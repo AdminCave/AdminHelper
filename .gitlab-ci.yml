@@ -19,7 +19,7 @@ cache:
     - .rustup/update-hashes
     - src-tauri/target
 
-build_deb_trixie:
+.tauri_trixie_base:
   stage: build
   image: debian:trixie
   before_script:
@@ -44,6 +44,9 @@ build_deb_trixie:
     - . "$CARGO_HOME/env"
     - rustup default stable
     - cargo install tauri-cli --locked --version '^2'
+
+build_deb_trixie:
+  extends: .tauri_trixie_base
   script:
     - . "$CARGO_HOME/env"
     - cd src-tauri
@@ -54,6 +57,24 @@ build_deb_trixie:
     expire_in: 14 days
     paths:
       - src-tauri/target/release/bundle/deb/*.deb
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+
+build_binary_trixie:
+  extends: .tauri_trixie_base
+  script:
+    - . "$CARGO_HOME/env"
+    - cd src-tauri
+    - cargo build --release
+    - sha256sum target/release/simple_remote_manager > target/release/simple_remote_manager.sha256
+    - ls -lah target/release/simple_remote_manager target/release/simple_remote_manager.sha256
+  artifacts:
+    name: "simple-remote-manager-bin-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    paths:
+      - src-tauri/target/release/simple_remote_manager
+      - src-tauri/target/release/simple_remote_manager.sha256
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
