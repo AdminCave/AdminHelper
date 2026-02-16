@@ -43,7 +43,12 @@ cache:
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     - . "$CARGO_HOME/env"
     - rustup default stable
-    - cargo install tauri-cli --locked --version '^2'
+    - |
+      if cargo-tauri --version 2>/dev/null | grep -Eq ' 2\.'; then
+        echo "Using cached $(cargo-tauri --version)"
+      else
+        cargo install tauri-cli --locked --version '^2'
+      fi
 
 build_deb_trixie:
   extends: .tauri_trixie_base
