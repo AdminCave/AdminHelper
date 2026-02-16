@@ -1,0 +1,59 @@
+stages:
+  - build
+
+variables:
+  DEBIAN_FRONTEND: noninteractive
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  RUSTUP_HOME: "$CI_PROJECT_DIR/.rustup"
+
+cache:
+  key:
+    files:
+      - src-tauri/Cargo.lock
+  paths:
+    - .cargo/bin
+    - .cargo/registry/index
+    - .cargo/registry/cache
+    - .cargo/git/db
+    - .rustup/toolchains
+    - .rustup/update-hashes
+    - src-tauri/target
+
+build_deb_trixie:
+  stage: build
+  image: debian:trixie
+  before_script:
+    - apt-get update
+    - >
+      apt-get install -y --no-install-recommends
+      ca-certificates
+      curl
+      build-essential
+      pkg-config
+      file
+      xz-utils
+      git
+      libssl-dev
+      libgtk-3-dev
+      libwebkit2gtk-4.1-dev
+      librsvg2-dev
+      libxdo-dev
+      patchelf
+    - apt-get install -y --no-install-recommends libayatana-appindicator3-dev || apt-get install -y --no-install-recommends libappindicator3-dev
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+    - . "$CARGO_HOME/env"
+    - rustup default stable
+    - cargo install tauri-cli --locked --version '^2'
+  script:
+    - . "$CARGO_HOME/env"
+    - cd src-tauri
+    - cargo tauri build --bundles deb
+    - ls -lah target/release/bundle/deb
+  artifacts:
+    name: "simple-remote-manager-deb-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    paths:
+      - src-tauri/target/release/bundle/deb/*.deb
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
