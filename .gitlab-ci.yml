@@ -91,7 +91,7 @@ publish_deb_trixie:
   needs:
     - build_deb_trixie
   rules:
-    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"'
   before_script:
     - apt-get update
     - apt-get install -y --no-install-recommends bash ca-certificates curl
