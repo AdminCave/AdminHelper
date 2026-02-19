@@ -1,5 +1,5 @@
 {
-  "productName": "Simple Remote Manager",
+  "productName": "simple-remote-manager",
   "version": "0.2.0",
   "identifier": "com.simpleremote.manager",
   "build": {
