@@ -453,11 +453,11 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = group.host || t("list.noName");
+    title.textContent = group.displayName || t("list.noName");
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
-    meta.textContent = t("grouped.connections", { count: group.connections.length });
+    meta.textContent = `${group.host} · ${t("grouped.connections", { count: group.connections.length })}`;
 
     const typeTag = document.createElement("div");
     typeTag.className = "card-tag";

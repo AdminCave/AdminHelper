@@ -154,10 +154,13 @@ export function groupConnectionsByHost(connections, search) {
           byKind[kind] = pickPreferredConnection(group.kindBuckets[kind]);
         }
       });
+      const preferred = pickPreferredConnection(group.connections);
+      const displayName = String(preferred?.name || "").trim();
       const haystack = `${group.host} ${group.connections.map(connectionHaystack).join(" ")}`.toLowerCase();
       return {
         key: group.key,
         host: group.host,
+        displayName,
         connections: group.connections,
         byKind,
         haystack
