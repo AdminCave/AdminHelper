@@ -5,7 +5,13 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 ## Highlights
 
 - **SSH / RDP / Web** connections in a single app
-- **List + Tree view** (tree is generated from tags)
+- **Filters**:
+  - `Einzeln` (single connections)
+  - `Zusammengefasst` (grouped by host/IP)
+  - `SSH`, `RDP`, `Web`
+- **List + Tree view**:
+  - In single mode: tree is grouped by tags
+  - In grouped mode: list is grouped by host/IP, tree is grouped by tags (with host groups inside)
 - **Tags + search** for fast filtering
 - **Sync mode**: load connections from a remote **HTTPS JSON** on startup and on a schedule
 - **Secure by design**: passwords are **not stored by default** (optional per-device storage)
@@ -19,6 +25,10 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 - **RDP**
   - Windows: opens `mstsc`
   - Linux: uses **FreeRDP** (`xfreerdp3` or `xfreerdp`)
+  - RDP scaling mode is configurable in settings: `auto` | `normal` | `hdpi`
+  - On Linux, keyboard layout for RDP is derived from app language setting:
+    - German (`de`) => German layout
+    - English / default => US layout
 - **Web**: opens the default browser
 
 ## Security notes
@@ -75,6 +85,7 @@ Notes:
 - **Sync URL** and **interval** (Sync mode only)
 - **Language**: German/English
 - **Store passwords locally**: Optional, per-device, OS keychain (RDP only)
+- **RDP scaling mode**: `auto`, `normal`, `hdpi`
 
 ## Build & Run
 
@@ -102,10 +113,27 @@ cargo tauri build
 
 ## Project structure
 
-```
+```text
 .
-├─ src/          # Frontend (HTML/CSS/JS)
-└─ src-tauri/    # Rust backend + Tauri config
+├─ src/
+│  ├─ index.html
+│  ├─ styles.css
+│  ├─ app.js
+│  ├─ connectionModel.js
+│  ├─ platformApi.js
+│  ├─ settingsModel.js
+│  └─ i18n.js
+└─ src-tauri/
+   └─ src/
+      ├─ main.rs
+      ├─ commands.rs
+      ├─ connection/
+      ├─ storage.rs
+      ├─ sync.rs
+      ├─ password.rs
+      ├─ models.rs
+      ├─ validation.rs
+      └─ terminal.rs
 ```
 
 ---
