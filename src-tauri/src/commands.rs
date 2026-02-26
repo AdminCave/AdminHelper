@@ -49,6 +49,7 @@ pub fn open_connection(
         password.as_deref(),
         client.as_ref(),
         settings.rdp_scaling_mode,
+        settings.language.as_deref(),
         &app,
     )
 }
@@ -65,6 +66,7 @@ pub fn open_connection_stored(
         &connection,
         client.as_ref(),
         settings.rdp_scaling_mode,
+        settings.language.as_deref(),
     )
 }
 

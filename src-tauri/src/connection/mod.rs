@@ -11,12 +11,20 @@ pub fn open_connection(
     password: Option<&str>,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
     match connection.kind {
         ConnectionKind::Ssh => ssh::open_ssh(connection),
-        ConnectionKind::Rdp => rdp::open_rdp(connection, password, client, rdp_scaling_mode, app),
+        ConnectionKind::Rdp => rdp::open_rdp(
+            connection,
+            password,
+            client,
+            rdp_scaling_mode,
+            ui_language,
+            app,
+        ),
         ConnectionKind::Web => web::open_web(connection),
     }
 }
@@ -26,13 +34,14 @@ pub fn open_connection_stored(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
     match connection.kind {
         ConnectionKind::Rdp => {
-            open_rdp_with_stored_password(app, connection, client, rdp_scaling_mode)
+            open_rdp_with_stored_password(app, connection, client, rdp_scaling_mode, ui_language)
         }
-        _ => open_connection(connection, None, client, rdp_scaling_mode, app),
+        _ => open_connection(connection, None, client, rdp_scaling_mode, ui_language, app),
     }
 }
 
@@ -42,8 +51,9 @@ fn open_rdp_with_stored_password(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
 ) -> Result<(), AppError> {
-    rdp::open_rdp(connection, None, client, rdp_scaling_mode, app)
+    rdp::open_rdp(connection, None, client, rdp_scaling_mode, ui_language, app)
 }
 
 #[cfg(unix)]
@@ -52,6 +62,7 @@ fn open_rdp_with_stored_password(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
 ) -> Result<(), AppError> {
     let password = crate::password::load_password_keyring(connection)?;
     rdp::open_rdp(
@@ -59,6 +70,7 @@ fn open_rdp_with_stored_password(
         password.as_deref(),
         client,
         rdp_scaling_mode,
+        ui_language,
         app,
     )
 }
@@ -69,6 +81,7 @@ fn open_rdp_with_stored_password(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
 ) -> Result<(), AppError> {
-    open_connection(connection, None, client, rdp_scaling_mode, app)
+    open_connection(connection, None, client, rdp_scaling_mode, ui_language, app)
 }

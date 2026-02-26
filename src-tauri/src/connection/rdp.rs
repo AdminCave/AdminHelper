@@ -24,6 +24,7 @@ pub fn open_rdp(
     password: Option<&str>,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     let host = connection
@@ -48,6 +49,8 @@ pub fn open_rdp(
     let _ = app;
     #[cfg(not(unix))]
     let _ = client;
+    #[cfg(not(unix))]
+    let _ = ui_language;
 
     #[cfg(target_os = "windows")]
     {
@@ -63,10 +66,9 @@ pub fn open_rdp(
             connection,
             host,
             port,
-            username,
-            domain,
             client,
             rdp_scaling_mode,
+            ui_language,
         );
         let password = password.filter(|value| !value.is_empty());
 
@@ -147,12 +149,21 @@ fn build_rdp_args(
     connection: &Connection,
     host: &str,
     port: u16,
-    username: &str,
-    domain: &str,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    ui_language: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![format!("/v:{host}:{port}")];
+    let username = connection
+        .username
+        .as_ref()
+        .map(|value| value.trim())
+        .unwrap_or("");
+    let domain = connection
+        .domain
+        .as_ref()
+        .map(|value| value.trim())
+        .unwrap_or("");
     args.push("/dynamic-resolution".to_string());
     if connection.trust_cert {
         args.push("/cert:ignore".to_string());
@@ -176,231 +187,19 @@ fn build_rdp_args(
         }
     }
     #[cfg(target_os = "linux")]
-    if let Some(kbd_arg) = linux_keyboard_layout_arg() {
-        args.push(kbd_arg);
-    }
+    args.push(linux_keyboard_layout_arg_from_ui_language(ui_language));
     args
 }
 
 #[cfg(target_os = "linux")]
-fn linux_keyboard_layout_arg() -> Option<String> {
-    let candidates = detect_linux_locale_candidates();
-    if candidates.is_empty() {
-        return None;
-    }
-
-    let lang_id = freerdp_lang_id_from_candidates_any_binary(&candidates)?;
-    let layout_id = format!("0x{lang_id:08X}");
-    Some(format!("/kbd:layout:{layout_id},lang:0x{lang_id:04X}"))
-}
-
-#[cfg(target_os = "linux")]
-fn detect_linux_locale_candidates() -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    if let Some(layout) = detect_linux_xkb_layout() {
-        if let Some(locale) = xkb_layout_to_locale(&layout) {
-            push_unique_case_insensitive(&mut candidates, locale.to_string());
-        }
-    }
-
-    for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
-        if let Ok(value) = std::env::var(key) {
-            if let Some(locale) = normalize_locale(&value) {
-                push_unique_case_insensitive(&mut candidates, locale);
-            }
-        }
-    }
-
-    let mut language_only = Vec::new();
-    for locale in &candidates {
-        let language = locale.split('_').next().unwrap_or(locale).to_lowercase();
-        if !language.is_empty() {
-            push_unique_case_insensitive(&mut language_only, language);
-        }
-    }
-    candidates.extend(language_only);
-    candidates
-}
-
-#[cfg(target_os = "linux")]
-fn detect_linux_xkb_layout() -> Option<String> {
-    if let Ok(value) = std::env::var("XKB_DEFAULT_LAYOUT") {
-        let layout = value.split(',').next().unwrap_or("").trim().to_lowercase();
-        if !layout.is_empty() {
-            return Some(layout);
-        }
-    }
-
-    if let Ok(output) = Command::new("setxkbmap").arg("-query").output() {
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            let trimmed = line.trim();
-            if let Some(value) = trimmed.strip_prefix("layout:") {
-                let layout = value.split(',').next().unwrap_or("").trim().to_lowercase();
-                if !layout.is_empty() {
-                    return Some(layout);
-                }
-            }
-        }
-    }
-
-    if let Ok(output) = Command::new("localectl").arg("status").output() {
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            let trimmed = line.trim();
-            if let Some(value) = trimmed.strip_prefix("X11 Layout:") {
-                let layout = value.split(',').next().unwrap_or("").trim().to_lowercase();
-                if !layout.is_empty() {
-                    return Some(layout);
-                }
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "linux")]
-fn xkb_layout_to_locale(layout: &str) -> Option<&'static str> {
-    match layout {
-        "us" => Some("en_US"),
-        "gb" => Some("en_GB"),
-        "de" => Some("de_DE"),
-        "fr" => Some("fr_FR"),
-        "es" => Some("es_ES"),
-        "it" => Some("it_IT"),
-        "pt" => Some("pt_PT"),
-        "br" => Some("pt_BR"),
-        "nl" => Some("nl_NL"),
-        "be" => Some("nl_BE"),
-        "se" => Some("sv_SE"),
-        "no" => Some("nb_NO"),
-        "dk" => Some("da_DK"),
-        "fi" => Some("fi_FI"),
-        "pl" => Some("pl_PL"),
-        "cz" => Some("cs_CZ"),
-        "sk" => Some("sk_SK"),
-        "hu" => Some("hu_HU"),
-        "ro" => Some("ro_RO"),
-        "bg" => Some("bg_BG"),
-        "hr" => Some("hr_HR"),
-        "rs" => Some("sr_RS"),
-        "si" => Some("sl_SI"),
-        "tr" => Some("tr_TR"),
-        "gr" => Some("el_GR"),
-        "ua" => Some("uk_UA"),
-        "ru" => Some("ru_RU"),
-        _ => None,
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn normalize_locale(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let base = trimmed.split('.').next().unwrap_or(trimmed);
-    let base = base.split('@').next().unwrap_or(base);
-    let normalized = base.replace('-', "_");
-    if normalized.is_empty() {
-        return None;
-    }
-    Some(normalized)
-}
-
-#[cfg(target_os = "linux")]
-fn push_unique_case_insensitive(values: &mut Vec<String>, value: String) {
-    if values
-        .iter()
-        .any(|existing| existing.eq_ignore_ascii_case(&value))
-    {
-        return;
-    }
-    values.push(value);
-}
-
-#[cfg(target_os = "linux")]
-fn freerdp_lang_id_from_candidates(rdp_binary: &str, candidates: &[String]) -> Option<u32> {
-    let output = Command::new(rdp_binary)
-        .arg("/list:kbd-lang")
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut entries: Vec<(String, u32)> = Vec::new();
-    for line in text.lines() {
-        let id_start = match line.find("id=0x") {
-            Some(pos) => pos,
-            None => continue,
-        };
-        let after_id = &line[id_start + 5..];
-        let (id_hex, after_colon) = match after_id.split_once(':') {
-            Some(parts) => parts,
-            None => continue,
-        };
-        let id = match u32::from_str_radix(id_hex.trim(), 16) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-
-        let locale_start = match after_colon.find('[') {
-            Some(pos) => pos,
-            None => continue,
-        };
-        let locale_rest = &after_colon[locale_start + 1..];
-        let locale_end = match locale_rest.find(']') {
-            Some(pos) => pos,
-            None => continue,
-        };
-        let locale = locale_rest[..locale_end].trim();
-        if locale.is_empty() {
-            continue;
-        }
-        entries.push((locale.to_lowercase(), id));
-    }
-
-    if entries.is_empty() {
-        return None;
-    }
-
-    for candidate in candidates {
-        let needle = candidate.to_lowercase();
-        if let Some((_, id)) = entries.iter().find(|(locale, _)| locale == &needle) {
-            return Some(*id);
-        }
-
-        if needle.len() == 2 {
-            if let Some((_, id)) = entries.iter().find(|(locale, _)| {
-                locale == &needle
-                    || (locale.len() > 3
-                        && locale.as_bytes().get(2) == Some(&b'_')
-                        && locale.starts_with(&needle))
-            }) {
-                return Some(*id);
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "linux")]
-fn freerdp_lang_id_from_candidates_any_binary(candidates: &[String]) -> Option<u32> {
-    for binary in ["xfreerdp3", "xfreerdp"] {
-        if which(binary).is_none() {
-            continue;
-        }
-        if let Some(id) = freerdp_lang_id_from_candidates(binary, candidates) {
-            return Some(id);
-        }
-    }
-    None
+fn linux_keyboard_layout_arg_from_ui_language(ui_language: Option<&str>) -> String {
+    let language = ui_language.unwrap_or("en").trim().to_ascii_lowercase();
+    let lang_id: u32 = if language.starts_with("de") {
+        0x0407
+    } else {
+        0x0409
+    };
+    format!("/kbd:layout:0x{lang_id:08X},lang:0x{lang_id:04X}")
 }
 
 #[cfg(unix)]
