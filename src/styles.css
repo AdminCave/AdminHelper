@@ -38,6 +38,9 @@ body {
   color: var(--text);
   line-height: 1.5;
   overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .backdrop {
@@ -135,13 +138,20 @@ body {
 .logo {
   width: 54px;
   height: 54px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.logo-mark {
+  width: 54px;
+  height: 54px;
+  display: block;
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(14, 165, 233, 0.4));
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #0b1220;
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 .brand-title {
