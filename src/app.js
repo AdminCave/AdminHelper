@@ -60,6 +60,7 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
   const syncUrlInput = document.getElementById("syncUrlInput");
   const syncIntervalField = document.getElementById("syncIntervalField");
   const syncIntervalInput = document.getElementById("syncIntervalInput");
+  const rdpScalingSelect = document.getElementById("rdpScalingSelect");
   const storePasswordsInput = document.getElementById("storePasswordsInput");
   const languageSelect = document.getElementById("languageSelect");
 
@@ -237,6 +238,10 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     }
     if (storePasswordsInput) {
       storePasswordsInput.checked = Boolean(settings.storePasswords);
+    }
+    if (rdpScalingSelect) {
+      const mode = settings.rdpScalingMode || "auto";
+      rdpScalingSelect.value = ["auto", "normal", "hdpi"].includes(mode) ? mode : "auto";
     }
     settingsPromptEl.classList.remove("hidden");
     settingsPromptEl.setAttribute("aria-hidden", "false");
@@ -866,12 +871,16 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     const intervalMinutes = Number(syncIntervalInput.value);
     const language = languageSelect ? languageSelect.value : "de";
     const storePasswords = storePasswordsInput ? storePasswordsInput.checked : false;
+    const rdpScalingMode = rdpScalingSelect ? rdpScalingSelect.value : "auto";
     const settings = {
       mode,
       url,
       intervalMinutes: getIntervalMinutes({ intervalMinutes }),
       language,
-      storePasswords
+      storePasswords,
+      rdpScalingMode: ["auto", "normal", "hdpi"].includes(rdpScalingMode)
+        ? rdpScalingMode
+        : "auto"
     };
     try {
       if (mode === "sync" && !url) {

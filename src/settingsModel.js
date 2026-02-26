@@ -9,7 +9,8 @@ export function getSettingsDefaults() {
     url: "",
     intervalMinutes: 1,
     language: detectSystemLanguage(),
-    storePasswords: false
+    storePasswords: false,
+    rdpScalingMode: "auto"
   };
 }
 

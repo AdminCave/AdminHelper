@@ -43,7 +43,14 @@ pub fn open_connection(
     password: Option<String>,
     client: Option<ClientInfo>,
 ) -> Result<(), AppError> {
-    connection::open_connection(&connection, password.as_deref(), client.as_ref(), &app)
+    let settings = storage::load_settings(&app)?;
+    connection::open_connection(
+        &connection,
+        password.as_deref(),
+        client.as_ref(),
+        settings.rdp_scaling_mode,
+        &app,
+    )
 }
 
 #[tauri::command]
@@ -52,7 +59,13 @@ pub fn open_connection_stored(
     connection: Connection,
     client: Option<ClientInfo>,
 ) -> Result<(), AppError> {
-    connection::open_connection_stored(&app, &connection, client.as_ref())
+    let settings = storage::load_settings(&app)?;
+    connection::open_connection_stored(
+        &app,
+        &connection,
+        client.as_ref(),
+        settings.rdp_scaling_mode,
+    )
 }
 
 #[tauri::command]

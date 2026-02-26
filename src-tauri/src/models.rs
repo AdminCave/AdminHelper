@@ -15,6 +15,15 @@ pub enum SyncMode {
     Sync,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RdpScalingMode {
+    #[default]
+    Auto,
+    Normal,
+    Hdpi,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connection {
@@ -46,6 +55,8 @@ pub struct Settings {
     pub language: Option<String>,
     #[serde(default)]
     pub store_passwords: bool,
+    #[serde(default)]
+    pub rdp_scaling_mode: RdpScalingMode,
 }
 
 impl Default for Settings {
@@ -56,6 +67,7 @@ impl Default for Settings {
             interval_minutes: default_sync_interval_minutes(),
             language: None,
             store_passwords: false,
+            rdp_scaling_mode: RdpScalingMode::Auto,
         }
     }
 }

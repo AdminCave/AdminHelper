@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::{ClientInfo, Connection};
+use crate::models::{ClientInfo, Connection, RdpScalingMode};
 
 #[cfg(unix)]
 use std::io::{Read, Write};
@@ -23,6 +23,7 @@ pub fn open_rdp(
     connection: &Connection,
     password: Option<&str>,
     client: Option<&ClientInfo>,
+    rdp_scaling_mode: RdpScalingMode,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     let host = connection
@@ -58,7 +59,15 @@ pub fn open_rdp(
         let rdp_binary = detect_rdp_binary()?;
         preflight_rdp(host, port)?;
 
-        let mut args = build_rdp_args(connection, host, port, username, domain, client);
+        let mut args = build_rdp_args(
+            connection,
+            host,
+            port,
+            username,
+            domain,
+            client,
+            rdp_scaling_mode,
+        );
         let password = password.filter(|value| !value.is_empty());
 
         if let Some(secret) = password {
@@ -141,6 +150,7 @@ fn build_rdp_args(
     username: &str,
     domain: &str,
     client: Option<&ClientInfo>,
+    rdp_scaling_mode: RdpScalingMode,
 ) -> Vec<String> {
     let mut args = vec![format!("/v:{host}:{port}")];
     args.push("/dynamic-resolution".to_string());
@@ -153,8 +163,17 @@ fn build_rdp_args(
     if !domain.is_empty() {
         args.push(format!("/d:{domain}"));
     }
-    if let Some(scale) = hdpi_scale(client) {
-        args.push(format!("/scale:{scale}"));
+    match rdp_scaling_mode {
+        RdpScalingMode::Auto => {
+            if let Some(scale) = hdpi_scale(client) {
+                args.push(format!("/scale:{scale}"));
+            }
+        }
+        RdpScalingMode::Normal => {}
+        RdpScalingMode::Hdpi => {
+            let scale = hdpi_scale(client).unwrap_or(180);
+            args.push(format!("/scale:{scale}"));
+        }
     }
     args
 }

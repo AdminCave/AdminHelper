@@ -280,6 +280,17 @@
             <input id="syncIntervalInput" type="number" min="1" max="1440" step="1" value="1" />
             <small data-i18n="settings.interval.help">Mindestens 1 Minute, maximal 24 Stunden.</small>
           </label>
+          <label class="field" id="rdpScalingField">
+            <span data-i18n="settings.rdpScaling.label">RDP Skalierung</span>
+            <select id="rdpScalingSelect">
+              <option value="auto" data-i18n="settings.rdpScaling.auto">Auto</option>
+              <option value="normal" data-i18n="settings.rdpScaling.normal">Normal</option>
+              <option value="hdpi" data-i18n="settings.rdpScaling.hdpi">HDPI/4K</option>
+            </select>
+            <small data-i18n="settings.rdpScaling.help">
+              Auto erkennt HDPI/4K automatisch. Normal deaktiviert die Skalierung. HDPI/4K erzwingt HDPI-Skalierung.
+            </small>
+          </label>
           <label class="field checkbox" id="storePasswordsField">
             <input id="storePasswordsInput" type="checkbox" />
             <div>
