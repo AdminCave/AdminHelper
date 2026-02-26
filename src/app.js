@@ -89,6 +89,8 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
   let rdpConnectId = 0;
   let rdpPendingId = null;
   let rdpErroredId = null;
+  const SCROLL_ACCELERATION_LIST = 2.2;
+  const SCROLL_ACCELERATION_PANEL = 1.8;
 
   function t(key, vars = {}) {
     const dict = translations[currentLanguage] || translations.en;
@@ -296,6 +298,50 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     if (globalStatusEl) {
       globalStatusEl.classList.remove("show");
     }
+  }
+
+  function accelerateWheelScroll(element, factor) {
+    if (!element || element.dataset.scrollAccelerationBound === "1") {
+      return;
+    }
+    element.dataset.scrollAccelerationBound = "1";
+    element.addEventListener(
+      "wheel",
+      (event) => {
+        if (event.ctrlKey) {
+          return;
+        }
+        if (element.scrollHeight <= element.clientHeight) {
+          return;
+        }
+
+        let modeScale = 1;
+        if (event.deltaMode === 1) {
+          modeScale = 16;
+        } else if (event.deltaMode === 2) {
+          modeScale = element.clientHeight;
+        }
+
+        const deltaY = event.deltaY * modeScale;
+        const deltaX = event.deltaX * modeScale;
+        if (Math.abs(deltaY) < 0.5 && Math.abs(deltaX) < 0.5) {
+          return;
+        }
+
+        event.preventDefault();
+        element.scrollTop += deltaY * factor;
+        element.scrollLeft += deltaX * factor;
+      },
+      { passive: false }
+    );
+  }
+
+  function initScrollAcceleration() {
+    accelerateWheelScroll(listEl, SCROLL_ACCELERATION_LIST);
+    accelerateWheelScroll(treeEl, SCROLL_ACCELERATION_LIST);
+    document.querySelectorAll(".editor-panel").forEach((panel) => {
+      accelerateWheelScroll(panel, SCROLL_ACCELERATION_PANEL);
+    });
   }
 
   function getSelectedConnection() {
@@ -1097,5 +1143,6 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     });
   });
 
+  initScrollAcceleration();
   init();
 })();
