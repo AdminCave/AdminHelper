@@ -1,5 +1,6 @@
 import {
   filterConnections,
+  groupConnectionsByHost,
   normalizeConnection,
   parseTags,
   toCardMeta,
@@ -19,7 +20,7 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
   const state = {
     connections: [],
     selectedId: null,
-    filter: "all",
+    filter: "single",
     search: "",
     view: "list"
   };
@@ -376,10 +377,126 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     return card;
   }
 
+  function preferredGroupedConnection(group) {
+    for (const kind of ["ssh", "rdp", "web"]) {
+      if (group.byKind[kind]) {
+        return group.byKind[kind];
+      }
+    }
+    return group.connections[0] || null;
+  }
+
+  function buildGroupedConnectionCard(group) {
+    const active = group.connections.some((connection) => connection.id === state.selectedId);
+    const card = document.createElement("div");
+    card.className = `card ${active ? "active" : ""}`;
+    card.dataset.id = group.key;
+
+    const cardMain = document.createElement("div");
+    cardMain.className = "card-main";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = group.host || t("list.noName");
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    meta.textContent = t("grouped.connections", { count: group.connections.length });
+
+    const typeTag = document.createElement("div");
+    typeTag.className = "card-tag";
+    typeTag.textContent = ["ssh", "rdp", "web"]
+      .filter((kind) => Boolean(group.byKind[kind]))
+      .map((kind) => kind.toUpperCase())
+      .join(" · ");
+
+    cardMain.append(title, meta, typeTag);
+
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    ["ssh", "rdp", "web"].forEach((kind) => {
+      const connection = group.byKind[kind];
+      if (!connection) {
+        return;
+      }
+      const button = document.createElement("button");
+      button.className = "btn small accent";
+      button.type = "button";
+      button.dataset.action = `connect-${kind}`;
+      button.textContent = kind.toUpperCase();
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        initiateConnect(connection);
+      });
+      actions.appendChild(button);
+    });
+
+    card.append(cardMain, actions);
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button")) {
+        return;
+      }
+      const connection = preferredGroupedConnection(group);
+      if (connection) {
+        openEditor(connection);
+      }
+    });
+    return card;
+  }
+
   function renderList(filtered) {
     listEl.innerHTML = "";
     filtered.forEach((connection) => {
       listEl.appendChild(buildConnectionCard(connection));
+    });
+  }
+
+  function renderGroupedList(groups) {
+    listEl.innerHTML = "";
+    groups.forEach((group) => {
+      listEl.appendChild(buildGroupedConnectionCard(group));
+    });
+  }
+
+  function renderGroupedTree(groups) {
+    treeEl.innerHTML = "";
+    groups.forEach((group) => {
+      const treeGroup = document.createElement("div");
+      treeGroup.className = "tree-group open";
+
+      const countLabel = t("grouped.connections", { count: group.connections.length });
+      const header = document.createElement("div");
+      header.className = "tree-header";
+
+      const hostEl = document.createElement("div");
+      hostEl.className = "tree-tag";
+      hostEl.textContent = group.host;
+
+      const toggle = document.createElement("div");
+      toggle.className = "tree-toggle";
+
+      const countEl = document.createElement("span");
+      countEl.className = "tree-count";
+      countEl.textContent = countLabel;
+
+      toggle.appendChild(countEl);
+      header.append(hostEl, toggle);
+
+      const list = document.createElement("div");
+      list.className = "tree-list";
+
+      const node = document.createElement("div");
+      node.className = "tree-node";
+      node.appendChild(buildGroupedConnectionCard(group));
+
+      list.appendChild(node);
+      treeGroup.append(header, list);
+
+      header.addEventListener("click", () => {
+        treeGroup.classList.toggle("open");
+      });
+
+      treeEl.appendChild(treeGroup);
     });
   }
 
@@ -438,6 +555,19 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
   }
 
   function renderConnections() {
+    if (state.filter === "grouped") {
+      const grouped = groupConnectionsByHost(state.connections, state.search);
+      counterEl.textContent = String(grouped.length);
+      listEl.classList.toggle("hidden", state.view !== "list");
+      treeEl.classList.toggle("hidden", state.view !== "tree");
+      if (state.view === "tree") {
+        renderGroupedTree(grouped);
+      } else {
+        renderGroupedList(grouped);
+      }
+      return;
+    }
+
     const filtered = filterConnections(state.connections, state.filter, state.search);
     counterEl.textContent = String(filtered.length);
     listEl.classList.toggle("hidden", state.view !== "list");
