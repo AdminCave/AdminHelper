@@ -26,23 +26,36 @@ pub fn open_connection_stored(
     client: Option<&ClientInfo>,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
-    if connection.kind != ConnectionKind::Rdp {
-        return open_connection(connection, None, client, app);
+    match connection.kind {
+        ConnectionKind::Rdp => open_rdp_with_stored_password(app, connection, client),
+        _ => open_connection(connection, None, client, app),
     }
+}
 
-    #[cfg(target_os = "windows")]
-    {
-        return rdp::open_rdp(connection, None, client, app);
-    }
+#[cfg(target_os = "windows")]
+fn open_rdp_with_stored_password(
+    app: &tauri::AppHandle,
+    connection: &Connection,
+    client: Option<&ClientInfo>,
+) -> Result<(), AppError> {
+    rdp::open_rdp(connection, None, client, app)
+}
 
-    #[cfg(unix)]
-    {
-        let password = crate::password::load_password_keyring(connection)?;
-        rdp::open_rdp(connection, password.as_deref(), client, app)
-    }
+#[cfg(unix)]
+fn open_rdp_with_stored_password(
+    app: &tauri::AppHandle,
+    connection: &Connection,
+    client: Option<&ClientInfo>,
+) -> Result<(), AppError> {
+    let password = crate::password::load_password_keyring(connection)?;
+    rdp::open_rdp(connection, password.as_deref(), client, app)
+}
 
-    #[cfg(not(any(target_os = "windows", unix)))]
-    {
-        return open_connection(connection, None, client, app);
-    }
+#[cfg(not(any(target_os = "windows", unix)))]
+fn open_rdp_with_stored_password(
+    app: &tauri::AppHandle,
+    connection: &Connection,
+    client: Option<&ClientInfo>,
+) -> Result<(), AppError> {
+    open_connection(connection, None, client, app)
 }

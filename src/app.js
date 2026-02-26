@@ -1,3 +1,20 @@
+import {
+  filterConnections,
+  normalizeConnection,
+  parseTags,
+  toCardMeta,
+  validateConnection
+} from "./connectionModel.js";
+import { translations } from "./i18n.js";
+import {
+  createConnectionsApi,
+  createPasswordApi,
+  createSettingsApi,
+  getClientInfo,
+  getTauriBridge
+} from "./platformApi.js";
+import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from "./settingsModel.js";
+
 (() => {
   const state = {
     connections: [],
@@ -7,227 +24,10 @@
     view: "list"
   };
 
-  const translations = {
-    de: {
-      "app.title": "Simple Remote Manager",
-      "brand.title": "Simple Remote",
-      "brand.subtitle": "Manager",
-      "search.label": "Suchen",
-      "search.placeholder": "Name, Host, URL",
-      "settings.label": "Einstellungen",
-      "settings.mode.local": "Lokal",
-      "settings.mode.sync": "Sync",
-      "connections.filter": "Filter",
-      "connections.title": "Verbindungen",
-      "connections.new": "Neue Verbindung",
-      "filters.all": "Alle",
-      "filters.ssh": "SSH",
-      "filters.rdp": "RDP",
-      "filters.web": "Web",
-      "view.list": "Liste",
-      "view.tree": "Baum",
-      "footer.status.ready": "Bereit",
-      "editor.eyebrow": "Details",
-      "editor.new": "Neue Verbindung",
-      "editor.connection": "Verbindung",
-      "action.connect": "Verbinden",
-      "action.save": "Speichern",
-      "action.delete": "Loeschen",
-      "action.close": "Schliessen",
-      "action.cancel": "Abbrechen",
-      "action.edit": "Bearbeiten",
-      "field.name": "Name",
-      "field.name.placeholder": "z.B. Prod Gateway",
-      "field.kind": "Typ",
-      "field.kind.web": "Webseite",
-      "field.host": "Host",
-      "field.host.placeholder": "server.example.com",
-      "field.port": "Port",
-      "field.port.placeholder": "Standard",
-      "field.username": "Benutzer",
-      "field.username.placeholder": "user",
-      "field.domain": "Domaene",
-      "field.domain.placeholder": "z.B. CONTOSO oder contoso.local",
-      "field.trustCert": "Zertifikat vertrauen (unsicher)",
-      "field.trustCert.help": "Ignoriert Zertifikatswarnungen beim RDP-Client.",
-      "field.keyPath": "SSH Key Pfad",
-      "field.keyPath.placeholder": "~/.ssh/id_ed25519",
-      "field.url": "URL",
-      "field.url.placeholder": "https://example.com",
-      "field.notes": "Notizen",
-      "field.notes.placeholder": "Kurzbeschreibung, Hinweise, Ablauf",
-      "field.tags": "Tags",
-      "field.tags.placeholder": "z.B. prod, mysql, vpn",
-      "field.lastUsed": "Zuletzt genutzt",
-      "security.eyebrow": "Sicherheit",
-      "security.title": "Private Daten bleiben lokal",
-      "security.body":
-        "Passwoerter werden standardmaessig nicht gespeichert. Optional kannst du sie lokal im OS-Schluesselbund ablegen. SSH nutzt deine lokalen Keys, RDP laesst dich beim Start authentifizieren. Die Konfiguration wird lokal im Benutzerprofil abgelegt.",
-      "security.tag.local": "Lokale Speicherung",
-      "security.tag.noPasswordDb": "Keine Passwortdatenbank",
-      "security.tag.osClients": "OS Standard Clients",
-      "rdp.title": "Passwort eingeben",
-      "rdp.hint": "Das Passwort wird nur fuer diese Verbindung verwendet und nicht gespeichert.",
-      "rdp.hint.remember":
-        "Das Passwort wird fuer diese Verbindung verwendet. Optional kannst du es lokal im OS-Schluesselbund speichern.",
-      "rdp.remember": "Auf diesem Geraet speichern",
-      "rdp.remember.help": "Nur lokal, niemals im Sync.",
-      "prompt.username": "Benutzer",
-      "prompt.username.placeholder": "user",
-      "prompt.domain": "Domaene",
-      "prompt.domain.placeholder": "z.B. CONTOSO",
-      "prompt.password": "Passwort",
-      "prompt.password.placeholder": "Passwort",
-      "settings.title": "Einstellungen",
-      "settings.mode.label": "Modus",
-      "settings.url.label": "Sync URL (https)",
-      "settings.url.placeholder": "https://example.com/connections.json",
-      "settings.url.help": "Die JSON-Datei wird beim Start und regelmaessig geladen.",
-      "settings.interval.label": "Sync Intervall (Minuten)",
-      "settings.interval.help": "Mindestens 1 Minute, maximal 24 Stunden.",
-      "settings.passwords.store": "Passwoerter lokal speichern (OS-Schluesselbund)",
-      "settings.passwords.help": "Nur auf diesem Geraet, niemals im Sync.",
-      "settings.language.label": "Sprache",
-      "settings.language.de": "Deutsch",
-      "settings.language.en": "Englisch",
-      "tree.untagged": "Ohne Tag",
-      "list.noName": "Ohne Namen",
-      "tree.connections": "{count} Verbindungen",
-      "status.saved": "Gespeichert.",
-      "status.deleted": "Geloescht.",
-      "status.connected": "Verbunden.",
-      "status.rdpStarted": "RDP-Client gestartet.",
-      "error.generic": "Fehler: {message}",
-      "error.tauriOnly": "Connect ist nur in der Tauri-App verfuegbar.",
-      "error.syncOnly": "Sync ist nur in der Tauri-App verfuegbar.",
-      "error.syncLocked":
-        "Im Sync-Modus sind lokale Aenderungen deaktiviert. Bitte auf Lokal umstellen, um Verbindungen zu bearbeiten oder anzulegen.",
-      "error.loadConnections": "Konnte Verbindungen nicht laden.",
-      "validation.name": "Bitte einen Namen vergeben.",
-      "validation.url": "Bitte eine URL angeben.",
-      "validation.host": "Bitte einen Host angeben.",
-      "sync.success": "Sync erfolgreich.",
-      "sync.error": "Sync Fehler: {message}",
-      "sync.urlRequired": "Bitte eine Sync URL angeben.",
-      "sync.httpsOnly": "Nur https:// URLs sind erlaubt.",
-      "sync.intervalInvalid": "Bitte ein gueltiges Sync Intervall angeben.",
-      "rdp.authFailed": "RDP Anmeldung fehlgeschlagen.",
-      "error.passwordStore": "Passwortspeicher Fehler: {message}"
-    },
-    en: {
-      "app.title": "Simple Remote Manager",
-      "brand.title": "Simple Remote",
-      "brand.subtitle": "Manager",
-      "search.label": "Search",
-      "search.placeholder": "Name, host, URL",
-      "settings.label": "Settings",
-      "settings.mode.local": "Local",
-      "settings.mode.sync": "Sync",
-      "connections.filter": "Filter",
-      "connections.title": "Connections",
-      "connections.new": "New Connection",
-      "filters.all": "All",
-      "filters.ssh": "SSH",
-      "filters.rdp": "RDP",
-      "filters.web": "Web",
-      "view.list": "List",
-      "view.tree": "Tree",
-      "footer.status.ready": "Ready",
-      "editor.eyebrow": "Details",
-      "editor.new": "New Connection",
-      "editor.connection": "Connection",
-      "action.connect": "Connect",
-      "action.save": "Save",
-      "action.delete": "Delete",
-      "action.close": "Close",
-      "action.cancel": "Cancel",
-      "action.edit": "Edit",
-      "field.name": "Name",
-      "field.name.placeholder": "e.g. Prod Gateway",
-      "field.kind": "Type",
-      "field.kind.web": "Website",
-      "field.host": "Host",
-      "field.host.placeholder": "server.example.com",
-      "field.port": "Port",
-      "field.port.placeholder": "Default",
-      "field.username": "Username",
-      "field.username.placeholder": "user",
-      "field.domain": "Domain",
-      "field.domain.placeholder": "e.g. CONTOSO or contoso.local",
-      "field.trustCert": "Trust certificate (unsafe)",
-      "field.trustCert.help": "Ignores certificate warnings in the RDP client.",
-      "field.keyPath": "SSH key path",
-      "field.keyPath.placeholder": "~/.ssh/id_ed25519",
-      "field.url": "URL",
-      "field.url.placeholder": "https://example.com",
-      "field.notes": "Notes",
-      "field.notes.placeholder": "Short description, notes, steps",
-      "field.tags": "Tags",
-      "field.tags.placeholder": "e.g. prod, mysql, vpn",
-      "field.lastUsed": "Last used",
-      "security.eyebrow": "Security",
-      "security.title": "Private data stays local",
-      "security.body":
-        "Passwords are not stored by default. Optionally you can store them locally in the OS keychain. SSH uses your local keys, RDP asks you to authenticate on launch. The configuration is stored locally in your user profile.",
-      "security.tag.local": "Local storage",
-      "security.tag.noPasswordDb": "No password database",
-      "security.tag.osClients": "Native OS clients",
-      "rdp.title": "Enter password",
-      "rdp.hint": "The password is only used for this connection and is not stored.",
-      "rdp.hint.remember":
-        "The password is used for this connection. Optionally you can store it locally in the OS keychain.",
-      "rdp.remember": "Save on this device",
-      "rdp.remember.help": "Local only, never synced.",
-      "prompt.username": "Username",
-      "prompt.username.placeholder": "user",
-      "prompt.domain": "Domain",
-      "prompt.domain.placeholder": "e.g. CONTOSO",
-      "prompt.password": "Password",
-      "prompt.password.placeholder": "Password",
-      "settings.title": "Settings",
-      "settings.mode.label": "Mode",
-      "settings.url.label": "Sync URL (https)",
-      "settings.url.placeholder": "https://example.com/connections.json",
-      "settings.url.help": "The JSON file is loaded at startup and on a schedule.",
-      "settings.interval.label": "Sync interval (minutes)",
-      "settings.interval.help": "Minimum 1 minute, maximum 24 hours.",
-      "settings.passwords.store": "Store passwords locally (OS keychain)",
-      "settings.passwords.help": "Only on this device, never synced.",
-      "settings.language.label": "Language",
-      "settings.language.de": "German",
-      "settings.language.en": "English",
-      "tree.untagged": "Untagged",
-      "list.noName": "Untitled",
-      "tree.connections": "{count} connections",
-      "status.saved": "Saved.",
-      "status.deleted": "Deleted.",
-      "status.connected": "Connected.",
-      "status.rdpStarted": "RDP client launched.",
-      "error.generic": "Error: {message}",
-      "error.tauriOnly": "Connect is only available in the Tauri app.",
-      "error.syncOnly": "Sync is only available in the Tauri app.",
-      "error.syncLocked":
-        "Local changes are disabled in Sync mode. Switch to Local to add or edit connections.",
-      "error.loadConnections": "Could not load connections.",
-      "validation.name": "Please provide a name.",
-      "validation.url": "Please provide a URL.",
-      "validation.host": "Please provide a host.",
-      "sync.success": "Sync successful.",
-      "sync.error": "Sync error: {message}",
-      "sync.urlRequired": "Please provide a sync URL.",
-      "sync.httpsOnly": "Only https:// URLs are allowed.",
-      "sync.intervalInvalid": "Please provide a valid sync interval.",
-      "rdp.authFailed": "RDP authentication failed.",
-      "error.passwordStore": "Password store error: {message}"
-    }
-  };
-
   let currentLanguage = "de";
 
-  const tauriInvoke =
-    window.__TAURI__?.core?.invoke || window.__TAURI__?.tauri?.invoke || window.__TAURI__?.invoke;
-  const isTauri = typeof tauriInvoke === "function";
-  const tauriEvent = window.__TAURI__?.event;
+  const bridge = getTauriBridge(window);
+  const { isTauri, tauriEvent } = bridge;
 
   const listEl = document.getElementById("list");
   const treeEl = document.getElementById("tree");
@@ -288,16 +88,6 @@
   let rdpPendingId = null;
   let rdpErroredId = null;
 
-  const DEFAULT_PORTS = {
-    ssh: 22,
-    rdp: 3389
-  };
-
-  function detectSystemLanguage() {
-    const language = navigator.language || "";
-    return language.toLowerCase().startsWith("de") ? "de" : "en";
-  }
-
   function t(key, vars = {}) {
     const dict = translations[currentLanguage] || translations.en;
     const fallback = translations.en || {};
@@ -347,102 +137,9 @@
     renderConnections();
   }
 
-  const storageFallback = {
-    load() {
-      try {
-        return JSON.parse(localStorage.getItem("rg-connections") || "[]");
-      } catch (error) {
-        return [];
-      }
-    },
-    save(connections) {
-      localStorage.setItem("rg-connections", JSON.stringify(connections));
-    }
-  };
-
-  const settingsFallback = {
-    load() {
-      try {
-        return JSON.parse(localStorage.getItem("rg-settings") || "{}");
-      } catch (error) {
-        return {};
-      }
-    },
-    save(settings) {
-      localStorage.setItem("rg-settings", JSON.stringify(settings));
-    }
-  };
-
-  const api = {
-    async load() {
-      if (isTauri) {
-        return await tauriInvoke("load_connections");
-      }
-      return storageFallback.load();
-    },
-    async save(connections) {
-      if (isTauri) {
-        await tauriInvoke("save_connections", { connections });
-        return;
-      }
-      storageFallback.save(connections);
-    },
-    async connect(connection) {
-      if (isTauri) {
-        await tauriInvoke("open_connection", { connection, client: getClientInfo() });
-        return;
-      }
-      alert(t("error.tauriOnly"));
-    }
-  };
-
-  const settingsApi = {
-    async load() {
-      if (isTauri) {
-        return await tauriInvoke("load_settings");
-      }
-      return settingsFallback.load();
-    },
-    async save(settings) {
-      if (isTauri) {
-        await tauriInvoke("save_settings", { settings });
-        return;
-      }
-      settingsFallback.save(settings);
-    },
-    async sync(url) {
-      if (isTauri) {
-        return await tauriInvoke("sync_connections", { url });
-      }
-      throw new Error(t("error.syncOnly"));
-    }
-  };
-
-  const passwordApi = {
-    async state(connection) {
-      if (isTauri) {
-        return await tauriInvoke("password_state", { connection });
-      }
-      return { stored: false, password: null, canStore: false };
-    },
-    async save(connection, password) {
-      if (isTauri) {
-        await tauriInvoke("save_password", { connection, password });
-      }
-    },
-    async delete(connection) {
-      if (isTauri) {
-        await tauriInvoke("delete_password", { connection });
-      }
-    }
-  };
-  async function connectWithPassword(connection, password) {
-    if (isTauri) {
-      await tauriInvoke("open_connection", { connection, password, client: getClientInfo() });
-      return;
-    }
-    alert(t("error.tauriOnly"));
-  }
+  const api = createConnectionsApi(bridge, t, () => getClientInfo(window));
+  const settingsApi = createSettingsApi(bridge, t);
+  const passwordApi = createPasswordApi(bridge);
 
   function getStatusTarget() {
     if (editorEl.classList.contains("hidden") && globalStatusEl) {
@@ -470,16 +167,6 @@
     }
   }
 
-  function getSettingsDefaults() {
-    return {
-      mode: "local",
-      url: "",
-      intervalMinutes: 1,
-      language: detectSystemLanguage(),
-      storePasswords: false
-    };
-  }
-
   function getSyncMode() {
     const selected = document.querySelector('input[name="syncMode"]:checked');
     return selected ? selected.value : "local";
@@ -491,14 +178,6 @@
     });
     syncUrlField.classList.toggle("hidden", mode !== "sync");
     syncIntervalField.classList.toggle("hidden", mode !== "sync");
-  }
-
-  function getIntervalMinutes(settings) {
-    const raw = Number(settings?.intervalMinutes);
-    if (!Number.isFinite(raw)) {
-      return 1;
-    }
-    return Math.max(1, Math.min(1440, Math.round(raw)));
   }
 
   function updateSettingsBadge(mode) {
@@ -603,14 +282,6 @@
       }
     }
   }
-  function getClientInfo() {
-    const scaleFactor = window.devicePixelRatio || 1;
-    return {
-      screenWidth: window.screen.width,
-      screenHeight: window.screen.height,
-      scaleFactor
-    };
-  }
 
   function clearStatus() {
     if (statusEl) {
@@ -621,52 +292,8 @@
     }
   }
 
-  function normalizeConnection(connection) {
-    const normalized = { ...connection };
-    normalized.name = (normalized.name || "").trim();
-    normalized.kind = normalized.kind || "ssh";
-    normalized.host = (normalized.host || "").trim();
-    normalized.username = (normalized.username || "").trim();
-    normalized.domain = (normalized.domain || "").trim();
-    normalized.keyPath = (normalized.keyPath || "").trim();
-    normalized.url = (normalized.url || "").trim();
-    normalized.notes = (normalized.notes || "").trim();
-    normalized.trustCert = Boolean(normalized.trustCert);
-    normalized.tags = Array.isArray(normalized.tags) ? normalized.tags : [];
-    normalized.tags = normalized.tags
-      .map((tag) => String(tag).trim())
-      .filter((tag) => tag.length > 0);
-    if (!normalized.port || Number.isNaN(Number(normalized.port))) {
-      normalized.port = null;
-    } else {
-      normalized.port = Number(normalized.port);
-    }
-    return normalized;
-  }
-
   function getSelectedConnection() {
     return state.connections.find((item) => item.id === state.selectedId) || null;
-  }
-
-  function toCardMeta(connection) {
-    if (connection.kind === "web") {
-      return connection.url || "-";
-    }
-    const host = connection.host || "-";
-    const port = connection.port || DEFAULT_PORTS[connection.kind] || "-";
-    const user = connection.username ? `${connection.username}@` : "";
-    return `${user}${host}:${port}`;
-  }
-
-  function getFilteredConnections() {
-    return state.connections
-      .filter((connection) => state.filter === "all" || connection.kind === state.filter)
-      .filter((connection) => {
-        const tagText = (connection.tags || []).join(" ");
-        const haystack = `${connection.name} ${connection.host} ${connection.url} ${connection.domain || ""} ${tagText}`.toLowerCase();
-        return haystack.includes(state.search.toLowerCase());
-      })
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
   }
 
   function buildConnectionCard(connection) {
@@ -806,7 +433,7 @@
   }
 
   function renderConnections() {
-    const filtered = getFilteredConnections();
+    const filtered = filterConnections(state.connections, state.filter, state.search);
     counterEl.textContent = String(filtered.length);
     listEl.classList.toggle("hidden", state.view !== "list");
     treeEl.classList.toggle("hidden", state.view !== "tree");
@@ -847,13 +474,6 @@
     fieldTags.value = normalized.tags ? normalized.tags.join(", ") : "";
     fieldLastUsed.textContent = normalized.lastUsed ? new Date(normalized.lastUsed).toLocaleString() : "-";
     toggleFields(normalized.kind);
-  }
-
-  function parseTags(raw) {
-    return raw
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter((tag) => tag.length > 0);
   }
 
   function collectForm() {
@@ -941,7 +561,7 @@
       return;
     }
     const connection = collectForm();
-    const validation = validate(connection);
+    const validation = validateConnection(connection, t);
     if (!validation.ok) {
       showStatus(validation.message, true);
       return;
@@ -988,12 +608,6 @@
     await initiateConnect(connection, true);
   }
 
-  async function connectWithStoredPassword(connection, keepEditorOpen) {
-    if (isTauri) {
-      await tauriInvoke("open_connection_stored", { connection, client: getClientInfo() });
-    }
-  }
-
   async function handleRdpAuth(connection, keepEditorOpen) {
     if (!isTauri) {
       return false;
@@ -1006,7 +620,7 @@
           return false;
         }
         if (pwState.stored) {
-          await performConnectStored(connection, keepEditorOpen);
+          await performConnect(connection, keepEditorOpen, { useStoredPassword: true });
           return true;
         }
         openPasswordPrompt(connection, keepEditorOpen, { allowRemember: true });
@@ -1025,7 +639,7 @@
   }
 
   async function initiateConnect(connection, keepEditorOpen = false) {
-    const validation = validate(connection);
+    const validation = validateConnection(connection, t);
     if (!validation.ok) {
       showStatus(validation.message, true);
       return;
@@ -1038,15 +652,18 @@
       }
     }
 
-    await performConnect(connection, null, keepEditorOpen);
+    await performConnect(connection, keepEditorOpen);
   }
 
-  async function performConnect(connection, password, keepEditorOpen) {
+  async function performConnect(connection, keepEditorOpen, options = {}) {
+    const { password = null, useStoredPassword = false } = options;
     try {
       let rdpId = null;
       if (connection.kind === "rdp") {
         rdpId = startRdpStatus();
-        const promise = password ? connectWithPassword(connection, password) : api.connect(connection);
+        const promise = useStoredPassword
+          ? api.connectStored(connection)
+          : api.connect(connection, password || undefined);
         promise.catch((error) => {
           if (rdpId !== null) {
             clearRdpStatusTimer();
@@ -1058,8 +675,10 @@
           const message = String(error?.message || error || "");
           reportError(t("error.generic", { message }));
         });
+      } else if (useStoredPassword) {
+        await api.connectStored(connection);
       } else {
-        await api.connect(connection);
+        await api.connect(connection, password || undefined);
       }
       const index = state.connections.findIndex((item) => item.id === connection.id);
       const updated = { ...connection, lastUsed: new Date().toISOString() };
@@ -1086,69 +705,6 @@
       const message = String(error?.message || error || "");
       reportError(t("error.generic", { message }));
     }
-  }
-
-  async function performConnectStored(connection, keepEditorOpen) {
-    try {
-      let rdpId = null;
-      if (connection.kind === "rdp") {
-        rdpId = startRdpStatus();
-        const promise = connectWithStoredPassword(connection, keepEditorOpen);
-        promise.catch((error) => {
-          if (rdpId !== null) {
-            clearRdpStatusTimer();
-            if (rdpPendingId === rdpId) {
-              rdpErroredId = rdpId;
-              rdpPendingId = null;
-            }
-          }
-          const message = String(error?.message || error || "");
-          reportError(t("error.generic", { message }));
-        });
-      } else {
-        await connectWithStoredPassword(connection, keepEditorOpen);
-      }
-      const index = state.connections.findIndex((item) => item.id === connection.id);
-      const updated = { ...connection, lastUsed: new Date().toISOString() };
-      if (index >= 0) {
-        state.connections[index] = updated;
-      } else {
-        state.connections.push(updated);
-      }
-      await api.save(state.connections);
-      state.selectedId = updated.id;
-      setForm(updated);
-      renderConnections();
-      if (connection.kind === "rdp") {
-        if (rdpId !== null) {
-          scheduleRdpStatus(rdpId);
-        }
-      } else {
-        showStatus(t("status.connected"));
-      }
-      if (!keepEditorOpen) {
-        closeEditor({ preserveStatus: connection.kind === "rdp" });
-      }
-    } catch (error) {
-      const message = String(error?.message || error || "");
-      reportError(t("error.generic", { message }));
-    }
-  }
-
-  function validate(connection) {
-    if (!connection.name) {
-      return { ok: false, message: t("validation.name") };
-    }
-    if (connection.kind === "web") {
-      if (!connection.url) {
-        return { ok: false, message: t("validation.url") };
-      }
-      return { ok: true };
-    }
-    if (!connection.host) {
-      return { ok: false, message: t("validation.host") };
-    }
-    return { ok: true };
   }
 
   function setFilter(filter) {
@@ -1288,7 +844,7 @@
         reportError(t("error.passwordStore", { message: error.message || error }));
       }
     }
-    await performConnect(updated, password, keepEditorOpen);
+    await performConnect(updated, keepEditorOpen, { password });
   });
 
   passwordCancelBtn.addEventListener("click", (event) => {

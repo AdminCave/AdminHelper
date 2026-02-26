@@ -20,10 +20,7 @@ pub async fn sync_connections(
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
     validate_https_url(&url)?;
-    let response = reqwest::get(&url).await?;
-    if !response.status().is_success() {
-        return Err(AppError::Network(response.error_for_status().unwrap_err()));
-    }
+    let response = reqwest::get(&url).await?.error_for_status()?;
     let connections: Vec<Connection> = response.json().await?;
     let connections = sanitize_synced_connections(connections);
     write_connections(&app, &connections)?;
