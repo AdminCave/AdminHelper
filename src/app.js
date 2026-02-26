@@ -89,8 +89,8 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
   let rdpConnectId = 0;
   let rdpPendingId = null;
   let rdpErroredId = null;
-  const SCROLL_ACCELERATION_LIST = 2.2;
-  const SCROLL_ACCELERATION_PANEL = 1.8;
+  const SCROLL_ACCELERATION_LIST = 1.55;
+  const SCROLL_ACCELERATION_PANEL = 1.35;
 
   function t(key, vars = {}) {
     const dict = translations[currentLanguage] || translations.en;
@@ -314,6 +314,9 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
         if (element.scrollHeight <= element.clientHeight) {
           return;
         }
+        if (event.deltaMode === 0) {
+          return;
+        }
 
         let modeScale = 1;
         if (event.deltaMode === 1) {
@@ -328,9 +331,16 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
           return;
         }
 
-        event.preventDefault();
+        const beforeTop = element.scrollTop;
+        const beforeLeft = element.scrollLeft;
         element.scrollTop += deltaY * factor;
         element.scrollLeft += deltaX * factor;
+        const changed =
+          Math.abs(element.scrollTop - beforeTop) > 0.1 ||
+          Math.abs(element.scrollLeft - beforeLeft) > 0.1;
+        if (changed) {
+          event.preventDefault();
+        }
       },
       { passive: false }
     );

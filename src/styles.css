@@ -26,13 +26,18 @@
   padding: 0;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   min-height: 100vh;
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .backdrop {
@@ -107,12 +112,14 @@ body {
   padding: 28px 36px 32px;
   max-width: 1240px;
   margin: 0 auto;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
 .topbar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -179,15 +186,23 @@ body {
 }
 
 .layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr;
   gap: 24px;
 }
 
 .connections {
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.connections.panel {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .connections-header {
@@ -253,21 +268,23 @@ body {
 }
 
 .list {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
   padding-right: 6px;
-  max-height: 70vh;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
 .tree {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-height: 70vh;
   overflow-y: auto;
   padding-right: 6px;
   overscroll-behavior: contain;
@@ -833,6 +850,7 @@ body {
 }
 
 .footer {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   color: var(--text-soft);
