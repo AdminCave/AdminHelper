@@ -75,19 +75,12 @@ if [[ ! "${gpg_key}" =~ ^(0x)?[A-Fa-f0-9]{8,40}$ ]]; then
   exit 1
 fi
 
-curl_netrc="$(mktemp)"
-trap 'rm -f "${curl_netrc}"' EXIT
-printf 'machine %s login %s password %s\n' \
-  "$(echo "${api_url}" | sed 's|https\?://||;s|/.*||')" \
-  "${APTLY_API_USER}" "${APTLY_API_PASSWORD}" > "${curl_netrc}"
-chmod 600 "${curl_netrc}"
-
 curl_common=(
   --silent
   --show-error
   --retry 3
   --retry-delay 2
-  --netrc-file "${curl_netrc}"
+  --user "${APTLY_API_USER}:${APTLY_API_PASSWORD}"
   --cert "${APTLY_CLIENT_CERT}"
   --key "${APTLY_CLIENT_KEY}"
   --cacert "${APTLY_CA_CERT}"
