@@ -5,14 +5,17 @@ ENV APP_VERSION=$VERSION
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 COPY static/ ./static/
+COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 ENV DATA_DIR=/app/data
 
-EXPOSE 8080
+EXPOSE 8443
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["/bin/sh", "/docker-entrypoint.sh"]
