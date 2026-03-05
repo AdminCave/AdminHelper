@@ -222,7 +222,7 @@ document.getElementById('connForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const kind = document.getElementById('cfKind').value;
   const conn = {
-    id:        state.editingConnId || crypto.randomUUID(),
+    id:        state.editingConnId || (crypto.randomUUID?.() ?? ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16))),
     name:      document.getElementById('cfName').value.trim(),
     kind,
     host:      document.getElementById('cfHost').value.trim(),
