@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Simple Remote Manager",
+  "description": "Web-Verbindungen aus Simple Remote Manager direkt im Browser öffnen",
+  "version": "0.3.3",
+  "permissions": ["storage", "tabs", "alarms"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "32": "icons/icon32.png",
+      "64": "icons/icon64.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "32": "icons/icon32.png",
+    "64": "icons/icon64.png",
+    "128": "icons/icon128.png"
+  }
+}

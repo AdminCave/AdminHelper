@@ -87,6 +87,8 @@ Notes:
 - **Store passwords locally**: Optional, per-device, OS keychain (RDP only)
 - **RDP scaling mode**: `auto`, `normal`, `hdpi`
 
+---
+
 ## Server (Team-Modus)
 
 Der optionale **Simple Remote Manager Server** ermöglicht zentrale Verwaltung und gemeinsamen Zugriff auf Verbindungen im Team.
@@ -97,13 +99,19 @@ Der optionale **Simple Remote Manager Server** ermöglicht zentrale Verwaltung u
 - **Benutzerrollen**: Admin (vollständige CRUD) und User (nur lesen)
 - **API-Keys** für programmatischen Zugriff und Client-Sync
 - **JWT-Authentifizierung** für das Web-Interface
-- **Docker**-Deployment
+- **Docker**-Deployment via GitLab-Registry
 
 ### Schnellstart
 
+Das Server-Image wird direkt aus der GitLab-Registry gezogen:
+
 ```bash
 # Im Projektroot:
-docker compose up --build
+cp .env.example .env
+# .env anpassen: SERVER_IMAGE auf die gewünschte Registry-URL setzen
+
+docker compose pull
+docker compose up -d
 ```
 
 Der Server ist dann unter `http://localhost:8080` erreichbar.
@@ -111,6 +119,14 @@ Der Server ist dann unter `http://localhost:8080` erreichbar.
 **Standard-Zugangsdaten:** `admin` / `admin` (über `ADMIN_PASSWORD` Env-Variable änderbar)
 
 > **Wichtig:** `SECRET_KEY` in der `docker-compose.yml` vor dem Produktiveinsatz ändern.
+
+### Persistente Daten
+
+Die Server-Daten werden im Verzeichnis `./data/` im Projektroot gespeichert (Bind-Mount). Dieses Verzeichnis ist in `.gitignore` eingetragen und wird automatisch angelegt.
+
+```
+./data/           ← connections.json, SQLite-Datenbank, etc.
+```
 
 ### Client-Sync konfigurieren
 
@@ -142,6 +158,40 @@ DELETE /api/api-keys/{id}       # API-Key löschen (Admin)
 ```
 
 API-Dokumentation: `http://localhost:8080/api/docs`
+
+---
+
+## Chrome Extension
+
+Die **Simple Remote Manager Chrome Extension** zeigt Web-Verbindungen (`kind: web`) vom Team-Server direkt als Browser-Popup an.
+
+### Features
+
+- Verbindungen per API-Key vom Server laden
+- **Sofortige Anzeige** aus dem Cache, im Hintergrund neu laden
+- **Live-Suche** über Name, URL, Tags und Notizen
+- **Zwei Ansichten**: flache Liste oder nach Tags gruppiert (aufklappbar)
+- **Badge** am Extension-Icon zeigt Anzahl der Web-Verbindungen
+- Automatisches **Hintergrund-Refresh** alle 5 Minuten
+- Gleiches **Dark-Theme** wie Client und Server
+
+### Installation
+
+1. `chrome://extensions` öffnen → **Entwicklermodus** aktivieren
+2. **"Entpackt laden"** → Verzeichnis `extension/` wählen
+3. Extension-Icon klicken → Server-URL und API-Key eingeben
+4. Web-Verbindungen erscheinen sofort im Popup
+
+### Konfiguration
+
+Über das **⚙-Icon** im Popup oder die Options-Seite:
+
+- **Server-URL**: z.B. `http://server:8080`
+- **API-Key**: Read-only API-Key aus dem Server-Web-Interface
+
+### Einstellungen zwischen Geräten
+
+Die Einstellungen (Server-URL, API-Key) werden über `chrome.storage.sync` gespeichert und bei aktivierter Chrome-Synchronisierung automatisch auf alle Geräte übertragen.
 
 ---
 
@@ -215,9 +265,20 @@ cargo tauri build
 │  │  ├─ styles.css
 │  │  ├─ app.js
 │  │  └─ logo.svg
-│  ├─ data/                  # Persistente Daten (Volume)
 │  ├─ Dockerfile
 │  └─ requirements.txt
+├─ extension/                # Chrome Extension
+│  ├─ manifest.json
+│  ├─ popup.html
+│  ├─ popup.css
+│  ├─ popup.js
+│  ├─ background.js
+│  ├─ options.html
+│  ├─ options.css
+│  ├─ options.js
+│  └─ icons/
+├─ data/                     # Server-Daten (gitignored, Bind-Mount)
+├─ .env.example
 └─ docker-compose.yml
 ```
 

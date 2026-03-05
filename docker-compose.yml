@@ -1,10 +1,10 @@
 services:
   server:
-    build: ./server
+    image: ${SERVER_IMAGE:-docker.nevondo.com/NAMESPACE/simpleremotemanager/server:latest}
     ports:
       - "8080:8080"
     volumes:
-      - ./server/data:/app/data
+      - ./data:/app/data
     environment:
       - SECRET_KEY=change-me-in-production
       - ADMIN_PASSWORD=admin

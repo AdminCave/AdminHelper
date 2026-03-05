@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Remote Manager – Einstellungen</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="backdrop">
+    <div class="orb orb-one"></div>
+    <div class="orb orb-two"></div>
+    <div class="mesh"></div>
+  </div>
+
+  <main class="page">
+    <header class="page-header">
+      <img class="logo-mark" src="icons/icon128.png" alt="Logo">
+      <div>
+        <div class="page-title">Simple Remote Manager</div>
+        <div class="page-subtitle">Extension-Einstellungen</div>
+      </div>
+    </header>
+
+    <!-- Server-Verbindung -->
+    <div class="card">
+      <div class="card-title">Server-Verbindung</div>
+
+      <div class="field">
+        <label for="server-url">Server-URL</label>
+        <input
+          type="url"
+          id="server-url"
+          placeholder="http://server:8080"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <small>URL des Simple Remote Manager Servers (ohne abschließenden Slash)</small>
+      </div>
+
+      <div class="field">
+        <label for="api-key">API-Key</label>
+        <div class="field-row">
+          <input
+            type="password"
+            id="api-key"
+            placeholder="API-Key eingeben"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <button class="icon-btn" id="toggle-key" title="Anzeigen/Verbergen">👁</button>
+        </div>
+        <small>Den API-Key findest du in den Server-Einstellungen unter "API-Keys".</small>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="btn-save">Speichern</button>
+        <button class="btn ghost" id="btn-test">Verbindung testen</button>
+      </div>
+
+      <div class="status" id="status-save"></div>
+      <div class="status" id="status-test"></div>
+    </div>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

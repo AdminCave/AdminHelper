@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Remote Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="backdrop">
+    <div class="orb orb-one"></div>
+    <div class="orb orb-two"></div>
+    <div class="mesh"></div>
+  </div>
+
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <img class="logo-mark" src="icons/icon64.png" alt="Logo">
+      <span class="brand-name">Simple Remote</span>
+      <span class="badge-web">WEB</span>
+      <div class="header-actions">
+        <button class="icon-btn" id="btn-refresh" title="Neu laden">↻</button>
+        <button class="icon-btn" id="btn-options" title="Einstellungen">⚙</button>
+      </div>
+    </header>
+
+    <!-- Setup View (wenn kein Config vorhanden) -->
+    <div id="setup-view" class="hidden">
+      <div class="setup-view">
+        <div class="setup-title">Verbindung einrichten</div>
+        <div class="setup-subtitle">Server-URL und API-Key eingeben, um Web-Verbindungen zu laden.</div>
+
+        <div class="setup-field">
+          <label for="setup-url">Server-URL</label>
+          <input type="url" id="setup-url" placeholder="http://server:8080" autocomplete="off">
+        </div>
+
+        <div class="setup-field">
+          <label for="setup-key">API-Key</label>
+          <input type="password" id="setup-key" placeholder="API-Key eingeben" autocomplete="off">
+        </div>
+
+        <button class="setup-btn" id="setup-save">Speichern &amp; Laden</button>
+        <div class="setup-error" id="setup-error"></div>
+      </div>
+    </div>
+
+    <!-- Main View -->
+    <div id="main-view" class="hidden" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+
+      <!-- Toolbar: Suche + View-Toggle -->
+      <div class="toolbar">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input
+            type="search"
+            class="search-input"
+            id="search-input"
+            placeholder="Suchen..."
+            autocomplete="off"
+          >
+        </div>
+        <div class="view-toggle">
+          <button class="toggle-btn active" id="btn-list-view" title="Liste">≡</button>
+          <button class="toggle-btn" id="btn-tag-view" title="Tags">⋯</button>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="content" id="content">
+        <!-- List View -->
+        <div id="list-view">
+          <div class="conn-list" id="conn-list"></div>
+        </div>
+
+        <!-- Tag Group View -->
+        <div id="tag-view" class="hidden">
+          <div class="tree-groups" id="tree-groups"></div>
+        </div>
+
+        <!-- Empty / Error states -->
+        <div id="state-empty" class="state-msg hidden">
+          <span class="icon">🔌</span>
+          Keine Web-Verbindungen gefunden.
+        </div>
+
+        <div id="state-error" class="state-msg hidden">
+          <span class="icon">⚠️</span>
+          <span id="state-error-msg">Fehler beim Laden.</span><br>
+          <a id="state-error-settings">Einstellungen öffnen</a>
+        </div>
+
+        <div id="state-loading" class="state-msg">
+          <span class="icon">⌛</span>
+          Verbindungen laden...
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <footer class="footer" id="footer">
+        <span class="footer-count" id="footer-count">–</span>
+        <span class="footer-time" id="footer-time"></span>
+      </footer>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

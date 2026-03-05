@@ -44,3 +44,6 @@ Desktop.ini
 .env.*
 !.env.example
 !.env.template
+
+# Server-Datendverzeichnis (bind mount statt Docker-Volume)
+/data/
