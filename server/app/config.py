@@ -21,4 +21,11 @@ ALLOWED_IPS_RAW = os.environ.get("ALLOWED_IPS", "").strip()
 
 # Auf True setzen wenn der Server hinter einem Reverse-Proxy (nginx, Traefik, …) läuft
 # und X-Forwarded-For / X-Real-IP vertraut werden soll.
+# Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
+
+# Kommagetrennte Liste von IPs/CIDRs der vertrauenswürdigen Reverse-Proxies.
+# X-Forwarded-For / X-Real-IP werden NUR ausgewertet wenn die direkte
+# Verbindung von einer dieser IPs kommt. Empfohlen statt TRUST_PROXY_HEADERS.
+# Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
+TRUSTED_PROXIES_RAW = os.environ.get("TRUSTED_PROXIES", "").strip()

@@ -12,5 +12,9 @@ services:
       # Beispiel: ALLOWED_IPS=192.168.1.0/24,10.0.0.5
       - ALLOWED_IPS=
       # Auf true setzen wenn hinter Reverse-Proxy (X-Forwarded-For auswerten)
+      # Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
       - TRUST_PROXY_HEADERS=false
+      # Empfohlen statt TRUST_PROXY_HEADERS: IPs/CIDRs der Reverse-Proxies
+      # Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
+      - TRUSTED_PROXIES=
     restart: unless-stopped
