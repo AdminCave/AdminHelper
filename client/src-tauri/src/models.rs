@@ -70,6 +70,7 @@ impl Default for Settings {
             language: None,
             store_passwords: false,
             rdp_scaling_mode: RdpScalingMode::Auto,
+            allow_self_signed_certs: false,
         }
     }
 }
