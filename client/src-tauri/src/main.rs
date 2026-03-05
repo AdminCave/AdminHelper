@@ -57,9 +57,10 @@ fn main() {
             let state_path = app.path().app_data_dir()?.join("window-state.json");
             if let Some(window) = app.get_webview_window("main") {
                 restore_window_state(&window, &state_path);
+                let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Resized(_) | WindowEvent::Moved(_)) {
-                        save_window_state(&window, &state_path);
+                        save_window_state(&window_clone, &state_path);
                     }
                 });
             }
