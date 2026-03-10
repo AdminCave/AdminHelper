@@ -1,15 +1,20 @@
 # Rust / Cargo
 /src-tauri/target/
+/client/src-tauri/target/
 /target/
 **/*.rs.bk
 
 # Tauri generated
 /src-tauri/gen/
+/client/src-tauri/gen/
 /src-tauri/.cargo/
+/client/src-tauri/.cargo/
 /src-tauri/.tauri/
+/client/src-tauri/.tauri/
 
 # Node / frontend (if added later)
 /node_modules/
+**/node_modules/
 /dist/
 /build/
 /out/
@@ -35,6 +40,7 @@ ehthumbs.db
 Desktop.ini
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
