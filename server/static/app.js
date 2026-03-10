@@ -8,8 +8,10 @@ const state = {
   connections: [],
   users: [],
   apikeys: [],
+  webhooks: [],
   editingConnId: null,
   editingUserId: null,
+  editingWebhookId: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -53,6 +55,7 @@ function navigate(page) {
   if (page === 'connections') loadConnections();
   if (page === 'users')       loadUsers();
   if (page === 'apikeys')     loadApiKeys();
+  if (page === 'webhooks')    loadWebhooks();
 }
 
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -430,6 +433,121 @@ async function deleteApiKey(id) {
     toast(err.message, 'error');
   }
 }
+
+// ── Webhooks ───────────────────────────────────────────────────────────────
+async function loadWebhooks() {
+  try {
+    state.webhooks = await get('/api/webhooks');
+    renderWebhooks();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function renderWebhooks() {
+  const tbody = document.getElementById('webhookBody');
+  const empty = document.getElementById('webhookEmpty');
+  tbody.innerHTML = '';
+
+  if (state.webhooks.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  state.webhooks.forEach(wh => {
+    const tr = document.createElement('tr');
+    const date = wh.created_at ? new Date(wh.created_at).toLocaleDateString('de-DE') : '–';
+    tr.innerHTML = `
+      <td><strong>${esc(wh.name)}</strong></td>
+      <td style="color:var(--text-soft)">${esc(wh.description || '–')}</td>
+      <td>${date}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="btn small" onclick="editWebhook('${esc(wh.id)}')">Bearbeiten</button>
+          <button class="btn small ghost" onclick="rotateWebhookToken('${esc(wh.id)}', '${esc(wh.name)}')">Token rotieren</button>
+          <button class="btn small ghost" onclick="deleteWebhook('${esc(wh.id)}')">Löschen</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('addWebhookBtn').addEventListener('click', () => openWebhookModal(null));
+
+function openWebhookModal(wh) {
+  state.editingWebhookId = wh ? wh.id : null;
+  document.getElementById('webhookModalTitle').textContent = wh ? 'Webhook bearbeiten' : 'Neuer Webhook';
+  document.getElementById('whName').value   = wh?.name        || '';
+  document.getElementById('whDesc').value   = wh?.description || '';
+  document.getElementById('whScript').value = wh?.script      || '';
+  showModal('webhookModal');
+}
+
+document.getElementById('webhookForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {
+    name:        document.getElementById('whName').value.trim(),
+    description: document.getElementById('whDesc').value.trim() || null,
+    script:      document.getElementById('whScript').value,
+  };
+  try {
+    if (state.editingWebhookId) {
+      await put(`/api/webhooks/${state.editingWebhookId}`, data);
+      toast('Webhook gespeichert');
+      closeModal('webhookModal');
+      await loadWebhooks();
+    } else {
+      const result = await post('/api/webhooks', data);
+      closeModal('webhookModal');
+      showWebhookToken(result.token, 'Webhook erstellt');
+      await loadWebhooks();
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+async function editWebhook(id) {
+  try {
+    const wh = await get(`/api/webhooks/${id}`);
+    openWebhookModal(wh);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function rotateWebhookToken(id, name) {
+  if (!confirm(`Token für "${name}" wirklich neu generieren? Der alte Token wird ungültig.`)) return;
+  try {
+    const result = await post(`/api/webhooks/${id}/rotate`);
+    showWebhookToken(result.token, 'Neuer Token generiert');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function deleteWebhook(id) {
+  if (!confirm('Webhook wirklich löschen?')) return;
+  try {
+    await del(`/api/webhooks/${id}`);
+    toast('Webhook gelöscht');
+    await loadWebhooks();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function showWebhookToken(token, title) {
+  document.getElementById('webhookTokenTitle').textContent = title;
+  document.getElementById('webhookTokenValue').textContent = token;
+  const triggerUrl = `${location.origin}/api/webhooks/trigger/${token}`;
+  document.getElementById('webhookTriggerUrl').textContent = triggerUrl;
+  showModal('webhookTokenModal');
+}
+
+document.getElementById('copyWebhookTokenBtn').addEventListener('click', () => {
+  const token = document.getElementById('webhookTokenValue').textContent;
+  navigator.clipboard.writeText(token).then(() => toast('Token kopiert'));
+});
 
 // ── Export / Import ────────────────────────────────────────────────────────
 document.getElementById('exportConnBtn').addEventListener('click', async () => {

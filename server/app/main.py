@@ -9,7 +9,7 @@ from .auth import hash_password
 from .database import SessionLocal
 from .config import ADMIN_PASSWORD
 from .middleware import IPFilterMiddleware
-from .routers import auth, connections, users, api_keys
+from .routers import auth, connections, users, api_keys, webhooks
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -40,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(connections.router)
 app.include_router(users.router)
 app.include_router(api_keys.router)
+app.include_router(webhooks.router)
 
 # Statische Dateien
 static_dir = Path(__file__).parent.parent / "static"

@@ -62,6 +62,36 @@ class ApiKeyCreatedResponse(ApiKeyResponse):
     key: str  # Nur beim Erstellen zurückgegeben
 
 
+# Webhooks
+class WebhookCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    script: str
+
+
+class WebhookUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    script: Optional[str] = None
+
+
+class WebhookResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class WebhookDetailResponse(WebhookResponse):
+    script: str
+
+
+class WebhookCreatedResponse(WebhookDetailResponse):
+    token: str  # Nur beim Erstellen / Token-Rotation zurückgegeben
+
+
 # Connections (passthrough, gleiche Struktur wie Client)
 class Connection(BaseModel):
     id: str

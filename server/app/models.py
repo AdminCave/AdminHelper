@@ -21,3 +21,14 @@ class ApiKey(Base):
     hashed_key = Column(String, unique=True, nullable=False)
     permission = Column(String, nullable=False)  # "read" or "read_write"
     created_at = Column(DateTime, server_default=func.now())
+
+
+class WebhookScript(Base):
+    __tablename__ = "webhook_scripts"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    hashed_token = Column(String, unique=True, nullable=False)
+    script = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
