@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Remote Manager - Project Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body data-page="overview">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="../assets/logo.svg" alt="Simple Remote Manager logo" />
+          <span class="brand-copy">
+            <strong>Simple Remote Manager</strong>
+            <span>Project Documentation</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menu</button>
+          <nav class="primary-nav" aria-label="Main navigation">
+            <a href="./index.html" data-page="overview">Overview</a>
+            <a href="./developer.html" data-page="developer">Developers</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+          </nav>
+          <div class="lang-switch" aria-label="Language">
+            <a href="../index.html">DE</a>
+            <a href="./index.html" class="active">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Documentation</p>
+        <h1 class="page-title">Complete docs for client, server, and browser extension</h1>
+        <p class="page-subtitle">
+          This website covers the whole repository from both perspectives:
+          engineering and operations. It includes installation, usage,
+          architecture, security, and day-to-day administration.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="./developer.html">Open developer docs</a>
+          <a class="btn ghost" href="./administration.html">Open admin docs</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+          <section id="scope" class="panel reveal">
+            <h2>Project Scope</h2>
+            <p>
+              <span class="inline-code">Simple Remote Manager</span> consists of three deployable parts.
+            </p>
+            <div class="cards cols-3">
+              <article class="card">
+                <h3>Desktop Client</h3>
+                <p>Tauri v2 app (Rust + HTML/CSS/JS) to manage SSH, RDP, and Web targets.</p>
+              </article>
+              <article class="card">
+                <h3>Server</h3>
+                <p>FastAPI backend with web UI, JWT auth, API keys, role model, webhooks, and TLS runtime.</p>
+              </article>
+              <article class="card">
+                <h3>Chrome Extension</h3>
+                <p>Fast access to <span class="inline-code">kind: web</span> connections from the shared server dataset.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="architecture" class="panel reveal">
+            <h2>Architecture at a Glance</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Layer</th>
+                  <th>Technology</th>
+                  <th>Responsibility</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Desktop</td>
+                  <td>Rust, Tauri v2, Vanilla JS</td>
+                  <td>Connection management, opening native clients, local credential handling.</td>
+                </tr>
+                <tr>
+                  <td>Server API</td>
+                  <td>Python, FastAPI, SQLAlchemy, SQLite</td>
+                  <td>Authentication, users, API keys, connection CRUD, webhook execution.</td>
+                </tr>
+                <tr>
+                  <td>Server UI</td>
+                  <td>Static SPA in <span class="inline-code">server/static</span></td>
+                  <td>Admin pages for users, API keys, webhooks, and connections.</td>
+                </tr>
+                <tr>
+                  <td>Browser Extension</td>
+                  <td>Manifest V3</td>
+                  <td>Cached browsing/opening of shared web connections.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="quickstart" class="panel reveal">
+            <h2>Quickstart</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Start Server with Docker</h3>
+                <pre class="code-block"><code>cp .env.example .env
+# set SECRET_KEY and ADMIN_PASSWORD
+
+docker compose pull
+docker compose up -d</code></pre>
+              </article>
+              <article class="card">
+                <h3>Run Desktop Client</h3>
+                <pre class="code-block"><code>cd client/src-tauri
+cargo tauri dev</code></pre>
+                <p>Build with <span class="inline-code">cargo tauri build</span>.</p>
+              </article>
+              <article class="card">
+                <h3>API Docs</h3>
+                <p>Swagger UI is available at <span class="inline-code">/api/docs</span>.</p>
+              </article>
+              <article class="card">
+                <h3>Chrome Extension</h3>
+                <p>Load folder <span class="inline-code">extension/</span> in <span class="inline-kbd">chrome://extensions</span>.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="navigation" class="panel reveal">
+            <h2>How This Documentation Is Structured</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Developer Docs</h3>
+                <p>Architecture, data models, APIs, implementation modules, and CI/CD.</p>
+                <a class="btn ghost" href="./developer.html">Open developer docs</a>
+              </article>
+              <article class="card">
+                <h3>Administration Docs</h3>
+                <p>Deployment, hardening, backups, updates, and incident handling.</p>
+                <a class="btn ghost" href="./administration.html">Open admin docs</a>
+              </article>
+            </div>
+            <div class="callout">
+              <strong>Webhook scripting:</strong> Variables, runtime behavior, and example code are documented in
+              <a href="./developer.html#webhook-scripts">Developer docs</a> and in
+              <a href="../examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>.
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Quick Navigation</h3>
+            <ul>
+              <li><a href="#scope">Project scope</a></li>
+              <li><a href="#architecture">Architecture</a></li>
+              <li><a href="#quickstart">Quickstart</a></li>
+              <li><a href="#navigation">Doc sections</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Important Notes</h3>
+            <div class="callout warn">
+              <strong>Production:</strong> always change <span class="inline-code">SECRET_KEY</span> and
+              <span class="inline-code">ADMIN_PASSWORD</span> before go-live.
+            </div>
+            <div class="badges">
+              <span>Tauri v2</span>
+              <span>FastAPI</span>
+              <span>SQLite</span>
+              <span>Manifest V3</span>
+            </div>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Key Paths</h3>
+            <div class="quick-links">
+              <a href="./developer.html#repo">client/</a>
+              <a href="./developer.html#server">server/</a>
+              <a href="./developer.html#extension">extension/</a>
+              <a href="./administration.html#deploy">docker-compose.yml</a>
+              <a href="./developer.html#webhook-scripts">Webhook scripts</a>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Documentation baseline date: 10.03.2026. Built from the current repository source.
+      </footer>
+    </main>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

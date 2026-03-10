@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Remote Manager - Projektdokumentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body data-page="overview">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="./assets/logo.svg" alt="Simple Remote Manager Logo" />
+          <span class="brand-copy">
+            <strong>Simple Remote Manager</strong>
+            <span>Projektdokumentation</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menü</button>
+          <nav class="primary-nav" aria-label="Hauptnavigation">
+            <a href="./index.html" data-page="overview">Übersicht</a>
+            <a href="./developer.html" data-page="developer">Für Entwickler</a>
+            <a href="./administration.html" data-page="admin">Für Administration</a>
+          </nav>
+          <div class="lang-switch" aria-label="Sprache">
+            <a href="./index.html" class="active">DE</a>
+            <a href="./en/index.html">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Dokumentation</p>
+        <h1 class="page-title">Gesamtdoku für Client, Server und Browser-Extension</h1>
+        <p class="page-subtitle">
+          Diese Website dokumentiert das komplette Projekt aus Entwickler- und Betriebs-Perspektive.
+          Alle Inhalte basieren auf dem aktuellen Repository-Stand und decken Installation,
+          Nutzung, Architektur, Sicherheit und Betrieb ab.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="./developer.html">Entwicklerdoku öffnen</a>
+          <a class="btn ghost" href="./administration.html">Admin-Doku öffnen</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+          <section id="scope" class="panel reveal">
+            <h2>Projektumfang</h2>
+            <p>
+              <span class="inline-code">simple remotemanager</span> besteht aus drei lauffähigen Teilen,
+              die getrennt deployt werden können, aber zusammen eine Team-Remote-Plattform bilden.
+            </p>
+            <div class="cards cols-3">
+              <article class="card">
+                <h3>Desktop-Client</h3>
+                <p>
+                  Tauri v2 App (Rust + HTML/CSS/JS) für SSH, RDP und Web-Verbindungen,
+                  inklusive lokaler Datenspeicherung und optionalem Sync.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Server</h3>
+                <p>
+                  FastAPI-Backend mit Web-UI, JWT-Login, Rollenmodell, API-Keys,
+                  Webhooks und TLS-Betrieb via Docker.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Chrome Extension</h3>
+                <p>
+                  Browser-Popup für <span class="inline-code">kind: web</span>-Einträge,
+                  mit Cache, Suche, Tag-Gruppierung und API-Key-gestütztem Zugriff.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section id="architecture" class="panel reveal">
+            <h2>Architektur auf einen Blick</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Ebene</th>
+                  <th>Technik</th>
+                  <th>Verantwortung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Desktop</td>
+                  <td>Rust, Tauri v2, Vanilla JS</td>
+                  <td>Verbindungsverwaltung, Start nativer Clients, lokaler Passwortspeicher (RDP)</td>
+                </tr>
+                <tr>
+                  <td>Server API</td>
+                  <td>Python, FastAPI, SQLAlchemy, SQLite</td>
+                  <td>Auth, Nutzerverwaltung, API-Keys, Connection-CRUD, Webhooks</td>
+                </tr>
+                <tr>
+                  <td>Server UI</td>
+                  <td>Statische SPA in <span class="inline-code">server/static</span></td>
+                  <td>Admin-Oberfläche für Verbindungen, Benutzer, API-Keys und Webhooks</td>
+                </tr>
+                <tr>
+                  <td>Browser Extension</td>
+                  <td>Manifest V3, Service Worker</td>
+                  <td>Anzeige/Öffnen von Web-Zielen aus Team-Server mit Hintergrund-Refresh</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="quickstart" class="panel reveal">
+            <h2>Schnellstart je Komponente</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Server per Docker starten</h3>
+                <pre class="code-block"><code>cp .env.example .env
+# SECRET_KEY und ADMIN_PASSWORD setzen
+
+docker compose pull
+docker compose up -d</code></pre>
+                <p>Danach erreichbar unter <span class="inline-code">https://localhost</span> (Port-Mapping: 443 -> 8443).</p>
+              </article>
+              <article class="card">
+                <h3>Desktop-Client lokal starten</h3>
+                <pre class="code-block"><code>cd client/src-tauri
+cargo tauri dev</code></pre>
+                <p>Produktion-Build über <span class="inline-code">cargo tauri build</span>.</p>
+              </article>
+              <article class="card">
+                <h3>Server API-Dokumentation</h3>
+                <p>
+                  Swagger-UI ist unter
+                  <span class="inline-code">/api/docs</span> verfügbar,
+                  z. B. <span class="inline-code">https://localhost/api/docs</span>.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Extension testen</h3>
+                <p>
+                  In Chrome <span class="inline-kbd">chrome://extensions</span> öffnen,
+                  Entwicklermodus aktivieren, <span class="inline-kbd">Entpackt laden</span>
+                  und Ordner <span class="inline-code">extension/</span> wählen.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section id="navigation" class="panel reveal">
+            <h2>Wie diese Doku aufgebaut ist</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Für Entwickler</h3>
+                <p>
+                  Architektur, Code-Struktur, lokale Entwicklung, API-Verhalten,
+                  Datenmodelle, CI/CD und typische Erweiterungspfade.
+                </p>
+                <a class="btn ghost" href="./developer.html">Zur Entwicklerdoku</a>
+              </article>
+              <article class="card">
+                <h3>Für Administration</h3>
+                <p>
+                  Deployment, Konfiguration, Security-Härtung, Nutzerbetrieb,
+                  Backup/Restore, Updates und Incident-Checklisten.
+                </p>
+                <a class="btn ghost" href="./administration.html">Zur Admin-Doku</a>
+              </article>
+            </div>
+            <div class="callout">
+              <strong>Webhook-Scripting:</strong> Beispiele und Variablenübersicht findest du in
+              <a href="./developer.html#webhook-scripts">der Entwicklerdoku</a> sowie als Datei unter
+              <a href="./examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>.
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Schnellnavigation</h3>
+            <ul>
+              <li><a href="#scope">Projektumfang</a></li>
+              <li><a href="#architecture">Architektur</a></li>
+              <li><a href="#quickstart">Schnellstart</a></li>
+              <li><a href="#navigation">Dokubereiche</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Wichtige Hinweise</h3>
+            <div class="callout warn">
+              <strong>Produktion:</strong> Vor Live-Betrieb mindestens
+              <span class="inline-code">SECRET_KEY</span> und
+              <span class="inline-code">ADMIN_PASSWORD</span> ändern.
+            </div>
+            <div class="badges">
+              <span>Tauri v2</span>
+              <span>FastAPI</span>
+              <span>SQLite</span>
+              <span>Manifest V3</span>
+            </div>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Projektpfade</h3>
+            <div class="quick-links">
+              <a href="./developer.html#repo">client/</a>
+              <a href="./developer.html#server">server/</a>
+              <a href="./developer.html#extension">extension/</a>
+              <a href="./administration.html#deploy">docker-compose.yml</a>
+              <a href="./developer.html#webhook-scripts">Webhook Scripts</a>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Stand der Doku: 10.03.2026. Erstellt aus aktuellem Repository-Quellcode.
+        © <span id="year"></span>
+      </footer>
+    </main>
+
+    <script src="./assets/app.js"></script>
+  </body>
+</html>

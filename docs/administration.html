@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Remote Manager - Administrationsdokumentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body data-page="admin">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="./assets/logo.svg" alt="Simple Remote Manager Logo" />
+          <span class="brand-copy">
+            <strong>Simple Remote Manager</strong>
+            <span>Administrationsdoku</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menü</button>
+          <nav class="primary-nav" aria-label="Hauptnavigation">
+            <a href="./index.html" data-page="overview">Übersicht</a>
+            <a href="./developer.html" data-page="developer">Für Entwickler</a>
+            <a href="./administration.html" data-page="admin">Für Administration</a>
+          </nav>
+          <div class="lang-switch" aria-label="Sprache">
+            <a href="./administration.html" class="active">DE</a>
+            <a href="./en/administration.html">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Operations Guide</p>
+        <h1 class="page-title">Installation, Betrieb und Sicherheit</h1>
+        <p class="page-subtitle">
+          Diese Seite ist für Systemadministration und Betriebsteams gedacht.
+          Sie enthält den vollständigen Ablauf von Erstinstallation bis Wartung,
+          inklusive Sicherheits-Härtung und Runbooks.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#deploy">Installation starten</a>
+          <a class="btn ghost" href="#hardening">Hardening-Checkliste</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+          <section id="deploy" class="panel reveal">
+            <h2>1) Deployment-Optionen</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Empfohlen: Docker Compose</h3>
+                <p>
+                  Schneller Produktivstart mit TLS-Unterstützung, persistenten Daten
+                  und Image-Pull aus der Registry.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Alternative: lokaler Python-Start</h3>
+                <p>
+                  Für interne Tests/Entwicklung ohne Container.
+                  TLS und Port-Mapping müssen dann separat geregelt werden.
+                </p>
+              </article>
+            </div>
+
+            <h3>Docker Erstinstallation</h3>
+            <pre class="code-block"><code>cp .env.example .env
+# Pflicht: SECRET_KEY, ADMIN_PASSWORD, ggf. SERVER_IMAGE setzen
+
+docker compose pull
+docker compose up -d</code></pre>
+
+            <p>
+              Mit der Standard-Compose-Datei ist der Server unter
+              <span class="inline-code">https://localhost</span> erreichbar
+              (Host-Port <span class="inline-code">443</span> auf Container-Port <span class="inline-code">8443</span>).
+            </p>
+
+            <div class="callout warn">
+              <strong>Wichtig:</strong> Falls kein Zertifikat in <span class="inline-code">./certs</span> liegt,
+              erzeugt der Container beim Start automatisch ein selbstsigniertes TLS-Zertifikat.
+            </div>
+          </section>
+
+          <section id="config" class="panel reveal">
+            <h2>2) Konfiguration (.env / Environment)</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Beispiel</th>
+                  <th>Bedeutung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">SERVER_IMAGE</span></td>
+                  <td>docker.nevondo.com/.../server:latest</td>
+                  <td>Container-Image für den Server-Dienst.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">DOMAIN</span></td>
+                  <td>localhost</td>
+                  <td>CN/SAN beim autogenerierten Zertifikat.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SECRET_KEY</span></td>
+                  <td>openssl rand -hex 32</td>
+                  <td>Signierschlüssel für JWT.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">ADMIN_PASSWORD</span></td>
+                  <td>starkes Initialpasswort</td>
+                  <td>Wird für den ersten Admin-Account verwendet.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">ALLOWED_IPS</span></td>
+                  <td>192.168.1.0/24,10.0.0.5</td>
+                  <td>Whitelist für Client-IP/CIDR, leer = kein Filter.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">TRUST_PROXY_HEADERS</span></td>
+                  <td>false</td>
+                  <td>Wenn true, werden Forwarded-Header global vertraut.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">TRUSTED_PROXIES</span></td>
+                  <td>172.17.0.1,10.0.0.0/8</td>
+                  <td>Empfohlene sichere Variante hinter Reverse Proxy.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Persistente Daten</h3>
+            <ul>
+              <li><span class="inline-code">./data/</span>: SQLite DB und <span class="inline-code">connections.json</span></li>
+              <li><span class="inline-code">./certs/</span>: TLS Zertifikat/Key</li>
+            </ul>
+          </section>
+
+          <section id="first-login" class="panel reveal">
+            <h2>3) Ersteinrichtung im Web-UI</h2>
+            <ol>
+              <li>Anmeldung mit <span class="inline-code">admin</span> und <span class="inline-code">ADMIN_PASSWORD</span>.</li>
+              <li>Mindestens einen weiteren Admin-Benutzer anlegen.</li>
+              <li>Read-only API-Key für Client-Sync erzeugen.</li>
+              <li>Optional: Nutzer ohne Admin-Rechte für reine Lesesicht anlegen.</li>
+            </ol>
+            <div class="callout">
+              <strong>Hinweis:</strong> API-Keys werden nur bei Erstellung im Klartext angezeigt.
+              Danach ist nur der Hash in der DB vorhanden.
+            </div>
+          </section>
+
+          <section id="operations" class="panel reveal">
+            <h2>4) Laufender Betrieb</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Verbindungen verwalten</h3>
+                <p>
+                  Create/Update/Delete über die Seite <span class="inline-code">Verbindungen</span>.
+                  Import/Export steht nur Admins zur Verfügung.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Nutzer und Rollen</h3>
+                <p>
+                  Nutzerverwaltung über Seite <span class="inline-code">Benutzer</span>.
+                  Eigenen Account kann man nicht löschen (Absicherung im Backend).
+                </p>
+              </article>
+              <article class="card">
+                <h3>API-Keys</h3>
+                <p>
+                  <span class="inline-code">read</span> für Sync/Extension,
+                  <span class="inline-code">read_write</span> nur für trusted Integrationen.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Webhooks</h3>
+                <p>
+                  Python-Script pro Webhook, Trigger via
+                  <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>,
+                  Token-Rotation jederzeit möglich.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section id="webhook-ops" class="panel reveal">
+            <h2>5) Webhook-Skripte im Betrieb</h2>
+            <p>
+              Webhooks erlauben automatisierte Änderungen an den Verbindungen direkt im Server.
+              Trigger-Endpunkt: <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>.
+            </p>
+
+            <h3>Empfohlener Betriebsablauf</h3>
+            <ol>
+              <li>Webhook im Admin-UI anlegen (<span class="inline-code">Webhooks</span> -> <span class="inline-code">+ Webhook</span>).</li>
+              <li>Script hinterlegen und einmal mit Test-Payload aufrufen.</li>
+              <li>Token nur an den aufrufenden Dienst geben und regelmäßig rotieren.</li>
+              <li>Bei Änderungen Script versioniert im Repository führen.</li>
+            </ol>
+
+            <h3>Beispielscript</h3>
+            <p>
+              Referenz im Projekt: <a href="./examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>
+            </p>
+            <pre class="code-block"><code>curl -X POST "https://&lt;server&gt;/api/webhooks/trigger/&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "name": "Prod Web",
+      "kind": "web",
+      "url": "https://prod.example.com",
+      "tags": ["prod", "web"]
+    }
+  }'</code></pre>
+
+            <div class="callout warn">
+              <strong>Sicherheit:</strong> Webhook-Tokens funktionieren ohne JWT.
+              Deshalb Token wie Passwörter behandeln und bei Verdacht sofort rotieren.
+            </div>
+          </section>
+
+          <section id="sync" class="panel reveal">
+            <h2>6) Client-Sync und Extension-Anbindung</h2>
+            <h3>Desktop-Client Sync URL</h3>
+            <pre class="code-block"><code>https://&lt;server&gt;/api/connections?api_key=&lt;read_only_key&gt;</code></pre>
+            <ul>
+              <li>Client akzeptiert nur HTTPS-URLs.</li>
+              <li>Bei selbstsigniertem Zertifikat im Client <span class="inline-code">Self-signed Zertifikate erlauben</span> aktivieren.</li>
+            </ul>
+
+            <h3>Chrome Extension</h3>
+            <ul>
+              <li>Verwendet ebenfalls <span class="inline-code">/api/connections?api_key=...</span>.</li>
+              <li>Lädt Web-Verbindungen (<span class="inline-code">kind: web</span>) und aktualisiert Badge automatisch.</li>
+              <li>Refresh-Zyklus im Background Service Worker: 5 Minuten.</li>
+            </ul>
+          </section>
+
+          <section id="backup" class="panel reveal">
+            <h2>7) Backup und Restore</h2>
+            <h3>Backup (Dateibasiert)</h3>
+            <pre class="code-block"><code># im Projektroot
+mkdir -p backups
+
+tar -czf backups/srm-backup-$(date +%F-%H%M).tar.gz \
+  data certs .env</code></pre>
+
+            <h3>Restore</h3>
+            <pre class="code-block"><code>docker compose down
+# Backup zurückspielen (data/, certs/, .env)
+docker compose up -d</code></pre>
+
+            <div class="callout warn">
+              <strong>Achtung:</strong> Bei Restore auf eine neue Instanz müssen TLS,
+              DNS und IP-Filterwerte zur Zielumgebung passen.
+            </div>
+          </section>
+
+          <section id="updates" class="panel reveal">
+            <h2>8) Updates und Rollback</h2>
+            <h3>Standard-Update</h3>
+            <pre class="code-block"><code>docker compose pull
+docker compose up -d</code></pre>
+
+            <h3>Rollback-Prinzip</h3>
+            <ol>
+              <li>Auf vorherige Image-Tag/Digest zurückstellen (<span class="inline-code">SERVER_IMAGE</span>).</li>
+              <li><span class="inline-code">docker compose up -d</span> ausführen.</li>
+              <li>Falls nötig, Daten aus letztem Backup wiederherstellen.</li>
+            </ol>
+          </section>
+
+          <section id="hardening" class="panel reveal">
+            <h2>9) Security-Härtung Checkliste</h2>
+            <ul>
+              <li><span class="inline-code">SECRET_KEY</span> mit starker Entropie setzen und geheim halten.</li>
+              <li><span class="inline-code">ADMIN_PASSWORD</span> sofort ändern und separaten Admin-User anlegen.</li>
+              <li><span class="inline-code">ALLOWED_IPS</span> und <span class="inline-code">TRUSTED_PROXIES</span> produktiv setzen.</li>
+              <li>Nur notwendige Ports veröffentlichen (idealerweise über Reverse Proxy/WAF).</li>
+              <li>Read-write API-Keys nur für klar definierte Integrationen ausgeben.</li>
+              <li>Webhook-Tokens regelmäßig rotieren und Skripte reviewen.</li>
+              <li>Regelmäßige Backups automatisieren und Restore testen.</li>
+            </ul>
+          </section>
+
+          <section id="runbook" class="panel reveal">
+            <h2>10) Incident-Runbook (Kurzfassung)</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Login schlägt fehl</h3>
+                <p>Prüfen, ob richtige Instanz angesprochen wird und JWT-Secret konsistent ist. Bei Neuinitialisierung ggf. Admin neu anlegen.</p>
+              </article>
+              <article class="card">
+                <h3>403 auf alle Requests</h3>
+                <p>IP-Filter prüfen: <span class="inline-code">ALLOWED_IPS</span> / Proxy-Header-Konfiguration.</p>
+              </article>
+              <article class="card">
+                <h3>Client-Sync Fehler</h3>
+                <p>HTTPS-URL, API-Key-Recht (<span class="inline-code">read</span>) und Zertifikatsvertrauen prüfen.</p>
+              </article>
+              <article class="card">
+                <h3>Verlust von API-Key/Token</h3>
+                <p>Key löschen/rotieren und neue Secrets an alle Clients verteilen.</p>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Inhalt</h3>
+            <ul>
+              <li><a href="#deploy">1) Deployment</a></li>
+              <li><a href="#config">2) Konfiguration</a></li>
+              <li><a href="#first-login">3) Ersteinrichtung</a></li>
+              <li><a href="#operations">4) Betrieb</a></li>
+              <li><a href="#webhook-ops">5) Webhook-Skripte</a></li>
+              <li><a href="#sync">6) Sync/Extension</a></li>
+              <li><a href="#backup">7) Backup</a></li>
+              <li><a href="#updates">8) Updates</a></li>
+              <li><a href="#hardening">9) Hardening</a></li>
+              <li><a href="#runbook">10) Runbook</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Operations-Snippets</h3>
+            <div class="quick-links">
+              <a href="#deploy">docker compose up -d</a>
+              <a href="#config">.env konfigurieren</a>
+              <a href="#webhook-ops">Webhook Script deployen</a>
+              <a href="#sync">Sync URL setzen</a>
+              <a href="#updates">Update / Rollback</a>
+            </div>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Minimal-Ports</h3>
+            <ul>
+              <li>Extern: <span class="inline-code">443/tcp</span> (Standard-Compose)</li>
+              <li>Intern Container: <span class="inline-code">8443/tcp</span></li>
+            </ul>
+            <div class="callout">
+              <strong>Tipp:</strong> In internen Netzen kann zusätzlich ein Reverse Proxy
+              für Zertifikatsmanagement, Logging und ACL vorgeschaltet werden.
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Administrationsdoku für den aktuellen Repository-Stand.
+        Für technische Implementierungsdetails siehe
+        <a href="./developer.html">Entwicklerdokumentation</a>.
+      </footer>
+    </main>
+
+    <script src="./assets/app.js"></script>
+  </body>
+</html>

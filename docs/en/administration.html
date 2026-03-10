@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Remote Manager - Administration Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body data-page="admin">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="../assets/logo.svg" alt="Simple Remote Manager logo" />
+          <span class="brand-copy">
+            <strong>Simple Remote Manager</strong>
+            <span>Administration Docs</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menu</button>
+          <nav class="primary-nav" aria-label="Main navigation">
+            <a href="./index.html" data-page="overview">Overview</a>
+            <a href="./developer.html" data-page="developer">Developers</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+          </nav>
+          <div class="lang-switch" aria-label="Language">
+            <a href="../administration.html">DE</a>
+            <a href="./administration.html" class="active">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Operations Guide</p>
+        <h1 class="page-title">Installation, runtime operations, and security hardening</h1>
+        <p class="page-subtitle">
+          This page is intended for platform administrators and operations teams.
+          It covers deployment, configuration, backups, update strategy, webhook operations,
+          and incident runbooks.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#deploy">Start installation</a>
+          <a class="btn ghost" href="#hardening">Hardening checklist</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+          <section id="deploy" class="panel reveal">
+            <h2>1) Deployment Options</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Recommended: Docker Compose</h3>
+                <p>Fast production setup with TLS runtime, persistent data, and image pull from registry.</p>
+              </article>
+              <article class="card">
+                <h3>Alternative: local Python process</h3>
+                <p>Useful for local diagnostics/dev. TLS and public exposure must be handled separately.</p>
+              </article>
+            </div>
+
+            <h3>First-time Docker setup</h3>
+            <pre class="code-block"><code>cp .env.example .env
+# set SECRET_KEY and ADMIN_PASSWORD at minimum
+
+docker compose pull
+docker compose up -d</code></pre>
+
+            <p>
+              Default compose publishes host port <span class="inline-code">443</span>
+              to container port <span class="inline-code">8443</span>.
+            </p>
+
+            <div class="callout warn">
+              <strong>Important:</strong> if no certs are mounted in <span class="inline-code">./certs</span>,
+              the container entrypoint generates a self-signed certificate.
+            </div>
+          </section>
+
+          <section id="config" class="panel reveal">
+            <h2>2) Configuration (.env / Environment)</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Example</th>
+                  <th>Purpose</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">SERVER_IMAGE</span></td>
+                  <td>docker.nevondo.com/.../server:latest</td>
+                  <td>Server image reference used by compose.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">DOMAIN</span></td>
+                  <td>localhost</td>
+                  <td>Certificate CN/SAN default for auto-generated certs.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SECRET_KEY</span></td>
+                  <td>openssl rand -hex 32</td>
+                  <td>JWT signing key.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">ADMIN_PASSWORD</span></td>
+                  <td>strong initial password</td>
+                  <td>Used for first admin bootstrap.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">ALLOWED_IPS</span></td>
+                  <td>192.168.1.0/24,10.0.0.5</td>
+                  <td>IP/CIDR allowlist; empty means allow all.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">TRUST_PROXY_HEADERS</span></td>
+                  <td>false</td>
+                  <td>Global trust of forwarded headers (less secure).</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">TRUSTED_PROXIES</span></td>
+                  <td>172.17.0.1,10.0.0.0/8</td>
+                  <td>Preferred secure proxy trust configuration.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Persistent state</h3>
+            <ul>
+              <li><span class="inline-code">./data/</span>: SQLite DB + <span class="inline-code">connections.json</span></li>
+              <li><span class="inline-code">./certs/</span>: TLS cert and key</li>
+            </ul>
+          </section>
+
+          <section id="first-login" class="panel reveal">
+            <h2>3) First Login and Baseline Setup</h2>
+            <ol>
+              <li>Login with user <span class="inline-code">admin</span> and value from <span class="inline-code">ADMIN_PASSWORD</span>.</li>
+              <li>Create at least one additional admin user.</li>
+              <li>Create read-only API key for client sync.</li>
+              <li>Create non-admin read users where needed.</li>
+            </ol>
+            <div class="callout">
+              <strong>Note:</strong> API keys are shown in clear text only once at creation time.
+            </div>
+          </section>
+
+          <section id="operations" class="panel reveal">
+            <h2>4) Day-to-Day Operations</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Connections</h3>
+                <p>Create/update/delete from the web UI. Import/export is admin-only.</p>
+              </article>
+              <article class="card">
+                <h3>Users and roles</h3>
+                <p>User management is available in the Users page. Self-delete is blocked by backend logic.</p>
+              </article>
+              <article class="card">
+                <h3>API keys</h3>
+                <p>Prefer <span class="inline-code">read</span> keys. Use <span class="inline-code">read_write</span> only for trusted integrations.</p>
+              </article>
+              <article class="card">
+                <h3>Webhooks</h3>
+                <p>Webhook tokens can trigger scripts without JWT. Rotate tokens regularly.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="webhook-ops" class="panel reveal">
+            <h2>5) Webhook Scripts in Operations</h2>
+            <p>
+              Webhooks allow controlled automation of connection data.
+              Trigger endpoint: <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>.
+            </p>
+            <h3>Recommended operational flow</h3>
+            <ol>
+              <li>Create webhook in admin UI (<span class="inline-code">Webhooks</span> -> <span class="inline-code">+ Webhook</span>).</li>
+              <li>Store script in version control, then paste/deploy to server UI.</li>
+              <li>Validate with test payload before production usage.</li>
+              <li>Rotate token on schedule and on any potential leak.</li>
+            </ol>
+
+            <h3>Reference example</h3>
+            <p>
+              File: <a href="../examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>
+            </p>
+            <pre class="code-block"><code>curl -X POST "https://&lt;server&gt;/api/webhooks/trigger/&lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "name": "Prod Web",
+      "kind": "web",
+      "url": "https://prod.example.com",
+      "tags": ["prod", "web"]
+    }
+  }'</code></pre>
+
+            <div class="callout warn">
+              <strong>Security:</strong> webhook tokens are bearer secrets.
+              Treat them like passwords and rotate immediately if exposed.
+            </div>
+          </section>
+
+          <section id="sync" class="panel reveal">
+            <h2>6) Client Sync and Extension Integration</h2>
+            <h3>Desktop client sync URL</h3>
+            <pre class="code-block"><code>https://&lt;server&gt;/api/connections?api_key=&lt;read_only_key&gt;</code></pre>
+            <ul>
+              <li>Desktop sync requires HTTPS URL.</li>
+              <li>For self-signed certs, enable the corresponding client option.</li>
+            </ul>
+
+            <h3>Chrome extension source URL</h3>
+            <p>Uses the same endpoint and API key model; only <span class="inline-code">kind: web</span> entries are shown.</p>
+          </section>
+
+          <section id="backup" class="panel reveal">
+            <h2>7) Backup and Restore</h2>
+            <h3>Backup</h3>
+            <pre class="code-block"><code>mkdir -p backups
+
+tar -czf backups/srm-backup-$(date +%F-%H%M).tar.gz \
+  data certs .env</code></pre>
+
+            <h3>Restore</h3>
+            <pre class="code-block"><code>docker compose down
+# restore data/, certs/, .env
+docker compose up -d</code></pre>
+          </section>
+
+          <section id="updates" class="panel reveal">
+            <h2>8) Updates and Rollback</h2>
+            <h3>Normal update</h3>
+            <pre class="code-block"><code>docker compose pull
+docker compose up -d</code></pre>
+
+            <h3>Rollback pattern</h3>
+            <ol>
+              <li>Pin <span class="inline-code">SERVER_IMAGE</span> to a previous known-good tag/digest.</li>
+              <li>Redeploy with <span class="inline-code">docker compose up -d</span>.</li>
+              <li>If necessary, restore data from the latest verified backup.</li>
+            </ol>
+          </section>
+
+          <section id="hardening" class="panel reveal">
+            <h2>9) Security Hardening Checklist</h2>
+            <ul>
+              <li>Set strong <span class="inline-code">SECRET_KEY</span> and protect it as secret.</li>
+              <li>Change bootstrap admin password immediately.</li>
+              <li>Set <span class="inline-code">ALLOWED_IPS</span> and <span class="inline-code">TRUSTED_PROXIES</span> for production.</li>
+              <li>Expose only required ports and prefer reverse-proxy controls.</li>
+              <li>Issue read-write API keys only when absolutely necessary.</li>
+              <li>Rotate webhook tokens and review scripts regularly.</li>
+              <li>Automate backups and test restores periodically.</li>
+            </ul>
+          </section>
+
+          <section id="runbook" class="panel reveal">
+            <h2>10) Incident Runbook (Short)</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Login failures</h3>
+                <p>Verify target instance, credential source, and JWT secret consistency.</p>
+              </article>
+              <article class="card">
+                <h3>Global 403 responses</h3>
+                <p>Check IP filtering and trusted-proxy settings first.</p>
+              </article>
+              <article class="card">
+                <h3>Sync failures</h3>
+                <p>Validate HTTPS URL, API key permission, and certificate trust path.</p>
+              </article>
+              <article class="card">
+                <h3>Leaked token/key</h3>
+                <p>Rotate/delete immediately and redeploy new credential to all consumers.</p>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Contents</h3>
+            <ul>
+              <li><a href="#deploy">1) Deployment</a></li>
+              <li><a href="#config">2) Configuration</a></li>
+              <li><a href="#first-login">3) First login</a></li>
+              <li><a href="#operations">4) Operations</a></li>
+              <li><a href="#webhook-ops">5) Webhook scripts</a></li>
+              <li><a href="#sync">6) Sync/Extension</a></li>
+              <li><a href="#backup">7) Backup</a></li>
+              <li><a href="#updates">8) Updates</a></li>
+              <li><a href="#hardening">9) Hardening</a></li>
+              <li><a href="#runbook">10) Runbook</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Operations Snippets</h3>
+            <div class="quick-links">
+              <a href="#deploy">docker compose up -d</a>
+              <a href="#config">configure .env</a>
+              <a href="#webhook-ops">deploy webhook script</a>
+              <a href="#sync">set sync URL</a>
+              <a href="#updates">update / rollback</a>
+            </div>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Minimal Ports</h3>
+            <ul>
+              <li>External: <span class="inline-code">443/tcp</span></li>
+              <li>Container: <span class="inline-code">8443/tcp</span></li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Administration docs for the current repository state.
+        See <a href="./developer.html">Developer docs</a> for implementation details.
+      </footer>
+    </main>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

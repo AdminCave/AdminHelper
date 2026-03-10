@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Remote Manager - Entwicklerdokumentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body data-page="developer">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="./assets/logo.svg" alt="Simple Remote Manager Logo" />
+          <span class="brand-copy">
+            <strong>Simple Remote Manager</strong>
+            <span>Entwicklerdoku</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menü</button>
+          <nav class="primary-nav" aria-label="Hauptnavigation">
+            <a href="./index.html" data-page="overview">Übersicht</a>
+            <a href="./developer.html" data-page="developer">Für Entwickler</a>
+            <a href="./administration.html" data-page="admin">Für Administration</a>
+          </nav>
+          <div class="lang-switch" aria-label="Sprache">
+            <a href="./developer.html" class="active">DE</a>
+            <a href="./en/developer.html">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Developer Guide</p>
+        <h1 class="page-title">Entwicklung, Architektur und Erweiterung</h1>
+        <p class="page-subtitle">
+          Diese Seite dokumentiert den technischen Aufbau des Projekts inklusive lokaler
+          Entwicklungsumgebung, API-Verhalten, Datenmodellen und Release-Pipeline.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#setup">Setup starten</a>
+          <a class="btn ghost" href="#api">API-Referenz</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+          <section id="setup" class="panel reveal">
+            <h2>1) Entwicklungs-Setup</h2>
+            <p>Empfohlen: Linux oder Windows mit aktuellen Toolchains.</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Bereich</th>
+                  <th>Pflicht</th>
+                  <th>Hinweis</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Client (Tauri)</td>
+                  <td>Rust stable, <span class="inline-code">cargo tauri</span></td>
+                  <td>Linux benötigt WebView-/GTK-Abhängigkeiten und für RDP <span class="inline-code">xfreerdp3</span> oder <span class="inline-code">xfreerdp</span>.</td>
+                </tr>
+                <tr>
+                  <td>Server</td>
+                  <td>Python 3.12+, pip</td>
+                  <td>FastAPI + SQLAlchemy + SQLite, optional Docker-Betrieb.</td>
+                </tr>
+                <tr>
+                  <td>Extension</td>
+                  <td>Chrome/Chromium</td>
+                  <td>Manifest V3, lokal als entpackte Erweiterung ladbar.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Tauri CLI installieren</h3>
+            <pre class="code-block"><code>cargo install tauri-cli --locked --version '^2'</code></pre>
+
+            <h3>Server lokal (ohne Docker)</h3>
+            <pre class="code-block"><code>cd server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080</code></pre>
+          </section>
+
+          <section id="run" class="panel reveal">
+            <h2>2) Run & Build Commands</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Desktop Client</h3>
+                <pre class="code-block"><code>cd client/src-tauri
+cargo tauri dev
+# Build:
+cargo tauri build</code></pre>
+              </article>
+              <article class="card">
+                <h3>Server via Docker Compose</h3>
+                <pre class="code-block"><code>cp .env.example .env
+# .env anpassen
+
+docker compose pull
+docker compose up -d</code></pre>
+                <p>Container läuft intern auf <span class="inline-code">8443</span>, extern via Compose auf <span class="inline-code">443</span>.</p>
+              </article>
+              <article class="card">
+                <h3>Extension lokal laden</h3>
+                <ol>
+                  <li><span class="inline-code">chrome://extensions</span> öffnen</li>
+                  <li>Entwicklermodus aktivieren</li>
+                  <li><span class="inline-code">Entpackt laden</span> -> Ordner <span class="inline-code">extension/</span></li>
+                </ol>
+              </article>
+              <article class="card">
+                <h3>API-Docs</h3>
+                <p>
+                  Swagger-UI ist unter <span class="inline-code">/api/docs</span> verfügbar.
+                  Beispiel lokal: <span class="inline-code">http://localhost:8080/api/docs</span>.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section id="repo" class="panel reveal">
+            <h2>3) Repository-Struktur</h2>
+            <pre class="code-block"><code>.
+├─ client/
+│  ├─ src/                 # Frontend (Vanilla JS, HTML, CSS)
+│  └─ src-tauri/           # Rust/Tauri Backend + OS Integrationen
+├─ server/
+│  ├─ app/                 # FastAPI App + Router + Auth + Storage
+│  ├─ static/              # Server Web-UI (SPA)
+│  └─ Dockerfile
+├─ extension/              # Chrome Extension (Popup + Options + SW)
+├─ docker-compose.yml      # Server Deployment
+└─ .env.example            # Betriebsparameter für Compose</code></pre>
+          </section>
+
+          <section id="client" class="panel reveal">
+            <h2>4) Client-Architektur (Tauri)</h2>
+            <p>
+              Der Client trennt Frontend-UI und native Funktionen über Tauri-Commands.
+              Einstieg ist <span class="inline-code">client/src-tauri/src/main.rs</span>.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Modul</th>
+                  <th>Datei</th>
+                  <th>Aufgabe</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Command Bridge</td>
+                  <td><span class="inline-code">commands.rs</span></td>
+                  <td>Expose von <span class="inline-code">load/save/open/sync/password</span> an das JS-Frontend.</td>
+                </tr>
+                <tr>
+                  <td>Verbindung öffnen</td>
+                  <td><span class="inline-code">connection/*</span></td>
+                  <td>SSH, RDP und Web je OS-spezifisch starten.</td>
+                </tr>
+                <tr>
+                  <td>Lokale Persistenz</td>
+                  <td><span class="inline-code">storage.rs</span></td>
+                  <td><span class="inline-code">connections.json</span> + <span class="inline-code">settings.json</span> im OS-AppData-Verzeichnis, auf Unix mit 0600-Rechten.</td>
+                </tr>
+                <tr>
+                  <td>Sync</td>
+                  <td><span class="inline-code">sync.rs</span></td>
+                  <td>Lädt Connection-JSON nur über <span class="inline-code">https://</span>.</td>
+                </tr>
+                <tr>
+                  <td>Passwortspeicher</td>
+                  <td><span class="inline-code">password.rs</span></td>
+                  <td>Nur für RDP; unter Linux Keyring, unter Windows Credential Manager.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="callout warn">
+              <strong>Wichtig:</strong> Im Sync-Modus sind lokale CRUD-Operationen im Frontend gesperrt.
+            </div>
+          </section>
+
+          <section id="server" class="panel reveal">
+            <h2>5) Server-Architektur (FastAPI)</h2>
+            <p>
+              Einstieg: <span class="inline-code">server/app/main.py</span>.
+              Beim Start werden DB-Schema erzeugt und ein initialer Admin angelegt,
+              falls noch kein Benutzer existiert.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Bereich</th>
+                  <th>Dateien</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Auth</td>
+                  <td><span class="inline-code">auth.py</span>, <span class="inline-code">routers/auth.py</span></td>
+                  <td>JWT Bearer, bcrypt mit SHA-256-Prehash für lange Passwörter.</td>
+                </tr>
+                <tr>
+                  <td>Datenbank</td>
+                  <td><span class="inline-code">database.py</span>, <span class="inline-code">models.py</span></td>
+                  <td>SQLite für User, API-Keys, Webhooks.</td>
+                </tr>
+                <tr>
+                  <td>Connections</td>
+                  <td><span class="inline-code">storage.py</span>, <span class="inline-code">routers/connections.py</span></td>
+                  <td>Connections werden als JSON-Datei gespeichert (kein SQL-Modell).</td>
+                </tr>
+                <tr>
+                  <td>IP Filter</td>
+                  <td><span class="inline-code">middleware.py</span></td>
+                  <td>Blockt Requests anhand <span class="inline-code">ALLOWED_IPS</span>, Proxy-aware mit Trust-Optionen.</td>
+                </tr>
+                <tr>
+                  <td>Webhooks</td>
+                  <td><span class="inline-code">routers/webhooks.py</span>, <span class="inline-code">script_runner.py</span></td>
+                  <td>Python-Script-Ausführung mit eingeschränkten Builtins.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="extension" class="panel reveal">
+            <h2>6) Extension-Architektur</h2>
+            <p>
+              Manifest V3 mit Service Worker. Ziel ist schnelle Anzeige von
+              <span class="inline-code">kind: web</span>-Verbindungen aus dem Server.
+            </p>
+            <ul>
+              <li><span class="inline-code">background.js</span>: Alarm alle 5 Minuten, Fetch + Cache + Badge-Update.</li>
+              <li><span class="inline-code">popup.js</span>: Setup-Flow, Suche, Listen-/Tag-Ansicht, Öffnen in neuem Tab.</li>
+              <li><span class="inline-code">options.js</span>: Speicherung und Verbindungstest (Server-URL + API-Key).</li>
+              <li>Konfiguration in <span class="inline-code">chrome.storage.sync</span>, Cache in <span class="inline-code">chrome.storage.local</span>.</li>
+            </ul>
+          </section>
+
+          <section id="api" class="panel reveal">
+            <h2>7) API und Auth-Verhalten</h2>
+            <p>
+              API nutzt zwei Auth-Wege: JWT Bearer (Benutzer) oder API-Key
+              über Header <span class="inline-code">X-API-Key</span> bzw. Query-Parameter <span class="inline-code">api_key</span>.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Endpoint</th>
+                  <th>Zugriff</th>
+                  <th>Kommentar</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">POST /api/auth/login</span></td>
+                  <td>öffentlich</td>
+                  <td>Login, liefert JWT.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">GET /api/connections</span></td>
+                  <td>JWT oder API-Key (read/read_write)</td>
+                  <td>Liste aller Connections.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">POST/PUT /api/connections</span></td>
+                  <td>Admin-JWT oder API-Key read_write</td>
+                  <td>Create/Update mit UUID-Vergabe bei Create.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">DELETE /api/connections/{id}</span></td>
+                  <td>nur Admin-JWT</td>
+                  <td>API-Key reicht hier nicht.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">/api/users</span>, <span class="inline-code">/api/api-keys</span>, <span class="inline-code">/api/webhooks</span></td>
+                  <td>nur Admin-JWT</td>
+                  <td>Betriebs-/Sicherheitsverwaltung.</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="webhook-scripts" class="panel reveal">
+            <h2>8) Webhook-Scripting</h2>
+            <p>
+              Webhooks werden über <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>
+              ausgelöst. Das Script läuft serverseitig im eingeschränkten Runner
+              (<span class="inline-code">server/app/script_runner.py</span>).
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Verfügbar im Script</th>
+                  <th>Typ</th>
+                  <th>Beschreibung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">load_connections()</span></td>
+                  <td>Funktion</td>
+                  <td>Lädt alle Connections aus <span class="inline-code">connections.json</span>.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">save_connections(list)</span></td>
+                  <td>Funktion</td>
+                  <td>Speichert die komplette Connection-Liste.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">uuid4()</span></td>
+                  <td>Funktion</td>
+                  <td>Erzeugt eine neue UUID als String.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">payload</span>, <span class="inline-code">headers</span>, <span class="inline-code">params</span></td>
+                  <td>dict</td>
+                  <td>Request-Kontext vom Trigger-Aufruf.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">result</span>, <span class="inline-code">logs</span>, <span class="inline-code">log(msg)</span></td>
+                  <td>dict/list/Funktion</td>
+                  <td>Antwort und Logging für den Trigger-Response.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Beispielscript (Anlegen/Updaten einer Verbindung)</h3>
+            <p>
+              Datei im Repository: <a href="./examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>
+            </p>
+            <pre class="code-block"><code>connections = load_connections()
+incoming = payload.get("connection")
+
+if not isinstance(incoming, dict):
+    raise ValueError("payload.connection muss ein Objekt sein")
+
+name = str(incoming.get("name", "")).strip()
+kind = str(incoming.get("kind", "")).strip().lower()
+if kind not in ("ssh", "rdp", "web"):
+    raise ValueError("connection.kind muss ssh, rdp oder web sein")
+
+# ... Normalisierung + ID-Suche ...
+# ... create/update ...
+
+save_connections(connections)
+result["mode"] = mode
+result["connectionId"] = connection_id</code></pre>
+
+            <div class="callout">
+              <strong>Hinweis:</strong> Der Runner erlaubt nur einen begrenzten Satz an Builtins.
+              Für komplexe Integrationen sollten Scripts klein gehalten und klar validiert werden.
+            </div>
+          </section>
+
+          <section id="models" class="panel reveal">
+            <h2>9) Datenmodelle</h2>
+            <h3>Connection-Objekt (Sync + API)</h3>
+            <pre class="code-block"><code>{
+  "id": "uuid",
+  "name": "Prod DB",
+  "kind": "ssh | rdp | web",
+  "host": "example.local",
+  "port": 22,
+  "username": "admin",
+  "domain": "",
+  "keyPath": "~/.ssh/id_ed25519",
+  "url": "",
+  "notes": "",
+  "tags": ["prod", "db"],
+  "trustCert": false,
+  "lastUsed": "2026-01-27T10:39:21.574Z"
+}</code></pre>
+
+            <h3>Settings (Client)</h3>
+            <ul>
+              <li><span class="inline-code">mode</span>: <span class="inline-code">local</span> oder <span class="inline-code">sync</span></li>
+              <li><span class="inline-code">url</span>: Sync-URL (HTTPS)</li>
+              <li><span class="inline-code">intervalMinutes</span>: 1 bis 1440</li>
+              <li><span class="inline-code">storePasswords</span>: lokaler RDP-Keychain-Speicher</li>
+              <li><span class="inline-code">allowSelfSignedCerts</span>: akzeptiert self-signed TLS im Sync-Request</li>
+            </ul>
+          </section>
+
+          <section id="security" class="panel reveal">
+            <h2>10) Security-Mechanismen im Code</h2>
+            <ul>
+              <li>Passwörter werden nicht im Connection-JSON gespeichert; optional nur lokal für RDP.</li>
+              <li>Server-API-Keys werden gehasht (SHA-256) in der DB gespeichert.</li>
+              <li>IP-Filter unterstützt CIDR und optionale Proxy-Ketten-Auswertung.</li>
+              <li>Sync akzeptiert clientseitig ausschließlich <span class="inline-code">https://</span> URLs.</li>
+              <li>Webhook-Scripts laufen mit eingeschränkten Builtins und explizitem Namespace.</li>
+            </ul>
+            <div class="callout">
+              <strong>Empfehlung:</strong> Für Reverse-Proxy-Betrieb immer
+              <span class="inline-code">TRUSTED_PROXIES</span> setzen und nicht global
+              <span class="inline-code">TRUST_PROXY_HEADERS=true</span> verwenden.
+            </div>
+          </section>
+
+          <section id="cicd" class="panel reveal">
+            <h2>11) CI/CD Pipeline (.gitlab-ci.yml)</h2>
+            <ul>
+              <li><strong>docker:</strong> baut/pusht Server-Image in Registry.</li>
+              <li><strong>build:</strong> erstellt Linux-Binary und Debian-Paket für den Client.</li>
+              <li><strong>publish:</strong> optionales Deb-Publishing via Aptly-API-Script.</li>
+            </ul>
+            <p>
+              Das Script <span class="inline-code">client/scripts/ci_publish_via_api.sh</span>
+              erwartet mTLS- und Aptly-Variablen (URL, Zertifikate, Repo, Distribution, GPG-Key).
+            </p>
+          </section>
+
+          <section id="updating" class="panel reveal">
+            <h2>12) Updaten</h2>
+            <p>
+              Updates sollten komponentenweise und reproduzierbar erfolgen.
+              Für den Server ist der Standardpfad Docker-Image-Update, für den Client ein neuer Build.
+            </p>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Server updaten</h3>
+                <pre class="code-block"><code>docker compose pull
+docker compose up -d</code></pre>
+                <p>Vor dem Update Backup von <span class="inline-code">data/</span>, <span class="inline-code">certs/</span> und <span class="inline-code">.env</span> erstellen.</p>
+              </article>
+              <article class="card">
+                <h3>Client updaten</h3>
+                <pre class="code-block"><code>cd client/src-tauri
+cargo tauri build</code></pre>
+                <p>Neue Version verteilen und Plattform-Abhängigkeiten (z. B. FreeRDP auf Linux) mitprüfen.</p>
+              </article>
+            </div>
+            <div class="callout">
+              <strong>Empfehlung:</strong> Versionssprünge immer gegen Sync, Auth und Webhook-Funktionalität testen.
+            </div>
+          </section>
+
+          <section id="workflow" class="panel reveal">
+            <h2>13) Typischer Erweiterungs-Workflow</h2>
+            <ol>
+              <li>Frontend-Datenmodell in <span class="inline-code">client/src/connectionModel.js</span> oder <span class="inline-code">settingsModel.js</span> erweitern.</li>
+              <li>Rust-Modell in <span class="inline-code">client/src-tauri/src/models.rs</span> anpassen.</li>
+              <li>Tauri-Command ergänzen (<span class="inline-code">commands.rs</span>, <span class="inline-code">main.rs</span>).</li>
+              <li>Server-Schema/Router anpassen, falls API-Auswirkung vorhanden.</li>
+              <li>In Sync- und Admin-UI-Verhalten gegenprüfen.</li>
+            </ol>
+          </section>
+
+          <section id="troubleshooting" class="panel reveal">
+            <h2>14) Troubleshooting</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Sync schlägt fehl</h3>
+                <p>Client verlangt HTTPS. Für self-signed Zertifikate Option <span class="inline-code">allowSelfSignedCerts</span> aktivieren.</p>
+              </article>
+              <article class="card">
+                <h3>RDP auf Linux startet nicht</h3>
+                <p>Prüfen, ob <span class="inline-code">xfreerdp3</span> oder <span class="inline-code">xfreerdp</span> im PATH verfügbar ist.</p>
+              </article>
+              <article class="card">
+                <h3>Server Login funktioniert nicht</h3>
+                <p>Initiales <span class="inline-code">ADMIN_PASSWORD</span> gilt nur bei Erstinitialisierung der DB.</p>
+              </article>
+              <article class="card">
+                <h3>403 trotz gültigem Token</h3>
+                <p>IP-Filter prüfen: <span class="inline-code">ALLOWED_IPS</span>, <span class="inline-code">TRUSTED_PROXIES</span>.</p>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Inhalt</h3>
+            <ul>
+              <li><a href="#setup">1) Setup</a></li>
+              <li><a href="#run">2) Run & Build</a></li>
+              <li><a href="#repo">3) Struktur</a></li>
+              <li><a href="#client">4) Client</a></li>
+              <li><a href="#server">5) Server</a></li>
+              <li><a href="#extension">6) Extension</a></li>
+              <li><a href="#api">7) API</a></li>
+              <li><a href="#webhook-scripts">8) Webhook Scripts</a></li>
+              <li><a href="#models">9) Modelle</a></li>
+              <li><a href="#security">10) Security</a></li>
+              <li><a href="#cicd">11) CI/CD</a></li>
+              <li><a href="#updating">12) Updaten</a></li>
+              <li><a href="#workflow">13) Workflow</a></li>
+              <li><a href="#troubleshooting">14) Troubleshooting</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Kernbefehle</h3>
+            <div class="quick-links">
+              <a href="#run">cargo tauri dev</a>
+              <a href="#setup">uvicorn app.main:app</a>
+              <a href="#run">docker compose up -d</a>
+              <a href="#api">/api/docs</a>
+              <a href="#webhook-scripts">Webhook Script Engine</a>
+              <a href="#updating">Updaten</a>
+            </div>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Quellcode-Hotspots</h3>
+            <ul>
+              <li><span class="inline-code">client/src-tauri/src/commands.rs</span></li>
+              <li><span class="inline-code">client/src-tauri/src/connection/rdp.rs</span></li>
+              <li><span class="inline-code">server/app/routers/*.py</span></li>
+              <li><span class="inline-code">server/app/script_runner.py</span></li>
+              <li><span class="inline-code">extension/popup.js</span></li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Entwicklerdoku für den aktuellen Repository-Stand. Siehe auch Betriebsdoku unter
+        <a href="./administration.html">Administration</a>.
+      </footer>
+    </main>
+
+    <script src="./assets/app.js"></script>
+  </body>
+</html>
