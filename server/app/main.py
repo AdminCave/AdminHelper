@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,13 +11,11 @@ from .auth import hash_password
 from .database import SessionLocal
 from .config import ADMIN_PASSWORD
 from .middleware import IPFilterMiddleware
-from .routers import auth, connections, users, api_keys, webhooks
+from .routers import auth, connections, users, api_keys, hooks
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Simple Remote Manager Server", docs_url="/api/docs", redoc_url=None)
 
-# Erster Admin anlegen
 def _ensure_admin():
     db = SessionLocal()
     try:
@@ -30,7 +30,23 @@ def _ensure_admin():
     finally:
         db.close()
 
+
 _ensure_admin()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from .scheduler import scheduler, load_all_scheduled_hooks
+    from .event_bus import fire_event
+
+    load_all_scheduled_hooks()
+    scheduler.start()
+    fire_event("server.startup", {})
+    yield
+    scheduler.shutdown(wait=False)
+
+
+app = FastAPI(title="Simple Remote Manager Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 
 # Middleware
 app.add_middleware(IPFilterMiddleware)
@@ -40,7 +56,7 @@ app.include_router(auth.router)
 app.include_router(connections.router)
 app.include_router(users.router)
 app.include_router(api_keys.router)
-app.include_router(webhooks.router)
+app.include_router(hooks.router)
 
 # Statische Dateien
 static_dir = Path(__file__).parent.parent / "static"

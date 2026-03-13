@@ -226,9 +226,9 @@ docker compose up -d</code></pre>
                   <td>IP/CIDR allowlist with optional trusted proxy support.</td>
                 </tr>
                 <tr>
-                  <td>Webhooks</td>
-                  <td><span class="inline-code">routers/webhooks.py</span>, <span class="inline-code">script_runner.py</span></td>
-                  <td>Python script execution; full builtins including <span class="inline-code">import</span> are available (admin-only feature).</td>
+                  <td>Hooks</td>
+                  <td><span class="inline-code">routers/hooks.py</span>, <span class="inline-code">script_runner.py</span>, <span class="inline-code">event_bus.py</span>, <span class="inline-code">scheduler.py</span></td>
+                  <td>Three types: Webhook (URL), Event (internal), Schedule (APScheduler). Full builtins incl. <span class="inline-code">import</span> (admin-only).</td>
                 </tr>
               </tbody>
             </table>
@@ -280,7 +280,7 @@ docker compose up -d</code></pre>
                   <td>Delete is stricter than write key mode.</td>
                 </tr>
                 <tr>
-                  <td><span class="inline-code">/api/users</span>, <span class="inline-code">/api/api-keys</span>, <span class="inline-code">/api/webhooks</span></td>
+                  <td><span class="inline-code">/api/users</span>, <span class="inline-code">/api/api-keys</span>, <span class="inline-code">/api/hooks</span></td>
                   <td>Admin JWT only</td>
                   <td>System administration domain.</td>
                 </tr>
@@ -288,27 +288,24 @@ docker compose up -d</code></pre>
             </table>
           </section>
 
-          <section id="webhook-scripts" class="panel reveal">
-            <h2>8) Webhook Scripting</h2>
+          <section id="hook-scripts" class="panel reveal">
+            <h2>8) Hook Scripting</h2>
             <p>
-              Trigger endpoint: <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>.
-              Scripts run server-side with full Python builtins — including <span class="inline-code">import</span> —
-              plus injected storage helpers and request context. Because webhooks are admin-only,
-              no builtin restrictions apply.
+              All hooks use the same script runner (<span class="inline-code">server/app/script_runner.py</span>)
+              with full Python builtins including <span class="inline-code">import</span> (admin-only).
+              The context injected into the script depends on the hook type.
             </p>
+
+            <h3>Common variables (all types)</h3>
             <table>
               <thead>
-                <tr>
-                  <th>Runtime object</th>
-                  <th>Type</th>
-                  <th>Use</th>
-                </tr>
+                <tr><th>Object</th><th>Type</th><th>Use</th></tr>
               </thead>
               <tbody>
                 <tr>
                   <td><span class="inline-code">load_connections()</span></td>
                   <td>function</td>
-                  <td>Read all current connections from JSON storage.</td>
+                  <td>Read all connections from JSON storage.</td>
                 </tr>
                 <tr>
                   <td><span class="inline-code">save_connections(list)</span></td>
@@ -321,69 +318,79 @@ docker compose up -d</code></pre>
                   <td>Create a new UUID string.</td>
                 </tr>
                 <tr>
-                  <td><span class="inline-code">payload</span>, <span class="inline-code">headers</span>, <span class="inline-code">params</span></td>
-                  <td>dict</td>
-                  <td>Request data for the current trigger call.</td>
-                </tr>
-                <tr>
                   <td><span class="inline-code">result</span>, <span class="inline-code">logs</span>, <span class="inline-code">log(msg)</span></td>
                   <td>dict/list/function</td>
-                  <td>Build response payload and runtime logs.</td>
+                  <td>Return value and runtime logging.</td>
                 </tr>
                 <tr>
                   <td><span class="inline-code">import ...</span></td>
                   <td>statement</td>
-                  <td>All Python modules available, e.g. <span class="inline-code">import requests</span>, <span class="inline-code">import json</span>, <span class="inline-code">import re</span>.</td>
+                  <td>All Python modules available: <span class="inline-code">requests</span>, <span class="inline-code">json</span>, <span class="inline-code">re</span>, …</td>
                 </tr>
               </tbody>
             </table>
 
-            <h3>Example: create or update a connection</h3>
+            <h3>Type-specific context</h3>
+            <table>
+              <thead>
+                <tr><th>Type</th><th>Extra variables</th><th>Trigger</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>webhook</td>
+                  <td><span class="inline-code">payload</span>, <span class="inline-code">headers</span>, <span class="inline-code">params</span></td>
+                  <td><span class="inline-code">POST /api/hooks/trigger/&lt;token&gt;</span></td>
+                </tr>
+                <tr>
+                  <td>event</td>
+                  <td><span class="inline-code">event_type</span> (str), <span class="inline-code">event_data</span> (dict)</td>
+                  <td>Internal: connection.*/user.*/server.startup</td>
+                </tr>
+                <tr>
+                  <td>schedule</td>
+                  <td><span class="inline-code">triggered_at</span> (ISO str), <span class="inline-code">last_run</span> (ISO str | None)</td>
+                  <td>APScheduler background thread</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Example: Webhook – create or update a connection</h3>
             <p>
               Repository file: <a href="../examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>
             </p>
             <pre class="code-block"><code>connections = load_connections()
 incoming = payload.get("connection")
-
-if not isinstance(incoming, dict):
-    raise ValueError("payload.connection must be an object")
-
 # normalize + validate + upsert
 save_connections(connections)
 result["mode"] = mode
 result["connectionId"] = connection_id</code></pre>
 
-            <h3>Example: import connections from an HTTP API</h3>
-            <p>
-              Repository file: <a href="../examples/webhook_http_import.py"><span class="inline-code">docs/examples/webhook_http_import.py</span></a>
-            </p>
+            <h3>Example: Event Hook – notify on changes</h3>
             <pre class="code-block"><code>import requests
 
-api_url = payload.get("api_url", "https://cmdb.example.com/api/servers")
-r = requests.get(api_url, timeout=10)
-r.raise_for_status()
+msg = f"[SRM] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
+requests.post("https://chat.example.com/webhooks/notify", json={"text": msg}, timeout=5)
+result["notified"] = True</code></pre>
 
+            <h3>Example: Scheduled Hook – daily cleanup</h3>
+            <pre class="code-block"><code># interval: 24h
 connections = load_connections()
-added = 0
-for srv in r.json():
-    if not any(c.get("host") == srv["ip"] for c in connections):
-        connections.append({
-            "id": uuid4(),
-            "name": srv["hostname"],
-            "host": srv["ip"],
-            "kind": "ssh",
-            "port": 22,
-            "tags": srv.get("tags", []),
-        })
-        added += 1
-
-save_connections(connections)
-result["added"] = added
-log(f"{added} connections imported from {api_url}")</code></pre>
+seen, unique = set(), []
+for c in connections:
+    key = (c.get("kind"), c.get("host"), c.get("port"))
+    if key not in seen:
+        seen.add(key)
+        unique.append(c)
+removed = len(connections) - len(unique)
+if removed:
+    save_connections(unique)
+result["removed"] = removed
+log(f"Cleaned up at {triggered_at}: removed {removed} duplicate(s)")</code></pre>
 
             <div class="callout">
-              <strong>Note:</strong> Scripts run synchronously in the request thread.
-              Always set a <span class="inline-code">timeout</span> on HTTP calls to avoid blocking the webhook endpoint indefinitely.
+              <strong>Execution model:</strong>
+              Webhook scripts run synchronously in the request thread — always set timeouts on HTTP calls.
+              Event and scheduled hooks run in daemon threads; exceptions do not affect server operations.
             </div>
           </section>
 
@@ -423,7 +430,7 @@ log(f"{added} connections imported from {api_url}")</code></pre>
               <li>API keys are stored as SHA-256 hashes on server side.</li>
               <li>IP filtering supports CIDR and trusted proxy chains.</li>
               <li>Client sync accepts HTTPS URLs only.</li>
-              <li>Webhook scripts run with full Python builtins (including <span class="inline-code">import</span>) inside an isolated namespace with only injected storage functions exposed.</li>
+              <li>Hook scripts run with full Python builtins (including <span class="inline-code">import</span>) inside an isolated namespace with only injected storage functions exposed.</li>
             </ul>
             <div class="callout">
               <strong>Recommendation:</strong> in proxy setups, set
@@ -515,7 +522,7 @@ cargo tauri build</code></pre>
               <li><a href="#server">5) Server</a></li>
               <li><a href="#extension">6) Extension</a></li>
               <li><a href="#api">7) API</a></li>
-              <li><a href="#webhook-scripts">8) Webhook Scripts</a></li>
+              <li><a href="#hook-scripts">8) Hook Scripts</a></li>
               <li><a href="#models">9) Models</a></li>
               <li><a href="#security">10) Security</a></li>
               <li><a href="#cicd">11) CI/CD</a></li>
@@ -532,7 +539,7 @@ cargo tauri build</code></pre>
               <a href="#setup">uvicorn app.main:app</a>
               <a href="#run">docker compose up -d</a>
               <a href="#api">/api/docs</a>
-              <a href="#webhook-scripts">Webhook Script Engine</a>
+              <a href="#hook-scripts">Hook Script Engine</a>
               <a href="#updating">Updating</a>
             </div>
           </section>

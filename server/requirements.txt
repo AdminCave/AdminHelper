@@ -5,3 +5,4 @@ python-jose[cryptography]>=3.3
 bcrypt>=4.0
 python-multipart>=0.0.20
 requests>=2.32
+apscheduler>=3.10

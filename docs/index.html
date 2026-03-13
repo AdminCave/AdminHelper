@@ -77,7 +77,7 @@
                 <h3>Server</h3>
                 <p>
                   FastAPI-Backend mit Web-UI, JWT-Login, Rollenmodell, API-Keys,
-                  Webhooks und TLS-Betrieb via Docker.
+                  Hooks (Webhook/Event/Schedule), JWT-Login, API-Keys und TLS via Docker.
                 </p>
               </article>
               <article class="card">
@@ -109,12 +109,12 @@
                 <tr>
                   <td>Server API</td>
                   <td>Python, FastAPI, SQLAlchemy, SQLite</td>
-                  <td>Auth, Nutzerverwaltung, API-Keys, Connection-CRUD, Webhooks</td>
+                  <td>Auth, Nutzerverwaltung, API-Keys, Connection-CRUD, Hooks (Webhook/Event/Schedule)</td>
                 </tr>
                 <tr>
                   <td>Server UI</td>
                   <td>Statische SPA in <span class="inline-code">server/static</span></td>
-                  <td>Admin-Oberfläche für Verbindungen, Benutzer, API-Keys und Webhooks</td>
+                  <td>Admin-Oberfläche für Verbindungen, Benutzer, API-Keys und Hooks</td>
                 </tr>
                 <tr>
                   <td>Browser Extension</td>
@@ -183,8 +183,8 @@ cargo tauri dev</code></pre>
               </article>
             </div>
             <div class="callout">
-              <strong>Webhook-Scripting:</strong> Beispiele und Variablenübersicht findest du in
-              <a href="./developer.html#webhook-scripts">der Entwicklerdoku</a> sowie als Datei unter
+              <strong>Hook-Scripting:</strong> Beispiele und Variablenübersicht für alle drei Hook-Typen findest du in
+              <a href="./developer.html#hook-scripts">der Entwicklerdoku</a> sowie als Datei unter
               <a href="./examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>.
             </div>
           </section>
@@ -223,7 +223,7 @@ cargo tauri dev</code></pre>
               <a href="./developer.html#server">server/</a>
               <a href="./developer.html#extension">extension/</a>
               <a href="./administration.html#deploy">docker-compose.yml</a>
-              <a href="./developer.html#webhook-scripts">Webhook Scripts</a>
+              <a href="./developer.html#hook-scripts">Hook Scripts</a>
             </div>
           </section>
         </aside>

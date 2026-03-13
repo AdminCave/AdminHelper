@@ -1,4 +1,5 @@
-# Webhook Beispiel: Verbindung anlegen oder aktualisieren
+# Hook-Beispiel (Typ: webhook): Verbindung anlegen oder aktualisieren
+# Trigger: POST /api/hooks/trigger/<TOKEN>
 # Erwarteter JSON-Body:
 # {
 #   "connection": {

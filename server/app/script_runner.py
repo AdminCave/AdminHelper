@@ -1,28 +1,29 @@
 """
-Script-Runner für Webhook-Scripts.
+Script-Runner für Hooks.
 
 Jedes Script wird via exec() ausgeführt. Imports sind vollständig erlaubt,
-da Webhooks nur von Admins angelegt werden können.
+da Hooks nur von Admins angelegt werden können.
 
-Verfügbare Variablen im Script:
+Verfügbare Variablen im Script (immer):
     load_connections()  -> list[dict]   Verbindungen laden
     save_connections(list[dict])        Verbindungen speichern
     uuid4()             -> str          Neue UUID generieren
-    payload             dict            JSON-Body des Webhook-Requests
-    headers             dict            HTTP-Request-Header
-    params              dict            Query-Parameter des Requests
-    result              dict            Rückgabe an den Aufrufer (hier reinschreiben)
-    logs                list            Log-Ausgaben (logs.append("..."))
+    result              dict            Rückgabe an den Aufrufer
+    logs                list            Log-Ausgaben
     log(msg)                            Kurzform für logs.append(str(msg))
 
-Beispiel mit HTTP-Aufruf:
-    import requests
-    r = requests.get("https://api.example.com/servers")
-    for srv in r.json():
-        connections = load_connections()
-        connections.append({"id": uuid4(), "name": srv["name"], "kind": "ssh", "host": srv["ip"]})
-        save_connections(connections)
-    result["imported"] = len(r.json())
+Webhook-Kontext:
+    payload             dict            JSON-Body des Requests
+    headers             dict            HTTP-Request-Header
+    params              dict            Query-Parameter
+
+Event-Kontext:
+    event_type          str             Name des Events (z. B. "connection.created")
+    event_data          dict            Betroffene Ressource
+
+Schedule-Kontext:
+    triggered_at        str             ISO-Zeitstempel der Ausführung
+    last_run            str|None        Letzter Lauf (ISO) oder None
 """
 
 import builtins
@@ -32,11 +33,10 @@ from typing import Any
 from .storage import load_connections, save_connections
 
 
-def run_webhook_script(
+def run_hook_script(
     script: str,
-    payload: Any,
-    headers: dict,
-    params: dict,
+    hook_type: str,
+    context: dict,
 ) -> dict:
     """Script ausführen und Ergebnis zurückgeben."""
     result: dict = {}
@@ -49,7 +49,7 @@ def run_webhook_script(
     def _print(*args, sep=" ", end="\n", **_kwargs):  # noqa: ANN001
         logs.append(sep.join(str(a) for a in args))
 
-    # Vollständige Builtins inkl. __import__ — Webhooks sind Admin-only
+    # Vollständige Builtins inkl. __import__ — Hooks sind Admin-only
     full_builtins = vars(builtins).copy()
     full_builtins["print"] = _print
 
@@ -61,16 +61,14 @@ def run_webhook_script(
         # Hilfsfunktionen
         "uuid4": lambda: str(_uuid.uuid4()),
         "log": _log,
-        # Request-Kontext
-        "payload": payload if payload is not None else {},
-        "headers": dict(headers),
-        "params": dict(params),
         # Ausgabe
         "result": result,
         "logs": logs,
+        # Typ-spezifischer Kontext
+        **context,
     }
 
-    compiled = compile(script, "<webhook_script>", "exec")
+    compiled = compile(script, f"<{hook_type}_script>", "exec")
     exec(compiled, namespace)  # noqa: S102
 
     return {"success": True, "result": result, "logs": logs}

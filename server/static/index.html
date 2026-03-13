@@ -69,8 +69,8 @@
           <button class="nav-item" data-page="apikeys">
             <i class="nav-icon">🔑</i> API-Keys
           </button>
-          <button class="nav-item" data-page="webhooks">
-            <i class="nav-icon">⚡</i> Webhooks
+          <button class="nav-item" data-page="hooks">
+            <i class="nav-icon">⚡</i> Hooks
           </button>
         </div>
       </nav>
@@ -148,33 +148,30 @@
         </div>
       </div>
 
-      <!-- Webhooks -->
-      <div id="pageWebhooks" class="page">
+      <!-- Hooks -->
+      <div id="pageHooks" class="page">
         <div class="page-header">
           <div>
-            <div class="page-title">Webhooks</div>
-            <div class="page-subtitle">Python-Scripts per HTTP-Call auslösen</div>
+            <div class="page-title">Hooks</div>
+            <div class="page-subtitle">Webhooks, Event-Hooks und Scheduled Hooks</div>
           </div>
-          <button id="addWebhookBtn" class="btn primary">+ Webhook</button>
+          <button id="addHookBtn" class="btn primary">+ Hook</button>
         </div>
         <div class="panel" style="overflow:auto">
-          <table class="data-table" id="webhookTable">
+          <table class="data-table" id="hookTable">
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Beschreibung</th>
-                <th>Erstellt</th>
+                <th>Typ</th>
+                <th>Details</th>
+                <th>Status</th>
+                <th>Letzter Lauf</th>
                 <th></th>
               </tr>
             </thead>
-            <tbody id="webhookBody"></tbody>
+            <tbody id="hookBody"></tbody>
           </table>
-          <div id="webhookEmpty" class="empty-state hidden"><p>Keine Webhooks vorhanden.</p></div>
-        </div>
-        <div class="panel" style="font-size:13px;color:var(--text-soft)">
-          <strong style="color:var(--text)">Webhook aufrufen:</strong><br/>
-          <code style="color:var(--accent)">POST http://&lt;server&gt;:8080/api/webhooks/trigger/&lt;TOKEN&gt;</code><br/>
-          <span style="margin-top:6px;display:block">Optional mit JSON-Body als <code>payload</code> im Script verfügbar.</span>
+          <div id="hookEmpty" class="empty-state hidden"><p>Keine Hooks vorhanden.</p></div>
         </div>
       </div>
 
@@ -346,45 +343,68 @@
     </div>
   </div>
 
-  <!-- Modal: Webhook anlegen / bearbeiten -->
-  <div id="webhookModal" class="modal-backdrop hidden">
+  <!-- Modal: Hook anlegen / bearbeiten -->
+  <div id="hookModal" class="modal-backdrop hidden">
     <div class="modal" style="width:min(860px,96vw);max-height:92vh;overflow-y:auto">
       <div class="modal-header">
-        <div class="modal-title" id="webhookModalTitle">Webhook</div>
-        <button class="modal-close" data-close="webhookModal">✕</button>
+        <div class="modal-title" id="hookModalTitle">Hook</div>
+        <button class="modal-close" data-close="hookModal">✕</button>
       </div>
-      <form id="webhookForm" class="modal-form">
+      <form id="hookForm" class="modal-form">
         <div class="field">
           <label>Name *</label>
-          <input id="whName" required placeholder="z. B. Deployment-Hook" />
+          <input id="hkName" required placeholder="z. B. Deployment-Hook" />
         </div>
         <div class="field">
           <label>Beschreibung</label>
-          <input id="whDesc" placeholder="Optionale Beschreibung" />
+          <input id="hkDesc" placeholder="Optionale Beschreibung" />
         </div>
+        <div class="field" id="hkTypeWrapper">
+          <label>Typ *</label>
+          <select id="hkType">
+            <option value="webhook">Webhook – per HTTP-Call auslösen</option>
+            <option value="event">Event-Hook – bei internem Ereignis</option>
+            <option value="schedule">Scheduled Hook – nach Zeitplan</option>
+          </select>
+        </div>
+
+        <!-- Event-spezifisch -->
+        <div id="hkEventsField" class="field hidden" style="grid-column:1/-1">
+          <label>Events *</label>
+          <div id="hkEventsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px"></div>
+        </div>
+
+        <!-- Schedule-spezifisch -->
+        <div id="hkIntervalField" class="field hidden">
+          <label>Intervall *</label>
+          <select id="hkInterval">
+            <option value="5m">Alle 5 Minuten</option>
+            <option value="15m">Alle 15 Minuten</option>
+            <option value="30m">Alle 30 Minuten</option>
+            <option value="1h" selected>Jede Stunde</option>
+            <option value="6h">Alle 6 Stunden</option>
+            <option value="12h">Alle 12 Stunden</option>
+            <option value="24h">Jeden Tag</option>
+            <option value="custom">Cron-Ausdruck…</option>
+          </select>
+        </div>
+        <div id="hkCronField" class="field hidden">
+          <label>Cron-Ausdruck</label>
+          <input id="hkCron" placeholder="0 */6 * * *" />
+          <p style="font-size:11px;color:var(--text-soft);margin:4px 0 0">Format: Minute Stunde Tag Monat Wochentag</p>
+        </div>
+
+        <!-- Script -->
         <div class="field" style="grid-column:1/-1">
           <label>Script *</label>
-          <p style="font-size:12px;color:var(--text-soft);margin:0 0 6px">
-            Verfügbar: <code>load_connections()</code>, <code>save_connections(list)</code>,
-            <code>uuid4()</code>, <code>payload</code>, <code>headers</code>,
-            <code>params</code>, <code>result</code>, <code>logs</code>, <code>log(msg)</code>
-            — <code>import</code> ist vollständig erlaubt (z. B. <code>import requests</code>)
-          </p>
-          <textarea id="whScript" required rows="18"
+          <p id="hkScriptHelp" style="font-size:12px;color:var(--text-soft);margin:0 0 6px"></p>
+          <textarea id="hkScript" required rows="18"
             style="font-family:monospace;font-size:13px;white-space:pre;tab-size:4;resize:vertical"
-            placeholder="# Beispiel: Verbindung aus Payload hinzufügen
-connections = load_connections()
-new_conn = payload.get('connection')
-if new_conn:
-    new_conn['id'] = uuid4()
-    connections.append(new_conn)
-    save_connections(connections)
-    result['added'] = new_conn.get('name')
-    log(f'Verbindung hinzugefügt: {new_conn[\"name\"]}')
-result['total'] = len(load_connections())"></textarea>
+            placeholder="# Python-Script hier eingeben"></textarea>
         </div>
+
         <div class="modal-actions">
-          <button type="button" class="btn ghost" data-close="webhookModal">Abbrechen</button>
+          <button type="button" class="btn ghost" data-close="hookModal">Abbrechen</button>
           <button type="submit" class="btn primary">Speichern</button>
         </div>
       </form>
@@ -409,6 +429,20 @@ result['total'] = len(load_connections())"></textarea>
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn primary" id="copyWebhookTokenBtn">Kopieren</button>
         <button class="btn ghost" data-close="webhookTokenModal">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Hook-Ausführungsergebnis -->
+  <div id="hookRunModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(720px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title" id="hookRunTitle">Hook-Ergebnis</div>
+        <button class="modal-close" data-close="hookRunModal">✕</button>
+      </div>
+      <pre id="hookRunResult" style="font-family:monospace;font-size:12px;background:var(--surface);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn ghost" data-close="hookRunModal">Schließen</button>
       </div>
     </div>
   </div>

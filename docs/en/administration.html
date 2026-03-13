@@ -175,33 +175,69 @@ docker compose up -d</code></pre>
                 <p>Prefer <span class="inline-code">read</span> keys. Use <span class="inline-code">read_write</span> only for trusted integrations.</p>
               </article>
               <article class="card">
-                <h3>Webhooks</h3>
-                <p>Webhook tokens can trigger scripts without JWT. Rotate tokens regularly.</p>
+                <h3>Hooks</h3>
+                <p>
+                  Three types: <strong>Webhook</strong> (URL trigger),
+                  <strong>Event Hook</strong> (internal events),
+                  <strong>Scheduled Hook</strong> (time-based, e.g. every hour).
+                </p>
               </article>
             </div>
           </section>
 
-          <section id="webhook-ops" class="panel reveal">
-            <h2>5) Webhook Scripts in Operations</h2>
+          <section id="hook-ops" class="panel reveal">
+            <h2>5) Hooks in Operations</h2>
             <p>
-              Webhooks allow controlled automation of connection data.
-              Trigger endpoint: <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>.
+              Hooks are Python scripts triggered in three different ways.
+              All hook types are managed under <span class="inline-code">Hooks</span> in the admin UI.
             </p>
-            <h3>Recommended operational flow</h3>
-            <ol>
-              <li>Create webhook in admin UI (<span class="inline-code">Webhooks</span> -> <span class="inline-code">+ Webhook</span>).</li>
-              <li>Store script in version control, then paste/deploy to server UI.</li>
-              <li>Validate with test payload before production usage.</li>
-              <li>Rotate token on schedule and on any potential leak.</li>
-            </ol>
 
-            <h3>Trigger example</h3>
+            <div class="cards cols-3">
+              <article class="card">
+                <h3>Webhook</h3>
+                <p>
+                  Triggered via HTTP POST with a token.<br/>
+                  <span class="inline-code">POST /api/hooks/trigger/&lt;token&gt;</span><br/>
+                  Script context: <span class="inline-code">payload</span>, <span class="inline-code">headers</span>, <span class="inline-code">params</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>Event Hook</h3>
+                <p>
+                  Triggered automatically on server events (no external URL required).<br/>
+                  Script context: <span class="inline-code">event_type</span>, <span class="inline-code">event_data</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>Scheduled Hook</h3>
+                <p>
+                  Runs on a schedule: 5m, 15m, 30m, 1h, 6h, 12h, 24h, or a cron expression.<br/>
+                  Script context: <span class="inline-code">triggered_at</span>, <span class="inline-code">last_run</span>
+                </p>
+              </article>
+            </div>
+
+            <h3>Available events (Event Hook)</h3>
+            <table>
+              <thead><tr><th>Event</th><th>When</th></tr></thead>
+              <tbody>
+                <tr><td><span class="inline-code">connection.created</span></td><td>Connection added</td></tr>
+                <tr><td><span class="inline-code">connection.updated</span></td><td>Connection changed</td></tr>
+                <tr><td><span class="inline-code">connection.deleted</span></td><td>Connection removed</td></tr>
+                <tr><td><span class="inline-code">connections.imported</span></td><td>Bulk import</td></tr>
+                <tr><td><span class="inline-code">user.created</span></td><td>User created</td></tr>
+                <tr><td><span class="inline-code">user.deleted</span></td><td>User deleted</td></tr>
+                <tr><td><span class="inline-code">server.startup</span></td><td>Server started</td></tr>
+              </tbody>
+            </table>
+
+            <h3>Webhook trigger example</h3>
             <p>
               Reference scripts:
               <a href="../examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>,
               <a href="../examples/webhook_http_import.py"><span class="inline-code">docs/examples/webhook_http_import.py</span></a>
             </p>
-            <pre class="code-block"><code>curl -X POST "https://&lt;server&gt;/api/webhooks/trigger/&lt;token&gt;" \
+            <pre class="code-block"><code>curl -X POST "https://&lt;server&gt;/api/hooks/trigger/&lt;token&gt;" \
   -H "Content-Type: application/json" \
   -d '{
     "connection": {
@@ -212,24 +248,43 @@ docker compose up -d</code></pre>
     }
   }'</code></pre>
 
-            <h3>Python imports in scripts</h3>
-            <p>
-              Scripts have full Python interpreter access — <span class="inline-code">import</span> is unrestricted.
-              Example of an HTTP call from a script:
-            </p>
-            <pre class="code-block"><code>import requests
+            <h3>Event Hook script example</h3>
+            <pre class="code-block"><code># Triggered e.g. on connection.created or connection.updated
+import requests
 
-r = requests.get("https://cmdb.example.com/api/servers", timeout=10)
+hook_url = "https://chat.example.com/webhooks/notify"
+msg = f"[SRM] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
+requests.post(hook_url, json={"text": msg}, timeout=5)
+result["notified"] = True</code></pre>
+
+            <h3>Scheduled Hook script example</h3>
+            <pre class="code-block"><code># Runs e.g. daily (24h) — remove duplicate connections
 connections = load_connections()
-for srv in r.json():
-    connections.append({"id": uuid4(), "name": srv["hostname"], "host": srv["ip"], "kind": "ssh"})
-save_connections(connections)
-result["imported"] = len(r.json())</code></pre>
+seen, unique = set(), []
+for c in connections:
+    key = (c.get("kind"), c.get("host"), c.get("port"))
+    if key not in seen:
+        seen.add(key)
+        unique.append(c)
+removed = len(connections) - len(unique)
+if removed:
+    save_connections(unique)
+result["removed_duplicates"] = removed
+log(f"Cleaned up at {triggered_at}: removed {removed} duplicate(s)")</code></pre>
+
+            <h3>Recommended operational flow</h3>
+            <ol>
+              <li>Create hook in admin UI (<span class="inline-code">Hooks</span> → <span class="inline-code">+ Hook</span>), select type.</li>
+              <li>Write script and validate using the <strong>Run</strong> button.</li>
+              <li>Webhook tokens: distribute only to the calling service and rotate regularly.</li>
+              <li>Version scripts in a repository for auditability.</li>
+              <li>Disable unused hooks instead of deleting them to preserve history.</li>
+            </ol>
 
             <div class="callout warn">
-              <strong>Security:</strong> webhook tokens are bearer secrets — treat them like passwords.
-              Scripts have full interpreter access, so only admins can create or modify webhooks.
-              Rotate tokens immediately on any suspected exposure.
+              <strong>Security:</strong> webhook tokens are bearer secrets — treat them like passwords and rotate on any suspected exposure.
+              Scripts have full interpreter access; only admins may create hooks.
+              Event and scheduled hooks run in the background — script errors do not affect server operations.
             </div>
           </section>
 
@@ -282,7 +337,7 @@ docker compose up -d</code></pre>
               <li>Set <span class="inline-code">ALLOWED_IPS</span> and <span class="inline-code">TRUSTED_PROXIES</span> for production.</li>
               <li>Expose only required ports and prefer reverse-proxy controls.</li>
               <li>Issue read-write API keys only when absolutely necessary.</li>
-              <li>Rotate webhook tokens and review scripts regularly.</li>
+              <li>Rotate webhook tokens and review hook scripts regularly.</li>
               <li>Automate backups and test restores periodically.</li>
             </ul>
           </section>
@@ -318,7 +373,7 @@ docker compose up -d</code></pre>
               <li><a href="#config">2) Configuration</a></li>
               <li><a href="#first-login">3) First login</a></li>
               <li><a href="#operations">4) Operations</a></li>
-              <li><a href="#webhook-ops">5) Webhook scripts</a></li>
+              <li><a href="#hook-ops">5) Hooks</a></li>
               <li><a href="#sync">6) Sync/Extension</a></li>
               <li><a href="#backup">7) Backup</a></li>
               <li><a href="#updates">8) Updates</a></li>
@@ -332,7 +387,7 @@ docker compose up -d</code></pre>
             <div class="quick-links">
               <a href="#deploy">docker compose up -d</a>
               <a href="#config">configure .env</a>
-              <a href="#webhook-ops">deploy webhook script</a>
+              <a href="#hook-ops">deploy hook script</a>
               <a href="#sync">set sync URL</a>
               <a href="#updates">update / rollback</a>
             </div>

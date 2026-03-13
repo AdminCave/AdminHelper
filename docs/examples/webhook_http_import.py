@@ -1,4 +1,5 @@
-# Webhook Beispiel: Verbindungen per HTTP-API importieren
+# Hook-Beispiel (Typ: webhook): Verbindungen per HTTP-API importieren
+# Trigger: POST /api/hooks/trigger/<TOKEN>
 #
 # Dieses Script ruft eine externe API ab und fügt alle Hosts,
 # die noch nicht als Verbindung existieren, automatisch hinzu.

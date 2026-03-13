@@ -23,6 +23,30 @@ class ApiKey(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class Hook(Base):
+    __tablename__ = "hooks"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    hook_type = Column(String, nullable=False)  # "webhook", "event", "schedule"
+    script = Column(String, nullable=False)
+    enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Webhook-spezifisch
+    hashed_token = Column(String, unique=True, nullable=True, index=True)
+
+    # Event-spezifisch: JSON-Array als String, z. B. '["connection.created"]'
+    event_triggers = Column(String, nullable=True)
+
+    # Schedule-spezifisch
+    schedule_interval = Column(String, nullable=True)  # "5m", "1h", … oder Cron
+    last_run = Column(DateTime, nullable=True)
+    next_run = Column(DateTime, nullable=True)
+
+
+# Alte Tabelle bleibt für bestehende DBs erhalten (wird nicht mehr aktiv genutzt)
 class WebhookScript(Base):
     __tablename__ = "webhook_scripts"
 

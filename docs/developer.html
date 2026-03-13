@@ -223,7 +223,7 @@ docker compose up -d</code></pre>
                 <tr>
                   <td>Datenbank</td>
                   <td><span class="inline-code">database.py</span>, <span class="inline-code">models.py</span></td>
-                  <td>SQLite für User, API-Keys, Webhooks.</td>
+                  <td>SQLite für User, API-Keys, Hooks.</td>
                 </tr>
                 <tr>
                   <td>Connections</td>
@@ -236,9 +236,9 @@ docker compose up -d</code></pre>
                   <td>Blockt Requests anhand <span class="inline-code">ALLOWED_IPS</span>, Proxy-aware mit Trust-Optionen.</td>
                 </tr>
                 <tr>
-                  <td>Webhooks</td>
-                  <td><span class="inline-code">routers/webhooks.py</span>, <span class="inline-code">script_runner.py</span></td>
-                  <td>Python-Script-Ausführung; vollständige Builtins inkl. <span class="inline-code">import</span> (Admin-only).</td>
+                  <td>Hooks</td>
+                  <td><span class="inline-code">routers/hooks.py</span>, <span class="inline-code">script_runner.py</span>, <span class="inline-code">event_bus.py</span>, <span class="inline-code">scheduler.py</span></td>
+                  <td>Drei Typen: Webhook (URL), Event (intern), Schedule (APScheduler). Vollständige Builtins inkl. <span class="inline-code">import</span> (Admin-only).</td>
                 </tr>
               </tbody>
             </table>
@@ -294,7 +294,7 @@ docker compose up -d</code></pre>
                   <td>API-Key reicht hier nicht.</td>
                 </tr>
                 <tr>
-                  <td><span class="inline-code">/api/users</span>, <span class="inline-code">/api/api-keys</span>, <span class="inline-code">/api/webhooks</span></td>
+                  <td><span class="inline-code">/api/users</span>, <span class="inline-code">/api/api-keys</span>, <span class="inline-code">/api/hooks</span></td>
                   <td>nur Admin-JWT</td>
                   <td>Betriebs-/Sicherheitsverwaltung.</td>
                 </tr>
@@ -302,22 +302,18 @@ docker compose up -d</code></pre>
             </table>
           </section>
 
-          <section id="webhook-scripts" class="panel reveal">
-            <h2>8) Webhook-Scripting</h2>
+          <section id="hook-scripts" class="panel reveal">
+            <h2>8) Hook-Scripting</h2>
             <p>
-              Webhooks werden über <span class="inline-code">POST /api/webhooks/trigger/&lt;token&gt;</span>
-              ausgelöst. Das Script läuft serverseitig im Runner
-              (<span class="inline-code">server/app/script_runner.py</span>).
-              Da Webhooks ausschließlich von Admins angelegt werden können, stehen
-              vollständige Python-Builtins inklusive <span class="inline-code">import</span> zur Verfügung.
+              Alle Hooks laufen im gleichen Script-Runner (<span class="inline-code">server/app/script_runner.py</span>)
+              mit vollständigen Python-Builtins inkl. <span class="inline-code">import</span> (Admin-only).
+              Der Kontext im Script ist je nach Typ unterschiedlich.
             </p>
+
+            <h3>Gemeinsame Variablen (alle Typen)</h3>
             <table>
               <thead>
-                <tr>
-                  <th>Verfügbar im Script</th>
-                  <th>Typ</th>
-                  <th>Beschreibung</th>
-                </tr>
+                <tr><th>Variable</th><th>Typ</th><th>Beschreibung</th></tr>
               </thead>
               <tbody>
                 <tr>
@@ -336,32 +332,48 @@ docker compose up -d</code></pre>
                   <td>Erzeugt eine neue UUID als String.</td>
                 </tr>
                 <tr>
-                  <td><span class="inline-code">payload</span>, <span class="inline-code">headers</span>, <span class="inline-code">params</span></td>
-                  <td>dict</td>
-                  <td>Request-Kontext vom Trigger-Aufruf.</td>
-                </tr>
-                <tr>
                   <td><span class="inline-code">result</span>, <span class="inline-code">logs</span>, <span class="inline-code">log(msg)</span></td>
                   <td>dict/list/Funktion</td>
-                  <td>Antwort und Logging für den Trigger-Response.</td>
+                  <td>Antwort und Logging.</td>
                 </tr>
                 <tr>
                   <td><span class="inline-code">import ...</span></td>
                   <td>Statement</td>
-                  <td>Alle Python-Module nutzbar, z. B. <span class="inline-code">import requests</span>, <span class="inline-code">import json</span>, <span class="inline-code">import re</span>.</td>
+                  <td>Alle Python-Module nutzbar: <span class="inline-code">requests</span>, <span class="inline-code">json</span>, <span class="inline-code">re</span>, …</td>
                 </tr>
               </tbody>
             </table>
 
-            <h3>Beispielscript: Verbindung anlegen/updaten</h3>
+            <h3>Typ-spezifischer Kontext</h3>
+            <table>
+              <thead>
+                <tr><th>Typ</th><th>Zusätzliche Variablen</th><th>Auslöser</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>webhook</td>
+                  <td><span class="inline-code">payload</span>, <span class="inline-code">headers</span>, <span class="inline-code">params</span></td>
+                  <td><span class="inline-code">POST /api/hooks/trigger/&lt;token&gt;</span></td>
+                </tr>
+                <tr>
+                  <td>event</td>
+                  <td><span class="inline-code">event_type</span> (str), <span class="inline-code">event_data</span> (dict)</td>
+                  <td>Intern bei connection.*/user.*/server.startup</td>
+                </tr>
+                <tr>
+                  <td>schedule</td>
+                  <td><span class="inline-code">triggered_at</span> (ISO-str), <span class="inline-code">last_run</span> (ISO-str | None)</td>
+                  <td>APScheduler Hintergrund-Thread</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Beispiel: Webhook – Verbindung anlegen/updaten</h3>
             <p>
               Datei im Repository: <a href="./examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>
             </p>
             <pre class="code-block"><code>connections = load_connections()
 incoming = payload.get("connection")
-
-if not isinstance(incoming, dict):
-    raise ValueError("payload.connection muss ein Objekt sein")
 
 name = str(incoming.get("name", "")).strip()
 kind = str(incoming.get("kind", "")).strip().lower()
@@ -369,44 +381,38 @@ if kind not in ("ssh", "rdp", "web"):
     raise ValueError("connection.kind muss ssh, rdp oder web sein")
 
 # ... Normalisierung + ID-Suche ...
-# ... create/update ...
-
 save_connections(connections)
 result["mode"] = mode
 result["connectionId"] = connection_id</code></pre>
 
-            <h3>Beispielscript: Verbindungen per HTTP-API importieren</h3>
-            <p>
-              Datei im Repository: <a href="./examples/webhook_http_import.py"><span class="inline-code">docs/examples/webhook_http_import.py</span></a>
-            </p>
+            <h3>Beispiel: Event-Hook – Benachrichtigung bei Änderungen</h3>
             <pre class="code-block"><code>import requests
 
-api_url = payload.get("api_url", "https://cmdb.example.com/api/servers")
-r = requests.get(api_url, timeout=10)
-r.raise_for_status()
+# Läuft bei connection.created, connection.updated, connection.deleted
+msg = f"[SRM] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
+requests.post("https://chat.example.com/webhooks/notify", json={"text": msg}, timeout=5)
+result["notified"] = True</code></pre>
 
+            <h3>Beispiel: Scheduled Hook – tägliche Bereinigung</h3>
+            <pre class="code-block"><code># Intervall: 24h
 connections = load_connections()
-added = 0
-for srv in r.json():
-    if not any(c.get("host") == srv["ip"] for c in connections):
-        connections.append({
-            "id": uuid4(),
-            "name": srv["hostname"],
-            "host": srv["ip"],
-            "kind": "ssh",
-            "port": 22,
-            "tags": srv.get("tags", []),
-        })
-        added += 1
-
-save_connections(connections)
-result["added"] = added
-log(f"{added} Verbindungen aus {api_url} importiert")</code></pre>
+seen, unique = set(), []
+for c in connections:
+    key = (c.get("kind"), c.get("host"), c.get("port"))
+    if key not in seen:
+        seen.add(key)
+        unique.append(c)
+removed = len(connections) - len(unique)
+if removed:
+    save_connections(unique)
+result["removed"] = removed
+log(f"Bereinigt am {triggered_at}: {removed} Duplikat(e)")</code></pre>
 
             <div class="callout">
-              <strong>Hinweis:</strong> Scripts laufen synchron im Request-Thread.
-              Langläufer (Timeouts, große Datenmengen) können den Trigger-Call blockieren.
-              Für produktive Integrationen deshalb Timeouts setzen (<span class="inline-code">requests.get(..., timeout=10)</span>).
+              <strong>Ausführungsmodell:</strong>
+              Webhook-Scripts laufen synchron im Request-Thread (Timeouts setzen!).
+              Event-Hooks und Scheduled Hooks laufen in Daemon-Threads im Hintergrund —
+              Exceptions brechen keine Server-Operationen ab.
             </div>
           </section>
 
@@ -446,7 +452,7 @@ log(f"{added} Verbindungen aus {api_url} importiert")</code></pre>
               <li>Server-API-Keys werden gehasht (SHA-256) in der DB gespeichert.</li>
               <li>IP-Filter unterstützt CIDR und optionale Proxy-Ketten-Auswertung.</li>
               <li>Sync akzeptiert clientseitig ausschließlich <span class="inline-code">https://</span> URLs.</li>
-              <li>Webhook-Scripts laufen mit vollständigen Builtins (inkl. <span class="inline-code">import</span>) in einem isolierten Namespace; Zugriff nur über explizit injizierte Funktionen möglich.</li>
+              <li>Hook-Scripts laufen mit vollständigen Builtins (inkl. <span class="inline-code">import</span>) in einem isolierten Namespace; Zugriff nur über explizit injizierte Funktionen möglich.</li>
             </ul>
             <div class="callout">
               <strong>Empfehlung:</strong> Für Reverse-Proxy-Betrieb immer
@@ -538,7 +544,7 @@ cargo tauri build</code></pre>
               <li><a href="#server">5) Server</a></li>
               <li><a href="#extension">6) Extension</a></li>
               <li><a href="#api">7) API</a></li>
-              <li><a href="#webhook-scripts">8) Webhook Scripts</a></li>
+              <li><a href="#hook-scripts">8) Hook Scripts</a></li>
               <li><a href="#models">9) Modelle</a></li>
               <li><a href="#security">10) Security</a></li>
               <li><a href="#cicd">11) CI/CD</a></li>
@@ -555,7 +561,7 @@ cargo tauri build</code></pre>
               <a href="#setup">uvicorn app.main:app</a>
               <a href="#run">docker compose up -d</a>
               <a href="#api">/api/docs</a>
-              <a href="#webhook-scripts">Webhook Script Engine</a>
+              <a href="#hook-scripts">Hook Script Engine</a>
               <a href="#updating">Updaten</a>
             </div>
           </section>

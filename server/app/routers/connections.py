@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from ..auth import ApiKeyOrUser, get_current_admin
 from ..storage import load_connections, save_connections
+from ..event_bus import fire_event
 from .. import models
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
@@ -23,13 +24,13 @@ def get_connections(auth=Depends(read_dep)):
 @router.post("", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
 def create_connection(connection: dict[str, Any], auth=Depends(write_dep)):
     user, api_key = auth
-    # Nur Admins dürfen über JWT schreiben; API-Keys mit read_write auch
     if user and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
     connection["id"] = str(uuid.uuid4())
     connections = load_connections()
     connections.append(connection)
     save_connections(connections)
+    fire_event("connection.created", connection)
     return connection
 
 
@@ -44,16 +45,18 @@ def update_connection(conn_id: str, connection: dict[str, Any], auth=Depends(wri
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden")
     connections[idx] = connection
     save_connections(connections)
+    fire_event("connection.updated", connection)
     return connection
 
 
 @router.delete("/{conn_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_connection(conn_id: str, current_user: models.User = Depends(get_current_admin)):
     connections = load_connections()
-    new_connections = [c for c in connections if c.get("id") != conn_id]
-    if len(new_connections) == len(connections):
+    deleted = next((c for c in connections if c.get("id") == conn_id), None)
+    if deleted is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden")
-    save_connections(new_connections)
+    save_connections([c for c in connections if c.get("id") != conn_id])
+    fire_event("connection.deleted", deleted)
 
 
 @router.get("/export", response_class=Response)
@@ -80,4 +83,5 @@ def import_connections(req: ImportRequest, current_user: models.User = Depends(g
         existing = load_connections()
         existing.extend(imported)
         save_connections(existing)
+    fire_event("connections.imported", {"count": len(imported), "mode": req.mode})
     return {"imported": len(imported), "mode": req.mode}

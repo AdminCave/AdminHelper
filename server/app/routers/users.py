@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth import get_current_admin, hash_password
 from ..schemas import UserCreate, UserUpdate, UserResponse
+from ..event_bus import fire_event
 from .. import models
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -26,6 +27,7 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), _admin=Depends(
     db.add(user)
     db.commit()
     db.refresh(user)
+    fire_event("user.created", {"id": user.id, "username": user.username, "is_admin": user.is_admin})
     return user
 
 
@@ -50,5 +52,6 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(get_c
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
+    fire_event("user.deleted", {"id": user.id, "username": user.username})
     db.delete(user)
     db.commit()
