@@ -1,12 +1,15 @@
 import json
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import Response
 from typing import Any
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
+from sqlalchemy.orm import Session
+
 from app.core.auth import ApiKeyOrUser, get_current_admin
+from app.core.database import get_db
 from app.core.events import fire_event
-from app.modules.connections.storage import load_connections, save_connections
+from app.modules.connections.models import Connection
 from app.modules.connections.schemas import ImportRequest
 from app.modules.users.models import User
 
@@ -17,51 +20,57 @@ write_dep = ApiKeyOrUser(require_write=True)
 
 
 @router.get("", response_model=list[dict[str, Any]])
-def get_connections(auth=Depends(read_dep)):
-    return load_connections()
+def get_connections(db: Session = Depends(get_db), auth=Depends(read_dep)):
+    connections = db.query(Connection).all()
+    return [c.to_dict() for c in connections]
 
 
 @router.post("", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
-def create_connection(connection: dict[str, Any], auth=Depends(write_dep)):
+def create_connection(connection: dict[str, Any], db: Session = Depends(get_db), auth=Depends(write_dep)):
     user, api_key = auth
     if user and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
     connection["id"] = str(uuid.uuid4())
-    connections = load_connections()
-    connections.append(connection)
-    save_connections(connections)
-    fire_event("connection.created", connection)
-    return connection
+    conn = Connection.from_dict(connection)
+    db.add(conn)
+    db.commit()
+    db.refresh(conn)
+    result = conn.to_dict()
+    fire_event("connection.created", result)
+    return result
 
 
 @router.put("/{conn_id}", response_model=dict[str, Any])
-def update_connection(conn_id: str, connection: dict[str, Any], auth=Depends(write_dep)):
+def update_connection(conn_id: str, connection: dict[str, Any], db: Session = Depends(get_db), auth=Depends(write_dep)):
     user, api_key = auth
     if user and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
-    connections = load_connections()
-    idx = next((i for i, c in enumerate(connections) if c.get("id") == conn_id), None)
-    if idx is None:
+    conn = db.query(Connection).filter(Connection.id == conn_id).first()
+    if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden")
-    connections[idx] = connection
-    save_connections(connections)
-    fire_event("connection.updated", connection)
-    return connection
+    conn.update_from_dict(connection)
+    db.commit()
+    db.refresh(conn)
+    result = conn.to_dict()
+    fire_event("connection.updated", result)
+    return result
 
 
 @router.delete("/{conn_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_connection(conn_id: str, current_user: User = Depends(get_current_admin)):
-    connections = load_connections()
-    deleted = next((c for c in connections if c.get("id") == conn_id), None)
-    if deleted is None:
+def delete_connection(conn_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
+    conn = db.query(Connection).filter(Connection.id == conn_id).first()
+    if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden")
-    save_connections([c for c in connections if c.get("id") != conn_id])
-    fire_event("connection.deleted", deleted)
+    result = conn.to_dict()
+    db.delete(conn)
+    db.commit()
+    fire_event("connection.deleted", result)
 
 
 @router.get("/export", response_class=Response)
-def export_connections(current_user: User = Depends(get_current_admin)):
-    data = json.dumps(load_connections(), ensure_ascii=False, indent=2)
+def export_connections(db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
+    connections = db.query(Connection).all()
+    data = json.dumps([c.to_dict() for c in connections], ensure_ascii=False, indent=2)
     return Response(
         content=data,
         media_type="application/json",
@@ -70,13 +79,17 @@ def export_connections(current_user: User = Depends(get_current_admin)):
 
 
 @router.post("/import")
-def import_connections(req: ImportRequest, current_user: User = Depends(get_current_admin)):
-    imported = [dict(conn, id=str(uuid.uuid4())) for conn in req.connections]
+def import_connections(req: ImportRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     if req.mode == "replace":
-        save_connections(imported)
-    else:
-        existing = load_connections()
-        existing.extend(imported)
-        save_connections(existing)
+        db.query(Connection).delete()
+
+    imported = []
+    for conn_data in req.connections:
+        conn_data["id"] = str(uuid.uuid4())
+        conn = Connection.from_dict(conn_data)
+        db.add(conn)
+        imported.append(conn)
+
+    db.commit()
     fire_event("connections.imported", {"count": len(imported), "mode": req.mode})
     return {"imported": len(imported), "mode": req.mode}

@@ -1587,6 +1587,48 @@ body {
 }
 
 /* Responsive */
+/* ── Server Cards ──────────────────────────────────────────────────────── */
+.server-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.server-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  cursor: pointer;
+  gap: 12px;
+  transition: background 0.15s;
+}
+
+.server-card-header:hover {
+  background: var(--surface);
+}
+
+.server-chevron {
+  font-size: 11px;
+  color: var(--text-soft);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.server-chevron.open {
+  transform: rotate(90deg);
+}
+
+.server-card-body {
+  border-top: 1px solid var(--border);
+  padding: 0;
+}
+
+.server-card-body .data-table {
+  border-radius: 0;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     width: 200px;

@@ -62,6 +62,9 @@
           <i class="nav-icon">⟷</i> Verbindungen
         </button>
         <div id="adminNav" class="hidden">
+          <button class="nav-item" data-page="servers">
+            <i class="nav-icon">&#x1F5A5;</i> Server
+          </button>
           <div class="nav-divider"></div>
           <button class="nav-item" data-page="users">
             <i class="nav-icon">👥</i> Benutzer
@@ -121,6 +124,23 @@
           </table>
           <div id="connEmpty" class="empty-state hidden"><p>Keine Verbindungen vorhanden.</p></div>
         </div>
+      </div>
+
+      <!-- Server -->
+      <div id="pageServers" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Server</div>
+            <div class="page-subtitle">Server und zugeordnete Verbindungen</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <input id="serverSearch" type="search" placeholder="Suchen..." style="padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-family:var(--font);font-size:14px" />
+            <button id="addServerBtn" class="btn primary">+ Server</button>
+          </div>
+        </div>
+        <div class="panel" id="serverList" style="display:flex;flex-direction:column;gap:12px">
+        </div>
+        <div id="serverEmpty" class="empty-state hidden"><p>Keine Server vorhanden.</p></div>
       </div>
 
       <!-- Benutzer -->
@@ -253,6 +273,12 @@
             <label>Key-Pfad</label>
             <input id="cfKey" placeholder="~/.ssh/id_rsa" />
           </div>
+          <div class="field" id="cfServerField">
+            <label>Server</label>
+            <select id="cfServer">
+              <option value="">-- Kein Server --</option>
+            </select>
+          </div>
           <div class="field full">
             <label>Tags (kommagetrennt)</label>
             <input id="cfTags" placeholder="prod, web, linux" />
@@ -265,6 +291,48 @@
         <div class="modal-actions">
           <button type="button" class="btn ghost" data-close="connModal">Abbrechen</button>
           <button type="submit" class="btn primary" id="connSaveBtn">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Server -->
+  <div id="serverModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(620px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title" id="serverModalTitle">Server</div>
+        <button class="modal-close" data-close="serverModal">&#x2715;</button>
+      </div>
+      <form id="serverForm" class="modal-form">
+        <div class="field">
+          <label>Name *</label>
+          <input id="sfName" required placeholder="prod-web-01" />
+        </div>
+        <div class="field">
+          <label>Hostname / IP *</label>
+          <input id="sfHostname" required placeholder="192.168.1.10" />
+        </div>
+        <div class="field">
+          <label>Betriebssystem</label>
+          <select id="sfOsType">
+            <option value="">-- Nicht angegeben --</option>
+            <option value="linux">Linux</option>
+            <option value="windows">Windows</option>
+            <option value="macos">macOS</option>
+            <option value="freebsd">FreeBSD</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Tags (kommagetrennt)</label>
+          <input id="sfTags" placeholder="prod, web, rack-a" />
+        </div>
+        <div class="field">
+          <label>Notizen</label>
+          <textarea id="sfNotes" placeholder="Optionale Notizen..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="serverModal">Abbrechen</button>
+          <button type="submit" class="btn primary" id="serverSaveBtn">Speichern</button>
         </div>
       </form>
     </div>

@@ -1,15 +1,36 @@
-import json
+"""
+Kompatibilitätsschicht für Hooks.
+
+load_connections() und save_connections() werden von Hooks via script_runner
+aufgerufen. Diese Funktionen arbeiten jetzt mit der Datenbank statt JSON.
+"""
+
 from typing import Any
-from app.core.config import CONNECTIONS_FILE
 
 
 def load_connections() -> list[dict[str, Any]]:
-    if not CONNECTIONS_FILE.exists():
-        return []
-    with open(CONNECTIONS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    from app.core.database import SessionLocal
+    from app.modules.connections.models import Connection
+
+    db = SessionLocal()
+    try:
+        connections = db.query(Connection).all()
+        return [c.to_dict() for c in connections]
+    finally:
+        db.close()
 
 
 def save_connections(connections: list[dict[str, Any]]) -> None:
-    with open(CONNECTIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(connections, f, ensure_ascii=False, indent=2)
+    from app.core.database import SessionLocal
+    from app.modules.connections.models import Connection
+
+    db = SessionLocal()
+    try:
+        # Alle bestehenden Connections löschen und neu schreiben
+        db.query(Connection).delete()
+        for data in connections:
+            conn = Connection.from_dict(data)
+            db.add(conn)
+        db.commit()
+    finally:
+        db.close()
