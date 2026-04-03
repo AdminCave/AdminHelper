@@ -33,16 +33,17 @@ impl FrpcProcess {
 
 #[derive(Deserialize)]
 struct VisitorInfo {
+    id: String,
     name: String,
 }
 
-#[derive(Deserialize)]
-struct VisitorConfigResponse {
-    toml: String,
+struct FoundVisitor {
+    id: String,
+    name: String,
 }
 
 /// Fetch list of visitors from the server and find the one matching the user.
-async fn find_visitor_name(server_url: &str, token: &str, username: &str) -> Result<String, AppError> {
+async fn find_visitor(server_url: &str, token: &str, username: &str) -> Result<FoundVisitor, AppError> {
     let client = auth::build_client(server_url)?;
     let url = format!("{}/api/frp/visitors", server_url.trim_end_matches('/'));
 
@@ -63,14 +64,14 @@ async fn find_visitor_name(server_url: &str, token: &str, username: &str) -> Res
     // Match by convention: visitor name is "tech-<username>"
     let expected = format!("tech-{username}");
     if let Some(v) = visitors.iter().find(|v| v.name == expected) {
-        return Ok(v.name.clone());
+        return Ok(FoundVisitor { id: v.id.clone(), name: v.name.clone() });
     }
 
     // Fallback: first visitor (single-user setups)
     visitors
         .into_iter()
         .next()
-        .map(|v| v.name)
+        .map(|v| FoundVisitor { id: v.id, name: v.name })
         .ok_or_else(|| AppError::Validation("Kein Visitor fuer diesen Benutzer gefunden".to_string()))
 }
 
@@ -78,13 +79,13 @@ async fn find_visitor_name(server_url: &str, token: &str, username: &str) -> Res
 async fn fetch_visitor_config(
     server_url: &str,
     token: &str,
-    visitor_name: &str,
+    visitor_id: &str,
 ) -> Result<String, AppError> {
     let client = auth::build_client(server_url)?;
     let url = format!(
-        "{}/api/frp/generate/visitor-toml?name={}",
+        "{}/api/frp/generate/visitor-toml?visitor_id={}",
         server_url.trim_end_matches('/'),
-        visitor_name
+        visitor_id
     );
 
     let response = client
@@ -99,8 +100,9 @@ async fn fetch_visitor_config(
         ));
     }
 
-    let config: VisitorConfigResponse = response.json().await?;
-    Ok(config.toml)
+    // API returns raw TOML text, not JSON
+    let toml_text = response.text().await.map_err(|e| AppError::Network(e))?;
+    Ok(toml_text)
 }
 
 /// Write visitor.toml to the app data directory.
@@ -204,8 +206,9 @@ pub async fn start_tunnel(
     token: &str,
     username: &str,
 ) -> Result<TunnelStatus, AppError> {
-    let visitor_name = find_visitor_name(server_url, token, username).await?;
-    let toml_content = fetch_visitor_config(server_url, token, &visitor_name).await?;
+    let visitor = find_visitor(server_url, token, username).await?;
+    let toml_content = fetch_visitor_config(server_url, token, &visitor.id).await?;
+    let visitor_name = visitor.name;
     let config_path = write_visitor_config(&app, &toml_content)?;
     start_frpc(&app, &config_path, &state, visitor_name)?;
     Ok(tunnel_status(&state))
