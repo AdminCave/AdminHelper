@@ -18,7 +18,7 @@ from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
-from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup  # noqa: F401
 
 # Router importieren
 from app.modules.users.auth_router import router as auth_router
@@ -83,6 +83,26 @@ def _migrate_connections_json():
         db.close()
 
 
+def _migrate_add_columns():
+    """Fuegt neue Spalten zu bestehenden Tabellen hinzu (idempotent)."""
+    import sqlite3
+    from app.core.config import DATA_DIR
+    db_path = DATA_DIR / "db.sqlite3"
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    # customer_group_id zu servers
+    cursor.execute("PRAGMA table_info(servers)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "customer_group_id" not in columns:
+        cursor.execute("ALTER TABLE servers ADD COLUMN customer_group_id TEXT REFERENCES frp_customer_groups(id) ON DELETE SET NULL")
+        logger.info("Migration: customer_group_id zu servers hinzugefuegt")
+    conn.commit()
+    conn.close()
+
+
+_migrate_add_columns()
 _ensure_admin()
 _migrate_connections_json()
 

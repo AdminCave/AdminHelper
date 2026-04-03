@@ -8,6 +8,46 @@ from sqlalchemy.sql import func
 from app.core.database import Base
 
 
+class CustomerGroup(Base):
+    __tablename__ = "frp_customer_groups"
+
+    id = Column(String, primary_key=True)
+    prefix = Column(String, unique=True, nullable=False)  # z.B. "k01"
+    name = Column(String, nullable=False)  # z.B. "Kunde Beispiel GmbH"
+    port_range_start = Column(Integer, nullable=False)  # z.B. 6100
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    servers = relationship(
+        "Server",
+        backref="customer_group",
+        lazy="selectin",
+        foreign_keys="Server.customer_group_id",
+    )
+
+    def to_dict(self, include_servers: bool = False) -> dict[str, Any]:
+        result = {
+            "id": self.id,
+            "prefix": self.prefix,
+            "name": self.name,
+            "portRangeStart": self.port_range_start,
+            "notes": self.notes or "",
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_servers:
+            result["servers"] = [s.to_dict(include_connections=False) for s in self.servers]
+        return result
+
+    def next_visitor_port(self, existing_tunnels: list) -> int:
+        """Berechnet den naechsten freien Visitor-Port im Bereich dieser Gruppe."""
+        used = {t.visitor_port for t in existing_tunnels if t.visitor_port}
+        for offset in range(1, 100):
+            port = self.port_range_start + offset
+            if port not in used:
+                return port
+        return self.port_range_start + 100
+
+
 class FrpServerConfig(Base):
     __tablename__ = "frp_server_config"
 

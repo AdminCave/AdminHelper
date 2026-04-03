@@ -16,7 +16,9 @@ const state = {
   editingServerId: null,
   frpConfig: null,
   frpTunnels: [],
+  customerGroups: [],
   editingTunnelId: null,
+  editingGroupId: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -108,8 +110,9 @@ async function initApp() {
     document.getElementById('exportConnBtn').classList.remove('hidden');
     document.getElementById('importConnBtn').classList.remove('hidden');
     document.getElementById('connActionsHeader').textContent = 'Aktionen';
-    // Server-Liste vorab laden (für Connection-Dropdown)
+    // Server-Liste und Kundengruppen vorab laden
     try { state.servers = await get('/api/servers'); } catch { /* ignore */ }
+    try { state.customerGroups = await get('/api/frp/customer-groups'); } catch { /* ignore */ }
   }
 
   const hash = location.hash.replace('#/', '') || 'connections';
@@ -833,6 +836,13 @@ function openServerModal(server) {
   document.getElementById('sfOsType').value   = server?.osType   || '';
   document.getElementById('sfTags').value     = (server?.tags || []).join(', ');
   document.getElementById('sfNotes').value    = server?.notes    || '';
+  // Kundengruppen-Dropdown befuellen
+  const cgSel = document.getElementById('sfCustomerGroup');
+  cgSel.innerHTML = '<option value="">-- Keine --</option>';
+  state.customerGroups.forEach(g => {
+    cgSel.innerHTML += `<option value="${esc(g.id)}">${esc(g.prefix)} \u2013 ${esc(g.name)}</option>`;
+  });
+  cgSel.value = server?.customerGroupId || '';
   showModal('serverModal');
 }
 
@@ -844,6 +854,7 @@ document.getElementById('serverForm').addEventListener('submit', async (e) => {
     os_type:  document.getElementById('sfOsType').value || null,
     tags:     document.getElementById('sfTags').value.split(',').map(t => t.trim()).filter(Boolean),
     notes:    document.getElementById('sfNotes').value.trim(),
+    customer_group_id: document.getElementById('sfCustomerGroup').value || null,
   };
   try {
     if (state.editingServerId) {
@@ -882,6 +893,7 @@ async function loadFrp() {
     const configs = await get('/api/frp/server-config');
     state.frpConfig = configs.length > 0 ? configs[0] : null;
     state.frpTunnels = await get('/api/frp/tunnels');
+    state.customerGroups = await get('/api/frp/customer-groups');
     if (state.servers.length === 0) {
       state.servers = await get('/api/servers');
     }
@@ -914,6 +926,24 @@ function renderFrp() {
     infoEl.textContent = 'Noch keine FRP-Server Konfiguration vorhanden. Klicke auf "Konfigurieren" um zu starten.';
     downloadFrps.style.display = 'none';
     downloadVisitor.style.display = 'none';
+  }
+
+  // Kundengruppen rendern
+  const groupListEl = document.getElementById('groupList');
+  if (state.customerGroups.length > 0) {
+    groupListEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${
+      state.customerGroups.map(g => `
+        <div style="background:var(--surface);padding:8px 14px;border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px">
+          <strong style="color:var(--accent)">${esc(g.prefix)}</strong>
+          <span>${esc(g.name)}</span>
+          <span style="color:var(--text-soft);font-size:11px">Ports: ${g.portRangeStart}+</span>
+          <button class="btn small" onclick="editGroup('${esc(g.id)}')" style="padding:2px 8px;font-size:11px">&#x270E;</button>
+          <button class="btn small ghost" onclick="deleteGroup('${esc(g.id)}')" style="padding:2px 8px;font-size:11px">&#x2715;</button>
+        </div>
+      `).join('')
+    }</div>`;
+  } else {
+    groupListEl.textContent = 'Keine Kundengruppen vorhanden.';
   }
 
   // Tunnel nach Server gruppieren
@@ -1104,6 +1134,7 @@ document.getElementById('frpTunnelForm').addEventListener('submit', async (e) =>
     secret_key:    document.getElementById('ftSecret').value.trim() || null,
     custom_domains: document.getElementById('ftDomains').value.trim() || null,
     visitor_port:  parseInt(document.getElementById('ftVisitorPort').value) || null,
+    auto_create_connection: document.getElementById('ftAutoConn').checked,
   };
   try {
     if (state.editingTunnelId) {
@@ -1180,6 +1211,89 @@ document.getElementById('copyFrpConfigBtn').addEventListener('click', () => {
   const text = document.getElementById('frpPreviewContent').textContent;
   navigator.clipboard.writeText(text).then(() => toast('In Zwischenablage kopiert'));
 });
+
+// Bulk-ZIP Download
+document.getElementById('bulkZipBtn').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/frp/generate/bulk-zip', {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'frp-configs.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('ZIP heruntergeladen');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+// Auto-Connection Checkbox nur bei STCP anzeigen
+document.getElementById('ftType').addEventListener('change', () => {
+  const isStcp = document.getElementById('ftType').value === 'stcp';
+  document.getElementById('ftAutoConnField').style.display = isStcp ? '' : 'none';
+  if (!isStcp) document.getElementById('ftAutoConn').checked = false;
+});
+
+// ── Customer Groups ──────────────────────────────────────────────────────
+document.getElementById('addGroupBtn').addEventListener('click', () => openGroupModal(null));
+
+function openGroupModal(group) {
+  state.editingGroupId = group ? group.id : null;
+  document.getElementById('groupModalTitle').textContent = group ? 'Kundengruppe bearbeiten' : 'Neue Kundengruppe';
+  document.getElementById('gfPrefix').value    = group?.prefix         || '';
+  document.getElementById('gfName').value      = group?.name           || '';
+  document.getElementById('gfPortStart').value = group?.portRangeStart || '';
+  document.getElementById('gfNotes').value     = group?.notes          || '';
+  document.getElementById('gfPrefix').disabled = !!group;
+  showModal('groupModal');
+}
+
+document.getElementById('groupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {
+    prefix:           document.getElementById('gfPrefix').value.trim().toLowerCase(),
+    name:             document.getElementById('gfName').value.trim(),
+    port_range_start: parseInt(document.getElementById('gfPortStart').value),
+    notes:            document.getElementById('gfNotes').value.trim() || null,
+  };
+  try {
+    if (state.editingGroupId) {
+      await put(`/api/frp/customer-groups/${state.editingGroupId}`, data);
+      toast('Kundengruppe gespeichert');
+    } else {
+      await post('/api/frp/customer-groups', data);
+      toast('Kundengruppe erstellt');
+    }
+    closeModal('groupModal');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+function editGroup(id) {
+  const g = state.customerGroups.find(g => g.id === id);
+  if (g) openGroupModal(g);
+}
+
+async function deleteGroup(id) {
+  if (!confirm('Kundengruppe wirklich l\u00f6schen?')) return;
+  try {
+    await del(`/api/frp/customer-groups/${id}`);
+    toast('Kundengruppe gel\u00f6scht');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
 
 // ── Export / Import ────────────────────────────────────────────────────────
 document.getElementById('exportConnBtn').addEventListener('click', async () => {

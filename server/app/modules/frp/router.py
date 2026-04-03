@@ -2,18 +2,23 @@ import json
 import secrets
 import uuid
 
+import io
+import zipfile
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import get_current_admin
 from app.core.events import fire_event
-from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup
 from app.modules.frp.schemas import (
     FrpServerConfigCreate, FrpServerConfigUpdate,
     FrpTunnelCreate, FrpTunnelUpdate,
+    CustomerGroupCreate, CustomerGroupUpdate,
 )
+from app.modules.connections.models import Connection
 from app.modules.frp.config_generator import (
     generate_frps_toml, generate_frpc_toml, generate_visitor_toml,
 )
@@ -155,6 +160,23 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
         extra_config=json.dumps(data.extra_config) if data.extra_config else None,
     )
     db.add(tunnel)
+    db.flush()
+
+    # Auto-Connection erstellen wenn gewuenscht
+    if data.auto_create_connection and data.tunnel_type == "stcp" and data.visitor_port:
+        conn_kind = "ssh" if data.protocol == "ssh" else "rdp" if data.protocol == "rdp" else "web"
+        auto_conn = Connection(
+            id=str(uuid.uuid4()),
+            name=f"{data.name} (via FRP)",
+            kind=conn_kind,
+            host="127.0.0.1",
+            port=data.visitor_port,
+            server_id=data.server_id,
+        )
+        db.add(auto_conn)
+        db.flush()
+        tunnel.connection_id = auto_conn.id
+
     db.commit()
     db.refresh(tunnel)
     fire_event("frp.tunnel.created", {"id": tunnel.id, "name": tunnel.name, "serverId": server.id})
@@ -268,3 +290,129 @@ def gen_visitor_toml(
 
     toml = generate_visitor_toml(config, tunnels)
     return PlainTextResponse(toml, media_type="application/toml")
+
+
+@router.get("/generate/bulk-zip")
+def gen_bulk_zip(
+    config_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _admin=Depends(get_current_admin),
+):
+    """Generiert ein ZIP mit frps.toml, visitor.toml und frpc.toml pro Server."""
+    if config_id:
+        config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
+    else:
+        config = db.query(FrpServerConfig).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # frps.toml
+        zf.writestr("frps.toml", generate_frps_toml(config))
+
+        # Alle Tunnel nach Server gruppieren
+        all_tunnels = db.query(FrpTunnel).filter(
+            FrpTunnel.frp_config_id == config.id,
+            FrpTunnel.enabled == True,
+        ).all()
+
+        by_server = {}
+        for t in all_tunnels:
+            by_server.setdefault(t.server_id, []).append(t)
+
+        for server_id, tunnels in by_server.items():
+            server = db.query(Server).filter(Server.id == server_id).first()
+            if not server:
+                continue
+            frpc = generate_frpc_toml(config, tunnels, server.name)
+            zf.writestr(f"clients/{server.name}/frpc.toml", frpc)
+
+        # visitor.toml
+        stcp_tunnels = [t for t in all_tunnels if t.tunnel_type == "stcp"]
+        zf.writestr("visitor.toml", generate_visitor_toml(config, stcp_tunnels))
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=frp-configs.zip"},
+    )
+
+
+# --------------- Customer Groups ---------------
+
+@router.get("/customer-groups")
+def list_customer_groups(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    groups = db.query(CustomerGroup).order_by(CustomerGroup.prefix).all()
+    return [g.to_dict() for g in groups]
+
+
+@router.post("/customer-groups", status_code=status.HTTP_201_CREATED)
+def create_customer_group(data: CustomerGroupCreate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    existing = db.query(CustomerGroup).filter(CustomerGroup.prefix == data.prefix).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Prefix '{data.prefix}' existiert bereits")
+
+    group = CustomerGroup(
+        id=str(uuid.uuid4()),
+        prefix=data.prefix,
+        name=data.name,
+        port_range_start=data.port_range_start,
+        notes=data.notes,
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return group.to_dict()
+
+
+@router.get("/customer-groups/{group_id}")
+def get_customer_group(group_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
+    return group.to_dict(include_servers=True)
+
+
+@router.put("/customer-groups/{group_id}")
+def update_customer_group(group_id: str, data: CustomerGroupUpdate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
+
+    if data.prefix is not None and data.prefix != group.prefix:
+        existing = db.query(CustomerGroup).filter(CustomerGroup.prefix == data.prefix).first()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Prefix '{data.prefix}' existiert bereits")
+
+    for field in ["prefix", "name", "port_range_start", "notes"]:
+        value = getattr(data, field)
+        if value is not None:
+            setattr(group, field, value)
+
+    db.commit()
+    db.refresh(group)
+    return group.to_dict()
+
+
+@router.delete("/customer-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_customer_group(group_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
+    db.delete(group)
+    db.commit()
+
+
+@router.get("/customer-groups/{group_id}/next-port")
+def get_next_visitor_port(group_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    """Gibt den naechsten freien Visitor-Port fuer diese Kundengruppe zurueck."""
+    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
+
+    # Alle Tunnel der Server in dieser Gruppe sammeln
+    server_ids = [s.id for s in group.servers]
+    tunnels = db.query(FrpTunnel).filter(FrpTunnel.server_id.in_(server_ids)).all() if server_ids else []
+    return {"nextPort": group.next_visitor_port(tunnels)}

@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -16,6 +16,7 @@ class Server(Base):
     os_type = Column(String, nullable=True)
     tags = Column(String, nullable=True)  # JSON-Array als String
     notes = Column(String, nullable=True)
+    customer_group_id = Column(String, ForeignKey("frp_customer_groups.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     connections = relationship(
@@ -39,6 +40,7 @@ class Server(Base):
             "osType": self.os_type,
             "tags": json.loads(self.tags) if self.tags else [],
             "notes": self.notes or "",
+            "customerGroupId": self.customer_group_id,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
         if include_connections:

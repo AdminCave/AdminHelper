@@ -8,6 +8,7 @@ class ServerCreate(BaseModel):
     os_type: Optional[str] = None
     tags: Optional[list[str]] = []
     notes: Optional[str] = ""
+    customer_group_id: Optional[str] = None
 
 
 class ServerUpdate(BaseModel):
@@ -16,3 +17,4 @@ class ServerUpdate(BaseModel):
     os_type: Optional[str] = None
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
+    customer_group_id: Optional[str] = None

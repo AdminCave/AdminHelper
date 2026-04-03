@@ -2,6 +2,22 @@ from pydantic import BaseModel
 from typing import Optional
 
 
+# --- Customer Groups ---
+
+class CustomerGroupCreate(BaseModel):
+    prefix: str  # z.B. "k01"
+    name: str  # z.B. "Kunde Beispiel GmbH"
+    port_range_start: int  # z.B. 6100
+    notes: Optional[str] = None
+
+
+class CustomerGroupUpdate(BaseModel):
+    prefix: Optional[str] = None
+    name: Optional[str] = None
+    port_range_start: Optional[int] = None
+    notes: Optional[str] = None
+
+
 # --- FRP Server Config ---
 
 class FrpServerConfigCreate(BaseModel):
@@ -48,6 +64,7 @@ class FrpTunnelCreate(BaseModel):
     connection_id: Optional[str] = None
     enabled: bool = True
     extra_config: Optional[dict] = None
+    auto_create_connection: bool = False  # automatisch passende Connection erstellen
 
 
 class FrpTunnelUpdate(BaseModel):
