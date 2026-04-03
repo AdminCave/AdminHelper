@@ -3,6 +3,18 @@ use crate::models::Connection;
 use crate::terminal::{open_linux_terminal, open_windows_terminal};
 use crate::validation::{validate_host, validate_no_control_chars};
 
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn build_ssh_command(args: &[String]) -> String {
+    let mut parts = vec!["ssh".to_string()];
+    for arg in args {
+        parts.push(shell_escape(arg));
+    }
+    parts.join(" ")
+}
+
 fn required(value: &Option<String>, label: &str) -> Result<String, AppError> {
     let trimmed = value.as_deref().unwrap_or("").trim().to_string();
     if trimmed.is_empty() {
@@ -47,6 +59,12 @@ pub fn open_ssh(connection: &Connection) -> Result<(), AppError> {
     if cfg!(target_os = "windows") {
         open_windows_terminal("ssh", &args)
     } else {
-        open_linux_terminal("ssh", &args)
+        // Wrap SSH in bash so the terminal stays open on connection failure
+        let ssh_cmd = build_ssh_command(&args);
+        let bash_args = vec![
+            "-c".to_string(),
+            format!("{ssh_cmd}; echo ''; echo 'Verbindung beendet. Druecke Enter zum Schliessen.'; read"),
+        ];
+        open_linux_terminal("bash", &bash_args)
     }
 }
