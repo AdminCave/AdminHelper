@@ -78,6 +78,7 @@ def generate_frpc_toml(
     config: FrpServerConfig,
     tunnels: list[FrpTunnel],
     frpc_user: str,
+    allow_users: list[str] | None = None,
 ) -> str:
     """Generiert eine frpc.toml fuer einen Zielhost.
 
@@ -114,7 +115,9 @@ def generate_frpc_toml(
 
         if tunnel.tunnel_type == "stcp":
             lines.append(f'secretKey = "{tunnel.secret_key}"')
-            lines.append('allowUsers = ["ops-admin"]')
+            users = allow_users if allow_users else ["ops-admin"]
+            user_list = ", ".join(f'"{u}"' for u in users)
+            lines.append(f'allowUsers = [{user_list}]')
 
         if tunnel.tunnel_type == "https" and tunnel.custom_domains:
             domains = [d.strip() for d in tunnel.custom_domains.split(",")]

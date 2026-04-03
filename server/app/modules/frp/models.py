@@ -2,7 +2,7 @@ import json
 import secrets
 from typing import Any
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -144,6 +144,40 @@ class FrpTunnel(Base):
             "extraConfig": json.loads(self.extra_config) if self.extra_config else None,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+# Zuordnungstabelle: Visitor <-> Server (many-to-many)
+visitor_server_assoc = Table(
+    "frp_visitor_servers",
+    Base.metadata,
+    Column("visitor_id", String, ForeignKey("frp_visitors.id", ondelete="CASCADE"), primary_key=True),
+    Column("server_id", String, ForeignKey("servers.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Visitor(Base):
+    __tablename__ = "frp_visitors"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, unique=True, nullable=False)  # z.B. "tech-kevin"
+    display_name = Column(String, nullable=True)  # z.B. "Kevin Stenzel"
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    servers = relationship("Server", secondary=visitor_server_assoc, lazy="selectin")
+
+    def to_dict(self, include_servers: bool = True) -> dict[str, Any]:
+        result = {
+            "id": self.id,
+            "name": self.name,
+            "displayName": self.display_name or "",
+            "notes": self.notes or "",
+            "serverIds": [s.id for s in self.servers],
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_servers:
+            result["servers"] = [{"id": s.id, "name": s.name, "hostname": s.hostname} for s in self.servers]
+        return result
 
 
 class ProvisionToken(Base):

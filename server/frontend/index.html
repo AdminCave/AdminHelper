@@ -250,6 +250,15 @@
           <div id="groupList" style="font-size:13px;color:var(--text-soft)">Keine Kundengruppen vorhanden.</div>
         </div>
 
+        <!-- Visitor-Profile -->
+        <div class="panel" id="visitorPanel" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="margin:0;font-size:16px;color:var(--text)">Visitor-Profile</h3>
+            <button id="addVisitorBtn" class="btn small primary">+ Visitor</button>
+          </div>
+          <div id="visitorList" style="font-size:13px;color:var(--text-soft)">Keine Visitor-Profile vorhanden.</div>
+        </div>
+
         <!-- FRP Server Config Karte -->
         <div class="panel" id="frpConfigPanel" style="margin-bottom:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -485,6 +494,38 @@
         </div>
         <div class="modal-actions">
           <button type="button" class="btn ghost" data-close="groupModal">Abbrechen</button>
+          <button type="submit" class="btn primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Visitor -->
+  <div id="visitorModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(560px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title" id="visitorModalTitle">Visitor-Profil</div>
+        <button class="modal-close" data-close="visitorModal">&#x2715;</button>
+      </div>
+      <form id="visitorForm" class="modal-form">
+        <div class="field">
+          <label>Name * (wird als frpc user verwendet)</label>
+          <input id="vfName" required placeholder="z.B. tech-kevin" pattern="[a-z0-9\-]+" />
+        </div>
+        <div class="field">
+          <label>Anzeigename</label>
+          <input id="vfDisplayName" placeholder="z.B. Kevin Stenzel" />
+        </div>
+        <div class="field full">
+          <label>Server zuweisen</label>
+          <div id="vfServerList" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;background:var(--surface);padding:8px;border-radius:var(--radius-sm)"></div>
+        </div>
+        <div class="field">
+          <label>Notizen</label>
+          <textarea id="vfNotes" placeholder="Optionale Notizen..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="visitorModal">Abbrechen</button>
           <button type="submit" class="btn primary">Speichern</button>
         </div>
       </form>

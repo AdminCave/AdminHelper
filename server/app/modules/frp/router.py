@@ -14,11 +14,12 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import get_current_admin, ApiKeyOrUser, hash_api_key, generate_api_key
 from app.core.events import fire_event
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup, ProvisionToken
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup, ProvisionToken, Visitor
 from app.modules.frp.schemas import (
     FrpServerConfigCreate, FrpServerConfigUpdate,
     FrpTunnelCreate, FrpTunnelUpdate,
     CustomerGroupCreate, CustomerGroupUpdate,
+    VisitorCreate, VisitorUpdate,
 )
 from app.modules.connections.models import Connection
 from app.modules.frp.config_generator import (
@@ -31,6 +32,16 @@ from app.modules.servers.models import Server
 from app.modules.api_keys.models import ApiKey
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
+
+
+def _get_allow_users(db: Session, server_id: str) -> list[str]:
+    """Ermittelt alle Visitor-Usernamen, die Zugriff auf diesen Server haben."""
+    visitors = db.query(Visitor).all()
+    users = []
+    for v in visitors:
+        if any(s.id == server_id for s in v.servers):
+            users.append(v.name)
+    return users if users else ["ops-admin"]
 
 
 # --------------- FRP Server Config ---------------
@@ -271,13 +282,15 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
 
     # frpc_user aus dem ersten Tunnel-Namen ableiten oder Server-Name nutzen
     frpc_user = server.name
-    toml = generate_frpc_toml(config, tunnels, frpc_user)
+    allow_users = _get_allow_users(db, server_id)
+    toml = generate_frpc_toml(config, tunnels, frpc_user, allow_users)
     return PlainTextResponse(toml, media_type="application/toml")
 
 
 @router.get("/generate/visitor-toml")
 def gen_visitor_toml(
     config_id: str | None = Query(None),
+    visitor_id: str | None = Query(None),
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
@@ -288,13 +301,24 @@ def gen_visitor_toml(
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
 
-    tunnels = db.query(FrpTunnel).filter(
+    tunnel_query = db.query(FrpTunnel).filter(
         FrpTunnel.frp_config_id == config.id,
         FrpTunnel.tunnel_type == "stcp",
         FrpTunnel.enabled == True,
-    ).all()
+    )
 
-    toml = generate_visitor_toml(config, tunnels)
+    visitor_user = "ops-admin"
+    if visitor_id:
+        visitor = db.query(Visitor).filter(Visitor.id == visitor_id).first()
+        if not visitor:
+            raise HTTPException(status_code=404, detail="Visitor nicht gefunden")
+        visitor_user = visitor.name
+        server_ids = [s.id for s in visitor.servers]
+        if server_ids:
+            tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
+
+    tunnels = tunnel_query.all()
+    toml = generate_visitor_toml(config, tunnels, visitor_user)
     return PlainTextResponse(toml, media_type="application/toml")
 
 
@@ -331,12 +355,22 @@ def gen_bulk_zip(
             server = db.query(Server).filter(Server.id == server_id).first()
             if not server:
                 continue
-            frpc = generate_frpc_toml(config, tunnels, server.name)
+            allow_users = _get_allow_users(db, server_id)
+            frpc = generate_frpc_toml(config, tunnels, server.name, allow_users)
             zf.writestr(f"clients/{server.name}/frpc.toml", frpc)
 
-        # visitor.toml
+        # visitor.toml — eine pro Visitor-Profil
         stcp_tunnels = [t for t in all_tunnels if t.tunnel_type == "stcp"]
-        zf.writestr("visitor.toml", generate_visitor_toml(config, stcp_tunnels))
+        visitors = db.query(Visitor).order_by(Visitor.name).all()
+        if visitors:
+            for visitor in visitors:
+                v_server_ids = {s.id for s in visitor.servers}
+                v_tunnels = [t for t in stcp_tunnels if t.server_id in v_server_ids]
+                if v_tunnels:
+                    zf.writestr(f"visitors/visitor-{visitor.name}.toml", generate_visitor_toml(config, v_tunnels, visitor.name))
+        else:
+            # Fallback: eine globale visitor.toml wenn keine Visitor-Profile existieren
+            zf.writestr("visitor.toml", generate_visitor_toml(config, stcp_tunnels))
 
     buf.seek(0)
     return StreamingResponse(
@@ -585,6 +619,72 @@ def get_next_visitor_port(group_id: str, db: Session = Depends(get_db), _admin=D
     return {"nextPort": group.next_visitor_port(tunnels)}
 
 
+# --------------- Visitors ---------------
+
+@router.get("/visitors")
+def list_visitors(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    visitors = db.query(Visitor).order_by(Visitor.name).all()
+    return [v.to_dict() for v in visitors]
+
+
+@router.post("/visitors", status_code=status.HTTP_201_CREATED)
+def create_visitor(data: VisitorCreate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    existing = db.query(Visitor).filter(Visitor.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Visitor-Name '{data.name}' existiert bereits")
+
+    visitor = Visitor(
+        id=str(uuid.uuid4()),
+        name=data.name,
+        display_name=data.display_name,
+        notes=data.notes,
+    )
+
+    # Server zuweisen
+    if data.server_ids:
+        servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
+        visitor.servers = servers
+
+    db.add(visitor)
+    db.commit()
+    db.refresh(visitor)
+    return visitor.to_dict()
+
+
+@router.put("/visitors/{visitor_id}")
+def update_visitor(visitor_id: str, data: VisitorUpdate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    visitor = db.query(Visitor).filter(Visitor.id == visitor_id).first()
+    if not visitor:
+        raise HTTPException(status_code=404, detail="Visitor nicht gefunden")
+
+    if data.name is not None and data.name != visitor.name:
+        existing = db.query(Visitor).filter(Visitor.name == data.name).first()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Visitor-Name '{data.name}' existiert bereits")
+        visitor.name = data.name
+
+    if data.display_name is not None:
+        visitor.display_name = data.display_name
+    if data.notes is not None:
+        visitor.notes = data.notes
+    if data.server_ids is not None:
+        servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
+        visitor.servers = servers
+
+    db.commit()
+    db.refresh(visitor)
+    return visitor.to_dict()
+
+
+@router.delete("/visitors/{visitor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_visitor(visitor_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    visitor = db.query(Visitor).filter(Visitor.id == visitor_id).first()
+    if not visitor:
+        raise HTTPException(status_code=404, detail="Visitor nicht gefunden")
+    db.delete(visitor)
+    db.commit()
+
+
 # --------------- Provisioning ---------------
 
 read_dep = ApiKeyOrUser(require_write=False)
@@ -694,7 +794,8 @@ def activate_provision(
         FrpTunnel.server_id == server_id,
         FrpTunnel.frp_config_id == config.id,
     ).all()
-    frpc_toml = generate_frpc_toml(config, tunnels, server.name)
+    allow_users = _get_allow_users(db, server_id)
+    frpc_toml = generate_frpc_toml(config, tunnels, server.name, allow_users)
 
     # PKI Bundle
     pki_bundle = provisioner.build_pki_bundle_b64(server.name)
@@ -727,7 +828,8 @@ def get_provision_config(
         FrpTunnel.frp_config_id == config.id,
     ).all()
 
-    toml_content = generate_frpc_toml(config, tunnels, server.name)
+    allow_users = _get_allow_users(db, server_id)
+    toml_content = generate_frpc_toml(config, tunnels, server.name, allow_users)
     return PlainTextResponse(toml_content, media_type="application/toml")
 
 
@@ -751,5 +853,6 @@ def get_provision_config_hash(
         FrpTunnel.frp_config_id == config.id,
     ).all()
 
-    config_hash = provisioner.get_config_hash(config, tunnels, server.name)
+    allow_users = _get_allow_users(db, server_id)
+    config_hash = provisioner.get_config_hash(config, tunnels, server.name, allow_users=allow_users)
     return {"hash": config_hash}

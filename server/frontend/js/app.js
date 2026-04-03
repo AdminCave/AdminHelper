@@ -19,6 +19,8 @@ const state = {
   customerGroups: [],
   editingTunnelId: null,
   editingGroupId: null,
+  visitors: [],
+  editingVisitorId: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -894,6 +896,7 @@ async function loadFrp() {
     state.frpConfig = configs.length > 0 ? configs[0] : null;
     state.frpTunnels = await get('/api/frp/tunnels');
     state.customerGroups = await get('/api/frp/customer-groups');
+    state.visitors = await get('/api/frp/visitors');
     if (state.servers.length === 0) {
       state.servers = await get('/api/servers');
     }
@@ -949,6 +952,26 @@ function renderFrp() {
     }</div>`;
   } else {
     groupListEl.textContent = 'Keine Kundengruppen vorhanden.';
+  }
+
+  // Visitor-Profile rendern
+  const visitorListEl = document.getElementById('visitorList');
+  if (state.visitors.length > 0) {
+    visitorListEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${
+      state.visitors.map(v => {
+        const serverNames = v.servers ? v.servers.map(s => s.name).join(', ') : '';
+        return `
+        <div style="background:var(--surface);padding:8px 14px;border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px">
+          <strong style="color:var(--accent)">${esc(v.name)}</strong>
+          ${v.displayName ? `<span>${esc(v.displayName)}</span>` : ''}
+          <span style="color:var(--text-soft);font-size:11px">${serverNames || 'keine Server'}</span>
+          <button class="btn small" onclick="editVisitor('${esc(v.id)}')" style="padding:2px 8px;font-size:11px">&#x270E;</button>
+          <button class="btn small ghost" onclick="deleteVisitor('${esc(v.id)}')" style="padding:2px 8px;font-size:11px">&#x2715;</button>
+        </div>`;
+      }).join('')
+    }</div>`;
+  } else {
+    visitorListEl.textContent = 'Keine Visitor-Profile vorhanden. Erstelle Profile, um individuelle visitor.toml-Configs zu generieren.';
   }
 
   // Tunnel nach Server gruppieren
@@ -1195,11 +1218,47 @@ document.getElementById('downloadFrpsBtn').addEventListener('click', async () =>
 });
 
 document.getElementById('downloadVisitorBtn').addEventListener('click', async () => {
-  try {
-    const toml = await _fetchToml('/api/frp/generate/visitor-toml');
-    _showConfigPreview('visitor.toml (Admin-PC)', toml);
-  } catch (err) { toast(err.message, 'error'); }
+  if (state.visitors.length === 0) {
+    // Kein Visitor-Profil: globale visitor.toml
+    try {
+      const toml = await _fetchToml('/api/frp/generate/visitor-toml');
+      _showConfigPreview('visitor.toml (alle Tunnel)', toml);
+    } catch (err) { toast(err.message, 'error'); }
+  } else {
+    // Visitor-Profile vorhanden: Auswahl anzeigen
+    let html = '<div style="display:flex;flex-direction:column;gap:12px">';
+    html += '<p style="margin:0;color:var(--text-soft)">Waehle ein Visitor-Profil fuer die Config:</p>';
+    state.visitors.forEach(v => {
+      const serverNames = v.servers ? v.servers.map(s => s.name).join(', ') : '';
+      html += `<div style="background:var(--surface);padding:10px 14px;border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong>${esc(v.name)}</strong>
+          ${v.displayName ? `<span style="color:var(--text-soft);margin-left:8px">${esc(v.displayName)}</span>` : ''}
+          <div style="font-size:11px;color:var(--text-soft)">${serverNames || 'Keine Server zugewiesen'}</div>
+        </div>
+        <button class="btn small primary" onclick="downloadVisitorToml('${esc(v.id)}', '${esc(v.name)}')">visitor.toml</button>
+      </div>`;
+    });
+    // Globale Option
+    html += `<div style="background:var(--surface);padding:10px 14px;border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+      <div><strong>Alle Tunnel</strong><div style="font-size:11px;color:var(--text-soft)">Globale visitor.toml mit allen STCP-Tunneln</div></div>
+      <button class="btn small" onclick="downloadVisitorToml(null, 'global')">visitor.toml</button>
+    </div>`;
+    html += '</div>';
+    _showHtmlPreview('Visitor-Config herunterladen', html);
+  }
 });
+
+async function downloadVisitorToml(visitorId, name) {
+  try {
+    const url = visitorId
+      ? `/api/frp/generate/visitor-toml?visitor_id=${visitorId}`
+      : '/api/frp/generate/visitor-toml';
+    const toml = await _fetchToml(url);
+    closeModal('frpPreviewModal');
+    _showConfigPreview(`visitor.toml (${name})`, toml);
+  } catch (err) { toast(err.message, 'error'); }
+}
 
 async function downloadFrpcToml(serverId) {
   try {
@@ -1501,6 +1560,74 @@ async function _loadProvisionTokens(serverId) {
     el.innerHTML = html;
   } catch (err) {
     el.textContent = 'Fehler beim Laden.';
+  }
+}
+
+// ── Visitors ────────────────────────────────────────────────────────────
+document.getElementById('addVisitorBtn').addEventListener('click', () => openVisitorModal(null));
+
+function openVisitorModal(visitor) {
+  state.editingVisitorId = visitor ? visitor.id : null;
+  document.getElementById('visitorModalTitle').textContent = visitor ? 'Visitor bearbeiten' : 'Neues Visitor-Profil';
+  document.getElementById('vfName').value = visitor?.name || '';
+  document.getElementById('vfName').disabled = !!visitor;
+  document.getElementById('vfDisplayName').value = visitor?.displayName || '';
+  document.getElementById('vfNotes').value = visitor?.notes || '';
+
+  // Server-Checkboxen
+  const selectedIds = new Set(visitor?.serverIds || []);
+  const listEl = document.getElementById('vfServerList');
+  listEl.innerHTML = state.servers.map(s => `
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" value="${esc(s.id)}" ${selectedIds.has(s.id) ? 'checked' : ''} />
+      <span>${esc(s.name)}</span>
+      <span style="color:var(--text-soft);font-size:11px">${esc(s.hostname)}</span>
+    </label>
+  `).join('');
+  if (state.servers.length === 0) {
+    listEl.innerHTML = '<span style="color:var(--text-soft)">Keine Server vorhanden.</span>';
+  }
+
+  showModal('visitorModal');
+}
+
+document.getElementById('visitorForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const serverCheckboxes = document.querySelectorAll('#vfServerList input[type="checkbox"]:checked');
+  const data = {
+    name: document.getElementById('vfName').value.trim().toLowerCase(),
+    display_name: document.getElementById('vfDisplayName').value.trim() || null,
+    notes: document.getElementById('vfNotes').value.trim() || null,
+    server_ids: Array.from(serverCheckboxes).map(cb => cb.value),
+  };
+  try {
+    if (state.editingVisitorId) {
+      await put(`/api/frp/visitors/${state.editingVisitorId}`, data);
+      toast('Visitor gespeichert');
+    } else {
+      await post('/api/frp/visitors', data);
+      toast('Visitor erstellt');
+    }
+    closeModal('visitorModal');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+function editVisitor(id) {
+  const v = state.visitors.find(v => v.id === id);
+  if (v) openVisitorModal(v);
+}
+
+async function deleteVisitor(id) {
+  if (!confirm('Visitor-Profil wirklich loeschen?')) return;
+  try {
+    await del(`/api/frp/visitors/${id}`);
+    toast('Visitor geloescht');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
   }
 }
 

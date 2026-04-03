@@ -18,7 +18,7 @@ from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup, ProvisionToken  # noqa: F401
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup, ProvisionToken, Visitor  # noqa: F401
 
 # Router importieren
 from app.modules.users.auth_router import router as auth_router

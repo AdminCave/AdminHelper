@@ -69,6 +69,22 @@ class FrpTunnelCreate(BaseModel):
     auto_create_connection: bool = False  # automatisch passende Connection erstellen
 
 
+# --- Visitors ---
+
+class VisitorCreate(BaseModel):
+    name: str  # z.B. "tech-kevin" (wird als frpc user verwendet)
+    display_name: Optional[str] = None
+    notes: Optional[str] = None
+    server_ids: list[str] = []  # zugewiesene Server
+
+
+class VisitorUpdate(BaseModel):
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    notes: Optional[str] = None
+    server_ids: Optional[list[str]] = None
+
+
 class FrpTunnelUpdate(BaseModel):
     name: Optional[str] = None
     tunnel_type: Optional[str] = None
