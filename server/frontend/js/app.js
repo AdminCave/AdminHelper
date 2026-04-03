@@ -1265,10 +1265,14 @@ document.getElementById('pkiBtn').addEventListener('click', async () => {
     html += '<h4 style="margin:0 0 8px">Certificate Authority (CA)</h4>';
     if (status.caExists) {
       html += `<p style="margin:0;color:var(--text-soft)">Gueltig bis: <strong>${new Date(status.caExpiry).toLocaleDateString('de-DE')}</strong></p>`;
+      html += `<div style="display:flex;gap:8px;margin-top:8px">`;
+      html += `<button class="btn small" onclick="pkiDownload('ca.crt')">ca.crt herunterladen</button>`;
+      html += `<button class="btn small primary" onclick="pkiGenerateCA()">CA neu generieren</button>`;
+      html += `</div>`;
     } else {
       html += '<p style="margin:0;color:var(--text-soft)">Keine CA vorhanden.</p>';
+      html += `<button class="btn small primary" style="margin-top:8px" onclick="pkiGenerateCA()">CA erstellen</button>`;
     }
-    html += `<button class="btn small primary" style="margin-top:8px" onclick="pkiGenerateCA()">${status.caExists ? 'CA neu generieren' : 'CA erstellen'}</button>`;
     html += '</div>';
 
     // Server Cert
@@ -1276,11 +1280,18 @@ document.getElementById('pkiBtn').addEventListener('click', async () => {
     html += '<h4 style="margin:0 0 8px">Server-Zertifikat (frps)</h4>';
     if (status.serverCertExists) {
       html += `<p style="margin:0;color:var(--text-soft)">Gueltig bis: <strong>${new Date(status.serverCertExpiry).toLocaleDateString('de-DE')}</strong></p>`;
+      html += `<div style="display:flex;gap:8px;margin-top:8px">`;
+      html += `<button class="btn small" onclick="pkiDownload('frps.crt')">frps.crt</button>`;
+      html += `<button class="btn small" onclick="pkiDownload('frps.key')">frps.key</button>`;
+      if (status.caExists) {
+        html += `<button class="btn small primary" onclick="pkiGenerateServerCert()">Neu generieren</button>`;
+      }
+      html += `</div>`;
     } else {
       html += '<p style="margin:0;color:var(--text-soft)">Kein Server-Zertifikat vorhanden.</p>';
-    }
-    if (status.caExists) {
-      html += `<button class="btn small" style="margin-top:8px" onclick="pkiGenerateServerCert()">Server-Cert generieren</button>`;
+      if (status.caExists) {
+        html += `<button class="btn small" style="margin-top:8px" onclick="pkiGenerateServerCert()">Server-Cert generieren</button>`;
+      }
     }
     html += '</div>';
 
@@ -1288,9 +1299,14 @@ document.getElementById('pkiBtn').addEventListener('click', async () => {
     html += '<div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">';
     html += '<h4 style="margin:0 0 8px">Client-Zertifikate</h4>';
     if (status.clientCerts.length > 0) {
-      html += '<table class="data-table" style="margin:0"><thead><tr><th>Name</th><th>Ablauf</th></tr></thead><tbody>';
+      html += '<table class="data-table" style="margin:0"><thead><tr><th>Name</th><th>Ablauf</th><th></th></tr></thead><tbody>';
       status.clientCerts.forEach(c => {
-        html += `<tr><td>${esc(c.name)}</td><td>${new Date(c.expiry).toLocaleDateString('de-DE')}</td></tr>`;
+        html += `<tr><td>${esc(c.name)}</td><td>${new Date(c.expiry).toLocaleDateString('de-DE')}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <button class="btn small ghost" onclick="pkiDownloadBundle('${esc(c.name)}')" title="ZIP mit ca.crt + Client-Cert + Key">ZIP</button>
+            <button class="btn small ghost" onclick="pkiDownload('${esc(c.name)}.crt')">crt</button>
+            <button class="btn small ghost" onclick="pkiDownload('${esc(c.name)}.key')">key</button>
+          </td></tr>`;
       });
       html += '</tbody></table>';
     } else {
@@ -1325,6 +1341,44 @@ async function pkiGenerateServerCert() {
     const result = await post('/api/frp/pki/server-cert', { server_addr: addr });
     toast(`Server-Cert erstellt fuer ${result.commonName}`);
     document.getElementById('pkiBtn').click();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function pkiDownload(filename) {
+  try {
+    const res = await fetch(`/api/frp/pki/download/${encodeURIComponent(filename)}`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function pkiDownloadBundle(clientName) {
+  try {
+    const res = await fetch(`/api/frp/pki/download-client-bundle/${encodeURIComponent(clientName)}`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${clientName}-pki.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
   } catch (err) { toast(err.message, 'error'); }
 }
 

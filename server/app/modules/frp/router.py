@@ -5,8 +5,10 @@ import uuid
 import io
 import zipfile
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -457,6 +459,50 @@ def create_client_cert(client_name: str, _admin=Depends(get_current_admin)):
     if not status["caExists"]:
         raise HTTPException(status_code=400, detail="Zuerst eine CA generieren")
     return pki_manager.generate_client_cert(client_name)
+
+
+@router.get("/pki/download/{filename}")
+def download_pki_file(filename: str, _admin=Depends(get_current_admin)):
+    """Laed eine PKI-Datei herunter (.crt oder .key)."""
+    # Nur .crt und .key erlauben, Path-Traversal verhindern
+    safe_name = Path(filename).name
+    if not safe_name.endswith((".crt", ".key")):
+        raise HTTPException(status_code=400, detail="Nur .crt und .key Dateien erlaubt")
+    file_path = pki_manager.PKI_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Datei '{safe_name}' nicht gefunden")
+    media = "application/x-pem-file"
+    return FileResponse(file_path, filename=safe_name, media_type=media)
+
+
+@router.get("/pki/download-client-bundle/{client_name}")
+def download_client_bundle(client_name: str, _admin=Depends(get_current_admin)):
+    """Laed ein ZIP mit ca.crt, client.crt und client.key herunter."""
+    import io
+    import zipfile
+
+    safe_name = Path(client_name).name
+    d = pki_manager.PKI_DIR
+    ca_crt = d / "ca.crt"
+    client_crt = d / f"{safe_name}.crt"
+    client_key = d / f"{safe_name}.key"
+
+    for f in [ca_crt, client_crt, client_key]:
+        if not f.exists():
+            raise HTTPException(status_code=404, detail=f"Datei '{f.name}' nicht gefunden")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(ca_crt, "pki/ca.crt")
+        zf.write(client_crt, f"pki/{safe_name}.crt")
+        zf.write(client_key, f"pki/{safe_name}.key")
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}-pki.zip"'},
+    )
 
 
 # --------------- Customer Groups ---------------
