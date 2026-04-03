@@ -1,0 +1,12 @@
+Package: srm-frpc-client
+Version: __VERSION__
+Architecture: amd64
+Maintainer: Simple Remote Manager <noreply@srm.local>
+Depends: systemd, curl, coreutils
+Section: net
+Priority: optional
+Homepage: https://gitlab.local/srm/simpleremotemanager
+Description: SRM FRP Client with auto-sync
+ FRP Client (frpc) bundled with an automatic config sync agent.
+ Managed by Simple Remote Manager (SRM). Includes systemd units
+ for frpc daemon and periodic config synchronization.

@@ -1,0 +1,145 @@
+#!/bin/sh
+# srm-frpc-sync — SRM FRP Client Config Sync Agent
+# Modes:
+#   --init --url <URL> --token <TOKEN> --server-id <ID>  (first-time setup)
+#   (no args)                                             (periodic sync)
+set -eu
+
+CONF="/etc/frp/srm.conf"
+FRP_DIR="/etc/frp"
+CONFIG_FILE="${FRP_DIR}/frpc.toml"
+HASH_FILE="${FRP_DIR}/.config-hash"
+PKI_DIR="${FRP_DIR}/pki"
+LOG_TAG="srm-frpc-sync"
+
+log() { logger -t "${LOG_TAG}" "$@" 2>/dev/null || echo "[${LOG_TAG}] $*"; }
+die() { log "ERROR: $*"; echo "ERROR: $*" >&2; exit 1; }
+
+# ── Init Mode ──────────────────────────────────────────────────────────
+do_init() {
+    SRM_URL=""
+    PROVISION_TOKEN=""
+    SERVER_ID=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --url)       SRM_URL="$2";          shift 2 ;;
+            --token)     PROVISION_TOKEN="$2";   shift 2 ;;
+            --server-id) SERVER_ID="$2";         shift 2 ;;
+            *)           die "Unbekannter Parameter: $1" ;;
+        esac
+    done
+
+    [ -z "${SRM_URL}" ]          && die "--url ist erforderlich"
+    [ -z "${PROVISION_TOKEN}" ]  && die "--token ist erforderlich"
+    [ -z "${SERVER_ID}" ]        && die "--server-id ist erforderlich"
+
+    # Remove trailing slash
+    SRM_URL="${SRM_URL%/}"
+
+    log "Aktiviere Provisioning fuer Server ${SERVER_ID}..."
+
+    # Call activate endpoint
+    RESPONSE=$(curl -sSf -X POST \
+        -H "X-Provision-Token: ${PROVISION_TOKEN}" \
+        -H "Content-Type: application/json" \
+        "${SRM_URL}/api/frp/provision/${SERVER_ID}/activate" 2>&1) \
+        || die "Activate fehlgeschlagen: ${RESPONSE}"
+
+    # Parse JSON response (using grep/sed for POSIX compat, no jq dependency)
+    API_KEY=$(echo "${RESPONSE}" | sed -n 's/.*"apiKey"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    CONFIG_B64=$(echo "${RESPONSE}" | sed -n 's/.*"config"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    PKI_BUNDLE_B64=$(echo "${RESPONSE}" | sed -n 's/.*"pkiBundle"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+    [ -z "${API_KEY}" ] && die "Kein API-Key in der Antwort erhalten"
+
+    # Write SRM config
+    mkdir -p "${FRP_DIR}"
+    cat > "${CONF}" <<EOF
+SRM_URL="${SRM_URL}"
+API_KEY="${API_KEY}"
+SERVER_ID="${SERVER_ID}"
+EOF
+    chmod 600 "${CONF}"
+
+    # Write frpc.toml (base64-decoded)
+    if [ -n "${CONFIG_B64}" ]; then
+        echo "${CONFIG_B64}" | base64 -d > "${CONFIG_FILE}"
+        log "frpc.toml geschrieben"
+    fi
+
+    # Write PKI certs (base64-encoded tar.gz)
+    if [ -n "${PKI_BUNDLE_B64}" ]; then
+        mkdir -p "${PKI_DIR}"
+        echo "${PKI_BUNDLE_B64}" | base64 -d | tar xz -C "${FRP_DIR}" 2>/dev/null \
+            || log "WARNUNG: PKI-Bundle konnte nicht entpackt werden"
+        chmod 600 "${PKI_DIR}"/*.key 2>/dev/null || true
+        log "PKI-Zertifikate installiert"
+    fi
+
+    # Compute initial hash
+    if [ -f "${CONFIG_FILE}" ]; then
+        sha256sum "${CONFIG_FILE}" | cut -d' ' -f1 > "${HASH_FILE}"
+    fi
+
+    # Enable and start services
+    systemctl daemon-reload
+    systemctl enable --now frpc.service srm-frpc-sync.timer
+    log "Provisioning abgeschlossen. frpc und sync-timer sind aktiv."
+    echo "OK: Provisioning abgeschlossen. frpc laeuft."
+}
+
+# ── Sync Mode ──────────────────────────────────────────────────────────
+do_sync() {
+    [ ! -f "${CONF}" ] && { log "Keine Konfiguration gefunden (${CONF}). Ueberspringe."; exit 0; }
+
+    # shellcheck source=/dev/null
+    . "${CONF}"
+
+    [ -z "${SRM_URL:-}" ] || [ -z "${API_KEY:-}" ] || [ -z "${SERVER_ID:-}" ] \
+        && die "srm.conf unvollstaendig"
+
+    # Fetch remote hash
+    REMOTE_HASH=$(curl -sSf \
+        -H "X-API-Key: ${API_KEY}" \
+        "${SRM_URL}/api/frp/provision/${SERVER_ID}/config-hash" 2>/dev/null \
+        | sed -n 's/.*"hash"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p') \
+        || { log "WARNUNG: Config-Hash konnte nicht abgefragt werden"; exit 0; }
+
+    # Compare with local hash
+    LOCAL_HASH=""
+    [ -f "${HASH_FILE}" ] && LOCAL_HASH=$(cat "${HASH_FILE}")
+
+    if [ "${REMOTE_HASH}" = "${LOCAL_HASH}" ]; then
+        exit 0
+    fi
+
+    log "Config-Aenderung erkannt. Aktualisiere..."
+
+    # Fetch new config
+    NEW_CONFIG=$(curl -sSf \
+        -H "X-API-Key: ${API_KEY}" \
+        "${SRM_URL}/api/frp/provision/${SERVER_ID}/config" 2>/dev/null) \
+        || { log "WARNUNG: Neue Config konnte nicht geladen werden"; exit 1; }
+
+    # Write config
+    echo "${NEW_CONFIG}" > "${CONFIG_FILE}"
+    echo "${REMOTE_HASH}" > "${HASH_FILE}"
+
+    # Restart frpc
+    systemctl restart frpc.service
+    log "frpc.toml aktualisiert und frpc neugestartet."
+}
+
+# ── Main ───────────────────────────────────────────────────────────────
+case "${1:-}" in
+    --init) shift; do_init "$@" ;;
+    --help|-h)
+        echo "Usage: srm-frpc-sync [--init --url URL --token TOKEN --server-id ID]"
+        echo "  Ohne Argumente: Sync-Modus (prueft auf Config-Aenderungen)"
+        echo "  --init: Ersteinrichtung mit Provision-Token"
+        exit 0
+        ;;
+    "") do_sync ;;
+    *) die "Unbekannter Befehl: $1. Nutze --help fuer Hilfe." ;;
+esac

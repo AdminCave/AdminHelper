@@ -1011,6 +1011,7 @@ function renderFrp() {
           <span style="color:var(--text-soft);font-size:12px;flex-shrink:0">${tunnels.length} Tunnel</span>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
+          ${server ? `<button class="btn small ghost" onclick="openProvisionModal('${esc(sid)}')">Provision</button>` : ''}
           ${server ? `<button class="btn small ghost" onclick="downloadFrpcToml('${esc(sid)}')">frpc.toml</button>` : ''}
         </div>
       </div>
@@ -1440,6 +1441,68 @@ document.getElementById('ftType').addEventListener('change', () => {
   document.getElementById('ftAutoConnField').style.display = isStcp ? '' : 'none';
   if (!isStcp) document.getElementById('ftAutoConn').checked = false;
 });
+
+// ── Provisioning ────────────────────────────────────────────────────────
+let _provisionServerId = null;
+
+async function openProvisionModal(serverId) {
+  _provisionServerId = serverId;
+  const server = state.servers.find(s => s.id === serverId);
+  document.getElementById('provisionModalTitle').textContent = `Provisioning: ${server?.name || serverId}`;
+  document.getElementById('provisionOneLiner').classList.add('hidden');
+  showModal('provisionModal');
+  await _loadProvisionTokens(serverId);
+}
+
+document.getElementById('createProvisionTokenBtn').addEventListener('click', async () => {
+  if (!_provisionServerId) return;
+  try {
+    const result = await post(`/api/frp/provision/${_provisionServerId}/token`);
+    const server = state.servers.find(s => s.id === _provisionServerId);
+    const srmUrl = window.location.origin;
+    const cmd = `sudo srm-frpc-sync --init \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${_provisionServerId}`;
+    document.getElementById('provisionCommand').textContent = cmd;
+    document.getElementById('provisionOneLiner').classList.remove('hidden');
+    toast('Provision-Token erstellt (24h gueltig)');
+    await _loadProvisionTokens(_provisionServerId);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+function copyProvisionCommand() {
+  const text = document.getElementById('provisionCommand').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Befehl kopiert'));
+}
+
+async function _loadProvisionTokens(serverId) {
+  const el = document.getElementById('provisionTokenListContent');
+  try {
+    const tokens = await get(`/api/frp/provision/${serverId}/tokens`);
+    if (tokens.length === 0) {
+      el.textContent = 'Keine Tokens vorhanden.';
+      return;
+    }
+    let html = '<table class="data-table" style="margin:0;font-size:13px"><thead><tr><th>Erstellt</th><th>Ablauf</th><th>Status</th></tr></thead><tbody>';
+    tokens.forEach(t => {
+      const created = new Date(t.createdAt).toLocaleString('de-DE');
+      const expires = new Date(t.expiresAt).toLocaleString('de-DE');
+      let statusBadge;
+      if (t.usedAt) {
+        statusBadge = `<span style="color:#22c55e">Verwendet (${new Date(t.usedAt).toLocaleString('de-DE')})</span>`;
+      } else if (t.isValid) {
+        statusBadge = '<span style="color:var(--accent)">Aktiv</span>';
+      } else {
+        statusBadge = '<span style="color:#ef4444">Abgelaufen</span>';
+      }
+      html += `<tr><td>${created}</td><td>${expires}</td><td>${statusBadge}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (err) {
+    el.textContent = 'Fehler beim Laden.';
+  }
+}
 
 // ── Customer Groups ──────────────────────────────────────────────────────
 document.getElementById('addGroupBtn').addEventListener('click', () => openGroupModal(null));

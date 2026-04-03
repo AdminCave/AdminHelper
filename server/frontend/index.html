@@ -424,6 +424,41 @@
     </div>
   </div>
 
+  <!-- Modal: Provisioning -->
+  <div id="provisionModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(680px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title" id="provisionModalTitle">Server provisionieren</div>
+        <button class="modal-close" data-close="provisionModal">&#x2715;</button>
+      </div>
+      <div style="padding:0">
+        <div id="provisionContent" style="display:flex;flex-direction:column;gap:16px">
+          <div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">
+            <p style="margin:0 0 8px;color:var(--text-soft);font-size:13px">
+              Erstelle einen einmaligen Provision-Token (24h g&#xFC;ltig).
+              Der Token wird nur einmal angezeigt und kann nur einmal verwendet werden.
+            </p>
+            <button class="btn primary" id="createProvisionTokenBtn">Token erstellen</button>
+          </div>
+          <div id="provisionOneLiner" class="hidden" style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">
+            <h4 style="margin:0 0 8px">Auf dem Zielserver ausf&#xFC;hren:</h4>
+            <div style="position:relative">
+              <pre id="provisionCommand" style="font-family:monospace;font-size:12px;background:var(--bg);padding:10px;border-radius:var(--radius-sm);white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+              <button class="btn small ghost" onclick="copyProvisionCommand()" style="position:absolute;top:4px;right:4px;font-size:11px">Kopieren</button>
+            </div>
+          </div>
+          <div id="provisionTokenList" style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">
+            <h4 style="margin:0 0 8px">Bestehende Tokens</h4>
+            <div id="provisionTokenListContent" style="color:var(--text-soft);font-size:13px">Lade...</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn ghost" data-close="provisionModal">Schlie&#xDF;en</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Kundengruppe -->
   <div id="groupModal" class="modal-backdrop hidden">
     <div class="modal" style="width:min(520px,95vw)">

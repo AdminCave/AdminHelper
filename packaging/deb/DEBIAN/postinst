@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+systemctl daemon-reload
+mkdir -p /etc/frp/pki
+chmod 700 /etc/frp/pki
+echo "srm-frpc-client installiert."
+echo "Einrichtung: sudo srm-frpc-sync --init --url <SRM_URL> --token <TOKEN> --server-id <ID>"

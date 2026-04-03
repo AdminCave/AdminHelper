@@ -1,0 +1,6 @@
+[Unit]
+Description=SRM FRP Config Sync
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/srm-frpc-sync

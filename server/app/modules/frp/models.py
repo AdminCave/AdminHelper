@@ -144,3 +144,35 @@ class FrpTunnel(Base):
             "extraConfig": json.loads(self.extra_config) if self.extra_config else None,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class ProvisionToken(Base):
+    __tablename__ = "frp_provision_tokens"
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, ForeignKey("servers.id", ondelete="CASCADE"), nullable=False)
+    hashed_token = Column(String, unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    server = relationship("Server", backref="provision_tokens", lazy="selectin")
+
+    def is_valid(self) -> bool:
+        """Prueft ob der Token noch gueltig ist (nicht abgelaufen, nicht verwendet)."""
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=datetime.timezone.utc)
+        return self.used_at is None and now < expires
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "serverId": self.server_id,
+            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
+            "usedAt": self.used_at.isoformat() if self.used_at else None,
+            "isValid": self.is_valid(),
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
