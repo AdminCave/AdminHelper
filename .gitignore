@@ -45,6 +45,12 @@ Desktop.ini
 *.swo
 *~
 
+# Python virtual environments
+venv/
+.venv/
+__pycache__/
+*.pyc
+
 # Env files
 .env
 .env.*
