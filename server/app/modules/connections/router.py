@@ -2,13 +2,13 @@ import json
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
-from pydantic import BaseModel
-from typing import Any, Literal
+from typing import Any
 
-from ..auth import ApiKeyOrUser, get_current_admin
-from ..storage import load_connections, save_connections
-from ..event_bus import fire_event
-from .. import models
+from app.core.auth import ApiKeyOrUser, get_current_admin
+from app.core.events import fire_event
+from app.modules.connections.storage import load_connections, save_connections
+from app.modules.connections.schemas import ImportRequest
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
@@ -50,7 +50,7 @@ def update_connection(conn_id: str, connection: dict[str, Any], auth=Depends(wri
 
 
 @router.delete("/{conn_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_connection(conn_id: str, current_user: models.User = Depends(get_current_admin)):
+def delete_connection(conn_id: str, current_user: User = Depends(get_current_admin)):
     connections = load_connections()
     deleted = next((c for c in connections if c.get("id") == conn_id), None)
     if deleted is None:
@@ -60,7 +60,7 @@ def delete_connection(conn_id: str, current_user: models.User = Depends(get_curr
 
 
 @router.get("/export", response_class=Response)
-def export_connections(current_user: models.User = Depends(get_current_admin)):
+def export_connections(current_user: User = Depends(get_current_admin)):
     data = json.dumps(load_connections(), ensure_ascii=False, indent=2)
     return Response(
         content=data,
@@ -69,13 +69,8 @@ def export_connections(current_user: models.User = Depends(get_current_admin)):
     )
 
 
-class ImportRequest(BaseModel):
-    connections: list[dict[str, Any]]
-    mode: Literal["merge", "replace"]
-
-
 @router.post("/import")
-def import_connections(req: ImportRequest, current_user: models.User = Depends(get_current_admin)):
+def import_connections(req: ImportRequest, current_user: User = Depends(get_current_admin)):
     imported = [dict(conn, id=str(uuid.uuid4())) for conn in req.connections]
     if req.mode == "replace":
         save_connections(imported)

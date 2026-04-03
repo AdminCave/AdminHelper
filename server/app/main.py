@@ -5,22 +5,31 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 
-from .database import engine
-from . import models
-from .auth import hash_password
-from .database import SessionLocal
-from .config import ADMIN_PASSWORD
-from .middleware import IPFilterMiddleware
-from .routers import auth, connections, users, api_keys, hooks
+from app.core.database import engine, SessionLocal, Base
+from app.core.config import ADMIN_PASSWORD
+from app.core.auth import hash_password
+from app.core.middleware import IPFilterMiddleware
 
-models.Base.metadata.create_all(bind=engine)
+# Models importieren, damit Base.metadata sie kennt
+from app.modules.users.models import User
+from app.modules.api_keys.models import ApiKey  # noqa: F401
+from app.modules.hooks.models import Hook  # noqa: F401
+
+# Router importieren
+from app.modules.users.auth_router import router as auth_router
+from app.modules.users.router import router as users_router
+from app.modules.connections.router import router as connections_router
+from app.modules.api_keys.router import router as api_keys_router
+from app.modules.hooks.router import router as hooks_router
+
+Base.metadata.create_all(bind=engine)
 
 
 def _ensure_admin():
     db = SessionLocal()
     try:
-        if db.query(models.User).count() == 0:
-            admin = models.User(
+        if db.query(User).count() == 0:
+            admin = User(
                 username="admin",
                 hashed_password=hash_password(ADMIN_PASSWORD),
                 is_admin=True,
@@ -36,8 +45,8 @@ _ensure_admin()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from .scheduler import scheduler, load_all_scheduled_hooks
-    from .event_bus import fire_event
+    from app.modules.hooks.scheduler import scheduler, load_all_scheduled_hooks
+    from app.core.events import fire_event
 
     load_all_scheduled_hooks()
     scheduler.start()
@@ -52,14 +61,14 @@ app = FastAPI(title="Simple Remote Manager Server", docs_url="/api/docs", redoc_
 app.add_middleware(IPFilterMiddleware)
 
 # Router einbinden
-app.include_router(auth.router)
-app.include_router(connections.router)
-app.include_router(users.router)
-app.include_router(api_keys.router)
-app.include_router(hooks.router)
+app.include_router(auth_router)
+app.include_router(connections_router)
+app.include_router(users_router)
+app.include_router(api_keys_router)
+app.include_router(hooks_router)
 
-# Statische Dateien
-static_dir = Path(__file__).parent.parent / "static"
+# Statische Dateien aus frontend/ ausliefern
+static_dir = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 

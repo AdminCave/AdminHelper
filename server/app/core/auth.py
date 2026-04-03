@@ -10,9 +10,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
-from .database import get_db
-from . import models
+from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.database import get_db
+from app.modules.users.models import User
+from app.modules.api_keys.models import ApiKey
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -48,7 +49,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def _get_user_from_token(token: str, db: Session) -> Optional[models.User]:
+def _get_user_from_token(token: str, db: Session) -> Optional[User]:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -56,22 +57,22 @@ def _get_user_from_token(token: str, db: Session) -> Optional[models.User]:
             return None
     except JWTError:
         return None
-    return db.query(models.User).filter(models.User.username == username).first()
+    return db.query(User).filter(User.username == username).first()
 
 
-def _get_api_key_from_header(request: Request, db: Session) -> Optional[models.ApiKey]:
+def _get_api_key_from_header(request: Request, db: Session) -> Optional[ApiKey]:
     key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if not key:
         return None
     hashed = hash_api_key(key)
-    return db.query(models.ApiKey).filter(models.ApiKey.hashed_key == hashed).first()
+    return db.query(ApiKey).filter(ApiKey.hashed_key == hashed).first()
 
 
 def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
-) -> models.User:
+) -> User:
     user = None
 
     if credentials:
@@ -86,7 +87,7 @@ def get_current_user(
     return user
 
 
-def get_current_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
+def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
     return current_user

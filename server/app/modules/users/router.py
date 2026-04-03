@@ -1,25 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..auth import get_current_admin, hash_password
-from ..schemas import UserCreate, UserUpdate, UserResponse
-from ..event_bus import fire_event
-from .. import models
+from app.core.database import get_db
+from app.core.auth import get_current_admin, hash_password
+from app.core.events import fire_event
+from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 @router.get("", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    return db.query(models.User).all()
+    return db.query(User).all()
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(data: UserCreate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    if db.query(models.User).filter(models.User.username == data.username).first():
+    if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername bereits vergeben")
-    user = models.User(
+    user = User(
         username=data.username,
         hashed_password=hash_password(data.password),
         is_admin=data.is_admin,
@@ -33,7 +33,7 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), _admin=Depends(
 
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
     if data.password is not None:
@@ -49,7 +49,7 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _
 def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(get_current_admin)):
     if admin.id == user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Eigener Account kann nicht gelöscht werden")
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
     fire_event("user.deleted", {"id": user.id, "username": user.username})

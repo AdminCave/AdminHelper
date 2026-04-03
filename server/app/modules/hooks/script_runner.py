@@ -30,7 +30,7 @@ import builtins
 import uuid as _uuid
 from typing import Any
 
-from .storage import load_connections, save_connections
+from app.modules.connections.storage import load_connections, save_connections
 
 
 def run_hook_script(

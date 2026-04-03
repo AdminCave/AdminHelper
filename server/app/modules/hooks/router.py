@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from ..auth import generate_api_key, get_current_admin, hash_api_key
-from ..database import get_db
-from ..schemas import (
+from app.core.auth import generate_api_key, get_current_admin, hash_api_key
+from app.core.database import get_db
+from app.modules.hooks.schemas import (
     HookCreate,
     HookCreatedResponse,
     HookDetailResponse,
@@ -16,14 +16,14 @@ from ..schemas import (
     VALID_EVENTS,
     VALID_INTERVALS,
 )
-from ..script_runner import run_hook_script
-from ..scheduler import add_hook, remove_hook, get_next_run, _INTERVAL_MAP
-from .. import models
+from app.modules.hooks.script_runner import run_hook_script
+from app.modules.hooks.scheduler import add_hook, remove_hook, get_next_run, _INTERVAL_MAP
+from app.modules.hooks.models import Hook
 
 router = APIRouter(prefix="/api/hooks", tags=["hooks"])
 
 
-def _to_dict(hook: models.Hook) -> dict:
+def _to_dict(hook: Hook) -> dict:
     """ORM-Objekt in ein einfaches Dict für die Response konvertieren."""
     return {
         "id": hook.id,
@@ -64,7 +64,7 @@ def _validate_create(data: HookCreate) -> None:
 
 @router.get("", response_model=list[HookResponse])
 def list_hooks(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    hooks = db.query(models.Hook).order_by(models.Hook.created_at).all()
+    hooks = db.query(Hook).order_by(Hook.created_at).all()
     return [_to_dict(h) for h in hooks]
 
 
@@ -82,7 +82,7 @@ def create_hook(
         raw_token = generate_api_key()
         hashed_token = hash_api_key(raw_token)
 
-    hook = models.Hook(
+    hook = Hook(
         id=str(uuid.uuid4()),
         name=data.name,
         description=data.description,
@@ -114,8 +114,8 @@ def create_hook(
 async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
     hashed = hash_api_key(token)
     hook = (
-        db.query(models.Hook)
-        .filter(models.Hook.hashed_token == hashed, models.Hook.hook_type == "webhook")
+        db.query(Hook)
+        .filter(Hook.hashed_token == hashed, Hook.hook_type == "webhook")
         .first()
     )
     if not hook:
@@ -146,7 +146,7 @@ async def trigger_webhook(token: str, request: Request, db: Session = Depends(ge
 
 @router.get("/{hook_id}", response_model=HookDetailResponse)
 def get_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    hook = db.query(models.Hook).filter(models.Hook.id == hook_id).first()
+    hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
     return _to_dict(hook)
@@ -159,7 +159,7 @@ def update_hook(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    hook = db.query(models.Hook).filter(models.Hook.id == hook_id).first()
+    hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
 
@@ -201,7 +201,7 @@ def update_hook(
 
 @router.delete("/{hook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    hook = db.query(models.Hook).filter(models.Hook.id == hook_id).first()
+    hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
     if hook.hook_type == "schedule":
@@ -212,7 +212,7 @@ def delete_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_
 
 @router.post("/{hook_id}/toggle", response_model=HookResponse)
 def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    hook = db.query(models.Hook).filter(models.Hook.id == hook_id).first()
+    hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
 
@@ -234,7 +234,7 @@ def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_
 
 @router.post("/{hook_id}/rotate")
 def rotate_hook_token(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    hook = db.query(models.Hook).filter(models.Hook.id == hook_id).first()
+    hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
     if hook.hook_type != "webhook":
@@ -247,7 +247,7 @@ def rotate_hook_token(hook_id: str, db: Session = Depends(get_db), _admin=Depend
 
 @router.post("/{hook_id}/run")
 def run_hook_manually(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    hook = db.query(models.Hook).filter(models.Hook.id == hook_id).first()
+    hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
 

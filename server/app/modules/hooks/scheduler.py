@@ -34,15 +34,15 @@ def _parse_trigger(interval: str):
 
 
 def _execute_scheduled_hook(hook_id: str) -> None:
-    from .database import SessionLocal
-    from . import models
-    from .script_runner import run_hook_script
+    from app.core.database import SessionLocal
+    from app.modules.hooks.models import Hook
+    from app.modules.hooks.script_runner import run_hook_script
 
     db = SessionLocal()
     try:
         hook = (
-            db.query(models.Hook)
-            .filter(models.Hook.id == hook_id, models.Hook.enabled == True)  # noqa: E712
+            db.query(Hook)
+            .filter(Hook.id == hook_id, Hook.enabled == True)  # noqa: E712
             .first()
         )
         if not hook:
@@ -97,14 +97,14 @@ def get_next_run(hook_id: str) -> datetime | None:
 
 def load_all_scheduled_hooks() -> None:
     """Beim Server-Start alle aktiven Scheduled Hooks laden und einplanen."""
-    from .database import SessionLocal
-    from . import models
+    from app.core.database import SessionLocal
+    from app.modules.hooks.models import Hook
 
     db = SessionLocal()
     try:
         hooks = (
-            db.query(models.Hook)
-            .filter(models.Hook.hook_type == "schedule", models.Hook.enabled == True)  # noqa: E712
+            db.query(Hook)
+            .filter(Hook.hook_type == "schedule", Hook.enabled == True)  # noqa: E712
             .all()
         )
         for hook in hooks:

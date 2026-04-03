@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Simple Remote Logo</title>
+  <desc id="desc">Rounded square mark with network nodes and SR monogram.</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38bdf8" />
+      <stop offset="1" stop-color="#0ea5e9" />
+    </linearGradient>
+    <linearGradient id="line" x1="128" y1="128" x2="384" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.9" />
+      <stop offset="1" stop-color="#dbeafe" stop-opacity="0.75" />
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="132" fill="url(#bg)" />
+
+  <path
+    d="M144 176C144 149.49 165.49 128 192 128H276C318.22 128 352.5 162.22 352.5 204.44C352.5 246.66 318.22 280.88 276 280.88H232.94"
+    fill="none"
+    stroke="url(#line)"
+    stroke-width="28"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M352 336C352 362.51 330.51 384 304 384H220C177.78 384 143.5 349.78 143.5 307.56C143.5 265.34 177.78 231.12 220 231.12H263.06"
+    fill="none"
+    stroke="url(#line)"
+    stroke-width="28"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <g fill="#e0f2fe">
+    <circle cx="144" cy="176" r="14" />
+    <circle cx="352" cy="336" r="14" />
+    <circle cx="352" cy="204.44" r="12" fill="#f0f9ff" />
+    <circle cx="143.5" cy="307.56" r="12" fill="#f0f9ff" />
+  </g>
+</svg>

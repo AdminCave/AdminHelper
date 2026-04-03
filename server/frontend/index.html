@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simple Remote Manager – Server</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Hintergrund -->
+  <div class="backdrop" aria-hidden="true">
+    <div class="orb orb-one"></div>
+    <div class="orb orb-two"></div>
+    <div class="orb orb-three"></div>
+    <div class="mesh"></div>
+  </div>
+
+  <!-- Login -->
+  <div id="loginPage" class="login-page">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="/static/assets/logo.svg" alt="Logo" class="logo-mark" />
+        <div>
+          <div class="brand-title">Simple Remote</div>
+          <div class="brand-subtitle">Server</div>
+        </div>
+      </div>
+      <form id="loginForm" class="login-form">
+        <div class="field">
+          <label for="loginUser">Benutzername</label>
+          <input id="loginUser" type="text" autocomplete="username" required placeholder="admin" />
+        </div>
+        <div class="field">
+          <label for="loginPass">Passwort</label>
+          <input id="loginPass" type="password" autocomplete="current-password" required />
+        </div>
+        <div id="loginError" class="login-error"></div>
+        <button type="submit" class="btn primary">Anmelden</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App (nach Login) -->
+  <div id="appLayout" class="server-layout hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="/static/assets/logo.svg" alt="Logo" class="logo-mark" />
+        <div class="sidebar-brand-text">
+          <div class="brand-title">Simple Remote</div>
+          <div class="brand-subtitle">Server</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-page="connections">
+          <i class="nav-icon">⟷</i> Verbindungen
+        </button>
+        <div id="adminNav" class="hidden">
+          <div class="nav-divider"></div>
+          <button class="nav-item" data-page="users">
+            <i class="nav-icon">👥</i> Benutzer
+          </button>
+          <button class="nav-item" data-page="apikeys">
+            <i class="nav-icon">🔑</i> API-Keys
+          </button>
+          <button class="nav-item" data-page="hooks">
+            <i class="nav-icon">⚡</i> Hooks
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <div class="user-avatar" id="userAvatar">?</div>
+          <div class="user-info">
+            <div class="user-name" id="userName">–</div>
+            <div class="user-role" id="userRole">–</div>
+          </div>
+        </div>
+        <button class="btn small ghost" id="logoutBtn" style="width:100%">Abmelden</button>
+      </div>
+    </aside>
+
+    <!-- Hauptbereich -->
+    <main class="main-content">
+
+      <!-- Verbindungen -->
+      <div id="pageConnections" class="page active">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Verbindungen</div>
+            <div class="page-subtitle" id="connSubtitle">Alle gespeicherten Verbindungen</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <input id="connSearch" type="search" placeholder="Suchen…" style="padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-family:var(--font);font-size:14px" />
+            <button id="exportConnBtn" class="btn ghost hidden">Exportieren</button>
+            <button id="importConnBtn" class="btn ghost hidden">Importieren</button>
+            <button id="addConnBtn" class="btn primary hidden">+ Verbindung</button>
+          </div>
+        </div>
+        <div class="panel" style="overflow:auto">
+          <table class="data-table" id="connTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Typ</th>
+                <th>Host / URL</th>
+                <th>Port</th>
+                <th>Benutzer</th>
+                <th>Tags</th>
+                <th id="connActionsHeader"></th>
+              </tr>
+            </thead>
+            <tbody id="connBody"></tbody>
+          </table>
+          <div id="connEmpty" class="empty-state hidden"><p>Keine Verbindungen vorhanden.</p></div>
+        </div>
+      </div>
+
+      <!-- Benutzer -->
+      <div id="pageUsers" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Benutzer</div>
+            <div class="page-subtitle">Zugriffsverwaltung</div>
+          </div>
+          <button id="addUserBtn" class="btn primary">+ Benutzer</button>
+        </div>
+        <div class="panel" style="overflow:auto">
+          <table class="data-table" id="userTable">
+            <thead>
+              <tr>
+                <th>Benutzername</th>
+                <th>Rolle</th>
+                <th>Erstellt</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="userBody"></tbody>
+          </table>
+          <div id="userEmpty" class="empty-state hidden"><p>Keine Benutzer vorhanden.</p></div>
+        </div>
+      </div>
+
+      <!-- Hooks -->
+      <div id="pageHooks" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Hooks</div>
+            <div class="page-subtitle">Webhooks, Event-Hooks und Scheduled Hooks</div>
+          </div>
+          <button id="addHookBtn" class="btn primary">+ Hook</button>
+        </div>
+        <div class="panel" style="overflow:auto">
+          <table class="data-table" id="hookTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Typ</th>
+                <th>Details</th>
+                <th>Status</th>
+                <th>Letzter Lauf</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="hookBody"></tbody>
+          </table>
+          <div id="hookEmpty" class="empty-state hidden"><p>Keine Hooks vorhanden.</p></div>
+        </div>
+      </div>
+
+      <!-- API-Keys -->
+      <div id="pageApikeys" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">API-Keys</div>
+            <div class="page-subtitle">Programmatischer Zugriff (z. B. Client-Sync)</div>
+          </div>
+          <button id="addApiKeyBtn" class="btn primary">+ API-Key</button>
+        </div>
+        <div class="panel" style="overflow:auto">
+          <table class="data-table" id="apikeyTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Berechtigung</th>
+                <th>Erstellt</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="apikeyBody"></tbody>
+          </table>
+          <div id="apikeyEmpty" class="empty-state hidden"><p>Keine API-Keys vorhanden.</p></div>
+        </div>
+        <div class="panel" style="font-size:13px;color:var(--text-soft)">
+          <strong style="color:var(--text)">Client-Sync konfigurieren:</strong><br/>
+          Verwende die Sync-URL im Simple Remote Manager Client:<br/>
+          <code style="color:var(--accent)">http://&lt;server&gt;:8080/api/connections?api_key=&lt;key&gt;</code>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Modal: Verbindung -->
+  <div id="connModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(720px,95vw);max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <div class="modal-title" id="connModalTitle">Verbindung</div>
+        <button class="modal-close" data-close="connModal">✕</button>
+      </div>
+      <form id="connForm">
+        <div class="conn-form">
+          <div class="field">
+            <label>Name *</label>
+            <input id="cfName" required placeholder="Mein Server" />
+          </div>
+          <div class="field">
+            <label>Typ *</label>
+            <select id="cfKind">
+              <option value="ssh">SSH</option>
+              <option value="rdp">RDP</option>
+              <option value="web">Web</option>
+            </select>
+          </div>
+          <div class="field" id="cfHostField">
+            <label>Host</label>
+            <input id="cfHost" placeholder="192.168.1.1" />
+          </div>
+          <div class="field" id="cfPortField">
+            <label>Port</label>
+            <input id="cfPort" type="number" placeholder="22" />
+          </div>
+          <div class="field" id="cfUserField">
+            <label>Benutzername</label>
+            <input id="cfUser" placeholder="root" />
+          </div>
+          <div class="field" id="cfDomainField">
+            <label>Domäne</label>
+            <input id="cfDomain" placeholder="CORP" />
+          </div>
+          <div class="field" id="cfUrlField">
+            <label>URL</label>
+            <input id="cfUrl" placeholder="https://..." />
+          </div>
+          <div class="field" id="cfKeyField">
+            <label>Key-Pfad</label>
+            <input id="cfKey" placeholder="~/.ssh/id_rsa" />
+          </div>
+          <div class="field full">
+            <label>Tags (kommagetrennt)</label>
+            <input id="cfTags" placeholder="prod, web, linux" />
+          </div>
+          <div class="field full">
+            <label>Notizen</label>
+            <textarea id="cfNotes" placeholder="Optionale Notizen…"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="connModal">Abbrechen</button>
+          <button type="submit" class="btn primary" id="connSaveBtn">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Benutzer -->
+  <div id="userModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="userModalTitle">Benutzer</div>
+        <button class="modal-close" data-close="userModal">✕</button>
+      </div>
+      <form id="userForm" class="modal-form">
+        <div class="field">
+          <label>Benutzername *</label>
+          <input id="ufUsername" required placeholder="max.mustermann" />
+        </div>
+        <div class="field">
+          <label id="ufPasswordLabel">Passwort *</label>
+          <input id="ufPassword" type="password" placeholder="Passwort" />
+        </div>
+        <label class="checkbox-label">
+          <input id="ufIsAdmin" type="checkbox" />
+          Admin-Rechte
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="userModal">Abbrechen</button>
+          <button type="submit" class="btn primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: API-Key erstellt -->
+  <div id="keyRevealModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">API-Key erstellt</div>
+        <button class="modal-close" data-close="keyRevealModal">✕</button>
+      </div>
+      <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px">
+        Dieser Schlüssel wird nur einmal angezeigt. Kopiere ihn jetzt.
+      </p>
+      <div class="key-reveal" id="keyRevealValue"></div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn primary" id="copyKeyBtn">Kopieren</button>
+        <button class="btn ghost" data-close="keyRevealModal">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: API-Key anlegen -->
+  <div id="apiKeyModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Neuer API-Key</div>
+        <button class="modal-close" data-close="apiKeyModal">✕</button>
+      </div>
+      <form id="apiKeyForm" class="modal-form">
+        <div class="field">
+          <label>Name *</label>
+          <input id="akName" required placeholder="Client-Sync" />
+        </div>
+        <div class="field">
+          <label>Berechtigung</label>
+          <select id="akPermission">
+            <option value="read">Nur lesen</option>
+            <option value="read_write">Lesen & Schreiben</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="apiKeyModal">Abbrechen</button>
+          <button type="submit" class="btn primary">Erstellen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Hook anlegen / bearbeiten -->
+  <div id="hookModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(860px,96vw);max-height:92vh;overflow-y:auto">
+      <div class="modal-header">
+        <div class="modal-title" id="hookModalTitle">Hook</div>
+        <button class="modal-close" data-close="hookModal">✕</button>
+      </div>
+      <form id="hookForm" class="modal-form">
+        <div class="field">
+          <label>Name *</label>
+          <input id="hkName" required placeholder="z. B. Deployment-Hook" />
+        </div>
+        <div class="field">
+          <label>Beschreibung</label>
+          <input id="hkDesc" placeholder="Optionale Beschreibung" />
+        </div>
+        <div class="field" id="hkTypeWrapper">
+          <label>Typ *</label>
+          <select id="hkType">
+            <option value="webhook">Webhook – per HTTP-Call auslösen</option>
+            <option value="event">Event-Hook – bei internem Ereignis</option>
+            <option value="schedule">Scheduled Hook – nach Zeitplan</option>
+          </select>
+        </div>
+
+        <!-- Event-spezifisch -->
+        <div id="hkEventsField" class="field hidden" style="grid-column:1/-1">
+          <label>Events *</label>
+          <div id="hkEventsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px"></div>
+        </div>
+
+        <!-- Schedule-spezifisch -->
+        <div id="hkIntervalField" class="field hidden">
+          <label>Intervall *</label>
+          <select id="hkInterval">
+            <option value="5m">Alle 5 Minuten</option>
+            <option value="15m">Alle 15 Minuten</option>
+            <option value="30m">Alle 30 Minuten</option>
+            <option value="1h" selected>Jede Stunde</option>
+            <option value="6h">Alle 6 Stunden</option>
+            <option value="12h">Alle 12 Stunden</option>
+            <option value="24h">Jeden Tag</option>
+            <option value="custom">Cron-Ausdruck…</option>
+          </select>
+        </div>
+        <div id="hkCronField" class="field hidden">
+          <label>Cron-Ausdruck</label>
+          <input id="hkCron" placeholder="0 */6 * * *" />
+          <p style="font-size:11px;color:var(--text-soft);margin:4px 0 0">Format: Minute Stunde Tag Monat Wochentag</p>
+        </div>
+
+        <!-- Script -->
+        <div class="field" style="grid-column:1/-1">
+          <label>Script *</label>
+          <p id="hkScriptHelp" style="font-size:12px;color:var(--text-soft);margin:0 0 6px"></p>
+          <textarea id="hkScript" required rows="18"
+            style="font-family:monospace;font-size:13px;white-space:pre;tab-size:4;resize:vertical"
+            placeholder="# Python-Script hier eingeben"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="hookModal">Abbrechen</button>
+          <button type="submit" class="btn primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Webhook-Token anzeigen -->
+  <div id="webhookTokenModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="webhookTokenTitle">Webhook-Token</div>
+        <button class="modal-close" data-close="webhookTokenModal">✕</button>
+      </div>
+      <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px">
+        Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt.
+      </p>
+      <div class="key-reveal" id="webhookTokenValue"></div>
+      <p style="font-size:12px;color:var(--text-soft);margin-top:12px;word-break:break-all">
+        Aufruf-URL:<br/>
+        <code id="webhookTriggerUrl" style="color:var(--accent)"></code>
+      </p>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn primary" id="copyWebhookTokenBtn">Kopieren</button>
+        <button class="btn ghost" data-close="webhookTokenModal">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Hook-Ausführungsergebnis -->
+  <div id="hookRunModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(720px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title" id="hookRunTitle">Hook-Ergebnis</div>
+        <button class="modal-close" data-close="hookRunModal">✕</button>
+      </div>
+      <pre id="hookRunResult" style="font-family:monospace;font-size:12px;background:var(--surface);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn ghost" data-close="hookRunModal">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Verbindungen importieren -->
+  <div id="importModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Verbindungen importieren</div>
+        <button class="modal-close" data-close="importModal">✕</button>
+      </div>
+      <div class="modal-form">
+        <div class="field">
+          <label>JSON-Datei *</label>
+          <input id="importFile" type="file" accept=".json,application/json" style="padding:6px 0;color:var(--text)" />
+        </div>
+        <div class="field">
+          <label>Import-Modus</label>
+          <select id="importMode">
+            <option value="merge">Hinzufügen – bestehende Verbindungen behalten</option>
+            <option value="replace">Ersetzen – alle bestehenden Verbindungen löschen</option>
+          </select>
+        </div>
+        <p id="importInfo" style="font-size:13px;color:var(--text-soft);margin:0"></p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" data-close="importModal">Abbrechen</button>
+        <button type="button" id="importSubmitBtn" class="btn primary">Importieren</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

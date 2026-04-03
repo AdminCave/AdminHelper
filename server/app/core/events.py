@@ -14,15 +14,15 @@ def fire_event(event_type: str, event_data: Any) -> None:
     """Event asynchron (Daemon-Thread) an alle passenden Event-Hooks senden."""
 
     def _run() -> None:
-        from .database import SessionLocal
-        from . import models
-        from .script_runner import run_hook_script
+        from app.core.database import SessionLocal
+        from app.modules.hooks.models import Hook
+        from app.modules.hooks.script_runner import run_hook_script
 
         db = SessionLocal()
         try:
             hooks = (
-                db.query(models.Hook)
-                .filter(models.Hook.hook_type == "event", models.Hook.enabled == True)  # noqa: E712
+                db.query(Hook)
+                .filter(Hook.hook_type == "event", Hook.enabled == True)  # noqa: E712
                 .all()
             )
             for hook in hooks:

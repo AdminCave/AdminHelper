@@ -1,6 +1,6 @@
 import json
 from typing import Any
-from .config import CONNECTIONS_FILE
+from app.core.config import CONNECTIONS_FILE
 
 
 def load_connections() -> list[dict[str, Any]]:
