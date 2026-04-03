@@ -104,7 +104,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080</code></pre>
             <div class="cards cols-2">
               <article class="card">
                 <h3>Desktop Client</h3>
-                <pre class="code-block"><code>cd client/src-tauri
+                <pre class="code-block"><code>cd desktop/src-tauri
 cargo tauri dev
 # production build:
 cargo tauri build</code></pre>
@@ -135,12 +135,12 @@ docker compose up -d</code></pre>
           <section id="repo" class="panel reveal">
             <h2>3) Repository Structure</h2>
             <pre class="code-block"><code>.
-├─ client/
+├─ desktop/
 │  ├─ src/               # frontend (vanilla JS, HTML, CSS)
 │  └─ src-tauri/         # Rust backend + OS integrations
 ├─ server/
 │  ├─ app/               # FastAPI routes, auth, storage
-│  ├─ static/            # server web UI
+│  ├─ frontend/          # server web UI
 │  └─ Dockerfile
 ├─ extension/            # browser extension
 ├─ docker-compose.yml
@@ -447,7 +447,7 @@ log(f"Cleaned up at {triggered_at}: removed {removed} duplicate(s)")</code></pre
               <li><strong>publish:</strong> optional Debian publishing via Aptly API script.</li>
             </ul>
             <p>
-              Publishing script: <span class="inline-code">client/scripts/ci_publish_via_api.sh</span>
+              Publishing script: <span class="inline-code">desktop/scripts/ci_publish_via_api.sh</span>
               (requires mTLS and Aptly environment variables).
             </p>
           </section>
@@ -467,7 +467,7 @@ docker compose up -d</code></pre>
               </article>
               <article class="card">
                 <h3>Update client</h3>
-                <pre class="code-block"><code>cd client/src-tauri
+                <pre class="code-block"><code>cd desktop/src-tauri
 cargo tauri build</code></pre>
                 <p>Distribute the new build and recheck runtime dependencies (for example FreeRDP on Linux).</p>
               </article>
@@ -480,8 +480,8 @@ cargo tauri build</code></pre>
           <section id="workflow" class="panel reveal">
             <h2>13) Typical Extension Workflow</h2>
             <ol>
-              <li>Update JS model in <span class="inline-code">client/src/connectionModel.js</span> or <span class="inline-code">settingsModel.js</span>.</li>
-              <li>Update Rust structs in <span class="inline-code">client/src-tauri/src/models.rs</span>.</li>
+              <li>Update JS model in <span class="inline-code">desktop/src/connectionModel.js</span> or <span class="inline-code">settingsModel.js</span>.</li>
+              <li>Update Rust structs in <span class="inline-code">desktop/src-tauri/src/models.rs</span>.</li>
               <li>Expose command in <span class="inline-code">commands.rs</span> and register in <span class="inline-code">main.rs</span>.</li>
               <li>Adjust server schema/routes if API contract changes.</li>
               <li>Validate local mode and sync mode behavior end-to-end.</li>
@@ -547,8 +547,8 @@ cargo tauri build</code></pre>
           <section class="panel reveal">
             <h3>Code Hotspots</h3>
             <ul>
-              <li><span class="inline-code">client/src-tauri/src/commands.rs</span></li>
-              <li><span class="inline-code">client/src-tauri/src/connection/rdp.rs</span></li>
+              <li><span class="inline-code">desktop/src-tauri/src/commands.rs</span></li>
+              <li><span class="inline-code">desktop/src-tauri/src/connection/rdp.rs</span></li>
               <li><span class="inline-code">server/app/routers/*.py</span></li>
               <li><span class="inline-code">server/app/script_runner.py</span></li>
               <li><span class="inline-code">extension/popup.js</span></li>

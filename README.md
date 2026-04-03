@@ -208,14 +208,14 @@ Die Einstellungen (Server-URL, API-Key) werden über `chrome.storage.sync` gespe
 ### Dev
 
 ```bash
-cd client/src-tauri
+cd desktop/src-tauri
 cargo tauri dev
 ```
 
 ### Build
 
 ```bash
-cd client/src-tauri
+cd desktop/src-tauri
 cargo tauri build
 ```
 
@@ -225,7 +225,7 @@ cargo tauri build
 
 ```text
 .
-├─ client/
+├─ desktop/                  # Tauri Desktop-Client (SSH/RDP/Web)
 │  ├─ src/                   # Frontend (HTML/CSS/JS)
 │  │  ├─ index.html
 │  │  ├─ styles.css
@@ -247,37 +247,32 @@ cargo tauri build
 │  │     └─ terminal.rs
 │  └─ scripts/
 ├─ server/
-│  ├─ app/                   # FastAPI-Backend
+│  ├─ app/                   # FastAPI-Backend (modularer Monolith)
 │  │  ├─ main.py
-│  │  ├─ config.py
-│  │  ├─ database.py
-│  │  ├─ models.py
-│  │  ├─ schemas.py
-│  │  ├─ auth.py
-│  │  ├─ storage.py
-│  │  └─ routers/
-│  │     ├─ auth.py
-│  │     ├─ connections.py
-│  │     ├─ users.py
-│  │     └─ api_keys.py
-│  ├─ static/                # Web-Interface
+│  │  ├─ core/               # Config, Auth, DB, Middleware
+│  │  └─ modules/            # users, connections, servers, frp, hooks, api_keys
+│  ├─ frontend/              # Web-Interface (HTML/CSS/JS)
 │  │  ├─ index.html
-│  │  ├─ styles.css
-│  │  ├─ app.js
-│  │  └─ logo.svg
+│  │  ├─ css/styles.css
+│  │  ├─ js/app.js
+│  │  └─ assets/logo.svg
 │  ├─ Dockerfile
 │  └─ requirements.txt
+├─ agent/                    # frpc Sync-Agent + DEB/RPM-Paketierung
+│  ├─ srm-frpc-sync          # POSIX-Shell Sync-Agent
+│  ├─ systemd/               # frpc.service, sync.service, sync.timer
+│  ├─ deb/                   # Debian-Paket-Dateien
+│  ├─ rpm/                   # RPM-Spec
+│  ├─ build-deb.sh
+│  └─ build-rpm.sh
 ├─ extension/                # Chrome Extension
 │  ├─ manifest.json
-│  ├─ popup.html
-│  ├─ popup.css
-│  ├─ popup.js
-│  ├─ background.js
-│  ├─ options.html
-│  ├─ options.css
-│  ├─ options.js
-│  └─ icons/
+│  ├─ popup.html / popup.js
+│  ├─ options.html / options.js
+│  └─ background.js
+├─ docs/                     # Dokumentation (DE + EN)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
+├─ .gitlab-ci.yml
 ├─ .env.example
 └─ docker-compose.yml
 ```

@@ -35,20 +35,20 @@ if [ -f frpc ]; then
 fi
 
 # Sync agent
-cp packaging/srm-frpc-sync "${SRCDIR}/usr/local/bin/srm-frpc-sync"
+cp agent/srm-frpc-sync "${SRCDIR}/usr/local/bin/srm-frpc-sync"
 chmod 755 "${SRCDIR}/usr/local/bin/srm-frpc-sync"
 
 # systemd units
-cp packaging/systemd/frpc.service           "${SRCDIR}/etc/systemd/system/"
-cp packaging/systemd/srm-frpc-sync.service  "${SRCDIR}/etc/systemd/system/"
-cp packaging/systemd/srm-frpc-sync.timer    "${SRCDIR}/etc/systemd/system/"
+cp agent/systemd/frpc.service           "${SRCDIR}/etc/systemd/system/"
+cp agent/systemd/srm-frpc-sync.service  "${SRCDIR}/etc/systemd/system/"
+cp agent/systemd/srm-frpc-sync.timer    "${SRCDIR}/etc/systemd/system/"
 
 cd "${RPMBUILD_DIR}/SOURCES"
 tar czf "${PKG_NAME}-${VERSION}.tar.gz" "${PKG_NAME}-${VERSION}"
 cd -
 
 # Write spec file with version
-sed "s/__VERSION__/${VERSION}/" packaging/rpm/srm-frpc-client.spec > "${RPMBUILD_DIR}/SPECS/${PKG_NAME}.spec"
+sed "s/__VERSION__/${VERSION}/" agent/rpm/srm-frpc-client.spec > "${RPMBUILD_DIR}/SPECS/${PKG_NAME}.spec"
 
 # Build
 rpmbuild --define "_topdir ${RPMBUILD_DIR}" -bb "${RPMBUILD_DIR}/SPECS/${PKG_NAME}.spec"

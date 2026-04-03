@@ -104,7 +104,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080</code></pre>
             <div class="cards cols-2">
               <article class="card">
                 <h3>Desktop Client</h3>
-                <pre class="code-block"><code>cd client/src-tauri
+                <pre class="code-block"><code>cd desktop/src-tauri
 cargo tauri dev
 # Build:
 cargo tauri build</code></pre>
@@ -139,12 +139,12 @@ docker compose up -d</code></pre>
           <section id="repo" class="panel reveal">
             <h2>3) Repository-Struktur</h2>
             <pre class="code-block"><code>.
-├─ client/
+├─ desktop/
 │  ├─ src/                 # Frontend (Vanilla JS, HTML, CSS)
 │  └─ src-tauri/           # Rust/Tauri Backend + OS Integrationen
 ├─ server/
 │  ├─ app/                 # FastAPI App + Router + Auth + Storage
-│  ├─ static/              # Server Web-UI (SPA)
+│  ├─ frontend/            # Server Web-UI (SPA)
 │  └─ Dockerfile
 ├─ extension/              # Chrome Extension (Popup + Options + SW)
 ├─ docker-compose.yml      # Server Deployment
@@ -155,7 +155,7 @@ docker compose up -d</code></pre>
             <h2>4) Client-Architektur (Tauri)</h2>
             <p>
               Der Client trennt Frontend-UI und native Funktionen über Tauri-Commands.
-              Einstieg ist <span class="inline-code">client/src-tauri/src/main.rs</span>.
+              Einstieg ist <span class="inline-code">desktop/src-tauri/src/main.rs</span>.
             </p>
             <table>
               <thead>
@@ -469,7 +469,7 @@ log(f"Bereinigt am {triggered_at}: {removed} Duplikat(e)")</code></pre>
               <li><strong>publish:</strong> optionales Deb-Publishing via Aptly-API-Script.</li>
             </ul>
             <p>
-              Das Script <span class="inline-code">client/scripts/ci_publish_via_api.sh</span>
+              Das Script <span class="inline-code">desktop/scripts/ci_publish_via_api.sh</span>
               erwartet mTLS- und Aptly-Variablen (URL, Zertifikate, Repo, Distribution, GPG-Key).
             </p>
           </section>
@@ -489,7 +489,7 @@ docker compose up -d</code></pre>
               </article>
               <article class="card">
                 <h3>Client updaten</h3>
-                <pre class="code-block"><code>cd client/src-tauri
+                <pre class="code-block"><code>cd desktop/src-tauri
 cargo tauri build</code></pre>
                 <p>Neue Version verteilen und Plattform-Abhängigkeiten (z. B. FreeRDP auf Linux) mitprüfen.</p>
               </article>
@@ -502,8 +502,8 @@ cargo tauri build</code></pre>
           <section id="workflow" class="panel reveal">
             <h2>13) Typischer Erweiterungs-Workflow</h2>
             <ol>
-              <li>Frontend-Datenmodell in <span class="inline-code">client/src/connectionModel.js</span> oder <span class="inline-code">settingsModel.js</span> erweitern.</li>
-              <li>Rust-Modell in <span class="inline-code">client/src-tauri/src/models.rs</span> anpassen.</li>
+              <li>Frontend-Datenmodell in <span class="inline-code">desktop/src/connectionModel.js</span> oder <span class="inline-code">settingsModel.js</span> erweitern.</li>
+              <li>Rust-Modell in <span class="inline-code">desktop/src-tauri/src/models.rs</span> anpassen.</li>
               <li>Tauri-Command ergänzen (<span class="inline-code">commands.rs</span>, <span class="inline-code">main.rs</span>).</li>
               <li>Server-Schema/Router anpassen, falls API-Auswirkung vorhanden.</li>
               <li>In Sync- und Admin-UI-Verhalten gegenprüfen.</li>
@@ -569,8 +569,8 @@ cargo tauri build</code></pre>
           <section class="panel reveal">
             <h3>Quellcode-Hotspots</h3>
             <ul>
-              <li><span class="inline-code">client/src-tauri/src/commands.rs</span></li>
-              <li><span class="inline-code">client/src-tauri/src/connection/rdp.rs</span></li>
+              <li><span class="inline-code">desktop/src-tauri/src/commands.rs</span></li>
+              <li><span class="inline-code">desktop/src-tauri/src/connection/rdp.rs</span></li>
               <li><span class="inline-code">server/app/routers/*.py</span></li>
               <li><span class="inline-code">server/app/script_runner.py</span></li>
               <li><span class="inline-code">extension/popup.js</span></li>

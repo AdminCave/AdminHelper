@@ -16,10 +16,10 @@ mkdir -p "${BUILD_DIR}/etc/systemd/system"
 mkdir -p "${BUILD_DIR}/etc/frp"
 
 # Control file with version
-sed "s/__VERSION__/${VERSION}/" packaging/deb/DEBIAN/control > "${BUILD_DIR}/DEBIAN/control"
-cp packaging/deb/DEBIAN/postinst "${BUILD_DIR}/DEBIAN/"
-cp packaging/deb/DEBIAN/prerm    "${BUILD_DIR}/DEBIAN/"
-cp packaging/deb/DEBIAN/postrm   "${BUILD_DIR}/DEBIAN/"
+sed "s/__VERSION__/${VERSION}/" agent/deb/DEBIAN/control > "${BUILD_DIR}/DEBIAN/control"
+cp agent/deb/DEBIAN/postinst "${BUILD_DIR}/DEBIAN/"
+cp agent/deb/DEBIAN/prerm    "${BUILD_DIR}/DEBIAN/"
+cp agent/deb/DEBIAN/postrm   "${BUILD_DIR}/DEBIAN/"
 chmod 755 "${BUILD_DIR}/DEBIAN/postinst" "${BUILD_DIR}/DEBIAN/prerm" "${BUILD_DIR}/DEBIAN/postrm"
 
 # frpc binary (must exist in project root, downloaded by CI)
@@ -34,13 +34,13 @@ else
 fi
 
 # Sync agent
-cp packaging/srm-frpc-sync "${BUILD_DIR}/usr/local/bin/srm-frpc-sync"
+cp agent/srm-frpc-sync "${BUILD_DIR}/usr/local/bin/srm-frpc-sync"
 chmod 755 "${BUILD_DIR}/usr/local/bin/srm-frpc-sync"
 
 # systemd units
-cp packaging/systemd/frpc.service           "${BUILD_DIR}/etc/systemd/system/"
-cp packaging/systemd/srm-frpc-sync.service  "${BUILD_DIR}/etc/systemd/system/"
-cp packaging/systemd/srm-frpc-sync.timer    "${BUILD_DIR}/etc/systemd/system/"
+cp agent/systemd/frpc.service           "${BUILD_DIR}/etc/systemd/system/"
+cp agent/systemd/srm-frpc-sync.service  "${BUILD_DIR}/etc/systemd/system/"
+cp agent/systemd/srm-frpc-sync.timer    "${BUILD_DIR}/etc/systemd/system/"
 
 # Build
 dpkg-deb --build "${BUILD_DIR}"

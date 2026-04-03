@@ -14,7 +14,7 @@ variables:
 cache:
   key:
     files:
-      - client/src-tauri/Cargo.lock
+      - desktop/src-tauri/Cargo.lock
   paths:
     - .cargo/bin
     - .cargo/registry/index
@@ -22,7 +22,7 @@ cache:
     - .cargo/git/db
     - .rustup/toolchains
     - .rustup/update-hashes
-    - client/src-tauri/target
+    - desktop/src-tauri/target
 
 .tauri_trixie_base:
   stage: build
@@ -60,14 +60,14 @@ build_deb_trixie:
   needs: []
   script:
     - . "$CARGO_HOME/env"
-    - cd client/src-tauri
+    - cd desktop/src-tauri
     - cargo tauri build --bundles deb
     - ls -lah target/release/bundle/deb
   artifacts:
     name: "simple-remote-manager-deb-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     expire_in: 14 days
     paths:
-      - client/src-tauri/target/release/bundle/deb/*.deb
+      - desktop/src-tauri/target/release/bundle/deb/*.deb
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
@@ -80,14 +80,14 @@ build_rpm_trixie:
     - apt-get install -y --no-install-recommends rpm
   script:
     - . "$CARGO_HOME/env"
-    - cd client/src-tauri
+    - cd desktop/src-tauri
     - cargo tauri build --bundles rpm
     - ls -lah target/release/bundle/rpm
   artifacts:
     name: "simple-remote-manager-rpm-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     expire_in: 14 days
     paths:
-      - client/src-tauri/target/release/bundle/rpm/*.rpm
+      - desktop/src-tauri/target/release/bundle/rpm/*.rpm
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
@@ -97,7 +97,7 @@ build_binary_trixie:
   needs: []
   script:
     - . "$CARGO_HOME/env"
-    - cd client/src-tauri
+    - cd desktop/src-tauri
     - cargo build --release
     - sha256sum target/release/simple_remote_manager > target/release/simple_remote_manager.sha256
     - ls -lah target/release/simple_remote_manager target/release/simple_remote_manager.sha256
@@ -105,8 +105,8 @@ build_binary_trixie:
     name: "simple-remote-manager-bin-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     expire_in: 14 days
     paths:
-      - client/src-tauri/target/release/simple_remote_manager
-      - client/src-tauri/target/release/simple_remote_manager.sha256
+      - desktop/src-tauri/target/release/simple_remote_manager
+      - desktop/src-tauri/target/release/simple_remote_manager.sha256
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
@@ -148,9 +148,9 @@ publish_deb_trixie:
   before_script:
     - apt-get update
     - apt-get install -y --no-install-recommends bash ca-certificates curl python3
-    - chmod +x client/scripts/ci_publish_via_api.sh
+    - chmod +x desktop/scripts/ci_publish_via_api.sh
   script:
-    - client/scripts/ci_publish_via_api.sh client/src-tauri/target/release/bundle/deb
+    - desktop/scripts/ci_publish_via_api.sh desktop/src-tauri/target/release/bundle/deb
 
 # ── FRP Client Package ────────────────────────────────────────────────
 download_frpc:
@@ -174,7 +174,7 @@ download_frpc:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
     - changes:
-        - packaging/**/*
+        - agent/**/*
 
 build_frpc_deb:
   stage: build
@@ -184,7 +184,7 @@ build_frpc_deb:
     FRPC_PKG_VERSION: "0.1.0"
   script:
     - apt-get update -qq && apt-get install -y -qq dpkg-dev > /dev/null
-    - VERSION=${FRPC_PKG_VERSION} bash packaging/build-deb.sh
+    - VERSION=${FRPC_PKG_VERSION} bash agent/build-deb.sh
   artifacts:
     name: "srm-frpc-client-deb-$CI_COMMIT_REF_SLUG"
     paths:
@@ -194,7 +194,7 @@ build_frpc_deb:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
     - changes:
-        - packaging/**/*
+        - agent/**/*
 
 build_frpc_rpm:
   stage: build
@@ -204,7 +204,7 @@ build_frpc_rpm:
     FRPC_PKG_VERSION: "0.1.0"
   script:
     - dnf install -y rpm-build tar gzip > /dev/null
-    - VERSION=${FRPC_PKG_VERSION} bash packaging/build-rpm.sh
+    - VERSION=${FRPC_PKG_VERSION} bash agent/build-rpm.sh
   artifacts:
     name: "srm-frpc-client-rpm-$CI_COMMIT_REF_SLUG"
     paths:
@@ -214,7 +214,7 @@ build_frpc_rpm:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
     - changes:
-        - packaging/**/*
+        - agent/**/*
 
 publish_frpc_deb:
   stage: publish
@@ -229,7 +229,7 @@ publish_frpc_deb:
     - |
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
            --upload-file "${DEB_FILE}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-client/${FRPC_PKG_VERSION}/${DEB_FILE}"
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-desktop/${FRPC_PKG_VERSION}/${DEB_FILE}"
 
 publish_frpc_rpm:
   stage: publish
@@ -244,4 +244,4 @@ publish_frpc_rpm:
     - |
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
            --upload-file "${RPM_FILE}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-client/${FRPC_PKG_VERSION}/${RPM_FILE}"
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-desktop/${FRPC_PKG_VERSION}/${RPM_FILE}"

@@ -84,11 +84,11 @@ docker compose up -d
 ### Client (Tauri)
 
 ```bash
-cd client/src-tauri
+cd desktop/src-tauri
 cargo tauri dev
 ```
 
-Der Client öffnet sich als Desktop-Fenster. Änderungen am Frontend (`client/src/`) werden live übernommen, Rust-Änderungen lösen einen Rebuild aus.
+Der Client öffnet sich als Desktop-Fenster. Änderungen am Frontend (`desktop/src/`) werden live übernommen, Rust-Änderungen lösen einen Rebuild aus.
 
 ### Chrome Extension
 
@@ -110,7 +110,7 @@ cd server && source venv/bin/activate
 DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # Terminal 2: Client
-cd client/src-tauri
+cd desktop/src-tauri
 cargo tauri dev
 ```
 
@@ -135,7 +135,7 @@ curl http://127.0.0.1:8080/api/docs
 rm -rf server/venv
 
 # Rust Build-Cache leeren
-cd client/src-tauri && cargo clean
+cd desktop/src-tauri && cargo clean
 
 # Docker aufräumen
 docker compose down -v
