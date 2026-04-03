@@ -54,6 +54,9 @@ venv/
 __pycache__/
 *.pyc
 
+# Docker dev override
+docker-compose.override.yml
+
 # Env files
 .env
 .env.*
