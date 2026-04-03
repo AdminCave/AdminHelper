@@ -75,6 +75,9 @@
           <button class="nav-item" data-page="hooks">
             <i class="nav-icon">⚡</i> Hooks
           </button>
+          <button class="nav-item" data-page="frp">
+            <i class="nav-icon">🔗</i> FRP Tunnels
+          </button>
         </div>
       </nav>
 
@@ -225,7 +228,175 @@
         </div>
       </div>
 
+      <!-- FRP Tunnels -->
+      <div id="pageFrp" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">FRP Tunnels</div>
+            <div class="page-subtitle">Tunnel-Konfigurationen verwalten und TOML-Configs generieren</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button id="addTunnelBtn" class="btn primary">+ Tunnel</button>
+          </div>
+        </div>
+
+        <!-- FRP Server Config Karte -->
+        <div class="panel" id="frpConfigPanel" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="margin:0;font-size:16px;color:var(--text)">FRP-Server Konfiguration</h3>
+            <div style="display:flex;gap:8px">
+              <button id="downloadFrpsBtn" class="btn small ghost" title="frps.toml herunterladen" style="display:none">frps.toml</button>
+              <button id="downloadVisitorBtn" class="btn small ghost" title="Visitor-Config herunterladen" style="display:none">visitor.toml</button>
+              <button id="frpConfigBtn" class="btn small primary">Konfigurieren</button>
+            </div>
+          </div>
+          <div id="frpConfigInfo" style="font-size:13px;color:var(--text-soft)">
+            Noch keine FRP-Server Konfiguration vorhanden. Klicke auf "Konfigurieren" um zu starten.
+          </div>
+        </div>
+
+        <!-- Tunnel-Liste gruppiert nach Server -->
+        <div id="frpTunnelList" style="display:flex;flex-direction:column;gap:12px"></div>
+        <div id="frpEmpty" class="empty-state hidden"><p>Keine Tunnel vorhanden.</p></div>
+      </div>
+
     </main>
+  </div>
+
+  <!-- Modal: FRP Server Config -->
+  <div id="frpConfigModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(680px,95vw);max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <div class="modal-title" id="frpConfigModalTitle">FRP-Server Konfiguration</div>
+        <button class="modal-close" data-close="frpConfigModal">&#x2715;</button>
+      </div>
+      <form id="frpConfigForm" class="modal-form">
+        <div class="conn-form">
+          <div class="field">
+            <label>Name *</label>
+            <input id="fcName" required placeholder="Production FRP" />
+          </div>
+          <div class="field">
+            <label>Server-Adresse *</label>
+            <input id="fcServerAddr" required placeholder="frps.example.net" />
+          </div>
+          <div class="field">
+            <label>Bind Port</label>
+            <input id="fcBindPort" type="number" value="7000" />
+          </div>
+          <div class="field">
+            <label>vHost HTTPS Port</label>
+            <input id="fcVhostPort" type="number" placeholder="443" />
+          </div>
+          <div class="field">
+            <label>Auth Token</label>
+            <input id="fcAuthToken" placeholder="wird auto-generiert" />
+          </div>
+          <div class="field">
+            <label>Subdomain Host</label>
+            <input id="fcSubdomainHost" placeholder="ops.example.net" />
+          </div>
+          <div class="field">
+            <label>Max Ports/Client</label>
+            <input id="fcMaxPorts" type="number" placeholder="4" />
+          </div>
+          <div class="field">
+            <label>Dashboard Port</label>
+            <input id="fcDashPort" type="number" placeholder="7500" />
+          </div>
+          <div class="field">
+            <label>Dashboard User</label>
+            <input id="fcDashUser" placeholder="admin" />
+          </div>
+          <div class="field">
+            <label>Dashboard Passwort</label>
+            <input id="fcDashPass" type="password" placeholder="Passwort" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="frpConfigModal">Abbrechen</button>
+          <button type="submit" class="btn primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: FRP Tunnel -->
+  <div id="frpTunnelModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(680px,95vw);max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <div class="modal-title" id="frpTunnelModalTitle">Tunnel</div>
+        <button class="modal-close" data-close="frpTunnelModal">&#x2715;</button>
+      </div>
+      <form id="frpTunnelForm" class="modal-form">
+        <div class="conn-form">
+          <div class="field">
+            <label>Server *</label>
+            <select id="ftServer" required>
+              <option value="">-- Server wählen --</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Proxy-Name *</label>
+            <input id="ftName" required placeholder="k01-lnx1-ssh" />
+          </div>
+          <div class="field">
+            <label>Tunnel-Typ *</label>
+            <select id="ftType">
+              <option value="stcp">STCP (SSH/RDP)</option>
+              <option value="https">HTTPS (Web-UI)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Protokoll *</label>
+            <select id="ftProtocol">
+              <option value="ssh">SSH</option>
+              <option value="rdp">RDP</option>
+              <option value="web">Web</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Local IP</label>
+            <input id="ftLocalIp" value="127.0.0.1" />
+          </div>
+          <div class="field">
+            <label>Local Port *</label>
+            <input id="ftLocalPort" type="number" required placeholder="22" />
+          </div>
+          <div class="field" id="ftSecretField">
+            <label>Secret Key</label>
+            <input id="ftSecret" placeholder="wird auto-generiert" />
+          </div>
+          <div class="field" id="ftVisitorField">
+            <label>Visitor Port</label>
+            <input id="ftVisitorPort" type="number" placeholder="6101" />
+          </div>
+          <div class="field" id="ftDomainsField" style="display:none">
+            <label>Custom Domains</label>
+            <input id="ftDomains" placeholder="pve.k01.ops.example.net" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="frpTunnelModal">Abbrechen</button>
+          <button type="submit" class="btn primary" id="tunnelSaveBtn">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Config-Vorschau -->
+  <div id="frpPreviewModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(720px,95vw)">
+      <div class="modal-header">
+        <div class="modal-title" id="frpPreviewTitle">Config-Vorschau</div>
+        <button class="modal-close" data-close="frpPreviewModal">&#x2715;</button>
+      </div>
+      <pre id="frpPreviewContent" style="font-family:monospace;font-size:13px;background:var(--surface);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn primary" id="copyFrpConfigBtn">Kopieren</button>
+        <button class="btn ghost" data-close="frpPreviewModal">Schließen</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal: Verbindung -->

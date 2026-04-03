@@ -18,6 +18,7 @@ from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
+from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
 
 # Router importieren
 from app.modules.users.auth_router import router as auth_router
@@ -26,6 +27,7 @@ from app.modules.connections.router import router as connections_router
 from app.modules.api_keys.router import router as api_keys_router
 from app.modules.hooks.router import router as hooks_router
 from app.modules.servers.router import router as servers_router
+from app.modules.frp.router import router as frp_router
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,7 @@ app.include_router(users_router)
 app.include_router(api_keys_router)
 app.include_router(hooks_router)
 app.include_router(servers_router)
+app.include_router(frp_router)
 
 # Statische Dateien aus frontend/ ausliefern
 static_dir = Path(__file__).parent.parent / "frontend"

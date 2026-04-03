@@ -14,6 +14,12 @@ VALID_EVENTS = [
     "server.updated",
     "server.deleted",
     "server.startup",
+    "frp.config.created",
+    "frp.config.updated",
+    "frp.config.deleted",
+    "frp.tunnel.created",
+    "frp.tunnel.updated",
+    "frp.tunnel.deleted",
 ]
 
 VALID_INTERVALS = ["5m", "15m", "30m", "1h", "6h", "12h", "24h"]

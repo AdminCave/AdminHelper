@@ -14,6 +14,9 @@ const state = {
   editingUserId: null,
   editingHookId: null,
   editingServerId: null,
+  frpConfig: null,
+  frpTunnels: [],
+  editingTunnelId: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -59,6 +62,7 @@ function navigate(page) {
   if (page === 'users')       loadUsers();
   if (page === 'apikeys')     loadApiKeys();
   if (page === 'hooks')       loadHooks();
+  if (page === 'frp')         loadFrp();
 }
 
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -463,6 +467,12 @@ const HOOK_EVENTS = [
   { value: 'server.updated',       label: 'Server geändert' },
   { value: 'server.deleted',       label: 'Server gelöscht' },
   { value: 'server.startup',       label: 'App gestartet' },
+  { value: 'frp.config.created',   label: 'FRP-Config erstellt' },
+  { value: 'frp.config.updated',   label: 'FRP-Config geändert' },
+  { value: 'frp.config.deleted',   label: 'FRP-Config gelöscht' },
+  { value: 'frp.tunnel.created',   label: 'FRP-Tunnel erstellt' },
+  { value: 'frp.tunnel.updated',   label: 'FRP-Tunnel geändert' },
+  { value: 'frp.tunnel.deleted',   label: 'FRP-Tunnel gelöscht' },
 ];
 
 const HOOK_SCRIPT_HELP = {
@@ -865,6 +875,311 @@ async function deleteServer(id) {
     toast(err.message, 'error');
   }
 }
+
+// ── FRP Tunnels ───────────────────────────────────────────────────────────
+async function loadFrp() {
+  try {
+    const configs = await get('/api/frp/server-config');
+    state.frpConfig = configs.length > 0 ? configs[0] : null;
+    state.frpTunnels = await get('/api/frp/tunnels');
+    if (state.servers.length === 0) {
+      state.servers = await get('/api/servers');
+    }
+    renderFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function renderFrp() {
+  const cfg = state.frpConfig;
+  const infoEl = document.getElementById('frpConfigInfo');
+  const downloadFrps = document.getElementById('downloadFrpsBtn');
+  const downloadVisitor = document.getElementById('downloadVisitorBtn');
+
+  if (cfg) {
+    infoEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 24px">
+        <div><strong>Name:</strong> ${esc(cfg.name)}</div>
+        <div><strong>Adresse:</strong> ${esc(cfg.serverAddr)}</div>
+        <div><strong>Bind Port:</strong> ${cfg.bindPort}</div>
+        ${cfg.vhostHttpsPort ? `<div><strong>HTTPS Port:</strong> ${cfg.vhostHttpsPort}</div>` : ''}
+        ${cfg.subdomainHost ? `<div><strong>Subdomain:</strong> ${esc(cfg.subdomainHost)}</div>` : ''}
+        ${cfg.dashboardPort ? `<div><strong>Dashboard:</strong> :${cfg.dashboardPort}</div>` : ''}
+      </div>
+    `;
+    downloadFrps.style.display = '';
+    downloadVisitor.style.display = '';
+  } else {
+    infoEl.textContent = 'Noch keine FRP-Server Konfiguration vorhanden. Klicke auf "Konfigurieren" um zu starten.';
+    downloadFrps.style.display = 'none';
+    downloadVisitor.style.display = 'none';
+  }
+
+  // Tunnel nach Server gruppieren
+  const container = document.getElementById('frpTunnelList');
+  const emptyEl = document.getElementById('frpEmpty');
+  container.innerHTML = '';
+
+  if (state.frpTunnels.length === 0) {
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+
+  const byServer = {};
+  state.frpTunnels.forEach(t => {
+    const sid = t.serverId || '__none__';
+    if (!byServer[sid]) byServer[sid] = [];
+    byServer[sid].push(t);
+  });
+
+  Object.entries(byServer).forEach(([sid, tunnels]) => {
+    const server = state.servers.find(s => s.id === sid);
+    const card = document.createElement('div');
+    card.className = 'server-card';
+
+    const title = server ? esc(server.name) : 'Unbekannter Server';
+    const hostname = server ? ` · ${esc(server.hostname)}` : '';
+
+    const tunnelRows = tunnels.map(t => {
+      const typeBadge = t.tunnelType === 'stcp'
+        ? '<span class="badge badge-ssh">STCP</span>'
+        : '<span class="badge badge-web">HTTPS</span>';
+      const protoBadge = `<span class="badge">${esc(t.protocol).toUpperCase()}</span>`;
+      const target = `${esc(t.localIp)}:${t.localPort}`;
+      const visitor = t.visitorPort ? `Visitor :${t.visitorPort}` : (t.customDomains || '\u2013');
+      const statusDot = t.enabled
+        ? '<span style="color:#22c55e" title="Aktiv">&#x25CF;</span>'
+        : '<span style="color:#ef4444" title="Deaktiviert">&#x25CF;</span>';
+      return `<tr>
+        <td>${statusDot}</td>
+        <td>${typeBadge} ${protoBadge}</td>
+        <td><strong>${esc(t.name)}</strong></td>
+        <td>${target}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(visitor)}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn small" onclick="editTunnel('${esc(t.id)}')">Bearbeiten</button>
+          <button class="btn small ghost" onclick="deleteTunnel('${esc(t.id)}')">L\u00f6schen</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="server-card-header" onclick="toggleServerCard(this)">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+          <span class="server-chevron open">&#x25B6;</span>
+          <div style="min-width:0">
+            <strong>${title}</strong>
+            <span style="color:var(--text-soft);font-size:13px;margin-left:8px">${hostname}</span>
+          </div>
+          <span style="color:var(--text-soft);font-size:12px;flex-shrink:0">${tunnels.length} Tunnel</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
+          ${server ? `<button class="btn small ghost" onclick="downloadFrpcToml('${esc(sid)}')">frpc.toml</button>` : ''}
+        </div>
+      </div>
+      <div class="server-card-body">
+        <table class="data-table" style="margin:0">
+          <thead><tr><th></th><th>Typ</th><th>Name</th><th>Ziel</th><th>Visitor / Domain</th><th></th></tr></thead>
+          <tbody>${tunnelRows}</tbody>
+        </table>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// FRP Config Modal
+document.getElementById('frpConfigBtn').addEventListener('click', () => openFrpConfigModal());
+
+function openFrpConfigModal() {
+  const cfg = state.frpConfig;
+  document.getElementById('frpConfigModalTitle').textContent = cfg ? 'FRP-Server bearbeiten' : 'Neue FRP-Server Konfiguration';
+  document.getElementById('fcName').value        = cfg?.name          || '';
+  document.getElementById('fcServerAddr').value   = cfg?.serverAddr    || '';
+  document.getElementById('fcBindPort').value     = cfg?.bindPort      || 7000;
+  document.getElementById('fcVhostPort').value    = cfg?.vhostHttpsPort || '';
+  document.getElementById('fcAuthToken').value    = cfg?.authToken     || '';
+  document.getElementById('fcSubdomainHost').value = cfg?.subdomainHost || '';
+  document.getElementById('fcMaxPorts').value     = cfg?.maxPortsPerClient || '';
+  document.getElementById('fcDashPort').value     = cfg?.dashboardPort  || '';
+  document.getElementById('fcDashUser').value     = cfg?.dashboardUser  || '';
+  document.getElementById('fcDashPass').value     = cfg?.dashboardPassword || '';
+  showModal('frpConfigModal');
+}
+
+document.getElementById('frpConfigForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {
+    name:                document.getElementById('fcName').value.trim(),
+    server_addr:         document.getElementById('fcServerAddr').value.trim(),
+    bind_port:           parseInt(document.getElementById('fcBindPort').value) || 7000,
+    vhost_https_port:    parseInt(document.getElementById('fcVhostPort').value) || null,
+    auth_token:          document.getElementById('fcAuthToken').value.trim() || null,
+    subdomain_host:      document.getElementById('fcSubdomainHost').value.trim() || null,
+    max_ports_per_client: parseInt(document.getElementById('fcMaxPorts').value) || null,
+    dashboard_port:      parseInt(document.getElementById('fcDashPort').value) || null,
+    dashboard_user:      document.getElementById('fcDashUser').value.trim() || null,
+    dashboard_password:  document.getElementById('fcDashPass').value.trim() || null,
+  };
+  try {
+    if (state.frpConfig) {
+      await put(`/api/frp/server-config/${state.frpConfig.id}`, data);
+      toast('FRP-Config gespeichert');
+    } else {
+      await post('/api/frp/server-config', data);
+      toast('FRP-Config erstellt');
+    }
+    closeModal('frpConfigModal');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+// Tunnel Modal
+document.getElementById('addTunnelBtn').addEventListener('click', () => openTunnelModal(null));
+
+function openTunnelModal(tunnel) {
+  if (!state.frpConfig) {
+    toast('Bitte zuerst eine FRP-Server Konfiguration anlegen', 'error');
+    return;
+  }
+  state.editingTunnelId = tunnel ? tunnel.id : null;
+  document.getElementById('frpTunnelModalTitle').textContent = tunnel ? 'Tunnel bearbeiten' : 'Neuer Tunnel';
+
+  // Server-Dropdown befuellen
+  const sel = document.getElementById('ftServer');
+  sel.innerHTML = '<option value="">-- Server w\u00e4hlen --</option>';
+  state.servers.forEach(s => {
+    sel.innerHTML += `<option value="${esc(s.id)}">${esc(s.name)} (${esc(s.hostname)})</option>`;
+  });
+
+  document.getElementById('ftServer').value    = tunnel?.serverId   || '';
+  document.getElementById('ftName').value       = tunnel?.name       || '';
+  document.getElementById('ftType').value       = tunnel?.tunnelType || 'stcp';
+  document.getElementById('ftProtocol').value   = tunnel?.protocol   || 'ssh';
+  document.getElementById('ftLocalIp').value    = tunnel?.localIp    || '127.0.0.1';
+  document.getElementById('ftLocalPort').value  = tunnel?.localPort  || '';
+  document.getElementById('ftSecret').value     = tunnel?.secretKey  || '';
+  document.getElementById('ftVisitorPort').value = tunnel?.visitorPort || '';
+  document.getElementById('ftDomains').value    = tunnel?.customDomains || '';
+
+  _updateTunnelFormFields();
+  showModal('frpTunnelModal');
+}
+
+function _updateTunnelFormFields() {
+  const type = document.getElementById('ftType').value;
+  const isStcp = type === 'stcp';
+  document.getElementById('ftSecretField').style.display  = isStcp ? '' : 'none';
+  document.getElementById('ftVisitorField').style.display = isStcp ? '' : 'none';
+  document.getElementById('ftDomainsField').style.display = isStcp ? 'none' : '';
+}
+
+document.getElementById('ftType').addEventListener('change', _updateTunnelFormFields);
+
+// Auto-fill local port based on protocol
+document.getElementById('ftProtocol').addEventListener('change', () => {
+  const proto = document.getElementById('ftProtocol').value;
+  const portEl = document.getElementById('ftLocalPort');
+  if (!portEl.value) {
+    if (proto === 'ssh') portEl.value = 22;
+    else if (proto === 'rdp') portEl.value = 3389;
+    else if (proto === 'web') portEl.value = 8006;
+  }
+});
+
+document.getElementById('frpTunnelForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {
+    server_id:     document.getElementById('ftServer').value,
+    frp_config_id: state.frpConfig.id,
+    name:          document.getElementById('ftName').value.trim(),
+    tunnel_type:   document.getElementById('ftType').value,
+    protocol:      document.getElementById('ftProtocol').value,
+    local_ip:      document.getElementById('ftLocalIp').value.trim(),
+    local_port:    parseInt(document.getElementById('ftLocalPort').value),
+    secret_key:    document.getElementById('ftSecret').value.trim() || null,
+    custom_domains: document.getElementById('ftDomains').value.trim() || null,
+    visitor_port:  parseInt(document.getElementById('ftVisitorPort').value) || null,
+  };
+  try {
+    if (state.editingTunnelId) {
+      await put(`/api/frp/tunnels/${state.editingTunnelId}`, data);
+      toast('Tunnel gespeichert');
+    } else {
+      await post('/api/frp/tunnels', data);
+      toast('Tunnel erstellt');
+    }
+    closeModal('frpTunnelModal');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+function editTunnel(id) {
+  const t = state.frpTunnels.find(t => t.id === id);
+  if (t) openTunnelModal(t);
+}
+
+async function deleteTunnel(id) {
+  if (!confirm('Tunnel wirklich l\u00f6schen?')) return;
+  try {
+    await del(`/api/frp/tunnels/${id}`);
+    toast('Tunnel gel\u00f6scht');
+    await loadFrp();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// Config Downloads
+async function _fetchToml(url) {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${state.token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  return res.text();
+}
+
+document.getElementById('downloadFrpsBtn').addEventListener('click', async () => {
+  try {
+    const toml = await _fetchToml('/api/frp/generate/frps-toml');
+    _showConfigPreview('frps.toml', toml);
+  } catch (err) { toast(err.message, 'error'); }
+});
+
+document.getElementById('downloadVisitorBtn').addEventListener('click', async () => {
+  try {
+    const toml = await _fetchToml('/api/frp/generate/visitor-toml');
+    _showConfigPreview('visitor.toml (Admin-PC)', toml);
+  } catch (err) { toast(err.message, 'error'); }
+});
+
+async function downloadFrpcToml(serverId) {
+  try {
+    const toml = await _fetchToml(`/api/frp/generate/frpc-toml/${serverId}`);
+    const server = state.servers.find(s => s.id === serverId);
+    _showConfigPreview(`frpc.toml (${server?.name || serverId})`, toml);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function _showConfigPreview(title, content) {
+  document.getElementById('frpPreviewTitle').textContent = title;
+  document.getElementById('frpPreviewContent').textContent = content;
+  showModal('frpPreviewModal');
+}
+
+document.getElementById('copyFrpConfigBtn').addEventListener('click', () => {
+  const text = document.getElementById('frpPreviewContent').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('In Zwischenablage kopiert'));
+});
 
 // ── Export / Import ────────────────────────────────────────────────────────
 document.getElementById('exportConnBtn').addEventListener('click', async () => {

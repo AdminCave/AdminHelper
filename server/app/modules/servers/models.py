@@ -24,6 +24,12 @@ class Server(Base):
         lazy="selectin",
         foreign_keys="Connection.server_id",
     )
+    frp_tunnels = relationship(
+        "FrpTunnel",
+        backref="target_server",
+        lazy="selectin",
+        foreign_keys="FrpTunnel.server_id",
+    )
 
     def to_dict(self, include_connections: bool = True) -> dict[str, Any]:
         result = {
@@ -37,4 +43,5 @@ class Server(Base):
         }
         if include_connections:
             result["connections"] = [c.to_dict() for c in self.connections]
+        result["frpTunnels"] = [t.to_dict() for t in self.frp_tunnels]
         return result
