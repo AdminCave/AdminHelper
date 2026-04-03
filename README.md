@@ -81,11 +81,29 @@ Notes:
 
 ### Settings
 
-- **Mode**: Local or Sync
+- **Mode**: Local, Sync, or Server
 - **Sync URL** and **interval** (Sync mode only)
+- **Server URL** (Server mode only)
 - **Language**: German/English
 - **Store passwords locally**: Optional, per-device, OS keychain (RDP only)
 - **RDP scaling mode**: `auto`, `normal`, `hdpi`
+
+### Server mode (JWT + Tunnel)
+
+In **Server mode**, the client connects to a SRM server with JWT authentication:
+
+1. Set mode to **Server** in settings, enter the server URL
+2. Login with username/password — JWT is stored in the OS keyring
+3. Connections are loaded from the server API
+4. **frpc** starts automatically as a visitor to establish STCP/HTTPS tunnels
+5. Connections with matching tunnels are resolved transparently:
+   - SSH/RDP (STCP): `host` → `127.0.0.1`, `port` → visitor port
+   - Web (HTTPS): URL → custom domain
+   - Web (STCP): URL → `http://127.0.0.1:<visitor_port>`
+6. A tunnel indicator in the header shows connection status
+7. Cards show a green **"via Tunnel"** badge for tunneled connections
+
+Session is persisted — no re-login needed on restart. Local and Sync modes remain fully functional.
 
 ---
 
@@ -139,22 +157,26 @@ Die Server-Daten werden im Verzeichnis `./data/` im Projektroot gespeichert (Bin
 ### Server-API
 
 ```
-POST   /api/auth/login          # Login → JWT
+POST   /api/auth/login          # Login -> JWT
 GET    /api/auth/me             # Aktueller Benutzer
 
 GET    /api/connections         # Verbindungen (User + API-Key)
 POST   /api/connections         # Erstellen (Admin)
 PUT    /api/connections/{id}    # Bearbeiten (Admin)
-DELETE /api/connections/{id}    # Löschen (Admin)
+DELETE /api/connections/{id}    # Loeschen (Admin)
 
 GET    /api/users               # Benutzer-Liste (Admin)
 POST   /api/users               # Benutzer anlegen (Admin)
 PUT    /api/users/{id}          # Benutzer bearbeiten (Admin)
-DELETE /api/users/{id}          # Benutzer löschen (Admin)
+DELETE /api/users/{id}          # Benutzer loeschen (Admin)
 
 GET    /api/api-keys            # API-Keys (Admin)
 POST   /api/api-keys            # API-Key anlegen (Admin)
-DELETE /api/api-keys/{id}       # API-Key löschen (Admin)
+DELETE /api/api-keys/{id}       # API-Key loeschen (Admin)
+
+GET    /api/frp/tunnels         # Tunnel-Liste (Admin)
+GET    /api/frp/visitors        # Visitor-Liste (Admin)
+GET    /api/frp/generate/visitor-toml  # Visitor-Config generieren
 ```
 
 API-Dokumentation: `http://localhost:8080/api/docs`
@@ -231,20 +253,25 @@ cargo tauri build
 │  │  ├─ styles.css
 │  │  ├─ app.js
 │  │  ├─ connectionModel.js
-│  │  ├─ platformApi.js
+│  │  ├─ platformApi.js       # Tauri-Bridge: Auth, Connections, Tunnel, Passwords
 │  │  ├─ settingsModel.js
 │  │  └─ i18n.js
 │  ├─ src-tauri/             # Rust-Backend (Tauri)
-│  │  └─ src/
-│  │     ├─ main.rs
-│  │     ├─ commands.rs
-│  │     ├─ connection/
-│  │     ├─ storage.rs
-│  │     ├─ sync.rs
-│  │     ├─ password.rs
-│  │     ├─ models.rs
-│  │     ├─ validation.rs
-│  │     └─ terminal.rs
+│  │  ├─ src/
+│  │  │  ├─ main.rs
+│  │  │  ├─ commands.rs       # Tauri-Commands (IPC)
+│  │  │  ├─ auth.rs           # JWT-Login, Keyring-Persistenz
+│  │  │  ├─ frpc.rs           # frpc-Sidecar Prozess-Management
+│  │  │  ├─ tunnel.rs         # Tunnel-Mapping + Connection-Resolution
+│  │  │  ├─ connection/       # SSH/RDP/Web Verbindungslogik
+│  │  │  ├─ storage.rs
+│  │  │  ├─ sync.rs
+│  │  │  ├─ password.rs
+│  │  │  ├─ models.rs
+│  │  │  ├─ validation.rs
+│  │  │  └─ terminal.rs
+│  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
+│  │  └─ capabilities/        # Tauri v2 Security Permissions
 │  └─ scripts/
 ├─ server/
 │  ├─ app/                   # FastAPI-Backend (modularer Monolith)
@@ -252,29 +279,20 @@ cargo tauri build
 │  │  ├─ core/               # Config, Auth, DB, Middleware
 │  │  └─ modules/            # users, connections, servers, frp, hooks, api_keys
 │  ├─ frontend/              # Web-Interface (HTML/CSS/JS)
-│  │  ├─ index.html
-│  │  ├─ css/styles.css
-│  │  ├─ js/app.js
-│  │  └─ assets/logo.svg
 │  ├─ Dockerfile
 │  └─ requirements.txt
 ├─ agent/                    # frpc Sync-Agent + DEB/RPM-Paketierung
 │  ├─ srm-frpc-sync          # POSIX-Shell Sync-Agent
 │  ├─ systemd/               # frpc.service, sync.service, sync.timer
-│  ├─ deb/                   # Debian-Paket-Dateien
-│  ├─ rpm/                   # RPM-Spec
 │  ├─ build-deb.sh
 │  └─ build-rpm.sh
 ├─ extension/                # Chrome Extension
-│  ├─ manifest.json
-│  ├─ popup.html / popup.js
-│  ├─ options.html / options.js
-│  └─ background.js
 ├─ docs/                     # Dokumentation (DE + EN)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
+├─ docker-compose.yml
+├─ docker-compose.override.yml  # Lokale Dev-Overrides (gitignored)
 ├─ .gitlab-ci.yml
-├─ .env.example
-└─ docker-compose.yml
+└─ .env.example
 ```
 
 ---
