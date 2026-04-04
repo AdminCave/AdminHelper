@@ -868,7 +868,7 @@ function _renderTemplateCheckDefs() {
         <span class="badge badge-${def.check_type || 'ping'}" style="flex-shrink:0;font-size:10px">${esc(typeBadge)}</span>
         <input value="${esc(def.name || '')}" onchange="state.templateCheckDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name ({{server_name}})" />
         <select onchange="state.templateCheckDefs[${i}].check_type=this.value;state.templateCheckDefs[${i}].config=_tplCheckDefaults(this.value);_renderTemplateCheckDefs()" style="width:110px">
-          ${['ping','tcp','http','agent_resources','service_process','snmp','proxmox_node','proxmox_vm','pbs_job','opnsense','unifi_device']
+          ${['ping','tcp','http','agent_ping','agent_resources','service_process','snmp','proxmox_node','proxmox_vm','pbs_job','opnsense','unifi_device']
             .map(t => `<option value="${t}" ${def.check_type===t?'selected':''}>${t}</option>`).join('')}
         </select>
         <select onchange="state.templateCheckDefs[${i}].interval=this.value" style="width:65px">
@@ -894,6 +894,7 @@ function _tplCheckDefaults(type) {
     case 'ping':           return { target: h, timeout: 5 };
     case 'tcp':            return { target: h, port: 22, timeout: 5 };
     case 'http':           return { url: 'http://{{hostname}}', method: 'GET', expected_status: 200, timeout: 10, verify_ssl: true };
+    case 'agent_ping':      return { server_id: '{{server_id}}', stale_minutes: 5 };
     case 'agent_resources': return { cpu_warn: 80, cpu_crit: 95, memory_warn: 80, memory_crit: 95 };
     case 'service_process': return { process_name: '' };
     case 'snmp':           return { target: h, port: 161, community: 'public', mode: 'get', oid: '1.3.6.1.2.1.1.3.0', timeout: 5 };
@@ -955,6 +956,10 @@ function _tplCheckConfigFields(type, cfg, idx) {
             </select>
           </label>`
         + inp('search_string', cfg.search_string, 'Suchtext', {width:'120px'});
+
+    case 'agent_ping':
+      return inp('server_id', cfg.server_id, 'Server-ID ({{server_id}})', {width:'220px'})
+        + inp('stale_minutes', cfg.stale_minutes, 'Timeout (Min.)', {width:'80px', type:'number'});
 
     case 'agent_resources':
       return inp('cpu_warn', cfg.cpu_warn, 'CPU Warn %', {width:'70px', type:'number'})

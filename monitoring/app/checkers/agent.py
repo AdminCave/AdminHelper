@@ -7,7 +7,56 @@ Die Daten kommen vom srm-monitor-agent via POST /agent/{server_id}/report.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
+
+# In-Memory Map: server_id -> letzter Report-Zeitstempel (Unix)
+_last_report: dict[str, float] = {}
+
+
+def record_agent_report(server_id: str) -> None:
+    """Wird beim Agent-Push aufgerufen um den Zeitstempel zu speichern."""
+    _last_report[server_id] = time.monotonic()
+
+
+class AgentPingChecker:
+    """Prueft ob der Agent sich innerhalb eines Zeitfensters gemeldet hat.
+
+    Config-Beispiel:
+    {
+        "stale_minutes": 5
+    }
+
+    Dieser Check wird vom Scheduler ausgefuehrt (nicht beim Push).
+    Er prüft den letzten Report-Zeitstempel aus der In-Memory-Map.
+    """
+
+    def run(self, config: dict) -> tuple[str, str, dict | None]:
+        server_id = config.get("server_id", "")
+        stale_minutes = config.get("stale_minutes", 5)
+
+        if not server_id:
+            return "unknown", "Keine server_id konfiguriert", None
+
+        last = _last_report.get(server_id)
+        if last is None:
+            return "unknown", "Noch kein Agent-Report empfangen", None
+
+        age_seconds = time.monotonic() - last
+        age_minutes = age_seconds / 60
+
+        if age_minutes > stale_minutes:
+            return (
+                "critical",
+                f"Agent seit {age_minutes:.0f} Min. nicht erreichbar (Limit: {stale_minutes} Min.)",
+                {"agent_last_seen_seconds": round(age_seconds)},
+            )
+
+        return (
+            "ok",
+            f"Agent aktiv (letzter Report vor {age_seconds:.0f}s)",
+            {"agent_last_seen_seconds": round(age_seconds)},
+        )
 
 
 class AgentResourcesChecker:

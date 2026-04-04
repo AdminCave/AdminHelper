@@ -18,7 +18,7 @@ def get_checker(check_type: str) -> Checker:
     from app.checkers.ping import PingChecker
     from app.checkers.tcp import TcpChecker
     from app.checkers.http import HttpChecker
-    from app.checkers.agent import AgentResourcesChecker, ServiceProcessChecker
+    from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
     from app.checkers.snmp import SnmpChecker
     from app.checkers.proxmox import ProxmoxNodeChecker, ProxmoxVmChecker, PbsJobChecker
     from app.checkers.opnsense import OpnsenseChecker
@@ -28,6 +28,7 @@ def get_checker(check_type: str) -> Checker:
         "ping": PingChecker(),
         "tcp": TcpChecker(),
         "http": HttpChecker(),
+        "agent_ping": AgentPingChecker(),
         "agent_resources": AgentResourcesChecker(),
         "service_process": ServiceProcessChecker(),
         "snmp": SnmpChecker(),
