@@ -35,7 +35,7 @@ _ALLOWED_NETWORKS = _parse_networks(ALLOWED_IPS_RAW, "ALLOWED_IPS") if ALLOWED_I
 _TRUSTED_PROXIES  = _parse_networks(TRUSTED_PROXIES_RAW, "TRUSTED_PROXIES") if TRUSTED_PROXIES_RAW else []
 
 
-def _resolve_client_ip(request: Request) -> str:
+def resolve_client_ip(request: Request) -> str:
     """Ermittelt die echte Client-IP.
 
     Reihenfolge:
@@ -78,7 +78,7 @@ class IPFilterMiddleware(BaseHTTPMiddleware):
         if not _ALLOWED_NETWORKS:
             return await call_next(request)
 
-        ip = _resolve_client_ip(request)
+        ip = resolve_client_ip(request)
         if not _in_networks(ip, _ALLOWED_NETWORKS):
             logger.warning("Zugriff verweigert für IP: %s %s", ip, request.url.path)
             return JSONResponse(

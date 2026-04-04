@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import verify_password, create_access_token, create_refresh_token, get_current_user, get_user_from_refresh_token
+from app.core.middleware import resolve_client_ip
 from app.modules.users.schemas import LoginRequest, RefreshRequest, TokenResponse, UserMe
 from app.modules.users.models import User
 
@@ -15,12 +16,24 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _MAX_ATTEMPTS = 5
 _WINDOW_SECONDS = 60
 _login_attempts: dict[str, list[float]] = defaultdict(list)
+_CLEANUP_INTERVAL = 300  # Alle 5 Minuten verwaiste Einträge bereinigen
+_last_cleanup = 0.0
 
 
 def _check_rate_limit(ip: str) -> None:
+    global _last_cleanup
     now = time.monotonic()
+
+    # Periodisch alle abgelaufenen Einträge bereinigen (Memory-Leak verhindern)
+    if now - _last_cleanup > _CLEANUP_INTERVAL:
+        _last_cleanup = now
+        stale = [k for k, v in _login_attempts.items()
+                 if all(now - t >= _WINDOW_SECONDS for t in v)]
+        for k in stale:
+            del _login_attempts[k]
+
     attempts = _login_attempts[ip]
-    # Alte Einträge entfernen
+    # Alte Einträge für diese IP entfernen
     _login_attempts[ip] = [t for t in attempts if now - t < _WINDOW_SECONDS]
     if len(_login_attempts[ip]) >= _MAX_ATTEMPTS:
         raise HTTPException(
@@ -35,7 +48,7 @@ def _record_failed_attempt(ip: str) -> None:
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = resolve_client_ip(request)
     _check_rate_limit(ip)
 
     user = db.query(User).filter(User.username == data.username).first()
