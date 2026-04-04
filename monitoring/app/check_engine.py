@@ -74,6 +74,7 @@ def execute_check(check_id: str) -> None:
         # Effektiven Status bestimmen (consecutive_fails beruecksichtigen)
         if result_status != "ok" and new_fail_count < check.consecutive_fails:
             effective_status = old_status if old_status != "pending" else "ok"
+            message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
         else:
             effective_status = result_status
 
