@@ -106,11 +106,12 @@ def collect_services(service_names: list[str]) -> list[dict]:
                     )
                     pid_str = pid_result.stdout.strip().split("=")[-1]
                     pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log(f"PID-Abfrage fuer '{name}' fehlgeschlagen: {exc}")
 
             services.append({"name": name, "running": running, "pid": pid})
-        except Exception:
+        except Exception as exc:
+            log(f"Service-Status fuer '{name}' nicht ermittelbar: {exc}")
             services.append({"name": name, "running": False, "pid": None})
     return services
 
@@ -136,8 +137,8 @@ def collect_systemd_health() -> dict:
         result["failed"] = [
             line.split()[0] for line in out.stdout.strip().splitlines() if line.strip()
         ]
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"Failed-Units-Abfrage fehlgeschlagen: {exc}")
 
     try:
         out = subprocess.run(
@@ -156,10 +157,11 @@ def collect_systemd_health() -> dict:
                 )
                 if enabled.stdout.strip() == "enabled":
                     result["enabled_inactive"].append(unit)
-            except Exception:
+            except Exception as exc:
+                log(f"is-enabled Pruefung fuer '{unit}' fehlgeschlagen: {exc}")
                 continue
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"Inactive-Services-Abfrage fehlgeschlagen: {exc}")
 
     return result
 
@@ -176,7 +178,8 @@ def _find_last_backup(vmid: int) -> int | None:
             capture_output=True, text=True, timeout=10,
         )
         storages = json.loads(storages_out.stdout)
-    except Exception:
+    except Exception as exc:
+        log(f"Proxmox Storage-Liste fehlgeschlagen: {exc}")
         return None
 
     newest_ctime: int | None = None
@@ -196,7 +199,8 @@ def _find_last_backup(vmid: int) -> int | None:
                 ct = max(item.get("ctime", 0) for item in items)
                 if newest_ctime is None or ct > newest_ctime:
                     newest_ctime = ct
-        except Exception:
+        except Exception as exc:
+            log(f"Backup-Abfrage fuer Storage '{sid}' (VMID {vmid}) fehlgeschlagen: {exc}")
             continue
 
     return newest_ctime
@@ -226,8 +230,8 @@ def collect_proxmox() -> dict | None:
             "cpu": round(nd.get("cpu", 0) * 100, 1),
             "memory_percent": round(mem.get("used", 0) / total * 100, 1),
         }
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"Proxmox Node-Status fehlgeschlagen: {exc}")
 
     # VMs + LXC Container
     try:
@@ -248,8 +252,8 @@ def collect_proxmox() -> dict | None:
                 "last_backup_ts": _find_last_backup(vmid),
             }
             result["vms"].append(vm_info)
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"Proxmox VM/CT-Liste fehlgeschlagen: {exc}")
 
     return result if (result["node"] or result["vms"]) else None
 
@@ -282,8 +286,8 @@ def collect_zfs() -> dict | None:
                 "capacity_percent": int(cap_str) if cap_str.isdigit() else 0,
                 "health": parts[5],
             })
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"ZFS Pool-Liste fehlgeschlagen: {exc}")
 
     if not pools:
         return None
@@ -298,8 +302,8 @@ def collect_zfs() -> dict | None:
                 capture_output=True, text=True, timeout=10,
             )
             result["errors"] = status_out.stdout.strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            log(f"ZFS Fehler-Details nicht abrufbar: {exc}")
 
     return result
 
@@ -318,7 +322,8 @@ def collect_docker() -> dict | None:
         subprocess.run(
             ["docker", "info"], capture_output=True, timeout=5, check=True,
         )
-    except Exception:
+    except Exception as exc:
+        log(f"Docker-Daemon nicht erreichbar: {exc}")
         return None
 
     containers = []
@@ -346,11 +351,11 @@ def collect_docker() -> dict | None:
                     capture_output=True, text=True, timeout=5,
                 )
                 container["restart_policy"] = insp.stdout.strip()
-            except Exception:
-                pass
+            except Exception as exc:
+                log(f"Restart-Policy fuer Container '{container['name']}' nicht ermittelbar: {exc}")
             containers.append(container)
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"Docker Container-Liste fehlgeschlagen: {exc}")
 
     return {"containers": containers} if containers else None
 

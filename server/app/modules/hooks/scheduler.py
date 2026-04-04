@@ -4,9 +4,12 @@ Hintergrund-Scheduler für Scheduled Hooks.
 Verwendet APScheduler BackgroundScheduler (eigener Thread-Pool).
 """
 
+import logging
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
+
+logger = logging.getLogger(__name__)
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -65,7 +68,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
                 context={"triggered_at": now.isoformat(), "last_run": last_run_str},
             )
         except Exception:
-            pass
+            logger.exception("Scheduled Hook '%s' fehlgeschlagen", hook.name)
     finally:
         db.close()
 

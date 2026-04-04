@@ -6,8 +6,11 @@ passenden aktiven Event-Hooks im Hintergrund aus.
 """
 
 import json
+import logging
 import threading
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def fire_event(event_type: str, event_data: Any) -> None:
@@ -36,7 +39,7 @@ def fire_event(event_type: str, event_data: Any) -> None:
                         context={"event_type": event_type, "event_data": event_data or {}},
                     )
                 except Exception:
-                    pass
+                    logger.exception("Event-Hook '%s' fehlgeschlagen (event=%s)", hook.name, event_type)
         finally:
             db.close()
 

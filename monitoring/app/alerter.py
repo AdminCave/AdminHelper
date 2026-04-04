@@ -147,7 +147,7 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
             text += f"\nDetails: {state.message}"
         db.close()
     except Exception:
-        pass
+        logger.warning("State-Message fuer Check '%s' konnte nicht geladen werden", check.name, exc_info=True)
 
     return {
         "check_name": check.name,
