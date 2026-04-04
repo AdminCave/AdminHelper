@@ -124,32 +124,6 @@ class MonitorAlertLog(Base):
         }
 
 
-class MonitorCredential(Base):
-    __tablename__ = "monitor_credentials"
-
-    id = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    cred_type = Column(String, nullable=False)  # proxmox_token, opnsense_api, unifi_login, snmp_community
-    config = Column(String, nullable=False, default="{}")
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    def to_dict(self, mask_secrets: bool = True) -> dict:
-        cfg = json.loads(self.config) if self.config else {}
-        if mask_secrets:
-            for key in ("password", "secret", "token_secret", "api_secret"):
-                if key in cfg:
-                    cfg[key] = "***"
-        return {
-            "id": self.id,
-            "name": self.name,
-            "credType": self.cred_type,
-            "config": cfg,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
 class MonitorTemplate(Base):
     __tablename__ = "monitor_templates"
 

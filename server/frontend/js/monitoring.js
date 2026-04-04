@@ -4,20 +4,17 @@
 // ── Load ���─────────────────────────────────────────────────────────────────
 async function loadMonitoring() {
   try {
-    const [checks, alerts, credentials, templates] = await Promise.all([
+    const [checks, alerts, templates] = await Promise.all([
       get('/api/monitoring/status'),
       get('/api/monitoring/alerts'),
-      get('/api/monitoring/credentials'),
       get('/api/monitoring/templates'),
     ]);
     state.monitorChecks = checks;
     state.monitorAlertRules = alerts;
-    state.monitorCredentials = credentials;
     state.monitorTemplates = templates;
     renderMonitorOverview();
     renderMonitorChecks();
     renderMonitorAlerts();
-    renderMonitorCredentials();
     renderMonitorTemplates();
   } catch (err) {
     toast(err.message, 'error');
@@ -178,12 +175,6 @@ document.getElementById('mcCheckType').addEventListener('change', function() {
   document.getElementById('mcHttpConfig').classList.toggle('hidden', this.value !== 'http');
   document.getElementById('mcAgentResourcesConfig').classList.toggle('hidden', this.value !== 'agent_resources');
   document.getElementById('mcServiceProcessConfig').classList.toggle('hidden', this.value !== 'service_process');
-  document.getElementById('mcSnmpConfig').classList.toggle('hidden', this.value !== 'snmp');
-  document.getElementById('mcProxmoxNodeConfig').classList.toggle('hidden', this.value !== 'proxmox_node');
-  document.getElementById('mcProxmoxVmConfig').classList.toggle('hidden', this.value !== 'proxmox_vm');
-  document.getElementById('mcPbsJobConfig').classList.toggle('hidden', this.value !== 'pbs_job');
-  document.getElementById('mcOpnsenseConfig').classList.toggle('hidden', this.value !== 'opnsense');
-  document.getElementById('mcUnifiConfig').classList.toggle('hidden', this.value !== 'unifi_device');
 });
 
 function openMonitorCheckModal(check) {
@@ -229,17 +220,6 @@ function openMonitorCheckModal(check) {
   // Service Process Config
   document.getElementById('mcServiceNames').value = (cfg.services || []).join(', ');
 
-  // SNMP Config
-  document.getElementById('mcSnmpTarget').value = cfg.target || '';
-  document.getElementById('mcSnmpPort').value = cfg.port || 161;
-  document.getElementById('mcSnmpCommunity').value = cfg.community || 'public';
-  document.getElementById('mcSnmpMode').value = cfg.mode || 'get';
-  document.getElementById('mcSnmpOid').value = cfg.oid || '';
-  document.getElementById('mcSnmpExpected').value = cfg.expected_value || '';
-  document.getElementById('mcSnmpTimeout').value = cfg.timeout || 5;
-  document.getElementById('mcSnmpWarnThreshold').value = cfg.warning_threshold || '';
-  document.getElementById('mcSnmpCritThreshold').value = cfg.critical_threshold || '';
-
   // Config-Sections umschalten
   const type = check?.checkType || 'ping';
   document.getElementById('mcPingConfig').classList.toggle('hidden', type !== 'ping');
@@ -247,59 +227,6 @@ function openMonitorCheckModal(check) {
   document.getElementById('mcHttpConfig').classList.toggle('hidden', type !== 'http');
   document.getElementById('mcAgentResourcesConfig').classList.toggle('hidden', type !== 'agent_resources');
   document.getElementById('mcServiceProcessConfig').classList.toggle('hidden', type !== 'service_process');
-  document.getElementById('mcSnmpConfig').classList.toggle('hidden', type !== 'snmp');
-  document.getElementById('mcProxmoxNodeConfig').classList.toggle('hidden', type !== 'proxmox_node');
-  document.getElementById('mcProxmoxVmConfig').classList.toggle('hidden', type !== 'proxmox_vm');
-  document.getElementById('mcPbsJobConfig').classList.toggle('hidden', type !== 'pbs_job');
-  document.getElementById('mcOpnsenseConfig').classList.toggle('hidden', type !== 'opnsense');
-  document.getElementById('mcUnifiConfig').classList.toggle('hidden', type !== 'unifi_device');
-
-  // Credential-Dropdowns befuellen
-  const credOpts = '<option value="">-- Credential waehlen --</option>' +
-    (state.monitorCredentials || []).map(c => `<option value="${c.id}">${esc(c.name)} (${c.credType})</option>`).join('');
-  ['mcPveNodeCredential','mcPveVmCredential','mcPbsCredential','mcOpnsenseCredential','mcUnifiCredential']
-    .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = credOpts; });
-
-  // Proxmox Node Config
-  document.getElementById('mcPveNodeCredential').value = cfg.credential_id || '';
-  document.getElementById('mcPveNodeHost').value = cfg.host || '';
-  document.getElementById('mcPveNodePort').value = cfg.port || 8006;
-  document.getElementById('mcPveNodeName').value = cfg.node || '';
-  document.getElementById('mcPveNodeCpuWarn').value = cfg.cpu_warn ?? 85;
-  document.getElementById('mcPveNodeCpuCrit').value = cfg.cpu_crit ?? 95;
-
-  // Proxmox VM Config
-  document.getElementById('mcPveVmCredential').value = cfg.credential_id || '';
-  document.getElementById('mcPveVmHost').value = cfg.host || '';
-  document.getElementById('mcPveVmPort').value = cfg.port || 8006;
-  document.getElementById('mcPveVmNode').value = cfg.node || '';
-  document.getElementById('mcPveVmId').value = cfg.vmid || '';
-  document.getElementById('mcPveVmType').value = cfg.vm_type || 'qemu';
-  document.getElementById('mcPveVmExpected').value = cfg.expected_status || 'running';
-
-  // PBS Job Config
-  document.getElementById('mcPbsCredential').value = cfg.credential_id || '';
-  document.getElementById('mcPbsHost').value = cfg.host || '';
-  document.getElementById('mcPbsPort').value = cfg.port || 8007;
-  document.getElementById('mcPbsDatastore').value = cfg.datastore || '';
-  document.getElementById('mcPbsMaxAge').value = cfg.max_backup_age_hours ?? 26;
-  document.getElementById('mcPbsDiskWarn').value = cfg.disk_warn ?? 80;
-  document.getElementById('mcPbsDiskCrit').value = cfg.disk_crit ?? 90;
-
-  // OPNsense Config
-  document.getElementById('mcOpnsenseCredential').value = cfg.credential_id || '';
-  document.getElementById('mcOpnsenseHost').value = cfg.host || '';
-  document.getElementById('mcOpnsensePort').value = cfg.port || 443;
-  document.getElementById('mcOpnsenseMode').value = cfg.check_mode || 'gateways';
-  document.getElementById('mcOpnsenseServices').value = cfg.services || '';
-
-  // Unifi Config
-  document.getElementById('mcUnifiCredential').value = cfg.credential_id || '';
-  document.getElementById('mcUnifiHost').value = cfg.host || '';
-  document.getElementById('mcUnifiPort').value = cfg.port || 443;
-  document.getElementById('mcUnifiSite').value = cfg.site || 'default';
-  document.getElementById('mcUnifiMode').value = cfg.check_mode || 'devices';
-  document.getElementById('mcUnifiMac').value = cfg.device_mac || '';
 
   showModal('monitorCheckModal');
 }
@@ -346,78 +273,6 @@ function _buildCheckConfig() {
       services: document.getElementById('mcServiceNames').value
         .split(',').map(s => s.trim()).filter(Boolean),
     };
-  }
-  if (type === 'snmp') {
-    const cfg = {
-      target: document.getElementById('mcSnmpTarget').value.trim(),
-      port: parseInt(document.getElementById('mcSnmpPort').value) || 161,
-      community: document.getElementById('mcSnmpCommunity').value.trim() || 'public',
-      mode: document.getElementById('mcSnmpMode').value,
-      oid: document.getElementById('mcSnmpOid').value.trim(),
-      timeout: parseInt(document.getElementById('mcSnmpTimeout').value) || 5,
-    };
-    const expected = document.getElementById('mcSnmpExpected').value.trim();
-    if (expected) cfg.expected_value = expected;
-    const warn = document.getElementById('mcSnmpWarnThreshold').value.trim();
-    if (warn) cfg.warning_threshold = parseFloat(warn);
-    const crit = document.getElementById('mcSnmpCritThreshold').value.trim();
-    if (crit) cfg.critical_threshold = parseFloat(crit);
-    return cfg;
-  }
-  if (type === 'proxmox_node') {
-    return {
-      credential_id: document.getElementById('mcPveNodeCredential').value,
-      host: document.getElementById('mcPveNodeHost').value.trim(),
-      port: parseInt(document.getElementById('mcPveNodePort').value) || 8006,
-      node: document.getElementById('mcPveNodeName').value.trim(),
-      cpu_warn: parseInt(document.getElementById('mcPveNodeCpuWarn').value) || 85,
-      cpu_crit: parseInt(document.getElementById('mcPveNodeCpuCrit').value) || 95,
-    };
-  }
-  if (type === 'proxmox_vm') {
-    return {
-      credential_id: document.getElementById('mcPveVmCredential').value,
-      host: document.getElementById('mcPveVmHost').value.trim(),
-      port: parseInt(document.getElementById('mcPveVmPort').value) || 8006,
-      node: document.getElementById('mcPveVmNode').value.trim(),
-      vmid: document.getElementById('mcPveVmId').value.trim(),
-      vm_type: document.getElementById('mcPveVmType').value,
-      expected_status: document.getElementById('mcPveVmExpected').value.trim() || 'running',
-    };
-  }
-  if (type === 'pbs_job') {
-    return {
-      credential_id: document.getElementById('mcPbsCredential').value,
-      host: document.getElementById('mcPbsHost').value.trim(),
-      port: parseInt(document.getElementById('mcPbsPort').value) || 8007,
-      datastore: document.getElementById('mcPbsDatastore').value.trim(),
-      max_backup_age_hours: parseInt(document.getElementById('mcPbsMaxAge').value) || 26,
-      disk_warn: parseInt(document.getElementById('mcPbsDiskWarn').value) || 80,
-      disk_crit: parseInt(document.getElementById('mcPbsDiskCrit').value) || 90,
-    };
-  }
-  if (type === 'opnsense') {
-    const cfg = {
-      credential_id: document.getElementById('mcOpnsenseCredential').value,
-      host: document.getElementById('mcOpnsenseHost').value.trim(),
-      port: parseInt(document.getElementById('mcOpnsensePort').value) || 443,
-      check_mode: document.getElementById('mcOpnsenseMode').value,
-    };
-    const svcs = document.getElementById('mcOpnsenseServices').value.trim();
-    if (svcs) cfg.services = svcs;
-    return cfg;
-  }
-  if (type === 'unifi_device') {
-    const cfg = {
-      credential_id: document.getElementById('mcUnifiCredential').value,
-      host: document.getElementById('mcUnifiHost').value.trim(),
-      port: parseInt(document.getElementById('mcUnifiPort').value) || 443,
-      site: document.getElementById('mcUnifiSite').value.trim() || 'default',
-      check_mode: document.getElementById('mcUnifiMode').value,
-    };
-    const mac = document.getElementById('mcUnifiMac').value.trim();
-    if (mac) cfg.device_mac = mac;
-    return cfg;
   }
   return {};
 }
@@ -660,141 +515,6 @@ async function loadAlertLog() {
   }
 }
 
-// ── Credentials ──────────────────────────────────────────────────────────
-function renderMonitorCredentials() {
-  const container = document.getElementById('monitorCredentialList');
-  const empty = document.getElementById('monitorCredentialEmpty');
-  if (!container) return;
-  container.innerHTML = '';
-
-  const creds = state.monitorCredentials || [];
-  if (creds.length === 0) {
-    if (empty) empty.classList.remove('hidden');
-    return;
-  }
-  if (empty) empty.classList.add('hidden');
-
-  const typeLabels = {
-    proxmox_token: 'Proxmox Token',
-    opnsense_api: 'OPNsense API',
-    unifi_login: 'Unifi Login',
-    snmp_community: 'SNMP Community',
-  };
-
-  const rows = creds.map(c => `<tr>
-    <td><strong>${esc(c.name)}</strong></td>
-    <td><span class="badge badge-${c.credType}">${esc(typeLabels[c.credType] || c.credType)}</span></td>
-    <td style="white-space:nowrap">
-      <button class="btn small" onclick="editCredential('${c.id}')">Bearbeiten</button>
-      <button class="btn small ghost" onclick="deleteCredential('${c.id}')">L\u00f6schen</button>
-    </td>
-  </tr>`).join('');
-
-  container.innerHTML = `<table class="data-table" style="margin:0">
-    <thead><tr><th>Name</th><th>Typ</th><th>Aktionen</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-}
-
-// ── Credential Modal ─────────────────────────────────────────────────────
-document.getElementById('addCredentialBtn')?.addEventListener('click', () => openCredentialModal(null));
-
-document.getElementById('credType')?.addEventListener('change', function() {
-  document.getElementById('credProxmoxFields').classList.toggle('hidden', this.value !== 'proxmox_token');
-  document.getElementById('credOpnsenseFields').classList.toggle('hidden', this.value !== 'opnsense_api');
-  document.getElementById('credUnifiFields').classList.toggle('hidden', this.value !== 'unifi_login');
-  document.getElementById('credSnmpFields').classList.toggle('hidden', this.value !== 'snmp_community');
-});
-
-function openCredentialModal(cred) {
-  state.editingCredentialId = cred ? cred.id : null;
-  document.getElementById('credentialModalTitle').textContent = cred ? 'Credential bearbeiten' : 'Neues Credential';
-
-  document.getElementById('credName').value = cred?.name || '';
-  document.getElementById('credType').value = cred?.credType || 'proxmox_token';
-
-  const cfg = cred?.config || {};
-  document.getElementById('credPveTokenId').value = cfg.token_id || '';
-  document.getElementById('credPveTokenSecret').value = cfg.token_secret || '';
-  document.getElementById('credOpsKey').value = cfg.api_key || '';
-  document.getElementById('credOpsSecret').value = cfg.api_secret || '';
-  document.getElementById('credUnifiUser').value = cfg.username || '';
-  document.getElementById('credUnifiPass').value = cfg.password || '';
-  document.getElementById('credSnmpCommunity').value = cfg.community || 'public';
-
-  const type = cred?.credType || 'proxmox_token';
-  document.getElementById('credProxmoxFields').classList.toggle('hidden', type !== 'proxmox_token');
-  document.getElementById('credOpnsenseFields').classList.toggle('hidden', type !== 'opnsense_api');
-  document.getElementById('credUnifiFields').classList.toggle('hidden', type !== 'unifi_login');
-  document.getElementById('credSnmpFields').classList.toggle('hidden', type !== 'snmp_community');
-
-  showModal('credentialModal');
-}
-
-function _buildCredentialConfig() {
-  const type = document.getElementById('credType').value;
-  if (type === 'proxmox_token') {
-    return {
-      token_id: document.getElementById('credPveTokenId').value.trim(),
-      token_secret: document.getElementById('credPveTokenSecret').value.trim(),
-    };
-  }
-  if (type === 'opnsense_api') {
-    return {
-      api_key: document.getElementById('credOpsKey').value.trim(),
-      api_secret: document.getElementById('credOpsSecret').value.trim(),
-    };
-  }
-  if (type === 'unifi_login') {
-    return {
-      username: document.getElementById('credUnifiUser').value.trim(),
-      password: document.getElementById('credUnifiPass').value.trim(),
-    };
-  }
-  if (type === 'snmp_community') {
-    return { community: document.getElementById('credSnmpCommunity').value.trim() };
-  }
-  return {};
-}
-
-document.getElementById('credentialForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const data = {
-    name: document.getElementById('credName').value.trim(),
-    cred_type: document.getElementById('credType').value,
-    config: _buildCredentialConfig(),
-  };
-  try {
-    if (state.editingCredentialId) {
-      await put(`/api/monitoring/credentials/${state.editingCredentialId}`, data);
-      toast('Credential gespeichert');
-    } else {
-      await post('/api/monitoring/credentials', data);
-      toast('Credential erstellt');
-    }
-    closeModal('credentialModal');
-    await loadMonitoring();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
-function editCredential(id) {
-  const c = (state.monitorCredentials || []).find(c => c.id === id);
-  if (c) openCredentialModal(c);
-}
-
-async function deleteCredential(id) {
-  if (!confirm('Credential wirklich loeschen?')) return;
-  try {
-    await del(`/api/monitoring/credentials/${id}`);
-    toast('Credential geloescht');
-    await loadMonitoring();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-}
-
 // ── Templates ────────────────────────────────────────────────────────────
 function renderMonitorTemplates() {
   const container = document.getElementById('monitorTemplateList');
@@ -868,7 +588,7 @@ function _renderTemplateCheckDefs() {
         <span class="badge badge-${def.check_type || 'ping'}" style="flex-shrink:0;font-size:10px">${esc(typeBadge)}</span>
         <input value="${esc(def.name || '')}" onchange="state.templateCheckDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name ({{server_name}})" />
         <select onchange="state.templateCheckDefs[${i}].check_type=this.value;state.templateCheckDefs[${i}].config=_tplCheckDefaults(this.value);_renderTemplateCheckDefs()" style="width:110px">
-          ${['ping','tcp','http','agent_ping','agent_resources','service_process','snmp','proxmox_node','proxmox_vm','pbs_job','opnsense','unifi_device']
+          ${['ping','tcp','http','agent_ping','agent_resources','service_process']
             .map(t => `<option value="${t}" ${def.check_type===t?'selected':''}>${t}</option>`).join('')}
         </select>
         <select onchange="state.templateCheckDefs[${i}].interval=this.value" style="width:65px">
@@ -897,12 +617,6 @@ function _tplCheckDefaults(type) {
     case 'agent_ping':      return { server_id: '{{server_id}}', stale_minutes: 5 };
     case 'agent_resources': return { cpu_warn: 80, cpu_crit: 95, memory_warn: 80, memory_crit: 95 };
     case 'service_process': return { process_name: '' };
-    case 'snmp':           return { target: h, port: 161, community: 'public', mode: 'get', oid: '1.3.6.1.2.1.1.3.0', timeout: 5 };
-    case 'proxmox_node':   return { api_url: 'https://{{hostname}}:8006', credential_id: '' };
-    case 'proxmox_vm':     return { api_url: 'https://{{hostname}}:8006', credential_id: '', node: 'pve' };
-    case 'pbs_job':        return { api_url: 'https://{{hostname}}:8007', credential_id: '', max_age_hours: 24 };
-    case 'opnsense':       return { api_url: 'https://{{hostname}}', credential_id: '', mode: 'gateways' };
-    case 'unifi_device':   return { controller_url: 'https://{{hostname}}:8443', credential_id: '', mode: 'devices' };
     default:               return {};
   }
 }
@@ -969,36 +683,6 @@ function _tplCheckConfigFields(type, cfg, idx) {
 
     case 'service_process':
       return inp('process_name', cfg.process_name, 'Prozessname', {width:'180px'});
-
-    case 'snmp':
-      return inp('target', cfg.target, 'Ziel', {width:'140px'})
-        + inp('port', cfg.port, 'Port', {width:'60px', type:'number'})
-        + inp('community', cfg.community, 'Community', {width:'90px'})
-        + sel('mode', cfg.mode, 'Modus', ['get','walk'])
-        + inp('oid', cfg.oid, 'OID', {width:'180px'})
-        + inp('expected_value', cfg.expected_value, 'Erwartet', {width:'80px'})
-        + inp('timeout', cfg.timeout, 'Timeout', {width:'60px', type:'number'});
-
-    case 'proxmox_node':
-    case 'proxmox_vm':
-      return inp('api_url', cfg.api_url, 'API URL', {width:'200px'})
-        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
-        + (type === 'proxmox_vm' ? inp('node', cfg.node, 'Node', {width:'90px'}) : '');
-
-    case 'pbs_job':
-      return inp('api_url', cfg.api_url, 'API URL', {width:'200px'})
-        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
-        + inp('max_age_hours', cfg.max_age_hours, 'Max. Alter (h)', {width:'80px', type:'number'});
-
-    case 'opnsense':
-      return inp('api_url', cfg.api_url, 'API URL', {width:'200px'})
-        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
-        + sel('mode', cfg.mode, 'Modus', ['gateways','interfaces','services']);
-
-    case 'unifi_device':
-      return inp('controller_url', cfg.controller_url, 'Controller URL', {width:'200px'})
-        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
-        + sel('mode', cfg.mode, 'Modus', ['devices','clients']);
 
     default:
       return `<span style="color:var(--text-soft);font-size:12px">Keine Config-Felder</span>`;

@@ -26,8 +26,6 @@ const state = {
   editingMonitorCheckId: null,
   monitorAlertRules: [],
   editingAlertRuleId: null,
-  monitorCredentials: [],
-  editingCredentialId: null,
   monitorTemplates: [],
   editingTemplateId: null,
   templateCheckDefs: [],

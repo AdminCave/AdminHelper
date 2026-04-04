@@ -15,13 +15,13 @@ from app.core.auth import require_internal, require_agent
 from app.core.database import get_db
 from app.core.victoria import victoria
 from app.models import (
-    MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorCredential,
+    MonitorAlertLog, MonitorAlertRule, MonitorCheck,
     MonitorState, MonitorTemplate, MonitorTemplateAssignment,
 )
 from app.schemas import (
     AlertRuleCreate, AlertRuleUpdate, CheckCreate, CheckUpdate,
-    CredentialCreate, CredentialUpdate, TemplateAssign, TemplateCreate, TemplateUpdate,
-    VALID_CHANNELS, VALID_CHECK_TYPES, VALID_CRED_TYPES, VALID_INTERVALS, VALID_SEVERITIES,
+    TemplateAssign, TemplateCreate, TemplateUpdate,
+    VALID_CHANNELS, VALID_CHECK_TYPES, VALID_INTERVALS, VALID_SEVERITIES,
 )
 from app.template_sync import apply_template, cleanup_server, remove_template, sync_template
 from app.scheduler import add_check, remove_check
@@ -461,83 +461,6 @@ def toggle_alert_rule(rule_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(rule)
     return rule.to_dict()
-
-
-# ---------------------------------------------------------------------------
-# Credentials CRUD (interner Zugriff via SRM-Proxy)
-# ---------------------------------------------------------------------------
-
-@router.get("/credentials", dependencies=[Depends(require_internal)])
-def list_credentials(db: Session = Depends(get_db)):
-    """Alle Credentials auflisten (Secrets maskiert)."""
-    creds = db.query(MonitorCredential).order_by(MonitorCredential.name).all()
-    return [c.to_dict(mask_secrets=True) for c in creds]
-
-
-@router.post("/credentials", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)])
-def create_credential(data: CredentialCreate, db: Session = Depends(get_db)):
-    """Neues Credential erstellen."""
-    if data.cred_type not in VALID_CRED_TYPES:
-        raise HTTPException(400, f"Ungueltiger cred_type. Erlaubt: {', '.join(sorted(VALID_CRED_TYPES))}")
-
-    cred = MonitorCredential(
-        id=str(uuid.uuid4()),
-        name=data.name,
-        cred_type=data.cred_type,
-        config=json.dumps(data.config),
-    )
-    db.add(cred)
-    db.commit()
-    db.refresh(cred)
-    return cred.to_dict(mask_secrets=True)
-
-
-@router.get("/credentials/{cred_id}", dependencies=[Depends(require_internal)])
-def get_credential(cred_id: str, db: Session = Depends(get_db)):
-    """Einzelnes Credential abrufen (Secrets maskiert)."""
-    cred = db.query(MonitorCredential).filter(MonitorCredential.id == cred_id).first()
-    if not cred:
-        raise HTTPException(404, "Credential nicht gefunden")
-    return cred.to_dict(mask_secrets=True)
-
-
-@router.put("/credentials/{cred_id}", dependencies=[Depends(require_internal)])
-def update_credential(cred_id: str, data: CredentialUpdate, db: Session = Depends(get_db)):
-    """Credential aktualisieren."""
-    cred = db.query(MonitorCredential).filter(MonitorCredential.id == cred_id).first()
-    if not cred:
-        raise HTTPException(404, "Credential nicht gefunden")
-
-    sent = data.model_fields_set
-    if "cred_type" in sent and data.cred_type not in VALID_CRED_TYPES:
-        raise HTTPException(400, f"Ungueltiger cred_type")
-
-    if "name" in sent:
-        cred.name = data.name
-    if "cred_type" in sent:
-        cred.cred_type = data.cred_type
-    if "config" in sent:
-        # Merge: "***"-Werte beibehalten (nicht ueberschreiben)
-        old_cfg = json.loads(cred.config) if cred.config else {}
-        new_cfg = data.config
-        for key, val in new_cfg.items():
-            if val == "***":
-                new_cfg[key] = old_cfg.get(key, "")
-        cred.config = json.dumps(new_cfg)
-
-    db.commit()
-    db.refresh(cred)
-    return cred.to_dict(mask_secrets=True)
-
-
-@router.delete("/credentials/{cred_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_internal)])
-def delete_credential(cred_id: str, db: Session = Depends(get_db)):
-    """Credential loeschen."""
-    cred = db.query(MonitorCredential).filter(MonitorCredential.id == cred_id).first()
-    if not cred:
-        raise HTTPException(404, "Credential nicht gefunden")
-    db.delete(cred)
-    db.commit()
 
 
 # ---------------------------------------------------------------------------
