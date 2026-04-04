@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+systemctl daemon-reload
+mkdir -p /etc/srm
+chmod 700 /etc/srm
+echo "srm-monitor-agent installiert."
+echo "Einrichtung: sudo srm-monitor-agent --init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"

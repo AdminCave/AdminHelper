@@ -1,0 +1,12 @@
+Package: srm-monitor-agent
+Version: __VERSION__
+Architecture: all
+Maintainer: Simple Remote Manager <noreply@srm.local>
+Depends: systemd, python3 (>= 3.7), python3-psutil
+Section: net
+Priority: optional
+Homepage: https://gitlab.local/srm/simpleremotemanager
+Description: SRM Monitoring Agent
+ Collects system metrics (CPU, RAM, disk, load, services) and pushes
+ them to the SRM Monitoring Service. Includes systemd timer for
+ periodic reporting (every 60 seconds).

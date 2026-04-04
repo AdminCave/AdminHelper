@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+systemctl stop srm-monitor-agent.timer 2>/dev/null || true
+systemctl disable srm-monitor-agent.timer 2>/dev/null || true

@@ -8,17 +8,20 @@ Modes:
   --init --url <URL> --api-key <KEY> --server-id <ID>  (Ersteinrichtung)
   (keine Args)                                          (periodischer Push)
 
-Abhaengigkeiten: python3 (>= 3.7), optional psutil
+Abhaengigkeiten: python3 (>= 3.7), python3-psutil
 """
 
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+
+import psutil
 
 CONF_DIR = Path("/etc/srm")
 CONF_FILE = CONF_DIR / "monitor.conf"
@@ -38,137 +41,52 @@ def die(msg: str) -> None:
 # System-Metriken sammeln
 # ---------------------------------------------------------------------------
 
-def collect_cpu_percent() -> float | None:
-    """CPU-Auslastung aus /proc/stat berechnen (Delta ueber 1 Sekunde)."""
-    try:
-        import psutil
-        return psutil.cpu_percent(interval=1)
-    except ImportError:
-        pass
-
-    try:
-        def read_stat():
-            with open("/proc/stat") as f:
-                parts = f.readline().split()
-            # user, nice, system, idle, iowait, irq, softirq, steal
-            vals = [int(x) for x in parts[1:9]]
-            idle = vals[3] + vals[4]
-            total = sum(vals)
-            return idle, total
-
-        idle1, total1 = read_stat()
-        time.sleep(1)
-        idle2, total2 = read_stat()
-
-        idle_delta = idle2 - idle1
-        total_delta = total2 - total1
-        if total_delta == 0:
-            return 0.0
-        return round((1 - idle_delta / total_delta) * 100, 1)
-    except Exception:
-        return None
+def collect_cpu_percent() -> float:
+    """CPU-Auslastung (Delta ueber 1 Sekunde)."""
+    return psutil.cpu_percent(interval=1)
 
 
 def collect_memory() -> dict:
     """Speicher-Informationen."""
-    try:
-        import psutil
-        mem = psutil.virtual_memory()
-        return {
-            "memory_percent": round(mem.percent, 1),
-            "memory_total_mb": round(mem.total / 1024 / 1024),
-            "memory_used_mb": round(mem.used / 1024 / 1024),
-        }
-    except ImportError:
-        pass
-
-    try:
-        info = {}
-        with open("/proc/meminfo") as f:
-            for line in f:
-                parts = line.split()
-                key = parts[0].rstrip(":")
-                val = int(parts[1])  # kB
-                info[key] = val
-
-        total = info.get("MemTotal", 0)
-        available = info.get("MemAvailable", 0)
-        used = total - available
-        percent = round(used / total * 100, 1) if total > 0 else 0
-        return {
-            "memory_percent": percent,
-            "memory_total_mb": round(total / 1024),
-            "memory_used_mb": round(used / 1024),
-        }
-    except Exception:
-        return {}
+    mem = psutil.virtual_memory()
+    return {
+        "memory_percent": round(mem.percent, 1),
+        "memory_total_mb": round(mem.total / 1024 / 1024),
+        "memory_used_mb": round(mem.used / 1024 / 1024),
+    }
 
 
 def collect_load() -> dict:
     """Load Average."""
-    try:
-        load1, load5, load15 = os.getloadavg()
-        return {
-            "load_1m": round(load1, 2),
-            "load_5m": round(load5, 2),
-            "load_15m": round(load15, 2),
-        }
-    except Exception:
-        return {}
+    load1, load5, load15 = os.getloadavg()
+    return {
+        "load_1m": round(load1, 2),
+        "load_5m": round(load5, 2),
+        "load_15m": round(load15, 2),
+    }
 
 
 def collect_disks() -> list[dict]:
     """Festplatten-Auslastung."""
-    try:
-        import psutil
-        disks = []
-        for part in psutil.disk_partitions():
-            if part.fstype in ("", "squashfs", "tmpfs", "devtmpfs", "overlay"):
-                continue
-            try:
-                usage = psutil.disk_usage(part.mountpoint)
-                disks.append({
-                    "mount": part.mountpoint,
-                    "percent": round(usage.percent, 1),
-                    "total_gb": round(usage.total / 1024**3, 1),
-                    "used_gb": round(usage.used / 1024**3, 1),
-                })
-            except PermissionError:
-                continue
-        return disks
-    except ImportError:
-        pass
-
-    # Fallback: df
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["df", "-P", "--exclude-type=tmpfs", "--exclude-type=devtmpfs", "--exclude-type=squashfs"],
-            capture_output=True, text=True, timeout=5,
-        )
-        disks = []
-        for line in result.stdout.strip().split("\n")[1:]:
-            parts = line.split()
-            if len(parts) < 6:
-                continue
-            total_kb = int(parts[1])
-            used_kb = int(parts[2])
-            mount = parts[5]
-            percent = round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0
+    disks = []
+    for part in psutil.disk_partitions():
+        if part.fstype in ("", "squashfs", "tmpfs", "devtmpfs", "overlay"):
+            continue
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
             disks.append({
-                "mount": mount,
-                "percent": percent,
-                "total_gb": round(total_kb / 1024**2, 1),
-                "used_gb": round(used_kb / 1024**2, 1),
+                "mount": part.mountpoint,
+                "percent": round(usage.percent, 1),
+                "total_gb": round(usage.total / 1024**3, 1),
+                "used_gb": round(usage.used / 1024**3, 1),
             })
-        return disks
-    except Exception:
-        return []
+        except PermissionError:
+            continue
+    return disks
 
 
 def collect_services(service_names: list[str]) -> list[dict]:
     """Prueft ob systemd-Services laufen."""
-    import subprocess
     services = []
     for name in service_names:
         try:
@@ -196,41 +114,30 @@ def collect_services(service_names: list[str]) -> list[dict]:
     return services
 
 
-def collect_uptime() -> int | None:
+def collect_uptime() -> int:
     """Uptime in Sekunden."""
-    try:
-        with open("/proc/uptime") as f:
-            return int(float(f.read().split()[0]))
-    except Exception:
-        return None
+    return int(time.time() - psutil.boot_time())
 
 
 def build_report(service_names: list[str]) -> dict:
     """Sammelt alle Metriken und baut den Report."""
-    cpu = collect_cpu_percent()
-    mem = collect_memory()
-    load = collect_load()
+    resources = {
+        "cpu_percent": collect_cpu_percent(),
+    }
+    resources.update(collect_memory())
+    resources.update(collect_load())
     disks = collect_disks()
-    uptime = collect_uptime()
-
-    resources = {}
-    if cpu is not None:
-        resources["cpu_percent"] = cpu
-    resources.update(mem)
-    resources.update(load)
     if disks:
         resources["disks"] = disks
 
     report = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "resources": resources,
+        "uptime_seconds": int(time.time() - psutil.boot_time()),
     }
 
     if service_names:
         report["services"] = collect_services(service_names)
-
-    if uptime is not None:
-        report["uptime_seconds"] = uptime
 
     return report
 
@@ -294,7 +201,6 @@ def do_init(url: str, api_key: str, server_id: str, services: str) -> None:
         log("WARNUNG: Test-Push fehlgeschlagen — pruefe URL und API-Key")
 
     # Systemd Units aktivieren (wenn vorhanden)
-    import subprocess
     for unit in ["srm-monitor-agent.timer"]:
         try:
             subprocess.run(["systemctl", "enable", "--now", unit], check=True, timeout=10)
@@ -342,7 +248,6 @@ def main():
     # Sync Mode: Config laden und Report pushen
     config = load_config()
     if not config:
-        # Kein Fehler — Agent ist noch nicht eingerichtet
         sys.exit(0)
 
     url = config.get("MONITOR_URL", "")
