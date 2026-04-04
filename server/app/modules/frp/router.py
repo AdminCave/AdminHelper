@@ -248,6 +248,35 @@ def update_tunnel(tunnel_id: str, data: FrpTunnelUpdate, db: Session = Depends(g
     if "tags" in sent:
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
+    # Auto-Connection nachträglich erstellen
+    if data.auto_create_connection and not tunnel.connection_id:
+        auto_conn = None
+        t_type = tunnel.tunnel_type
+        if t_type == "stcp" and tunnel.visitor_port:
+            conn_kind = "ssh" if tunnel.protocol == "ssh" else "rdp" if tunnel.protocol == "rdp" else "web"
+            auto_conn = Connection(
+                id=str(uuid.uuid4()),
+                name=f"{tunnel.name} (via FRP)",
+                kind=conn_kind,
+                host="127.0.0.1",
+                port=tunnel.visitor_port,
+                server_id=tunnel.server_id,
+            )
+        elif t_type == "https" and tunnel.custom_domains:
+            domain = tunnel.custom_domains.split(",")[0].strip()
+            if domain:
+                auto_conn = Connection(
+                    id=str(uuid.uuid4()),
+                    name=f"{tunnel.name} (via FRP)",
+                    kind="web",
+                    url=f"https://{domain}",
+                    server_id=tunnel.server_id,
+                )
+        if auto_conn:
+            db.add(auto_conn)
+            db.flush()
+            tunnel.connection_id = auto_conn.id
+
     db.commit()
     db.refresh(tunnel)
     fire_event("frp.tunnel.updated", {"id": tunnel.id, "name": tunnel.name})

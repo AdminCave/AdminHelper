@@ -82,6 +82,7 @@ class FrpTunnelUpdate(BaseModel):
     enabled: Optional[bool] = None
     extra_config: Optional[dict] = None
     tags: Optional[list[str]] = None
+    auto_create_connection: bool = False
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
 

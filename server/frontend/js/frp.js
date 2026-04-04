@@ -251,7 +251,7 @@ function openTunnelModal(tunnel) {
   document.getElementById('ftVisitorPort').value = tunnel?.visitorPort || '';
   document.getElementById('ftDomains').value    = tunnel?.customDomains || '';
   document.getElementById('ftTags').value       = (tunnel?.tags || []).join(', ');
-  document.getElementById('ftAutoConn').checked = false;
+  document.getElementById('ftAutoConn').checked = !!(tunnel?.connectionId);
 
   _updateTunnelFormFields();
   showModal('frpTunnelModal');
