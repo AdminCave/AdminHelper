@@ -1477,18 +1477,21 @@ body {
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 13px;
   text-transform: none;
   letter-spacing: 0;
   color: var(--text);
   cursor: pointer;
+  padding: 8px 0;
 }
 
-.checkbox-label input {
-  width: 16px;
-  height: 16px;
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
   accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* Key reveal */
@@ -1520,7 +1523,7 @@ body {
   grid-column: span 2;
 }
 
-.conn-form input,
+.conn-form input:not([type="checkbox"]),
 .conn-form select,
 .conn-form textarea {
   width: 100%;
@@ -1534,7 +1537,7 @@ body {
   transition: border-color 0.2s ease;
 }
 
-.conn-form input:focus,
+.conn-form input:not([type="checkbox"]):focus,
 .conn-form select:focus,
 .conn-form textarea:focus {
   outline: none;

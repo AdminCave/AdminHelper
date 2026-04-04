@@ -152,10 +152,6 @@ function renderConnTagFilter() {
   const select = document.getElementById('connTagSelect');
   if (!select) return;
   const allTags = [...new Set(state.connections.flatMap(c => c.tags || []))].sort();
-  if (allTags.length === 0) {
-    select.classList.add('hidden');
-    return;
-  }
   select.classList.remove('hidden');
   const prev = state.connTagFilter;
   select.innerHTML = '<option value="">Alle Tags</option>' +
@@ -752,10 +748,6 @@ function renderServerTagFilter() {
   const select = document.getElementById('serverTagSelect');
   if (!select) return;
   const allTags = [...new Set(state.servers.flatMap(s => s.tags || []))].sort();
-  if (allTags.length === 0) {
-    select.classList.add('hidden');
-    return;
-  }
   select.classList.remove('hidden');
   const prev = state.serverTagFilter;
   select.innerHTML = '<option value="">Alle Tags</option>' +
@@ -952,10 +944,6 @@ function renderTunnelTagFilter() {
   const select = document.getElementById('tunnelTagSelect');
   if (!select) return;
   const allTags = [...new Set(state.frpTunnels.flatMap(t => t.tags || []))].sort();
-  if (allTags.length === 0) {
-    select.classList.add('hidden');
-    return;
-  }
   select.classList.remove('hidden');
   const prev = state.tunnelTagFilter;
   select.innerHTML = '<option value="">Alle Tags</option>' +
