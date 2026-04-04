@@ -20,6 +20,25 @@ MONITOR_SERVICE_URL = os.environ.get("MONITOR_SERVICE_URL", "http://monitoring:8
 MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")
 
 
+@router.post("/agent/{server_id}/report")
+async def proxy_agent_report(server_id: str, request: Request):
+    """Proxy fuer Agent-Reports (Auth via X-API-Key, kein JWT noetig)."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{MONITOR_SERVICE_URL}/agent/{server_id}/report",
+            content=await request.body(),
+            headers={
+                "X-API-Key": request.headers.get("x-api-key", ""),
+                "Content-Type": request.headers.get("content-type", "application/json"),
+            },
+        )
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type"),
+        )
+
+
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_to_monitoring(path: str, request: Request, _admin=Depends(get_current_admin)):
     """Proxy fuer alle Monitoring-Anfragen (nur fuer Admins)."""

@@ -148,7 +148,7 @@ def build_report(service_names: list[str]) -> dict:
 
 def push_report(url: str, api_key: str, server_id: str, report: dict) -> bool:
     """Sendet den Report an den Monitoring-Service."""
-    endpoint = f"{url}/agent/{server_id}/report"
+    endpoint = f"{url.rstrip('/')}/agent/{server_id}/report"
     data = json.dumps(report).encode("utf-8")
 
     req = Request(endpoint, data=data, method="POST")

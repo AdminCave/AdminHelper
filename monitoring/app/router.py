@@ -715,6 +715,20 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
 # Server Cleanup (bei Server-Loeschung)
 # ---------------------------------------------------------------------------
 
+@router.get("/agent-setup", dependencies=[Depends(require_internal)])
+def get_agent_setup():
+    """Gibt die Agent-Setup-Informationen zurueck (API-Key + Hinweise)."""
+    import os
+    from app.core.config import AGENT_API_KEYS
+    agent_key = next(iter(AGENT_API_KEYS), None)
+    agent_port = os.environ.get("MONITOR_AGENT_PORT", "8480")
+    return {
+        "agentApiKey": agent_key,
+        "agentPort": agent_port,
+        "hasAgentKey": bool(agent_key),
+    }
+
+
 @router.delete("/servers/{server_id}/cleanup", dependencies=[Depends(require_internal)])
 def server_cleanup(server_id: str, db: Session = Depends(get_db)):
     """Alle Monitoring-Daten eines Servers bereinigen."""

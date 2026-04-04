@@ -115,6 +115,7 @@ VALID_CHECK_TYPES = {
     "tcp",
     "http",
     # Phase 2
+    "agent_ping",
     "agent_resources",
     "service_process",
     # Phase 4

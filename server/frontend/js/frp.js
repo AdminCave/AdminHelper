@@ -685,7 +685,16 @@ document.getElementById('createProvisionTokenBtn').addEventListener('click', asy
   try {
     const result = await post(`/api/frp/provision/${_provisionServerId}/token`);
     const srmUrl = window.location.origin;
-    const cmd = `sudo srm-frpc-sync --init \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${_provisionServerId}`;
+    let cmd = `# FRP-Client einrichten\nsudo srm-frpc-sync --init \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${_provisionServerId}`;
+
+    // Monitoring-Agent Befehl anhaengen
+    try {
+      const agentSetup = await get('/api/monitoring/agent-setup');
+      if (agentSetup.hasAgentKey) {
+        cmd += `\n\n# Monitoring-Agent einrichten\nsudo srm-monitor-agent --init \\\n  --url ${srmUrl}/api/monitoring \\\n  --api-key ${agentSetup.agentApiKey} \\\n  --server-id ${_provisionServerId}`;
+      }
+    } catch { /* Monitoring nicht erreichbar — nur FRP anzeigen */ }
+
     document.getElementById('provisionCommand').textContent = cmd;
     document.getElementById('provisionOneLiner').classList.remove('hidden');
     toast('Provision-Token erstellt (24h gueltig)');
