@@ -145,12 +145,22 @@ class AgentResourcesChecker:
 
 
 class ServiceProcessChecker:
-    """Prueft ob bestimmte Services laufen (basierend auf Agent-Push).
+    """Prueft ob Services laufen (basierend auf Agent-Push).
 
-    Config-Beispiel:
+    Zwei Modi:
+    - "auto": Erkennt automatisch failed und enabled-but-inactive Units
+    - "list": Prueft nur explizit benannte Services (bisheriges Verhalten)
+
+    Config-Beispiel (auto):
     {
-        "services": ["nginx", "docker", "frpc"],
-        "stale_minutes": 5
+        "mode": "auto",
+        "ignore": ["ModemManager.service", "udisks2.service"]
+    }
+
+    Config-Beispiel (list):
+    {
+        "mode": "list",
+        "services": ["nginx", "docker", "frpc"]
     }
     """
 
@@ -158,7 +168,46 @@ class ServiceProcessChecker:
         return "unknown", "Wartet auf Agent-Daten", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Wertet die Service-Liste aus dem Agent-Report aus."""
+        """Wertet die Service-Daten aus dem Agent-Report aus."""
+        mode = config.get("mode", "list")
+
+        if mode == "auto":
+            return self._evaluate_auto(config, report)
+        return self._evaluate_list(config, report)
+
+    def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+        """Auto-Modus: prueft systemd health aus dem Report."""
+        systemd = report.get("systemd")
+        if not systemd:
+            return "unknown", "Keine systemd-Daten im Report", None
+
+        ignore = set(config.get("ignore", []))
+
+        failed = [u for u in systemd.get("failed", []) if u not in ignore]
+        enabled_inactive = [u for u in systemd.get("enabled_inactive", []) if u not in ignore]
+
+        metrics = {
+            "services_failed": len(failed),
+            "services_enabled_inactive": len(enabled_inactive),
+        }
+
+        if failed:
+            msg = f"Failed: {', '.join(failed)}"
+            if enabled_inactive:
+                msg += f"; Inaktiv (autostart): {', '.join(enabled_inactive)}"
+            return "critical", msg, metrics
+
+        if enabled_inactive:
+            return (
+                "warning",
+                f"Inaktiv (autostart): {', '.join(enabled_inactive)}",
+                metrics,
+            )
+
+        return "ok", "Alle systemd-Units OK", metrics
+
+    def _evaluate_list(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
+        """List-Modus: prueft explizit benannte Services."""
         expected = config.get("services", [])
         if not expected:
             return "ok", "Keine Services konfiguriert", None

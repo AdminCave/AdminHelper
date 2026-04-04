@@ -250,6 +250,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
     import time as _time
     from datetime import datetime, timezone
     from app.checkers.agent import AgentResourcesChecker, ServiceProcessChecker, record_agent_report
+    from app.checkers.plugins import ProxmoxBackupChecker, ZfsHealthChecker, DockerHealthChecker
 
     record_agent_report(server_id)
 
@@ -285,7 +286,8 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
         .filter(
             MonitorCheck.server_id == server_id,
             MonitorCheck.enabled == True,  # noqa: E712
-            MonitorCheck.check_type.in_(["agent_ping", "agent_resources", "service_process"]),
+            MonitorCheck.check_type.in_(["agent_ping", "agent_resources", "service_process",
+                                        "proxmox_backup", "zfs_health", "docker_health"]),
         )
         .all()
     )
@@ -303,6 +305,12 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
             result_status, message, metrics = AgentResourcesChecker().evaluate(config, report)
         elif check.check_type == "service_process":
             result_status, message, metrics = ServiceProcessChecker().evaluate(config, report)
+        elif check.check_type == "proxmox_backup":
+            result_status, message, metrics = ProxmoxBackupChecker().evaluate(config, report)
+        elif check.check_type == "zfs_health":
+            result_status, message, metrics = ZfsHealthChecker().evaluate(config, report)
+        elif check.check_type == "docker_health":
+            result_status, message, metrics = DockerHealthChecker().evaluate(config, report)
         else:
             continue
 

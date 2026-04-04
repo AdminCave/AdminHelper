@@ -175,6 +175,15 @@ document.getElementById('mcCheckType').addEventListener('change', function() {
   document.getElementById('mcHttpConfig').classList.toggle('hidden', this.value !== 'http');
   document.getElementById('mcAgentResourcesConfig').classList.toggle('hidden', this.value !== 'agent_resources');
   document.getElementById('mcServiceProcessConfig').classList.toggle('hidden', this.value !== 'service_process');
+  document.getElementById('mcProxmoxBackupConfig').classList.toggle('hidden', this.value !== 'proxmox_backup');
+  document.getElementById('mcZfsHealthConfig').classList.toggle('hidden', this.value !== 'zfs_health');
+  document.getElementById('mcDockerHealthConfig').classList.toggle('hidden', this.value !== 'docker_health');
+});
+
+// Service-Modus umschalten
+document.getElementById('mcServiceMode')?.addEventListener('change', function() {
+  document.getElementById('mcServiceListFields').classList.toggle('hidden', this.value !== 'list');
+  document.getElementById('mcServiceAutoFields').classList.toggle('hidden', this.value !== 'auto');
 });
 
 function openMonitorCheckModal(check) {
@@ -218,7 +227,24 @@ function openMonitorCheckModal(check) {
   document.getElementById('mcAgentDiskCrit').value = cfg.disk_crit ?? 95;
 
   // Service Process Config
+  const svcMode = cfg.mode || 'list';
+  document.getElementById('mcServiceMode').value = svcMode;
   document.getElementById('mcServiceNames').value = (cfg.services || []).join(', ');
+  document.getElementById('mcServiceIgnore').value = (cfg.ignore || []).join(', ');
+  document.getElementById('mcServiceListFields').classList.toggle('hidden', svcMode !== 'list');
+  document.getElementById('mcServiceAutoFields').classList.toggle('hidden', svcMode !== 'auto');
+
+  // Proxmox Backup Config
+  document.getElementById('mcPveBackupMaxAge').value = cfg.max_backup_age_hours ?? 26;
+  document.getElementById('mcPveBackupExclude').value = (cfg.exclude_vmids || []).join(', ');
+  document.getElementById('mcPveBackupExcludeStopped').value = (cfg.exclude_stopped !== false) ? 'true' : 'false';
+
+  // ZFS Health Config
+  document.getElementById('mcZfsCapWarn').value = cfg.capacity_warn ?? 80;
+  document.getElementById('mcZfsCapCrit').value = cfg.capacity_crit ?? 90;
+
+  // Docker Health Config
+  document.getElementById('mcDockerIgnore').value = (cfg.ignore_containers || []).join(', ');
 
   // Config-Sections umschalten
   const type = check?.checkType || 'ping';
@@ -227,6 +253,9 @@ function openMonitorCheckModal(check) {
   document.getElementById('mcHttpConfig').classList.toggle('hidden', type !== 'http');
   document.getElementById('mcAgentResourcesConfig').classList.toggle('hidden', type !== 'agent_resources');
   document.getElementById('mcServiceProcessConfig').classList.toggle('hidden', type !== 'service_process');
+  document.getElementById('mcProxmoxBackupConfig').classList.toggle('hidden', type !== 'proxmox_backup');
+  document.getElementById('mcZfsHealthConfig').classList.toggle('hidden', type !== 'zfs_health');
+  document.getElementById('mcDockerHealthConfig').classList.toggle('hidden', type !== 'docker_health');
 
   showModal('monitorCheckModal');
 }
@@ -269,8 +298,37 @@ function _buildCheckConfig() {
     };
   }
   if (type === 'service_process') {
+    const mode = document.getElementById('mcServiceMode').value;
+    if (mode === 'auto') {
+      return {
+        mode: 'auto',
+        ignore: document.getElementById('mcServiceIgnore').value
+          .split(',').map(s => s.trim()).filter(Boolean),
+      };
+    }
     return {
+      mode: 'list',
       services: document.getElementById('mcServiceNames').value
+        .split(',').map(s => s.trim()).filter(Boolean),
+    };
+  }
+  if (type === 'proxmox_backup') {
+    return {
+      max_backup_age_hours: parseInt(document.getElementById('mcPveBackupMaxAge').value) || 26,
+      exclude_vmids: document.getElementById('mcPveBackupExclude').value
+        .split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
+      exclude_stopped: document.getElementById('mcPveBackupExcludeStopped').value === 'true',
+    };
+  }
+  if (type === 'zfs_health') {
+    return {
+      capacity_warn: parseInt(document.getElementById('mcZfsCapWarn').value) || 80,
+      capacity_crit: parseInt(document.getElementById('mcZfsCapCrit').value) || 90,
+    };
+  }
+  if (type === 'docker_health') {
+    return {
+      ignore_containers: document.getElementById('mcDockerIgnore').value
         .split(',').map(s => s.trim()).filter(Boolean),
     };
   }
@@ -588,7 +646,7 @@ function _renderTemplateCheckDefs() {
         <span class="badge badge-${def.check_type || 'ping'}" style="flex-shrink:0;font-size:10px">${esc(typeBadge)}</span>
         <input value="${esc(def.name || '')}" onchange="state.templateCheckDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name ({{server_name}})" />
         <select onchange="state.templateCheckDefs[${i}].check_type=this.value;state.templateCheckDefs[${i}].config=_tplCheckDefaults(this.value);_renderTemplateCheckDefs()" style="width:110px">
-          ${['ping','tcp','http','agent_ping','agent_resources','service_process']
+          ${['ping','tcp','http','agent_ping','agent_resources','service_process','proxmox_backup','zfs_health','docker_health']
             .map(t => `<option value="${t}" ${def.check_type===t?'selected':''}>${t}</option>`).join('')}
         </select>
         <select onchange="state.templateCheckDefs[${i}].interval=this.value" style="width:65px">
@@ -616,8 +674,11 @@ function _tplCheckDefaults(type) {
     case 'http':           return { url: 'http://{{hostname}}', method: 'GET', expected_status: 200, timeout: 10, verify_ssl: true };
     case 'agent_ping':      return { server_id: '{{server_id}}', stale_minutes: 5 };
     case 'agent_resources': return { cpu_warn: 80, cpu_crit: 95, memory_warn: 80, memory_crit: 95 };
-    case 'service_process': return { process_name: '' };
-    default:               return {};
+    case 'service_process': return { mode: 'auto', ignore: [] };
+    case 'proxmox_backup':  return { max_backup_age_hours: 26, exclude_vmids: [], exclude_stopped: true };
+    case 'zfs_health':      return { capacity_warn: 80, capacity_crit: 90 };
+    case 'docker_health':   return { ignore_containers: [] };
+    default:                return {};
   }
 }
 
@@ -682,7 +743,22 @@ function _tplCheckConfigFields(type, cfg, idx) {
         + inp('memory_crit', cfg.memory_crit, 'RAM Crit %', {width:'70px', type:'number'});
 
     case 'service_process':
-      return inp('process_name', cfg.process_name, 'Prozessname', {width:'180px'});
+      return sel('mode', cfg.mode || 'auto', 'Modus', [{value:'auto',label:'Auto'},{value:'list',label:'Liste'}])
+        + (cfg.mode === 'list'
+          ? inp('services', (cfg.services||[]).join(', '), 'Services', {width:'200px'})
+          : inp('ignore', (cfg.ignore||[]).join(', '), 'Ignorieren', {width:'200px'}));
+
+    case 'proxmox_backup':
+      return inp('max_backup_age_hours', cfg.max_backup_age_hours, 'Max. Alter (h)', {width:'80px', type:'number'})
+        + inp('exclude_vmids', (cfg.exclude_vmids||[]).join(', '), 'VMIDs ausschl.', {width:'120px'})
+        + sel('exclude_stopped', String(cfg.exclude_stopped ?? true), 'Gestoppte ign.', [{value:'true',label:'Ja'},{value:'false',label:'Nein'}]);
+
+    case 'zfs_health':
+      return inp('capacity_warn', cfg.capacity_warn, 'Kap. Warn %', {width:'80px', type:'number'})
+        + inp('capacity_crit', cfg.capacity_crit, 'Kap. Crit %', {width:'80px', type:'number'});
+
+    case 'docker_health':
+      return inp('ignore_containers', (cfg.ignore_containers||[]).join(', '), 'Ignorieren', {width:'200px'});
 
     default:
       return `<span style="color:var(--text-soft);font-size:12px">Keine Config-Felder</span>`;

@@ -909,6 +909,9 @@
               <option value="agent_ping">Agent: Ping</option>
               <option value="agent_resources">Agent: Ressourcen</option>
               <option value="service_process">Agent: Services</option>
+              <option value="proxmox_backup">Plugin: Proxmox Backup</option>
+              <option value="zfs_health">Plugin: ZFS Health</option>
+              <option value="docker_health">Plugin: Docker Health</option>
             </select>
           </div>
           <div class="field">
@@ -1031,11 +1034,74 @@
           <!-- Service Process Config -->
           <div id="mcServiceProcessConfig" class="hidden">
             <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
-              Prueft ob bestimmte systemd-Services laufen. Der Agent muss auf dem Server installiert sein und die Services ueberwachen.
+              Prueft systemd-Services. Im Auto-Modus werden failed und inaktive Autostart-Services automatisch erkannt.
+            </div>
+            <div class="field">
+              <label>Modus</label>
+              <select id="mcServiceMode">
+                <option value="auto">Auto (alle Units)</option>
+                <option value="list">Liste (benannte Services)</option>
+              </select>
+            </div>
+            <div id="mcServiceListFields">
+              <div class="field full">
+                <label>Services (kommagetrennt)</label>
+                <input id="mcServiceNames" placeholder="nginx, docker, frpc, postgresql" />
+              </div>
+            </div>
+            <div id="mcServiceAutoFields">
+              <div class="field full">
+                <label>Ignorieren (kommagetrennt)</label>
+                <input id="mcServiceIgnore" placeholder="ModemManager.service, udisks2.service" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Proxmox Backup Config -->
+          <div id="mcProxmoxBackupConfig" class="hidden">
+            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+              Prueft ob VMs/CTs aktuelle Backups haben. Plugin wird automatisch aktiviert wenn Proxmox erkannt wird.
+            </div>
+            <div class="field">
+              <label>Max. Backup-Alter (Stunden)</label>
+              <input id="mcPveBackupMaxAge" type="number" value="26" min="1" />
             </div>
             <div class="field full">
-              <label>Services (kommagetrennt)</label>
-              <input id="mcServiceNames" placeholder="nginx, docker, frpc, postgresql" />
+              <label>VMIDs ausschliessen (kommagetrennt)</label>
+              <input id="mcPveBackupExclude" placeholder="999, 101" />
+            </div>
+            <div class="field">
+              <label>Gestoppte VMs/CTs ignorieren</label>
+              <select id="mcPveBackupExcludeStopped">
+                <option value="true">Ja</option>
+                <option value="false">Nein</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- ZFS Health Config -->
+          <div id="mcZfsHealthConfig" class="hidden">
+            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+              Prueft ZFS Pool Health und Kapazitaet. Plugin wird automatisch aktiviert wenn ZFS erkannt wird.
+            </div>
+            <div class="field">
+              <label>Kapazitaet Warnung (%)</label>
+              <input id="mcZfsCapWarn" type="number" value="80" min="0" max="100" />
+            </div>
+            <div class="field">
+              <label>Kapazitaet Kritisch (%)</label>
+              <input id="mcZfsCapCrit" type="number" value="90" min="0" max="100" />
+            </div>
+          </div>
+
+          <!-- Docker Health Config -->
+          <div id="mcDockerHealthConfig" class="hidden">
+            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+              Prueft Docker Container Status. Plugin wird automatisch aktiviert wenn Docker erkannt wird.
+            </div>
+            <div class="field full">
+              <label>Container ignorieren (kommagetrennt)</label>
+              <input id="mcDockerIgnore" placeholder="watchtower, portainer-agent" />
             </div>
           </div>
 

@@ -14,6 +14,7 @@ Abhaengigkeiten: python3 (>= 3.7), python3-psutil
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -119,6 +120,241 @@ def collect_uptime() -> int:
     return int(time.time() - psutil.boot_time())
 
 
+# ---------------------------------------------------------------------------
+# Systemd Health (ersetzt teilweise collect_services)
+# ---------------------------------------------------------------------------
+
+def collect_systemd_health() -> dict:
+    """Sammelt failed Units und enabled-but-inactive Services."""
+    result: dict = {"failed": [], "enabled_inactive": []}
+
+    try:
+        out = subprocess.run(
+            ["systemctl", "list-units", "--state=failed", "--no-legend", "--plain"],
+            capture_output=True, text=True, timeout=10,
+        )
+        result["failed"] = [
+            line.split()[0] for line in out.stdout.strip().splitlines() if line.strip()
+        ]
+    except Exception:
+        pass
+
+    try:
+        out = subprocess.run(
+            ["systemctl", "list-units", "--type=service", "--state=inactive",
+             "--no-legend", "--plain"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in out.stdout.strip().splitlines():
+            unit = line.split()[0] if line.strip() else None
+            if not unit:
+                continue
+            try:
+                enabled = subprocess.run(
+                    ["systemctl", "is-enabled", unit],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if enabled.stdout.strip() == "enabled":
+                    result["enabled_inactive"].append(unit)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Plugin: Proxmox
+# ---------------------------------------------------------------------------
+
+def _find_last_backup(vmid: int) -> int | None:
+    """Findet den ctime-Timestamp des neuesten Backups fuer eine VMID."""
+    try:
+        storages_out = subprocess.run(
+            ["pvesh", "get", "/storage", "--output-format", "json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        storages = json.loads(storages_out.stdout)
+    except Exception:
+        return None
+
+    newest_ctime: int | None = None
+    for storage in storages:
+        sid = storage.get("storage", "")
+        content = storage.get("content", "")
+        if "backup" not in content:
+            continue
+        try:
+            backups_out = subprocess.run(
+                ["pvesh", "get", f"/nodes/localhost/storage/{sid}/content",
+                 "--content", "backup", "--vmid", str(vmid), "--output-format", "json"],
+                capture_output=True, text=True, timeout=15,
+            )
+            items = json.loads(backups_out.stdout)
+            if items:
+                ct = max(item.get("ctime", 0) for item in items)
+                if newest_ctime is None or ct > newest_ctime:
+                    newest_ctime = ct
+        except Exception:
+            continue
+
+    return newest_ctime
+
+
+def collect_proxmox() -> dict | None:
+    """Sammelt Proxmox Node-Status und VM/CT Backup-Infos via pvesh CLI."""
+    if not shutil.which("pvesh"):
+        return None
+
+    result: dict = {"node": None, "vms": []}
+
+    # Node-Status
+    try:
+        node_name = subprocess.run(
+            ["hostname", "-s"], capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        node_out = subprocess.run(
+            ["pvesh", "get", f"/nodes/{node_name}/status", "--output-format", "json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        nd = json.loads(node_out.stdout)
+        mem = nd.get("memory", {})
+        total = mem.get("total", 1) or 1
+        result["node"] = {
+            "name": node_name,
+            "cpu": round(nd.get("cpu", 0) * 100, 1),
+            "memory_percent": round(mem.get("used", 0) / total * 100, 1),
+        }
+    except Exception:
+        pass
+
+    # VMs + LXC Container
+    try:
+        vms_out = subprocess.run(
+            ["pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        vms = json.loads(vms_out.stdout)
+        for vm in vms:
+            vmid = vm.get("vmid")
+            if vmid is None:
+                continue
+            vm_info = {
+                "vmid": vmid,
+                "name": vm.get("name", ""),
+                "status": vm.get("status", "unknown"),
+                "type": vm.get("type", ""),  # "qemu" oder "lxc"
+                "last_backup_ts": _find_last_backup(vmid),
+            }
+            result["vms"].append(vm_info)
+    except Exception:
+        pass
+
+    return result if (result["node"] or result["vms"]) else None
+
+
+# ---------------------------------------------------------------------------
+# Plugin: ZFS
+# ---------------------------------------------------------------------------
+
+def collect_zfs() -> dict | None:
+    """Sammelt ZFS Pool Health und Kapazitaet."""
+    if not shutil.which("zpool"):
+        return None
+
+    pools = []
+    try:
+        out = subprocess.run(
+            ["zpool", "list", "-H", "-o", "name,size,alloc,free,cap,health"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in out.stdout.strip().splitlines():
+            parts = line.split("\t")
+            if len(parts) < 6:
+                continue
+            cap_str = parts[4].rstrip("%")
+            pools.append({
+                "name": parts[0],
+                "size": parts[1],
+                "allocated": parts[2],
+                "free": parts[3],
+                "capacity_percent": int(cap_str) if cap_str.isdigit() else 0,
+                "health": parts[5],
+            })
+    except Exception:
+        pass
+
+    if not pools:
+        return None
+
+    result: dict = {"pools": pools}
+
+    # Fehler-Details bei nicht-ONLINE Pools
+    if any(p["health"] != "ONLINE" for p in pools):
+        try:
+            status_out = subprocess.run(
+                ["zpool", "status", "-x"],
+                capture_output=True, text=True, timeout=10,
+            )
+            result["errors"] = status_out.stdout.strip()
+        except Exception:
+            pass
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Plugin: Docker
+# ---------------------------------------------------------------------------
+
+def collect_docker() -> dict | None:
+    """Sammelt Docker Container Status und Restart-Policies."""
+    if not shutil.which("docker"):
+        return None
+
+    # Pruefen ob Daemon laeuft
+    try:
+        subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=5, check=True,
+        )
+    except Exception:
+        return None
+
+    containers = []
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "-a", "--format", "{{json .}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in out.stdout.strip().splitlines():
+            if not line.strip():
+                continue
+            c = json.loads(line)
+            container = {
+                "id": c.get("ID", ""),
+                "name": c.get("Names", ""),
+                "image": c.get("Image", ""),
+                "state": c.get("State", ""),
+                "status": c.get("Status", ""),
+                "restart_policy": "",
+            }
+            try:
+                insp = subprocess.run(
+                    ["docker", "inspect", "--format",
+                     "{{.HostConfig.RestartPolicy.Name}}", container["id"]],
+                    capture_output=True, text=True, timeout=5,
+                )
+                container["restart_policy"] = insp.stdout.strip()
+            except Exception:
+                pass
+            containers.append(container)
+    except Exception:
+        pass
+
+    return {"containers": containers} if containers else None
+
+
 def build_report(service_names: list[str]) -> dict:
     """Sammelt alle Metriken und baut den Report."""
     resources = {
@@ -136,8 +372,28 @@ def build_report(service_names: list[str]) -> dict:
         "uptime_seconds": int(time.time() - psutil.boot_time()),
     }
 
+    # Systemd Health (automatisch)
+    systemd = collect_systemd_health()
+    if service_names:
+        systemd["watched"] = collect_services(service_names)
+    report["systemd"] = systemd
+
+    # Legacy: services-Key fuer Rueckwaertskompatibilitaet
     if service_names:
         report["services"] = collect_services(service_names)
+
+    # Auto-detected Plugins
+    proxmox = collect_proxmox()
+    if proxmox:
+        report["proxmox"] = proxmox
+
+    zfs = collect_zfs()
+    if zfs:
+        report["zfs"] = zfs
+
+    docker = collect_docker()
+    if docker:
+        report["docker"] = docker
 
     return report
 
