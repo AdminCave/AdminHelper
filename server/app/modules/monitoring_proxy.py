@@ -29,7 +29,10 @@ async def proxy_to_monitoring(path: str, request: Request, _admin=Depends(get_cu
             method=request.method,
             url=target_url,
             content=await request.body(),
-            headers={"X-Internal-Key": MONITOR_API_KEY},
+            headers={
+                "X-Internal-Key": MONITOR_API_KEY,
+                "Content-Type": request.headers.get("content-type", "application/json"),
+            },
             params=request.query_params,
         )
         return Response(
