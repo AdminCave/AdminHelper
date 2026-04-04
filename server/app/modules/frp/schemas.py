@@ -50,7 +50,7 @@ class FrpTunnelCreate(BaseModel):
     connection_id: Optional[str] = None
     enabled: bool = True
     extra_config: Optional[dict] = None
-    tags: Optional[list[str]] = []
+    tags: list[str] = []
     auto_create_connection: bool = False  # automatisch passende Connection erstellen
 
 

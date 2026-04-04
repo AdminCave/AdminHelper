@@ -156,8 +156,3 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 @app.get("/{full_path:path}", include_in_schema=False)
 def spa_fallback(full_path: str):
     return FileResponse(static_dir / "index.html")
-
-
-@app.get("/", include_in_schema=False)
-def root():
-    return FileResponse(static_dir / "index.html")

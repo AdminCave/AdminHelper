@@ -6,7 +6,7 @@ class ServerCreate(BaseModel):
     name: str
     hostname: str
     os_type: Optional[str] = None
-    tags: Optional[list[str]] = []
+    tags: list[str] = []
     notes: Optional[str] = ""
 
 

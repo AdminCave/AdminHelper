@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import get_current_admin, ApiKeyOrUser, hash_api_key, generate_api_key
 from app.core.events import fire_event
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor, visitor_server_assoc
 from app.modules.frp.schemas import (
     FrpServerConfigCreate, FrpServerConfigUpdate,
     FrpTunnelCreate, FrpTunnelUpdate,
@@ -35,11 +35,13 @@ router = APIRouter(prefix="/api/frp", tags=["frp"])
 
 def _get_allow_users(db: Session, server_id: str) -> list[str]:
     """Ermittelt alle Visitor-Usernamen, die Zugriff auf diesen Server haben."""
-    visitors = db.query(Visitor).all()
-    users = []
-    for v in visitors:
-        if any(s.id == server_id for s in v.servers):
-            users.append(v.name)
+    visitors = (
+        db.query(Visitor)
+        .join(visitor_server_assoc, Visitor.id == visitor_server_assoc.c.visitor_id)
+        .filter(visitor_server_assoc.c.server_id == server_id)
+        .all()
+    )
+    users = [v.name for v in visitors]
     return users if users else ["ops-admin"]
 
 
@@ -275,7 +277,7 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
 
     tunnels = db.query(FrpTunnel).filter(
         FrpTunnel.server_id == server_id,
-        FrpTunnel.enabled == True,
+        FrpTunnel.enabled.is_(True),
     ).all()
     if not tunnels:
         raise HTTPException(status_code=404, detail="Keine aktiven Tunnel fuer diesen Server")
@@ -308,7 +310,7 @@ def gen_visitor_toml(
     tunnel_query = db.query(FrpTunnel).filter(
         FrpTunnel.frp_config_id == config.id,
         FrpTunnel.tunnel_type == "stcp",
-        FrpTunnel.enabled == True,
+        FrpTunnel.enabled.is_(True),
     )
 
     visitor_user = "ops-admin"
@@ -348,7 +350,7 @@ def gen_bulk_zip(
         # Alle Tunnel nach Server gruppieren
         all_tunnels = db.query(FrpTunnel).filter(
             FrpTunnel.frp_config_id == config.id,
-            FrpTunnel.enabled == True,
+            FrpTunnel.enabled.is_(True),
         ).all()
 
         by_server = {}
@@ -518,9 +520,6 @@ def download_pki_file(filename: str, _admin=Depends(get_current_admin)):
 @router.get("/pki/download-client-bundle/{client_name}")
 def download_client_bundle(client_name: str, _admin=Depends(get_current_admin)):
     """Laed ein ZIP mit ca.crt, client.crt und client.key herunter."""
-    import io
-    import zipfile
-
     safe_name = Path(client_name).name
     d = pki_manager.PKI_DIR
     ca_crt = d / "ca.crt"
