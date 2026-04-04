@@ -20,6 +20,9 @@ def get_checker(check_type: str) -> Checker:
     from app.checkers.http import HttpChecker
     from app.checkers.agent import AgentResourcesChecker, ServiceProcessChecker
     from app.checkers.snmp import SnmpChecker
+    from app.checkers.proxmox import ProxmoxNodeChecker, ProxmoxVmChecker, PbsJobChecker
+    from app.checkers.opnsense import OpnsenseChecker
+    from app.checkers.unifi import UnifiDeviceChecker
 
     _REGISTRY: dict[str, Checker] = {
         "ping": PingChecker(),
@@ -28,6 +31,11 @@ def get_checker(check_type: str) -> Checker:
         "agent_resources": AgentResourcesChecker(),
         "service_process": ServiceProcessChecker(),
         "snmp": SnmpChecker(),
+        "proxmox_node": ProxmoxNodeChecker(),
+        "proxmox_vm": ProxmoxVmChecker(),
+        "pbs_job": PbsJobChecker(),
+        "opnsense": OpnsenseChecker(),
+        "unifi_device": UnifiDeviceChecker(),
     }
 
     checker = _REGISTRY.get(check_type)

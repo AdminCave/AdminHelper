@@ -47,6 +47,25 @@ class AlertRuleUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class CredentialCreate(BaseModel):
+    name: str
+    cred_type: str
+    config: dict = {}
+
+
+class CredentialUpdate(BaseModel):
+    name: str | None = None
+    cred_type: str | None = None
+    config: dict | None = None
+
+
+VALID_CRED_TYPES = {
+    "proxmox_token",
+    "opnsense_api",
+    "unifi_login",
+    "snmp_community",
+}
+
 VALID_CHANNELS = {"webhook", "email"}
 
 VALID_CHECK_TYPES = {

@@ -26,6 +26,8 @@ const state = {
   editingMonitorCheckId: null,
   monitorAlertRules: [],
   editingAlertRuleId: null,
+  monitorCredentials: [],
+  editingCredentialId: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
