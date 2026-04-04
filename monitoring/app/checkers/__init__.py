@@ -19,6 +19,7 @@ def get_checker(check_type: str) -> Checker:
     from app.checkers.tcp import TcpChecker
     from app.checkers.http import HttpChecker
     from app.checkers.agent import AgentResourcesChecker, ServiceProcessChecker
+    from app.checkers.snmp import SnmpChecker
 
     _REGISTRY: dict[str, Checker] = {
         "ping": PingChecker(),
@@ -26,6 +27,7 @@ def get_checker(check_type: str) -> Checker:
         "http": HttpChecker(),
         "agent_resources": AgentResourcesChecker(),
         "service_process": ServiceProcessChecker(),
+        "snmp": SnmpChecker(),
     }
 
     checker = _REGISTRY.get(check_type)

@@ -894,6 +894,7 @@
               <option value="http">HTTP(S)</option>
               <option value="agent_resources">Agent: Ressourcen</option>
               <option value="service_process">Agent: Services</option>
+              <option value="snmp">SNMP</option>
             </select>
           </div>
           <div class="field">
@@ -1021,6 +1022,53 @@
             <div class="field full">
               <label>Services (kommagetrennt)</label>
               <input id="mcServiceNames" placeholder="nginx, docker, frpc, postgresql" />
+            </div>
+          </div>
+
+          <!-- SNMP Config -->
+          <div id="mcSnmpConfig" class="hidden">
+            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+              SNMP v2c Abfrage an Netzwerk-Geraete (Switches, Router, etc.)
+            </div>
+            <div class="field">
+              <label>Ziel (IP/Hostname) *</label>
+              <input id="mcSnmpTarget" placeholder="10.0.1.1" />
+            </div>
+            <div class="field">
+              <label>Port</label>
+              <input id="mcSnmpPort" type="number" value="161" />
+            </div>
+            <div class="field">
+              <label>Community</label>
+              <input id="mcSnmpCommunity" value="public" />
+            </div>
+            <div class="field">
+              <label>Modus</label>
+              <select id="mcSnmpMode">
+                <option value="get">GET (einzelne OID)</option>
+                <option value="walk">WALK (OID-Subtree)</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label>OID</label>
+              <input id="mcSnmpOid" placeholder="1.3.6.1.2.1.1.3.0 oder sysUpTime" />
+              <small style="color:var(--text-soft)">Bekannte Namen: sysUpTime, sysName, sysDescr, ifNumber, ifOperStatus, ifInOctets, ifOutOctets</small>
+            </div>
+            <div class="field">
+              <label>Erwarteter Wert (optional)</label>
+              <input id="mcSnmpExpected" placeholder="z.B. 1 fuer ifOperStatus=up" />
+            </div>
+            <div class="field">
+              <label>Timeout (Sek.)</label>
+              <input id="mcSnmpTimeout" type="number" value="5" min="1" max="30" />
+            </div>
+            <div class="field">
+              <label>Warning-Schwellwert</label>
+              <input id="mcSnmpWarnThreshold" type="number" placeholder="Optional" />
+            </div>
+            <div class="field">
+              <label>Critical-Schwellwert</label>
+              <input id="mcSnmpCritThreshold" type="number" placeholder="Optional" />
             </div>
           </div>
 

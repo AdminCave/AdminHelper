@@ -1736,6 +1736,7 @@ body {
 .badge-http             { background: rgba(249, 115, 22, 0.15); color: var(--accent-warm); }
 .badge-agent_resources  { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
 .badge-service_process  { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
+.badge-snmp             { background: rgba(20, 184, 166, 0.15); color: #14b8a6; }
 .badge-webhook          { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
 .badge-email            { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 .disabled-row           { opacity: 0.5; }

@@ -172,6 +172,7 @@ document.getElementById('mcCheckType').addEventListener('change', function() {
   document.getElementById('mcHttpConfig').classList.toggle('hidden', this.value !== 'http');
   document.getElementById('mcAgentResourcesConfig').classList.toggle('hidden', this.value !== 'agent_resources');
   document.getElementById('mcServiceProcessConfig').classList.toggle('hidden', this.value !== 'service_process');
+  document.getElementById('mcSnmpConfig').classList.toggle('hidden', this.value !== 'snmp');
 });
 
 function openMonitorCheckModal(check) {
@@ -217,6 +218,17 @@ function openMonitorCheckModal(check) {
   // Service Process Config
   document.getElementById('mcServiceNames').value = (cfg.services || []).join(', ');
 
+  // SNMP Config
+  document.getElementById('mcSnmpTarget').value = cfg.target || '';
+  document.getElementById('mcSnmpPort').value = cfg.port || 161;
+  document.getElementById('mcSnmpCommunity').value = cfg.community || 'public';
+  document.getElementById('mcSnmpMode').value = cfg.mode || 'get';
+  document.getElementById('mcSnmpOid').value = cfg.oid || '';
+  document.getElementById('mcSnmpExpected').value = cfg.expected_value || '';
+  document.getElementById('mcSnmpTimeout').value = cfg.timeout || 5;
+  document.getElementById('mcSnmpWarnThreshold').value = cfg.warning_threshold || '';
+  document.getElementById('mcSnmpCritThreshold').value = cfg.critical_threshold || '';
+
   // Config-Sections umschalten
   const type = check?.checkType || 'ping';
   document.getElementById('mcPingConfig').classList.toggle('hidden', type !== 'ping');
@@ -224,6 +236,7 @@ function openMonitorCheckModal(check) {
   document.getElementById('mcHttpConfig').classList.toggle('hidden', type !== 'http');
   document.getElementById('mcAgentResourcesConfig').classList.toggle('hidden', type !== 'agent_resources');
   document.getElementById('mcServiceProcessConfig').classList.toggle('hidden', type !== 'service_process');
+  document.getElementById('mcSnmpConfig').classList.toggle('hidden', type !== 'snmp');
 
   showModal('monitorCheckModal');
 }
@@ -270,6 +283,23 @@ function _buildCheckConfig() {
       services: document.getElementById('mcServiceNames').value
         .split(',').map(s => s.trim()).filter(Boolean),
     };
+  }
+  if (type === 'snmp') {
+    const cfg = {
+      target: document.getElementById('mcSnmpTarget').value.trim(),
+      port: parseInt(document.getElementById('mcSnmpPort').value) || 161,
+      community: document.getElementById('mcSnmpCommunity').value.trim() || 'public',
+      mode: document.getElementById('mcSnmpMode').value,
+      oid: document.getElementById('mcSnmpOid').value.trim(),
+      timeout: parseInt(document.getElementById('mcSnmpTimeout').value) || 5,
+    };
+    const expected = document.getElementById('mcSnmpExpected').value.trim();
+    if (expected) cfg.expected_value = expected;
+    const warn = document.getElementById('mcSnmpWarnThreshold').value.trim();
+    if (warn) cfg.warning_threshold = parseFloat(warn);
+    const crit = document.getElementById('mcSnmpCritThreshold').value.trim();
+    if (crit) cfg.critical_threshold = parseFloat(crit);
+    return cfg;
   }
   return {};
 }
