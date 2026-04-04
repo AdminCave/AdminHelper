@@ -84,6 +84,7 @@ impl Default for Settings {
 pub struct AuthSession {
     pub server_url: String,
     pub token: String,
+    pub refresh_token: String,
     pub username: String,
     pub is_admin: bool,
 }

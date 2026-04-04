@@ -5,11 +5,19 @@ use crate::models::AuthSession;
 
 const KEYRING_SERVICE: &str = "com.simpleremote.manager";
 const KEYRING_JWT_KEY: &str = "auth|jwt";
+const KEYRING_REFRESH_KEY: &str = "auth|refresh";
 const KEYRING_SERVER_URL_KEY: &str = "auth|server_url";
 
 #[derive(Deserialize)]
 struct LoginResponse {
     access_token: String,
+    refresh_token: String,
+}
+
+#[derive(Deserialize)]
+struct RefreshResponse {
+    access_token: String,
+    refresh_token: String,
 }
 
 #[derive(Deserialize)]
@@ -58,6 +66,7 @@ pub async fn login(server_url: &str, username: &str, password: &str) -> Result<A
     let session = AuthSession {
         server_url: server_url.trim_end_matches('/').to_string(),
         token: login_resp.access_token,
+        refresh_token: login_resp.refresh_token,
         username: me.username,
         is_admin: me.is_admin,
     };
@@ -84,23 +93,90 @@ async fn fetch_me(server_url: &str, token: &str) -> Result<MeResponse, AppError>
 }
 
 pub async fn check_session() -> Result<Option<AuthSession>, AppError> {
-    let (server_url, token) = match load_session_from_keyring() {
-        Ok(pair) => pair,
+    let (server_url, token, refresh_token) = match load_session_from_keyring() {
+        Ok(triple) => triple,
         Err(_) => return Ok(None),
     };
 
+    // Versuche mit aktuellem Access-Token
     match fetch_me(&server_url, &token).await {
         Ok(me) => Ok(Some(AuthSession {
             server_url,
             token,
+            refresh_token,
             username: me.username,
             is_admin: me.is_admin,
         })),
         Err(_) => {
-            let _ = clear_keyring();
-            Ok(None)
+            // Access-Token abgelaufen — Refresh versuchen
+            match try_refresh(&server_url, &refresh_token).await {
+                Ok(session) => {
+                    save_session_to_keyring(&session)?;
+                    Ok(Some(session))
+                }
+                Err(_) => {
+                    let _ = clear_keyring();
+                    Ok(None)
+                }
+            }
         }
     }
+}
+
+/// Refresh-Token gegen neue Access- und Refresh-Tokens tauschen.
+async fn try_refresh(server_url: &str, refresh_token: &str) -> Result<AuthSession, AppError> {
+    let url = format!("{}/api/auth/refresh", server_url.trim_end_matches('/'));
+    let client = build_client(server_url)?;
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+
+    let response = client.post(&url).json(&body).send().await?;
+    if !response.status().is_success() {
+        return Err(AppError::Validation("Refresh fehlgeschlagen".to_string()));
+    }
+
+    let resp: RefreshResponse = response.json().await?;
+    let me = fetch_me(server_url, &resp.access_token).await?;
+
+    Ok(AuthSession {
+        server_url: server_url.trim_end_matches('/').to_string(),
+        token: resp.access_token,
+        refresh_token: resp.refresh_token,
+        username: me.username,
+        is_admin: me.is_admin,
+    })
+}
+
+/// Authenticated GET mit automatischem Token-Refresh bei 401.
+pub async fn authenticated_get(
+    server_url: &str,
+    token: &str,
+    path: &str,
+) -> Result<reqwest::Response, AppError> {
+    let client = build_client(server_url)?;
+    let url = format!("{}{}", server_url.trim_end_matches('/'), path);
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await?;
+
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        // Refresh-Token aus Keyring laden und Refresh versuchen
+        if let Ok((_, _, refresh_token)) = load_session_from_keyring() {
+            if let Ok(new_session) = try_refresh(server_url, &refresh_token).await {
+                let _ = save_session_to_keyring(&new_session);
+                let retry = client
+                    .get(&url)
+                    .header("Authorization", format!("Bearer {}", new_session.token))
+                    .send()
+                    .await?;
+                return Ok(retry);
+            }
+        }
+    }
+
+    Ok(response)
 }
 
 pub fn logout() -> Result<(), AppError> {
@@ -118,6 +194,11 @@ fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
         jwt_entry
             .set_password(&session.token)
             .map_err(|e| AppError::Keyring(e.to_string()))?;
+        let refresh_entry = Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_KEY)
+            .map_err(|e| AppError::Keyring(e.to_string()))?;
+        refresh_entry
+            .set_password(&session.refresh_token)
+            .map_err(|e| AppError::Keyring(e.to_string()))?;
         let url_entry = Entry::new(KEYRING_SERVICE, KEYRING_SERVER_URL_KEY)
             .map_err(|e| AppError::Keyring(e.to_string()))?;
         url_entry
@@ -129,6 +210,7 @@ fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
     {
         use crate::password::{windows_store_credential, to_utf16_null};
         windows_store_credential(KEYRING_JWT_KEY, "srm", &session.token)?;
+        windows_store_credential(KEYRING_REFRESH_KEY, "srm", &session.refresh_token)?;
         windows_store_credential(KEYRING_SERVER_URL_KEY, "srm", &session.server_url)?;
         Ok(())
     }
@@ -138,7 +220,7 @@ fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
     }
 }
 
-fn load_session_from_keyring() -> Result<(String, String), AppError> {
+fn load_session_from_keyring() -> Result<(String, String, String), AppError> {
     #[cfg(unix)]
     {
         use keyring::Entry;
@@ -147,12 +229,17 @@ fn load_session_from_keyring() -> Result<(String, String), AppError> {
         let token = jwt_entry
             .get_password()
             .map_err(|e| AppError::Keyring(e.to_string()))?;
+        let refresh_entry = Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_KEY)
+            .map_err(|e| AppError::Keyring(e.to_string()))?;
+        let refresh_token = refresh_entry
+            .get_password()
+            .unwrap_or_default();
         let url_entry = Entry::new(KEYRING_SERVICE, KEYRING_SERVER_URL_KEY)
             .map_err(|e| AppError::Keyring(e.to_string()))?;
         let server_url = url_entry
             .get_password()
             .map_err(|e| AppError::Keyring(e.to_string()))?;
-        Ok((server_url, token))
+        Ok((server_url, token, refresh_token))
     }
     #[cfg(target_os = "windows")]
     {
@@ -169,7 +256,7 @@ fn clear_keyring() -> Result<(), AppError> {
     #[cfg(unix)]
     {
         use keyring::{Entry, Error as KeyringError};
-        for key in [KEYRING_JWT_KEY, KEYRING_SERVER_URL_KEY] {
+        for key in [KEYRING_JWT_KEY, KEYRING_REFRESH_KEY, KEYRING_SERVER_URL_KEY] {
             if let Ok(entry) = Entry::new(KEYRING_SERVICE, key) {
                 match entry.delete_password() {
                     Ok(_) | Err(KeyringError::NoEntry) => {}
@@ -183,6 +270,7 @@ fn clear_keyring() -> Result<(), AppError> {
     {
         use crate::password::windows_delete_credential;
         let _ = windows_delete_credential(KEYRING_JWT_KEY);
+        let _ = windows_delete_credential(KEYRING_REFRESH_KEY);
         let _ = windows_delete_credential(KEYRING_SERVER_URL_KEY);
         Ok(())
     }

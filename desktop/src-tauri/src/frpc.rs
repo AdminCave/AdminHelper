@@ -44,14 +44,7 @@ struct FoundVisitor {
 
 /// Fetch list of visitors from the server and find the one matching the user.
 async fn find_visitor(server_url: &str, token: &str, username: &str) -> Result<FoundVisitor, AppError> {
-    let client = auth::build_client(server_url)?;
-    let url = format!("{}/api/frp/visitors", server_url.trim_end_matches('/'));
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .send()
-        .await?;
+    let response = auth::authenticated_get(server_url, token, "/api/frp/visitors").await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(
@@ -81,18 +74,8 @@ async fn fetch_visitor_config(
     token: &str,
     visitor_id: &str,
 ) -> Result<String, AppError> {
-    let client = auth::build_client(server_url)?;
-    let url = format!(
-        "{}/api/frp/generate/visitor-toml?visitor_id={}",
-        server_url.trim_end_matches('/'),
-        visitor_id
-    );
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .send()
-        .await?;
+    let path = format!("/api/frp/generate/visitor-toml?visitor_id={}", visitor_id);
+    let response = auth::authenticated_get(server_url, token, &path).await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(

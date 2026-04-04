@@ -36,16 +36,7 @@ pub async fn fetch_connections_jwt(
     server_url: &str,
     token: &str,
 ) -> Result<Vec<Connection>, AppError> {
-    let url = format!("{}/api/connections", server_url.trim_end_matches('/'));
-    let accept_invalid = server_url.starts_with("https://localhost")
-        || server_url.starts_with("https://127.0.0.1");
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(accept_invalid)
-        .build()?;
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .send()
+    let response = crate::auth::authenticated_get(server_url, token, "/api/connections")
         .await?
         .error_for_status()?;
     let connections: Vec<Connection> = response.json().await?;

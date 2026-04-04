@@ -30,14 +30,7 @@ pub struct ResolvedConnection {
 
 /// Fetch all tunnels from the server.
 pub async fn fetch_tunnels(server_url: &str, token: &str) -> Result<Vec<TunnelMapping>, AppError> {
-    let client = auth::build_client(server_url)?;
-    let url = format!("{}/api/frp/tunnels", server_url.trim_end_matches('/'));
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .send()
-        .await?;
+    let response = auth::authenticated_get(server_url, token, "/api/frp/tunnels").await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(
