@@ -28,6 +28,7 @@ from app.modules.api_keys.router import router as api_keys_router
 from app.modules.hooks.router import router as hooks_router
 from app.modules.servers.router import router as servers_router
 from app.modules.frp.router import router as frp_router
+from app.modules.monitoring_proxy import router as monitoring_proxy_router
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,7 @@ app.include_router(api_keys_router)
 app.include_router(hooks_router)
 app.include_router(servers_router)
 app.include_router(frp_router)
+app.include_router(monitoring_proxy_router)
 
 # Statische Dateien aus frontend/ ausliefern
 static_dir = Path(__file__).parent.parent / "frontend"

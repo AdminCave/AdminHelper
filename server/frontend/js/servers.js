@@ -4,6 +4,8 @@
 async function loadServers() {
   try {
     state.servers = await get('/api/servers');
+    // Monitoring-Status fuer Status-Dots laden (still fail)
+    try { state.monitorChecks = await get('/api/monitoring/status'); } catch { /* ignore */ }
     renderTagFilter('serverTagSelect', state.servers, 'serverTagFilter');
     renderServers();
   } catch (err) {
@@ -57,10 +59,12 @@ function renderServers() {
     const connCount = (s.connections || []).length;
     const osLabel = s.osType ? ` · ${esc(s.osType)}` : '';
 
+    const monitorStatus = _getServerMonitorStatus(s.id);
     card.innerHTML = `
       <div class="server-card-header" onclick="toggleServerCard(this)">
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
           <span class="server-chevron">&#x25B6;</span>
+          ${monitorStatus ? `<span class="monitor-dot monitor-${monitorStatus}" title="Monitoring: ${monitorStatus}"></span>` : ''}
           <div style="min-width:0">
             <strong>${esc(s.name)}</strong>
             <span style="color:var(--text-soft);font-size:13px;margin-left:8px">${esc(s.hostname)}${osLabel}</span>
@@ -175,4 +179,19 @@ async function deleteServer(id) {
   } catch (err) {
     toast(err.message, 'error');
   }
+}
+
+// ── Monitoring Status-Dot fuer Server-Cards ───────────────────────────────
+function _getServerMonitorStatus(serverId) {
+  const checks = (state.monitorChecks || []).filter(c => c.serverId === serverId);
+  if (checks.length === 0) return null;
+  let worst = 'ok';
+  for (const c of checks) {
+    const st = c.state?.status || 'pending';
+    if (st === 'critical') return 'critical';
+    if (st === 'warning') worst = 'warning';
+    if (st === 'unknown' && worst === 'ok') worst = 'unknown';
+    if (st === 'pending' && worst === 'ok') worst = 'pending';
+  }
+  return worst;
 }

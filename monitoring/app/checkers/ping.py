@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+import re
+import subprocess
+
+
+class PingChecker:
+    """ICMP Ping Check via subprocess."""
+
+    def run(self, config: dict) -> tuple[str, str, dict | None]:
+        target = config.get("target", "")
+        timeout = config.get("timeout", 5)
+
+        if not target:
+            return "unknown", "Kein Ziel angegeben", None
+
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", str(timeout), target],
+                capture_output=True,
+                text=True,
+                timeout=timeout + 2,
+            )
+
+            if result.returncode == 0:
+                rtt = _parse_rtt(result.stdout)
+                return "ok", f"Erreichbar ({rtt:.1f} ms)" if rtt else "Erreichbar", {"ping_rtt_ms": rtt} if rtt else None
+            else:
+                return "critical", f"{target} nicht erreichbar", None
+
+        except subprocess.TimeoutExpired:
+            return "critical", f"Timeout nach {timeout}s", None
+        except Exception as exc:
+            return "unknown", f"Fehler: {exc}", None
+
+
+def _parse_rtt(output: str) -> float | None:
+    """Extrahiert Round-Trip-Time aus ping-Output."""
+    match = re.search(r"time[=<](\d+\.?\d*)", output)
+    if match:
+        return float(match.group(1))
+    return None

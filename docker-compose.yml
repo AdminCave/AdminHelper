@@ -12,6 +12,9 @@ services:
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - FRP_CONFIG_DIR=/app/frp-config
+      # Monitoring-Proxy
+      - MONITOR_SERVICE_URL=http://monitoring:8080
+      - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       # IP-Zugangsbeschränkung (leer = kein Filter)
       # Beispiel: ALLOWED_IPS=192.168.1.0/24,10.0.0.5
       - ALLOWED_IPS=
@@ -34,5 +37,34 @@ services:
     depends_on:
       - server
 
+  monitoring:
+    image: ${MONITORING_IMAGE:-srm-monitoring:latest}
+    expose:
+      - "8080"
+    ports:
+      - "${MONITOR_AGENT_PORT:-8480}:8080"
+    volumes:
+      - monitoring-data:/app/data
+    environment:
+      - VICTORIA_METRICS_URL=http://victoria:8428
+      - MONITOR_API_KEY=${MONITOR_API_KEY:-}
+      - MONITOR_AGENT_API_KEYS=${MONITOR_AGENT_API_KEYS:-}
+    restart: unless-stopped
+    depends_on:
+      - victoria
+
+  victoria:
+    image: victoriametrics/victoria-metrics:latest
+    volumes:
+      - victoria-data:/victoria-metrics-data
+    command:
+      - "-retentionPeriod=90d"
+      - "-storageDataPath=/victoria-metrics-data"
+    expose:
+      - "8428"
+    restart: unless-stopped
+
 volumes:
   frp-config:
+  monitoring-data:
+  victoria-data:

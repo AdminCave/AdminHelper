@@ -78,6 +78,10 @@
           <button class="nav-item" data-page="frp">
             <i class="nav-icon">🔗</i> FRP Tunnels
           </button>
+          <div class="nav-divider"></div>
+          <button class="nav-item" data-page="monitoring">
+            <i class="nav-icon">&#x1F4CA;</i> Monitoring
+          </button>
         </div>
       </nav>
 
@@ -280,6 +284,26 @@
         <!-- Tunnel-Liste -->
         <div id="frpTunnelList" style="display:flex;flex-direction:column;gap:12px"></div>
         <div id="frpEmpty" class="empty-state hidden"><p>Keine Tunnel vorhanden.</p></div>
+      </div>
+
+      <!-- Monitoring -->
+      <div id="pageMonitoring" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Monitoring</div>
+            <div class="page-subtitle">Server- und Service-Ueberwachung</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button id="addMonitorCheckBtn" class="btn primary">+ Check</button>
+          </div>
+        </div>
+
+        <!-- Status-Uebersicht -->
+        <div id="monitorOverview" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px"></div>
+
+        <!-- Check-Liste gruppiert nach Server -->
+        <div id="monitorCheckList" style="display:flex;flex-direction:column;gap:12px"></div>
+        <div id="monitorEmpty" class="empty-state hidden"><p>Keine Checks vorhanden.</p></div>
       </div>
 
     </main>
@@ -825,6 +849,130 @@
   </div>
 
   <!-- Toast -->
+  <!-- Modal: Monitor Check -->
+  <div id="monitorCheckModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(580px,95vw);max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <div class="modal-title" id="monitorCheckModalTitle">Neuer Check</div>
+        <button class="modal-close" data-close="monitorCheckModal">&#x2715;</button>
+      </div>
+      <form id="monitorCheckForm" class="modal-form">
+        <div class="conn-form">
+          <div class="field">
+            <label>Name *</label>
+            <input id="mcName" required placeholder="z.B. Ping Web-Server" />
+          </div>
+          <div class="field">
+            <label>Server</label>
+            <select id="mcServerId"><option value="">-- Kein Server --</option></select>
+          </div>
+          <div class="field">
+            <label>Check-Typ *</label>
+            <select id="mcCheckType" required>
+              <option value="ping">Ping</option>
+              <option value="tcp">TCP Port</option>
+              <option value="http">HTTP(S)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Intervall</label>
+            <select id="mcInterval">
+              <option value="1m">1 Minute</option>
+              <option value="5m" selected>5 Minuten</option>
+              <option value="15m">15 Minuten</option>
+              <option value="30m">30 Minuten</option>
+              <option value="1h">1 Stunde</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Schweregrad</label>
+            <select id="mcSeverity">
+              <option value="critical">Kritisch</option>
+              <option value="warning">Warnung</option>
+              <option value="info">Info</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Fehlversuche vor Alert</label>
+            <input id="mcConsecutiveFails" type="number" min="1" max="20" value="3" />
+          </div>
+
+          <!-- Ping Config -->
+          <div id="mcPingConfig">
+            <div class="field">
+              <label>Ziel (IP/Hostname) *</label>
+              <input id="mcPingTarget" placeholder="10.0.1.5 oder server.example.com" />
+            </div>
+            <div class="field">
+              <label>Timeout (Sek.)</label>
+              <input id="mcPingTimeout" type="number" value="5" min="1" max="30" />
+            </div>
+          </div>
+
+          <!-- TCP Config -->
+          <div id="mcTcpConfig" class="hidden">
+            <div class="field">
+              <label>Ziel (IP/Hostname) *</label>
+              <input id="mcTcpTarget" placeholder="10.0.1.5" />
+            </div>
+            <div class="field">
+              <label>Port *</label>
+              <input id="mcTcpPort" type="number" placeholder="22" />
+            </div>
+            <div class="field">
+              <label>Timeout (Sek.)</label>
+              <input id="mcTcpTimeout" type="number" value="5" min="1" max="30" />
+            </div>
+          </div>
+
+          <!-- HTTP Config -->
+          <div id="mcHttpConfig" class="hidden">
+            <div class="field full">
+              <label>URL *</label>
+              <input id="mcHttpUrl" placeholder="https://example.com/health" />
+            </div>
+            <div class="field">
+              <label>Methode</label>
+              <select id="mcHttpMethod">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="HEAD">HEAD</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Erwarteter Status</label>
+              <input id="mcHttpStatus" type="number" value="200" />
+            </div>
+            <div class="field">
+              <label>Timeout (Sek.)</label>
+              <input id="mcHttpTimeout" type="number" value="10" min="1" max="60" />
+            </div>
+            <div class="field">
+              <label>SSL pruefen</label>
+              <select id="mcHttpVerifySsl">
+                <option value="true">Ja</option>
+                <option value="false">Nein</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label>Suchtext (optional)</label>
+              <input id="mcHttpSearch" placeholder="Text der in der Antwort vorkommen muss" />
+            </div>
+          </div>
+
+          <div class="field full">
+            <label>Beschreibung</label>
+            <textarea id="mcDescription" rows="2" placeholder="Optionale Beschreibung"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="monitorCheckModal">Abbrechen</button>
+          <button type="submit" class="btn primary">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <script src="/static/js/utils.js"></script>
@@ -834,6 +982,7 @@
   <script src="/static/js/hooks.js"></script>
   <script src="/static/js/servers.js"></script>
   <script src="/static/js/frp.js"></script>
+  <script src="/static/js/monitoring.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

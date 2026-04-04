@@ -22,6 +22,8 @@ const state = {
   tunnelTagFilter: '',
   visitors: [],
   editingVisitorId: null,
+  monitorChecks: [],
+  editingMonitorCheckId: null,
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────

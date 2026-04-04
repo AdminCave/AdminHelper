@@ -78,6 +78,7 @@ function navigate(page) {
   if (page === 'apikeys')     loadApiKeys();
   if (page === 'hooks')       loadHooks();
   if (page === 'frp')         loadFrp();
+  if (page === 'monitoring')  loadMonitoring();
 }
 
 // ── Startup ────────────────────────────────────────────────────────────────
