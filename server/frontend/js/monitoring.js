@@ -862,25 +862,142 @@ function _renderTemplateCheckDefs() {
 
   container.innerHTML = state.templateCheckDefs.map((def, i) => {
     const typeBadge = def.check_type ? def.check_type.toUpperCase() : 'PING';
-    return `<div class="tpl-def-row" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px">
-      <span class="badge badge-${def.check_type || 'ping'}" style="flex-shrink:0;font-size:10px">${esc(typeBadge)}</span>
-      <input value="${esc(def.name || '')}" onchange="state.templateCheckDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name ({{server_name}})" />
-      <select onchange="state.templateCheckDefs[${i}].check_type=this.value;_renderTemplateCheckDefs()" style="width:100px">
-        ${['ping','tcp','http','agent_resources','service_process','snmp','proxmox_node','proxmox_vm','pbs_job','opnsense','unifi_device']
-          .map(t => `<option value="${t}" ${def.check_type===t?'selected':''}>${t}</option>`).join('')}
-      </select>
-      <select onchange="state.templateCheckDefs[${i}].interval=this.value" style="width:65px">
-        ${['1m','5m','15m','30m','1h','6h','12h','24h']
-          .map(v => `<option value="${v}" ${def.interval===v?'selected':''}>${v}</option>`).join('')}
-      </select>
-      <select onchange="state.templateCheckDefs[${i}].severity=this.value" style="width:80px">
-        ${['critical','warning','info']
-          .map(v => `<option value="${v}" ${def.severity===v?'selected':''}>${v}</option>`).join('')}
-      </select>
-      <button type="button" class="btn small" onclick="editTemplateCheckConfig(${i})" title="Config">&#x2699;</button>
-      <button type="button" class="btn small ghost" onclick="removeTemplateCheckDef(${i})" title="Entfernen">&#x2715;</button>
+    const cfg = def.config || {};
+    return `<div class="tpl-def-row" style="margin-bottom:8px;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <span class="badge badge-${def.check_type || 'ping'}" style="flex-shrink:0;font-size:10px">${esc(typeBadge)}</span>
+        <input value="${esc(def.name || '')}" onchange="state.templateCheckDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name ({{server_name}})" />
+        <select onchange="state.templateCheckDefs[${i}].check_type=this.value;state.templateCheckDefs[${i}].config=_tplCheckDefaults(this.value);_renderTemplateCheckDefs()" style="width:110px">
+          ${['ping','tcp','http','agent_resources','service_process','snmp','proxmox_node','proxmox_vm','pbs_job','opnsense','unifi_device']
+            .map(t => `<option value="${t}" ${def.check_type===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+        <select onchange="state.templateCheckDefs[${i}].interval=this.value" style="width:65px">
+          ${['1m','5m','15m','30m','1h','6h','12h','24h']
+            .map(v => `<option value="${v}" ${def.interval===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+        <select onchange="state.templateCheckDefs[${i}].severity=this.value" style="width:80px">
+          ${['critical','warning','info']
+            .map(v => `<option value="${v}" ${def.severity===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+        <button type="button" class="btn small ghost" onclick="removeTemplateCheckDef(${i})" title="Entfernen">&#x2715;</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:13px">
+        ${_tplCheckConfigFields(def.check_type, cfg, i)}
+      </div>
     </div>`;
   }).join('');
+}
+
+function _tplCheckDefaults(type) {
+  const h = '{{hostname}}';
+  switch (type) {
+    case 'ping':           return { target: h, timeout: 5 };
+    case 'tcp':            return { target: h, port: 22, timeout: 5 };
+    case 'http':           return { url: 'http://{{hostname}}', method: 'GET', expected_status: 200, timeout: 10, verify_ssl: true };
+    case 'agent_resources': return { cpu_warn: 80, cpu_crit: 95, memory_warn: 80, memory_crit: 95 };
+    case 'service_process': return { process_name: '' };
+    case 'snmp':           return { target: h, port: 161, community: 'public', mode: 'get', oid: '1.3.6.1.2.1.1.3.0', timeout: 5 };
+    case 'proxmox_node':   return { api_url: 'https://{{hostname}}:8006', credential_id: '' };
+    case 'proxmox_vm':     return { api_url: 'https://{{hostname}}:8006', credential_id: '', node: 'pve' };
+    case 'pbs_job':        return { api_url: 'https://{{hostname}}:8007', credential_id: '', max_age_hours: 24 };
+    case 'opnsense':       return { api_url: 'https://{{hostname}}', credential_id: '', mode: 'gateways' };
+    case 'unifi_device':   return { controller_url: 'https://{{hostname}}:8443', credential_id: '', mode: 'devices' };
+    default:               return {};
+  }
+}
+
+function _tplCfgInput(idx, key, val, placeholder, opts) {
+  const w = opts?.width || '120px';
+  const type = opts?.type || 'text';
+  return `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+    <span style="font-size:11px">${esc(placeholder)}</span>
+    <input value="${esc(val ?? '')}" ${type==='number'?'type="number"':''} style="width:${w};font-size:12px"
+      onchange="state.templateCheckDefs[${idx}].config.${key}=${type==='number'?'Number(this.value)||0':'this.value'}" />
+  </label>`;
+}
+
+function _tplCfgSelect(idx, key, val, label, options) {
+  const opts = options.map(o => {
+    const v = typeof o === 'string' ? o : o.value;
+    const l = typeof o === 'string' ? o : o.label;
+    return `<option value="${v}" ${val===v?'selected':''}>${esc(l)}</option>`;
+  }).join('');
+  return `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+    <span style="font-size:11px">${esc(label)}</span>
+    <select style="width:auto;font-size:12px" onchange="state.templateCheckDefs[${idx}].config.${key}=this.value">${opts}</select>
+  </label>`;
+}
+
+function _tplCheckConfigFields(type, cfg, idx) {
+  const inp = (key, val, ph, o) => _tplCfgInput(idx, key, val, ph, o);
+  const sel = (key, val, ph, o) => _tplCfgSelect(idx, key, val, ph, o);
+
+  switch (type) {
+    case 'ping':
+      return inp('target', cfg.target, 'Ziel', {width:'160px'})
+        + inp('timeout', cfg.timeout, 'Timeout (s)', {width:'70px', type:'number'});
+
+    case 'tcp':
+      return inp('target', cfg.target, 'Ziel', {width:'160px'})
+        + inp('port', cfg.port, 'Port', {width:'70px', type:'number'})
+        + inp('timeout', cfg.timeout, 'Timeout (s)', {width:'70px', type:'number'});
+
+    case 'http':
+      return inp('url', cfg.url, 'URL', {width:'220px'})
+        + sel('method', cfg.method, 'Methode', ['GET','POST','PUT','HEAD'])
+        + inp('expected_status', cfg.expected_status, 'Status', {width:'60px', type:'number'})
+        + inp('timeout', cfg.timeout, 'Timeout (s)', {width:'70px', type:'number'})
+        + `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+            <span style="font-size:11px">SSL pruefen</span>
+            <select style="width:auto;font-size:12px" onchange="state.templateCheckDefs[${idx}].config.verify_ssl=this.value==='true'">
+              <option value="true" ${(cfg.verify_ssl??true)?'selected':''}>Ja</option>
+              <option value="false" ${!(cfg.verify_ssl??true)?'selected':''}>Nein</option>
+            </select>
+          </label>`
+        + inp('search_string', cfg.search_string, 'Suchtext', {width:'120px'});
+
+    case 'agent_resources':
+      return inp('cpu_warn', cfg.cpu_warn, 'CPU Warn %', {width:'70px', type:'number'})
+        + inp('cpu_crit', cfg.cpu_crit, 'CPU Crit %', {width:'70px', type:'number'})
+        + inp('memory_warn', cfg.memory_warn, 'RAM Warn %', {width:'70px', type:'number'})
+        + inp('memory_crit', cfg.memory_crit, 'RAM Crit %', {width:'70px', type:'number'});
+
+    case 'service_process':
+      return inp('process_name', cfg.process_name, 'Prozessname', {width:'180px'});
+
+    case 'snmp':
+      return inp('target', cfg.target, 'Ziel', {width:'140px'})
+        + inp('port', cfg.port, 'Port', {width:'60px', type:'number'})
+        + inp('community', cfg.community, 'Community', {width:'90px'})
+        + sel('mode', cfg.mode, 'Modus', ['get','walk'])
+        + inp('oid', cfg.oid, 'OID', {width:'180px'})
+        + inp('expected_value', cfg.expected_value, 'Erwartet', {width:'80px'})
+        + inp('timeout', cfg.timeout, 'Timeout', {width:'60px', type:'number'});
+
+    case 'proxmox_node':
+    case 'proxmox_vm':
+      return inp('api_url', cfg.api_url, 'API URL', {width:'200px'})
+        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
+        + (type === 'proxmox_vm' ? inp('node', cfg.node, 'Node', {width:'90px'}) : '');
+
+    case 'pbs_job':
+      return inp('api_url', cfg.api_url, 'API URL', {width:'200px'})
+        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
+        + inp('max_age_hours', cfg.max_age_hours, 'Max. Alter (h)', {width:'80px', type:'number'});
+
+    case 'opnsense':
+      return inp('api_url', cfg.api_url, 'API URL', {width:'200px'})
+        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
+        + sel('mode', cfg.mode, 'Modus', ['gateways','interfaces','services']);
+
+    case 'unifi_device':
+      return inp('controller_url', cfg.controller_url, 'Controller URL', {width:'200px'})
+        + inp('credential_id', cfg.credential_id, 'Credential-ID', {width:'140px'})
+        + sel('mode', cfg.mode, 'Modus', ['devices','clients']);
+
+    default:
+      return `<span style="color:var(--text-soft);font-size:12px">Keine Config-Felder</span>`;
+  }
 }
 
 function addTemplateCheckDef() {
@@ -901,18 +1018,6 @@ function removeTemplateCheckDef(index) {
   _renderTemplateCheckDefs();
 }
 
-function editTemplateCheckConfig(index) {
-  const def = state.templateCheckDefs[index];
-  const configStr = JSON.stringify(def.config || {}, null, 2);
-  const result = prompt(`Config fuer "${def.name}" (JSON):\n\nPlatzhalter: {{hostname}}, {{server_name}}, {{server_id}}`, configStr);
-  if (result !== null) {
-    try {
-      def.config = JSON.parse(result);
-    } catch {
-      toast('Ungueltiges JSON', 'error');
-    }
-  }
-}
 
 function _renderTemplateAlertDefs() {
   const container = document.getElementById('tplAlertDefs');
@@ -925,21 +1030,50 @@ function _renderTemplateAlertDefs() {
 
   container.innerHTML = state.templateAlertDefs.map((def, i) => {
     const channelLabel = def.channel === 'email' ? 'E-Mail' : 'Webhook';
-    return `<div class="tpl-def-row" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px">
-      <span class="badge badge-${def.channel || 'webhook'}" style="flex-shrink:0;font-size:10px">${esc(channelLabel)}</span>
-      <input value="${esc(def.name || '')}" onchange="state.templateAlertDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name" />
-      <select onchange="state.templateAlertDefs[${i}].channel=this.value;_renderTemplateAlertDefs()" style="width:90px">
-        <option value="webhook" ${def.channel==='webhook'?'selected':''}>Webhook</option>
-        <option value="email" ${def.channel==='email'?'selected':''}>E-Mail</option>
-      </select>
-      <select onchange="state.templateAlertDefs[${i}].match_severity=this.value||null" style="width:80px">
-        <option value="" ${!def.match_severity?'selected':''}>Alle</option>
-        <option value="critical" ${def.match_severity==='critical'?'selected':''}>Critical</option>
-        <option value="warning" ${def.match_severity==='warning'?'selected':''}>Warning</option>
-      </select>
-      <input value="${def.cooldown_minutes||30}" onchange="state.templateAlertDefs[${i}].cooldown_minutes=parseInt(this.value)||30" style="width:50px" type="number" title="Cooldown (Min.)" />
-      <button type="button" class="btn small" onclick="editTemplateAlertConfig(${i})" title="Config">&#x2699;</button>
-      <button type="button" class="btn small ghost" onclick="removeTemplateAlertDef(${i})" title="Entfernen">&#x2715;</button>
+    const cc = def.channel_config || {};
+    const channelFields = def.channel === 'email'
+      ? `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft);flex:1">
+           <span style="font-size:11px">Empfaenger</span>
+           <input value="${esc(cc.to || '')}" style="font-size:12px" placeholder="admin@example.com"
+             onchange="state.templateAlertDefs[${i}].channel_config.to=this.value" />
+         </label>
+         <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+           <span style="font-size:11px">SMTP Host</span>
+           <input value="${esc(cc.smtp_host || '')}" style="width:130px;font-size:12px" placeholder="smtp.example.com"
+             onchange="state.templateAlertDefs[${i}].channel_config.smtp_host=this.value" />
+         </label>
+         <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+           <span style="font-size:11px">Port</span>
+           <input value="${cc.smtp_port || 587}" type="number" style="width:60px;font-size:12px"
+             onchange="state.templateAlertDefs[${i}].channel_config.smtp_port=Number(this.value)||587" />
+         </label>`
+      : `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft);flex:1">
+           <span style="font-size:11px">Webhook URL</span>
+           <input value="${esc(cc.url || '')}" style="font-size:12px" placeholder="https://hooks.example.com/alert"
+             onchange="state.templateAlertDefs[${i}].channel_config.url=this.value" />
+         </label>`;
+    return `<div class="tpl-def-row" style="margin-bottom:8px;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <span class="badge badge-${def.channel || 'webhook'}" style="flex-shrink:0;font-size:10px">${esc(channelLabel)}</span>
+        <input value="${esc(def.name || '')}" onchange="state.templateAlertDefs[${i}].name=this.value" style="flex:1;min-width:120px" placeholder="Name" />
+        <select onchange="state.templateAlertDefs[${i}].channel=this.value;state.templateAlertDefs[${i}].channel_config={};_renderTemplateAlertDefs()" style="width:90px">
+          <option value="webhook" ${def.channel==='webhook'?'selected':''}>Webhook</option>
+          <option value="email" ${def.channel==='email'?'selected':''}>E-Mail</option>
+        </select>
+        <select onchange="state.templateAlertDefs[${i}].match_severity=this.value||null" style="width:80px">
+          <option value="" ${!def.match_severity?'selected':''}>Alle</option>
+          <option value="critical" ${def.match_severity==='critical'?'selected':''}>Critical</option>
+          <option value="warning" ${def.match_severity==='warning'?'selected':''}>Warning</option>
+        </select>
+        <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+          <span style="font-size:11px">Cooldown</span>
+          <input value="${def.cooldown_minutes||30}" onchange="state.templateAlertDefs[${i}].cooldown_minutes=parseInt(this.value)||30" style="width:50px;font-size:12px" type="number" />
+        </label>
+        <button type="button" class="btn small ghost" onclick="removeTemplateAlertDef(${i})" title="Entfernen">&#x2715;</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:13px">
+        ${channelFields}
+      </div>
     </div>`;
   }).join('');
 }
@@ -962,18 +1096,6 @@ function removeTemplateAlertDef(index) {
   _renderTemplateAlertDefs();
 }
 
-function editTemplateAlertConfig(index) {
-  const def = state.templateAlertDefs[index];
-  const configStr = JSON.stringify(def.channel_config || {}, null, 2);
-  const result = prompt(`Channel-Config fuer "${def.name}" (JSON):`, configStr);
-  if (result !== null) {
-    try {
-      def.channel_config = JSON.parse(result);
-    } catch {
-      toast('Ungueltiges JSON', 'error');
-    }
-  }
-}
 
 document.getElementById('templateForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
