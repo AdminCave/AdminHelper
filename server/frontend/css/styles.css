@@ -477,6 +477,26 @@ body {
   color: var(--text-soft);
 }
 
+.filter-select {
+  font-family: var(--font);
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 140px;
+}
+.filter-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.filter-select option {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
 .details {
   display: flex;
   flex-direction: column;

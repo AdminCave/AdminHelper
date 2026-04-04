@@ -16,9 +16,10 @@ const state = {
   editingServerId: null,
   frpConfig: null,
   frpTunnels: [],
-  customerGroups: [],
   editingTunnelId: null,
-  editingGroupId: null,
+  connTagFilter: '',
+  serverTagFilter: '',
+  tunnelTagFilter: '',
   visitors: [],
   editingVisitorId: null,
 };
@@ -114,7 +115,6 @@ async function initApp() {
     document.getElementById('connActionsHeader').textContent = 'Aktionen';
     // Server-Liste und Kundengruppen vorab laden
     try { state.servers = await get('/api/servers'); } catch { /* ignore */ }
-    try { state.customerGroups = await get('/api/frp/customer-groups'); } catch { /* ignore */ }
   }
 
   const hash = location.hash.replace('#/', '') || 'connections';
@@ -138,6 +138,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
 async function loadConnections() {
   try {
     state.connections = await get('/api/connections');
+    renderConnTagFilter();
     renderConnections();
   } catch (err) {
     toast(err.message, 'error');
@@ -147,15 +148,39 @@ async function loadConnections() {
 const connSearch = document.getElementById('connSearch');
 connSearch.addEventListener('input', renderConnections);
 
+function renderConnTagFilter() {
+  const select = document.getElementById('connTagSelect');
+  if (!select) return;
+  const allTags = [...new Set(state.connections.flatMap(c => c.tags || []))].sort();
+  if (allTags.length === 0) {
+    select.classList.add('hidden');
+    return;
+  }
+  select.classList.remove('hidden');
+  const prev = state.connTagFilter;
+  select.innerHTML = '<option value="">Alle Tags</option>' +
+    allTags.map(t => `<option value="${esc(t)}"${prev === t ? ' selected' : ''}>${esc(t)}</option>`).join('');
+}
+
+document.getElementById('connTagSelect').addEventListener('change', function() {
+  state.connTagFilter = this.value;
+  renderConnections();
+});
+
 function renderConnections() {
   const q = connSearch.value.toLowerCase();
-  const filtered = state.connections.filter(c =>
-    !q ||
-    c.name.toLowerCase().includes(q) ||
-    (c.host || '').toLowerCase().includes(q) ||
-    (c.url || '').toLowerCase().includes(q) ||
-    (c.tags || []).some(t => t.toLowerCase().includes(q))
-  );
+  const filtered = state.connections.filter(c => {
+    if (state.connTagFilter && !(c.tags || []).includes(state.connTagFilter)) return false;
+    if (q && ![
+      c.name,
+      c.host || '',
+      c.url || '',
+      c.kind || '',
+      c.username || '',
+      (c.tags || []).join(' '),
+    ].some(f => f.toLowerCase().includes(q))) return false;
+    return true;
+  });
 
   const tbody = document.getElementById('connBody');
   const empty = document.getElementById('connEmpty');
@@ -716,11 +741,31 @@ document.getElementById('copyWebhookTokenBtn').addEventListener('click', () => {
 async function loadServers() {
   try {
     state.servers = await get('/api/servers');
+    renderServerTagFilter();
     renderServers();
   } catch (err) {
     toast(err.message, 'error');
   }
 }
+
+function renderServerTagFilter() {
+  const select = document.getElementById('serverTagSelect');
+  if (!select) return;
+  const allTags = [...new Set(state.servers.flatMap(s => s.tags || []))].sort();
+  if (allTags.length === 0) {
+    select.classList.add('hidden');
+    return;
+  }
+  select.classList.remove('hidden');
+  const prev = state.serverTagFilter;
+  select.innerHTML = '<option value="">Alle Tags</option>' +
+    allTags.map(t => `<option value="${esc(t)}"${prev === t ? ' selected' : ''}>${esc(t)}</option>`).join('');
+}
+
+document.getElementById('serverTagSelect').addEventListener('change', function() {
+  state.serverTagFilter = this.value;
+  renderServers();
+});
 
 const serverSearch = document.getElementById('serverSearch');
 serverSearch.addEventListener('input', renderServers);
@@ -731,7 +776,7 @@ function renderServers() {
   const empty = document.getElementById('serverEmpty');
   container.innerHTML = '';
 
-  const filtered = state.servers.filter(s =>
+  let filtered = state.servers.filter(s =>
     !q ||
     s.name.toLowerCase().includes(q) ||
     s.hostname.toLowerCase().includes(q) ||
@@ -741,6 +786,11 @@ function renderServers() {
       (c.host || '').toLowerCase().includes(q)
     )
   );
+
+  // Tag-Filter anwenden
+  if (state.serverTagFilter) {
+    filtered = filtered.filter(s => (s.tags || []).includes(state.serverTagFilter));
+  }
 
   // Standalone-Connections (ohne Server) sammeln
   const assignedIds = new Set();
@@ -838,13 +888,6 @@ function openServerModal(server) {
   document.getElementById('sfOsType').value   = server?.osType   || '';
   document.getElementById('sfTags').value     = (server?.tags || []).join(', ');
   document.getElementById('sfNotes').value    = server?.notes    || '';
-  // Kundengruppen-Dropdown befuellen
-  const cgSel = document.getElementById('sfCustomerGroup');
-  cgSel.innerHTML = '<option value="">-- Keine --</option>';
-  state.customerGroups.forEach(g => {
-    cgSel.innerHTML += `<option value="${esc(g.id)}">${esc(g.prefix)} \u2013 ${esc(g.name)}</option>`;
-  });
-  cgSel.value = server?.customerGroupId || '';
   showModal('serverModal');
 }
 
@@ -856,7 +899,6 @@ document.getElementById('serverForm').addEventListener('submit', async (e) => {
     os_type:  document.getElementById('sfOsType').value || null,
     tags:     document.getElementById('sfTags').value.split(',').map(t => t.trim()).filter(Boolean),
     notes:    document.getElementById('sfNotes').value.trim(),
-    customer_group_id: document.getElementById('sfCustomerGroup').value || null,
   };
   try {
     if (state.editingServerId) {
@@ -895,16 +937,37 @@ async function loadFrp() {
     const configs = await get('/api/frp/server-config');
     state.frpConfig = configs.length > 0 ? configs[0] : null;
     state.frpTunnels = await get('/api/frp/tunnels');
-    state.customerGroups = await get('/api/frp/customer-groups');
     state.visitors = await get('/api/frp/visitors');
     if (state.servers.length === 0) {
       state.servers = await get('/api/servers');
     }
+    renderTunnelTagFilter();
     renderFrp();
   } catch (err) {
     toast(err.message, 'error');
   }
 }
+
+function renderTunnelTagFilter() {
+  const select = document.getElementById('tunnelTagSelect');
+  if (!select) return;
+  const allTags = [...new Set(state.frpTunnels.flatMap(t => t.tags || []))].sort();
+  if (allTags.length === 0) {
+    select.classList.add('hidden');
+    return;
+  }
+  select.classList.remove('hidden');
+  const prev = state.tunnelTagFilter;
+  select.innerHTML = '<option value="">Alle Tags</option>' +
+    allTags.map(t => `<option value="${esc(t)}"${prev === t ? ' selected' : ''}>${esc(t)}</option>`).join('');
+}
+
+document.getElementById('tunnelTagSelect').addEventListener('change', function() {
+  state.tunnelTagFilter = this.value;
+  renderFrp();
+});
+
+document.getElementById('tunnelSearch').addEventListener('input', renderFrp);
 
 function renderFrp() {
   const cfg = state.frpConfig;
@@ -936,24 +999,6 @@ function renderFrp() {
     document.getElementById('pkiBtn').style.display = 'none';
   }
 
-  // Kundengruppen rendern
-  const groupListEl = document.getElementById('groupList');
-  if (state.customerGroups.length > 0) {
-    groupListEl.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${
-      state.customerGroups.map(g => `
-        <div style="background:var(--surface);padding:8px 14px;border-radius:var(--radius-sm);display:flex;align-items:center;gap:10px">
-          <strong style="color:var(--accent)">${esc(g.prefix)}</strong>
-          <span>${esc(g.name)}</span>
-          <span style="color:var(--text-soft);font-size:11px">Ports: ${g.portRangeStart}+</span>
-          <button class="btn small" onclick="editGroup('${esc(g.id)}')" style="padding:2px 8px;font-size:11px">&#x270E;</button>
-          <button class="btn small ghost" onclick="deleteGroup('${esc(g.id)}')" style="padding:2px 8px;font-size:11px">&#x2715;</button>
-        </div>
-      `).join('')
-    }</div>`;
-  } else {
-    groupListEl.textContent = 'Keine Kundengruppen vorhanden.';
-  }
-
   // Visitor-Profile rendern
   const visitorListEl = document.getElementById('visitorList');
   if (state.visitors.length > 0) {
@@ -979,14 +1024,36 @@ function renderFrp() {
   const emptyEl = document.getElementById('frpEmpty');
   container.innerHTML = '';
 
-  if (state.frpTunnels.length === 0) {
+  const tunnelSearchEl = document.getElementById('tunnelSearch');
+  const q = tunnelSearchEl ? tunnelSearchEl.value.toLowerCase() : '';
+  const filteredTunnels = state.frpTunnels.filter(t => {
+    if (state.tunnelTagFilter && !(t.tags || []).includes(state.tunnelTagFilter)) return false;
+    if (q) {
+      const server = state.servers.find(s => s.id === t.serverId);
+      const fields = [
+        t.name,
+        t.tunnelType,
+        t.protocol,
+        (t.tags || []).join(' '),
+        t.localIp + ':' + t.localPort,
+        String(t.remotePort || ''),
+        t.customDomains,
+        server ? server.name : '',
+        server ? server.hostname : '',
+      ].map(f => (f || '').toLowerCase());
+      if (!fields.some(f => f.includes(q))) return false;
+    }
+    return true;
+  });
+
+  if (filteredTunnels.length === 0) {
     emptyEl.classList.remove('hidden');
     return;
   }
   emptyEl.classList.add('hidden');
 
   const byServer = {};
-  state.frpTunnels.forEach(t => {
+  filteredTunnels.forEach(t => {
     const sid = t.serverId || '__none__';
     if (!byServer[sid]) byServer[sid] = [];
     byServer[sid].push(t);
@@ -1006,6 +1073,7 @@ function renderFrp() {
         : '<span class="badge badge-web">HTTPS</span>';
       const protoBadge = `<span class="badge">${esc(t.protocol).toUpperCase()}</span>`;
       const target = `${esc(t.localIp)}:${t.localPort}`;
+      const tagBadges = (t.tags || []).map(tag => `<span class="badge" style="font-size:10px">${esc(tag)}</span>`).join(' ');
       const visitor = t.visitorPort ? `Visitor :${t.visitorPort}` : (t.customDomains || '\u2013');
       const statusDot = t.enabled
         ? '<span style="color:#22c55e" title="Aktiv">&#x25CF;</span>'
@@ -1013,7 +1081,7 @@ function renderFrp() {
       return `<tr>
         <td>${statusDot}</td>
         <td>${typeBadge} ${protoBadge}</td>
-        <td><strong>${esc(t.name)}</strong></td>
+        <td><strong>${esc(t.name)}</strong> ${tagBadges}</td>
         <td>${target}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(visitor)}</td>
         <td style="text-align:right;white-space:nowrap">
@@ -1126,6 +1194,7 @@ function openTunnelModal(tunnel) {
   document.getElementById('ftSecret').value     = tunnel?.secretKey  || '';
   document.getElementById('ftVisitorPort').value = tunnel?.visitorPort || '';
   document.getElementById('ftDomains').value    = tunnel?.customDomains || '';
+  document.getElementById('ftTags').value       = (tunnel?.tags || []).join(', ');
 
   _updateTunnelFormFields();
   showModal('frpTunnelModal');
@@ -1140,6 +1209,17 @@ function _updateTunnelFormFields() {
 }
 
 document.getElementById('ftType').addEventListener('change', _updateTunnelFormFields);
+
+// Auto-populate tags from selected server
+document.getElementById('ftServer').addEventListener('change', () => {
+  const tagsEl = document.getElementById('ftTags');
+  if (tagsEl.value.trim()) return; // don't overwrite manual tags
+  const serverId = document.getElementById('ftServer').value;
+  const server = state.servers.find(s => s.id === serverId);
+  if (server && server.tags && server.tags.length > 0) {
+    tagsEl.value = server.tags.join(', ');
+  }
+});
 
 // Auto-fill local port based on protocol
 document.getElementById('ftProtocol').addEventListener('change', () => {
@@ -1166,6 +1246,7 @@ document.getElementById('frpTunnelForm').addEventListener('submit', async (e) =>
     custom_domains: document.getElementById('ftDomains').value.trim() || null,
     visitor_port:  parseInt(document.getElementById('ftVisitorPort').value) || null,
     auto_create_connection: document.getElementById('ftAutoConn').checked,
+    tags: document.getElementById('ftTags').value.split(',').map(t => t.trim()).filter(Boolean),
   };
   try {
     if (state.editingTunnelId) {
@@ -1625,59 +1706,6 @@ async function deleteVisitor(id) {
   try {
     await del(`/api/frp/visitors/${id}`);
     toast('Visitor geloescht');
-    await loadFrp();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-}
-
-// ── Customer Groups ──────────────────────────────────────────────────────
-document.getElementById('addGroupBtn').addEventListener('click', () => openGroupModal(null));
-
-function openGroupModal(group) {
-  state.editingGroupId = group ? group.id : null;
-  document.getElementById('groupModalTitle').textContent = group ? 'Kundengruppe bearbeiten' : 'Neue Kundengruppe';
-  document.getElementById('gfPrefix').value    = group?.prefix         || '';
-  document.getElementById('gfName').value      = group?.name           || '';
-  document.getElementById('gfPortStart').value = group?.portRangeStart || '';
-  document.getElementById('gfNotes').value     = group?.notes          || '';
-  document.getElementById('gfPrefix').disabled = !!group;
-  showModal('groupModal');
-}
-
-document.getElementById('groupForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const data = {
-    prefix:           document.getElementById('gfPrefix').value.trim().toLowerCase(),
-    name:             document.getElementById('gfName').value.trim(),
-    port_range_start: parseInt(document.getElementById('gfPortStart').value),
-    notes:            document.getElementById('gfNotes').value.trim() || null,
-  };
-  try {
-    if (state.editingGroupId) {
-      await put(`/api/frp/customer-groups/${state.editingGroupId}`, data);
-      toast('Kundengruppe gespeichert');
-    } else {
-      await post('/api/frp/customer-groups', data);
-      toast('Kundengruppe erstellt');
-    }
-    closeModal('groupModal');
-    await loadFrp();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
-function editGroup(id) {
-  const g = state.customerGroups.find(g => g.id === id);
-  if (g) openGroupModal(g);
-}
-
-async function deleteGroup(id) {
-  if (!confirm('Kundengruppe wirklich l\u00f6schen?')) return;
-  try {
-    await del(`/api/frp/customer-groups/${id}`);
-    toast('Kundengruppe gel\u00f6scht');
     await loadFrp();
   } catch (err) {
     toast(err.message, 'error');

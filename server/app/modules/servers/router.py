@@ -28,7 +28,6 @@ def create_server(data: ServerCreate, db: Session = Depends(get_db), _admin=Depe
         os_type=data.os_type,
         tags=json.dumps(data.tags) if data.tags else None,
         notes=data.notes or "",
-        customer_group_id=data.customer_group_id,
     )
     db.add(server)
     db.commit()
@@ -61,9 +60,6 @@ def update_server(server_id: str, data: ServerUpdate, db: Session = Depends(get_
         server.tags = json.dumps(data.tags) if data.tags else None
     if data.notes is not None:
         server.notes = data.notes
-    if data.customer_group_id is not None:
-        server.customer_group_id = data.customer_group_id or None
-
     db.commit()
     db.refresh(server)
     fire_event("server.updated", {"id": server.id, "name": server.name})

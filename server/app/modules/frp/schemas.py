@@ -2,22 +2,6 @@ from pydantic import BaseModel
 from typing import Optional
 
 
-# --- Customer Groups ---
-
-class CustomerGroupCreate(BaseModel):
-    prefix: str  # z.B. "k01"
-    name: str  # z.B. "Kunde Beispiel GmbH"
-    port_range_start: int  # z.B. 6100
-    notes: Optional[str] = None
-
-
-class CustomerGroupUpdate(BaseModel):
-    prefix: Optional[str] = None
-    name: Optional[str] = None
-    port_range_start: Optional[int] = None
-    notes: Optional[str] = None
-
-
 # --- FRP Server Config ---
 
 class FrpServerConfigCreate(BaseModel):
@@ -66,7 +50,23 @@ class FrpTunnelCreate(BaseModel):
     connection_id: Optional[str] = None
     enabled: bool = True
     extra_config: Optional[dict] = None
+    tags: Optional[list[str]] = []
     auto_create_connection: bool = False  # automatisch passende Connection erstellen
+
+
+class FrpTunnelUpdate(BaseModel):
+    name: Optional[str] = None
+    tunnel_type: Optional[str] = None
+    protocol: Optional[str] = None
+    local_ip: Optional[str] = None
+    local_port: Optional[int] = None
+    secret_key: Optional[str] = None
+    custom_domains: Optional[str] = None
+    visitor_port: Optional[int] = None
+    connection_id: Optional[str] = None
+    enabled: Optional[bool] = None
+    extra_config: Optional[dict] = None
+    tags: Optional[list[str]] = None
 
 
 # --- Visitors ---
@@ -83,17 +83,3 @@ class VisitorUpdate(BaseModel):
     display_name: Optional[str] = None
     notes: Optional[str] = None
     server_ids: Optional[list[str]] = None
-
-
-class FrpTunnelUpdate(BaseModel):
-    name: Optional[str] = None
-    tunnel_type: Optional[str] = None
-    protocol: Optional[str] = None
-    local_ip: Optional[str] = None
-    local_port: Optional[int] = None
-    secret_key: Optional[str] = None
-    custom_domains: Optional[str] = None
-    visitor_port: Optional[int] = None
-    connection_id: Optional[str] = None
-    enabled: Optional[bool] = None
-    extra_config: Optional[dict] = None

@@ -14,11 +14,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import get_current_admin, ApiKeyOrUser, hash_api_key, generate_api_key
 from app.core.events import fire_event
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup, ProvisionToken, Visitor
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor
 from app.modules.frp.schemas import (
     FrpServerConfigCreate, FrpServerConfigUpdate,
     FrpTunnelCreate, FrpTunnelUpdate,
-    CustomerGroupCreate, CustomerGroupUpdate,
     VisitorCreate, VisitorUpdate,
 )
 from app.modules.connections.models import Connection
@@ -175,6 +174,7 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
         connection_id=data.connection_id,
         enabled=data.enabled,
         extra_config=json.dumps(data.extra_config) if data.extra_config else None,
+        tags=json.dumps(data.tags) if data.tags else None,
     )
     db.add(tunnel)
     db.flush()
@@ -228,6 +228,9 @@ def update_tunnel(tunnel_id: str, data: FrpTunnelUpdate, db: Session = Depends(g
 
     if data.extra_config is not None:
         tunnel.extra_config = json.dumps(data.extra_config)
+
+    if data.tags is not None:
+        tunnel.tags = json.dumps(data.tags) if data.tags else None
 
     db.commit()
     db.refresh(tunnel)
@@ -539,84 +542,6 @@ def download_client_bundle(client_name: str, _admin=Depends(get_current_admin)):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}-pki.zip"'},
     )
-
-
-# --------------- Customer Groups ---------------
-
-@router.get("/customer-groups")
-def list_customer_groups(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    groups = db.query(CustomerGroup).order_by(CustomerGroup.prefix).all()
-    return [g.to_dict() for g in groups]
-
-
-@router.post("/customer-groups", status_code=status.HTTP_201_CREATED)
-def create_customer_group(data: CustomerGroupCreate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    existing = db.query(CustomerGroup).filter(CustomerGroup.prefix == data.prefix).first()
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Prefix '{data.prefix}' existiert bereits")
-
-    group = CustomerGroup(
-        id=str(uuid.uuid4()),
-        prefix=data.prefix,
-        name=data.name,
-        port_range_start=data.port_range_start,
-        notes=data.notes,
-    )
-    db.add(group)
-    db.commit()
-    db.refresh(group)
-    return group.to_dict()
-
-
-@router.get("/customer-groups/{group_id}")
-def get_customer_group(group_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
-    return group.to_dict(include_servers=True)
-
-
-@router.put("/customer-groups/{group_id}")
-def update_customer_group(group_id: str, data: CustomerGroupUpdate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
-
-    if data.prefix is not None and data.prefix != group.prefix:
-        existing = db.query(CustomerGroup).filter(CustomerGroup.prefix == data.prefix).first()
-        if existing:
-            raise HTTPException(status_code=409, detail=f"Prefix '{data.prefix}' existiert bereits")
-
-    for field in ["prefix", "name", "port_range_start", "notes"]:
-        value = getattr(data, field)
-        if value is not None:
-            setattr(group, field, value)
-
-    db.commit()
-    db.refresh(group)
-    return group.to_dict()
-
-
-@router.delete("/customer-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_customer_group(group_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
-    db.delete(group)
-    db.commit()
-
-
-@router.get("/customer-groups/{group_id}/next-port")
-def get_next_visitor_port(group_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    """Gibt den naechsten freien Visitor-Port fuer diese Kundengruppe zurueck."""
-    group = db.query(CustomerGroup).filter(CustomerGroup.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=404, detail="Kundengruppe nicht gefunden")
-
-    # Alle Tunnel der Server in dieser Gruppe sammeln
-    server_ids = [s.id for s in group.servers]
-    tunnels = db.query(FrpTunnel).filter(FrpTunnel.server_id.in_(server_ids)).all() if server_ids else []
-    return {"nextPort": group.next_visitor_port(tunnels)}
 
 
 # --------------- Visitors ---------------

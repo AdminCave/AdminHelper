@@ -104,6 +104,9 @@
             <div class="page-subtitle" id="connSubtitle">Alle gespeicherten Verbindungen</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
+            <select id="connTagSelect" class="filter-select hidden">
+              <option value="">Alle Tags</option>
+            </select>
             <input id="connSearch" type="search" placeholder="Suchen…" style="padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-family:var(--font);font-size:14px" />
             <button id="exportConnBtn" class="btn ghost hidden">Exportieren</button>
             <button id="importConnBtn" class="btn ghost hidden">Importieren</button>
@@ -137,6 +140,9 @@
             <div class="page-subtitle">Server und zugeordnete Verbindungen</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
+            <select id="serverTagSelect" class="filter-select hidden">
+              <option value="">Alle Tags</option>
+            </select>
             <input id="serverSearch" type="search" placeholder="Suchen..." style="padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-family:var(--font);font-size:14px" />
             <button id="addServerBtn" class="btn primary">+ Server</button>
           </div>
@@ -236,18 +242,13 @@
             <div class="page-subtitle">Tunnel-Konfigurationen verwalten und TOML-Configs generieren</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
+            <select id="tunnelTagSelect" class="filter-select hidden">
+              <option value="">Alle Tags</option>
+            </select>
+            <input id="tunnelSearch" type="search" placeholder="Suchen..." style="padding:8px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-family:var(--font);font-size:14px" />
             <button id="bulkZipBtn" class="btn ghost">ZIP Download</button>
             <button id="addTunnelBtn" class="btn primary">+ Tunnel</button>
           </div>
-        </div>
-
-        <!-- Kundengruppen -->
-        <div class="panel" id="customerGroupPanel" style="margin-bottom:16px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <h3 style="margin:0;font-size:16px;color:var(--text)">Kundengruppen</h3>
-            <button id="addGroupBtn" class="btn small primary">+ Gruppe</button>
-          </div>
-          <div id="groupList" style="font-size:13px;color:var(--text-soft)">Keine Kundengruppen vorhanden.</div>
         </div>
 
         <!-- Visitor-Profile -->
@@ -276,7 +277,7 @@
           </div>
         </div>
 
-        <!-- Tunnel-Liste gruppiert nach Server -->
+        <!-- Tunnel-Liste -->
         <div id="frpTunnelList" style="display:flex;flex-direction:column;gap:12px"></div>
         <div id="frpEmpty" class="empty-state hidden"><p>Keine Tunnel vorhanden.</p></div>
       </div>
@@ -403,6 +404,10 @@
             <label>Custom Domains</label>
             <input id="ftDomains" placeholder="pve.k01.ops.example.net" />
           </div>
+          <div class="field full">
+            <label>Tags (kommagetrennt)</label>
+            <input id="ftTags" placeholder="prod, web, linux" />
+          </div>
           <div class="field full" id="ftAutoConnField">
             <label class="checkbox-label">
               <input id="ftAutoConn" type="checkbox" />
@@ -465,38 +470,6 @@
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn ghost" data-close="provisionModal">Schlie&#xDF;en</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Modal: Kundengruppe -->
-  <div id="groupModal" class="modal-backdrop hidden">
-    <div class="modal" style="width:min(520px,95vw)">
-      <div class="modal-header">
-        <div class="modal-title" id="groupModalTitle">Kundengruppe</div>
-        <button class="modal-close" data-close="groupModal">&#x2715;</button>
-      </div>
-      <form id="groupForm" class="modal-form">
-        <div class="field">
-          <label>Prefix * (z.B. k01)</label>
-          <input id="gfPrefix" required placeholder="k01" pattern="[a-z0-9]+" />
-        </div>
-        <div class="field">
-          <label>Name *</label>
-          <input id="gfName" required placeholder="Kunde Beispiel GmbH" />
-        </div>
-        <div class="field">
-          <label>Port-Bereich Start *</label>
-          <input id="gfPortStart" type="number" required placeholder="6100" />
-        </div>
-        <div class="field">
-          <label>Notizen</label>
-          <textarea id="gfNotes" placeholder="Optionale Notizen..."></textarea>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn ghost" data-close="groupModal">Abbrechen</button>
-          <button type="submit" class="btn primary">Speichern</button>
-        </div>
-      </form>
     </div>
   </div>
 
@@ -624,12 +597,6 @@
             <option value="windows">Windows</option>
             <option value="macos">macOS</option>
             <option value="freebsd">FreeBSD</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Kundengruppe</label>
-          <select id="sfCustomerGroup">
-            <option value="">-- Keine --</option>
           </select>
         </div>
         <div class="field">

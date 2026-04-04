@@ -18,7 +18,7 @@ from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, CustomerGroup, ProvisionToken, Visitor  # noqa: F401
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor  # noqa: F401
 
 # Router importieren
 from app.modules.users.auth_router import router as auth_router
@@ -92,12 +92,12 @@ def _migrate_add_columns():
         return
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
-    # customer_group_id zu servers
-    cursor.execute("PRAGMA table_info(servers)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if "customer_group_id" not in columns:
-        cursor.execute("ALTER TABLE servers ADD COLUMN customer_group_id TEXT REFERENCES frp_customer_groups(id) ON DELETE SET NULL")
-        logger.info("Migration: customer_group_id zu servers hinzugefuegt")
+    # tags zu frp_tunnels
+    cursor.execute("PRAGMA table_info(frp_tunnels)")
+    tunnel_cols = {row[1] for row in cursor.fetchall()}
+    if tunnel_cols and "tags" not in tunnel_cols:
+        cursor.execute("ALTER TABLE frp_tunnels ADD COLUMN tags TEXT")
+        logger.info("Migration: tags zu frp_tunnels hinzugefuegt")
     # TLS-Felder zu frp_server_config
     cursor.execute("PRAGMA table_info(frp_server_config)")
     frp_cols = {row[1] for row in cursor.fetchall()}
