@@ -10,7 +10,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
 from app.modules.users.models import User
 from app.modules.api_keys.models import ApiKey
@@ -45,19 +45,32 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def _get_user_from_token(token: str, db: Session) -> Optional[User]:
+def create_refresh_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _get_user_from_token(token: str, db: Session, expected_type: str = "access") -> Optional[User]:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type", "access") != expected_type:
+            return None
         username: str = payload.get("sub")
         if not username:
             return None
     except JWTError:
         return None
     return db.query(User).filter(User.username == username).first()
+
+
+def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
+    return _get_user_from_token(token, db, expected_type="refresh")
 
 
 def _get_api_key_from_header(request: Request, db: Session) -> Optional[ApiKey]:

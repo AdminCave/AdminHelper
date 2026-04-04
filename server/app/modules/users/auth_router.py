@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.auth import verify_password, create_access_token, get_current_user
-from app.modules.users.schemas import LoginRequest, TokenResponse, UserMe
+from app.core.auth import verify_password, create_access_token, create_refresh_token, get_current_user, get_user_from_refresh_token
+from app.modules.users.schemas import LoginRequest, RefreshRequest, TokenResponse, UserMe
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -48,8 +48,22 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     # Bei erfolgreichem Login: Zähler zurücksetzen
     _login_attempts.pop(ip, None)
-    token = create_access_token({"sub": user.username})
-    return TokenResponse(access_token=token)
+    access = create_access_token({"sub": user.username})
+    refresh = create_refresh_token({"sub": user.username})
+    return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(data: RefreshRequest, db: Session = Depends(get_db)):
+    user = get_user_from_refresh_token(data.refresh_token, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungültiger oder abgelaufener Refresh-Token",
+        )
+    access = create_access_token({"sub": user.username})
+    refresh = create_refresh_token({"sub": user.username})
+    return TokenResponse(access_token=access, refresh_token=refresh)
 
 
 @router.get("/me", response_model=UserMe)

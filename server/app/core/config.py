@@ -33,6 +33,7 @@ def _resolve_secret_key() -> str:
 SECRET_KEY = _resolve_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 Stunden
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 DATABASE_URL = f"sqlite:///{DATA_DIR}/db.sqlite3"
 CONNECTIONS_FILE = DATA_DIR / "connections.json"

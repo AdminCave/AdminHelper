@@ -25,14 +25,47 @@ const state = {
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
+let _refreshing = null;
+
+async function _tryRefreshToken() {
+  if (_refreshing) return _refreshing;
+  const refreshToken = localStorage.getItem('srm_refresh_token');
+  if (!refreshToken) return false;
+
+  _refreshing = fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  }).then(async (res) => {
+    if (!res.ok) return false;
+    const data = await res.json();
+    state.token = data.access_token;
+    localStorage.setItem('srm_token', data.access_token);
+    localStorage.setItem('srm_refresh_token', data.refresh_token);
+    return true;
+  }).catch(() => false).finally(() => { _refreshing = null; });
+
+  return _refreshing;
+}
+
 async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const jsonBody = body !== undefined ? JSON.stringify(body) : undefined;
+  let res = await fetch(path, { method, headers, body: jsonBody });
+
+  // Bei 401: Refresh versuchen und Request wiederholen
+  if (res.status === 401 && !path.includes('/auth/')) {
+    const refreshed = await _tryRefreshToken();
+    if (refreshed) {
+      headers['Authorization'] = `Bearer ${state.token}`;
+      res = await fetch(path, { method, headers, body: jsonBody });
+    } else {
+      logout();
+      throw new Error('Sitzung abgelaufen');
+    }
+  }
+
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);

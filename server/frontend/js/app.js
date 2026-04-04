@@ -12,7 +12,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       password: document.getElementById('loginPass').value,
     });
     state.token = data.access_token;
-    localStorage.setItem('srm_token', state.token);
+    localStorage.setItem('srm_token', data.access_token);
+    localStorage.setItem('srm_refresh_token', data.refresh_token);
     await initApp();
   } catch (err) {
     errEl.textContent = err.message;
@@ -55,6 +56,7 @@ document.getElementById('logoutBtn').addEventListener('click', logout);
 function logout() {
   state.token = null;
   localStorage.removeItem('srm_token');
+  localStorage.removeItem('srm_refresh_token');
   location.reload();
 }
 
