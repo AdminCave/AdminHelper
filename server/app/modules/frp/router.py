@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import get_current_admin, ApiKeyOrUser, hash_api_key, generate_api_key
+from app.core.config import VISITOR_PORT_START, VISITOR_PORT_END
 from app.core.events import fire_event
 from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor, visitor_server_assoc
 from app.modules.frp.schemas import (
@@ -31,6 +32,24 @@ from app.modules.servers.models import Server
 from app.modules.api_keys.models import ApiKey
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
+
+
+def _next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int:
+    """Nächsten freien Visitor-Port aus dem konfigurierten Bereich ermitteln."""
+    query = db.query(FrpTunnel.visitor_port).filter(
+        FrpTunnel.visitor_port.isnot(None),
+        FrpTunnel.tunnel_type == "stcp",
+    )
+    if exclude_tunnel_id:
+        query = query.filter(FrpTunnel.id != exclude_tunnel_id)
+    used = {row[0] for row in query.all()}
+    for port in range(VISITOR_PORT_START, VISITOR_PORT_END + 1):
+        if port not in used:
+            return port
+    raise HTTPException(
+        status_code=409,
+        detail=f"Keine freien Visitor-Ports im Bereich {VISITOR_PORT_START}–{VISITOR_PORT_END}",
+    )
 
 
 def _get_allow_users(db: Session, server_id: str) -> list[str]:
@@ -161,6 +180,17 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
     if data.tunnel_type == "stcp" and not secret:
         secret = FrpTunnel.generate_secret()
 
+    visitor_port = data.visitor_port
+    if data.tunnel_type == "stcp":
+        if not visitor_port:
+            visitor_port = _next_visitor_port(db)
+        else:
+            conflict = db.query(FrpTunnel).filter(
+                FrpTunnel.visitor_port == visitor_port, FrpTunnel.tunnel_type == "stcp"
+            ).first()
+            if conflict:
+                raise HTTPException(status_code=409, detail=f"Visitor-Port {visitor_port} ist bereits belegt")
+
     tunnel = FrpTunnel(
         id=str(uuid.uuid4()),
         server_id=data.server_id,
@@ -172,7 +202,7 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
         local_port=data.local_port,
         secret_key=secret,
         custom_domains=data.custom_domains,
-        visitor_port=data.visitor_port,
+        visitor_port=visitor_port,
         connection_id=data.connection_id,
         enabled=data.enabled,
         extra_config=json.dumps(data.extra_config) if data.extra_config else None,
@@ -184,14 +214,14 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
     # Auto-Connection erstellen wenn gewuenscht
     if data.auto_create_connection:
         auto_conn = None
-        if data.tunnel_type == "stcp" and data.visitor_port:
+        if data.tunnel_type == "stcp" and visitor_port:
             conn_kind = "ssh" if data.protocol == "ssh" else "rdp" if data.protocol == "rdp" else "web"
             auto_conn = Connection(
                 id=str(uuid.uuid4()),
                 name=f"{data.name} (via FRP)",
                 kind=conn_kind,
                 host="127.0.0.1",
-                port=data.visitor_port,
+                port=visitor_port,
                 server_id=data.server_id,
             )
         elif data.tunnel_type == "https" and data.custom_domains:
@@ -237,10 +267,24 @@ def update_tunnel(tunnel_id: str, data: FrpTunnelUpdate, db: Session = Depends(g
         if existing:
             raise HTTPException(status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits")
 
+    # Visitor-Port Duplikat-Prüfung
+    if "visitor_port" in sent and data.visitor_port:
+        conflict = db.query(FrpTunnel).filter(
+            FrpTunnel.visitor_port == data.visitor_port,
+            FrpTunnel.tunnel_type == "stcp",
+            FrpTunnel.id != tunnel_id,
+        ).first()
+        if conflict:
+            raise HTTPException(status_code=409, detail=f"Visitor-Port {data.visitor_port} ist bereits belegt")
+
     for field in ["name", "tunnel_type", "protocol", "local_ip", "local_port",
                    "secret_key", "custom_domains", "visitor_port", "connection_id", "enabled"]:
         if field in sent:
             setattr(tunnel, field, getattr(data, field))
+
+    # STCP ohne Visitor-Port: automatisch zuweisen
+    if tunnel.tunnel_type == "stcp" and not tunnel.visitor_port:
+        tunnel.visitor_port = _next_visitor_port(db, exclude_tunnel_id=tunnel_id)
 
     if "extra_config" in sent:
         tunnel.extra_config = json.dumps(data.extra_config) if data.extra_config else None

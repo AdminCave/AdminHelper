@@ -50,6 +50,10 @@ if not ADMIN_PASSWORD:
 FRP_CONFIG_DIR = Path(os.environ.get("FRP_CONFIG_DIR", str(DATA_DIR / "frp-config")))
 FRP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+# Visitor-Port-Bereich für automatische Zuweisung (STCP-Tunnel)
+VISITOR_PORT_START = int(os.environ.get("VISITOR_PORT_START", "6000"))
+VISITOR_PORT_END = int(os.environ.get("VISITOR_PORT_END", "6999"))
+
 # IP-Zugangsbeschränkung
 # Kommagetrennte Liste von IPs und/oder CIDR-Netzen, z.B.:
 #   ALLOWED_IPS=192.168.1.0/24,10.0.0.5,172.16.0.0/12
