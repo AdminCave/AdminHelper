@@ -35,7 +35,7 @@ def _parse_trigger(interval: str):
     parts = interval.split()
     if len(parts) == 5:
         return CronTrigger.from_crontab(interval)
-    raise ValueError(f"Ungueltiges Intervall: {interval!r}")
+    raise ValueError(f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)} oder Cron (5 Felder)")
 
 
 def add_check(check_id: str, interval: str) -> None:

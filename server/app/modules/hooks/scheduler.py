@@ -13,6 +13,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 scheduler = BackgroundScheduler(timezone="UTC")
 
 _INTERVAL_MAP = {
+    "1m":  {"minutes": 1},
     "5m":  {"minutes": 5},
     "15m": {"minutes": 15},
     "30m": {"minutes": 30},
