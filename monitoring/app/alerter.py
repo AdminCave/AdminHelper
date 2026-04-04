@@ -42,10 +42,13 @@ def process_alert(
 
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
 
+    is_recovery = new_status == "ok"
+
     for rule in rules:
         if not _rule_matches(rule, check):
             continue
-        if _is_in_cooldown(db, rule, check):
+        # Recovery-Alerts nie durch Cooldown blockieren
+        if not is_recovery and _is_in_cooldown(db, rule, check):
             logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
             continue
 
@@ -113,8 +116,39 @@ def _dispatch(
 def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dict:
     """Baut die Alert-Nachricht als dict."""
     status_icons = {
-        "ok": "✅", "warning": "⚠️", "critical": "🔴", "unknown": "❓",
+        "ok": "\u2705", "warning": "\u26a0\ufe0f", "critical": "\U0001f534", "unknown": "\u2753",
     }
+    is_recovery = new_status == "ok"
+
+    if is_recovery:
+        subject = f"[SRM Monitor] RECOVERY: {check.name} ist wieder OK"
+        text = (
+            f"RECOVERY\n"
+            f"Check: {check.name} ({check.check_type})\n"
+            f"Status: {old_status} \u2192 OK\n"
+            f"Der Check ist wieder in Ordnung."
+        )
+    else:
+        label = "CRITICAL" if new_status == "critical" else new_status.upper()
+        subject = f"[SRM Monitor] {label}: {check.name}"
+        text = (
+            f"{label}\n"
+            f"Check: {check.name} ({check.check_type})\n"
+            f"Status: {old_status} \u2192 {new_status}\n"
+            f"Severity: {check.severity}"
+        )
+
+    # Check-State Message anhaengen (z.B. "Port 22: Connection refused")
+    try:
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+        if state and state.message:
+            text += f"\nDetails: {state.message}"
+        db.close()
+    except Exception:
+        pass
+
     return {
         "check_name": check.name,
         "check_type": check.check_type,
@@ -122,13 +156,10 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
         "severity": check.severity,
         "old_status": old_status,
         "new_status": new_status,
+        "is_recovery": is_recovery,
         "icon": status_icons.get(new_status, ""),
-        "subject": f"[SRM Monitor] {check.name}: {old_status} → {new_status}",
-        "text": (
-            f"Check: {check.name} ({check.check_type})\n"
-            f"Status: {old_status} → {new_status}\n"
-            f"Severity: {check.severity}"
-        ),
+        "subject": subject,
+        "text": text,
     }
 
 
@@ -169,13 +200,18 @@ def _send_email(
     new_status: str,
 ) -> tuple[bool, str | None]:
     """Sendet Alert per E-Mail."""
-    recipients = config.get("recipients", [])
+    recipients = config.get("recipients") or config.get("to") or []
     if isinstance(recipients, str):
         recipients = [r.strip() for r in recipients.split(",") if r.strip()]
     if not recipients:
         return False, "Keine Empfaenger konfiguriert"
 
-    if not SMTP_HOST:
+    smtp_host = config.get("smtp_host") or SMTP_HOST
+    smtp_port = int(config.get("smtp_port") or SMTP_PORT)
+    smtp_user = config.get("smtp_user") or SMTP_USER
+    smtp_pass = config.get("smtp_password") or SMTP_PASSWORD
+
+    if not smtp_host:
         return False, "SMTP nicht konfiguriert (SMTP_HOST fehlt)"
 
     msg_data = _build_message(check, old_status, new_status)
@@ -187,11 +223,11 @@ def _send_email(
     message.attach(MIMEText(msg_data["text"], "plain"))
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-            if SMTP_PORT == 587:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            if smtp_port == 587:
                 server.starttls()
-            if SMTP_USER and SMTP_PASSWORD:
-                server.login(SMTP_USER, SMTP_PASSWORD)
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
             server.send_message(message)
         logger.info("E-Mail gesendet: %s -> %s", check.name, recipients)
         return True, None
