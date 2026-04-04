@@ -34,6 +34,39 @@ from app.modules.api_keys.models import ApiKey
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
 
+def _create_auto_connection(
+    name: str,
+    tunnel_type: str,
+    protocol: str | None,
+    custom_domains: str | None,
+    visitor_port: int | None,
+    server_id: str,
+    db: Session,
+) -> Connection | None:
+    """Auto-Connection fuer einen Tunnel erstellen (STCP oder HTTPS)."""
+    if tunnel_type == "stcp" and visitor_port:
+        conn_kind = "ssh" if protocol == "ssh" else "rdp" if protocol == "rdp" else "web"
+        return Connection(
+            id=str(uuid.uuid4()),
+            name=f"{name} (via FRP)",
+            kind=conn_kind,
+            host="127.0.0.1",
+            port=visitor_port,
+            server_id=server_id,
+        )
+    if tunnel_type == "https" and custom_domains:
+        domain = custom_domains.split(",")[0].strip()
+        if domain:
+            return Connection(
+                id=str(uuid.uuid4()),
+                name=f"{name} (via FRP)",
+                kind="web",
+                url=f"https://{domain}",
+                server_id=server_id,
+            )
+    return None
+
+
 def _next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int:
     """Nächsten freien Visitor-Port aus dem konfigurierten Bereich ermitteln."""
     query = db.query(FrpTunnel.visitor_port).filter(
@@ -213,27 +246,10 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
 
     # Auto-Connection erstellen wenn gewuenscht
     if data.auto_create_connection:
-        auto_conn = None
-        if data.tunnel_type == "stcp" and visitor_port:
-            conn_kind = "ssh" if data.protocol == "ssh" else "rdp" if data.protocol == "rdp" else "web"
-            auto_conn = Connection(
-                id=str(uuid.uuid4()),
-                name=f"{data.name} (via FRP)",
-                kind=conn_kind,
-                host="127.0.0.1",
-                port=visitor_port,
-                server_id=data.server_id,
-            )
-        elif data.tunnel_type == "https" and data.custom_domains:
-            domain = data.custom_domains.split(",")[0].strip()
-            if domain:
-                auto_conn = Connection(
-                    id=str(uuid.uuid4()),
-                    name=f"{data.name} (via FRP)",
-                    kind="web",
-                    url=f"https://{domain}",
-                    server_id=data.server_id,
-                )
+        auto_conn = _create_auto_connection(
+            data.name, data.tunnel_type, data.protocol,
+            data.custom_domains, visitor_port, data.server_id, db,
+        )
         if auto_conn:
             db.add(auto_conn)
             db.flush()
@@ -294,28 +310,10 @@ def update_tunnel(tunnel_id: str, data: FrpTunnelUpdate, db: Session = Depends(g
 
     # Auto-Connection nachträglich erstellen
     if data.auto_create_connection and not tunnel.connection_id:
-        auto_conn = None
-        t_type = tunnel.tunnel_type
-        if t_type == "stcp" and tunnel.visitor_port:
-            conn_kind = "ssh" if tunnel.protocol == "ssh" else "rdp" if tunnel.protocol == "rdp" else "web"
-            auto_conn = Connection(
-                id=str(uuid.uuid4()),
-                name=f"{tunnel.name} (via FRP)",
-                kind=conn_kind,
-                host="127.0.0.1",
-                port=tunnel.visitor_port,
-                server_id=tunnel.server_id,
-            )
-        elif t_type == "https" and tunnel.custom_domains:
-            domain = tunnel.custom_domains.split(",")[0].strip()
-            if domain:
-                auto_conn = Connection(
-                    id=str(uuid.uuid4()),
-                    name=f"{tunnel.name} (via FRP)",
-                    kind="web",
-                    url=f"https://{domain}",
-                    server_id=tunnel.server_id,
-                )
+        auto_conn = _create_auto_connection(
+            tunnel.name, tunnel.tunnel_type, tunnel.protocol,
+            tunnel.custom_domains, tunnel.visitor_port, tunnel.server_id, db,
+        )
         if auto_conn:
             db.add(auto_conn)
             db.flush()
