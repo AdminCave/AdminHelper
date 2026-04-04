@@ -1,8 +1,9 @@
 """
 Script-Runner für Hooks.
 
-Jedes Script wird via exec() ausgeführt. Imports sind vollständig erlaubt,
-da Hooks nur von Admins angelegt werden können.
+Jedes Script wird via exec() ausgeführt. Gefährliche Builtins (exec, eval,
+compile) sind entfernt. Imports sind auf eine Whitelist sicherer
+Standardmodule beschränkt.
 
 Verfügbare Variablen im Script (immer):
     load_connections()  -> list[dict]   Verbindungen laden
@@ -49,12 +50,33 @@ def run_hook_script(
     def _print(*args, sep=" ", end="\n", **_kwargs):  # noqa: ANN001
         logs.append(sep.join(str(a) for a in args))
 
-    # Vollständige Builtins inkl. __import__ — Hooks sind Admin-only
-    full_builtins = vars(builtins).copy()
-    full_builtins["print"] = _print
+    # Eingeschränkte Builtins — gefährliche Funktionen entfernt
+    safe_builtins = vars(builtins).copy()
+    for dangerous in ("exec", "eval", "compile", "breakpoint", "exit", "quit"):
+        safe_builtins.pop(dangerous, None)
+
+    # Import-Whitelist: nur sichere Standardmodule erlauben
+    _IMPORT_WHITELIST = frozenset({
+        "json", "re", "math", "datetime", "time", "hashlib", "hmac",
+        "base64", "urllib", "urllib.parse", "collections", "itertools",
+        "functools", "operator", "string", "textwrap", "copy",
+        "csv", "io", "os.path", "pathlib", "uuid", "random",
+        "logging", "http", "http.client", "email",
+    })
+
+    _original_import = builtins.__import__
+
+    def _restricted_import(name, *args, **kwargs):
+        top = name.split(".")[0]
+        if top not in _IMPORT_WHITELIST and name not in _IMPORT_WHITELIST:
+            raise ImportError(f"Import von '{name}' ist in Hook-Scripts nicht erlaubt")
+        return _original_import(name, *args, **kwargs)
+
+    safe_builtins["__import__"] = _restricted_import
+    safe_builtins["print"] = _print
 
     namespace: dict[str, Any] = {
-        "__builtins__": full_builtins,
+        "__builtins__": safe_builtins,
         # Storage-Funktionen
         "load_connections": load_connections,
         "save_connections": save_connections,
