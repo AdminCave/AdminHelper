@@ -652,23 +652,32 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
 
 @router.post("/agent-keys/{server_id}", dependencies=[Depends(require_internal)])
 def create_agent_key(server_id: str, db: Session = Depends(get_db)):
-    """Generiert einen neuen Agent-API-Key fuer einen Server (oder gibt bestehenden zurueck)."""
+    """Generiert einen neuen Agent-API-Key fuer einen Server.
+
+    Der Raw-Key wird nur bei Neuerstellung zurueckgegeben. Bei bestehendem
+    Key muss dieser neu generiert werden (DELETE + POST).
+    """
     import secrets
     from app.models import MonitorAgentKey
 
+    # Bei bestehendem Key: alten löschen und neu generieren
     existing = db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).first()
     if existing:
-        return existing.to_dict(mask=False)
+        db.delete(existing)
+        db.flush()
 
+    raw_key = secrets.token_urlsafe(48)
     key = MonitorAgentKey(
         id=str(uuid.uuid4()),
         server_id=server_id,
-        api_key=secrets.token_urlsafe(48),
+        hashed_key=MonitorAgentKey.hash_key(raw_key),
     )
     db.add(key)
     db.commit()
     db.refresh(key)
-    return key.to_dict(mask=False)
+    d = key.to_dict()
+    d["apiKey"] = raw_key  # Einmalig den Raw-Key zurückgeben
+    return d
 
 
 @router.delete("/agent-keys/{server_id}", dependencies=[Depends(require_internal)])

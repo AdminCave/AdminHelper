@@ -174,13 +174,18 @@ class MonitorAgentKey(Base):
 
     id = Column(String, primary_key=True)
     server_id = Column(String, nullable=False, unique=True, index=True)
-    api_key = Column(String, nullable=False, unique=True, index=True)
+    hashed_key = Column(String, nullable=False, unique=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
 
-    def to_dict(self, mask: bool = True) -> dict:
+    @staticmethod
+    def hash_key(raw_key: str) -> str:
+        import hashlib
+        return hashlib.sha256(raw_key.encode()).hexdigest()
+
+    def to_dict(self) -> dict:
         return {
             "id": self.id,
             "serverId": self.server_id,
-            "apiKey": ("***" + self.api_key[-8:]) if mask else self.api_key,
+            "apiKey": "***" + self.hashed_key[-8:],
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }

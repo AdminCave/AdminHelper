@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
         ("template_id", "TEXT"),
         ("template_def_id", "TEXT"),
     ])
+    _migrate_agent_keys_to_hash(insp)
     logger.info("Datenbank initialisiert")
 
     load_all_checks()
@@ -57,6 +58,31 @@ def _migrate_columns(insp, table_name: str, columns: list[tuple[str, str]]):
             if col_name not in existing:
                 conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"))
                 logger.info("Spalte %s.%s hinzugefuegt", table_name, col_name)
+
+
+def _migrate_agent_keys_to_hash(insp):
+    """Migriert Klartext api_key Spalte zu hashed_key (SHA-256)."""
+    if not insp.has_table("monitor_agent_keys"):
+        return
+    existing = {c["name"] for c in insp.get_columns("monitor_agent_keys")}
+    if "hashed_key" in existing:
+        return  # Bereits migriert
+    if "api_key" not in existing:
+        return  # Frische DB, create_all hat hashed_key bereits angelegt
+
+    import hashlib
+    with engine.begin() as conn:
+        # Neue Spalte anlegen
+        conn.execute(text("ALTER TABLE monitor_agent_keys ADD COLUMN hashed_key TEXT"))
+        # Bestehende Klartext-Keys hashen
+        rows = conn.execute(text("SELECT id, api_key FROM monitor_agent_keys")).fetchall()
+        for row in rows:
+            hashed = hashlib.sha256(row[1].encode()).hexdigest()
+            conn.execute(
+                text("UPDATE monitor_agent_keys SET hashed_key = :h WHERE id = :id"),
+                {"h": hashed, "id": row[0]},
+            )
+        logger.info("Migration: %d Agent-Keys von Klartext zu SHA-256 Hash konvertiert", len(rows))
 
 
 app = FastAPI(

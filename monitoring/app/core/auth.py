@@ -24,8 +24,9 @@ def require_agent(request: Request, db: Session = Depends(get_db)) -> str:
     if key == INTERNAL_API_KEY:
         return "__internal__"
 
-    # Agent-Key in DB suchen
-    agent_key = db.query(MonitorAgentKey).filter(MonitorAgentKey.api_key == key).first()
+    # Agent-Key hashen und gegen DB vergleichen
+    hashed = MonitorAgentKey.hash_key(key)
+    agent_key = db.query(MonitorAgentKey).filter(MonitorAgentKey.hashed_key == hashed).first()
     if not agent_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ungültiger API-Key")
 
