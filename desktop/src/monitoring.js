@@ -4,7 +4,10 @@ import {
   worstStatus,
   statusClass,
   formatCheckTime,
-  computeSummary
+  computeSummary,
+  formatCheckConfig,
+  checkTypeUnit,
+  isPercentCheck
 } from "./monitoringModel.js";
 
 export function initMonitoring(state, t, monitoringApiFactory) {
@@ -251,6 +254,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     panel.className = "mon-detail-panel";
     panel.dataset.checkId = check.id;
 
+    const status = check.state?.status || "pending";
     const info = document.createElement("div");
     info.className = "mon-detail-info";
     info.innerHTML = `<strong>${check.name}</strong> &mdash; ${check.checkType.toUpperCase()}`;
@@ -260,6 +264,19 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       desc.textContent = check.description;
       info.appendChild(desc);
     }
+
+    // Config-Zusammenfassung
+    const configKV = formatCheckConfig(check);
+    if (configKV.length > 0) {
+      const configEl = document.createElement("div");
+      configEl.className = "mon-detail-config";
+      configEl.innerHTML = configKV.map(([k, v]) => `<span class="mon-cfg-key">${k}:</span> <span class="mon-cfg-val">${v}</span>`).join("  &middot;  ");
+      info.appendChild(configEl);
+    }
+
+    // Aktuelle Werte (wird nach Chart-Load gefüllt)
+    const currentValues = document.createElement("div");
+    currentValues.className = "mon-detail-current";
 
     const periodBar = document.createElement("div");
     periodBar.className = "mon-period-selector";
@@ -272,7 +289,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       chip.addEventListener("click", () => {
         activePeriod = p;
         periodBar.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c.textContent === p));
-        loadAndRenderChart(check.id, p, chartContainer);
+        loadAndRenderChart(check, p, chartContainer, currentValues, timelineContainer);
       });
       periodBar.appendChild(chip);
     }
@@ -280,24 +297,85 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     const chartContainer = document.createElement("div");
     chartContainer.className = "mon-chart-container";
 
-    panel.append(info, periodBar, chartContainer);
+    const timelineContainer = document.createElement("div");
+    timelineContainer.className = "mon-status-timeline";
+
+    panel.append(info, currentValues, periodBar, chartContainer, timelineContainer);
     rowEl.after(panel);
 
-    loadAndRenderChart(check.id, activePeriod, chartContainer);
+    loadAndRenderChart(check, activePeriod, chartContainer, currentValues, timelineContainer);
   }
 
-  async function loadAndRenderChart(checkId, period, container) {
+  async function loadAndRenderChart(check, period, container, currentValuesEl, timelineEl) {
     if (!ensureApi()) return;
     container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.loading")}</div>`;
     try {
-      const metricsData = await monitoringApi.fetchMetrics(checkId, period);
-      renderChart(container, metricsData);
+      const metricsData = await monitoringApi.fetchMetrics(check.id, period);
+      renderChart(container, metricsData, check.checkType);
+      renderCurrentValues(currentValuesEl, metricsData, check.checkType);
+      renderStatusTimeline(timelineEl, metricsData?.statusHistory);
     } catch (err) {
       container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.error")}</div>`;
     }
   }
 
-  function renderChart(container, metricsData) {
+  function renderCurrentValues(el, metricsData, checkType) {
+    el.innerHTML = "";
+    const results = metricsData?.data || [];
+    if (results.length === 0) return;
+
+    const unit = checkTypeUnit(checkType);
+    const parts = [];
+    for (const series of results) {
+      const name = series.metric?.__name__ || "";
+      if (name.includes("status")) continue;
+      const values = series.values || [];
+      if (values.length === 0) continue;
+      const last = parseFloat(values[values.length - 1][1]);
+      if (isNaN(last)) continue;
+
+      const label = name
+        .replace("monitor_check_", "")
+        .replace("monitor_agent_", "")
+        .replace("monitor_", "")
+        .replace(/_/g, " ");
+      const formatted = Number.isInteger(last) ? String(last) : last.toFixed(1);
+      parts.push(`<span class="mon-current-item"><strong>${label}</strong> ${formatted}${unit}</span>`);
+    }
+    if (parts.length > 0) {
+      el.innerHTML = parts.join("  ");
+    }
+  }
+
+  function renderStatusTimeline(el, statusHistory) {
+    el.innerHTML = "";
+    const results = statusHistory || [];
+    if (results.length === 0 || !results[0]?.values?.length) return;
+
+    const values = results[0].values;
+    const statusColors = { 0: "var(--mon-ok-bg, #22c55e)", 1: "var(--mon-warn-bg, #f59e0b)", 2: "var(--mon-crit-bg, #ef4444)", 3: "var(--mon-unknown-bg, #94a3b8)" };
+    const bar = document.createElement("div");
+    bar.className = "mon-timeline-bar";
+
+    let segStart = 0;
+    let segStatus = Math.round(parseFloat(values[0][1]));
+    for (let i = 1; i <= values.length; i++) {
+      const curStatus = i < values.length ? Math.round(parseFloat(values[i][1])) : -1;
+      if (curStatus !== segStatus) {
+        const pct = ((i - segStart) / values.length) * 100;
+        const seg = document.createElement("div");
+        seg.className = "mon-timeline-seg";
+        seg.style.width = `${pct}%`;
+        seg.style.backgroundColor = statusColors[segStatus] || statusColors[3];
+        bar.appendChild(seg);
+        segStart = i;
+        segStatus = curStatus;
+      }
+    }
+    el.appendChild(bar);
+  }
+
+  function renderChart(container, metricsData, checkType) {
     destroyChart();
     container.innerHTML = "";
 
@@ -309,7 +387,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
 
     // Skip the status metric, prefer duration/value metrics
     const filtered = results.filter((r) => {
-      const name = Object.keys(r.metric).find((k) => k === "__name__") ? r.metric.__name__ : "";
+      const name = r.metric?.__name__ || "";
       return !name.includes("status");
     });
     const series = filtered.length > 0 ? filtered : results;
@@ -331,12 +409,16 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       const label = metricName
         .replace("monitor_check_", "")
         .replace("monitor_agent_", "")
+        .replace("monitor_", "")
         .replace(/_/g, " ");
 
       uplotSeries.push({
         label,
         stroke: colors[i % colors.length],
-        width: 2
+        width: 2,
+        fill: ["service_process", "proxmox_backup", "docker_health"].includes(checkType)
+          ? colors[i % colors.length] + "30"
+          : undefined,
       });
     }
 
@@ -345,27 +427,26 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       return;
     }
 
+    const unit = checkTypeUnit(checkType);
+    const pctCheck = isPercentCheck(checkType);
+    const axisStyle = { stroke: "#94a3b8", grid: { stroke: "rgba(148,163,184,0.12)" }, ticks: { stroke: "rgba(148,163,184,0.12)" } };
+
     const opts = {
       width: container.offsetWidth || 600,
       height: 250,
       series: uplotSeries,
       axes: [
+        axisStyle,
         {
-          stroke: "#94a3b8",
-          grid: { stroke: "rgba(148,163,184,0.12)" },
-          ticks: { stroke: "rgba(148,163,184,0.12)" }
-        },
-        {
-          stroke: "#94a3b8",
-          grid: { stroke: "rgba(148,163,184,0.12)" },
-          ticks: { stroke: "rgba(148,163,184,0.12)" }
+          ...axisStyle,
+          label: unit || undefined,
+          ...(pctCheck ? { range: [0, 100] } : {}),
         }
       ],
-      cursor: {
-        drag: { x: false, y: false }
-      },
+      cursor: { drag: { x: false, y: false } },
       scales: {
-        x: { time: true }
+        x: { time: true },
+        ...(pctCheck ? { y: { min: 0, max: 100 } } : {}),
       }
     };
 

@@ -17,6 +17,31 @@ from app.scheduler import add_check, remove_check
 
 router = APIRouter()
 
+# Typspezifische Metriken die in VictoriaMetrics geschrieben werden
+CHECK_TYPE_METRICS: dict[str, list[str]] = {
+    "ping": ["monitor_check_duration_ms", "monitor_ping_rtt_ms"],
+    "tcp": ["monitor_check_duration_ms", "monitor_tcp_connect_ms"],
+    "http": ["monitor_check_duration_ms", "monitor_http_response_ms", "monitor_http_status_code"],
+    "agent_ping": ["monitor_agent_last_seen_seconds"],
+    "agent_resources": ["monitor_agent_cpu_percent", "monitor_agent_memory_percent"],
+    "service_process": [
+        "monitor_services_failed", "monitor_services_enabled_inactive",
+        "monitor_services_down", "monitor_services_up",
+    ],
+    "proxmox_backup": [
+        "monitor_proxmox_backup_ok", "monitor_proxmox_backup_missing",
+        "monitor_proxmox_backup_outdated",
+    ],
+    "zfs_health": [],  # dynamisch: monitor_zfs_capacity_{pool}
+    "docker_health": ["monitor_docker_ok", "monitor_docker_critical", "monitor_docker_warning"],
+}
+
+# Check-Typen mit dynamischen Metrik-Namen (Regex-Query)
+_DYNAMIC_METRIC_PATTERNS: dict[str, str] = {
+    "zfs_health": "monitor_zfs_capacity_.*",
+    "agent_resources": "monitor_agent_disk_percent.*",
+}
+
 
 # ---------------------------------------------------------------------------
 # Check CRUD
@@ -207,7 +232,7 @@ def get_check_metrics(
     period: str = Query("1h", regex="^(1h|6h|24h|7d)$"),
     db: Session = Depends(get_db),
 ):
-    """Zeitreihen-Metriken fuer einen Check aus VictoriaMetrics."""
+    """Typspezifische Zeitreihen-Metriken + Status-Timeline aus VictoriaMetrics."""
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check nicht gefunden")
@@ -215,7 +240,30 @@ def get_check_metrics(
     period_map = {"1h": ("1h", "1m"), "6h": ("6h", "5m"), "24h": ("24h", "15m"), "7d": ("7d", "1h")}
     duration, step = period_map[period]
 
-    query = f'monitor_check_duration_ms{{check_id="{check_id}"}}'
-    result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
+    all_results = []
 
-    return {"checkId": check_id, "period": period, "data": result.get("data", {}).get("result", [])}
+    # Typspezifische Metriken abfragen
+    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
+    for metric in metric_names:
+        query = f'{metric}{{check_id="{check_id}"}}'
+        result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
+        all_results.extend(result.get("data", {}).get("result", []))
+
+    # Dynamische Metriken (zfs pools, disk mounts)
+    pattern = _DYNAMIC_METRIC_PATTERNS.get(check.check_type)
+    if pattern:
+        query = f'{{__name__=~"{pattern}",check_id="{check_id}"}}'
+        result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
+        all_results.extend(result.get("data", {}).get("result", []))
+
+    # Status-Timeline (immer)
+    status_query = f'monitor_check_status{{check_id="{check_id}"}}'
+    status_result = victoria.query_range(query=status_query, start=f"now-{duration}", end="now", step=step)
+
+    return {
+        "checkId": check_id,
+        "checkType": check.check_type,
+        "period": period,
+        "data": all_results,
+        "statusHistory": status_result.get("data", {}).get("result", []),
+    }

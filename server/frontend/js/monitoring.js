@@ -237,13 +237,13 @@ function _renderCheckTable(checks) {
     const msg = c.state?.message || '\u2013';
     const lastCheck = c.state?.lastCheck ? _formatTime(c.state.lastCheck) : 'Noch nie';
     const typeBadge = c.checkType.toUpperCase();
-    return `<tr>
+    return `<tr class="check-row" data-check-id="${c.id}" onclick="toggleCheckDetail('${c.id}', this)" style="cursor:pointer">
       <td><span class="monitor-dot monitor-${st}"></span></td>
       <td><span class="badge badge-${c.checkType}">${esc(typeBadge)}</span></td>
       <td><strong>${esc(c.name)}</strong>${c.templateId ? ' <span class="badge badge-tpl" title="Von Template verwaltet">TPL</span>' : ''}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-soft)">${esc(msg)}</td>
       <td style="color:var(--text-soft);font-size:12px">${esc(lastCheck)}</td>
-      <td style="white-space:nowrap">
+      <td style="white-space:nowrap" onclick="event.stopPropagation()">
         <button class="btn small" onclick="runMonitorCheck('${c.id}')" title="Jetzt ausfuehren">&#x25B6;</button>
         <button class="btn small" onclick="editMonitorCheck('${c.id}')">Bearbeiten</button>
         <button class="btn small ghost" onclick="toggleMonitorCheck('${c.id}')">
@@ -267,6 +267,224 @@ function _formatTime(isoStr) {
   } catch {
     return isoStr;
   }
+}
+
+// ── Check Detail Panel ────────────────────────────────────────────────────
+let _openDetailCheckId = null;
+let _detailChart = null;
+
+function toggleCheckDetail(checkId, trEl) {
+  const existing = trEl.nextElementSibling;
+  if (existing && existing.classList.contains('check-detail-row')) {
+    existing.remove();
+    if (_detailChart) { _detailChart.destroy(); _detailChart = null; }
+    _openDetailCheckId = null;
+    return;
+  }
+  // Andere offene Detail-Rows schliessen
+  document.querySelectorAll('.check-detail-row').forEach(r => r.remove());
+  if (_detailChart) { _detailChart.destroy(); _detailChart = null; }
+
+  const check = state.monitorChecks.find(c => c.id === checkId);
+  if (!check) return;
+  _openDetailCheckId = checkId;
+
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'check-detail-row';
+  const td = document.createElement('td');
+  td.setAttribute('colspan', '6');
+  td.innerHTML = _buildDetailPanel(check);
+  detailTr.appendChild(td);
+  trEl.after(detailTr);
+
+  _loadDetailMetrics(checkId, '1h', check);
+}
+
+function _buildDetailPanel(check) {
+  const configKv = _formatCheckConfigWeb(check);
+  let configHtml = '';
+  if (configKv.length > 0) {
+    configHtml = '<div class="check-detail-config"><strong>Konfiguration</strong><div class="check-cfg-grid">' +
+      configKv.map(([k, v]) => `<span class="check-cfg-key">${esc(k)}:</span><span class="check-cfg-val">${esc(String(v))}</span>`).join('') +
+      '</div></div>';
+  }
+
+  return `
+    <div class="check-detail-panel">
+      ${configHtml}
+      <div class="check-detail-current" id="checkDetailCurrent_${check.id}"></div>
+      <div class="check-detail-periods">
+        <button class="btn small active" onclick="_switchDetailPeriod('${check.id}', '1h', this)">1h</button>
+        <button class="btn small" onclick="_switchDetailPeriod('${check.id}', '6h', this)">6h</button>
+        <button class="btn small" onclick="_switchDetailPeriod('${check.id}', '24h', this)">24h</button>
+        <button class="btn small" onclick="_switchDetailPeriod('${check.id}', '7d', this)">7d</button>
+      </div>
+      <div class="check-detail-chart" id="checkDetailChart_${check.id}"></div>
+      <div class="check-detail-timeline" id="checkDetailTimeline_${check.id}"></div>
+    </div>`;
+}
+
+function _switchDetailPeriod(checkId, period, btn) {
+  const check = state.monitorChecks.find(c => c.id === checkId);
+  if (!check) return;
+  btn.parentElement.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _loadDetailMetrics(checkId, period, check);
+}
+
+async function _loadDetailMetrics(checkId, period, check) {
+  const chartEl = document.getElementById(`checkDetailChart_${checkId}`);
+  const timelineEl = document.getElementById(`checkDetailTimeline_${checkId}`);
+  const currentEl = document.getElementById(`checkDetailCurrent_${checkId}`);
+  if (!chartEl) return;
+
+  chartEl.innerHTML = '<span style="color:var(--text-soft)">Lade Metriken...</span>';
+
+  try {
+    const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
+    _renderDetailCurrentValues(currentEl, data, check);
+    _renderDetailChart(chartEl, data, check);
+    _renderDetailTimeline(timelineEl, data.statusHistory || []);
+  } catch (err) {
+    chartEl.innerHTML = `<span style="color:var(--red)">Fehler: ${esc(err.message)}</span>`;
+  }
+}
+
+function _renderDetailCurrentValues(el, data, check) {
+  if (!el) return;
+  const series = data.data || [];
+  if (series.length === 0) { el.innerHTML = ''; return; }
+
+  const items = series.map(s => {
+    const name = s.metric?.__name__ || 'Wert';
+    const vals = s.values || [];
+    const last = vals.length > 0 ? parseFloat(vals[vals.length - 1][1]) : null;
+    if (last === null) return null;
+    const unit = _checkTypeUnitWeb(check.checkType);
+    const label = name.replace(/^monitor_/, '').replace(/_/g, ' ');
+    return `<span class="check-current-item"><strong>${esc(label)}</strong>: ${last.toFixed(1)}${unit}</span>`;
+  }).filter(Boolean);
+
+  el.innerHTML = items.join('');
+}
+
+function _renderDetailChart(container, data, check) {
+  if (_detailChart) { _detailChart.destroy(); _detailChart = null; }
+  container.innerHTML = '';
+
+  const series = data.data || [];
+  if (series.length === 0) {
+    container.innerHTML = '<span style="color:var(--text-soft)">Keine Metrik-Daten verfuegbar</span>';
+    return;
+  }
+
+  // Zeitstempel aus der ersten Serie als X-Achse
+  const timestamps = series[0].values.map(v => v[0]);
+  const uData = [timestamps];
+  const uSeries = [{}];
+
+  const colors = ['#4a9eff', '#ff6b6b', '#ffa726', '#66bb6a', '#ab47bc', '#26c6da'];
+  series.forEach((s, i) => {
+    const name = (s.metric?.__name__ || `Serie ${i + 1}`).replace(/^monitor_/, '').replace(/_/g, ' ');
+    uData.push(s.values.map(v => parseFloat(v[1])));
+    const isCount = ['service_process', 'proxmox_backup', 'docker_health'].includes(check.checkType);
+    uSeries.push({
+      label: name,
+      stroke: colors[i % colors.length],
+      width: 2,
+      fill: isCount ? colors[i % colors.length] + '20' : undefined,
+    });
+  });
+
+  const unit = _checkTypeUnitWeb(check.checkType);
+  const isPercent = ['agent_resources', 'zfs_health'].includes(check.checkType);
+
+  const opts = {
+    width: container.clientWidth || 600,
+    height: 200,
+    series: uSeries,
+    axes: [
+      {},
+      {
+        label: unit,
+        ...(isPercent ? { range: [0, 100] } : {}),
+      },
+    ],
+    cursor: { show: true },
+    legend: { show: series.length > 1 },
+  };
+
+  try {
+    _detailChart = new uPlot(opts, uData, container);
+  } catch (e) {
+    container.innerHTML = '<span style="color:var(--text-soft)">Chart konnte nicht geladen werden</span>';
+  }
+}
+
+function _renderDetailTimeline(container, statusHistory) {
+  if (!container) return;
+  const result = statusHistory[0];
+  if (!result || !result.values || result.values.length < 2) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const statusMap = { 0: 'ok', 1: 'warning', 2: 'critical', 3: 'unknown', 4: 'pending' };
+  const colorMap = { ok: 'var(--green)', warning: 'var(--yellow)', critical: 'var(--red)', unknown: 'var(--text-soft)', pending: '#666' };
+  const values = result.values;
+  const totalTime = values[values.length - 1][0] - values[0][0];
+  if (totalTime <= 0) { container.innerHTML = ''; return; }
+
+  let segments = '';
+  for (let i = 0; i < values.length - 1; i++) {
+    const status = statusMap[parseInt(values[i][1])] || 'unknown';
+    const duration = values[i + 1][0] - values[i][0];
+    const pct = (duration / totalTime) * 100;
+    segments += `<div class="check-timeline-seg" style="width:${pct}%;background:${colorMap[status]}" title="${status}"></div>`;
+  }
+
+  container.innerHTML = `<div class="check-detail-timeline-label">Status-Verlauf</div><div class="check-timeline-bar">${segments}</div>`;
+}
+
+function _formatCheckConfigWeb(check) {
+  const c = check.config || {};
+  const type = check.checkType;
+  const kv = [];
+  if (type === 'ping') {
+    kv.push(['Ziel', c.target], ['Timeout', `${c.timeout || 5}s`]);
+  } else if (type === 'tcp') {
+    kv.push(['Ziel', `${c.target}:${c.port}`], ['Timeout', `${c.timeout || 5}s`]);
+  } else if (type === 'http') {
+    kv.push(['URL', c.url], ['Methode', c.method || 'GET'], ['Expected', c.expected_status || 200]);
+    if (c.verify_ssl === false) kv.push(['SSL', 'deaktiviert']);
+    if (c.search_string) kv.push(['Suchtext', c.search_string]);
+  } else if (type === 'agent_ping') {
+    kv.push(['Stale-Schwelle', `${c.stale_minutes || 5} min`]);
+  } else if (type === 'agent_resources') {
+    kv.push(['CPU', `Warn ${c.cpu_warn || 80}% / Crit ${c.cpu_crit || 95}%`],
+            ['RAM', `Warn ${c.memory_warn || 80}% / Crit ${c.memory_crit || 95}%`],
+            ['Disk', `Warn ${c.disk_warn || 85}% / Crit ${c.disk_crit || 95}%`]);
+  } else if (type === 'service_process') {
+    kv.push(['Modus', c.mode || 'auto']);
+    if (c.services?.length) kv.push(['Services', c.services.join(', ')]);
+    if (c.ignore?.length) kv.push(['Ignoriert', c.ignore.join(', ')]);
+  } else if (type === 'proxmox_backup') {
+    kv.push(['Max. Alter', `${c.max_backup_age_hours || 26}h`]);
+    if (c.exclude_vmids?.length) kv.push(['Exclude VMIDs', c.exclude_vmids.join(', ')]);
+  } else if (type === 'zfs_health') {
+    kv.push(['Kapazitaet', `Warn ${c.capacity_warn || 80}% / Crit ${c.capacity_crit || 90}%`]);
+  } else if (type === 'docker_health') {
+    if (c.ignore_containers?.length) kv.push(['Ignoriert', c.ignore_containers.join(', ')]);
+    kv.push(['Restart-Check', c.check_restarts !== false ? 'aktiv' : 'aus']);
+  }
+  return kv;
+}
+
+function _checkTypeUnitWeb(checkType) {
+  if (['ping', 'tcp', 'http'].includes(checkType)) return ' ms';
+  if (['agent_resources', 'zfs_health'].includes(checkType)) return '%';
+  if (checkType === 'agent_ping') return ' s';
+  return '';
 }
 
 // ── Check Modal ───────────────────────────────────────────────────────────

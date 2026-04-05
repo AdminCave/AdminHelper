@@ -1783,3 +1783,75 @@ body {
 .badge-email            { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 .badge-tpl              { background: rgba(56, 189, 248, 0.12); color: var(--accent); font-size: 10px; padding: 1px 6px; vertical-align: middle; }
 .disabled-row           { opacity: 0.5; }
+
+/* ── Check Detail Panel ──────────────────────────────────────────────── */
+.check-row:hover { background: rgba(255, 255, 255, 0.03); }
+.check-detail-row td { padding: 0 !important; border-top: none !important; }
+.check-detail-panel {
+  padding: 16px 20px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.check-detail-config {
+  margin-bottom: 12px;
+}
+.check-detail-config strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  letter-spacing: 0.5px;
+}
+.check-cfg-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  font-size: 13px;
+}
+.check-cfg-key { color: var(--text-soft); }
+.check-cfg-val { color: var(--text); }
+.check-detail-current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.check-current-item {
+  font-size: 13px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+.check-detail-periods {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.check-detail-periods .btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+.check-detail-chart {
+  min-height: 60px;
+  margin-bottom: 10px;
+}
+.check-detail-timeline-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+.check-timeline-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.check-timeline-seg {
+  min-width: 1px;
+  transition: opacity 0.2s;
+}
+.check-timeline-seg:hover { opacity: 0.8; }
