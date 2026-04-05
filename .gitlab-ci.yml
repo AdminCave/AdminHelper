@@ -160,22 +160,6 @@ publish_deb_trixie:
   script:
     - desktop/scripts/ci_publish_via_api.sh desktop/src-tauri/target/release/bundle/deb
 
-publish_deb_dev:
-  stage: publish
-  image: debian:trixie
-  needs:
-    - build_deb_trixie
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends bash ca-certificates curl python3
-    - chmod +x desktop/scripts/ci_publish_via_api.sh
-  variables:
-    APTLY_DISTRIBUTION: dev
-  script:
-    - desktop/scripts/ci_publish_via_api.sh desktop/src-tauri/target/release/bundle/deb
-
 # ── FRP Client Package ────────────────────────────────────────────────
 download_frpc:
   stage: download
@@ -255,24 +239,6 @@ publish_frpc_deb:
            --upload-file "${DEB_FILE}" \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-desktop/${FRPC_PKG_VERSION}/${DEB_FILE}"
 
-publish_frpc_deb_dev:
-  stage: publish
-  image: debian:trixie
-  needs:
-    - build_frpc_deb
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends bash ca-certificates curl python3
-    - chmod +x desktop/scripts/ci_publish_via_api.sh
-  variables:
-    APTLY_DISTRIBUTION: dev
-  script:
-    - mkdir -p /tmp/frpc-debs
-    - cp srm-frpc-client_*.deb /tmp/frpc-debs/
-    - desktop/scripts/ci_publish_via_api.sh /tmp/frpc-debs
-
 publish_frpc_rpm:
   stage: publish
   image: curlimages/curl:latest
@@ -343,24 +309,6 @@ publish_monitor_deb:
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
            --upload-file "${DEB_FILE}" \
            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-monitor-agent/${MONITOR_PKG_VERSION}/${DEB_FILE}"
-
-publish_monitor_deb_dev:
-  stage: publish
-  image: debian:trixie
-  needs:
-    - build_monitor_deb
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends bash ca-certificates curl python3
-    - chmod +x desktop/scripts/ci_publish_via_api.sh
-  variables:
-    APTLY_DISTRIBUTION: dev
-  script:
-    - mkdir -p /tmp/monitor-debs
-    - cp srm-monitor-agent_*.deb /tmp/monitor-debs/
-    - desktop/scripts/ci_publish_via_api.sh /tmp/monitor-debs
 
 publish_monitor_rpm:
   stage: publish
