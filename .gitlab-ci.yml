@@ -28,6 +28,8 @@ cache:
   stage: build
   image: debian:trixie
   before_script:
+    - cp frpc desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+    - chmod +x desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
     - apt-get update
     - >
       apt-get install -y --no-install-recommends
@@ -57,7 +59,7 @@ cache:
 
 build_deb_trixie:
   extends: .tauri_trixie_base
-  needs: []
+  needs: [download_frpc]
   script:
     - . "$CARGO_HOME/env"
     - cd desktop/src-tauri
@@ -74,7 +76,7 @@ build_deb_trixie:
 
 build_rpm_trixie:
   extends: .tauri_trixie_base
-  needs: []
+  needs: [download_frpc]
   before_script:
     - !reference [.tauri_trixie_base, before_script]
     - apt-get install -y --no-install-recommends rpm
@@ -94,7 +96,7 @@ build_rpm_trixie:
 
 build_binary_trixie:
   extends: .tauri_trixie_base
-  needs: []
+  needs: [download_frpc]
   script:
     - . "$CARGO_HOME/env"
     - cd desktop/src-tauri
