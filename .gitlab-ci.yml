@@ -226,33 +226,18 @@ build_frpc_rpm:
 
 publish_frpc_deb:
   stage: publish
-  image: curlimages/curl:latest
+  image: debian:trixie
   needs: [build_frpc_deb]
-  variables:
-    FRPC_PKG_VERSION: "0.2.0"
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"'
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends bash ca-certificates curl python3
+    - chmod +x desktop/scripts/ci_publish_via_api.sh
   script:
-    - DEB_FILE=$(ls srm-frpc-client_*.deb | head -1)
-    - |
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-           --upload-file "${DEB_FILE}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-desktop/${FRPC_PKG_VERSION}/${DEB_FILE}"
-
-publish_frpc_rpm:
-  stage: publish
-  image: curlimages/curl:latest
-  needs: [build_frpc_rpm]
-  variables:
-    FRPC_PKG_VERSION: "0.2.0"
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    - RPM_FILE=$(ls srm-frpc-client-*.rpm | head -1)
-    - |
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-           --upload-file "${RPM_FILE}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-frpc-desktop/${FRPC_PKG_VERSION}/${RPM_FILE}"
+    - mkdir -p /tmp/frpc-debs
+    - cp srm-frpc-client_*.deb /tmp/frpc-debs/
+    - desktop/scripts/ci_publish_via_api.sh /tmp/frpc-debs
 
 # ── Monitor Agent Package ────────────────────────────────────────────
 build_monitor_deb:
@@ -297,30 +282,15 @@ build_monitor_rpm:
 
 publish_monitor_deb:
   stage: publish
-  image: curlimages/curl:latest
+  image: debian:trixie
   needs: [build_monitor_deb]
-  variables:
-    MONITOR_PKG_VERSION: "0.2.0"
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"'
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends bash ca-certificates curl python3
+    - chmod +x desktop/scripts/ci_publish_via_api.sh
   script:
-    - DEB_FILE=$(ls srm-monitor-agent_*.deb | head -1)
-    - |
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-           --upload-file "${DEB_FILE}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-monitor-agent/${MONITOR_PKG_VERSION}/${DEB_FILE}"
-
-publish_monitor_rpm:
-  stage: publish
-  image: curlimages/curl:latest
-  needs: [build_monitor_rpm]
-  variables:
-    MONITOR_PKG_VERSION: "0.2.0"
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    - RPM_FILE=$(ls srm-monitor-agent-*.rpm | head -1)
-    - |
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-           --upload-file "${RPM_FILE}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/srm-monitor-agent/${MONITOR_PKG_VERSION}/${RPM_FILE}"
+    - mkdir -p /tmp/monitor-debs
+    - cp srm-monitor-agent_*.deb /tmp/monitor-debs/
+    - desktop/scripts/ci_publish_via_api.sh /tmp/monitor-debs
