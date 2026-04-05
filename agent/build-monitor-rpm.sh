@@ -2,7 +2,7 @@
 # Build .rpm package for srm-monitor-agent
 set -euo pipefail
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.2.0}"
 PKG_NAME="srm-monitor-agent"
 
 echo "=== Building ${PKG_NAME} ${VERSION} (rpm) ==="
