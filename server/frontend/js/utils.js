@@ -20,8 +20,6 @@ const state = {
   connTagFilter: '',
   serverTagFilter: '',
   tunnelTagFilter: '',
-  visitors: [],
-  editingVisitorId: null,
   monitorChecks: [],
   editingMonitorCheckId: null,
   monitorAlertRules: [],

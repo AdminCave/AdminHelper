@@ -85,19 +85,3 @@ class FrpTunnelUpdate(BaseModel):
     auto_create_connection: bool = False
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
-
-
-# --- Visitors ---
-
-class VisitorCreate(BaseModel):
-    name: str  # z.B. "tech-kevin" (wird als frpc user verwendet)
-    display_name: Optional[str] = None
-    notes: Optional[str] = None
-    server_ids: list[str] = []  # zugewiesene Server
-
-
-class VisitorUpdate(BaseModel):
-    name: Optional[str] = None
-    display_name: Optional[str] = None
-    notes: Optional[str] = None
-    server_ids: Optional[list[str]] = None

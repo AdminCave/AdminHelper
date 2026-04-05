@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -32,72 +33,58 @@ impl FrpcProcess {
 }
 
 #[derive(Deserialize)]
-struct VisitorInfo {
-    id: String,
-    name: String,
+struct VisitorBundle {
+    toml: String,
+    pki: HashMap<String, String>,
 }
 
-struct FoundVisitor {
-    id: String,
-    name: String,
-}
-
-/// Fetch list of visitors from the server and find the one matching the user.
-async fn find_visitor(server_url: &str, token: &str, username: &str) -> Result<FoundVisitor, AppError> {
-    let response = auth::authenticated_get(server_url, token, "/api/frp/visitors").await?;
-
-    if !response.status().is_success() {
-        return Err(AppError::Validation(
-            "Visitor-Liste konnte nicht geladen werden".to_string(),
-        ));
-    }
-
-    let visitors: Vec<VisitorInfo> = response.json().await?;
-
-    // Match by convention: visitor name is "tech-<username>"
-    let expected = format!("tech-{username}");
-    if let Some(v) = visitors.iter().find(|v| v.name == expected) {
-        return Ok(FoundVisitor { id: v.id.clone(), name: v.name.clone() });
-    }
-
-    // Fallback: first visitor (single-user setups)
-    visitors
-        .into_iter()
-        .next()
-        .map(|v| FoundVisitor { id: v.id, name: v.name })
-        .ok_or_else(|| AppError::Validation("Kein Visitor fuer diesen Benutzer gefunden".to_string()))
-}
-
-/// Fetch the visitor TOML configuration from the server.
-async fn fetch_visitor_config(
+/// Fetch the visitor bundle (TOML + PKI) from the server.
+async fn fetch_visitor_bundle(
     server_url: &str,
     token: &str,
-    visitor_id: &str,
-) -> Result<String, AppError> {
-    let path = format!("/api/frp/generate/visitor-toml?visitor_id={}", visitor_id);
-    let response = auth::authenticated_get(server_url, token, &path).await?;
+) -> Result<VisitorBundle, AppError> {
+    let path = "/api/frp/generate/visitor-bundle";
+    let response = auth::authenticated_get(server_url, token, path).await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(
-            "Visitor-Konfiguration konnte nicht geladen werden".to_string(),
+            "Visitor-Bundle konnte nicht geladen werden".to_string(),
         ));
     }
 
-    // API returns raw TOML text, not JSON
-    let toml_text = response.text().await.map_err(|e| AppError::Network(e))?;
-    Ok(toml_text)
+    let bundle: VisitorBundle = response.json().await.map_err(|e| AppError::Network(e))?;
+    Ok(bundle)
 }
 
-/// Write visitor.toml to the app data directory.
-fn write_visitor_config(app: &tauri::AppHandle, toml_content: &str) -> Result<PathBuf, AppError> {
+/// Write visitor bundle (TOML + PKI files) to the app data directory.
+/// Rewrites relative PKI paths in the TOML to absolute paths.
+fn write_visitor_bundle(app: &tauri::AppHandle, bundle: &VisitorBundle) -> Result<PathBuf, AppError> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string())))?;
     std::fs::create_dir_all(&data_dir)?;
 
+    // Write PKI files
+    if !bundle.pki.is_empty() {
+        let pki_dir = data_dir.join("pki");
+        std::fs::create_dir_all(&pki_dir)?;
+
+        for (filename, content) in &bundle.pki {
+            let file_path = pki_dir.join(filename);
+            std::fs::write(&file_path, content)?;
+        }
+
+        // Rewrite relative pki/ paths to absolute paths in the TOML
+        let abs_pki = pki_dir.to_string_lossy();
+        let toml_content = bundle.toml.replace("\"pki/", &format!("\"{abs_pki}/"));
+        let config_path = data_dir.join("visitor.toml");
+        std::fs::write(&config_path, &toml_content)?;
+        return Ok(config_path);
+    }
+
     let config_path = data_dir.join("visitor.toml");
-    std::fs::write(&config_path, toml_content)?;
+    std::fs::write(&config_path, &bundle.toml)?;
     Ok(config_path)
 }
 
@@ -181,7 +168,7 @@ pub fn tunnel_status(state: &FrpcState) -> TunnelStatus {
     }
 }
 
-/// Full tunnel start flow: find visitor, fetch config, write it, start frpc.
+/// Full tunnel start flow: fetch bundle, write config + PKI, start frpc.
 pub async fn start_tunnel(
     app: tauri::AppHandle,
     state: FrpcState,
@@ -189,10 +176,8 @@ pub async fn start_tunnel(
     token: &str,
     username: &str,
 ) -> Result<TunnelStatus, AppError> {
-    let visitor = find_visitor(server_url, token, username).await?;
-    let toml_content = fetch_visitor_config(server_url, token, &visitor.id).await?;
-    let visitor_name = visitor.name;
-    let config_path = write_visitor_config(&app, &toml_content)?;
-    start_frpc(&app, &config_path, &state, visitor_name)?;
+    let bundle = fetch_visitor_bundle(server_url, token).await?;
+    let config_path = write_visitor_bundle(&app, &bundle)?;
+    start_frpc(&app, &config_path, &state, username.to_string())?;
     Ok(tunnel_status(&state))
 }

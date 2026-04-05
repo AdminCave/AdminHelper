@@ -1,6 +1,15 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
+
+
+user_server_assoc = Table(
+    "user_servers",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("server_id", String, ForeignKey("servers.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class User(Base):
@@ -11,3 +20,5 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+    servers = relationship("Server", secondary=user_server_assoc, lazy="selectin")

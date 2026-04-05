@@ -18,7 +18,8 @@ from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor  # noqa: F401
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken  # noqa: F401
+from app.modules.users.models import user_server_assoc  # noqa: F401
 
 # Router importieren
 from app.modules.users.auth_router import router as auth_router
@@ -118,9 +119,47 @@ def _migrate_add_columns():
     conn.close()
 
 
+def _migrate_visitors_to_users():
+    """Migriert Visitor-Server-Zuweisungen zu User-Server-Zuweisungen und entfernt alte Tabellen."""
+    import sqlite3
+    from app.core.config import DATA_DIR
+    db_path = DATA_DIR / "db.sqlite3"
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    # Pruefen ob alte Tabelle existiert
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='frp_visitor_servers'")
+    if not cursor.fetchone():
+        conn.close()
+        return
+
+    # Daten migrieren: Visitor-Name → User-Username matchen
+    cursor.execute("""
+        INSERT OR IGNORE INTO user_servers (user_id, server_id)
+        SELECT u.id, vs.server_id
+        FROM frp_visitor_servers vs
+        JOIN frp_visitors v ON v.id = vs.visitor_id
+        JOIN users u ON u.username = REPLACE(v.name, 'tech-', '')
+    """)
+    migrated = cursor.rowcount
+    if migrated > 0:
+        logger.info("Migration: %d Visitor-Server-Zuweisungen zu Users migriert", migrated)
+
+    # Alte Tabellen entfernen
+    cursor.execute("DROP TABLE IF EXISTS frp_visitor_servers")
+    cursor.execute("DROP TABLE IF EXISTS frp_visitors")
+    logger.info("Migration: frp_visitors und frp_visitor_servers entfernt")
+
+    conn.commit()
+    conn.close()
+
+
 _migrate_add_columns()
 _ensure_admin()
 _migrate_connections_json()
+_migrate_visitors_to_users()
 
 
 @asynccontextmanager

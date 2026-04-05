@@ -9,8 +9,6 @@ if TYPE_CHECKING:
 
 def _tls_server_block(config: FrpServerConfig) -> list[str]:
     """Generiert den [transport.tls]-Block fuer frps."""
-    if not config.tls_force:
-        return []
     lines = ['', '[transport.tls]', 'force = true']
     if config.tls_cert_file:
         lines.append(f'certFile = "{config.tls_cert_file}"')
@@ -21,16 +19,18 @@ def _tls_server_block(config: FrpServerConfig) -> list[str]:
     return lines
 
 
-def _tls_client_block(config: FrpServerConfig, frpc_user: str = "") -> list[str]:
+def _tls_client_block(
+    config: FrpServerConfig,
+    frpc_user: str = "",
+    pki_base_path: str = "/etc/frp/pki",
+) -> list[str]:
     """Generiert den [transport.tls]-Block fuer frpc/visitor."""
-    if not config.tls_force:
-        return []
     lines = ['', '[transport.tls]', 'enable = true']
     if config.tls_ca_file:
-        lines.append(f'trustedCaFile = "/etc/frp/pki/ca.crt"')
+        lines.append(f'trustedCaFile = "{pki_base_path}/ca.crt"')
     if frpc_user:
-        lines.append(f'certFile = "/etc/frp/pki/{frpc_user}.crt"')
-        lines.append(f'keyFile = "/etc/frp/pki/{frpc_user}.key"')
+        lines.append(f'certFile = "{pki_base_path}/{frpc_user}.crt"')
+        lines.append(f'keyFile = "{pki_base_path}/{frpc_user}.key"')
     return lines
 
 
@@ -135,6 +135,7 @@ def generate_visitor_toml(
     config: FrpServerConfig,
     tunnels: list[FrpTunnel],
     visitor_user: str = "ops-admin",
+    pki_base_path: str = "/etc/frp/pki",
 ) -> str:
     """Generiert eine Visitor-frpc.toml fuer den Admin-PC.
 
@@ -149,7 +150,7 @@ def generate_visitor_toml(
         f'auth.token = "{config.auth_token}"',
     ]
 
-    lines.extend(_tls_client_block(config, visitor_user))
+    lines.extend(_tls_client_block(config, visitor_user, pki_base_path))
 
     stcp_tunnels = [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
     stcp_tunnels.sort(key=lambda t: t.visitor_port or 0)

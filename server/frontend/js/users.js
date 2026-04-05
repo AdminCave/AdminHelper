@@ -4,6 +4,9 @@
 async function loadUsers() {
   try {
     state.users = await get('/api/users');
+    if (state.servers.length === 0) {
+      state.servers = await get('/api/servers');
+    }
     renderUsers();
   } catch (err) {
     toast(err.message, 'error');
@@ -48,25 +51,45 @@ function openUserModal(user) {
   document.getElementById('ufPassword').required = !user;
   document.getElementById('ufPasswordLabel').textContent = user ? 'Neues Passwort (leer = unverändert)' : 'Passwort *';
   document.getElementById('ufIsAdmin').checked = user?.is_admin || false;
+
+  // Server-Checkboxen rendern
+  const selectedIds = new Set(user?.server_ids || []);
+  const listEl = document.getElementById('ufServerList');
+  if (state.servers.length > 0) {
+    listEl.innerHTML = state.servers.map(s => `
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" value="${esc(s.id)}" ${selectedIds.has(s.id) ? 'checked' : ''} />
+        <span>${esc(s.name)}</span>
+        <span style="color:var(--text-soft);font-size:11px">${esc(s.hostname)}</span>
+      </label>
+    `).join('');
+  } else {
+    listEl.innerHTML = '<span style="color:var(--text-soft);font-size:12px">Keine Server vorhanden.</span>';
+  }
+
   showModal('userModal');
 }
 
 document.getElementById('userForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const payload = {
-    username: document.getElementById('ufUsername').value.trim(),
-    is_admin: document.getElementById('ufIsAdmin').checked,
-  };
+  const serverCheckboxes = document.querySelectorAll('#ufServerList input[type="checkbox"]:checked');
+  const serverIds = Array.from(serverCheckboxes).map(cb => cb.value);
   const pw = document.getElementById('ufPassword').value;
-  if (pw) payload.password = pw;
 
   try {
     if (state.editingUserId) {
-      await put(`/api/users/${state.editingUserId}`, { password: pw || undefined, is_admin: payload.is_admin });
+      const data = { is_admin: document.getElementById('ufIsAdmin').checked, server_ids: serverIds };
+      if (pw) data.password = pw;
+      await put(`/api/users/${state.editingUserId}`, data);
       toast('Benutzer gespeichert');
     } else {
       if (!pw) { toast('Passwort erforderlich', 'error'); return; }
-      await post('/api/users', { ...payload, password: pw });
+      await post('/api/users', {
+        username: document.getElementById('ufUsername').value.trim(),
+        password: pw,
+        is_admin: document.getElementById('ufIsAdmin').checked,
+        server_ids: serverIds,
+      });
       toast('Benutzer erstellt');
     }
     closeModal('userModal');

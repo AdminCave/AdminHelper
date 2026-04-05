@@ -255,15 +255,6 @@
           </div>
         </div>
 
-        <!-- Visitor-Profile -->
-        <div class="panel" id="visitorPanel" style="margin-bottom:16px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <h3 style="margin:0;font-size:16px;color:var(--text)">Visitor-Profile</h3>
-            <button id="addVisitorBtn" class="btn small primary">+ Visitor</button>
-          </div>
-          <div id="visitorList" style="font-size:13px;color:var(--text-soft)">Keine Visitor-Profile vorhanden.</div>
-        </div>
-
         <!-- FRP Server Config Karte -->
         <div class="panel" id="frpConfigPanel" style="margin-bottom:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -482,10 +473,6 @@
             <label>Tags (kommagetrennt)</label>
             <input id="ftTags" placeholder="prod, web, linux" />
           </div>
-          <div class="field full" id="ftVisitorsField">
-            <label>Visitors zuordnen</label>
-            <div id="ftVisitorList" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto"></div>
-          </div>
           <div class="field full" id="ftAutoConnField">
             <label class="checkbox-label">
               <input id="ftAutoConn" type="checkbox" />
@@ -548,38 +535,6 @@
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn ghost" data-close="provisionModal">Schlie&#xDF;en</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Modal: Visitor -->
-  <div id="visitorModal" class="modal-backdrop hidden">
-    <div class="modal" style="width:min(560px,95vw)">
-      <div class="modal-header">
-        <div class="modal-title" id="visitorModalTitle">Visitor-Profil</div>
-        <button class="modal-close" data-close="visitorModal">&#x2715;</button>
-      </div>
-      <form id="visitorForm" class="modal-form">
-        <div class="field">
-          <label>Name * (wird als frpc user verwendet)</label>
-          <input id="vfName" required placeholder="z.B. tech-kevin" pattern="[a-z0-9\-]+" />
-        </div>
-        <div class="field">
-          <label>Anzeigename</label>
-          <input id="vfDisplayName" placeholder="z.B. Kevin Stenzel" />
-        </div>
-        <div class="field full">
-          <label>Server zuweisen</label>
-          <div id="vfServerList" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;background:var(--surface);padding:8px;border-radius:var(--radius-sm)"></div>
-        </div>
-        <div class="field">
-          <label>Notizen</label>
-          <textarea id="vfNotes" placeholder="Optionale Notizen..."></textarea>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn ghost" data-close="visitorModal">Abbrechen</button>
-          <button type="submit" class="btn primary">Speichern</button>
-        </div>
-      </form>
     </div>
   </div>
 
@@ -719,6 +674,10 @@
           <input id="ufIsAdmin" type="checkbox" />
           Admin-Rechte
         </label>
+        <div class="field full">
+          <label>Server zuweisen (FRP-Zugriff)</label>
+          <div id="ufServerList" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;background:var(--surface);padding:8px;border-radius:var(--radius-sm)"></div>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn ghost" data-close="userModal">Abbrechen</button>
           <button type="submit" class="btn primary">Speichern</button>

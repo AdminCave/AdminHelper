@@ -12,15 +12,15 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.auth import get_current_admin, ApiKeyOrUser, hash_api_key, generate_api_key
+from app.core.auth import get_current_admin, get_current_user, ApiKeyOrUser, hash_api_key, generate_api_key
 from app.core.config import VISITOR_PORT_START, VISITOR_PORT_END
 from app.core.events import fire_event
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken, Visitor, visitor_server_assoc
+from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken
 from app.modules.frp.schemas import (
     FrpServerConfigCreate, FrpServerConfigUpdate,
     FrpTunnelCreate, FrpTunnelUpdate,
-    VisitorCreate, VisitorUpdate,
 )
+from app.modules.users.models import User, user_server_assoc
 from app.modules.connections.models import Connection
 from app.modules.frp.config_generator import (
     generate_frps_toml, generate_frpc_toml, generate_visitor_toml,
@@ -86,15 +86,15 @@ def _next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int
 
 
 def _get_allow_users(db: Session, server_id: str) -> list[str]:
-    """Ermittelt alle Visitor-Usernamen, die Zugriff auf diesen Server haben."""
-    visitors = (
-        db.query(Visitor)
-        .join(visitor_server_assoc, Visitor.id == visitor_server_assoc.c.visitor_id)
-        .filter(visitor_server_assoc.c.server_id == server_id)
+    """Ermittelt alle Usernamen, die Zugriff auf diesen Server haben."""
+    users = (
+        db.query(User)
+        .join(user_server_assoc, User.id == user_server_assoc.c.user_id)
+        .filter(user_server_assoc.c.server_id == server_id)
         .all()
     )
-    users = [v.name for v in visitors]
-    return users if users else ["ops-admin"]
+    names = [u.username for u in users]
+    return names if names else ["*"]
 
 
 # --------------- FRP Server Config ---------------
@@ -380,10 +380,46 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
 @router.get("/generate/visitor-toml")
 def gen_visitor_toml(
     config_id: str | None = Query(None),
-    visitor_id: str | None = Query(None),
+    user_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _admin=Depends(get_current_admin),
+    current_user=Depends(get_current_user),
 ):
+    if config_id:
+        config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
+    else:
+        config = db.query(FrpServerConfig).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+
+    # User ermitteln: expliziter user_id oder eingeloggter User
+    user = current_user
+    if user_id and current_user.is_admin:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    tunnel_query = db.query(FrpTunnel).filter(
+        FrpTunnel.frp_config_id == config.id,
+        FrpTunnel.tunnel_type == "stcp",
+        FrpTunnel.enabled.is_(True),
+    )
+
+    server_ids = [s.id for s in user.servers]
+    if server_ids:
+        tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
+
+    tunnels = tunnel_query.all()
+    toml = generate_visitor_toml(config, tunnels, user.username)
+    return PlainTextResponse(toml, media_type="application/toml")
+
+
+@router.get("/generate/visitor-bundle")
+def gen_visitor_bundle(
+    config_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Liefert TOML + PKI-Bundle als JSON fuer die Desktop-App."""
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
@@ -397,19 +433,33 @@ def gen_visitor_toml(
         FrpTunnel.enabled.is_(True),
     )
 
-    visitor_user = "ops-admin"
-    if visitor_id:
-        visitor = db.query(Visitor).filter(Visitor.id == visitor_id).first()
-        if not visitor:
-            raise HTTPException(status_code=404, detail="Visitor nicht gefunden")
-        visitor_user = visitor.name
-        server_ids = [s.id for s in visitor.servers]
-        if server_ids:
-            tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
+    server_ids = [s.id for s in current_user.servers]
+    if server_ids:
+        tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
 
     tunnels = tunnel_query.all()
-    toml = generate_visitor_toml(config, tunnels, visitor_user)
-    return PlainTextResponse(toml, media_type="application/toml")
+    toml = generate_visitor_toml(config, tunnels, current_user.username, pki_base_path="pki")
+
+    # PKI-Bundle: Client-Cert generieren falls noetig
+    pki = {}
+    pki_status = pki_manager.get_pki_status()
+    if pki_status["caExists"]:
+        username = current_user.username
+        client_crt = pki_manager.PKI_DIR / f"{username}.crt"
+        if not client_crt.exists():
+            pki_manager.generate_client_cert(username)
+
+        ca_crt = pki_manager.PKI_DIR / "ca.crt"
+        client_key = pki_manager.PKI_DIR / f"{username}.key"
+
+        if ca_crt.exists():
+            pki["ca.crt"] = ca_crt.read_text()
+        if client_crt.exists():
+            pki[f"{username}.crt"] = client_crt.read_text()
+        if client_key.exists():
+            pki[f"{username}.key"] = client_key.read_text()
+
+    return {"toml": toml, "pki": pki}
 
 
 @router.get("/generate/bulk-zip")
@@ -449,17 +499,16 @@ def gen_bulk_zip(
             frpc = generate_frpc_toml(config, tunnels, server.name, allow_users)
             zf.writestr(f"clients/{server.name}/frpc.toml", frpc)
 
-        # visitor.toml — eine pro Visitor-Profil
+        # visitor.toml — eine pro User mit Server-Zuweisungen
         stcp_tunnels = [t for t in all_tunnels if t.tunnel_type == "stcp"]
-        visitors = db.query(Visitor).order_by(Visitor.name).all()
-        if visitors:
-            for visitor in visitors:
-                v_server_ids = {s.id for s in visitor.servers}
-                v_tunnels = [t for t in stcp_tunnels if t.server_id in v_server_ids]
-                if v_tunnels:
-                    zf.writestr(f"visitors/visitor-{visitor.name}.toml", generate_visitor_toml(config, v_tunnels, visitor.name))
+        users_with_servers = db.query(User).filter(User.servers.any()).all()
+        if users_with_servers:
+            for user in users_with_servers:
+                u_server_ids = {s.id for s in user.servers}
+                u_tunnels = [t for t in stcp_tunnels if t.server_id in u_server_ids]
+                if u_tunnels:
+                    zf.writestr(f"visitors/{user.username}.toml", generate_visitor_toml(config, u_tunnels, user.username))
         else:
-            # Fallback: eine globale visitor.toml wenn keine Visitor-Profile existieren
             zf.writestr("visitor.toml", generate_visitor_toml(config, stcp_tunnels))
 
     buf.seek(0)
@@ -626,72 +675,6 @@ def download_client_bundle(client_name: str, _admin=Depends(get_current_admin)):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}-pki.zip"'},
     )
-
-
-# --------------- Visitors ---------------
-
-@router.get("/visitors")
-def list_visitors(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    visitors = db.query(Visitor).order_by(Visitor.name).all()
-    return [v.to_dict() for v in visitors]
-
-
-@router.post("/visitors", status_code=status.HTTP_201_CREATED)
-def create_visitor(data: VisitorCreate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    existing = db.query(Visitor).filter(Visitor.name == data.name).first()
-    if existing:
-        raise HTTPException(status_code=409, detail=f"Visitor-Name '{data.name}' existiert bereits")
-
-    visitor = Visitor(
-        id=str(uuid.uuid4()),
-        name=data.name,
-        display_name=data.display_name,
-        notes=data.notes,
-    )
-
-    # Server zuweisen
-    if data.server_ids:
-        servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
-        visitor.servers = servers
-
-    db.add(visitor)
-    db.commit()
-    db.refresh(visitor)
-    return visitor.to_dict()
-
-
-@router.put("/visitors/{visitor_id}")
-def update_visitor(visitor_id: str, data: VisitorUpdate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    visitor = db.query(Visitor).filter(Visitor.id == visitor_id).first()
-    if not visitor:
-        raise HTTPException(status_code=404, detail="Visitor nicht gefunden")
-
-    if data.name is not None and data.name != visitor.name:
-        existing = db.query(Visitor).filter(Visitor.name == data.name).first()
-        if existing:
-            raise HTTPException(status_code=409, detail=f"Visitor-Name '{data.name}' existiert bereits")
-        visitor.name = data.name
-
-    if data.display_name is not None:
-        visitor.display_name = data.display_name
-    if data.notes is not None:
-        visitor.notes = data.notes
-    if data.server_ids is not None:
-        servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
-        visitor.servers = servers
-
-    db.commit()
-    db.refresh(visitor)
-    return visitor.to_dict()
-
-
-@router.delete("/visitors/{visitor_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_visitor(visitor_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    visitor = db.query(Visitor).filter(Visitor.id == visitor_id).first()
-    if not visitor:
-        raise HTTPException(status_code=404, detail="Visitor nicht gefunden")
-    db.delete(visitor)
-    db.commit()
 
 
 # --------------- Provisioning ---------------

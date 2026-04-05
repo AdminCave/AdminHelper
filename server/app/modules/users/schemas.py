@@ -32,17 +32,20 @@ class UserCreate(BaseModel):
     username: str
     password: str
     is_admin: bool = False
+    server_ids: list[str] = []
 
 
 class UserUpdate(BaseModel):
     password: Optional[str] = None
     is_admin: Optional[bool] = None
+    server_ids: Optional[list[str]] = None
 
 
 class UserResponse(BaseModel):
     id: int
     username: str
     is_admin: bool
+    server_ids: list[str] = []
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
