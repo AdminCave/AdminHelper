@@ -75,6 +75,13 @@ fn write_visitor_bundle(app: &tauri::AppHandle, bundle: &VisitorBundle) -> Resul
         }
     }
 
+    // Fail early if TOML references TLS certs but server sent no PKI bundle
+    if bundle.pki.is_empty() && bundle.toml.contains("[transport.tls]") {
+        return Err(AppError::Validation(
+            "Server hat kein PKI-Bundle geliefert. Bitte CA auf dem Server generieren (FRP → PKI → CA generieren).".to_string(),
+        ));
+    }
+
     // Always rewrite relative pki/ paths to absolute paths in the TOML
     let abs_pki = pki_dir.to_string_lossy();
     let toml_content = bundle.toml.replace("\"pki/", &format!("\"{abs_pki}/"));
