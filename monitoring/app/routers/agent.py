@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.alerter import process_alert
 from app.core.auth import require_agent
 from app.core.database import get_db
-from app.core.victoria import victoria
+from app.core.victoria import victoria, format_line
 from app.models import MonitorCheck, MonitorState
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
     record_agent_report(server_id)
 
     ts = int(_time.time())
-    tags = f'server_id="{server_id}"'
+    base_tags = {"server_id": server_id}
     lines = []
 
     resources = report.get("resources", {})
@@ -41,18 +41,17 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
         for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
             val = resources.get(key)
             if val is not None:
-                lines.append(f"monitor_agent_{key}{{{tags}}} {val} {ts}")
+                lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
         for disk in resources.get("disks", []):
             mount = disk.get("mount", "/")
-            disk_tags = f'{tags},mount="{mount}"'
+            disk_tags = {**base_tags, "mount": mount}
             if disk.get("percent") is not None:
-                pct = disk["percent"]
-                lines.append(f'monitor_agent_disk_percent{{{disk_tags}}} {pct} {ts}')
+                lines.append(format_line("monitor_agent_disk_percent", disk_tags, disk["percent"], ts))
 
     uptime = report.get("uptime_seconds")
     if uptime is not None:
-        lines.append(f"monitor_agent_uptime_seconds{{{tags}}} {uptime} {ts}")
+        lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
     if lines:
         victoria.write(lines)

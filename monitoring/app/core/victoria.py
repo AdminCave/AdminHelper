@@ -10,6 +10,26 @@ from app.core.config import VICTORIA_METRICS_URL
 logger = logging.getLogger("monitor.victoria")
 
 
+def _esc_tag(v: str) -> str:
+    """Escaped Sonderzeichen in InfluxDB Line Protocol Tag-Werten."""
+    return v.replace(" ", r"\ ").replace(",", r"\,").replace("=", r"\=")
+
+
+def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
+    """Formatiert eine InfluxDB Line Protocol Zeile.
+
+    Format: measurement,tag1=val1,tag2=val2 value=X timestamp
+    """
+    tag_str = ",".join(f"{k}={_esc_tag(v)}" for k, v in tags.items() if v)
+    if isinstance(value, float):
+        field = f"value={value}"
+    elif isinstance(value, int):
+        field = f"value={value}i"
+    else:
+        field = f"value={value}"
+    return f"{measurement},{tag_str} {field} {ts}"
+
+
 class VictoriaClient:
     """Client fuer VictoriaMetrics HTTP-API."""
 
@@ -43,24 +63,19 @@ class VictoriaClient:
         status_val = status_map.get(status, 3)
         ts = int(time.time())
 
-        # InfluxDB Line Protocol: Tag-Werte ohne Anfuehrungszeichen,
-        # Kommas/Leerzeichen/Gleichheitszeichen muessen escaped werden
-        def _esc(v: str) -> str:
-            return v.replace(" ", r"\ ").replace(",", r"\,").replace("=", r"\=")
-
-        tags = f"check_id={_esc(check_id)},check_type={_esc(check_type)},name={_esc(name)}"
+        tags = {"check_id": check_id, "check_type": check_type, "name": name}
         if server_id:
-            tags += f",server_id={_esc(server_id)}"
+            tags["server_id"] = server_id
 
         lines = [
-            f"monitor_check_status{{{tags}}} {status_val} {ts}",
-            f"monitor_check_duration_ms{{{tags}}} {duration_ms} {ts}",
+            format_line("monitor_check_status", tags, status_val, ts),
+            format_line("monitor_check_duration_ms", tags, duration_ms, ts),
         ]
 
         if extra_metrics:
             for key, value in extra_metrics.items():
                 if isinstance(value, (int, float)):
-                    lines.append(f"monitor_{key}{{{tags}}} {value} {ts}")
+                    lines.append(format_line(f"monitor_{key}", tags, value, ts))
 
         self.write(lines)
 
