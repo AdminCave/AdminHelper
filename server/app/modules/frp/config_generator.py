@@ -63,11 +63,8 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
         lines.append('')
 
     # Auth
-    lines.append('[auth]')
-    lines.append('method = "token"')
-    lines.append('')
-    lines.append('[auth.token]')
-    lines.append(f'token = "{config.auth_token}"')
+    lines.append('auth.method = "token"')
+    lines.append(f'auth.token = "{config.auth_token}"')
 
     lines.extend(_tls_server_block(config))
 
