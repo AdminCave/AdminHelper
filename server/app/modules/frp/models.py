@@ -3,7 +3,7 @@ import secrets
 from typing import Any
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Table
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -152,7 +152,7 @@ class ProvisionToken(Base):
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
-    server = relationship("Server", backref="provision_tokens", lazy="selectin")
+    server = relationship("Server", backref=backref("provision_tokens", passive_deletes=True), lazy="selectin")
 
     def is_valid(self) -> bool:
         """Prueft ob der Token noch gueltig ist (nicht abgelaufen, nicht verwendet)."""

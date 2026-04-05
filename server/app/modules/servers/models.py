@@ -23,12 +23,14 @@ class Server(Base):
         backref="server",
         lazy="selectin",
         foreign_keys="Connection.server_id",
+        passive_deletes=True,
     )
     frp_tunnels = relationship(
         "FrpTunnel",
         backref="target_server",
         lazy="selectin",
         foreign_keys="FrpTunnel.server_id",
+        passive_deletes=True,
     )
 
     def to_dict(self, include_connections: bool = True) -> dict[str, Any]:
