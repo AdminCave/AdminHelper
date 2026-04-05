@@ -20,12 +20,16 @@ do_init() {
     SRM_URL=""
     PROVISION_TOKEN=""
     SERVER_ID=""
+    CACERT=""
+    INSECURE=""
 
     while [ $# -gt 0 ]; do
         case "$1" in
             --url)       SRM_URL="$2";          shift 2 ;;
             --token)     PROVISION_TOKEN="$2";   shift 2 ;;
             --server-id) SERVER_ID="$2";         shift 2 ;;
+            --cacert)    CACERT="$2";            shift 2 ;;
+            --insecure)  INSECURE="1";           shift ;;
             *)           die "Unbekannter Parameter: $1" ;;
         esac
     done
@@ -37,10 +41,23 @@ do_init() {
     # Remove trailing slash
     SRM_URL="${SRM_URL%/}"
 
+    # Build curl SSL options
+    CURL_SSL=""
+    if [ -n "${CACERT}" ]; then
+        [ -f "${CACERT}" ] || die "CA-Zertifikat nicht gefunden: ${CACERT}"
+        CURL_SSL="--cacert ${CACERT}"
+        # Copy CA cert for sync mode
+        mkdir -p "${FRP_DIR}"
+        cp "${CACERT}" "${FRP_DIR}/ca.crt"
+        chmod 644 "${FRP_DIR}/ca.crt"
+    elif [ -n "${INSECURE}" ]; then
+        CURL_SSL="--insecure"
+    fi
+
     log "Aktiviere Provisioning fuer Server ${SERVER_ID}..."
 
     # Call activate endpoint
-    RESPONSE=$(curl -sSf -X POST \
+    RESPONSE=$(curl -sSf ${CURL_SSL} -X POST \
         -H "X-Provision-Token: ${PROVISION_TOKEN}" \
         -H "Content-Type: application/json" \
         "${SRM_URL}/api/frp/provision/${SERVER_ID}/activate" 2>&1) \
@@ -55,10 +72,19 @@ do_init() {
 
     # Write SRM config
     mkdir -p "${FRP_DIR}"
+    # Determine SSL config for sync mode
+    CONF_CURL_SSL=""
+    if [ -f "${FRP_DIR}/ca.crt" ]; then
+        CONF_CURL_SSL="--cacert ${FRP_DIR}/ca.crt"
+    elif [ -n "${INSECURE}" ]; then
+        CONF_CURL_SSL="--insecure"
+    fi
+
     cat > "${CONF}" <<EOF
 SRM_URL="${SRM_URL}"
 API_KEY="${API_KEY}"
 SERVER_ID="${SERVER_ID}"
+CURL_SSL="${CONF_CURL_SSL}"
 EOF
     chmod 600 "${CONF}"
 
@@ -100,7 +126,7 @@ do_sync() {
         && die "srm.conf unvollstaendig"
 
     # Fetch remote hash
-    REMOTE_HASH=$(curl -sSf \
+    REMOTE_HASH=$(curl -sSf ${CURL_SSL:-} \
         -H "X-API-Key: ${API_KEY}" \
         "${SRM_URL}/api/frp/provision/${SERVER_ID}/config-hash" 2>/dev/null \
         | sed -n 's/.*"hash"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p') \
@@ -117,7 +143,7 @@ do_sync() {
     log "Config-Aenderung erkannt. Aktualisiere..."
 
     # Fetch new config
-    NEW_CONFIG=$(curl -sSf \
+    NEW_CONFIG=$(curl -sSf ${CURL_SSL:-} \
         -H "X-API-Key: ${API_KEY}" \
         "${SRM_URL}/api/frp/provision/${SERVER_ID}/config" 2>/dev/null) \
         || { log "WARNUNG: Neue Config konnte nicht geladen werden"; exit 1; }
@@ -135,9 +161,11 @@ do_sync() {
 case "${1:-}" in
     --init) shift; do_init "$@" ;;
     --help|-h)
-        echo "Usage: srm-frpc-sync [--init --url URL --token TOKEN --server-id ID]"
+        echo "Usage: srm-frpc-sync [--init --url URL --token TOKEN --server-id ID [--cacert FILE | --insecure]]"
         echo "  Ohne Argumente: Sync-Modus (prueft auf Config-Aenderungen)"
-        echo "  --init: Ersteinrichtung mit Provision-Token"
+        echo "  --init:     Ersteinrichtung mit Provision-Token"
+        echo "  --cacert:   CA-Zertifikat fuer self-signed Server"
+        echo "  --insecure: SSL-Verifikation deaktivieren (nicht empfohlen)"
         exit 0
         ;;
     "") do_sync ;;
