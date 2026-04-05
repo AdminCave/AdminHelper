@@ -43,9 +43,14 @@ class VictoriaClient:
         status_val = status_map.get(status, 3)
         ts = int(time.time())
 
-        tags = f'check_id="{check_id}",check_type="{check_type}",name="{name}"'
+        # InfluxDB Line Protocol: Tag-Werte ohne Anfuehrungszeichen,
+        # Kommas/Leerzeichen/Gleichheitszeichen muessen escaped werden
+        def _esc(v: str) -> str:
+            return v.replace(" ", r"\ ").replace(",", r"\,").replace("=", r"\=")
+
+        tags = f"check_id={_esc(check_id)},check_type={_esc(check_type)},name={_esc(name)}"
         if server_id:
-            tags += f',server_id="{server_id}"'
+            tags += f",server_id={_esc(server_id)}"
 
         lines = [
             f"monitor_check_status{{{tags}}} {status_val} {ts}",
