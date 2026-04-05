@@ -91,11 +91,8 @@ def generate_frpc_toml(
         f'serverPort = {config.bind_port}',
         f'user = "{frpc_user}"',
         '',
-        '[auth]',
-        'method = "token"',
-        '',
-        '[auth.token]',
-        f'token = "{config.auth_token}"',
+        'auth.method = "token"',
+        f'auth.token = "{config.auth_token}"',
     ]
 
     lines.extend(_tls_client_block(config, frpc_user))
@@ -148,11 +145,8 @@ def generate_visitor_toml(
         f'serverPort = {config.bind_port}',
         f'user = "{visitor_user}"',
         '',
-        '[auth]',
-        'method = "token"',
-        '',
-        '[auth.token]',
-        f'token = "{config.auth_token}"',
+        'auth.method = "token"',
+        f'auth.token = "{config.auth_token}"',
     ]
 
     lines.extend(_tls_client_block(config, visitor_user))
