@@ -86,14 +86,18 @@ def _next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int
 
 
 def _get_allow_users(db: Session, server_id: str) -> list[str]:
-    """Ermittelt alle Usernamen, die Zugriff auf diesen Server haben."""
-    users = (
+    """Ermittelt alle Usernamen, die Zugriff auf diesen Server haben.
+
+    Admins sind automatisch fuer alle Server berechtigt.
+    """
+    assigned = (
         db.query(User)
         .join(user_server_assoc, User.id == user_server_assoc.c.user_id)
         .filter(user_server_assoc.c.server_id == server_id)
         .all()
     )
-    names = [u.username for u in users]
+    admins = db.query(User).filter(User.is_admin.is_(True)).all()
+    names = list({u.username for u in [*assigned, *admins]})
     return names if names else ["*"]
 
 
@@ -432,9 +436,11 @@ def gen_visitor_bundle(
         FrpTunnel.enabled.is_(True),
     )
 
-    server_ids = [s.id for s in current_user.servers]
-    if server_ids:
-        tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
+    # Admins bekommen alle Tunnel, normale User nur ihre zugewiesenen Server
+    if not current_user.is_admin:
+        server_ids = [s.id for s in current_user.servers]
+        if server_ids:
+            tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
 
     tunnels = tunnel_query.all()
     toml = generate_visitor_toml(config, tunnels, current_user.username, pki_base_path="pki")
