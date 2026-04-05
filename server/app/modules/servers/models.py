@@ -23,13 +23,13 @@ class Server(Base):
         backref="server",
         lazy="selectin",
         foreign_keys="Connection.server_id",
-        passive_deletes=True,
     )
     frp_tunnels = relationship(
         "FrpTunnel",
         backref="target_server",
         lazy="selectin",
         foreign_keys="FrpTunnel.server_id",
+        cascade="all, delete-orphan",
         passive_deletes=True,
     )
 

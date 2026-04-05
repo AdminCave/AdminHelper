@@ -152,7 +152,7 @@ class ProvisionToken(Base):
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
-    server = relationship("Server", backref=backref("provision_tokens", passive_deletes=True), lazy="selectin")
+    server = relationship("Server", backref=backref("provision_tokens", cascade="all, delete-orphan", passive_deletes=True), lazy="selectin")
 
     def is_valid(self) -> bool:
         """Prueft ob der Token noch gueltig ist (nicht abgelaufen, nicht verwendet)."""
