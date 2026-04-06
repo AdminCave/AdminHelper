@@ -20,6 +20,7 @@ from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
 from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken  # noqa: F401
 from app.modules.users.models import user_server_assoc  # noqa: F401
+from app.modules.ansible.models import Playbook  # noqa: F401
 
 # Router importieren
 from app.modules.users.auth_router import router as auth_router
@@ -30,6 +31,7 @@ from app.modules.hooks.router import router as hooks_router
 from app.modules.servers.router import router as servers_router
 from app.modules.frp.router import router as frp_router
 from app.modules.monitoring_proxy import router as monitoring_proxy_router
+from app.modules.ansible.router import router as ansible_router
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +232,7 @@ app.include_router(hooks_router)
 app.include_router(servers_router)
 app.include_router(frp_router)
 app.include_router(monitoring_proxy_router)
+app.include_router(ansible_router)
 
 # Statische Dateien aus frontend/ ausliefern
 static_dir = Path(__file__).parent.parent / "frontend"

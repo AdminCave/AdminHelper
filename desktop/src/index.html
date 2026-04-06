@@ -57,6 +57,7 @@
         <nav id="mainNav" class="main-nav hidden">
           <button class="nav-btn active" data-nav="connections" data-i18n="nav.connections">Verbindungen</button>
           <button class="nav-btn" data-nav="monitoring" data-i18n="nav.monitoring">Monitoring</button>
+          <button class="nav-btn" data-nav="ansible" data-i18n="nav.ansible">Ansible</button>
         </nav>
         <div class="top-actions">
           <div id="tunnelIndicator" class="tunnel-indicator hidden" title="">
@@ -130,6 +131,44 @@
           </div>
           <div class="mon-tab-content hidden" data-tab="log">
             <div id="monAlertLog" class="mon-alert-log"></div>
+          </div>
+        </section>
+
+        <section id="ansibleSection" class="ansible-section panel hidden">
+          <div class="ansible-header">
+            <div>
+              <div class="eyebrow" data-i18n="ansible.eyebrow">Ansible</div>
+              <h2 data-i18n="ansible.title">Playbooks</h2>
+            </div>
+          </div>
+          <div class="ansible-steps">
+            <div class="ansible-step active" data-step="playbook">
+              <div class="ansible-step-header">
+                <span class="step-number">1</span>
+                <span data-i18n="ansible.step.playbook">Playbook waehlen</span>
+              </div>
+              <div id="ansiblePlaybookList" class="ansible-playbook-list"></div>
+            </div>
+            <div class="ansible-step" data-step="targets">
+              <div class="ansible-step-header">
+                <span class="step-number">2</span>
+                <span data-i18n="ansible.step.targets">Server waehlen</span>
+              </div>
+              <div class="ansible-target-mode">
+                <button class="chip active" data-target-mode="servers" data-i18n="ansible.mode.servers">Einzeln</button>
+                <button class="chip" data-target-mode="tags" data-i18n="ansible.mode.tags">Nach Tags</button>
+              </div>
+              <div id="ansibleServerList" class="ansible-server-list"></div>
+              <div id="ansibleTagList" class="ansible-tag-list hidden"></div>
+            </div>
+            <div class="ansible-step" data-step="run">
+              <div class="ansible-step-header">
+                <span class="step-number">3</span>
+                <span data-i18n="ansible.step.run">Ausfuehren</span>
+              </div>
+              <div id="ansibleRunSummary" class="ansible-run-summary"></div>
+              <button id="ansibleRunBtn" class="btn accent" disabled data-i18n="ansible.action.run">Playbook ausfuehren</button>
+            </div>
           </div>
         </section>
 

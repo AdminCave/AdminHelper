@@ -9,6 +9,8 @@ import {
 import { translations } from "./i18n.js";
 import { createMonitoringApi } from "./monitoringApi.js";
 import { initMonitoring } from "./monitoring.js";
+import { createAnsibleApi } from "./ansibleApi.js";
+import { initAnsible } from "./ansible.js";
 import {
   createAuthApi,
   createConnectionsApi,
@@ -182,6 +184,8 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
   const monitoringSection = document.getElementById("monitoringSection");
   const connectionsSection = document.querySelector(".connections.panel");
   const monitoring = initMonitoring(state, t, createMonitoringApi);
+  const ansible = initAnsible(state, t, createAnsibleApi);
+  const ansibleSection = document.getElementById("ansibleSection");
 
   function switchView(view) {
     state.activeView = view;
@@ -190,10 +194,16 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     });
     connectionsSection.classList.toggle("hidden", view !== "connections");
     monitoringSection.classList.toggle("hidden", view !== "monitoring");
+    ansibleSection.classList.toggle("hidden", view !== "ansible");
     if (view === "monitoring") {
       monitoring.activate();
     } else {
       monitoring.deactivate();
+    }
+    if (view === "ansible") {
+      ansible.activate();
+    } else {
+      ansible.deactivate();
     }
   }
 
@@ -201,7 +211,7 @@ import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from ".
     const mode = (state.settings || getSettingsDefaults()).mode;
     const showNav = mode === "server" && state.session;
     if (mainNav) mainNav.classList.toggle("hidden", !showNav);
-    if (!showNav && state.activeView === "monitoring") {
+    if (!showNav && (state.activeView === "monitoring" || state.activeView === "ansible")) {
       switchView("connections");
     }
   }

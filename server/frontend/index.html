@@ -79,6 +79,9 @@
             <i class="nav-icon">🔗</i> FRP Tunnels
           </button>
           <div class="nav-divider"></div>
+          <button class="nav-item" data-page="ansible">
+            <i class="nav-icon">&#x2699;</i> Ansible
+          </button>
           <button class="nav-item" data-page="monitoring">
             <i class="nav-icon">&#x1F4CA;</i> Monitoring
           </button>
@@ -275,6 +278,25 @@
         <!-- Tunnel-Liste -->
         <div id="frpTunnelList" style="display:flex;flex-direction:column;gap:12px"></div>
         <div id="frpEmpty" class="empty-state hidden"><p>Keine Tunnel vorhanden.</p></div>
+      </div>
+
+      <!-- Ansible -->
+      <div id="pageAnsible" class="page">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Ansible Playbooks</div>
+            <div class="page-subtitle">Playbooks verwalten und auf Servern ausfuehren</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <select id="ansibleTagSelect" class="filter-select">
+              <option value="">Alle Tags</option>
+            </select>
+            <input id="ansibleSearch" type="search" class="search-input" placeholder="Suchen..." />
+            <button id="addPlaybookBtn" class="btn primary">+ Playbook</button>
+          </div>
+        </div>
+        <div id="ansibleList" style="display:flex;flex-direction:column;gap:12px"></div>
+        <div id="ansibleEmpty" class="empty-state hidden"><p>Keine Playbooks vorhanden.</p></div>
       </div>
 
       <!-- Monitoring -->
@@ -859,6 +881,51 @@
     </div>
   </div>
 
+  <!-- Modal: Ansible Playbook -->
+  <div id="playbookModal" class="modal-backdrop hidden">
+    <div class="modal" style="width:min(720px,95vw);max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <div class="modal-title" id="playbookModalTitle">Neues Playbook</div>
+        <button class="modal-close" data-close="playbookModal">&#x2715;</button>
+      </div>
+      <form id="playbookForm" class="modal-form">
+        <div class="conn-form">
+          <div class="field">
+            <label>Name *</label>
+            <input id="pbName" required placeholder="System Update" />
+          </div>
+          <div class="field">
+            <label>Dateiname *</label>
+            <input id="pbFilename" required placeholder="system-update.yml" />
+          </div>
+          <div class="field">
+            <label>Beschreibung</label>
+            <input id="pbDescription" placeholder="Aktualisiert alle Pakete via apt" />
+          </div>
+          <div class="field">
+            <label>Tags</label>
+            <input id="pbTags" placeholder="maintenance, security" />
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>Playbook-Inhalt (YAML) *</label>
+            <textarea id="pbContent" required rows="16" style="font-family:monospace;font-size:13px;tab-size:2;white-space:pre;resize:vertical" placeholder="---
+- hosts: all
+  become: true
+  tasks:
+    - name: System aktualisieren
+      apt:
+        update_cache: yes
+        upgrade: dist"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-close="playbookModal">Abbrechen</button>
+          <button type="submit" class="btn primary" id="playbookSaveBtn">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast -->
   <!-- Modal: Monitor Check -->
   <div id="monitorCheckModal" class="modal-backdrop hidden">
@@ -1215,6 +1282,7 @@
   <script src="/static/js/hooks.js"></script>
   <script src="/static/js/servers.js"></script>
   <script src="/static/js/frp.js"></script>
+  <script src="/static/js/ansible.js"></script>
   <link rel="stylesheet" href="/static/vendor/uplot.min.css" />
   <script src="/static/vendor/uplot.min.js"></script>
   <script src="/static/js/monitoring.js"></script>

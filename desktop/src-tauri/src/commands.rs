@@ -1,5 +1,6 @@
 use tauri::State;
 
+use crate::ansible;
 use crate::auth;
 use crate::connection;
 use crate::error::AppError;
@@ -217,4 +218,27 @@ pub fn resolve_connection(
     tunnels: Vec<tunnel::TunnelMapping>,
 ) -> tunnel::ResolvedConnection {
     tunnel::resolve_connection(&connection, &tunnels)
+}
+
+#[tauri::command]
+pub fn ansible_generate_inventory(
+    servers: Vec<ansible::AnsibleTarget>,
+) -> Result<String, AppError> {
+    ansible::generate_inventory(&servers)
+}
+
+#[tauri::command]
+pub fn ansible_write_playbook(
+    filename: String,
+    content: String,
+) -> Result<String, AppError> {
+    ansible::write_playbook_temp(&filename, &content)
+}
+
+#[tauri::command]
+pub fn ansible_launch(
+    inventory_path: String,
+    playbook_path: String,
+) -> Result<(), AppError> {
+    ansible::launch_ansible(&inventory_path, &playbook_path)
 }
