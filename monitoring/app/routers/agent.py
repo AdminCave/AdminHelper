@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.alerter import process_alert
+from app.checkers.agent import EXCLUDED_FSTYPES
 from app.core.auth import require_agent
 from app.core.database import get_db
 from app.core.victoria import victoria, format_line
@@ -44,6 +45,8 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
                 lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
         for disk in resources.get("disks", []):
+            if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
+                continue
             mount = disk.get("mount", "/")
             disk_tags = {**base_tags, "mount": mount}
             if disk.get("percent") is not None:

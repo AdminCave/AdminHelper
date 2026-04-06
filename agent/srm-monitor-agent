@@ -69,20 +69,19 @@ def collect_load() -> dict:
 
 
 def collect_disks() -> list[dict]:
-    """Festplatten-Auslastung."""
+    """Festplatten-Auslastung (alle Partitionen, ungefiltert — Server filtert)."""
     disks = []
-    for part in psutil.disk_partitions():
-        if part.fstype in ("", "squashfs", "tmpfs", "devtmpfs", "overlay"):
-            continue
+    for part in psutil.disk_partitions(all=True):
         try:
             usage = psutil.disk_usage(part.mountpoint)
             disks.append({
                 "mount": part.mountpoint,
+                "fstype": part.fstype,
                 "percent": round(usage.percent, 1),
                 "total_gb": round(usage.total / 1024**3, 1),
                 "used_gb": round(usage.used / 1024**3, 1),
             })
-        except PermissionError:
+        except (PermissionError, OSError):
             continue
     return disks
 
@@ -127,9 +126,40 @@ def collect_uptime() -> int:
 # ---------------------------------------------------------------------------
 
 def collect_systemd_health() -> dict:
-    """Sammelt failed Units und enabled-but-inactive Services."""
-    result: dict = {"failed": [], "enabled_inactive": []}
+    """Sammelt alle Service-Units mit Status — Server uebernimmt Filterung."""
+    result: dict = {"failed": [], "enabled_inactive": [], "all_services": []}
 
+    # 1) Alle Service-Units mit active_state
+    unit_states: dict[str, str] = {}
+    try:
+        out = subprocess.run(
+            ["systemctl", "list-units", "--type=service", "--all",
+             "--no-legend", "--plain", "--no-pager"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in out.stdout.strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                unit_states[parts[0]] = parts[2]  # UNIT LOAD ACTIVE SUB
+    except Exception as exc:
+        log(f"Service-Units-Abfrage fehlgeschlagen: {exc}")
+
+    # 2) Enabled-State fuer alle Service-Unit-Files
+    enabled_states: dict[str, str] = {}
+    try:
+        out = subprocess.run(
+            ["systemctl", "list-unit-files", "--type=service",
+             "--no-legend", "--no-pager"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in out.stdout.strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                enabled_states[parts[0]] = parts[1]
+    except Exception as exc:
+        log(f"Unit-Files-Abfrage fehlgeschlagen: {exc}")
+
+    # 3) Failed Units aller Typen (nicht nur Services)
     try:
         out = subprocess.run(
             ["systemctl", "list-units", "--state=failed", "--no-legend", "--plain"],
@@ -141,28 +171,20 @@ def collect_systemd_health() -> dict:
     except Exception as exc:
         log(f"Failed-Units-Abfrage fehlgeschlagen: {exc}")
 
-    try:
-        out = subprocess.run(
-            ["systemctl", "list-units", "--type=service", "--state=inactive",
-             "--no-legend", "--plain"],
-            capture_output=True, text=True, timeout=10,
-        )
-        for line in out.stdout.strip().splitlines():
-            unit = line.split()[0] if line.strip() else None
-            if not unit:
-                continue
-            try:
-                enabled = subprocess.run(
-                    ["systemctl", "is-enabled", unit],
-                    capture_output=True, text=True, timeout=3,
-                )
-                if enabled.stdout.strip() == "enabled":
-                    result["enabled_inactive"].append(unit)
-            except Exception as exc:
-                log(f"is-enabled Pruefung fuer '{unit}' fehlgeschlagen: {exc}")
-                continue
-    except Exception as exc:
-        log(f"Inactive-Services-Abfrage fehlgeschlagen: {exc}")
+    # all_services: Rohdaten fuer den Server
+    all_units = set(unit_states.keys()) | set(enabled_states.keys())
+    for unit in sorted(all_units):
+        result["all_services"].append({
+            "unit": unit,
+            "active_state": unit_states.get(unit, "unknown"),
+            "enabled_state": enabled_states.get(unit, "unknown"),
+        })
+
+    # Legacy-Keys fuer Rueckwaertskompatibilitaet mit altem Server
+    result["enabled_inactive"] = [
+        unit for unit, active in unit_states.items()
+        if active == "inactive" and enabled_states.get(unit) == "enabled"
+    ]
 
     return result
 
@@ -373,6 +395,7 @@ def build_report(service_names: list[str]) -> dict:
         resources["disks"] = disks
 
     report = {
+        "report_version": 2,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "resources": resources,
         "uptime_seconds": int(time.time() - psutil.boot_time()),

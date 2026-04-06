@@ -7,11 +7,11 @@ Die Daten kommen vom srm-monitor-agent via POST /agent/{server_id}/report.
 
 from __future__ import annotations
 
-import logging
 import time
 from datetime import datetime, timezone
 
-logger = logging.getLogger("monitor.checkers.agent")
+# Pseudo-Dateisysteme die bei Disk-Auswertung ignoriert werden
+EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
 # In-Memory Map: server_id -> letzter Report-Zeitstempel (Unix)
 _last_report: dict[str, float] = {}
@@ -119,10 +119,14 @@ class AgentResourcesChecker:
                 if status != "critical":
                     status = "warning"
 
-        # Disks
+        # Disks — Server-seitig Pseudo-Dateisysteme filtern
+        # Alte Agents senden kein fstype → Default "_real_" passiert den Filter
+        raw_disks = resources.get("disks", [])
+        disks = [d for d in raw_disks if d.get("fstype", "_real_") not in EXCLUDED_FSTYPES]
+
         disk_crit = config.get("disk_crit", 95)
         disk_warn = config.get("disk_warn", 85)
-        for disk in resources.get("disks", []):
+        for disk in disks:
             pct = disk.get("percent", 0)
             mount = disk.get("mount", "?")
             metrics[f"agent_disk_percent_{mount}"] = pct
@@ -152,7 +156,7 @@ class AgentResourcesChecker:
             "disks": [
                 {"mount": d.get("mount", "/"), "percent": d.get("percent", 0),
                  "total_gb": d.get("total_gb"), "used_gb": d.get("used_gb")}
-                for d in resources.get("disks", [])
+                for d in disks
             ],
         }
 
@@ -216,21 +220,38 @@ class ServiceProcessChecker:
         return f"{unit}.service" in ignore
 
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Auto-Modus: prueft systemd health aus dem Report."""
+        """Auto-Modus: prueft systemd health aus dem Report.
+
+        Unterstuetzt zwei Report-Formate:
+        - Neu (v2): systemd.all_services mit Rohdaten → Server filtert selbst
+        - Alt (v1): systemd.failed / systemd.enabled_inactive (Agent hat vorgefiltert)
+        """
         systemd = report.get("systemd")
         if not systemd:
             return "unknown", "Keine systemd-Daten im Report", None
 
         ignore = self._parse_ignore(config.get("ignore", []))
-        logger.info(
-            "_evaluate_auto: config.ignore=%r (type=%s) -> parsed ignore=%r | "
-            "failed_raw=%r | enabled_inactive_raw=%r",
-            config.get("ignore"), type(config.get("ignore")).__name__,
-            ignore, systemd.get("failed", []), systemd.get("enabled_inactive", []),
-        )
 
-        failed = [u for u in systemd.get("failed", []) if not self._is_ignored(u, ignore)]
-        enabled_inactive = [u for u in systemd.get("enabled_inactive", []) if not self._is_ignored(u, ignore)]
+        if "all_services" in systemd:
+            # Neues Format: Rohdaten vom Agent, Server filtert
+            all_svcs = systemd["all_services"]
+            failed_raw = [s["unit"] for s in all_svcs if s.get("active_state") == "failed"]
+            enabled_inactive_raw = [
+                s["unit"] for s in all_svcs
+                if s.get("enabled_state") == "enabled"
+                and s.get("active_state") == "inactive"
+            ]
+            # Auch nicht-Service failed Units beruecksichtigen (z.B. .mount, .socket)
+            for u in systemd.get("failed", []):
+                if u not in failed_raw:
+                    failed_raw.append(u)
+        else:
+            # Altes Format: Agent hat bereits gefiltert
+            failed_raw = systemd.get("failed", [])
+            enabled_inactive_raw = systemd.get("enabled_inactive", [])
+
+        failed = [u for u in failed_raw if not self._is_ignored(u, ignore)]
+        enabled_inactive = [u for u in enabled_inactive_raw if not self._is_ignored(u, ignore)]
 
         metrics = {
             "services_failed": len(failed),
