@@ -464,16 +464,16 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       const allSeries = metricsData?.data || [];
       console.debug("[monitoring] gauge chart: _debug =", metricsData?._debug, "allSeries =", allSeries.map(s => ({ name: s.metric?.__name__, mount: s.metric?.mount })), "filter =", metricFilter, "diskMount =", diskMount);
       // Filter auf die angeklickte Metrik
+      // VictoriaMetrics haengt '_value' an InfluxDB-Metriken an
       const filtered = allSeries.filter((s) => {
         const name = s.metric?.__name__ || "";
         if (metricFilter === "monitor_agent_disk_percent") {
-          // Roh-Daten: monitor_agent_disk_percent mit mount-Tag
-          // Check-Daten: monitor_agent_disk_percent_/ mit mount im Namen
           if (!name.startsWith("monitor_agent_disk_percent")) return false;
+          if (name.includes("cpu") || name.includes("memory")) return false;
           const mount = s.metric?.mount || "";
           return mount ? mount === diskMount : name.includes(diskMount || "/");
         }
-        return name === metricFilter;
+        return name === metricFilter || name === metricFilter + "_value";
       });
       if (filtered.length === 0) {
         container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.noData")}</div>`;
@@ -663,6 +663,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
         .replace("monitor_check_", "")
         .replace("monitor_agent_", "")
         .replace("monitor_", "")
+        .replace(/_value$/, "")
         .replace(/_/g, " ");
       const formatted = Number.isInteger(last) ? String(last) : last.toFixed(1);
       parts.push(`<span class="mon-current-item"><strong>${label}</strong> ${formatted}${unit}</span>`);
@@ -735,6 +736,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
         .replace("monitor_check_", "")
         .replace("monitor_agent_", "")
         .replace("monitor_", "")
+        .replace(/_value$/, "")
         .replace(/_/g, " ");
 
       uplotSeries.push({

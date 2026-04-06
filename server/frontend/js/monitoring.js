@@ -578,16 +578,16 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
     const allSeries = data.data || [];
     console.debug('[monitoring] gauge chart: allSeries =', allSeries.map(s => ({ name: s.metric?.__name__, mount: s.metric?.mount })), 'filter =', metricFilter, 'diskMount =', diskMount);
     // Filter auf die angeklickte Metrik
+    // VictoriaMetrics haengt '_value' an InfluxDB-Metriken an
     const filtered = allSeries.filter(s => {
       const name = s.metric?.__name__ || '';
       if (metricFilter === 'monitor_agent_disk_percent') {
-        // Roh-Daten: monitor_agent_disk_percent mit mount-Tag
-        // Check-Daten: monitor_agent_disk_percent_/ mit mount im Namen
         if (!name.startsWith('monitor_agent_disk_percent')) return false;
+        if (name.includes('cpu') || name.includes('memory')) return false;
         const mount = s.metric?.mount || '';
         return mount ? mount === diskMount : name.includes(diskMount || '/');
       }
-      return name === metricFilter;
+      return name === metricFilter || name === metricFilter + '_value';
     });
     if (filtered.length === 0) {
       chartEl.innerHTML = '<span style="color:var(--text-soft)">Keine Metrik-Daten verfuegbar</span>';
@@ -636,7 +636,7 @@ function _renderDetailCurrentValues(el, data, check) {
     const last = vals.length > 0 ? parseFloat(vals[vals.length - 1][1]) : null;
     if (last === null) return null;
     const unit = _checkTypeUnitWeb(check.checkType);
-    const label = name.replace(/^monitor_/, '').replace(/_/g, ' ');
+    const label = name.replace(/^monitor_/, '').replace(/_value$/, '').replace(/_/g, ' ');
     return `<span class="check-current-item"><strong>${esc(label)}</strong>: ${last.toFixed(1)}${unit}</span>`;
   }).filter(Boolean);
 
@@ -660,7 +660,7 @@ function _renderDetailChart(container, data, check) {
 
   const colors = ['#4a9eff', '#ff6b6b', '#ffa726', '#66bb6a', '#ab47bc', '#26c6da'];
   series.forEach((s, i) => {
-    const name = (s.metric?.__name__ || `Serie ${i + 1}`).replace(/^monitor_/, '').replace(/_/g, ' ');
+    const name = (s.metric?.__name__ || `Serie ${i + 1}`).replace(/^monitor_/, '').replace(/_value$/, '').replace(/_/g, ' ');
     uData.push(s.values.map(v => parseFloat(v[1])));
     const isCount = ['service_process', 'proxmox_backup', 'docker_health'].includes(check.checkType);
     uSeries.push({

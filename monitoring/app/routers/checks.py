@@ -17,29 +17,31 @@ from app.scheduler import add_check, remove_check
 
 router = APIRouter()
 
-# Typspezifische Metriken die in VictoriaMetrics geschrieben werden
+# Typspezifische Metriken die in VictoriaMetrics geschrieben werden.
+# VictoriaMetrics haengt '_value' an InfluxDB Line Protocol Metriken an
+# (measurement + '_' + field_key), daher der Suffix hier.
 CHECK_TYPE_METRICS: dict[str, list[str]] = {
-    "ping": ["monitor_check_duration_ms", "monitor_ping_rtt_ms"],
-    "tcp": ["monitor_check_duration_ms", "monitor_tcp_connect_ms"],
-    "http": ["monitor_check_duration_ms", "monitor_http_response_ms", "monitor_http_status_code"],
-    "agent_ping": ["monitor_agent_last_seen_seconds"],
-    "agent_resources": ["monitor_agent_cpu_percent", "monitor_agent_memory_percent"],
+    "ping": ["monitor_check_duration_ms_value", "monitor_ping_rtt_ms_value"],
+    "tcp": ["monitor_check_duration_ms_value", "monitor_tcp_connect_ms_value"],
+    "http": ["monitor_check_duration_ms_value", "monitor_http_response_ms_value", "monitor_http_status_code_value"],
+    "agent_ping": ["monitor_agent_last_seen_seconds_value"],
+    "agent_resources": ["monitor_agent_cpu_percent_value", "monitor_agent_memory_percent_value"],
     "service_process": [
-        "monitor_services_failed", "monitor_services_enabled_inactive",
-        "monitor_services_down", "monitor_services_up",
+        "monitor_services_failed_value", "monitor_services_enabled_inactive_value",
+        "monitor_services_down_value", "monitor_services_up_value",
     ],
     "proxmox_backup": [
-        "monitor_proxmox_backup_ok", "monitor_proxmox_backup_missing",
-        "monitor_proxmox_backup_outdated",
+        "monitor_proxmox_backup_ok_value", "monitor_proxmox_backup_missing_value",
+        "monitor_proxmox_backup_outdated_value",
     ],
-    "zfs_health": [],  # dynamisch: monitor_zfs_capacity_{pool}
-    "docker_health": ["monitor_docker_ok", "monitor_docker_critical", "monitor_docker_warning"],
+    "zfs_health": [],  # dynamisch: monitor_zfs_capacity_{pool}_value
+    "docker_health": ["monitor_docker_ok_value", "monitor_docker_critical_value", "monitor_docker_warning_value"],
 }
 
 # Check-Typen mit dynamischen Metrik-Namen (Regex-Query)
 _DYNAMIC_METRIC_PATTERNS: dict[str, str] = {
-    "zfs_health": "monitor_zfs_capacity_.*",
-    "agent_resources": "monitor_agent_disk_percent.*",
+    "zfs_health": "monitor_zfs_capacity_.*_value",
+    "agent_resources": "monitor_agent_disk_percent.*_value",
 }
 
 
@@ -263,8 +265,8 @@ def get_check_metrics(
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
         all_results.extend(result.get("data", {}).get("result", []))
 
-    # Status-Timeline (immer)
-    status_query = f'monitor_check_status{{check_id="{check_id}"}}'
+    # Status-Timeline (immer, mit _value Suffix)
+    status_query = f'monitor_check_status_value{{check_id="{check_id}"}}'
     status_result = victoria.query_range(query=status_query, start=f"now-{duration}", end="now", step=step)
 
     return {
