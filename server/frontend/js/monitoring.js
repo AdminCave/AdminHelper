@@ -297,15 +297,17 @@ function toggleCheckDetail(checkId, trEl) {
   detailTr.appendChild(td);
   trEl.after(detailTr);
 
-  if (check.checkType === 'agent_resources') {
+  if (check.checkType === 'agent_resources' && check.state?.details) {
     _initGaugeClickHandlers(check);
   }
-  if (!_NO_CHART_TYPES.includes(check.checkType)) {
+  const skipMetrics = _NO_CHART_TYPES.includes(check.checkType)
+    || (check.checkType === 'agent_resources' && check.state?.details);
+  if (!skipMetrics) {
     _loadDetailMetrics(checkId, '1h', check);
   }
 }
 
-const _NO_CHART_TYPES = ['service_process', 'docker_health', 'proxmox_backup', 'agent_resources'];
+const _NO_CHART_TYPES = ['service_process', 'docker_health', 'proxmox_backup'];
 
 function _buildDetailPanel(check) {
   const configKv = _formatCheckConfigWeb(check);
@@ -317,7 +319,10 @@ function _buildDetailPanel(check) {
   }
 
   const typeContentHtml = _renderTypeContentHtml(check);
-  const hasChart = !_NO_CHART_TYPES.includes(check.checkType);
+  // agent_resources: kein Auto-Chart wenn Details vorhanden (Gauges haben eigenen On-Demand-Chart)
+  const skipChart = _NO_CHART_TYPES.includes(check.checkType)
+    || (check.checkType === 'agent_resources' && check.state?.details);
+  const hasChart = !skipChart;
 
   const chartHtml = hasChart ? `
       <div class="check-detail-current" id="checkDetailCurrent_${check.id}"></div>

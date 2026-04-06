@@ -251,7 +251,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
   }
 
   // ── Detail Panel (Metrics) ─────────────────────────────────────────
-  const NO_CHART_TYPES = ["service_process", "docker_health", "proxmox_backup", "agent_resources"];
+  const NO_CHART_TYPES = ["service_process", "docker_health", "proxmox_backup"];
 
   function toggleDetailPanel(check, rowEl) {
     const existingPanel = rowEl.parentElement.querySelector(`.mon-detail-panel[data-check-id="${check.id}"]`);
@@ -300,8 +300,10 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     panel.appendChild(typeContent);
 
     // Chart nur fuer Typen die Zeitreihen-Daten haben
-    const hasChart = !NO_CHART_TYPES.includes(check.checkType);
-    if (hasChart) {
+    // agent_resources: kein Auto-Chart wenn Details vorhanden (Gauges haben eigenen On-Demand-Chart)
+    const skipChart = NO_CHART_TYPES.includes(check.checkType)
+      || (check.checkType === "agent_resources" && check.state?.details);
+    if (!skipChart) {
       const currentValues = document.createElement("div");
       currentValues.className = "mon-detail-current";
 
