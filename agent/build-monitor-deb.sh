@@ -2,7 +2,7 @@
 # Build .deb package for srm-monitor-agent
 set -euo pipefail
 
-VERSION="${VERSION:-0.7.0}"
+VERSION="${VERSION:-0.7.1}"
 PKG_NAME="srm-monitor-agent"
 BUILD_DIR="build-deb/${PKG_NAME}_${VERSION}_all"
 

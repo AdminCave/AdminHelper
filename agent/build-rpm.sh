@@ -2,7 +2,7 @@
 # Build .rpm package for srm-frpc-client
 set -euo pipefail
 
-VERSION="${VERSION:-0.7.0}"
+VERSION="${VERSION:-0.7.1}"
 PKG_NAME="srm-frpc-client"
 
 echo "=== Building ${PKG_NAME} ${VERSION} (rpm) ==="
