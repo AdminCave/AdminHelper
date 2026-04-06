@@ -7,7 +7,8 @@ from typing import Optional
 import bcrypt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
@@ -64,7 +65,7 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
         username: str = payload.get("sub")
         if not username:
             return None
-    except JWTError:
+    except InvalidTokenError:
         return None
     return db.query(User).filter(User.username == username).first()
 

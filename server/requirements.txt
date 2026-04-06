@@ -1,7 +1,7 @@
 fastapi>=0.115
 uvicorn[standard]>=0.34
 sqlalchemy>=2.0
-python-jose[cryptography]>=3.3
+PyJWT>=2.8
 bcrypt>=4.0
 python-multipart>=0.0.20
 requests>=2.32
