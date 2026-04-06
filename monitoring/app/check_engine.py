@@ -49,6 +49,9 @@ def execute_check(check_id: str) -> None:
             logger.exception("Check %s fehlgeschlagen", check.name)
         duration_ms = int((time.monotonic() - start) * 1000)
 
+        # Strukturierte Details extrahieren (nicht an VictoriaMetrics senden)
+        details = metrics.pop("_details", None) if metrics else None
+
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Metriken an VictoriaMetrics senden
@@ -78,6 +81,8 @@ def execute_check(check_id: str) -> None:
         else:
             effective_status = result_status
 
+        details_json = json.dumps(details) if details else None
+
         if not state:
             state = MonitorState(
                 check_id=check.id,
@@ -86,6 +91,7 @@ def execute_check(check_id: str) -> None:
                 last_check=now,
                 fail_count=new_fail_count,
                 message=message,
+                details=details_json,
             )
             db.add(state)
         else:
@@ -99,6 +105,7 @@ def execute_check(check_id: str) -> None:
             state.fail_count = new_fail_count
             state.last_check = now
             state.message = message
+            state.details = details_json
 
         db.commit()
 

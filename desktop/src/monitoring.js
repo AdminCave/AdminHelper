@@ -251,6 +251,8 @@ export function initMonitoring(state, t, monitoringApiFactory) {
   }
 
   // ── Detail Panel (Metrics) ─────────────────────────────────────────
+  const NO_CHART_TYPES = ["service_process", "docker_health", "proxmox_backup"];
+
   function toggleDetailPanel(check, rowEl) {
     const existingPanel = rowEl.parentElement.querySelector(`.mon-detail-panel[data-check-id="${check.id}"]`);
     if (existingPanel) {
@@ -270,7 +272,6 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     panel.className = "mon-detail-panel";
     panel.dataset.checkId = check.id;
 
-    const status = check.state?.status || "pending";
     const info = document.createElement("div");
     info.className = "mon-detail-info";
     info.innerHTML = `<strong>${check.name}</strong> &mdash; ${check.checkType.toUpperCase()}`;
@@ -290,37 +291,256 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       info.appendChild(configEl);
     }
 
-    // Aktuelle Werte (wird nach Chart-Load gefüllt)
-    const currentValues = document.createElement("div");
-    currentValues.className = "mon-detail-current";
+    panel.appendChild(info);
 
-    const periodBar = document.createElement("div");
-    periodBar.className = "mon-period-selector";
-    const periods = ["1h", "6h", "24h", "7d"];
-    let activePeriod = "1h";
-    for (const p of periods) {
-      const chip = document.createElement("button");
-      chip.className = `chip ${p === activePeriod ? "active" : ""}`;
-      chip.textContent = p;
-      chip.addEventListener("click", () => {
-        activePeriod = p;
-        periodBar.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c.textContent === p));
-        loadAndRenderChart(check, p, chartContainer, currentValues, timelineContainer);
-      });
-      periodBar.appendChild(chip);
+    // Typspezifischer Content aus state.details
+    const typeContent = document.createElement("div");
+    typeContent.className = "mon-type-content";
+    renderTypeContent(check, typeContent);
+    panel.appendChild(typeContent);
+
+    // Chart nur fuer Typen die Zeitreihen-Daten haben
+    const hasChart = !NO_CHART_TYPES.includes(check.checkType);
+    if (hasChart) {
+      const currentValues = document.createElement("div");
+      currentValues.className = "mon-detail-current";
+
+      const periodBar = document.createElement("div");
+      periodBar.className = "mon-period-selector";
+      const periods = ["1h", "6h", "24h", "7d"];
+      let activePeriod = "1h";
+      for (const p of periods) {
+        const chip = document.createElement("button");
+        chip.className = `chip ${p === activePeriod ? "active" : ""}`;
+        chip.textContent = p;
+        chip.addEventListener("click", () => {
+          activePeriod = p;
+          periodBar.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c.textContent === p));
+          loadAndRenderChart(check, p, chartContainer, currentValues, timelineContainer);
+        });
+        periodBar.appendChild(chip);
+      }
+
+      const chartContainer = document.createElement("div");
+      chartContainer.className = "mon-chart-container";
+
+      const timelineContainer = document.createElement("div");
+      timelineContainer.className = "mon-status-timeline";
+
+      panel.append(currentValues, periodBar, chartContainer, timelineContainer);
+
+      loadAndRenderChart(check, activePeriod, chartContainer, currentValues, timelineContainer);
     }
 
-    const chartContainer = document.createElement("div");
-    chartContainer.className = "mon-chart-container";
-
-    const timelineContainer = document.createElement("div");
-    timelineContainer.className = "mon-status-timeline";
-
-    panel.append(info, currentValues, periodBar, chartContainer, timelineContainer);
     rowEl.after(panel);
     requestAnimationFrame(() => panel.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  }
 
-    loadAndRenderChart(check, activePeriod, chartContainer, currentValues, timelineContainer);
+  // ── Type-Specific Renderers ────────────────────────────────────────
+  function renderTypeContent(check, container) {
+    const details = check.state?.details;
+    switch (check.checkType) {
+      case "agent_resources": return renderResourceGauges(container, details, check.config);
+      case "service_process": return renderServiceList(container, details);
+      case "docker_health": return renderContainerList(container, details);
+      case "proxmox_backup": return renderBackupList(container, details);
+      case "zfs_health": return renderZfsGauges(container, details);
+      case "agent_ping": return renderAgentPingValue(container, check);
+      default: break; // ping, tcp, http - nur Chart
+    }
+  }
+
+  function gaugeClass(pct, warn, crit) {
+    if (pct >= crit) return "gauge-crit";
+    if (pct >= warn) return "gauge-warn";
+    return "gauge-ok";
+  }
+
+  function buildGaugeItem(label, pct, detailText, cls) {
+    const item = document.createElement("div");
+    item.className = "mon-gauge-item";
+    item.innerHTML = `
+      <span class="mon-gauge-label">${label}</span>
+      <div class="mon-gauge-bar">
+        <div class="mon-gauge-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div>
+        <span class="mon-gauge-text">${pct.toFixed(1)}%</span>
+      </div>
+      ${detailText ? `<span class="mon-gauge-detail">${detailText}</span>` : ""}
+    `;
+    return item;
+  }
+
+  function renderResourceGauges(container, details, config) {
+    if (!details) return;
+    const grid = document.createElement("div");
+    grid.className = "mon-gauge-grid";
+    const cpuWarn = config?.cpu_warn || 80;
+    const cpuCrit = config?.cpu_crit || 95;
+    const memWarn = config?.memory_warn || 80;
+    const memCrit = config?.memory_crit || 95;
+    const diskWarn = config?.disk_warn || 85;
+    const diskCrit = config?.disk_crit || 95;
+
+    if (details.cpu != null) {
+      grid.appendChild(buildGaugeItem("CPU", details.cpu, null, gaugeClass(details.cpu, cpuWarn, cpuCrit)));
+    }
+    if (details.memory != null) {
+      const memDetail = details.memory_total_mb
+        ? `${details.memory_used_mb || 0} / ${details.memory_total_mb} MB`
+        : null;
+      grid.appendChild(buildGaugeItem("RAM", details.memory, memDetail, gaugeClass(details.memory, memWarn, memCrit)));
+    }
+    for (const disk of details.disks || []) {
+      const diskDetail = disk.total_gb != null
+        ? `${(disk.used_gb || 0).toFixed(1)} / ${disk.total_gb.toFixed(1)} GB`
+        : null;
+      grid.appendChild(buildGaugeItem(disk.mount, disk.percent, diskDetail, gaugeClass(disk.percent, diskWarn, diskCrit)));
+    }
+    container.appendChild(grid);
+  }
+
+  function renderServiceList(container, details) {
+    if (!details) return;
+    if (details.mode === "auto") {
+      const failed = details.failed || [];
+      const inactive = details.enabled_inactive || [];
+      if (failed.length === 0 && inactive.length === 0) {
+        container.innerHTML = `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> ${t("monitoring.detail.allUnitsOk")}</div>`;
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "mon-item-list";
+      if (failed.length > 0) {
+        const title = document.createElement("div");
+        title.className = "mon-section-title";
+        title.textContent = "Failed";
+        list.appendChild(title);
+        for (const svc of failed) {
+          list.appendChild(buildItemRow(svc, "critical", "failed"));
+        }
+      }
+      if (inactive.length > 0) {
+        const title = document.createElement("div");
+        title.className = "mon-section-title";
+        title.textContent = "Inaktiv (Autostart)";
+        list.appendChild(title);
+        for (const svc of inactive) {
+          list.appendChild(buildItemRow(svc, "warn", "inactive"));
+        }
+      }
+      container.appendChild(list);
+    } else {
+      // list mode
+      const watched = details.watched || [];
+      if (watched.length === 0) return;
+      const allOk = watched.every((s) => s.running);
+      if (allOk) {
+        container.innerHTML = `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle ${watched.length} Services aktiv</div>`;
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "mon-item-list";
+      for (const svc of watched) {
+        list.appendChild(buildItemRow(svc.name, svc.running ? "ok" : "critical", svc.running ? "running" : "down"));
+      }
+      container.appendChild(list);
+    }
+  }
+
+  function renderContainerList(container, details) {
+    if (!details?.containers?.length) return;
+    const allOk = details.containers.every((c) => c.category === "ok");
+    if (allOk) {
+      container.innerHTML = `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle ${details.containers.length} Container laufen</div>`;
+      return;
+    }
+    const list = document.createElement("div");
+    list.className = "mon-item-list";
+    // Probleme zuerst
+    const sorted = [...details.containers].sort((a, b) => {
+      const order = { critical: 0, warning: 1, ok: 2 };
+      return (order[a.category] ?? 2) - (order[b.category] ?? 2);
+    });
+    for (const c of sorted) {
+      const catMap = { critical: "critical", warning: "warn", ok: "ok" };
+      const row = buildItemRow(c.name, catMap[c.category] || "ok", c.state);
+      if (c.image) {
+        const badge = document.createElement("span");
+        badge.className = "mon-item-badge";
+        badge.textContent = c.image.split(":")[0].split("/").pop();
+        row.insertBefore(badge, row.querySelector(".mon-item-status"));
+      }
+      list.appendChild(row);
+    }
+    container.appendChild(list);
+  }
+
+  function renderBackupList(container, details) {
+    if (!details?.vms?.length) return;
+    const allOk = details.vms.every((v) => v.backupStatus === "ok");
+    if (allOk) {
+      container.innerHTML = `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle ${details.vms.length} VMs/CTs haben aktuelle Backups</div>`;
+      return;
+    }
+    const list = document.createElement("div");
+    list.className = "mon-item-list";
+    const sorted = [...details.vms].sort((a, b) => {
+      const order = { missing: 0, outdated: 1, ok: 2 };
+      return (order[a.backupStatus] ?? 2) - (order[b.backupStatus] ?? 2);
+    });
+    for (const vm of sorted) {
+      const catMap = { ok: "ok", outdated: "warn", missing: "critical" };
+      let statusText = vm.backupStatus === "ok" ? "OK" : vm.backupStatus === "missing" ? "Kein Backup" : `Veraltet (${vm.ageHours}h)`;
+      const row = buildItemRow(`${vm.name} (${vm.vmid})`, catMap[vm.backupStatus] || "ok", statusText);
+      const badge = document.createElement("span");
+      badge.className = "mon-item-badge";
+      badge.textContent = (vm.type || "vm").toUpperCase();
+      row.insertBefore(badge, row.querySelector(".mon-item-name"));
+      list.appendChild(row);
+    }
+    container.appendChild(list);
+  }
+
+  function renderZfsGauges(container, details) {
+    if (!details?.pools?.length) return;
+    const grid = document.createElement("div");
+    grid.className = "mon-gauge-grid";
+    for (const pool of details.pools) {
+      const healthCls = pool.health === "ONLINE" ? "health-online" : pool.health === "DEGRADED" ? "health-degraded" : "health-faulted";
+      const item = document.createElement("div");
+      item.className = "mon-gauge-item";
+      item.innerHTML = `
+        <span class="mon-gauge-label">${pool.name}</span>
+        <div class="mon-gauge-bar">
+          <div class="mon-gauge-fill ${gaugeClass(pool.capacityPercent, 80, 90)}" style="width:${Math.min(pool.capacityPercent, 100)}%"></div>
+          <span class="mon-gauge-text">${pool.capacityPercent}%</span>
+        </div>
+        <span class="mon-health-badge ${healthCls}">${pool.health}</span>
+      `;
+      grid.appendChild(item);
+    }
+    container.appendChild(grid);
+  }
+
+  function renderAgentPingValue(container, check) {
+    const msg = check.state?.message || "";
+    const match = msg.match(/(\d+)/);
+    const seconds = match ? parseInt(match[1], 10) : null;
+    if (seconds == null) return;
+    const display = seconds < 120 ? `${seconds}s` : `${Math.round(seconds / 60)}m`;
+    container.innerHTML = `<div class="mon-last-seen"><span class="mon-last-seen-value">${display}</span><span class="mon-last-seen-unit">${t("monitoring.detail.lastSeen")}</span></div>`;
+  }
+
+  function buildItemRow(name, category, statusText) {
+    const row = document.createElement("div");
+    row.className = "mon-item-row";
+    const catCls = category === "critical" ? "item-crit" : category === "warn" ? "item-warn" : "item-ok";
+    row.innerHTML = `
+      <span class="mon-item-dot ${catCls}"></span>
+      <span class="mon-item-name">${name}</span>
+      <span class="mon-item-status">${statusText}</span>
+    `;
+    return row;
   }
 
   async function loadAndRenderChart(check, period, container, currentValuesEl, timelineEl) {

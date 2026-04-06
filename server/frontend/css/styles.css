@@ -1855,3 +1855,67 @@ body {
   transition: opacity 0.2s;
 }
 .check-timeline-seg:hover { opacity: 0.8; }
+
+/* ── Type-Specific Detail Content ──────────────────────────────── */
+.mon-type-content { margin-bottom: 14px; }
+.mon-gauge-grid { display: flex; flex-direction: column; gap: 10px; }
+.mon-gauge-item { display: flex; align-items: center; gap: 12px; }
+.mon-gauge-label {
+  min-width: 80px; font-size: 12px; color: var(--text-soft);
+  text-align: right; white-space: nowrap;
+}
+.mon-gauge-bar {
+  flex: 1; height: 22px; background: rgba(255,255,255,0.06);
+  border-radius: 4px; overflow: hidden; position: relative;
+}
+.mon-gauge-fill {
+  height: 100%; border-radius: 4px; transition: width 0.4s ease; min-width: 2px;
+}
+.mon-gauge-fill.gauge-ok { background: var(--green); }
+.mon-gauge-fill.gauge-warn { background: var(--yellow); }
+.mon-gauge-fill.gauge-crit { background: var(--red); }
+.mon-gauge-text {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; font-weight: 600; color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+.mon-gauge-detail { font-size: 11px; color: var(--text-soft); min-width: 90px; white-space: nowrap; }
+
+.mon-item-list { display: flex; flex-direction: column; gap: 3px; }
+.mon-item-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 6px;
+  background: rgba(255,255,255,0.03); font-size: 13px;
+}
+.mon-item-row:hover { background: rgba(255,255,255,0.06); }
+.mon-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mon-item-dot.item-ok { background: var(--green); }
+.mon-item-dot.item-warn { background: var(--yellow); }
+.mon-item-dot.item-crit { background: var(--red); }
+.mon-item-name { flex: 1; font-weight: 500; }
+.mon-item-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.08); color: var(--text-soft);
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.mon-item-status { font-size: 12px; color: var(--text-soft); }
+.mon-section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  color: var(--text-soft); margin: 10px 0 4px; letter-spacing: 0.5px;
+}
+.mon-section-title:first-child { margin-top: 0; }
+.mon-health-badge {
+  font-size: 10px; padding: 2px 8px; border-radius: 4px;
+  font-weight: 600; text-transform: uppercase;
+}
+.mon-health-badge.health-online { background: rgba(34,197,94,0.15); color: var(--green); }
+.mon-health-badge.health-degraded { background: rgba(249,115,22,0.15); color: var(--yellow); }
+.mon-health-badge.health-faulted { background: rgba(239,68,68,0.15); color: var(--red); }
+.mon-last-seen { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; }
+.mon-last-seen-value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mon-last-seen-unit { font-size: 14px; color: var(--text-soft); }
+.mon-all-ok {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  background: rgba(34,197,94,0.08); border-radius: 8px;
+  color: var(--green); font-weight: 500; font-size: 13px;
+}

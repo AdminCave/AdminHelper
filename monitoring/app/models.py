@@ -55,6 +55,7 @@ class MonitorState(Base):
     last_check = Column(DateTime, nullable=True)
     fail_count = Column(Integer, default=0)
     message = Column(String, nullable=True)
+    details = Column(String, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -64,6 +65,7 @@ class MonitorState(Base):
             "lastCheck": self.last_check.isoformat() if self.last_check else None,
             "failCount": self.fail_count,
             "message": self.message,
+            "details": json.loads(self.details) if self.details else None,
         }
 
 

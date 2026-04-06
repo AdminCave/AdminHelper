@@ -68,6 +68,29 @@ class ProxmoxBackupChecker:
             "proxmox_backup_outdated": len(outdated),
         }
 
+        # Strukturierte Details fuer die UI
+        vm_details = []
+        for vm in vms:
+            vmid = vm.get("vmid")
+            if vmid in exclude_vmids:
+                continue
+            if exclude_stopped and vm.get("status") != "running":
+                continue
+            last_ts = vm.get("last_backup_ts")
+            vm_status = "ok"
+            age_hours = None
+            if last_ts is None:
+                vm_status = "missing"
+            elif (now - last_ts) > max_age_seconds:
+                vm_status = "outdated"
+                age_hours = round((now - last_ts) / 3600)
+            vm_details.append({
+                "vmid": vmid, "name": vm.get("name", "?"),
+                "type": vm.get("type", "vm"), "backupStatus": vm_status,
+                "ageHours": age_hours,
+            })
+        metrics["_details"] = {"vms": vm_details}
+
         if no_backup:
             msg = "Kein Backup: " + ", ".join(no_backup)
             if outdated:
@@ -131,6 +154,14 @@ class ZfsHealthChecker:
                 if status != "critical":
                     status = "warning"
 
+        metrics["_details"] = {
+            "pools": [
+                {"name": p.get("name", "?"), "health": p.get("health", "UNKNOWN"),
+                 "capacityPercent": p.get("capacity_percent", 0)}
+                for p in pools
+            ]
+        }
+
         if problems:
             return status, "; ".join(problems), metrics
 
@@ -165,6 +196,7 @@ class DockerHealthChecker:
         critical_problems = []
         warning_problems = []
         ok_count = 0
+        container_details = []
 
         for c in containers:
             name = c.get("name", c.get("id", "?"))
@@ -174,6 +206,7 @@ class DockerHealthChecker:
             state = c.get("state", "").lower()
             status_text = c.get("status", "").lower()
             restart_policy = c.get("restart_policy", "no")
+            category = "ok"
 
             # Container mit Restart-Policy die nicht laufen
             if restart_policy not in ("no", "") and state != "running":
@@ -181,21 +214,24 @@ class DockerHealthChecker:
                     critical_problems.append(f"{name}: {state}")
                 else:
                     critical_problems.append(f"{name}: nicht aktiv (policy={restart_policy})")
-                continue
-
-            # Unhealthy Container
-            if "unhealthy" in status_text:
+                category = "critical"
+            elif "unhealthy" in status_text:
                 warning_problems.append(f"{name}: unhealthy")
-                continue
-
-            if state == "running":
+                category = "warning"
+            elif state == "running":
                 ok_count += 1
+
+            container_details.append({
+                "name": name, "state": state, "category": category,
+                "image": c.get("image", ""),
+            })
 
         metrics = {
             "docker_ok": ok_count,
             "docker_critical": len(critical_problems),
             "docker_warning": len(warning_problems),
         }
+        metrics["_details"] = {"containers": container_details}
 
         if critical_problems:
             msg = "Container-Probleme: " + ", ".join(critical_problems)

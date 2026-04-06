@@ -141,6 +141,18 @@ class AgentResourcesChecker:
                 parts.append(f"RAM {mem}%")
             message = ", ".join(parts) if parts else "OK"
 
+        metrics["_details"] = {
+            "cpu": cpu,
+            "memory": mem,
+            "memory_total_mb": resources.get("memory_total_mb"),
+            "memory_used_mb": resources.get("memory_used_mb"),
+            "disks": [
+                {"mount": d.get("mount", "/"), "percent": d.get("percent", 0),
+                 "total_gb": d.get("total_gb"), "used_gb": d.get("used_gb")}
+                for d in resources.get("disks", [])
+            ],
+        }
+
         return status, message, metrics
 
 
@@ -191,6 +203,12 @@ class ServiceProcessChecker:
             "services_enabled_inactive": len(enabled_inactive),
         }
 
+        metrics["_details"] = {
+            "mode": "auto",
+            "failed": failed,
+            "enabled_inactive": enabled_inactive,
+        }
+
         if failed:
             msg = f"Failed: {', '.join(failed)}"
             if enabled_inactive:
@@ -223,15 +241,21 @@ class ServiceProcessChecker:
             else:
                 down.append(name)
 
+        metrics = {"services_down": len(down), "services_up": len(up)}
+        metrics["_details"] = {
+            "mode": "list",
+            "watched": [{"name": n, "running": n not in down} for n in expected],
+        }
+
         if down:
             return (
                 "critical",
                 f"Services nicht aktiv: {', '.join(down)}",
-                {"services_down": len(down), "services_up": len(up)},
+                metrics,
             )
 
         return (
             "ok",
             f"Alle {len(up)} Services aktiv",
-            {"services_down": 0, "services_up": len(up)},
+            metrics,
         )

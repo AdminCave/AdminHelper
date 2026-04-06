@@ -34,6 +34,9 @@ async def lifespan(app: FastAPI):
         ("template_id", "TEXT"),
         ("template_def_id", "TEXT"),
     ])
+    _migrate_columns(insp, "monitor_states", [
+        ("details", "TEXT"),
+    ])
     _migrate_agent_keys_to_hash(insp)
     logger.info("Datenbank initialisiert")
 

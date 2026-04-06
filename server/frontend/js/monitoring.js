@@ -297,8 +297,12 @@ function toggleCheckDetail(checkId, trEl) {
   detailTr.appendChild(td);
   trEl.after(detailTr);
 
-  _loadDetailMetrics(checkId, '1h', check);
+  if (!_NO_CHART_TYPES.includes(check.checkType)) {
+    _loadDetailMetrics(checkId, '1h', check);
+  }
 }
+
+const _NO_CHART_TYPES = ['service_process', 'docker_health', 'proxmox_backup'];
 
 function _buildDetailPanel(check) {
   const configKv = _formatCheckConfigWeb(check);
@@ -309,9 +313,10 @@ function _buildDetailPanel(check) {
       '</div></div>';
   }
 
-  return `
-    <div class="check-detail-panel">
-      ${configHtml}
+  const typeContentHtml = _renderTypeContentHtml(check);
+  const hasChart = !_NO_CHART_TYPES.includes(check.checkType);
+
+  const chartHtml = hasChart ? `
       <div class="check-detail-current" id="checkDetailCurrent_${check.id}"></div>
       <div class="check-detail-periods">
         <button class="btn small active" onclick="_switchDetailPeriod('${check.id}', '1h', this)">1h</button>
@@ -321,7 +326,183 @@ function _buildDetailPanel(check) {
       </div>
       <div class="check-detail-chart" id="checkDetailChart_${check.id}"></div>
       <div class="check-detail-timeline" id="checkDetailTimeline_${check.id}"></div>
+  ` : '';
+
+  return `
+    <div class="check-detail-panel">
+      ${configHtml}
+      ${typeContentHtml}
+      ${chartHtml}
     </div>`;
+}
+
+// ── Type-Specific Renderers (Web) ──────────────────────────────────
+
+function _renderTypeContentHtml(check) {
+  const details = check.state?.details;
+  switch (check.checkType) {
+    case 'agent_resources': return _renderResourceGaugesHtml(details, check.config);
+    case 'service_process': return _renderServiceListHtml(details);
+    case 'docker_health': return _renderContainerListHtml(details);
+    case 'proxmox_backup': return _renderBackupListHtml(details);
+    case 'zfs_health': return _renderZfsGaugesHtml(details);
+    case 'agent_ping': return _renderAgentPingHtml(check);
+    default: return '';
+  }
+}
+
+function _gaugeClass(pct, warn, crit) {
+  if (pct >= crit) return 'gauge-crit';
+  if (pct >= warn) return 'gauge-warn';
+  return 'gauge-ok';
+}
+
+function _gaugeItemHtml(label, pct, detailText, cls) {
+  return `<div class="mon-gauge-item">
+    <span class="mon-gauge-label">${esc(label)}</span>
+    <div class="mon-gauge-bar">
+      <div class="mon-gauge-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div>
+      <span class="mon-gauge-text">${pct.toFixed(1)}%</span>
+    </div>
+    ${detailText ? `<span class="mon-gauge-detail">${esc(detailText)}</span>` : ''}
+  </div>`;
+}
+
+function _itemRowHtml(name, category, statusText) {
+  const catCls = category === 'critical' ? 'item-crit' : category === 'warn' ? 'item-warn' : 'item-ok';
+  return `<div class="mon-item-row">
+    <span class="mon-item-dot ${catCls}"></span>
+    <span class="mon-item-name">${esc(name)}</span>
+    <span class="mon-item-status">${esc(statusText)}</span>
+  </div>`;
+}
+
+function _renderResourceGaugesHtml(details, config) {
+  if (!details) return '';
+  const cpuWarn = config?.cpu_warn || 80, cpuCrit = config?.cpu_crit || 95;
+  const memWarn = config?.memory_warn || 80, memCrit = config?.memory_crit || 95;
+  const diskWarn = config?.disk_warn || 85, diskCrit = config?.disk_crit || 95;
+  let html = '<div class="mon-gauge-grid">';
+  if (details.cpu != null) {
+    html += _gaugeItemHtml('CPU', details.cpu, null, _gaugeClass(details.cpu, cpuWarn, cpuCrit));
+  }
+  if (details.memory != null) {
+    const memDetail = details.memory_total_mb ? `${details.memory_used_mb || 0} / ${details.memory_total_mb} MB` : null;
+    html += _gaugeItemHtml('RAM', details.memory, memDetail, _gaugeClass(details.memory, memWarn, memCrit));
+  }
+  for (const disk of details.disks || []) {
+    const diskDetail = disk.total_gb != null ? `${(disk.used_gb || 0).toFixed(1)} / ${disk.total_gb.toFixed(1)} GB` : null;
+    html += _gaugeItemHtml(disk.mount, disk.percent, diskDetail, _gaugeClass(disk.percent, diskWarn, diskCrit));
+  }
+  html += '</div>';
+  return html;
+}
+
+function _renderServiceListHtml(details) {
+  if (!details) return '';
+  if (details.mode === 'auto') {
+    const failed = details.failed || [];
+    const inactive = details.enabled_inactive || [];
+    if (failed.length === 0 && inactive.length === 0) {
+      return '<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle systemd-Units OK</div>';
+    }
+    let html = '<div class="mon-item-list">';
+    if (failed.length > 0) {
+      html += '<div class="mon-section-title">Failed</div>';
+      for (const svc of failed) html += _itemRowHtml(svc, 'critical', 'failed');
+    }
+    if (inactive.length > 0) {
+      html += '<div class="mon-section-title">Inaktiv (Autostart)</div>';
+      for (const svc of inactive) html += _itemRowHtml(svc, 'warn', 'inactive');
+    }
+    html += '</div>';
+    return html;
+  }
+  // list mode
+  const watched = details.watched || [];
+  if (watched.length === 0) return '';
+  const allOk = watched.every(s => s.running);
+  if (allOk) return `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle ${watched.length} Services aktiv</div>`;
+  let html = '<div class="mon-item-list">';
+  for (const svc of watched) {
+    html += _itemRowHtml(svc.name, svc.running ? 'ok' : 'critical', svc.running ? 'running' : 'down');
+  }
+  html += '</div>';
+  return html;
+}
+
+function _renderContainerListHtml(details) {
+  if (!details?.containers?.length) return '';
+  const allOk = details.containers.every(c => c.category === 'ok');
+  if (allOk) return `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle ${details.containers.length} Container laufen</div>`;
+  const sorted = [...details.containers].sort((a, b) => {
+    const order = { critical: 0, warning: 1, ok: 2 };
+    return (order[a.category] ?? 2) - (order[b.category] ?? 2);
+  });
+  let html = '<div class="mon-item-list">';
+  for (const c of sorted) {
+    const catMap = { critical: 'critical', warning: 'warn', ok: 'ok' };
+    const imgBadge = c.image ? `<span class="mon-item-badge">${esc(c.image.split(':')[0].split('/').pop())}</span>` : '';
+    html += `<div class="mon-item-row">
+      <span class="mon-item-dot ${catMap[c.category] === 'critical' ? 'item-crit' : catMap[c.category] === 'warn' ? 'item-warn' : 'item-ok'}"></span>
+      <span class="mon-item-name">${esc(c.name)}</span>
+      ${imgBadge}
+      <span class="mon-item-status">${esc(c.state)}</span>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function _renderBackupListHtml(details) {
+  if (!details?.vms?.length) return '';
+  const allOk = details.vms.every(v => v.backupStatus === 'ok');
+  if (allOk) return `<div class="mon-all-ok"><span class="mon-item-dot item-ok"></span> Alle ${details.vms.length} VMs/CTs haben aktuelle Backups</div>`;
+  const sorted = [...details.vms].sort((a, b) => {
+    const order = { missing: 0, outdated: 1, ok: 2 };
+    return (order[a.backupStatus] ?? 2) - (order[b.backupStatus] ?? 2);
+  });
+  let html = '<div class="mon-item-list">';
+  for (const vm of sorted) {
+    const catMap = { ok: 'ok', outdated: 'warn', missing: 'critical' };
+    const cat = catMap[vm.backupStatus] || 'ok';
+    const statusText = vm.backupStatus === 'ok' ? 'OK' : vm.backupStatus === 'missing' ? 'Kein Backup' : `Veraltet (${vm.ageHours}h)`;
+    html += `<div class="mon-item-row">
+      <span class="mon-item-dot ${cat === 'critical' ? 'item-crit' : cat === 'warn' ? 'item-warn' : 'item-ok'}"></span>
+      <span class="mon-item-badge">${esc((vm.type || 'vm').toUpperCase())}</span>
+      <span class="mon-item-name">${esc(vm.name)} (${vm.vmid})</span>
+      <span class="mon-item-status">${esc(statusText)}</span>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function _renderZfsGaugesHtml(details) {
+  if (!details?.pools?.length) return '';
+  let html = '<div class="mon-gauge-grid">';
+  for (const pool of details.pools) {
+    const healthCls = pool.health === 'ONLINE' ? 'health-online' : pool.health === 'DEGRADED' ? 'health-degraded' : 'health-faulted';
+    html += `<div class="mon-gauge-item">
+      <span class="mon-gauge-label">${esc(pool.name)}</span>
+      <div class="mon-gauge-bar">
+        <div class="mon-gauge-fill ${_gaugeClass(pool.capacityPercent, 80, 90)}" style="width:${Math.min(pool.capacityPercent, 100)}%"></div>
+        <span class="mon-gauge-text">${pool.capacityPercent}%</span>
+      </div>
+      <span class="mon-health-badge ${healthCls}">${esc(pool.health)}</span>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function _renderAgentPingHtml(check) {
+  const msg = check.state?.message || '';
+  const match = msg.match(/(\d+)/);
+  const seconds = match ? parseInt(match[1], 10) : null;
+  if (seconds == null) return '';
+  const display = seconds < 120 ? `${seconds}s` : `${Math.round(seconds / 60)}m`;
+  return `<div class="mon-last-seen"><span class="mon-last-seen-value">${display}</span><span class="mon-last-seen-unit">seit letztem Report</span></div>`;
 }
 
 function _switchDetailPeriod(checkId, period, btn) {

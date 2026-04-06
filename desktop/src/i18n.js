@@ -163,6 +163,8 @@ export const translations = {
     "monitoring.chart.loading": "Lade Metriken...",
     "monitoring.chart.error": "Fehler beim Laden der Metriken.",
     "monitoring.chart.noData": "Keine Daten vorhanden.",
+    "monitoring.detail.allUnitsOk": "Alle systemd-Units OK",
+    "monitoring.detail.lastSeen": "seit letztem Report",
     "monitoring.error.session": "Sitzung abgelaufen. Bitte neu anmelden.",
     "monitoring.error.action": "Aktion fehlgeschlagen."
   },
@@ -330,6 +332,8 @@ export const translations = {
     "monitoring.chart.loading": "Loading metrics...",
     "monitoring.chart.error": "Failed to load metrics.",
     "monitoring.chart.noData": "No data available.",
+    "monitoring.detail.allUnitsOk": "All systemd units OK",
+    "monitoring.detail.lastSeen": "since last report",
     "monitoring.error.session": "Session expired. Please sign in again.",
     "monitoring.error.action": "Action failed."
   }

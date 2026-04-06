@@ -90,6 +90,9 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
         else:
             continue
 
+        # Strukturierte Details extrahieren
+        details = metrics.pop("_details", None) if metrics else None
+
         if metrics:
             victoria.write_check_result(
                 check_id=check.id,
@@ -115,10 +118,13 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
         else:
             effective_status = result_status
 
+        details_json = json.dumps(details) if details else None
+
         if not state:
             state = MonitorState(
                 check_id=check.id, status=effective_status, since=now,
                 last_check=now, fail_count=new_fail_count, message=message,
+                details=details_json,
             )
             db.add(state)
         else:
@@ -128,6 +134,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
             state.fail_count = new_fail_count
             state.last_check = now
             state.message = message
+            state.details = details_json
 
         # Alerting bei Status-Wechsel
         if old_status != effective_status:
