@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
+from sqlalchemy import text
 
 from app.core.database import engine, SessionLocal, Base
 from app.core.config import ADMIN_PASSWORD, CONNECTIONS_FILE
@@ -35,34 +36,27 @@ from app.modules.ansible.router import router as ansible_router
 
 logger = logging.getLogger(__name__)
 
-Base.metadata.create_all(bind=engine)
+
+def _ensure_admin(db):
+    if db.query(User).count() == 0:
+        admin = User(
+            username="admin",
+            hashed_password=hash_password(ADMIN_PASSWORD),
+            is_admin=True,
+        )
+        db.add(admin)
+        db.commit()
 
 
-def _ensure_admin():
-    db = SessionLocal()
-    try:
-        if db.query(User).count() == 0:
-            admin = User(
-                username="admin",
-                hashed_password=hash_password(ADMIN_PASSWORD),
-                is_admin=True,
-            )
-            db.add(admin)
-            db.commit()
-    finally:
-        db.close()
-
-
-def _migrate_connections_json():
+def _migrate_connections_json(db):
     """Migriert connections.json in die SQLite-Datenbank (einmalig beim ersten Start)."""
     if not CONNECTIONS_FILE.exists():
         return
 
-    db = SessionLocal()
-    try:
-        if db.query(Connection).count() > 0:
-            return  # DB hat bereits Connections, keine Migration nötig
+    if db.query(Connection).count() > 0:
+        return
 
+    try:
         with open(CONNECTIONS_FILE, "r", encoding="utf-8") as f:
             connections = json.load(f)
 
@@ -76,78 +70,53 @@ def _migrate_connections_json():
         db.commit()
         logger.info("Migration: %d Connections aus connections.json importiert", len(connections))
 
-        # JSON-Datei umbenennen als Backup
         backup = CONNECTIONS_FILE.with_suffix(".json.migrated")
         CONNECTIONS_FILE.rename(backup)
         logger.info("Migration: connections.json → connections.json.migrated")
     except Exception:
         db.rollback()
         logger.exception("Migration von connections.json fehlgeschlagen")
-    finally:
-        db.close()
 
 
-def _migrate_add_columns():
+def _migrate_add_columns(db):
     """Fuegt neue Spalten zu bestehenden Tabellen hinzu (idempotent)."""
-    import sqlite3
-    from app.core.config import DATA_DIR
-    db_path = DATA_DIR / "db.sqlite3"
-    if not db_path.exists():
-        return
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
     # tags zu frp_tunnels
-    cursor.execute("PRAGMA table_info(frp_tunnels)")
-    tunnel_cols = {row[1] for row in cursor.fetchall()}
+    rows = db.execute(text("PRAGMA table_info(frp_tunnels)")).fetchall()
+    tunnel_cols = {row[1] for row in rows}
     if tunnel_cols and "tags" not in tunnel_cols:
-        cursor.execute("ALTER TABLE frp_tunnels ADD COLUMN tags TEXT")
+        db.execute(text("ALTER TABLE frp_tunnels ADD COLUMN tags TEXT"))
         logger.info("Migration: tags zu frp_tunnels hinzugefuegt")
-    # TLS-Felder aus frp_server_config entfernen (TLS ist jetzt immer aktiv, Pfade kommen aus pki_base_path)
-    cursor.execute("PRAGMA table_info(frp_server_config)")
-    frp_cols = {row[1] for row in cursor.fetchall()}
+
+    # TLS-Felder aus frp_server_config entfernen
+    rows = db.execute(text("PRAGMA table_info(frp_server_config)")).fetchall()
+    frp_cols = {row[1] for row in rows}
     for col in ("tls_force", "tls_cert_file", "tls_key_file", "tls_ca_file"):
         if col in frp_cols:
-            cursor.execute(f"ALTER TABLE frp_server_config DROP COLUMN {col}")
+            db.execute(text(f"ALTER TABLE frp_server_config DROP COLUMN {col}"))
             logger.info("Migration: %s aus frp_server_config entfernt", col)
-    conn.commit()
-    conn.close()
+    db.commit()
 
 
-def _migrate_visitors_to_users():
+def _migrate_visitors_to_users(db):
     """Migriert Visitor-Server-Zuweisungen zu User-Server-Zuweisungen und entfernt alte Tabellen."""
-    import sqlite3
-    from app.core.config import DATA_DIR
-    db_path = DATA_DIR / "db.sqlite3"
-    if not db_path.exists():
-        return
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-
-    # Pruefen ob alte Tabelle existiert
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='frp_visitor_servers'")
-    if not cursor.fetchone():
-        conn.close()
+    rows = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='frp_visitor_servers'")).fetchall()
+    if not rows:
         return
 
-    # Daten migrieren: Visitor-Name → User-Username matchen
-    cursor.execute("""
+    result = db.execute(text("""
         INSERT OR IGNORE INTO user_servers (user_id, server_id)
         SELECT u.id, vs.server_id
         FROM frp_visitor_servers vs
         JOIN frp_visitors v ON v.id = vs.visitor_id
         JOIN users u ON u.username = REPLACE(v.name, 'tech-', '')
-    """)
-    migrated = cursor.rowcount
-    if migrated > 0:
-        logger.info("Migration: %d Visitor-Server-Zuweisungen zu Users migriert", migrated)
+    """))
+    if result.rowcount > 0:
+        logger.info("Migration: %d Visitor-Server-Zuweisungen zu Users migriert", result.rowcount)
 
-    # Alte Tabellen entfernen
-    cursor.execute("DROP TABLE IF EXISTS frp_visitor_servers")
-    cursor.execute("DROP TABLE IF EXISTS frp_visitors")
+    db.execute(text("DROP TABLE IF EXISTS frp_visitor_servers"))
+    db.execute(text("DROP TABLE IF EXISTS frp_visitors"))
     logger.info("Migration: frp_visitors und frp_visitor_servers entfernt")
-
-    conn.commit()
-    conn.close()
+    db.commit()
 
 
 def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
@@ -161,7 +130,6 @@ def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
     try:
         cert = cx509.load_pem_x509_certificate(cert_path.read_bytes())
         san = cert.extensions.get_extension_for_class(cx509.SubjectAlternativeName)
-        # Pruefen ob die Adresse korrekt als IP oder DNS im SAN steht
         try:
             addr = ipaddress.ip_address(server_addr)
             return addr not in san.value.get_values_for_type(cx509.IPAddress)
@@ -171,19 +139,18 @@ def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
         return True
 
 
-def _ensure_pki():
+def _ensure_pki(db):
     """Generiert CA + Server-Cert automatisch wenn eine FRP-Config existiert aber PKI fehlt."""
     from app.modules.frp import pki as pki_manager
     from app.modules.frp.docker_manager import write_frps_config
 
-    db = SessionLocal()
     try:
         config = db.query(FrpServerConfig).first()
         if not config:
             return
 
-        status = pki_manager.get_pki_status()
-        if not status["caExists"]:
+        pki_status = pki_manager.get_pki_status()
+        if not pki_status["caExists"]:
             pki_manager.generate_ca("Simple Remote Manager CA")
             logger.info("Auto-PKI: CA generiert")
 
@@ -195,21 +162,29 @@ def _ensure_pki():
         logger.info("Auto-PKI: frps.toml neu geschrieben")
     except Exception:
         logger.exception("Auto-PKI fehlgeschlagen")
+
+
+def _run_startup_tasks():
+    """Fuehrt alle Migrationen und Startup-Tasks in einer Session aus."""
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        _migrate_add_columns(db)
+        _ensure_admin(db)
+        _migrate_connections_json(db)
+        _migrate_visitors_to_users(db)
+        _ensure_pki(db)
     finally:
         db.close()
-
-
-_migrate_add_columns()
-_ensure_admin()
-_migrate_connections_json()
-_migrate_visitors_to_users()
-_ensure_pki()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.modules.hooks.scheduler import scheduler, load_all_scheduled_hooks
     from app.core.events import fire_event
+
+    _run_startup_tasks()
 
     load_all_scheduled_hooks()
     scheduler.start()
