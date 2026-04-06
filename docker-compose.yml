@@ -8,6 +8,7 @@ services:
       - ./certs:/app/certs
       - frp-config:/app/frp-config
     environment:
+      - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
@@ -46,6 +47,7 @@ services:
     volumes:
       - monitoring-data:/app/data
     environment:
+      - TZ=${TZ:-Europe/Berlin}
       - VICTORIA_METRICS_URL=http://victoria:8428
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       - MONITOR_AGENT_API_KEYS=${MONITOR_AGENT_API_KEYS:-}
@@ -55,6 +57,8 @@ services:
 
   victoria:
     image: victoriametrics/victoria-metrics:latest
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
     volumes:
       - victoria-data:/victoria-metrics-data
     command:
