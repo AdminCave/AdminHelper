@@ -242,17 +242,24 @@ def get_check_metrics(
 
     all_results = []
 
+    # Agent-basierte Checks: Roh-Metriken nach server_id abfragen
+    # (werden vom Agent-Router ohne check_id geschrieben)
+    agent_types = {"agent_ping", "agent_resources", "service_process",
+                   "docker_health", "proxmox_backup", "zfs_health"}
+    use_server_id = check.check_type in agent_types and check.server_id
+    filter_label = f'server_id="{check.server_id}"' if use_server_id else f'check_id="{check_id}"'
+
     # Typspezifische Metriken abfragen
     metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
     for metric in metric_names:
-        query = f'{metric}{{check_id="{check_id}"}}'
+        query = f'{metric}{{{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
         all_results.extend(result.get("data", {}).get("result", []))
 
     # Dynamische Metriken (zfs pools, disk mounts)
     pattern = _DYNAMIC_METRIC_PATTERNS.get(check.check_type)
     if pattern:
-        query = f'{{__name__=~"{pattern}",check_id="{check_id}"}}'
+        query = f'{{__name__=~"{pattern}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
         all_results.extend(result.get("data", {}).get("result", []))
 

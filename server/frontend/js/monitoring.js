@@ -576,12 +576,16 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
     const allSeries = data.data || [];
-    console.debug('[monitoring] gauge chart: allSeries names =', allSeries.map(s => s.metric?.__name__), 'filter =', metricFilter, 'diskMount =', diskMount);
-    // Disk-Metriken haben den Mount im Namen (monitor_agent_disk_percent_/)
+    console.debug('[monitoring] gauge chart: allSeries =', allSeries.map(s => ({ name: s.metric?.__name__, mount: s.metric?.mount })), 'filter =', metricFilter, 'diskMount =', diskMount);
+    // Filter auf die angeklickte Metrik
     const filtered = allSeries.filter(s => {
       const name = s.metric?.__name__ || '';
       if (metricFilter === 'monitor_agent_disk_percent') {
-        return name.startsWith('monitor_agent_disk_percent') && name.includes(diskMount || '/');
+        // Roh-Daten: monitor_agent_disk_percent mit mount-Tag
+        // Check-Daten: monitor_agent_disk_percent_/ mit mount im Namen
+        if (!name.startsWith('monitor_agent_disk_percent')) return false;
+        const mount = s.metric?.mount || '';
+        return mount ? mount === diskMount : name.includes(diskMount || '/');
       }
       return name === metricFilter;
     });
