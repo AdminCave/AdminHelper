@@ -70,3 +70,7 @@ TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in 
 # Verbindung von einer dieser IPs kommt. Empfohlen statt TRUST_PROXY_HEADERS.
 # Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
 TRUSTED_PROXIES_RAW = os.environ.get("TRUSTED_PROXIES", "").strip()
+
+# Monitoring-Service
+MONITOR_SERVICE_URL = os.environ.get("MONITOR_SERVICE_URL", "http://monitoring:8080")
+MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")

@@ -110,8 +110,9 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
 class ApiKeyOrUser:
     """Dependency: akzeptiert JWT-Bearer ODER API-Key. Gibt (user_or_none, apikey_or_none) zurück."""
 
-    def __init__(self, require_write: bool = False):
+    def __init__(self, require_write: bool = False, require_admin: bool = False):
         self.require_write = require_write
+        self.require_admin = require_admin
 
     def __call__(
         self,
@@ -130,6 +131,8 @@ class ApiKeyOrUser:
         if credentials:
             user = _get_user_from_token(credentials.credentials, db)
             if user:
+                if self.require_admin and not user.is_admin:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
                 return user, None
 
         raise HTTPException(

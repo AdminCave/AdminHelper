@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import uuid
 
 import httpx
@@ -9,14 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import get_current_admin
+from app.core.config import MONITOR_SERVICE_URL, MONITOR_API_KEY
 from app.core.events import fire_event
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
 logger = logging.getLogger("srm.servers")
 
-MONITOR_URL = os.environ.get("MONITOR_SERVICE_URL", "http://monitoring:8080")
-MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
@@ -82,7 +80,7 @@ def delete_server(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     # Monitoring-Cleanup: Alle Checks/Alerts/Assignments dieses Servers loeschen
     try:
         httpx.delete(
-            f"{MONITOR_URL}/servers/{server_id}/cleanup",
+            f"{MONITOR_SERVICE_URL}/servers/{server_id}/cleanup",
             headers={"X-Internal-Key": MONITOR_API_KEY},
             timeout=5,
         )

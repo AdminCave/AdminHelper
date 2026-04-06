@@ -7,17 +7,13 @@ intern im Docker-Netzwerk an den Monitoring-Container weitergeleitet.
 
 from __future__ import annotations
 
-import os
-
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.core.auth import get_current_admin
+from app.core.config import MONITOR_SERVICE_URL, MONITOR_API_KEY
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
-
-MONITOR_SERVICE_URL = os.environ.get("MONITOR_SERVICE_URL", "http://monitoring:8080")
-MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")
 
 
 @router.post("/agent/{server_id}/report")
