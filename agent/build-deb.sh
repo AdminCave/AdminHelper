@@ -2,7 +2,7 @@
 # Build .deb package for srm-frpc-client
 set -euo pipefail
 
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.7.0}"
 PKG_NAME="srm-frpc-client"
 BUILD_DIR="build-deb/${PKG_NAME}_${VERSION}_amd64"
 
