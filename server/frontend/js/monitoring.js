@@ -575,7 +575,7 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
   const check = state.monitorChecks.find(c => c.id === checkId);
   if (!check) return;
 
-  chartEl.innerHTML = '<span style="color:var(--text-soft)">${t('monitor.loadingMetrics')}</span>';
+  chartEl.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.loadingMetrics')}</span>`;
 
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
@@ -594,7 +594,7 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
       return name === metricFilter || name === metricFilter + '_value';
     });
     if (filtered.length === 0) {
-      chartEl.innerHTML = '<span style="color:var(--text-soft)">${t('monitor.noMetrics')}</span>';
+      chartEl.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.noMetrics')}</span>`;
       return;
     }
     _renderDetailChart(chartEl, { data: filtered }, check);
@@ -617,7 +617,7 @@ async function _loadDetailMetrics(checkId, period, check) {
   const currentEl = document.getElementById(`checkDetailCurrent_${checkId}`);
   if (!chartEl) return;
 
-  chartEl.innerHTML = '<span style="color:var(--text-soft)">${t('monitor.loadingMetrics')}</span>';
+  chartEl.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.loadingMetrics')}</span>`;
 
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
@@ -653,7 +653,7 @@ function _renderDetailChart(container, data, check) {
 
   const series = data.data || [];
   if (series.length === 0) {
-    container.innerHTML = '<span style="color:var(--text-soft)">${t('monitor.noMetrics')}</span>';
+    container.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.noMetrics')}</span>`;
     return;
   }
 
@@ -696,7 +696,7 @@ function _renderDetailChart(container, data, check) {
   try {
     _detailChart = new uPlot(opts, uData, container);
   } catch (e) {
-    container.innerHTML = '<span style="color:var(--text-soft)">${t('monitor.chartError')}</span>';
+    container.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.chartError')}</span>`;
   }
 }
 
