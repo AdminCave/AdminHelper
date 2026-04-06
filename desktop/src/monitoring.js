@@ -251,7 +251,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
   }
 
   // ── Detail Panel (Metrics) ─────────────────────────────────────────
-  const NO_CHART_TYPES = ["service_process", "docker_health", "proxmox_backup"];
+  const NO_CHART_TYPES = ["service_process", "docker_health", "proxmox_backup", "agent_resources"];
 
   function toggleDetailPanel(check, rowEl) {
     const existingPanel = rowEl.parentElement.querySelector(`.mon-detail-panel[data-check-id="${check.id}"]`);
@@ -340,7 +340,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
   function renderTypeContent(check, container) {
     const details = check.state?.details;
     switch (check.checkType) {
-      case "agent_resources": return renderResourceGauges(container, details, check.config);
+      case "agent_resources": return renderResourceGauges(container, details, check.config, check);
       case "service_process": return renderServiceList(container, details);
       case "docker_health": return renderContainerList(container, details);
       case "proxmox_backup": return renderBackupList(container, details);
@@ -356,9 +356,10 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     return "gauge-ok";
   }
 
-  function buildGaugeItem(label, pct, detailText, cls) {
+  function buildGaugeItem(label, pct, detailText, cls, metricName) {
     const item = document.createElement("div");
-    item.className = "mon-gauge-item";
+    item.className = "mon-gauge-item" + (metricName ? " mon-gauge-clickable" : "");
+    if (metricName) item.dataset.metric = metricName;
     item.innerHTML = `
       <span class="mon-gauge-label">${label}</span>
       <div class="mon-gauge-bar">
@@ -370,7 +371,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     return item;
   }
 
-  function renderResourceGauges(container, details, config) {
+  function renderResourceGauges(container, details, config, check) {
     if (!details) return;
     const grid = document.createElement("div");
     grid.className = "mon-gauge-grid";
@@ -382,21 +383,102 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     const diskCrit = config?.disk_crit || 95;
 
     if (details.cpu != null) {
-      grid.appendChild(buildGaugeItem("CPU", details.cpu, null, gaugeClass(details.cpu, cpuWarn, cpuCrit)));
+      grid.appendChild(buildGaugeItem("CPU", details.cpu, null, gaugeClass(details.cpu, cpuWarn, cpuCrit), "monitor_agent_cpu_percent"));
     }
     if (details.memory != null) {
       const memDetail = details.memory_total_mb
         ? `${details.memory_used_mb || 0} / ${details.memory_total_mb} MB`
         : null;
-      grid.appendChild(buildGaugeItem("RAM", details.memory, memDetail, gaugeClass(details.memory, memWarn, memCrit)));
+      grid.appendChild(buildGaugeItem("RAM", details.memory, memDetail, gaugeClass(details.memory, memWarn, memCrit), "monitor_agent_memory_percent"));
     }
     for (const disk of details.disks || []) {
       const diskDetail = disk.total_gb != null
         ? `${(disk.used_gb || 0).toFixed(1)} / ${disk.total_gb.toFixed(1)} GB`
         : null;
-      grid.appendChild(buildGaugeItem(disk.mount, disk.percent, diskDetail, gaugeClass(disk.percent, diskWarn, diskCrit)));
+      grid.appendChild(buildGaugeItem(disk.mount, disk.percent, diskDetail, gaugeClass(disk.percent, diskWarn, diskCrit), "monitor_agent_disk_percent"));
     }
     container.appendChild(grid);
+
+    // Chart-Bereich fuer angeklickte Gauge
+    const chartArea = document.createElement("div");
+    chartArea.className = "mon-gauge-chart-area hidden";
+    container.appendChild(chartArea);
+
+    let activeMetric = null;
+    let activePeriod = "1h";
+
+    grid.addEventListener("click", (e) => {
+      const gaugeItem = e.target.closest(".mon-gauge-clickable");
+      if (!gaugeItem) return;
+      const metric = gaugeItem.dataset.metric;
+      const diskMount = gaugeItem.querySelector(".mon-gauge-label")?.textContent;
+
+      // Toggle: gleicher Gauge nochmal -> schliessen
+      const metricKey = metric + (diskMount || "");
+      if (activeMetric === metricKey) {
+        chartArea.classList.add("hidden");
+        chartArea.innerHTML = "";
+        grid.querySelectorAll(".mon-gauge-item").forEach((g) => g.classList.remove("mon-gauge-active"));
+        activeMetric = null;
+        destroyChart();
+        return;
+      }
+
+      activeMetric = metricKey;
+      activePeriod = "1h";
+      grid.querySelectorAll(".mon-gauge-item").forEach((g) => g.classList.remove("mon-gauge-active"));
+      gaugeItem.classList.add("mon-gauge-active");
+
+      chartArea.classList.remove("hidden");
+      chartArea.innerHTML = "";
+
+      const periodBar = document.createElement("div");
+      periodBar.className = "mon-period-selector";
+      for (const p of ["1h", "6h", "24h", "7d"]) {
+        const chip = document.createElement("button");
+        chip.className = `chip ${p === activePeriod ? "active" : ""}`;
+        chip.textContent = p;
+        chip.addEventListener("click", () => {
+          activePeriod = p;
+          periodBar.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c.textContent === p));
+          loadGaugeChart(check, p, chartContainer, metric, diskMount);
+        });
+        periodBar.appendChild(chip);
+      }
+
+      const chartContainer = document.createElement("div");
+      chartContainer.className = "mon-chart-container";
+
+      chartArea.append(periodBar, chartContainer);
+      loadGaugeChart(check, activePeriod, chartContainer, metric, diskMount);
+    });
+  }
+
+  async function loadGaugeChart(check, period, container, metricFilter, diskMount) {
+    if (!ensureApi()) return;
+    container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.loading")}</div>`;
+    try {
+      const metricsData = await monitoringApi.fetchMetrics(check.id, period);
+      const allSeries = metricsData?.data || [];
+      // Filter auf die angeklickte Metrik
+      const filtered = allSeries.filter((s) => {
+        const name = s.metric?.__name__ || "";
+        if (name !== metricFilter) return false;
+        // Bei Disk: mount muss passen
+        if (metricFilter === "monitor_agent_disk_percent" && diskMount) {
+          const mount = s.metric?.mount || s.metric?.mountpoint || "/";
+          return mount === diskMount;
+        }
+        return true;
+      });
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.noData")}</div>`;
+        return;
+      }
+      renderChart(container, { data: filtered }, check.checkType);
+    } catch (err) {
+      container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.error")}</div>`;
+    }
   }
 
   function renderServiceList(container, details) {

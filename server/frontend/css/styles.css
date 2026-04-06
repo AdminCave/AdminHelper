@@ -1880,6 +1880,12 @@ body {
   text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
 .mon-gauge-detail { font-size: 11px; color: var(--text-soft); min-width: 90px; white-space: nowrap; }
+.mon-gauge-clickable { cursor: pointer; border-radius: 6px; padding: 4px 6px; margin: -4px -6px; transition: background 0.15s; }
+.mon-gauge-clickable:hover { background: rgba(255,255,255,0.06); }
+.mon-gauge-active { background: rgba(255,255,255,0.1); }
+.mon-gauge-active:hover { background: rgba(255,255,255,0.1); }
+.mon-gauge-chart-area { margin-top: 16px; }
+.mon-gauge-chart-area.hidden { display: none; }
 
 .mon-item-list { display: flex; flex-direction: column; gap: 3px; }
 .mon-item-row {

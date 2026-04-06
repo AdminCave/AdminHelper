@@ -297,12 +297,15 @@ function toggleCheckDetail(checkId, trEl) {
   detailTr.appendChild(td);
   trEl.after(detailTr);
 
+  if (check.checkType === 'agent_resources') {
+    _initGaugeClickHandlers(check);
+  }
   if (!_NO_CHART_TYPES.includes(check.checkType)) {
     _loadDetailMetrics(checkId, '1h', check);
   }
 }
 
-const _NO_CHART_TYPES = ['service_process', 'docker_health', 'proxmox_backup'];
+const _NO_CHART_TYPES = ['service_process', 'docker_health', 'proxmox_backup', 'agent_resources'];
 
 function _buildDetailPanel(check) {
   const configKv = _formatCheckConfigWeb(check);
@@ -341,7 +344,7 @@ function _buildDetailPanel(check) {
 function _renderTypeContentHtml(check) {
   const details = check.state?.details;
   switch (check.checkType) {
-    case 'agent_resources': return _renderResourceGaugesHtml(details, check.config);
+    case 'agent_resources': return _renderResourceGaugesHtml(details, check.config, check.id);
     case 'service_process': return _renderServiceListHtml(details);
     case 'docker_health': return _renderContainerListHtml(details);
     case 'proxmox_backup': return _renderBackupListHtml(details);
@@ -357,8 +360,10 @@ function _gaugeClass(pct, warn, crit) {
   return 'gauge-ok';
 }
 
-function _gaugeItemHtml(label, pct, detailText, cls) {
-  return `<div class="mon-gauge-item">
+function _gaugeItemHtml(label, pct, detailText, cls, metricName) {
+  const clickable = metricName ? ' mon-gauge-clickable' : '';
+  const dataAttr = metricName ? ` data-metric="${esc(metricName)}"` : '';
+  return `<div class="mon-gauge-item${clickable}"${dataAttr}>
     <span class="mon-gauge-label">${esc(label)}</span>
     <div class="mon-gauge-bar">
       <div class="mon-gauge-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div>
@@ -377,24 +382,25 @@ function _itemRowHtml(name, category, statusText) {
   </div>`;
 }
 
-function _renderResourceGaugesHtml(details, config) {
+function _renderResourceGaugesHtml(details, config, checkId) {
   if (!details) return '';
   const cpuWarn = config?.cpu_warn || 80, cpuCrit = config?.cpu_crit || 95;
   const memWarn = config?.memory_warn || 80, memCrit = config?.memory_crit || 95;
   const diskWarn = config?.disk_warn || 85, diskCrit = config?.disk_crit || 95;
-  let html = '<div class="mon-gauge-grid">';
+  let html = `<div class="mon-gauge-grid" id="gaugeGrid_${checkId}">`;
   if (details.cpu != null) {
-    html += _gaugeItemHtml('CPU', details.cpu, null, _gaugeClass(details.cpu, cpuWarn, cpuCrit));
+    html += _gaugeItemHtml('CPU', details.cpu, null, _gaugeClass(details.cpu, cpuWarn, cpuCrit), 'monitor_agent_cpu_percent');
   }
   if (details.memory != null) {
     const memDetail = details.memory_total_mb ? `${details.memory_used_mb || 0} / ${details.memory_total_mb} MB` : null;
-    html += _gaugeItemHtml('RAM', details.memory, memDetail, _gaugeClass(details.memory, memWarn, memCrit));
+    html += _gaugeItemHtml('RAM', details.memory, memDetail, _gaugeClass(details.memory, memWarn, memCrit), 'monitor_agent_memory_percent');
   }
   for (const disk of details.disks || []) {
     const diskDetail = disk.total_gb != null ? `${(disk.used_gb || 0).toFixed(1)} / ${disk.total_gb.toFixed(1)} GB` : null;
-    html += _gaugeItemHtml(disk.mount, disk.percent, diskDetail, _gaugeClass(disk.percent, diskWarn, diskCrit));
+    html += _gaugeItemHtml(disk.mount, disk.percent, diskDetail, _gaugeClass(disk.percent, diskWarn, diskCrit), 'monitor_agent_disk_percent');
   }
   html += '</div>';
+  html += `<div class="mon-gauge-chart-area hidden" id="gaugeChartArea_${checkId}"></div>`;
   return html;
 }
 
@@ -503,6 +509,85 @@ function _renderAgentPingHtml(check) {
   if (seconds == null) return '';
   const display = seconds < 120 ? `${seconds}s` : `${Math.round(seconds / 60)}m`;
   return `<div class="mon-last-seen"><span class="mon-last-seen-value">${display}</span><span class="mon-last-seen-unit">seit letztem Report</span></div>`;
+}
+
+let _gaugeActiveMetric = null;
+
+function _initGaugeClickHandlers(check) {
+  const grid = document.getElementById(`gaugeGrid_${check.id}`);
+  const chartArea = document.getElementById(`gaugeChartArea_${check.id}`);
+  if (!grid || !chartArea) return;
+
+  _gaugeActiveMetric = null;
+
+  grid.addEventListener('click', (e) => {
+    const gaugeItem = e.target.closest('.mon-gauge-clickable');
+    if (!gaugeItem) return;
+    const metric = gaugeItem.dataset.metric;
+    const diskMount = gaugeItem.querySelector('.mon-gauge-label')?.textContent;
+    const metricKey = metric + (diskMount || '');
+
+    if (_gaugeActiveMetric === metricKey) {
+      chartArea.classList.add('hidden');
+      chartArea.innerHTML = '';
+      grid.querySelectorAll('.mon-gauge-item').forEach(g => g.classList.remove('mon-gauge-active'));
+      _gaugeActiveMetric = null;
+      if (_detailChart) { _detailChart.destroy(); _detailChart = null; }
+      return;
+    }
+
+    _gaugeActiveMetric = metricKey;
+    grid.querySelectorAll('.mon-gauge-item').forEach(g => g.classList.remove('mon-gauge-active'));
+    gaugeItem.classList.add('mon-gauge-active');
+
+    chartArea.classList.remove('hidden');
+    chartArea.innerHTML = `
+      <div class="check-detail-periods">
+        <button class="btn small active" onclick="_switchGaugePeriod('${check.id}', '1h', this, '${metric}', '${esc(diskMount || '')}')">1h</button>
+        <button class="btn small" onclick="_switchGaugePeriod('${check.id}', '6h', this, '${metric}', '${esc(diskMount || '')}')">6h</button>
+        <button class="btn small" onclick="_switchGaugePeriod('${check.id}', '24h', this, '${metric}', '${esc(diskMount || '')}')">24h</button>
+        <button class="btn small" onclick="_switchGaugePeriod('${check.id}', '7d', this, '${metric}', '${esc(diskMount || '')}')">7d</button>
+      </div>
+      <div class="check-detail-chart" id="gaugeChart_${check.id}"></div>
+    `;
+    _loadGaugeChart(check.id, '1h', metric, diskMount);
+  });
+}
+
+function _switchGaugePeriod(checkId, period, btn, metric, diskMount) {
+  btn.parentElement.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _loadGaugeChart(checkId, period, metric, diskMount || null);
+}
+
+async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
+  const chartEl = document.getElementById(`gaugeChart_${checkId}`);
+  if (!chartEl) return;
+  const check = state.monitorChecks.find(c => c.id === checkId);
+  if (!check) return;
+
+  chartEl.innerHTML = '<span style="color:var(--text-soft)">Lade Metriken...</span>';
+
+  try {
+    const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
+    const allSeries = data.data || [];
+    const filtered = allSeries.filter(s => {
+      const name = s.metric?.__name__ || '';
+      if (name !== metricFilter) return false;
+      if (metricFilter === 'monitor_agent_disk_percent' && diskMount) {
+        const mount = s.metric?.mount || s.metric?.mountpoint || '/';
+        return mount === diskMount;
+      }
+      return true;
+    });
+    if (filtered.length === 0) {
+      chartEl.innerHTML = '<span style="color:var(--text-soft)">Keine Metrik-Daten verfuegbar</span>';
+      return;
+    }
+    _renderDetailChart(chartEl, { data: filtered }, check);
+  } catch (err) {
+    chartEl.innerHTML = `<span style="color:var(--red)">Fehler: ${esc(err.message)}</span>`;
+  }
 }
 
 function _switchDetailPeriod(checkId, period, btn) {
