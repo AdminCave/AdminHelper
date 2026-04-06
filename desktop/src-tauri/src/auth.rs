@@ -27,18 +27,16 @@ struct MeResponse {
     is_admin: bool,
 }
 
-pub fn build_client(server_url: &str) -> Result<reqwest::Client, AppError> {
-    let accept_invalid = server_url.starts_with("https://localhost")
-        || server_url.starts_with("https://127.0.0.1");
+pub fn build_client(_server_url: &str, allow_self_signed: bool) -> Result<reqwest::Client, AppError> {
     reqwest::Client::builder()
-        .danger_accept_invalid_certs(accept_invalid)
+        .danger_accept_invalid_certs(allow_self_signed)
         .build()
         .map_err(AppError::from)
 }
 
-pub async fn login(server_url: &str, username: &str, password: &str) -> Result<AuthSession, AppError> {
+pub async fn login(server_url: &str, username: &str, password: &str, allow_self_signed: bool) -> Result<AuthSession, AppError> {
     let url = format!("{}/api/auth/login", server_url.trim_end_matches('/'));
-    let client = build_client(server_url)?;
+    let client = build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({
         "username": username,
         "password": password,
@@ -61,7 +59,7 @@ pub async fn login(server_url: &str, username: &str, password: &str) -> Result<A
 
     let login_resp: LoginResponse = response.json().await?;
 
-    let me = fetch_me(server_url, &login_resp.access_token).await?;
+    let me = fetch_me(server_url, &login_resp.access_token, allow_self_signed).await?;
 
     let session = AuthSession {
         server_url: server_url.trim_end_matches('/').to_string(),
@@ -76,9 +74,9 @@ pub async fn login(server_url: &str, username: &str, password: &str) -> Result<A
     Ok(session)
 }
 
-async fn fetch_me(server_url: &str, token: &str) -> Result<MeResponse, AppError> {
+async fn fetch_me(server_url: &str, token: &str, allow_self_signed: bool) -> Result<MeResponse, AppError> {
     let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
-    let client = build_client(server_url)?;
+    let client = build_client(server_url, allow_self_signed)?;
     let response = client
         .get(&url)
         .header("Authorization", format!("Bearer {token}"))
@@ -92,14 +90,14 @@ async fn fetch_me(server_url: &str, token: &str) -> Result<MeResponse, AppError>
     Ok(response.json().await?)
 }
 
-pub async fn check_session() -> Result<Option<AuthSession>, AppError> {
+pub async fn check_session(allow_self_signed: bool) -> Result<Option<AuthSession>, AppError> {
     let (server_url, token, refresh_token) = match load_session_from_keyring() {
         Ok(triple) => triple,
         Err(_) => return Ok(None),
     };
 
     // Versuche mit aktuellem Access-Token
-    match fetch_me(&server_url, &token).await {
+    match fetch_me(&server_url, &token, allow_self_signed).await {
         Ok(me) => Ok(Some(AuthSession {
             server_url,
             token,
@@ -109,7 +107,7 @@ pub async fn check_session() -> Result<Option<AuthSession>, AppError> {
         })),
         Err(_) => {
             // Access-Token abgelaufen — Refresh versuchen
-            match try_refresh(&server_url, &refresh_token).await {
+            match try_refresh(&server_url, &refresh_token, allow_self_signed).await {
                 Ok(session) => {
                     save_session_to_keyring(&session)?;
                     Ok(Some(session))
@@ -124,9 +122,9 @@ pub async fn check_session() -> Result<Option<AuthSession>, AppError> {
 }
 
 /// Refresh-Token gegen neue Access- und Refresh-Tokens tauschen.
-async fn try_refresh(server_url: &str, refresh_token: &str) -> Result<AuthSession, AppError> {
+async fn try_refresh(server_url: &str, refresh_token: &str, allow_self_signed: bool) -> Result<AuthSession, AppError> {
     let url = format!("{}/api/auth/refresh", server_url.trim_end_matches('/'));
-    let client = build_client(server_url)?;
+    let client = build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({ "refresh_token": refresh_token });
 
     let response = client.post(&url).json(&body).send().await?;
@@ -135,7 +133,7 @@ async fn try_refresh(server_url: &str, refresh_token: &str) -> Result<AuthSessio
     }
 
     let resp: RefreshResponse = response.json().await?;
-    let me = fetch_me(server_url, &resp.access_token).await?;
+    let me = fetch_me(server_url, &resp.access_token, allow_self_signed).await?;
 
     Ok(AuthSession {
         server_url: server_url.trim_end_matches('/').to_string(),
@@ -151,8 +149,9 @@ pub async fn authenticated_get(
     server_url: &str,
     token: &str,
     path: &str,
+    allow_self_signed: bool,
 ) -> Result<reqwest::Response, AppError> {
-    let client = build_client(server_url)?;
+    let client = build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
     let response = client
@@ -164,7 +163,7 @@ pub async fn authenticated_get(
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         // Refresh-Token aus Keyring laden und Refresh versuchen
         if let Ok((_, _, refresh_token)) = load_session_from_keyring() {
-            if let Ok(new_session) = try_refresh(server_url, &refresh_token).await {
+            if let Ok(new_session) = try_refresh(server_url, &refresh_token, allow_self_signed).await {
                 let _ = save_session_to_keyring(&new_session);
                 let retry = client
                     .get(&url)

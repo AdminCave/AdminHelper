@@ -35,8 +35,9 @@ pub async fn fetch_connections_jwt(
     app: tauri::AppHandle,
     server_url: &str,
     token: &str,
+    allow_self_signed: bool,
 ) -> Result<Vec<Connection>, AppError> {
-    let response = crate::auth::authenticated_get(server_url, token, "/api/connections")
+    let response = crate::auth::authenticated_get(server_url, token, "/api/connections", allow_self_signed)
         .await?
         .error_for_status()?;
     let connections: Vec<Connection> = response.json().await?;

@@ -42,9 +42,10 @@ struct VisitorBundle {
 async fn fetch_visitor_bundle(
     server_url: &str,
     token: &str,
+    allow_self_signed: bool,
 ) -> Result<VisitorBundle, AppError> {
     let path = "/api/frp/generate/visitor-bundle";
-    let response = auth::authenticated_get(server_url, token, path).await?;
+    let response = auth::authenticated_get(server_url, token, path, allow_self_signed).await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(
@@ -177,8 +178,9 @@ pub async fn start_tunnel(
     server_url: &str,
     token: &str,
     username: &str,
+    allow_self_signed: bool,
 ) -> Result<TunnelStatus, AppError> {
-    let bundle = fetch_visitor_bundle(server_url, token).await?;
+    let bundle = fetch_visitor_bundle(server_url, token, allow_self_signed).await?;
     let config_path = write_visitor_bundle(&app, &bundle)?;
     start_frpc(&app, &config_path, &state, username.to_string())?;
     Ok(tunnel_status(&state))

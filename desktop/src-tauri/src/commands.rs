@@ -37,8 +37,9 @@ pub async fn api_proxy(
     method: String,
     path: String,
     body: Option<String>,
+    allow_self_signed: Option<bool>,
 ) -> Result<serde_json::Value, AppError> {
-    let client = auth::build_client(&server_url)?;
+    let client = auth::build_client(&server_url, allow_self_signed.unwrap_or(false))?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
     let mut req = match method.as_str() {
@@ -159,13 +160,19 @@ pub async fn login(
     server_url: String,
     username: String,
     password: String,
+    allow_self_signed: Option<bool>,
 ) -> Result<AuthSession, AppError> {
-    auth::login(&server_url, &username, &password).await
+    auth::login(&server_url, &username, &password, allow_self_signed.unwrap_or(false)).await
 }
 
 #[tauri::command]
-pub async fn check_session() -> Result<Option<AuthSession>, AppError> {
-    auth::check_session().await
+pub async fn check_session(
+    app: tauri::AppHandle,
+) -> Result<Option<AuthSession>, AppError> {
+    let allow_self_signed = storage::load_settings(&app)
+        .map(|s| s.allow_self_signed_certs)
+        .unwrap_or(false);
+    auth::check_session(allow_self_signed).await
 }
 
 #[tauri::command]
@@ -179,7 +186,10 @@ pub async fn fetch_connections_jwt(
     server_url: String,
     token: String,
 ) -> Result<Vec<Connection>, AppError> {
-    sync::fetch_connections_jwt(app, &server_url, &token).await
+    let allow_self_signed = storage::load_settings(&app)
+        .map(|s| s.allow_self_signed_certs)
+        .unwrap_or(false);
+    sync::fetch_connections_jwt(app, &server_url, &token, allow_self_signed).await
 }
 
 #[tauri::command]
@@ -190,8 +200,11 @@ pub async fn start_tunnel(
     token: String,
     username: String,
 ) -> Result<TunnelStatus, AppError> {
+    let allow_self_signed = storage::load_settings(&app)
+        .map(|s| s.allow_self_signed_certs)
+        .unwrap_or(false);
     let frpc_state = state.inner().clone();
-    frpc::start_tunnel(app, frpc_state, &server_url, &token, &username).await
+    frpc::start_tunnel(app, frpc_state, &server_url, &token, &username, allow_self_signed).await
 }
 
 #[tauri::command]
@@ -206,10 +219,14 @@ pub fn tunnel_status(state: State<'_, frpc::FrpcState>) -> TunnelStatus {
 
 #[tauri::command]
 pub async fn fetch_tunnels(
+    app: tauri::AppHandle,
     server_url: String,
     token: String,
 ) -> Result<Vec<tunnel::TunnelMapping>, AppError> {
-    tunnel::fetch_tunnels(&server_url, &token).await
+    let allow_self_signed = storage::load_settings(&app)
+        .map(|s| s.allow_self_signed_certs)
+        .unwrap_or(false);
+    tunnel::fetch_tunnels(&server_url, &token, allow_self_signed).await
 }
 
 #[tauri::command]
