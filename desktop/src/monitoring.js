@@ -462,7 +462,6 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     try {
       const metricsData = await monitoringApi.fetchMetrics(check.id, period);
       const allSeries = metricsData?.data || [];
-      console.debug("[monitoring] gauge chart: _debug =", metricsData?._debug, "allSeries =", allSeries.map(s => ({ name: s.metric?.__name__, mount: s.metric?.mount })), "filter =", metricFilter, "diskMount =", diskMount);
       // Filter auf die angeklickte Metrik
       // VictoriaMetrics haengt '_value' an InfluxDB-Metriken an
       const filtered = allSeries.filter((s) => {
@@ -634,7 +633,6 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.loading")}</div>`;
     try {
       const metricsData = await monitoringApi.fetchMetrics(check.id, period);
-      console.debug("[monitoring] metrics response for", check.id, period, ":", JSON.stringify(metricsData).substring(0, 500));
       renderChart(container, metricsData, check.checkType);
       renderCurrentValues(currentValuesEl, metricsData, check.checkType);
       renderStatusTimeline(timelineEl, metricsData?.statusHistory);

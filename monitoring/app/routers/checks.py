@@ -275,10 +275,4 @@ def get_check_metrics(
         "period": period,
         "data": all_results,
         "statusHistory": status_result.get("data", {}).get("result", []),
-        "_debug": {
-            "filterLabel": filter_label,
-            "queries": [f'{m}{{{filter_label}}}' for m in metric_names]
-                + ([f'{{__name__=~"{pattern}",{filter_label}}}'] if pattern else []),
-            "resultCount": len(all_results),
-        },
     }

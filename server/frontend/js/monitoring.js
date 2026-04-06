@@ -580,7 +580,6 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
     const allSeries = data.data || [];
-    console.debug('[monitoring] gauge chart: allSeries =', allSeries.map(s => ({ name: s.metric?.__name__, mount: s.metric?.mount })), 'filter =', metricFilter, 'diskMount =', diskMount);
     // Filter auf die angeklickte Metrik
     // VictoriaMetrics haengt '_value' an InfluxDB-Metriken an
     const filtered = allSeries.filter(s => {
