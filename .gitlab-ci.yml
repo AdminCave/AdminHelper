@@ -189,7 +189,7 @@ build_frpc_deb:
   image: debian:bookworm-slim
   needs: [download_frpc]
   variables:
-    FRPC_PKG_VERSION: "0.2.0"
+    FRPC_PKG_VERSION: "0.7.0"
   script:
     - apt-get update -qq && apt-get install -y -qq dpkg-dev > /dev/null
     - VERSION=${FRPC_PKG_VERSION} bash agent/build-deb.sh
@@ -209,7 +209,7 @@ build_frpc_rpm:
   image: almalinux:9
   needs: [download_frpc]
   variables:
-    FRPC_PKG_VERSION: "0.2.0"
+    FRPC_PKG_VERSION: "0.7.0"
   script:
     - dnf install -y rpm-build tar gzip > /dev/null
     - VERSION=${FRPC_PKG_VERSION} bash agent/build-rpm.sh
@@ -245,7 +245,7 @@ build_monitor_deb:
   image: debian:bookworm-slim
   needs: []
   variables:
-    MONITOR_PKG_VERSION: "0.3.0"
+    MONITOR_PKG_VERSION: "0.7.0"
   script:
     - apt-get update -qq && apt-get install -y -qq dpkg-dev > /dev/null
     - VERSION=${MONITOR_PKG_VERSION} bash agent/build-monitor-deb.sh
@@ -265,7 +265,7 @@ build_monitor_rpm:
   image: almalinux:9
   needs: []
   variables:
-    MONITOR_PKG_VERSION: "0.3.0"
+    MONITOR_PKG_VERSION: "0.7.0"
   script:
     - dnf install -y rpm-build tar gzip > /dev/null
     - VERSION=${MONITOR_PKG_VERSION} bash agent/build-monitor-rpm.sh
