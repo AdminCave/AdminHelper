@@ -68,12 +68,28 @@ def collect_load() -> dict:
     }
 
 
+_SKIP_FSTYPES = {
+    "", "squashfs", "tmpfs", "devtmpfs", "overlay", "proc", "sysfs",
+    "devpts", "cgroup", "cgroup2", "pstore", "bpf", "debugfs",
+    "tracefs", "securityfs", "configfs", "fusectl", "mqueue",
+    "hugetlbfs", "autofs", "binfmt_misc", "efivarfs", "fuse.lxcfs",
+}
+
+_SKIP_MOUNT_PREFIXES = ("/sys", "/proc", "/dev/", "/run/snapd", "/snap")
+
+
 def collect_disks() -> list[dict]:
-    """Festplatten-Auslastung (alle Partitionen, ungefiltert — Server filtert)."""
+    """Festplatten-Auslastung (nur echte Dateisysteme)."""
     disks = []
-    for part in psutil.disk_partitions(all=True):
+    for part in psutil.disk_partitions(all=False):
+        if part.fstype in _SKIP_FSTYPES:
+            continue
+        if any(part.mountpoint.startswith(p) for p in _SKIP_MOUNT_PREFIXES):
+            continue
         try:
             usage = psutil.disk_usage(part.mountpoint)
+            if usage.total == 0:
+                continue
             disks.append({
                 "mount": part.mountpoint,
                 "fstype": part.fstype,
