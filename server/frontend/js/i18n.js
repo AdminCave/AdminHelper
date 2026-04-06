@@ -259,7 +259,7 @@ const translations = {
     "toast.hook.tokenCopied": "Token kopiert",
     "toast.hook.tokenGenerated": "Neuer Token generiert",
     "confirm.hook.delete": "Hook wirklich löschen?",
-    "confirm.hook.rotateToken": "Token für „{name}" wirklich neu generieren? Der alte Token wird ungültig.",
+    "confirm.hook.rotateToken": "Token fuer \u201E{name}\u201C wirklich neu generieren? Der alte Token wird ungueltig.",
     "hook.result.title": "Ergebnis: {name}",
     "hook.webhookToken.title": "Webhook-Token",
     "hook.webhookToken.hint": "Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt.",
