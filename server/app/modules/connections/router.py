@@ -10,7 +10,7 @@ from app.core.auth import ApiKeyOrUser, get_current_admin
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.modules.connections.models import Connection
-from app.modules.connections.schemas import ImportRequest
+from app.modules.connections.schemas import ConnectionCreate, ConnectionUpdate, ImportRequest
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
@@ -26,12 +26,13 @@ def get_connections(db: Session = Depends(get_db), auth=Depends(read_dep)):
 
 
 @router.post("", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
-def create_connection(connection: dict[str, Any], db: Session = Depends(get_db), auth=Depends(write_dep)):
+def create_connection(connection: ConnectionCreate, db: Session = Depends(get_db), auth=Depends(write_dep)):
     user, api_key = auth
     if user and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
-    connection["id"] = str(uuid.uuid4())
-    conn = Connection.from_dict(connection)
+    data = connection.model_dump()
+    data["id"] = str(uuid.uuid4())
+    conn = Connection.from_dict(data)
     db.add(conn)
     db.commit()
     db.refresh(conn)
@@ -41,14 +42,14 @@ def create_connection(connection: dict[str, Any], db: Session = Depends(get_db),
 
 
 @router.put("/{conn_id}", response_model=dict[str, Any])
-def update_connection(conn_id: str, connection: dict[str, Any], db: Session = Depends(get_db), auth=Depends(write_dep)):
+def update_connection(conn_id: str, connection: ConnectionUpdate, db: Session = Depends(get_db), auth=Depends(write_dep)):
     user, api_key = auth
     if user and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich")
     conn = db.query(Connection).filter(Connection.id == conn_id).first()
     if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden")
-    conn.update_from_dict(connection)
+    conn.update_from_dict(connection.model_dump(exclude_unset=True))
     db.commit()
     db.refresh(conn)
     result = conn.to_dict()
