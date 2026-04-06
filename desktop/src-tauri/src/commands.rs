@@ -32,6 +32,7 @@ pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
 /// Umgeht damit WebView-TLS-Beschränkungen bei Self-Signed Certs.
 #[tauri::command]
 pub async fn api_proxy(
+    app: tauri::AppHandle,
     server_url: String,
     token: String,
     method: String,
@@ -39,7 +40,12 @@ pub async fn api_proxy(
     body: Option<String>,
     allow_self_signed: Option<bool>,
 ) -> Result<serde_json::Value, AppError> {
-    let client = auth::build_client(&server_url, allow_self_signed.unwrap_or(false))?;
+    let self_signed = allow_self_signed.unwrap_or_else(|| {
+        storage::load_settings(&app)
+            .map(|s| s.allow_self_signed_certs)
+            .unwrap_or(false)
+    });
+    let client = auth::build_client(&server_url, self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
     let mut req = match method.as_str() {
@@ -157,12 +163,18 @@ pub fn delete_password(connection: Connection) -> Result<(), AppError> {
 
 #[tauri::command]
 pub async fn login(
+    app: tauri::AppHandle,
     server_url: String,
     username: String,
     password: String,
     allow_self_signed: Option<bool>,
 ) -> Result<AuthSession, AppError> {
-    auth::login(&server_url, &username, &password, allow_self_signed.unwrap_or(false)).await
+    let self_signed = allow_self_signed.unwrap_or_else(|| {
+        storage::load_settings(&app)
+            .map(|s| s.allow_self_signed_certs)
+            .unwrap_or(false)
+    });
+    auth::login(&server_url, &username, &password, self_signed).await
 }
 
 #[tauri::command]
