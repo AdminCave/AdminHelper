@@ -1146,6 +1146,16 @@ body {
   overflow: hidden;
 }
 .monitoring-section.hidden { display: none; }
+.mon-tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 6px;
+}
 .mon-header {
   display: flex;
   align-items: center;
@@ -1270,15 +1280,9 @@ body {
 
 /* ── Server Groups ───────────────────────────────────────────────── */
 .mon-check-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-right: 6px;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 .mon-server-group {
   border: 1px solid var(--border);

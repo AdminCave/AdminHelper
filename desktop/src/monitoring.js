@@ -318,6 +318,7 @@ export function initMonitoring(state, t, monitoringApiFactory) {
 
     panel.append(info, currentValues, periodBar, chartContainer, timelineContainer);
     rowEl.after(panel);
+    requestAnimationFrame(() => panel.scrollIntoView({ behavior: "smooth", block: "nearest" }));
 
     loadAndRenderChart(check, activePeriod, chartContainer, currentValues, timelineContainer);
   }
@@ -327,10 +328,12 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.loading")}</div>`;
     try {
       const metricsData = await monitoringApi.fetchMetrics(check.id, period);
+      console.debug("[monitoring] metrics response for", check.id, period, ":", JSON.stringify(metricsData).substring(0, 500));
       renderChart(container, metricsData, check.checkType);
       renderCurrentValues(currentValuesEl, metricsData, check.checkType);
       renderStatusTimeline(timelineEl, metricsData?.statusHistory);
     } catch (err) {
+      console.error("[monitoring] metrics fetch error:", err);
       container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.error")}</div>`;
     }
   }
@@ -466,7 +469,17 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       }
     };
 
-    activeChart = new window.uPlot(opts, data, container);
+    function createChart() {
+      opts.width = container.offsetWidth || 600;
+      activeChart = new window.uPlot(opts, data, container);
+    }
+
+    // Sicherstellen, dass der Container im Layout ist, bevor uPlot die Breite misst
+    if (container.offsetWidth > 0) {
+      createChart();
+    } else {
+      requestAnimationFrame(createChart);
+    }
 
     resizeObserver = new ResizeObserver(() => {
       if (activeChart && container.offsetWidth > 0) {
