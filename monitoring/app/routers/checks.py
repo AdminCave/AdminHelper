@@ -95,7 +95,7 @@ def create_check(data: CheckCreate, db: Session = Depends(get_db)):
     db.refresh(check)
 
     if check.enabled:
-        add_check(check.id, check.interval)
+        add_check(check.id, check.interval, check.check_type)
 
     return check.to_dict(state=state)
 
@@ -135,7 +135,7 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
     db.refresh(check)
 
     if check.enabled:
-        add_check(check.id, check.interval)
+        add_check(check.id, check.interval, check.check_type)
     else:
         remove_check(check.id)
 
@@ -166,7 +166,7 @@ def toggle_check(check_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     if check.enabled:
-        add_check(check.id, check.interval)
+        add_check(check.id, check.interval, check.check_type)
     else:
         remove_check(check.id)
 

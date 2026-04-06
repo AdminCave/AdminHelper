@@ -32,6 +32,11 @@ def execute_check(check_id: str) -> None:
 
         config = json.loads(check.config) if check.config else {}
 
+        # Push-Only-Checks nicht vom Scheduler ausfuehren
+        from app.scheduler import PUSH_ONLY_TYPES
+        if check.check_type in PUSH_ONLY_TYPES:
+            return
+
         try:
             checker = get_checker(check.check_type)
         except ValueError as exc:

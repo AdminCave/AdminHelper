@@ -16,6 +16,10 @@ logger = logging.getLogger("monitor.scheduler")
 
 scheduler = BackgroundScheduler(timezone="UTC")
 
+# Agent-Push-Checks werden nur vom Agent-Report-Endpoint ausgewertet,
+# nicht vom Scheduler. agent_ping ist Ausnahme: prueft ob Agent stale ist.
+PUSH_ONLY_TYPES = {"agent_resources", "service_process", "docker_health", "proxmox_backup", "zfs_health"}
+
 _INTERVAL_MAP = {
     "1m": {"minutes": 1},
     "5m": {"minutes": 5},
@@ -38,8 +42,15 @@ def _parse_trigger(interval: str):
     raise ValueError(f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)} oder Cron (5 Felder)")
 
 
-def add_check(check_id: str, interval: str) -> None:
-    """Check im Scheduler registrieren oder aktualisieren."""
+def add_check(check_id: str, interval: str, check_type: str | None = None) -> None:
+    """Check im Scheduler registrieren oder aktualisieren.
+
+    Push-Only-Checks (agent_resources, service_process, ...) werden
+    uebersprungen, da sie nur beim Agent-Report ausgewertet werden.
+    """
+    if check_type and check_type in PUSH_ONLY_TYPES:
+        return
+
     from app.check_engine import execute_check
 
     trigger = _parse_trigger(interval)
@@ -80,12 +91,16 @@ def load_all_checks() -> None:
             .all()
         )
         count = 0
+        skipped = 0
         for check in checks:
+            if check.check_type in PUSH_ONLY_TYPES:
+                skipped += 1
+                continue
             try:
-                add_check(check.id, check.interval)
+                add_check(check.id, check.interval, check.check_type)
                 count += 1
             except ValueError as exc:
                 logger.warning("Check %s (%s): %s", check.id, check.name, exc)
-        logger.info("%d Monitoring-Checks geladen", count)
+        logger.info("%d Monitoring-Checks geladen (%d Push-Only uebersprungen)", count, skipped)
     finally:
         db.close()
