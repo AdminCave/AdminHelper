@@ -83,10 +83,15 @@ export function initMonitoring(state, t, monitoringApiFactory) {
   function renderFilterBar(checks) {
     filterBar.innerHTML = "";
 
-    const servers = [...new Set(checks.map((c) => c.serverId).filter(Boolean))].sort();
+    const serverIds = [...new Set(checks.map((c) => c.serverId).filter(Boolean))].sort();
     const types = [...new Set(checks.map((c) => c.checkType))].sort();
 
-    const serverSelect = buildSelect("monFilterServer", t("monitoring.filter.allServers"), servers.map((s) => ({ value: s, label: s })));
+    const serverOptions = serverIds.map((id) => {
+      const conn = (state.connections || []).find((c) => c.serverId === id);
+      const label = conn ? (conn.name || conn.host || id) : id;
+      return { value: id, label };
+    });
+    const serverSelect = buildSelect("monFilterServer", t("monitoring.filter.allServers"), serverOptions);
     serverSelect.value = state.monitorFilters.server || "";
     serverSelect.addEventListener("change", () => { state.monitorFilters.server = serverSelect.value; applyFilters(); });
 

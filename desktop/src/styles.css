@@ -1208,14 +1208,20 @@ body {
   align-items: center;
 }
 .mon-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
   background: rgba(15, 23, 42, 0.78);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 8px 12px;
+  padding: 8px 30px 8px 12px;
   color: var(--text);
   font-size: 13px;
   font-family: var(--font);
   min-width: 130px;
+  cursor: pointer;
 }
 .mon-filter-select option { background: #0f172a; color: var(--text); }
 .mon-filter-search {
