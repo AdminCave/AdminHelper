@@ -462,16 +462,15 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     try {
       const metricsData = await monitoringApi.fetchMetrics(check.id, period);
       const allSeries = metricsData?.data || [];
+      console.debug("[monitoring] gauge chart: allSeries names =", allSeries.map(s => s.metric?.__name__), "filter =", metricFilter, "diskMount =", diskMount);
       // Filter auf die angeklickte Metrik
+      // Disk-Metriken haben den Mount im Namen (monitor_agent_disk_percent_/)
       const filtered = allSeries.filter((s) => {
         const name = s.metric?.__name__ || "";
-        if (name !== metricFilter) return false;
-        // Bei Disk: mount muss passen
-        if (metricFilter === "monitor_agent_disk_percent" && diskMount) {
-          const mount = s.metric?.mount || s.metric?.mountpoint || "/";
-          return mount === diskMount;
+        if (metricFilter === "monitor_agent_disk_percent") {
+          return name.startsWith("monitor_agent_disk_percent") && name.includes(diskMount || "/");
         }
-        return true;
+        return name === metricFilter;
       });
       if (filtered.length === 0) {
         container.innerHTML = `<div class="mon-chart-loading">${t("monitoring.chart.noData")}</div>`;

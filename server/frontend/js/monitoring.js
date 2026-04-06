@@ -576,14 +576,14 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
     const allSeries = data.data || [];
+    console.debug('[monitoring] gauge chart: allSeries names =', allSeries.map(s => s.metric?.__name__), 'filter =', metricFilter, 'diskMount =', diskMount);
+    // Disk-Metriken haben den Mount im Namen (monitor_agent_disk_percent_/)
     const filtered = allSeries.filter(s => {
       const name = s.metric?.__name__ || '';
-      if (name !== metricFilter) return false;
-      if (metricFilter === 'monitor_agent_disk_percent' && diskMount) {
-        const mount = s.metric?.mount || s.metric?.mountpoint || '/';
-        return mount === diskMount;
+      if (metricFilter === 'monitor_agent_disk_percent') {
+        return name.startsWith('monitor_agent_disk_percent') && name.includes(diskMount || '/');
       }
-      return true;
+      return name === metricFilter;
     });
     if (filtered.length === 0) {
       chartEl.innerHTML = '<span style="color:var(--text-soft)">Keine Metrik-Daten verfuegbar</span>';
