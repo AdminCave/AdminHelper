@@ -84,62 +84,69 @@ func collectProxmox() map[string]any {
 		}
 	}
 
+	// Backup-Index einmal fuer alle VMs aufbauen (O(Storages) statt O(VMs × Storages))
+	backupIndex := buildBackupIndex()
+
 	// VMs + LXC Container
+	var vmList []map[string]any
 	vmsOut, err := exec.Command("pvesh", "get", "/cluster/resources", "--type", "vm",
 		"--output-format", "json").Output()
 	if err == nil {
 		var vms []map[string]any
 		if json.Unmarshal(vmsOut, &vms) == nil {
-			var vmList []map[string]any
 			for _, vm := range vms {
 				vmid := int(getFloat(vm, "vmid", 0))
 				if vmid == 0 {
 					continue
 				}
-				vmInfo := map[string]any{
+				var lastBackup any
+				if ts, ok := backupIndex[vmid]; ok {
+					lastBackup = ts
+				}
+				vmList = append(vmList, map[string]any{
 					"vmid":           vmid,
 					"name":           vm["name"],
 					"status":         vm["status"],
 					"type":           vm["type"],
-					"last_backup_ts": findLastBackup(vmid),
-				}
-				vmList = append(vmList, vmInfo)
+					"last_backup_ts": lastBackup,
+				})
 			}
-			result["vms"] = vmList
 		}
 	}
+	result["vms"] = vmList
 
-	if result["node"] == nil && len(result["vms"].([]any)) == 0 {
+	if result["node"] == nil && len(vmList) == 0 {
 		return nil
 	}
 	return result
 }
 
-// TODO(human): Soll hier ein Cache fuer die Storage-Liste eingebaut werden,
-// oder reicht die aktuelle Implementierung fuer den MVP?
-// Bedenke: Bei vielen VMs (50+) und mehreren Storages entstehen viele API-Calls.
-func findLastBackup(vmid int) any {
+// buildBackupIndex holt alle Backups aller Storages und baut eine Lookup-Map
+// vmid -> neuester ctime-Timestamp. Nur O(Storages) API-Calls statt O(VMs × Storages).
+func buildBackupIndex() map[int]int64 {
+	index := make(map[int]int64)
+
 	storagesOut, err := exec.Command("pvesh", "get", "/storage",
 		"--output-format", "json").Output()
 	if err != nil {
-		return nil
+		return index
 	}
 	var storages []map[string]any
 	if json.Unmarshal(storagesOut, &storages) != nil {
-		return nil
+		return index
 	}
 
-	var newestCtime int64
 	for _, storage := range storages {
 		content, _ := storage["content"].(string)
 		if !strings.Contains(content, "backup") {
 			continue
 		}
 		sid, _ := storage["storage"].(string)
+
+		// Alle Backups dieses Storages auf einmal holen (ohne --vmid Filter)
 		backupsOut, err := exec.Command("pvesh", "get",
 			"/nodes/localhost/storage/"+sid+"/content",
-			"--content", "backup", "--vmid", strconv.Itoa(vmid),
-			"--output-format", "json").Output()
+			"--content", "backup", "--output-format", "json").Output()
 		if err != nil {
 			continue
 		}
@@ -148,16 +155,17 @@ func findLastBackup(vmid int) any {
 			continue
 		}
 		for _, item := range items {
+			vmid := int(getFloat(item, "vmid", 0))
+			if vmid == 0 {
+				continue
+			}
 			ct := int64(getFloat(item, "ctime", 0))
-			if ct > newestCtime {
-				newestCtime = ct
+			if ct > index[vmid] {
+				index[vmid] = ct
 			}
 		}
 	}
-	if newestCtime == 0 {
-		return nil
-	}
-	return newestCtime
+	return index
 }
 
 // collectZFS sammelt ZFS Pool-Informationen (nur Linux).

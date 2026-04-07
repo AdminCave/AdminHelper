@@ -209,8 +209,10 @@ def collect_systemd_health() -> dict:
 # Plugin: Proxmox
 # ---------------------------------------------------------------------------
 
-def _find_last_backup(vmid: int) -> int | None:
-    """Findet den ctime-Timestamp des neuesten Backups fuer eine VMID."""
+def _build_backup_index() -> dict[int, int]:
+    """Baut einen Index vmid -> neuester ctime-Timestamp ueber alle Backup-Storages.
+    Nur O(Storages) API-Calls statt O(VMs x Storages)."""
+    index: dict[int, int] = {}
     try:
         storages_out = subprocess.run(
             ["pvesh", "get", "/storage", "--output-format", "json"],
@@ -219,9 +221,8 @@ def _find_last_backup(vmid: int) -> int | None:
         storages = json.loads(storages_out.stdout)
     except Exception as exc:
         log(f"Proxmox Storage-Liste fehlgeschlagen: {exc}")
-        return None
+        return index
 
-    newest_ctime: int | None = None
     for storage in storages:
         sid = storage.get("storage", "")
         content = storage.get("content", "")
@@ -230,19 +231,22 @@ def _find_last_backup(vmid: int) -> int | None:
         try:
             backups_out = subprocess.run(
                 ["pvesh", "get", f"/nodes/localhost/storage/{sid}/content",
-                 "--content", "backup", "--vmid", str(vmid), "--output-format", "json"],
+                 "--content", "backup", "--output-format", "json"],
                 capture_output=True, text=True, timeout=15,
             )
             items = json.loads(backups_out.stdout)
-            if items:
-                ct = max(item.get("ctime", 0) for item in items)
-                if newest_ctime is None or ct > newest_ctime:
-                    newest_ctime = ct
+            for item in items:
+                vmid = item.get("vmid")
+                if vmid is None:
+                    continue
+                ct = item.get("ctime", 0)
+                if ct > index.get(vmid, 0):
+                    index[vmid] = ct
         except Exception as exc:
-            log(f"Backup-Abfrage fuer Storage '{sid}' (VMID {vmid}) fehlgeschlagen: {exc}")
+            log(f"Backup-Abfrage fuer Storage '{sid}' fehlgeschlagen: {exc}")
             continue
 
-    return newest_ctime
+    return index
 
 
 def collect_proxmox() -> dict | None:
@@ -272,6 +276,9 @@ def collect_proxmox() -> dict | None:
     except Exception as exc:
         log(f"Proxmox Node-Status fehlgeschlagen: {exc}")
 
+    # Backup-Index einmal fuer alle VMs aufbauen
+    backup_index = _build_backup_index()
+
     # VMs + LXC Container
     try:
         vms_out = subprocess.run(
@@ -288,7 +295,7 @@ def collect_proxmox() -> dict | None:
                 "name": vm.get("name", ""),
                 "status": vm.get("status", "unknown"),
                 "type": vm.get("type", ""),  # "qemu" oder "lxc"
-                "last_backup_ts": _find_last_backup(vmid),
+                "last_backup_ts": backup_index.get(vmid),
             }
             result["vms"].append(vm_info)
     except Exception as exc:
