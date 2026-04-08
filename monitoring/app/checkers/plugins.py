@@ -2,7 +2,7 @@
 Plugin-basierte Checker.
 
 Werten Agent-Push-Daten von automatisch erkannten Plugins aus
-(Proxmox, ZFS, Docker). Die Daten kommen vom srm-monitor-agent,
+(Proxmox, ZFS, Docker). Die Daten kommen vom srm-agent,
 der die Plugins anhand installierter Binaries aktiviert.
 """
 

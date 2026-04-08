@@ -593,12 +593,12 @@ document.getElementById('createProvisionTokenBtn').addEventListener('click', asy
   try {
     const result = await post(`/api/frp/provision/${_provisionServerId}/token`);
     const srmUrl = window.location.origin;
-    let cmd = `# FRP-Client einrichten\nsudo srm-frpc-sync --init \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${_provisionServerId}`;
+    let cmd = `# FRP-Client einrichten\nsudo srm-agent frpc init \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${_provisionServerId} \\\n  --insecure`;
 
     // Monitoring-Agent Key generieren und Befehl anhaengen
     try {
       const agentKey = await post(`/api/monitoring/agent-keys/${_provisionServerId}`);
-      cmd += `\n\n# Monitoring-Agent einrichten\nsudo srm-monitor-agent --init \\\n  --url ${srmUrl}/api/monitoring \\\n  --api-key ${agentKey.apiKey} \\\n  --server-id ${_provisionServerId}`;
+      cmd += `\n\n# Monitoring-Agent einrichten\nsudo srm-agent monitor init \\\n  --url ${srmUrl}/api/monitoring \\\n  --api-key ${agentKey.apiKey} \\\n  --server-id ${_provisionServerId} \\\n  --insecure`;
     } catch { /* Monitoring nicht erreichbar — nur FRP anzeigen */ }
 
     document.getElementById('provisionCommand').textContent = cmd;

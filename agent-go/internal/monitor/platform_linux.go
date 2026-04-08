@@ -4,7 +4,7 @@ package monitor
 
 import "os/exec"
 
-// enableMonitorService aktiviert den Monitor-Timer via systemd.
+// enableMonitorService aktiviert den SRM-Agent-Timer via systemd.
 func enableMonitorService() error {
-	return exec.Command("systemctl", "enable", "--now", "srm-monitor-agent.timer").Run()
+	return exec.Command("systemctl", "enable", "--now", "srm-agent.timer").Run()
 }

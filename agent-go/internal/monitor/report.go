@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const logTag = "srm-monitor-agent"
+const logTag = "srm-agent-monitor"
 
 func logMsg(format string, args ...any) {
 	fmt.Printf("[%s] %s\n", logTag, fmt.Sprintf(format, args...))

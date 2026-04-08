@@ -22,7 +22,7 @@ type provisionResponse struct {
 	PkiBundle string `json:"pkiBundle"`
 }
 
-// Init fuehrt die Ersteinrichtung durch (Portierung von do_init aus srm-frpc-sync).
+// Init fuehrt die Ersteinrichtung durch.
 func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 	srmURL = strings.TrimRight(srmURL, "/")
 

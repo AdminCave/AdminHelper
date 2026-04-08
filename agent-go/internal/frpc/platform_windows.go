@@ -19,7 +19,7 @@ func enableFrpcService() error {
 // restartFrpc startet frpc unter Windows neu.
 func restartFrpc() error {
 	if err := exec.Command("sc", "stop", "frpc").Run(); err != nil {
-		fmt.Printf("[srm-frpc-sync] WARNUNG: frpc stop: %v\n", err)
+		fmt.Printf("[srm-agent-frpc] WARNUNG: frpc stop: %v\n", err)
 	}
 	return exec.Command("sc", "start", "frpc").Run()
 }
