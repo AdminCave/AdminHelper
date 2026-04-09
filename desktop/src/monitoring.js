@@ -258,6 +258,21 @@ export function initMonitoring(state, t, monitoringApiFactory) {
 
     row.addEventListener("click", () => toggleDetailPanel(check, row));
 
+    // service_process / docker_health: Details direkt unter der Zeile anzeigen
+    const details = check.state?.details;
+    if (details && (check.checkType === "service_process" || check.checkType === "docker_health")) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "mon-check-row-wrapper";
+      wrapper.appendChild(row);
+      const inlineDetails = document.createElement("div");
+      inlineDetails.className = "mon-inline-details";
+      renderTypeContent(check, inlineDetails);
+      if (inlineDetails.children.length > 0) {
+        wrapper.appendChild(inlineDetails);
+      }
+      return wrapper;
+    }
+
     return row;
   }
 

@@ -1329,7 +1329,12 @@ body {
   transition: background 0.15s ease;
 }
 .mon-check-row:last-child { border-bottom: none; }
+.mon-check-row-wrapper:last-child .mon-check-row { border-bottom: none; }
 .mon-check-row:hover { background: rgba(255, 255, 255, 0.02); }
+.mon-check-row-wrapper { border-bottom: 1px solid rgba(148, 163, 184, 0.08); }
+.mon-check-row-wrapper:last-child { border-bottom: none; }
+.mon-check-row-wrapper .mon-check-row { border-bottom: none; }
+.mon-inline-details { padding: 4px 0 10px 24px; }
 .mon-check-name { font-weight: 500; font-size: 14px; }
 .mon-check-msg { font-size: 12px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mon-check-time { font-size: 12px; color: var(--text-soft); white-space: nowrap; }
