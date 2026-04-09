@@ -256,23 +256,26 @@ export function initMonitoring(state, t, monitoringApiFactory) {
     actions.append(toggleBtn, runBtn);
     row.append(dot, typeBadge, nameEl, msgEl, timeEl, actions);
 
-    row.addEventListener("click", () => toggleDetailPanel(check, row));
-
-    // service_process / docker_health: Details direkt unter der Zeile anzeigen
+    // service_process / docker_health: klappbare Details unter der Zeile
     const details = check.state?.details;
     if (details && (check.checkType === "service_process" || check.checkType === "docker_health")) {
       const wrapper = document.createElement("div");
       wrapper.className = "mon-check-row-wrapper";
       wrapper.appendChild(row);
       const inlineDetails = document.createElement("div");
-      inlineDetails.className = "mon-inline-details";
+      inlineDetails.className = "mon-inline-details hidden";
       renderTypeContent(check, inlineDetails);
       if (inlineDetails.children.length > 0) {
         wrapper.appendChild(inlineDetails);
       }
+      row.addEventListener("click", () => {
+        inlineDetails.classList.toggle("hidden");
+        wrapper.classList.toggle("open");
+      });
       return wrapper;
     }
 
+    row.addEventListener("click", () => toggleDetailPanel(check, row));
     return row;
   }
 

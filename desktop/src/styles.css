@@ -1335,6 +1335,7 @@ body {
 .mon-check-row-wrapper:last-child { border-bottom: none; }
 .mon-check-row-wrapper .mon-check-row { border-bottom: none; }
 .mon-inline-details { padding: 4px 0 10px 24px; }
+.mon-inline-details.hidden { display: none; }
 .mon-check-name { font-weight: 500; font-size: 14px; }
 .mon-check-msg { font-size: 12px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mon-check-time { font-size: 12px; color: var(--text-soft); white-space: nowrap; }
