@@ -8,12 +8,6 @@
     <link rel="stylesheet" href="vendor/uplot.min.css" />
   </head>
   <body>
-    <div class="backdrop">
-      <div class="orb orb-one"></div>
-      <div class="orb orb-two"></div>
-      <div class="orb orb-three"></div>
-      <div class="mesh"></div>
-    </div>
 
     <!-- Login Screen (Server-Modus) -->
     <div id="loginScreen" class="login-screen hidden">
@@ -39,87 +33,117 @@
           <div id="loginError" class="login-error hidden"></div>
           <button id="loginBtn" type="submit" class="btn accent login-btn" data-i18n="login.submit">Anmelden</button>
         </form>
-        <button id="loginBackBtn" class="btn ghost login-back" data-i18n="login.back">Zur\u00fcck zu Einstellungen</button>
+        <button id="loginBackBtn" class="btn ghost login-back" data-i18n="login.back">Zurueck zu Einstellungen</button>
       </div>
     </div>
 
-    <div id="appMain" class="app">
-      <header class="topbar">
-        <div class="brand">
-          <div class="logo" aria-label="Simple Remote Logo">
-            <img class="logo-mark" src="logo.svg" alt="" />
+    <div id="appMain" class="app-shell">
+
+      <!-- ── Sidebar ──────────────────────────────────────────────── -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-logo">
+            <img src="logo.svg" alt="SRM" width="36" height="36" />
           </div>
-          <div class="brand-text">
-            <div class="brand-title" data-i18n="brand.title">Simple Remote</div>
-            <div class="brand-subtitle" data-i18n="brand.subtitle">Manager</div>
+          <div class="sidebar-brand-text">
+            <div class="sidebar-title">Simple Remote</div>
+            <div class="sidebar-subtitle">Manager</div>
           </div>
         </div>
-        <nav id="mainNav" class="main-nav hidden">
-          <button class="nav-btn active" data-nav="connections" data-i18n="nav.connections">Verbindungen</button>
-          <button class="nav-btn" data-nav="monitoring" data-i18n="nav.monitoring">Monitoring</button>
-          <button class="nav-btn" data-nav="ansible" data-i18n="nav.ansible">Ansible</button>
+
+        <nav class="sidebar-nav">
+          <button class="sidebar-item active" data-nav="dashboard">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M4 13h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1zm0 8h6a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1zm10 0h6a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1zm0-18v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1z"/></svg>
+            <span class="sidebar-label" data-i18n="nav.dashboard">Dashboard</span>
+          </button>
+          <button class="sidebar-item" data-nav="connections">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M21 2H3a1 1 0 0 0-1 1v18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1zm-1 18H4V4h16v16zM7 7h2v2H7V7zm0 4h2v2H7v-2zm0 4h2v2H7v-2zm4-8h6v2h-6V7zm0 4h6v2h-6v-2zm0 4h6v2h-6v-2z"/></svg>
+            <span class="sidebar-label" data-i18n="nav.connections">Verbindungen</span>
+          </button>
+          <button class="sidebar-item" data-nav="monitoring" id="navMonitoring">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+            <span class="sidebar-label" data-i18n="nav.monitoring">Monitoring</span>
+          </button>
+          <button class="sidebar-item" data-nav="ansible" id="navAnsible">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            <span class="sidebar-label" data-i18n="nav.ansible">Ansible</span>
+          </button>
         </nav>
-        <div class="top-actions">
+
+        <div class="sidebar-spacer"></div>
+
+        <div class="sidebar-bottom">
           <div id="tunnelIndicator" class="tunnel-indicator hidden" title="">
             <span class="tunnel-dot"></span>
             <span id="tunnelLabel" class="tunnel-label">Tunnel</span>
           </div>
-          <label class="search">
-            <span data-i18n="search.label">Suchen</span>
+          <button class="sidebar-item" id="settingsBtn">
+            <svg class="sidebar-icon" viewBox="0 0 24 24"><path d="M12 8.75a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5Zm8.25 3.25c0-.46-.04-.9-.11-1.34l2.01-1.57-1.8-3.12-2.45.99a7.9 7.9 0 0 0-2.32-1.34l-.37-2.6H9.79l-.37 2.6a7.9 7.9 0 0 0-2.32 1.34l-2.45-.99-1.8 3.12 2.01 1.57c-.07.44-.11.88-.11 1.34 0 .46.04.9.11 1.34l-2.01 1.57 1.8 3.12 2.45-.99c.69.57 1.48 1 2.32 1.34l.37 2.6h4.42l.37-2.6c.84-.34 1.63-.77 2.32-1.34l2.45.99 1.8-3.12-2.01-1.57c.07-.44.11-.88.11-1.34Z"/></svg>
+            <span class="sidebar-label" data-i18n="settings.label">Einstellungen</span>
+            <span id="settingsModeBadge" class="sidebar-badge">Lokal</span>
+          </button>
+          <div class="sidebar-version">v0.9.0</div>
+        </div>
+
+        <button class="sidebar-collapse-btn" id="sidebarToggle" aria-label="Sidebar einklappen">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+      </aside>
+
+      <!-- ── Content Header ───────────────────────────────────────── -->
+      <header class="content-header">
+        <div class="content-header-left">
+          <h1 id="pageTitle" class="page-title" data-i18n="nav.dashboard">Dashboard</h1>
+        </div>
+        <div class="content-header-right">
+          <label class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
             <input id="searchInput" type="search" placeholder="Name, Host, URL" data-i18n-placeholder="search.placeholder" />
           </label>
-          <button id="settingsBtn" class="settings-btn" aria-label="Einstellungen" data-i18n-aria="settings.label">
-            <span class="settings-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M12 8.75a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5Zm8.25 3.25c0-.46-.04-.9-.11-1.34l2.01-1.57-1.8-3.12-2.45.99a7.9 7.9 0 0 0-2.32-1.34l-.37-2.6H9.79l-.37 2.6a7.9 7.9 0 0 0-2.32 1.34l-2.45-.99-1.8 3.12 2.01 1.57c-.07.44-.11.88-.11 1.34 0 .46.04.9.11 1.34l-2.01 1.57 1.8 3.12 2.45-.99c.69.57 1.48 1 2.32 1.34l.37 2.6h4.42l.37-2.6c.84-.34 1.63-.77 2.32-1.34l2.45.99 1.8-3.12-2.01-1.57c.07-.44.11-.88.11-1.34Z"
-                />
-              </svg>
-            </span>
-            <span class="settings-label" data-i18n="settings.label">Einstellungen</span>
-            <span id="settingsModeBadge" class="settings-mode">Lokal</span>
-          </button>
         </div>
       </header>
 
-      <main class="layout">
-        <section class="connections panel">
-          <div class="connections-header">
-            <div>
-              <div class="eyebrow" data-i18n="connections.filter">Filter</div>
-              <h2 data-i18n="connections.title">Verbindungen</h2>
+      <!-- ── Content Main ─────────────────────────────────────────── -->
+      <main class="content-main">
+
+        <!-- Dashboard -->
+        <section id="dashboardSection" class="content-section">
+          <div id="dashboardContent"></div>
+        </section>
+
+        <!-- Connections -->
+        <section id="connectionsSection" class="content-section hidden">
+          <div class="section-toolbar">
+            <div class="toolbar-left">
+              <div class="filters">
+                <button class="chip active" data-filter="single" data-i18n="filters.single">Einzeln</button>
+                <button class="chip" data-filter="grouped" data-i18n="filters.grouped">Zusammengefasst</button>
+                <button class="chip" data-filter="ssh" data-i18n="filters.ssh">SSH</button>
+                <button class="chip" data-filter="rdp" data-i18n="filters.rdp">RDP</button>
+                <button class="chip" data-filter="web" data-i18n="filters.web">Web</button>
+              </div>
+              <div class="view-toggle">
+                <button class="chip active" data-view="list" data-i18n="view.list">Liste</button>
+                <button class="chip" data-view="tree" data-i18n="view.tree">Baum</button>
+              </div>
             </div>
-            <div class="connections-actions">
+            <div class="toolbar-right">
               <div id="counter" class="counter">0</div>
               <button id="newBtn" class="btn primary" data-i18n="connections.new">Neue Verbindung</button>
             </div>
-          </div>
-          <div class="filters">
-            <button class="chip active" data-filter="single" data-i18n="filters.single">Einzeln</button>
-            <button class="chip" data-filter="grouped" data-i18n="filters.grouped">Zusammengefasst</button>
-            <button class="chip" data-filter="ssh" data-i18n="filters.ssh">SSH</button>
-            <button class="chip" data-filter="rdp" data-i18n="filters.rdp">RDP</button>
-            <button class="chip" data-filter="web" data-i18n="filters.web">Web</button>
-          </div>
-          <div class="view-toggle">
-            <button class="chip active" data-view="list" data-i18n="view.list">Liste</button>
-            <button class="chip" data-view="tree" data-i18n="view.tree">Baum</button>
           </div>
           <div id="list" class="list"></div>
           <div id="tree" class="tree hidden"></div>
         </section>
 
-        <section id="monitoringSection" class="monitoring-section panel hidden">
-          <div class="mon-header">
-            <div>
-              <div class="eyebrow" data-i18n="monitoring.eyebrow">Monitoring</div>
-              <h2 data-i18n="monitoring.title">Monitoring</h2>
+        <!-- Monitoring -->
+        <section id="monitoringSection" class="content-section hidden">
+          <div class="section-toolbar">
+            <div class="mon-tabs">
+              <button class="mon-tab active" data-tab="overview" data-i18n="monitoring.overview">Uebersicht</button>
+              <button class="mon-tab" data-tab="alerts" data-i18n="monitoring.alerts">Alerts</button>
+              <button class="mon-tab" data-tab="log" data-i18n="monitoring.log">Log</button>
             </div>
-          </div>
-          <div class="mon-tabs">
-            <button class="mon-tab active" data-tab="overview" data-i18n="monitoring.overview">Übersicht</button>
-            <button class="mon-tab" data-tab="alerts" data-i18n="monitoring.alerts">Alerts</button>
-            <button class="mon-tab" data-tab="log" data-i18n="monitoring.log">Log</button>
           </div>
           <div class="mon-tab-content" data-tab="overview">
             <div id="monSummaryCards" class="mon-summary-cards"></div>
@@ -134,13 +158,8 @@
           </div>
         </section>
 
-        <section id="ansibleSection" class="ansible-section panel hidden">
-          <div class="ansible-header">
-            <div>
-              <div class="eyebrow" data-i18n="ansible.eyebrow">Ansible</div>
-              <h2 data-i18n="ansible.title">Playbooks</h2>
-            </div>
-          </div>
+        <!-- Ansible -->
+        <section id="ansibleSection" class="content-section hidden">
           <div class="ansible-steps">
             <div class="ansible-step active" data-step="playbook">
               <div class="ansible-step-header">
@@ -173,15 +192,11 @@
         </section>
 
       </main>
-
-      <footer class="footer">
-        <span data-i18n="app.title">Simple Remote Manager</span>
-        <span class="status-dot" data-i18n="footer.status.ready">Bereit</span>
-      </footer>
     </div>
 
     <div id="globalStatus" class="status toast"></div>
 
+    <!-- ── Editor Panel ─────────────────────────────────────────── -->
     <div id="editor" class="editor hidden" aria-hidden="true">
       <div class="editor-backdrop" data-action="close"></div>
       <div class="editor-panel">
@@ -277,6 +292,7 @@
       </div>
     </div>
 
+    <!-- ── Password Prompt ──────────────────────────────────────── -->
     <div id="passwordPrompt" class="editor hidden" aria-hidden="true">
       <div class="editor-backdrop" data-action="close-password"></div>
       <div class="editor-panel compact">
@@ -298,35 +314,15 @@
         <form class="form-grid single" autocomplete="off">
           <label class="field" data-field="prompt-username">
             <span data-i18n="prompt.username">Benutzer</span>
-            <input
-              id="fieldPromptUsername"
-              type="text"
-              placeholder="user"
-              data-i18n-placeholder="prompt.username.placeholder"
-              required
-              autocomplete="username"
-            />
+            <input id="fieldPromptUsername" type="text" placeholder="user" data-i18n-placeholder="prompt.username.placeholder" required autocomplete="username" />
           </label>
           <label class="field" data-field="prompt-domain">
             <span data-i18n="prompt.domain">Domaene</span>
-            <input
-              id="fieldPromptDomain"
-              type="text"
-              placeholder="z.B. CONTOSO"
-              data-i18n-placeholder="prompt.domain.placeholder"
-              autocomplete="organization"
-            />
+            <input id="fieldPromptDomain" type="text" placeholder="z.B. CONTOSO" data-i18n-placeholder="prompt.domain.placeholder" autocomplete="organization" />
           </label>
           <label class="field" data-field="password">
             <span data-i18n="prompt.password">Passwort</span>
-            <input
-              id="fieldPassword"
-              type="password"
-              placeholder="Passwort"
-              data-i18n-placeholder="prompt.password.placeholder"
-              required
-              autocomplete="current-password"
-            />
+            <input id="fieldPassword" type="password" placeholder="Passwort" data-i18n-placeholder="prompt.password.placeholder" required autocomplete="current-password" />
           </label>
           <label class="field checkbox" id="passwordRememberField">
             <input id="passwordRememberInput" type="checkbox" />
@@ -339,6 +335,7 @@
       </div>
     </div>
 
+    <!-- ── Settings Prompt ──────────────────────────────────────── -->
     <div id="settingsPrompt" class="editor hidden" aria-hidden="true">
       <div class="editor-backdrop" data-action="close-settings"></div>
       <div class="editor-panel compact">
@@ -374,7 +371,7 @@
           <label class="field" id="serverUrlField">
             <span data-i18n="settings.serverUrl.label">Server URL</span>
             <input id="serverUrlInput" type="url" placeholder="https://srm.example.com" />
-            <small data-i18n="settings.serverUrl.help">SRM-Server f&uuml;r Login, Connections und Tunnel.</small>
+            <small data-i18n="settings.serverUrl.help">SRM-Server fuer Login, Connections und Tunnel.</small>
           </label>
           <div class="field" id="serverLogoutField">
             <span data-i18n="settings.server.status">Verbunden als</span>

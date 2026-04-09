@@ -22,6 +22,7 @@ import { initPasswordPrompt } from "./passwordPrompt.js";
 import { initConnectFlow } from "./connectFlow.js";
 import { initSettings } from "./settingsManager.js";
 import { initAuth } from "./authLogin.js";
+import { initDashboard } from "./dashboard.js";
 
 (() => {
   // ── Shared state ────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ import { initAuth } from "./authLogin.js";
     view: "list",
     session: null,
     tunnels: [],
-    activeView: "connections",
+    activeView: "dashboard",
     monitorChecks: [],
     monitorAlertRules: [],
     monitorAlertLog: [],
@@ -110,28 +111,56 @@ import { initAuth } from "./authLogin.js";
       }
     }
     renderer.renderConnections();
+    if (state.activeView === "dashboard") {
+      dashboard.render();
+    }
   }
 
   // ── Navigation ──────────────────────────────────────────────────────
 
-  const mainNav = document.getElementById("mainNav");
+  const pageTitle = document.getElementById("pageTitle");
   const monitoringSection = document.getElementById("monitoringSection");
-  const connectionsSection = document.querySelector(".connections.panel");
+  const connectionsSection = document.getElementById("connectionsSection");
   const ansibleSection = document.getElementById("ansibleSection");
+  const dashboardSection = document.getElementById("dashboardSection");
   const newBtn = document.getElementById("newBtn");
   const settingsBtn = document.getElementById("settingsBtn");
 
   const monitoring = initMonitoring(state, t, createMonitoringApi);
   const ansible = initAnsible(state, t, createAnsibleApi);
+  const dashboard = initDashboard(state, t, {
+    initiateConnect: (conn) => connect.initiateConnect(conn),
+    switchView,
+    openEditor: () => editor.openEditor(),
+  });
+
+  const pageTitles = {
+    dashboard: "nav.dashboard",
+    connections: "connections.title",
+    monitoring: "monitoring.title",
+    ansible: "ansible.title",
+  };
 
   function switchView(view) {
     state.activeView = view;
-    document.querySelectorAll("[data-nav]").forEach((btn) => {
+
+    // Update sidebar active state
+    document.querySelectorAll(".sidebar-item[data-nav]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.nav === view);
     });
+
+    // Update page title
+    if (pageTitle) {
+      pageTitle.textContent = t(pageTitles[view] || view);
+    }
+
+    // Toggle sections
+    dashboardSection.classList.toggle("hidden", view !== "dashboard");
     connectionsSection.classList.toggle("hidden", view !== "connections");
     monitoringSection.classList.toggle("hidden", view !== "monitoring");
     ansibleSection.classList.toggle("hidden", view !== "ansible");
+
+    // Activate/deactivate subsystems
     if (view === "monitoring") {
       monitoring.activate();
     } else {
@@ -142,14 +171,41 @@ import { initAuth } from "./authLogin.js";
     } else {
       ansible.deactivate();
     }
+    if (view === "dashboard") {
+      dashboard.render();
+    }
   }
 
   function updateNavVisibility() {
     const mode = (state.settings || getSettingsDefaults()).mode;
-    const showNav = mode === "server" && state.session;
-    if (mainNav) mainNav.classList.toggle("hidden", !showNav);
-    if (!showNav && (state.activeView === "monitoring" || state.activeView === "ansible")) {
-      switchView("connections");
+    const showServerNav = mode === "server" && state.session;
+    const navMonitoring = document.getElementById("navMonitoring");
+    const navAnsible = document.getElementById("navAnsible");
+    if (navMonitoring) navMonitoring.classList.toggle("disabled", !showServerNav);
+    if (navAnsible) navAnsible.classList.toggle("disabled", !showServerNav);
+    if (!showServerNav && (state.activeView === "monitoring" || state.activeView === "ansible")) {
+      switchView("dashboard");
+    }
+  }
+
+  // ── Sidebar collapse ───────────────────────────────────────────────
+
+  const sidebarToggle = document.getElementById("sidebarToggle");
+  const appShell = document.getElementById("appMain");
+
+  function initSidebar() {
+    const collapsed = localStorage.getItem("srm-sidebar-collapsed") === "true";
+    if (collapsed) {
+      appShell.classList.add("sidebar-collapsed");
+    }
+    if (sidebarToggle) {
+      sidebarToggle.addEventListener("click", () => {
+        appShell.classList.toggle("sidebar-collapsed");
+        localStorage.setItem(
+          "srm-sidebar-collapsed",
+          appShell.classList.contains("sidebar-collapsed")
+        );
+      });
     }
   }
 
@@ -207,6 +263,7 @@ import { initAuth } from "./authLogin.js";
     setLanguage,
     updateNavVisibility,
     saveSettings: (s) => settingsApi.save(s),
+    switchView,
   });
 
   // ── Global listeners ────────────────────────────────────────────────
@@ -223,13 +280,18 @@ import { initAuth } from "./authLogin.js";
     settings.openSettingsPrompt();
   });
 
-  document.querySelectorAll("[data-nav]").forEach((btn) => {
-    btn.addEventListener("click", () => switchView(btn.dataset.nav));
+  // Sidebar navigation
+  document.querySelectorAll(".sidebar-item[data-nav]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.classList.contains("disabled")) return;
+      switchView(btn.dataset.nav);
+    });
   });
 
   // ── Bootstrap ───────────────────────────────────────────────────────
 
   async function init() {
+    initSidebar();
     setLanguage(getSettingsDefaults().language);
     try {
       const loadedSettings = await settingsApi.load();
@@ -275,6 +337,7 @@ import { initAuth } from "./authLogin.js";
     }
 
     renderer.renderConnections();
+    dashboard.render();
   }
 
   initScrollAcceleration();
