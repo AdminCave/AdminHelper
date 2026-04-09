@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Simple Remote Manager",
   "description": "Web-Verbindungen aus Simple Remote Manager direkt im Browser öffnen",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "permissions": ["storage", "tabs", "alarms"],
   "action": {
     "default_popup": "popup.html",
