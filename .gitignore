@@ -66,5 +66,10 @@ docker-compose.override.yml
 # Server-Datendverzeichnis (bind mount statt Docker-Volume)
 /data/
 
+# Build-Artefakte
+build-deb/
+*.deb
+*.rpm
+
 # TLS-Zertifikate (auto-generiert oder eigene)
 /certs/

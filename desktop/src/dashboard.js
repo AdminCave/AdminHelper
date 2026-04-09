@@ -39,6 +39,10 @@ export function initDashboard(state, t, callbacks) {
     if (days === 1) return t("dashboard.timeAgo.yesterday");
     if (days < 30) return t("dashboard.timeAgo.days", { count: days });
     const months = Math.floor(days / 30);
+    if (months >= 12) {
+      const years = Math.floor(months / 12);
+      return t("dashboard.timeAgo.years", { count: years });
+    }
     return t("dashboard.timeAgo.months", { count: months });
   }
 

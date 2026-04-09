@@ -4,6 +4,13 @@
 /** Array-oder-String sicher zu comma-separated String wandeln */
 function _toCSV(v) { return Array.isArray(v) ? v.join(', ') : (v || ''); }
 
+// ── Default-Schwellwerte (zentral, nicht duplizieren) ───────────────────
+const TEMP_GAUGE_MAX   = 120;
+const DEF_CPU_WARN     = 80,  DEF_CPU_CRIT     = 95;
+const DEF_MEM_WARN     = 80,  DEF_MEM_CRIT     = 95;
+const DEF_DISK_WARN    = 85,  DEF_DISK_CRIT    = 95;
+const DEF_TEMP_WARN    = 80,  DEF_TEMP_CRIT    = 95;
+
 // ── Load ���─────────────────────────────────────────────────────────────────
 // ── Tab-Switching ────────────────────────────────────────────────────────
 document.querySelectorAll('.monitor-tab').forEach(tab => {
@@ -373,7 +380,7 @@ function _gaugeItemHtml(label, pct, detailText, cls, metricName, unit) {
   const clickable = metricName ? ' mon-gauge-clickable' : '';
   const dataAttr = metricName ? ` data-metric="${esc(metricName)}"` : '';
   const isTemp = unit === '\u00b0C';
-  const barWidth = isTemp ? Math.min(pct / 120 * 100, 100) : Math.min(pct, 100);
+  const barWidth = isTemp ? Math.min(pct / TEMP_GAUGE_MAX * 100, 100) : Math.min(pct, 100);
   const displayVal = isTemp ? `${pct.toFixed(1)}\u00b0C` : `${pct.toFixed(1)}%`;
   return `<div class="mon-gauge-item${clickable}"${dataAttr}>
     <span class="mon-gauge-label">${esc(label)}</span>
@@ -396,9 +403,9 @@ function _itemRowHtml(name, category, statusText) {
 
 function _renderResourceGaugesHtml(details, config, checkId) {
   if (!details) return '';
-  const cpuWarn = config?.cpu_warn || 80, cpuCrit = config?.cpu_crit || 95;
-  const memWarn = config?.memory_warn || 80, memCrit = config?.memory_crit || 95;
-  const diskWarn = config?.disk_warn || 85, diskCrit = config?.disk_crit || 95;
+  const cpuWarn = config?.cpu_warn || DEF_CPU_WARN, cpuCrit = config?.cpu_crit || DEF_CPU_CRIT;
+  const memWarn = config?.memory_warn || DEF_MEM_WARN, memCrit = config?.memory_crit || DEF_MEM_CRIT;
+  const diskWarn = config?.disk_warn || DEF_DISK_WARN, diskCrit = config?.disk_crit || DEF_DISK_CRIT;
   let html = `<div class="mon-gauge-grid" id="gaugeGrid_${checkId}">`;
   if (details.cpu != null) {
     html += _gaugeItemHtml('CPU', details.cpu, null, _gaugeClass(details.cpu, cpuWarn, cpuCrit), 'monitor_agent_cpu_percent');
@@ -411,7 +418,7 @@ function _renderResourceGaugesHtml(details, config, checkId) {
     const diskDetail = disk.total_gb != null ? `${(disk.used_gb || 0).toFixed(1)} / ${disk.total_gb.toFixed(1)} GB` : null;
     html += _gaugeItemHtml(disk.mount, disk.percent, diskDetail, _gaugeClass(disk.percent, diskWarn, diskCrit), 'monitor_agent_disk_percent');
   }
-  const tempWarn = config?.temp_warn || 80, tempCrit = config?.temp_crit || 95;
+  const tempWarn = config?.temp_warn || DEF_TEMP_WARN, tempCrit = config?.temp_crit || DEF_TEMP_CRIT;
   const tempOverrides = config?.temp_overrides || {};
   for (const sensor of details.temperatures || []) {
     const ov = tempOverrides[sensor.sensor] || {};
@@ -663,11 +670,17 @@ function _renderDetailChart(container, data, check) {
   if (_detailChart) { _detailChart.destroy(); _detailChart = null; }
   container.innerHTML = '';
 
-  const series = data.data || [];
-  if (series.length === 0) {
+  const allSeries = data.data || [];
+  if (allSeries.length === 0) {
     container.innerHTML = `<span style="color:var(--text-muted)">${t('monitor.noMetrics')}</span>`;
     return;
   }
+
+  // Temperatur- und Prozent-Serien trennen, um gemischte Units auf einer Y-Achse zu vermeiden
+  const tempSeries = allSeries.filter(s => (s.metric?.__name__ || '').includes('agent_temp'));
+  const otherSeries = allSeries.filter(s => !(s.metric?.__name__ || '').includes('agent_temp'));
+  const series = otherSeries.length > 0 ? otherSeries : tempSeries;
+  const chartIsTemp = otherSeries.length === 0 && tempSeries.length > 0;
 
   // Zeitstempel aus der ersten Serie als X-Achse
   const timestamps = series[0].values.map(v => v[0]);
@@ -687,9 +700,8 @@ function _renderDetailChart(container, data, check) {
     });
   });
 
-  const hasTemp = series.some(s => (s.metric?.__name__ || '').includes('agent_temp'));
-  const unit = hasTemp ? ' \u00b0C' : _checkTypeUnitWeb(check.checkType);
-  const isPercent = !hasTemp && ['agent_resources', 'zfs_health'].includes(check.checkType);
+  const unit = chartIsTemp ? ' \u00b0C' : _checkTypeUnitWeb(check.checkType);
+  const isPercent = !chartIsTemp && ['agent_resources', 'zfs_health'].includes(check.checkType);
 
   const opts = {
     width: container.clientWidth || 600,
@@ -753,10 +765,10 @@ function _formatCheckConfigWeb(check) {
   } else if (type === 'agent_ping') {
     kv.push([t('monitor.cfg.staleThreshold'), t('monitor.cfg.staleMinutes', { min: c.stale_minutes || 5 })]);
   } else if (type === 'agent_resources') {
-    kv.push([t('monitor.cfg.cpu'), `Warn ${c.cpu_warn || 80}% / Crit ${c.cpu_crit || 95}%`],
-            [t('monitor.cfg.ram'), `Warn ${c.memory_warn || 80}% / Crit ${c.memory_crit || 95}%`],
-            [t('monitor.cfg.disk'), `Warn ${c.disk_warn || 85}% / Crit ${c.disk_crit || 95}%`],
-            [t('monitor.cfg.temp'), `Warn ${c.temp_warn || 80}\u00b0C / Crit ${c.temp_crit || 95}\u00b0C`]);
+    kv.push([t('monitor.cfg.cpu'), `Warn ${c.cpu_warn || DEF_CPU_WARN}% / Crit ${c.cpu_crit || DEF_CPU_CRIT}%`],
+            [t('monitor.cfg.ram'), `Warn ${c.memory_warn || DEF_MEM_WARN}% / Crit ${c.memory_crit || DEF_MEM_CRIT}%`],
+            [t('monitor.cfg.disk'), `Warn ${c.disk_warn || DEF_DISK_WARN}% / Crit ${c.disk_crit || DEF_DISK_CRIT}%`],
+            [t('monitor.cfg.temp'), `Warn ${c.temp_warn || DEF_TEMP_WARN}\u00b0C / Crit ${c.temp_crit || DEF_TEMP_CRIT}\u00b0C`]);
     if (c.temp_overrides) {
       for (const [sensor, ov] of Object.entries(c.temp_overrides)) {
         const parts = [];
@@ -842,14 +854,14 @@ function openMonitorCheckModal(check) {
   document.getElementById('mcHttpSearch').value = cfg.search_string || '';
 
   // Agent Resources Config
-  document.getElementById('mcAgentCpuWarn').value = cfg.cpu_warn ?? 80;
-  document.getElementById('mcAgentCpuCrit').value = cfg.cpu_crit ?? 95;
-  document.getElementById('mcAgentMemWarn').value = cfg.memory_warn ?? 80;
-  document.getElementById('mcAgentMemCrit').value = cfg.memory_crit ?? 95;
-  document.getElementById('mcAgentDiskWarn').value = cfg.disk_warn ?? 85;
-  document.getElementById('mcAgentDiskCrit').value = cfg.disk_crit ?? 95;
-  document.getElementById('mcAgentTempWarn').value = cfg.temp_warn ?? 80;
-  document.getElementById('mcAgentTempCrit').value = cfg.temp_crit ?? 95;
+  document.getElementById('mcAgentCpuWarn').value = cfg.cpu_warn ?? DEF_CPU_WARN;
+  document.getElementById('mcAgentCpuCrit').value = cfg.cpu_crit ?? DEF_CPU_CRIT;
+  document.getElementById('mcAgentMemWarn').value = cfg.memory_warn ?? DEF_MEM_WARN;
+  document.getElementById('mcAgentMemCrit').value = cfg.memory_crit ?? DEF_MEM_CRIT;
+  document.getElementById('mcAgentDiskWarn').value = cfg.disk_warn ?? DEF_DISK_WARN;
+  document.getElementById('mcAgentDiskCrit').value = cfg.disk_crit ?? DEF_DISK_CRIT;
+  document.getElementById('mcAgentTempWarn').value = cfg.temp_warn ?? DEF_TEMP_WARN;
+  document.getElementById('mcAgentTempCrit').value = cfg.temp_crit ?? DEF_TEMP_CRIT;
 
   // Per-Sensor Temperatur-Overrides
   const tempOverrides = cfg.temp_overrides || {};
@@ -859,20 +871,23 @@ function openMonitorCheckModal(check) {
   ovContainer.innerHTML = '';
   if (sensorList.length > 0) {
     ovSection.classList.remove('hidden');
+    const parts = [];
     for (const s of sensorList) {
       const name = s.sensor;
       const ov = tempOverrides[name] || {};
-      ovContainer.innerHTML += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+      const safeTemp = esc(String(s.temp_c));
+      parts.push(`<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
         <span style="min-width:180px;font-size:12px;color:var(--text-muted)" title="${esc(name)}">${esc(name)}</span>
-        <span style="font-size:11px;color:var(--text-muted);min-width:45px">${s.temp_c}\u00b0C</span>
+        <span style="font-size:11px;color:var(--text-muted);min-width:45px">${safeTemp}\u00b0C</span>
         <input type="number" class="temp-ov-warn" data-sensor="${esc(name)}"
-          placeholder="${cfg.temp_warn ?? 80}" value="${ov.warn ?? ''}"
-          style="width:60px;font-size:12px" min="0" max="120" title="Warn \u00b0C" />
+          placeholder="${cfg.temp_warn ?? DEF_TEMP_WARN}" value="${ov.warn ?? ''}"
+          style="width:60px;font-size:12px" min="0" max="${TEMP_GAUGE_MAX}" title="Warn \u00b0C" />
         <input type="number" class="temp-ov-crit" data-sensor="${esc(name)}"
-          placeholder="${cfg.temp_crit ?? 95}" value="${ov.crit ?? ''}"
-          style="width:60px;font-size:12px" min="0" max="120" title="Crit \u00b0C" />
-      </div>`;
+          placeholder="${cfg.temp_crit ?? DEF_TEMP_CRIT}" value="${ov.crit ?? ''}"
+          style="width:60px;font-size:12px" min="0" max="${TEMP_GAUGE_MAX}" title="Crit \u00b0C" />
+      </div>`);
     }
+    ovContainer.innerHTML = parts.join('');
   } else {
     ovSection.classList.add('hidden');
   }
@@ -940,14 +955,14 @@ function _buildCheckConfig() {
   }
   if (type === 'agent_resources') {
     const cfg = {
-      cpu_warn: parseInt(document.getElementById('mcAgentCpuWarn').value) || 80,
-      cpu_crit: parseInt(document.getElementById('mcAgentCpuCrit').value) || 95,
-      memory_warn: parseInt(document.getElementById('mcAgentMemWarn').value) || 80,
-      memory_crit: parseInt(document.getElementById('mcAgentMemCrit').value) || 95,
-      disk_warn: parseInt(document.getElementById('mcAgentDiskWarn').value) || 85,
-      disk_crit: parseInt(document.getElementById('mcAgentDiskCrit').value) || 95,
-      temp_warn: parseInt(document.getElementById('mcAgentTempWarn').value) || 80,
-      temp_crit: parseInt(document.getElementById('mcAgentTempCrit').value) || 95,
+      cpu_warn: parseInt(document.getElementById('mcAgentCpuWarn').value) || DEF_CPU_WARN,
+      cpu_crit: parseInt(document.getElementById('mcAgentCpuCrit').value) || DEF_CPU_CRIT,
+      memory_warn: parseInt(document.getElementById('mcAgentMemWarn').value) || DEF_MEM_WARN,
+      memory_crit: parseInt(document.getElementById('mcAgentMemCrit').value) || DEF_MEM_CRIT,
+      disk_warn: parseInt(document.getElementById('mcAgentDiskWarn').value) || DEF_DISK_WARN,
+      disk_crit: parseInt(document.getElementById('mcAgentDiskCrit').value) || DEF_DISK_CRIT,
+      temp_warn: parseInt(document.getElementById('mcAgentTempWarn').value) || DEF_TEMP_WARN,
+      temp_crit: parseInt(document.getElementById('mcAgentTempCrit').value) || DEF_TEMP_CRIT,
     };
     const overrides = {};
     document.querySelectorAll('.temp-ov-warn').forEach(el => {
@@ -1340,7 +1355,7 @@ function _tplCheckDefaults(type) {
     case 'tcp':            return { target: h, port: 22, timeout: 5 };
     case 'http':           return { url: 'http://{{hostname}}', method: 'GET', expected_status: 200, timeout: 10, verify_ssl: true };
     case 'agent_ping':      return { server_id: '{{server_id}}', stale_minutes: 5 };
-    case 'agent_resources': return { cpu_warn: 80, cpu_crit: 95, memory_warn: 80, memory_crit: 95, disk_warn: 85, disk_crit: 95, temp_warn: 80, temp_crit: 95 };
+    case 'agent_resources': return { cpu_warn: DEF_CPU_WARN, cpu_crit: DEF_CPU_CRIT, memory_warn: DEF_MEM_WARN, memory_crit: DEF_MEM_CRIT, disk_warn: DEF_DISK_WARN, disk_crit: DEF_DISK_CRIT, temp_warn: DEF_TEMP_WARN, temp_crit: DEF_TEMP_CRIT };
     case 'service_process': return { mode: 'auto', ignore: [] };
     case 'proxmox_backup':  return { max_backup_age_hours: 26, exclude_vmids: [], exclude_stopped: true };
     case 'zfs_health':      return { capacity_warn: 80, capacity_crit: 90 };

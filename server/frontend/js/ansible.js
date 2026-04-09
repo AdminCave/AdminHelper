@@ -78,7 +78,7 @@ function renderAnsible() {
         </div>
       </div>
       <div class="server-card-body hidden">
-        <pre style="margin:0;padding:12px;font-size:13px;overflow-x:auto;background:var(--bg-card);border-radius:6px" id="pbPreview_${esc(p.id)}"><span style="color:var(--text-muted)">${t('page.ansible.contentLoading')}</span></pre>
+        <pre style="margin:0;padding:12px;font-size:13px;overflow-x:auto;background:var(--bg-elevated);border-radius:6px" id="pbPreview_${esc(p.id)}"><span style="color:var(--text-muted)">${t('page.ansible.contentLoading')}</span></pre>
       </div>
     `;
     container.appendChild(card);
