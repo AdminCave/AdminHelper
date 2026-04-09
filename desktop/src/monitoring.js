@@ -163,6 +163,17 @@ export function initMonitoring(state, t, monitoringApiFactory) {
       const groupEl = buildServerGroup(group);
       checkListContainer.appendChild(groupEl);
     }
+
+    // Offenes Detail-Panel nach Re-Rendering wiederherstellen
+    if (expandedCheckId) {
+      const check = checks.find((c) => c.id === expandedCheckId);
+      const row = checkListContainer.querySelector(`.mon-check-row[data-check-id="${expandedCheckId}"]`);
+      if (check && row) {
+        toggleDetailPanel(check, row);
+      } else {
+        expandedCheckId = null;
+      }
+    }
   }
 
   function buildServerGroup(group) {
