@@ -28,13 +28,18 @@ export function initDashboard(state, t, callbacks) {
   function formatTimeAgo(dateStr) {
     if (!dateStr) return "-";
     const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return t("dashboard.justNow");
-    if (mins < 60) return `${mins}min`;
+    if (diff < 0) return "-";
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60) return t("dashboard.justNow");
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return t("dashboard.timeAgo.minutes", { count: mins });
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h`;
+    if (hours < 24) return t("dashboard.timeAgo.hours", { count: hours });
     const days = Math.floor(hours / 24);
-    return `${days}d`;
+    if (days === 1) return t("dashboard.timeAgo.yesterday");
+    if (days < 30) return t("dashboard.timeAgo.days", { count: days });
+    const months = Math.floor(days / 30);
+    return t("dashboard.timeAgo.months", { count: months });
   }
 
   function isServerMode() {
