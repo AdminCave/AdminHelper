@@ -1,5 +1,7 @@
 import json
+import time
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -21,6 +23,25 @@ from app.modules.hooks.scheduler import add_hook, remove_hook, get_next_run, _IN
 from app.modules.hooks.models import Hook
 
 router = APIRouter(prefix="/api/hooks", tags=["hooks"])
+
+# Rate-Limiting fuer Webhook-Triggers: max 20 Aufrufe pro IP in 60 Sekunden
+_TRIGGER_MAX = 20
+_TRIGGER_WINDOW = 60
+_trigger_attempts: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_trigger_rate_limit(request: Request) -> None:
+    from app.core.middleware import resolve_client_ip
+    ip = resolve_client_ip(request)
+    now = time.monotonic()
+    attempts = _trigger_attempts[ip]
+    _trigger_attempts[ip] = [t for t in attempts if now - t < _TRIGGER_WINDOW]
+    if len(_trigger_attempts[ip]) >= _TRIGGER_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Zu viele Anfragen. Bitte {_TRIGGER_WINDOW} Sekunden warten.",
+        )
+    _trigger_attempts[ip].append(now)
 
 
 def _to_dict(hook: Hook) -> dict:
@@ -112,6 +133,7 @@ def create_hook(
 # WICHTIG: /trigger/{token} muss vor /{hook_id} definiert sein
 @router.post("/trigger/{token}")
 async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
+    _check_trigger_rate_limit(request)
     hashed = hash_api_key(token)
     hook = (
         db.query(Hook)

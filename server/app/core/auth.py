@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import secrets
+import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
-from app.modules.users.models import User
+from app.modules.users.models import User, TokenBlacklist
 from app.modules.api_keys.models import ApiKey
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -46,14 +47,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update({"exp": expire, "type": "access", "jti": str(_uuid.uuid4())})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": expire, "type": "refresh", "jti": str(_uuid.uuid4())})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -65,9 +66,36 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
         username: str = payload.get("sub")
         if not username:
             return None
+        # Blacklist-Pruefung: widerrufene Tokens ablehnen
+        jti = payload.get("jti")
+        if jti and db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
+            return None
     except InvalidTokenError:
         return None
     return db.query(User).filter(User.username == username).first()
+
+
+def blacklist_token(token: str, db: Session) -> None:
+    """Token auf die Blacklist setzen (z.B. bei Logout)."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if jti and exp:
+            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+            if not db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
+                db.add(TokenBlacklist(jti=jti, expires_at=expires_at))
+                db.commit()
+    except InvalidTokenError:
+        pass
+
+
+def cleanup_expired_blacklist(db: Session) -> int:
+    """Abgelaufene Eintraege aus der Blacklist entfernen."""
+    now = datetime.now(timezone.utc)
+    count = db.query(TokenBlacklist).filter(TokenBlacklist.expires_at < now).delete()
+    db.commit()
+    return count
 
 
 def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
@@ -75,7 +103,7 @@ def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
 
 
 def _get_api_key_from_header(request: Request, db: Session) -> Optional[ApiKey]:
-    key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    key = request.headers.get("X-API-Key")
     if not key:
         return None
     hashed = hash_api_key(key)

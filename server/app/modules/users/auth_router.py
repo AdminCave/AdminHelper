@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.auth import verify_password, create_access_token, create_refresh_token, get_current_user, get_user_from_refresh_token
+from app.core.auth import verify_password, create_access_token, create_refresh_token, get_current_user, get_user_from_refresh_token, blacklist_token
 from app.core.middleware import resolve_client_ip
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.modules.users.schemas import LoginRequest, RefreshRequest, TokenResponse, UserMe
 from app.modules.users.models import User
+
+bearer_scheme = HTTPBearer(auto_error=False)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -77,6 +80,17 @@ def refresh_token(data: RefreshRequest, db: Session = Depends(get_db)):
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
     return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+@router.post("/logout")
+def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+):
+    """Aktuellen Access-Token auf die Blacklist setzen."""
+    if credentials:
+        blacklist_token(credentials.credentials, db)
+    return {"detail": "Abgemeldet"}
 
 
 @router.get("/me", response_model=UserMe)

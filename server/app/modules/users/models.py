@@ -12,6 +12,14 @@ user_server_assoc = Table(
 )
 
 
+class TokenBlacklist(Base):
+    """Widerrufene JWT-Tokens (z.B. nach Logout oder Password-Change)."""
+    __tablename__ = "token_blacklist"
+
+    jti = Column(String, primary_key=True)  # JWT ID
+    expires_at = Column(DateTime, nullable=False)  # Automatische Bereinigung nach Ablauf
+
+
 class User(Base):
     __tablename__ = "users"
 

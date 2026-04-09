@@ -1,8 +1,40 @@
 from __future__ import annotations
 
+import ipaddress
+import socket
 import time
+from urllib.parse import urlparse
 
 import httpx
+
+# Private/reservierte IP-Bereiche die nicht als Check-Ziel erlaubt sind (SSRF-Schutz)
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_private_url(url: str) -> bool:
+    """Prueft ob eine URL auf eine private/reservierte IP aufloest."""
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        return True
+    try:
+        addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for family, _, _, _, sockaddr in addr_info:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if any(ip in net for net in _BLOCKED_NETWORKS):
+                return True
+    except (socket.gaierror, ValueError):
+        pass
+    return False
 
 
 class HttpChecker:
@@ -18,6 +50,9 @@ class HttpChecker:
 
         if not url:
             return "unknown", "Keine URL angegeben", None
+
+        if _is_private_url(url):
+            return "unknown", "URL zeigt auf eine private/reservierte Adresse (SSRF-Schutz)", None
 
         try:
             start = time.monotonic()

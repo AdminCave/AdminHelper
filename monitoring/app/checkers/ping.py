@@ -4,6 +4,9 @@ import re
 import subprocess
 
 
+_VALID_TARGET = re.compile(r'^[a-zA-Z0-9._-]+$')
+
+
 class PingChecker:
     """ICMP Ping Check via subprocess."""
 
@@ -13,6 +16,9 @@ class PingChecker:
 
         if not target:
             return "unknown", "Kein Ziel angegeben", None
+
+        if not _VALID_TARGET.match(target) or len(target) > 253:
+            return "unknown", "Ungueltiges Ziel (nur Hostnamen und IPs erlaubt)", None
 
         try:
             result = subprocess.run(

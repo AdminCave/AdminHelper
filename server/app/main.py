@@ -14,7 +14,7 @@ from app.core.auth import hash_password
 from app.core.middleware import IPFilterMiddleware
 
 # Models importieren, damit Base.metadata sie kennt
-from app.modules.users.models import User
+from app.modules.users.models import User, TokenBlacklist  # noqa: F401
 from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401

@@ -175,8 +175,23 @@ def generate_server_cert(server_addr: str) -> dict:
     }
 
 
+import re as _re
+
+_VALID_CLIENT_NAME = _re.compile(r'^[a-zA-Z0-9._-]+$')
+
+
 def generate_client_cert(client_name: str) -> dict:
     """Generiert ein Client-Zertifikat fuer einen frpc-Host, signiert von der CA."""
+    safe_name = Path(client_name).name
+    if (
+        not safe_name
+        or safe_name != client_name
+        or '..' in client_name
+        or not _VALID_CLIENT_NAME.match(client_name)
+        or len(client_name) > 64
+    ):
+        raise ValueError(f"Ungueltiger Client-Name: {client_name!r}")
+
     ca_cert, ca_key = _load_ca()
     d = _ensure_pki_dir()
     key = _generate_key()

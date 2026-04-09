@@ -51,7 +51,10 @@ def create_client_cert(client_name: str, _admin=Depends(get_current_admin)):
     status = pki_manager.get_pki_status()
     if not status["caExists"]:
         raise HTTPException(status_code=400, detail="Zuerst eine CA generieren")
-    return pki_manager.generate_client_cert(client_name)
+    try:
+        return pki_manager.generate_client_cert(client_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/pki/download/{filename}")

@@ -8,12 +8,18 @@ intern im Docker-Netzwerk an den Monitoring-Container weitergeleitet.
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.auth import get_current_admin
 from app.core.config import MONITOR_SERVICE_URL, MONITOR_API_KEY
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
+
+# Erlaubte Pfad-Prefixe fuer den Monitoring-Proxy (SSRF-Schutz)
+_ALLOWED_PATH_PREFIXES = (
+    "checks", "alerts", "log", "metrics", "status",
+    "templates", "agent",
+)
 
 
 @router.post("/agent/{server_id}/report")
@@ -38,6 +44,11 @@ async def proxy_agent_report(server_id: str, request: Request):
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_to_monitoring(path: str, request: Request, _admin=Depends(get_current_admin)):
     """Proxy fuer alle Monitoring-Anfragen (nur fuer Admins)."""
+    # Path-Traversal und SSRF verhindern: nur bekannte Pfade erlauben
+    normalized = path.lstrip("/")
+    if ".." in normalized or not any(normalized.startswith(p) for p in _ALLOWED_PATH_PREFIXES):
+        raise HTTPException(status_code=400, detail="Unerlaubter Proxy-Pfad")
+
     async with httpx.AsyncClient(timeout=30) as client:
         target_url = f"{MONITOR_SERVICE_URL}/{path}"
         resp = await client.request(
