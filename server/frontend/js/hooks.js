@@ -40,7 +40,7 @@ const HOOK_TYPE_LABEL = { webhook: 'Webhook', event: 'Event', schedule: 'Schedul
     lbl.className = 'checkbox-label';
     lbl.innerHTML =
       `<input type="checkbox" name="hkEvent" value="${esc(evt.value)}" /> ` +
-      `${esc(evt.label)}<br/><span style="font-size:10px;color:var(--text-soft)">${esc(evt.value)}</span>`;
+      `${esc(evt.label)}<br/><span style="font-size:10px;color:var(--text-muted)">${esc(evt.value)}</span>`;
     grid.appendChild(lbl);
   });
 }());
@@ -90,7 +90,7 @@ function renderHooks() {
     } else if (h.hook_type === 'schedule') {
       details = `<strong>${esc(h.schedule_interval || '–')}</strong>`;
       if (h.next_run) {
-        details += `<br/><span style="font-size:11px;color:var(--text-soft)">${t('page.hooks.next', { time: new Date(h.next_run).toLocaleString(currentLanguage === 'en' ? 'en-GB' : 'de-DE') })}</span>`;
+        details += `<br/><span style="font-size:11px;color:var(--text-muted)">${t('page.hooks.next', { time: new Date(h.next_run).toLocaleString(currentLanguage === 'en' ? 'en-GB' : 'de-DE') })}</span>`;
       }
     }
 
@@ -107,12 +107,12 @@ function renderHooks() {
     tr.innerHTML = `
       <td>
         <strong>${esc(h.name)}</strong>
-        ${h.description ? `<br/><span style="font-size:11px;color:var(--text-soft)">${esc(h.description)}</span>` : ''}
+        ${h.description ? `<br/><span style="font-size:11px;color:var(--text-muted)">${esc(h.description)}</span>` : ''}
       </td>
       <td><span class="badge badge-${esc(h.hook_type)}">${esc(HOOK_TYPE_LABEL[h.hook_type] || h.hook_type)}</span></td>
       <td>${details}</td>
       <td><span class="badge badge-${h.enabled ? 'active' : 'inactive'}">${h.enabled ? t('page.hooks.active') : t('page.hooks.inactive')}</span></td>
-      <td style="font-size:12px;color:var(--text-soft)">${esc(lastRun)}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${esc(lastRun)}</td>
       <td><div style="display:flex;gap:6px;flex-wrap:wrap">${actions}</div></td>
     `;
     tbody.appendChild(tr);

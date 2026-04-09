@@ -26,7 +26,7 @@ function renderUsers() {
     const date = u.created_at ? new Date(u.created_at).toLocaleDateString('de-DE') : '–';
     const isMe = u.id === state.user?.id;
     tr.innerHTML = `
-      <td><strong>${esc(u.username)}</strong>${isMe ? ` <span style="color:var(--text-soft);font-size:12px">${t('page.users.me')}</span>` : ''}</td>
+      <td><strong>${esc(u.username)}</strong>${isMe ? ` <span style="color:var(--text-muted);font-size:12px">${t('page.users.me')}</span>` : ''}</td>
       <td><span class="badge badge-${u.is_admin ? 'admin' : 'user'}">${u.is_admin ? t('role.admin') : t('role.user')}</span></td>
       <td>${date}</td>
       <td>
@@ -60,11 +60,11 @@ function openUserModal(user) {
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" value="${esc(s.id)}" ${selectedIds.has(s.id) ? 'checked' : ''} />
         <span>${esc(s.name)}</span>
-        <span style="color:var(--text-soft);font-size:11px">${esc(s.hostname)}</span>
+        <span style="color:var(--text-muted);font-size:11px">${esc(s.hostname)}</span>
       </label>
     `).join('');
   } else {
-    listEl.innerHTML = `<span style="color:var(--text-soft);font-size:12px">${t('page.users.noServers')}</span>`;
+    listEl.innerHTML = `<span style="color:var(--text-muted);font-size:12px">${t('page.users.noServers')}</span>`;
   }
 
   showModal('userModal');

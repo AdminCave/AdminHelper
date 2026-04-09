@@ -7,17 +7,9 @@
   <link rel="stylesheet" href="/static/css/styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
-
-  <!-- Hintergrund -->
-  <div class="backdrop" aria-hidden="true">
-    <div class="orb orb-one"></div>
-    <div class="orb orb-two"></div>
-    <div class="orb orb-three"></div>
-    <div class="mesh"></div>
-  </div>
 
   <!-- Login -->
   <div id="loginPage" class="login-page">
@@ -59,31 +51,39 @@
 
       <nav class="nav">
         <button class="nav-item active" data-page="connections">
-          <i class="nav-icon">⟷</i> <span data-i18n="nav.connections">Verbindungen</span>
+          <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M8 12h8M12 3v2m0 14v2M5.5 5.5l1.4 1.4m10.2 10.2l1.4 1.4M3 12h2m14 0h2M5.5 18.5l1.4-1.4m10.2-10.2l1.4-1.4"/></svg></i>
+          <span data-i18n="nav.connections">Verbindungen</span>
         </button>
         <div id="adminNav" class="hidden">
           <button class="nav-item" data-page="servers">
-            <i class="nav-icon">&#x1F5A5;</i> <span data-i18n="nav.servers">Server</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><circle cx="6" cy="6.5" r="1"/><circle cx="6" cy="17.5" r="1"/></svg></i>
+            <span data-i18n="nav.servers">Server</span>
           </button>
           <div class="nav-divider"></div>
           <button class="nav-item" data-page="users">
-            <i class="nav-icon">👥</i> <span data-i18n="nav.users">Benutzer</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></i>
+            <span data-i18n="nav.users">Benutzer</span>
           </button>
           <button class="nav-item" data-page="apikeys">
-            <i class="nav-icon">🔑</i> <span data-i18n="nav.apikeys">API-Keys</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.78 7.78 5.5 5.5 0 017.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></i>
+            <span data-i18n="nav.apikeys">API-Keys</span>
           </button>
           <button class="nav-item" data-page="hooks">
-            <i class="nav-icon">⚡</i> <span data-i18n="nav.hooks">Hooks</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></i>
+            <span data-i18n="nav.hooks">Hooks</span>
           </button>
           <button class="nav-item" data-page="frp">
-            <i class="nav-icon">🔗</i> <span data-i18n="nav.frp">FRP Tunnels</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></i>
+            <span data-i18n="nav.frp">FRP Tunnels</span>
           </button>
           <div class="nav-divider"></div>
           <button class="nav-item" data-page="ansible">
-            <i class="nav-icon">&#x2699;</i> <span data-i18n="nav.ansible">Ansible</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></i>
+            <span data-i18n="nav.ansible">Ansible</span>
           </button>
           <button class="nav-item" data-page="monitoring">
-            <i class="nav-icon">&#x1F4CA;</i> <span data-i18n="nav.monitoring">Monitoring</span>
+            <i class="nav-icon"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></i>
+            <span data-i18n="nav.monitoring">Monitoring</span>
           </button>
         </div>
       </nav>
@@ -237,7 +237,7 @@
           </table>
           <div id="apikeyEmpty" class="empty-state hidden"><p data-i18n="page.apikeys.empty">Keine API-Keys vorhanden.</p></div>
         </div>
-        <div class="panel" style="font-size:13px;color:var(--text-soft)">
+        <div class="panel" style="font-size:13px;color:var(--text-muted)">
           <strong style="color:var(--text)" data-i18n="page.apikeys.syncTitle">Client-Sync konfigurieren:</strong><br/>
           <span data-i18n="page.apikeys.syncInfo">Verwende die Sync-URL im Simple Remote Manager Client:</span><br/>
           <code style="color:var(--accent)">http://&lt;server&gt;:8080/api/connections?api_key=&lt;key&gt;</code>
@@ -273,7 +273,7 @@
               <button id="frpConfigBtn" class="btn small primary" data-i18n="action.configure">Konfigurieren</button>
             </div>
           </div>
-          <div id="frpConfigInfo" style="font-size:13px;color:var(--text-soft)" data-i18n="page.frp.noConfig">
+          <div id="frpConfigInfo" style="font-size:13px;color:var(--text-muted)" data-i18n="page.frp.noConfig">
             Noch keine FRP-Server Konfiguration vorhanden. Klicke auf "Konfigurieren" um zu starten.
           </div>
         </div>
@@ -357,7 +357,7 @@
           <table class="data-table">
             <thead><tr><th data-i18n="alertLog.time">Zeit</th><th data-i18n="alertLog.check">Check</th><th data-i18n="alertLog.from">Von</th><th data-i18n="alertLog.to">Nach</th><th data-i18n="alertLog.status">Status</th><th data-i18n="alertLog.error">Fehler</th></tr></thead>
             <tbody id="monitorAlertLogBody">
-              <tr><td colspan="6" style="text-align:center;color:var(--text-soft)" data-i18n="alerts.loadOnTab">Wird beim Tab-Wechsel geladen</td></tr>
+              <tr><td colspan="6" style="text-align:center;color:var(--text-muted)" data-i18n="alerts.loadOnTab">Wird beim Tab-Wechsel geladen</td></tr>
             </tbody>
           </table>
         </div>
@@ -425,7 +425,7 @@
             <input id="fcDashPass" type="password" placeholder="Passwort" />
           </div>
           <div class="field full">
-            <p style="font-size:11px;color:var(--text-soft);margin:4px 0 0">mTLS ist immer aktiv. Zertifikate werden automatisch generiert.</p>
+            <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0">mTLS ist immer aktiv. Zertifikate werden automatisch generiert.</p>
           </div>
         </div>
         <div class="modal-actions">
@@ -516,7 +516,7 @@
         <div class="modal-title" id="frpPreviewTitle">Config-Vorschau</div>
         <button class="modal-close" data-close="frpPreviewModal">&#x2715;</button>
       </div>
-      <pre id="frpPreviewContent" style="font-family:monospace;font-size:13px;background:var(--surface);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <pre id="frpPreviewContent" style="font-family:monospace;font-size:13px;background:var(--bg-elevated);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn primary" id="copyFrpConfigBtn" data-i18n="action.copy">Kopieren</button>
         <button class="btn ghost" data-close="frpPreviewModal" data-i18n="action.close">Schließen</button>
@@ -533,23 +533,23 @@
       </div>
       <div style="padding:0">
         <div id="provisionContent" style="display:flex;flex-direction:column;gap:16px">
-          <div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">
-            <p style="margin:0 0 8px;color:var(--text-soft);font-size:13px">
+          <div style="background:var(--bg-elevated);padding:12px;border-radius:var(--radius-sm)">
+            <p style="margin:0 0 8px;color:var(--text-muted);font-size:13px">
               Erstelle einen einmaligen Provision-Token (24h g&#xFC;ltig).
               Der Token wird nur einmal angezeigt und kann nur einmal verwendet werden.
             </p>
             <button class="btn primary" id="createProvisionTokenBtn">Token erstellen</button>
           </div>
-          <div id="provisionOneLiner" class="hidden" style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">
+          <div id="provisionOneLiner" class="hidden" style="background:var(--bg-elevated);padding:12px;border-radius:var(--radius-sm)">
             <h4 style="margin:0 0 8px">Auf dem Zielserver ausf&#xFC;hren:</h4>
             <div style="position:relative">
               <pre id="provisionCommand" style="font-family:monospace;font-size:12px;background:var(--bg);padding:10px;border-radius:var(--radius-sm);white-space:pre-wrap;word-break:break-all;margin:0"></pre>
               <button class="btn small ghost" onclick="copyProvisionCommand()" style="position:absolute;top:4px;right:4px;font-size:11px">Kopieren</button>
             </div>
           </div>
-          <div id="provisionTokenList" style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">
+          <div id="provisionTokenList" style="background:var(--bg-elevated);padding:12px;border-radius:var(--radius-sm)">
             <h4 style="margin:0 0 8px">Bestehende Tokens</h4>
-            <div id="provisionTokenListContent" style="color:var(--text-soft);font-size:13px">Lade...</div>
+            <div id="provisionTokenListContent" style="color:var(--text-muted);font-size:13px">Lade...</div>
           </div>
         </div>
       </div>
@@ -665,7 +665,7 @@
           <label>Monitoring-Templates</label>
           <select id="sfTemplates" multiple size="3" style="min-height:60px">
           </select>
-          <small style="color:var(--text-soft)">Mehrfachauswahl: Strg+Klick</small>
+          <small style="color:var(--text-muted)">Mehrfachauswahl: Strg+Klick</small>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn ghost" data-close="serverModal" data-i18n="action.cancel">Abbrechen</button>
@@ -697,7 +697,7 @@
         </label>
         <div class="field full">
           <label>Server zuweisen (FRP-Zugriff)</label>
-          <div id="ufServerList" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;background:var(--surface);padding:8px;border-radius:var(--radius-sm)"></div>
+          <div id="ufServerList" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;background:var(--bg-elevated);padding:8px;border-radius:var(--radius-sm)"></div>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn ghost" data-close="userModal" data-i18n="action.cancel">Abbrechen</button>
@@ -714,7 +714,7 @@
         <div class="modal-title">API-Key erstellt</div>
         <button class="modal-close" data-close="keyRevealModal">✕</button>
       </div>
-      <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px">
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
         Dieser Schlüssel wird nur einmal angezeigt. Kopiere ihn jetzt.
       </p>
       <div class="key-reveal" id="keyRevealValue"></div>
@@ -800,13 +800,13 @@
         <div id="hkCronField" class="field hidden">
           <label>Cron-Ausdruck</label>
           <input id="hkCron" placeholder="0 */6 * * *" />
-          <p style="font-size:11px;color:var(--text-soft);margin:4px 0 0">Format: Minute Stunde Tag Monat Wochentag</p>
+          <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0">Format: Minute Stunde Tag Monat Wochentag</p>
         </div>
 
         <!-- Script -->
         <div class="field" style="grid-column:1/-1">
           <label>Script *</label>
-          <p id="hkScriptHelp" style="font-size:12px;color:var(--text-soft);margin:0 0 6px"></p>
+          <p id="hkScriptHelp" style="font-size:12px;color:var(--text-muted);margin:0 0 6px"></p>
           <textarea id="hkScript" required rows="18"
             style="font-family:monospace;font-size:13px;white-space:pre;tab-size:4;resize:vertical"
             placeholder="# Python-Script hier eingeben"></textarea>
@@ -827,11 +827,11 @@
         <div class="modal-title" id="webhookTokenTitle">Webhook-Token</div>
         <button class="modal-close" data-close="webhookTokenModal">✕</button>
       </div>
-      <p style="color:var(--text-soft);font-size:13px;margin-bottom:14px">
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
         Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt.
       </p>
       <div class="key-reveal" id="webhookTokenValue"></div>
-      <p style="font-size:12px;color:var(--text-soft);margin-top:12px;word-break:break-all">
+      <p style="font-size:12px;color:var(--text-muted);margin-top:12px;word-break:break-all">
         Aufruf-URL:<br/>
         <code id="webhookTriggerUrl" style="color:var(--accent)"></code>
       </p>
@@ -849,7 +849,7 @@
         <div class="modal-title" id="hookRunTitle">Hook-Ergebnis</div>
         <button class="modal-close" data-close="hookRunModal">✕</button>
       </div>
-      <pre id="hookRunResult" style="font-family:monospace;font-size:12px;background:var(--surface);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+      <pre id="hookRunResult" style="font-family:monospace;font-size:12px;background:var(--bg-elevated);border-radius:var(--radius-sm);padding:14px;max-height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn ghost" data-close="hookRunModal" data-i18n="action.close">Schließen</button>
       </div>
@@ -875,7 +875,7 @@
             <option value="replace">Ersetzen – alle bestehenden Verbindungen löschen</option>
           </select>
         </div>
-        <p id="importInfo" style="font-size:13px;color:var(--text-soft);margin:0"></p>
+        <p id="importInfo" style="font-size:13px;color:var(--text-muted);margin:0"></p>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn ghost" data-close="importModal" data-i18n="action.cancel">Abbrechen</button>
@@ -1049,7 +1049,7 @@
 
           <!-- Agent Resources Config -->
           <div id="mcAgentResourcesConfig" class="hidden">
-            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+            <div class="field full" style="color:var(--text-muted);font-size:13px;margin-bottom:8px">
               Wertet Metriken vom srm-agent aus. Der Agent muss auf dem Server installiert und konfiguriert sein.
             </div>
             <div class="field">
@@ -1080,7 +1080,7 @@
 
           <!-- Service Process Config -->
           <div id="mcServiceProcessConfig" class="hidden">
-            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+            <div class="field full" style="color:var(--text-muted);font-size:13px;margin-bottom:8px">
               Prueft systemd-Services. Im Auto-Modus werden failed und inaktive Autostart-Services automatisch erkannt.
             </div>
             <div class="field">
@@ -1106,7 +1106,7 @@
 
           <!-- Proxmox Backup Config -->
           <div id="mcProxmoxBackupConfig" class="hidden">
-            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+            <div class="field full" style="color:var(--text-muted);font-size:13px;margin-bottom:8px">
               Prueft ob VMs/CTs aktuelle Backups haben. Plugin wird automatisch aktiviert wenn Proxmox erkannt wird.
             </div>
             <div class="field">
@@ -1128,7 +1128,7 @@
 
           <!-- ZFS Health Config -->
           <div id="mcZfsHealthConfig" class="hidden">
-            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+            <div class="field full" style="color:var(--text-muted);font-size:13px;margin-bottom:8px">
               Prueft ZFS Pool Health und Kapazitaet. Plugin wird automatisch aktiviert wenn ZFS erkannt wird.
             </div>
             <div class="field">
@@ -1143,7 +1143,7 @@
 
           <!-- Docker Health Config -->
           <div id="mcDockerHealthConfig" class="hidden">
-            <div class="field full" style="color:var(--text-soft);font-size:13px;margin-bottom:8px">
+            <div class="field full" style="color:var(--text-muted);font-size:13px;margin-bottom:8px">
               Prueft Docker Container Status. Plugin wird automatisch aktiviert wenn Docker erkannt wird.
             </div>
             <div class="field full">
@@ -1255,7 +1255,7 @@
               <button type="button" class="btn small" onclick="addTemplateCheckDef()">+ Check</button>
             </div>
             <div id="tplCheckDefs"></div>
-            <small style="color:var(--text-soft)">Verwende <code>{{hostname}}</code>, <code>{{server_name}}</code>, <code>{{server_id}}</code> als Platzhalter</small>
+            <small style="color:var(--text-muted)">Verwende <code>{{hostname}}</code>, <code>{{server_name}}</code>, <code>{{server_id}}</code> als Platzhalter</small>
           </div>
 
           <!-- Alert-Definitionen -->

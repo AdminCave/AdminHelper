@@ -67,9 +67,9 @@ function renderServers() {
           ${monitorStatus ? `<span class="monitor-dot monitor-${monitorStatus}" title="Monitoring: ${monitorStatus}"></span>` : ''}
           <div style="min-width:0">
             <strong>${esc(s.name)}</strong>
-            <span style="color:var(--text-soft);font-size:13px;margin-left:8px">${esc(s.hostname)}${osLabel}</span>
+            <span style="color:var(--text-muted);font-size:13px;margin-left:8px">${esc(s.hostname)}${osLabel}</span>
           </div>
-          <span style="color:var(--text-soft);font-size:12px;flex-shrink:0">${t(connCount !== 1 ? 'page.servers.connCountPlural' : 'page.servers.connCount', { count: connCount })}</span>
+          <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">${t(connCount !== 1 ? 'page.servers.connCountPlural' : 'page.servers.connCount', { count: connCount })}</span>
           ${tags ? `<div style="display:flex;gap:4px;flex-shrink:0">${tags}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
@@ -91,8 +91,8 @@ function renderServers() {
       <div class="server-card-header" onclick="toggleServerCard(this)">
         <div style="display:flex;align-items:center;gap:10px;flex:1">
           <span class="server-chevron">&#x25B6;</span>
-          <strong style="color:var(--text-soft)">${t('page.servers.noServer')}</strong>
-          <span style="color:var(--text-soft);font-size:12px">${t(standalone.length !== 1 ? 'page.servers.connCountPlural' : 'page.servers.connCount', { count: standalone.length })}</span>
+          <strong style="color:var(--text-muted)">${t('page.servers.noServer')}</strong>
+          <span style="color:var(--text-muted);font-size:12px">${t(standalone.length !== 1 ? 'page.servers.connCountPlural' : 'page.servers.connCount', { count: standalone.length })}</span>
         </div>
       </div>
       <div class="server-card-body hidden">
@@ -105,7 +105,7 @@ function renderServers() {
 
 function _renderServerConnections(conns) {
   if (conns.length === 0) {
-    return `<div style="padding:12px;color:var(--text-soft);font-size:13px">${t('page.servers.noConnections')}</div>`;
+    return `<div style="padding:12px;color:var(--text-muted);font-size:13px">${t('page.servers.noConnections')}</div>`;
   }
   const rows = conns.map(c => {
     const host = c.kind === 'web' ? (c.url || '\u2013') : (c.host || '\u2013');

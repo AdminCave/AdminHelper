@@ -133,9 +133,9 @@ function renderFrp() {
           <span class="server-chevron open">&#x25B6;</span>
           <div style="min-width:0">
             <strong>${title}</strong>
-            <span style="color:var(--text-soft);font-size:13px;margin-left:8px">${hostname}</span>
+            <span style="color:var(--text-muted);font-size:13px;margin-left:8px">${hostname}</span>
           </div>
-          <span style="color:var(--text-soft);font-size:12px;flex-shrink:0">${t('page.frp.tunnelCount', { count: tunnels.length })}</span>
+          <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">${t('page.frp.tunnelCount', { count: tunnels.length })}</span>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
           ${server ? `<button class="btn small ghost" onclick="openProvisionModal('${esc(sid)}')">Provision</button>` : ''}
@@ -405,24 +405,24 @@ document.getElementById('pkiBtn').addEventListener('click', async () => {
     const _dl = currentLanguage === 'en' ? 'en-GB' : 'de-DE';
     let html = '<div style="display:flex;flex-direction:column;gap:16px">';
 
-    html += '<div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">';
+    html += '<div style="background:var(--bg-elevated);padding:12px;border-radius:var(--radius-sm)">';
     html += `<h4 style="margin:0 0 8px">${t('frp.pki.caTitle')}</h4>`;
     if (status.caExists) {
-      html += `<p style="margin:0;color:var(--text-soft)">${t('frp.pki.caValidUntil')} <strong>${new Date(status.caExpiry).toLocaleDateString(_dl)}</strong></p>`;
+      html += `<p style="margin:0;color:var(--text-muted)">${t('frp.pki.caValidUntil')} <strong>${new Date(status.caExpiry).toLocaleDateString(_dl)}</strong></p>`;
       html += `<div style="display:flex;gap:8px;margin-top:8px">`;
       html += `<button class="btn small" onclick="pkiDownload('ca.crt')">${t('frp.pki.caDownload')}</button>`;
       html += `<button class="btn small primary" onclick="pkiGenerateCA()">${t('frp.pki.caRegenerate')}</button>`;
       html += `</div>`;
     } else {
-      html += `<p style="margin:0;color:var(--text-soft)">${t('frp.pki.caNotExist')}</p>`;
+      html += `<p style="margin:0;color:var(--text-muted)">${t('frp.pki.caNotExist')}</p>`;
       html += `<button class="btn small primary" style="margin-top:8px" onclick="pkiGenerateCA()">${t('frp.pki.caCreate')}</button>`;
     }
     html += '</div>';
 
-    html += '<div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">';
+    html += '<div style="background:var(--bg-elevated);padding:12px;border-radius:var(--radius-sm)">';
     html += `<h4 style="margin:0 0 8px">${t('frp.pki.serverCertTitle')}</h4>`;
     if (status.serverCertExists) {
-      html += `<p style="margin:0;color:var(--text-soft)">${t('frp.pki.caValidUntil')} <strong>${new Date(status.serverCertExpiry).toLocaleDateString(_dl)}</strong></p>`;
+      html += `<p style="margin:0;color:var(--text-muted)">${t('frp.pki.caValidUntil')} <strong>${new Date(status.serverCertExpiry).toLocaleDateString(_dl)}</strong></p>`;
       html += `<div style="display:flex;gap:8px;margin-top:8px">`;
       html += `<button class="btn small" onclick="pkiDownload('frps.crt')">frps.crt</button>`;
       html += `<button class="btn small" onclick="pkiDownload('frps.key')">frps.key</button>`;
@@ -431,14 +431,14 @@ document.getElementById('pkiBtn').addEventListener('click', async () => {
       }
       html += `</div>`;
     } else {
-      html += `<p style="margin:0;color:var(--text-soft)">${t('frp.pki.serverCertNotExist')}</p>`;
+      html += `<p style="margin:0;color:var(--text-muted)">${t('frp.pki.serverCertNotExist')}</p>`;
       if (status.caExists) {
         html += `<button class="btn small" style="margin-top:8px" onclick="pkiGenerateServerCert()">${t('frp.pki.serverCertGenerate')}</button>`;
       }
     }
     html += '</div>';
 
-    html += '<div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm)">';
+    html += '<div style="background:var(--bg-elevated);padding:12px;border-radius:var(--radius-sm)">';
     html += `<h4 style="margin:0 0 8px">${t('frp.pki.clientCertsTitle')}</h4>`;
     if (status.clientCerts.length > 0) {
       html += `<table class="data-table" style="margin:0"><thead><tr><th>${t('label.name')}</th><th>${t('frp.pki.expiry')}</th><th></th></tr></thead><tbody>`;
@@ -452,7 +452,7 @@ document.getElementById('pkiBtn').addEventListener('click', async () => {
       });
       html += '</tbody></table>';
     } else {
-      html += `<p style="margin:0;color:var(--text-soft)">${t('frp.pki.clientCertsNone')}</p>`;
+      html += `<p style="margin:0;color:var(--text-muted)">${t('frp.pki.clientCertsNone')}</p>`;
     }
     if (status.caExists) {
       html += `<div style="display:flex;gap:8px;margin-top:8px;align-items:center">
@@ -546,7 +546,7 @@ document.getElementById('frpStatusBtn').addEventListener('click', async () => {
     } else {
       const proxies = status.proxies || [];
       if (proxies.length === 0) {
-        html = `<p style="color:var(--text-soft)">${t('frp.status.noProxies')}</p>`;
+        html = `<p style="color:var(--text-muted)">${t('frp.status.noProxies')}</p>`;
       } else {
         html += `<table class="data-table" style="margin:0"><thead><tr><th></th><th>${t('label.name')}</th><th>${t('label.type')}</th><th>${t('frp.status.connections')}</th><th>Traffic In</th><th>Traffic Out</th></tr></thead><tbody>`;
         proxies.forEach(p => {

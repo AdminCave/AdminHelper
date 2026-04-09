@@ -224,7 +224,7 @@ function _renderCheckGroup(title, checks, worstStatus) {
         <span class="server-chevron">&#x25B6;</span>
         <span class="monitor-dot monitor-${worstStatus}"></span>
         <strong>${esc(title)}</strong>
-        <span style="color:var(--text-soft);font-size:12px">${t(checks.length !== 1 ? 'monitor.checkCountPlural' : 'monitor.checkCount', { count: checks.length })}</span>
+        <span style="color:var(--text-muted);font-size:12px">${t(checks.length !== 1 ? 'monitor.checkCountPlural' : 'monitor.checkCount', { count: checks.length })}</span>
       </div>
     </div>
     <div class="server-card-body hidden">
@@ -244,8 +244,8 @@ function _renderCheckTable(checks) {
       <td><span class="monitor-dot monitor-${st}"></span></td>
       <td><span class="badge badge-${c.checkType}">${esc(typeBadge)}</span></td>
       <td><strong>${esc(c.name)}</strong>${c.templateId ? ' <span class="badge badge-tpl" title="Von Template verwaltet">TPL</span>' : ''}</td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-soft)">${esc(msg)}</td>
-      <td style="color:var(--text-soft);font-size:12px">${esc(lastCheck)}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)">${esc(msg)}</td>
+      <td style="color:var(--text-muted);font-size:12px">${esc(lastCheck)}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">
         <button class="btn small" onclick="runMonitorCheck('${c.id}')" title="${t('monitor.runNow')}">&#x25B6;</button>
         <button class="btn small" onclick="editMonitorCheck('${c.id}')">${t('action.edit')}</button>
@@ -573,7 +573,7 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
   const check = state.monitorChecks.find(c => c.id === checkId);
   if (!check) return;
 
-  chartEl.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.loadingMetrics')}</span>`;
+  chartEl.innerHTML = `<span style="color:var(--text-muted)">${t('monitor.loadingMetrics')}</span>`;
 
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
@@ -591,7 +591,7 @@ async function _loadGaugeChart(checkId, period, metricFilter, diskMount) {
       return name === metricFilter || name === metricFilter + '_value';
     });
     if (filtered.length === 0) {
-      chartEl.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.noMetrics')}</span>`;
+      chartEl.innerHTML = `<span style="color:var(--text-muted)">${t('monitor.noMetrics')}</span>`;
       return;
     }
     _renderDetailChart(chartEl, { data: filtered }, check);
@@ -614,7 +614,7 @@ async function _loadDetailMetrics(checkId, period, check) {
   const currentEl = document.getElementById(`checkDetailCurrent_${checkId}`);
   if (!chartEl) return;
 
-  chartEl.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.loadingMetrics')}</span>`;
+  chartEl.innerHTML = `<span style="color:var(--text-muted)">${t('monitor.loadingMetrics')}</span>`;
 
   try {
     const data = await get(`/api/monitoring/checks/${checkId}/metrics?period=${period}`);
@@ -650,7 +650,7 @@ function _renderDetailChart(container, data, check) {
 
   const series = data.data || [];
   if (series.length === 0) {
-    container.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.noMetrics')}</span>`;
+    container.innerHTML = `<span style="color:var(--text-muted)">${t('monitor.noMetrics')}</span>`;
     return;
   }
 
@@ -693,7 +693,7 @@ function _renderDetailChart(container, data, check) {
   try {
     _detailChart = new uPlot(opts, uData, container);
   } catch (e) {
-    container.innerHTML = `<span style="color:var(--text-soft)">${t('monitor.chartError')}</span>`;
+    container.innerHTML = `<span style="color:var(--text-muted)">${t('monitor.chartError')}</span>`;
   }
 }
 
@@ -706,7 +706,7 @@ function _renderDetailTimeline(container, statusHistory) {
   }
 
   const statusMap = { 0: 'ok', 1: 'warning', 2: 'critical', 3: 'unknown', 4: 'pending' };
-  const colorMap = { ok: 'var(--green)', warning: 'var(--yellow)', critical: 'var(--red)', unknown: 'var(--text-soft)', pending: '#666' };
+  const colorMap = { ok: 'var(--green)', warning: 'var(--yellow)', critical: 'var(--red)', unknown: 'var(--text-muted)', pending: '#666' };
   const values = result.values;
   const totalTime = values[values.length - 1][0] - values[0][0];
   if (totalTime <= 0) { container.innerHTML = ''; return; }
@@ -1024,8 +1024,8 @@ function renderMonitorAlerts() {
     return `<tr class="${r.enabled ? '' : 'disabled-row'}">
       <td><strong>${esc(r.name)}</strong></td>
       <td><span class="badge badge-${r.channel}">${channelLabel}</span></td>
-      <td style="color:var(--text-soft)">${esc(filters)}</td>
-      <td style="color:var(--text-soft)">${t('alerts.cooldown', { min: r.cooldownMinutes })}</td>
+      <td style="color:var(--text-muted)">${esc(filters)}</td>
+      <td style="color:var(--text-muted)">${t('alerts.cooldown', { min: r.cooldownMinutes })}</td>
       <td style="white-space:nowrap">
         <button class="btn small" onclick="editAlertRule('${r.id}')">${t('action.edit')}</button>
         <button class="btn small ghost" onclick="toggleAlertRule('${r.id}')">
@@ -1149,7 +1149,7 @@ async function loadAlertLog() {
     if (!container) return;
 
     if (logs.length === 0) {
-      container.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-soft)">${t('alerts.noAlerts')}</td></tr>`;
+      container.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">${t('alerts.noAlerts')}</td></tr>`;
       return;
     }
 
@@ -1158,12 +1158,12 @@ async function loadAlertLog() {
       const check = state.monitorChecks.find(c => c.id === l.checkId);
       const checkName = check ? check.name : l.checkId.substring(0, 8);
       return `<tr>
-        <td style="font-size:12px;color:var(--text-soft)">${esc(time)}</td>
+        <td style="font-size:12px;color:var(--text-muted)">${esc(time)}</td>
         <td>${esc(checkName)}</td>
         <td><span class="monitor-dot monitor-${l.oldStatus}"></span> ${esc(l.oldStatus)}</td>
         <td><span class="monitor-dot monitor-${l.newStatus}"></span> ${esc(l.newStatus)}</td>
         <td>${l.success ? `<span style="color:var(--green)">${t('alerts.sent')}</span>` : `<span style="color:var(--red)">${t('alerts.error')}</span>`}</td>
-        <td style="font-size:12px;color:var(--text-soft)">${l.error ? esc(l.error) : '\u2013'}</td>
+        <td style="font-size:12px;color:var(--text-muted)">${l.error ? esc(l.error) : '\u2013'}</td>
       </tr>`;
     }).join('');
   } catch (err) {
@@ -1193,9 +1193,9 @@ function renderMonitorTemplates() {
 
     return `<tr>
       <td><strong>${esc(tpl.name)}</strong></td>
-      <td style="color:var(--text-soft)">${esc(tpl.description || '')}</td>
+      <td style="color:var(--text-muted)">${esc(tpl.description || '')}</td>
       <td>${t('template.checks', { count: checkCount, alerts: alertCount })}</td>
-      <td style="color:var(--text-soft);font-size:12px" title="${esc(serverNames)}">${t('template.servers', { count: serverCount })}</td>
+      <td style="color:var(--text-muted);font-size:12px" title="${esc(serverNames)}">${t('template.servers', { count: serverCount })}</td>
       <td style="white-space:nowrap">
         <button class="btn small" onclick="editTemplate('${tpl.id}')">${t('action.edit')}</button>
         <button class="btn small ghost" onclick="deleteTemplate('${tpl.id}')">${t('action.delete')}</button>
@@ -1232,7 +1232,7 @@ function _renderTemplateCheckDefs() {
   if (!container) return;
 
   if (state.templateCheckDefs.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-soft);font-size:13px;padding:8px 0">${t('modal.template.noChecks')}</div>`;
+    container.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:8px 0">${t('modal.template.noChecks')}</div>`;
     return;
   }
 
@@ -1291,7 +1291,7 @@ function _tplCfgInput(idx, key, val, placeholder, opts) {
   } else {
     handler = `state.templateCheckDefs[${idx}].config.${key}=this.value`;
   }
-  return `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+  return `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted)">
     <span style="font-size:11px">${esc(placeholder)}</span>
     <input value="${esc(val ?? '')}" ${type==='number'?'type="number"':''} style="width:${w};font-size:12px"
       onchange="${handler}" />
@@ -1304,7 +1304,7 @@ function _tplCfgSelect(idx, key, val, label, options) {
     const l = typeof o === 'string' ? o : o.label;
     return `<option value="${v}" ${val===v?'selected':''}>${esc(l)}</option>`;
   }).join('');
-  return `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+  return `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted)">
     <span style="font-size:11px">${esc(label)}</span>
     <select style="width:auto;font-size:12px" onchange="state.templateCheckDefs[${idx}].config.${key}=this.value">${opts}</select>
   </label>`;
@@ -1329,7 +1329,7 @@ function _tplCheckConfigFields(type, cfg, idx) {
         + sel('method', cfg.method, 'Methode', ['GET','POST','PUT','HEAD'])
         + inp('expected_status', cfg.expected_status, 'Status', {width:'60px', type:'number'})
         + inp('timeout', cfg.timeout, 'Timeout (s)', {width:'70px', type:'number'})
-        + `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+        + `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted)">
             <span style="font-size:11px">SSL pruefen</span>
             <select style="width:auto;font-size:12px" onchange="state.templateCheckDefs[${idx}].config.verify_ssl=this.value==='true'">
               <option value="true" ${(cfg.verify_ssl??true)?'selected':''}>Ja</option>
@@ -1367,7 +1367,7 @@ function _tplCheckConfigFields(type, cfg, idx) {
       return inp('ignore_containers', _toCSV(cfg.ignore_containers), 'Ignorieren', {width:'200px', csv: true});
 
     default:
-      return `<span style="color:var(--text-soft);font-size:12px">Keine Config-Felder</span>`;
+      return `<span style="color:var(--text-muted);font-size:12px">Keine Config-Felder</span>`;
   }
 }
 
@@ -1395,7 +1395,7 @@ function _renderTemplateAlertDefs() {
   if (!container) return;
 
   if (state.templateAlertDefs.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-soft);font-size:13px;padding:8px 0">${t('modal.template.noAlerts')}</div>`;
+    container.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:8px 0">${t('modal.template.noAlerts')}</div>`;
     return;
   }
 
@@ -1403,22 +1403,22 @@ function _renderTemplateAlertDefs() {
     const channelLabel = def.channel === 'email' ? 'E-Mail' : 'Webhook';
     const cc = def.channel_config || {};
     const channelFields = def.channel === 'email'
-      ? `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft);flex:1">
+      ? `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted);flex:1">
            <span style="font-size:11px">Empfaenger</span>
            <input value="${esc(cc.to || '')}" style="font-size:12px" placeholder="admin@example.com"
              onchange="state.templateAlertDefs[${i}].channel_config.to=this.value" />
          </label>
-         <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+         <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted)">
            <span style="font-size:11px">SMTP Host</span>
            <input value="${esc(cc.smtp_host || '')}" style="width:130px;font-size:12px" placeholder="smtp.example.com"
              onchange="state.templateAlertDefs[${i}].channel_config.smtp_host=this.value" />
          </label>
-         <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+         <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted)">
            <span style="font-size:11px">Port</span>
            <input value="${cc.smtp_port || 587}" type="number" style="width:60px;font-size:12px"
              onchange="state.templateAlertDefs[${i}].channel_config.smtp_port=Number(this.value)||587" />
          </label>`
-      : `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft);flex:1">
+      : `<label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted);flex:1">
            <span style="font-size:11px">Webhook URL</span>
            <input value="${esc(cc.url || '')}" style="font-size:12px" placeholder="https://hooks.example.com/alert"
              onchange="state.templateAlertDefs[${i}].channel_config.url=this.value" />
@@ -1436,7 +1436,7 @@ function _renderTemplateAlertDefs() {
           <option value="critical" ${def.match_severity==='critical'?'selected':''}>Critical</option>
           <option value="warning" ${def.match_severity==='warning'?'selected':''}>Warning</option>
         </select>
-        <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-soft)">
+        <label style="display:flex;flex-direction:column;gap:2px;color:var(--text-muted)">
           <span style="font-size:11px">Cooldown</span>
           <input value="${def.cooldown_minutes||30}" onchange="state.templateAlertDefs[${i}].cooldown_minutes=parseInt(this.value)||30" style="width:50px;font-size:12px" type="number" />
         </label>

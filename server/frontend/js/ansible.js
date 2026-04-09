@@ -54,7 +54,7 @@ function renderAnsible() {
     const card = document.createElement('div');
     card.className = 'server-card';
     const tags = (p.tags || []).map(tg => `<span class="tag">${esc(tg)}</span>`).join(' ');
-    const desc = p.description ? `<span style="color:var(--text-soft);font-size:13px;margin-left:8px">${esc(p.description)}</span>` : '';
+    const desc = p.description ? `<span style="color:var(--text-muted);font-size:13px;margin-left:8px">${esc(p.description)}</span>` : '';
     const _dl = currentLanguage === 'en' ? 'en-GB' : 'de-DE';
     const updated = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString(_dl) : '';
     const created = p.createdAt ? new Date(p.createdAt).toLocaleDateString(_dl) : '';
@@ -68,8 +68,8 @@ function renderAnsible() {
             <strong>${esc(p.name)}</strong>
             ${desc}
           </div>
-          <span style="color:var(--text-soft);font-size:12px;flex-shrink:0">${esc(p.filename)}</span>
-          ${dateLabel ? `<span style="color:var(--text-soft);font-size:11px;flex-shrink:0">${dateLabel}</span>` : ''}
+          <span style="color:var(--text-muted);font-size:12px;flex-shrink:0">${esc(p.filename)}</span>
+          ${dateLabel ? `<span style="color:var(--text-muted);font-size:11px;flex-shrink:0">${dateLabel}</span>` : ''}
           ${tags ? `<div style="display:flex;gap:4px;flex-shrink:0">${tags}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
@@ -78,7 +78,7 @@ function renderAnsible() {
         </div>
       </div>
       <div class="server-card-body hidden">
-        <pre style="margin:0;padding:12px;font-size:13px;overflow-x:auto;background:var(--bg-card);border-radius:6px" id="pbPreview_${esc(p.id)}"><span style="color:var(--text-soft)">${t('page.ansible.contentLoading')}</span></pre>
+        <pre style="margin:0;padding:12px;font-size:13px;overflow-x:auto;background:var(--bg-card);border-radius:6px" id="pbPreview_${esc(p.id)}"><span style="color:var(--text-muted)">${t('page.ansible.contentLoading')}</span></pre>
       </div>
     `;
     container.appendChild(card);
