@@ -1,9 +1,9 @@
 package main
 
 import (
-	"srm-agent/internal/frpc"
-	"srm-agent/internal/monitor"
-	"srm-agent/internal/service"
+	"adminhelper-agent/internal/frpc"
+	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/service"
 )
 
 func frpcInitRun(url, token, serverID, cacert string, insecure bool) error {

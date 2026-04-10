@@ -1,5 +1,5 @@
 """
-Simple Remote Manager — Monitoring Service
+AdminHelper — Monitoring Service
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ def _migrate_agent_keys_to_hash(insp):
 
 
 app = FastAPI(
-    title="SRM Monitoring Service",
+    title="AdminHelper Monitoring Service",
     docs_url="/docs",
     redoc_url=None,
     lifespan=lifespan,

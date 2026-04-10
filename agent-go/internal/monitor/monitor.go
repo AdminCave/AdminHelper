@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"srm-agent/internal/config"
+	"adminhelper-agent/internal/config"
 )
 
 // Init fuehrt die Ersteinrichtung des Monitor-Agents durch.

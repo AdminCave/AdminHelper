@@ -3,11 +3,11 @@ set -e
 systemctl daemon-reload
 mkdir -p /etc/frp/pki
 chmod 700 /etc/frp/pki
-mkdir -p /etc/srm
-chmod 700 /etc/srm
+mkdir -p /etc/adminhelper
+chmod 700 /etc/adminhelper
 
 # Alte systemd-Units aufraeumen (falls von frueheren Paketen vorhanden)
-for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer srm-monitor-agent.service; do
+for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer srm-monitor-agent.service srm-agent.timer srm-agent.service; do
     if [ -f "/etc/systemd/system/${unit}" ]; then
         systemctl stop "${unit}" 2>/dev/null || true
         systemctl disable "${unit}" 2>/dev/null || true
@@ -16,6 +16,6 @@ for unit in srm-frpc-sync.timer srm-frpc-sync.service srm-monitor-agent.timer sr
 done
 systemctl daemon-reload
 
-echo "srm-agent installiert."
-echo "FRPC Einrichtung:    sudo srm-agent frpc init --url <SRM_URL> --token <TOKEN> --server-id <ID>"
-echo "Monitor Einrichtung: sudo srm-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"
+echo "adminhelper-agent installiert."
+echo "FRPC Einrichtung:    sudo adminhelper-agent frpc init --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
+echo "Monitor Einrichtung: sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"

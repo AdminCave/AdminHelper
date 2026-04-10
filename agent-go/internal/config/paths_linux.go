@@ -3,4 +3,4 @@
 package config
 
 func FrpDir() string     { return "/etc/frp" }
-func MonitorDir() string { return "/etc/srm" }
+func MonitorDir() string { return "/etc/adminhelper" }

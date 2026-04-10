@@ -13,7 +13,7 @@ from app.core.events import fire_event
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
-logger = logging.getLogger("srm.servers")
+logger = logging.getLogger("adminhelper.servers")
 
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])

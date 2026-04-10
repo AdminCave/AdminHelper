@@ -151,7 +151,7 @@ def _ensure_pki(db):
 
         pki_status = pki_manager.get_pki_status()
         if not pki_status["caExists"]:
-            pki_manager.generate_ca("Simple Remote Manager CA")
+            pki_manager.generate_ca("AdminHelper CA")
             logger.info("Auto-PKI: CA generiert")
 
         if _server_cert_needs_regen(pki_manager.PKI_DIR, config.server_addr):
@@ -193,7 +193,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Simple Remote Manager Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 
 # Middleware
 app.add_middleware(IPFilterMiddleware)

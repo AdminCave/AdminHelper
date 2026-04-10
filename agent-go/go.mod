@@ -1,4 +1,4 @@
-module srm-agent
+module adminhelper-agent
 
 go 1.24.2
 

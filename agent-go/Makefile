@@ -1,16 +1,16 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  = -ldflags "-s -w -X main.version=$(VERSION)"
-BINARY   = srm-agent
+BINARY   = adminhelper-agent
 
 .PHONY: build build-linux build-windows clean tidy deb rpm all
 
 build: build-linux
 
 build-linux:
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/srm-agent
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/adminhelper-agent
 
 build-windows:
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY).exe ./cmd/srm-agent
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY).exe ./cmd/adminhelper-agent
 
 deb: build-linux
 	cd .. && VERSION=$(VERSION) bash agent-go/build-deb.sh

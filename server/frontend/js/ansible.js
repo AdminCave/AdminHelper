@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Ansible Playbooks */
+/* AdminHelper – Ansible Playbooks */
 'use strict';
 
 // ── State ─────────────────────────────────────────────────────────────────

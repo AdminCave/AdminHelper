@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Shared Utilities */
+/* AdminHelper – Shared Utilities */
 'use strict';
 
 // ── State ──────────────────────────────────────────────────────────────────

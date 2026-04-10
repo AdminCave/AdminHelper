@@ -3,7 +3,7 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::models::AuthSession;
 
-const KEYRING_SERVICE: &str = "com.simpleremote.manager";
+const KEYRING_SERVICE: &str = "com.adminhelper.app";
 const KEYRING_JWT_KEY: &str = "auth|jwt";
 const KEYRING_REFRESH_KEY: &str = "auth|refresh";
 const KEYRING_SERVER_URL_KEY: &str = "auth|server_url";
@@ -208,9 +208,9 @@ fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
     #[cfg(target_os = "windows")]
     {
         use crate::password::{windows_store_credential, to_utf16_null};
-        windows_store_credential(KEYRING_JWT_KEY, "srm", &session.token)?;
-        windows_store_credential(KEYRING_REFRESH_KEY, "srm", &session.refresh_token)?;
-        windows_store_credential(KEYRING_SERVER_URL_KEY, "srm", &session.server_url)?;
+        windows_store_credential(KEYRING_JWT_KEY, "adminhelper", &session.token)?;
+        windows_store_credential(KEYRING_REFRESH_KEY, "adminhelper", &session.refresh_token)?;
+        windows_store_credential(KEYRING_SERVER_URL_KEY, "adminhelper", &session.server_url)?;
         Ok(())
     }
     #[cfg(not(any(target_os = "windows", unix)))]

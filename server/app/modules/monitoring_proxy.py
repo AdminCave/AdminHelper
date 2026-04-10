@@ -1,7 +1,7 @@
 """
 Reverse-Proxy: Leitet /api/monitoring/* Anfragen an den Monitoring-Service weiter.
 
-Der Browser kommuniziert nur mit dem SRM-Server. Monitoring-Anfragen werden
+Der Browser kommuniziert nur mit dem AdminHelper-Server. Monitoring-Anfragen werden
 intern im Docker-Netzwerk an den Monitoring-Container weitergeleitet.
 """
 

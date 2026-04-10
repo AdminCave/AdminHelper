@@ -1,7 +1,7 @@
 """Shared test fixtures — in-memory SQLite + FastAPI TestClient."""
 
 import os
-os.environ.setdefault("DATA_DIR", "/tmp/srm-test-data")
+os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
 

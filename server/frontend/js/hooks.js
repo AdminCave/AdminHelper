@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Hooks */
+/* AdminHelper – Hooks */
 'use strict';
 
 function _getHookEvents() {

@@ -8,9 +8,9 @@ import (
 )
 
 func FrpDir() string {
-	return filepath.Join(os.Getenv("ProgramData"), "SRM", "frp")
+	return filepath.Join(os.Getenv("ProgramData"), "AdminHelper", "frp")
 }
 
 func MonitorDir() string {
-	return filepath.Join(os.Getenv("ProgramData"), "SRM")
+	return filepath.Join(os.Getenv("ProgramData"), "AdminHelper")
 }

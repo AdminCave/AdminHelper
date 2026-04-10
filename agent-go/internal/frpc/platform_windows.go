@@ -8,7 +8,7 @@ import (
 )
 
 // enableFrpcService startet den frpc-Prozess unter Windows.
-// Im Service-Modus wird frpc vom SRM-Agent-Service selbst verwaltet.
+// Im Service-Modus wird frpc vom AdminHelper-Agent-Service selbst verwaltet.
 func enableFrpcService() error {
 	// frpc als Hintergrundprozess starten — im Service-Modus uebernimmt der
 	// Windows Service das Management.
@@ -19,7 +19,7 @@ func enableFrpcService() error {
 // restartFrpc startet frpc unter Windows neu.
 func restartFrpc() error {
 	if err := exec.Command("sc", "stop", "frpc").Run(); err != nil {
-		fmt.Printf("[srm-agent-frpc] WARNUNG: frpc stop: %v\n", err)
+		fmt.Printf("[adminhelper-agent-frpc] WARNUNG: frpc stop: %v\n", err)
 	}
 	return exec.Command("sc", "start", "frpc").Run()
 }

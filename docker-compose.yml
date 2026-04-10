@@ -1,6 +1,6 @@
 services:
   server:
-    image: ${SERVER_IMAGE:-docker.nevondo.com/NAMESPACE/simpleremotemanager/server:latest}
+    image: ${SERVER_IMAGE:-docker.nevondo.com/NAMESPACE/adminhelper/server:latest}
     ports:
       - "443:8443"
     volumes:
@@ -40,7 +40,7 @@ services:
       - server
 
   monitoring:
-    image: ${MONITORING_IMAGE:-srm-monitoring:latest}
+    image: ${MONITORING_IMAGE:-adminhelper-monitoring:latest}
     expose:
       - "8080"
     ports:

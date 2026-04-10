@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Simple Remote Manager - Entwicklerdokumentation</title>
+    <title>AdminHelper - Entwicklerdokumentation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -20,9 +20,9 @@
     <header class="site-header">
       <div class="header-inner">
         <a class="brand" href="./index.html">
-          <img src="./assets/logo.svg" alt="Simple Remote Manager Logo" />
+          <img src="./assets/logo.svg" alt="AdminHelper Logo" />
           <span class="brand-copy">
-            <strong>Simple Remote Manager</strong>
+            <strong>AdminHelper</strong>
             <span>Entwicklerdoku</span>
           </span>
         </a>
@@ -159,7 +159,7 @@ docker compose up -d</code></pre>
 │  ├─ frontend/            # Server Web-UI (SPA)
 │  └─ Dockerfile
 ├─ agent-go/               # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/srm-agent/       # Cobra CLI
+│  ├─ cmd/adminhelper-agent/       # Cobra CLI
 │  ├─ internal/            # Config, FRPC-Sync, Monitor, Service
 │  └─ Makefile
 ├─ monitoring/             # Monitoring-Service (FastAPI + VictoriaMetrics)
@@ -444,7 +444,7 @@ result["connectionId"] = connection_id</code></pre>
             <pre class="code-block"><code>import requests
 
 # Läuft bei connection.created, connection.updated, connection.deleted
-msg = f"[SRM] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
+msg = f"[AdminHelper] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
 requests.post("https://chat.example.com/webhooks/notify", json={"text": msg}, timeout=5)
 result["notified"] = True</code></pre>
 
@@ -635,7 +635,7 @@ cargo tauri build</code></pre>
               <li><span class="inline-code">desktop/src-tauri/src/ansible.rs</span></li>
               <li><span class="inline-code">server/app/modules/*/router.py</span></li>
               <li><span class="inline-code">server/app/modules/hooks/script_runner.py</span></li>
-              <li><span class="inline-code">agent-go/cmd/srm-agent/main.go</span></li>
+              <li><span class="inline-code">agent-go/cmd/adminhelper-agent/main.go</span></li>
               <li><span class="inline-code">monitoring/app/routers/*.py</span></li>
               <li><span class="inline-code">extension/popup.js</span></li>
             </ul>

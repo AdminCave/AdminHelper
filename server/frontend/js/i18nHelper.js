@@ -1,4 +1,4 @@
-/* Simple Remote Manager – i18n Helper Functions */
+/* AdminHelper – i18n Helper Functions */
 'use strict';
 
 let currentLanguage = 'de';

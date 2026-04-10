@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Simple Remote Manager",
-  "description": "Web-Verbindungen aus Simple Remote Manager direkt im Browser öffnen",
-  "version": "0.11.0",
+  "name": "AdminHelper",
+  "description": "Web-Verbindungen aus AdminHelper direkt im Browser öffnen",
+  "version": "0.12.0",
   "permissions": ["storage", "tabs", "alarms"],
   "action": {
     "default_popup": "popup.html",

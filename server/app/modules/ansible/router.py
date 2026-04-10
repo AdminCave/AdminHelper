@@ -15,7 +15,7 @@ from app.core.events import fire_event
 from app.modules.ansible.models import Playbook
 from app.modules.ansible.schemas import PlaybookCreate, PlaybookUpdate
 
-logger = logging.getLogger("srm.ansible")
+logger = logging.getLogger("adminhelper.ansible")
 
 PLAYBOOKS_DIR = DATA_DIR / "ansible" / "playbooks"
 PLAYBOOKS_DIR.mkdir(parents=True, exist_ok=True)

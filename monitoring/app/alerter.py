@@ -27,7 +27,7 @@ SMTP_HOST = os.environ.get("SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-SMTP_FROM = os.environ.get("SMTP_FROM", "srm@localhost")
+SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
 
 
 def process_alert(
@@ -121,7 +121,7 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
     is_recovery = new_status == "ok"
 
     if is_recovery:
-        subject = f"[SRM Monitor] RECOVERY: {check.name} ist wieder OK"
+        subject = f"[AdminHelper Monitor] RECOVERY: {check.name} ist wieder OK"
         text = (
             f"RECOVERY\n"
             f"Check: {check.name} ({check.check_type})\n"
@@ -130,7 +130,7 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
         )
     else:
         label = "CRITICAL" if new_status == "critical" else new_status.upper()
-        subject = f"[SRM Monitor] {label}: {check.name}"
+        subject = f"[AdminHelper Monitor] {label}: {check.name}"
         text = (
             f"{label}\n"
             f"Check: {check.name} ({check.check_type})\n"

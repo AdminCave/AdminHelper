@@ -5,5 +5,5 @@
 *.rpm
 
 # Compiled binaries
-srm-agent
-srm-agent.exe
+adminhelper-agent
+adminhelper-agent.exe

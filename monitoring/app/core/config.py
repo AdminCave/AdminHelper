@@ -11,7 +11,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # VictoriaMetrics
 VICTORIA_METRICS_URL = os.environ.get("VICTORIA_METRICS_URL", "http://victoria:8428")
 
-# Interner API-Key fuer Service-zu-Service Kommunikation (SRM -> Monitoring)
+# Interner API-Key fuer Service-zu-Service Kommunikation (AdminHelper -> Monitoring)
 INTERNAL_API_KEY = os.environ.get("MONITOR_API_KEY", "").strip()
 if not INTERNAL_API_KEY:
     key_file = DATA_DIR / ".api_key"

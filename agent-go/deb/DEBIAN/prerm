@@ -1,12 +1,14 @@
 #!/bin/sh
 set -e
 # Neue Units
-systemctl stop srm-agent.timer 2>/dev/null || true
+systemctl stop adminhelper-agent.timer 2>/dev/null || true
 systemctl stop frpc.service 2>/dev/null || true
-systemctl disable srm-agent.timer 2>/dev/null || true
+systemctl disable adminhelper-agent.timer 2>/dev/null || true
 systemctl disable frpc.service 2>/dev/null || true
 # Alte Units (falls vorhanden, z.B. bei Upgrade)
+systemctl stop srm-agent.timer 2>/dev/null || true
 systemctl stop srm-frpc-sync.timer 2>/dev/null || true
 systemctl stop srm-monitor-agent.timer 2>/dev/null || true
+systemctl disable srm-agent.timer 2>/dev/null || true
 systemctl disable srm-frpc-sync.timer 2>/dev/null || true
 systemctl disable srm-monitor-agent.timer 2>/dev/null || true

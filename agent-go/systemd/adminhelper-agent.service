@@ -1,0 +1,9 @@
+[Unit]
+Description=AdminHelper Agent — FRPC Sync + Monitoring
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/adminhelper-agent run --once
+TimeoutStartSec=60

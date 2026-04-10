@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Simple Remote Manager</title>
+    <title>AdminHelper</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="vendor/uplot.min.css" />
   </head>
@@ -12,15 +12,15 @@
     <!-- Login Screen (Server-Modus) -->
     <div id="loginScreen" class="login-screen hidden">
       <div class="login-card">
-        <div class="login-logo" aria-label="Simple Remote Logo">
-          <img src="logo.svg" alt="SRM" width="48" height="48" />
+        <div class="login-logo" aria-label="AdminHelper Logo">
+          <img src="logo.svg" alt="AdminHelper" width="48" height="48" />
         </div>
-        <h2>Simple Remote Manager</h2>
+        <h2>AdminHelper</h2>
         <p class="login-subtitle" data-i18n="login.subtitle">Mit Server verbinden</p>
         <form id="loginForm" autocomplete="off">
           <label class="field">
             <span data-i18n="login.serverUrl">Server URL</span>
-            <input id="loginServerUrl" type="url" placeholder="https://srm.example.com" required />
+            <input id="loginServerUrl" type="url" placeholder="https://adminhelper.example.com" required />
           </label>
           <label class="field">
             <span data-i18n="login.username">Benutzername</span>
@@ -43,11 +43,11 @@
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
           <div class="sidebar-logo">
-            <img src="logo.svg" alt="SRM" width="36" height="36" />
+            <img src="logo.svg" alt="AdminHelper" width="36" height="36" />
           </div>
           <div class="sidebar-brand-text">
-            <div class="sidebar-title">Simple Remote</div>
-            <div class="sidebar-subtitle">Manager</div>
+            <div class="sidebar-title">Admin</div>
+            <div class="sidebar-subtitle">Helper</div>
           </div>
         </div>
 
@@ -82,7 +82,7 @@
             <span class="sidebar-label" data-i18n="settings.label">Einstellungen</span>
             <span id="settingsModeBadge" class="sidebar-badge">Lokal</span>
           </button>
-          <div class="sidebar-version">v0.11.0</div>
+          <div class="sidebar-version">v0.12.0</div>
         </div>
 
         <button class="sidebar-collapse-btn" id="sidebarToggle" aria-label="Sidebar einklappen">
@@ -370,8 +370,8 @@
           </label>
           <label class="field" id="serverUrlField">
             <span data-i18n="settings.serverUrl.label">Server URL</span>
-            <input id="serverUrlInput" type="url" placeholder="https://srm.example.com" />
-            <small data-i18n="settings.serverUrl.help">SRM-Server fuer Login, Connections und Tunnel.</small>
+            <input id="serverUrlInput" type="url" placeholder="https://adminhelper.example.com" />
+            <small data-i18n="settings.serverUrl.help">AdminHelper-Server fuer Login, Connections und Tunnel.</small>
           </label>
           <div class="field" id="serverLogoutField">
             <span data-i18n="settings.server.status">Verbunden als</span>

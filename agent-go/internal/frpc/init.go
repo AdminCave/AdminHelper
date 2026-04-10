@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"srm-agent/internal/config"
+	"adminhelper-agent/internal/config"
 )
 
 type provisionResponse struct {
@@ -89,9 +89,9 @@ func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 		confInsecure = true
 	}
 
-	// SRM-Config schreiben
+	// AdminHelper-Config schreiben
 	entries := []config.KeyValue{
-		{Key: "SRM_URL", Value: srmURL},
+		{Key: "ADMINHELPER_URL", Value: srmURL},
 		{Key: "API_KEY", Value: prov.APIKey},
 		{Key: "SERVER_ID", Value: serverID},
 	}

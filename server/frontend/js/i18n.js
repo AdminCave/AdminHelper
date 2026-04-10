@@ -1,4 +1,4 @@
-/* Simple Remote Manager – i18n Translation Dictionary */
+/* AdminHelper – i18n Translation Dictionary */
 'use strict';
 
 const translations = {
@@ -177,7 +177,7 @@ const translations = {
     "page.apikeys.add": "+ API-Key",
     "page.apikeys.empty": "Keine API-Keys vorhanden.",
     "page.apikeys.syncTitle": "Client-Sync konfigurieren:",
-    "page.apikeys.syncInfo": "Verwende die Sync-URL im Simple Remote Manager Client:",
+    "page.apikeys.syncInfo": "Verwende die Sync-URL im AdminHelper Client:",
     "page.apikeys.permission": "Berechtigung",
     "page.apikeys.readWrite": "Lesen & Schreiben",
     "page.apikeys.readOnly": "Nur lesen",
@@ -483,7 +483,7 @@ const translations = {
     "modal.check.httpVerifySsl": "SSL pruefen",
     "modal.check.httpSearchText": "Suchtext (optional)",
     "modal.check.httpSearchPlaceholder": "Text der in der Antwort vorkommen muss",
-    "modal.check.agentResourcesHint": "Wertet Metriken vom srm-agent aus. Der Agent muss auf dem Server installiert und konfiguriert sein.",
+    "modal.check.agentResourcesHint": "Wertet Metriken vom adminhelper-agent aus. Der Agent muss auf dem Server installiert und konfiguriert sein.",
     "modal.check.cpuWarn": "CPU Warnung (%)",
     "modal.check.cpuCrit": "CPU Kritisch (%)",
     "modal.check.ramWarn": "RAM Warnung (%)",
@@ -759,7 +759,7 @@ const translations = {
     "page.apikeys.add": "+ API Key",
     "page.apikeys.empty": "No API keys available.",
     "page.apikeys.syncTitle": "Configure client sync:",
-    "page.apikeys.syncInfo": "Use this sync URL in the Simple Remote Manager client:",
+    "page.apikeys.syncInfo": "Use this sync URL in the AdminHelper client:",
     "page.apikeys.permission": "Permission",
     "page.apikeys.readWrite": "Read & Write",
     "page.apikeys.readOnly": "Read only",
@@ -1065,7 +1065,7 @@ const translations = {
     "modal.check.httpVerifySsl": "Verify SSL",
     "modal.check.httpSearchText": "Search text (optional)",
     "modal.check.httpSearchPlaceholder": "Text that must appear in the response",
-    "modal.check.agentResourcesHint": "Evaluates metrics from srm-agent. The agent must be installed and configured on the server.",
+    "modal.check.agentResourcesHint": "Evaluates metrics from adminhelper-agent. The agent must be installed and configured on the server.",
     "modal.check.cpuWarn": "CPU warning (%)",
     "modal.check.cpuCrit": "CPU critical (%)",
     "modal.check.ramWarn": "RAM warning (%)",

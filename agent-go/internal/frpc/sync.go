@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"srm-agent/internal/config"
+	"adminhelper-agent/internal/config"
 )
 
 // Sync prueft auf Config-Aenderungen und aktualisiert frpc (Portierung von do_sync).
@@ -21,8 +21,8 @@ func Sync() error {
 		return fmt.Errorf("Config laden: %w", err)
 	}
 
-	if cfg.SRMURL == "" || cfg.APIKey == "" || cfg.ServerID == "" {
-		return fmt.Errorf("srm.conf unvollstaendig")
+	if cfg.AdminHelperURL == "" || cfg.APIKey == "" || cfg.ServerID == "" {
+		return fmt.Errorf("adminhelper.conf unvollstaendig")
 	}
 
 	client, err := httpClient(cfg.CACert, cfg.Insecure)
@@ -31,7 +31,7 @@ func Sync() error {
 	}
 
 	// Remote-Hash abrufen
-	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.SRMURL, cfg.ServerID)
+	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
 	hashBody, err := httpGet(client, hashURL, cfg.APIKey)
 	if err != nil {
 		logMsg("WARNUNG: Config-Hash konnte nicht abgefragt werden: %v", err)
@@ -57,7 +57,7 @@ func Sync() error {
 	logMsg("Config-Aenderung erkannt. Aktualisiere...")
 
 	// Neue Config holen
-	configURL := fmt.Sprintf("%s/api/frp/provision/%s/config", cfg.SRMURL, cfg.ServerID)
+	configURL := fmt.Sprintf("%s/api/frp/provision/%s/config", cfg.AdminHelperURL, cfg.ServerID)
 	newConfig, err := httpGet(client, configURL, cfg.APIKey)
 	if err != nil {
 		return fmt.Errorf("neue Config laden: %w", err)

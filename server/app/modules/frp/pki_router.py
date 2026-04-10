@@ -21,7 +21,7 @@ def pki_status(_admin=Depends(get_current_admin)):
 
 
 @router.post("/pki/ca")
-def create_ca(common_name: str = Query("SRM FRP CA"), _admin=Depends(get_current_admin)):
+def create_ca(common_name: str = Query("AdminHelper FRP CA"), _admin=Depends(get_current_admin)):
     """Generiert eine neue CA. ACHTUNG: Ueberschreibt bestehende CA!"""
     return pki_manager.generate_ca(common_name)
 

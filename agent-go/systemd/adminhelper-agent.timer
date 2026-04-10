@@ -1,5 +1,5 @@
 [Unit]
-Description=SRM Agent Timer (FRPC Sync + Monitoring alle 5 Minuten)
+Description=AdminHelper Agent Timer (FRPC Sync + Monitoring alle 5 Minuten)
 
 [Timer]
 OnBootSec=60

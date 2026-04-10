@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Servers */
+/* AdminHelper – Servers */
 'use strict';
 
 async function loadServers() {

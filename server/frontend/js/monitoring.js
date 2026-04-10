@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Monitoring */
+/* AdminHelper – Monitoring */
 'use strict';
 
 /** Array-oder-String sicher zu comma-separated String wandeln */

@@ -545,7 +545,7 @@ pub fn write_rdp_file(
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_nanos())
         .unwrap_or(0);
-    path.push(format!("simple-remote-manager-{suffix}.rdp"));
+    path.push(format!("adminhelper-{suffix}.rdp"));
 
     let mut lines = Vec::new();
     lines.push(format!("full address:s:{host}:{port}"));

@@ -1,6 +1,6 @@
 [package]
-name = "simple_remote_manager"
-version = "0.11.0"
+name = "adminhelper"
+version = "0.12.0"
 edition = "2021"
 
 [build-dependencies]

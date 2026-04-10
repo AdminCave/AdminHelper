@@ -1,4 +1,4 @@
-/* Simple Remote Manager – App Entry Point (Login, Init, Nav, Startup) */
+/* AdminHelper – App Entry Point (Login, Init, Nav, Startup) */
 'use strict';
 
 // ── Login ──────────────────────────────────────────────────────────────────

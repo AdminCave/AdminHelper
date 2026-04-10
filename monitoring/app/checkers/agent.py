@@ -2,7 +2,7 @@
 Agent-basierte Checker.
 
 Werten Agent-Push-Daten gegen konfigurierbare Thresholds aus.
-Die Daten kommen vom srm-agent via POST /agent/{server_id}/report.
+Die Daten kommen vom adminhelper-agent via POST /agent/{server_id}/report.
 """
 
 from __future__ import annotations

@@ -11,8 +11,8 @@ var version = "dev"
 
 func main() {
 	root := &cobra.Command{
-		Use:   "srm-agent",
-		Short: "SRM Agent — FRPC Sync + Monitoring (Linux & Windows)",
+		Use:   "adminhelper-agent",
+		Short: "AdminHelper Agent — FRPC Sync + Monitoring (Linux & Windows)",
 	}
 
 	root.AddCommand(versionCmd())
@@ -32,7 +32,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Zeigt die Version an",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("srm-agent %s\n", version)
+			fmt.Printf("adminhelper-agent %s\n", version)
 		},
 	}
 }
@@ -60,7 +60,7 @@ func frpcInitCmd() *cobra.Command {
 			return frpcInitRun(url, token, serverID, cacert, insecure)
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "SRM Server URL (erforderlich)")
+	cmd.Flags().StringVar(&url, "url", "", "AdminHelper Server URL (erforderlich)")
 	cmd.Flags().StringVar(&token, "token", "", "Provision-Token (erforderlich)")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
 	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat fuer self-signed Server")

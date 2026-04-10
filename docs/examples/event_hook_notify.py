@@ -25,7 +25,7 @@ action_labels = {
 }
 action = action_labels.get(event_type, event_type)
 
-msg = f"[SRM] Verbindung {action}: *{name}* ({kind}, `{host}`)"
+msg = f"[AdminHelper] Verbindung {action}: *{name}* ({kind}, `{host}`)"
 
 try:
     r = http_post(WEBHOOK_URL, json={"text": msg}, timeout=5)

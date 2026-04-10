@@ -3,7 +3,7 @@ import os
 import secrets
 from pathlib import Path
 
-logger = logging.getLogger("srm.config")
+logger = logging.getLogger("adminhelper.config")
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)

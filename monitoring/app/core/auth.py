@@ -6,7 +6,7 @@ from app.core.database import get_db
 
 
 def require_internal(request: Request) -> None:
-    """Validiert den internen API-Key (SRM-Proxy -> Monitoring)."""
+    """Validiert den internen API-Key (AdminHelper-Proxy -> Monitoring)."""
     key = request.headers.get("X-Internal-Key", "")
     if not key or key != INTERNAL_API_KEY:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ungültiger interner API-Key")

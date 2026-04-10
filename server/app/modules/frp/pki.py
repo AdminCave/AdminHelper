@@ -77,7 +77,7 @@ def get_pki_status() -> dict:
     return status
 
 
-def generate_ca(common_name: str = "SRM FRP CA") -> dict:
+def generate_ca(common_name: str = "AdminHelper FRP CA") -> dict:
     """Generiert eine neue CA (ueberschreibt bestehende!)."""
     d = _ensure_pki_dir()
     key = _generate_key()
@@ -85,7 +85,7 @@ def generate_ca(common_name: str = "SRM FRP CA") -> dict:
 
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Simple Remote Manager"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AdminHelper"),
     ])
 
     cert = (
@@ -136,7 +136,7 @@ def generate_server_cert(server_addr: str) -> dict:
 
     subject = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, server_addr),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Simple Remote Manager"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AdminHelper"),
     ])
 
     # IP-Adressen muessen als IPAddress-SAN eingetragen werden, nicht als DNSName
@@ -199,7 +199,7 @@ def generate_client_cert(client_name: str) -> dict:
 
     subject = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, client_name),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Simple Remote Manager"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AdminHelper"),
     ])
 
     cert = (

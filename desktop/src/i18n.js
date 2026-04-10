@@ -1,8 +1,8 @@
 export const translations = {
   de: {
-    "app.title": "Simple Remote Manager",
-    "brand.title": "Simple Remote",
-    "brand.subtitle": "Manager",
+    "app.title": "AdminHelper",
+    "brand.title": "Admin",
+    "brand.subtitle": "Helper",
     "search.label": "Suchen",
     "search.placeholder": "Name, Host, URL",
     "settings.label": "Einstellungen",
@@ -10,7 +10,7 @@ export const translations = {
     "settings.mode.sync": "Sync",
     "settings.mode.server": "Server",
     "settings.serverUrl.label": "Server URL",
-    "settings.serverUrl.help": "SRM-Server fuer Login, Connections und Tunnel.",
+    "settings.serverUrl.help": "AdminHelper-Server fuer Login, Connections und Tunnel.",
     "login.subtitle": "Mit Server verbinden",
     "login.serverUrl": "Server URL",
     "login.username": "Benutzername",
@@ -200,9 +200,9 @@ export const translations = {
     "monitoring.error.action": "Aktion fehlgeschlagen."
   },
   en: {
-    "app.title": "Simple Remote Manager",
-    "brand.title": "Simple Remote",
-    "brand.subtitle": "Manager",
+    "app.title": "AdminHelper",
+    "brand.title": "Admin",
+    "brand.subtitle": "Helper",
     "search.label": "Search",
     "search.placeholder": "Name, host, URL",
     "settings.label": "Settings",
@@ -210,7 +210,7 @@ export const translations = {
     "settings.mode.sync": "Sync",
     "settings.mode.server": "Server",
     "settings.serverUrl.label": "Server URL",
-    "settings.serverUrl.help": "SRM server for login, connections, and tunnels.",
+    "settings.serverUrl.help": "AdminHelper server for login, connections, and tunnels.",
     "login.subtitle": "Connect to server",
     "login.serverUrl": "Server URL",
     "login.username": "Username",

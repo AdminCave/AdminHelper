@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Simple Remote Manager - Administration Documentation</title>
+    <title>AdminHelper - Administration Documentation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -20,9 +20,9 @@
     <header class="site-header">
       <div class="header-inner">
         <a class="brand" href="./index.html">
-          <img src="../assets/logo.svg" alt="Simple Remote Manager logo" />
+          <img src="../assets/logo.svg" alt="AdminHelper logo" />
           <span class="brand-copy">
-            <strong>Simple Remote Manager</strong>
+            <strong>AdminHelper</strong>
             <span>Administration Docs</span>
           </span>
         </a>
@@ -278,7 +278,7 @@ docker compose up -d</code></pre>
 import requests
 
 hook_url = "https://chat.example.com/webhooks/notify"
-msg = f"[SRM] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
+msg = f"[AdminHelper] {event_type}: {event_data.get('name', '?')} ({event_data.get('kind', '?')})"
 requests.post(hook_url, json={"text": msg}, timeout=5)
 result["notified"] = True</code></pre>
 
@@ -343,26 +343,26 @@ log(f"Cleaned up at {triggered_at}: removed {removed} duplicate(s)")</code></pre
 
             <h3>Agent Installation</h3>
             <p>
-              The unified Go agent (<span class="inline-code">srm-agent</span>) combines FRP sync and monitoring.
+              The unified Go agent (<span class="inline-code">adminhelper-agent</span>) combines FRP sync and monitoring.
               Available as DEB and RPM packages for Linux, and as a Windows binary.
             </p>
             <pre class="code-block"><code># Install DEB package:
-apt install ./srm-agent_0.8.0_amd64.deb
+apt install ./adminhelper-agent_0.12.0_amd64.deb
 
 # Set up monitoring:
-sudo srm-agent monitor init \
+sudo adminhelper-agent monitor init \
   --url https://&lt;server&gt;/api/monitoring \
   --api-key &lt;MONITOR_AGENT_API_KEY&gt; \
   --server-id &lt;SERVER-ID&gt;
 
 # Set up FRP sync (optional):
-sudo srm-agent frpc init \
+sudo adminhelper-agent frpc init \
   --url https://&lt;server&gt; \
   --token &lt;PROVISION-TOKEN&gt; \
   --server-id &lt;SERVER-ID&gt;
 
 # Install as systemd service:
-sudo srm-agent service install</code></pre>
+sudo adminhelper-agent service install</code></pre>
 
             <h3>Features</h3>
             <div class="cards cols-2">
@@ -418,7 +418,7 @@ sudo srm-agent service install</code></pre>
             <h3>Backup</h3>
             <pre class="code-block"><code>mkdir -p backups
 
-tar -czf backups/srm-backup-$(date +%F-%H%M).tar.gz \
+tar -czf backups/adminhelper-backup-$(date +%F-%H%M).tar.gz \
   data certs .env</code></pre>
 
             <h3>Restore</h3>

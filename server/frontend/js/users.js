@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Users */
+/* AdminHelper – Users */
 'use strict';
 
 async function loadUsers() {

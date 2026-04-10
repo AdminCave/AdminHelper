@@ -1,15 +1,15 @@
-Package: srm-agent
+Package: adminhelper-agent
 Version: __VERSION__
 Architecture: amd64
-Maintainer: Simple Remote Manager <noreply@srm.local>
+Maintainer: AdminHelper <noreply@adminhelper.local>
 Depends: systemd
-Replaces: srm-frpc-client, srm-monitor-agent
-Conflicts: srm-frpc-client, srm-monitor-agent
+Replaces: srm-frpc-client, srm-monitor-agent, srm-agent
+Conflicts: srm-frpc-client, srm-monitor-agent, srm-agent
 Section: net
 Priority: optional
-Homepage: https://gitlab.local/srm/simpleremotemanager
-Description: SRM Agent — FRPC Sync + Monitoring
- Unified agent for Simple Remote Manager (SRM). Combines FRP Client
+Homepage: https://gitlab.local/adminhelper/adminhelper
+Description: AdminHelper Agent — FRPC Sync + Monitoring
+ Unified agent for AdminHelper. Combines FRP Client
  (frpc) with automatic config sync and system monitoring in a single
- binary. Supports Linux and Windows. Replaces srm-frpc-client and
- srm-monitor-agent packages.
+ binary. Supports Linux and Windows. Replaces srm-frpc-client,
+ srm-monitor-agent, and srm-agent packages.

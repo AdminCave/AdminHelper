@@ -1,7 +1,7 @@
 """
 Hintergrund-Scheduler fuer Monitoring Checks.
 
-Eigene APScheduler-Instanz (unabhaengig vom SRM-Server).
+Eigene APScheduler-Instanz (unabhaengig vom AdminHelper-Server).
 """
 
 from __future__ import annotations

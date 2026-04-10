@@ -116,7 +116,7 @@ services:
   server:
     build:
       context: ./server
-    image: srm-server:dev
+    image: adminhelper-server:dev
     environment:
       - DOMAIN=localhost
       - ADMIN_PASSWORD=admin
@@ -177,8 +177,8 @@ make all
 Der Agent laesst sich auch direkt starten:
 
 ```bash
-go run ./cmd/srm-agent version
-go run ./cmd/srm-agent run --once
+go run ./cmd/adminhelper-agent version
+go run ./cmd/adminhelper-agent run --once
 ```
 
 ### Monitoring (lokal ohne Docker)
@@ -211,7 +211,7 @@ Client laedt Connections per HTTPS-URL + API-Key. Im Client: Einstellungen -> Mo
 
 ### Server-Modus (JWT + Tunnel)
 
-Vollstaendige Integration mit dem SRM-Server:
+Vollstaendige Integration mit dem AdminHelper-Server:
 
 1. **Server + frps starten** (siehe oben)
 2. Im Client: Einstellungen -> Modus: **Server** -> Server-URL: `https://localhost`
@@ -311,10 +311,10 @@ curl -sk https://localhost/api/frp/tunnels \
 │  ├─ Dockerfile
 │  └─ requirements.txt
 ├─ agent-go/                 # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/srm-agent/         # Cobra CLI (run, frpc, monitor, service, version)
+│  ├─ cmd/adminhelper-agent/         # Cobra CLI (run, frpc, monitor, service, version)
 │  ├─ internal/              # Config, FRPC-Sync, Monitor, Service-Verwaltung
 │  ├─ deb/ + rpm/            # Paket-Metadaten
-│  ├─ systemd/               # srm-agent.service + srm-agent.timer
+│  ├─ systemd/               # adminhelper-agent.service + adminhelper-agent.timer
 │  └─ Makefile               # build-linux, build-windows, deb, rpm
 ├─ monitoring/
 │  ├─ app/                   # FastAPI Monitoring-Service

@@ -1,4 +1,4 @@
-# Simple Remote Manager
+# AdminHelper
 
 A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** and a fast **HTML/CSS/JS** UI. Manage SSH, RDP, and Web targets in one place with tags, search, and a clean workflow.
 
@@ -90,7 +90,7 @@ Notes:
 
 ### Server mode (JWT + Tunnel)
 
-In **Server mode**, the client connects to a SRM server with JWT authentication:
+In **Server mode**, the client connects to an AdminHelper server with JWT authentication:
 
 1. Set mode to **Server** in settings, enter the server URL
 2. Login with username/password — JWT is stored in the OS keyring
@@ -109,7 +109,7 @@ Session is persisted — no re-login needed on restart. Local and Sync modes rem
 
 ## Server (Team-Modus)
 
-Der optionale **Simple Remote Manager Server** ermöglicht zentrale Verwaltung und gemeinsamen Zugriff auf Verbindungen im Team.
+Der optionale **AdminHelper Server** ermöglicht zentrale Verwaltung und gemeinsamen Zugriff auf Verbindungen im Team.
 
 ### Features
 
@@ -197,7 +197,7 @@ API-Dokumentation: `http://localhost:8080/api/docs`
 
 ## Chrome Extension
 
-Die **Simple Remote Manager Chrome Extension** zeigt Web-Verbindungen (`kind: web`) vom Team-Server direkt als Browser-Popup an.
+Die **AdminHelper Chrome Extension** zeigt Web-Verbindungen (`kind: web`) vom Team-Server direkt als Browser-Popup an.
 
 ### Features
 
@@ -243,43 +243,43 @@ Der **Monitoring-Service** läuft als separater Container neben dem Server und �
 
 ### Agent installieren
 
-Der **Unified Go Agent** (`srm-agent`) vereint FRP-Sync und Monitoring in einem einzigen Paket fuer Linux und Windows:
+Der **Unified Go Agent** (`adminhelper-agent`) vereint FRP-Sync und Monitoring in einem einzigen Paket fuer Linux und Windows:
 
 ```bash
 # DEB installieren:
-apt install ./srm-agent_0.8.0_amd64.deb
+apt install ./adminhelper-agent_0.12.0_amd64.deb
 
 # Monitoring einrichten:
-sudo srm-agent monitor init \
+sudo adminhelper-agent monitor init \
   --url https://<server>/api/monitoring \
   --api-key <KEY> \
   --server-id <SERVER-ID>
 
 # FRP-Sync einrichten:
-sudo srm-agent frpc init \
+sudo adminhelper-agent frpc init \
   --url https://<server> \
   --token <PROVISION-TOKEN> \
   --server-id <SERVER-ID>
 
 # Dauerbetrieb starten (FRP-Sync + Monitor-Push alle 5 Min):
-sudo srm-agent run
+sudo adminhelper-agent run
 
 # Als systemd-Service installieren:
-sudo srm-agent service install
+sudo adminhelper-agent service install
 ```
 
 **Agent-Subcommands:**
 
 | Befehl | Funktion |
 |--------|----------|
-| `srm-agent run [--once]` | FRP-Sync + Monitor-Push (Loop oder einmalig) |
-| `srm-agent frpc init` | FRP-Ersteinrichtung mit Provision-Token |
-| `srm-agent frpc sync` | Einmaliger Config-Sync |
-| `srm-agent monitor init` | Monitoring-Ersteinrichtung |
-| `srm-agent monitor push` | Einmaliger Metriken-Push |
-| `srm-agent service install` | OS-Service registrieren (systemd/Windows) |
-| `srm-agent service uninstall` | OS-Service deregistrieren |
-| `srm-agent version` | Version anzeigen |
+| `adminhelper-agent run [--once]` | FRP-Sync + Monitor-Push (Loop oder einmalig) |
+| `adminhelper-agent frpc init` | FRP-Ersteinrichtung mit Provision-Token |
+| `adminhelper-agent frpc sync` | Einmaliger Config-Sync |
+| `adminhelper-agent monitor init` | Monitoring-Ersteinrichtung |
+| `adminhelper-agent monitor push` | Einmaliger Metriken-Push |
+| `adminhelper-agent service install` | OS-Service registrieren (systemd/Windows) |
+| `adminhelper-agent service uninstall` | OS-Service deregistrieren |
+| `adminhelper-agent version` | Version anzeigen |
 
 Der Agent erkennt automatisch vorhandene Subsysteme (Docker, ZFS, Proxmox) und sammelt CPU-, RAM-, Disk- und Service-Metriken. Metriken werden in **VictoriaMetrics** gespeichert (90 Tage Retention).
 
@@ -393,11 +393,11 @@ cargo tauri build
 │  │  └─ scheduler.py        # APScheduler fuer periodische Checks
 │  └─ Dockerfile
 ├─ agent-go/                 # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/srm-agent/         # Cobra CLI (run, frpc, monitor, service, version)
+│  ├─ cmd/adminhelper-agent/         # Cobra CLI (run, frpc, monitor, service, version)
 │  ├─ internal/              # Config, FRPC-Sync, Monitor, Service-Verwaltung
 │  ├─ deb/                   # Debian-Paketierung
 │  ├─ rpm/                   # RPM-Paketierung
-│  ├─ systemd/               # srm-agent.service + srm-agent.timer
+│  ├─ systemd/               # adminhelper-agent.service + adminhelper-agent.timer
 │  └─ Makefile               # build-linux, build-windows, deb, rpm
 ├─ extension/                # Chrome Extension
 ├─ docs/                     # Dokumentation (DE + EN)

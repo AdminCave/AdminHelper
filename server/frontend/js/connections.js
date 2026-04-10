@@ -1,4 +1,4 @@
-/* Simple Remote Manager – Connections */
+/* AdminHelper – Connections */
 'use strict';
 
 async function loadConnections() {

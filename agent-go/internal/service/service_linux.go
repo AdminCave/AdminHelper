@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 )
 
-const serviceName = "srm-agent"
+const serviceName = "adminhelper-agent"
 
-// Install registriert den SRM-Agent als systemd-Service mit Timer.
+// Install registriert den AdminHelper-Agent als systemd-Service mit Timer.
 func Install() error {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -20,7 +20,7 @@ func Install() error {
 
 	// Service-Unit schreiben
 	serviceUnit := fmt.Sprintf(`[Unit]
-Description=SRM Agent — FRPC Sync + Monitoring
+Description=AdminHelper Agent — FRPC Sync + Monitoring
 After=network-online.target
 Wants=network-online.target
 
@@ -34,7 +34,7 @@ WantedBy=multi-user.target
 
 	// Timer-Unit schreiben
 	timerUnit := `[Unit]
-Description=SRM Agent Timer (alle 5 Minuten)
+Description=AdminHelper Agent Timer (alle 5 Minuten)
 
 [Timer]
 OnBootSec=60
@@ -66,7 +66,7 @@ WantedBy=timers.target
 	return nil
 }
 
-// Uninstall deregistriert den SRM-Agent Service.
+// Uninstall deregistriert den AdminHelper-Agent Service.
 func Uninstall() error {
 	exec.Command("systemctl", "stop", serviceName+".timer").Run()
 	exec.Command("systemctl", "disable", serviceName+".timer").Run()

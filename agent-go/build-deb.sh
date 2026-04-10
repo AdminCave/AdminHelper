@@ -1,9 +1,9 @@
 #!/bin/bash
-# Build .deb package for srm-agent (unified Go agent)
+# Build .deb package for adminhelper-agent (unified Go agent)
 set -euo pipefail
 
-VERSION="${VERSION:-0.8.0}"
-PKG_NAME="srm-agent"
+VERSION="${VERSION:-0.12.0}"
+PKG_NAME="adminhelper-agent"
 BUILD_DIR="build-deb/${PKG_NAME}_${VERSION}_amd64"
 
 echo "=== Building ${PKG_NAME} ${VERSION} (deb) ==="
@@ -14,7 +14,7 @@ mkdir -p "${BUILD_DIR}/usr/bin"
 mkdir -p "${BUILD_DIR}/usr/local/bin"
 mkdir -p "${BUILD_DIR}/etc/systemd/system"
 mkdir -p "${BUILD_DIR}/etc/frp"
-mkdir -p "${BUILD_DIR}/etc/srm"
+mkdir -p "${BUILD_DIR}/etc/adminhelper"
 
 # Control file with version
 sed "s/__VERSION__/${VERSION}/" agent-go/deb/DEBIAN/control > "${BUILD_DIR}/DEBIAN/control"
@@ -23,12 +23,12 @@ cp agent-go/deb/DEBIAN/prerm    "${BUILD_DIR}/DEBIAN/"
 cp agent-go/deb/DEBIAN/postrm   "${BUILD_DIR}/DEBIAN/"
 chmod 755 "${BUILD_DIR}/DEBIAN/postinst" "${BUILD_DIR}/DEBIAN/prerm" "${BUILD_DIR}/DEBIAN/postrm"
 
-# srm-agent Go binary (must exist, built by CI or make)
-if [ -f agent-go/bin/srm-agent ]; then
-    cp agent-go/bin/srm-agent "${BUILD_DIR}/usr/local/bin/srm-agent"
-    chmod 755 "${BUILD_DIR}/usr/local/bin/srm-agent"
+# adminhelper-agent Go binary (must exist, built by CI or make)
+if [ -f agent-go/bin/adminhelper-agent ]; then
+    cp agent-go/bin/adminhelper-agent "${BUILD_DIR}/usr/local/bin/adminhelper-agent"
+    chmod 755 "${BUILD_DIR}/usr/local/bin/adminhelper-agent"
 else
-    echo "FEHLER: agent-go/bin/srm-agent nicht gefunden. Bitte zuerst bauen."
+    echo "FEHLER: agent-go/bin/adminhelper-agent nicht gefunden. Bitte zuerst bauen."
     exit 1
 fi
 
@@ -44,9 +44,9 @@ else
 fi
 
 # systemd units
-cp agent-go/systemd/frpc.service       "${BUILD_DIR}/etc/systemd/system/"
-cp agent-go/systemd/srm-agent.service  "${BUILD_DIR}/etc/systemd/system/"
-cp agent-go/systemd/srm-agent.timer    "${BUILD_DIR}/etc/systemd/system/"
+cp agent-go/systemd/frpc.service                "${BUILD_DIR}/etc/systemd/system/"
+cp agent-go/systemd/adminhelper-agent.service    "${BUILD_DIR}/etc/systemd/system/"
+cp agent-go/systemd/adminhelper-agent.timer      "${BUILD_DIR}/etc/systemd/system/"
 
 # Build
 dpkg-deb --root-owner-group --build "${BUILD_DIR}"

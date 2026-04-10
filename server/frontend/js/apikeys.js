@@ -1,4 +1,4 @@
-/* Simple Remote Manager – API Keys */
+/* AdminHelper – API Keys */
 'use strict';
 
 async function loadApiKeys() {

@@ -9,7 +9,7 @@ import (
 
 // FrpcConfig enthaelt die Konfiguration fuer den FRPC-Sync Agent.
 type FrpcConfig struct {
-	SRMURL   string
+	AdminHelperURL string
 	APIKey   string
 	ServerID string
 	CurlSSL  string // Legacy-Feld, wird in Go nicht direkt genutzt
@@ -73,7 +73,7 @@ func LoadFrpcConfig() (*FrpcConfig, error) {
 		return nil, err
 	}
 	cfg := &FrpcConfig{
-		SRMURL:   kv["SRM_URL"],
+		AdminHelperURL: kv["ADMINHELPER_URL"],
 		APIKey:   kv["API_KEY"],
 		ServerID: kv["SERVER_ID"],
 		CurlSSL:  kv["CURL_SSL"],

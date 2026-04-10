@@ -194,7 +194,7 @@ import { initDashboard } from "./dashboard.js";
   const appShell = document.getElementById("appMain");
 
   function initSidebar() {
-    const collapsed = localStorage.getItem("srm-sidebar-collapsed") === "true";
+    const collapsed = localStorage.getItem("adminhelper-sidebar-collapsed") === "true";
     if (collapsed) {
       appShell.classList.add("sidebar-collapsed");
     }
@@ -202,7 +202,7 @@ import { initDashboard } from "./dashboard.js";
       sidebarToggle.addEventListener("click", () => {
         appShell.classList.toggle("sidebar-collapsed");
         localStorage.setItem(
-          "srm-sidebar-collapsed",
+          "adminhelper-sidebar-collapsed",
           appShell.classList.contains("sidebar-collapsed")
         );
       });
