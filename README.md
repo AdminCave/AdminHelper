@@ -247,7 +247,7 @@ Der **Unified Go Agent** (`adminhelper-agent`) vereint FRP-Sync und Monitoring i
 
 ```bash
 # DEB installieren:
-apt install ./adminhelper-agent_0.12.0_amd64.deb
+apt install ./adminhelper-agent_0.13.0_amd64.deb
 
 # Monitoring einrichten:
 sudo adminhelper-agent monitor init \

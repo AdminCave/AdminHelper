@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AdminHelper",
   "description": "Web-Verbindungen aus AdminHelper direkt im Browser öffnen",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "permissions": ["storage", "tabs", "alarms"],
   "action": {
     "default_popup": "popup.html",
