@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AdminHelper - Monitoring</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body data-page="monitoring">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="./assets/logo.svg" alt="AdminHelper Logo" />
+          <span class="brand-copy">
+            <strong>AdminHelper</strong>
+            <span>Monitoring</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menu</button>
+          <nav class="primary-nav" aria-label="Hauptnavigation">
+            <a href="./index.html" data-page="overview">Ubersicht</a>
+            <a href="./developer.html" data-page="developer">Entwickler</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
+          </nav>
+          <div class="lang-switch" aria-label="Sprache">
+            <a href="./monitoring.html" class="active">DE</a>
+            <a href="./en/monitoring.html">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Monitoring</p>
+        <h1 class="page-title">Monitoring und Alerting</h1>
+        <p class="page-subtitle">
+          AdminHelper Monitoring uberwacht Server und Dienste mit Pull- und Push-basierten
+          Checks, speichert Metriken in VictoriaMetrics und alarmiert per Webhook oder E-Mail.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#check-types">Check-Typen</a>
+          <a class="btn ghost" href="#alerting">Alerting</a>
+        </div>
+      </section>
+
+      <div class="content-grid">
+        <div class="content-main">
+          <section id="architecture" class="panel reveal">
+            <h2>1) Architektur</h2>
+            <p>
+              Das Monitoring-System besteht aus vier Komponenten, die zusammenarbeiten,
+              um Server und Dienste zu uberwachen:
+            </p>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Monitoring-Service</h3>
+                <p>
+                  FastAPI-Anwendung auf <strong>Port 8080</strong>. Enthalt die Check-Engine,
+                  den Scheduler fur periodische Prufungen und das Alerting-System.
+                  Empfangt Push-Daten vom Agent und fuhrt Pull-Checks selbststandig aus.
+                </p>
+              </article>
+              <article class="card">
+                <h3>VictoriaMetrics</h3>
+                <p>
+                  Zeitreihen-Datenbank auf <strong>Port 8428</strong>. Speichert alle Metriken
+                  mit einer Standard-Retention von 90 Tagen. Kompatibel mit PromQL-Abfragen.
+                </p>
+              </article>
+              <article class="card">
+                <h3>AdminHelper Agent</h3>
+                <p>
+                  Push-basierte Metrikerfassung auf den uberwachten Servern. Sammelt
+                  CPU, RAM, Disks, Services und Temperaturen und sendet diese per HTTPS
+                  an den Monitoring-Service.
+                </p>
+              </article>
+              <article class="card">
+                <h3>AdminHelper Server</h3>
+                <p>
+                  Stellt einen Proxy bereit, uber den die Web-UI auf die Monitoring-API
+                  zugreifen kann. Der Monitoring-Service ist nicht direkt von aussen erreichbar.
+                </p>
+              </article>
+            </div>
+            <div class="callout">
+              <strong>Datenfluss:</strong> Agent → Monitoring-Service → VictoriaMetrics + Alerting.
+              Pull-Checks werden direkt vom Monitoring-Service ausgefuhrt.
+            </div>
+          </section>
+
+          <section id="check-types" class="panel reveal">
+            <h2>2) Check-Typen</h2>
+            <p>
+              AdminHelper unterstutzt 10 verschiedene Check-Typen, aufgeteilt in Pull-basierte
+              (vom Monitoring-Service ausgefuhrt) und Push-basierte (vom Agent gemeldet) Checks.
+            </p>
+
+            <h3>Pull-basierte Checks</h3>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>ping — ICMP Ping</h3>
+                <p>
+                  Pruft die Erreichbarkeit eines Hosts per ICMP Ping.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  <span class="inline-code">target</span> (Hostname/IP),
+                  <span class="inline-code">timeout</span> (Sekunden, Standard: 5)
+                </p>
+                <p>
+                  <strong>Metrik:</strong>
+                  <span class="inline-code">monitor_ping_rtt_ms</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>tcp — TCP Port Check</h3>
+                <p>
+                  Pruft ob ein TCP-Port erreichbar ist und misst die Verbindungszeit.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  <span class="inline-code">host</span>,
+                  <span class="inline-code">port</span>,
+                  <span class="inline-code">timeout</span> (Sekunden, Standard: 5)
+                </p>
+                <p>
+                  <strong>Metrik:</strong>
+                  <span class="inline-code">monitor_tcp_connect_ms</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>http — HTTP/HTTPS Check</h3>
+                <p>
+                  Fuhrt einen HTTP-Request aus und pruft Status-Code und Antwortzeit.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  <span class="inline-code">url</span>,
+                  <span class="inline-code">method</span> (GET/POST),
+                  <span class="inline-code">timeout</span>,
+                  <span class="inline-code">status_code</span> (erwarteter Code)
+                </p>
+                <p>
+                  <strong>Metriken:</strong>
+                  <span class="inline-code">monitor_http_status_code</span>,
+                  <span class="inline-code">monitor_http_response_ms</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>agent_ping — Agent-Erreichbarkeit</h3>
+                <p>
+                  Pruft ob der Agent in den letzten 5 Minuten Daten gesendet hat.
+                  Benotigt keine besonderen Konfigurationsparameter.
+                </p>
+                <p>
+                  <strong>Config:</strong> keine besonderen Parameter
+                </p>
+              </article>
+            </div>
+
+            <h3>Push-basierte Checks</h3>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>agent_resources — CPU, Memory, Disk</h3>
+                <p>
+                  Uberwacht Systemressourcen mit konfigurierbaren Schwellwerten.
+                  Per-Disk und Per-Sensor Schwellwerte sind moglich.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  <span class="inline-code">cpu_warning</span> (%),
+                  <span class="inline-code">cpu_critical</span> (%),
+                  <span class="inline-code">memory_warning</span> (%),
+                  <span class="inline-code">memory_critical</span> (%)
+                </p>
+                <p>
+                  <strong>Metriken:</strong>
+                  <span class="inline-code">monitor_cpu_percent</span>,
+                  <span class="inline-code">monitor_memory_percent</span>,
+                  <span class="inline-code">monitor_disk_percent</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>service_process — Dienst-Uberwachung</h3>
+                <p>
+                  Pruft den Status konfigurierter Dienste. Unterstutzt
+                  systemd-Units (Linux) und Windows-Services.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  <span class="inline-code">services</span> (Array von Dienstnamen)
+                </p>
+                <p>
+                  <strong>Status:</strong> running, stopped, failed
+                </p>
+              </article>
+              <article class="card">
+                <h3>docker_health — Docker Container</h3>
+                <p>
+                  Pruft den Health-Status laufender Docker-Container.
+                  Container werden automatisch vom Agent erkannt.
+                </p>
+                <p>
+                  <strong>Config:</strong> automatische Erkennung
+                </p>
+              </article>
+              <article class="card">
+                <h3>proxmox_backup — Proxmox Backup Server</h3>
+                <p>
+                  Pruft den letzten Backup-Zeitpunkt auf einem Proxmox Backup Server.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  <span class="inline-code">max_backup_age_hours</span>,
+                  <span class="inline-code">exclude_vmids</span>,
+                  <span class="inline-code">exclude_stopped</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>zfs_health — ZFS Pool Status</h3>
+                <p>
+                  Pruft ZFS-Pool-Kapazitat und Health-Status.
+                </p>
+                <p>
+                  <strong>Config:</strong>
+                  Pool-Namen,
+                  <span class="inline-code">warning_percent</span>,
+                  <span class="inline-code">critical_percent</span>
+                </p>
+              </article>
+              <article class="card">
+                <h3>smart_health — Festplatten S.M.A.R.T.</h3>
+                <p>
+                  Uberwacht S.M.A.R.T.-Werte der Festplatten. Automatische Erkennung
+                  durch den Agent.
+                </p>
+                <p>
+                  <strong>Pruft:</strong> Reallocated Sectors, Pending Sectors, Temperature
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section id="check-config" class="panel reveal">
+            <h2>3) Check-Konfiguration</h2>
+            <p>
+              Jeder Check kann individuell konfiguriert werden. Die wichtigsten Parameter sind:
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Beschreibung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Intervall</strong></td>
+                  <td>
+                    Vordefiniert: <span class="inline-code">1m</span>, <span class="inline-code">5m</span>,
+                    <span class="inline-code">15m</span>, <span class="inline-code">30m</span>,
+                    <span class="inline-code">1h</span>, <span class="inline-code">6h</span>,
+                    <span class="inline-code">12h</span>, <span class="inline-code">24h</span>
+                    oder Cron-Ausdrucke (5 Felder)
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Severity</strong></td>
+                  <td>
+                    <span class="inline-code">warning</span> oder
+                    <span class="inline-code">critical</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Consecutive Fails</strong></td>
+                  <td>
+                    Anzahl aufeinanderfolgender Fehler bevor der Status wechselt (z.B. 3 = erst
+                    nach 3 Fehlern wird alarmiert)
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Enabled</strong></td>
+                  <td>
+                    Checks konnen per Flag aktiviert oder deaktiviert werden
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Beispiel: Check per API erstellen</h3>
+            <pre class="code-block"><code>POST /api/monitoring/checks
+Content-Type: application/json
+
+{
+  "name": "Webserver erreichbar",
+  "check_type": "http",
+  "server_id": "srv-web-prod-01",
+  "interval": "5m",
+  "severity": "critical",
+  "consecutive_fails": 3,
+  "enabled": true,
+  "config": {
+    "url": "https://example.com/health",
+    "method": "GET",
+    "timeout": 10,
+    "status_code": 200
+  }
+}</code></pre>
+            <div class="callout">
+              <strong>Tipp:</strong> Mit <span class="inline-code">consecutive_fails</span> lassen sich
+              kurzzeitige Ausfalle (Flapping) filtern. Ein Wert von 3 bei einem 5-Minuten-Intervall
+              bedeutet, dass erst nach 15 Minuten anhaltendem Fehler alarmiert wird.
+            </div>
+          </section>
+
+          <section id="alerting" class="panel reveal">
+            <h2>4) Alerting</h2>
+            <p>
+              Das Alerting-System benachrichtigt bei Statusanderungen uber konfigurierbare Kanale.
+            </p>
+
+            <h3>Alert-Regeln</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Beschreibung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">match_severity</span></td>
+                  <td>Nur bei bestimmtem Severity alarmieren (<span class="inline-code">warning</span>, <span class="inline-code">critical</span>)</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">match_server_id</span></td>
+                  <td>Nur fur bestimmten Server (optional, leer = alle Server)</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">cooldown_minutes</span></td>
+                  <td>Mindestabstand zwischen Alarmen (z.B. 30 = max. alle 30 Minuten)</td>
+                </tr>
+                <tr>
+                  <td><strong>Recovery-Alerts</strong></td>
+                  <td>Automatisch wenn Status zu "ok" zuruckkehrt (ignoriert Cooldown)</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>Channel: Webhook</h3>
+            <p>
+              Sendet einen JSON-Payload an eine konfigurierbare URL (Timeout: 10 Sekunden).
+            </p>
+            <pre class="code-block"><code>// Konfiguration
+{
+  "url": "https://hooks.slack.com/services/T00/B00/xxxx"
+}
+
+// Payload (wird automatisch gesendet)
+{
+  "alert_rule": "critical-alerts",
+  "check_name": "Webserver erreichbar",
+  "server_id": "srv-web-prod-01",
+  "severity": "critical",
+  "old_status": "ok",
+  "new_status": "critical",
+  "is_recovery": false,
+  "subject": "[AdminHelper Monitor] CRITICAL: Webserver erreichbar",
+  "text": "Check 'Webserver erreichbar' auf srv-web-prod-01 ist CRITICAL."
+}</code></pre>
+
+            <h3>Channel: E-Mail (SMTP)</h3>
+            <p>
+              Sendet E-Mail-Benachrichtigungen per SMTP. Port 587 aktiviert STARTTLS automatisch.
+            </p>
+            <pre class="code-block"><code>// Alert-Channel Konfiguration
+{
+  "recipients": ["admin@example.com", "ops@example.com"],
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_user": "alerts@example.com",
+  "smtp_password": "geheim"
+}</code></pre>
+            <div class="callout">
+              <strong>Hinweis:</strong> SMTP-Einstellungen konnen alternativ global uber
+              Umgebungsvariablen gesetzt werden. Die Channel-Konfiguration uberschreibt
+              die globalen Werte.
+              Betreff-Format: <span class="inline-code">[AdminHelper Monitor] CRITICAL: Checkname</span>
+            </div>
+          </section>
+
+          <section id="env-vars" class="panel reveal">
+            <h2>5) Umgebungsvariablen</h2>
+            <p>
+              Der Monitoring-Service wird uber folgende Umgebungsvariablen konfiguriert:
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Standard</th>
+                  <th>Beschreibung</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">VICTORIA_METRICS_URL</span></td>
+                  <td><span class="inline-code">http://victoria:8428</span></td>
+                  <td>VictoriaMetrics API URL</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">MONITOR_API_KEY</span></td>
+                  <td>(leer)</td>
+                  <td>Interner API-Key (geteilt mit Server)</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">DATA_DIR</span></td>
+                  <td><span class="inline-code">/app/data</span></td>
+                  <td>Verzeichnis fur SQLite-Datenbank</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SMTP_HOST</span></td>
+                  <td>(leer)</td>
+                  <td>SMTP-Server fur E-Mail-Alerts</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SMTP_PORT</span></td>
+                  <td><span class="inline-code">587</span></td>
+                  <td>SMTP-Port (587 = STARTTLS)</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SMTP_USER</span></td>
+                  <td>(leer)</td>
+                  <td>SMTP-Benutzername</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SMTP_PASSWORD</span></td>
+                  <td>(leer)</td>
+                  <td>SMTP-Passwort</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">SMTP_FROM</span></td>
+                  <td><span class="inline-code">adminhelper@localhost</span></td>
+                  <td>Absender-Adresse</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">TZ</span></td>
+                  <td><span class="inline-code">Europe/Berlin</span></td>
+                  <td>Zeitzone</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="templates" class="panel reveal">
+            <h2>6) Templates</h2>
+            <p>
+              Monitoring-Templates sind wiederverwendbare Sammlungen von Check- und
+              Alert-Definitionen, die auf mehrere Server angewendet werden konnen.
+            </p>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>Template-Inhalt</h3>
+                <p>
+                  Ein Template enthalt zwei Arrays:
+                  <span class="inline-code">check_definitions</span> (Check-Vorlagen) und
+                  <span class="inline-code">alert_definitions</span> (Alert-Regel-Vorlagen).
+                </p>
+              </article>
+              <article class="card">
+                <h3>Zuweisung und Sync</h3>
+                <p>
+                  Bei Zuweisung an einen Server werden Checks und Alert-Regeln automatisch
+                  erstellt. Anderungen am Template konnen auf zugewiesene Server
+                  synchronisiert werden.
+                </p>
+              </article>
+            </div>
+            <pre class="code-block"><code>// Beispiel: Template-Struktur
+{
+  "name": "Standard Linux Server",
+  "check_definitions": [
+    {
+      "check_type": "agent_resources",
+      "interval": "5m",
+      "severity": "critical",
+      "config": {
+        "cpu_warning": 80,
+        "cpu_critical": 95,
+        "memory_warning": 85,
+        "memory_critical": 95
+      }
+    },
+    {
+      "check_type": "agent_ping",
+      "interval": "5m",
+      "severity": "critical",
+      "consecutive_fails": 3
+    }
+  ],
+  "alert_definitions": [
+    {
+      "channel_type": "webhook",
+      "match_severity": "critical",
+      "cooldown_minutes": 30,
+      "config": {
+        "url": "https://hooks.slack.com/services/..."
+      }
+    }
+  ]
+}</code></pre>
+          </section>
+
+          <section id="agent-keys" class="panel reveal">
+            <h2>7) Agent-Keys</h2>
+            <p>
+              Jeder uberwachte Server benotigt einen eigenen Agent-API-Key zur
+              Authentifizierung gegenuber dem Monitoring-Service.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Eigenschaft</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Generierung</strong></td>
+                  <td>Uber Web-UI oder <span class="inline-code">POST /admin/agent-keys</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Anzeige</strong></td>
+                  <td>Key wird bei Generierung einmalig im Klartext angezeigt</td>
+                </tr>
+                <tr>
+                  <td><strong>Speicherung</strong></td>
+                  <td>In der Datenbank als SHA-256 Hash gespeichert</td>
+                </tr>
+                <tr>
+                  <td><strong>Verwendung</strong></td>
+                  <td>Agent sendet Key im <span class="inline-code">X-API-Key</span> Header bei jedem Push</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="callout warn">
+              <strong>Wichtig:</strong> Der API-Key wird nur einmal im Klartext angezeigt.
+              Notieren Sie ihn sofort oder konfigurieren Sie den Agent direkt nach der Generierung.
+              Ein verlorener Key kann nicht wiederhergestellt werden — es muss ein neuer generiert werden.
+            </div>
+          </section>
+
+          <section id="victoriametrics" class="panel reveal">
+            <h2>8) VictoriaMetrics</h2>
+            <p>
+              VictoriaMetrics dient als Zeitreihen-Datenbank fur alle Monitoring-Metriken.
+              Daten werden uber das InfluxDB Line Protocol geschrieben.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Eigenschaft</th>
+                  <th>Wert</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Protokoll</td>
+                  <td>InfluxDB Line Protocol</td>
+                </tr>
+                <tr>
+                  <td>Retention</td>
+                  <td>90 Tage (Standard)</td>
+                </tr>
+                <tr>
+                  <td>Abfrage-Sprache</td>
+                  <td>PromQL</td>
+                </tr>
+              </tbody>
+            </table>
+            <p>
+              Fur jeden Check werden mindestens zwei Metriken geschrieben:
+            </p>
+            <ul>
+              <li>
+                <span class="inline-code">monitor_check_status</span> —
+                0 = ok, 1 = warning, 2 = critical, 3 = unknown
+              </li>
+              <li>
+                <span class="inline-code">monitor_check_duration_ms</span> —
+                Ausfuhrungsdauer des Checks in Millisekunden
+              </li>
+            </ul>
+            <p>
+              PromQL-Abfragen sind uber den Endpunkt
+              <span class="inline-code">/api/monitoring/checks/{id}/metrics</span> moglich.
+            </p>
+            <pre class="code-block"><code># Beispiel PromQL: Durchschnittliche Check-Dauer der letzten Stunde
+avg_over_time(monitor_check_duration_ms{check_id="42"}[1h])
+
+# Alle kritischen Checks
+monitor_check_status == 2</code></pre>
+          </section>
+
+          <section id="docker-compose" class="panel reveal">
+            <h2>9) Docker Compose Setup</h2>
+            <p>
+              Die Monitoring-relevanten Teile der
+              <span class="inline-code">docker-compose.yml</span>:
+            </p>
+            <pre class="code-block"><code>services:
+  monitoring:
+    image: adminhelper-monitoring:latest
+    ports:
+      - "8480:8080"
+    environment:
+      - VICTORIA_METRICS_URL=http://victoria:8428
+      - MONITOR_API_KEY=${MONITOR_API_KEY}
+      - DATA_DIR=/app/data
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
+      - TZ=Europe/Berlin
+    volumes:
+      - monitoring-data:/app/data
+    depends_on:
+      - victoria
+    restart: unless-stopped
+
+  victoria:
+    image: victoriametrics/victoria-metrics:v1.101.0
+    command:
+      - "-retentionPeriod=90d"
+      - "-storageDataPath=/victoria-data"
+    volumes:
+      - victoria-data:/victoria-data
+    restart: unless-stopped
+
+volumes:
+  monitoring-data:
+  victoria-data:</code></pre>
+            <div class="callout">
+              <strong>Hinweis:</strong> Der Monitoring-Service ist intern auf Port 8080 erreichbar
+              und wird extern auf Port 8480 gemappt. Der AdminHelper-Server leitet Anfragen
+              als Proxy an den Monitoring-Service weiter.
+            </div>
+          </section>
+        </div>
+
+        <aside class="content-sidebar">
+          <section class="panel toc reveal">
+            <h3>Inhalt</h3>
+            <ul>
+              <li><a href="#architecture">1) Architektur</a></li>
+              <li><a href="#check-types">2) Check-Typen</a></li>
+              <li><a href="#check-config">3) Check-Konfiguration</a></li>
+              <li><a href="#alerting">4) Alerting</a></li>
+              <li><a href="#env-vars">5) Umgebungsvariablen</a></li>
+              <li><a href="#templates">6) Templates</a></li>
+              <li><a href="#agent-keys">7) Agent-Keys</a></li>
+              <li><a href="#victoriametrics">8) VictoriaMetrics</a></li>
+              <li><a href="#docker-compose">9) Docker Compose</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Quick Info</h3>
+            <table>
+              <tbody>
+                <tr>
+                  <td>Service-Port</td>
+                  <td><span class="inline-code">8080</span></td>
+                </tr>
+                <tr>
+                  <td>Datenbank</td>
+                  <td>SQLite</td>
+                </tr>
+                <tr>
+                  <td>Metriken</td>
+                  <td>VictoriaMetrics</td>
+                </tr>
+                <tr>
+                  <td>Check-Typen</td>
+                  <td>10</td>
+                </tr>
+                <tr>
+                  <td>Alert-Channels</td>
+                  <td>Webhook, E-Mail</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Schnellstart</h3>
+            <div class="quick-links">
+              <a href="#check-types">Check-Typen</a>
+              <a href="#check-config">Check erstellen</a>
+              <a href="#alerting">Alerting einrichten</a>
+              <a href="#templates">Templates nutzen</a>
+              <a href="#docker-compose">Docker Setup</a>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Monitoring-Dokumentation fur den aktuellen Repository-Stand.
+        Fur Agent-Setup siehe <a href="./agent.html">Agent-Referenz</a>.
+      </footer>
+    </main>
+
+    <script src="./assets/app.js"></script>
+  </body>
+</html>
