@@ -189,7 +189,7 @@ build_go_agent:
   image: golang:1.24-bookworm
   needs: []
   variables:
-    AGENT_VERSION: "0.13.0"
+    AGENT_VERSION: "0.14.0"
   script:
     - cd agent-go
     - GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.version=${AGENT_VERSION}" -o bin/adminhelper-agent ./cmd/adminhelper-agent
@@ -211,7 +211,7 @@ build_agent_deb:
   image: debian:bookworm-slim
   needs: [download_frpc, build_go_agent]
   variables:
-    AGENT_VERSION: "0.13.0"
+    AGENT_VERSION: "0.14.0"
   script:
     - apt-get update -qq && apt-get install -y -qq dpkg-dev > /dev/null
     - VERSION=${AGENT_VERSION} bash agent-go/build-deb.sh
@@ -231,7 +231,7 @@ build_agent_rpm:
   image: almalinux:9
   needs: [download_frpc, build_go_agent]
   variables:
-    AGENT_VERSION: "0.13.0"
+    AGENT_VERSION: "0.14.0"
   script:
     - dnf install -y rpm-build tar gzip > /dev/null
     - VERSION=${AGENT_VERSION} bash agent-go/build-rpm.sh
