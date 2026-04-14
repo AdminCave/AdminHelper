@@ -1,6 +1,6 @@
 (() => {
-  const LANG_KEY = 'srm_docs_lang';
-  const DOC_PAGES = new Set(['index.html', 'developer.html', 'administration.html']);
+  const LANG_KEY = 'adminhelper_docs_lang';
+  const DOC_PAGES = new Set(['index.html', 'developer.html', 'administration.html', 'agent.html', 'api-reference.html', 'monitoring.html']);
 
   function safeGetLangPreference() {
     try {

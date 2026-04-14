@@ -31,8 +31,11 @@
           <button class="menu-btn" type="button">Menü</button>
           <nav class="primary-nav" aria-label="Hauptnavigation">
             <a href="./index.html" data-page="overview">Übersicht</a>
-            <a href="./developer.html" data-page="developer">Für Entwickler</a>
-            <a href="./administration.html" data-page="admin">Für Administration</a>
+            <a href="./developer.html" data-page="developer">Entwickler</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
           </nav>
           <div class="lang-switch" aria-label="Sprache">
             <a href="./index.html" class="active">DE</a>
@@ -126,7 +129,7 @@
                 <tr>
                   <td>Monitoring-Service</td>
                   <td>Python, FastAPI, APScheduler, VictoriaMetrics</td>
-                  <td>Check-Engine (Ping/TCP/HTTP/SNMP/Agent), Templates, Alerting (Webhook/E-Mail)</td>
+                  <td>Check-Engine (Ping/TCP/HTTP/Agent), Templates, Alerting (Webhook/E-Mail)</td>
                 </tr>
                 <tr>
                   <td>Agent</td>
@@ -181,22 +184,46 @@ cargo tauri dev</code></pre>
 
           <section id="navigation" class="panel reveal">
             <h2>Wie diese Doku aufgebaut ist</h2>
-            <div class="cards cols-2">
+            <div class="cards cols-3">
               <article class="card">
-                <h3>Für Entwickler</h3>
+                <h3>Entwickler</h3>
                 <p>
-                  Architektur, Code-Struktur, lokale Entwicklung, API-Verhalten,
-                  Datenmodelle, CI/CD und typische Erweiterungspfade.
+                  Architektur, Code-Struktur, lokale Entwicklung,
+                  Datenmodelle, CI/CD und Erweiterungspfade.
                 </p>
                 <a class="btn ghost" href="./developer.html">Zur Entwicklerdoku</a>
               </article>
               <article class="card">
-                <h3>Für Administration</h3>
+                <h3>Administration</h3>
                 <p>
-                  Deployment, Konfiguration, Security-Härtung, Nutzerbetrieb,
-                  Backup/Restore, Updates und Incident-Checklisten.
+                  Deployment, Konfiguration, Security-Härtung,
+                  Backup/Restore, Updates und Incident-Runbook.
                 </p>
                 <a class="btn ghost" href="./administration.html">Zur Admin-Doku</a>
+              </article>
+              <article class="card">
+                <h3>Agent-Referenz</h3>
+                <p>
+                  CLI-Kommandos, Konfigurationsdateien, Provisionierung,
+                  Monitoring-Collector und Systemd/Windows-Service.
+                </p>
+                <a class="btn ghost" href="./agent.html">Zur Agent-Doku</a>
+              </article>
+              <article class="card">
+                <h3>API-Referenz</h3>
+                <p>
+                  Alle REST-Endpunkte mit Auth-Level, Parametern
+                  und Beispielen — gruppiert nach Modul.
+                </p>
+                <a class="btn ghost" href="./api-reference.html">Zur API-Doku</a>
+              </article>
+              <article class="card">
+                <h3>Monitoring</h3>
+                <p>
+                  Check-Typen, Alerting-Konfiguration, Templates,
+                  VictoriaMetrics und Agent-Keys.
+                </p>
+                <a class="btn ghost" href="./monitoring.html">Zur Monitoring-Doku</a>
               </article>
             </div>
             <div class="callout">
@@ -249,7 +276,7 @@ cargo tauri dev</code></pre>
       </div>
 
       <footer class="footer">
-        Stand der Doku: 07.04.2026. Erstellt aus aktuellem Repository-Quellcode.
+        Stand der Doku: 13.04.2026. Erstellt aus aktuellem Repository-Quellcode.
         © <span id="year"></span>
       </footer>
     </main>

@@ -31,8 +31,11 @@
           <button class="menu-btn" type="button">Menü</button>
           <nav class="primary-nav" aria-label="Hauptnavigation">
             <a href="./index.html" data-page="overview">Übersicht</a>
-            <a href="./developer.html" data-page="developer">Für Entwickler</a>
-            <a href="./administration.html" data-page="admin">Für Administration</a>
+            <a href="./developer.html" data-page="developer">Entwickler</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
           </nav>
           <div class="lang-switch" aria-label="Sprache">
             <a href="./developer.html" class="active">DE</a>
@@ -355,6 +358,15 @@ docker compose up -d</code></pre>
                 </tr>
               </tbody>
             </table>
+            <div class="callout">
+              <strong>Vollständige API-Referenz:</strong> Alle 40+ Endpunkte mit Auth-Level und Parametern findest du in der
+              <a href="./api-reference.html">API-Referenz</a>.
+            </div>
+            <div class="callout">
+              <strong>Monitoring-Architektur:</strong> Check-Engine, Alerting, Templates und VictoriaMetrics-Integration
+              sind in der <a href="./monitoring.html">Monitoring-Doku</a> detailliert beschrieben. Agent-CLI-Kommandos
+              findest du in der <a href="./agent.html">Agent-Referenz</a>.
+            </div>
           </section>
 
           <section id="hook-scripts" class="panel reveal">

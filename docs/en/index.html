@@ -33,6 +33,9 @@
             <a href="./index.html" data-page="overview">Overview</a>
             <a href="./developer.html" data-page="developer">Developers</a>
             <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
           </nav>
           <div class="lang-switch" aria-label="Language">
             <a href="../index.html">DE</a>
@@ -113,7 +116,7 @@
                 <tr>
                   <td>Monitoring Service</td>
                   <td>Python, FastAPI, APScheduler, VictoriaMetrics</td>
-                  <td>Check engine (Ping/TCP/HTTP/SNMP/Agent), templates, alerting (webhook/email).</td>
+                  <td>Check engine (Ping/TCP/HTTP/Agent), templates, alerting (webhook/email).</td>
                 </tr>
                 <tr>
                   <td>Agent</td>
@@ -159,16 +162,31 @@ cargo tauri dev</code></pre>
 
           <section id="navigation" class="panel reveal">
             <h2>How This Documentation Is Structured</h2>
-            <div class="cards cols-2">
+            <div class="cards cols-3">
               <article class="card">
-                <h3>Developer Docs</h3>
-                <p>Architecture, data models, APIs, implementation modules, and CI/CD.</p>
+                <h3>Developers</h3>
+                <p>Architecture, data models, modules, and CI/CD.</p>
                 <a class="btn ghost" href="./developer.html">Open developer docs</a>
               </article>
               <article class="card">
-                <h3>Administration Docs</h3>
-                <p>Deployment, hardening, backups, updates, and incident handling.</p>
+                <h3>Administration</h3>
+                <p>Deployment, hardening, backups, updates, and incidents.</p>
                 <a class="btn ghost" href="./administration.html">Open admin docs</a>
+              </article>
+              <article class="card">
+                <h3>Agent Reference</h3>
+                <p>CLI commands, configuration files, provisioning, monitoring collector, and service setup.</p>
+                <a class="btn ghost" href="./agent.html">Open agent docs</a>
+              </article>
+              <article class="card">
+                <h3>API Reference</h3>
+                <p>All REST endpoints with auth levels, parameters, and examples — grouped by module.</p>
+                <a class="btn ghost" href="./api-reference.html">Open API docs</a>
+              </article>
+              <article class="card">
+                <h3>Monitoring</h3>
+                <p>Check types, alerting configuration, templates, VictoriaMetrics, and agent keys.</p>
+                <a class="btn ghost" href="./monitoring.html">Open monitoring docs</a>
               </article>
             </div>
             <div class="callout">
@@ -220,7 +238,7 @@ cargo tauri dev</code></pre>
       </div>
 
       <footer class="footer">
-        Documentation baseline date: 07.04.2026. Built from the current repository source.
+        Documentation baseline date: 13.04.2026. Built from the current repository source.
       </footer>
     </main>
 

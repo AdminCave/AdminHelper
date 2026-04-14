@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AdminHelper - Agent Reference</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body data-page="agent">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="../assets/logo.svg" alt="AdminHelper Logo" />
+          <span class="brand-copy">
+            <strong>AdminHelper</strong>
+            <span>Agent Reference</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menu</button>
+          <nav class="primary-nav" aria-label="Main navigation">
+            <a href="./index.html" data-page="overview">Overview</a>
+            <a href="./developer.html" data-page="developer">Developers</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
+          </nav>
+          <div class="lang-switch" aria-label="Language">
+            <a href="../agent.html">DE</a>
+            <a href="./agent.html" class="active">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">Agent CLI</p>
+        <h1 class="page-title">AdminHelper Agent — Reference</h1>
+        <p class="page-subtitle">
+          The AdminHelper Agent is a unified Go binary for
+          FRP tunnel synchronization and system monitoring on Linux and Windows.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#installation">Installation</a>
+          <a class="btn ghost" href="#commands">Command Reference</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+          <section id="overview" class="panel reveal">
+            <h2>1) Overview</h2>
+            <p>
+              The <span class="inline-code">adminhelper-agent</span> is a unified Go binary
+              that fully replaces the legacy shell and Python scripts. It combines two main functions
+              in a single program:
+            </p>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>FRP Client Synchronization</h3>
+                <p>
+                  Automatic synchronization of the FRP client configuration with the AdminHelper server.
+                  The agent downloads tunnel definitions, PKI certificates and automatically generates
+                  the <span class="inline-code">frpc.toml</span>.
+                </p>
+              </article>
+              <article class="card">
+                <h3>System Monitoring Push</h3>
+                <p>
+                  Collects system metrics (CPU, RAM, disk, services, temperatures) and sends them
+                  via HTTPS push to the monitoring service. No inbound ports required.
+                </p>
+              </article>
+            </div>
+            <p>
+              The agent runs as a systemd timer (Linux) or Windows service and executes a
+              synchronization and monitoring cycle every 5 minutes.
+              Supported platforms: <strong>Linux amd64</strong> and <strong>Windows amd64</strong>.
+            </p>
+          </section>
+
+          <section id="installation" class="panel reveal">
+            <h2>2) Installation</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>DEB Package (Debian/Ubuntu)</h3>
+                <pre class="code-block"><code>sudo apt install ./adminhelper-agent_0.13.0_amd64.deb</code></pre>
+                <p>
+                  Installs the agent to <span class="inline-code">/usr/local/bin/</span>
+                  and creates systemd unit files.
+                </p>
+              </article>
+              <article class="card">
+                <h3>RPM Package (RHEL/AlmaLinux)</h3>
+                <pre class="code-block"><code>sudo rpm -i adminhelper-agent-0.13.0-1.x86_64.rpm</code></pre>
+                <p>
+                  Analogous to the DEB package — agent binary and systemd units are installed.
+                </p>
+              </article>
+            </div>
+
+            <h3>Windows Binary</h3>
+            <p>
+              Copy the EXE file to <span class="inline-code">C:\Program Files\AdminHelper\</span>
+              and register it as a Windows service:
+            </p>
+            <pre class="code-block"><code>copy adminhelper-agent.exe "C:\Program Files\AdminHelper\"
+"C:\Program Files\AdminHelper\adminhelper-agent.exe" service install</code></pre>
+          </section>
+
+          <section id="commands" class="panel reveal">
+            <h2>3) Command Reference</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Command</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent version</span></td>
+                  <td>Display version</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent run</span></td>
+                  <td>Daemon mode: FRP sync + monitoring every 5 minutes</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent run --once</span></td>
+                  <td>Single execution (for systemd timer)</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent frpc init</span></td>
+                  <td>Initial FRP client setup. Flags: <span class="inline-code">--url URL --token TOKEN --server-id ID [--cacert PATH] [--insecure]</span></td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent frpc sync</span></td>
+                  <td>One-time configuration synchronization</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent monitor init</span></td>
+                  <td>Initial monitoring setup. Flags: <span class="inline-code">--url URL --api-key KEY --server-id ID [--services svc1,svc2] [--cacert PATH] [--insecure]</span></td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent monitor push</span></td>
+                  <td>One-time metric push</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent service install</span></td>
+                  <td>Register systemd timer or Windows service</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">adminhelper-agent service uninstall</span></td>
+                  <td>Unregister service</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="config" class="panel reveal">
+            <h2>4) Configuration Files</h2>
+            <p>
+              Both configuration files use a simple
+              <span class="inline-code">KEY=VALUE</span> format (one variable per line).
+            </p>
+
+            <h3>FRP Configuration (<span class="inline-code">adminhelper.conf</span>)</h3>
+            <ul>
+              <li>Linux: <span class="inline-code">/etc/frp/adminhelper.conf</span></li>
+              <li>Windows: <span class="inline-code">%ProgramData%\AdminHelper\frp\adminhelper.conf</span></li>
+            </ul>
+            <pre class="code-block"><code># /etc/frp/adminhelper.conf
+ADMINHELPER_URL=https://admin.example.com
+API_KEY=abcdef1234567890abcdef1234567890
+SERVER_ID=srv-web-prod-01
+CACERT=/etc/frp/ca.crt
+INSECURE=false</code></pre>
+
+            <h3>Monitor Configuration (<span class="inline-code">monitor.conf</span>)</h3>
+            <ul>
+              <li>Linux: <span class="inline-code">/etc/adminhelper/monitor.conf</span></li>
+              <li>Windows: <span class="inline-code">%ProgramData%\AdminHelper\monitor.conf</span></li>
+            </ul>
+            <pre class="code-block"><code># /etc/adminhelper/monitor.conf
+MONITOR_URL=https://admin.example.com/api/monitoring
+API_KEY=abcdef1234567890abcdef1234567890
+SERVER_ID=srv-web-prod-01
+SERVICES=nginx,postgresql,redis
+CACERT=/etc/adminhelper/ca.crt
+INSECURE=false</code></pre>
+
+            <div class="callout">
+              <strong>Note:</strong> The configuration files are automatically created by
+              <span class="inline-code">frpc init</span> and <span class="inline-code">monitor init</span>
+              respectively. Manual editing is only necessary for special cases.
+            </div>
+          </section>
+
+          <section id="provisioning" class="panel reveal">
+            <h2>5) Provisioning Flow</h2>
+            <ol>
+              <li>Create the server in the AdminHelper Web UI.</li>
+              <li>Generate a provision token (Web UI or API).</li>
+              <li>
+                Initialize the agent on the target server:
+                <pre class="code-block"><code>sudo adminhelper-agent frpc init \
+  --url https://server:443 \
+  --token TOKEN \
+  --server-id SERVER_ID</code></pre>
+              </li>
+              <li>The agent downloads the PKI bundle (CA certificate, client certificate, private key).</li>
+              <li>The agent creates <span class="inline-code">adminhelper.conf</span> and <span class="inline-code">frpc.toml</span>.</li>
+              <li>
+                Start the timer/service:
+                <pre class="code-block"><code>sudo adminhelper-agent service install</code></pre>
+              </li>
+              <li>Automatic synchronization runs every 5 minutes from this point on.</li>
+            </ol>
+            <div class="callout">
+              <strong>Tip:</strong> Monitoring can be set up in the same step —
+              simply run <span class="inline-code">monitor init</span> in addition,
+              before calling <span class="inline-code">service install</span>.
+            </div>
+          </section>
+
+          <section id="collector" class="panel reveal">
+            <h2>6) Monitoring Collector</h2>
+            <p>
+              The integrated collector captures the following system metrics on each push cycle:
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>CPU</strong></td>
+                  <td>Utilization in percent (1-second average)</td>
+                </tr>
+                <tr>
+                  <td><strong>Memory</strong></td>
+                  <td>Usage in percent, total MB, used MB</td>
+                </tr>
+                <tr>
+                  <td><strong>Load</strong></td>
+                  <td>1m, 5m, 15m average (Linux only)</td>
+                </tr>
+                <tr>
+                  <td><strong>Disks</strong></td>
+                  <td>Per partition: mount point, filesystem, usage %, total/used GB. Automatically filters: squashfs, tmpfs, devtmpfs, overlay, proc, sysfs</td>
+                </tr>
+                <tr>
+                  <td><strong>Uptime</strong></td>
+                  <td>System uptime in seconds</td>
+                </tr>
+                <tr>
+                  <td><strong>Services</strong></td>
+                  <td>Status of configured services (systemd on Linux, Windows Services)</td>
+                </tr>
+                <tr>
+                  <td><strong>Temperatures</strong></td>
+                  <td>CPU temperature sensors (if available)</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section id="systemd" class="panel reveal">
+            <h2>7) Systemd Integration</h2>
+            <p>
+              On Linux, the agent uses timer-based execution. The timer starts the associated
+              oneshot service every 5 minutes.
+            </p>
+
+            <h3>Timer Unit (<span class="inline-code">adminhelper-agent.timer</span>)</h3>
+            <pre class="code-block"><code>[Unit]
+Description=AdminHelper Agent Timer
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target</code></pre>
+
+            <h3>Service Unit (<span class="inline-code">adminhelper-agent.service</span>)</h3>
+            <pre class="code-block"><code>[Unit]
+Description=AdminHelper Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/adminhelper-agent run --once
+StandardOutput=journal
+StandardError=journal</code></pre>
+
+            <ul>
+              <li><strong>RandomizedDelaySec=30:</strong> Prevents simultaneous requests from many agents.</li>
+              <li><strong>Persistent=true:</strong> Missed runs are caught up on the next boot.</li>
+              <li><strong>Type=oneshot:</strong> The service runs once and exits.</li>
+            </ul>
+          </section>
+
+          <section id="windows" class="panel reveal">
+            <h2>8) Windows Integration</h2>
+            <p>
+              On Windows, the agent is registered as a native Windows service via
+              <span class="inline-code">sc.exe</span>.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Service Name</td>
+                  <td><span class="inline-code">AdminHelper-Agent</span></td>
+                </tr>
+                <tr>
+                  <td>Binary</td>
+                  <td><span class="inline-code">C:\Program Files\AdminHelper\adminhelper-agent.exe run</span></td>
+                </tr>
+                <tr>
+                  <td>Startup Type</td>
+                  <td>Automatic</td>
+                </tr>
+                <tr>
+                  <td>Recovery</td>
+                  <td>Restart after 60 seconds (3 attempts)</td>
+                </tr>
+              </tbody>
+            </table>
+            <pre class="code-block"><code>:: Register service manually (if not via 'service install'):
+sc.exe create AdminHelper-Agent ^
+  binPath= "C:\Program Files\AdminHelper\adminhelper-agent.exe run" ^
+  start= auto ^
+  DisplayName= "AdminHelper Agent"
+
+:: Set recovery options:
+sc.exe failure AdminHelper-Agent reset= 86400 ^
+  actions= restart/60000/restart/60000/restart/60000</code></pre>
+          </section>
+
+          <section id="troubleshooting" class="panel reveal">
+            <h2>9) Troubleshooting</h2>
+            <div class="cards cols-2">
+              <article class="card">
+                <h3>SSL Certificate Errors</h3>
+                <p>
+                  For self-signed certificates, specify the CA certificate with
+                  <span class="inline-code">--cacert /path/to/ca.crt</span>.
+                  Alternatively, use <span class="inline-code">--insecure</span> for test environments.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Permission denied on /etc/frp</h3>
+                <p>
+                  The agent requires root privileges for initial setup.
+                  Run commands with <span class="inline-code">sudo</span>.
+                </p>
+              </article>
+              <article class="card">
+                <h3>frpc does not start</h3>
+                <p>
+                  Check status with
+                  <span class="inline-code">systemctl status frpc.service</span> and
+                  <span class="inline-code">journalctl -u frpc.service -n 50</span>.
+                </p>
+              </article>
+              <article class="card">
+                <h3>Monitoring push fails</h3>
+                <p>
+                  Verify <span class="inline-code">API_KEY</span> and
+                  <span class="inline-code">SERVER_ID</span> in
+                  <span class="inline-code">monitor.conf</span>.
+                  Manual test: <span class="inline-code">adminhelper-agent monitor push</span>.
+                </p>
+              </article>
+            </div>
+            <div class="callout warn">
+              <strong>Diagnostic tip:</strong> Use
+              <span class="inline-code">adminhelper-agent run --once</span> to manually trigger a single
+              cycle and inspect the output directly in the terminal.
+            </div>
+          </section>
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Contents</h3>
+            <ul>
+              <li><a href="#overview">1) Overview</a></li>
+              <li><a href="#installation">2) Installation</a></li>
+              <li><a href="#commands">3) Command Reference</a></li>
+              <li><a href="#config">4) Configuration</a></li>
+              <li><a href="#provisioning">5) Provisioning</a></li>
+              <li><a href="#collector">6) Monitoring Collector</a></li>
+              <li><a href="#systemd">7) Systemd</a></li>
+              <li><a href="#windows">8) Windows</a></li>
+              <li><a href="#troubleshooting">9) Troubleshooting</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Quick Info</h3>
+            <table>
+              <tbody>
+                <tr>
+                  <td>Version</td>
+                  <td><span class="inline-code">0.13.0</span></td>
+                </tr>
+                <tr>
+                  <td>Platforms</td>
+                  <td>Linux amd64, Windows amd64</td>
+                </tr>
+                <tr>
+                  <td>Language</td>
+                  <td>Go</td>
+                </tr>
+                <tr>
+                  <td>License</td>
+                  <td>Proprietary</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Quick Start</h3>
+            <div class="quick-links">
+              <a href="#installation">Install agent</a>
+              <a href="#provisioning">Provision server</a>
+              <a href="#commands">Commands</a>
+              <a href="#config">Configuration</a>
+              <a href="#troubleshooting">Troubleshooting</a>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        Agent reference for the current repository state.
+        For server configuration see <a href="./administration.html">Administration docs</a>.
+      </footer>
+    </main>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

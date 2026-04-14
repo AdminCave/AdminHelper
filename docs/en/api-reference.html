@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AdminHelper - API Reference</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body data-page="api">
+    <div class="site-bg" aria-hidden="true">
+      <div class="orb one"></div>
+      <div class="orb two"></div>
+      <div class="orb three"></div>
+      <div class="grid-pattern"></div>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html">
+          <img src="../assets/logo.svg" alt="AdminHelper Logo" />
+          <span class="brand-copy">
+            <strong>AdminHelper</strong>
+            <span>API Reference</span>
+          </span>
+        </a>
+
+        <div class="header-tools">
+          <button class="menu-btn" type="button">Menu</button>
+          <nav class="primary-nav" aria-label="Main navigation">
+            <a href="./index.html" data-page="overview">Overview</a>
+            <a href="./developer.html" data-page="developer">Developers</a>
+            <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
+          </nav>
+          <div class="lang-switch" aria-label="Language">
+            <a href="../api-reference.html">DE</a>
+            <a href="./api-reference.html" class="active">EN</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero reveal">
+        <p class="kicker">REST API</p>
+        <h1 class="page-title">API Reference</h1>
+        <p class="page-subtitle">
+          Complete reference for all AdminHelper Server API endpoints.
+          Base URL: <span class="inline-code">https://&lt;server&gt;:443/api</span>
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#auth">Authentication</a>
+          <a class="btn ghost" href="#connections">Connections</a>
+        </div>
+      </section>
+
+      <div class="layout">
+        <div class="main-col">
+
+          <!-- 1) Authentication -->
+          <section id="auth" class="panel reveal">
+            <h2>1) Authentication</h2>
+            <p>The API supports two authentication methods:</p>
+
+            <h3>JWT Bearer Token</h3>
+            <p>
+              Login via <span class="inline-code">POST /api/auth/login</span> returns an
+              <span class="inline-code">access_token</span> (validity: 8 h) and a
+              <span class="inline-code">refresh_token</span> (validity: 7 d).
+              The access token is passed as a Bearer token in the header.
+            </p>
+            <pre class="code-block"><code># Login and obtain token
+curl -X POST https://server:443/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "geheim"}'
+
+# Use the token
+curl https://server:443/api/connections \
+  -H "Authorization: Bearer &lt;access_token&gt;"</code></pre>
+
+            <h3>API-Key</h3>
+            <p>
+              API keys are created via the web UI or the API.
+              The key is passed in the <span class="inline-code">X-API-Key</span> header.
+              Permissions: <span class="inline-code">read</span> or
+              <span class="inline-code">read_write</span>.
+            </p>
+            <pre class="code-block"><code># Use an API key
+curl https://server:443/api/connections \
+  -H "X-API-Key: &lt;api_key&gt;"</code></pre>
+
+            <div class="callout">
+              <strong>Auth levels in the tables below:</strong>
+              <ul>
+                <li><strong>Public</strong> — No token required</li>
+                <li><strong>JWT</strong> — Bearer token required</li>
+                <li><strong>Admin</strong> — Bearer token + admin flag</li>
+                <li><strong>API-Key</strong> — API key header (read or read_write)</li>
+                <li><strong>JWT|API-Key</strong> — Either accepted</li>
+              </ul>
+            </div>
+          </section>
+
+          <!-- 2) Auth Endpoints -->
+          <section id="auth-endpoints" class="panel reveal">
+            <h2>2) Auth Endpoints</h2>
+            <details open>
+              <summary>Auth — Login, Refresh, Logout</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/auth/login</span></td>
+                    <td>Public</td>
+                    <td>Login, returns access and refresh tokens</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/auth/refresh</span></td>
+                    <td>JWT</td>
+                    <td>Renew access token</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/auth/logout</span></td>
+                    <td>JWT</td>
+                    <td>Revoke token (blacklist)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/auth/me</span></td>
+                    <td>JWT</td>
+                    <td>Get current user</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 3) Users -->
+          <section id="users" class="panel reveal">
+            <h2>3) Users</h2>
+            <details>
+              <summary>Users — CRUD Operations</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/users</span></td>
+                    <td>Admin</td>
+                    <td>List all users</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/users</span></td>
+                    <td>Admin</td>
+                    <td>Create user</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">PUT</span></td>
+                    <td><span class="inline-code">/api/users/{user_id}</span></td>
+                    <td>Admin</td>
+                    <td>Update user</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/users/{user_id}</span></td>
+                    <td>Admin</td>
+                    <td>Delete user</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 4) Connections -->
+          <section id="connections" class="panel reveal">
+            <h2>4) Connections</h2>
+            <details>
+              <summary>Connections — Manage connections</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/connections</span></td>
+                    <td>JWT|API-Key</td>
+                    <td>List all connections</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/connections</span></td>
+                    <td>JWT|API-Key(rw)</td>
+                    <td>Create connection</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">PUT</span></td>
+                    <td><span class="inline-code">/api/connections/{id}</span></td>
+                    <td>JWT|API-Key(rw)</td>
+                    <td>Update connection</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/connections/{id}</span></td>
+                    <td>JWT|API-Key(rw)</td>
+                    <td>Delete connection</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/connections/import</span></td>
+                    <td>JWT|API-Key(rw)</td>
+                    <td>Import connections (bulk)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/connections/export</span></td>
+                    <td>JWT|API-Key</td>
+                    <td>Export connections</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 5) Servers -->
+          <section id="servers" class="panel reveal">
+            <h2>5) Servers</h2>
+            <details>
+              <summary>Servers — Server management</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/servers</span></td>
+                    <td>Admin</td>
+                    <td>List all servers</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/servers</span></td>
+                    <td>Admin</td>
+                    <td>Create server</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/servers/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Get server details</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">PUT</span></td>
+                    <td><span class="inline-code">/api/servers/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Update server</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/servers/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Delete server</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 6) FRP — Server Configuration -->
+          <section id="frp-server-config" class="panel reveal">
+            <h2>6) FRP — Server Configuration</h2>
+            <details>
+              <summary>FRP Server Config — Manage frps configuration</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/server-config</span></td>
+                    <td>Admin</td>
+                    <td>Get FRP server configuration</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/server-config</span></td>
+                    <td>Admin</td>
+                    <td>Create/update configuration</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">PUT</span></td>
+                    <td><span class="inline-code">/api/frp/server-config/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Update configuration</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/frp/server-config/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Delete configuration</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 7) FRP — Tunnels -->
+          <section id="frp-tunnels" class="panel reveal">
+            <h2>7) FRP — Tunnels</h2>
+            <details>
+              <summary>FRP Tunnels — STCP and HTTPS tunnels</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/tunnels</span></td>
+                    <td>Admin</td>
+                    <td>List all tunnels</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/tunnels</span></td>
+                    <td>Admin</td>
+                    <td>Create tunnel (STCP or HTTPS)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">PUT</span></td>
+                    <td><span class="inline-code">/api/frp/tunnels/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Update tunnel</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/frp/tunnels/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Delete tunnel</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 8) FRP — PKI -->
+          <section id="frp-pki" class="panel reveal">
+            <h2>8) FRP — PKI (Certificates)</h2>
+            <details>
+              <summary>FRP PKI — CA and certificate management</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/pki/status</span></td>
+                    <td>Admin</td>
+                    <td>PKI status (CA present?)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/pki/ca</span></td>
+                    <td>Admin</td>
+                    <td>Generate CA certificate</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/pki/server-cert</span></td>
+                    <td>Admin</td>
+                    <td>Generate server certificate</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/pki/client-cert/{name}</span></td>
+                    <td>Admin</td>
+                    <td>Generate client certificate</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/pki/download/{filename}</span></td>
+                    <td>Admin</td>
+                    <td>Download certificate file</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/pki/download-client-bundle/{name}</span></td>
+                    <td>Admin</td>
+                    <td>Download client bundle (tar.gz)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 9) FRP — Provisioning -->
+          <section id="frp-provisioning" class="panel reveal">
+            <h2>9) FRP — Provisioning</h2>
+            <details>
+              <summary>FRP Provisioning — Agent activation and config sync</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/provision/{server_id}/token</span></td>
+                    <td>Admin</td>
+                    <td>Generate provision token</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/provision/{server_id}/tokens</span></td>
+                    <td>Admin</td>
+                    <td>List active tokens</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/provision/{server_id}/activate</span></td>
+                    <td>Token</td>
+                    <td>Activate agent (via X-Provision-Token)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/provision/{server_id}/config</span></td>
+                    <td>API-Key</td>
+                    <td>Get current frpc configuration</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/provision/{server_id}/config-hash</span></td>
+                    <td>API-Key</td>
+                    <td>Config hash for change detection</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 10) FRP — Configuration Generation -->
+          <section id="frp-generate" class="panel reveal">
+            <h2>10) FRP — Configuration Generation</h2>
+            <details>
+              <summary>FRP Generate — TOML and bundle generation</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/frp/generate/frps-toml</span></td>
+                    <td>Admin</td>
+                    <td>Generate and write frps.toml</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/generate/frpc-toml/{server_id}</span></td>
+                    <td>Admin</td>
+                    <td>Generate frpc.toml for server</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/generate/visitor-toml</span></td>
+                    <td>Admin</td>
+                    <td>Generate visitor TOML</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/generate/visitor-bundle</span></td>
+                    <td>Admin</td>
+                    <td>Download visitor bundle (ZIP)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/generate/bulk-zip</span></td>
+                    <td>Admin</td>
+                    <td>All configurations as ZIP</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 11) FRP — Status -->
+          <section id="frp-status" class="panel reveal">
+            <h2>11) FRP — Status</h2>
+            <details>
+              <summary>FRP Status — Query runtime status</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/frp/status</span></td>
+                    <td>Admin</td>
+                    <td>Query FRP server status</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 12) Hooks -->
+          <section id="hooks" class="panel reveal">
+            <h2>12) Hooks</h2>
+            <details>
+              <summary>Hooks — Webhooks, events, and schedules</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/hooks</span></td>
+                    <td>Admin</td>
+                    <td>List all hooks</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/hooks</span></td>
+                    <td>Admin</td>
+                    <td>Create hook (webhook/event/schedule)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">PUT</span></td>
+                    <td><span class="inline-code">/api/hooks/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Update hook</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/hooks/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Delete hook</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/hooks/{id}/trigger</span></td>
+                    <td>Admin</td>
+                    <td>Trigger hook manually</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/hooks/incoming/{token}</span></td>
+                    <td>Public</td>
+                    <td>Webhook endpoint (via token)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+
+            <h3>Hook Types</h3>
+            <ul>
+              <li>
+                <strong>Webhook</strong>: HTTP POST with token authentication, rate-limited (20/min).
+              </li>
+              <li>
+                <strong>Event</strong>: Triggered automatically on system events
+                (<span class="inline-code">connection.created</span>,
+                <span class="inline-code">server.updated</span>,
+                <span class="inline-code">frp.config.created</span> etc.).
+              </li>
+              <li>
+                <strong>Schedule</strong>: Cron-based, e.g.
+                <span class="inline-code">0 2 * * *</span> = daily at 02:00.
+              </li>
+            </ul>
+          </section>
+
+          <!-- 13) API-Keys -->
+          <section id="api-keys" class="panel reveal">
+            <h2>13) API Keys</h2>
+            <details>
+              <summary>API Keys — Create and revoke</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/api-keys</span></td>
+                    <td>Admin</td>
+                    <td>List all API keys (masked)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/api-keys</span></td>
+                    <td>Admin</td>
+                    <td>Create API key (plaintext visible only once)</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/api-keys/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Revoke API key</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 14) Ansible -->
+          <section id="ansible" class="panel reveal">
+            <h2>14) Ansible</h2>
+            <details>
+              <summary>Ansible — Playbook management</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/ansible/playbooks</span></td>
+                    <td>Admin</td>
+                    <td>List all playbooks</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">POST</span></td>
+                    <td><span class="inline-code">/api/ansible/playbooks</span></td>
+                    <td>Admin</td>
+                    <td>Create/upload playbook</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">GET</span></td>
+                    <td><span class="inline-code">/api/ansible/playbooks/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Get playbook content</td>
+                  </tr>
+                  <tr>
+                    <td><span class="inline-code">DELETE</span></td>
+                    <td><span class="inline-code">/api/ansible/playbooks/{id}</span></td>
+                    <td>Admin</td>
+                    <td>Delete playbook</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+          <!-- 15) Monitoring Proxy -->
+          <section id="monitoring" class="panel reveal">
+            <h2>15) Monitoring Proxy</h2>
+            <p>
+              The AdminHelper server forwards monitoring requests as a reverse proxy
+              to the internal monitoring service. All paths below
+              <span class="inline-code">/api/monitoring/</span> are transparently proxied.
+            </p>
+            <details>
+              <summary>Monitoring — Proxy to monitoring service</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Auth</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="inline-code">*</span></td>
+                    <td><span class="inline-code">/api/monitoring/*</span></td>
+                    <td>Admin</td>
+                    <td>Proxy to monitoring service</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          </section>
+
+        </div>
+
+        <aside class="side-col">
+          <section class="panel toc reveal">
+            <h3>Contents</h3>
+            <ul>
+              <li><a href="#auth">1) Authentication</a></li>
+              <li><a href="#auth-endpoints">2) Auth Endpoints</a></li>
+              <li><a href="#users">3) Users</a></li>
+              <li><a href="#connections">4) Connections</a></li>
+              <li><a href="#servers">5) Servers</a></li>
+              <li><a href="#frp-server-config">6) FRP Server Config</a></li>
+              <li><a href="#frp-tunnels">7) FRP Tunnels</a></li>
+              <li><a href="#frp-pki">8) FRP PKI</a></li>
+              <li><a href="#frp-provisioning">9) FRP Provisioning</a></li>
+              <li><a href="#frp-generate">10) FRP Generate</a></li>
+              <li><a href="#frp-status">11) FRP Status</a></li>
+              <li><a href="#hooks">12) Hooks</a></li>
+              <li><a href="#api-keys">13) API Keys</a></li>
+              <li><a href="#ansible">14) Ansible</a></li>
+              <li><a href="#monitoring">15) Monitoring</a></li>
+            </ul>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Quick Reference</h3>
+            <div class="quick-links">
+              <a href="#auth">Base URL: /api</a>
+              <a href="#auth">Auth: JWT + API Key</a>
+              <a href="#connections">Format: JSON</a>
+              <a href="#auth-endpoints">OpenAPI: /api/docs</a>
+            </div>
+          </section>
+
+          <section class="panel reveal">
+            <h3>Key Facts</h3>
+            <ul>
+              <li>Base URL: <span class="inline-code">https://server:443/api</span></li>
+              <li>Auth: JWT Bearer + API Key</li>
+              <li>Format: JSON</li>
+              <li>OpenAPI/Swagger: <span class="inline-code">/api/docs</span></li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        API reference for the current repository state. For operations see the
+        <a href="./administration.html">administration documentation</a>.
+      </footer>
+    </main>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

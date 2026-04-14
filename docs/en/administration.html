@@ -33,6 +33,9 @@
             <a href="./index.html" data-page="overview">Overview</a>
             <a href="./developer.html" data-page="developer">Developers</a>
             <a href="./administration.html" data-page="admin">Administration</a>
+            <a href="./agent.html" data-page="agent">Agent</a>
+            <a href="./api-reference.html" data-page="api">API</a>
+            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
           </nav>
           <div class="lang-switch" aria-label="Language">
             <a href="../administration.html">DE</a>
@@ -112,6 +115,11 @@ docker compose up -d</code></pre>
                   <td>Certificate CN/SAN default for auto-generated certs.</td>
                 </tr>
                 <tr>
+                  <td><span class="inline-code">EXTRA_SANS</span></td>
+                  <td>DNS:app.example.com,IP:10.0.0.1</td>
+                  <td>Additional SANs for the auto-generated TLS certificate.</td>
+                </tr>
+                <tr>
                   <td><span class="inline-code">SECRET_KEY</span></td>
                   <td>openssl rand -hex 32</td>
                   <td>JWT signing key.</td>
@@ -137,9 +145,34 @@ docker compose up -d</code></pre>
                   <td>Preferred secure proxy trust configuration.</td>
                 </tr>
                 <tr>
+                  <td><span class="inline-code">MONITOR_SERVICE_URL</span></td>
+                  <td>http://monitoring:8080</td>
+                  <td>Internal URL to monitoring service.</td>
+                </tr>
+                <tr>
                   <td><span class="inline-code">MONITOR_API_KEY</span></td>
                   <td>openssl rand -hex 32</td>
                   <td>Shared secret between server and monitoring service.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">VICTORIA_METRICS_URL</span></td>
+                  <td>http://victoria:8428</td>
+                  <td>VictoriaMetrics API URL (monitoring service).</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">VISITOR_PORT_START</span></td>
+                  <td>6000</td>
+                  <td>Start of STCP visitor port range.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">VISITOR_PORT_END</span></td>
+                  <td>6999</td>
+                  <td>End of STCP visitor port range.</td>
+                </tr>
+                <tr>
+                  <td><span class="inline-code">FRP_CONFIG_DIR</span></td>
+                  <td>/app/frp-config</td>
+                  <td>Shared volume for FRP configuration.</td>
                 </tr>
                 <tr>
                   <td><span class="inline-code">MONITOR_AGENT_API_KEYS</span></td>
@@ -368,7 +401,8 @@ sudo adminhelper-agent service install</code></pre>
             <div class="cards cols-2">
               <article class="card">
                 <h3>Check Types</h3>
-                <p>Ping, TCP, HTTP, SNMP, and agent-based resource checks (CPU, RAM, Disk, Services).</p>
+                <p>Ping, TCP, HTTP, and agent-based checks (CPU, RAM, Disk, Services, Docker, ZFS, Proxmox, S.M.A.R.T.).</p>
+                <p>Detailed documentation of all 10 check types in the <a href="./monitoring.html">Monitoring docs</a>.</p>
               </article>
               <article class="card">
                 <h3>Agent Plugins</h3>
