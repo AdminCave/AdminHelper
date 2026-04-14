@@ -1,6 +1,7 @@
 [package]
 name = "adminhelper"
 version = "0.15.0"
+description = "AdminHelper Desktop-Client — Remote-Verwaltung mit FRP-Tunneln"
 edition = "2021"
 
 [build-dependencies]
