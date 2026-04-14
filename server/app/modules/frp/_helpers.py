@@ -18,6 +18,7 @@ def create_auto_connection(
     server_id: str,
     db: Session,
     tags: str | None = None,
+    username: str | None = None,
 ) -> Connection | None:
     """Auto-Connection fuer einen Tunnel erstellen (STCP oder HTTPS)."""
     if tunnel_type == "stcp" and visitor_port:
@@ -30,6 +31,7 @@ def create_auto_connection(
             port=visitor_port,
             server_id=server_id,
             tags=tags,
+            username=username or "",
         )
     if tunnel_type == "https" and custom_domains:
         domain = custom_domains.split(",")[0].strip()
@@ -41,6 +43,7 @@ def create_auto_connection(
                 url=f"https://{domain}",
                 server_id=server_id,
                 tags=tags,
+                username=username or "",
             )
     return None
 

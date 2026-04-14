@@ -229,6 +229,7 @@ function openTunnelModal(tunnel) {
   document.getElementById('ftDomains').value    = tunnel?.customDomains || '';
   document.getElementById('ftTags').value       = (tunnel?.tags || []).join(', ');
   document.getElementById('ftAutoConn').checked = !!(tunnel?.connectionId);
+  document.getElementById('ftAutoConnUser').value = '';
 
   _updateTunnelFormFields();
   showModal('frpTunnelModal');
@@ -241,9 +242,12 @@ function _updateTunnelFormFields() {
   document.getElementById('ftVisitorField').style.display  = isStcp ? '' : 'none';
   document.getElementById('ftDomainsField').style.display  = isStcp ? 'none' : '';
   document.getElementById('ftAutoConnField').style.display = '';
+  const autoConn = document.getElementById('ftAutoConn').checked;
+  document.getElementById('ftAutoConnUserField').style.display = autoConn ? '' : 'none';
 }
 
 document.getElementById('ftType').addEventListener('change', _updateTunnelFormFields);
+document.getElementById('ftAutoConn').addEventListener('change', _updateTunnelFormFields);
 
 document.getElementById('ftServer').addEventListener('change', () => {
   const serverId = document.getElementById('ftServer').value;
@@ -283,6 +287,7 @@ document.getElementById('frpTunnelForm').addEventListener('submit', async (e) =>
     custom_domains: document.getElementById('ftDomains').value.trim() || null,
     visitor_port:  parseInt(document.getElementById('ftVisitorPort').value) || null,
     auto_create_connection: document.getElementById('ftAutoConn').checked,
+    auto_connection_username: document.getElementById('ftAutoConnUser').value.trim() || null,
     tags: parseTags(document.getElementById('ftTags').value),
   };
   try {

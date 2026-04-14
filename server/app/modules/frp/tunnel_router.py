@@ -88,6 +88,7 @@ def create_tunnel(data: FrpTunnelCreate, db: Session = Depends(get_db), _admin=D
             data.name, data.tunnel_type, data.protocol,
             data.custom_domains, visitor_port, data.server_id, db,
             tags=json.dumps(data.tags) if data.tags else None,
+            username=data.auto_connection_username,
         )
         if auto_conn:
             db.add(auto_conn)
@@ -149,6 +150,7 @@ def update_tunnel(tunnel_id: str, data: FrpTunnelUpdate, db: Session = Depends(g
             tunnel.name, tunnel.tunnel_type, tunnel.protocol,
             tunnel.custom_domains, tunnel.visitor_port, tunnel.server_id, db,
             tags=tunnel.tags,
+            username=data.auto_connection_username,
         )
         if auto_conn:
             db.add(auto_conn)

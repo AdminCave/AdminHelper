@@ -63,6 +63,7 @@ class FrpTunnelCreate(BaseModel):
     extra_config: Optional[dict] = None
     tags: list[str] = []
     auto_create_connection: bool = False  # automatisch passende Connection erstellen
+    auto_connection_username: Optional[str] = None  # Benutzername fuer auto-erstellte Connection
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
 
@@ -81,5 +82,6 @@ class FrpTunnelUpdate(BaseModel):
     extra_config: Optional[dict] = None
     tags: Optional[list[str]] = None
     auto_create_connection: bool = False
+    auto_connection_username: Optional[str] = None
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
