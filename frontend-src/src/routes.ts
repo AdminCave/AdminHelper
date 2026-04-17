@@ -4,15 +4,17 @@ import Servers from './pages/Servers.svelte';
 import Connections from './pages/Connections.svelte';
 import Users from './pages/Users.svelte';
 import ApiKeys from './pages/ApiKeys.svelte';
+import Hooks from './pages/Hooks.svelte';
+import Ansible from './pages/Ansible.svelte';
 
 export const routes: Record<string, Component> = {
   '/connections': Connections,
   '/servers': Servers,
   '/users': Users,
   '/apikeys': ApiKeys,
-  '/hooks': Placeholder,
+  '/hooks': Hooks,
   '/frp': Placeholder,
-  '/ansible': Placeholder,
+  '/ansible': Ansible,
   '/monitoring': Placeholder,
   '*': Placeholder,
 };
