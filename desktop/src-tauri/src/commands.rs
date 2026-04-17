@@ -125,6 +125,9 @@ pub fn open_connection(
         password.as_deref(),
         client.as_ref(),
         settings.rdp_scaling_mode,
+        settings.rdp_window_mode,
+        settings.rdp_custom_size.as_deref(),
+        settings.rdp_performance_profile,
         settings.language.as_deref(),
         &app,
     )
@@ -142,6 +145,9 @@ pub fn open_connection_stored(
         &connection,
         client.as_ref(),
         settings.rdp_scaling_mode,
+        settings.rdp_window_mode,
+        settings.rdp_custom_size.as_deref(),
+        settings.rdp_performance_profile,
         settings.language.as_deref(),
     )
 }

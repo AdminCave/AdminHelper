@@ -415,6 +415,37 @@
               Auto erkennt HDPI/4K automatisch. Normal deaktiviert die Skalierung. HDPI/4K erzwingt HDPI-Skalierung.
             </small>
           </label>
+          <label class="field" id="rdpWindowModeField">
+            <span data-i18n="settings.rdpWindow.label">RDP Fenstermodus</span>
+            <select id="rdpWindowModeSelect">
+              <option value="fit" data-i18n="settings.rdpWindow.fit">An Bildschirm anpassen</option>
+              <option value="fullscreen" data-i18n="settings.rdpWindow.fullscreen">Vollbild</option>
+              <option value="multimon" data-i18n="settings.rdpWindow.multimon">Mehrere Monitore</option>
+              <option value="custom" data-i18n="settings.rdpWindow.custom">Benutzerdefiniert</option>
+            </select>
+            <small data-i18n="settings.rdpWindow.help">
+              Bestimmt die Startgroesse des RDP-Fensters.
+            </small>
+          </label>
+          <label class="field hidden" id="rdpCustomSizeField">
+            <span data-i18n="settings.rdpCustomSize.label">RDP Groesse (WxH)</span>
+            <input id="rdpCustomSizeInput" type="text" placeholder="1920x1080" />
+            <small data-i18n="settings.rdpCustomSize.help">
+              Format: Breite x Hoehe in Pixeln, z.B. 1920x1080.
+            </small>
+          </label>
+          <label class="field" id="rdpPerformanceField">
+            <span data-i18n="settings.rdpPerformance.label">RDP Leistungsprofil</span>
+            <select id="rdpPerformanceSelect">
+              <option value="auto" data-i18n="settings.rdpPerformance.auto">Auto</option>
+              <option value="lan" data-i18n="settings.rdpPerformance.lan">LAN</option>
+              <option value="broadband" data-i18n="settings.rdpPerformance.broadband">Breitband</option>
+              <option value="low" data-i18n="settings.rdpPerformance.low">Niedrig</option>
+            </select>
+            <small data-i18n="settings.rdpPerformance.help">
+              Auto erkennt die Verbindung automatisch. LAN nutzt volle Qualitaet. Breitband fuer normale Internetverbindungen. Niedrig deaktiviert Effekte fuer langsame Verbindungen.
+            </small>
+          </label>
           <label class="field checkbox" id="storePasswordsField">
             <input id="storePasswordsInput" type="checkbox" />
             <div>

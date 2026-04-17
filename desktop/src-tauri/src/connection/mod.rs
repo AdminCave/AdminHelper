@@ -3,7 +3,9 @@ pub mod ssh;
 pub mod web;
 
 use crate::error::AppError;
-use crate::models::{ClientInfo, Connection, ConnectionKind, RdpScalingMode};
+use crate::models::{
+    ClientInfo, Connection, ConnectionKind, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
+};
 use crate::validation::validate_connection_input;
 
 pub fn open_connection(
@@ -11,6 +13,9 @@ pub fn open_connection(
     password: Option<&str>,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
@@ -22,6 +27,9 @@ pub fn open_connection(
             password,
             client,
             rdp_scaling_mode,
+            rdp_window_mode,
+            rdp_custom_size,
+            rdp_performance_profile,
             ui_language,
             app,
         ),
@@ -34,14 +42,34 @@ pub fn open_connection_stored(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
     match connection.kind {
-        ConnectionKind::Rdp => {
-            open_rdp_with_stored_password(app, connection, client, rdp_scaling_mode, ui_language)
-        }
-        _ => open_connection(connection, None, client, rdp_scaling_mode, ui_language, app),
+        ConnectionKind::Rdp => open_rdp_with_stored_password(
+            app,
+            connection,
+            client,
+            rdp_scaling_mode,
+            rdp_window_mode,
+            rdp_custom_size,
+            rdp_performance_profile,
+            ui_language,
+        ),
+        _ => open_connection(
+            connection,
+            None,
+            client,
+            rdp_scaling_mode,
+            rdp_window_mode,
+            rdp_custom_size,
+            rdp_performance_profile,
+            ui_language,
+            app,
+        ),
     }
 }
 
@@ -51,9 +79,22 @@ fn open_rdp_with_stored_password(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
 ) -> Result<(), AppError> {
-    rdp::open_rdp(connection, None, client, rdp_scaling_mode, ui_language, app)
+    rdp::open_rdp(
+        connection,
+        None,
+        client,
+        rdp_scaling_mode,
+        rdp_window_mode,
+        rdp_custom_size,
+        rdp_performance_profile,
+        ui_language,
+        app,
+    )
 }
 
 #[cfg(unix)]
@@ -62,6 +103,9 @@ fn open_rdp_with_stored_password(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
 ) -> Result<(), AppError> {
     let password = crate::password::load_password_keyring(connection)?;
@@ -70,6 +114,9 @@ fn open_rdp_with_stored_password(
         password.as_deref(),
         client,
         rdp_scaling_mode,
+        rdp_window_mode,
+        rdp_custom_size,
+        rdp_performance_profile,
         ui_language,
         app,
     )
@@ -81,7 +128,20 @@ fn open_rdp_with_stored_password(
     connection: &Connection,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
 ) -> Result<(), AppError> {
-    open_connection(connection, None, client, rdp_scaling_mode, ui_language, app)
+    open_connection(
+        connection,
+        None,
+        client,
+        rdp_scaling_mode,
+        rdp_window_mode,
+        rdp_custom_size,
+        rdp_performance_profile,
+        ui_language,
+        app,
+    )
 }

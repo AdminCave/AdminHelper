@@ -1,5 +1,12 @@
 import { normalizeConnection } from "./connectionModel.js";
-import { detectSystemLanguage, getIntervalMinutes, getSettingsDefaults } from "./settingsModel.js";
+import {
+  detectSystemLanguage,
+  getIntervalMinutes,
+  getSettingsDefaults,
+  RDP_WINDOW_MODES,
+  RDP_PERFORMANCE_PROFILES,
+  RDP_CUSTOM_SIZE_PATTERN
+} from "./settingsModel.js";
 
 export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authApi) {
   const settingsPromptEl = document.getElementById("settingsPrompt");
@@ -10,6 +17,10 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
   const syncIntervalField = document.getElementById("syncIntervalField");
   const syncIntervalInput = document.getElementById("syncIntervalInput");
   const rdpScalingSelect = document.getElementById("rdpScalingSelect");
+  const rdpWindowModeSelect = document.getElementById("rdpWindowModeSelect");
+  const rdpCustomSizeField = document.getElementById("rdpCustomSizeField");
+  const rdpCustomSizeInput = document.getElementById("rdpCustomSizeInput");
+  const rdpPerformanceSelect = document.getElementById("rdpPerformanceSelect");
   const storePasswordsInput = document.getElementById("storePasswordsInput");
   const allowSelfSignedField = document.getElementById("allowSelfSignedField");
   const allowSelfSignedInput = document.getElementById("allowSelfSignedInput");
@@ -88,6 +99,18 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
       const mode = settings.rdpScalingMode || "auto";
       rdpScalingSelect.value = ["auto", "normal", "hdpi"].includes(mode) ? mode : "auto";
     }
+    if (rdpWindowModeSelect) {
+      const mode = settings.rdpWindowMode || "fit";
+      rdpWindowModeSelect.value = RDP_WINDOW_MODES.includes(mode) ? mode : "fit";
+      toggleCustomSizeField(rdpWindowModeSelect.value);
+    }
+    if (rdpCustomSizeInput) {
+      rdpCustomSizeInput.value = settings.rdpCustomSize || "1920x1080";
+    }
+    if (rdpPerformanceSelect) {
+      const profile = settings.rdpPerformanceProfile || "auto";
+      rdpPerformanceSelect.value = RDP_PERFORMANCE_PROFILES.includes(profile) ? profile : "auto";
+    }
     if (serverUrlInput) {
       serverUrlInput.value = settings.serverUrl || "";
     }
@@ -98,6 +121,12 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
   function closeSettingsPrompt() {
     settingsPromptEl.classList.add("hidden");
     settingsPromptEl.setAttribute("aria-hidden", "true");
+  }
+
+  function toggleCustomSizeField(mode) {
+    if (rdpCustomSizeField) {
+      rdpCustomSizeField.classList.toggle("hidden", mode !== "custom");
+    }
   }
 
   // ── Sync timer ──────────────────────────────────────────────────────
@@ -149,6 +178,13 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
     const storePasswords = storePasswordsInput ? storePasswordsInput.checked : false;
     const allowSelfSignedCerts = allowSelfSignedInput ? allowSelfSignedInput.checked : false;
     const rdpScalingMode = rdpScalingSelect ? rdpScalingSelect.value : "auto";
+    const rdpWindowModeRaw = rdpWindowModeSelect ? rdpWindowModeSelect.value : "fit";
+    const rdpWindowMode = RDP_WINDOW_MODES.includes(rdpWindowModeRaw) ? rdpWindowModeRaw : "fit";
+    const rdpCustomSize = rdpCustomSizeInput ? rdpCustomSizeInput.value.trim() : "";
+    const rdpPerformanceRaw = rdpPerformanceSelect ? rdpPerformanceSelect.value : "auto";
+    const rdpPerformanceProfile = RDP_PERFORMANCE_PROFILES.includes(rdpPerformanceRaw)
+      ? rdpPerformanceRaw
+      : "auto";
     const serverUrl = serverUrlInput ? serverUrlInput.value.trim() : "";
     const settings = {
       mode,
@@ -160,6 +196,9 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
       rdpScalingMode: ["auto", "normal", "hdpi"].includes(rdpScalingMode)
         ? rdpScalingMode
         : "auto",
+      rdpWindowMode,
+      rdpCustomSize,
+      rdpPerformanceProfile,
       serverUrl
     };
     try {
@@ -177,6 +216,10 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
       }
       if (mode === "server" && !serverUrl) {
         callbacks.reportError(t("login.serverUrlRequired"));
+        return;
+      }
+      if (rdpWindowMode === "custom" && !RDP_CUSTOM_SIZE_PATTERN.test(rdpCustomSize)) {
+        callbacks.reportError(t("settings.rdpCustomSize.invalid"));
         return;
       }
       state.settings = settings;
@@ -230,6 +273,12 @@ export function initSettings(state, t, callbacks, settingsApi, tunnelApi, authAp
       setSyncMode(getSyncMode());
     });
   });
+
+  if (rdpWindowModeSelect) {
+    rdpWindowModeSelect.addEventListener("change", () => {
+      toggleCustomSizeField(rdpWindowModeSelect.value);
+    });
+  }
 
   if (serverLogoutBtn) {
     serverLogoutBtn.addEventListener("click", async () => {

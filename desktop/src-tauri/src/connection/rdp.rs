@@ -1,5 +1,7 @@
 use crate::error::AppError;
-use crate::models::{ClientInfo, Connection, RdpScalingMode};
+use crate::models::{
+    ClientInfo, Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
+};
 
 #[cfg(unix)]
 use std::io::{Read, Write};
@@ -24,6 +26,9 @@ pub fn open_rdp(
     password: Option<&str>,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
@@ -51,10 +56,21 @@ pub fn open_rdp(
     let _ = client;
     #[cfg(not(unix))]
     let _ = ui_language;
+    #[cfg(not(unix))]
+    let _ = rdp_scaling_mode;
 
     #[cfg(target_os = "windows")]
     {
-        return open_rdp_windows(host, port, username, domain, connection.trust_cert);
+        return open_rdp_windows(
+            host,
+            port,
+            username,
+            domain,
+            connection,
+            rdp_window_mode,
+            rdp_custom_size,
+            rdp_performance_profile,
+        );
     }
 
     #[cfg(unix)]
@@ -68,8 +84,11 @@ pub fn open_rdp(
             port,
             client,
             rdp_scaling_mode,
+            rdp_window_mode,
+            rdp_custom_size,
+            rdp_performance_profile,
             ui_language,
-        );
+        )?;
         let password = password.filter(|value| !value.is_empty());
 
         if let Some(secret) = password {
@@ -101,6 +120,9 @@ pub fn open_rdp(
 
     #[cfg(not(any(target_os = "windows", unix)))]
     {
+        let _ = rdp_window_mode;
+        let _ = rdp_custom_size;
+        let _ = rdp_performance_profile;
         Err(AppError::Connection(
             "RDP wird auf diesem Betriebssystem nicht unterstuetzt".to_string(),
         ))
@@ -113,21 +135,24 @@ fn open_rdp_windows(
     port: u16,
     username: &str,
     domain: &str,
-    trust_cert: bool,
+    connection: &Connection,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
 ) -> Result<(), AppError> {
     use std::process::Command;
 
-    if trust_cert || !username.is_empty() || !domain.is_empty() {
-        let rdp_path = write_rdp_file(host, port, username, domain, trust_cert)?;
-        Command::new("mstsc").arg(rdp_path).spawn()?;
-    } else {
-        let target = if port == 3389 {
-            host.to_string()
-        } else {
-            format!("{host}:{port}")
-        };
-        Command::new("mstsc").arg(format!("/v:{target}")).spawn()?;
-    }
+    let rdp_path = write_rdp_file(
+        host,
+        port,
+        username,
+        domain,
+        connection.trust_cert,
+        rdp_window_mode,
+        rdp_custom_size,
+        rdp_performance_profile,
+    )?;
+    Command::new("mstsc").arg(rdp_path).spawn()?;
     Ok(())
 }
 
@@ -151,8 +176,11 @@ fn build_rdp_args(
     port: u16,
     client: Option<&ClientInfo>,
     rdp_scaling_mode: RdpScalingMode,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
-) -> Vec<String> {
+) -> Result<Vec<String>, AppError> {
     let mut args = vec![format!("/v:{host}:{port}")];
     let username = connection
         .username
@@ -164,7 +192,27 @@ fn build_rdp_args(
         .as_ref()
         .map(|value| value.trim())
         .unwrap_or("");
-    args.push("/dynamic-resolution".to_string());
+
+    // Fenstergroesse + dynamic-resolution je nach Modus
+    match rdp_window_mode {
+        RdpWindowMode::Fit => {
+            let (w, h) = fit_window_size(client);
+            args.push(format!("/size:{w}x{h}"));
+            args.push("/dynamic-resolution".to_string());
+        }
+        RdpWindowMode::Fullscreen => {
+            args.push("/f".to_string());
+        }
+        RdpWindowMode::Multimon => {
+            args.push("/multimon".to_string());
+        }
+        RdpWindowMode::Custom => {
+            let (w, h) = parse_custom_size(rdp_custom_size)?;
+            args.push(format!("/size:{w}x{h}"));
+            args.push("/dynamic-resolution".to_string());
+        }
+    }
+
     if connection.trust_cert {
         args.push("/cert:ignore".to_string());
     }
@@ -188,7 +236,98 @@ fn build_rdp_args(
     }
     #[cfg(target_os = "linux")]
     args.push(linux_keyboard_layout_arg_from_ui_language(ui_language));
-    args
+
+    args.push("+clipboard".to_string());
+    let title = connection.name.trim();
+    if !title.is_empty() {
+        args.push(format!("/title:{title}"));
+    }
+
+    args.extend(performance_args(rdp_performance_profile));
+
+    Ok(args)
+}
+
+#[cfg(unix)]
+fn fit_window_size(client: Option<&ClientInfo>) -> (u32, u32) {
+    let (screen_w, screen_h) = client
+        .and_then(|info| match (info.screen_width, info.screen_height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
+            _ => None,
+        })
+        .unwrap_or((1280, 800));
+
+    let width = ((screen_w as f64) * 0.85) as u32;
+    let height = (((screen_h as f64) * 0.85) as u32).saturating_sub(80);
+    let width = width.max(1024);
+    let height = height.max(720);
+    (width, height)
+}
+
+fn parse_custom_size(raw: Option<&str>) -> Result<(u32, u32), AppError> {
+    let value = raw
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::Validation(
+                "Benutzerdefinierte RDP-Groesse fehlt (Format WxH, z.B. 1920x1080)".to_string(),
+            )
+        })?;
+    let lower = value.to_ascii_lowercase();
+    let parts: Vec<&str> = lower.split('x').collect();
+    if parts.len() != 2 {
+        return Err(AppError::Validation(format!(
+            "Ungueltige RDP-Groesse '{value}'. Format: WxH (z.B. 1920x1080)"
+        )));
+    }
+    let width: u32 = parts[0].parse().map_err(|_| {
+        AppError::Validation(format!(
+            "Ungueltige RDP-Breite '{}'. Muss eine Zahl sein.",
+            parts[0]
+        ))
+    })?;
+    let height: u32 = parts[1].parse().map_err(|_| {
+        AppError::Validation(format!(
+            "Ungueltige RDP-Hoehe '{}'. Muss eine Zahl sein.",
+            parts[1]
+        ))
+    })?;
+    if !(640..=7680).contains(&width) || !(480..=4320).contains(&height) {
+        return Err(AppError::Validation(format!(
+            "RDP-Groesse {width}x{height} ausserhalb des gueltigen Bereichs (640x480 bis 7680x4320)"
+        )));
+    }
+    Ok((width, height))
+}
+
+#[cfg(unix)]
+fn performance_args(profile: RdpPerformanceProfile) -> Vec<String> {
+    match profile {
+        RdpPerformanceProfile::Auto => {
+            vec!["/network:auto".to_string(), "+compression".to_string()]
+        }
+        RdpPerformanceProfile::Lan => vec![
+            "/network:lan".to_string(),
+            "+compression".to_string(),
+            "/gfx:avc444".to_string(),
+        ],
+        RdpPerformanceProfile::Broadband => vec![
+            "/network:wan".to_string(),
+            "+compression".to_string(),
+            "/gfx:avc420".to_string(),
+        ],
+        RdpPerformanceProfile::Low => vec![
+            "/network:broadband-low".to_string(),
+            "+compression".to_string(),
+            "-wallpaper".to_string(),
+            "-aero".to_string(),
+            "-window-drag".to_string(),
+            "-menu-anims".to_string(),
+            "-themes".to_string(),
+            "-fonts".to_string(),
+            "/bpp:16".to_string(),
+        ],
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -532,12 +671,48 @@ pub fn check_rdp_auth(
 }
 
 #[cfg(target_os = "windows")]
+fn performance_rdp_lines(profile: RdpPerformanceProfile) -> Vec<String> {
+    match profile {
+        RdpPerformanceProfile::Auto => vec![
+            "networkautodetect:i:1".to_string(),
+            "bandwidthautodetect:i:1".to_string(),
+            "connection type:i:7".to_string(),
+        ],
+        RdpPerformanceProfile::Lan => vec![
+            "networkautodetect:i:0".to_string(),
+            "bandwidthautodetect:i:0".to_string(),
+            "connection type:i:6".to_string(),
+            "allow desktop composition:i:1".to_string(),
+            "allow font smoothing:i:1".to_string(),
+        ],
+        RdpPerformanceProfile::Broadband => vec![
+            "networkautodetect:i:0".to_string(),
+            "bandwidthautodetect:i:0".to_string(),
+            "connection type:i:4".to_string(),
+        ],
+        RdpPerformanceProfile::Low => vec![
+            "networkautodetect:i:0".to_string(),
+            "bandwidthautodetect:i:0".to_string(),
+            "connection type:i:2".to_string(),
+            "disable wallpaper:i:1".to_string(),
+            "disable full window drag:i:1".to_string(),
+            "disable menu anims:i:1".to_string(),
+            "disable themes:i:1".to_string(),
+            "disable cursor setting:i:1".to_string(),
+        ],
+    }
+}
+
+#[cfg(target_os = "windows")]
 pub fn write_rdp_file(
     host: &str,
     port: u16,
     username: &str,
     domain: &str,
     trust_cert: bool,
+    rdp_window_mode: RdpWindowMode,
+    rdp_custom_size: Option<&str>,
+    rdp_performance_profile: RdpPerformanceProfile,
 ) -> Result<std::path::PathBuf, AppError> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let mut path = std::env::temp_dir();
@@ -558,6 +733,34 @@ pub fn write_rdp_file(
     if trust_cert {
         lines.push("authentication level:i:0".to_string());
     }
+
+    // Fenstergroesse
+    match rdp_window_mode {
+        RdpWindowMode::Fit => {
+            lines.push("screen mode id:i:1".to_string());
+            lines.push("smart sizing:i:1".to_string());
+        }
+        RdpWindowMode::Fullscreen => {
+            lines.push("screen mode id:i:2".to_string());
+        }
+        RdpWindowMode::Multimon => {
+            lines.push("screen mode id:i:2".to_string());
+            lines.push("use multimon:i:1".to_string());
+        }
+        RdpWindowMode::Custom => {
+            let (w, h) = parse_custom_size(rdp_custom_size)?;
+            lines.push("screen mode id:i:1".to_string());
+            lines.push(format!("desktopwidth:i:{w}"));
+            lines.push(format!("desktopheight:i:{h}"));
+        }
+    }
+
+    // Zwischenablage explizit aktivieren (Default, aber dokumentiert)
+    lines.push("redirectclipboard:i:1".to_string());
+
+    // Performance
+    lines.extend(performance_rdp_lines(rdp_performance_profile));
+
     let contents = lines.join("\r\n");
     std::fs::write(&path, contents)?;
 

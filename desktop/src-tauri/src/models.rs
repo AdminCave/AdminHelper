@@ -25,6 +25,26 @@ pub enum RdpScalingMode {
     Hdpi,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RdpWindowMode {
+    #[default]
+    Fit,
+    Fullscreen,
+    Multimon,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RdpPerformanceProfile {
+    #[default]
+    Auto,
+    Lan,
+    Broadband,
+    Low,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connection {
@@ -59,6 +79,12 @@ pub struct Settings {
     #[serde(default)]
     pub rdp_scaling_mode: RdpScalingMode,
     #[serde(default)]
+    pub rdp_window_mode: RdpWindowMode,
+    #[serde(default)]
+    pub rdp_custom_size: Option<String>,
+    #[serde(default)]
+    pub rdp_performance_profile: RdpPerformanceProfile,
+    #[serde(default)]
     pub allow_self_signed_certs: bool,
     #[serde(default)]
     pub server_url: Option<String>,
@@ -73,6 +99,9 @@ impl Default for Settings {
             language: None,
             store_passwords: false,
             rdp_scaling_mode: RdpScalingMode::Auto,
+            rdp_window_mode: RdpWindowMode::Fit,
+            rdp_custom_size: None,
+            rdp_performance_profile: RdpPerformanceProfile::Auto,
             allow_self_signed_certs: false,
             server_url: None,
         }

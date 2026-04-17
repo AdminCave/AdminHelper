@@ -102,6 +102,24 @@ export const translations = {
     "settings.rdpScaling.hdpi": "HDPI/4K",
     "settings.rdpScaling.help":
       "Auto erkennt HDPI/4K automatisch. Normal deaktiviert die Skalierung. HDPI/4K erzwingt HDPI-Skalierung.",
+    "settings.rdpWindow.label": "RDP Fenstermodus",
+    "settings.rdpWindow.fit": "An Bildschirm anpassen",
+    "settings.rdpWindow.fullscreen": "Vollbild",
+    "settings.rdpWindow.multimon": "Mehrere Monitore",
+    "settings.rdpWindow.custom": "Benutzerdefiniert",
+    "settings.rdpWindow.help":
+      "Bestimmt die Startgroesse des RDP-Fensters. 'An Bildschirm anpassen' nutzt ca. 85% des Bildschirms.",
+    "settings.rdpCustomSize.label": "RDP Groesse (WxH)",
+    "settings.rdpCustomSize.help": "Format: Breite x Hoehe in Pixeln, z.B. 1920x1080.",
+    "settings.rdpCustomSize.invalid":
+      "Ungueltige RDP-Groesse. Format: WxH (z.B. 1920x1080, zwischen 640x480 und 7680x4320).",
+    "settings.rdpPerformance.label": "RDP Leistungsprofil",
+    "settings.rdpPerformance.auto": "Auto",
+    "settings.rdpPerformance.lan": "LAN",
+    "settings.rdpPerformance.broadband": "Breitband",
+    "settings.rdpPerformance.low": "Niedrig",
+    "settings.rdpPerformance.help":
+      "Auto erkennt die Verbindung. LAN nutzt volle Qualitaet. Breitband fuer normale Internetverbindungen. Niedrig deaktiviert Effekte fuer langsame Verbindungen.",
     "settings.passwords.store": "Passwoerter lokal speichern (OS-Schluesselbund)",
     "settings.passwords.help": "Nur auf diesem Geraet, niemals im Sync.",
     "settings.selfSigned.label": "Self-signed Zertifikate erlauben",
@@ -302,6 +320,24 @@ export const translations = {
     "settings.rdpScaling.hdpi": "HDPI/4K",
     "settings.rdpScaling.help":
       "Auto detects HDPI/4K screens. Normal disables scaling. HDPI/4K forces HDPI scaling.",
+    "settings.rdpWindow.label": "RDP window mode",
+    "settings.rdpWindow.fit": "Fit to screen",
+    "settings.rdpWindow.fullscreen": "Fullscreen",
+    "settings.rdpWindow.multimon": "Multiple monitors",
+    "settings.rdpWindow.custom": "Custom size",
+    "settings.rdpWindow.help":
+      "Controls the initial size of the RDP window. 'Fit to screen' uses about 85% of the screen.",
+    "settings.rdpCustomSize.label": "RDP size (WxH)",
+    "settings.rdpCustomSize.help": "Format: width x height in pixels, e.g. 1920x1080.",
+    "settings.rdpCustomSize.invalid":
+      "Invalid RDP size. Format: WxH (e.g. 1920x1080, between 640x480 and 7680x4320).",
+    "settings.rdpPerformance.label": "RDP performance profile",
+    "settings.rdpPerformance.auto": "Auto",
+    "settings.rdpPerformance.lan": "LAN",
+    "settings.rdpPerformance.broadband": "Broadband",
+    "settings.rdpPerformance.low": "Low",
+    "settings.rdpPerformance.help":
+      "Auto detects the link. LAN enables full quality. Broadband for normal internet links. Low disables effects for slow connections.",
     "settings.passwords.store": "Store passwords locally (OS keychain)",
     "settings.passwords.help": "Only on this device, never synced.",
     "settings.selfSigned.label": "Allow self-signed certificates",
