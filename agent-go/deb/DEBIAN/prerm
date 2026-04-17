@@ -1,11 +1,22 @@
 #!/bin/sh
 set -e
-# Neue Units
-systemctl stop adminhelper-agent.timer 2>/dev/null || true
-systemctl stop frpc.service 2>/dev/null || true
-systemctl disable adminhelper-agent.timer 2>/dev/null || true
-systemctl disable frpc.service 2>/dev/null || true
-# Alte Units (falls vorhanden, z.B. bei Upgrade)
+
+# Bei Upgrade: nur stoppen, enabled-Status bleibt erhalten
+# Bei Remove/Deconfigure: stop + disable
+case "$1" in
+    remove|deconfigure)
+        systemctl stop adminhelper-agent.timer 2>/dev/null || true
+        systemctl stop frpc.service 2>/dev/null || true
+        systemctl disable adminhelper-agent.timer 2>/dev/null || true
+        systemctl disable frpc.service 2>/dev/null || true
+        ;;
+    upgrade|failed-upgrade)
+        systemctl stop adminhelper-agent.timer 2>/dev/null || true
+        systemctl stop frpc.service 2>/dev/null || true
+        ;;
+esac
+
+# Alte Units aus Vorgaenger-Paketen komplett entfernen (immer)
 systemctl stop srm-agent.timer 2>/dev/null || true
 systemctl stop srm-frpc-sync.timer 2>/dev/null || true
 systemctl stop srm-monitor-agent.timer 2>/dev/null || true
