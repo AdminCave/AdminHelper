@@ -1,5 +1,5 @@
-import { http } from './client';
-import type { Connection } from './types';
+import { http, getAccessToken } from './client';
+import type { Connection, ConnectionImportResult } from './types';
 
 export function list(): Promise<Connection[]> {
   return http.get<Connection[]>('/api/connections');
@@ -15,4 +15,20 @@ export function update(id: string, data: Partial<Connection>): Promise<Connectio
 
 export function remove(id: string): Promise<void> {
   return http.del<void>(`/api/connections/${id}`);
+}
+
+export async function exportConnections(): Promise<Blob> {
+  const token = getAccessToken();
+  const res = await fetch('/api/connections/export', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.blob();
+}
+
+export function importConnections(
+  connections: unknown[],
+  mode: 'merge' | 'replace',
+): Promise<ConnectionImportResult> {
+  return http.post<ConnectionImportResult>('/api/connections/import', { connections, mode });
 }

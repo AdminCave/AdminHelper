@@ -46,6 +46,13 @@ export interface Connection {
   serverId?: string | null;
   tags?: string[];
   notes?: string | null;
+  trustCert?: boolean | null;
+  lastUsed?: string | null;
+  scalingMode?: string | null;
+}
+
+export interface ConnectionImportResult {
+  imported: number;
 }
 
 export interface Server {
