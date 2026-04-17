@@ -279,6 +279,11 @@ export const translations: Translations = {
     "page.frp.unknownServer": "Unbekannter Server",
     "page.frp.tunnelCount": "{count} Tunnel",
     "page.frp.createConfigFirst": "Bitte zuerst eine FRP-Server Konfiguration anlegen",
+    "page.frp.editConfig": "Konfiguration bearbeiten",
+    "page.frp.createConfig": "Konfigurieren",
+    "page.frp.bulkZip": "Alle als ZIP",
+    "page.frp.status": "Status",
+    "page.frp.addTunnel": "+ Tunnel",
 
     // ── FRP Config Modal ──────────────────────────────────────────────
     "modal.frpConfig.title": "FRP-Server bearbeiten",
@@ -323,6 +328,7 @@ export const translations: Translations = {
     "modal.tunnel.customDomains": "Custom Domains",
     "modal.tunnel.tagsComma": "Tags (kommagetrennt)",
     "modal.tunnel.autoConnection": "Automatisch Verbindung erstellen",
+    "modal.tunnel.autoConnUser": "Benutzername für Auto-Verbindung",
 
     // ── FRP Config Preview ────────────────────────────────────────────
     "frp.preview.title": "Config-Vorschau",
@@ -370,6 +376,9 @@ export const translations: Translations = {
     "frp.provision.expired": "Abgelaufen",
     "toast.provision.created": "Provision-Token erstellt (24h gueltig)",
     "toast.provision.commandCopied": "Befehl kopiert",
+    "frp.provision.oneLiner": "Einzeilen-Befehl",
+    "state.loading": "Wird geladen...",
+    "action.confirm": "Bestätigen",
 
     // ── Ansible Page ──────────────────────────────────────────────────
     "page.ansible.title": "Ansible Playbooks",
@@ -861,6 +870,11 @@ export const translations: Translations = {
     "page.frp.unknownServer": "Unknown server",
     "page.frp.tunnelCount": "{count} tunnels",
     "page.frp.createConfigFirst": "Please create an FRP server configuration first",
+    "page.frp.editConfig": "Edit configuration",
+    "page.frp.createConfig": "Configure",
+    "page.frp.bulkZip": "All as ZIP",
+    "page.frp.status": "Status",
+    "page.frp.addTunnel": "+ Tunnel",
 
     // ── FRP Config Modal ──────────────────────────────────────────────
     "modal.frpConfig.title": "Edit FRP server",
@@ -905,6 +919,7 @@ export const translations: Translations = {
     "modal.tunnel.customDomains": "Custom domains",
     "modal.tunnel.tagsComma": "Tags (comma-separated)",
     "modal.tunnel.autoConnection": "Automatically create connection",
+    "modal.tunnel.autoConnUser": "Username for auto connection",
 
     // ── FRP Config Preview ────────────────────────────────────────────
     "frp.preview.title": "Config preview",
@@ -952,6 +967,9 @@ export const translations: Translations = {
     "frp.provision.expired": "Expired",
     "toast.provision.created": "Provision token created (valid 24h)",
     "toast.provision.commandCopied": "Command copied",
+    "frp.provision.oneLiner": "One-liner command",
+    "state.loading": "Loading...",
+    "action.confirm": "Confirm",
 
     // ── Ansible Page ──────────────────────────────────────────────────
     "page.ansible.title": "Ansible Playbooks",

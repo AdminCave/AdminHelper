@@ -201,3 +201,122 @@ export interface PlaybookInput {
   tags: string[];
   content: string;
 }
+
+export interface FrpConfig {
+  id: string;
+  name: string;
+  serverAddr: string;
+  bindPort: number;
+  vhostHttpsPort?: number | null;
+  authToken?: string | null;
+  subdomainHost?: string | null;
+  maxPortsPerClient?: number | null;
+  dashboardPort?: number | null;
+  dashboardUser?: string | null;
+  dashboardPassword?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface FrpConfigInput {
+  name: string;
+  server_addr: string;
+  bind_port: number;
+  vhost_https_port?: number | null;
+  auth_token?: string | null;
+  subdomain_host?: string | null;
+  max_ports_per_client?: number | null;
+  dashboard_port?: number | null;
+  dashboard_user?: string | null;
+  dashboard_password?: string | null;
+}
+
+export type FrpTunnelType = 'stcp' | 'https';
+export type FrpProtocol = 'ssh' | 'rdp' | 'web';
+
+export interface FrpTunnel {
+  id: string;
+  serverId: string;
+  frpConfigId: string;
+  name: string;
+  tunnelType: FrpTunnelType;
+  protocol: FrpProtocol;
+  localIp: string;
+  localPort: number;
+  secretKey?: string | null;
+  customDomains?: string | null;
+  visitorPort?: number | null;
+  connectionId?: string | null;
+  enabled: boolean;
+  tags?: string[];
+  createdAt?: string | null;
+}
+
+export interface FrpTunnelInput {
+  server_id: string;
+  frp_config_id: string;
+  name: string;
+  tunnel_type: FrpTunnelType;
+  protocol: FrpProtocol;
+  local_ip: string;
+  local_port: number;
+  secret_key?: string | null;
+  custom_domains?: string | null;
+  visitor_port?: number | null;
+  auto_create_connection: boolean;
+  auto_connection_username?: string | null;
+  tags: string[];
+}
+
+export interface FrpPkiClientCert {
+  name: string;
+  expiry: string;
+}
+
+export interface FrpPkiStatus {
+  pkiDir: string;
+  caExists: boolean;
+  serverCertExists: boolean;
+  caExpiry?: string | null;
+  serverCertExpiry?: string | null;
+  clientCerts: FrpPkiClientCert[];
+}
+
+export interface FrpStatusProxy {
+  name: string;
+  type: string;
+  status: string;
+  curConns: number;
+  clientVersion?: string;
+  todayTrafficIn: number;
+  todayTrafficOut: number;
+  lastStartTime?: string;
+  lastCloseTime?: string;
+}
+
+export interface FrpStatus {
+  proxies: FrpStatusProxy[];
+  total?: number;
+  error?: string;
+}
+
+export interface FrpProvisionToken {
+  id: string;
+  serverId: string;
+  expiresAt: string;
+  usedAt?: string | null;
+  isValid: boolean;
+  createdAt?: string | null;
+}
+
+export interface FrpProvisionTokenCreateResult {
+  token: string;
+  expiresAt: string;
+  serverId: string;
+  serverName: string;
+}
+
+export interface MonitoringAgentKeyResult {
+  apiKey: string;
+  serverId: string;
+}
