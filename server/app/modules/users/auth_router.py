@@ -1,12 +1,10 @@
-import time
-from collections import defaultdict
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import verify_password, create_access_token, create_refresh_token, get_current_user, get_user_from_refresh_token, blacklist_token
 from app.core.middleware import resolve_client_ip
+from app.core.rate_limit import get_backend as get_rate_limit_backend
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.modules.users.schemas import LoginRequest, RefreshRequest, TokenResponse, UserMe
 from app.modules.users.models import User
@@ -18,27 +16,15 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # Rate-Limiting: max 5 fehlgeschlagene Login-Versuche pro IP innerhalb von 60 Sekunden
 _MAX_ATTEMPTS = 5
 _WINDOW_SECONDS = 60
-_login_attempts: dict[str, list[float]] = defaultdict(list)
-_CLEANUP_INTERVAL = 300  # Alle 5 Minuten verwaiste Einträge bereinigen
-_last_cleanup = 0.0
+
+
+def _rate_limit_key(ip: str) -> str:
+    return f"auth:fail:{ip}"
 
 
 def _check_rate_limit(ip: str) -> None:
-    global _last_cleanup
-    now = time.monotonic()
-
-    # Periodisch alle abgelaufenen Einträge bereinigen (Memory-Leak verhindern)
-    if now - _last_cleanup > _CLEANUP_INTERVAL:
-        _last_cleanup = now
-        stale = [k for k, v in _login_attempts.items()
-                 if all(now - t >= _WINDOW_SECONDS for t in v)]
-        for k in stale:
-            del _login_attempts[k]
-
-    attempts = _login_attempts[ip]
-    # Alte Einträge für diese IP entfernen
-    _login_attempts[ip] = [t for t in attempts if now - t < _WINDOW_SECONDS]
-    if len(_login_attempts[ip]) >= _MAX_ATTEMPTS:
+    backend = get_rate_limit_backend()
+    if backend.get_count(_rate_limit_key(ip)) >= _MAX_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Zu viele Login-Versuche. Bitte {_WINDOW_SECONDS} Sekunden warten.",
@@ -46,7 +32,11 @@ def _check_rate_limit(ip: str) -> None:
 
 
 def _record_failed_attempt(ip: str) -> None:
-    _login_attempts[ip].append(time.monotonic())
+    get_rate_limit_backend().increment(_rate_limit_key(ip), _WINDOW_SECONDS)
+
+
+def _reset_rate_limit(ip: str) -> None:
+    get_rate_limit_backend().reset(_rate_limit_key(ip))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -63,7 +53,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
 
     # Bei erfolgreichem Login: Zähler zurücksetzen
-    _login_attempts.pop(ip, None)
+    _reset_rate_limit(ip)
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
     return TokenResponse(access_token=access, refresh_token=refresh)

@@ -74,3 +74,7 @@ TRUSTED_PROXIES_RAW = os.environ.get("TRUSTED_PROXIES", "").strip()
 # Monitoring-Service
 MONITOR_SERVICE_URL = os.environ.get("MONITOR_SERVICE_URL", "http://monitoring:8080")
 MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")
+
+# Redis (fuer Rate-Limit ueber mehrere Worker hinweg). Leer = In-Memory-Fallback
+# (nur fuer Single-Worker-/Dev-Setups sicher).
+REDIS_URL = os.environ.get("REDIS_URL", "").strip()
