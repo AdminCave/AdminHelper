@@ -112,7 +112,7 @@ func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 		if err != nil {
 			return fmt.Errorf("Config base64 decodieren: %w", err)
 		}
-		if err := os.WriteFile(config.FrpConfigFile(), decoded, 0644); err != nil {
+		if err := os.WriteFile(config.FrpConfigFile(), decoded, 0600); err != nil {
 			return fmt.Errorf("frpc.toml schreiben: %w", err)
 		}
 		logMsg("frpc.toml geschrieben")
@@ -144,6 +144,9 @@ func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 	return nil
 }
 
+// maxBundleBytes begrenzt die entpackte Gesamtgroesse des PKI-Bundles (Zip-Bomb-Schutz).
+const maxBundleBytes int64 = 10 * 1024 * 1024 // 10 MiB
+
 // extractPkiBundle entpackt ein base64-encoded tar.gz Archiv.
 func extractPkiBundle(b64 string, destDir string) error {
 	data, err := base64.StdEncoding.DecodeString(b64)
@@ -156,6 +159,12 @@ func extractPkiBundle(b64 string, destDir string) error {
 	}
 	defer gz.Close()
 
+	cleanDest, err := filepath.Abs(filepath.Clean(destDir))
+	if err != nil {
+		return fmt.Errorf("Zielverzeichnis aufloesen: %w", err)
+	}
+
+	var totalBytes int64
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -165,25 +174,50 @@ func extractPkiBundle(b64 string, destDir string) error {
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(destDir, hdr.Name)
-		// Sicherheit: Pfad darf nicht ausserhalb destDir zeigen
-		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destDir)) {
-			continue
+
+		target, err := filepath.Abs(filepath.Join(cleanDest, hdr.Name))
+		if err != nil {
+			return fmt.Errorf("Pfad aufloesen: %w", err)
 		}
+		rel, err := filepath.Rel(cleanDest, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("zip slip erkannt: %s", hdr.Name)
+		}
+
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			os.MkdirAll(target, 0755)
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
 		case tar.TypeReg:
-			os.MkdirAll(filepath.Dir(target), 0755)
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			// Sichere Standard-Permission, .key bekommt zusaetzlich 0600.
+			mode := os.FileMode(hdr.Mode) & 0644
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
 				return err
 			}
-			io.Copy(f, tr)
+
+			remaining := maxBundleBytes - totalBytes
+			written, err := io.CopyN(f, tr, remaining+1)
+			if err != nil && err != io.EOF {
+				f.Close()
+				os.Remove(target)
+				return err
+			}
+			if written > remaining {
+				f.Close()
+				os.Remove(target)
+				return fmt.Errorf("zip bomb erkannt: PKI-Bundle ueberschreitet %d Bytes", maxBundleBytes)
+			}
+			totalBytes += written
 			f.Close()
-			// Private Keys schuetzen
 			if strings.HasSuffix(hdr.Name, ".key") {
-				os.Chmod(target, 0600)
+				if err := os.Chmod(target, 0600); err != nil {
+					return err
+				}
 			}
 		}
 	}

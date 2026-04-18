@@ -1,10 +1,31 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
+
+/// Schreibt Daten mit restriktiven Permissions (0600 auf Unix).
+/// Auf Windows greifen die Standard-User-ACLs des AppData-Ordners.
+fn write_secret(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        f.write_all(content)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, content)
+    }
+}
 
 use crate::auth;
 use crate::error::AppError;
@@ -72,7 +93,12 @@ fn write_visitor_bundle(app: &tauri::AppHandle, bundle: &VisitorBundle) -> Resul
         std::fs::create_dir_all(&pki_dir)?;
         for (filename, content) in &bundle.pki {
             let file_path = pki_dir.join(filename);
-            std::fs::write(&file_path, content)?;
+            // Private Keys (.key) restriktiv schreiben, Certs duerfen 0644 bleiben.
+            if filename.ends_with(".key") {
+                write_secret(&file_path, content.as_bytes())?;
+            } else {
+                std::fs::write(&file_path, content)?;
+            }
         }
     }
 
@@ -87,7 +113,8 @@ fn write_visitor_bundle(app: &tauri::AppHandle, bundle: &VisitorBundle) -> Resul
     let abs_pki = pki_dir.to_string_lossy();
     let toml_content = bundle.toml.replace("\"pki/", &format!("\"{abs_pki}/"));
     let config_path = data_dir.join("visitor.toml");
-    std::fs::write(&config_path, &toml_content)?;
+    // visitor.toml enthaelt frp-Auth-Token -> 0600 auf Unix.
+    write_secret(&config_path, toml_content.as_bytes())?;
     Ok(config_path)
 }
 

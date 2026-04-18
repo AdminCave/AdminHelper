@@ -63,8 +63,8 @@ func Sync() error {
 		return fmt.Errorf("neue Config laden: %w", err)
 	}
 
-	// Config schreiben
-	if err := os.WriteFile(config.FrpConfigFile(), newConfig, 0644); err != nil {
+	// Config schreiben (0600: enthaelt frp-Auth-Token).
+	if err := os.WriteFile(config.FrpConfigFile(), newConfig, 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
 	}
 	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
