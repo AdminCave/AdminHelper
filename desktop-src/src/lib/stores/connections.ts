@@ -3,7 +3,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import type { Connection, ConnectionKind } from '$lib/bridge/types';
+import type { AuthSession, Connection, ConnectionKind, Settings } from '$lib/bridge/types';
 
 export type KindFilter = 'all' | 'ssh' | 'rdp' | 'web';
 export type GroupFilter = 'single' | 'grouped';
@@ -51,6 +51,32 @@ export async function load(): Promise<void> {
   try {
     const items = await bridge.loadConnections();
     _state.set({ items, loading: false, error: null });
+  } catch (err) {
+    _state.set({
+      items: [],
+      loading: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+export async function reloadForMode(
+  settings: Settings | null,
+  session: AuthSession | null,
+): Promise<void> {
+  if (!settings) return load();
+  _state.update((s) => ({ ...s, loading: true, error: null }));
+  try {
+    if (settings.mode === 'server' && session) {
+      const items = await bridge.fetchConnectionsJwt(session.serverUrl, session.token);
+      _state.set({ items, loading: false, error: null });
+    } else if (settings.mode === 'sync' && settings.url) {
+      const items = await bridge.syncConnections(settings.url);
+      _state.set({ items, loading: false, error: null });
+    } else {
+      const items = await bridge.loadConnections();
+      _state.set({ items, loading: false, error: null });
+    }
   } catch (err) {
     _state.set({
       items: [],

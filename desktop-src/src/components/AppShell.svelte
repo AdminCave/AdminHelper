@@ -9,10 +9,13 @@
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
   import Monitoring from '../pages/Monitoring.svelte';
+  import Ansible from '../pages/Ansible.svelte';
   import ConnectionEditor from './ConnectionEditor.svelte';
   import PasswordPrompt from './PasswordPrompt.svelte';
+  import SettingsModal from './SettingsModal.svelte';
   import StatusBar from './StatusBar.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
+  import { openSettings, startSyncTimer, stopSyncTimer } from '$lib/stores/settings';
 
   interface NavItem {
     id: 'dashboard' | 'connections' | 'monitoring' | 'ansible';
@@ -51,6 +54,9 @@
     if (isServerMode) {
       void startIfServerMode();
     }
+    if ($settings?.mode === 'sync') {
+      startSyncTimer();
+    }
     try {
       unlisteners.push(
         await listen('frpc-terminated', () => markTerminated()),
@@ -65,6 +71,7 @@
   });
 
   onDestroy(() => {
+    stopSyncTimer();
     unlisteners.forEach((fn) => {
       try { fn(); } catch { /* ignore */ }
     });
@@ -126,6 +133,7 @@
       {:else if $settings}
         <span style="color: var(--text-muted);">Modus: {$settings.mode}</span>
       {/if}
+      <button class="btn ghost small" onclick={openSettings} title="Einstellungen">⚙</button>
     </div>
   </header>
 
@@ -138,10 +146,7 @@
       {:else if currentId === 'monitoring'}
         <Monitoring />
       {:else if currentId === 'ansible'}
-        <div style="padding: var(--sp-6); color: var(--text-muted);">
-          <h2>Ansible</h2>
-          <p>Kommt in Phase 9.</p>
-        </div>
+        <Ansible />
       {/if}
     </section>
   </main>
@@ -149,4 +154,5 @@
 
 <ConnectionEditor />
 <PasswordPrompt />
+<SettingsModal />
 <StatusBar />

@@ -84,11 +84,8 @@ export interface ResolvedConnection {
 }
 
 export interface AnsibleTarget {
-  host: string;
-  name?: string | null;
-  username?: string | null;
-  port?: number | null;
-  keyPath?: string | null;
+  hostname: string;
+  groups: string[];
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
