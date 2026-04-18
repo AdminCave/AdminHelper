@@ -5,6 +5,20 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.19.1] - 2026-04-18
+
+### Changed
+
+- Einmalige Prettier-Formatierung ueber `frontend-src/` (rein
+  kosmetisch, 31 Dateien)
+
+### Fixed
+
+- CI-Failure bei `npm run lint` im Frontend behoben: ESLint 9
+  Flat-Config (`eslint.config.js`) eingefuehrt, `typescript-eslint` +
+  `globals` als Dev-Dependencies ergaenzt, `.prettierignore` fuer
+  `frontend-src/`
+
 ## [0.19.0] - 2026-04-18
 
 ### Highlights
@@ -150,5 +164,6 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.19.1]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.19.1
 [0.19.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.19.0
 [0.17.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.17.0
