@@ -9,6 +9,8 @@
   } from '$lib/stores/connections';
   import { timeAgo } from '$lib/utils/timeAgo';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
+  import { openEditor } from '$lib/stores/editor';
+  import { initiateConnect } from '$lib/stores/connectFlow';
 
   onMount(async () => {
     await loadConnections();
@@ -18,9 +20,9 @@
     kindFilter.set(k);
   }
 
-  function openEditor(_c?: Connection): void {
-    // Placeholder - Editor kommt in Phase 7
-    console.info('open editor', _c?.id ?? 'new');
+  function onConnect(conn: Connection, event: MouseEvent | KeyboardEvent): void {
+    event.stopPropagation();
+    void initiateConnect(conn);
   }
 
   function kindBadgeColor(kind: ConnectionKind): string {
@@ -63,7 +65,7 @@
   </div>
   <div class="toolbar-right">
     <div class="counter">{$filteredConnections.length}</div>
-    <button class="btn primary" onclick={() => openEditor()}>Neue Verbindung</button>
+    <button class="btn primary" onclick={() => openEditor(null)}>Neue Verbindung</button>
   </div>
 </div>
 
@@ -102,6 +104,13 @@
             </div>
           {/if}
         </div>
+        <button
+          class="btn primary small"
+          onclick={(e) => onConnect(conn, e)}
+          onkeydown={(e) => e.key === 'Enter' && onConnect(conn, e)}
+        >
+          Verbinden
+        </button>
       </div>
     {/each}
   {/if}

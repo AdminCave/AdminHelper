@@ -1,9 +1,17 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { path, navigate } from '$lib/router';
   import { session, settings, logout } from '$lib/stores/session';
   import { searchTerm } from '$lib/stores/connections';
+  import { markRdpError } from '$lib/stores/connectFlow';
+  import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
+  import ConnectionEditor from './ConnectionEditor.svelte';
+  import PasswordPrompt from './PasswordPrompt.svelte';
+  import StatusBar from './StatusBar.svelte';
+  import TunnelIndicator from './TunnelIndicator.svelte';
 
   interface NavItem {
     id: 'dashboard' | 'connections' | 'monitoring' | 'ansible';
@@ -20,7 +28,6 @@
   ];
 
   let isServerMode = $derived($settings?.mode === 'server' && $session !== null);
-
   let visibleNav = $derived(navItems.filter((n) => !n.serverOnly || isServerMode));
 
   let currentId = $derived.by<NavItem['id']>(() => {
@@ -36,6 +43,31 @@
   function go(item: NavItem): void {
     navigate(item.href);
   }
+
+  const unlisteners: UnlistenFn[] = [];
+
+  onMount(async () => {
+    if (isServerMode) {
+      void startIfServerMode();
+    }
+    try {
+      unlisteners.push(
+        await listen('frpc-terminated', () => markTerminated()),
+        await listen<string>('frpc-error', (e) => markError(String(e.payload ?? 'frpc error'))),
+        await listen<string>('rdp-error', (e) =>
+          markRdpError(String(e.payload ?? 'RDP-Authentifizierung fehlgeschlagen')),
+        ),
+      );
+    } catch (err) {
+      console.warn('Tauri-Event-Listener konnten nicht registriert werden', err);
+    }
+  });
+
+  onDestroy(() => {
+    unlisteners.forEach((fn) => {
+      try { fn(); } catch { /* ignore */ }
+    });
+  });
 </script>
 
 <div class="app-shell">
@@ -63,6 +95,8 @@
     </nav>
 
     <div class="sidebar-spacer"></div>
+
+    <TunnelIndicator />
 
     <div class="sidebar-bottom">
       <div class="sidebar-version">v0.18.0-dev</div>
@@ -114,3 +148,7 @@
     </section>
   </main>
 </div>
+
+<ConnectionEditor />
+<PasswordPrompt />
+<StatusBar />

@@ -9,6 +9,8 @@
   } from '$lib/stores/connections';
   import { timeAgo } from '$lib/utils/timeAgo';
   import type { Connection } from '$lib/bridge/types';
+  import { initiateConnect } from '$lib/stores/connectFlow';
+  import { openEditor } from '$lib/stores/editor';
 
   let stats = $state({ total: 0, ssh: 0, rdp: 0, web: 0 });
   let recent = $state<Connection[]>([]);
@@ -32,8 +34,7 @@
   }
 
   function onConnect(c: Connection): void {
-    // Placeholder - volles Connect-Handling kommt in Phase 7
-    console.info('connect requested', c.id);
+    void initiateConnect(c);
   }
 </script>
 
@@ -85,7 +86,10 @@
 </div>
 
 <div class="dash-actions">
-  <button class="btn primary" onclick={() => navigate('/connections')}>
+  <button class="btn primary" onclick={() => openEditor(null)}>
     Neue Verbindung
+  </button>
+  <button class="btn" onclick={() => navigate('/connections')}>
+    Zur Liste
   </button>
 </div>
