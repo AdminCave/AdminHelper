@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent-Deployment – Admin-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/extension.html">Browser-Extension</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Agent-Deployment</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./agent-deployment.html" class="is-active">DE</a><a href="../en/admin/agent-deployment.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin-Handbuch</span>
+          <h1>Agent-Deployment</h1>
+          <p class="lead">Der Go-Agent läuft auf jedem überwachten Server. Er übernimmt zwei Aufgaben: Metrik-Collector-Läufe und FRP-Client-Auto-Provisioning. Ausgeliefert wird er als DEB, RPM (Linux) oder MSI/ZIP (Windows).</p>
+
+          <h2>Was macht der Agent?</h2>
+          <ul>
+            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet an <code>/api/monitoring/ingest</code>.</li>
+            <li><strong>FRP-Client</strong>: lädt beim Erst-Start mit einem Provision-Token sein Client-Zertifikat und startet <code>frpc.service</code>.</li>
+            <li><strong>Self-Update</strong>: per <code>apt</code>/<code>dnf</code> aus dem Aptly-Repo; Konfig und Service werden bei Upgrades nicht überschrieben.</li>
+          </ul>
+
+          <h2>Repository einrichten (Debian/Ubuntu)</h2>
+          <p>Die DEB-Pakete liegen im internen Aptly-Repo, das der Installer beim ersten Start konfiguriert. Für manuelle Einrichtung:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>curl -fsSL https://apt.ks98.de/pubkey.asc | sudo gpg --dearmor \
+    -o /etc/apt/keyrings/adminhelper.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/adminhelper.gpg] \
+https://apt.ks98.de/ stable main" | sudo tee /etc/apt/sources.list.d/adminhelper.list
+
+sudo apt update
+sudo apt install adminhelper-agent</code></pre>
+
+          <h2>Repository einrichten (Rocky/Alma/RHEL)</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>cat &lt;&lt;'EOF' | sudo tee /etc/yum.repos.d/adminhelper.repo
+[adminhelper]
+name=AdminHelper
+baseurl=https://rpm.ks98.de/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://rpm.ks98.de/pubkey.asc
+EOF
+
+sudo dnf install adminhelper-agent</code></pre>
+
+          <h2>Erst-Provisionierung</h2>
+          <p>Nach Installation läuft der Agent noch nicht produktiv – er hat weder einen Server-URL noch ein FRP-Client-Zertifikat. Provisionierung in zwei Schritten:</p>
+          <ol>
+            <li>Im Web-Panel → <em>Server → Neuen Server registrieren</em> klicken. Das System legt einen Server-Eintrag an und generiert einen einmaligen <strong>Provision-Token</strong> (24h gültig).</li>
+            <li>Auf dem Ziel-Server:
+              <div class="code-header"><span>bash</span></div>
+<pre><code>sudo adminhelper-agent provision \
+    --server https://srm.example.com \
+    --token  &lt;provision-token&gt;</code></pre>
+            </li>
+          </ol>
+          <p>Der Agent ruft <code>/api/frp/provision</code> auf, bekommt Client-Zertifikat + <code>frpc.toml</code>, aktiviert <code>adminhelper-agent.timer</code> und <code>frpc.service</code>. Der Token wird nach Einlösung ungültig.</p>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Ansible-One-Liner</div><p>Für Rollouts auf viele Hosts: ein Playbook mit <code>apt</code>/<code>yum</code>-Modul plus <code>command: adminhelper-agent provision ...</code>. Beispiel-Role im Repo unter <code>agent-go/ansible/</code>.</p></div>
+          </div>
+
+          <h2>Windows (MSI)</h2>
+          <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>
+          <div class="code-header"><span>powershell</span></div>
+<pre><code>adminhelper-agent.exe provision `
+    --server https://srm.example.com `
+    --token  &lt;provision-token&gt;</code></pre>
+          <p>Der Agent registriert sich als Windows-Service (<code>adminhelper-agent</code>) und startet automatisch beim Boot.</p>
+
+          <h2>Prüfen, ob der Agent läuft</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>systemctl status adminhelper-agent.timer   # Linux – nächste Aktivierung
+systemctl status frpc.service              # FRP-Client-Verbindung
+journalctl -u adminhelper-agent.service --since "1 hour ago"</code></pre>
+
+          <h2>Upgrade</h2>
+          <p>Bei gesetztem Apt-Repo reicht <code>apt upgrade adminhelper-agent</code> auf allen Servern. Die systemd-Units und die Konfig (<code>/etc/adminhelper/agent.toml</code>) bleiben erhalten.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./benutzer.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Benutzer &amp; Zugriff</span></a>
+            <a class="next" href="./monitoring.html"><span class="label">Nächstes Kapitel</span><span class="title">Monitoring →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

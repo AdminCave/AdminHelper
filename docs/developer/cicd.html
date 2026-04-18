@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CI/CD &amp; Release – Entwickler-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/extension.html">Browser-Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./extension.html">Browser-Extension</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Entwickler</a><span class="sep">/</span><span class="current">CI/CD &amp; Release</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./cicd.html" class="is-active">DE</a><a href="../en/developer/cicd.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Entwickler-Handbuch</span>
+          <h1>CI/CD &amp; Release</h1>
+          <p class="lead">GitLab-CI-Pipeline baut Docker-Image, Desktop-DEBs und Go-Agent-Pakete. Release-Artefakte werden per Aptly-REST-API in ein signiertes Debian-Repo publiziert – nicht in GitLab-Packages.</p>
+
+          <h2>Pipeline-Stages</h2>
+          <table>
+            <thead><tr><th>Stage</th><th>Jobs</th></tr></thead>
+            <tbody>
+              <tr><td><code>check</code></td><td><code>pytest</code>, <code>svelte-check</code>, <code>cargo check</code>, <code>go vet</code></td></tr>
+              <tr><td><code>docker</code></td><td>Server-Image bauen &amp; in <code>docker.nevondo.com</code> pushen</td></tr>
+              <tr><td><code>download</code></td><td><code>frpc</code>-Binary vom offiziellen Release</td></tr>
+              <tr><td><code>build</code></td><td>Desktop-DEB (Trixie), Go-Agent-DEB/RPM für linux-amd64 + windows-amd64</td></tr>
+              <tr><td><code>publish</code></td><td>DEBs via Aptly-API hochladen, Repo-Snapshots erzeugen &amp; publizieren</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Trigger-Matrix</h2>
+          <table>
+            <thead><tr><th>Event</th><th>Was läuft</th></tr></thead>
+            <tbody>
+              <tr><td>Merge Request</td><td><code>check</code> (muss grün sein)</td></tr>
+              <tr><td>Branch-Push</td><td><code>check</code> + <code>docker</code> + <code>build</code>, aber kein <code>publish</code></td></tr>
+              <tr><td>Tag <code>v*.*.*</code></td><td>Volle Pipeline inklusive <code>publish</code> ins Prod-Repo</td></tr>
+              <tr><td>Tag <code>agent-v*.*.*</code></td><td>Nur Agent-Build + Agent-Publish (Server &amp; Desktop bleiben unberührt)</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Version-Stellen</h2>
+          <p>Bei einem Release muss die neue Version an mehreren Stellen parallel gesetzt werden – Tag allein reicht nicht:</p>
+          <ul>
+            <li><code>server/pyproject.toml</code> – <code>version = "0.18.0"</code></li>
+            <li><code>docs/**/*.html</code> – Footer-<code>&lt;span&gt;v0.18.0&lt;/span&gt;</code></li>
+            <li><code>frontend-src/package.json</code> – Vite-Build &amp; About-Page</li>
+            <li><code>desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code></li>
+            <li><code>agent-go/cmd/adminhelper-agent/main.go</code> – <code>const Version</code> (überschrieben via <code>-ldflags "-X main.Version=…"</code>)</li>
+            <li><code>extension/manifest.json</code> – Chrome-Webstore-Version</li>
+          </ul>
+          <p>Script <code>scripts/bump_version.sh 0.18.0</code> patcht alles in einem Rutsch und erzeugt den passenden Git-Tag.</p>
+
+          <h2>Aptly-Publish</h2>
+          <p>Der CI-Job <code>publish</code> lädt DEBs in ein Aptly-Staging-Repo über die REST-API hoch (mutual TLS). Nach erfolgreichem Upload wird ein Snapshot erstellt und auf <code>stable</code> publiziert:</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code># desktop/scripts/ci_publish_via_api.sh (gekürzt)
+curl --cert "$APTLY_CLIENT_CERT" --key "$APTLY_CLIENT_KEY" \
+     -F file=@"$DEB" \
+     "$APTLY_URL/api/files/srm-staging"
+
+curl --cert "$APTLY_CLIENT_CERT" --key "$APTLY_CLIENT_KEY" \
+     -X POST "$APTLY_URL/api/repos/srm/file/srm-staging"
+
+curl --cert "$APTLY_CLIENT_CERT" --key "$APTLY_CLIENT_KEY" \
+     -X POST -H 'Content-Type: application/json' \
+     -d "{\"Name\":\"srm-$VERSION\",\"SourceKind\":\"local\",\"SourceRepo\":\"srm\"}" \
+     "$APTLY_URL/api/snapshots/srm"
+
+curl --cert "$APTLY_CLIENT_CERT" --key "$APTLY_CLIENT_KEY" \
+     -X PUT -H 'Content-Type: application/json' \
+     -d "{\"Snapshots\":[{\"Component\":\"main\",\"Name\":\"srm-$VERSION\"}]}" \
+     "$APTLY_URL/api/publish/stable/trixie"</code></pre>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Kein GitLab-Packages</div><p>DEBs werden <strong>ausschließlich</strong> über Aptly publiziert. GitLab-Packages wird nicht benutzt – nicht manuell hochladen, nicht als Fallback. Die öffentliche APT-Quelle bezieht ausschließlich aus dem Aptly-Repo.</p></div>
+          </div>
+
+          <h2>Docker-Image</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Multi-Stage: Frontend-Build → Python-Runtime
+docker build \
+  --target runtime \
+  -t docker.nevondo.com/simpleremotemanager/server:$CI_COMMIT_TAG \
+  -t docker.nevondo.com/simpleremotemanager/server:latest \
+  .
+docker push docker.nevondo.com/simpleremotemanager/server:$CI_COMMIT_TAG
+docker push docker.nevondo.com/simpleremotemanager/server:latest</code></pre>
+
+          <p>Tag <code>latest</code> wird nur bei Prod-Releases geschoben – Dev-Branches bekommen nur den Commit-SHA-Tag, um Deployment-Verwechslungen zu vermeiden.</p>
+
+          <h2>Tauri-Build (Trixie)</h2>
+          <p>Desktop-Client-Build läuft in <code>debian:trixie</code> Docker-Runner. Die Toolchain wird pro Job installiert, aber Cargo-Cache + <code>target/</code> werden über GitLab-Cache wiederverwendet – spart ca. 6 min pro Build:</p>
+
+          <div class="code-header"><span>yaml</span></div>
+<pre><code>cache:
+  key:
+    files: [desktop/src-tauri/Cargo.lock]
+  paths:
+    - .cargo/bin
+    - .cargo/registry/index
+    - .cargo/registry/cache
+    - .cargo/git/db
+    - .rustup/toolchains
+    - desktop/src-tauri/target</code></pre>
+
+          <h2>Go-Agent-Build</h2>
+          <p>Cross-Compile für Linux + Windows in einem Job. Version wird per <code>-ldflags</code> reingeschrieben, damit <code>adminhelper-agent version</code> stimmt:</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>VERSION=${CI_COMMIT_TAG#v}
+GOOS=linux   GOARCH=amd64 go build \
+  -ldflags "-X main.Version=$VERSION -X main.Commit=$CI_COMMIT_SHORT_SHA" \
+  -o bin/adminhelper-agent ./cmd/adminhelper-agent
+
+GOOS=windows GOARCH=amd64 go build \
+  -ldflags "-X main.Version=$VERSION -X main.Commit=$CI_COMMIT_SHORT_SHA" \
+  -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
+
+VERSION=$VERSION bash build-deb.sh
+VERSION=$VERSION bash build-rpm.sh</code></pre>
+
+          <h2>Release-Checkliste</h2>
+          <ol>
+            <li><code>scripts/bump_version.sh 0.18.0</code> ausführen.</li>
+            <li><code>CHANGELOG.md</code> pflegen (manuell, nach Conventional-Commits-Vorgabe).</li>
+            <li>Commit &amp; Tag: <code>git commit -am "release: v0.18.0" &amp;&amp; git tag v0.18.0</code>.</li>
+            <li><code>git push --follow-tags</code>.</li>
+            <li>Pipeline beobachten – bei grünem <code>publish</code> ist die neue Version live auf <code>deb.ks98.de</code>.</li>
+            <li>Release-Notes in GitLab-UI ergänzen (Markdown aus <code>CHANGELOG.md</code>).</li>
+          </ol>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Agent-only Release</div><p>Für Hotfixes am Go-Agent reicht ein Tag <code>agent-v0.18.1</code>. Die Pipeline überspringt Server- und Desktop-Jobs und publisht nur das Agent-DEB/-RPM. Spart 10+ min CI-Zeit.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./hooks.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Hooks &amp; Events</span></a>
+            <a class="next" href="../admin/index.html"><span class="label">Weiter zu</span><span class="title">Admin-Handbuch →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

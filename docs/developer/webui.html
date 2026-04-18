@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web-Panel – Entwickler-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/extension.html">Browser-Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./extension.html">Browser-Extension</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Entwickler</a><span class="sep">/</span><span class="current">Web-Panel</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./webui.html" class="is-active">DE</a><a href="../en/developer/webui.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Entwickler-Handbuch</span>
+          <h1>Web-Panel</h1>
+          <p class="lead">Das Web-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>frontend-src/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert.</p>
+
+          <h2>Projekt-Struktur</h2>
+          <div class="code-header"><span>tree</span></div>
+<pre><code>frontend-src/
+├── src/
+│   ├── lib/
+│   │   ├── api/           fetch-Wrapper für /api/*
+│   │   ├── components/    Button, Modal, TagChip, Tabs, ...
+│   │   ├── stores/        13 Runes-Stores (auth, connections, ...)
+│   │   ├── i18n/          DE/EN-Dictionaries
+│   │   └── utils/
+│   ├── routes/            Pages (hash-routed)
+│   ├── App.svelte
+│   └── main.ts
+├── tests/e2e/             Playwright
+├── svelte.config.ts
+└── vite.config.ts</code></pre>
+
+          <h2>Routing</h2>
+          <p>Hash-Router (kein SSR, kein Client-Router von SvelteKit): Die Pfade sind <code>#/connections</code>, <code>#/servers</code> usw. Das funktioniert zuverlässig hinter beliebigen Reverse-Proxies, ohne dass der Server SPA-Fallbacks verstehen muss. Implementierung in <code>src/lib/router.ts</code>.</p>
+
+          <h2>Stores</h2>
+          <p>Svelte-5-Runes ersetzen die klassischen Writables. Jeder Store ist eine TypeScript-Klasse mit <code>$state</code>-Feldern und Methoden:</p>
+          <table>
+            <thead><tr><th>Store</th><th>Zweck</th></tr></thead>
+            <tbody>
+              <tr><td><code>authStore</code></td><td>Login, Logout, Refresh, aktueller User.</td></tr>
+              <tr><td><code>connectionsStore</code></td><td>Live-Liste + Suche + Gruppenfilter.</td></tr>
+              <tr><td><code>serversStore</code></td><td>Server-Inventar + Provision-Token.</td></tr>
+              <tr><td><code>apiKeysStore</code></td><td>Key-CRUD.</td></tr>
+              <tr><td><code>hooksStore</code></td><td>Hook-CRUD + Execution-Log.</td></tr>
+              <tr><td><code>monitoringStore</code></td><td>Checks, Alerts, VictoriaMetrics-Queries.</td></tr>
+              <tr><td><code>ansibleStore</code></td><td>Playbook-Läufe, Streaming-Output.</td></tr>
+              <tr><td><code>tunnelStore</code></td><td>FRP-Tunnel-Status und -CRUD.</td></tr>
+              <tr><td><code>toastStore</code></td><td>Globale Toast-Benachrichtigungen.</td></tr>
+              <tr><td><code>confirmStore</code></td><td>Bestätigungs-Dialoge.</td></tr>
+              <tr><td><code>languageStore</code></td><td>DE/EN-Umschaltung (i18n).</td></tr>
+              <tr><td><code>themeStore</code></td><td>Kein Theme-Switch – immer Dark (aus CSS-Tokens).</td></tr>
+              <tr><td><code>settingsStore</code></td><td>Serverseitige Settings.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>API-Wrapper</h2>
+          <p>Alle HTTP-Calls gehen durch <code>src/lib/api/client.ts</code>. Der Client verwaltet Access-Token und triggert automatisch Refresh, wenn ein 401 zurückkommt. Bei zweitem 401 wird zur Login-Page geleitet.</p>
+
+          <h2>uPlot-Charts</h2>
+          <p>Monitoring-Charts nutzen <code>uplot</code> direkt – kein schwergewichtiges Chart-Framework. Wrapper in <code>src/lib/components/charts/</code>. uPlot ist 30 kB gzipped und rendert schnell auch 100k Punkte.</p>
+
+          <h2>Tests</h2>
+          <p>Playwright-Smoketests deck alle 8 Produktiv-Seiten ab: Login, Connections, Servers, Users, API-Keys, Hooks, Ansible, FRP-Tunnels, Monitoring. Visual-Diff-Screenshots werden als CI-Artifact hinterlegt.</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>cd frontend-src
+npm run check           # svelte-check + tsc
+npm run lint            # eslint + svelte-eslint
+npx playwright test     # E2E</code></pre>
+
+          <h2>Build &amp; Deployment</h2>
+          <p>Der Vite-Build landet in <code>frontend-src/dist/</code>. Im Dockerfile wird dieser Output in <code>/app/frontend/</code> kopiert, und die FastAPI-App mountet ihn als Static-Route. SPA-Fallback prüft vorher Datei-Existenz, bevor <code>index.html</code> zurückgegeben wird – das verhindert MIME-Fehler auf <code>/assets/*.js</code>.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./server.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Server</span></a>
+            <a class="next" href="./desktop.html"><span class="label">Nächstes Kapitel</span><span class="title">Desktop-Client →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

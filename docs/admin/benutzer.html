@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Benutzer &amp; Zugriff – Admin-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group">
+            <div class="nav-title">Admin-Handbuch</div>
+            <a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a>
+          </div>
+          <div class="nav-group">
+            <div class="nav-title">Entwickler-Handbuch</div>
+            <a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/extension.html">Browser-Extension</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a>
+          </div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Benutzer</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./benutzer.html" class="is-active">DE</a><a href="../en/admin/users.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin-Handbuch</span>
+          <h1>Benutzer &amp; Zugriff</h1>
+          <p class="lead">SRM unterscheidet drei Zugriffsarten: interaktive Benutzer (Web- und Desktop-Login), API-Keys (Agenten und Skripte) sowie FRP-Provision-Tokens (Einmalverwendung). Diese Seite erklärt, wie du alle drei verwaltest.</p>
+
+          <h2>Benutzerrollen</h2>
+          <table>
+            <thead><tr><th>Rolle</th><th>Darf</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge badge-info">admin</span></td><td>Alles: Benutzer verwalten, API-Keys erstellen, Server registrieren, Hooks definieren, globale Einstellungen.</td></tr>
+              <tr><td><span class="badge">user</span></td><td>Eigene Verbindungen pflegen, Server und Monitoring lesen. Keine Admin-Aktionen.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Benutzer anlegen</h2>
+          <ol>
+            <li>Im Web-Panel <em>Benutzer → Neu</em> öffnen</li>
+            <li>Username und Passwort vergeben; Passwort wird mit bcrypt gehasht</li>
+            <li>Rolle wählen – Admins sehen und bearbeiten alles</li>
+          </ol>
+          <p>Admins können jederzeit fremde Passwörter zurücksetzen. Normale Benutzer können ihr eigenes Passwort in den Einstellungen ändern.</p>
+
+          <h2>Login-Flow</h2>
+          <p>Der Login-Flow nutzt JWT mit Refresh-Token-Rotation:</p>
+          <ul>
+            <li><strong>Access-Token</strong>: 8h gültig, wird bei jedem Request im <code>Authorization</code>-Header mitgeschickt.</li>
+            <li><strong>Refresh-Token</strong>: 7 Tage gültig, rotiert bei jeder Verwendung (der alte wird sofort blacklisted).</li>
+            <li><strong>Reuse-Detection</strong>: Wird ein geblacklisteter Refresh-Token erneut verwendet, werden <em>alle</em> Sessions des Users sofort invalidiert – ein Hinweis auf einen gestohlenen Token.</li>
+          </ul>
+
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Login-Rate-Limit</div><p>5 fehlgeschlagene Login-Versuche pro IP in 15 Minuten → 5-Minuten-Sperre. Implementierung via Redis, mit In-Memory-Fallback für Single-Worker.</p></div>
+          </div>
+
+          <h2>API-Keys</h2>
+          <p>API-Keys authentifizieren nicht-interaktive Clients (Go-Agent, Skripte, CI-Jobs). Unterschiede zu User-Credentials:</p>
+          <ul>
+            <li>Kein Ablauf, aber widerrufbar per Klick</li>
+            <li>Eigener Scope: z. B. nur Monitoring-Ingest oder nur Server-Read</li>
+            <li>Server speichert nur den SHA-256-Hash, der Klartext ist nach dem Anzeigen weg</li>
+          </ul>
+
+          <p>API-Keys erstellen:</p>
+          <ol>
+            <li>Web-Panel → <em>API-Keys → Neu</em></li>
+            <li>Label + Scope wählen</li>
+            <li>Klartext-Key <strong>sofort</strong> kopieren – wird nie wieder angezeigt</li>
+            <li>Als <code>Authorization: Bearer &lt;key&gt;</code> verwenden</li>
+          </ol>
+
+          <h2>IP-Restriktion</h2>
+          <p>Mit <code>ALLOWED_IPS</code> lassen sich alle Zugriffe auf eine Whitelist begrenzen. Beispiel:</p>
+          <div class="code-header"><span>.env</span></div>
+<pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
+          <p>Wird die Liste leer gelassen, ist der Zugriff offen (für Reverse-Proxy- oder VPN-geschützte Setups).</p>
+
+          <h2>Audit-Log</h2>
+          <p>Admin-Aktionen werden in die DB-Tabelle <code>audit_log</code> geschrieben: Benutzer-Änderungen, API-Key-Erzeugung/-Widerruf, Server-Registrierungen, Hook-Ausführungen. Im Web-Panel unter <em>Admin → Audit</em> einsehbar.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./betrieb.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Betrieb &amp; Konfiguration</span></a>
+            <a class="next" href="./agent-deployment.html"><span class="label">Nächstes Kapitel</span><span class="title">Agent-Deployment →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

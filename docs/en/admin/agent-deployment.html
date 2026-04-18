@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Deployment – Admin Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/extension.html">Browser Extension</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Agent Deployment</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/agent-deployment.html">DE</a><a href="./agent-deployment.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin Guide</span>
+          <h1>Agent Deployment</h1>
+          <p class="lead">One Go binary, two packages (DEB + RPM), shipped with matching service units. The provision flow redeems a one-time token and installs a persistent client certificate.</p>
+
+          <h2>Debian / Ubuntu</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>curl -fsSL https://deb.ks98.de/pubkey.asc | sudo tee /etc/apt/trusted.gpg.d/ks98.asc
+echo 'deb https://deb.ks98.de/srm stable main' | sudo tee /etc/apt/sources.list.d/srm.list
+sudo apt update
+sudo apt install adminhelper-agent</code></pre>
+
+          <h2>RHEL / Rocky / Fedora</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>sudo tee /etc/yum.repos.d/srm.repo &lt;&lt;'EOF'
+[srm]
+name=SimpleRemoteManager
+baseurl=https://deb.ks98.de/srm-rpm/stable
+gpgcheck=1
+gpgkey=https://deb.ks98.de/pubkey.asc
+EOF
+sudo dnf install adminhelper-agent</code></pre>
+
+          <h2>Windows</h2>
+          <p>Grab the latest MSI from the Servers page (<em>Provision → Windows</em>) or directly from <code>https://srm.example.com/downloads/adminhelper-agent.msi</code>. Install with elevated privileges – the installer registers the Windows service.</p>
+
+          <h2>Provisioning</h2>
+          <p>In the Web Panel: <em>Servers → New → Provision Token</em>. The token is valid for 24 h and redeemable exactly once.</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Linux
+sudo adminhelper-agent provision \
+  --server https://srm.example.com \
+  --token  TOKEN_VALUE</code></pre>
+
+          <div class="code-header"><span>powershell</span></div>
+<pre><code># Windows (PowerShell, as Admin)
+&amp; 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision `
+    --server https://srm.example.com `
+    --token  TOKEN_VALUE</code></pre>
+
+          <p>After provisioning the agent holds a client certificate signed by the FRP CA and enables the <code>adminhelper-agent.timer</code> systemd unit (Linux) or the Windows service (auto-start).</p>
+
+          <h2>Verification</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>systemctl status adminhelper-agent.timer
+journalctl -u adminhelper-agent.service -n 50
+adminhelper-agent run --verbose</code></pre>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Migration from legacy agents</div><p>The DEB/RPM packages carry <code>Replaces</code> + <code>Conflicts</code> for <code>srm-frpc-client</code>, <code>srm-monitor-agent</code>, and <code>srm-agent</code>. A single <code>apt install adminhelper-agent</code> removes the old trio and preserves the config.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./users.html"><span class="label">← Previous chapter</span><span class="title">Users &amp; Access</span></a>
+            <a class="next" href="./monitoring.html"><span class="label">Next chapter</span><span class="title">Monitoring →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

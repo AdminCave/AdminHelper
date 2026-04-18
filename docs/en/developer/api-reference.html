@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API Reference – Developer Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Developer</a><span class="sep">/</span><span class="current">API Reference</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../developer/api-reference.html">DE</a><a href="./api-reference.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Developer Guide</span>
+          <h1>API Reference</h1>
+          <p class="lead">All HTTP endpoints of the SRM server. Base URL: <code>https://&lt;host&gt;/api</code>. The complete OpenAPI schema lives at <code>/api/docs</code> (Swagger UI) and <code>/api/openapi.json</code>.</p>
+
+          <h2>Authentication</h2>
+          <p>Two mechanisms depending on the caller:</p>
+          <ul>
+            <li><strong>JWT bearer</strong> (web panel, desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Refresh via httpOnly cookie.</li>
+            <li><strong>API key</strong> (agents, extension, third parties): <code>?api_key=srm_…</code> as query parameter or <code>X-API-Key</code> header.</li>
+          </ul>
+
+          <h2>Auth</h2>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/auth/login</code>
+            <p>Body: <code>{ "username": "admin", "password": "…" }</code>. Response: <code>{ "access_token": "…", "user": {…} }</code>. Sets the <code>refresh_token</code> cookie.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/auth/refresh</code>
+            <p>Reads the refresh cookie. Rotates the refresh token, blacklists the old <code>jti</code>. Reuse of a blacklisted token invalidates all user sessions.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/auth/logout</code>
+            <p>Blacklists the current refresh token, deletes the cookie.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/auth/me</code>
+            <p>Current user incl. <code>roles</code>, <code>mfa_enabled</code>.</p>
+          </div>
+
+          <h2>Users</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/users</code><p>List of all users (admin only).</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/users</code><p>Create a user. Password is hashed via Argon2id.</p></div>
+          <div class="endpoint"><span class="method-patch">PATCH</span><code>/api/users/{id}</code><p>Change roles, email or <code>is_active</code>.</p></div>
+          <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/users/{id}</code><p>Soft delete: <code>is_active = false</code>, sessions invalidated.</p></div>
+
+          <h2>Connections</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/connections</code><p>Query: <code>?kind=rdp|ssh|vnc|web</code>, <code>?group=…</code>, <code>?search=…</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections</code><p>Body: <code>{ kind, name, host, port, tags, tunnel_id? }</code>.</p></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/connections/{id}</code><p>Full replace.</p></div>
+          <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/connections/{id}</code></div>
+
+          <h2>Servers</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/servers</code><p>Inventory, grouped by <code>status</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/servers/{id}/token</code><p>24 h provision token for the agent. Redeemable once.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/servers/provision</code><p>Agent redeems the token → certificate + config.</p></div>
+
+          <h2>API Keys</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/apikeys</code></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/apikeys</code><p>Body: <code>{ name, scope: [...], expires_at? }</code>. Clear-text key returned <strong>once</strong> in the response; only SHA-256 is persisted.</p></div>
+          <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/apikeys/{id}</code></div>
+
+          <h2>Hooks</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/hooks</code></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks</code><p>Body: <code>{ event, script, timeout_sec, enabled }</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/hooks/{id}/executions</code><p>Last 50 runs with <code>exit_code</code>, <code>stdout</code>, <code>stderr</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/test</code><p>Run with a test event payload.</p></div>
+
+          <h2>Monitoring</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/monitoring/checks</code></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/checks</code><p>Body: <code>{ kind, server_id, config: {…}, threshold: {…}, interval_sec }</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/ingest</code><p>Agent push. Body: Prometheus remote-write payload. Auth: <code>X-API-Key</code> with scope <code>monitor_ingest</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/monitoring/query</code><p>SSRF-safe proxy to VictoriaMetrics. Only <code>/api/v1/query</code> and <code>/api/v1/query_range</code> are allowed.</p></div>
+
+          <h2>Alerts</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/alerts</code><p>Query: <code>?state=firing|acknowledged|resolved</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/alerts/{id}/ack</code><p>Acknowledge alert, triggers the <code>alert.acknowledged</code> hook.</p></div>
+
+          <h2>FRP</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels</code></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/tunnels</code><p>Body: <code>{ name, type: "tcp"|"http"|"stcp", local_port, sk? }</code>. <code>stcp</code> requires <code>sk</code> (shared key).</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/client-cert/rotate</code><p>Agent-initiated shortcut to <code>/api/servers/{id}/cert</code>.</p></div>
+
+          <h2>Audit</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/audit</code><p>Query: <code>?since=ISO</code>, <code>?user_id=</code>, <code>?action=</code>. Paginate via <code>?limit</code> + <code>?cursor</code>.</p></div>
+
+          <h2>Settings &amp; Health</h2>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/settings</code><p>Global settings (branding, timeouts, feature flags).</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/health</code><p>Returns <code>{ status, version, git_commit, db: "ok", redis: "ok" }</code>. No auth.</p></div>
+
+          <h2>Error Format</h2>
+          <div class="code-header"><span>json</span></div>
+<pre><code>HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/json
+
+{
+  "detail": [
+    { "loc": ["body", "port"], "msg": "ensure this value is less than 65536", "type": "value_error" }
+  ]
+}</code></pre>
+
+          <p>Errors follow Pydantic validation conventions; <code>500</code> responses only contain <code>{ "detail": "internal error", "request_id": "…" }</code> – the request ID correlates with the server log.</p>
+
+          <h2>Rate Limits</h2>
+          <ul>
+            <li>Login: 5 failed attempts per 15 min / IP (Redis).</li>
+            <li>Refresh: 20 req/min / account.</li>
+            <li>Ingest: unbounded with a valid agent key, but samples are server-side deduplicated (by <code>metric,labels,ts</code>).</li>
+          </ul>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Use Swagger directly</div><p><code>/api/docs</code> renders OpenAPI 3.1 interactively, including "Try it out". For CI clients, a single <code>openapi-generator generate -g go -i https://srv/api/openapi.json</code> is enough.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./extension.html"><span class="label">← Previous chapter</span><span class="title">Browser Extension</span></a>
+            <a class="next" href="./hooks.html"><span class="label">Next chapter</span><span class="title">Hooks &amp; Events →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

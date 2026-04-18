@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Installation – Admin-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html">
+          <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span>
+          <span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span>
+        </a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group">
+            <div class="nav-title">Admin-Handbuch</div>
+            <a href="./index.html">Übersicht</a>
+            <a href="./installation.html">Installation</a>
+            <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>
+            <a href="./benutzer.html">Benutzer &amp; Zugriff</a>
+            <a href="./agent-deployment.html">Agent-Deployment</a>
+            <a href="./monitoring.html">Monitoring</a>
+            <a href="./frp-tunnel.html">FRP-Tunnel</a>
+            <a href="./extension.html">Browser-Extension</a>
+            <a href="./troubleshooting.html">Troubleshooting</a>
+          </div>
+          <div class="nav-group">
+            <div class="nav-title">Entwickler-Handbuch</div>
+            <a href="../developer/index.html">Übersicht</a>
+            <a href="../developer/server.html">Server (Backend)</a>
+            <a href="../developer/webui.html">Web-Panel</a>
+            <a href="../developer/desktop.html">Desktop-Client</a>
+            <a href="../developer/agent.html">Go-Agent</a>
+            <a href="../developer/monitoring.html">Monitoring-Stack</a>
+            <a href="../developer/extension.html">Browser-Extension</a>
+            <a href="../developer/api-reference.html">API-Referenz</a>
+            <a href="../developer/hooks.html">Hooks &amp; Events</a>
+            <a href="../developer/cicd.html">CI/CD &amp; Release</a>
+          </div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Installation</span></nav>
+        </div>
+        <div class="topbar-right">
+          <div class="lang-switch" role="group" aria-label="Sprache"><a href="./installation.html" class="is-active">DE</a><a href="../en/admin/installation.html">EN</a></div>
+          <a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a>
+        </div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin-Handbuch</span>
+          <h1>Installation</h1>
+          <p class="lead">SRM wird als Docker-Compose-Stack betrieben: Server, Redis, FRP-Server (frps), Monitoring-Service und VictoriaMetrics. Diese Seite führt durch eine frische Installation inklusive Reverse-Proxy-Setup und Erstanmeldung.</p>
+
+          <div class="toc" data-reveal>
+            <div class="toc-title">Auf dieser Seite</div>
+            <ul>
+              <li><a href="#voraussetzungen">Voraussetzungen</a></li>
+              <li><a href="#stack">Stack starten</a></li>
+              <li><a href="#env">Wichtige Umgebungsvariablen</a></li>
+              <li><a href="#reverseproxy">Reverse-Proxy (empfohlen)</a></li>
+              <li><a href="#erstanmeldung">Erstanmeldung</a></li>
+              <li><a href="#update">Updates</a></li>
+            </ul>
+          </div>
+
+          <h2 id="voraussetzungen">Voraussetzungen</h2>
+          <ul>
+            <li>Linux-Host mit Docker 24+ und Docker-Compose v2</li>
+            <li>Öffentlich erreichbarer Port 443 (bzw. 7000 und 7443 für FRP)</li>
+            <li>DNS-Eintrag, der auf den Host zeigt (<code>srm.example.com</code>)</li>
+            <li>Reverse-Proxy (nginx, Traefik, Caddy) für TLS-Termination – empfohlen</li>
+          </ul>
+
+          <h2 id="stack">Stack starten</h2>
+          <p>Die offizielle <code>docker-compose.yml</code> liegt im Repository-Root. Für einen schnellen Test reicht:</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>git clone https://git.ks98.de/kevin/simpleremotemanager.git
+cd simpleremotemanager
+
+# .env anlegen
+cat &gt; .env &lt;&lt;'EOF'
+DOMAIN=srm.example.com
+SECRET_KEY=$(openssl rand -base64 48)
+ADMIN_PASSWORD=$(openssl rand -base64 24)
+TZ=Europe/Berlin
+MONITOR_API_KEY=$(openssl rand -hex 32)
+TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
+EOF
+
+docker compose pull
+docker compose up -d</code></pre>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title"><code>SECRET_KEY</code> unbedingt setzen</div>
+              <p>Wenn <code>SECRET_KEY</code> leer ist oder den Default-Wert <code>change-me-in-production</code> hat, generiert der Server beim ersten Start einen zufälligen Key und speichert ihn in <code>./data/.secret_key</code>. Das funktioniert, ist aber nicht portabel zwischen Hosts. Setze den Key immer explizit, wenn du den Stack migrieren oder replizieren willst.</p>
+            </div>
+          </div>
+
+          <h2 id="env">Wichtige Umgebungsvariablen</h2>
+          <table>
+            <thead>
+              <tr><th>Variable</th><th>Default</th><th>Beschreibung</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>DOMAIN</code></td><td><code>localhost</code></td><td>Haupt-FQDN des Servers. Wird in Self-Signed-Zertifikaten und Links verwendet.</td></tr>
+              <tr><td><code>SECRET_KEY</code></td><td>auto</td><td>JWT-Signing-Key. Manuell setzen oder auto-generieren lassen (persistiert in <code>data/.secret_key</code>).</td></tr>
+              <tr><td><code>ADMIN_PASSWORD</code></td><td><code>admin</code> ⚠️</td><td>Passwort des initialen Admin-Users. Unbedingt überschreiben.</td></tr>
+              <tr><td><code>DATA_DIR</code></td><td><code>/app/data</code></td><td>Datenverzeichnis (SQLite-DB, Secrets, FRP-Config, Zertifikate).</td></tr>
+              <tr><td><code>REDIS_URL</code></td><td>leer</td><td>Redis-URL für Rate-Limit. Ohne Redis wird ein In-Memory-Fallback genutzt (nur Single-Worker sicher).</td></tr>
+              <tr><td><code>TRUSTED_PROXIES</code></td><td>leer</td><td>Kommagetrennte CIDRs der vertrauenswürdigen Reverse-Proxies. Nur von diesen IPs werden <code>X-Forwarded-For</code>-Header akzeptiert.</td></tr>
+              <tr><td><code>TRUST_PROXY_HEADERS</code></td><td><code>false</code></td><td>Legacy-Schalter, vertraut <em>allen</em> Proxy-Headern. Nur setzen, wenn <code>TRUSTED_PROXIES</code> nicht nutzbar ist.</td></tr>
+              <tr><td><code>ALLOWED_IPS</code></td><td>leer</td><td>Whitelist von IPs/CIDRs, die auf das Web-Panel zugreifen dürfen. Leer = kein Filter.</td></tr>
+              <tr><td><code>MONITOR_SERVICE_URL</code></td><td><code>http://monitoring:8080</code></td><td>URL des Monitoring-Services (Container-intern).</td></tr>
+              <tr><td><code>MONITOR_API_KEY</code></td><td>leer</td><td>Shared Secret zwischen Server und Monitoring. Muss in beiden Containern identisch sein.</td></tr>
+              <tr><td><code>VISITOR_PORT_START</code> / <code>_END</code></td><td><code>6000</code> / <code>6999</code></td><td>Port-Range für STCP-Visitor-Tunnel im Desktop-Client.</td></tr>
+              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP-Port für FRP-Bind (Kontrollkanal).</td></tr>
+              <tr><td><code>FRP_HTTPS_PORT</code></td><td><code>7443</code></td><td>HTTPS-Port für FRP-Tunnel.</td></tr>
+            </tbody>
+          </table>
+
+          <h2 id="reverseproxy">Reverse-Proxy (empfohlen)</h2>
+          <p>Der Server selbst bindet auf <code>8443</code> und präsentiert ein Self-Signed-Zertifikat. Für Produktion wird er üblicherweise hinter einem Reverse-Proxy mit Let's-Encrypt-Zertifikat betrieben. Beispiel für <strong>nginx</strong>:</p>
+
+          <div class="code-header"><span>nginx</span></div>
+<pre><code>server {
+    listen 443 ssl http2;
+    server_name srm.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/srm.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/srm.example.com/privkey.pem;
+
+    location / {
+        proxy_pass         https://127.0.0.1:8443;
+        proxy_ssl_verify   off;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+}</code></pre>
+
+          <p>Dann in der <code>.env</code>:</p>
+          <div class="code-header"><span>.env</span></div>
+<pre><code>TRUSTED_PROXIES=127.0.0.1,::1</code></pre>
+
+          <h2 id="erstanmeldung">Erstanmeldung</h2>
+          <ol>
+            <li>Web-Panel öffnen: <code>https://srm.example.com</code></li>
+            <li>Login mit <code>admin</code> + dem Wert aus <code>ADMIN_PASSWORD</code></li>
+            <li>Unter <em>Benutzer</em> einen eigenen Admin-Account anlegen, ausloggen</li>
+            <li>Mit dem neuen Account anmelden und den initialen <code>admin</code>-Account deaktivieren</li>
+          </ol>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2v1M19.07 4.93l-.71.71M22 12h-1M4.93 4.93l.71.71M2 12h1"/><path d="M12 17a5 5 0 0 0 5-5 5 5 0 0 0-10 0 5 5 0 0 0 5 5z"/></svg>
+            <div>
+              <div class="callout-title">Health-Check</div>
+              <p>Der Server liefert unter <code>/api/health</code> einen kurzen JSON-Status. Nutze den Endpunkt für Monitoring-Systeme oder Docker-Healthchecks.</p>
+            </div>
+          </div>
+
+          <h2 id="update">Updates</h2>
+          <p>Der Server läuft aus dem Container-Registry <code>docker.nevondo.com</code>. Standard-Tags:</p>
+          <ul>
+            <li><code>:latest</code> – letzter erfolgreicher Build der Default-Branch</li>
+            <li><code>:dev</code> – derselbe Build, explizit für Dev-Umgebungen getaggt</li>
+            <li><code>:v0.18.0</code> – Release-Tag (protected)</li>
+            <li><code>:&lt;commit-sha&gt;</code> – deterministisches Image pro Commit</li>
+          </ul>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose pull server
+docker compose up -d server</code></pre>
+
+          <p>SQLite-Datenbank-Migrationen laufen automatisch beim Start (Schema-Versionen in <code>server/app/db/migrations/</code>). Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./index.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Übersicht</span></a>
+            <a class="next" href="./betrieb.html"><span class="label">Nächstes Kapitel</span><span class="title">Betrieb &amp; Konfiguration →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

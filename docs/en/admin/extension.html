@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browser Extension – Admin Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/extension.html">Browser Extension</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Browser Extension</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/extension.html">DE</a><a href="./extension.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin Guide</span>
+          <h1>Browser Extension</h1>
+          <p class="lead">The AdminHelper extension adds a toolbar popup to Chromium-based browsers that launches HTTP/HTTPS connections directly. Manifest V3, three permissions, no content scripts.</p>
+
+          <h2>Deployment</h2>
+          <ol>
+            <li>Download the ZIP from <em>Settings → Extensions</em> or Web Panel <code>/downloads/adminhelper-extension.zip</code>.</li>
+            <li>Unpack to a stable path (e.g. <code>/opt/adminhelper-ext/</code>).</li>
+            <li>Chrome/Edge → <code>chrome://extensions</code> → Developer mode → Load unpacked.</li>
+            <li>Open the extension options → enter Server URL and API key (scope <code>web_only</code>).</li>
+          </ol>
+
+          <h2>Rollout in Organizations</h2>
+          <p>Managed Chrome policies can preinstall the extension:</p>
+
+          <div class="code-header"><span>json</span></div>
+<pre><code>{
+  "ExtensionInstallForcelist": [
+    "&lt;ext-id&gt;;https://srm.example.com/downloads/extension-update.xml"
+  ]
+}</code></pre>
+
+          <p>The update XML lives next to the ZIP download and is served with the correct MIME type by the SRM server.</p>
+
+          <h2>Permissions</h2>
+          <ul>
+            <li><code>storage</code> – Server URL and API key in <code>chrome.storage.sync</code>; cached connections in <code>chrome.storage.local</code>.</li>
+            <li><code>tabs</code> – Open new tabs from the popup.</li>
+            <li><code>alarms</code> – 5-minute refresh job in the background service worker.</li>
+          </ul>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Use a scoped API key</div><p><code>chrome.storage.sync</code> is <em>not</em> a secret store. Always issue the extension a key with scope <code>web_only</code> – never give it connection-write or hook-admin privileges.</p></div>
+          </div>
+
+          <h2>Protocol Filter</h2>
+          <p>The popup shows only <code>http</code> and <code>https</code> connections. RDP/SSH/VNC entries are filtered out client-side – no URI-handler hijacking surface.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./frp-tunnel.html"><span class="label">← Previous chapter</span><span class="title">FRP Tunnel</span></a>
+            <a class="next" href="./troubleshooting.html"><span class="label">Next chapter</span><span class="title">Troubleshooting →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monitoring Stack – Developer Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Developer</a><span class="sep">/</span><span class="current">Monitoring Stack</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../developer/monitoring.html">DE</a><a href="./monitoring.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Developer Guide</span>
+          <h1>Monitoring Stack</h1>
+          <p class="lead">Monitoring is three layers cooperating: SRM server defines checks and aggregates alerts, the separate <code>monitoring/</code> service executes check logic and writes metrics, VictoriaMetrics stores the time-series data.</p>
+
+          <h2>Data Flow</h2>
+          <div class="code-header"><span>flow</span></div>
+<pre><code>[Agent]                [Monitoring service]       [VictoriaMetrics]
+    │                         │                            │
+    │ POST /ingest ─ metrics ▶│                            │
+    │                         │ /api/v1/import/prometheus ▶│
+    │                         │                            │
+                              │ ◀ pull config from /api/monitoring
+                              │
+   [SRM server] ─ schedule ─▶ APScheduler triggers checks ─▶ [Monitoring service]
+                              │
+                              │ SRM ◀ query charts ◀ uPlot (web panel)</code></pre>
+
+          <h2>SRM Server Components</h2>
+          <ul>
+            <li><code>server/app/monitoring/checks.py</code> – Pydantic schemas per check type</li>
+            <li><code>server/app/monitoring/scheduler.py</code> – APScheduler integration</li>
+            <li><code>server/app/monitoring/proxy.py</code> – SSRF-safe proxy to VictoriaMetrics</li>
+            <li><code>server/app/monitoring/alerts.py</code> – threshold evaluation + hook trigger</li>
+          </ul>
+
+          <h2>Monitoring Service</h2>
+          <p>Standalone FastAPI app under <code>monitoring/</code>. Listens on port 8080 (container-internal), 8480 is exposed for agent ingest. Authenticates via <code>MONITOR_API_KEY</code>.</p>
+
+          <h2>Check-Type Schemas</h2>
+          <p>Each check type has a Pydantic schema for config and an executor. Example <code>http</code>:</p>
+
+          <div class="code-header"><span>python</span></div>
+<pre><code>class HttpCheckConfig(BaseModel):
+    url: HttpUrl
+    method: Literal["GET", "HEAD", "POST"] = "GET"
+    expected_codes: list[int] = [200]
+    timeout_sec: float = 5.0
+    verify_tls: bool = True
+    headers: dict[str, str] | None = None</code></pre>
+
+          <p>The executor calls <code>httpx.AsyncClient</code>, measures latency, builds a <code>CheckResult</code> and pushes metrics to VictoriaMetrics.</p>
+
+          <h2>SSRF Protection</h2>
+          <p>The monitoring proxy inside the server forwards VictoriaMetrics queries from the web panel, but the query URL is strictly allow-listed: <code>/api/v1/query</code> and <code>/api/v1/query_range</code>. Raw host access is blocked so internal services cannot be reached.</p>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Ingest validation</div><p>The ingest endpoint enforces that samples from an agent belong to the agent's own server ID. A compromised agent key cannot forge metrics for other servers.</p></div>
+          </div>
+
+          <h2>Local Debugging</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Run a single check with debug output to stdout
+docker compose exec monitoring python -m app.cli run-check http &lt;id&gt;
+
+# Query VictoriaMetrics directly
+docker compose exec monitoring curl -s \
+    "http://victoria:8428/api/v1/query?query=cpu_load{server=\"srv1\"}"</code></pre>
+
+          <div class="page-nav">
+            <a class="prev" href="./agent.html"><span class="label">← Previous chapter</span><span class="title">Go Agent</span></a>
+            <a class="next" href="./extension.html"><span class="label">Next chapter</span><span class="title">Browser Extension →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

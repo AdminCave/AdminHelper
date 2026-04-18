@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Entwickler-Handbuch – SimpleRemoteManager</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/extension.html">Browser-Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./extension.html">Browser-Extension</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Entwickler</a><span class="sep">/</span><span class="current">Übersicht</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./index.html" class="is-active">DE</a><a href="../en/developer/index.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Entwickler-Handbuch</span>
+          <h1>Übersicht</h1>
+          <p class="lead">Das Entwickler-Handbuch dokumentiert Architektur, Code-Struktur und API von SimpleRemoteManager. Es richtet sich an alle, die am Code mitschreiben oder SRM in ihr eigenes System integrieren wollen.</p>
+
+          <h2>Tech-Stack auf einen Blick</h2>
+          <div class="card-grid">
+            <div class="card" data-reveal>
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg></div>
+              <h3>Backend</h3>
+              <p>Python 3.12, FastAPI, SQLAlchemy 2.0, APScheduler, SQLite (Standard). Async-first, strenge Pydantic-Schemas.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
+              <h3>Web-Panel</h3>
+              <p>Svelte 5 Runes, TypeScript strict, Vite, Hash-Router, uPlot, Playwright-E2E.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+              <h3>Desktop</h3>
+              <p>Tauri 2 + Rust, Svelte 5 Frontend, keyring-Secrets, RDP-Race-Guard mit UUID.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg></div>
+              <h3>Agent</h3>
+              <p>Go 1.24, Cobra CLI, sqlx, native systemd + windowssvc-Integration.</p>
+            </div>
+          </div>
+
+          <h2>Repo-Layout</h2>
+          <div class="code-header"><span>tree</span></div>
+<pre><code>simpleremotemanager/
+├── server/               FastAPI + Scheduler (Python)
+│   ├── app/
+│   │   ├── api/          Router (13 Module)
+│   │   ├── core/         Config, Auth, Logging
+│   │   ├── db/           Models, Migrations
+│   │   ├── monitoring/   Checks, Scheduler
+│   │   └── frp/          PKI + Tunnel-Management
+│   └── tests/
+├── frontend-src/         Web-Panel (Svelte 5 + Vite)
+│   ├── src/
+│   │   ├── lib/          Komponenten, Stores
+│   │   └── routes/       Hash-Router-Pages
+│   └── tests/e2e/        Playwright
+├── desktop/              Tauri-Wrapper + Rust
+│   └── src-tauri/        24 Tauri-Commands, 13 Rust-Module
+├── desktop-src/          Desktop-Frontend (Svelte 5 + Vite)
+│   └── src/lib/bridge/   Typisierte Tauri-Brücke
+├── agent-go/             Go-Agent
+│   ├── cmd/              Cobra-Commands
+│   ├── internal/         Collectors, FRP-Client, HTTP
+│   └── build-deb.sh      DEB-Pakete
+├── monitoring/           Monitoring-Service (FastAPI)
+├── extension/            Chrome-Extension (Manifest V3)
+├── docs/                 Diese Dokumentation
+├── Dockerfile            Multi-Stage (Vite-Build + Python-Runtime)
+└── .gitlab-ci.yml        CI-Pipeline</code></pre>
+
+          <h2>Lokale Entwicklung</h2>
+          <p>Jedes Unterprojekt ist eigenständig, kein Monorepo-Toolchain:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Server
+cd server && uv sync && uv run uvicorn app.main:app --reload --port 8443
+
+# Web-Panel (mit Proxy zum laufenden Server)
+cd frontend-src && npm ci && npm run dev
+
+# Desktop-Client (startet Tauri-Dev mit Auto-Reload)
+cd desktop-src && npm ci
+cd ../desktop && cargo tauri dev
+
+# Go-Agent
+cd agent-go && go run ./cmd/adminhelper-agent version</code></pre>
+
+          <h2>Lies weiter</h2>
+          <ul>
+            <li><a href="./server.html">Server-Architektur</a> – Router, Models, Auth, Scheduler</li>
+            <li><a href="./webui.html">Web-Panel</a> – Stores, Routing, Tests</li>
+            <li><a href="./desktop.html">Desktop-Client</a> – Tauri-Commands, Stores, RDP-Flow</li>
+            <li><a href="./agent.html">Go-Agent</a> – Cobra-CLI, Collector-Framework</li>
+            <li><a href="./api-reference.html">API-Referenz</a> – alle Endpunkte mit Request/Response</li>
+            <li><a href="./cicd.html">CI/CD &amp; Release</a> – Pipeline, Tagging, Aptly-Publish</li>
+          </ul>
+
+          <div class="page-nav">
+            <a class="next" href="./server.html"><span class="label">Nächstes Kapitel</span><span class="title">Server (Backend) →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

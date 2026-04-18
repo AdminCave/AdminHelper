@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hooks &amp; Events – Developer Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Developer</a><span class="sep">/</span><span class="current">Hooks &amp; Events</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../developer/hooks.html">DE</a><a href="./hooks.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Developer Guide</span>
+          <h1>Hooks &amp; Events</h1>
+          <p class="lead">The hook system is the primary outbound integration surface. Every relevant server event fires an event, registered scripts run in a sanitised subprocess with a hard timeout.</p>
+
+          <h2>Architecture</h2>
+          <div class="code-header"><span>tree</span></div>
+<pre><code>server/app/modules/hooks/
+├── router.py          /api/hooks CRUD
+├── models.py          Hook, HookExecution
+├── schemas.py         Pydantic schemas
+├── scheduler.py       Event dispatch + retry queue
+├── script_runner.py   Async subprocess spawn
+└── script_worker.py   Child process: stdin=JSON, stdout/stderr capture</code></pre>
+
+          <h2>Event Catalogue</h2>
+          <table>
+            <thead><tr><th>Event</th><th>Payload (excerpt)</th></tr></thead>
+            <tbody>
+              <tr><td><code>server.provisioned</code></td><td><code>server_id</code>, <code>hostname</code>, <code>ip</code></td></tr>
+              <tr><td><code>server.online</code> / <code>server.offline</code></td><td><code>server_id</code>, <code>last_seen</code></td></tr>
+              <tr><td><code>connection.created</code> / <code>updated</code> / <code>deleted</code></td><td>Connection object</td></tr>
+              <tr><td><code>connection.launched</code></td><td><code>connection_id</code>, <code>user</code>, <code>client</code> (desktop / web)</td></tr>
+              <tr><td><code>alert.triggered</code> / <code>resolved</code> / <code>acknowledged</code></td><td><code>check_id</code>, <code>severity</code>, <code>value</code></td></tr>
+              <tr><td><code>user.login</code> / <code>login_failed</code></td><td><code>user_id</code>, <code>ip</code>, <code>reason?</code></td></tr>
+              <tr><td><code>hook.failed</code></td><td>Meta-event on hook failure (CANNOT trigger more hooks – loop guard)</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Hook Definition</h2>
+          <div class="code-header"><span>json</span></div>
+<pre><code>{
+  "name": "Slack alert",
+  "event": "alert.triggered",
+  "script": "#!/usr/bin/env bash\nset -euo pipefail\nEVENT=$(cat)\ncurl -sS -X POST $SLACK_URL -d \"payload={\\\"text\\\": \\\"Alert: $(echo $EVENT | jq .check_name)\\\"}\"",
+  "timeout_sec": 10,
+  "enabled": true
+}</code></pre>
+
+          <p>The event JSON is passed via <strong>stdin</strong>, not via argument or env var. This avoids shell-escape issues and <code>ARG_MAX</code> limits.</p>
+
+          <h2>Sandbox Model</h2>
+          <p>Hook scripts run in a fork with tightened defaults:</p>
+          <ul>
+            <li><strong>Minimal env</strong>: only <code>PATH</code>, <code>HOME</code>, <code>LANG</code>, plus explicitly configured secrets (<code>SLACK_URL</code>, etc.). No leakage of <code>SECRET_KEY</code>, <code>ADMIN_PASSWORD</code>, etc.</li>
+            <li><strong>CWD</strong> is a <code>tempfile.mkdtemp()</code> directory, cleaned up afterwards.</li>
+            <li><strong>Timeout</strong> via <code>asyncio.wait_for</code> + <code>process.kill()</code>, default 10 s, max 300 s.</li>
+            <li><strong>Output limit</strong>: 64 KiB each for stdout and stderr; the rest is truncated and marked in the log (<code>[truncated]</code>).</li>
+            <li><strong>User switch</strong>: runs as <code>nobody</code> when the server is deployed with root capabilities (Docker: <code>--user 65534</code>).</li>
+          </ul>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Not a full sandbox</div><p>The hook isolation is defense-in-depth, <strong>not</strong> a seccomp/namespace jail. Admins with hook-CRUD privileges can run arbitrary code on the server host. Grant hook access only to trusted roles.</p></div>
+          </div>
+
+          <h2>Retry Strategy</h2>
+          <p>If a hook fails (<code>exit_code != 0</code> or timeout), it is retried with exponential backoff: 30 s, 2 min, 10 min, 1 h. After the fourth failure <code>HookExecution.state = failed</code> is set and the meta-event <code>hook.failed</code> is emitted (loop guard prevents cascades).</p>
+
+          <h2>Script Runner Implementation</h2>
+          <div class="code-header"><span>python</span></div>
+<pre><code>async def run_hook(hook: Hook, event: dict) -&gt; HookExecution:
+    payload = json.dumps(event).encode()
+    env = _sanitised_env(hook)  # only PATH, HOME, LANG, + explicit secrets
+
+    with tempfile.TemporaryDirectory() as cwd:
+        proc = await asyncio.create_subprocess_exec(
+            "/bin/sh", "-c", hook.script,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd, env=env,
+        )
+        try:
+            out, err = await asyncio.wait_for(
+                proc.communicate(payload),
+                timeout=min(hook.timeout_sec, MAX_TIMEOUT),
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            return HookExecution(state="timeout", ...)
+        return HookExecution(state="ok" if proc.returncode == 0 else "failed",
+                             stdout=out[:65_536], stderr=err[:65_536],
+                             exit_code=proc.returncode)</code></pre>
+
+          <h2>Firing Custom Events</h2>
+          <p>Internal code can emit events at any time:</p>
+          <div class="code-header"><span>python</span></div>
+<pre><code>from app.modules.hooks import dispatch_event
+
+await dispatch_event("connection.launched", {
+    "connection_id": conn.id,
+    "user": current_user.username,
+    "client": "desktop",
+})</code></pre>
+
+          <p><code>dispatch_event</code> is non-blocking: the hook scheduler queues the run and returns immediately. The HTTP response of the emitter does <strong>not</strong> wait on the hook.</p>
+
+          <h2>Test Execution</h2>
+          <p>Every hook can be tested from the web panel with a sample event: <code>POST /api/hooks/{id}/test</code>. The execution log shows stdout/stderr/exit_code in real time – handy for script debugging.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./api-reference.html"><span class="label">← Previous chapter</span><span class="title">API Reference</span></a>
+            <a class="next" href="./cicd.html"><span class="label">Next chapter</span><span class="title">CI/CD &amp; Release →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

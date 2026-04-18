@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desktop Client – Developer Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Developer</a><span class="sep">/</span><span class="current">Desktop Client</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../developer/desktop.html">DE</a><a href="./desktop.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Developer Guide</span>
+          <h1>Desktop Client</h1>
+          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>desktop/src-tauri/</code>) exposes 24 typed commands; the frontend (<code>desktop-src/</code>) consumes them through a 1:1 bridge.</p>
+
+          <h2>Architecture</h2>
+          <div class="code-header"><span>tree</span></div>
+<pre><code>desktop/
+├── src-tauri/
+│   ├── src/
+│   │   ├── main.rs           Tauri app setup
+│   │   ├── commands/         24 #[tauri::command] (auth, connect, frp, ...)
+│   │   ├── connection/       RDP/SSH/VNC/HTTP launcher
+│   │   ├── frp/              FRP sidecar management
+│   │   ├── keyring/          OS keyring (Linux: secret-service, macOS: keychain)
+│   │   ├── http/             Reqwest client with auto-refresh
+│   │   └── rdp/              Race guard with monotonic UUID
+│   ├── tauri.conf.json
+│   └── Cargo.toml
+└── binaries/                 frpc sidecar per target triple
+desktop-src/
+├── src/
+│   ├── lib/
+│   │   ├── bridge/           invoke() wrapper per command
+│   │   ├── stores/           10 stores (session, connections, ...)
+│   │   ├── components/       Modals, widgets
+│   │   └── pages/            4 pages (Dashboard, Connections, Monitoring, Ansible)
+│   └── main.ts
+└── tests/                    41 Vitest unit tests</code></pre>
+
+          <h2>Tauri Commands</h2>
+          <p>The 24 commands cover auth, connection CRUD, connect flow, FRP tunnel, monitoring, Ansible, and settings. Each command is typed – the bridge uses TypeScript types that mirror the Rust structs exactly:</p>
+
+          <div class="code-header"><span>rust</span></div>
+<pre><code>#[tauri::command]
+async fn connect_rdp(
+    state: tauri::State&lt;'_, AppState&gt;,
+    connection_id: String,
+    password: String,
+) -&gt; Result&lt;ConnectResponse, ConnectError&gt; {
+    // Race guard: monotonic UUID
+    let connect_id = state.next_connect_id();
+    ...
+}</code></pre>
+
+          <h2>RDP Race Guard</h2>
+          <p>Clicking <em>Connect</em> multiple times in quick succession would, without protection, spawn multiple RDP processes. The Desktop Client assigns a <strong>monotonic UUID</strong> per click. If the FRP tunnel setup is still running when a newer connect ID comes in, the older one is discarded. Implementation in <code>desktop/src-tauri/src/rdp/race_guard.rs</code>.</p>
+
+          <h2>Keyring Secrets</h2>
+          <p>Passwords are stored in the OS keyring, never in the SQLite DB:</p>
+          <ul>
+            <li>Linux: <code>secret-service</code> (GNOME Keyring / KWallet)</li>
+            <li>macOS: Keychain</li>
+            <li>Windows: Credential Manager</li>
+          </ul>
+          <p>Service prefix <code>adminhelper:</code>, account = <code>&lt;connection-id&gt;</code>.</p>
+
+          <h2>FRP Sidecar</h2>
+          <p>Tauri capabilities are scoped: <code>frpc</code> can only be spawned from the app binaries directory. At build time the matching target binary (<code>frpc-x86_64-unknown-linux-gnu</code>, <code>frpc-aarch64-apple-darwin</code>, …) must be dropped into <code>desktop/src-tauri/binaries/</code>.</p>
+
+          <h2>Connect Flow</h2>
+          <ol>
+            <li>User clicks <em>Connect</em> → <code>connectFlow</code> store sets <code>state = 'connecting'</code></li>
+            <li>Bridge calls <code>connect_rdp</code> (with race-guard UUID)</li>
+            <li>Rust backend resolves the FRP tunnel (local visitor port)</li>
+            <li>Password is fetched from the keyring or prompted via the <code>PasswordPrompt</code> modal</li>
+            <li>RDP/SSH/VNC client is launched with a temporary config</li>
+            <li>After exit the tunnel is torn down</li>
+          </ol>
+
+          <h2>Tests &amp; Build</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>cd desktop-src
+npm run check                    # svelte-check
+npm run test                     # vitest (41 tests)
+
+cd ../desktop
+cargo tauri dev                  # hot-reload dev mode
+cargo tauri build --bundles deb  # DEB release</code></pre>
+
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Since v0.18.0</div><p>The old plain-JS client in <code>desktop/src/</code> is dead – kept for history only. <code>tauri.conf.json.beforeBuildCommand</code> points to <code>../desktop-src</code>.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./webui.html"><span class="label">← Previous chapter</span><span class="title">Web Panel</span></a>
+            <a class="next" href="./agent.html"><span class="label">Next chapter</span><span class="title">Go Agent →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Betrieb &amp; Konfiguration – Admin-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html">
+          <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span>
+          <span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span>
+        </a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group">
+            <div class="nav-title">Admin-Handbuch</div>
+            <a href="./index.html">Übersicht</a>
+            <a href="./installation.html">Installation</a>
+            <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>
+            <a href="./benutzer.html">Benutzer &amp; Zugriff</a>
+            <a href="./agent-deployment.html">Agent-Deployment</a>
+            <a href="./monitoring.html">Monitoring</a>
+            <a href="./frp-tunnel.html">FRP-Tunnel</a>
+            <a href="./extension.html">Browser-Extension</a>
+            <a href="./troubleshooting.html">Troubleshooting</a>
+          </div>
+          <div class="nav-group">
+            <div class="nav-title">Entwickler-Handbuch</div>
+            <a href="../developer/index.html">Übersicht</a>
+            <a href="../developer/server.html">Server (Backend)</a>
+            <a href="../developer/webui.html">Web-Panel</a>
+            <a href="../developer/desktop.html">Desktop-Client</a>
+            <a href="../developer/agent.html">Go-Agent</a>
+            <a href="../developer/monitoring.html">Monitoring-Stack</a>
+            <a href="../developer/extension.html">Browser-Extension</a>
+            <a href="../developer/api-reference.html">API-Referenz</a>
+            <a href="../developer/hooks.html">Hooks &amp; Events</a>
+            <a href="../developer/cicd.html">CI/CD &amp; Release</a>
+          </div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Betrieb</span></nav>
+        </div>
+        <div class="topbar-right">
+          <div class="lang-switch" role="group" aria-label="Sprache"><a href="./betrieb.html" class="is-active">DE</a><a href="../en/admin/operations.html">EN</a></div>
+          <a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a>
+        </div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin-Handbuch</span>
+          <h1>Betrieb &amp; Konfiguration</h1>
+          <p class="lead">Alltagsaufgaben: Datenverzeichnis verstehen, Backups anlegen, Logs finden, Konfiguration anpassen, Server neu starten.</p>
+
+          <h2>Datenverzeichnis</h2>
+          <p>Der Server persistiert alle zustandsbehafteten Daten unter <code>DATA_DIR</code> (Default <code>/app/data</code>, im Compose-Mount <code>./data</code>):</p>
+          <table>
+            <thead><tr><th>Pfad</th><th>Inhalt</th></tr></thead>
+            <tbody>
+              <tr><td><code>data/db.sqlite3</code></td><td>Haupt-DB: Benutzer, Verbindungen, Server, API-Keys, Hooks, Audit-Log.</td></tr>
+              <tr><td><code>data/.secret_key</code></td><td>Auto-generierter JWT-Key (sofern <code>SECRET_KEY</code> nicht gesetzt).</td></tr>
+              <tr><td><code>data/connections.json</code></td><td>Legacy-Import aus Plain-JS-Client (nur bei Migration).</td></tr>
+              <tr><td><code>data/frp-config/</code></td><td>Generierte <code>frps.toml</code> + Server-Zertifikate (PKI).</td></tr>
+              <tr><td><code>data/pki/</code></td><td>CA-Material, Client-Zertifikate, CRL.</td></tr>
+              <tr><td><code>data/certs/</code></td><td>Self-Signed-TLS für den FastAPI-Port <code>8443</code>.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Backup</h2>
+          <p>Für ein konsistentes Backup reicht es, den Stack kurz zu stoppen und das <code>data/</code>-Verzeichnis zu archivieren:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose stop server
+tar czf srm-backup-$(date +%F).tar.gz data/
+docker compose start server</code></pre>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div>
+              <div class="callout-title">Hot-Backup mit <code>sqlite3 .backup</code></div>
+              <p>Ohne Stop: Das SQLite-Tool bringt einen konsistenten Online-Dump mit. Docker-Exec in den Container:<br><code>docker compose exec server sqlite3 /app/data/db.sqlite3 ".backup /app/data/backup.sqlite3"</code></p>
+            </div>
+          </div>
+
+          <h2>Logs</h2>
+          <p>Die Container schreiben auf stdout; <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg.</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose logs -f server            # FastAPI + Scheduler
+docker compose logs -f monitoring        # Check-Ausführungen
+docker compose logs -f frps              # FRP-Server
+docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</code></pre>
+
+          <p>Der Server nutzt das Logging-Modul <code>adminhelper.*</code>. Interessante Log-Namen:</p>
+          <ul>
+            <li><code>adminhelper.auth</code> – Logins, Refresh-Rotationen, Reuse-Detection</li>
+            <li><code>adminhelper.frp</code> – PKI-Aktionen und Token-Einlösung</li>
+            <li><code>adminhelper.hooks</code> – Hook-Ausführungen inkl. Subprozess-Exitcodes</li>
+            <li><code>adminhelper.rate_limit</code> – Blockierte Requests</li>
+          </ul>
+
+          <h2>Konfiguration ändern</h2>
+          <p>Alle Config-Werte kommen aus Environment-Variablen. Änderungen erfordern ein <code>docker compose up -d</code>, damit die Container neu erzeugt werden:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># .env anpassen, danach:
+docker compose up -d server</code></pre>
+
+          <h2>Multi-Worker-Betrieb</h2>
+          <p>Standardmäßig läuft ein einzelner Uvicorn-Worker. Für höhere Last:</p>
+          <ol>
+            <li><code>REDIS_URL</code> setzen (sonst wird das In-Memory-Rate-Limit inkonsistent)</li>
+            <li>Im <code>docker-compose.override.yml</code> <code>command</code> überschreiben: <code>uvicorn app.main:app --host 0.0.0.0 --port 8443 --workers 4 --ssl-keyfile ... --ssl-certfile ...</code></li>
+          </ol>
+
+          <h2>Zeitzone</h2>
+          <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Das beeinflusst Audit-Log-Zeitstempel und Cron-ähnliche Hook-Jobs.</p>
+
+          <h2>Zertifikate erneuern</h2>
+          <p>Die internen TLS-Zertifikate des FastAPI-Ports haben 10 Jahre Gültigkeit. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./installation.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Installation</span></a>
+            <a class="next" href="./benutzer.html"><span class="label">Nächstes Kapitel</span><span class="title">Benutzer &amp; Zugriff →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

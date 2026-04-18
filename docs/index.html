@@ -3,283 +3,296 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AdminHelper - Projektdokumentation</title>
+    <title>SimpleRemoteManager – Dokumentation</title>
+    <meta name="description" content="Offizielle Dokumentation für SimpleRemoteManager: Admin-Handbuch und Entwickler-Handbuch – Server, Web-Panel, Desktop-Client, Go-Agent, Monitoring." />
+    <link rel="icon" type="image/svg+xml" href="./assets/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./assets/styles.css" />
   </head>
-  <body data-page="overview">
-    <div class="site-bg" aria-hidden="true">
-      <div class="orb one"></div>
-      <div class="orb two"></div>
-      <div class="orb three"></div>
-      <div class="grid-pattern"></div>
-    </div>
-
-    <header class="site-header">
-      <div class="header-inner">
-        <a class="brand" href="./index.html">
-          <img src="./assets/logo.svg" alt="AdminHelper Logo" />
-          <span class="brand-copy">
-            <strong>AdminHelper</strong>
-            <span>Projektdokumentation</span>
+  <body>
+    <div class="app-shell">
+      <!-- ── Sidebar ─────────────────────────────────────────────── -->
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="./index.html">
+          <span class="logo-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="4" />
+              <path d="M8 15 L12 7 L16 15" />
+              <path d="M9.5 12 L14.5 12" />
+            </svg>
+          </span>
+          <span class="brand-text">
+            <span class="brand-name">SimpleRemoteManager</span>
+            <span class="brand-sub">Dokumentation</span>
           </span>
         </a>
 
-        <div class="header-tools">
-          <button class="menu-btn" type="button">Menü</button>
-          <nav class="primary-nav" aria-label="Hauptnavigation">
-            <a href="./index.html" data-page="overview">Übersicht</a>
-            <a href="./developer.html" data-page="developer">Entwickler</a>
-            <a href="./administration.html" data-page="admin">Administration</a>
-            <a href="./agent.html" data-page="agent">Agent</a>
-            <a href="./api-reference.html" data-page="api">API</a>
-            <a href="./monitoring.html" data-page="monitoring">Monitoring</a>
+        <nav class="sidebar-nav">
+          <div class="nav-group">
+            <a href="./index.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7" /><path d="M5 9v11h14V9" /></svg>
+              Willkommen
+            </a>
+          </div>
+
+          <div class="nav-group">
+            <div class="nav-title">Admin-Handbuch</div>
+            <a href="./admin/index.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+              Übersicht
+            </a>
+            <a href="./admin/installation.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10H3"/><path d="M21 6H3"/><path d="M21 14H3"/><path d="M21 18H3"/></svg>
+              Installation
+            </a>
+            <a href="./admin/betrieb.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg>
+              Betrieb &amp; Konfiguration
+            </a>
+            <a href="./admin/benutzer.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Benutzer &amp; Zugriff
+            </a>
+            <a href="./admin/agent-deployment.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Agent-Deployment
+            </a>
+            <a href="./admin/monitoring.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 4 5-8"/></svg>
+              Monitoring
+            </a>
+            <a href="./admin/frp-tunnel.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
+              FRP-Tunnel
+            </a>
+            <a href="./admin/extension.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM4 14h6v6H4z"/></svg>
+              Browser-Extension
+            </a>
+            <a href="./admin/troubleshooting.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+              Troubleshooting
+            </a>
+          </div>
+
+          <div class="nav-group">
+            <div class="nav-title">Entwickler-Handbuch</div>
+            <a href="./developer/index.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6 2 12l6 6M16 6l6 6-6 6M14 4l-4 16"/></svg>
+              Übersicht
+            </a>
+            <a href="./developer/server.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>
+              Server (Backend)
+            </a>
+            <a href="./developer/webui.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              Web-Panel
+            </a>
+            <a href="./developer/desktop.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Desktop-Client
+            </a>
+            <a href="./developer/agent.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>
+              Go-Agent
+            </a>
+            <a href="./developer/monitoring.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9-6-18-3 9H2"/></svg>
+              Monitoring-Stack
+            </a>
+            <a href="./developer/extension.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM4 14h6v6H4z"/></svg>
+              Browser-Extension
+            </a>
+            <a href="./developer/api-reference.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 4v16"/></svg>
+              API-Referenz
+            </a>
+            <a href="./developer/hooks.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              Hooks &amp; Events
+            </a>
+            <a href="./developer/cicd.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M6 6l-3 6 3 6M18 6l3 6-3 6"/></svg>
+              CI/CD &amp; Release
+            </a>
+          </div>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span>v0.18.0</span>
+          <span id="year"></span>
+        </div>
+      </aside>
+
+      <!-- ── Header ─────────────────────────────────────────────── -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <nav class="crumbs" aria-label="Pfad">
+            <a href="./index.html">Docs</a>
+            <span class="sep">/</span>
+            <span class="current">Willkommen</span>
           </nav>
-          <div class="lang-switch" aria-label="Sprache">
-            <a href="./index.html" class="active">DE</a>
+        </div>
+        <div class="topbar-right">
+          <div class="lang-switch" role="group" aria-label="Sprache">
+            <a href="./index.html" class="is-active">DE</a>
             <a href="./en/index.html">EN</a>
           </div>
+          <a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+            GitLab
+          </a>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <main class="page">
-      <section class="hero reveal">
-        <p class="kicker">Dokumentation</p>
-        <h1 class="page-title">Gesamtdoku für Client, Server, Agent, Monitoring und Browser-Extension</h1>
-        <p class="page-subtitle">
-          Diese Website dokumentiert das komplette Projekt aus Entwickler- und Betriebs-Perspektive.
-          Alle Inhalte basieren auf dem aktuellen Repository-Stand und decken Installation,
-          Nutzung, Architektur, Sicherheit und Betrieb ab.
-        </p>
-        <div class="hero-actions">
-          <a class="btn primary" href="./developer.html">Entwicklerdoku öffnen</a>
-          <a class="btn ghost" href="./administration.html">Admin-Doku öffnen</a>
-        </div>
-      </section>
-
-      <div class="layout">
-        <div class="main-col">
-          <section id="scope" class="panel reveal">
-            <h2>Projektumfang</h2>
-            <p>
-              <span class="inline-code">AdminHelper</span> besteht aus mehreren lauffähigen Teilen,
-              die getrennt deployt werden können, aber zusammen eine Team-Remote-Plattform bilden.
+      <!-- ── Content ─────────────────────────────────────────────── -->
+      <main class="content">
+        <div class="content-inner">
+          <section class="hero" data-reveal>
+            <span class="eyebrow">Version 0.18.0 · 2026-04-18</span>
+            <h1>SimpleRemoteManager – Dokumentation</h1>
+            <p class="lead">
+              Ein modularer Monolith zur zentralen Verwaltung von
+              Remote-Zugängen, Server-Monitoring und Agent-Rollouts.
+              Die Dokumentation ist in zwei Bücher geteilt: das
+              <strong>Admin-Handbuch</strong> für Betrieb und Nutzung
+              und das <strong>Entwickler-Handbuch</strong> für Code,
+              Architektur und API.
             </p>
-            <div class="cards cols-3">
-              <article class="card">
-                <h3>Desktop-Client</h3>
-                <p>
-                  Tauri v2 App (Rust + HTML/CSS/JS) für SSH, RDP und Web-Verbindungen,
-                  inklusive lokaler Datenspeicherung, Sync und Ansible-Integration.
-                </p>
-              </article>
-              <article class="card">
-                <h3>Server</h3>
-                <p>
-                  FastAPI-Backend mit Web-UI, JWT-Login, Rollenmodell, API-Keys,
-                  Hooks, FRP-Tunnel, Ansible-Playbooks und TLS via Docker.
-                </p>
-              </article>
-              <article class="card">
-                <h3>Monitoring + Agent</h3>
-                <p>
-                  Separater Monitoring-Service mit VictoriaMetrics und Unified Go Agent
-                  für Ressourcen-Überwachung (CPU, RAM, Disk, Services, Docker, ZFS, Proxmox).
-                </p>
-              </article>
-              <article class="card">
-                <h3>Chrome Extension</h3>
-                <p>
-                  Browser-Popup für <span class="inline-code">kind: web</span>-Einträge,
-                  mit Cache, Suche, Tag-Gruppierung und API-Key-gestütztem Zugriff.
-                </p>
-              </article>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="./admin/index.html">Admin-Handbuch öffnen</a>
+              <a class="btn" href="./developer/index.html">Entwickler-Handbuch öffnen</a>
             </div>
           </section>
 
-          <section id="architecture" class="panel reveal">
-            <h2>Architektur auf einen Blick</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Ebene</th>
-                  <th>Technik</th>
-                  <th>Verantwortung</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Desktop</td>
-                  <td>Rust, Tauri v2, Vanilla JS</td>
-                  <td>Verbindungsverwaltung, Start nativer Clients, lokaler Passwortspeicher (RDP)</td>
-                </tr>
-                <tr>
-                  <td>Server API</td>
-                  <td>Python, FastAPI, SQLAlchemy, SQLite</td>
-                  <td>Auth, Nutzerverwaltung, API-Keys, Connection-CRUD, Hooks, FRP-Tunnel, Ansible-Playbooks</td>
-                </tr>
-                <tr>
-                  <td>Server UI</td>
-                  <td>Statische SPA in <span class="inline-code">server/frontend</span></td>
-                  <td>Admin-Oberfläche für Verbindungen, Benutzer, API-Keys, Hooks, Monitoring und Ansible</td>
-                </tr>
-                <tr>
-                  <td>Monitoring-Service</td>
-                  <td>Python, FastAPI, APScheduler, VictoriaMetrics</td>
-                  <td>Check-Engine (Ping/TCP/HTTP/Agent), Templates, Alerting (Webhook/E-Mail)</td>
-                </tr>
-                <tr>
-                  <td>Agent</td>
-                  <td>Go, gopsutil, Cobra CLI</td>
-                  <td>Unified Agent für Linux + Windows: FRP-Config-Sync und Ressourcen-Monitoring</td>
-                </tr>
-                <tr>
-                  <td>Browser Extension</td>
-                  <td>Manifest V3, Service Worker</td>
-                  <td>Anzeige/Öffnen von Web-Zielen aus Team-Server mit Hintergrund-Refresh</td>
-                </tr>
-              </tbody>
-            </table>
+          <section class="choice-grid" data-reveal>
+            <a class="choice-card" href="./admin/index.html">
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2 3 7v6c0 5 4 9 9 10 5-1 9-5 9-10V7l-9-5Z"/>
+                  <path d="M9 12l2 2 4-4"/>
+                </svg>
+              </div>
+              <h2>Für Admins</h2>
+              <p>
+                Installation, Betrieb, Benutzer, Agent-Deployment,
+                Monitoring, FRP-Tunnel, Browser-Extension und
+                Troubleshooting – alles, um SRM in Produktion zu
+                fahren.
+              </p>
+              <span class="choice-meta">Admin-Handbuch lesen</span>
+            </a>
+
+            <a class="choice-card" href="./developer/index.html">
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 6 2 12l6 6"/>
+                  <path d="M16 6l6 6-6 6"/>
+                  <path d="M14 4l-4 16"/>
+                </svg>
+              </div>
+              <h2>Für Entwickler</h2>
+              <p>
+                FastAPI-Backend, Svelte-5-Frontend, Tauri-Desktop,
+                Go-Agent, Monitoring-Stack, vollständige API-Referenz,
+                Hook-System und CI/CD-Release-Flow.
+              </p>
+              <span class="choice-meta">Entwickler-Handbuch lesen</span>
+            </a>
           </section>
 
-          <section id="quickstart" class="panel reveal">
-            <h2>Schnellstart je Komponente</h2>
-            <div class="cards cols-2">
-              <article class="card">
-                <h3>Server per Docker starten</h3>
-                <pre class="code-block"><code>cp .env.example .env
-# SECRET_KEY und ADMIN_PASSWORD setzen
+          <h2>Was ist SimpleRemoteManager?</h2>
+          <p>
+            SimpleRemoteManager (SRM, intern auch <em>AdminHelper</em>)
+            verbindet drei Welten: ein <strong>zentrales Web-Panel</strong>
+            (FastAPI + Svelte 5) für die Verwaltung aller Verbindungen
+            und Monitoring-Daten, einen <strong>Desktop-Client</strong>
+            (Tauri 2 + Svelte 5) zum Verbindungsaufbau via RDP, SSH,
+            VNC und HTTP, sowie einen <strong>Go-Agenten</strong>, der
+            auf Linux- und Windows-Servern läuft, Messwerte liefert
+            und FRP-Tunnel verwaltet.
+          </p>
 
-docker compose pull
-docker compose up -d</code></pre>
-                <p>Danach erreichbar unter <span class="inline-code">https://localhost</span> (Port-Mapping: 443 -> 8443).</p>
-              </article>
-              <article class="card">
-                <h3>Desktop-Client lokal starten</h3>
-                <pre class="code-block"><code>cd desktop/src-tauri
-cargo tauri dev</code></pre>
-                <p>Produktion-Build über <span class="inline-code">cargo tauri build</span>.</p>
-              </article>
-              <article class="card">
-                <h3>Server API-Dokumentation</h3>
-                <p>
-                  Swagger-UI ist unter
-                  <span class="inline-code">/api/docs</span> verfügbar,
-                  z. B. <span class="inline-code">https://localhost/api/docs</span>.
-                </p>
-              </article>
-              <article class="card">
-                <h3>Extension testen</h3>
-                <p>
-                  In Chrome <span class="inline-kbd">chrome://extensions</span> öffnen,
-                  Entwicklermodus aktivieren, <span class="inline-kbd">Entpackt laden</span>
-                  und Ordner <span class="inline-code">extension/</span> wählen.
-                </p>
-              </article>
+          <div class="card-grid">
+            <div class="card" data-reveal>
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>
+              </div>
+              <h3>Web-Panel</h3>
+              <p>Svelte 5 + TypeScript strict, Hash-Router, i18n DE/EN, 8 Produktiv-Seiten, uPlot-Charts, Playwright-E2E-Tests.</p>
             </div>
-          </section>
+            <div class="card" data-reveal>
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </div>
+              <h3>Desktop-Client</h3>
+              <p>Tauri 2 + Rust, 24 typisierte Commands, Keyring-Secrets, RDP-Race-Guard, FRP-Sidecar, Auto-Update via DEB/RPM.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>
+              </div>
+              <h3>Go-Agent</h3>
+              <p>Einheitliche Cobra-CLI für Linux + Windows, Collector-Framework für CPU/RAM/Disk/SMART/Docker, systemd-Timer mit Jitter.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 4 5-8"/></svg>
+              </div>
+              <h3>Monitoring</h3>
+              <p>APScheduler-Jobs schreiben Metriken in VictoriaMetrics; 10 Check-Typen inklusive SMART-Health, HTTP, Ping, SSH, Docker.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
+              </div>
+              <h3>FRP-Tunnel mit mTLS</h3>
+              <p>Eigene 10-Jahres-CA, 1-Jahres-Client-Zertifikate, automatische Provisionierung über Einmal-Token und systemd.</p>
+            </div>
+            <div class="card" data-reveal>
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </div>
+              <h3>Auth &amp; Security</h3>
+              <p>JWT-Access mit Refresh-Rotation, Redis-Rate-Limit mit Fallback, Reuse-Detection für gestohlene Tokens.</p>
+            </div>
+          </div>
 
-          <section id="navigation" class="panel reveal">
-            <h2>Wie diese Doku aufgebaut ist</h2>
-            <div class="cards cols-3">
-              <article class="card">
-                <h3>Entwickler</h3>
-                <p>
-                  Architektur, Code-Struktur, lokale Entwicklung,
-                  Datenmodelle, CI/CD und Erweiterungspfade.
-                </p>
-                <a class="btn ghost" href="./developer.html">Zur Entwicklerdoku</a>
-              </article>
-              <article class="card">
-                <h3>Administration</h3>
-                <p>
-                  Deployment, Konfiguration, Security-Härtung,
-                  Backup/Restore, Updates und Incident-Runbook.
-                </p>
-                <a class="btn ghost" href="./administration.html">Zur Admin-Doku</a>
-              </article>
-              <article class="card">
-                <h3>Agent-Referenz</h3>
-                <p>
-                  CLI-Kommandos, Konfigurationsdateien, Provisionierung,
-                  Monitoring-Collector und Systemd/Windows-Service.
-                </p>
-                <a class="btn ghost" href="./agent.html">Zur Agent-Doku</a>
-              </article>
-              <article class="card">
-                <h3>API-Referenz</h3>
-                <p>
-                  Alle REST-Endpunkte mit Auth-Level, Parametern
-                  und Beispielen — gruppiert nach Modul.
-                </p>
-                <a class="btn ghost" href="./api-reference.html">Zur API-Doku</a>
-              </article>
-              <article class="card">
-                <h3>Monitoring</h3>
-                <p>
-                  Check-Typen, Alerting-Konfiguration, Templates,
-                  VictoriaMetrics und Agent-Keys.
-                </p>
-                <a class="btn ghost" href="./monitoring.html">Zur Monitoring-Doku</a>
-              </article>
+          <h2>Was ist neu in 0.18.0?</h2>
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <div>
+              <div class="callout-title">Desktop-Client auf Svelte 5 portiert</div>
+              <p>
+                Big-Bang-Migration in 11 Phasen: Stores statt DOM-Managern,
+                TypeScript strict, typisierte Tauri-Bridge zu allen
+                24 Rust-Commands, 41 Vitest-Unit-Tests. Details im
+                <a href="./developer/desktop.html">Entwickler-Handbuch &rsaquo; Desktop-Client</a>.
+              </p>
             </div>
-            <div class="callout">
-              <strong>Hook-Scripting:</strong> Beispiele und Variablenübersicht für alle drei Hook-Typen findest du in
-              <a href="./developer.html#hook-scripts">der Entwicklerdoku</a> sowie als Datei unter
-              <a href="./examples/webhook_add_connection.py"><span class="inline-code">docs/examples/webhook_add_connection.py</span></a>.
-            </div>
-          </section>
+          </div>
+
+          <h2>Schnell-Links</h2>
+          <ul>
+            <li><a href="./admin/installation.html">Server in 10 Minuten installieren</a></li>
+            <li><a href="./admin/agent-deployment.html">Agent auf einem Server ausrollen</a></li>
+            <li><a href="./admin/monitoring.html">Monitoring-Checks einrichten</a></li>
+            <li><a href="./developer/api-reference.html">Vollständige REST-API-Referenz</a></li>
+            <li><a href="./developer/cicd.html">Release-Workflow und Tag-basiertes Versionen-Bump</a></li>
+          </ul>
         </div>
-
-        <aside class="side-col">
-          <section class="panel toc reveal">
-            <h3>Schnellnavigation</h3>
-            <ul>
-              <li><a href="#scope">Projektumfang</a></li>
-              <li><a href="#architecture">Architektur</a></li>
-              <li><a href="#quickstart">Schnellstart</a></li>
-              <li><a href="#navigation">Dokubereiche</a></li>
-            </ul>
-          </section>
-
-          <section class="panel reveal">
-            <h3>Wichtige Hinweise</h3>
-            <div class="callout warn">
-              <strong>Produktion:</strong> Vor Live-Betrieb mindestens
-              <span class="inline-code">SECRET_KEY</span> und
-              <span class="inline-code">ADMIN_PASSWORD</span> ändern.
-            </div>
-            <div class="badges">
-              <span>Tauri v2</span>
-              <span>FastAPI</span>
-              <span>SQLite</span>
-              <span>Go Agent</span>
-              <span>VictoriaMetrics</span>
-              <span>Manifest V3</span>
-            </div>
-          </section>
-
-          <section class="panel reveal">
-            <h3>Projektpfade</h3>
-            <div class="quick-links">
-              <a href="./developer.html#repo">desktop/</a>
-              <a href="./developer.html#server">server/</a>
-              <a href="./developer.html#extension">extension/</a>
-              <a href="./administration.html#deploy">docker-compose.yml</a>
-              <a href="./developer.html#hook-scripts">Hook Scripts</a>
-            </div>
-          </section>
-        </aside>
-      </div>
-
-      <footer class="footer">
-        Stand der Doku: 13.04.2026. Erstellt aus aktuellem Repository-Quellcode.
-        © <span id="year"></span>
-      </footer>
-    </main>
+      </main>
+    </div>
 
     <script src="./assets/app.js"></script>
   </body>

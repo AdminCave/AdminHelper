@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Operations &amp; Config – Admin Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/extension.html">Browser Extension</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Operations &amp; Config</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/betrieb.html">DE</a><a href="./operations.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin Guide</span>
+          <h1>Operations &amp; Config</h1>
+          <p class="lead">Where data lives, how logs are named, how to take consistent backups – the operational knobs you need to keep the system healthy over time.</p>
+
+          <h2>Data Directories</h2>
+          <table>
+            <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>/data/srm.db</code></td><td>SQLite DB – users, connections, servers, hooks, monitoring config</td></tr>
+              <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete or replace without re-issuing all tokens</td></tr>
+              <tr><td><code>/data/frp-ca/</code></td><td>FRP root CA (<code>ca.crt</code>, <code>ca.key</code>) – 10 y lifetime</td></tr>
+              <tr><td><code>/data/frp-certs/</code></td><td>Per-agent client certificates, issued on provision</td></tr>
+              <tr><td><code>/data/uploads/</code></td><td>Optional branding assets (logos, theming)</td></tr>
+              <tr><td><code>/var/log/srm/</code></td><td>Rotated log files when file logging is enabled</td></tr>
+              <tr><td><code>/data/victoria/</code></td><td>VictoriaMetrics storage – 90 d retention</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Backups</h2>
+          <p>SQLite allows hot backups while the server is running. Use the SQLite <code>.backup</code> command instead of <code>cp</code> to guarantee consistency:</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose exec server sqlite3 /data/srm.db ".backup '/data/backup.db'"
+docker compose cp server:/data/backup.db ./srm-$(date +%F).db
+gpg --encrypt --recipient admin@example.com srm-$(date +%F).db</code></pre>
+
+          <p>Also back up <code>/data/.secret_key</code> and <code>/data/frp-ca/</code> – without these, restoring the DB alone is useless.</p>
+
+          <h2>Logging</h2>
+          <p>Four logger names emit structured JSON by default:</p>
+          <table>
+            <thead><tr><th>Logger</th><th>What it records</th></tr></thead>
+            <tbody>
+              <tr><td><code>app</code></td><td>HTTP requests, auth events, CRUD actions</td></tr>
+              <tr><td><code>monitoring</code></td><td>Check execution, ingest results, alert state changes</td></tr>
+              <tr><td><code>frp</code></td><td>Tunnel lifecycle, cert issuance/rotation</td></tr>
+              <tr><td><code>scheduler</code></td><td>APScheduler jobs (queued / ran / failed / retried)</td></tr>
+            </tbody>
+          </table>
+
+          <p>Override per-logger level via env, e.g. <code>LOG_LEVEL_FRP=DEBUG</code>. Systemd/journald picks up the JSON automatically; tools like <code>jq</code> work out of the box:</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose logs server | jq 'select(.logger == "frp" and .level == "ERROR")'</code></pre>
+
+          <h2>Multi-Worker Notes</h2>
+          <p>The default compose stack runs a single Uvicorn worker – APScheduler assumes <strong>one</strong> scheduling instance, and the in-memory rate-limit fallback is per-process. For horizontal scaling:</p>
+          <ul>
+            <li>Scale only the <em>HTTP layer</em> (add replicas behind a load balancer with sticky sessions for refresh cookies).</li>
+            <li>Keep <strong>exactly one</strong> worker with <code>ENABLE_SCHEDULER=true</code>; others run with scheduler disabled.</li>
+            <li>Redis is required – the in-memory rate-limit fallback breaks across workers.</li>
+          </ul>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">Update flow</div><p><code>docker compose pull &amp;&amp; docker compose up -d</code>. The server runs <code>alembic upgrade head</code> on startup; downtime is typically below 10 seconds.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./installation.html"><span class="label">← Previous chapter</span><span class="title">Installation</span></a>
+            <a class="next" href="./users.html"><span class="label">Next chapter</span><span class="title">Users &amp; Access →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

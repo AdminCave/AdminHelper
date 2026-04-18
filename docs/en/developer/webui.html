@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Panel – Developer Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Developer</a><span class="sep">/</span><span class="current">Web Panel</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../developer/webui.html">DE</a><a href="./webui.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Developer Guide</span>
+          <h1>Web Panel</h1>
+          <p class="lead">The Web Panel is a standalone Svelte 5 SPA with a hash router. It lives under <code>frontend-src/</code>, is built via Vite, and is multi-stage-copied into the Python runtime image at Docker build time.</p>
+
+          <h2>Project Structure</h2>
+          <div class="code-header"><span>tree</span></div>
+<pre><code>frontend-src/
+├── src/
+│   ├── lib/
+│   │   ├── api/           fetch wrapper for /api/*
+│   │   ├── components/    Button, Modal, TagChip, Tabs, ...
+│   │   ├── stores/        13 runes-based stores (auth, connections, ...)
+│   │   ├── i18n/          DE/EN dictionaries
+│   │   └── utils/
+│   ├── routes/            Pages (hash-routed)
+│   ├── App.svelte
+│   └── main.ts
+├── tests/e2e/             Playwright
+├── svelte.config.ts
+└── vite.config.ts</code></pre>
+
+          <h2>Routing</h2>
+          <p>Hash router (no SSR, no SvelteKit client router): paths are <code>#/connections</code>, <code>#/servers</code>, etc. This works reliably behind any reverse proxy without SPA fallback support on the server side. Implementation in <code>src/lib/router.ts</code>.</p>
+
+          <h2>Stores</h2>
+          <p>Svelte 5 runes replace classic writables. Each store is a TypeScript class with <code>$state</code> fields and methods:</p>
+          <table>
+            <thead><tr><th>Store</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>authStore</code></td><td>Login, logout, refresh, current user.</td></tr>
+              <tr><td><code>connectionsStore</code></td><td>Live list + search + group filter.</td></tr>
+              <tr><td><code>serversStore</code></td><td>Server inventory + provision token.</td></tr>
+              <tr><td><code>apiKeysStore</code></td><td>Key CRUD.</td></tr>
+              <tr><td><code>hooksStore</code></td><td>Hook CRUD + execution log.</td></tr>
+              <tr><td><code>monitoringStore</code></td><td>Checks, alerts, VictoriaMetrics queries.</td></tr>
+              <tr><td><code>ansibleStore</code></td><td>Playbook runs, streaming output.</td></tr>
+              <tr><td><code>tunnelStore</code></td><td>FRP tunnel state and CRUD.</td></tr>
+              <tr><td><code>toastStore</code></td><td>Global toast notifications.</td></tr>
+              <tr><td><code>confirmStore</code></td><td>Confirmation dialogs.</td></tr>
+              <tr><td><code>languageStore</code></td><td>DE/EN switch (i18n).</td></tr>
+              <tr><td><code>themeStore</code></td><td>No theme switch – always dark (from CSS tokens).</td></tr>
+              <tr><td><code>settingsStore</code></td><td>Server-side settings.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>API Wrapper</h2>
+          <p>All HTTP calls go through <code>src/lib/api/client.ts</code>. The client manages the access token and auto-triggers refresh on 401. A second 401 redirects to the login page.</p>
+
+          <h2>uPlot Charts</h2>
+          <p>Monitoring charts use <code>uplot</code> directly – no heavyweight chart framework. Wrapper in <code>src/lib/components/charts/</code>. uPlot is 30 KB gzipped and renders 100 k points without stutter.</p>
+
+          <h2>Tests</h2>
+          <p>Playwright smoke tests cover all 8 production pages: Login, Connections, Servers, Users, API-Keys, Hooks, Ansible, FRP Tunnels, Monitoring. Visual-diff screenshots are uploaded as CI artifacts.</p>
+
+          <div class="code-header"><span>bash</span></div>
+<pre><code>cd frontend-src
+npm run check           # svelte-check + tsc
+npm run lint            # eslint + svelte-eslint
+npx playwright test     # E2E</code></pre>
+
+          <h2>Build &amp; Deployment</h2>
+          <p>The Vite build outputs to <code>frontend-src/dist/</code>. The Dockerfile copies this into <code>/app/frontend/</code>, and the FastAPI app mounts it as a static route. SPA fallback checks file existence before returning <code>index.html</code> – this prevents MIME errors on <code>/assets/*.js</code>.</p>
+
+          <div class="page-nav">
+            <a class="prev" href="./server.html"><span class="label">← Previous chapter</span><span class="title">Server</span></a>
+            <a class="next" href="./desktop.html"><span class="label">Next chapter</span><span class="title">Desktop Client →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

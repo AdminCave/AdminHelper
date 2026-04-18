@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FRP-Tunnel – Admin-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/extension.html">Browser-Extension</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">FRP-Tunnel</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./frp-tunnel.html" class="is-active">DE</a><a href="../en/admin/frp-tunnel.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin-Handbuch</span>
+          <h1>FRP-Tunnel</h1>
+          <p class="lead">FRP (Fast Reverse Proxy) baut verschlüsselte, bidirektionale Tunnel zwischen Agent und Server auf. So erreichst du RDP/SSH/HTTP auf Servern hinter NAT oder Firewalls ohne Port-Forwarding.</p>
+
+          <h2>Architektur</h2>
+          <p>Drei Komponenten:</p>
+          <ul>
+            <li><strong>frps</strong> – läuft im Server-Stack, exponiert Port 7000 (Kontrollkanal) und 7443 (Tunnel).</li>
+            <li><strong>frpc</strong> – läuft auf jedem Agent-Host, verbindet sich zu <code>frps</code> und meldet Services an.</li>
+            <li><strong>PKI</strong> – eigene CA im Server, jeder <code>frpc</code> authentifiziert sich mit einem Client-Zertifikat (mTLS).</li>
+          </ul>
+
+          <h2>PKI-Setup</h2>
+          <p>Die CA wird beim ersten Server-Start automatisch erzeugt:</p>
+          <ul>
+            <li><strong>CA-Zertifikat</strong>: 10 Jahre gültig, liegt unter <code>data/pki/ca.crt</code> + <code>ca.key</code></li>
+            <li><strong>Server-Cert</strong> für <code>frps</code>: CN <code>frps</code>, signiert von der CA</li>
+            <li><strong>Client-Certs</strong>: 1 Jahr gültig, pro Agent individuell, CN = Server-ID</li>
+          </ul>
+
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">CA-Backup nicht vergessen</div><p>Das <code>data/pki/</code>-Verzeichnis ist <em>das</em> Security-Asset der Installation. Verliert der Server die CA, müssen alle Agenten neu provisioniert werden. Backup ist Teil des <a href="./betrieb.html#backup">Datenverzeichnis-Backups</a>.</p></div>
+          </div>
+
+          <h2>Client-Zertifikate rotieren</h2>
+          <p>Client-Zertifikate laufen nach 12 Monaten ab. Der Agent prüft das Ablaufdatum bei jedem Start und requested automatisch eine Rotation, wenn weniger als 30 Tage Restlaufzeit bleiben. Manueller Rotate-Trigger im Web-Panel: <em>Server → Details → Zertifikat rotieren</em>.</p>
+
+          <h2>Provision-Token</h2>
+          <p>Jeder neue Agent bekommt beim Registrieren einen Einmal-Token. Token-Eigenschaften:</p>
+          <ul>
+            <li>24h Gültigkeit</li>
+            <li>Einmal einlösbar (server-seitig nach Verwendung sofort invalidiert)</li>
+            <li>Bindet an eine Server-ID, d. h. der Token passt nur zu einem einzigen Agent-Eintrag</li>
+          </ul>
+
+          <h2>Tunneltypen</h2>
+          <table>
+            <thead><tr><th>Typ</th><th>Use-Case</th></tr></thead>
+            <tbody>
+              <tr><td><code>tcp</code></td><td>SSH, RDP, VNC, beliebige TCP-Services</td></tr>
+              <tr><td><code>http</code>/<code>https</code></td><td>Web-UIs mit Virtual-Host-Routing (<code>idrac.srv1.example.com</code>)</td></tr>
+              <tr><td><code>stcp</code></td><td>Secure-TCP, braucht Visitor auf Client-Seite – Desktop-Client löst das automatisch.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Visitor-Ports</h2>
+          <p>STCP-Tunnel brauchen lokal einen freien Port für den Visitor. Der Desktop-Client wählt zufällig aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
+
+          <h2>Troubleshooting</h2>
+          <ul>
+            <li><strong>Agent verbindet sich nicht</strong>: Zertifikats-Ablauf prüfen (<code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code>), Server-Erreichbarkeit via <code>nc -vz srm.example.com 7000</code>.</li>
+            <li><strong>"Tunnel not found"</strong>: Service im Panel aktiv? FRP-Logs: <code>docker compose logs -f frps</code>.</li>
+            <li><strong>STCP klappt nicht</strong>: Visitor-Port bereits belegt? Desktop-Client-Log prüfen.</li>
+          </ul>
+
+          <div class="page-nav">
+            <a class="prev" href="./monitoring.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Monitoring</span></a>
+            <a class="next" href="./extension.html"><span class="label">Nächstes Kapitel</span><span class="title">Browser-Extension →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Go Agent – Developer Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Developer</a><span class="sep">/</span><span class="current">Go Agent</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../developer/agent.html">DE</a><a href="./agent.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Developer Guide</span>
+          <h1>Go Agent</h1>
+          <p class="lead">Unified Go agent under <code>agent-go/</code>. Replaces the legacy shell + Python agents and merges monitoring, FRP-client setup, and service installer into a single binary that runs on Linux (systemd) and Windows (service manager) alike.</p>
+
+          <h2>Project Layout</h2>
+          <div class="code-header"><span>tree</span></div>
+<pre><code>agent-go/
+├── cmd/adminhelper-agent/   main.go – Cobra root
+├── internal/
+│   ├── cli/                 Subcommands (run, provision, monitor, ...)
+│   ├── config/              agent.toml + env-var overrides
+│   ├── http/                API client with auto-retry
+│   ├── collectors/          cpu, ram, disk, smart, docker, zfs, proxmox
+│   ├── frp/                 frpc management, cert rotation
+│   └── service/             systemd / windowssvc integration
+├── systemd/                 .service + .timer units
+├── rpm/                     Spec file
+├── build-deb.sh
+├── build-rpm.sh
+└── go.mod</code></pre>
+
+          <h2>Cobra Subcommands</h2>
+          <table>
+            <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>version</code></td><td>Emit version + git commit (set via <code>-ldflags</code>).</td></tr>
+              <tr><td><code>provision</code></td><td>Initial setup: server URL, redeem token, fetch cert, enable services.</td></tr>
+              <tr><td><code>run</code></td><td>One full agent cycle (monitoring + FRP).</td></tr>
+              <tr><td><code>monitor run</code></td><td>Only the monitoring collector pass.</td></tr>
+              <tr><td><code>frpc rotate</code></td><td>Manually rotate the client certificate.</td></tr>
+              <tr><td><code>service install</code> / <code>uninstall</code></td><td>systemd-unit / Windows-service installation.</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Collector Framework</h2>
+          <p>Every collector implements a simple interface:</p>
+
+          <div class="code-header"><span>go</span></div>
+<pre><code>type Collector interface {
+    Name() string
+    Enabled(cfg *config.Config) bool
+    Collect(ctx context.Context) ([]Sample, error)
+}
+
+type Sample struct {
+    Metric string
+    Value  float64
+    Labels map[string]string
+    Time   time.Time
+}</code></pre>
+
+          <p>Available collectors:</p>
+          <ul>
+            <li><code>cpu</code> – load + per-core utilization (from <code>/proc/stat</code> or <code>GetSystemInfo</code> on Windows)</li>
+            <li><code>ram</code> – total/used/free/swap</li>
+            <li><code>disk</code> – per mountpoint</li>
+            <li><code>smart</code> – via <code>smartctl --scan-open</code> + <code>--all --json=cv</code></li>
+            <li><code>docker</code> – via Docker API socket</li>
+            <li><code>zfs</code> – via <code>zpool status -p</code></li>
+            <li><code>proxmox</code> – via <code>pveversion</code> + API (on PVE hosts only)</li>
+          </ul>
+
+          <h2>systemd Timer with Jitter</h2>
+          <p>Instead of <code>cron</code>, the agent uses systemd <code>OnCalendar=*:0/5</code> + <code>RandomizedDelaySec=30s</code>. The jitter spreads load across the 5-minute window and avoids thundering-herd requests at the server.</p>
+
+          <h2>Build</h2>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>cd agent-go
+GOOS=linux   GOARCH=amd64 go build -o bin/adminhelper-agent     ./cmd/adminhelper-agent
+GOOS=windows GOARCH=amd64 go build -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
+
+VERSION=0.18.0 bash build-deb.sh
+VERSION=0.18.0 bash build-rpm.sh</code></pre>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">DEB/RPM <code>Replaces</code></div><p>The DEB/RPM packages carry <code>Replaces</code> + <code>Conflicts</code> entries for the legacy packages <code>srm-frpc-client</code>, <code>srm-monitor-agent</code> and <code>srm-agent</code>. A single <code>apt install adminhelper-agent</code> migrates clean installs automatically.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./desktop.html"><span class="label">← Previous chapter</span><span class="title">Desktop Client</span></a>
+            <a class="next" href="./monitoring.html"><span class="label">Next chapter</span><span class="title">Monitoring Stack →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

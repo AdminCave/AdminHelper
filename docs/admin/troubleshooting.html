@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Troubleshooting – Admin-Handbuch</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dokumentations-Navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">SimpleRemoteManager</span><span class="brand-sub">Dokumentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Willkommen</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/extension.html">Browser-Extension</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.18.0</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Troubleshooting</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./troubleshooting.html" class="is-active">DE</a><a href="../en/admin/troubleshooting.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.ks98.de/kevin/simpleremotemanager" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin-Handbuch</span>
+          <h1>Troubleshooting</h1>
+          <p class="lead">Diagnose-Rezepte für die häufigsten Probleme – gegliedert nach Symptom. Wenn du nichts Passendes findest: <code>docker compose logs</code> ist fast immer der richtige erste Schritt.</p>
+
+          <h2>Login funktioniert nicht</h2>
+          <div class="card-grid">
+            <div class="card" data-reveal>
+              <h3>„Zugriff verweigert" trotz korrektem Passwort</h3>
+              <p>Zu viele Fehlversuche → <span class="badge badge-warning">Rate-Limit</span>. 5 Min warten oder den Redis-Key manuell löschen:</p>
+              <pre><code>docker compose exec redis redis-cli keys "ratelimit:*"</code></pre>
+            </div>
+            <div class="card" data-reveal>
+              <h3>Admin-Passwort vergessen</h3>
+              <p>Neues <code>ADMIN_PASSWORD</code> in die <code>.env</code> schreiben, DB-Entry aktualisieren:</p>
+              <pre><code>docker compose exec server python -m app.cli reset-admin</code></pre>
+            </div>
+            <div class="card" data-reveal>
+              <h3>„Session abgelaufen" direkt nach Login</h3>
+              <p>Uhrzeit-Drift zwischen Host und Client &gt; 5 Min? NTP auf dem Server aktivieren. JWT-<code>iat</code>/<code>exp</code>-Validierung ist zeitabhängig.</p>
+            </div>
+          </div>
+
+          <h2>TLS / Zertifikats-Probleme</h2>
+          <ul>
+            <li><strong>Browser warnt vor Self-Signed</strong>: Normal, wenn ohne Reverse-Proxy betrieben. Reverse-Proxy mit Let's Encrypt davor setzen – siehe <a href="./installation.html#reverseproxy">Installation</a>.</li>
+            <li><strong>Desktop-Client meldet <code>certificate verify failed</code></strong>: Eigene CA in die System-Trust-Store des Clients importieren oder in den Desktop-Einstellungen <em>Self-Signed akzeptieren</em> aktivieren.</li>
+          </ul>
+
+          <h2>Agent meldet sich nicht mehr</h2>
+          <ol>
+            <li><code>systemctl status adminhelper-agent.timer</code> – läuft der Timer?</li>
+            <li><code>journalctl -u adminhelper-agent.service --since "1 hour ago"</code></li>
+            <li>API-Key widerrufen? Im Web-Panel → <em>Server → Provision erneuern</em> aufrufen, neuen Token am Host einlösen.</li>
+            <li>Zertifikat abgelaufen? <code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code></li>
+          </ol>
+
+          <h2>Monitoring zeigt keine Daten</h2>
+          <ul>
+            <li>VictoriaMetrics erreichbar? <code>docker compose exec monitoring curl -s http://victoria:8428/health</code></li>
+            <li>Server → Monitoring: <code>MONITOR_API_KEY</code> identisch in beiden Containern?</li>
+            <li>Agent-Debug: <code>adminhelper-agent monitor run --dry-run</code> auf dem Ziel-Host</li>
+          </ul>
+
+          <h2>FRP-Tunnel bricht ab</h2>
+          <ul>
+            <li><code>docker compose logs -f frps</code> → Client-Auth-Fehler?</li>
+            <li>Cert-Rotation hängt? Bei Clients mit &lt; 30 Tagen Restlaufzeit triggert der Agent die Rotation – Serverseitig blockieren CRL-Einträge eine neue Ausstellung, CRL-Content prüfen.</li>
+            <li>Proxy / Firewall blockiert Port 7000 oder 7443? Reiner TCP-Check: <code>nc -vz srm.example.com 7000</code>.</li>
+          </ul>
+
+          <h2>Monitoring-Scheduler stoppt nach Upgrade</h2>
+          <p>APScheduler verwendet einen Job-Store in der DB. Bei Schema-Changes werden veraltete Job-Einträge migriert; bei wirklich festgefahrenen Situationen einmalig:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose exec server python -m app.cli rebuild-scheduler</code></pre>
+
+          <h2>Performance</h2>
+          <ul>
+            <li><strong>Langsame Charts</strong>: VictoriaMetrics-Retention prüfen (<code>-retentionPeriod=90d</code>). Falls DB mehrere GB groß: Downsampling per <code>vmagent</code> aktivieren.</li>
+            <li><strong>FastAPI-Worker überlastet</strong>: <code>REDIS_URL</code> setzen und Worker hochdrehen – siehe <a href="./betrieb.html">Betrieb</a>.</li>
+          </ul>
+
+          <h2>Support-Bundle erzeugen</h2>
+          <p>Wenn gar nichts mehr geht – ein Support-Bundle (Logs + Config + DB-Dump) für einen Blick mit Entwickler:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose exec server python -m app.cli support-bundle \
+    -o /app/data/support-$(date +%F).tar.gz</code></pre>
+
+          <div class="callout callout-danger" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Bundle enthält Geheimnisse</div><p>Das Support-Bundle enthält DB-Dump und Logs inklusive JWT-Secrets, Refresh-Tokens und API-Keys (gehasht, aber trotzdem sensibel). Immer verschlüsselt übertragen.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./extension.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Browser-Extension</span></a>
+            <a class="next" href="../developer/index.html"><span class="label">Weiter im</span><span class="title">Entwickler-Handbuch →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../assets/app.js"></script>
+  </body>
+</html>
