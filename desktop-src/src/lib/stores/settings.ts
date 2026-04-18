@@ -8,7 +8,7 @@ import * as tunnelStore from './tunnel';
 import { reloadForMode } from './connections';
 import { reportError, showStatus } from './statusBar';
 import { getIntervalMinutes, getSettingsDefaults, validateSettings } from '$lib/models/settings';
-import { setLanguage } from '$lib/i18n';
+import { setLanguage, tNow } from '$lib/i18n';
 import type { Settings } from '$lib/bridge/types';
 
 export const settingsModalOpen = writable<boolean>(false);
@@ -44,7 +44,7 @@ export async function syncNow(notify: boolean): Promise<void> {
   if (!current || current.mode !== 'sync' || !current.url) return;
   try {
     await reloadForMode(current, null);
-    if (notify) showStatus('Sync erfolgreich.');
+    if (notify) showStatus(tNow('status.syncSuccess'));
   } catch (err) {
     if (notify) {
       reportError(err instanceof Error ? err.message : String(err));
@@ -64,7 +64,7 @@ export interface SaveResult {
 export async function saveSettings(next: Settings): Promise<SaveResult> {
   const v = validateSettings(next);
   if (!v.ok) {
-    reportError(v.error ?? 'Ungueltige Einstellungen.');
+    reportError(v.error ?? tNow('error.invalidSettings'));
     return { ok: false };
   }
   try {

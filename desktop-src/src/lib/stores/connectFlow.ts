@@ -14,6 +14,7 @@ import { reportError, showStatus } from './statusBar';
 import { getMappings } from './tunnel';
 import { requestPassword } from './passwordPrompt';
 import { closeEditor } from './editor';
+import { tNow } from '$lib/i18n';
 
 const isLinux = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('linux');
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -42,7 +43,7 @@ function scheduleRdpStatus(connectId: number): void {
   clearRdpStatusTimer();
   rdpStatusTimer = setTimeout(() => {
     if (rdpPendingId !== connectId || rdpErroredId === connectId) return;
-    showStatus('RDP wird gestartet…');
+    showStatus(tNow('status.rdpStarting'));
     rdpStatusTimer = null;
   }, 800);
 }
@@ -80,7 +81,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
         try {
           await bridge.savePassword(updated, outcome.password);
         } catch (err) {
-          reportError(`Password-Store: ${err instanceof Error ? err.message : String(err)}`);
+          reportError(tNow('error.passwordStore', { message: err instanceof Error ? err.message : String(err) }));
         }
       }
       await performConnect(updated, keepEditorOpen, { password: outcome.password });
@@ -104,7 +105,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
 export async function initiateConnect(connection: Connection, keepEditorOpen = false): Promise<void> {
   const validation = validateConnection(connection);
   if (!validation.ok) {
-    reportError(validation.message ?? 'Ungueltige Verbindung');
+    reportError(validation.message ?? tNow('error.invalidConnection'));
     return;
   }
 
@@ -172,7 +173,7 @@ export async function performConnect(
     if (connection.kind === 'rdp') {
       if (rdpId !== null) scheduleRdpStatus(rdpId);
     } else {
-      showStatus('Verbindung gestartet');
+      showStatus(tNow('status.connectionStarted'));
     }
 
     if (!keepEditorOpen) closeEditor();

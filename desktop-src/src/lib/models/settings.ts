@@ -2,6 +2,7 @@
 // Spiegelt desktop/src/settingsModel.js 1:1.
 
 import type { Settings } from '$lib/bridge/types';
+import { tNow } from '$lib/i18n';
 
 export const RDP_WINDOW_MODES = ['fit', 'fullscreen', 'multimon', 'custom'] as const;
 export const RDP_PERFORMANCE_PROFILES = ['auto', 'lan', 'broadband', 'low'] as const;
@@ -43,20 +44,20 @@ export interface SettingsValidation {
 export function validateSettings(next: Settings): SettingsValidation {
   if (next.mode === 'sync') {
     const url = (next.url ?? '').trim();
-    if (!url) return { ok: false, error: 'Sync-URL ist erforderlich.' };
-    if (!url.startsWith('https://')) return { ok: false, error: 'Sync-URL muss mit https:// beginnen.' };
+    if (!url) return { ok: false, error: tNow('validation.syncUrl.required') };
+    if (!url.startsWith('https://')) return { ok: false, error: tNow('validation.syncUrl.https') };
     if (!Number.isFinite(Number(next.intervalMinutes))) {
-      return { ok: false, error: 'Intervall ist ungueltig.' };
+      return { ok: false, error: tNow('validation.interval.invalid') };
     }
   }
   if (next.mode === 'server') {
     const url = (next.serverUrl ?? '').trim();
-    if (!url) return { ok: false, error: 'Server-URL ist erforderlich.' };
+    if (!url) return { ok: false, error: tNow('validation.serverUrl.required') };
   }
   if (next.rdpWindowMode === 'custom') {
     const size = (next.rdpCustomSize ?? '').trim();
     if (!RDP_CUSTOM_SIZE_PATTERN.test(size)) {
-      return { ok: false, error: 'Ungueltige RDP-Groesse (z. B. 1920x1080).' };
+      return { ok: false, error: tNow('validation.rdpSize.invalid') };
     }
   }
   return { ok: true };

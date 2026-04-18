@@ -2,6 +2,7 @@
 // 1:1-Port von desktop/src/connectionModel.js mit TS-Typen.
 
 import type { Connection, ConnectionKind } from '$lib/bridge/types';
+import { tNow } from '$lib/i18n';
 
 export const DEFAULT_PORTS: Record<Extract<ConnectionKind, 'ssh' | 'rdp'>, number> = {
   ssh: 22,
@@ -62,13 +63,13 @@ export interface ValidationResult {
 
 export function validateConnection(c: Connection): ValidationResult {
   if (!c.name) {
-    return { ok: false, message: 'Name darf nicht leer sein' };
+    return { ok: false, message: tNow('validation.name.empty') };
   }
   if (c.kind === 'web') {
-    if (!c.url) return { ok: false, message: 'URL darf nicht leer sein' };
+    if (!c.url) return { ok: false, message: tNow('validation.url.empty') };
     return { ok: true };
   }
-  if (!c.host) return { ok: false, message: 'Host darf nicht leer sein' };
+  if (!c.host) return { ok: false, message: tNow('validation.host.empty') };
   return { ok: true };
 }
 

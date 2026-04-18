@@ -1,5 +1,6 @@
 <script lang="ts">
   import { status, clearStatus } from '$lib/stores/statusBar';
+  import { t } from '$lib/i18n';
 </script>
 
 {#if $status}
@@ -9,7 +10,7 @@
     role={$status.isError ? 'alert' : 'status'}
   >
     <span class="status-text">{$status.text}</span>
-    <button class="status-close" onclick={() => clearStatus()} aria-label="Schliessen">×</button>
+    <button class="status-close" onclick={() => clearStatus()} aria-label={$t('action.close')}>×</button>
   </div>
 {/if}
 

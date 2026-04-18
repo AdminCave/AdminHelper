@@ -6,6 +6,7 @@ import { sessionStore } from './session';
 import { reportError } from './statusBar';
 import { monitoringApi } from '$lib/api/monitoring';
 import { filterChecks, type MonitoringFilters } from '$lib/models/monitoring';
+import { tNow } from '$lib/i18n';
 import type { AlertLogEntry, AlertRule, MonitorCheck, Server } from '$lib/api/types';
 
 export type MonitoringTab = 'overview' | 'alerts' | 'log';
@@ -90,7 +91,7 @@ export async function loadMonitoring(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, checks: [], loading: false }));
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(`Monitoring: ${msg}`);
+    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 

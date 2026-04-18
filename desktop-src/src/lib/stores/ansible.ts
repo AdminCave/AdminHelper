@@ -7,6 +7,7 @@ import { sessionStore } from './session';
 import { reportError, showStatus } from './statusBar';
 import { ansibleApi } from '$lib/api/ansible';
 import { buildAnsibleTargets, groupServersByTag } from '$lib/models/ansible';
+import { tNow } from '$lib/i18n';
 import type { Playbook, Server } from '$lib/api/types';
 
 export type AnsibleTargetMode = 'servers' | 'tags';
@@ -130,7 +131,7 @@ export async function runPlaybook(): Promise<void> {
     const inventoryPath = await bridge.ansibleGenerateInventory(targets);
     const playbookPath = await bridge.ansibleWritePlaybook(playbook.filename, content);
     await bridge.ansibleLaunch(inventoryPath, playbookPath);
-    showStatus(`Ansible gestartet: ${playbook.name}`);
+    showStatus(tNow('status.ansibleStarted', { name: playbook.name }));
   } catch (err) {
     reportError(err instanceof Error ? err.message : String(err));
   } finally {

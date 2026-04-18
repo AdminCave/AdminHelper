@@ -7,6 +7,7 @@ import * as bridge from '$lib/bridge';
 import type { TunnelMapping, TunnelStatus } from '$lib/bridge/types';
 import { sessionStore } from './session';
 import { reportError } from './statusBar';
+import { tNow } from '$lib/i18n';
 
 export type TunnelUiState = 'idle' | 'connecting' | 'connected' | 'disconnected';
 
@@ -55,7 +56,7 @@ export async function startIfServerMode(): Promise<void> {
   } catch (err) {
     _state.set({ ui: 'disconnected', status: { running: false }, mappings: [] });
     const msg = err instanceof Error ? err.message : String(err);
-    reportError(`Tunnel: ${msg}`);
+    reportError(tNow('error.tunnel', { message: msg }));
   }
 }
 
@@ -73,5 +74,5 @@ export function markTerminated(): void {
 
 export function markError(message: string): void {
   _state.update((s) => ({ ...s, ui: 'disconnected', status: { running: false } }));
-  reportError(`Tunnel: ${message}`);
+  reportError(tNow('error.tunnel', { message }));
 }
