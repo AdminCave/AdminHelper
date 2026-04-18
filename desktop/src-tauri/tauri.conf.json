@@ -1,6 +1,6 @@
 {
   "productName": "adminhelper",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "identifier": "com.adminhelper.app",
   "build": {
     "beforeDevCommand": "npm --prefix ../desktop-src run dev",

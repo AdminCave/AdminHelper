@@ -5,7 +5,7 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-## [0.18.0] - 2026-04-18
+## [0.19.0] - 2026-04-18
 
 ### Highlights
 
@@ -15,6 +15,12 @@ wurde vollstaendig durch `desktop-src/` ersetzt und baut ueber
 `npm --prefix ../desktop-src run build` in den Tauri-Release.
 Funktional bleibt der Client unveraendert; intern ist alles typisiert
 und reaktiv ueber Stores statt DOM-imperativen Managern.
+
+Zusaetzlich in 0.19.0: mehrere Security-Haertungen (Refresh-Token-
+Rotation mit Blacklist/Reuse-Detection, Login-Rate-Limit auf Redis,
+Tauri-Capability-Scoping, PKI-Bundle-Zip-Slip-Schutz), ein komplett
+ueberarbeitetes Monitoring-Dashboard sowie ein Doku-Komplett-Rewrite
+mit getrennten Admin- und Developer-Sektionen (DE + EN).
 
 ### Added
 
@@ -34,16 +40,52 @@ und reaktiv ueber Stores statt DOM-imperativen Managern.
   Tunnel-Auto-Resolve fuer Server-Modus
 - Vitest-Suite: 41 Tests fuer Models (connection, settings, ansible,
   monitoring) und Stores (ansible, connections)
+- Monitoring-Detail: Current-Values-Panel und Status-Timeline pro Check
+- Grouped-View und Tree-View fuer die Connections-Seite
+- Scroll-Beschleunigung als wiederverwendbare Svelte-Action
+- Refresh-Token-Rotation mit Token-Blacklist und Reuse-Detection
+  (kompromittierte Tokens werden erkannt und alle Sessions der
+  betroffenen User-Kette invalidiert)
+- Komplette Dokumentation neu aufgesetzt: getrennte Admin- und
+  Developer-Sektionen, vollstaendige EN-Spiegelung unter `docs/en/`
 
 ### Changed
 
 - `desktop/src-tauri/tauri.conf.json` `beforeBuildCommand` zeigt auf
   `../desktop-src` statt `../src`
-- Sidebar-Version-Label von `v0.17.0` auf `v0.18.0`
+- Sidebar-Version-Label auf `v0.19.0`
 - Monitoring-Detail auf Sektions-Dashboard umgestellt: pro Server werden
   alle Checks in typ-spezifischen Sektionen (Heartbeat, Live, Network,
   Services, Docker, Backups, ZFS, SMART) gruppiert; jede Zeile klappt
   inline auf zu Perioden-Tabs (1h/6h/24h/7d) mit Graph und Timeline
+- Monitoring-Dashboard v2: Card-Layout mit typ-spezifischen Heroes,
+  Master-Detail-Layout fuer die Overview, Sektions-basiertes Dashboard
+  statt Card-Grid
+- Connections-Liste: Card fungiert als Connect-Button, Edit-Icon nur
+  noch per Hover eingeblendet, aufgeraeumte Button-Anordnung
+- Login-Rate-Limit auf Redis migriert (mit In-Memory-Fallback, wenn
+  Redis nicht erreichbar ist) — skaliert ueber mehrere Server-Worker
+  hinweg konsistent
+- Tauri-Capabilities strikt gescopt (minimale Permissions statt
+  Default-Allow-All), RDP-Fenstertitel werden sanitisiert
+- i18n fuer Stores, Validatoren und `timeAgo` eingefuehrt, i18n-Leaks
+  in AppShell/App/Connections geschlossen
+- `metricLabel` als eigenes Modul ausgelagert, toter Alert-Log-Wrapper
+  entfernt
+
+### Fixed
+
+- RDP-Race-Condition zwischen aufeinanderfolgenden Connects ueber
+  Correlation-IDs geschlossen
+- `lastUsed` wird pro Connect-Modus getrennt gefuehrt (statt global)
+- `trustCert`-Checkbox logisch zu RDP zugeordnet (war faelschlich
+  auch bei Web aktiv)
+- Transparente Modals durch fehlende `--bg-panel`- und
+  `--bg-input`-CSS-Variablen beseitigt
+- PKI-Bundle-Import gegen Zip-Slip und Zip-Bomb geschuetzt, erzeugte
+  Secrets landen mit `0600` auf der Platte
+- Visuelle Regressionen, Monitoring-TLS-Handling und i18n-Engine
+  in der Desktop-UI
 
 ### Removed
 
@@ -108,4 +150,5 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.19.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.19.0
 [0.17.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.17.0
