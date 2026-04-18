@@ -11,16 +11,6 @@ import type { AlertLogEntry, AlertRule, MonitorCheck, Server } from '$lib/api/ty
 
 export type MonitoringTab = 'overview' | 'alerts' | 'log';
 
-export type MonitoringViewMode = 'cards' | 'compact';
-
-const VIEW_MODE_STORAGE_KEY = 'monitoring.viewMode';
-
-function loadViewMode(): MonitoringViewMode {
-  if (typeof localStorage === 'undefined') return 'cards';
-  const v = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-  return v === 'compact' ? 'compact' : 'cards';
-}
-
 const STATUS_PRIO: Record<string, number> = {
   critical: 4,
   warning: 3,
@@ -55,7 +45,6 @@ interface MonitoringState {
   filters: MonitoringFilters;
   loading: boolean;
   expandedCheckId: string | null;
-  viewMode: MonitoringViewMode;
   selectedServerId: string | null;
   serverSearch: string;
 }
@@ -69,7 +58,6 @@ const initial: MonitoringState = {
   filters: { server: '', type: '', status: '', search: '' },
   loading: false,
   expandedCheckId: null,
-  viewMode: loadViewMode(),
   selectedServerId: null,
   serverSearch: '',
 };
@@ -82,7 +70,6 @@ export const monitoringChecks = derived(_state, ($s) => $s.checks);
 export const monitoringServers = derived(_state, ($s) => $s.servers);
 export const monitoringAlerts = derived(_state, ($s) => $s.alerts);
 export const monitoringLog = derived(_state, ($s) => $s.log);
-export const monitoringViewMode = derived(_state, ($s) => $s.viewMode);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
 
@@ -92,18 +79,6 @@ export function setSelectedServer(id: string | null): void {
 
 export function setServerSearch(v: string): void {
   _state.update((s) => ({ ...s, serverSearch: v }));
-}
-
-export function setViewMode(mode: MonitoringViewMode): void {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-  }
-  _state.update((s) => ({ ...s, viewMode: mode }));
-}
-
-export function toggleViewMode(): void {
-  const current = get(_state).viewMode;
-  setViewMode(current === 'cards' ? 'compact' : 'cards');
 }
 
 export const filteredChecks = derived(_state, ($s) => filterChecks($s.checks, $s.filters));

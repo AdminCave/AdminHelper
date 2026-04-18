@@ -1,7 +1,7 @@
 <script lang="ts">
   import MonSummaryCards from './MonSummaryCards.svelte';
   import MonServerList from './MonServerList.svelte';
-  import MonCheckPanel from './MonCheckPanel.svelte';
+  import MonServerDashboard from './MonServerDashboard.svelte';
 </script>
 
 <MonSummaryCards />
@@ -11,6 +11,6 @@
     <MonServerList />
   </aside>
   <section class="mon-split-main">
-    <MonCheckPanel />
+    <MonServerDashboard />
   </section>
 </div>
