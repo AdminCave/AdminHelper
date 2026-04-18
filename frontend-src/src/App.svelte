@@ -14,7 +14,10 @@
   onMount(async () => {
     await auth.hydrate();
     hydrated = true;
-    if ($isAuthenticated && (location.hash === '' || location.hash === '#/')) {
+  });
+
+  $effect(() => {
+    if (hydrated && $isAuthenticated && (location.hash === '' || location.hash === '#/')) {
       replace('/connections');
     }
   });

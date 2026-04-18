@@ -73,3 +73,8 @@ build-deb/
 
 # TLS-Zertifikate (auto-generiert oder eigene)
 /certs/
+
+# Playwright
+/frontend-src/test-results/
+/frontend-src/playwright-report/
+/frontend-src/playwright/.cache/
