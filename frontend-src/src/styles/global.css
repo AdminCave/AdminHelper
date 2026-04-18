@@ -164,6 +164,7 @@ body {
   text-align: left;
   width: 100%;
   position: relative;
+  text-decoration: none;
 }
 
 .nav-item:hover {
