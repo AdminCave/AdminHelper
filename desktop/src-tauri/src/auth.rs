@@ -178,8 +178,32 @@ pub async fn authenticated_get(
     Ok(response)
 }
 
-pub fn logout() -> Result<(), AppError> {
+pub async fn logout(allow_self_signed: bool) -> Result<(), AppError> {
+    // Server informieren, damit Access- und Refresh-Token serverseitig
+    // blacklistet werden. Fehler werden ignoriert: lokales Keyring-Clearing
+    // muss in jedem Fall passieren (Offline, Server down, …).
+    if let Ok((server_url, token, refresh_token)) = load_session_from_keyring() {
+        let _ = notify_server_logout(&server_url, &token, &refresh_token, allow_self_signed).await;
+    }
     clear_keyring()
+}
+
+async fn notify_server_logout(
+    server_url: &str,
+    token: &str,
+    refresh_token: &str,
+    allow_self_signed: bool,
+) -> Result<(), AppError> {
+    let url = format!("{}/api/auth/logout", server_url.trim_end_matches('/'));
+    let client = build_client(server_url, allow_self_signed)?;
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+    let _ = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await?;
+    Ok(())
 }
 
 // ── Keyring helpers ──────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 import secrets
 import uuid as _uuid
 from datetime import datetime, timedelta, timezone
@@ -11,6 +12,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("adminhelper.auth")
 
 from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
@@ -75,19 +78,43 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
     return db.query(User).filter(User.username == username).first()
 
 
-def blacklist_token(token: str, db: Session) -> None:
-    """Token auf die Blacklist setzen (z.B. bei Logout)."""
+def blacklist_token(token: str, db: Session) -> bool:
+    """Token auf die Blacklist setzen (z.B. bei Logout oder Refresh-Rotation).
+    Gibt True zurueck wenn neu eingetragen, False wenn bereits vorhanden oder
+    der Token ungueltig ist."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        jti = payload.get("jti")
-        exp = payload.get("exp")
-        if jti and exp:
-            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
-            if not db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
-                db.add(TokenBlacklist(jti=jti, expires_at=expires_at))
-                db.commit()
     except InvalidTokenError:
-        pass
+        return False
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if not jti or not exp:
+        return False
+    if db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
+        return False
+    expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+    db.add(TokenBlacklist(jti=jti, expires_at=expires_at))
+    db.commit()
+    return True
+
+
+def is_token_blacklisted(token: str, db: Session) -> bool:
+    """Prueft ob der Token (anhand seiner jti) bereits widerrufen wurde.
+    Erforderlich fuer Refresh-Reuse-Detection: ein blacklisteter Refresh,
+    der erneut eingereicht wird, ist ein Diebstahl-Signal."""
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except InvalidTokenError:
+        return False
+    jti = payload.get("jti")
+    if not jti:
+        return False
+    return db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first() is not None
 
 
 def cleanup_expired_blacklist(db: Session) -> int:

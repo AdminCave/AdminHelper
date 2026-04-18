@@ -116,3 +116,60 @@ class TestTokenValidation:
         token = create_access_token({})
         user = _get_user_from_token(token, db_session)
         assert user is None
+
+
+class TestRefreshRotation:
+    """H-2: Refresh-Token-Rotation + Reuse-Detection."""
+
+    def test_refresh_rotates_and_blacklists_old(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+        )
+        assert login.status_code == 200
+        old_refresh = login.json()["refresh_token"]
+
+        rot = test_client.post("/api/auth/refresh", json={"refresh_token": old_refresh})
+        assert rot.status_code == 200
+        new_refresh = rot.json()["refresh_token"]
+        assert new_refresh != old_refresh
+
+        # Reuse des alten Refresh-Tokens muss scheitern (Reuse-Detection)
+        reuse = test_client.post("/api/auth/refresh", json={"refresh_token": old_refresh})
+        assert reuse.status_code == 401
+
+    def test_logout_blacklists_refresh(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+        )
+        access = login.json()["access_token"]
+        refresh = login.json()["refresh_token"]
+
+        out = test_client.post(
+            "/api/auth/logout",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"refresh_token": refresh},
+        )
+        assert out.status_code == 200
+
+        # Refresh nach Logout muss scheitern
+        denied = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
+        assert denied.status_code == 401
+
+    def test_logout_without_refresh_still_blacklists_access(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "adminpass"},
+        )
+        access = login.json()["access_token"]
+
+        out = test_client.post(
+            "/api/auth/logout",
+            headers={"Authorization": f"Bearer {access}"},
+        )
+        assert out.status_code == 200
+
+        # /me mit dem geblacklisteten Access-Token muss scheitern
+        me = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"})
+        assert me.status_code == 401

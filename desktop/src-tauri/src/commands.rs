@@ -200,8 +200,11 @@ pub async fn check_session(
 }
 
 #[tauri::command]
-pub fn logout() -> Result<(), AppError> {
-    auth::logout()
+pub async fn logout(app: tauri::AppHandle) -> Result<(), AppError> {
+    let allow_self_signed = storage::load_settings(&app)
+        .map(|s| s.allow_self_signed_certs)
+        .unwrap_or(false);
+    auth::logout(allow_self_signed).await
 }
 
 #[tauri::command]
