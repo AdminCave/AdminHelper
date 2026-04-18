@@ -40,20 +40,26 @@
   function onCardClick(conn: Connection, ev: MouseEvent | KeyboardEvent): void {
     const target = ev.target as HTMLElement;
     if (target.closest('button')) return;
-    openEditor(conn);
+    void initiateConnect(conn);
   }
 
   function onGroupClick(group: ConnectionGroup, ev: MouseEvent | KeyboardEvent): void {
     const target = ev.target as HTMLElement;
     if (target.closest('button')) return;
     const preferred = group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0];
-    if (preferred) openEditor(preferred);
+    if (preferred) void initiateConnect(preferred);
   }
 
   function onConnect(conn: Connection, event: MouseEvent | KeyboardEvent): void {
     event.stopPropagation();
     event.preventDefault();
     void initiateConnect(conn);
+  }
+
+  function onEdit(conn: Connection, event: MouseEvent | KeyboardEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    openEditor(conn);
   }
 
   function tunnelFor(conn: Connection): string | null {
@@ -161,12 +167,11 @@
             {/if}
           </div>
           <div class="card-actions">
-            <button class="btn small accent" onclick={(e) => onConnect(conn, e)}>{$t('action.connect')}</button>
             <button
-              class="btn icon"
+              class="btn icon large"
               title={$t('action.edit')}
               aria-label={$t('action.edit')}
-              onclick={(e) => { e.stopPropagation(); openEditor(conn); }}
+              onclick={(e) => onEdit(conn, e)}
             >
               <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
             </button>
@@ -181,6 +186,7 @@
       <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
     {:else}
       {#each $groupedConnections as group (group.key)}
+        {@const preferred = group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0]}
         <div
           class="card"
           role="button"
@@ -204,6 +210,16 @@
                 >{kind.toUpperCase()}</button>
               {/if}
             {/each}
+            {#if preferred}
+              <button
+                class="btn icon large"
+                title={$t('action.edit')}
+                aria-label={$t('action.edit')}
+                onclick={(e) => onEdit(preferred, e)}
+              >
+                <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
+              </button>
+            {/if}
           </div>
         </div>
       {/each}
@@ -229,6 +245,7 @@
           <div class="tree-list">
             {#if $groupFilter === 'grouped'}
               {#each node.groups as group (group.key)}
+                {@const preferred = group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0]}
                 <div class="tree-node">
                   <div
                     class="card"
@@ -253,6 +270,16 @@
                           >{kind.toUpperCase()}</button>
                         {/if}
                       {/each}
+                      {#if preferred}
+                        <button
+                          class="btn icon large"
+                          title={$t('action.edit')}
+                          aria-label={$t('action.edit')}
+                          onclick={(e) => onEdit(preferred, e)}
+                        >
+                          <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
+                        </button>
+                      {/if}
                     </div>
                   </div>
                 </div>
@@ -277,12 +304,11 @@
                       {/if}
                     </div>
                     <div class="card-actions">
-                      <button class="btn small accent" onclick={(e) => onConnect(conn, e)}>{$t('action.connect')}</button>
                       <button
-                        class="btn icon"
+                        class="btn icon large"
                         title={$t('action.edit')}
                         aria-label={$t('action.edit')}
-                        onclick={(e) => { e.stopPropagation(); openEditor(conn); }}
+                        onclick={(e) => onEdit(conn, e)}
                       >
                         <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
                       </button>

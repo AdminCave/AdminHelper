@@ -528,6 +528,15 @@ html, body {
   fill: currentColor;
 }
 
+.btn.icon.large {
+  padding: 10px;
+}
+
+.btn.icon.large svg {
+  width: 22px;
+  height: 22px;
+}
+
 /* ── Cards (Connections) ───────────────────────────────────────────── */
 .list {
   display: flex;
@@ -561,8 +570,19 @@ html, body {
 }
 
 .card:hover {
-  border-color: var(--border-hover);
+  border-color: rgba(52,211,153,0.35);
   background: var(--bg-elevated);
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.card:focus-visible {
+  outline: none;
+  border-color: rgba(52,211,153,0.5);
+  box-shadow: inset 3px 0 0 var(--success), 0 0 0 2px rgba(52,211,153,0.2);
+}
+
+.card:active {
+  transform: translateY(1px);
 }
 
 .card.active {
@@ -607,23 +627,8 @@ html, body {
 }
 
 .card-actions .btn.accent {
-  min-width: 92px;
+  min-width: 72px;
   justify-content: center;
-}
-
-/* Sekundaere Aktionen (Edit, Menue-Icons) erscheinen erst beim Hover/Focus
-   der Card. Primaere Aktion (Connect) bleibt immer sichtbar. */
-.card-actions .btn.icon {
-  opacity: 0;
-  transform: translateX(-4px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.card:hover .card-actions .btn.icon,
-.card:focus-within .card-actions .btn.icon,
-.card-actions .btn.icon:focus-visible {
-  opacity: 1;
-  transform: translateX(0);
 }
 
 .card-tags {
