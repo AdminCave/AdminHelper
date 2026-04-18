@@ -118,8 +118,10 @@ pub fn open_connection(
     connection: Connection,
     password: Option<String>,
     client: Option<ClientInfo>,
+    correlation_id: Option<String>,
 ) -> Result<(), AppError> {
     let settings = storage::load_settings(&app)?;
+    let cid = correlation_id.unwrap_or_default();
     connection::open_connection(
         &connection,
         password.as_deref(),
@@ -129,6 +131,7 @@ pub fn open_connection(
         settings.rdp_custom_size.as_deref(),
         settings.rdp_performance_profile,
         settings.language.as_deref(),
+        &cid,
         &app,
     )
 }
@@ -138,8 +141,10 @@ pub fn open_connection_stored(
     app: tauri::AppHandle,
     connection: Connection,
     client: Option<ClientInfo>,
+    correlation_id: Option<String>,
 ) -> Result<(), AppError> {
     let settings = storage::load_settings(&app)?;
+    let cid = correlation_id.unwrap_or_default();
     connection::open_connection_stored(
         &app,
         &connection,
@@ -149,6 +154,7 @@ pub fn open_connection_stored(
         settings.rdp_custom_size.as_deref(),
         settings.rdp_performance_profile,
         settings.language.as_deref(),
+        &cid,
     )
 }
 

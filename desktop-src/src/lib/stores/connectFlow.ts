@@ -1,8 +1,10 @@
 // Connect-Flow: orchestriert das Starten einer Verbindung.
 // Bei RDP wird ggf. der Password-Store befragt oder ein Prompt gezeigt.
-// Das Pattern mit monotonem rdpConnectId-Zaehler schuetzt vor Race-Conditions,
-// wenn ein spaeter eintreffendes rdp-error-Event eine bereits laufende
-// zweite Verbindung faelschlicherweise als fehlgeschlagen markieren wuerde.
+//
+// Race-Condition-Schutz: jede RDP-Attempt bekommt eine UUID, die an die
+// Tauri-Bridge uebergeben und in jedem rdp-error-Event mitgeschickt wird.
+// markRdpError filtert ueber die UUID, sodass spaete Fehler einer abgebrochenen
+// Verbindung keine parallel laufende neue Verbindung als fehlgeschlagen markieren.
 
 import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
@@ -19,41 +21,64 @@ import { tNow } from '$lib/i18n';
 const isLinux = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('linux');
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-let rdpConnectId = 0;
-let rdpPendingId: number | null = null;
-let rdpErroredId: number | null = null;
-let rdpStatusTimer: ReturnType<typeof setTimeout> | null = null;
+interface RdpAttempt {
+  id: string;
+  timer: ReturnType<typeof setTimeout> | null;
+  errored: boolean;
+}
 
-function clearRdpStatusTimer(): void {
-  if (rdpStatusTimer) {
-    clearTimeout(rdpStatusTimer);
-    rdpStatusTimer = null;
+const rdpAttempts = new Map<string, RdpAttempt>();
+
+function newCorrelationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
   }
+  return `rdp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function startRdpStatus(): number {
-  rdpConnectId += 1;
-  rdpPendingId = rdpConnectId;
-  rdpErroredId = null;
-  clearRdpStatusTimer();
-  return rdpConnectId;
+function startRdpAttempt(): string {
+  const id = newCorrelationId();
+  rdpAttempts.set(id, { id, timer: null, errored: false });
+  return id;
 }
 
-function scheduleRdpStatus(connectId: number): void {
-  clearRdpStatusTimer();
-  rdpStatusTimer = setTimeout(() => {
-    if (rdpPendingId !== connectId || rdpErroredId === connectId) return;
+function scheduleRdpStatus(id: string): void {
+  const attempt = rdpAttempts.get(id);
+  if (!attempt) return;
+  if (attempt.timer) clearTimeout(attempt.timer);
+  attempt.timer = setTimeout(() => {
+    const a = rdpAttempts.get(id);
+    if (!a || a.errored) return;
     showStatus(tNow('status.rdpStarting'));
-    rdpStatusTimer = null;
+    rdpAttempts.delete(id);
   }, 800);
 }
 
-/** Wird vom rdp-error Tauri-Event aufgerufen. */
-export function markRdpError(message: string): void {
-  clearRdpStatusTimer();
-  if (rdpPendingId !== null) {
-    rdpErroredId = rdpPendingId;
-    rdpPendingId = null;
+function clearRdpAttempt(id: string): void {
+  const attempt = rdpAttempts.get(id);
+  if (attempt?.timer) clearTimeout(attempt.timer);
+  rdpAttempts.delete(id);
+}
+
+/**
+ * Wird vom rdp-error Tauri-Event aufgerufen. correlationId == null fuer Legacy-
+ * Events ohne ID -> alle laufenden Attempts werden als errored markiert (alte
+ * Semantik). Mit ID wird nur der zugehoerige Attempt beeinflusst.
+ */
+export function markRdpError(correlationId: string | null, message: string): void {
+  if (correlationId) {
+    const attempt = rdpAttempts.get(correlationId);
+    if (attempt) {
+      if (attempt.timer) clearTimeout(attempt.timer);
+      attempt.errored = true;
+      rdpAttempts.delete(correlationId);
+    }
+  } else {
+    for (const attempt of rdpAttempts.values()) {
+      if (attempt.timer) clearTimeout(attempt.timer);
+      attempt.errored = true;
+    }
+    rdpAttempts.clear();
   }
   reportError(message);
 }
@@ -181,20 +206,15 @@ export async function performConnect(
       }
     }
 
-    let rdpId: number | null = null;
+    let rdpId: string | null = null;
     if (resolved.kind === 'rdp') {
-      rdpId = startRdpStatus();
+      rdpId = startRdpAttempt();
+      const cid = rdpId;
       const promise = useStoredPassword
-        ? bridge.openConnectionStored(resolved)
-        : bridge.openConnection(resolved, password);
+        ? bridge.openConnectionStored(resolved, undefined, cid)
+        : bridge.openConnection(resolved, password, undefined, cid);
       promise.catch((err: unknown) => {
-        if (rdpId !== null) {
-          clearRdpStatusTimer();
-          if (rdpPendingId === rdpId) {
-            rdpErroredId = rdpId;
-            rdpPendingId = null;
-          }
-        }
+        clearRdpAttempt(cid);
         reportError(err instanceof Error ? err.message : String(err));
       });
     } else if (useStoredPassword) {

@@ -1,7 +1,18 @@
 use crate::error::AppError;
 use crate::models::{
-    ClientInfo, Connection, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
+    ClientInfo, Connection, RdpErrorPayload, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
 };
+
+#[cfg(unix)]
+fn emit_rdp_error(app: &tauri::AppHandle, correlation_id: &str, message: impl Into<String>) {
+    let _ = app.emit(
+        "rdp-error",
+        RdpErrorPayload {
+            correlation_id: correlation_id.to_string(),
+            message: message.into(),
+        },
+    );
+}
 
 #[cfg(unix)]
 use std::io::{Read, Write};
@@ -30,6 +41,7 @@ pub fn open_rdp(
     rdp_custom_size: Option<&str>,
     rdp_performance_profile: RdpPerformanceProfile,
     ui_language: Option<&str>,
+    correlation_id: &str,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     let host = connection
@@ -58,6 +70,8 @@ pub fn open_rdp(
     let _ = ui_language;
     #[cfg(not(unix))]
     let _ = rdp_scaling_mode;
+    #[cfg(not(unix))]
+    let _ = correlation_id;
 
     #[cfg(target_os = "windows")]
     {
@@ -110,10 +124,10 @@ pub fn open_rdp(
             }
             args.push("/from-stdin:force".to_string());
             args.push("/log-level:INFO".to_string());
-            spawn_rdp_with_password(rdp_binary, args, secret, app)?;
+            spawn_rdp_with_password(rdp_binary, args, secret, correlation_id, app)?;
         } else {
             args.push("/log-level:INFO".to_string());
-            spawn_rdp_interactive(rdp_binary, args, app)?;
+            spawn_rdp_interactive(rdp_binary, args, correlation_id, app)?;
         }
         Ok(())
     }
@@ -347,6 +361,7 @@ fn spawn_output_monitor(
     emitted: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
+    correlation_id: String,
     app: tauri::AppHandle,
 ) {
     std::thread::spawn(move || {
@@ -368,7 +383,7 @@ fn spawn_output_monitor(
             }
             if let Some(message) = parse_freerdp_error(&buffer) {
                 if !emitted.swap(true, Ordering::SeqCst) {
-                    let _ = app.emit("rdp-error", message);
+                    emit_rdp_error(&app, &correlation_id, message);
                 }
                 break;
             }
@@ -382,6 +397,7 @@ fn monitor_rdp_exit(
     emitted: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
+    correlation_id: String,
     app: tauri::AppHandle,
 ) {
     // Timeout thread
@@ -389,14 +405,15 @@ fn monitor_rdp_exit(
         let emitted = emitted.clone();
         let connected_at_ms = connected_at_ms.clone();
         let app = app.clone();
+        let correlation_id = correlation_id.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(12));
             if connected_at_ms.load(Ordering::SeqCst) == 0 && !emitted.swap(true, Ordering::SeqCst)
             {
-                let _ = app.emit(
-                    "rdp-error",
-                    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen."
-                        .to_string(),
+                emit_rdp_error(
+                    &app,
+                    &correlation_id,
+                    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.",
                 );
             }
         });
@@ -408,16 +425,16 @@ fn monitor_rdp_exit(
             let elapsed_ms = started_at.elapsed().as_millis() as u64;
             let connected_ms = connected_at_ms.load(Ordering::SeqCst);
             if connected_ms == 0 {
-                let _ = app.emit(
-                    "rdp-error",
-                    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen."
-                        .to_string(),
+                emit_rdp_error(
+                    &app,
+                    &correlation_id,
+                    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
                 );
             } else if elapsed_ms.saturating_sub(connected_ms) < 8000 {
-                let _ = app.emit(
-                    "rdp-error",
-                    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen."
-                        .to_string(),
+                emit_rdp_error(
+                    &app,
+                    &correlation_id,
+                    "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen.",
                 );
             }
         }
@@ -429,6 +446,7 @@ fn spawn_rdp_with_password(
     binary: &str,
     args: Vec<String>,
     password: &str,
+    correlation_id: &str,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     let started_at = Instant::now();
@@ -448,6 +466,7 @@ fn spawn_rdp_with_password(
 
     let emitted = Arc::new(AtomicBool::new(false));
     let connected_at_ms = Arc::new(AtomicU64::new(0));
+    let cid = correlation_id.to_string();
 
     if let Some(stdout) = child.stdout.take() {
         spawn_output_monitor(
@@ -455,6 +474,7 @@ fn spawn_rdp_with_password(
             emitted.clone(),
             connected_at_ms.clone(),
             started_at,
+            cid.clone(),
             app.clone(),
         );
     }
@@ -465,11 +485,12 @@ fn spawn_rdp_with_password(
             emitted.clone(),
             connected_at_ms.clone(),
             started_at,
+            cid.clone(),
             app.clone(),
         );
     }
 
-    monitor_rdp_exit(child, emitted, connected_at_ms, started_at, app.clone());
+    monitor_rdp_exit(child, emitted, connected_at_ms, started_at, cid, app.clone());
     Ok(())
 }
 
@@ -477,6 +498,7 @@ fn spawn_rdp_with_password(
 fn spawn_rdp_interactive(
     binary: &str,
     args: Vec<String>,
+    correlation_id: &str,
     app: &tauri::AppHandle,
 ) -> Result<(), AppError> {
     let mut command = Command::new(binary);
@@ -488,18 +510,19 @@ fn spawn_rdp_interactive(
     let child = command.spawn()?;
 
     let app_handle = app.clone();
+    let cid = correlation_id.to_string();
     std::thread::spawn(move || {
         if let Ok(output) = child.wait_with_output() {
             let mut combined = output.stderr;
             combined.extend_from_slice(&output.stdout);
             let parsed = parse_freerdp_error(&combined);
             if let Some(message) = parsed {
-                let _ = app_handle.emit("rdp-error", message);
+                emit_rdp_error(&app_handle, &cid, message);
             } else if !buffer_has_connected(&combined) {
-                let _ = app_handle.emit(
-                    "rdp-error",
-                    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen."
-                        .to_string(),
+                emit_rdp_error(
+                    &app_handle,
+                    &cid,
+                    "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
                 );
             }
         }

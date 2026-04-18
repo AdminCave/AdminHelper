@@ -94,9 +94,14 @@
       unlisteners.push(
         await listen('frpc-terminated', () => markTerminated()),
         await listen<string>('frpc-error', (e) => markError(String(e.payload ?? 'frpc error'))),
-        await listen<string>('rdp-error', (e) =>
-          markRdpError(String(e.payload ?? tNow('error.rdpAuth'))),
-        ),
+        await listen<string | { correlationId?: string; message?: string }>('rdp-error', (e) => {
+          const payload = e.payload;
+          if (typeof payload === 'string' || payload == null) {
+            markRdpError(null, String(payload ?? tNow('error.rdpAuth')));
+          } else {
+            markRdpError(payload.correlationId ?? null, payload.message ?? tNow('error.rdpAuth'));
+          }
+        }),
       );
     } catch (err) {
       console.warn('Tauri-Event-Listener konnten nicht registriert werden', err);

@@ -106,15 +106,17 @@ export function openConnection(
   connection: Connection,
   password?: string,
   client?: ClientInfo,
+  correlationId?: string,
 ): Promise<void> {
-  return invoke('open_connection', { connection, password, client });
+  return invoke('open_connection', { connection, password, client, correlationId });
 }
 
 export function openConnectionStored(
   connection: Connection,
   client?: ClientInfo,
+  correlationId?: string,
 ): Promise<void> {
-  return invoke('open_connection_stored', { connection, client });
+  return invoke('open_connection_stored', { connection, client, correlationId });
 }
 
 export function resolveConnection(

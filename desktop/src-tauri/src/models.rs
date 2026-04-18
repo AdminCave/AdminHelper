@@ -144,3 +144,10 @@ pub struct PasswordState {
     pub stored: bool,
     pub can_store: bool,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpErrorPayload {
+    pub correlation_id: String,
+    pub message: String,
+}
