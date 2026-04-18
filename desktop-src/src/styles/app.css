@@ -7,6 +7,10 @@
   --bg-surface:   #161922;
   --bg-elevated:  #1c2030;
   --bg-sidebar:   #0c0e14;
+  /* Aliase fuer Modal-Panels und Input-Felder (verwendet in
+     SettingsModal, ConnectionEditor, PasswordPrompt, StatusBar, Ansible). */
+  --bg-panel:     var(--bg-elevated);
+  --bg-input:     var(--bg-surface);
 
   /* Borders */
   --border:       rgba(255,255,255,0.08);
