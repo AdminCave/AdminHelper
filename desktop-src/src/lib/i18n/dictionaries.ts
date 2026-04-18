@@ -759,6 +759,12 @@ export const translations: Translations = {
     "monitoring.check.disable": "Deaktivieren",
     "monitoring.check.runNow": "Jetzt prüfen",
     "monitoring.server.noServer": "Ohne Server",
+    "monitoring.view.label": "Ansicht",
+    "monitoring.view.cards": "Kacheln",
+    "monitoring.view.compact": "Kompakt",
+    "monitoring.view.toCards": "Kachel-Ansicht",
+    "monitoring.view.toCompact": "Kompakt-Ansicht",
+    "monitoring.hero.service.running": "laufen",
 
     // ── Desktop: timeAgo ──────────────────────────────────────────────
     "timeAgo.never": "-",
@@ -1551,6 +1557,12 @@ export const translations: Translations = {
     "monitoring.check.disable": "Disable",
     "monitoring.check.runNow": "Run now",
     "monitoring.server.noServer": "No server",
+    "monitoring.view.label": "View",
+    "monitoring.view.cards": "Cards",
+    "monitoring.view.compact": "Compact",
+    "monitoring.view.toCards": "Card view",
+    "monitoring.view.toCompact": "Compact view",
+    "monitoring.hero.service.running": "running",
 
     // ── Desktop: timeAgo ──────────────────────────────────────────────
     "timeAgo.never": "-",

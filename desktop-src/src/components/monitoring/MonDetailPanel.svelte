@@ -2,6 +2,7 @@
   import { sessionStore } from '$lib/stores/session';
   import { monitoringApi } from '$lib/api/monitoring';
   import { formatCheckConfig } from '$lib/models/monitoring';
+  import { monitoringViewMode } from '$lib/stores/monitoring';
   import type { MonitorCheck, MonitoringMetricsResponse } from '$lib/api/types';
   import MonChart from './MonChart.svelte';
   import MonCurrentValues from './MonCurrentValues.svelte';
@@ -19,6 +20,7 @@
   let metrics = $state<MonitoringMetricsResponse | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let mode = $derived($monitoringViewMode);
 
   let configKV = $derived(formatCheckConfig(check));
   let skipChart = $derived(
@@ -52,35 +54,34 @@
 </script>
 
 <div class="mon-detail-panel" data-check-id={check.id}>
-  <div class="mon-detail-info">
-    <strong>{check.name}</strong> &mdash; {check.checkType.toUpperCase()}
-    {#if check.description}
-      <div class="mon-detail-desc">{check.description}</div>
-    {/if}
-    {#if configKV.length > 0}
-      <div class="mon-detail-config">
-        {#each configKV as [k, v], i}
-          <span class="mon-cfg-key">{k}:</span>
-          <span class="mon-cfg-val">{v}</span>
-          {#if i < configKV.length - 1}
-            <span> · </span>
-          {/if}
-        {/each}
-      </div>
-    {/if}
-  </div>
+  {#if check.description}
+    <div class="mon-detail-desc">{check.description}</div>
+  {/if}
 
-  <div class="mon-type-content">
-    <TypeContent {check} />
-  </div>
+  {#if configKV.length > 0}
+    <div class="mon-detail-config-chips">
+      {#each configKV as [k, v]}
+        <span class="mon-config-chip">
+          <span class="mon-config-key">{k}</span>
+          <span class="mon-config-val">{v}</span>
+        </span>
+      {/each}
+    </div>
+  {/if}
+
+  {#if mode === 'compact'}
+    <div class="mon-type-content">
+      <TypeContent {check} />
+    </div>
+  {/if}
 
   {#if !skipChart}
     <MonCurrentValues {metrics} checkType={check.checkType} />
 
-    <div class="mon-period-selector">
+    <div class="mon-segmented">
       {#each PERIODS as p}
         <button
-          class="chip"
+          class="mon-seg-btn"
           class:active={p === activePeriod}
           onclick={() => setPeriod(p)}
         >

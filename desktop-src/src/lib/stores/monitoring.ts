@@ -11,6 +11,16 @@ import type { AlertLogEntry, AlertRule, MonitorCheck, Server } from '$lib/api/ty
 
 export type MonitoringTab = 'overview' | 'alerts' | 'log';
 
+export type MonitoringViewMode = 'cards' | 'compact';
+
+const VIEW_MODE_STORAGE_KEY = 'monitoring.viewMode';
+
+function loadViewMode(): MonitoringViewMode {
+  if (typeof localStorage === 'undefined') return 'cards';
+  const v = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+  return v === 'compact' ? 'compact' : 'cards';
+}
+
 interface MonitoringState {
   tab: MonitoringTab;
   servers: Server[];
@@ -20,6 +30,7 @@ interface MonitoringState {
   filters: MonitoringFilters;
   loading: boolean;
   expandedCheckId: string | null;
+  viewMode: MonitoringViewMode;
 }
 
 const initial: MonitoringState = {
@@ -31,6 +42,7 @@ const initial: MonitoringState = {
   filters: { server: '', type: '', status: '', search: '' },
   loading: false,
   expandedCheckId: null,
+  viewMode: loadViewMode(),
 };
 
 const _state = writable<MonitoringState>(initial);
@@ -41,6 +53,19 @@ export const monitoringChecks = derived(_state, ($s) => $s.checks);
 export const monitoringServers = derived(_state, ($s) => $s.servers);
 export const monitoringAlerts = derived(_state, ($s) => $s.alerts);
 export const monitoringLog = derived(_state, ($s) => $s.log);
+export const monitoringViewMode = derived(_state, ($s) => $s.viewMode);
+
+export function setViewMode(mode: MonitoringViewMode): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+  }
+  _state.update((s) => ({ ...s, viewMode: mode }));
+}
+
+export function toggleViewMode(): void {
+  const current = get(_state).viewMode;
+  setViewMode(current === 'cards' ? 'compact' : 'cards');
+}
 
 export const filteredChecks = derived(_state, ($s) => filterChecks($s.checks, $s.filters));
 
