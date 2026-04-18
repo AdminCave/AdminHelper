@@ -49,6 +49,7 @@ cache:
       libxdo-dev
       patchelf
     - apt-get install -y --no-install-recommends libayatana-appindicator3-dev || apt-get install -y --no-install-recommends libappindicator3-dev
+    - apt-get install -y --no-install-recommends nodejs npm
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     - . "$CARGO_HOME/env"
     - rustup default stable
@@ -58,6 +59,7 @@ cache:
       else
         cargo install tauri-cli --locked --version '^2'
       fi
+    - npm --prefix desktop-src ci
 
 build_deb_trixie:
   extends: .tauri_trixie_base
@@ -152,6 +154,22 @@ frontend_e2e:
     - if: $CI_COMMIT_BRANCH
       changes:
         - frontend-src/**/*
+
+desktop_check:
+  stage: check
+  image: node:22-alpine
+  needs: []
+  before_script:
+    - cd desktop-src
+    - npm ci --no-audit --no-fund
+  script:
+    - npm run check
+    - npm run test
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - desktop-src/**/*
 
 docker_server:
   stage: docker

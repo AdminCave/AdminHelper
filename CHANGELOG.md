@@ -5,6 +5,48 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.18.0] - 2026-04-18
+
+### Highlights
+
+Big-Bang-Migration des **Desktop-Clients** von Plain-JavaScript auf
+**Svelte 5 + TypeScript + Vite** (11 Phasen). Das alte `desktop/src/`
+wurde vollstaendig durch `desktop-src/` ersetzt und baut ueber
+`npm --prefix ../desktop-src run build` in den Tauri-Release.
+Funktional bleibt der Client unveraendert; intern ist alles typisiert
+und reaktiv ueber Stores statt DOM-imperativen Managern.
+
+### Added
+
+- `desktop-src/` als eigenstaendiges Projekt (kein Monorepo) mit
+  Svelte 5 Runes, TS strict, Vite-Build, Pfad-Aliassen (`$lib`)
+- Typisierte Tauri-Bridge (`src/lib/bridge/`) mit 1:1-Mapping zu allen
+  24 `#[tauri::command]` Backend-Funktionen
+- Store-Architektur: `sessionStore`, `connectionsStore`, `tunnelStore`,
+  `monitoringStore`, `ansibleStore`, `settingsStore`, `connectFlow`,
+  `passwordPrompt`, `editorStore`, `statusBarStore`
+- Seiten: Dashboard, Connections (mit Live-Suche + Kind/Group-Filter),
+  Monitoring (Overview/Alerts/Log mit uPlot-Charts), Ansible
+  (3-Stufen-Wizard mit Server/Tag-Auswahl)
+- Modals: ConnectionEditor, PasswordPrompt (Promise-Continuation),
+  SettingsModal (Sync/Server-Mode, RDP-Optionen, Sprache, Logout)
+- Connect-Flow mit RDP-Race-Guard (monotone Connect-ID) und
+  Tunnel-Auto-Resolve fuer Server-Modus
+- Vitest-Suite: 41 Tests fuer Models (connection, settings, ansible,
+  monitoring) und Stores (ansible, connections)
+
+### Changed
+
+- `desktop/src-tauri/tauri.conf.json` `beforeBuildCommand` zeigt auf
+  `../desktop-src` statt `../src`
+- Sidebar-Version-Label von `v0.17.0` auf `v0.18.0`
+
+### Removed
+
+- Altes Plain-JS-Frontend (`desktop/src/`) wird vom Tauri-Build nicht
+  mehr verwendet (bleibt historisch im Repo erhalten, bis alle
+  Referenzen entfernt sind)
+
 ## [0.17.0] - 2026-04-18
 
 ### Highlights

@@ -107,7 +107,7 @@
     <TunnelIndicator />
 
     <div class="sidebar-bottom">
-      <div class="sidebar-version">v0.18.0-dev</div>
+      <div class="sidebar-version">v0.18.0</div>
     </div>
   </aside>
 
