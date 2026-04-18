@@ -8,6 +8,7 @@
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
+  import Monitoring from '../pages/Monitoring.svelte';
   import ConnectionEditor from './ConnectionEditor.svelte';
   import PasswordPrompt from './PasswordPrompt.svelte';
   import StatusBar from './StatusBar.svelte';
@@ -135,10 +136,7 @@
       {:else if currentId === 'connections'}
         <Connections />
       {:else if currentId === 'monitoring'}
-        <div style="padding: var(--sp-6); color: var(--text-muted);">
-          <h2>Monitoring</h2>
-          <p>Kommt in Phase 8.</p>
-        </div>
+        <Monitoring />
       {:else if currentId === 'ansible'}
         <div style="padding: var(--sp-6); color: var(--text-muted);">
           <h2>Ansible</h2>
