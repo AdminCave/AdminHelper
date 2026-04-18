@@ -4,6 +4,8 @@
   import { formatCheckConfig } from '$lib/models/monitoring';
   import type { MonitorCheck, MonitoringMetricsResponse } from '$lib/api/types';
   import MonChart from './MonChart.svelte';
+  import MonCurrentValues from './MonCurrentValues.svelte';
+  import MonStatusTimeline from './MonStatusTimeline.svelte';
   import TypeContent from './detail/TypeContent.svelte';
 
   interface Props { check: MonitorCheck; }
@@ -72,6 +74,8 @@
   </div>
 
   {#if !skipChart}
+    <MonCurrentValues {metrics} checkType={check.checkType} />
+
     <div class="mon-period-selector">
       {#each PERIODS as p}
         <button
@@ -90,6 +94,7 @@
       <div class="mon-chart-loading">Fehler beim Laden</div>
     {:else}
       <MonChart {metrics} checkType={check.checkType} />
+      <MonStatusTimeline statusHistory={metrics?.statusHistory} />
     {/if}
   {/if}
 </div>

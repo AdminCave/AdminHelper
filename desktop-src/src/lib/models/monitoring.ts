@@ -137,7 +137,7 @@ export function formatCheckConfig(check: MonitorCheck): KV[] {
     if (excl?.length) kv.push(['Exclude VMIDs', excl.join(', ')]);
   } else if (type === 'zfs_health') {
     kv.push(
-      ['Kapazitaet', `Warn ${(c.capacity_warn as number) || 80}% / Crit ${(c.capacity_crit as number) || 90}%`],
+      ['Kapazität', `Warn ${(c.capacity_warn as number) || 80}% / Crit ${(c.capacity_crit as number) || 90}%`],
     );
   } else if (type === 'docker_health') {
     const ign = c.ignore_containers as string[] | undefined;
