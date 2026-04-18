@@ -40,12 +40,20 @@ und reaktiv ueber Stores statt DOM-imperativen Managern.
 - `desktop/src-tauri/tauri.conf.json` `beforeBuildCommand` zeigt auf
   `../desktop-src` statt `../src`
 - Sidebar-Version-Label von `v0.17.0` auf `v0.18.0`
+- Monitoring-Detail auf Sektions-Dashboard umgestellt: pro Server werden
+  alle Checks in typ-spezifischen Sektionen (Heartbeat, Live, Network,
+  Services, Docker, Backups, ZFS, SMART) gruppiert; jede Zeile klappt
+  inline auf zu Perioden-Tabs (1h/6h/24h/7d) mit Graph und Timeline
 
 ### Removed
 
 - Altes Plain-JS-Frontend (`desktop/src/`) wird vom Tauri-Build nicht
   mehr verwendet (bleibt historisch im Repo erhalten, bis alle
   Referenzen entfernt sind)
+- Monitoring-Card-Grid, Filter-Bar, View-Switch und Hero-Komponenten
+  (`MonCheckPanel/Card/Row`, `MonFilterBar`, `MonDetailPanel`,
+  `hero/Hero*.svelte`) — ersetzt durch `MonServerDashboard` +
+  `section/Sec*.svelte` mit wiederverwendbarem `MonCheckLine`-Snippet
 
 ## [0.17.0] - 2026-04-18
 
