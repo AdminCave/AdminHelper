@@ -790,6 +790,10 @@ export const translations: Translations = {
     "validation.interval.invalid": "Intervall ist ungültig.",
     "validation.serverUrl.required": "Server-URL ist erforderlich.",
     "validation.rdpSize.invalid": "Ungültige RDP-Größe (z. B. 1920x1080).",
+    "loading.generic": "Lade…",
+    "error.rdpAuth": "RDP-Authentifizierung fehlgeschlagen",
+    "connections.empty": "Noch keine Verbindungen angelegt",
+    "connections.noResults": "Keine Treffer für deine Filter",
   },
 
   en: {
@@ -1578,5 +1582,9 @@ export const translations: Translations = {
     "validation.interval.invalid": "Interval is invalid.",
     "validation.serverUrl.required": "Server URL is required.",
     "validation.rdpSize.invalid": "Invalid RDP size (e.g. 1920x1080).",
+    "loading.generic": "Loading…",
+    "error.rdpAuth": "RDP authentication failed",
+    "connections.empty": "No connections saved yet",
+    "connections.noResults": "No matches for your filters",
   },
 };

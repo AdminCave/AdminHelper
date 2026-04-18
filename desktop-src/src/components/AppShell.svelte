@@ -6,7 +6,7 @@
   import { searchTerm } from '$lib/stores/connections';
   import { markRdpError } from '$lib/stores/connectFlow';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
-  import { t } from '$lib/i18n';
+  import { t, tNow } from '$lib/i18n';
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
   import Monitoring from '../pages/Monitoring.svelte';
@@ -95,7 +95,7 @@
         await listen('frpc-terminated', () => markTerminated()),
         await listen<string>('frpc-error', (e) => markError(String(e.payload ?? 'frpc error'))),
         await listen<string>('rdp-error', (e) =>
-          markRdpError(String(e.payload ?? 'RDP-Authentifizierung fehlgeschlagen')),
+          markRdpError(String(e.payload ?? tNow('error.rdpAuth'))),
         ),
       );
     } catch (err) {

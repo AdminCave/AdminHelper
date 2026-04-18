@@ -127,12 +127,12 @@
 
 {#if $connections.length === 0}
   <div class="list" use:accelerateScroll={LIST_FACTOR}>
-    <div class="dash-empty" style="padding: var(--sp-6);">Noch keine Verbindungen angelegt</div>
+    <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.empty')}</div>
   </div>
 {:else if $viewMode === 'list' && $groupFilter === 'single'}
   <div class="list" use:accelerateScroll={LIST_FACTOR}>
     {#if $filteredConnections.length === 0}
-      <div class="dash-empty" style="padding: var(--sp-6);">Keine Treffer fuer deine Filter</div>
+      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
     {:else}
       {#each $filteredConnections as conn (conn.id)}
         {@const tunnelName = tunnelFor(conn)}
@@ -169,7 +169,7 @@
 {:else if $viewMode === 'list' && $groupFilter === 'grouped'}
   <div class="list" use:accelerateScroll={LIST_FACTOR}>
     {#if $groupedConnections.length === 0}
-      <div class="dash-empty" style="padding: var(--sp-6);">Keine Treffer fuer deine Filter</div>
+      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
     {:else}
       {#each $groupedConnections as group (group.key)}
         <div
@@ -203,7 +203,7 @@
 {:else}
   <div class="tree" use:accelerateScroll={LIST_FACTOR}>
     {#if treeNodes.length === 0}
-      <div class="dash-empty" style="padding: var(--sp-6);">Keine Treffer fuer deine Filter</div>
+      <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
     {:else}
       {#each treeNodes as node (node.tag)}
         <div class="tree-group" class:open={isOpen(node.tag)}>
