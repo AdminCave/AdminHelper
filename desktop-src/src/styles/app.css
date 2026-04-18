@@ -603,11 +603,27 @@ html, body {
   display: flex;
   gap: var(--sp-2);
   align-items: center;
+  justify-content: flex-end;
 }
 
 .card-actions .btn.accent {
-  min-width: 88px;
+  min-width: 92px;
   justify-content: center;
+}
+
+/* Sekundaere Aktionen (Edit, Menue-Icons) erscheinen erst beim Hover/Focus
+   der Card. Primaere Aktion (Connect) bleibt immer sichtbar. */
+.card-actions .btn.icon {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.card:hover .card-actions .btn.icon,
+.card:focus-within .card-actions .btn.icon,
+.card-actions .btn.icon:focus-visible {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .card-tags {
