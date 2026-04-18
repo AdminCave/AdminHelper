@@ -1,8 +1,10 @@
 // Monitoring-API: getypte Wrapper um apiProxy() fuer Monitoring-Endpoints.
 // Nimmt die aktuelle AuthSession aus dem session-Store.
 
+import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { AuthSession } from '$lib/bridge/types';
+import { sessionStore } from '$lib/stores/session';
 import type {
   AlertLogEntry,
   AlertRule,
@@ -17,7 +19,7 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const allowSelfSigned = false;
+  const allowSelfSigned = get(sessionStore).settings?.allowSelfSignedCerts ?? false;
   return bridge.apiProxy<T>(
     session.serverUrl,
     session.token,

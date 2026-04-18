@@ -11,6 +11,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
+import { setLanguage } from '$lib/i18n';
 import type { AuthSession, Settings, SyncMode } from '$lib/bridge/types';
 
 interface SessionState {
@@ -44,6 +45,7 @@ export const needsLogin = derived(_state, ($s) => {
 export async function hydrate(): Promise<void> {
   try {
     const s = await bridge.loadSettings();
+    setLanguage(s.language);
     let sess: AuthSession | null = null;
     if (s.mode === 'server') {
       try {

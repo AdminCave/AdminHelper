@@ -8,6 +8,7 @@ import * as tunnelStore from './tunnel';
 import { reloadForMode } from './connections';
 import { reportError, showStatus } from './statusBar';
 import { getIntervalMinutes, getSettingsDefaults, validateSettings } from '$lib/models/settings';
+import { setLanguage } from '$lib/i18n';
 import type { Settings } from '$lib/bridge/types';
 
 export const settingsModalOpen = writable<boolean>(false);
@@ -69,6 +70,7 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
   try {
     await bridge.saveSettings(next);
     await refreshSettings();
+    setLanguage(next.language);
 
     const { session } = get(sessionStore);
 

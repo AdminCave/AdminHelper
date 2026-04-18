@@ -593,6 +593,16 @@ export const translations: Translations = {
     // ── Language ──────────────────────────────────────────────────────
     "language.de": "DE",
     "language.en": "EN",
+
+    // ── Desktop-spezifische Keys ──────────────────────────────────────
+    "nav.dashboard": "Dashboard",
+    "search.placeholder": "Name, Host, URL",
+    "settings.label": "Einstellungen",
+    "settings.mode.local": "Lokal",
+    "settings.mode.sync": "Sync",
+    "settings.mode.server": "Server",
+    "sidebar.collapse": "Sidebar einklappen",
+    "sidebar.expand": "Sidebar ausklappen",
   },
 
   en: {
@@ -1184,5 +1194,15 @@ export const translations: Translations = {
     // ── Language ──────────────────────────────────────────────────────
     "language.de": "DE",
     "language.en": "EN",
+
+    // ── Desktop-spezifische Keys ──────────────────────────────────────
+    "nav.dashboard": "Dashboard",
+    "search.placeholder": "Name, host, URL",
+    "settings.label": "Settings",
+    "settings.mode.local": "Local",
+    "settings.mode.sync": "Sync",
+    "settings.mode.server": "Server",
+    "sidebar.collapse": "Collapse sidebar",
+    "sidebar.expand": "Expand sidebar",
   },
 };
