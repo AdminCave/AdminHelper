@@ -1,6 +1,6 @@
 {
   "productName": "adminhelper",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "identifier": "com.adminhelper.app",
   "build": {
     "frontendDist": "../src"
