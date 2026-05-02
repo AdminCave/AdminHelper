@@ -135,7 +135,7 @@ server_test:
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev
     - cd server
-    - pip install --no-cache-dir -r requirements.txt
+    - pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
   script:
     - pytest -q
   rules:

@@ -1,0 +1,11 @@
+# Dev-Dependencies fuer lokale Tests + CI. NICHT im Production-Container
+# noetig (Dockerfile installiert nur requirements.txt).
+#
+# Lokal:  pip install -r requirements.txt -r requirements-dev.txt
+# CI:     same in der server_test-Job-before_script
+
+-r requirements.txt
+
+pytest>=8.0
+pytest-asyncio>=1.0
+testcontainers[postgres]>=4.7
