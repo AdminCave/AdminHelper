@@ -85,7 +85,7 @@ source .venv/bin/activate
 DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```
 
-Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface und API-Docs unter `/api/docs`.
+Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface und API-Docs unter `/docs` (Swagger UI) bzw. `/openapi.json`.
 
 **Standard-Login:** `admin` / `admin`
 
@@ -136,7 +136,7 @@ cd desktop/src-tauri
 cargo tauri dev
 ```
 
-Der Client oeffnet sich als Desktop-Fenster. Aenderungen am Frontend (`desktop/src/`) werden live uebernommen, Rust-Aenderungen loesen einen Rebuild aus.
+Der Client oeffnet sich als Desktop-Fenster. `tauri.conf.json` ruft `npm --prefix ../../desktop-src run dev` als Vite-Dev-Server auf — Aenderungen am Svelte-Frontend (`desktop-src/`) werden live uebernommen, Rust-Aenderungen loesen einen Rebuild aus. Das alte `desktop/src/` (Plain-JS) ist seit v0.19.0 historisch und wird nicht mehr gebaut.
 
 **Hinweis:** Beim ersten Build muss eine frpc-Platzhalter-Binary existieren:
 
@@ -249,7 +249,7 @@ cd server && source .venv/bin/activate
 DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # In einem anderen Terminal:
-curl http://127.0.0.1:8080/api/docs
+curl http://127.0.0.1:8080/docs
 ```
 
 ### Server-Login per CLI testen
@@ -275,56 +275,63 @@ curl -sk https://localhost/api/frp/tunnels \
 
 ```text
 .
-├─ desktop/                  # Tauri Desktop-Client (SSH/RDP/Web)
-│  ├─ src/                   # Frontend (HTML/CSS/JS)
-│  │  ├─ index.html
-│  │  ├─ styles.css
-│  │  ├─ app.js
-│  │  ├─ connectionModel.js
-│  │  ├─ platformApi.js       # Tauri-Bridge: Auth, Connections, Tunnel, Passwords
-│  │  ├─ settingsModel.js
-│  │  └─ i18n.js
-│  ├─ src-tauri/             # Rust-Backend (Tauri)
+├─ desktop/                  # Tauri Desktop-Client (Wrapper)
+│  ├─ src-tauri/             # Rust-Backend
 │  │  ├─ src/
-│  │  │  ├─ main.rs
-│  │  │  ├─ commands.rs       # Tauri-Commands (IPC-Schnittstelle)
-│  │  │  ├─ auth.rs           # JWT-Login, Keyring-Persistenz
-│  │  │  ├─ frpc.rs           # frpc-Sidecar Prozess-Management
-│  │  │  ├─ tunnel.rs         # Tunnel-Mapping + Connection-Resolution
-│  │  │  ├─ connection/       # SSH/RDP/Web Verbindungslogik
-│  │  │  ├─ storage.rs
-│  │  │  ├─ sync.rs           # Sync + JWT-basierter Connection-Fetch
-│  │  │  ├─ password.rs
-│  │  │  ├─ models.rs
-│  │  │  ├─ validation.rs
-│  │  │  ├─ ansible.rs          # Inventory-Generierung + Playbook-Ausfuehrung
-│  │  │  └─ terminal.rs
-│  │  ├─ binaries/            # frpc-Sidecar Binary (gitignored, CI-Download)
+│  │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
+│  │  │  ├─ commands.rs        # IPC-Schnittstelle
+│  │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
+│  │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
+│  │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
+│  │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
+│  │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
+│  │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausfuehrung
+│  │  │  └─ ...
+│  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
 │  │  └─ capabilities/        # Tauri v2 Security Permissions
-│  └─ scripts/
-├─ server/
-│  ├─ app/                   # FastAPI-Backend (modularer Monolith)
+│  └─ src/                    # ALT (Plain-JS, seit v0.19.0 historisch, nicht mehr gebaut)
+├─ desktop-src/              # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
+│  ├─ src/
+│  │  ├─ lib/bridge/          # 22 typisierte invoke()-Wrapper
+│  │  ├─ lib/stores/          # 12 Stores
+│  │  ├─ lib/models/          # connection, settings, ansible, monitoring (typisiert)
+│  │  ├─ components/          # ~30 Components
+│  │  └─ pages/               # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
+│  └─ vitest.setup.ts         # ~41 Vitest-Unit-Tests
+├─ frontend-src/             # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
+│  ├─ src/
+│  │  ├─ lib/api/             # 11 Module (client + 9 Domain-Wrapper + types)
+│  │  ├─ lib/stores/          # 10 Stores
+│  │  ├─ lib/i18n/            # DE/EN-Dictionaries
+│  │  ├─ pages/               # 8 Produktiv-Pages + Login + Placeholder
+│  │  └─ modals/              # 19 Modal-Komponenten
+│  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+├─ server/                   # FastAPI-Backend (modularer Monolith)
+│  ├─ app/
 │  │  ├─ main.py
-│  │  ├─ core/               # Config, Auth, DB, Middleware
-│  │  └─ modules/            # users, connections, servers, frp, hooks, api_keys, ansible, monitoring_proxy
-│  ├─ frontend/              # Web-Interface (HTML/CSS/JS)
-│  ├─ Dockerfile
+│  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
+│  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
+│  │                          #   ansible, monitoring_proxy
+│  ├─ frontend/               # ALT (Plain-JS, seit v0.17.0 historisch, nicht mehr gebaut)
+│  ├─ Dockerfile              # NICHT mehr gebaut – Repo-Root-Dockerfile ist aktiv
 │  └─ requirements.txt
 ├─ agent-go/                 # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/adminhelper-agent/         # Cobra CLI (run, frpc, monitor, service, version)
-│  ├─ internal/              # Config, FRPC-Sync, Monitor, Service-Verwaltung
-│  ├─ deb/ + rpm/            # Paket-Metadaten
-│  ├─ systemd/               # adminhelper-agent.service + adminhelper-agent.timer
-│  └─ Makefile               # build-linux, build-windows, deb, rpm
-├─ monitoring/
-│  ├─ app/                   # FastAPI Monitoring-Service
-│  │  ├─ routers/            # checks, templates, alerts, agent, admin
-│  │  ├─ checkers/           # ping, tcp, http, agent, plugins
-│  │  └─ core/               # Config, Auth, DB, VictoriaMetrics-Client
+│  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
+│  ├─ internal/               # config, frpc, monitor, service
+│  ├─ deb/, rpm/              # Paket-Metadaten
+│  ├─ systemd/                # adminhelper-agent.service + .timer
+│  └─ Makefile                # build-linux, build-windows, deb, rpm
+├─ monitoring/               # Eigenstaendiger FastAPI-Microservice
+│  ├─ app/
+│  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
+│  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  ├─ core/                # auth, config, database, victoria
+│  │  └─ scheduler.py         # APScheduler fuer Pull-Checks
 │  └─ Dockerfile
-├─ extension/                # Chrome Extension
-├─ docs/                     # Dokumentation (DE + EN)
+├─ extension/                # Browser-Extension (Manifest V3)
+├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
+├─ Dockerfile                # Multi-Stage: Vite-Build (frontend-src) → Python-Runtime
 ├─ docker-compose.yml
 ├─ docker-compose.override.yml  # Lokale Dev-Overrides (gitignored)
 ├─ .gitlab-ci.yml

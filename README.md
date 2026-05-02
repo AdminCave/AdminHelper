@@ -1,6 +1,6 @@
 # AdminHelper
 
-A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** and a fast **HTML/CSS/JS** UI. Manage SSH, RDP, and Web targets in one place with tags, search, and a clean workflow.
+A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** and a typed **Svelte 5 + TypeScript** UI. Manage SSH, RDP, and Web targets in one place with tags, search, and a clean workflow.
 
 ## Highlights
 
@@ -191,7 +191,7 @@ GET    /api/monitoring/templates # Monitoring-Templates (Admin)
 POST   /api/monitoring/agent-keys/{server_id}  # Agent-Key generieren
 ```
 
-API-Dokumentation: `http://localhost:8080/api/docs`
+API-Dokumentation: `http://localhost:8080/docs` (Swagger UI) bzw. `/openapi.json`
 
 ---
 
@@ -247,7 +247,7 @@ Der **Unified Go Agent** (`adminhelper-agent`) vereint FRP-Sync und Monitoring i
 
 ```bash
 # DEB installieren:
-apt install ./adminhelper-agent_0.15.0_amd64.deb
+apt install ./adminhelper-agent_0.20.0_amd64.deb
 
 # Monitoring einrichten:
 sudo adminhelper-agent monitor init \
@@ -349,59 +349,67 @@ cargo tauri build
 
 ```text
 .
-├─ desktop/                  # Tauri Desktop-Client (SSH/RDP/Web)
-│  ├─ src/                   # Frontend (HTML/CSS/JS)
-│  │  ├─ index.html
-│  │  ├─ styles.css
-│  │  ├─ app.js
-│  │  ├─ connectionModel.js
-│  │  ├─ platformApi.js       # Tauri-Bridge: Auth, Connections, Tunnel, Passwords
-│  │  ├─ settingsModel.js
-│  │  └─ i18n.js
-│  ├─ src-tauri/             # Rust-Backend (Tauri)
+├─ desktop/                  # Tauri Desktop-Client (Wrapper)
+│  ├─ src-tauri/             # Rust-Backend
 │  │  ├─ src/
-│  │  │  ├─ main.rs
-│  │  │  ├─ commands.rs       # Tauri-Commands (IPC)
-│  │  │  ├─ auth.rs           # JWT-Login, Keyring-Persistenz
-│  │  │  ├─ frpc.rs           # frpc-Sidecar Prozess-Management
-│  │  │  ├─ tunnel.rs         # Tunnel-Mapping + Connection-Resolution
-│  │  │  ├─ connection/       # SSH/RDP/Web Verbindungslogik
-│  │  │  ├─ storage.rs
-│  │  │  ├─ sync.rs
-│  │  │  ├─ password.rs
-│  │  │  ├─ models.rs
-│  │  │  ├─ validation.rs
-│  │  │  ├─ ansible.rs          # Inventory-Generierung + Playbook-Ausfuehrung
-│  │  │  └─ terminal.rs
+│  │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
+│  │  │  ├─ commands.rs        # IPC-Schnittstelle
+│  │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
+│  │  │  ├─ frpc.rs            # frpc-Sidecar-Prozess
+│  │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
+│  │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
+│  │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
+│  │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausfuehrung
+│  │  │  └─ ...
 │  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
-│  │  └─ capabilities/        # Tauri v2 Security Permissions
-│  └─ scripts/
-├─ server/
-│  ├─ app/                   # FastAPI-Backend (modularer Monolith)
-│  │  ├─ main.py
-│  │  ├─ core/               # Config, Auth, DB, Middleware
-│  │  └─ modules/            # users, connections, servers, frp, hooks, api_keys, ansible, monitoring_proxy
-│  ├─ frontend/              # Web-Interface (HTML/CSS/JS)
-│  ├─ Dockerfile
+│  │  └─ capabilities/        # Tauri v2 Security Permissions (strikt gescopt)
+│  └─ src/                    # ALT (Plain-JS, seit v0.19.0 historisch)
+├─ desktop-src/              # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
+│  ├─ src/
+│  │  ├─ lib/
+│  │  │  ├─ bridge/           # 22 typisierte invoke()-Wrapper
+│  │  │  ├─ stores/           # 12 Stores (session, connections, tunnel, …)
+│  │  │  ├─ models/           # connection / settings / ansible / monitoring
+│  │  │  ├─ api/, i18n/, utils/
+│  │  ├─ components/          # ~30 Components (AppShell, Login, …)
+│  │  ├─ pages/               # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
+│  │  └─ main.ts
+│  └─ vitest.setup.ts         # ~41 Vitest-Unit-Tests
+├─ frontend-src/             # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
+│  ├─ src/
+│  │  ├─ lib/                 # 11 API-Module + 10 Stores + i18n + Hash-Router
+│  │  ├─ pages/               # 8 Produktivseiten + Login + Placeholder
+│  │  ├─ modals/              # 19 Modal-Komponenten
+│  │  └─ App.svelte, main.ts
+│  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+├─ server/                   # FastAPI-Backend (modularer Monolith)
+│  ├─ app/
+│  │  ├─ main.py              # App, Lifespan, Auto-Migrationen, SPA-Fallback
+│  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
+│  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
+│  │                          #   ansible, monitoring_proxy
+│  ├─ frontend/               # ALT (Plain-JS, seit v0.17.0 historisch)
+│  ├─ Dockerfile              # NICHT mehr gebaut – Repo-Root-Dockerfile ist aktiv
 │  └─ requirements.txt
-├─ monitoring/
-│  ├─ app/                   # FastAPI Monitoring-Service
+├─ monitoring/               # Eigenstaendiger FastAPI-Microservice
+│  ├─ app/
 │  │  ├─ main.py
-│  │  ├─ models.py           # Checks, States, Templates, AlertRules, AgentKeys
-│  │  ├─ routers/            # checks, templates, alerts, agent, admin
-│  │  ├─ core/               # Config, Auth, DB
-│  │  └─ scheduler.py        # APScheduler fuer periodische Checks
+│  │  ├─ models.py            # Checks, States, Templates, AlertRules, AgentKeys
+│  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
+│  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  ├─ core/                # auth, config, database, victoria
+│  │  └─ scheduler.py         # APScheduler fuer Pull-Checks
 │  └─ Dockerfile
 ├─ agent-go/                 # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/adminhelper-agent/         # Cobra CLI (run, frpc, monitor, service, version)
-│  ├─ internal/              # Config, FRPC-Sync, Monitor, Service-Verwaltung
-│  ├─ deb/                   # Debian-Paketierung
-│  ├─ rpm/                   # RPM-Paketierung
-│  ├─ systemd/               # adminhelper-agent.service + adminhelper-agent.timer
-│  └─ Makefile               # build-linux, build-windows, deb, rpm
-├─ extension/                # Chrome Extension
-├─ docs/                     # Dokumentation (DE + EN)
+│  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
+│  ├─ internal/               # config, frpc, monitor, service
+│  ├─ deb/, rpm/              # Paket-Metadaten
+│  ├─ systemd/                # adminhelper-agent.service + .timer
+│  └─ Makefile                # build-linux, build-windows, deb, rpm
+├─ extension/                # Browser-Extension (Manifest V3)
+├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
+├─ Dockerfile                # Multi-Stage: Vite-Build (frontend-src) → Python-Runtime
 ├─ docker-compose.yml
 ├─ docker-compose.override.yml  # Lokale Dev-Overrides (gitignored)
 ├─ .gitlab-ci.yml
