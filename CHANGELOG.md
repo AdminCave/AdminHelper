@@ -174,7 +174,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
-[0.20.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.20.0
-[0.19.1]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.19.1
-[0.19.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.19.0
-[0.17.0]: https://git.ks98.de/kevin/simpleremotemanager/-/releases/v0.17.0
+[0.20.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.20.0
+[0.19.1]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.19.1
+[0.19.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.19.0
+[0.17.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.17.0
