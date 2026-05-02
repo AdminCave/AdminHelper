@@ -129,8 +129,11 @@ def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
     return _get_user_from_token(token, db, expected_type="refresh")
 
 
-def _get_api_key_from_header(request: Request, db: Session) -> Optional[ApiKey]:
-    key = request.headers.get("X-API-Key")
+def _get_api_key(request: Request, db: Session) -> Optional[ApiKey]:
+    # Header bevorzugt; Query-Param-Fallback fuer Browser-Extension und
+    # Sync-URLs (curl/wget). Achtung: Query-Param landet ggf. in Server-Logs,
+    # daher in der Doku der Header-Pfad empfohlen.
+    key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if not key:
         return None
     hashed = hash_api_key(key)
@@ -176,7 +179,7 @@ class ApiKeyOrUser:
         db: Session = Depends(get_db),
     ):
         # API-Key prüfen
-        api_key = _get_api_key_from_header(request, db)
+        api_key = _get_api_key(request, db)
         if api_key:
             if self.require_write and api_key.permission != "read_write":
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Schreibzugriff erforderlich")
