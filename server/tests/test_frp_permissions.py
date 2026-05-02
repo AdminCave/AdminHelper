@@ -28,7 +28,7 @@ def _make_config(db, **overrides):
 
 
 def _make_server(db, *, sid: str, name: str):
-    srv = Server(id=sid, name=name)
+    srv = Server(id=sid, name=name, hostname=f"{name}.example.test")
     db.add(srv)
     db.commit()
     db.refresh(srv)
