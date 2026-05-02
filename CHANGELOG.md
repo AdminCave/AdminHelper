@@ -23,6 +23,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   CI installiert beide Files. Production-Container (Dockerfile)
   bleibt schlanker, weil testcontainers + pytest nicht mehr in
   jedem Server-Image landen.
+- `docker compose pull` scheiterte mit `pull access denied for
+  adminhelper-monitoring`, weil das Monitoring-Image nirgends in
+  der Registry lebte (es gab nur einen `docker_server`-Job). Neuer
+  `docker_monitoring`-Job in `.gitlab-ci.yml` (1:1 analog zu
+  `docker_server`) baut + pusht jetzt das Monitoring-Image nach
+  `docker.nevondo.com/$CI_PROJECT_PATH/monitoring` mit den Tags
+  SHA, `latest`, `dev` (main-Branch) und `$CI_COMMIT_TAG` (bei Tags).
+  `MONITORING_IMAGE`-Default in `docker-compose.yml` zeigt jetzt
+  auf den Registry-Pfad statt den nicht-pullbaren lokalen Tag.
 
 ## [0.21.0] - 2026-05-02
 
