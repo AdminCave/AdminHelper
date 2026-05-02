@@ -9,15 +9,131 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Highlights
 
-Migration der Server-Side-Persistenz von **SQLite auf PostgreSQL 17**
-(server + monitoring). Beide FastAPI-Services teilen sich einen Postgres-
-Cluster mit zwei DBs (`adminhelper`, `adminhelper_monitor`). Schema-Anlage
-uebernimmt jetzt **Alembic** statt `Base.metadata.create_all()`. Tests
-laufen gegen ein echtes Postgres via `testcontainers` (lokal) bzw.
+**Pre-Release-Welle**: drei groesse Stoesse parallel gefahren —
+Brand-Umbenennung **SimpleRemoteManager/SRM &rarr; AdminHelper**,
+**6 P0-Sicherheits-Fixes** aus dem Pre-Release-Audit, und Migration
+der Server-Side-Persistenz von **SQLite auf PostgreSQL 17**
+(server + monitoring). Plus 2 P1-Cleanups, Plain-JS-Desktop-Client-
+Reste entfernt, Doku komplett aufgeraeumt.
+
+Beide FastAPI-Services teilen sich einen Postgres-Cluster mit zwei
+DBs (`adminhelper`, `adminhelper_monitor`). Schema-Anlage uebernimmt
+jetzt **Alembic** statt `Base.metadata.create_all()`. Tests laufen
+gegen ein echtes Postgres via `testcontainers` (lokal) bzw.
 `services: postgres:17-alpine` (CI), nicht mehr gegen SQLite-in-memory.
 
-Plus: alle Pre-Release P0-Sicherheits-Fixes aus dem Audit, Brand-
-Migration auf "AdminHelper", komplettes Doku-Refresh.
+22 Commits seit v0.20.0.
+
+### Brand
+
+- Vollstaendige Umbenennung des Projekts von "SimpleRemoteManager"
+  (intern auch "SRM") auf **"AdminHelper"** &mdash; in Doku, Code,
+  Storage-Keys (localStorage `adminhelper_token`, `adminhelper_refresh_token`,
+  `adminhelper_language`), Tauri-Keyring-Service (`com.adminhelper.app`),
+  Browser-Extension, FRP-Provision-Token-Prefix, Go-Agent-Variablen.
+- GitLab-Repo migriert auf <https://git.nevondo.com/ks98/adminhelper>;
+  Doku-Verweise und CHANGELOG-Release-Links aktualisiert.
+- Bewusst behalten: Legacy-Paketnamen (`srm-frpc-client`, `srm-monitor-agent`,
+  `srm-agent`) in DEB-`Replaces`/RPM-`Obsoletes` &mdash; werden gebraucht
+  fuer DEB/RPM-Upgrades von Vorgaenger-Installationen.
+
+### Security (Pre-Release-Audit-Fixes)
+
+- **P0-1**: API-Key wird jetzt zusaetzlich als Query-Parameter akzeptiert
+  (`?api_key=...`), nicht nur als `X-API-Key`-Header &mdash; Browser-
+  Extension funktionierte vorher gar nicht.
+- **P0-2**: `MONITOR_API_KEY`-Mismatch zwischen server und monitoring
+  geloest; `init-secrets.sh` generiert jetzt einen synchronen Wert.
+  Vorher: Default-Setup hatte 401 auf jedem `/api/monitoring/*`-Aufruf.
+- **P0-3**: Authorization-Bypass im FRP-Visitor-Bundle behoben &mdash;
+  Non-Admin-User ohne Server-Zuweisungen sahen vorher *alle* STCP-Tunnel
+  inklusive Secret-Keys (`if server_ids:`-Logik invertiert). Plus
+  5 Regression-Tests in `test_frp_permissions.py`.
+- **P0-4**: Frontend-Logout invalidiert JWT jetzt auch serverseitig
+  via `POST /api/auth/logout`. Vorher: Token blieb 8h gueltig nach "Abmelden".
+- **P0-5**: Security-Headers-Middleware hinzugefuegt
+  (HSTS, CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy).
+  CSP nur fuer SPA-HTML, nicht fuer `/api/docs` (Swagger-UI braucht CDN).
+- **P0-6**: Default-Admin `admin/admin` entfernt; ersetzt durch
+  Bootstrap-Token-Pattern (Vaultwarden/Gitea-Style). Server schreibt
+  Setup-Token in `data/.bootstrap_token`, Admin wird ueber
+  `POST /api/auth/bootstrap` angelegt. 6 neue Endpoint-Tests.
+- **P1-6 + P1-7**: stale `server/frontend/`-Stub-Verzeichnis entfernt,
+  Dead Config `MONITOR_AGENT_API_KEYS` aus `docker-compose.yml` raus.
+
+### Database (SQLite &rarr; PostgreSQL)
+
+- PostgreSQL 17 als neuer `postgres`-Service in `docker-compose.yml`
+  mit Healthcheck und `service_healthy`-Dependencies fuer beide Apps.
+- `server/alembic/` und `monitoring/alembic/` mit initialen Migrations.
+- `monitoring/docker-entrypoint.sh` neu (vorher nur `CMD`).
+- Server- und Monitoring-Entrypoint warten via `pg_isready` auf die DB
+  und fuehren `alembic upgrade head` vor `uvicorn`-Start aus.
+- `scripts/postgres-init.sh` legt beim ersten Postgres-Start die zweite
+  DB (`adminhelper_monitor`) idempotent an.
+- `scripts/pg-backup.sh` + `scripts/pg-restore.sh` fuer pg_dump-basiertes
+  Backup beider DBs (Custom-Format, 7-Tage-Retention).
+- Optionaler `pg-backup`-Service in `docker-compose.yml` (auskommentiert
+  als Opt-In-Beispiel) &mdash; taegliche Backups nach `./backups/`.
+- `init-secrets.sh` erzeugt zusaetzlich `POSTGRES_PASSWORD` (32 Bytes hex).
+- `psycopg[binary]>=3.1`, `alembic>=1.13` in beiden requirements.txt.
+- `testcontainers[postgres]>=4.7` als dev-dependency im server.
+- Server-`pytest`-Job in `.gitlab-ci.yml` (existierte vorher nicht):
+  nutzt `services: postgres:17-alpine` als CI-Sidecar.
+- `tests/test_alembic_consistency.py`: Drift-Detector zwischen
+  `Base.metadata` und Alembic-Migrations, laeuft bei jedem CI-Run.
+
+### Other
+
+- Plain-JS-Desktop-Client (`desktop/src/`, ~6670 Zeilen) komplett
+  geloescht &mdash; war seit v0.19.0 nur noch historisch im Repo.
+  8 Migrationskontext-Kommentare in `desktop-src/` bereinigt.
+- `/api/docs` Swagger-UI-Pfad in der Doku korrigiert (war faelschlich
+  als `/docs` dokumentiert; `app/main.py` setzt explizit
+  `docs_url='/api/docs'`).
+- README + DEVELOPMENT.md auf aktuellen v0.20.0-Stand gebracht
+  (Lead-Beschreibung Svelte 5, Project-Tree mit `desktop-src/` +
+  `frontend-src/` als produktiven Frontends).
+
+### Changed
+
+- Server-Side-DBs von SQLite auf PostgreSQL umgestellt:
+  - `server/app/core/database.py` + `monitoring/app/core/database.py`:
+    Engine ohne `check_same_thread`, dafuer Pool (size=10, overflow=20,
+    pre-ping, recycle=3600).
+  - `server/app/core/config.py` + `monitoring/app/core/config.py`:
+    `DATABASE_URL` aus Env mit Postgres-Default-Fallback.
+- Beide Dockerfiles installieren `postgresql-client` (fuer `pg_isready`),
+  kopieren `alembic/`-Folder in den Container.
+- `server/tests/conftest.py` komplett neu: testcontainers-Postgres,
+  SAVEPOINT-Pattern fuer Test-Isolation (kein DROP/CREATE pro Test).
+- Tests jetzt 78 (77 bestehende + 1 alembic-consistency); Wallclock
+  ~17s lokal (12s Container-Boot einmalig), ~8s im Cache-Lauf.
+
+### Removed
+
+- `_migrate_connections_json`, `_migrate_add_columns`,
+  `_migrate_visitors_to_users` aus `server/app/main.py` (PRAGMA-basierte
+  SQLite-only Migrationen, jetzt durch Alembic ersetzt).
+- `_migrate_columns`, `_migrate_agent_keys_to_hash` aus
+  `monitoring/app/main.py` (gleiches Pattern).
+- `Base.metadata.create_all()` aus beiden Lifespans (Alembic ist neuer
+  Schema-Owner).
+- `CONNECTIONS_FILE`-Konstante aus `server/app/core/config.py`
+  (Konsument war `_migrate_connections_json`).
+- `desktop/src/` (Plain-JS-Frontend) und 8 SQLite-Stub-Files unter
+  `server/frontend/`.
+
+### Migration
+
+- Bestehende lokale `data/db.sqlite3` und `data/monitor.sqlite3` sind
+  obsolete und koennen geloescht werden.
+- Pre-Release-Status: keine Production-Datenmigration noetig.
+- Beim Update bestehender Setups vor dem ersten Restart:
+  `./scripts/init-secrets.sh` ausfuehren, damit `POSTGRES_PASSWORD`
+  in der `.env` steht (sonst weigert sich der Postgres-Container).
+- `data/`-Verzeichnis bleibt erhalten (Bootstrap-Token, .secret_key,
+  FRP-PKI), nur die DB-Datei darin ist obsolete.
 
 ### Added
 
@@ -248,6 +364,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.21.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.21.0
 [0.20.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.20.0
 [0.19.1]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.19.1
 [0.19.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.19.0
