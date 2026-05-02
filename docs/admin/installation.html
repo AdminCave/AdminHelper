@@ -159,13 +159,23 @@ docker compose up -d</code></pre>
           <div class="code-header"><span>.env</span></div>
 <pre><code>TRUSTED_PROXIES=127.0.0.1,::1</code></pre>
 
-          <h2 id="erstanmeldung">Erstanmeldung</h2>
-          <ol>
-            <li>Web-Panel öffnen: <code>https://srm.example.com</code></li>
-            <li>Login mit <code>admin</code> + dem Wert aus <code>ADMIN_PASSWORD</code></li>
-            <li>Unter <em>Benutzer</em> einen eigenen Admin-Account anlegen, ausloggen</li>
-            <li>Mit dem neuen Account anmelden und den initialen <code>admin</code>-Account deaktivieren</li>
-          </ol>
+          <h2 id="erstanmeldung">Erstanmeldung &ndash; Bootstrap-Token</h2>
+          <p>Es gibt <strong>keinen</strong> fest verdrahteten Default-Login mehr. Beim ersten Start mit leerem <code>ADMIN_PASSWORD</code> generiert der Server einen einmaligen Setup-Token nach <code>data/.bootstrap_token</code> und zeigt ihn im WARNING-Log:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose logs server | grep -A2 'Setup-Token'</code></pre>
+          <p>Mit dem Token den ersten Admin anlegen:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>curl -k -X POST https://srm.example.com/api/auth/bootstrap \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"&lt;TOKEN&gt;","username":"admin","password":"&lt;eigenes-passwort&gt;"}'</code></pre>
+          <p>Antwort enth&auml;lt sofort <code>access_token</code> und <code>refresh_token</code>. Die Token-Datei wird nach erfolgreichem Bootstrap geloescht. Der Endpoint kann nicht erneut aufgerufen werden, sobald ein User existiert (409-Antwort).</p>
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div>
+              <div class="callout-title">CI / Power-User: <code>ADMIN_PASSWORD</code> direkt setzen</div>
+              <p>Wenn du in <code>.env</code> einen anderen Wert als <code>admin</code> oder leer setzt (z.&nbsp;B. <code>ADMIN_PASSWORD=initialpw</code>), wird beim ersten Start direkt ein User <code>admin</code> mit diesem Passwort angelegt &ndash; kein Bootstrap-Schritt n&ouml;tig. Praktisch f&uuml;r CI-Pipelines.</p>
+            </div>
+          </div>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2v1M19.07 4.93l-.71.71M22 12h-1M4.93 4.93l.71.71M2 12h1"/><path d="M12 17a5 5 0 0 0 5-5 5 5 0 0 0-10 0 5 5 0 0 0 5 5z"/></svg>

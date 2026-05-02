@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import (
     verify_password,
+    hash_password,
+    hash_api_key,
     create_access_token,
     create_refresh_token,
     get_current_user,
@@ -13,10 +15,18 @@ from app.core.auth import (
     blacklist_token,
     is_token_blacklisted,
 )
+from app.core.config import BOOTSTRAP_TOKEN_FILE
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.modules.users.schemas import LoginRequest, LogoutRequest, RefreshRequest, TokenResponse, UserMe
+from app.modules.users.schemas import (
+    BootstrapRequest,
+    LoginRequest,
+    LogoutRequest,
+    RefreshRequest,
+    TokenResponse,
+    UserMe,
+)
 from app.modules.users.models import User
 
 logger = logging.getLogger("adminhelper.auth_router")
@@ -120,3 +130,65 @@ def logout(
 @router.get("/me", response_model=UserMe)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/bootstrap", response_model=TokenResponse, status_code=201)
+def bootstrap(data: BootstrapRequest, request: Request, db: Session = Depends(get_db)):
+    """Legt den ersten Admin-User per Setup-Token an.
+
+    Aktiv nur, wenn ADMIN_PASSWORD leer/'admin' war beim ersten Start —
+    der Server hat dann einen Token nach DATA_DIR/.bootstrap_token (Hash)
+    geschrieben und ihn im WARNING-Log angezeigt. Sobald ein User existiert,
+    ist der Endpoint dauerhaft tot (409).
+    """
+    ip = resolve_client_ip(request)
+    _check_rate_limit(ip)
+
+    if db.query(User).count() > 0:
+        # Server ist bereits initialisiert – kein Bootstrap mehr moeglich.
+        # Gleiche Antwort wie 'kein Token aktiv', um Auskunft ueber DB-State
+        # zu vermeiden.
+        _record_failed_attempt(ip)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Server ist bereits initialisiert",
+        )
+
+    if not BOOTSTRAP_TOKEN_FILE.exists():
+        _record_failed_attempt(ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kein Bootstrap-Token aktiv",
+        )
+
+    expected = BOOTSTRAP_TOKEN_FILE.read_text().strip()
+    if hash_api_key(data.token) != expected:
+        _record_failed_attempt(ip)
+        logger.warning("Bootstrap-Versuch mit ungueltigem Token von IP=%s", ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungueltiger Bootstrap-Token",
+        )
+
+    user = User(
+        username=data.username,
+        hashed_password=hash_password(data.password),
+        is_admin=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Token verbrauchen — auch wenn Datei-Loeschen scheitert, ist die
+    # 'count() > 0'-Pruefung oben weiterhin der wirksame Schutz.
+    try:
+        BOOTSTRAP_TOKEN_FILE.unlink()
+    except OSError:
+        logger.warning("Bootstrap-Token-Datei konnte nicht geloescht werden: %s", BOOTSTRAP_TOKEN_FILE)
+
+    _reset_rate_limit(ip)
+    logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)
+
+    access = create_access_token({"sub": user.username})
+    refresh = create_refresh_token({"sub": user.username})
+    return TokenResponse(access_token=access, refresh_token=refresh)

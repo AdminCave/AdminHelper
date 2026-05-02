@@ -38,13 +38,15 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 DATABASE_URL = f"sqlite:///{DATA_DIR}/db.sqlite3"
 CONNECTIONS_FILE = DATA_DIR / "connections.json"
 
+# ADMIN_PASSWORD: optional. Wenn leer ODER auf 'admin' gesetzt, wird beim
+# ersten Start KEIN Default-User angelegt; stattdessen schreibt der Server
+# einen einmaligen Bootstrap-Token nach DATA_DIR/.bootstrap_token, mit
+# dem der Admin per POST /api/auth/bootstrap angelegt werden muss. Wenn
+# ein anderer Wert gesetzt ist, legt der Server direkt einen Admin-User
+# an (CI / Test / explizite Power-User-Konfiguration).
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
-if not ADMIN_PASSWORD:
-    ADMIN_PASSWORD = "admin"
-    logger.warning(
-        "ADMIN_PASSWORD nicht gesetzt — verwende unsicheres Default-Passwort 'admin'. "
-        "Setze die Umgebungsvariable ADMIN_PASSWORD fuer eine sichere Installation!"
-    )
+
+BOOTSTRAP_TOKEN_FILE = DATA_DIR / ".bootstrap_token"
 
 # FRP-Konfigurationsverzeichnis (Shared Volume mit frps-Container)
 FRP_CONFIG_DIR = Path(os.environ.get("FRP_CONFIG_DIR", str(DATA_DIR / "frp-config")))

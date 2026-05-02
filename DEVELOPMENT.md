@@ -87,7 +87,7 @@ DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 Der Server laeuft dann unter `http://127.0.0.1:8080` mit Web-Interface und API-Docs unter `/api/docs` (Swagger UI) bzw. `/openapi.json`.
 
-**Standard-Login:** `admin` / `admin`
+**Erstanmeldung:** Es gibt keinen Default-Login mehr. Im Log nach `Setup-Token` suchen, dann mit dem Token einen Admin per `POST /api/auth/bootstrap` anlegen (siehe README). Fuer schnelle lokale Entwicklung kannst du in der `.env` `ADMIN_PASSWORD=dev` setzen — dann legt der Server beim Start einen Admin `admin/dev` direkt an.
 
 Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden (siehe `.env.example`).
 
@@ -124,7 +124,7 @@ services:
     image: adminhelper-server:dev
     environment:
       - DOMAIN=localhost
-      - ADMIN_PASSWORD=admin
+      - ADMIN_PASSWORD=dev   # nur fuer lokale Entwicklung; Production: leer lassen + Bootstrap-Token
 ```
 
 **Logs ansehen:**

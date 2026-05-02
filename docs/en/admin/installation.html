@@ -105,17 +105,23 @@ cp .env.example .env
     }
 }</code></pre>
 
-          <h2>First Login</h2>
-          <ol>
-            <li>Browse to <code>https://srm.example.com</code>.</li>
-            <li>Log in as <code>admin</code> with the value from <code>ADMIN_PASSWORD</code>.</li>
-            <li>Change the password in the profile menu.</li>
-            <li>Unset <code>ADMIN_PASSWORD</code> in <code>.env</code> and restart the server.</li>
-          </ol>
+          <h2>First Login &ndash; Bootstrap Token</h2>
+          <p>There is <strong>no</strong> default login anymore. With an empty <code>ADMIN_PASSWORD</code>, the server generates a one-time setup token at <code>data/.bootstrap_token</code> and prints it to the WARNING log:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>docker compose logs server | grep -A2 'Setup-Token'</code></pre>
+          <p>Use the token to create the first admin:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>curl -k -X POST https://srm.example.com/api/auth/bootstrap \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"&lt;TOKEN&gt;","username":"admin","password":"&lt;your-password&gt;"}'</code></pre>
+          <p>The response contains <code>access_token</code> and <code>refresh_token</code> immediately. The token file is deleted after a successful bootstrap and the endpoint can no longer be called once a user exists (returns 409).</p>
 
-          <div class="callout callout-warn" data-reveal>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <div><div class="callout-title">ADMIN_PASSWORD is one-shot</div><p>The bootstrap password is consumed on first user creation. Leaving it in <code>.env</code> is harmless but unnecessary – the server ignores it once the <code>admin</code> user exists.</p></div>
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div>
+              <div class="callout-title">CI / power users: set <code>ADMIN_PASSWORD</code> directly</div>
+              <p>Setting any value other than <code>admin</code> or empty in <code>.env</code> (e.g. <code>ADMIN_PASSWORD=initialpw</code>) creates an <code>admin</code> user with that password on first start &ndash; no bootstrap step needed. Convenient for CI pipelines.</p>
+            </div>
           </div>
 
           <div class="page-nav">

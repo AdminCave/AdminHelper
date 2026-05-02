@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -21,6 +21,13 @@ class RefreshRequest(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: Optional[str] = None
+
+
+class BootstrapRequest(BaseModel):
+    """Erstellt den ersten Admin-User mit dem Bootstrap-Token aus den Server-Logs."""
+    token: str
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserMe(BaseModel):

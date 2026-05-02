@@ -142,7 +142,23 @@ docker compose up -d
 
 Der Server ist dann unter `http://localhost:8080` erreichbar.
 
-**Standard-Zugangsdaten:** `admin` / `admin` (über `ADMIN_PASSWORD` Env-Variable änderbar — bitte vor dem Produktiveinsatz tun)
+**Erstanmeldung — Bootstrap-Token-Flow:**
+
+Es gibt **keinen** Default-Login mit `admin/admin` mehr. Beim ersten Start (mit leerem `ADMIN_PASSWORD`) schreibt der Server einen einmaligen Setup-Token in `data/.bootstrap_token` und zeigt ihn im Log:
+
+```bash
+docker compose logs server | grep -A2 'Setup-Token'
+```
+
+Damit den ersten Admin anlegen:
+
+```bash
+curl -k -X POST https://localhost/api/auth/bootstrap \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<TOKEN>","username":"admin","password":"<eigenes-passwort>"}'
+```
+
+Antwort enthält direkt `access_token` + `refresh_token` — kein zusätzlicher Login nötig. Token-Datei wird nach dem Bootstrap automatisch gelöscht.
 
 > **Warum `init-secrets.sh`?** Server- und Monitoring-Container teilen sich einen `MONITOR_API_KEY` als internes Shared Secret. Wenn der Wert in `.env` leer ist, generiert sich der Monitoring-Container einen eigenen Random — und die Server-zu-Monitoring-Aufrufe scheitern mit 401, was die Monitoring-Page in der Web-UI tot wirken lässt. Das Init-Script fixt das.
 

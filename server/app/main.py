@@ -9,8 +9,9 @@ from pathlib import Path
 from sqlalchemy import text
 
 from app.core.database import engine, SessionLocal, Base
-from app.core.config import ADMIN_PASSWORD, CONNECTIONS_FILE
-from app.core.auth import hash_password
+import secrets
+from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE, CONNECTIONS_FILE
+from app.core.auth import hash_api_key, hash_password
 from app.core.middleware import IPFilterMiddleware
 
 # Models importieren, damit Base.metadata sie kennt
@@ -38,14 +39,64 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_admin(db):
-    if db.query(User).count() == 0:
-        admin = User(
-            username="admin",
-            hashed_password=hash_password(ADMIN_PASSWORD),
-            is_admin=True,
-        )
-        db.add(admin)
-        db.commit()
+    """Stellt sicher, dass ein Admin angelegt wird oder ein Bootstrap-Pfad existiert.
+
+    - Wenn schon User existieren: nichts tun (idempotent).
+    - Wenn ADMIN_PASSWORD leer ODER 'admin': KEIN Default-User; stattdessen
+      Bootstrap-Token in DATA_DIR/.bootstrap_token, mit dem der Admin per
+      POST /api/auth/bootstrap angelegt wird (analog Vaultwarden/Gitea).
+    - Wenn ADMIN_PASSWORD anders: Admin wie bisher direkt anlegen
+      (fuer CI/Test/Power-User mit explizit gesetztem Passwort).
+    """
+    if db.query(User).count() > 0:
+        # Schon initialisiert – Bootstrap-Token aus alten Setups aufraeumen,
+        # falls ein Admin sich anders als per Bootstrap angemeldet hat.
+        if BOOTSTRAP_TOKEN_FILE.exists():
+            try:
+                BOOTSTRAP_TOKEN_FILE.unlink()
+            except OSError:
+                pass
+        return
+
+    if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
+        _emit_bootstrap_token()
+        return
+
+    admin = User(
+        username="admin",
+        hashed_password=hash_password(ADMIN_PASSWORD),
+        is_admin=True,
+    )
+    db.add(admin)
+    db.commit()
+    logger.info("Default-Admin 'admin' aus ADMIN_PASSWORD-Env angelegt.")
+
+
+def _emit_bootstrap_token():
+    """Generiert und persistiert einen einmaligen Bootstrap-Token, loggt ihn prominent."""
+    token = secrets.token_urlsafe(32)
+    BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(token))
+    try:
+        BOOTSTRAP_TOKEN_FILE.chmod(0o600)
+    except OSError:
+        pass
+
+    bar = "=" * 78
+    logger.warning(bar)
+    logger.warning("KEIN ADMIN-USER vorhanden und ADMIN_PASSWORD ist leer/'admin'.")
+    logger.warning("Setup-Token (gilt einmal, wird nach Verbrauch geloescht):")
+    logger.warning("    %s", token)
+    logger.warning("")
+    logger.warning("Ersten Admin anlegen mit:")
+    logger.warning("    curl -k -X POST https://<host>/api/auth/bootstrap \\")
+    logger.warning("         -H 'Content-Type: application/json' \\")
+    logger.warning(
+        "         -d '{\"token\":\"%s\",\"username\":\"<dein-name>\",\"password\":\"<dein-pw>\"}'",
+        token,
+    )
+    logger.warning("")
+    logger.warning("Token-Hash liegt in %s (gegen unauthorized read 0600).", BOOTSTRAP_TOKEN_FILE)
+    logger.warning(bar)
 
 
 def _migrate_connections_json(db):
