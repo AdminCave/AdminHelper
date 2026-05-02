@@ -35,8 +35,13 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 Stunden
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-DATABASE_URL = f"sqlite:///{DATA_DIR}/db.sqlite3"
-CONNECTIONS_FILE = DATA_DIR / "connections.json"
+# DATABASE_URL: liest aus Env, faellt auf Postgres-Default fuer lokale Dev zurueck.
+# Schema-Anlage uebernimmt Alembic (siehe server/alembic/), nicht mehr
+# Base.metadata.create_all().
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper",
+)
 
 # ADMIN_PASSWORD: optional. Wenn leer ODER auf 'admin' gesetzt, wird beim
 # ersten Start KEIN Default-User angelegt; stattdessen schreibt der Server
