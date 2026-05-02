@@ -11,6 +11,10 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY);
+}
+
 export function setTokens(access: string, refresh: string): void {
   accessToken = access;
   localStorage.setItem(TOKEN_KEY, access);

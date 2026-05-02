@@ -1,4 +1,4 @@
-import { http, setTokens, clearTokens } from './client';
+import { http, setTokens, clearTokens, getRefreshToken } from './client';
 import type { LoginResponse, User } from './types';
 
 export async function login(username: string, password: string): Promise<User> {
@@ -7,8 +7,15 @@ export async function login(username: string, password: string): Promise<User> {
   return me();
 }
 
-export function logout(): void {
-  clearTokens();
+export async function logout(): Promise<void> {
+  const refresh = getRefreshToken();
+  try {
+    await http.post('/api/auth/logout', refresh ? { refresh_token: refresh } : undefined);
+  } catch {
+    // Lokales Clear muss in jedem Fall passieren (z.B. wenn Server unerreichbar).
+  } finally {
+    clearTokens();
+  }
 }
 
 export function me(): Promise<User> {
