@@ -1,21 +1,20 @@
-import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
-from sqlalchemy import text
 
-from app.core.database import engine, SessionLocal, Base
-import secrets
-from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE, CONNECTIONS_FILE
+from app.core.database import SessionLocal
+from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE
 from app.core.auth import hash_api_key, hash_password
 from app.core.middleware import IPFilterMiddleware
 
-# Models importieren, damit Base.metadata sie kennt
-from app.modules.users.models import User, TokenBlacklist  # noqa: F401
+# Models importieren, damit Base.metadata sie kennt (auch wenn Schema-Anlage
+# jetzt von Alembic uebernommen wird — wichtig fuer ORM-Queries im Lifespan).
+from app.modules.users.models import User  # noqa: F401
 from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
@@ -99,77 +98,6 @@ def _emit_bootstrap_token():
     logger.warning(bar)
 
 
-def _migrate_connections_json(db):
-    """Migriert connections.json in die SQLite-Datenbank (einmalig beim ersten Start)."""
-    if not CONNECTIONS_FILE.exists():
-        return
-
-    if db.query(Connection).count() > 0:
-        return
-
-    try:
-        with open(CONNECTIONS_FILE, "r", encoding="utf-8") as f:
-            connections = json.load(f)
-
-        if not connections:
-            return
-
-        for data in connections:
-            conn = Connection.from_dict(data)
-            db.add(conn)
-
-        db.commit()
-        logger.info("Migration: %d Connections aus connections.json importiert", len(connections))
-
-        backup = CONNECTIONS_FILE.with_suffix(".json.migrated")
-        CONNECTIONS_FILE.rename(backup)
-        logger.info("Migration: connections.json → connections.json.migrated")
-    except Exception:
-        db.rollback()
-        logger.exception("Migration von connections.json fehlgeschlagen")
-
-
-def _migrate_add_columns(db):
-    """Fuegt neue Spalten zu bestehenden Tabellen hinzu (idempotent)."""
-    # tags zu frp_tunnels
-    rows = db.execute(text("PRAGMA table_info(frp_tunnels)")).fetchall()
-    tunnel_cols = {row[1] for row in rows}
-    if tunnel_cols and "tags" not in tunnel_cols:
-        db.execute(text("ALTER TABLE frp_tunnels ADD COLUMN tags TEXT"))
-        logger.info("Migration: tags zu frp_tunnels hinzugefuegt")
-
-    # TLS-Felder aus frp_server_config entfernen
-    rows = db.execute(text("PRAGMA table_info(frp_server_config)")).fetchall()
-    frp_cols = {row[1] for row in rows}
-    for col in ("tls_force", "tls_cert_file", "tls_key_file", "tls_ca_file"):
-        if col in frp_cols:
-            db.execute(text(f"ALTER TABLE frp_server_config DROP COLUMN {col}"))
-            logger.info("Migration: %s aus frp_server_config entfernt", col)
-    db.commit()
-
-
-def _migrate_visitors_to_users(db):
-    """Migriert Visitor-Server-Zuweisungen zu User-Server-Zuweisungen und entfernt alte Tabellen."""
-    rows = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='frp_visitor_servers'")).fetchall()
-    if not rows:
-        return
-
-    result = db.execute(text("""
-        INSERT OR IGNORE INTO user_servers (user_id, server_id)
-        SELECT u.id, vs.server_id
-        FROM frp_visitor_servers vs
-        JOIN frp_visitors v ON v.id = vs.visitor_id
-        JOIN users u ON u.username = REPLACE(v.name, 'tech-', '')
-    """))
-    if result.rowcount > 0:
-        logger.info("Migration: %d Visitor-Server-Zuweisungen zu Users migriert", result.rowcount)
-
-    db.execute(text("DROP TABLE IF EXISTS frp_visitor_servers"))
-    db.execute(text("DROP TABLE IF EXISTS frp_visitors"))
-    logger.info("Migration: frp_visitors und frp_visitor_servers entfernt")
-    db.commit()
-
-
 def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
     """Prueft ob das Server-Cert neu generiert werden muss (fehlende/falsche SANs)."""
     import ipaddress
@@ -216,15 +144,16 @@ def _ensure_pki(db):
 
 
 def _run_startup_tasks():
-    """Fuehrt alle Migrationen und Startup-Tasks in einer Session aus."""
-    Base.metadata.create_all(bind=engine)
+    """Fuehrt Startup-Tasks in einer Session aus.
 
+    Schema-Anlage uebernimmt Alembic (siehe server/alembic/), nicht mehr
+    Base.metadata.create_all(). Historische SQLite-PRAGMA-Migrationen
+    (_migrate_add_columns, _migrate_connections_json, _migrate_visitors_to_users)
+    sind ersatzlos entfernt — Pre-Release, keine Bestandsdaten.
+    """
     db = SessionLocal()
     try:
-        _migrate_add_columns(db)
         _ensure_admin(db)
-        _migrate_connections_json(db)
-        _migrate_visitors_to_users(db)
         _ensure_pki(db)
     finally:
         db.close()
