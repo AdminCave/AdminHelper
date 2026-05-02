@@ -62,7 +62,6 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       - VICTORIA_METRICS_URL=http://victoria:8428
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
-      - MONITOR_AGENT_API_KEYS=${MONITOR_AGENT_API_KEYS:-}
     restart: unless-stopped
     depends_on:
       - victoria

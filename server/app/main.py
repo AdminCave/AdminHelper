@@ -235,9 +235,13 @@ app.include_router(frp_router)
 app.include_router(monitoring_proxy_router)
 app.include_router(ansible_router)
 
-# Statische Dateien aus frontend/ ausliefern (Vite-Build-Output)
+# Statische Dateien aus frontend/ ausliefern (Vite-Build-Output).
+# Im Production-Container wird der Vite-Build aus frontend-src/dist/ via
+# Multi-Stage-Dockerfile nach /app/frontend/ kopiert. Im Dev-Modus mit
+# uvicorn ohne Build existiert das Verzeichnis nicht — Mount conditional.
 static_dir = Path(__file__).parent.parent / "frontend"
-app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+if (static_dir / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
 if (static_dir / "fonts").is_dir():
     app.mount("/fonts", StaticFiles(directory=static_dir / "fonts"), name="fonts")
 
