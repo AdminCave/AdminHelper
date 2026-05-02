@@ -1,7 +1,7 @@
 import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 
-const TOKEN_KEY = 'srm_token';
-const REFRESH_KEY = 'srm_refresh_token';
+const TOKEN_KEY = 'adminhelper_token';
+const REFRESH_KEY = 'adminhelper_refresh_token';
 
 let accessToken: string | null = localStorage.getItem(TOKEN_KEY);
 let refreshInFlight: Promise<boolean> | null = null;

@@ -120,7 +120,7 @@ export async function mockApi(page: Page): Promise<void> {
 
 export async function seedAuth(page: Page): Promise<void> {
   await page.addInitScript((tokens: typeof TOKENS) => {
-    window.localStorage.setItem('srm_token', tokens.access_token);
-    window.localStorage.setItem('srm_refresh_token', tokens.refresh_token);
+    window.localStorage.setItem('adminhelper_token', tokens.access_token);
+    window.localStorage.setItem('adminhelper_refresh_token', tokens.refresh_token);
   }, TOKENS);
 }

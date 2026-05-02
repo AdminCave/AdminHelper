@@ -51,7 +51,7 @@ pub fn rdp_storage_key_required(connection: &Connection) -> Result<String, AppEr
 #[cfg(unix)]
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
     use keyring::{Entry, Error as KeyringError};
-    const PASSWORD_SERVICE: &str = "com.simpleremote.manager";
+    const PASSWORD_SERVICE: &str = "com.adminhelper.app";
 
     let key = match rdp_storage_key(connection) {
         Some(value) => value,
@@ -70,7 +70,7 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
 #[cfg(unix)]
 pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<(), AppError> {
     use keyring::Entry;
-    const PASSWORD_SERVICE: &str = "com.simpleremote.manager";
+    const PASSWORD_SERVICE: &str = "com.adminhelper.app";
 
     let key = rdp_storage_key_required(connection)?;
     let entry =
@@ -84,7 +84,7 @@ pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<
 #[cfg(unix)]
 pub fn delete_password_keyring(connection: &Connection) -> Result<(), AppError> {
     use keyring::{Entry, Error as KeyringError};
-    const PASSWORD_SERVICE: &str = "com.simpleremote.manager";
+    const PASSWORD_SERVICE: &str = "com.adminhelper.app";
 
     let key = match rdp_storage_key(connection) {
         Some(value) => value,

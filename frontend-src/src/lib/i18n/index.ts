@@ -5,7 +5,7 @@ export type { Language } from './dictionaries';
 export type TVars = Record<string, string | number | null | undefined>;
 
 function detect(): Language {
-  const stored = localStorage.getItem('srm_language');
+  const stored = localStorage.getItem('adminhelper_language');
   if (stored === 'de' || stored === 'en') return stored;
   const nav = (navigator.language || '').substring(0, 2);
   return nav === 'en' ? 'en' : 'de';
@@ -14,7 +14,7 @@ function detect(): Language {
 const _language = writable<Language>(detect());
 
 _language.subscribe((lang) => {
-  localStorage.setItem('srm_language', lang);
+  localStorage.setItem('adminhelper_language', lang);
   if (typeof document !== 'undefined') {
     document.documentElement.lang = lang;
   }

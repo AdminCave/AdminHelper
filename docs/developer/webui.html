@@ -41,7 +41,7 @@
 &#9474;   &#9474;   &#9500;&#9472;&#9472; api/           11 Module: client.ts + 9 Domain-Wrapper + types.ts
 &#9474;   &#9474;   &#9500;&#9472;&#9472; components/    Button, Modal, TagChip, Tabs, EmptyState, Toast, ...
 &#9474;   &#9474;   &#9500;&#9472;&#9472; stores/        10 Runes-Stores (auth, connections, &hellip;)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/          DE/EN-Dictionaries (localStorage <code>srm_language</code>)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/          DE/EN-Dictionaries (localStorage <code>adminhelper_language</code>)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; router.ts      Hash-Router
 &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
 &#9474;   &#9500;&#9472;&#9472; pages/           10 Pages (8 produktiv + Login + Placeholder)
@@ -62,7 +62,7 @@
           <table>
             <thead><tr><th>Store</th><th>Zweck</th></tr></thead>
             <tbody>
-              <tr><td><code>auth</code></td><td>Login, Logout, Refresh, aktueller User; Token in <code>localStorage</code> (<code>srm_token</code>, <code>srm_refresh_token</code>).</td></tr>
+              <tr><td><code>auth</code></td><td>Login, Logout, Refresh, aktueller User; Token in <code>localStorage</code> (<code>adminhelper_token</code>, <code>adminhelper_refresh_token</code>).</td></tr>
               <tr><td><code>connections</code></td><td>Live-Liste, Suche, Gruppenfilter, Tag-Hierarchie.</td></tr>
               <tr><td><code>servers</code></td><td>Server-Inventar, Provision-Token, User-Zuweisung.</td></tr>
               <tr><td><code>users</code></td><td>Benutzer-CRUD inkl. Server-Mapping.</td></tr>
@@ -80,7 +80,7 @@
           <p>Domain-Wrapper liegen daneben: <code>auth.ts</code>, <code>connections.ts</code>, <code>servers.ts</code>, <code>users.ts</code>, <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code>, <code>ansible.ts</code>, <code>monitoring.ts</code> &ndash; jeweils typisiert &uuml;ber <code>types.ts</code>.</p>
 
           <h2>i18n</h2>
-          <p>Sprachen: DE und EN. Aktive Sprache wird in <code>localStorage.srm_language</code> persistiert; Browser-Detect dient nur als initialer Fallback. Die <code>t()</code>-Funktion ist als Store implementiert &ndash; das verhindert i18n-Leaks in reaktiven Komponenten.</p>
+          <p>Sprachen: DE und EN. Aktive Sprache wird in <code>localStorage.adminhelper_language</code> persistiert; Browser-Detect dient nur als initialer Fallback. Die <code>t()</code>-Funktion ist als Store implementiert &ndash; das verhindert i18n-Leaks in reaktiven Komponenten.</p>
 
           <h2>uPlot-Charts</h2>
           <p>Monitoring-Charts nutzen <code>uplot</code> direkt &ndash; kein schwergewichtiges Chart-Framework. Wrapper in <code>src/lib/components/</code>. uPlot ist 30 kB gzipped und rendert schnell auch 100k Punkte.</p>
