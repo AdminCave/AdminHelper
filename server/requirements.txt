@@ -9,3 +9,4 @@ apscheduler>=3.10
 httpx>=0.28
 cryptography>=42.0
 redis>=5.0
+alembic>=1.13
