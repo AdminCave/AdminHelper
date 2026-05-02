@@ -23,8 +23,8 @@ type provisionResponse struct {
 }
 
 // Init fuehrt die Ersteinrichtung durch.
-func Init(srmURL, token, serverID, cacert string, insecure bool) error {
-	srmURL = strings.TrimRight(srmURL, "/")
+func Init(adminHelperURL, token, serverID, cacert string, insecure bool) error {
+	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
 	client, err := httpClient(cacert, insecure)
 	if err != nil {
@@ -32,7 +32,7 @@ func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 	}
 
 	// Provisioning-Endpoint aufrufen
-	endpoint := fmt.Sprintf("%s/api/frp/provision/%s/activate", srmURL, serverID)
+	endpoint := fmt.Sprintf("%s/api/frp/provision/%s/activate", adminHelperURL, serverID)
 	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 
 	// AdminHelper-Config schreiben
 	entries := []config.KeyValue{
-		{Key: "ADMINHELPER_URL", Value: srmURL},
+		{Key: "ADMINHELPER_URL", Value: adminHelperURL},
 		{Key: "API_KEY", Value: prov.APIKey},
 		{Key: "SERVER_ID", Value: serverID},
 	}
@@ -101,10 +101,10 @@ func Init(srmURL, token, serverID, cacert string, insecure bool) error {
 	if confInsecure {
 		entries = append(entries, config.KeyValue{Key: "INSECURE", Value: "1"})
 	}
-	if err := config.WriteKeyValue(config.FrpSrmConf(), entries); err != nil {
+	if err := config.WriteKeyValue(config.FrpAdminHelperConf(), entries); err != nil {
 		return fmt.Errorf("Config schreiben: %w", err)
 	}
-	logMsg("Config geschrieben: %s", config.FrpSrmConf())
+	logMsg("Config geschrieben: %s", config.FrpAdminHelperConf())
 
 	// frpc.toml schreiben (base64-decoded)
 	if prov.Config != "" {

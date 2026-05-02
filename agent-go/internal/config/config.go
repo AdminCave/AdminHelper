@@ -68,7 +68,7 @@ type KeyValue struct {
 
 // LoadFrpcConfig liest die FRPC-Sync Konfiguration.
 func LoadFrpcConfig() (*FrpcConfig, error) {
-	kv, err := LoadKeyValue(FrpSrmConf())
+	kv, err := LoadKeyValue(FrpAdminHelperConf())
 	if err != nil {
 		return nil, err
 	}

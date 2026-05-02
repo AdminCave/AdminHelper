@@ -40,7 +40,7 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         content.push('\n');
     }
 
-    let path = std::env::temp_dir().join(format!("srm_ansible_inventory_{}.ini", std::process::id()));
+    let path = std::env::temp_dir().join(format!("adminhelper_ansible_inventory_{}.ini", std::process::id()));
     let mut file = std::fs::File::create(&path)?;
     file.write_all(content.as_bytes())?;
 
@@ -54,7 +54,7 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
         .replace("..", "_")
         .trim()
         .to_string();
-    let path = std::env::temp_dir().join(format!("srm_ansible_{}", safe_name));
+    let path = std::env::temp_dir().join(format!("adminhelper_ansible_{}", safe_name));
     let mut file = std::fs::File::create(&path)?;
     file.write_all(content.as_bytes())?;
 

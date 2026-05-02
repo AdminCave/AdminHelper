@@ -1,5 +1,5 @@
 (() => {
-  const LANG_KEY = 'srm_docs_lang';
+  const LANG_KEY = 'adminhelper_docs_lang';
 
   /* ─── Sprach-Persistenz ─────────────────────────────────────────── */
   function safeGetLangPreference() {

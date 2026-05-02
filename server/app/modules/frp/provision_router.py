@@ -33,7 +33,7 @@ def create_provision_token(
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    raw_token = f"srm_prov_{secrets.token_urlsafe(32)}"
+    raw_token = f"adminhelper_prov_{secrets.token_urlsafe(32)}"
     hashed = hash_api_key(raw_token)
 
     token = ProvisionToken(
