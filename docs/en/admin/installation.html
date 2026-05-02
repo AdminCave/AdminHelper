@@ -62,16 +62,25 @@
 
           <h2>Generate .env</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>install -d -m 0700 /srv/srm
-cd /srv/srm
-cat &gt; .env &lt;&lt;EOF
-ADMIN_PASSWORD=$(openssl rand -base64 24)
-SECRET_KEY=$(openssl rand -hex 32)
-MONITOR_API_KEY=$(openssl rand -hex 32)
-FRP_DOMAIN=frp.example.com
-TRUSTED_PROXIES=10.0.0.1
-EOF
-chmod 0600 .env</code></pre>
+<pre><code>git clone https://git.nevondo.com/ks98/adminhelper.git /srv/adminhelper
+cd /srv/adminhelper
+
+cp .env.example .env
+
+# Generate secure random secrets (SECRET_KEY + MONITOR_API_KEY).
+# Idempotent: leaves any value already set untouched.
+./scripts/init-secrets.sh
+
+# Then edit .env for the non-secret values:
+#   DOMAIN, ADMIN_PASSWORD, TZ, TRUSTED_PROXIES, ALLOWED_IPS, FRP_DOMAIN</code></pre>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title">Why <code>init-secrets.sh</code> matters</div>
+              <p>Server and monitoring containers share <code>MONITOR_API_KEY</code> as an internal secret. If the value in <code>.env</code> stays empty, the monitoring container generates its own random — but the server sends an empty key, so every <code>/api/monitoring/*</code> call returns 401 and the monitoring page looks broken. The init script fixes this.</p>
+            </div>
+          </div>
 
           <h2>Reverse Proxy (nginx)</h2>
           <div class="code-header"><span>nginx</span></div>

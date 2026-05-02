@@ -93,10 +93,15 @@ Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden
 
 ### Server + frps (Docker, empfohlen)
 
-Fuer das vollstaendige Setup inkl. FRP-Server:
+Fuer das vollstaendige Setup inkl. FRP-Server. Beim ersten Start einmal
+die Secrets initialisieren — generiert `SECRET_KEY` und `MONITOR_API_KEY`
+in der `.env`:
 
 ```bash
 # Im Projektroot:
+cp .env.example .env
+./scripts/init-secrets.sh
+
 docker compose up --build -d
 ```
 

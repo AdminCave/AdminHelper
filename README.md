@@ -129,7 +129,12 @@ Das Server-Image wird direkt aus der GitLab-Registry gezogen:
 ```bash
 # Im Projektroot:
 cp .env.example .env
-# .env anpassen: SERVER_IMAGE auf die gewünschte Registry-URL setzen
+
+# Sichere Zufalls-Secrets generieren (SECRET_KEY + MONITOR_API_KEY).
+# Idempotent: ueberschreibt nichts, was bereits gesetzt ist.
+./scripts/init-secrets.sh
+
+# Optional: SERVER_IMAGE in .env auf eigene Registry-URL setzen.
 
 docker compose pull
 docker compose up -d
@@ -137,9 +142,9 @@ docker compose up -d
 
 Der Server ist dann unter `http://localhost:8080` erreichbar.
 
-**Standard-Zugangsdaten:** `admin` / `admin` (über `ADMIN_PASSWORD` Env-Variable änderbar)
+**Standard-Zugangsdaten:** `admin` / `admin` (über `ADMIN_PASSWORD` Env-Variable änderbar — bitte vor dem Produktiveinsatz tun)
 
-> **Wichtig:** `SECRET_KEY` in der `docker-compose.yml` vor dem Produktiveinsatz ändern.
+> **Warum `init-secrets.sh`?** Server- und Monitoring-Container teilen sich einen `MONITOR_API_KEY` als internes Shared Secret. Wenn der Wert in `.env` leer ist, generiert sich der Monitoring-Container einen eigenen Random — und die Server-zu-Monitoring-Aufrufe scheitern mit 401, was die Monitoring-Page in der Web-UI tot wirken lässt. Das Init-Script fixt das.
 
 ### Persistente Daten
 

@@ -92,15 +92,14 @@
 <pre><code>git clone https://git.nevondo.com/ks98/adminhelper.git
 cd adminhelper
 
-# .env anlegen
-cat &gt; .env &lt;&lt;'EOF'
-DOMAIN=srm.example.com
-SECRET_KEY=$(openssl rand -base64 48)
-ADMIN_PASSWORD=$(openssl rand -base64 24)
-TZ=Europe/Berlin
-MONITOR_API_KEY=$(openssl rand -hex 32)
-TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
-EOF
+cp .env.example .env
+
+# Sichere Zufalls-Secrets generieren (SECRET_KEY + MONITOR_API_KEY).
+# Idempotent: laesst bereits gesetzte Werte in Ruhe.
+./scripts/init-secrets.sh
+
+# Anschliessend in .env die nicht-Secret-Variablen anpassen:
+#   DOMAIN, ADMIN_PASSWORD, TZ, TRUSTED_PROXIES, ALLOWED_IPS
 
 docker compose pull
 docker compose up -d</code></pre>
@@ -108,8 +107,9 @@ docker compose up -d</code></pre>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
-              <div class="callout-title"><code>SECRET_KEY</code> unbedingt setzen</div>
-              <p>Wenn <code>SECRET_KEY</code> leer ist oder den Default-Wert <code>change-me-in-production</code> hat, generiert der Server beim ersten Start einen zufälligen Key und speichert ihn in <code>./data/.secret_key</code>. Das funktioniert, ist aber nicht portabel zwischen Hosts. Setze den Key immer explizit, wenn du den Stack migrieren oder replizieren willst.</p>
+              <div class="callout-title"><code>MONITOR_API_KEY</code> ohne Init-Script = Monitoring-UI tot</div>
+              <p>Server- und Monitoring-Container teilen sich <code>MONITOR_API_KEY</code> als internes Shared Secret. Bleibt der Wert in <code>.env</code> leer, generiert sich der Monitoring-Container einen eigenen Random — der Server schickt aber einen leeren Key, jeder <code>/api/monitoring/*</code>-Aufruf endet mit 401. <code>./scripts/init-secrets.sh</code> verhindert das.</p>
+              <p>Genauso wichtig: <code>SECRET_KEY</code>. Bleibt er auf <code>change-me-in-production</code> oder leer, generiert der Server beim ersten Start einen Random in <code>./data/.secret_key</code> — funktioniert, ist aber nicht portabel zwischen Hosts. Init-Script schreibt einen festen Wert in die <code>.env</code>, damit der Stack reproduzierbar migrierbar bleibt.</p>
             </div>
           </div>
 
