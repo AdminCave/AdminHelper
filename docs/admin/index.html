@@ -79,7 +79,7 @@
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg></div>
               <h3>Server</h3>
-              <p>Docker-Container mit FastAPI + SQLite. Liefert Web-Panel, REST-API, Monitoring-Scheduler und FRP-Tunnel-CA. Läuft typischerweise hinter einem Reverse-Proxy mit TLS.</p>
+              <p>Docker-Container mit FastAPI + PostgreSQL. Liefert Web-Panel, REST-API, Monitoring-Scheduler und FRP-Tunnel-CA. Läuft typischerweise hinter einem Reverse-Proxy mit TLS.</p>
             </div>
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
@@ -119,9 +119,10 @@
                 APScheduler, der Monitoring-Jobs ausführt.
                 Metriken werden an ein externes <strong>VictoriaMetrics</strong>
                 gestreamt, FRP läuft in einem eigenen Container.
-                SQLite als Datenbank (Standard) oder PostgreSQL
-                (optional via ENV) – für kleine bis mittlere
-                Installationen reicht SQLite komplett aus.
+                Persistenz: <strong>PostgreSQL 17</strong> (eigener Compose-Service);
+                Server- und Monitoring-Service teilen sich einen
+                Postgres-Cluster mit zwei DBs (<code>adminhelper</code>,
+                <code>adminhelper_monitor</code>).
               </p>
             </div>
           </div>

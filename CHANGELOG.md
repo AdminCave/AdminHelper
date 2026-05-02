@@ -5,6 +5,80 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.21.0] - 2026-05-02
+
+### Highlights
+
+Migration der Server-Side-Persistenz von **SQLite auf PostgreSQL 17**
+(server + monitoring). Beide FastAPI-Services teilen sich einen Postgres-
+Cluster mit zwei DBs (`adminhelper`, `adminhelper_monitor`). Schema-Anlage
+uebernimmt jetzt **Alembic** statt `Base.metadata.create_all()`. Tests
+laufen gegen ein echtes Postgres via `testcontainers` (lokal) bzw.
+`services: postgres:17-alpine` (CI), nicht mehr gegen SQLite-in-memory.
+
+Plus: alle Pre-Release P0-Sicherheits-Fixes aus dem Audit, Brand-
+Migration auf "AdminHelper", komplettes Doku-Refresh.
+
+### Added
+
+- PostgreSQL 17 als neuer `postgres`-Service in `docker-compose.yml`
+  mit Healthcheck und `service_healthy`-Dependencies fuer beide Apps
+- `server/alembic/` und `monitoring/alembic/` mit initialen Migrations
+- `monitoring/docker-entrypoint.sh` neu (vorher nur `CMD`)
+- Server- und Monitoring-Entrypoint warten via `pg_isready` auf die DB
+  und fuehren `alembic upgrade head` vor `uvicorn`-Start aus
+- `scripts/postgres-init.sh` legt beim ersten Postgres-Start die zweite
+  DB (`adminhelper_monitor`) idempotent an
+- `scripts/pg-backup.sh` + `scripts/pg-restore.sh` fuer pg_dump-basiertes
+  Backup beider DBs (Custom-Format, 7-Tage-Retention)
+- Optionaler `pg-backup`-Service in `docker-compose.yml` (auskommentiert
+  als Opt-In-Beispiel) — taegliche Backups nach `./backups/`
+- `init-secrets.sh` erzeugt zusaetzlich `POSTGRES_PASSWORD` (32 Bytes hex)
+- `psycopg[binary]>=3.1` und `alembic>=1.13` in beiden requirements.txt
+- `testcontainers[postgres]>=4.7` als dev-dependency im server
+- Server-`pytest`-Job in `.gitlab-ci.yml` (existierte vorher nicht):
+  nutzt `services: postgres:17-alpine` als CI-Sidecar
+- `tests/test_alembic_consistency.py`: Drift-Detector zwischen
+  `Base.metadata` und Alembic-Migrations, laeuft bei jedem CI-Run
+
+### Changed
+
+- Server-Side-DBs von SQLite auf PostgreSQL umgestellt:
+  - `server/app/core/database.py` + `monitoring/app/core/database.py`:
+    Engine ohne `check_same_thread`, dafuer Pool (size=10, overflow=20,
+    pre-ping, recycle=3600)
+  - `server/app/core/config.py` + `monitoring/app/core/config.py`:
+    `DATABASE_URL` aus Env mit Postgres-Default-Fallback
+- Beide Dockerfiles installieren `postgresql-client` (fuer `pg_isready`),
+  kopieren `alembic/`-Folder in den Container
+- `server/tests/conftest.py` komplett neu: testcontainers-Postgres,
+  SAVEPOINT-Pattern fuer Test-Isolation (kein DROP/CREATE pro Test)
+- Tests jetzt 78 (77 bestehende + 1 alembic-consistency); Wallclock
+  ~17s lokal (12s Container-Boot einmalig), ~8s im Cache-Lauf
+
+### Removed
+
+- `_migrate_connections_json`, `_migrate_add_columns`,
+  `_migrate_visitors_to_users` aus `server/app/main.py` (PRAGMA-basierte
+  SQLite-only Migrationen, jetzt durch Alembic ersetzt)
+- `_migrate_columns`, `_migrate_agent_keys_to_hash` aus
+  `monitoring/app/main.py` (gleiches Pattern)
+- `Base.metadata.create_all()` aus beiden Lifespans (Alembic ist neuer
+  Schema-Owner)
+- `CONNECTIONS_FILE`-Konstante aus `server/app/core/config.py`
+  (Konsument war `_migrate_connections_json`)
+
+### Migration
+
+- Bestehende lokale `data/db.sqlite3` und `data/monitor.sqlite3` sind
+  obsolete und koennen geloescht werden.
+- Pre-Release-Status: keine Production-Datenmigration noetig.
+- Beim Update bestehender Setups vor dem ersten Restart:
+  `./scripts/init-secrets.sh` ausfuehren, damit `POSTGRES_PASSWORD`
+  in der `.env` steht (sonst weigert sich der Postgres-Container).
+- `data/`-Verzeichnis bleibt erhalten (Bootstrap-Token, .secret_key,
+  FRP-PKI), nur die DB-Datei darin ist obsolete.
+
 ## [0.20.0] - 2026-04-19
 
 ### Changed

@@ -77,6 +77,16 @@ else
     generated+=("MONITOR_API_KEY")
 fi
 
+# POSTGRES_PASSWORD (Server + Monitoring teilen sich Postgres-Cluster) — 32 Bytes hex
+# Wenn leer, weigert sich der Postgres-Container zu starten (Default-
+# Verhalten von postgres-Image seit 2017).
+if is_set_safely "POSTGRES_PASSWORD"; then
+    left_alone+=("POSTGRES_PASSWORD")
+else
+    upsert "POSTGRES_PASSWORD" "$(openssl rand -hex 32)"
+    generated+=("POSTGRES_PASSWORD")
+fi
+
 # Permission auf 0600 setzen — Secrets sollen nicht weltlesbar sein
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 

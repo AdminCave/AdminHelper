@@ -33,29 +33,48 @@
           <h1>Operations &amp; Config</h1>
           <p class="lead">Where data lives, how logs are named, how to take consistent backups – the operational knobs you need to keep the system healthy over time.</p>
 
-          <h2>Data Directories</h2>
+          <h2>Data Directories &amp; Postgres Volume</h2>
+          <p>State splits across two locations: <code>DATA_DIR</code> for file-based artifacts, the <code>postgres-data</code> Docker volume for the actual databases.</p>
           <table>
             <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>/data/srm.db</code></td><td>SQLite DB – users, connections, servers, hooks, monitoring config</td></tr>
-              <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete or replace without re-issuing all tokens</td></tr>
-              <tr><td><code>/data/frp-ca/</code></td><td>FRP root CA (<code>ca.crt</code>, <code>ca.key</code>) – 10 y lifetime</td></tr>
-              <tr><td><code>/data/frp-certs/</code></td><td>Per-agent client certificates, issued on provision</td></tr>
-              <tr><td><code>/data/uploads/</code></td><td>Optional branding assets (logos, theming)</td></tr>
-              <tr><td><code>/var/log/srm/</code></td><td>Rotated log files when file logging is enabled</td></tr>
-              <tr><td><code>/data/victoria/</code></td><td>VictoriaMetrics storage – 90 d retention</td></tr>
+              <tr><td><code>postgres-data</code> (volume)</td><td>PostgreSQL cluster with two DBs: <code>adminhelper</code> (users, connections, servers, hooks) and <code>adminhelper_monitor</code> (checks, alerts, templates, agent keys).</td></tr>
+              <tr><td><code>/data/.bootstrap_token</code></td><td>One-time setup-token hash for the first admin (see installation guide).</td></tr>
+              <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete without re-issuing all tokens.</td></tr>
+              <tr><td><code>/data/frp-config/pki/</code></td><td>FRP root CA (10 y) + server cert + per-client certs.</td></tr>
+              <tr><td><code>/data/certs/</code></td><td>Self-signed TLS for the FastAPI port 8443.</td></tr>
+              <tr><td><code>victoria-data</code> (volume)</td><td>VictoriaMetrics storage – 90 d retention (separate, not in this scope).</td></tr>
             </tbody>
           </table>
 
           <h2>Backups</h2>
-          <p>SQLite allows hot backups while the server is running. Use the SQLite <code>.backup</code> command instead of <code>cp</code> to guarantee consistency:</p>
+          <p>Two backup paths — combine both for a complete restore:</p>
 
+          <h3>1. PostgreSQL dump (databases)</h3>
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose exec server sqlite3 /data/srm.db ".backup '/data/backup.db'"
-docker compose cp server:/data/backup.db ./adminhelper-$(date +%F).db
-gpg --encrypt --recipient admin@example.com adminhelper-$(date +%F).db</code></pre>
+<pre><code># Manual dump of both DBs (no stop required):
+docker compose exec postgres pg_dump -U adminhelper -d adminhelper -Fc -f /tmp/adminhelper.dump
+docker compose exec postgres pg_dump -U adminhelper -d adminhelper_monitor -Fc -f /tmp/adminhelper_monitor.dump
+docker compose cp postgres:/tmp/adminhelper.dump ./backups/
+docker compose cp postgres:/tmp/adminhelper_monitor.dump ./backups/
 
-          <p>Also back up <code>/data/.secret_key</code> and <code>/data/frp-ca/</code> – without these, restoring the DB alone is useless.</p>
+# Or via the bundled script:
+docker compose exec postgres /usr/local/bin/pg-backup.sh    # if scripts/ is mounted</code></pre>
+
+          <p>For automatic daily backups, uncomment the <code>pg-backup</code> service in <code>docker-compose.yml</code> — writes to <code>./backups/</code>, 7-day rolling retention.</p>
+
+          <h3>2. File data (PKI, bootstrap token, certificates)</h3>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>tar czf adminhelper-files-$(date +%F).tar.gz data/</code></pre>
+
+          <h3>Restore</h3>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Restore DB:
+docker compose cp ./backups/adminhelper-2026-05-02.dump postgres:/tmp/restore.dump
+docker compose exec postgres pg_restore -U adminhelper -d adminhelper --clean --if-exists --no-owner /tmp/restore.dump
+
+# Files:
+tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
 
           <h2>Logging</h2>
           <p>Four logger names emit structured JSON by default:</p>

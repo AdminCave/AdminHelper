@@ -121,8 +121,10 @@ docker compose up -d</code></pre>
             <tbody>
               <tr><td><code>DOMAIN</code></td><td><code>localhost</code></td><td>Haupt-FQDN des Servers. Wird in Self-Signed-Zertifikaten und Links verwendet.</td></tr>
               <tr><td><code>SECRET_KEY</code></td><td>auto</td><td>JWT-Signing-Key. Manuell setzen oder auto-generieren lassen (persistiert in <code>data/.secret_key</code>).</td></tr>
-              <tr><td><code>ADMIN_PASSWORD</code></td><td><code>admin</code> ⚠️</td><td>Passwort des initialen Admin-Users. Unbedingt überschreiben.</td></tr>
-              <tr><td><code>DATA_DIR</code></td><td><code>/app/data</code></td><td>Datenverzeichnis (SQLite-DB, Secrets, FRP-Config, Zertifikate).</td></tr>
+              <tr><td><code>ADMIN_PASSWORD</code></td><td>leer</td><td>Optional. Leer/'admin' triggert den Bootstrap-Token-Pfad (siehe oben). Nicht-Default-Wert legt direkt einen Admin an (CI/Dev).</td></tr>
+              <tr><td><code>POSTGRES_PASSWORD</code></td><td><em>auto</em></td><td>Wird durch <code>./scripts/init-secrets.sh</code> generiert. Postgres weigert sich zu starten, wenn leer.</td></tr>
+              <tr><td><code>DATABASE_URL</code></td><td>aus Compose</td><td><code>postgresql+psycopg://adminhelper:$POSTGRES_PASSWORD@postgres:5432/adminhelper</code> – wird im Compose-Service automatisch gesetzt.</td></tr>
+              <tr><td><code>DATA_DIR</code></td><td><code>/app/data</code></td><td>Datenverzeichnis für Bootstrap-Token, .secret_key, FRP-Config, Zertifikate (DB liegt in Postgres).</td></tr>
               <tr><td><code>REDIS_URL</code></td><td>leer</td><td>Redis-URL für Rate-Limit. Ohne Redis wird ein In-Memory-Fallback genutzt (nur Single-Worker sicher).</td></tr>
               <tr><td><code>TRUSTED_PROXIES</code></td><td>leer</td><td>Kommagetrennte CIDRs der vertrauenswürdigen Reverse-Proxies. Nur von diesen IPs werden <code>X-Forwarded-For</code>-Header akzeptiert.</td></tr>
               <tr><td><code>TRUST_PROXY_HEADERS</code></td><td><code>false</code></td><td>Legacy-Schalter, vertraut <em>allen</em> Proxy-Headern. Nur setzen, wenn <code>TRUSTED_PROXIES</code> nicht nutzbar ist.</td></tr>
@@ -198,7 +200,7 @@ docker compose up -d</code></pre>
 <pre><code>docker compose pull server
 docker compose up -d server</code></pre>
 
-          <p>SQLite-Datenbank-Migrationen laufen automatisch beim Start (Schema-Versionen in <code>server/app/db/migrations/</code>). Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
+          <p>Datenbank-Migrationen laufen automatisch beim Container-Start via <strong>Alembic</strong> (siehe <code>server/alembic/versions/</code>). Der Entrypoint wartet erst auf <code>pg_isready</code>, führt dann <code>alembic upgrade head</code> aus, dann erst startet uvicorn. Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
 
           <div class="page-nav">
             <a class="prev" href="./index.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Übersicht</span></a>

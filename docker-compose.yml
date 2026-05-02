@@ -115,6 +115,28 @@ services:
       - "8428"
     restart: unless-stopped
 
+  # Optionaler Postgres-Backup-Container.
+  # Aktivieren mit: docker compose up -d pg-backup
+  # Schreibt taeglich pg_dump-Backups beider DBs nach ./backups/.
+  # Retention 7 Tage rolling.
+  #
+  # pg-backup:
+  #   image: postgres:17-alpine
+  #   volumes:
+  #     - ./backups:/backups
+  #     - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
+  #   environment:
+  #     - PGHOST=postgres
+  #     - PGUSER=adminhelper
+  #     - PGPASSWORD=${POSTGRES_PASSWORD}
+  #     - BACKUP_DIR=/backups
+  #     - RETENTION_DAYS=7
+  #   entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
 volumes:
   frp-config:
   monitoring-data:
