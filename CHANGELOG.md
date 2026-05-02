@@ -5,6 +5,25 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.22.0] - 2026-05-02
+
+### Changed
+
+- Koordinierter Versions-Bump aller Komponenten auf `v0.22.0`
+  (Server, Web-Admin-Panel, Desktop-Client, Browser-Extension,
+  Go-Agent via `.gitlab-ci.yml AGENT_VERSION`, Doku-Footer in
+  40 HTML-Dateien). Sammel-Release ohne funktionale Aenderungen.
+
+### Fixed
+
+- CI-Job `server_test` scheiterte mit `pytest: command not found`,
+  weil `pytest` und `testcontainers` nur lokal im venv installiert
+  waren, nicht in `requirements.txt`. Neu: `requirements-dev.txt`
+  mit `pytest`, `pytest-asyncio` und `testcontainers[postgres]`;
+  CI installiert beide Files. Production-Container (Dockerfile)
+  bleibt schlanker, weil testcontainers + pytest nicht mehr in
+  jedem Server-Image landen.
+
 ## [0.21.0] - 2026-05-02
 
 ### Highlights
@@ -364,6 +383,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.22.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.22.0
 [0.21.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.21.0
 [0.20.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.20.0
 [0.19.1]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.19.1
