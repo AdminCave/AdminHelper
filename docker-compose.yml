@@ -78,7 +78,7 @@ services:
       - server
 
   monitoring:
-    image: ${MONITORING_IMAGE:-adminhelper-monitoring:latest}
+    image: ${MONITORING_IMAGE:-docker.nevondo.com/ks98/adminhelper/monitoring:latest}
     expose:
       - "8080"
     ports:
