@@ -96,7 +96,7 @@ async fn connect_rdp(
           <p>Wenn der Nutzer mehrmals kurz hintereinander auf <em>Connect</em> klickt, würden ohne Schutz mehrere RDP-Prozesse starten. Der Desktop-Client vergibt pro Klick eine <strong>monotone UUID</strong>. Läuft der FRP-Tunnel-Aufbau noch, während eine neue Connect-ID reinkommt, wird die alte verworfen. Implementierung in <code>desktop/src-tauri/src/rdp/race_guard.rs</code>.</p>
 
           <h2>Keyring-Secrets</h2>
-          <p>Passwörter landen nicht in der SQLite-DB, sondern im OS-Keyring:</p>
+          <p>Passwörter landen nicht in der lokalen Connection-Datei, sondern im OS-Keyring:</p>
           <ul>
             <li>Linux: <code>secret-service</code> (GNOME Keyring / KWallet)</li>
             <li>macOS: Keychain</li>

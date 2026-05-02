@@ -25,4 +25,10 @@ if not INTERNAL_API_KEY:
 
     # Agent-API-Keys werden jetzt pro Server in der DB gespeichert (monitor_agent_keys)
 
-DATABASE_URL = f"sqlite:///{DATA_DIR}/monitor.sqlite3"
+# DATABASE_URL: liest aus Env, faellt auf Postgres-Default fuer lokale Dev zurueck.
+# Schema-Anlage uebernimmt Alembic (siehe monitoring/alembic/), nicht mehr
+# Base.metadata.create_all().
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor",
+)

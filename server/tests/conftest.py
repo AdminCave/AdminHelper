@@ -1,45 +1,112 @@
-"""Shared test fixtures — in-memory SQLite + FastAPI TestClient."""
+"""Shared test fixtures: Postgres via testcontainers (lokal) oder GitLab-services (CI),
+SAVEPOINT-basiertes Transaction-Rollback-Pattern fuer Test-Isolation."""
 
 import os
+
+# Test-Defaults setzen, BEVOR app-Module importiert werden.
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
 
 import pytest
-from sqlalchemy import create_engine, StaticPool
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base, get_db
 from app.core.auth import hash_password
 from app.modules.users.models import User
-# Import all models so Base.metadata knows every table (foreign key resolution)
+
+# Alle Models explizit importieren — sonst kennt Base.metadata sie nicht.
 import app.modules.servers.models  # noqa: F401
 import app.modules.connections.models  # noqa: F401
 import app.modules.api_keys.models  # noqa: F401
+import app.modules.hooks.models  # noqa: F401
 import app.modules.frp.models  # noqa: F401
+import app.modules.ansible.models  # noqa: F401
+
+
+def _normalize_postgres_url(raw_url: str) -> str:
+    """Erzwingt psycopg3-Driver — testcontainers liefert per Default
+    'postgresql+psycopg2://', GitLab-services liefert 'postgresql://',
+    beides muss auf 'postgresql+psycopg://' umgeschrieben werden, damit
+    SQLAlchemy nicht versucht, das nicht-installierte psycopg2 zu importieren."""
+    for old in ("postgresql+psycopg2://", "postgresql+asyncpg://", "postgresql://"):
+        if raw_url.startswith(old):
+            return "postgresql+psycopg://" + raw_url[len(old):]
+    return raw_url
+
+
+@pytest.fixture(scope="session")
+def pg_engine():
+    """Postgres-Engine fuer die gesamte Test-Session.
+
+    - Wenn DATABASE_URL env gesetzt ist (CI-Modus mit GitLab-services
+      oder dev-Setup mit lokalem Postgres) -> diese URL nutzen.
+    - Sonst -> testcontainers startet einen Postgres 17-alpine Container.
+
+    Schema einmal pro Session via Base.metadata.create_all anlegen
+    (schneller als alembic upgrade head; Alembic-Drift wird im
+    test_alembic_consistency.py separat gegen das Models-Set geprueft).
+    """
+    env_url = os.environ.get("DATABASE_URL", "").strip()
+    if env_url:
+        url = _normalize_postgres_url(env_url)
+        engine = create_engine(url)
+        Base.metadata.create_all(bind=engine)
+        try:
+            yield engine
+        finally:
+            Base.metadata.drop_all(bind=engine)
+            engine.dispose()
+        return
+
+    # Lokal: testcontainers
+    from testcontainers.postgres import PostgresContainer
+
+    with PostgresContainer("postgres:17-alpine") as pg:
+        url = _normalize_postgres_url(pg.get_connection_url())
+        engine = create_engine(url)
+        Base.metadata.create_all(bind=engine)
+        try:
+            yield engine
+        finally:
+            engine.dispose()
 
 
 @pytest.fixture()
-def db_session():
-    """In-memory SQLite session, tables created fresh per test."""
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+def db_session(pg_engine):
+    """Pro Test eine eigene Connection mit Outer-Transaction.
+
+    SAVEPOINT-Pattern: jeder Test darf 'commit()' aufrufen, das landet
+    nur im Inner-SAVEPOINT. Am Test-Ende rollt die Outer-Transaction
+    alles zurueck — kein DROP/CREATE pro Test, keine Dateninterferenz.
+    """
+    connection = pg_engine.connect()
+    outer = connection.begin()
+
+    SessionLocal = sessionmaker(bind=connection, autoflush=False, autocommit=False)
+    session = SessionLocal()
+
+    # Inner SAVEPOINT, der bei jedem session.commit() neu gestartet wird.
+    nested = connection.begin_nested()
+
+    @event.listens_for(session, "after_transaction_end")
+    def restart_savepoint(sess, trans):
+        nonlocal nested
+        if not nested.is_active:
+            nested = connection.begin_nested()
+
     try:
         yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine)
+        if outer.is_active:
+            outer.rollback()
+        connection.close()
 
 
 @pytest.fixture()
 def admin_user(db_session):
-    """Create an admin user in the test DB."""
     user = User(
         username="admin",
         hashed_password=hash_password("adminpass"),
@@ -53,7 +120,6 @@ def admin_user(db_session):
 
 @pytest.fixture()
 def normal_user(db_session):
-    """Create a non-admin user in the test DB."""
     user = User(
         username="viewer",
         hashed_password=hash_password("viewerpass"),
@@ -67,7 +133,7 @@ def normal_user(db_session):
 
 @pytest.fixture()
 def test_client(db_session):
-    """FastAPI TestClient with DB dependency overridden."""
+    """FastAPI TestClient mit ueberschriebener DB-Dependency."""
     from fastapi.testclient import TestClient
     from app.main import app
 

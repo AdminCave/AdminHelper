@@ -3,3 +3,5 @@ uvicorn[standard]>=0.34
 sqlalchemy>=2.0
 httpx>=0.28
 apscheduler>=3.10
+alembic>=1.13
+psycopg[binary]>=3.1

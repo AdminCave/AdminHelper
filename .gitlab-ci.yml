@@ -117,6 +117,34 @@ build_binary_trixie:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH
 
+server_test:
+  stage: check
+  image: python:3.13-slim
+  needs: []
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: adminhelper
+    POSTGRES_PASSWORD: cipw
+    POSTGRES_DB: adminhelper
+    DATABASE_URL: "postgresql+psycopg://adminhelper:cipw@postgres:5432/adminhelper"
+    DATA_DIR: "/tmp/adminhelper-test-data"
+    SECRET_KEY: "ci-test-secret-key"
+    ADMIN_PASSWORD: "ciadmin"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev
+    - cd server
+    - pip install --no-cache-dir -r requirements.txt
+  script:
+    - pytest -q
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - server/**/*
+        - .gitlab-ci.yml
+
 frontend_check:
   stage: check
   image: node:22-alpine

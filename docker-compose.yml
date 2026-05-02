@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_USER=adminhelper
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=adminhelper
+      - TZ=${TZ:-Europe/Berlin}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sh:/docker-entrypoint-initdb.d/01-create-monitor-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adminhelper -d adminhelper"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
+
   server:
     image: ${SERVER_IMAGE:-docker.nevondo.com/NAMESPACE/adminhelper/server:latest}
     ports:
@@ -12,8 +30,14 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
       - EXTRA_SANS=${EXTRA_SANS:-}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - FRP_CONFIG_DIR=/app/frp-config
+      # Postgres
+      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=adminhelper
+      - PGPASSWORD=${POSTGRES_PASSWORD}
       # Monitoring-Proxy
       - MONITOR_SERVICE_URL=http://monitoring:8080
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
@@ -30,7 +54,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -62,9 +89,18 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       - VICTORIA_METRICS_URL=http://victoria:8428
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
+      # Postgres
+      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper_monitor
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=adminhelper
+      - PGPASSWORD=${POSTGRES_PASSWORD}
     restart: unless-stopped
     depends_on:
-      - victoria
+      victoria:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   victoria:
     image: victoriametrics/victoria-metrics:latest
@@ -79,7 +115,30 @@ services:
       - "8428"
     restart: unless-stopped
 
+  # Optionaler Postgres-Backup-Container.
+  # Aktivieren mit: docker compose up -d pg-backup
+  # Schreibt taeglich pg_dump-Backups beider DBs nach ./backups/.
+  # Retention 7 Tage rolling.
+  #
+  # pg-backup:
+  #   image: postgres:17-alpine
+  #   volumes:
+  #     - ./backups:/backups
+  #     - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
+  #   environment:
+  #     - PGHOST=postgres
+  #     - PGUSER=adminhelper
+  #     - PGPASSWORD=${POSTGRES_PASSWORD}
+  #     - BACKUP_DIR=/backups
+  #     - RETENTION_DAYS=7
+  #   entrypoint: ["sh", "-c", "while true; do /usr/local/bin/pg-backup.sh; sleep 86400; done"]
+  #   restart: unless-stopped
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
 volumes:
   frp-config:
   monitoring-data:
   victoria-data:
+  postgres-data:

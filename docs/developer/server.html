@@ -40,7 +40,7 @@
               <tr><td><code>server/app/main.py</code></td><td>FastAPI-App, Lifespan, Middleware-Stack, Static-Mounts für Vite-Output, Auto-Migrationen, SPA-Fallback.</td></tr>
               <tr><td><code>server/app/core/config.py</code></td><td>Env-Var-Resolution, JWT-Settings, Secret-Key-Persistenz (<code>.secret_key</code>-Datei).</td></tr>
               <tr><td><code>server/app/core/auth.py</code></td><td>JWT-Encode/Decode, Bcrypt-Hashing mit SHA-256-Prehash, Refresh-Rotation, Token-Blacklist, API-Key-Auth.</td></tr>
-              <tr><td><code>server/app/core/database.py</code></td><td>SQLAlchemy-Engine + <code>SessionLocal</code>; SQLite mit <code>check_same_thread=False</code>.</td></tr>
+              <tr><td><code>server/app/core/database.py</code></td><td>SQLAlchemy-Engine + <code>SessionLocal</code>; PostgreSQL via psycopg3, Pool-Konfig (size=10, overflow=20, pre-ping, recycle=3600).</td></tr>
               <tr><td><code>server/app/core/rate_limit.py</code></td><td>Redis-basierter Fixed-Window-Limiter mit In-Memory-Fallback.</td></tr>
               <tr><td><code>server/app/core/middleware.py</code></td><td>IP-Filter (<code>ALLOWED_IPS</code>) und Proxy-Trust (<code>TRUSTED_PROXIES</code>).</td></tr>
               <tr><td><code>server/app/core/events.py</code></td><td>Async Event-Bus für Hooks (ThreadPoolExecutor mit 4 Workern, Fire-and-Forget).</td></tr>
@@ -120,12 +120,15 @@
           <p>Details siehe <a href="./hooks.html">Hooks &amp; Events</a>.</p>
 
           <h2>Persistenz</h2>
-          <p>Alle Stateful-Daten leben unter <code>DATA_DIR</code> (Default <code>/app/data</code>):</p>
+          <p>Stateful-Daten verteilen sich auf zwei Stellen:</p>
+          <ul>
+            <li><strong>PostgreSQL</strong> (Compose-Volume <code>postgres-data</code>): zwei DBs <code>adminhelper</code> (Server) und <code>adminhelper_monitor</code> (Monitoring).</li>
+            <li><strong>File-System unter <code>DATA_DIR</code></strong> (Default <code>/app/data</code>): Bootstrap-Token, JWT-Secret, FRP-PKI, Ansible-Playbook-Dateien.</li>
+          </ul>
           <div class="code-header"><span>tree</span></div>
 <pre><code>/app/data/
-&#9500;&#9472;&#9472; db.sqlite3                  # Haupt-DB (SQLAlchemy)
+&#9500;&#9472;&#9472; .bootstrap_token            # Einmaliger Setup-Token-Hash (P0-6)
 &#9500;&#9472;&#9472; .secret_key                 # Auto-Gen JWT-Secret
-&#9500;&#9472;&#9472; connections.json.migrated   # Legacy-Migration-Marker
 &#9500;&#9472;&#9472; frp-config/
 &#9474;   &#9500;&#9472;&#9472; frps.toml
 &#9474;   &#9492;&#9472;&#9472; pki/
@@ -135,7 +138,7 @@
 &#9492;&#9472;&#9472; ansible/playbooks/{id}/{file}.yaml</code></pre>
 
           <h2>Tests</h2>
-          <p>Pytest-Suite unter <code>server/tests/</code>. Test-DB wird per <code>DATA_DIR=/tmp/...</code> in <code>conftest.py</code> isoliert. FastAPI-TestClient nutzt einen shared-memory SQLite, damit Migrationen deterministisch sind.</p>
+          <p>Pytest-Suite unter <code>server/tests/</code>. Tests laufen gegen ein <strong>echtes Postgres 17</strong> via <code>testcontainers</code> (lokal) bzw. <code>services: postgres:17-alpine</code> (CI). SAVEPOINT-Pattern in der <code>db_session</code>-Fixture: Outer-Transaction mit <code>begin_nested</code> + <code>after_transaction_end</code>-Listener — erlaubt <code>commit()</code> im Test-Code, am Ende sauberer Rollback. Plus <code>test_alembic_consistency.py</code> als Drift-Detector zwischen <code>Base.metadata</code> und Alembic-Migrations.</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code>cd server

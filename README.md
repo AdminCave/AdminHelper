@@ -167,7 +167,7 @@ Antwort enthält direkt `access_token` + `refresh_token` — kein zusätzlicher 
 Die Server-Daten werden im Verzeichnis `./data/` im Projektroot gespeichert (Bind-Mount). Dieses Verzeichnis ist in `.gitignore` eingetragen und wird automatisch angelegt.
 
 ```
-./data/           ← connections.json, SQLite-Datenbank, etc.
+./data/           ← Bootstrap-Token, .secret_key, FRP-Config, Ansible-Playbooks, Zertifikate
 ```
 
 ### Client-Sync konfigurieren

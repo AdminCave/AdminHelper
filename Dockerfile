@@ -22,13 +22,15 @@ ENV APP_VERSION=$VERSION \
 WORKDIR /app
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl tzdata \
+ && apt-get install -y --no-install-recommends openssl tzdata postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server/app/ ./app/
+COPY server/alembic.ini ./alembic.ini
+COPY server/alembic/ ./alembic/
 COPY server/docker-entrypoint.sh /docker-entrypoint.sh
 
 # Vite-Dist aus Stage 1 als statisches Frontend einhaengen

@@ -65,14 +65,14 @@
           <h1>Betrieb &amp; Konfiguration</h1>
           <p class="lead">Alltagsaufgaben: Datenverzeichnis verstehen, Backups anlegen, Logs finden, Konfiguration anpassen, Server neu starten.</p>
 
-          <h2>Datenverzeichnis</h2>
-          <p>Der Server persistiert alle zustandsbehafteten Daten unter <code>DATA_DIR</code> (Default <code>/app/data</code>, im Compose-Mount <code>./data</code>):</p>
+          <h2>Datenverzeichnis &amp; Postgres-Volume</h2>
+          <p>Zustandsbehaftete Daten verteilen sich auf zwei Stellen: <code>DATA_DIR</code> für File-basierte Artefakte (Bootstrap-Token, PKI, Zertifikate) und das <code>postgres-data</code>-Volume für die eigentlichen Datenbanken.</p>
           <table>
             <thead><tr><th>Pfad</th><th>Inhalt</th></tr></thead>
             <tbody>
-              <tr><td><code>data/db.sqlite3</code></td><td>Haupt-DB: Benutzer, Verbindungen, Server, API-Keys, Hooks, Audit-Log.</td></tr>
+              <tr><td><code>postgres-data</code> (Docker-Volume)</td><td>PostgreSQL-Cluster mit zwei DBs: <code>adminhelper</code> (Benutzer, Verbindungen, Server, API-Keys, Hooks) und <code>adminhelper_monitor</code> (Checks, Alerts, Templates, Agent-Keys).</td></tr>
+              <tr><td><code>data/.bootstrap_token</code></td><td>Einmaliger Setup-Token-Hash für den ersten Admin (siehe Erstanmeldung in der Installations-Doku).</td></tr>
               <tr><td><code>data/.secret_key</code></td><td>Auto-generierter JWT-Key (sofern <code>SECRET_KEY</code> nicht gesetzt).</td></tr>
-              <tr><td><code>data/connections.json</code></td><td>Legacy-Import aus Plain-JS-Client (nur bei Migration).</td></tr>
               <tr><td><code>data/frp-config/</code></td><td>Generierte <code>frps.toml</code> + Server-Zertifikate (PKI).</td></tr>
               <tr><td><code>data/pki/</code></td><td>CA-Material, Client-Zertifikate, CRL.</td></tr>
               <tr><td><code>data/certs/</code></td><td>Self-Signed-TLS für den FastAPI-Port <code>8443</code>.</td></tr>
@@ -80,19 +80,32 @@
           </table>
 
           <h2>Backup</h2>
-          <p>Für ein konsistentes Backup reicht es, den Stack kurz zu stoppen und das <code>data/</code>-Verzeichnis zu archivieren:</p>
+          <p>Zwei Backup-Pfade — <strong>beide laufen kombinieren</strong> für ein vollständiges Restore:</p>
+          <h3>1. PostgreSQL-Dump (DBs)</h3>
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose stop server
-tar czf adminhelper-backup-$(date +%F).tar.gz data/
-docker compose start server</code></pre>
+<pre><code># Manueller Dump beider DBs (lokal, ohne Stop):
+docker compose exec postgres pg_dump -U adminhelper -d adminhelper -Fc -f /tmp/adminhelper.dump
+docker compose exec postgres pg_dump -U adminhelper -d adminhelper_monitor -Fc -f /tmp/adminhelper_monitor.dump
+docker compose cp postgres:/tmp/adminhelper.dump ./backups/
+docker compose cp postgres:/tmp/adminhelper_monitor.dump ./backups/
 
-          <div class="callout callout-tip" data-reveal>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div>
-              <div class="callout-title">Hot-Backup mit <code>sqlite3 .backup</code></div>
-              <p>Ohne Stop: Das SQLite-Tool bringt einen konsistenten Online-Dump mit. Docker-Exec in den Container:<br><code>docker compose exec server sqlite3 /app/data/db.sqlite3 ".backup /app/data/backup.sqlite3"</code></p>
-            </div>
-          </div>
+# Oder via mitgeliefertem Script:
+docker compose exec postgres /usr/local/bin/pg-backup.sh    # falls scripts/ gemountet</code></pre>
+
+          <p>Für automatische tägliche Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren — schreibt nach <code>./backups/</code>, Retention 7 Tage.</p>
+
+          <h3>2. File-Daten (PKI, Bootstrap-Token, Zertifikate)</h3>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>tar czf adminhelper-files-$(date +%F).tar.gz data/</code></pre>
+
+          <h3>Restore</h3>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># DB zurueckspielen:
+docker compose cp ./backups/adminhelper-2026-05-02.dump postgres:/tmp/restore.dump
+docker compose exec postgres pg_restore -U adminhelper -d adminhelper --clean --if-exists --no-owner /tmp/restore.dump
+
+# Files:
+tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
 
           <h2>Logs</h2>
           <p>Die Container schreiben auf stdout; <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg.</p>
