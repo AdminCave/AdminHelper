@@ -82,11 +82,15 @@ def gen_visitor_toml(
         FrpTunnel.enabled.is_(True),
     )
 
-    server_ids = [s.id for s in user.servers]
-    if server_ids:
-        tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
+    if user.is_admin:
+        tunnels = tunnel_query.all()
+    else:
+        server_ids = [s.id for s in user.servers]
+        if not server_ids:
+            tunnels = []
+        else:
+            tunnels = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids)).all()
 
-    tunnels = tunnel_query.all()
     toml = generate_visitor_toml(config, tunnels, user.username)
     return PlainTextResponse(toml, media_type="application/toml")
 
@@ -111,12 +115,14 @@ def gen_visitor_bundle(
         FrpTunnel.enabled.is_(True),
     )
 
-    if not current_user.is_admin:
+    if current_user.is_admin:
+        tunnels = tunnel_query.all()
+    else:
         server_ids = [s.id for s in current_user.servers]
-        if server_ids:
-            tunnel_query = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids))
-
-    tunnels = tunnel_query.all()
+        if not server_ids:
+            tunnels = []
+        else:
+            tunnels = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids)).all()
     toml = generate_visitor_toml(config, tunnels, current_user.username, pki_base_path="pki")
 
     pki = {}
