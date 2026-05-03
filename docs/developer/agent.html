@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/extension.html">Browser-Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./extension.html">Browser-Extension</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.22.1</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.23.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -42,7 +42,8 @@
 &#9474;   &#9492;&#9472;&#9472; run.go              Standalone-Modus ohne Systemd
 &#9500;&#9472;&#9472; internal/
 &#9474;   &#9500;&#9472;&#9472; config/             paths_linux.go / paths_windows.go, Key=Value-Parser
-&#9474;   &#9500;&#9472;&#9472; frpc/               Init &uuml;ber <code>/api/frp/provision/{id}/activate</code>, ZIP-Slip-sicher
+&#9474;   &#9500;&#9472;&#9472; provision/          Activate &uuml;ber <code>/api/servers/{id}/provision/activate</code>, orchestriert frpc.Apply + monitor.Init
+&#9474;   &#9500;&#9472;&#9472; frpc/               Apply (Datei + Service) + Sync, ZIP-Slip-sicher
 &#9474;   &#9500;&#9472;&#9472; monitor/            Collector + Plugins (10 Dateien, OS-spezifische Splits)
 &#9474;   &#9492;&#9472;&#9472; service/            service_linux.go (systemd) / service_windows.go (SCM)
 &#9500;&#9472;&#9472; systemd/                .service + .timer Units
@@ -60,7 +61,7 @@
             <tbody>
               <tr><td><code>version</code></td><td>Version + Git-Commit ausgeben (gesetzt &uuml;ber <code>-ldflags</code>).</td></tr>
               <tr><td><code>run</code></td><td>Standalone-Modus: gesamten Zyklus einmal durchspielen (Monitoring-Push + FRP-Sync).</td></tr>
-              <tr><td><code>frpc init</code></td><td>Erst-Setup: Provisioning-Token einl&ouml;sen, PKI-Bundle entpacken, <code>frpc.toml</code> schreiben.</td></tr>
+              <tr><td><code>provision</code></td><td>Erst-Setup: Token gegen <code>/api/servers/{id}/provision/activate</code> einl&ouml;sen, Server-API-Key + optional Monitor-Key + optional FRP-Bundle in einem Aufruf installieren.</td></tr>
               <tr><td><code>frpc sync</code></td><td>Periodischer Config-Sync per Hash-Vergleich; schreibt nur, wenn sich der Server-seitige Hash ge&auml;ndert hat.</td></tr>
               <tr><td><code>monitor init</code></td><td>Monitor-Config-Datei anlegen (URL, API-Key, Service-Liste).</td></tr>
               <tr><td><code>monitor push</code></td><td>Einmaligen Metriken-Sammel- und -Push-Lauf ausf&uuml;hren.</td></tr>
@@ -102,8 +103,8 @@
 make build-linux       # bin/adminhelper-agent       (ELF amd64)
 make build-windows     # bin/adminhelper-agent.exe   (PE amd64)
 
-VERSION=0.22.1 bash build-deb.sh
-VERSION=0.22.1 bash build-rpm.sh</code></pre>
+VERSION=0.23.0 bash build-deb.sh
+VERSION=0.23.0 bash build-rpm.sh</code></pre>
           <p>Das DEB-Paket installiert <code>/usr/local/bin/adminhelper-agent</code> sowie <code>/usr/bin/frpc</code> (in der CI heruntergeladen) und legt die Systemd-Unit + Timer an.</p>
 
           <div class="callout callout-tip" data-reveal>

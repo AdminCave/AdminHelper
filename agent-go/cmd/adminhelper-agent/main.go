@@ -17,6 +17,7 @@ func main() {
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(runCmd())
+	root.AddCommand(provisionCmd())
 	root.AddCommand(frpcCmd())
 	root.AddCommand(monitorCmd())
 	root.AddCommand(serviceCmd())
@@ -37,27 +38,17 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-// --- FRPC Subcommands ---
+// --- Provision Subcommand (server-zentrisch, ersetzt frpc init seit v0.23.0) ---
 
-func frpcCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "frpc",
-		Short: "FRPC Config Sync",
-	}
-	cmd.AddCommand(frpcInitCmd())
-	cmd.AddCommand(frpcSyncCmd())
-	return cmd
-}
-
-func frpcInitCmd() *cobra.Command {
+func provisionCmd() *cobra.Command {
 	var url, token, serverID, cacert string
 	var insecure bool
 
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Ersteinrichtung mit Provision-Token",
+		Use:   "provision",
+		Short: "Server gegen AdminHelper provisionieren (Server-API-Key + optional Monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return frpcInitRun(url, token, serverID, cacert, insecure)
+			return provisionRun(url, token, serverID, cacert, insecure)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "AdminHelper Server URL (erforderlich)")
@@ -68,6 +59,17 @@ func frpcInitCmd() *cobra.Command {
 	cmd.MarkFlagRequired("url")
 	cmd.MarkFlagRequired("token")
 	cmd.MarkFlagRequired("server-id")
+	return cmd
+}
+
+// --- FRPC Subcommands ---
+
+func frpcCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "frpc",
+		Short: "FRPC Config Sync",
+	}
+	cmd.AddCommand(frpcSyncCmd())
 	return cmd
 }
 

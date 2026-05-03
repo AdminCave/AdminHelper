@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.22.1</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.23.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -42,7 +42,8 @@
 &#9474;   &#9492;&#9472;&#9472; run.go              standalone mode without systemd
 &#9500;&#9472;&#9472; internal/
 &#9474;   &#9500;&#9472;&#9472; config/             paths_linux.go / paths_windows.go, key=value parser
-&#9474;   &#9500;&#9472;&#9472; frpc/               init via <code>/api/frp/provision/{id}/activate</code>, zip-slip safe
+&#9474;   &#9500;&#9472;&#9472; provision/          activate via <code>/api/servers/{id}/provision/activate</code>, orchestrates frpc.Apply + monitor.Init
+&#9474;   &#9500;&#9472;&#9472; frpc/               Apply (file + service) + Sync, zip-slip safe
 &#9474;   &#9500;&#9472;&#9472; monitor/            collector + plugins (10 files, OS-specific splits)
 &#9474;   &#9492;&#9472;&#9472; service/            service_linux.go (systemd) / service_windows.go (SCM)
 &#9500;&#9472;&#9472; systemd/                .service + .timer units
@@ -60,7 +61,7 @@
             <tbody>
               <tr><td><code>version</code></td><td>Emit version + git commit (set via <code>-ldflags</code>).</td></tr>
               <tr><td><code>run</code></td><td>Standalone mode: run one full cycle (monitor push + FRP sync).</td></tr>
-              <tr><td><code>frpc init</code></td><td>Initial setup: redeem provision token, unpack PKI bundle, write <code>frpc.toml</code>.</td></tr>
+              <tr><td><code>provision</code></td><td>Initial setup: redeem token against <code>/api/servers/{id}/provision/activate</code>, install server API key + optional monitor key + optional FRP bundle in a single call.</td></tr>
               <tr><td><code>frpc sync</code></td><td>Periodic config sync via hash compare; only writes when the server-side hash changed.</td></tr>
               <tr><td><code>monitor init</code></td><td>Create the monitor config (URL, API key, services list).</td></tr>
               <tr><td><code>monitor push</code></td><td>One metric collection + push run.</td></tr>
@@ -102,8 +103,8 @@
 make build-linux       # bin/adminhelper-agent       (ELF amd64)
 make build-windows     # bin/adminhelper-agent.exe   (PE amd64)
 
-VERSION=0.22.1 bash build-deb.sh
-VERSION=0.22.1 bash build-rpm.sh</code></pre>
+VERSION=0.23.0 bash build-deb.sh
+VERSION=0.23.0 bash build-rpm.sh</code></pre>
           <p>The DEB package installs <code>/usr/local/bin/adminhelper-agent</code> plus <code>/usr/bin/frpc</code> (downloaded in CI) and registers the systemd unit + timer.</p>
 
           <div class="callout callout-tip" data-reveal>

@@ -205,11 +205,15 @@ DELETE /api/servers/{id}         # Server loeschen (Admin)
 GET    /api/frp/tunnels         # Tunnel-Liste (Admin)
 GET    /api/frp/visitors        # Visitor-Liste (Admin)
 GET    /api/frp/generate/visitor-toml  # Visitor-Config generieren
-POST   /api/frp/provision/{id}/activate  # Provisioning aktivieren
+GET    /api/frp/provision/{id}/config       # Aktueller frpc.toml (Sync-Agent)
+GET    /api/frp/provision/{id}/config-hash  # SHA-256 fuer Drift-Sync
+
+POST   /api/servers/{id}/provision/token     # Provision-Token erzeugen (Admin)
+GET    /api/servers/{id}/provision/tokens    # Tokens auflisten (Admin)
+POST   /api/servers/{id}/provision/activate  # Token einloesen (X-Provision-Token)
 
 GET    /api/monitoring/checks    # Monitoring-Checks (Admin)
 GET    /api/monitoring/templates # Monitoring-Templates (Admin)
-POST   /api/monitoring/agent-keys/{server_id}  # Agent-Key generieren
 ```
 
 API-Dokumentation: `http://localhost:8080/api/docs` (Swagger UI) bzw. `/openapi.json`
@@ -268,16 +272,10 @@ Der **Unified Go Agent** (`adminhelper-agent`) vereint FRP-Sync und Monitoring i
 
 ```bash
 # DEB installieren:
-apt install ./adminhelper-agent_0.20.0_amd64.deb
+apt install ./adminhelper-agent_0.23.0_amd64.deb
 
-# Monitoring einrichten:
-sudo adminhelper-agent monitor init \
-  --url https://<server>/api/monitoring \
-  --api-key <KEY> \
-  --server-id <SERVER-ID>
-
-# FRP-Sync einrichten:
-sudo adminhelper-agent frpc init \
+# Komplett-Provisioning in einem Aufruf (Server-API-Key + optional Monitor + optional FRP):
+sudo adminhelper-agent provision \
   --url https://<server> \
   --token <PROVISION-TOKEN> \
   --server-id <SERVER-ID>
@@ -289,14 +287,25 @@ sudo adminhelper-agent run
 sudo adminhelper-agent service install
 ```
 
+Der `provision`-Befehl loest den Token gegen `/api/servers/{id}/provision/activate`
+ein und installiert je nach Antwort:
+
+- Server-API-Key (immer)
+- Monitor-Agent + Key (wenn Monitor-Service erreichbar)
+- FRP-Client + frpc.toml + PKI-Bundle (wenn Server FRP-Tunnel hat)
+
+Damit funktioniert Provisioning auch fuer Server **ohne** FRP-Tunnel — bis v0.22.x
+war der Flow an FRP gekoppelt. Manuelle Setups (z.B. nur Monitoring) gehen weiter
+ueber `adminhelper-agent monitor init --api-key ...`.
+
 **Agent-Subcommands:**
 
 | Befehl | Funktion |
 |--------|----------|
+| `adminhelper-agent provision` | Ersteinrichtung mit Provision-Token (FRP optional, Monitor optional) |
 | `adminhelper-agent run [--once]` | FRP-Sync + Monitor-Push (Loop oder einmalig) |
-| `adminhelper-agent frpc init` | FRP-Ersteinrichtung mit Provision-Token |
-| `adminhelper-agent frpc sync` | Einmaliger Config-Sync |
-| `adminhelper-agent monitor init` | Monitoring-Ersteinrichtung |
+| `adminhelper-agent frpc sync` | Einmaliger FRP-Config-Sync |
+| `adminhelper-agent monitor init` | Monitoring-Ersteinrichtung (manuell, ohne Token) |
 | `adminhelper-agent monitor push` | Einmaliger Metriken-Push |
 | `adminhelper-agent service install` | OS-Service registrieren (systemd/Windows) |
 | `adminhelper-agent service uninstall` | OS-Service deregistrieren |

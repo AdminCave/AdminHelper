@@ -19,7 +19,8 @@ from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.servers.models import Server  # noqa: F401
-from app.modules.frp.models import FrpServerConfig, FrpTunnel, ProvisionToken  # noqa: F401
+from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
+from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.users.models import user_server_assoc  # noqa: F401
 from app.modules.ansible.models import Playbook  # noqa: F401
 
@@ -31,6 +32,7 @@ from app.modules.api_keys.router import router as api_keys_router
 from app.modules.hooks.router import router as hooks_router
 from app.modules.servers.router import router as servers_router
 from app.modules.frp.router import router as frp_router
+from app.modules.provisioning.router import router as provisioning_router
 from app.modules.monitoring_proxy import router as monitoring_proxy_router
 from app.modules.ansible.router import router as ansible_router
 
@@ -211,6 +213,7 @@ app.include_router(users_router)
 app.include_router(api_keys_router)
 app.include_router(hooks_router)
 app.include_router(servers_router)
+app.include_router(provisioning_router)
 app.include_router(frp_router)
 app.include_router(monitoring_proxy_router)
 app.include_router(ansible_router)

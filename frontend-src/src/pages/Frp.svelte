@@ -14,8 +14,7 @@
   import FrpConfigPreviewModal from '$modals/FrpConfigPreviewModal.svelte';
   import FrpPkiModal from '$modals/FrpPkiModal.svelte';
   import FrpStatusModal from '$modals/FrpStatusModal.svelte';
-  import ProvisionModal from '$modals/ProvisionModal.svelte';
-  import type { FrpTunnel, Server } from '$lib/api/types';
+  import type { FrpTunnel } from '$lib/api/types';
 
   let search = $state('');
   let tagFilter = $state('');
@@ -30,9 +29,6 @@
 
   let pkiOpen = $state(false);
   let statusOpen = $state(false);
-
-  let provisionOpen = $state(false);
-  let provisionServer = $state<Server | null>(null);
 
   onMount(() => {
     void load();
@@ -143,10 +139,6 @@
     }
   }
 
-  function openProvision(server: Server) {
-    provisionServer = server;
-    provisionOpen = true;
-  }
 </script>
 
 <div class="page active">
@@ -241,9 +233,6 @@
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
               {#if server}
-                <button class="btn small ghost" onclick={() => openProvision(server)}>
-                  Provision
-                </button>
                 <button
                   class="btn small ghost"
                   onclick={() =>
@@ -334,8 +323,3 @@
 />
 <FrpPkiModal open={pkiOpen} onClose={() => (pkiOpen = false)} />
 <FrpStatusModal open={statusOpen} onClose={() => (statusOpen = false)} />
-<ProvisionModal
-  open={provisionOpen}
-  server={provisionServer}
-  onClose={() => (provisionOpen = false)}
-/>

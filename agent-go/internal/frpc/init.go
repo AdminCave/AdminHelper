@@ -5,10 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,60 +14,21 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
-type provisionResponse struct {
-	APIKey    string `json:"apiKey"`
-	Config    string `json:"config"`
-	PkiBundle string `json:"pkiBundle"`
-}
-
-// Init fuehrt die Ersteinrichtung durch.
-func Init(adminHelperURL, token, serverID, cacert string, insecure bool) error {
+// Apply schreibt die FRP-Config + PKI-Bundle aus einer Provisioning-Antwort
+// auf die Platte und aktiviert den Service. Es findet KEIN HTTP-Call mehr
+// statt — der Token-Activate-Aufruf passiert seit v0.23.0 zentral im
+// `provision`-Subbefehl, der `Apply` mit den bereits dekodierten Werten
+// aufruft.
+func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert string, insecure bool) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
-	client, err := httpClient(cacert, insecure)
-	if err != nil {
-		return fmt.Errorf("HTTP-Client: %w", err)
-	}
-
-	// Provisioning-Endpoint aufrufen
-	endpoint := fmt.Sprintf("%s/api/frp/provision/%s/activate", adminHelperURL, serverID)
-	req, err := http.NewRequest("POST", endpoint, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-Provision-Token", token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("Activate fehlgeschlagen: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("Activate fehlgeschlagen (HTTP %d): %s", resp.StatusCode, string(body))
-	}
-
-	var prov provisionResponse
-	if err := json.Unmarshal(body, &prov); err != nil {
-		return fmt.Errorf("JSON-Antwort parsen: %w", err)
-	}
-	if prov.APIKey == "" {
-		return fmt.Errorf("kein API-Key in der Antwort erhalten")
-	}
-
-	// Verzeichnisse anlegen
 	frpDir := config.FrpDir()
 	pkiDir := config.FrpPkiDir()
 	if err := os.MkdirAll(pkiDir, 0755); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
 
-	// CA-Cert kopieren falls angegeben
+	// CA-Cert kopieren, falls angegeben
 	if cacert != "" {
 		data, err := os.ReadFile(cacert)
 		if err != nil {
@@ -92,7 +51,7 @@ func Init(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	// AdminHelper-Config schreiben
 	entries := []config.KeyValue{
 		{Key: "ADMINHELPER_URL", Value: adminHelperURL},
-		{Key: "API_KEY", Value: prov.APIKey},
+		{Key: "API_KEY", Value: apiKey},
 		{Key: "SERVER_ID", Value: serverID},
 	}
 	if confCACert != "" {
@@ -107,8 +66,8 @@ func Init(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	logMsg("Config geschrieben: %s", config.FrpAdminHelperConf())
 
 	// frpc.toml schreiben (base64-decoded)
-	if prov.Config != "" {
-		decoded, err := base64.StdEncoding.DecodeString(prov.Config)
+	if frpConfigB64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(frpConfigB64)
 		if err != nil {
 			return fmt.Errorf("Config base64 decodieren: %w", err)
 		}
@@ -119,8 +78,8 @@ func Init(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	}
 
 	// PKI-Bundle entpacken (base64-encoded tar.gz)
-	if prov.PkiBundle != "" {
-		if err := extractPkiBundle(prov.PkiBundle, frpDir); err != nil {
+	if pkiBundleB64 != "" {
+		if err := extractPkiBundle(pkiBundleB64, frpDir); err != nil {
 			logMsg("WARNUNG: PKI-Bundle konnte nicht entpackt werden: %v", err)
 		} else {
 			logMsg("PKI-Zertifikate installiert")
@@ -137,10 +96,9 @@ func Init(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 		logMsg("WARNUNG: Service konnte nicht aktiviert werden: %v", err)
 		logMsg("Bitte manuell aktivieren")
 	} else {
-		logMsg("Provisioning abgeschlossen. frpc und sync sind aktiv.")
+		logMsg("FRP-Setup abgeschlossen. frpc und sync sind aktiv.")
 	}
 
-	fmt.Println("OK: Provisioning abgeschlossen. frpc laeuft.")
 	return nil
 }
 

@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.22.1</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.23.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -57,14 +57,14 @@
           </table>
 
           <h2>Version Locations</h2>
-          <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough. As of v0.22.1:</p>
+          <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough. As of v0.23.0:</p>
           <ul>
             <li><code>frontend-src/package.json</code> &ndash; Vite build of the web panel</li>
             <li><code>desktop-src/package.json</code> &ndash; Vite build of the desktop frontend</li>
             <li><code>desktop/src-tauri/tauri.conf.json</code> + <code>desktop/src-tauri/Cargo.toml</code> &ndash; Tauri bundle version</li>
             <li><code>extension/manifest.json</code> &ndash; browser extension</li>
             <li><code>.gitlab-ci.yml</code> &ndash; <code>AGENT_VERSION</code> variable in agent build/publish jobs (multiple occurrences)</li>
-            <li><code>docs/**/*.html</code> &ndash; footer <code>&lt;span&gt;v0.22.1&lt;/span&gt;</code> across 50 HTML files (DE + EN)</li>
+            <li><code>docs/**/*.html</code> &ndash; footer <code>&lt;span&gt;v0.23.0&lt;/span&gt;</code> across 50 HTML files (DE + EN)</li>
             <li><code>CHANGELOG.md</code> &ndash; new section at the top</li>
           </ul>
           <p>The server itself does not carry its own <code>version</code> &ndash; the backend is identified by Docker image tag. In the Go agent the version is injected via <code>-ldflags "-X main.version=$VERSION"</code> at CI build time.</p>
@@ -145,7 +145,7 @@ VERSION=$VERSION bash build-rpm.sh</code></pre>
             <li>Bump the versions in the files listed above (e.g. with <code>sed</code> across <code>frontend-src/package.json</code>, <code>desktop-src/package.json</code>, <code>desktop/src-tauri/tauri.conf.json</code>, <code>desktop/src-tauri/Cargo.toml</code>, <code>extension/manifest.json</code>, <code>.gitlab-ci.yml</code>).</li>
             <li>Update the footer versions in <code>docs/**/*.html</code>: <code>find docs -name '*.html' -exec sed -i 's/v0\.OLD/v0.NEW/g' {} \;</code></li>
             <li>Update <code>CHANGELOG.md</code> (manual, Conventional-Commits style).</li>
-            <li>Commit &amp; tag: <code>git commit -am "release: v0.22.1" &amp;&amp; git tag v0.22.1</code>.</li>
+            <li>Commit &amp; tag: <code>git commit -am "release: v0.23.0" &amp;&amp; git tag v0.23.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>
             <li>Watch the pipeline &ndash; once <code>publish</code> is green, the new version is live on <code>deb.ks98.de</code>.</li>
             <li>Add release notes in the GitLab UI (Markdown from <code>CHANGELOG.md</code>).</li>

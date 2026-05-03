@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.22.1</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.23.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -59,14 +59,15 @@
               <tr><td><code>/api/api-keys</code></td><td><code>modules/api_keys/</code></td><td>API keys with <code>read</code> or <code>read_write</code> permission, SHA-256 hashed.</td></tr>
               <tr><td><code>/api/hooks</code></td><td><code>modules/hooks/</code></td><td>Hook CRUD, public <code>/trigger/{token}</code>, <code>/run</code> for manual test, <code>/rotate</code> for webhook token.</td></tr>
               <tr><td><code>/api/ansible/playbooks</code></td><td><code>modules/ansible/</code></td><td>Playbook CRUD with YAML validation, disk storage under <code>/data/ansible/playbooks/{id}/</code>.</td></tr>
-              <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Six sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, <code>pki</code>, <code>provision</code>.</td></tr>
+              <tr><td><code>/api/servers/{id}/provision</code></td><td><code>modules/provisioning/</code></td><td>Server-centric provisioning: token lifecycle and activate (FRP-independent). Returns server API key, optional monitor key, optional FRP bundle.</td></tr>
+              <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Five sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, <code>pki</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
               <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy.py</code></td><td>Reverse proxy to the monitoring microservice; public agent push endpoint <code>/agent/{id}/report</code>.</td></tr>
             </tbody>
           </table>
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">No dedicated <code>alerts</code>/<code>audit</code>/<code>settings</code> router</div><p>Alerts and check status live in the monitoring service and are exposed via <code>monitoring_proxy</code>. There is no dedicated audit-log router as of v0.22.1; logging happens through Python logging and hook events.</p></div>
+            <div><div class="callout-title">No dedicated <code>alerts</code>/<code>audit</code>/<code>settings</code> router</div><p>Alerts and check status live in the monitoring service and are exposed via <code>monitoring_proxy</code>. There is no dedicated audit-log router as of v0.23.0; logging happens through Python logging and hook events.</p></div>
           </div>
 
           <h2>Auth Architecture</h2>
@@ -85,13 +86,13 @@
             <div><div class="callout-title">Rate limit &amp; IP filter</div><p>Login limit (5 per 60 s/IP) and webhook limit (20 per 60 s/IP) are Redis-backed with in-memory fallback. IP filter via <code>ALLOWED_IPS</code> (CIDR list); proxy trust via <code>TRUSTED_PROXIES</code> (safe) instead of <code>TRUST_PROXY_HEADERS</code> (legacy).</p></div>
           </div>
 
-          <h2>FRP Provisioning</h2>
-          <p>New servers are onboarded via one-time tokens with a 24-hour TTL:</p>
+          <h2>Server Provisioning</h2>
+          <p>New servers are onboarded via one-time tokens with a 24-hour TTL &mdash; since v0.23.0 FRP-independent inside the server module:</p>
           <ol>
-            <li>Admin calls <code>POST /api/frp/provision/{server_id}/token</code> and receives <code>{token, expiresAt}</code>.</li>
-            <li>The agent redeems it with <code>POST /api/frp/provision/{server_id}/activate</code> (header <code>X-Provision-Token</code>) and gets back a fresh API key, <code>frpc.toml</code>, PKI bundle (CA + client cert + key) and the server name.</li>
+            <li>Admin calls <code>POST /api/servers/{server_id}/provision/token</code> and receives <code>{token, expiresAt, serverId, serverName}</code>.</li>
+            <li>The agent redeems it with <code>POST /api/servers/{server_id}/provision/activate</code> (header <code>X-Provision-Token</code>) and gets back: a fresh server API key (always), monitor agent key + URL (when the monitor service is reachable), <code>frpc.toml</code> + PKI bundle (when the server has FRP tunnels). Fields are <code>null</code> when the respective component is not configured &mdash; an unreachable monitor service does not block provisioning.</li>
             <li>Tokens are one-time: <code>used_at</code> is set, further activations fail.</li>
-            <li>At runtime the agent syncs its <code>frpc.toml</code> via <code>GET /provision/{server_id}/config</code> + <code>config-hash</code>.</li>
+            <li>At runtime the agent syncs its <code>frpc.toml</code> via <code>GET /api/frp/provision/{server_id}/config</code> + <code>config-hash</code> (only when FRP is configured).</li>
           </ol>
 
           <h2>SQLAlchemy Models</h2>

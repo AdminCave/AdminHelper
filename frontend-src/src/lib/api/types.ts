@@ -300,7 +300,7 @@ export interface FrpStatus {
   error?: string;
 }
 
-export interface FrpProvisionToken {
+export interface ProvisionToken {
   id: string;
   serverId: string;
   expiresAt: string;
@@ -309,16 +309,11 @@ export interface FrpProvisionToken {
   createdAt?: string | null;
 }
 
-export interface FrpProvisionTokenCreateResult {
+export interface ProvisionTokenCreateResult {
   token: string;
   expiresAt: string;
   serverId: string;
   serverName: string;
-}
-
-export interface MonitoringAgentKeyResult {
-  apiKey: string;
-  serverId: string;
 }
 
 // ── Monitoring (volle Payloads vom Monitoring-Service) ──────────────────

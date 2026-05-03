@@ -11,6 +11,7 @@
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
   import ServerModal from '$modals/ServerModal.svelte';
+  import ServerProvisionModal from '$modals/ServerProvisionModal.svelte';
   import type { Server, Connection, MonCheckSummary } from '$lib/api/types';
 
   let search = $state('');
@@ -19,6 +20,8 @@
   let monitorChecks = $state<MonCheckSummary[]>([]);
   let modalOpen = $state(false);
   let editing = $state<Server | null>(null);
+  let provisionOpen = $state(false);
+  let provisionServer = $state<Server | null>(null);
 
   onMount(() => {
     load();
@@ -77,6 +80,11 @@
   function openEdit(s: Server) {
     editing = s;
     modalOpen = true;
+  }
+
+  function openProvision(s: Server) {
+    provisionServer = s;
+    provisionOpen = true;
   }
 
   async function handleClose() {
@@ -169,6 +177,7 @@
             onkeydown={(e) => e.stopPropagation()}
           >
             <button class="btn small" onclick={() => openEdit(s)}>{$t('action.edit')}</button>
+            <button class="btn small ghost" onclick={() => openProvision(s)}>Provision</button>
             <button class="btn small ghost" onclick={() => removeServer(s)}>
               {$t('action.delete')}
             </button>
@@ -270,3 +279,8 @@
 </div>
 
 <ServerModal open={modalOpen} {editing} onClose={handleClose} />
+<ServerProvisionModal
+  open={provisionOpen}
+  server={provisionServer}
+  onClose={() => (provisionOpen = false)}
+/>

@@ -6,9 +6,6 @@ import type {
   FrpTunnelInput,
   FrpPkiStatus,
   FrpStatus,
-  FrpProvisionToken,
-  FrpProvisionTokenCreateResult,
-  MonitoringAgentKeyResult,
 } from './types';
 
 export function listConfigs(): Promise<FrpConfig[]> {
@@ -117,16 +114,4 @@ export function pkiDownloadBundle(clientName: string): Promise<Blob> {
 
 export function status(): Promise<FrpStatus> {
   return http.get<FrpStatus>('/api/frp/status');
-}
-
-export function listProvisionTokens(serverId: string): Promise<FrpProvisionToken[]> {
-  return http.get<FrpProvisionToken[]>(`/api/frp/provision/${serverId}/tokens`);
-}
-
-export function createProvisionToken(serverId: string): Promise<FrpProvisionTokenCreateResult> {
-  return http.post<FrpProvisionTokenCreateResult>(`/api/frp/provision/${serverId}/token`);
-}
-
-export function createMonitoringAgentKey(serverId: string): Promise<MonitoringAgentKeyResult> {
-  return http.post<MonitoringAgentKeyResult>(`/api/monitoring/agent-keys/${serverId}`);
 }

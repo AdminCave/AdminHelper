@@ -3,8 +3,8 @@
   import Button from '$lib/components/ui/Button.svelte';
   import { t, language } from '$lib/i18n';
   import { showToast } from '$lib/stores/notifications';
-  import * as api from '$lib/api/frp';
-  import type { FrpProvisionToken, Server } from '$lib/api/types';
+  import * as api from '$lib/api/provisioning';
+  import type { ProvisionToken, Server } from '$lib/api/types';
 
   interface Props {
     open: boolean;
@@ -14,7 +14,7 @@
 
   let { open, server, onClose }: Props = $props();
 
-  let tokens = $state<FrpProvisionToken[]>([]);
+  let tokens = $state<ProvisionToken[]>([]);
   let command = $state<string>('');
   let loading = $state(false);
 
@@ -46,14 +46,9 @@
     try {
       const result = await api.createProvisionToken(server.id);
       const srmUrl = window.location.origin;
-      let cmd = `# FRP-Client einrichten\nsudo adminhelper-agent frpc init \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${server.id} \\\n  --insecure`;
-      try {
-        const agentKey = await api.createMonitoringAgentKey(server.id);
-        cmd += `\n\n# Monitoring-Agent einrichten\nsudo adminhelper-agent monitor init \\\n  --url ${srmUrl}/api/monitoring \\\n  --api-key ${agentKey.apiKey} \\\n  --server-id ${server.id} \\\n  --insecure`;
-      } catch {
-        /* Monitoring-Agent-Key nicht verfuegbar — nur FRP anzeigen */
-      }
-      command = cmd;
+      // Ein einziger provision-Aufruf — der Agent holt sich Server-API-Key,
+      // optional Monitor-Key, optional FRP-Bundle aus der Activate-Antwort.
+      command = `sudo adminhelper-agent provision \\\n  --url ${srmUrl} \\\n  --token ${result.token} \\\n  --server-id ${server.id} \\\n  --insecure`;
       showToast($t('toast.provision.created'));
       await loadTokens();
     } catch (err) {
@@ -80,7 +75,7 @@
     }
   }
 
-  function tokenStatus(tk: FrpProvisionToken): { label: string; color: string } {
+  function tokenStatus(tk: ProvisionToken): { label: string; color: string } {
     if (tk.usedAt) {
       return {
         label: $t('frp.provision.used', { time: formatDateTime(tk.usedAt) }),
@@ -99,6 +94,9 @@
   {onClose}
 >
   <div style="display:flex;flex-direction:column;gap:16px">
+    <p style="margin:0;color:var(--text-muted);font-size:13px">
+      {$t('frp.provision.hint')}
+    </p>
     <div>
       <Button variant="primary" onclick={createToken}>
         {$t('frp.provision.createToken')}
@@ -109,7 +107,7 @@
         <div
           style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"
         >
-          <strong>{$t('frp.provision.oneLiner')}</strong>
+          <strong>{$t('frp.provision.runOnTarget')}</strong>
           <button class="btn small" onclick={copyCommand}>{$t('action.copy')}</button>
         </div>
         <pre style="margin:0;font-size:12px;white-space:pre-wrap;overflow-x:auto">{command}</pre>

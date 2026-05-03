@@ -3,11 +3,12 @@ package main
 import (
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/provision"
 	"adminhelper-agent/internal/service"
 )
 
-func frpcInitRun(url, token, serverID, cacert string, insecure bool) error {
-	return frpc.Init(url, token, serverID, cacert, insecure)
+func provisionRun(url, token, serverID, cacert string, insecure bool) error {
+	return provision.Run(url, token, serverID, cacert, insecure)
 }
 
 func frpcSyncRun() error {

@@ -5,6 +5,68 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.23.0] - 2026-05-02
+
+### Highlights
+
+**Server-zentrisches Provisioning** — bis v0.22.x war der Provision-Flow
+fest an FRP gekoppelt; wer keinen Tunnel hatte, konnte den Token-Flow nicht
+nutzen und bekam keinen Monitor-Agent-Key. Ab v0.23.0 lebt Provisioning im
+Server-Modul und liefert je nach Konfiguration optional FRP-Bundle und
+Monitor-Key. Ein einziger Agent-Aufruf ersetzt das alte zweistufige Setup.
+
+### Added
+
+- Neues Backend-Modul `app.modules.provisioning` mit Endpoints
+  `POST /api/servers/{id}/provision/token`, `GET /tokens` und
+  `POST /activate` (Header `X-Provision-Token`). Activate-Antwort:
+  `{ serverName, apiKey, monitorApiKey?, monitorUrl?, frp? }` —
+  Felder sind `null`, wenn die jeweilige Komponente nicht konfiguriert
+  oder nicht erreichbar ist. Resilience-Pattern: ausgefallener
+  Monitor-Service blockiert das Provisioning nicht.
+- Neuer Agent-Subbefehl `adminhelper-agent provision --url ... --token ... --server-id ...`
+  in `internal/provision/`. Orchestriert Activate-Aufruf, dann je nach
+  Antwort `monitor.Init` und `frpc.Apply`.
+- Frontend: `ServerProvisionModal.svelte` an der Servers-Page (statt
+  vorher in der Frp-Page); generiert genau einen `provision`-Befehl
+  zum Kopieren.
+- Tests: `server/tests/test_provisioning.py` mit pytest-httpx-Mocking
+  fuer den Monitor-Service-Aufruf (8 Testfaelle, u.a. minimal/with-monitor/
+  monitor-down/wrong-token/used-twice/wrong-server).
+- Neue Test-Dependency: `pytest-httpx>=0.30` in `requirements-dev.txt`.
+
+### Changed
+
+- Tabelle `frp_provision_tokens` umbenannt zu `provision_tokens` per
+  `op.rename_table` (nicht-destruktive Alembic-Migration
+  `0494a8f377ef_rename_frp_provision_tokens_to_provision_tokens`).
+  Constraints (PK, UNIQUE auf `hashed_token`, FK auf `servers`) werden
+  von Postgres automatisch mit umbenannt.
+- `frpc.Init` (HTTP + Datei + Service in einem) wurde zu `frpc.Apply`
+  (nur Datei + Service) zerlegt — der HTTP-Activate-Aufruf wandert in
+  das neue `internal/provision/` Package.
+- `frp/models.py` exportiert `ProvisionToken` weiterhin (Re-Export aus
+  `app.modules.provisioning.models`) als Backwards-Compat fuer Test-
+  Fixtures, die das alte Symbol importieren.
+
+### Removed (Breaking)
+
+- Alte Endpoints `/api/frp/provision/{id}/token`, `/tokens` und `/activate`
+  sind komplett entfernt — Pre-Release, kein Deprecation-Window.
+  Das FRP-Modul behaelt nur noch `/api/frp/provision/{id}/config` und
+  `/config-hash` fuer den laufenden Sync-Agent.
+- Agent-Subbefehl `adminhelper-agent frpc init` ist entfernt — Setup
+  laeuft nun ausschliesslich ueber `adminhelper-agent provision`.
+- Frontend-API: `createMonitoringAgentKey()` (toter Code, war im alten
+  Modal als Fallback gedacht) und der API-Type `MonitoringAgentKeyResult`
+  sind weg. Die zugehoerigen Funktionen `listProvisionTokens` /
+  `createProvisionToken` sind aus `lib/api/frp.ts` in das neue
+  `lib/api/provisioning.ts` umgezogen, Types `FrpProvisionToken[…]`
+  heissen jetzt `ProvisionToken[…]`.
+- Versions-Bump aller Komponenten auf `v0.23.0` (Server, Monitoring,
+  Web-Admin-Panel, Desktop-Client, Browser-Extension, Go-Agent via
+  `.gitlab-ci.yml AGENT_VERSION`, 40 Doku-HTML-Footer).
+
 ## [0.22.1] - 2026-05-02
 
 ### Fixed
