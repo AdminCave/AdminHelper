@@ -138,7 +138,6 @@
       showToast(err instanceof Error ? err.message : 'Fehler', 'error');
     }
   }
-
 </script>
 
 <div class="page active">
