@@ -5,6 +5,39 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.23.2] - 2026-05-03
+
+### Fixed
+
+**Desktop-Client: alte Connections nach Server-Wechsel sichtbar**
+
+Beim Wechsel zwischen zwei AdminHelper-Servern (Login zu B nach Login zu A,
+oder serverUrl-Aenderung in den Settings) blieben die Verbindungen vom
+vorherigen Server im Desktop-Client sichtbar — sowohl im Memory-Store als
+auch persistent in `connections.json` (Tauri-AppDataDir). Bei Fehlschlag
+des Fetch-Calls zum neuen Server (z.B. falscher Port) blieb der alte Stand
+unveraendert.
+
+Drei Code-Pfade hatten den Connection-Reload nicht getriggert:
+
+- `session.ts:login()` aktualisierte nur das Session-Objekt, ohne
+  `connections.reloadForMode()` zu rufen → frischer Login zu Server B
+  liess die alten Daten von Server A stehen, bis der User manuell die
+  Connections-Page wechselte (was ohne Trigger auch nichts neu lud).
+- `session.ts:logout()` setzte nur die Session auf `null`, leerte aber
+  nicht den Connection-Cache → die Datei blieb voll mit Server-A-Daten
+  und tauchte nach dem naechsten App-Start wieder auf.
+- `settings.ts:saveSettings()` ignorierte serverUrl-Wechsel mit aktiver
+  Session — das alte JWT gehoerte zum alten Server, der neue Server
+  haette es abgelehnt, aber der User merkte das nie, weil kein Reload
+  triggerte.
+
+Fix: Login triggert nun `reloadForMode(settings, sess)` direkt nach dem
+Token-Setzen. Logout leert vor dem Session-Reset den Connection-Cache
+(Memory + Datei via `saveAll([])`). Settings erzwingen bei serverUrl-
+Wechsel mit aktiver Session ein `serverLogout()`, sodass der User in den
+needsLogin-Flow geschickt wird.
+
 ## [0.23.1] - 2026-05-03
 
 ### Highlights

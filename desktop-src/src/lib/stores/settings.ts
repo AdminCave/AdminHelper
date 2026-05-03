@@ -66,6 +66,19 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
     reportError(v.error ?? tNow('error.invalidSettings'));
     return { ok: false };
   }
+  // Server-URL-Wechsel mit aktiver Session erzwingt Logout: das alte
+  // JWT gehoert zum alten Server und wird vom neuen Server abgelehnt.
+  // Ohne Logout blieben in der lokalen connections.json + im Store die
+  // Daten vom alten Server sichtbar, bis der User selbst neu einloggt.
+  const previous = get(sessionStore).settings;
+  const serverUrlChanged =
+    previous?.mode === 'server' &&
+    next.mode === 'server' &&
+    previous.serverUrl !== next.serverUrl;
+  if (serverUrlChanged && get(sessionStore).session) {
+    await serverLogout();
+  }
+
   try {
     await bridge.saveSettings(next);
     await refreshSettings();

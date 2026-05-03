@@ -12,6 +12,7 @@
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { setLanguage } from '$lib/i18n';
+import { reloadForMode, saveAll as setConnections } from './connections';
 import type { AuthSession, Settings, SyncMode } from '$lib/bridge/types';
 
 interface SessionState {
@@ -70,12 +71,25 @@ export async function login(
   const allowSelfSigned = current.settings?.allowSelfSignedCerts ?? false;
   const sess = await bridge.login(serverUrl, username, password, allowSelfSigned);
   _state.update((s) => ({ ...s, session: sess }));
+  // Connections vom neuen Server frisch holen — verhindert, dass nach
+  // Server-Wechsel der alte connections.json-Datei-Cache sichtbar bleibt.
+  if (current.settings) {
+    await reloadForMode(current.settings, sess);
+  }
 }
 
 export async function logout(): Promise<void> {
   try {
     await bridge.logout();
   } finally {
+    // Erst Connection-Cache leeren (Memory + Datei via saveAll([])), dann
+    // Session auf null setzen — sonst sehen Subscriber kurz die alten
+    // Daten im bereits ausgeloggten State.
+    try {
+      await setConnections([]);
+    } catch {
+      /* Cache-Cleanup darf Logout nicht blocken */
+    }
     _state.update((s) => ({ ...s, session: null }));
   }
 }
