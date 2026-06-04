@@ -6,6 +6,7 @@
 
 import datetime
 import logging
+import os
 from pathlib import Path
 
 from cryptography import x509
@@ -24,6 +25,15 @@ VALIDITY_DAYS_CERT = 365  # 1 Jahr
 
 def _ensure_pki_dir() -> Path:
     PKI_DIR.mkdir(parents=True, exist_ok=True)
+    # Verzeichnis und vorhandene Privatkeys restriktiv halten — auch fuer Bestands-
+    # Deployments, deren Keys frueher world-/group-readable (umask) angelegt wurden.
+    # Idempotent; laeuft bei jedem PKI-Zugriff.
+    try:
+        PKI_DIR.chmod(0o700)
+        for key_file in PKI_DIR.glob("*.key"):
+            key_file.chmod(0o600)
+    except OSError as exc:
+        logger.warning("Konnte PKI-Permissions nicht setzen (%s): %s", PKI_DIR, exc)
     return PKI_DIR
 
 
@@ -32,11 +42,22 @@ def _generate_key() -> rsa.RSAPrivateKey:
 
 
 def _write_key(path: Path, key: rsa.RSAPrivateKey) -> None:
-    path.write_bytes(key.private_bytes(
+    # Privatkeys umask-robust mit 0600 schreiben (kein kurzes world-readable Fenster).
+    pem = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
-    ))
+    )
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, pem)
+    finally:
+        os.close(fd)
+    # O_CREAT laesst den Mode einer BESTEHENDEN Datei unveraendert -> explizit nachziehen.
+    try:
+        path.chmod(0o600)
+    except OSError as exc:
+        logger.warning("Konnte Key-Permissions nicht auf 0600 setzen (%s): %s", path, exc)
 
 
 def _write_cert(path: Path, cert: x509.Certificate) -> None:
