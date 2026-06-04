@@ -209,3 +209,81 @@ class TestProvisionActivate:
             headers={"X-Provision-Token": raw},
         )
         assert res.status_code == 403
+
+
+class TestProvisionActivateConcurrency:
+    """TOCTOU-Schutz: ein Einmal-Token darf nie mehrfach einen Key erzeugen."""
+
+    def test_conditional_consume_is_atomic(self, test_client, db_session):
+        srv = _make_server(db_session, sid="srv-toctou", name="toctou")
+        _make_token(db_session, server_id=srv.id)
+        token = (
+            db_session.query(ProvisionToken)
+            .filter(ProvisionToken.server_id == srv.id)
+            .first()
+        )
+
+        def consume() -> int:
+            return (
+                db_session.query(ProvisionToken)
+                .filter(ProvisionToken.id == token.id, ProvisionToken.used_at.is_(None))
+                .update(
+                    {ProvisionToken.used_at: datetime.datetime.now(datetime.timezone.utc)},
+                    synchronize_session=False,
+                )
+            )
+
+        # Genau ein Konsum gewinnt; jeder weitere Race-Teilnehmer bekommt rowcount 0.
+        assert consume() == 1
+        assert consume() == 0
+
+    def test_activate_loses_race_returns_409_and_no_key(
+        self, test_client, db_session, monkeypatch
+    ):
+        srv = _make_server(db_session, sid="srv-race", name="race")
+        raw = _make_token(db_session, server_id=srv.id)
+
+        # Simuliere: ein konkurrierender Request hat den Token bereits konsumiert,
+        # waehrend dieser Request is_valid() noch auf used_at=None sah.
+        token = (
+            db_session.query(ProvisionToken)
+            .filter(ProvisionToken.server_id == srv.id)
+            .first()
+        )
+        token.used_at = datetime.datetime.now(datetime.timezone.utc)
+        db_session.commit()
+        monkeypatch.setattr(ProvisionToken, "is_valid", lambda self: True)
+
+        before = db_session.query(ApiKey).count()
+        res = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": raw},
+        )
+        assert res.status_code == 409, res.text
+        # Fail-closed: bei verlorenem Race wird KEIN read-API-Key erzeugt.
+        assert db_session.query(ApiKey).count() == before
+
+    def test_activate_twice_issues_only_one_key(
+        self, test_client, db_session, monitor_key_set, httpx_mock
+    ):
+        srv = _make_server(db_session, sid="srv-once", name="once")
+        raw = _make_token(db_session, server_id=srv.id)
+        httpx_mock.add_response(
+            url=f"{MONITOR_SERVICE_URL.rstrip('/')}/agent-keys/{srv.id}",
+            method="POST",
+            status_code=503,
+        )
+        before = db_session.query(ApiKey).count()
+        r1 = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": raw},
+        )
+        assert r1.status_code == 200, r1.text
+        assert db_session.query(ApiKey).count() == before + 1
+        # Zweiter Versuch erzeugt keinen weiteren Key (401 vom is_valid oder 409 vom Guard).
+        r2 = test_client.post(
+            f"/api/servers/{srv.id}/provision/activate",
+            headers={"X-Provision-Token": raw},
+        )
+        assert r2.status_code in (401, 409)
+        assert db_session.query(ApiKey).count() == before + 1

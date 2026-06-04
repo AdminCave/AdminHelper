@@ -111,8 +111,19 @@ def activate_provision(
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    # Token verbrauchen
-    token.used_at = datetime.datetime.now(datetime.timezone.utc)
+    # Token atomar verbrauchen (TOCTOU-Schutz): bedingtes UPDATE serialisiert
+    # parallele Einloesungen ueber die Row-Lock -> genau EIN Request gewinnt; alle
+    # weiteren bekommen rowcount 0 und werden abgewiesen, BEVOR ein Key entsteht.
+    consumed = (
+        db.query(ProvisionToken)
+        .filter(ProvisionToken.id == token.id, ProvisionToken.used_at.is_(None))
+        .update(
+            {ProvisionToken.used_at: datetime.datetime.now(datetime.timezone.utc)},
+            synchronize_session=False,
+        )
+    )
+    if consumed == 0:
+        raise HTTPException(status_code=409, detail="Token wurde bereits eingeloest")
 
     # 1. Server-Read-API-Key (immer)
     raw_api_key = generate_api_key()
