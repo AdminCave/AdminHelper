@@ -2,12 +2,17 @@ Name:           adminhelper-agent
 Version:        __VERSION__
 Release:        1%{?dist}
 Summary:        AdminHelper Agent — FRPC Sync + Monitoring
-License:        Proprietary
+License:        GPL-3.0-or-later
 URL:            https://adminhelper.de
 Vendor:         Kevin Stenzel <kevin@ks98.de>
 Packager:       Kevin Stenzel <kevin@ks98.de>
 
 Source0:        %{name}-%{version}.tar.gz
+
+# Payload is a prebuilt, stripped Go binary — no debuginfo to extract.
+# Without this, rpm >= 4.14 runs find-debuginfo and aborts with an empty
+# debugfiles.list, producing no RPM at all.
+%global debug_package %{nil}
 
 Requires:       systemd
 Obsoletes:      srm-frpc-client < %{version}
