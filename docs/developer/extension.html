@@ -47,7 +47,7 @@
 <pre><code>{
   "manifest_version": 3,
   "name": "AdminHelper",
-  "version": "0.17.0",
+  "version": "0.23.2",
   "permissions": ["storage", "tabs", "alarms"],
   "action":    { "default_popup": "popup.html" },
   "options_page": "options.html",
@@ -101,14 +101,18 @@ updateBadge(webConns.length);</code></pre>
           <h2>Badge-Counter</h2>
           <p>Die Anzahl der Web-Verbindungen erscheint als Badge am Toolbar-Icon (<code>chrome.action.setBadgeText</code>). Leer bei <code>0</code>, Cyan-Background (<code>#38bdf8</code>) für Sichtbarkeit gegen helle und dunkle Chrome-Themes.</p>
 
+          <h2>Popup &amp; Options</h2>
+          <p>Das Popup hat zwei Zustände: Ist keine Config gesetzt, erscheint die <strong>Setup-View</strong> (Server-URL + API-Key inline). Andernfalls die <strong>Main-View</strong> mit Suche, Listen-/Tag-Ansicht-Umschalter und Footer (Verbindungszahl + relative Zeit des letzten Refresh). Die gewählte Ansicht wird in <code>chrome.storage.local.viewMode</code> persistiert; offene/zugeklappte Tag-Gruppen leben in <code>sessionStorage</code>. Gefiltert wird live über Name, URL, Notes und Tags.</p>
+          <p>Die <strong>Options-Seite</strong> bietet neben „Speichern" einen Button <em>Verbindung testen</em>: er ruft denselben <code>GET /api/connections</code> auf und meldet die Gesamtzahl der Verbindungen sowie die Anzahl der Web-Verbindungen zurück, ohne etwas zu speichern. Änderungen an <code>serverUrl</code>/<code>apiKey</code> werden über <code>chrome.storage.onChanged</code> erkannt – ein offenes Popup re-initialisiert sich dann automatisch.</p>
+
           <h2>Security-Model</h2>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div><div class="callout-title">API-Key im Klartext</div><p><code>chrome.storage.sync</code> ist <strong>kein</strong> Secret-Store. Der API-Key ist für alle Extensions im selben Chrome-Profil lesbar. Scope daher auf <code>web_only</code> beschränken – kein Connection-CRUD, kein Hook-Zugriff, keine Server-Admin-Rechte.</p></div>
           </div>
 
-          <h2>Protokoll-Filter</h2>
-          <p>Das Popup rendert nur <code>http</code>- und <code>https</code>-URLs. Andere Schemes (<code>rdp://</code>, <code>ssh://</code>, <code>vnc://</code>) werden im Frontend gar nicht erst angezeigt – keine Angriffsfläche für URI-Handler-Hijacking.</p>
+          <h2>Web-Filter</h2>
+          <p>Sowohl der Background-Worker als auch das Popup filtern die Server-Antwort auf <code>c.kind === 'web'</code> – nur Web-Verbindungen werden zwischengespeichert und gerendert. Verbindungen anderer Art (RDP, SSH, VNC) tragen ein abweichendes <code>kind</code> und erreichen die Extension gar nicht erst – keine Angriffsfläche für URI-Handler-Hijacking. Geklickt wird die Verbindung per <code>chrome.tabs.create({ url })</code> mit der unveränderten <code>url</code> aus dem Server.</p>
 
           <h2>Lokales Testen</h2>
           <ol>

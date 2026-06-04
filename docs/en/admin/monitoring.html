@@ -16,7 +16,7 @@
         <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">AdminHelper</span><span class="brand-sub">Documentation</span></span></a>
         <nav class="sidebar-nav">
           <div class="nav-group"><a href="../index.html">Welcome</a></div>
-          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/extension.html">Browser Extension</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
         <div class="sidebar-footer"><span>v0.23.2</span><span id="year"></span></div>
@@ -34,21 +34,26 @@
           <p class="lead">Define checks, set thresholds, wire alerts into hooks. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage with 90 days retention.</p>
 
           <h2>Check Types</h2>
+          <p>The type identifier (<code>check_type</code>) is exactly the value the web panel shows in its dropdown. Server-side probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run inside the monitoring container; all <code>agent_*</code> and plugin checks evaluate data pushed by the agent.</p>
           <table>
             <thead><tr><th>Kind</th><th>Runs where</th><th>Typical use</th></tr></thead>
             <tbody>
-              <tr><td><code>http</code></td><td>Monitoring service</td><td>API/website reachability, status codes, latency</td></tr>
-              <tr><td><code>tcp</code></td><td>Monitoring service</td><td>Port reachability (e.g. DB, SMTP)</td></tr>
-              <tr><td><code>ping</code></td><td>Monitoring service</td><td>ICMP echo, RTT, packet loss</td></tr>
-              <tr><td><code>ssh</code></td><td>Monitoring service</td><td>SSH banner check – does the daemon respond?</td></tr>
-              <tr><td><code>cpu</code></td><td>Agent</td><td>CPU load / utilization</td></tr>
-              <tr><td><code>ram</code></td><td>Agent</td><td>Memory &amp; swap usage</td></tr>
-              <tr><td><code>disk</code></td><td>Agent</td><td>Fill level per mountpoint</td></tr>
-              <tr><td><code>smart</code></td><td>Agent</td><td>SMART attributes, NVMe Critical-Warning bits</td></tr>
-              <tr><td><code>docker</code></td><td>Agent</td><td>Container health / restart count</td></tr>
-              <tr><td><code>zfs</code></td><td>Agent</td><td>Pool state, scrub age, resilver progress</td></tr>
+              <tr><td><code>ping</code></td><td>Monitoring service</td><td>ICMP reachability + round-trip time</td></tr>
+              <tr><td><code>tcp</code></td><td>Monitoring service</td><td>Port reachability + connect time</td></tr>
+              <tr><td><code>http</code></td><td>Monitoring service</td><td>HTTP status code, latency, optional body text match</td></tr>
+              <tr><td><code>agent_ping</code></td><td>Agent (push)</td><td>Did the agent report within <code>stale_minutes</code>?</td></tr>
+              <tr><td><code>agent_resources</code></td><td>Agent (push)</td><td>CPU, RAM, disk mountpoints and temperature sensors vs. thresholds</td></tr>
+              <tr><td><code>service_process</code></td><td>Agent (push)</td><td>systemd units: <code>auto</code> mode (failed + enabled-but-inactive) or <code>list</code> mode (explicit service names)</td></tr>
+              <tr><td><code>proxmox_backup</code></td><td>Agent (push)</td><td>Backup age of all VMs/CTs vs. <code>max_backup_age_hours</code></td></tr>
+              <tr><td><code>zfs_health</code></td><td>Agent (push)</td><td>Pool health (DEGRADED/FAULTED/…) + capacity vs. <code>capacity_warn/crit</code></td></tr>
+              <tr><td><code>docker_health</code></td><td>Agent (push)</td><td>Container state + <code>unhealthy</code> detection, optional <code>ignore_containers</code></td></tr>
+              <tr><td><code>smart_health</code></td><td>Agent (push)</td><td>SMART attributes + temperature for ATA (HDD/SSD) and NVMe</td></tr>
             </tbody>
           </table>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Agent plugins are auto-detected</div><p>The plugin checks <code>proxmox_backup</code>, <code>zfs_health</code> and <code>docker_health</code> only evaluate data when the agent finds the respective subsystem (Proxmox, ZFS, Docker) on the host. If the subsystem is absent, the check simply has no data – that is not an error.</p></div>
+          </div>
 
           <h2>Thresholds &amp; Alerts</h2>
           <p>Each check has a <code>threshold</code> block with three severities: <code>warn</code>, <code>crit</code>, <code>recover</code>. Transitions fire events that can trigger hooks (Slack, email, webhook).</p>
@@ -80,11 +85,41 @@ interval_sec: 60</code></pre>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <div><div class="callout-title">Agent-based checks need an agent</div><p>CPU/RAM/Disk/SMART/Docker/ZFS require the Go agent on the target. Server-based probes (<code>http</code>, <code>tcp</code>, <code>ping</code>, <code>ssh</code>) run from the monitoring container and don't need an agent.</p></div>
+            <div><div class="callout-title">Agent-based checks need an agent</div><p>The <code>agent_*</code> and plugin checks (<code>agent_resources</code>, <code>service_process</code>, <code>smart_health</code>, <code>docker_health</code>, <code>zfs_health</code>, <code>proxmox_backup</code>) require the Go agent on the target. Server-based probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run from the monitoring container and don't need an agent.</p></div>
           </div>
 
           <h2>Charts</h2>
           <p>Charts on the Server details page query VictoriaMetrics via the AdminHelper proxy – the allowlist permits only <code>/api/v1/query</code> and <code>/api/v1/query_range</code>, so raw-host SSRF is impossible.</p>
+
+          <h2>Templates</h2>
+          <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
+          <ol>
+            <li>Web panel → <em>Monitoring → Templates</em> → create a template, add check and alert definitions</li>
+            <li>Assign the template to a server – AdminHelper creates all contained checks and alert rules</li>
+            <li>When the template is edited later, a <strong>live sync</strong> runs: every assigned server is updated automatically (checks created, updated or deleted). Each definition carries a stable <code>def_id</code> the sync uses to match.</li>
+          </ol>
+          <p>Definitions may use placeholders that are substituted per server at assignment time:</p>
+          <table>
+            <thead><tr><th>Placeholder</th><th>Replaced with</th></tr></thead>
+            <tbody>
+              <tr><td><code>{{hostname}}</code></td><td>Server hostname</td></tr>
+              <tr><td><code>{{server_name}}</code></td><td>Server display name</td></tr>
+              <tr><td><code>{{server_id}}</code></td><td>Internal server ID</td></tr>
+            </tbody>
+          </table>
+          <p>Removing an assignment deletes the checks and alerts it created. Deleting a template removes them on <em>all</em> assigned servers.</p>
+
+          <h2>Notifications &amp; Alerting</h2>
+          <p>Alert rules fire when a check <strong>changes</strong> status (e.g. <code>ok → critical</code>). Each rule optionally filters by <code>severity</code> and server and dispatches over one channel.</p>
+          <table>
+            <thead><tr><th>Channel</th><th>Configuration</th></tr></thead>
+            <tbody>
+              <tr><td><code>webhook</code></td><td><code>url</code> – AdminHelper sends a JSON POST with check name, type, server, severity, old/new status and a plain-text message (10 s timeout, success on HTTP &lt; 300)</td></tr>
+              <tr><td><code>email</code></td><td><code>recipients</code> (or <code>to</code>, also as CSV). SMTP defaults from the environment variables <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; overridable per rule. Port 587 uses STARTTLS.</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Cooldown:</strong> After a successfully sent alert, <code>cooldown_minutes</code> (default 30) suppresses further alerts from the same rule for the same check.</p>
+          <p><strong>Recovery:</strong> When a check returns to <code>ok</code>, a recovery notification is sent – it deliberately bypasses the cooldown so the all-clear always gets through. Every dispatch is recorded in the alert log with success/error.</p>
 
           <div class="page-nav">
             <a class="prev" href="./agent-deployment.html"><span class="label">← Previous chapter</span><span class="title">Agent Deployment</span></a>

@@ -16,7 +16,7 @@
         <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">AdminHelper</span><span class="brand-sub">Dokumentation</span></span></a>
         <nav class="sidebar-nav">
           <div class="nav-group"><a href="../index.html">Willkommen</a></div>
-          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/extension.html">Browser-Extension</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
         <div class="sidebar-footer"><span>v0.23.2</span><span id="year"></span></div>
@@ -34,21 +34,26 @@
           <p class="lead">Das Monitoring-System besteht aus drei Komponenten: <strong>Checks</strong> (Konfigurationen, was wie oft geprüft wird), <strong>Collectors</strong> im Agent (führen Messungen durch) und <strong>VictoriaMetrics</strong> (speichert die Zeitreihen). Charts im Web-Panel lesen direkt von VictoriaMetrics via uPlot.</p>
 
           <h2>Check-Typen</h2>
+          <p>Der Typ-Bezeichner (<code>check_type</code>) ist exakt der Wert, den das Web-Panel im Dropdown anzeigt. Server-seitige Probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) laufen direkt im Monitoring-Container, alle <code>agent_*</code>- und Plugin-Checks werten Push-Daten des Agents aus.</p>
           <table>
             <thead><tr><th>Typ</th><th>Was wird gemessen</th><th>Wo läuft er</th></tr></thead>
             <tbody>
-              <tr><td><code>http</code></td><td>HTTP-Response-Code + Latenz</td><td>Monitoring-Service (zentral)</td></tr>
-              <tr><td><code>tcp</code></td><td>Port-Erreichbarkeit</td><td>Monitoring-Service</td></tr>
-              <tr><td><code>ping</code></td><td>ICMP-Latenz + Packet-Loss</td><td>Monitoring-Service</td></tr>
-              <tr><td><code>ssh</code></td><td>SSH-Handshake + Command-Exit</td><td>Monitoring-Service</td></tr>
-              <tr><td><code>cpu</code></td><td>Load + Prozentauslastung</td><td>Agent</td></tr>
-              <tr><td><code>ram</code></td><td>Total / Used / Swap</td><td>Agent</td></tr>
-              <tr><td><code>disk</code></td><td>Mountpoints, belegt/frei</td><td>Agent</td></tr>
-              <tr><td><code>smart</code></td><td>SMART-Werte + Temperatur (SATA/SAS/NVMe)</td><td>Agent</td></tr>
-              <tr><td><code>docker</code></td><td>Container-Status + Image-Version</td><td>Agent</td></tr>
-              <tr><td><code>zfs</code></td><td>Pool-Health, Scrub-Status, Kapazität</td><td>Agent</td></tr>
+              <tr><td><code>ping</code></td><td>ICMP-Erreichbarkeit + Round-Trip-Time</td><td>Monitoring-Service (zentral)</td></tr>
+              <tr><td><code>tcp</code></td><td>Port-Erreichbarkeit + Connect-Zeit</td><td>Monitoring-Service</td></tr>
+              <tr><td><code>http</code></td><td>HTTP-Status-Code, Latenz, optional Text-Suche im Body</td><td>Monitoring-Service</td></tr>
+              <tr><td><code>agent_ping</code></td><td>Hat sich der Agent innerhalb von <code>stale_minutes</code> gemeldet?</td><td>Agent (Push)</td></tr>
+              <tr><td><code>agent_resources</code></td><td>CPU, RAM, Disk-Mountpoints und Temperatur-Sensoren gegen Thresholds</td><td>Agent (Push)</td></tr>
+              <tr><td><code>service_process</code></td><td>systemd-Units: Modus <code>auto</code> (failed + enabled-but-inactive) oder <code>list</code> (explizite Service-Namen)</td><td>Agent (Push)</td></tr>
+              <tr><td><code>proxmox_backup</code></td><td>Backup-Alter aller VMs/CTs gegen <code>max_backup_age_hours</code></td><td>Agent (Push)</td></tr>
+              <tr><td><code>zfs_health</code></td><td>Pool-Health (DEGRADED/FAULTED/…) + Kapazität gegen <code>capacity_warn/crit</code></td><td>Agent (Push)</td></tr>
+              <tr><td><code>docker_health</code></td><td>Container-State + <code>unhealthy</code>-Erkennung, optional <code>ignore_containers</code></td><td>Agent (Push)</td></tr>
+              <tr><td><code>smart_health</code></td><td>SMART-Werte + Temperatur für ATA (HDD/SSD) und NVMe</td><td>Agent (Push)</td></tr>
             </tbody>
           </table>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Agent-Plugins werden automatisch erkannt</div><p>Die Plugin-Checks <code>proxmox_backup</code>, <code>zfs_health</code> und <code>docker_health</code> werten nur dann Daten aus, wenn der Agent das jeweilige Subsystem (Proxmox, ZFS, Docker) auf dem Host findet. Fehlt das Subsystem, bleibt der Check ohne Daten – kein Fehler.</p></div>
+          </div>
 
           <h2>Check anlegen</h2>
           <ol>
@@ -91,6 +96,36 @@
 
           <h2>Charts im Web-Panel</h2>
           <p>Die Monitoring-Seite kombiniert uPlot-Liniencharts mit einer Alert-Liste. Zeitfenster wählbar: 1h, 6h, 24h, 7d, 30d. Klick auf eine Linie öffnet Detail-Ansicht mit Rohdaten.</p>
+
+          <h2>Templates</h2>
+          <p>Ein <strong>Monitoring-Template</strong> bündelt mehrere Check- und Alert-Definitionen und wird einem Server zugewiesen, statt jeden Check einzeln anzulegen. Beim Zuweisen werden aus den Definitionen echte Checks und Alert-Regeln für den Server erzeugt.</p>
+          <ol>
+            <li>Web-Panel → <em>Monitoring → Templates</em> → Template anlegen, Check- und Alert-Definitionen hinzufügen</li>
+            <li>Template einem Server zuweisen – AdminHelper erstellt alle enthaltenen Checks und Alert-Regeln</li>
+            <li>Wird das Template später geändert, läuft ein <strong>Live-Sync</strong>: alle zugewiesenen Server werden automatisch aktualisiert (Checks erstellt, geändert oder gelöscht). Jede Definition trägt eine stabile <code>def_id</code>, über die der Sync zuordnet.</li>
+          </ol>
+          <p>In Definitionen lassen sich Platzhalter verwenden, die beim Zuweisen pro Server ersetzt werden:</p>
+          <table>
+            <thead><tr><th>Platzhalter</th><th>Ersetzt durch</th></tr></thead>
+            <tbody>
+              <tr><td><code>{{hostname}}</code></td><td>Hostname des Servers</td></tr>
+              <tr><td><code>{{server_name}}</code></td><td>Anzeigename des Servers</td></tr>
+              <tr><td><code>{{server_id}}</code></td><td>Interne Server-ID</td></tr>
+            </tbody>
+          </table>
+          <p>Eine Zuweisung entfernen löscht die daraus erzeugten Checks und Alerts wieder. Ein Template zu löschen entfernt diese auf <em>allen</em> zugewiesenen Servern.</p>
+
+          <h2>Benachrichtigungen &amp; Alerting</h2>
+          <p>Alert-Regeln feuern, wenn ein Check seinen Status <strong>wechselt</strong> (z. B. <code>ok → critical</code>). Jede Regel filtert optional nach <code>severity</code> und Server und versendet über einen Kanal.</p>
+          <table>
+            <thead><tr><th>Kanal</th><th>Konfiguration</th></tr></thead>
+            <tbody>
+              <tr><td><code>webhook</code></td><td><code>url</code> – AdminHelper sendet ein JSON-POST mit Check-Name, Typ, Server, Severity, altem/neuem Status und Klartext-Nachricht (Timeout 10 s, Erfolg bei HTTP &lt; 300)</td></tr>
+              <tr><td><code>email</code></td><td><code>recipients</code> (oder <code>to</code>, auch als CSV). SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar. Bei Port 587 wird STARTTLS genutzt.</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Cooldown:</strong> Nach einem erfolgreich versendeten Alert unterdrückt <code>cooldown_minutes</code> (Default 30) weitere Alerts derselben Regel für denselben Check.</p>
+          <p><strong>Recovery:</strong> Geht ein Check zurück auf <code>ok</code>, wird eine Recovery-Benachrichtigung versendet – diese umgeht den Cooldown bewusst, damit die Entwarnung immer ankommt. Jeder Versand wird im Alert-Log mit Erfolg/Fehler protokolliert.</p>
 
           <div class="page-nav">
             <a class="prev" href="./agent-deployment.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Agent-Deployment</span></a>

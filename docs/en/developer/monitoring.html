@@ -60,7 +60,7 @@
           <h2>Monitoring service structure</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>monitoring/app/
-&#9500;&#9472;&#9472; main.py            FastAPI app, lifespan, route registration, hashed-key migration
+&#9500;&#9472;&#9472; main.py            FastAPI app, lifespan (scheduler start), route registration
 &#9500;&#9472;&#9472; models.py          MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey
 &#9500;&#9472;&#9472; schemas.py         Pydantic input schemas (CheckCreate, AlertRuleCreate, TemplateCreate)
 &#9500;&#9472;&#9472; check_engine.py    execute_check() dispatcher
@@ -82,10 +82,65 @@
           </table>
           <p>Both paths converge in <code>execute_check()</code> &rarr; status update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics write &rarr; <code>process_alert()</code> when <code>fail_count &ge; consecutive_fails</code>.</p>
 
+          <h2>Push payload (agent &rarr; service)</h2>
+          <p>The Go agent assembles the report in <code>agent-go/internal/monitor/report.go</code> (<code>BuildReport</code>) and sends it as JSON via <code>POST {url}/agent/{server_id}/report</code> with the headers <code>Content-Type: application/json</code> and <code>X-API-Key</code> (<code>PushReport</code>). The server handler in <code>routers/agent.py</code> accepts the JSON as a free-form <code>dict</code>. Structure:</p>
+          <div class="code-header"><span>json</span></div>
+<pre><code>{
+  "report_version": 2,
+  "timestamp": "2026-06-04T10:00:00Z",
+  "uptime_seconds": 864000,
+  "resources": {
+    "cpu_percent": 45.2,
+    "memory_percent": 61.0,
+    "memory_total_mb": 16000,
+    "memory_used_mb": 9760,
+    "load_1m": 0.8, "load_5m": 0.6, "load_15m": 0.5,
+    "disks": [
+      { "mount": "/", "fstype": "ext4", "percent": 72.0,
+        "total_gb": 100, "used_gb": 72 }
+    ],
+    "temperatures": [
+      { "sensor": "Package id 0", "temp_c": 54, "high": 80, "critical": 100 }
+    ]
+  },
+  "systemd": { "all_services": [ /* unit, active_state, enabled_state */ ],
+               "failed": [], "watched": [] },
+  "services": [ { "name": "nginx", "running": true } ],
+  "docker":  { /* plugin: docker_health */ },
+  "proxmox": { /* plugin: proxmox_backup */ },
+  "zfs":     { /* plugin: zfs_health */ },
+  "smart":   [ { "device": "/dev/sda", "temp_c": 38,
+                 "reallocated_sectors": 0, "pending_sectors": 0 } ]
+}</code></pre>
+          <p>Fields are optional: <code>docker</code>/<code>proxmox</code>/<code>zfs</code>/<code>smart</code> appear only when the agent detects the respective subsystem; VMs without sensors send no <code>temperatures</code>. <code>services</code> is a legacy key alongside <code>systemd</code>. The handler iterates over <code>resources</code> (CPU/RAM/load/disk/temp), <code>uptime_seconds</code> and <code>smart</code>, writes VictoriaMetrics lines from them (pseudo filesystems in <code>EXCLUDED_FSTYPES</code> are skipped), then evaluates the push checks configured for the server against the report. Response: <code>{"status":"ok","metricsWritten":N,"checksUpdated":M}</code>.</p>
+
+          <h2>Checkers at a glance</h2>
+          <p>Each checker returns a triple <code>(status, message, metrics)</code> with <code>status &isin; {ok, warning, critical, unknown}</code>. Pull checkers expose a <code>run(config)</code> method; agent/push checkers evaluate the push report directly in <code>evaluate(config, report)</code>.</p>
+          <table>
+            <thead><tr><th>Checker</th><th>Type(s)</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>http.py</code></td><td><code>http</code></td><td>HTTP/HTTPS request via <code>httpx</code> (method configurable, follows redirects). Compares the status code against <code>expected_status</code>, optionally searches for <code>search_string</code> in the body, measures response time. SSRF guard: URLs that resolve to private/reserved IP ranges are rejected.</td></tr>
+              <tr><td><code>ping.py</code></td><td><code>ping</code></td><td>ICMP echo via <code>ping -c 1 -W &lt;timeout&gt;</code> as a subprocess. The target is validated against an allowlist regex (hostnames/IPs); parses the RTT from the output.</td></tr>
+              <tr><td><code>tcp.py</code></td><td><code>tcp</code></td><td>TCP connect via <code>socket.create_connection((target, port))</code> with timeout. <code>ok</code> on a successful connect (with connect time), <code>critical</code> on timeout/refused.</td></tr>
+              <tr><td><code>agent.py</code></td><td><code>agent_ping</code>, <code>agent_resources</code>, <code>service_process</code></td><td><code>AgentPingChecker</code> checks (scheduler-driven) the age of the last push against <code>stale_minutes</code>. <code>AgentResourcesChecker</code> evaluates CPU/RAM/disk/temp against warn/crit thresholds. <code>ServiceProcessChecker</code> checks services &ndash; mode <code>auto</code> (failed + enabled-but-inactive systemd units, with an ignore list) or <code>list</code> (explicitly named services).</td></tr>
+              <tr><td><code>smart.py</code></td><td><code>smart_health</code></td><td>Evaluates SMART data from the push (ATA HDD/SSD and NVMe). Checks reallocated/pending sectors, NVMe <code>critical_warning</code> bits and temperatures against type-specific thresholds, among others. A missing <code>smart</code> key (VM or no <code>smartctl</code>) is <code>ok</code>, not an error.</td></tr>
+            </tbody>
+          </table>
+          <p>The plugin checkers <code>proxmox_backup</code>, <code>zfs_health</code> and <code>docker_health</code> (in <code>checkers/plugins.py</code>) are likewise push-evaluated.</p>
+
           <h2>Auth modes</h2>
+          <p>Both modes are implemented in <code>core/auth.py</code> as FastAPI dependencies:</p>
           <ul>
-            <li><code>require_agent</code> (agent push): header <code>X-API-Key</code>; keys are stored as SHA-256 hashes in <code>MonitorAgentKey</code> (clear-text migration is wired into the lifespan hook of <code>main.py</code>).</li>
-            <li><code>require_internal</code> (AdminHelper &harr; service): header <code>X-Internal-Key</code> with value <code>INTERNAL_API_KEY</code>.</li>
+            <li><code>require_agent</code> (agent push): reads header <code>X-API-Key</code>. If the value matches the internal key exactly, it counts as <code>__internal__</code> (access to all servers). Otherwise the key is SHA-256-hashed via <code>MonitorAgentKey.hash_key()</code> and compared against the <code>hashed_key</code> column in <code>monitor_agent_keys</code> &ndash; on a hit the dependency returns the associated <code>server_id</code>. A clear-text key is never stored; only the hash lives in the DB.</li>
+            <li><code>require_internal</code> (AdminHelper &harr; service): reads header <code>X-Internal-Key</code> and compares it against the internal key. Its source is the env var <code>MONITOR_API_KEY</code>; if absent, a random key is generated at startup and persisted to <code>$DATA_DIR/.api_key</code> (<code>core/config.py</code>).</li>
+          </ul>
+
+          <h3>Agent key: issuance &amp; server binding</h3>
+          <p>Agent keys are issued per server (<code>routers/admin.py</code>):</p>
+          <ul>
+            <li><code>POST /agent-keys/{server_id}</code> creates a raw key with <code>secrets.token_urlsafe(48)</code>, stores only its SHA-256 hash, and returns the raw key <strong>once</strong> in the response. If a key already exists for the server, it is deleted first (rotation = DELETE + POST). <code>server_id</code> is <code>unique</code> in the table, so exactly one key per server.</li>
+            <li>Both endpoints (<code>POST</code>/<code>DELETE /agent-keys/{server_id}</code>) are themselves guarded by <code>require_internal</code> &ndash; only the AdminHelper server may manage keys.</li>
+            <li>The push handler (<code>routers/agent.py</code>) additionally checks that the <code>server_id</code> derived from the key matches the <code>server_id</code> in the path; otherwise <code>403</code>. A valid key for server A therefore cannot submit metrics for server B (<code>__internal__</code> excepted).</li>
           </ul>
 
           <h2>Templates</h2>

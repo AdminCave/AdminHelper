@@ -47,7 +47,7 @@
 <pre><code>{
   "manifest_version": 3,
   "name": "AdminHelper",
-  "version": "0.17.0",
+  "version": "0.23.2",
   "permissions": ["storage", "tabs", "alarms"],
   "action":    { "default_popup": "popup.html" },
   "options_page": "options.html",
@@ -101,14 +101,18 @@ updateBadge(webConns.length);</code></pre>
           <h2>Badge Counter</h2>
           <p>The web-connection count appears as a badge on the toolbar icon (<code>chrome.action.setBadgeText</code>). Empty at <code>0</code>, cyan background (<code>#38bdf8</code>) for visibility on both light and dark Chrome themes.</p>
 
+          <h2>Popup &amp; Options</h2>
+          <p>The popup has two states: with no config set it shows the <strong>setup view</strong> (server URL + API key inline). Otherwise the <strong>main view</strong> with search, a list/tag view toggle, and a footer (connection count + relative time of the last refresh). The chosen view is persisted in <code>chrome.storage.local.viewMode</code>; open/collapsed tag groups live in <code>sessionStorage</code>. Filtering runs live across name, URL, notes, and tags.</p>
+          <p>The <strong>options page</strong> offers a <em>Test connection</em> button next to „Save": it calls the same <code>GET /api/connections</code> and reports the total connection count plus the number of web connections, without saving anything. Changes to <code>serverUrl</code>/<code>apiKey</code> are picked up via <code>chrome.storage.onChanged</code> – an open popup then re-initialises automatically.</p>
+
           <h2>Security Model</h2>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div><div class="callout-title">API key stored in clear text</div><p><code>chrome.storage.sync</code> is <strong>not</strong> a secret store. The API key is readable by every extension in the same Chrome profile. Always scope it to <code>web_only</code> – no connection CRUD, no hook access, no server-admin rights.</p></div>
           </div>
 
-          <h2>Protocol Filter</h2>
-          <p>The popup only renders <code>http</code> and <code>https</code> URLs. Other schemes (<code>rdp://</code>, <code>ssh://</code>, <code>vnc://</code>) are filtered out client-side – no URI-handler hijacking surface.</p>
+          <h2>Web Filter</h2>
+          <p>Both the background worker and the popup filter the server response to <code>c.kind === 'web'</code> – only web connections are cached and rendered. Connections of other kinds (RDP, SSH, VNC) carry a different <code>kind</code> and never reach the extension in the first place – no URI-handler hijacking surface. A click opens the connection via <code>chrome.tabs.create({ url })</code> with the unmodified <code>url</code> from the server.</p>
 
           <h2>Local Testing</h2>
           <ol>

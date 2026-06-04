@@ -16,7 +16,7 @@
         <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">AdminHelper</span><span class="brand-sub">Documentation</span></span></a>
         <nav class="sidebar-nav">
           <div class="nav-group"><a href="../index.html">Welcome</a></div>
-          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/extension.html">Browser Extension</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
         <div class="sidebar-footer"><span>v0.23.2</span><span id="year"></span></div>
@@ -31,47 +31,59 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Users &amp; Access</h1>
-          <p class="lead">User accounts, roles, API keys, and the rate-limit/audit layers that keep the access surface tight.</p>
+          <p class="lead">AdminHelper distinguishes three kinds of access: interactive users (web and desktop login), API keys (agents and scripts), and FRP provision tokens (single use). This page explains how to manage all three.</p>
 
-          <h2>Roles</h2>
+          <h2>User roles</h2>
           <table>
-            <thead><tr><th>Role</th><th>Permissions</th></tr></thead>
+            <thead><tr><th>Role</th><th>Can</th></tr></thead>
             <tbody>
-              <tr><td><code>admin</code></td><td>Full access incl. user management, hooks, FRP PKI, settings</td></tr>
-              <tr><td><code>operator</code></td><td>Connection &amp; server CRUD, monitoring, audit log read</td></tr>
-              <tr><td><code>viewer</code></td><td>Read-only on connections and monitoring dashboard</td></tr>
+              <tr><td><span class="badge badge-info">admin</span></td><td>Everything: manage users, create API keys, register servers, define hooks, global settings.</td></tr>
+              <tr><td><span class="badge">user</span></td><td>Manage own connections, read servers and monitoring. No admin actions.</td></tr>
             </tbody>
           </table>
 
-          <h2>JWT Refresh Rotation</h2>
-          <p>Access tokens are HS256, 8 h lifetime, passed in <code>Authorization: Bearer</code>. Refresh tokens are 7 d and live in an <code>httpOnly</code> cookie. On every refresh:</p>
+          <h2>Creating a user</h2>
           <ol>
-            <li>The server verifies signature + expiry.</li>
-            <li>The old <code>jti</code> is written to the refresh blacklist.</li>
-            <li>A brand-new access + refresh pair is issued.</li>
-            <li>If a blacklisted <code>jti</code> appears again → <strong>reuse detection</strong>: all sessions of that user are invalidated immediately.</li>
+            <li>Open <em>Users → New</em> in the web panel</li>
+            <li>Assign username and password; the password is hashed with bcrypt</li>
+            <li>Choose the role – admins see and edit everything</li>
           </ol>
+          <p>Admins can reset other users' passwords at any time. Regular users can change their own password in the settings.</p>
 
-          <div class="callout callout-tip" data-reveal>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Rate limit</div><p>Login is limited to <strong>5 failed attempts per 15 min</strong> per IP, keyed in Redis (<code>ratelimit:login:&lt;ip&gt;</code>). The in-memory fallback works for single-worker setups only.</p></div>
-          </div>
-
-          <h2>API Keys</h2>
-          <p>API keys are issued under <em>Settings → API Keys</em> with a scope list. The server stores only the SHA-256 hash – the clear-text key is shown <strong>once</strong> at creation time. Scopes include:</p>
+          <h2>Login flow</h2>
+          <p>The login flow uses JWT (HS256) with refresh-token rotation:</p>
           <ul>
-            <li><code>connections_read</code> / <code>connections_write</code></li>
-            <li><code>monitor_ingest</code> (agent push)</li>
-            <li><code>monitor_read</code> (dashboards, extension)</li>
-            <li><code>web_only</code> (browser extension – strictly read + filter <code>kind=web</code>)</li>
-            <li><code>hooks_admin</code> (dangerous – allows RCE via hook scripts)</li>
+            <li><strong>Access token</strong>: valid for 8 h, sent on every request in the <code>Authorization</code> header.</li>
+            <li><strong>Refresh token</strong>: valid for 7 days, rotated on every use (the old one is blacklisted immediately).</li>
+            <li><strong>Reuse detection</strong>: if a blacklisted refresh token is submitted again, the request is rejected and the event is logged as a possible token theft.</li>
           </ul>
 
-          <h2>Audit Log</h2>
-          <p>Every state-changing action writes to the <code>AuditEntry</code> table: <code>user_id</code>, <code>action</code>, <code>target</code>, <code>ip</code>, <code>timestamp</code>, <code>details</code> (JSON). Query via <em>Settings → Audit</em> or the <code>/api/audit</code> endpoint.</p>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Login rate limit</div><p>5 failed login attempts per IP within 60 seconds → further attempts are rejected with <code>429</code>. A successful login resets the counter. Implemented via Redis (fixed-window), with an in-memory fallback for single-worker setups.</p></div>
+          </div>
 
-          <h2>MFA</h2>
-          <p>TOTP-based second factor, enabled per user in their profile. Backup codes are one-time, SHA-256-hashed at rest. Admins can force MFA in <em>Settings → Security</em>.</p>
+          <h2>API keys</h2>
+          <p>API keys authenticate non-interactive clients (Go agent, scripts, CI jobs). Differences from user credentials:</p>
+          <ul>
+            <li>No expiry, but revocable with one click</li>
+            <li>One of two permissions: <code>read</code> (read only) or <code>read_write</code> (read and write)</li>
+            <li>The server stores only the SHA-256 hash; the clear text is gone after it is shown once</li>
+          </ul>
+
+          <p>Creating API keys:</p>
+          <ol>
+            <li>Web panel → <em>API Keys → New</em></li>
+            <li>Assign a name and choose the permission (<code>read</code> or <code>read_write</code>)</li>
+            <li>Copy the clear-text key <strong>immediately</strong> – it is never shown again</li>
+            <li>Send it as the HTTP header <code>X-API-Key: &lt;key&gt;</code> (fallback: query parameter <code>?api_key=…</code> for the browser extension and sync URLs)</li>
+          </ol>
+
+          <h2>IP restriction</h2>
+          <p>With <code>ALLOWED_IPS</code> all access can be limited to a whitelist. Example:</p>
+          <div class="code-header"><span>.env</span></div>
+<pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
+          <p>If the list is left empty, access is open (for reverse-proxy- or VPN-protected setups).</p>
 
           <div class="page-nav">
             <a class="prev" href="./operations.html"><span class="label">← Previous chapter</span><span class="title">Operations &amp; Config</span></a>

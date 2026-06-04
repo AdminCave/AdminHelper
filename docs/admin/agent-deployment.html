@@ -16,7 +16,7 @@
         <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">AdminHelper</span><span class="brand-sub">Dokumentation</span></span></a>
         <nav class="sidebar-nav">
           <div class="nav-group"><a href="../index.html">Willkommen</a></div>
-          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/extension.html">Browser-Extension</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
         <div class="sidebar-footer"><span>v0.23.2</span><span id="year"></span></div>
@@ -83,6 +83,24 @@ sudo dnf install adminhelper-agent</code></pre>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
             <div><div class="callout-title">Ansible-One-Liner</div><p>Für Rollouts auf viele Hosts: ein Playbook mit <code>apt</code>/<code>yum</code>-Modul plus <code>command: adminhelper-agent provision ...</code>. Beispiel-Role im Repo unter <code>agent-go/ansible/</code>.</p></div>
           </div>
+
+          <h2>Subcommand-Referenz</h2>
+          <p>Alle Subcommands der Agent-Binary. Erforderliche Flags sind mit <strong>*</strong> markiert.</p>
+          <table>
+            <thead>
+              <tr><th>Befehl</th><th>Funktion</th><th>Wichtige Flags</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>version</code></td><td>Zeigt die Version an</td><td>—</td></tr>
+              <tr><td><code>run</code></td><td>FRPC-Sync + Monitor-Push ausführen (ohne Flag Dauerbetrieb, alle 5 Minuten)</td><td><code>--once</code></td></tr>
+              <tr><td><code>provision</code></td><td>Server gegen AdminHelper provisionieren (Server-API-Key + optional Monitor + FRP)</td><td><code>--url</code>*, <code>--token</code>*, <code>--server-id</code>*, <code>--cacert</code>, <code>--insecure</code></td></tr>
+              <tr><td><code>frpc sync</code></td><td>Einmaliger Config-Sync</td><td>—</td></tr>
+              <tr><td><code>monitor init</code></td><td>Ersteinrichtung des Monitor-Agents</td><td><code>--url</code>*, <code>--api-key</code>*, <code>--server-id</code>*, <code>--services</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
+              <tr><td><code>monitor push</code></td><td>Einmaliger Metriken-Push</td><td>—</td></tr>
+              <tr><td><code>service install</code></td><td>OS-Service registrieren und starten</td><td>—</td></tr>
+              <tr><td><code>service uninstall</code></td><td>OS-Service deregistrieren</td><td>—</td></tr>
+            </tbody>
+          </table>
 
           <h2>Windows (MSI)</h2>
           <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>

@@ -107,6 +107,18 @@ async fn connect_rdp(
           <h2>FRP-Sidecar</h2>
           <p>Tauri-Capabilities sind geschärft: <code>frpc</code> darf nur aus dem App-Binaries-Verzeichnis gestartet werden. Beim Build wird die passende Target-Binary (<code>frpc-x86_64-unknown-linux-gnu</code>, <code>frpc-aarch64-apple-darwin</code>, …) in <code>desktop/src-tauri/binaries/</code> erwartet.</p>
 
+          <h2>Server-Mode-Flow</h2>
+          <p>Im <strong>Server-Mode</strong> (Setting <code>mode = 'server'</code>) holt der Client Verbindungen per JWT vom AdminHelper-Server und baut den FRP-Tunnel selbst auf. Die Schritte greifen über <code>auth.rs</code>, <code>sync.rs</code>, <code>frpc.rs</code> und <code>tunnel.rs</code> ineinander:</p>
+          <ol>
+            <li><strong>Login</strong> &ndash; <code>login</code> postet an <code>/api/auth/login</code>, ruft danach <code>/api/auth/me</code> ab und legt Access-Token, Refresh-Token und Server-URL im OS-Keyring ab (Service <code>com.adminhelper.app</code>, Keys <code>auth|jwt</code>, <code>auth|refresh</code>, <code>auth|server_url</code>). Implementierung in <code>auth.rs</code>.</li>
+            <li><strong>Session-Restore</strong> &ndash; <code>check_session</code> validiert das gespeicherte Access-Token gegen <code>/api/auth/me</code>; bei 401 wird über <code>/api/auth/refresh</code> ein neues Token-Paar geholt und neu im Keyring gespeichert. Kein erneuter Login nach Neustart.</li>
+            <li><strong>Verbindungen laden</strong> &ndash; <code>fetch_connections_jwt</code> holt die Liste per <code>authenticated_get</code> von <code>/api/connections</code> (mit transparentem 401-Refresh-Retry) und schreibt sie lokal weg. Passwörter sind nie Teil der Sync-Daten.</li>
+            <li><strong>Tunnel starten</strong> &ndash; <code>start_tunnel</code> lädt das <em>Visitor-Bundle</em> (TOML&nbsp;+&nbsp;PKI-Map) von <code>/api/frp/generate/visitor-bundle</code>, schreibt <code>visitor.toml</code> und die PKI-Dateien in das App-Data-Verzeichnis (relative <code>pki/</code>-Pfade werden auf absolute umgeschrieben, <code>.key</code>-Dateien mit <code>0600</code>) und startet anschließend <code>frpc -c &lt;config&gt;</code> als Sidecar.</li>
+            <li><strong>Status &amp; Events</strong> &ndash; <code>tunnel_status</code> liefert <code>running</code>, <code>visitor_name</code> und <code>connected_since</code>. Der Sidecar-Prozess emittiert die Tauri-Events <code>frpc-terminated</code> und <code>frpc-error</code>; der Tunnel-Store (<code>stores/tunnel.ts</code>) hört darauf und speist die Statusanzeige (<code>TunnelIndicator.svelte</code>) mit den UI-Zuständen <code>connecting</code> / <code>connected</code> / <code>disconnected</code>.</li>
+            <li><strong>Tunnel-Auflösung</strong> &ndash; <code>fetch_tunnels</code> holt die Mappings von <code>/api/frp/tunnels</code>, <code>resolve_connection</code> rewritet passende Connections: <code>stcp</code> &rarr; <code>host = 127.0.0.1</code>, <code>port = visitor_port</code> (Web zusätzlich <code>http://127.0.0.1:&lt;port&gt;</code>), <code>https</code> &rarr; <code>url = https://&lt;custom-domain&gt;</code>.</li>
+          </ol>
+          <p>Der Auto-Start des Sidecars passiert nur im Server-Mode: <code>startIfServerMode()</code> im Tunnel-Store bricht ab, wenn keine Session vorliegt oder <code>settings.mode !== 'server'</code>. Beim Beenden der App räumt <code>RunEvent::Exit</code> in <code>main.rs</code> den frpc-Prozess via <code>stop_frpc</code> auf.</p>
+
           <h2>Connect-Flow</h2>
           <ol>
             <li>User klickt <em>Connect</em> → <code>connectFlow</code>-Store setzt <code>state = 'connecting'</code></li>

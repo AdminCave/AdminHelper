@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ansible – Admin Guide</title>
+    <link rel="icon" type="image/svg+xml" href="../../assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Documentation navigation">
+        <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">AdminHelper</span><span class="brand-sub">Documentation</span></span></a>
+        <nav class="sidebar-nav">
+          <div class="nav-group"><a href="../index.html">Welcome</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html" class="is-active">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./extension.html">Browser Extension</a><a href="./troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/extension.html">Browser Extension</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
+        </nav>
+        <div class="sidebar-footer"><span>v0.23.2</span><span id="year"></span></div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Ansible</span></nav></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/ansible.html">DE</a><a href="./ansible.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://git.nevondo.com/ks98/adminhelper" rel="noopener">GitLab</a></div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <span class="eyebrow">Admin Guide</span>
+          <h1>Ansible</h1>
+          <p class="lead">Ansible management separates <strong>central maintenance</strong> from <strong>local execution</strong>: playbooks are stored and versioned in the web panel, but they run via the desktop client using a locally installed <code>ansible-playbook</code>. The server itself runs <strong>no</strong> playbooks.</p>
+
+          <h2>Playbook CRUD in the Web Panel</h2>
+          <p>Playbooks are managed via <code>/api/ansible/playbooks</code> — all write operations are <strong>admin-only</strong>. Each playbook has metadata in the database (table <code>ansible_playbooks</code>) and a YAML file on disk at <code>DATA_DIR/ansible/playbooks/&lt;id&gt;/&lt;filename&gt;</code>.</p>
+          <table>
+            <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>name</code></td><td>Display name in the panel and desktop client</td></tr>
+              <tr><td><code>filename</code></td><td>Name of the YAML file — must end in <code>.yml</code> or <code>.yaml</code>, no path separators</td></tr>
+              <tr><td><code>description</code></td><td>Optional description</td></tr>
+              <tr><td><code>tags</code></td><td>List of tags for filtering/search</td></tr>
+              <tr><td><code>content</code></td><td>The YAML content — written to disk, not stored in the DB</td></tr>
+            </tbody>
+          </table>
+          <p>On create (<code>POST</code>) and on edit (<code>PUT</code>, if <code>content</code> is included) the server validates the YAML via <code>yaml.safe_load</code>; invalid YAML returns <code>422</code>. If the filename changes, the server renames the file on disk or deletes the old one. On delete (<code>DELETE</code>) the entire <code>&lt;id&gt;/</code> directory is removed.</p>
+
+          <div class="code-header"><span>HTTP</span></div>
+<pre><code>GET    /api/ansible/playbooks              # List all playbooks
+POST   /api/ansible/playbooks              # Create playbook (admin)
+GET    /api/ansible/playbooks/{id}         # Playbook metadata
+GET    /api/ansible/playbooks/{id}/content # Fetch YAML content
+PUT    /api/ansible/playbooks/{id}         # Update playbook (admin)
+DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)</code></pre>
+
+          <p>CRUD operations fire hooks: <code>playbook.created</code>, <code>playbook.updated</code> and <code>playbook.deleted</code> (payload: <code>id</code> + <code>name</code>). For hook configuration details: <a href="../developer/hooks.html">Hooks &amp; Events</a>.</p>
+
+          <h2>3-Step Workflow (Desktop)</h2>
+          <p>The desktop client guides you through a three-step wizard. Step 2 only becomes active once a playbook is selected; step 3 only once at least one target server is also selected.</p>
+          <ol>
+            <li><strong>Select playbook</strong> — list of all playbooks maintained on the server, with name, description, filename and tags.</li>
+            <li><strong>Select target servers</strong> — two modes: <em>Servers</em> (individual checkbox selection) or <em>Tags</em> (one chip per tag selects all servers carrying that tag).</li>
+            <li><strong>Run</strong> — summary (playbook + server count), then launch via <code>ansible-playbook</code> in a native terminal.</li>
+          </ol>
+          <p>On run, the client fetches the YAML content fresh from the server (<code>/{id}/content</code>), writes it to a temporary file, generates the inventory and starts the run. Servers and playbooks are sourced from the server web interface — nothing is maintained locally.</p>
+
+          <h2>Inventory Generation</h2>
+          <p>The desktop client automatically builds an <strong>INI-format</strong> inventory file from the selected servers in a temporary directory. All selected hosts go under <code>[all]</code>; in addition, one group per server tag is created (sorted alphabetically) listing the matching hosts.</p>
+          <div class="code-header"><span>INI</span></div>
+<pre><code>[all]
+web01.example.com
+db01.example.com
+
+[database]
+db01.example.com
+
+[web]
+web01.example.com</code></pre>
+          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server in the web panel that drive selection in tag mode. Hostnames are the servers' <code>hostname</code> fields.</p>
+
+          <h2>Requirements</h2>
+          <ul>
+            <li><code>ansible-playbook</code> must be installed on the <strong>desktop machine</strong> and on the <code>PATH</code>. If missing, the run aborts with an error message.</li>
+            <li>Target servers must be created in the server web interface under <em>Servers</em> — only hosts maintained there appear in the desktop wizard.</li>
+            <li>Playbook maintenance (create/edit/delete) requires an admin session.</li>
+          </ul>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
+            <div><div class="callout-title">SSH reachability</div><p>Execution runs on the desktop machine against the hostnames from the inventory. SSH access, keys and optionally <code>ansible_user</code> are handled as usual via your Ansible/SSH configuration — AdminHelper only generates the inventory and playbook file.</p></div>
+          </div>
+
+          <div class="page-nav">
+            <a class="prev" href="./monitoring.html"><span class="label">← Previous chapter</span><span class="title">Monitoring</span></a>
+            <a class="next" href="./frp-tunnel.html"><span class="label">Next chapter</span><span class="title">FRP Tunnel →</span></a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="../../assets/app.js"></script>
+  </body>
+</html>

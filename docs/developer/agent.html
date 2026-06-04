@@ -94,6 +94,62 @@
           </ul>
           <p>Alle Daten landen unter dem JSON-Key <code>resources</code> in <code>POST /agent/{server_id}/report</code> am Monitoring-Service.</p>
 
+          <h2>Plattform-Splits: Linux vs. Windows</h2>
+          <p>Collector, Service-Aktivierung und Pfade sind &uuml;ber Go-Build-Tags (<code>//go:build linux</code> / <code>//go:build windows</code>) getrennt. Die folgende Tabelle listet je Funktion das konkrete Plattform-Verhalten.</p>
+          <table>
+            <thead><tr><th>Funktion</th><th>Linux</th><th>Windows</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>collectServiceHealth()</code><br /><code>services_*.go</code></td>
+                <td><code>systemctl list-units</code> + <code>list-unit-files</code> + <code>list-units --state=failed</code>; f&uuml;llt <code>failed</code>, <code>enabled_inactive</code> und <code>all_services</code> (mit <code>active_state</code> / <code>enabled_state</code>).</td>
+                <td><code>sc query state= all</code>; Windows-Status wird auf das systemd-Format gemappt (<code>RUNNING</code>&rarr;<code>active</code>, <code>STOPPED</code>/<code>PAUSED</code>&rarr;<code>inactive</code>, <code>*_PENDING</code>&rarr;<code>activating</code>). <code>failed</code> bleibt leer, <code>enabled_state</code> ist immer <code>unknown</code>.</td>
+              </tr>
+              <tr>
+                <td><code>collectWatchedServices(names)</code><br /><code>services_*.go</code></td>
+                <td><code>systemctl is-active</code>; PID via <code>systemctl show -p MainPID</code>.</td>
+                <td><code>sc query</code> (Suche nach <code>RUNNING</code>); PID via <code>sc queryex</code>.</td>
+              </tr>
+              <tr>
+                <td><code>collectTemperatures()</code><br /><code>temperatures.go (gemeinsam)</code></td>
+                <td colspan="2">Eine gemeinsame Datei ohne Build-Tag: liest <code>gopsutil/v4/sensors.SensorsTemperatures()</code>. Auf beiden Plattformen identischer Code; gopsutil greift unter Linux auf hwmon/lm-sensors, unter Windows auf WMI zu. Sensoren mit Temperatur &le; 0 werden verworfen; ohne Sensoren wird <code>nil</code> zur&uuml;ckgegeben (kein Fehler).</td>
+              </tr>
+              <tr>
+                <td><code>collectLoad()</code><br /><code>collector.go (gemeinsam)</code></td>
+                <td><code>load.Avg()</code> liefert <code>load_1m</code>/<code>load_5m</code>/<code>load_15m</code>.</td>
+                <td>Liefert <code>nil</code> (kein Load-Average) &mdash; Guard <code>runtime.GOOS == "windows"</code>.</td>
+              </tr>
+              <tr>
+                <td><code>collectDisks()</code><br /><code>collector.go (gemeinsam)</code></td>
+                <td colspan="2">Gemeinsamer Code via <code>gopsutil/disk</code>. Die Filterlisten <code>skipFSTypes</code> (squashfs, tmpfs, overlay, proc&hellip;) und <code>skipMountPrefixes</code> (<code>/sys</code>, <code>/proc</code>, <code>/dev/</code>, <code>/snap</code>&hellip;) sind Linux-spezifisch; unter Windows treffen sie nicht zu und filtern nichts.</td>
+              </tr>
+              <tr>
+                <td><code>enableMonitorService()</code><br /><code>platform_*.go</code></td>
+                <td><code>systemctl enable --now adminhelper-agent.timer</code>.</td>
+                <td>No-op: gibt den Hinweis aus, <code>adminhelper-agent service install</code> auszuf&uuml;hren (SCM-Integration als TODO offen).</td>
+              </tr>
+              <tr>
+                <td><code>service.Install()</code><br /><code>service_*.go</code></td>
+                <td>Schreibt <code>.service</code> (<code>Type=oneshot</code>, <code>ExecStart=&lt;exe&gt; run</code>) + <code>.timer</code> (<code>OnBootSec=60</code>, <code>OnUnitActiveSec=300</code>, <code>Persistent=true</code>) nach <code>/etc/systemd/system</code>, dann <code>daemon-reload</code> + <code>enable --now</code> auf den Timer. Unit-Name <code>adminhelper-agent</code>.</td>
+                <td>Kopiert die Binary nach <code>%ProgramFiles%\AdminHelper\</code>, registriert via <code>sc create</code> (<code>binPath=&lt;exe&gt; run</code>, <code>start= auto</code>, <code>obj= LocalSystem</code>), setzt Recovery via <code>sc failure</code> (Neustart nach 60&nbsp;s) und startet mit <code>sc start</code>. Dienst-Name <code>AdminHelper-Agent</code> &mdash; ein dauerhaft laufender Dienst, kein Timer.</td>
+              </tr>
+              <tr>
+                <td><code>service.Uninstall()</code><br /><code>service_*.go</code></td>
+                <td><code>systemctl stop</code>/<code>disable</code> f&uuml;r Timer und Service, l&ouml;scht die Unit-Dateien, <code>daemon-reload</code>.</td>
+                <td><code>sc stop</code> + <code>sc delete</code> auf <code>AdminHelper-Agent</code>.</td>
+              </tr>
+              <tr>
+                <td><code>FrpDir()</code><br /><code>paths_*.go</code></td>
+                <td><code>/etc/frp</code></td>
+                <td><code>%ProgramData%\AdminHelper\frp</code></td>
+              </tr>
+              <tr>
+                <td><code>MonitorDir()</code><br /><code>paths_*.go</code></td>
+                <td><code>/etc/adminhelper</code></td>
+                <td><code>%ProgramData%\AdminHelper</code></td>
+              </tr>
+            </tbody>
+          </table>
+
           <h2>systemd-Timer mit Jitter</h2>
           <p>Statt <code>cron</code> nutzt der Agent systemd mit <code>OnBootSec=60</code>, <code>OnUnitActiveSec=300</code> (5&nbsp;min Intervall) und <code>RandomizedDelaySec=30</code>. Der Jitter verteilt die Last aller Agents auf das 5-Minuten-Fenster und verhindert Thundering-Herd-Requests am Server.</p>
 

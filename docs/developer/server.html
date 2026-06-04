@@ -48,7 +48,7 @@
           </table>
 
           <h2>Router-Übersicht</h2>
-          <p>9 Top-Level-Router unter <code>server/app/modules/</code>; jedes Modul kapselt Models, Schemas und Routen.</p>
+          <p>10 Top-Level-Router unter <code>server/app/modules/</code>; jedes Modul kapselt Models, Schemas und Routen.</p>
           <table>
             <thead><tr><th>Prefix</th><th>Modul</th><th>Funktion</th></tr></thead>
             <tbody>
@@ -94,6 +94,57 @@
             <li>Tokens sind one-time: <code>used_at</code> wird gesetzt, weitere Aktivierungen scheitern.</li>
             <li>Im laufenden Betrieb synchronisiert der Agent &uuml;ber <code>GET /api/frp/provision/{server_id}/config</code> + <code>config-hash</code> seinen <code>frpc.toml</code>-Stand (nur wenn FRP konfiguriert).</li>
           </ol>
+
+          <h2>FRP — TOML-Struktur</h2>
+          <p><code>modules/frp/config_generator.py</code> rendert die FRP-Konfigurationen direkt aus den DB-Modellen zu TOML-Strings — kein Template-Engine, nur String-Listen. Drei Generatoren:</p>
+          <table>
+            <thead><tr><th>Funktion</th><th>Ziel</th><th>Inhalt</th></tr></thead>
+            <tbody>
+              <tr><td><code>generate_frps_toml(config)</code></td><td><code>frps.toml</code> (Server)</td><td><code>bindPort</code>, optional <code>vhostHTTPSPort</code>/<code>subDomainHost</code>/<code>maxPortsPerClient</code>, optionaler Dashboard-Block (<code>webServer.*</code> an <code>127.0.0.1</code>), <code>auth.method = "token"</code> + Token, plus <code>[transport.tls]</code>-Server-Block.</td></tr>
+              <tr><td><code>generate_frpc_toml(config, tunnels, frpc_user)</code></td><td><code>frpc.toml</code> (Agent)</td><td><code>serverAddr</code>/<code>serverPort</code>/<code>user</code>, Token-Auth, Client-TLS-Block, dann je aktivem Tunnel ein <code>[[proxies]]</code>-Block.</td></tr>
+              <tr><td><code>generate_visitor_toml(config, tunnels, visitor_user)</code></td><td>Visitor-<code>frpc.toml</code> (Admin-PC)</td><td>Aggregiert alle aktiven STCP-Tunnel zu je einem <code>[[visitors]]</code>-Block (<code>bindPort</code> = <code>visitor_port</code>).</td></tr>
+            </tbody>
+          </table>
+          <p>Nur Tunnel mit <code>enabled = true</code> werden gerendert. Zwei Tunnel-Typen sind speziell behandelt:</p>
+          <ul>
+            <li><strong>STCP</strong> (<code>type = "stcp"</code>): bekommt <code>secretKey</code> und <code>allowUsers</code> (Default <code>["ops-admin"]</code>, sonst die uebergebenen <code>allow_users</code>). Der zugehoerige <code>[[visitors]]</code>-Block setzt <code>serverName</code>, <code>serverUser</code> (= Agent-User, weil FRP Proxies als <code>{user}.{name}</code> registriert) und denselben <code>secretKey</code>.</li>
+            <li><strong>HTTPS</strong> (<code>type = "https"</code>): rendert <code>customDomains</code> aus dem komma-getrennten Feld <code>custom_domains</code>.</li>
+          </ul>
+          <p><code>extra_config</code> (JSON) wird je Tunnel typ-erhaltend angehaengt: Strings gequotet, Bools als <code>true</code>/<code>false</code>, Zahlen roh.</p>
+          <div class="code-header"><span>frpc.toml (STCP-Beispiel)</span></div>
+<pre><code>serverAddr = "frp.example.com"
+serverPort = 7000
+user = "k01-lnx1"
+
+auth.method = "token"
+auth.token = "&lt;token&gt;"
+
+[transport.tls]
+enable = true
+trustedCaFile = "/etc/frp/pki/ca.crt"
+certFile = "/etc/frp/pki/k01-lnx1.crt"
+keyFile = "/etc/frp/pki/k01-lnx1.key"
+
+[[proxies]]
+name = "ssh"
+type = "stcp"
+localIP = "127.0.0.1"
+localPort = 22
+secretKey = "&lt;secret&gt;"
+allowUsers = ["ops-admin"]</code></pre>
+
+          <h2>FRP-PKI &amp; TLS</h2>
+          <p><code>modules/frp/pki.py</code> verwaltet die mTLS-PKI fuer FRP mit der <code>cryptography</code>-Lib. Alle Artefakte liegen unter <code>PKI_DIR = FRP_CONFIG_DIR/pki</code>. Schluessel sind RSA-4096, Signatur SHA-256.</p>
+          <table>
+            <thead><tr><th>Funktion</th><th>Erzeugt</th><th>Eigenschaften</th></tr></thead>
+            <tbody>
+              <tr><td><code>generate_ca(common_name)</code></td><td><code>ca.crt</code> + <code>ca.key</code></td><td>Self-signed, <code>BasicConstraints(ca=True)</code>, <code>KeyUsage</code> mit <code>keyCertSign</code>/<code>crlSign</code>. 10 Jahre gueltig (<code>VALIDITY_DAYS_CA = 3650</code>). <strong>Ueberschreibt</strong> eine bestehende CA.</td></tr>
+              <tr><td><code>generate_server_cert(server_addr)</code></td><td><code>frps.crt</code> + <code>frps.key</code></td><td>CA-signiert, <code>SubjectAlternativeName</code> = IP-SAN bei IP-Adresse, sonst DNS-SAN; EKU <code>SERVER_AUTH</code>. 1 Jahr (<code>VALIDITY_DAYS_CERT = 365</code>).</td></tr>
+              <tr><td><code>generate_client_cert(client_name)</code></td><td><code>{client}.crt</code> + <code>{client}.key</code></td><td>CA-signiert, EKU <code>CLIENT_AUTH</code>, 1 Jahr. <code>client_name</code> wird gegen <code>^[a-zA-Z0-9._-]+$</code> (max. 64 Zeichen, kein <code>..</code>) validiert — Path-Traversal-Schutz.</td></tr>
+            </tbody>
+          </table>
+          <p><code>get_pki_status()</code> meldet CA-/Server-Cert-Existenz samt Ablaufdaten und listet alle Client-Certs (jede <code>*.crt</code> ausser <code>ca.crt</code>/<code>frps.crt</code>). Im <code>main.py</code>-Lifespan generiert <code>_ensure_pki()</code> CA und Server-Cert automatisch, sobald eine <code>FrpServerConfig</code> existiert; ein Server-Cert wird neu ausgestellt, wenn die <code>server_addr</code> nicht mehr in den SANs steht.</p>
+          <p>Die TLS-Verdrahtung in <code>frps.toml</code>/<code>frpc.toml</code> erzeugt der <code>config_generator</code>: Der Server-Block setzt <code>force = true</code> mit <code>certFile</code>/<code>keyFile</code>/<code>trustedCaFile</code>, der Client-Block <code>enable = true</code> mit <code>trustedCaFile</code> und — wenn ein Client-User gesetzt ist — dem passenden Client-<code>certFile</code>/<code>keyFile</code>. Damit gilt beidseitiges mTLS gegen dieselbe CA.</p>
 
           <h2>SQLAlchemy-Models</h2>
           <p>Die Tabellen liegen jeweils im Modul (z.&nbsp;B. <code>modules/users/models.py</code>) und werden in <code>main.py</code> per <code>Base.metadata.create_all()</code> beim Startup angelegt. Idempotente Spalten-Migrationen erfolgen &uuml;ber <code>_migrate_add_columns()</code> mit <code>PRAGMA table_info</code>.</p>

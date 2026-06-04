@@ -18,7 +18,7 @@
           <div class="nav-group"><a href="../index.html">Willkommen</a></div>
           <div class="nav-group">
             <div class="nav-title">Admin-Handbuch</div>
-            <a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a>
+            <a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./extension.html">Browser-Extension</a><a href="./troubleshooting.html">Troubleshooting</a>
           </div>
           <div class="nav-group">
             <div class="nav-title">Entwickler-Handbuch</div>
@@ -66,23 +66,23 @@
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">Login-Rate-Limit</div><p>5 fehlgeschlagene Login-Versuche pro IP in 15 Minuten → 5-Minuten-Sperre. Implementierung via Redis, mit In-Memory-Fallback für Single-Worker.</p></div>
+            <div><div class="callout-title">Login-Rate-Limit</div><p>5 fehlgeschlagene Login-Versuche pro IP innerhalb von 60 Sekunden → weitere Versuche werden mit <code>429</code> abgewiesen. Ein erfolgreicher Login setzt den Zähler zurück. Implementierung via Redis (fixed-window), mit In-Memory-Fallback für Single-Worker-Setups.</p></div>
           </div>
 
           <h2>API-Keys</h2>
           <p>API-Keys authentifizieren nicht-interaktive Clients (Go-Agent, Skripte, CI-Jobs). Unterschiede zu User-Credentials:</p>
           <ul>
             <li>Kein Ablauf, aber widerrufbar per Klick</li>
-            <li>Eigener Scope: z. B. nur Monitoring-Ingest oder nur Server-Read</li>
+            <li>Eine von zwei Berechtigungen: <code>read</code> (nur lesen) oder <code>read_write</code> (lesen und schreiben)</li>
             <li>Server speichert nur den SHA-256-Hash, der Klartext ist nach dem Anzeigen weg</li>
           </ul>
 
           <p>API-Keys erstellen:</p>
           <ol>
             <li>Web-Panel → <em>API-Keys → Neu</em></li>
-            <li>Label + Scope wählen</li>
+            <li>Name vergeben und Berechtigung (<code>read</code> oder <code>read_write</code>) wählen</li>
             <li>Klartext-Key <strong>sofort</strong> kopieren – wird nie wieder angezeigt</li>
-            <li>Als <code>Authorization: Bearer &lt;key&gt;</code> verwenden</li>
+            <li>Als HTTP-Header <code>X-API-Key: &lt;key&gt;</code> senden (Fallback: Query-Parameter <code>?api_key=…</code> für Browser-Extension und Sync-URLs)</li>
           </ol>
 
           <h2>IP-Restriktion</h2>
@@ -90,9 +90,6 @@
           <div class="code-header"><span>.env</span></div>
 <pre><code>ALLOWED_IPS=10.0.0.0/8,192.168.1.0/24,203.0.113.42</code></pre>
           <p>Wird die Liste leer gelassen, ist der Zugriff offen (für Reverse-Proxy- oder VPN-geschützte Setups).</p>
-
-          <h2>Audit-Log</h2>
-          <p>Admin-Aktionen werden in die DB-Tabelle <code>audit_log</code> geschrieben: Benutzer-Änderungen, API-Key-Erzeugung/-Widerruf, Server-Registrierungen, Hook-Ausführungen. Im Web-Panel unter <em>Admin → Audit</em> einsehbar.</p>
 
           <div class="page-nav">
             <a class="prev" href="./betrieb.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Betrieb &amp; Konfiguration</span></a>
