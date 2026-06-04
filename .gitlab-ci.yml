@@ -200,6 +200,82 @@ desktop_check:
       changes:
         - desktop-src/**/*
 
+agent_check:
+  stage: check
+  image: golang:1.24
+  needs: []
+  before_script:
+    - cd agent-go
+  script:
+    - test -z "$(gofmt -l .)"
+    - go vet ./...
+    - go test ./...
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - agent-go/**/*
+
+rust_check:
+  extends: .tauri_trixie_base
+  stage: check
+  needs: [download_frpc]
+  script:
+    - . "$CARGO_HOME/env"
+    - cd desktop/src-tauri
+    - cargo fmt --check
+    - cargo clippy -- -D warnings
+    - cargo test
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - desktop/src-tauri/**/*
+
+monitoring_test:
+  stage: check
+  image: python:3.13-slim
+  needs: []
+  before_script:
+    - cd monitoring
+    - pip install --no-cache-dir -r requirements.txt pytest
+  script:
+    - python -m pytest -q
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - monitoring/**/*
+
+frontend_unit:
+  stage: check
+  image: node:22-alpine
+  needs: []
+  before_script:
+    - cd frontend-src
+    - npm ci --no-audit --no-fund
+  script:
+    - npm run test:unit
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - frontend-src/**/*
+
+extension_test:
+  stage: check
+  image: node:22-alpine
+  needs: []
+  before_script:
+    - cd extension
+  script:
+    - node --test
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - extension/**/*
+
 docker_server:
   stage: docker
   image: docker:27
