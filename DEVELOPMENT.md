@@ -110,6 +110,7 @@ Das startet:
 - **frps** auf Port 7000 (FRP-Protokoll) und 7443 (HTTPS-vhosts)
 - **Monitoring** auf Port 8480 (Agent-API)
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
+- **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start von `scripts/postgres-init.sh` angelegt
 
 **Login:** `admin` / `admin`
 

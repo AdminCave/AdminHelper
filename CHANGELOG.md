@@ -506,6 +506,8 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.23.2]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.23.2
+[0.23.1]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.23.1
 [0.22.1]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.22.1
 [0.22.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.22.0
 [0.21.0]: https://git.nevondo.com/ks98/adminhelper/-/releases/v0.21.0

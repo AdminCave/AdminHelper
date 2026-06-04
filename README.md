@@ -120,6 +120,7 @@ Der optionale **AdminHelper Server** ermöglicht zentrale Verwaltung und gemeins
 - **FRP-Tunnel-Verwaltung** mit Config-Generierung, Visitor-Profilen und Provisioning
 - **Monitoring-Service** mit Agent-basiertem Ressourcen-Monitoring, Templates und Alerting
 - **Server-Verwaltung** mit Tags, PKI/TLS-Management und Auto-Connection
+- **PostgreSQL 17** als gemeinsame Datenbank für Server und Monitoring
 - **Docker**-Deployment via GitLab-Registry
 
 ### Schnellstart
@@ -164,7 +165,9 @@ Antwort enthält direkt `access_token` + `refresh_token` — kein zusätzlicher 
 
 ### Persistente Daten
 
-Die Server-Daten werden im Verzeichnis `./data/` im Projektroot gespeichert (Bind-Mount). Dieses Verzeichnis ist in `.gitignore` eingetragen und wird automatisch angelegt.
+Die strukturierten Daten (Connections, Benutzer, Server, Tunnel, Monitoring) liegen in **PostgreSQL 17** (Service `postgres`, Image `postgres:17-alpine`). Server und Monitoring teilen sich einen Postgres-Cluster mit zwei Datenbanken: `adminhelper` (vom Postgres-Container als Default-DB angelegt) und `adminhelper_monitor` (beim ersten Start idempotent angelegt durch `scripts/postgres-init.sh`). Der Postgres-Container ist nur intern im Compose-Network erreichbar (kein Port-Mapping); die Daten liegen im Volume `postgres-data`.
+
+Datei-basierte Server-Daten werden im Verzeichnis `./data/` im Projektroot gespeichert (Bind-Mount). Dieses Verzeichnis ist in `.gitignore` eingetragen und wird automatisch angelegt.
 
 ```
 ./data/           ← Bootstrap-Token, .secret_key, FRP-Config, Ansible-Playbooks, Zertifikate
@@ -272,7 +275,7 @@ Der **Unified Go Agent** (`adminhelper-agent`) vereint FRP-Sync und Monitoring i
 
 ```bash
 # DEB installieren:
-apt install ./adminhelper-agent_0.23.0_amd64.deb
+apt install ./adminhelper-agent_0.22.1_amd64.deb
 
 # Komplett-Provisioning in einem Aufruf (Server-API-Key + optional Monitor + optional FRP):
 sudo adminhelper-agent provision \
