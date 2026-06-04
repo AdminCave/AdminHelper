@@ -77,21 +77,16 @@ docker compose exec postgres pg_restore -U adminhelper -d adminhelper --clean --
 tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
 
           <h2>Logging</h2>
-          <p>Four logger names emit structured JSON by default:</p>
-          <table>
-            <thead><tr><th>Logger</th><th>What it records</th></tr></thead>
-            <tbody>
-              <tr><td><code>app</code></td><td>HTTP requests, auth events, CRUD actions</td></tr>
-              <tr><td><code>monitoring</code></td><td>Check execution, ingest results, alert state changes</td></tr>
-              <tr><td><code>frp</code></td><td>Tunnel lifecycle, cert issuance/rotation</td></tr>
-              <tr><td><code>scheduler</code></td><td>APScheduler jobs (queued / ran / failed / retried)</td></tr>
-            </tbody>
-          </table>
-
-          <p>Override per-logger level via env, e.g. <code>LOG_LEVEL_FRP=DEBUG</code>. Systemd/journald picks up the JSON automatically; tools like <code>jq</code> work out of the box:</p>
-
-          <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose logs server | jq 'select(.logger == "frp" and .level == "ERROR")'</code></pre>
+          <p>The server container uses named loggers prefixed <code>adminhelper.*</code>; some modules log under their module path <code>app.*</code>. Useful logger names:</p>
+          <ul>
+            <li><code>adminhelper.auth</code> / <code>adminhelper.auth_router</code> – logins, refresh rotations, reuse detection</li>
+            <li><code>adminhelper.rate_limit</code> – blocked requests</li>
+            <li><code>adminhelper.provisioning</code> – server provisioning</li>
+            <li><code>adminhelper.servers</code> / <code>adminhelper.ansible</code> – server and Ansible actions</li>
+            <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI actions and the FRP container</li>
+            <li><code>app.modules.hooks.scheduler</code> – hook executions incl. subprocess exit codes</li>
+          </ul>
+          <p>The monitoring container logs under the <code>monitor.*</code> prefix (e.g. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Both containers write plain-text lines to stdout, not JSON.</p>
 
           <h2>Multi-Worker Notes</h2>
           <p>The default compose stack runs a single Uvicorn worker – APScheduler assumes <strong>one</strong> scheduling instance, and the in-memory rate-limit fallback is per-process. For horizontal scaling:</p>
@@ -105,6 +100,12 @@ tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
             <div><div class="callout-title">Update flow</div><p><code>docker compose pull &amp;&amp; docker compose up -d</code>. The server runs <code>alembic upgrade head</code> on startup; downtime is typically below 10 seconds.</p></div>
           </div>
+
+          <h2>Timezone</h2>
+          <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. It affects audit-log timestamps and cron-like hook jobs.</p>
+
+          <h2>Renewing certificates</h2>
+          <p>The internal TLS certificates of the FastAPI port are valid for 10 years. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
 
           <div class="page-nav">
             <a class="prev" href="./installation.html"><span class="label">← Previous chapter</span><span class="title">Installation</span></a>

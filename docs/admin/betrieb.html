@@ -76,6 +76,7 @@
               <tr><td><code>data/frp-config/</code></td><td>Generierte <code>frps.toml</code> + Server-Zertifikate (PKI).</td></tr>
               <tr><td><code>data/pki/</code></td><td>CA-Material, Client-Zertifikate, CRL.</td></tr>
               <tr><td><code>data/certs/</code></td><td>Self-Signed-TLS für den FastAPI-Port <code>8443</code>.</td></tr>
+              <tr><td><code>victoria-data</code> (Docker-Volume)</td><td>VictoriaMetrics-Speicher – Retention 90&nbsp;Tage (eigenes Volume, nicht Teil dieses Datenverzeichnisses).</td></tr>
             </tbody>
           </table>
 
@@ -116,13 +117,16 @@ docker compose logs -f monitoring        # Check-Ausführungen
 docker compose logs -f frps              # FRP-Server
 docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</code></pre>
 
-          <p>Der Server nutzt das Logging-Modul <code>adminhelper.*</code>. Interessante Log-Namen:</p>
+          <p>Der Server-Container nutzt benannte Logger mit Präfix <code>adminhelper.*</code>; einige Module loggen unter ihrem Modulpfad <code>app.*</code>. Interessante Log-Namen:</p>
           <ul>
-            <li><code>adminhelper.auth</code> – Logins, Refresh-Rotationen, Reuse-Detection</li>
-            <li><code>adminhelper.frp</code> – PKI-Aktionen und Token-Einlösung</li>
-            <li><code>adminhelper.hooks</code> – Hook-Ausführungen inkl. Subprozess-Exitcodes</li>
+            <li><code>adminhelper.auth</code> / <code>adminhelper.auth_router</code> – Logins, Refresh-Rotationen, Reuse-Detection</li>
             <li><code>adminhelper.rate_limit</code> – Blockierte Requests</li>
+            <li><code>adminhelper.provisioning</code> – Server-Provisionierung</li>
+            <li><code>adminhelper.servers</code> / <code>adminhelper.ansible</code> – Server- und Ansible-Aktionen</li>
+            <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI-Aktionen und FRP-Container</li>
+            <li><code>app.modules.hooks.scheduler</code> – Hook-Ausführungen inkl. Subprozess-Exitcodes</li>
           </ul>
+          <p>Der Monitoring-Container loggt unter dem Präfix <code>monitor.*</code> (z.&nbsp;B. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Beide Container schreiben Plain-Text-Zeilen nach stdout, kein JSON.</p>
 
           <h2>Konfiguration ändern</h2>
           <p>Alle Config-Werte kommen aus Environment-Variablen. Änderungen erfordern ein <code>docker compose up -d</code>, damit die Container neu erzeugt werden:</p>
