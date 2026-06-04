@@ -11,17 +11,17 @@ import (
 	"strings"
 )
 
-// FrpcConfig enthaelt die Konfiguration fuer den FRPC-Sync Agent.
+// FrpcConfig holds the configuration for the FRPC sync agent.
 type FrpcConfig struct {
 	AdminHelperURL string
 	APIKey         string
 	ServerID       string
-	CurlSSL        string // Legacy-Feld, wird in Go nicht direkt genutzt
+	CurlSSL        string // Legacy field, not used directly in Go
 	CACert         string
 	Insecure       bool
 }
 
-// MonitorConfig enthaelt die Konfiguration fuer den Monitor Agent.
+// MonitorConfig holds the configuration for the monitor agent.
 type MonitorConfig struct {
 	MonitorURL string
 	APIKey     string
@@ -31,7 +31,7 @@ type MonitorConfig struct {
 	Insecure   bool
 }
 
-// LoadKeyValue liest eine Key=Value Config-Datei (kompatibel mit bestehendem Format).
+// LoadKeyValue reads a Key=Value config file (compatible with the existing format).
 func LoadKeyValue(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -55,7 +55,7 @@ func LoadKeyValue(path string) (map[string]string, error) {
 	return kv, scanner.Err()
 }
 
-// WriteKeyValue schreibt eine Key=Value Config-Datei.
+// WriteKeyValue writes a Key=Value config file.
 func WriteKeyValue(path string, entries []KeyValue) error {
 	var b strings.Builder
 	for _, e := range entries {
@@ -64,13 +64,13 @@ func WriteKeyValue(path string, entries []KeyValue) error {
 	return os.WriteFile(path, []byte(b.String()), 0600)
 }
 
-// KeyValue ist ein einzelner Config-Eintrag.
+// KeyValue is a single config entry.
 type KeyValue struct {
 	Key   string
 	Value string
 }
 
-// LoadFrpcConfig liest die FRPC-Sync Konfiguration.
+// LoadFrpcConfig reads the FRPC sync configuration.
 func LoadFrpcConfig() (*FrpcConfig, error) {
 	kv, err := LoadKeyValue(FrpAdminHelperConf())
 	if err != nil {
@@ -79,8 +79,8 @@ func LoadFrpcConfig() (*FrpcConfig, error) {
 	return frpcConfigFromKV(kv), nil
 }
 
-// frpcConfigFromKV baut die FrpcConfig aus den Roh-Key-Values und wendet die
-// CACert-Fallback-Logik an.
+// frpcConfigFromKV builds the FrpcConfig from the raw key-values and applies the
+// CACert fallback logic.
 func frpcConfigFromKV(kv map[string]string) *FrpcConfig {
 	cfg := &FrpcConfig{
 		AdminHelperURL: kv["ADMINHELPER_URL"],
@@ -90,14 +90,14 @@ func frpcConfigFromKV(kv map[string]string) *FrpcConfig {
 		CACert:         kv["CACERT"],
 		Insecure:       kv["INSECURE"] == "1",
 	}
-	// Fallback: CACert aus FRP-Verzeichnis
+	// Fallback: CACert from the FRP directory
 	if cfg.CACert == "" && cfg.CurlSSL != "" && strings.Contains(cfg.CurlSSL, "cacert") {
 		cfg.CACert = FrpCACert()
 	}
 	return cfg
 }
 
-// LoadMonitorConfig liest die Monitor Konfiguration.
+// LoadMonitorConfig reads the monitor configuration.
 func LoadMonitorConfig() (*MonitorConfig, error) {
 	kv, err := LoadKeyValue(MonitorConfFile())
 	if err != nil {
@@ -113,8 +113,8 @@ func LoadMonitorConfig() (*MonitorConfig, error) {
 	}, nil
 }
 
-// splitServices zerlegt eine kommaseparierte SERVICES-Liste, ignoriert Leerraum
-// und leere Eintraege.
+// splitServices splits a comma-separated SERVICES list, ignoring whitespace
+// and empty entries.
 func splitServices(s string) []string {
 	if s == "" {
 		return nil

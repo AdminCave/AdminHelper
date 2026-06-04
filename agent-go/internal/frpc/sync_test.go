@@ -11,13 +11,13 @@ import (
 )
 
 func TestHashConfigKnownInput(t *testing.T) {
-	// SHA256("") ist ein bekannter, konstanter Wert.
+	// SHA256("") is a known, constant value.
 	const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	if got := hashConfig([]byte("")); got != emptySHA256 {
 		t.Errorf("hashConfig(\"\") = %q, erwartet %q", got, emptySHA256)
 	}
 
-	// Bekannter Wert fuer "hello".
+	// Known value for "hello".
 	const helloSHA256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 	if got := hashConfig([]byte("hello")); got != helloSHA256 {
 		t.Errorf("hashConfig(\"hello\") = %q, erwartet %q", got, helloSHA256)
@@ -33,14 +33,14 @@ func TestHashConfigMatchesStdlib(t *testing.T) {
 }
 
 func TestHashConfigCompare(t *testing.T) {
-	// Match: identische Bytes ergeben identischen Hash.
+	// Match: identical bytes yield an identical hash.
 	a := hashConfig([]byte("same-config"))
 	b := hashConfig([]byte("same-config"))
 	if a != b {
 		t.Errorf("identischer Input erzeugte ungleiche Hashes: %q != %q", a, b)
 	}
 
-	// Mismatch: eine geaenderte Zeile aendert den Hash.
+	// Mismatch: a changed line changes the hash.
 	c := hashConfig([]byte("same-config\n"))
 	if a == c {
 		t.Errorf("unterschiedlicher Input erzeugte gleichen Hash: %q", a)
@@ -59,7 +59,7 @@ func TestParseConfigHashValid(t *testing.T) {
 }
 
 func TestParseConfigHashMissingField(t *testing.T) {
-	// Gueltiges JSON ohne "hash"-Feld -> leerer String, kein Fehler.
+	// Valid JSON without the "hash" field -> empty string, no error.
 	got, err := parseConfigHash([]byte(`{"other": "x"}`))
 	if err != nil {
 		t.Fatalf("parseConfigHash gab unerwarteten Fehler: %v", err)

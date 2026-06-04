@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// collectServiceHealth sammelt systemd Service-Status (Portierung von collect_systemd_health).
+// collectServiceHealth collects systemd service status (port of collect_systemd_health).
 func collectServiceHealth() map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
@@ -19,7 +19,7 @@ func collectServiceHealth() map[string]any {
 		"all_services":     []map[string]string{},
 	}
 
-	// 1) Alle Service-Units mit active_state
+	// 1) All service units with active_state
 	unitStates := map[string]string{}
 	out, err := exec.Command("systemctl", "list-units", "--type=service", "--all",
 		"--no-legend", "--plain", "--no-pager").Output()
@@ -32,7 +32,7 @@ func collectServiceHealth() map[string]any {
 		}
 	}
 
-	// 2) Enabled-State fuer alle Unit-Files
+	// 2) Enabled state for all unit files
 	enabledStates := map[string]string{}
 	out, err = exec.Command("systemctl", "list-unit-files", "--type=service",
 		"--no-legend", "--no-pager").Output()
@@ -45,7 +45,7 @@ func collectServiceHealth() map[string]any {
 		}
 	}
 
-	// 3) Failed Units
+	// 3) Failed units
 	failed := []string{}
 	out, err = exec.Command("systemctl", "list-units", "--state=failed",
 		"--no-legend", "--plain").Output()
@@ -58,7 +58,7 @@ func collectServiceHealth() map[string]any {
 	}
 	result["failed"] = failed
 
-	// all_services zusammenbauen
+	// Assemble all_services
 	allUnits := map[string]bool{}
 	for u := range unitStates {
 		allUnits[u] = true
@@ -96,7 +96,7 @@ func collectServiceHealth() map[string]any {
 	return result
 }
 
-// collectWatchedServices prueft den Status bestimmter systemd-Services.
+// collectWatchedServices checks the status of specific systemd services.
 func collectWatchedServices(names []string) []map[string]any {
 	var services []map[string]any
 	for _, name := range names {

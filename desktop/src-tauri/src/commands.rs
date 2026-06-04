@@ -17,8 +17,8 @@ use crate::storage;
 use crate::sync;
 use crate::tunnel;
 
-/// Prüft ob das Server-Zertifikat gültig ist. Gibt true zurück wenn gültig,
-/// false wenn Self-Signed/ungültig.
+/// Checks whether the server certificate is valid. Returns true if valid,
+/// false if self-signed/invalid.
 #[tauri::command]
 pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
     let client = reqwest::Client::builder()
@@ -34,8 +34,8 @@ pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
     }
 }
 
-/// Generischer API-Proxy: leitet Requests über reqwest an den Server weiter.
-/// Umgeht damit WebView-TLS-Beschränkungen bei Self-Signed Certs.
+/// Generic API proxy: forwards requests to the server via reqwest.
+/// Works around WebView TLS restrictions for self-signed certs.
 #[tauri::command]
 pub async fn api_proxy(
     app: tauri::AppHandle,

@@ -15,14 +15,14 @@ import (
 
 const serviceName = "adminhelper-agent"
 
-// Install registriert den AdminHelper-Agent als systemd-Service mit Timer.
+// Install registers the AdminHelper agent as a systemd service with a timer.
 func Install() error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("eigenen Pfad ermitteln: %w", err)
 	}
 
-	// Service-Unit schreiben
+	// Write the service unit
 	serviceUnit := fmt.Sprintf(`[Unit]
 Description=AdminHelper Agent — FRPC Sync + Monitoring
 After=network-online.target
@@ -36,7 +36,7 @@ ExecStart=%s run
 WantedBy=multi-user.target
 `, exePath)
 
-	// Timer-Unit schreiben
+	// Write the timer unit
 	timerUnit := `[Unit]
 Description=AdminHelper Agent Timer (alle 5 Minuten)
 
@@ -70,7 +70,7 @@ WantedBy=timers.target
 	return nil
 }
 
-// Uninstall deregistriert den AdminHelper-Agent Service.
+// Uninstall deregisters the AdminHelper agent service.
 func Uninstall() error {
 	exec.Command("systemctl", "stop", serviceName+".timer").Run()
 	exec.Command("systemctl", "disable", serviceName+".timer").Run()

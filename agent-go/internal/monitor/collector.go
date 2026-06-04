@@ -15,7 +15,7 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-// Dateisystem-Typen die uebersprungen werden sollen (Linux-spezifisch, Windows ignoriert diese).
+// Filesystem types to skip (Linux-specific; Windows ignores these).
 var skipFSTypes = map[string]bool{
 	"squashfs": true, "tmpfs": true, "devtmpfs": true, "overlay": true,
 	"proc": true, "sysfs": true, "devpts": true, "cgroup": true,
@@ -25,7 +25,7 @@ var skipFSTypes = map[string]bool{
 	"efivarfs": true, "fuse.lxcfs": true,
 }
 
-// Mount-Prefixe die uebersprungen werden (Linux-spezifisch).
+// Mount prefixes to skip (Linux-specific).
 var skipMountPrefixes = []string{"/sys", "/proc", "/dev/", "/run/snapd", "/snap"}
 
 func collectCPU() float64 {
@@ -63,7 +63,7 @@ func collectLoad() map[string]any {
 	}
 }
 
-// DiskInfo enthaelt die Metriken einer Partition.
+// DiskInfo holds the metrics of a partition.
 type DiskInfo struct {
 	Mount   string  `json:"mount"`
 	FSType  string  `json:"fstype"`
@@ -108,7 +108,7 @@ func collectUptime() int {
 	return int(uptime)
 }
 
-// Hilfsfunktionen
+// Helper functions
 
 func hasPrefix(s string, prefixes []string) bool {
 	for _, p := range prefixes {

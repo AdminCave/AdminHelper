@@ -12,7 +12,7 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
-// Init fuehrt die Ersteinrichtung des Monitor-Agents durch.
+// Init performs the initial setup of the monitor agent.
 func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 	url = strings.TrimRight(url, "/")
 
@@ -21,7 +21,7 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
 
-	// CA-Cert kopieren falls angegeben
+	// Copy the CA cert if provided
 	storedCACert := ""
 	if cacert != "" {
 		if _, err := os.Stat(cacert); err != nil {
@@ -39,7 +39,7 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		logMsg("CA-Zertifikat kopiert: %s", dest)
 	}
 
-	// Config schreiben
+	// Write the config
 	entries := []config.KeyValue{
 		{Key: "MONITOR_URL", Value: url},
 		{Key: "API_KEY", Value: apiKey},
@@ -59,7 +59,7 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 	}
 	logMsg("Config geschrieben: %s", config.MonitorConfFile())
 
-	// Test-Push
+	// Test push
 	var serviceList []string
 	if services != "" {
 		for _, s := range strings.Split(services, ",") {
@@ -76,7 +76,7 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		logMsg("Test-Push erfolgreich")
 	}
 
-	// Service aktivieren (plattform-spezifisch)
+	// Activate the service (platform-specific)
 	if err := enableMonitorService(); err != nil {
 		logMsg("WARNUNG: Service konnte nicht aktiviert werden: %v", err)
 		logMsg("Bitte manuell aktivieren")
@@ -85,7 +85,7 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 	return nil
 }
 
-// Push liest die Config und sendet einen einmaligen Report.
+// Push reads the config and sends a one-off report.
 func Push() error {
 	cfg, err := config.LoadMonitorConfig()
 	if err != nil {

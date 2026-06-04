@@ -14,7 +14,7 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
-// Sync prueft auf Config-Aenderungen und aktualisiert frpc (Portierung von do_sync).
+// Sync checks for config changes and updates frpc (port of do_sync).
 func Sync() error {
 	cfg, err := config.LoadFrpcConfig()
 	if err != nil {
@@ -34,7 +34,7 @@ func Sync() error {
 		return fmt.Errorf("HTTP-Client: %w", err)
 	}
 
-	// Remote-Hash abrufen
+	// Fetch the remote hash
 	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
 	hashBody, err := httpGet(client, hashURL, cfg.APIKey)
 	if err != nil {
@@ -46,7 +46,7 @@ func Sync() error {
 		return fmt.Errorf("Hash-Antwort parsen: %w", err)
 	}
 
-	// Lokalen Hash lesen
+	// Read the local hash
 	localHash := ""
 	if data, err := os.ReadFile(config.FrpHashFile()); err == nil {
 		localHash = strings.TrimSpace(string(data))
@@ -57,14 +57,14 @@ func Sync() error {
 	}
 	logMsg("Config-Aenderung erkannt. Aktualisiere...")
 
-	// Neue Config holen
+	// Fetch the new config
 	configURL := fmt.Sprintf("%s/api/frp/provision/%s/config", cfg.AdminHelperURL, cfg.ServerID)
 	newConfig, err := httpGet(client, configURL, cfg.APIKey)
 	if err != nil {
 		return fmt.Errorf("neue Config laden: %w", err)
 	}
 
-	// Config schreiben (0600: enthaelt frp-Auth-Token).
+	// Write the config (0600: contains the frp auth token).
 	if err := os.WriteFile(config.FrpConfigFile(), newConfig, 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
 	}
@@ -72,7 +72,7 @@ func Sync() error {
 		return fmt.Errorf("Hash schreiben: %w", err)
 	}
 
-	// frpc neustarten
+	// Restart frpc
 	if err := restartFrpc(); err != nil {
 		return fmt.Errorf("frpc neustarten: %w", err)
 	}
@@ -80,7 +80,7 @@ func Sync() error {
 	return nil
 }
 
-// parseConfigHash liest den Hash-Wert aus der Server-Antwort (`{"hash": "..."}`).
+// parseConfigHash reads the hash value from the server response (`{"hash": "..."}`).
 func parseConfigHash(body []byte) (string, error) {
 	var hashResp struct {
 		Hash string `json:"hash"`
@@ -91,12 +91,12 @@ func parseConfigHash(body []byte) (string, error) {
 	return hashResp.Hash, nil
 }
 
-// hashConfig berechnet den hex-kodierten SHA256-Hash der Config-Bytes.
+// hashConfig computes the hex-encoded SHA256 hash of the config bytes.
 func hashConfig(data []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
-// writeConfigHash berechnet den SHA256-Hash der aktuellen frpc.toml.
+// writeConfigHash computes the SHA256 hash of the current frpc.toml.
 func writeConfigHash() error {
 	data, err := os.ReadFile(config.FrpConfigFile())
 	if err != nil {

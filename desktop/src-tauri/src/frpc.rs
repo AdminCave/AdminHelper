@@ -10,8 +10,8 @@ use serde::Deserialize;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 
-/// Schreibt Daten mit restriktiven Permissions (0600 auf Unix).
-/// Auf Windows greifen die Standard-User-ACLs des AppData-Ordners.
+/// Writes data with restrictive permissions (0600 on Unix).
+/// On Windows the default user ACLs of the AppData folder apply.
 fn write_secret(path: &Path, content: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -102,7 +102,7 @@ fn write_visitor_bundle(
         std::fs::create_dir_all(&pki_dir)?;
         for (filename, content) in &bundle.pki {
             let file_path = pki_dir.join(filename);
-            // Private Keys (.key) restriktiv schreiben, Certs duerfen 0644 bleiben.
+            // Write private keys (.key) restrictively; certs may stay 0644.
             if filename.ends_with(".key") {
                 write_secret(&file_path, content.as_bytes())?;
             } else {
@@ -122,7 +122,7 @@ fn write_visitor_bundle(
     let abs_pki = pki_dir.to_string_lossy();
     let toml_content = bundle.toml.replace("\"pki/", &format!("\"{abs_pki}/"));
     let config_path = data_dir.join("visitor.toml");
-    // visitor.toml enthaelt frp-Auth-Token -> 0600 auf Unix.
+    // visitor.toml contains the frp auth token -> 0600 on Unix.
     write_secret(&config_path, toml_content.as_bytes())?;
     Ok(config_path)
 }

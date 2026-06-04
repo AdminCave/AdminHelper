@@ -4,14 +4,14 @@
 
 package config
 
-// Plattform-spezifische Pfade werden in paths_linux.go und paths_windows.go definiert.
-// Jede Datei exportiert:
-//   FrpDir()     — Basisverzeichnis fuer frpc-Konfiguration
-//   MonitorDir() — Basisverzeichnis fuer Monitor-Konfiguration
+// Platform-specific paths are defined in paths_linux.go and paths_windows.go.
+// Each file exports:
+//   FrpDir()     — base directory for frpc configuration
+//   MonitorDir() — base directory for monitor configuration
 
 import "path/filepath"
 
-// Abgeleitete Pfade (plattform-unabhaengig)
+// Derived paths (platform-independent)
 
 func FrpConfigFile() string      { return filepath.Join(FrpDir(), "frpc.toml") }
 func FrpAdminHelperConf() string { return filepath.Join(FrpDir(), "adminhelper.conf") }

@@ -2,17 +2,17 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package provision implementiert den Server-zentrischen Provisioning-Flow.
+// Package provision implements the server-centric provisioning flow.
 //
-// Ab v0.23.0 ist Provisioning nicht mehr an FRP gekoppelt. Ein einziger
-// `adminhelper-agent provision`-Aufruf:
-//   - loest den Provision-Token via POST /api/servers/{id}/provision/activate ein,
-//   - schreibt Server-API-Key (immer),
-//   - bei verfuegbarem Monitor-Service: monitor.Init mit zurueckgeliefertem Key,
-//   - bei konfiguriertem FRP-Tunnel: frpc.Apply mit zurueckgeliefertem Bundle.
+// As of v0.23.0, provisioning is no longer coupled to FRP. A single
+// `adminhelper-agent provision` call:
+//   - redeems the provision token via POST /api/servers/{id}/provision/activate,
+//   - writes the server API key (always),
+//   - with an available monitor service: monitor.Init with the returned key,
+//   - with a configured FRP tunnel: frpc.Apply with the returned bundle.
 //
-// Damit reicht ein einziger Befehl auf dem Zielserver, egal welche Komponenten
-// (FRP / Monitor / nur Server-Read) konfiguriert sind.
+// This way a single command on the target server suffices, regardless of which
+// components (FRP / monitor / server-read only) are configured.
 package provision
 
 import (
@@ -43,8 +43,8 @@ type activateResponse struct {
 	FRP           *frpBundle `json:"frp"`
 }
 
-// Run loest einen Provision-Token gegen den Server-Endpoint ein und
-// installiert die zurueckgegebenen Bundles plattform-passend.
+// Run redeems a provision token against the server endpoint and
+// installs the returned bundles in a platform-appropriate way.
 func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 	if adminHelperURL == "" || token == "" || serverID == "" {
@@ -61,7 +61,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Printf("Provisioning fuer Server %q gestartet.\n", resp.ServerName)
 
-	// 1. Monitor-Init nur, wenn Service einen Key zurueckgegeben hat.
+	// 1. Monitor init only if the service returned a key.
 	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" &&
 		resp.MonitorURL != nil && *resp.MonitorURL != "" {
 		fmt.Println("→ Monitor-Agent wird eingerichtet...")
@@ -72,7 +72,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 		fmt.Println("→ Monitor-Service nicht konfiguriert oder nicht erreichbar — Monitor wird uebersprungen.")
 	}
 
-	// 2. FRP-Apply nur, wenn Server FRP-Tunnel hat.
+	// 2. FRP apply only if the server has an FRP tunnel.
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
 		if err := frpc.Apply(adminHelperURL, serverID, resp.APIKey, resp.FRP.Config, resp.FRP.PkiBundle, cacert, insecure); err != nil {

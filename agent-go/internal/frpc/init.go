@@ -18,11 +18,11 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
-// Apply schreibt die FRP-Config + PKI-Bundle aus einer Provisioning-Antwort
-// auf die Platte und aktiviert den Service. Es findet KEIN HTTP-Call mehr
-// statt — der Token-Activate-Aufruf passiert seit v0.23.0 zentral im
-// `provision`-Subbefehl, der `Apply` mit den bereits dekodierten Werten
-// aufruft.
+// Apply writes the FRP config + PKI bundle from a provisioning response
+// to disk and activates the service. NO HTTP call happens here anymore —
+// the token-activate call has been centralized since v0.23.0 in the
+// `provision` subcommand, which invokes `Apply` with the already-decoded
+// values.
 func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert string, insecure bool) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
@@ -32,7 +32,7 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
 
-	// CA-Cert kopieren, falls angegeben
+	// Copy the CA cert if provided
 	if cacert != "" {
 		data, err := os.ReadFile(cacert)
 		if err != nil {
@@ -43,7 +43,7 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		}
 	}
 
-	// SSL-Config fuer Sync-Modus bestimmen
+	// Determine the SSL config for sync mode
 	confCACert := ""
 	confInsecure := false
 	if cacert != "" {
@@ -52,7 +52,7 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		confInsecure = true
 	}
 
-	// AdminHelper-Config schreiben
+	// Write the AdminHelper config
 	entries := []config.KeyValue{
 		{Key: "ADMINHELPER_URL", Value: adminHelperURL},
 		{Key: "API_KEY", Value: apiKey},
@@ -69,7 +69,7 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 	}
 	logMsg("Config geschrieben: %s", config.FrpAdminHelperConf())
 
-	// frpc.toml schreiben (base64-decoded)
+	// Write frpc.toml (base64-decoded)
 	if frpConfigB64 != "" {
 		decoded, err := base64.StdEncoding.DecodeString(frpConfigB64)
 		if err != nil {
@@ -81,7 +81,7 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		logMsg("frpc.toml geschrieben")
 	}
 
-	// PKI-Bundle entpacken (base64-encoded tar.gz)
+	// Extract the PKI bundle (base64-encoded tar.gz)
 	if pkiBundleB64 != "" {
 		if err := extractPkiBundle(pkiBundleB64, frpDir); err != nil {
 			logMsg("WARNUNG: PKI-Bundle konnte nicht entpackt werden: %v", err)
@@ -90,12 +90,12 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		}
 	}
 
-	// Initialen Hash berechnen
+	// Compute the initial hash
 	if err := writeConfigHash(); err != nil {
 		logMsg("WARNUNG: Hash konnte nicht geschrieben werden: %v", err)
 	}
 
-	// Service aktivieren (plattform-spezifisch)
+	// Activate the service (platform-specific)
 	if err := enableFrpcService(); err != nil {
 		logMsg("WARNUNG: Service konnte nicht aktiviert werden: %v", err)
 		logMsg("Bitte manuell aktivieren")
@@ -106,10 +106,10 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 	return nil
 }
 
-// maxBundleBytes begrenzt die entpackte Gesamtgroesse des PKI-Bundles (Zip-Bomb-Schutz).
+// maxBundleBytes limits the total extracted size of the PKI bundle (zip-bomb protection).
 const maxBundleBytes int64 = 10 * 1024 * 1024 // 10 MiB
 
-// extractPkiBundle entpackt ein base64-encoded tar.gz Archiv.
+// extractPkiBundle unpacks a base64-encoded tar.gz archive.
 func extractPkiBundle(b64 string, destDir string) error {
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
@@ -155,7 +155,7 @@ func extractPkiBundle(b64 string, destDir string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return err
 			}
-			// Sichere Standard-Permission, .key bekommt zusaetzlich 0600.
+			// Safe default permission; .key additionally gets 0600.
 			mode := os.FileMode(hdr.Mode) & 0644
 			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {

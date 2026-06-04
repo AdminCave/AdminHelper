@@ -49,8 +49,8 @@ pub enum RdpPerformanceProfile {
     Low,
 }
 
-/// Gebündelte RDP-Darstellungsoptionen, die durch die Verbindungs-Aufrufkette
-/// gereicht werden. Vermeidet breite Signaturen (clippy::too_many_arguments).
+/// Bundled RDP display options that are passed through the connection call
+/// chain. Avoids wide signatures (clippy::too_many_arguments).
 #[derive(Debug, Clone, Copy)]
 pub struct RdpOptions<'a> {
     pub scaling_mode: RdpScalingMode,

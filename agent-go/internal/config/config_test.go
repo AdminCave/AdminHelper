@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// writeTemp schreibt content in eine tmp-Datei und gibt deren Pfad zurueck.
+// writeTemp writes content to a tmp file and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -114,7 +114,7 @@ func TestLoadKeyValueMissingKeyReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadKeyValue: %v", err)
 	}
-	// Fehlender Key ergibt im Go-Map-Zugriff den Null-Wert (leerer String).
+	// A missing key yields the zero value (empty string) on Go map access.
 	if got := kv["NICHT_VORHANDEN"]; got != "" {
 		t.Errorf("fehlender Key sollte \"\" sein, war %q", got)
 	}
@@ -174,7 +174,7 @@ func TestFrpcConfigFromKVFields(t *testing.T) {
 }
 
 func TestFrpcConfigFallbackCACert(t *testing.T) {
-	// CACERT leer + CURL_SSL enthaelt "cacert" -> Fallback auf FrpCACert().
+	// Empty CACERT + CURL_SSL containing "cacert" -> fallback to FrpCACert().
 	kv := map[string]string{
 		"CURL_SSL": "--cacert /etc/frp/ca.crt",
 	}
@@ -185,7 +185,7 @@ func TestFrpcConfigFallbackCACert(t *testing.T) {
 }
 
 func TestFrpcConfigNoFallbackWhenCACertSet(t *testing.T) {
-	// Explizites CACERT hat Vorrang, Fallback greift nicht.
+	// An explicit CACERT takes precedence; the fallback does not apply.
 	kv := map[string]string{
 		"CACERT":   "/custom/ca.crt",
 		"CURL_SSL": "--cacert /etc/frp/ca.crt",
@@ -197,7 +197,7 @@ func TestFrpcConfigNoFallbackWhenCACertSet(t *testing.T) {
 }
 
 func TestFrpcConfigNoFallbackWhenCurlSSLNoCacert(t *testing.T) {
-	// CURL_SSL ohne "cacert"-Substring -> kein Fallback.
+	// CURL_SSL without the "cacert" substring -> no fallback.
 	kv := map[string]string{
 		"CURL_SSL": "-k",
 	}

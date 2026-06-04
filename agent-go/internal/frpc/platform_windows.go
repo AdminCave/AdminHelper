@@ -11,16 +11,16 @@ import (
 	"os/exec"
 )
 
-// enableFrpcService startet den frpc-Prozess unter Windows.
-// Im Service-Modus wird frpc vom AdminHelper-Agent-Service selbst verwaltet.
+// enableFrpcService starts the frpc process on Windows.
+// In service mode, frpc is managed by the AdminHelper agent service itself.
 func enableFrpcService() error {
-	// frpc als Hintergrundprozess starten — im Service-Modus uebernimmt der
-	// Windows Service das Management.
-	// TODO: Integration mit Windows Service Manager
+	// Start frpc as a background process — in service mode the Windows
+	// service takes over management.
+	// TODO: integrate with the Windows Service Manager
 	return exec.Command("sc", "start", "frpc").Run()
 }
 
-// restartFrpc startet frpc unter Windows neu.
+// restartFrpc restarts frpc on Windows.
 func restartFrpc() error {
 	if err := exec.Command("sc", "stop", "frpc").Run(); err != nil {
 		fmt.Printf("[adminhelper-agent-frpc] WARNUNG: frpc stop: %v\n", err)

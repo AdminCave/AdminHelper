@@ -17,7 +17,7 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Generiert eine Ansible-Inventory-Datei im INI-Format und gibt den Pfad zurueck.
+/// Generates an Ansible inventory file in INI format and returns the path.
 pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError> {
     let mut content = String::from("[all]\n");
     for server in servers {
@@ -26,7 +26,7 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
     }
     content.push('\n');
 
-    // Gruppen aus Tags erstellen
+    // Build groups from tags
     let mut groups: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
     for server in servers {
         for tag in &server.groups {
@@ -57,7 +57,7 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Schreibt den Playbook-Inhalt in eine temporaere Datei und gibt den Pfad zurueck.
+/// Writes the playbook content to a temporary file and returns the path.
 pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppError> {
     let safe_name = filename
         .replace(['/', '\\'], "_")
@@ -71,7 +71,7 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Startet ansible-playbook in einem nativen Terminal.
+/// Starts ansible-playbook in a native terminal.
 pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), AppError> {
     if which("ansible-playbook").is_none() {
         return Err(AppError::Connection(

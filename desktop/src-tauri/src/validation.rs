@@ -74,10 +74,10 @@ pub fn validate_connection_input(connection: &Connection) -> Result<(), AppError
     Ok(())
 }
 
-/// Bereinigt einen Verbindungsnamen fuer die sichere Verwendung als RDP-Fenstertitel
-/// (xfreerdp `/title:`). Defense-in-Depth: Argv-Uebergabe verhindert bereits
-/// Argument-Splitting, aber Sanitization schuetzt vor Steuerzeichen, X11-Escapes
-/// und kuenftigen Codepfaden, die den Wert evtl. shell-formatieren.
+/// Sanitizes a connection name for safe use as an RDP window title
+/// (xfreerdp `/title:`). Defense-in-depth: passing via argv already prevents
+/// argument splitting, but sanitization guards against control characters,
+/// X11 escapes, and future code paths that might shell-format the value.
 pub fn sanitize_window_title(name: &str) -> String {
     let filtered: String = name
         .chars()
@@ -157,7 +157,7 @@ mod tests {
     fn validate_web_url_allows_http_and_https() {
         assert!(validate_web_url("http://example.com").is_ok());
         assert!(validate_web_url("https://example.com").is_ok());
-        // Ohne Schema wird https:// vorangestellt.
+        // Without a scheme, https:// is prepended.
         assert!(validate_web_url("example.com").is_ok());
     }
 

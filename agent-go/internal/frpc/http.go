@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// httpClient erstellt einen HTTP-Client mit optionalen TLS-Einstellungen.
+// httpClient creates an HTTP client with optional TLS settings.
 func httpClient(cacert string, insecure bool) (*http.Client, error) {
 	tlsCfg := &tls.Config{}
 
@@ -40,7 +40,7 @@ func httpClient(cacert string, insecure bool) (*http.Client, error) {
 	}, nil
 }
 
-// httpGet fuehrt einen GET-Request mit API-Key Header aus.
+// httpGet performs a GET request with an API-Key header.
 func httpGet(client *http.Client, url, apiKey string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

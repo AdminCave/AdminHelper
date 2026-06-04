@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// collectServiceHealth sammelt Windows Service-Status.
-// Das Format ist kompatibel mit dem systemd-Format fuer den Monitoring-Server.
+// collectServiceHealth collects Windows service status.
+// The format is compatible with the systemd format for the monitoring server.
 func collectServiceHealth() map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
@@ -20,7 +20,7 @@ func collectServiceHealth() map[string]any {
 		"all_services":     []map[string]string{},
 	}
 
-	// sc query state= all ausfuehren
+	// Run sc query state= all
 	out, err := exec.Command("sc", "query", "state=", "all").Output()
 	if err != nil {
 		return result
@@ -67,7 +67,7 @@ func collectServiceHealth() map[string]any {
 	return result
 }
 
-// mapWindowsService bildet einen Windows-Service auf das systemd-kompatible Format ab.
+// mapWindowsService maps a Windows service to the systemd-compatible format.
 func mapWindowsService(name, state string) map[string]string {
 	activeState := "unknown"
 	switch state {
@@ -87,7 +87,7 @@ func mapWindowsService(name, state string) map[string]string {
 	}
 }
 
-// collectWatchedServices prueft den Status bestimmter Windows-Services.
+// collectWatchedServices checks the status of specific Windows services.
 func collectWatchedServices(names []string) []map[string]any {
 	var services []map[string]any
 	for _, name := range names {

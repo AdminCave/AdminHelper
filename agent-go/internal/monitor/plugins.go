@@ -11,12 +11,12 @@ import (
 	"strings"
 )
 
-// collectDocker sammelt Docker Container-Status (plattform-uebergreifend).
+// collectDocker collects Docker container status (cross-platform).
 func collectDocker() map[string]any {
 	if _, err := exec.LookPath("docker"); err != nil {
 		return nil
 	}
-	// Daemon erreichbar?
+	// Is the daemon reachable?
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		return nil
 	}
@@ -42,7 +42,7 @@ func collectDocker() map[string]any {
 			"state":  c["State"],
 			"status": c["Status"],
 		}
-		// Restart-Policy via docker inspect
+		// Restart policy via docker inspect
 		inspOut, err := exec.Command("docker", "inspect", "--format",
 			"{{.HostConfig.RestartPolicy.Name}}", c["ID"]).Output()
 		if err == nil {
@@ -56,7 +56,7 @@ func collectDocker() map[string]any {
 	return map[string]any{"containers": containers}
 }
 
-// collectProxmox sammelt Proxmox-Metriken (nur auf Linux mit pvesh).
+// collectProxmox collects Proxmox metrics (Linux with pvesh only).
 func collectProxmox() map[string]any {
 	if _, err := exec.LookPath("pvesh"); err != nil {
 		return nil
@@ -64,7 +64,7 @@ func collectProxmox() map[string]any {
 
 	result := map[string]any{"node": nil, "vms": []any{}}
 
-	// Node-Status
+	// Node status
 	hostname, err := exec.Command("hostname", "-s").Output()
 	if err != nil {
 		return nil
@@ -88,10 +88,10 @@ func collectProxmox() map[string]any {
 		}
 	}
 
-	// Backup-Index einmal fuer alle VMs aufbauen (O(Storages) statt O(VMs × Storages))
+	// Build the backup index once for all VMs (O(Storages) instead of O(VMs × Storages))
 	backupIndex := buildBackupIndex()
 
-	// VMs + LXC Container
+	// VMs + LXC containers
 	var vmList []map[string]any
 	vmsOut, err := exec.Command("pvesh", "get", "/cluster/resources", "--type", "vm",
 		"--output-format", "json").Output()
@@ -125,8 +125,8 @@ func collectProxmox() map[string]any {
 	return result
 }
 
-// buildBackupIndex holt alle Backups aller Storages und baut eine Lookup-Map
-// vmid -> neuester ctime-Timestamp. Nur O(Storages) API-Calls statt O(VMs × Storages).
+// buildBackupIndex fetches all backups of all storages and builds a lookup map
+// vmid -> newest ctime timestamp. Only O(Storages) API calls instead of O(VMs × Storages).
 func buildBackupIndex() map[int]int64 {
 	index := make(map[int]int64)
 
@@ -147,7 +147,7 @@ func buildBackupIndex() map[int]int64 {
 		}
 		sid, _ := storage["storage"].(string)
 
-		// Alle Backups dieses Storages auf einmal holen (ohne --vmid Filter)
+		// Fetch all backups of this storage at once (without the --vmid filter)
 		backupsOut, err := exec.Command("pvesh", "get",
 			"/nodes/localhost/storage/"+sid+"/content",
 			"--content", "backup", "--output-format", "json").Output()
@@ -172,7 +172,7 @@ func buildBackupIndex() map[int]int64 {
 	return index
 }
 
-// collectZFS sammelt ZFS Pool-Informationen (nur Linux).
+// collectZFS collects ZFS pool information (Linux only).
 func collectZFS() map[string]any {
 	if _, err := exec.LookPath("zpool"); err != nil {
 		return nil
@@ -207,7 +207,7 @@ func collectZFS() map[string]any {
 
 	result := map[string]any{"pools": pools}
 
-	// Fehler-Details bei nicht-ONLINE Pools
+	// Error details for non-ONLINE pools
 	for _, p := range pools {
 		if p["health"] != "ONLINE" {
 			statusOut, err := exec.Command("zpool", "status", "-x").Output()
@@ -220,7 +220,7 @@ func collectZFS() map[string]any {
 	return result
 }
 
-// getFloat extrahiert einen float64-Wert aus einer Map.
+// getFloat extracts a float64 value from a map.
 func getFloat(m map[string]any, key string, fallback float64) float64 {
 	if m == nil {
 		return fallback

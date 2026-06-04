@@ -42,7 +42,7 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-// --- Provision Subcommand (server-zentrisch, ersetzt frpc init seit v0.23.0) ---
+// --- Provision subcommand (server-centric, replaces frpc init since v0.23.0) ---
 
 func provisionCmd() *cobra.Command {
 	var url, token, serverID, cacert string
@@ -66,7 +66,7 @@ func provisionCmd() *cobra.Command {
 	return cmd
 }
 
-// --- FRPC Subcommands ---
+// --- FRPC subcommands ---
 
 func frpcCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -87,7 +87,7 @@ func frpcSyncCmd() *cobra.Command {
 	}
 }
 
-// --- Monitor Subcommands ---
+// --- Monitor subcommands ---
 
 func monitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -132,7 +132,7 @@ func monitorPushCmd() *cobra.Command {
 	}
 }
 
-// --- Service Subcommands ---
+// --- Service subcommands ---
 
 func serviceCmd() *cobra.Command {
 	cmd := &cobra.Command{

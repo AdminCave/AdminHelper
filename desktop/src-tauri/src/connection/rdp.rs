@@ -193,7 +193,7 @@ fn build_rdp_args(
         .map(|value| value.trim())
         .unwrap_or("");
 
-    // Fenstergroesse + dynamic-resolution je nach Modus
+    // Window size + dynamic-resolution depending on the mode
     match rdp.window_mode {
         RdpWindowMode::Fit => {
             let (w, h) = fit_window_size(client);
@@ -750,7 +750,7 @@ pub fn write_rdp_file(
         lines.push("authentication level:i:0".to_string());
     }
 
-    // Fenstergroesse
+    // Window size
     match rdp_window_mode {
         RdpWindowMode::Fit => {
             lines.push("screen mode id:i:1".to_string());
@@ -771,7 +771,7 @@ pub fn write_rdp_file(
         }
     }
 
-    // Zwischenablage explizit aktivieren (Default, aber dokumentiert)
+    // Explicitly enable the clipboard (default, but documented)
     lines.push("redirectclipboard:i:1".to_string());
 
     // Performance

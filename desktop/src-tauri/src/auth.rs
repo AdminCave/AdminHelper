@@ -108,7 +108,7 @@ pub async fn check_session(allow_self_signed: bool) -> Result<Option<AuthSession
         Err(_) => return Ok(None),
     };
 
-    // Versuche mit aktuellem Access-Token
+    // Try with the current access token
     match fetch_me(&server_url, &token, allow_self_signed).await {
         Ok(me) => Ok(Some(AuthSession {
             server_url,
@@ -118,7 +118,7 @@ pub async fn check_session(allow_self_signed: bool) -> Result<Option<AuthSession
             is_admin: me.is_admin,
         })),
         Err(_) => {
-            // Access-Token abgelaufen — Refresh versuchen
+            // Access token expired — try to refresh
             match try_refresh(&server_url, &refresh_token, allow_self_signed).await {
                 Ok(session) => {
                     save_session_to_keyring(&session)?;
@@ -133,7 +133,7 @@ pub async fn check_session(allow_self_signed: bool) -> Result<Option<AuthSession
     }
 }
 
-/// Refresh-Token gegen neue Access- und Refresh-Tokens tauschen.
+/// Exchanges the refresh token for new access and refresh tokens.
 async fn try_refresh(
     server_url: &str,
     refresh_token: &str,
@@ -160,7 +160,7 @@ async fn try_refresh(
     })
 }
 
-/// Authenticated GET mit automatischem Token-Refresh bei 401.
+/// Authenticated GET with automatic token refresh on 401.
 pub async fn authenticated_get(
     server_url: &str,
     token: &str,
@@ -177,7 +177,7 @@ pub async fn authenticated_get(
         .await?;
 
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        // Refresh-Token aus Keyring laden und Refresh versuchen
+        // Load the refresh token from the keyring and try to refresh
         if let Ok((_, _, refresh_token)) = load_session_from_keyring() {
             if let Ok(new_session) =
                 try_refresh(server_url, &refresh_token, allow_self_signed).await
@@ -197,9 +197,9 @@ pub async fn authenticated_get(
 }
 
 pub async fn logout(allow_self_signed: bool) -> Result<(), AppError> {
-    // Server informieren, damit Access- und Refresh-Token serverseitig
-    // blacklistet werden. Fehler werden ignoriert: lokales Keyring-Clearing
-    // muss in jedem Fall passieren (Offline, Server down, …).
+    // Notify the server so the access and refresh tokens get blacklisted
+    // server-side. Errors are ignored: clearing the local keyring must happen
+    // in every case (offline, server down, …).
     if let Ok((server_url, token, refresh_token)) = load_session_from_keyring() {
         let _ = notify_server_logout(&server_url, &token, &refresh_token, allow_self_signed).await;
     }

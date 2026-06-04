@@ -22,7 +22,7 @@ func logMsg(format string, args ...any) {
 	fmt.Printf("[%s] %s\n", logTag, fmt.Sprintf(format, args...))
 }
 
-// BuildReport sammelt alle Metriken und baut den Report.
+// BuildReport collects all metrics and builds the report.
 func BuildReport(serviceNames []string) map[string]any {
 	resources := map[string]any{
 		"cpu_percent": collectCPU(),
@@ -51,19 +51,19 @@ func BuildReport(serviceNames []string) map[string]any {
 		"uptime_seconds": collectUptime(),
 	}
 
-	// Service-Health (plattform-spezifisch)
+	// Service health (platform-specific)
 	svcHealth := collectServiceHealth()
 	if serviceNames != nil && len(serviceNames) > 0 {
 		svcHealth["watched"] = collectWatchedServices(serviceNames)
 	}
 	report["systemd"] = svcHealth
 
-	// Legacy: services-Key
+	// Legacy: services key
 	if len(serviceNames) > 0 {
 		report["services"] = collectWatchedServices(serviceNames)
 	}
 
-	// Auto-detected Plugins
+	// Auto-detected plugins
 	if docker := collectDocker(); docker != nil {
 		report["docker"] = docker
 	}
@@ -80,7 +80,7 @@ func BuildReport(serviceNames []string) map[string]any {
 	return report
 }
 
-// PushReport sendet den Report an den Monitoring-Service.
+// PushReport sends the report to the monitoring service.
 func PushReport(url, apiKey, serverID string, report map[string]any, cacert string, insecure bool) error {
 	endpoint := fmt.Sprintf("%s/agent/%s/report", url, serverID)
 

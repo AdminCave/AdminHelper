@@ -8,7 +8,7 @@ import (
 	"github.com/shirou/gopsutil/v4/sensors"
 )
 
-// TempInfo enthaelt die Metriken eines Temperatursensors.
+// TempInfo holds the metrics of a temperature sensor.
 type TempInfo struct {
 	Sensor   string  `json:"sensor"`
 	TempC    float64 `json:"temp_c"`
@@ -16,8 +16,8 @@ type TempInfo struct {
 	Critical float64 `json:"critical"`
 }
 
-// collectTemperatures liest alle verfuegbaren Temperatursensoren via gopsutil.
-// Auf VMs ohne hwmon-Sensoren wird nil zurueckgegeben (kein Fehler).
+// collectTemperatures reads all available temperature sensors via gopsutil.
+// On VMs without hwmon sensors, nil is returned (no error).
 func collectTemperatures() []TempInfo {
 	temps, err := sensors.SensorsTemperatures()
 	if err != nil || len(temps) == 0 {

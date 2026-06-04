@@ -12,21 +12,21 @@ import (
 	"time"
 )
 
-// SmartDisk enthaelt die SMART-Gesundheitsdaten einer Festplatte.
+// SmartDisk holds the SMART health data of a disk.
 type SmartDisk struct {
 	Device   string `json:"device"`
 	Model    string `json:"model"`
 	Serial   string `json:"serial"`
-	Protocol string `json:"protocol"` // "ATA" oder "NVMe"
-	Kind     string `json:"kind"`     // "HDD", "SATA-SSD" oder "NVMe"
+	Protocol string `json:"protocol"` // "ATA" or "NVMe"
+	Kind     string `json:"kind"`     // "HDD", "SATA-SSD" or "NVMe"
 	Passed   bool   `json:"smart_passed"`
 	TempC    int    `json:"temp_c"`
 	PowerOnH int    `json:"power_on_hours"`
 
-	// smartctl Exit-Code (Bit-Flags). 0 = alles ok.
+	// smartctl exit code (bit flags). 0 = all ok.
 	SmartctlStatus int `json:"smartctl_status"`
 
-	// ATA-spezifisch (SSDs + HDDs)
+	// ATA-specific (SSDs + HDDs)
 	ReallocatedSectors int `json:"reallocated_sectors"`
 	SpinRetryCount     int `json:"spin_retry_count"`
 	ReallocationEvents int `json:"reallocation_events"`
@@ -35,22 +35,22 @@ type SmartDisk struct {
 	ReportedUncorrect  int `json:"reported_uncorrect"`
 	UDMACRCErrors      int `json:"udma_crc_errors"`
 
-	// NVMe-spezifisch
+	// NVMe-specific
 	AvailableSparePct int `json:"available_spare_pct,omitempty"`
 	PercentageUsed    int `json:"percentage_used,omitempty"`
 	MediaErrors       int `json:"media_errors,omitempty"`
 	CriticalWarning   int `json:"critical_warning,omitempty"`
 }
 
-// collectSmart sammelt SMART-Daten aller erkannten Geraete via smartctl.
-// Gibt nil zurueck wenn smartctl nicht installiert ist (z.B. auf VMs).
+// collectSmart collects SMART data of all detected devices via smartctl.
+// Returns nil if smartctl is not installed (e.g. on VMs).
 func collectSmart() []SmartDisk {
 	smartctl, err := exec.LookPath("smartctl")
 	if err != nil {
 		return nil
 	}
 
-	// Alle SMART-faehigen Geraete scannen (mit Timeout, falls Controller haengt)
+	// Scan all SMART-capable devices (with a timeout in case the controller hangs)
 	ctxScan, cancelScan := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelScan()
 	scanOut, err := exec.CommandContext(ctxScan, smartctl, "--scan", "--json=c").Output()
@@ -89,12 +89,12 @@ func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
 	cmd := exec.CommandContext(ctx, smartctl, "--all", "--json=c", device)
 	out, err := cmd.Output()
 
-	// smartctl nutzt Bit-Flags im Exit-Code. Wir behalten den vollen Code,
-	// damit der Server Bit 0x10 (Prefail) als kritisch auswerten kann.
+	// smartctl uses bit flags in the exit code. We keep the full code
+	// so the server can evaluate bit 0x10 (prefail) as critical.
 	exitCode := 0
 	if err != nil {
-		// Bits 0-2 (1,2,4) = echte Fehler (CLI/Device/Command)
-		// Bits 3-7 (8+)    = Warnungen, JSON ist trotzdem nutzbar
+		// Bits 0-2 (1,2,4) = real errors (CLI/device/command)
+		// Bits 3-7 (8+)    = warnings, JSON is still usable
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 			if exitCode&0x07 != 0 && len(out) == 0 {
@@ -123,7 +123,7 @@ func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
 		SmartctlStatus: exitCode,
 	}
 
-	// Protokoll aus smartctl-Ausgabe bestimmen
+	// Determine the protocol from the smartctl output
 	proto := strings.ToUpper(raw.Device.Protocol)
 	if proto == "" {
 		proto = strings.ToUpper(protocol)
@@ -141,8 +141,8 @@ func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
 	return disk
 }
 
-// determineKind klassifiziert die Platte anhand Protokoll + Rotation Rate.
-// smartctl liefert rotation_rate=0 fuer SSDs, >0 (RPM) fuer HDDs.
+// determineKind classifies the disk by protocol + rotation rate.
+// smartctl returns rotation_rate=0 for SSDs, >0 (RPM) for HDDs.
 func determineKind(protocol string, rotationRate int) string {
 	if protocol == "NVMe" {
 		return "NVMe"
@@ -183,7 +183,7 @@ func parseNVMeHealth(disk *SmartDisk, raw *smartctlJSON) {
 	disk.CriticalWarning = nvme.CriticalWarning
 }
 
-// smartctlJSON bildet die relevanten Felder der smartctl --json=c Ausgabe ab.
+// smartctlJSON maps the relevant fields of the smartctl --json=c output.
 type smartctlJSON struct {
 	Device struct {
 		Protocol string `json:"protocol"`
