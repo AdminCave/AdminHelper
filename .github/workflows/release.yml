@@ -1,0 +1,209 @@
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FRP_VERSION: "0.61.1"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Desktop client: Tauri bundles (.deb + .rpm) and the raw ELF binary.
+  # Tauri bundles the RPM via the Rust `rpm` crate, so no system rpmbuild needed.
+  # ─────────────────────────────────────────────────────────────────────────
+  desktop-linux:
+    name: Desktop (deb/rpm/bin, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
+            libayatana-appindicator3-dev libssl-dev patchelf file
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop-src/package-lock.json
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+      - name: frpc sidecar
+        run: |
+          curl -fsSL -o frpc.tar.gz \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
+          tar xzf frpc.tar.gz
+          mkdir -p desktop/src-tauri/binaries
+          cp "frp_${FRP_VERSION}_linux_amd64/frpc" \
+            desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+          chmod +x desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+      - name: npm ci
+        working-directory: desktop-src
+        run: npm ci --no-audit --no-fund
+      - name: Build bundles
+        working-directory: desktop/src-tauri
+        run: cargo tauri build --bundles deb,rpm
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp desktop/src-tauri/target/release/bundle/deb/*.deb dist/
+          cp desktop/src-tauri/target/release/bundle/rpm/*.rpm dist/
+          cp desktop/src-tauri/target/release/adminhelper dist/adminhelper-desktop-linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: dist/
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Go agent: linux + windows binaries, plus .deb and .rpm (bundling frpc).
+  # ─────────────────────────────────────────────────────────────────────────
+  agent:
+    name: Go Agent (deb/rpm/bins)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: agent-go/go.sum
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build binaries
+        working-directory: agent-go
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+            -o bin/adminhelper-agent ./cmd/adminhelper-agent
+          GOOS=windows GOARCH=amd64 go build \
+            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+            -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
+      - name: Download frpc (bundled into deb/rpm)
+        run: |
+          curl -fsSL -o frpc.tar.gz \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
+          tar xzf frpc.tar.gz
+          cp "frp_${FRP_VERSION}_linux_amd64/frpc" ./frpc
+          chmod +x frpc
+      - name: Build .deb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev
+          VERSION=${{ steps.ver.outputs.version }} bash agent-go/build-deb.sh
+      - name: Build .rpm
+        run: |
+          sudo apt-get install -y --no-install-recommends rpm
+          VERSION=${{ steps.ver.outputs.version }} bash agent-go/build-rpm.sh
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp adminhelper-agent_*.deb dist/
+          cp adminhelper-agent-*.rpm dist/
+          cp agent-go/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
+          cp agent-go/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent
+          path: dist/
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Desktop client on Windows (MSI). Best-effort: first time this runs on a
+  # GitHub Windows runner; failures must not block the release. If it fails,
+  # the MSI is simply absent from the draft and can be added in a follow-up.
+  # ─────────────────────────────────────────────────────────────────────────
+  desktop-windows:
+    name: Desktop (MSI, Windows, best-effort)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop-src/package-lock.json
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+      - name: frpc sidecar (windows)
+        shell: bash
+        run: |
+          curl -fsSL -o frpc.zip \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
+          unzip -o frpc.zip
+          mkdir -p desktop/src-tauri/binaries
+          cp "frp_${FRP_VERSION}_windows_amd64/frpc.exe" \
+            desktop/src-tauri/binaries/frpc-x86_64-pc-windows-msvc.exe
+      - name: npm ci
+        working-directory: desktop-src
+        run: npm ci --no-audit --no-fund
+      - name: Build MSI
+        working-directory: desktop/src-tauri
+        run: cargo tauri build --bundles msi
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp desktop/src-tauri/target/release/bundle/msi/*.msi dist/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-windows
+          path: dist/
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Gather every artifact, build SHA256SUMS, publish a DRAFT release.
+  # draft: true -> nothing is public until a human presses "Publish".
+  # ─────────────────────────────────────────────────────────────────────────
+  release:
+    name: Draft GitHub Release
+    needs: [desktop-linux, agent, desktop-windows]
+    # Gate on the MANDATORY Linux builds only. desktop-windows is best-effort
+    # (continue-on-error), so its failure must not block the draft — but a
+    # failed desktop-linux or agent build must, to avoid a partial-asset draft
+    # that looks complete while missing the core .deb/.rpm/binaries.
+    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Flatten and checksum
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          cd release
+          sha256sum * > SHA256SUMS
+          echo "=== Release assets ==="
+          ls -lah
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: AdminHelper ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: release/*
