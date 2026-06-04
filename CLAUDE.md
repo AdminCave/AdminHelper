@@ -161,24 +161,21 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
 Code-Änderung ohne entsprechendes Doku-Update gilt als unvollständig. Vor
 "fertig" prüfen, ob diese Dateien angepasst werden müssen:
 
-- **`README.md`** — user-sichtbare Änderungen: Install, Build, Usage,
+- **`docs/` — die vollständige Produkt-Dokumentation** (zweisprachiges HTML,
+  DE/EN). Deckt **alles** ab: Admin-/Anwender-Themen (Bedienung,
+  Installation, Betrieb, Monitoring, FRP, Troubleshooting) **und**
+  Entwickler-Themen (Architektur & Komponenten-Grenzen/Datenflüsse, neue
+  Module, externe Integrationen samt Wire-Protokollen & Auth,
+  plattform-spezifisches Verhalten). Bei **jeder** inhaltlich relevanten
+  Änderung **immer** mitpflegen — Pflicht, kein optionales „prüfen" — und
+  **beide** Sprachen nachziehen. **Im Zweifel über Bedienung oder erwartetes
+  Verhalten zuerst hier nachschlagen.**
+- **`README.md`** — user-sichtbarer Einstieg: Install, Build, Usage,
   Features, CLI-Flags, Voraussetzungen, Troubleshooting.
 - **`DEVELOPMENT.md`** — Entwickler-Setup, lokale Workflows, neue
   Abhängigkeiten/Komponenten, Änderungen am Docker-Compose-Setup.
 - **`CHANGELOG.md`** — bei jeder neuen Version: Keep-a-Changelog-Format +
   SemVer (`## [X.Y.Z] - YYYY-MM-DD`, Abschnitte Added/Changed/Fixed/Removed).
-- **`docs/` — Admin-/Anwender-Handbuch:** bei **jeder** user-sichtbaren
-  Änderung (Bedienung, Installation, Betrieb, Monitoring, FRP,
-  Troubleshooting) **immer** mitpflegen — Pflicht, kein optionales „prüfen".
-- **`docs/` — Entwickler-Handbuch:** ebenso **immer** mitpflegen bei
-  strukturellen Änderungen am System, Komponenten-Grenzen/Datenflüssen,
-  neuen Modulen, externen Integrationen (FRP, API/Wire-Protokolle, Auth) und
-  plattform-spezifischem Verhalten. (Ersetzt die früheren Einträge
-  `docs/ARCHITECTURE.md` / `docs/MODES.md` / `docs/PLATFORMS.md` /
-  `docs/PROVIDERS.md`.)
-
-  `docs/` ist zweisprachig (DE/EN) — beide Sprachen nachziehen. **Im Zweifel
-  über Bedienung oder erwartetes Verhalten zuerst dort nachschlagen.**
 
 Regeln:
 
