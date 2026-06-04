@@ -1,7 +1,7 @@
 use crate::error::AppError;
-use crate::models::{
-    ClientInfo, Connection, RdpErrorPayload, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
-};
+use crate::models::{ClientInfo, Connection, RdpErrorPayload, RdpOptions};
+#[cfg(any(unix, target_os = "windows"))]
+use crate::models::{RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
 
 #[cfg(unix)]
 fn emit_rdp_error(app: &tauri::AppHandle, correlation_id: &str, message: impl Into<String>) {
@@ -36,10 +36,7 @@ pub fn open_rdp(
     connection: &Connection,
     password: Option<&str>,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
     app: &tauri::AppHandle,
@@ -69,7 +66,7 @@ pub fn open_rdp(
     #[cfg(not(unix))]
     let _ = ui_language;
     #[cfg(not(unix))]
-    let _ = rdp_scaling_mode;
+    let _ = rdp.scaling_mode;
     #[cfg(not(unix))]
     let _ = correlation_id;
 
@@ -81,9 +78,9 @@ pub fn open_rdp(
             username,
             domain,
             connection,
-            rdp_window_mode,
-            rdp_custom_size,
-            rdp_performance_profile,
+            rdp.window_mode,
+            rdp.custom_size,
+            rdp.performance_profile,
         );
     }
 
@@ -92,17 +89,7 @@ pub fn open_rdp(
         let rdp_binary = detect_rdp_binary()?;
         preflight_rdp(host, port)?;
 
-        let mut args = build_rdp_args(
-            connection,
-            host,
-            port,
-            client,
-            rdp_scaling_mode,
-            rdp_window_mode,
-            rdp_custom_size,
-            rdp_performance_profile,
-            ui_language,
-        )?;
+        let mut args = build_rdp_args(connection, host, port, client, rdp, ui_language)?;
         let password = password.filter(|value| !value.is_empty());
 
         if let Some(secret) = password {
@@ -134,9 +121,7 @@ pub fn open_rdp(
 
     #[cfg(not(any(target_os = "windows", unix)))]
     {
-        let _ = rdp_window_mode;
-        let _ = rdp_custom_size;
-        let _ = rdp_performance_profile;
+        let _ = rdp;
         Err(AppError::Connection(
             "RDP wird auf diesem Betriebssystem nicht unterstuetzt".to_string(),
         ))
@@ -189,10 +174,7 @@ fn build_rdp_args(
     host: &str,
     port: u16,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
 ) -> Result<Vec<String>, AppError> {
     let mut args = vec![format!("/v:{host}:{port}")];
@@ -208,7 +190,7 @@ fn build_rdp_args(
         .unwrap_or("");
 
     // Fenstergroesse + dynamic-resolution je nach Modus
-    match rdp_window_mode {
+    match rdp.window_mode {
         RdpWindowMode::Fit => {
             let (w, h) = fit_window_size(client);
             args.push(format!("/size:{w}x{h}"));
@@ -221,7 +203,7 @@ fn build_rdp_args(
             args.push("/multimon".to_string());
         }
         RdpWindowMode::Custom => {
-            let (w, h) = parse_custom_size(rdp_custom_size)?;
+            let (w, h) = parse_custom_size(rdp.custom_size)?;
             args.push(format!("/size:{w}x{h}"));
             args.push("/dynamic-resolution".to_string());
         }
@@ -236,7 +218,7 @@ fn build_rdp_args(
     if !domain.is_empty() {
         args.push(format!("/d:{domain}"));
     }
-    match rdp_scaling_mode {
+    match rdp.scaling_mode {
         RdpScalingMode::Auto => {
             if let Some(scale) = hdpi_scale(client) {
                 args.push(format!("/scale:{scale}"));
@@ -257,7 +239,7 @@ fn build_rdp_args(
         args.push(format!("/title:{title}"));
     }
 
-    args.extend(performance_args(rdp_performance_profile));
+    args.extend(performance_args(rdp.performance_profile));
 
     Ok(args)
 }

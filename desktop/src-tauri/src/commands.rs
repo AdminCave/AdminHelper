@@ -5,7 +5,9 @@ use crate::auth;
 use crate::connection;
 use crate::error::AppError;
 use crate::frpc;
-use crate::models::{AuthSession, ClientInfo, Connection, PasswordState, Settings, TunnelStatus};
+use crate::models::{
+    AuthSession, ClientInfo, Connection, PasswordState, RdpOptions, Settings, TunnelStatus,
+};
 use crate::password;
 use crate::storage;
 use crate::sync;
@@ -125,14 +127,17 @@ pub fn open_connection(
 ) -> Result<(), AppError> {
     let settings = storage::load_settings(&app)?;
     let cid = correlation_id.unwrap_or_default();
+    let rdp = RdpOptions {
+        scaling_mode: settings.rdp_scaling_mode,
+        window_mode: settings.rdp_window_mode,
+        custom_size: settings.rdp_custom_size.as_deref(),
+        performance_profile: settings.rdp_performance_profile,
+    };
     connection::open_connection(
         &connection,
         password.as_deref(),
         client.as_ref(),
-        settings.rdp_scaling_mode,
-        settings.rdp_window_mode,
-        settings.rdp_custom_size.as_deref(),
-        settings.rdp_performance_profile,
+        rdp,
         settings.language.as_deref(),
         &cid,
         &app,
@@ -148,14 +153,17 @@ pub fn open_connection_stored(
 ) -> Result<(), AppError> {
     let settings = storage::load_settings(&app)?;
     let cid = correlation_id.unwrap_or_default();
+    let rdp = RdpOptions {
+        scaling_mode: settings.rdp_scaling_mode,
+        window_mode: settings.rdp_window_mode,
+        custom_size: settings.rdp_custom_size.as_deref(),
+        performance_profile: settings.rdp_performance_profile,
+    };
     connection::open_connection_stored(
         &app,
         &connection,
         client.as_ref(),
-        settings.rdp_scaling_mode,
-        settings.rdp_window_mode,
-        settings.rdp_custom_size.as_deref(),
-        settings.rdp_performance_profile,
+        rdp,
         settings.language.as_deref(),
         &cid,
     )

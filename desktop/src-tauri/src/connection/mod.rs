@@ -3,19 +3,14 @@ pub mod ssh;
 pub mod web;
 
 use crate::error::AppError;
-use crate::models::{
-    ClientInfo, Connection, ConnectionKind, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode,
-};
+use crate::models::{ClientInfo, Connection, ConnectionKind, RdpOptions};
 use crate::validation::validate_connection_input;
 
 pub fn open_connection(
     connection: &Connection,
     password: Option<&str>,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
     app: &tauri::AppHandle,
@@ -27,10 +22,7 @@ pub fn open_connection(
             connection,
             password,
             client,
-            rdp_scaling_mode,
-            rdp_window_mode,
-            rdp_custom_size,
-            rdp_performance_profile,
+            rdp,
             ui_language,
             correlation_id,
             app,
@@ -43,34 +35,20 @@ pub fn open_connection_stored(
     app: &tauri::AppHandle,
     connection: &Connection,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
     validate_connection_input(connection)?;
     match connection.kind {
-        ConnectionKind::Rdp => open_rdp_with_stored_password(
-            app,
-            connection,
-            client,
-            rdp_scaling_mode,
-            rdp_window_mode,
-            rdp_custom_size,
-            rdp_performance_profile,
-            ui_language,
-            correlation_id,
-        ),
+        ConnectionKind::Rdp => {
+            open_rdp_with_stored_password(app, connection, client, rdp, ui_language, correlation_id)
+        }
         _ => open_connection(
             connection,
             None,
             client,
-            rdp_scaling_mode,
-            rdp_window_mode,
-            rdp_custom_size,
-            rdp_performance_profile,
+            rdp,
             ui_language,
             correlation_id,
             app,
@@ -83,10 +61,7 @@ fn open_rdp_with_stored_password(
     app: &tauri::AppHandle,
     connection: &Connection,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
@@ -94,10 +69,7 @@ fn open_rdp_with_stored_password(
         connection,
         None,
         client,
-        rdp_scaling_mode,
-        rdp_window_mode,
-        rdp_custom_size,
-        rdp_performance_profile,
+        rdp,
         ui_language,
         correlation_id,
         app,
@@ -109,10 +81,7 @@ fn open_rdp_with_stored_password(
     app: &tauri::AppHandle,
     connection: &Connection,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
@@ -121,10 +90,7 @@ fn open_rdp_with_stored_password(
         connection,
         password.as_deref(),
         client,
-        rdp_scaling_mode,
-        rdp_window_mode,
-        rdp_custom_size,
-        rdp_performance_profile,
+        rdp,
         ui_language,
         correlation_id,
         app,
@@ -136,10 +102,7 @@ fn open_rdp_with_stored_password(
     app: &tauri::AppHandle,
     connection: &Connection,
     client: Option<&ClientInfo>,
-    rdp_scaling_mode: RdpScalingMode,
-    rdp_window_mode: RdpWindowMode,
-    rdp_custom_size: Option<&str>,
-    rdp_performance_profile: RdpPerformanceProfile,
+    rdp: RdpOptions,
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
@@ -147,10 +110,7 @@ fn open_rdp_with_stored_password(
         connection,
         None,
         client,
-        rdp_scaling_mode,
-        rdp_window_mode,
-        rdp_custom_size,
-        rdp_performance_profile,
+        rdp,
         ui_language,
         correlation_id,
         app,

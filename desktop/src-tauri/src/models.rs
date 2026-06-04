@@ -45,6 +45,16 @@ pub enum RdpPerformanceProfile {
     Low,
 }
 
+/// Gebündelte RDP-Darstellungsoptionen, die durch die Verbindungs-Aufrufkette
+/// gereicht werden. Vermeidet breite Signaturen (clippy::too_many_arguments).
+#[derive(Debug, Clone, Copy)]
+pub struct RdpOptions<'a> {
+    pub scaling_mode: RdpScalingMode,
+    pub window_mode: RdpWindowMode,
+    pub custom_size: Option<&'a str>,
+    pub performance_profile: RdpPerformanceProfile,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connection {

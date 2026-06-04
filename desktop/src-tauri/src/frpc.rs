@@ -74,7 +74,7 @@ async fn fetch_visitor_bundle(
         ));
     }
 
-    let bundle: VisitorBundle = response.json().await.map_err(|e| AppError::Network(e))?;
+    let bundle: VisitorBundle = response.json().await.map_err(AppError::Network)?;
     Ok(bundle)
 }
 
