@@ -9,8 +9,11 @@ Wird von script_runner.py als Subprozess gestartet. Empfaengt das Script
 und den Kontext via stdin (JSON), fuehrt das Script aus und gibt das
 Ergebnis via stdout (JSON) zurueck.
 
-Die Prozess-Isolation verhindert, dass ein bösartiges Script den
-Hauptprozess kompromittieren kann (eigener Adressraum, killbar via Timeout).
+SICHERHEITSMODELL: Hook-Skripte sind VERTRAUENSWUERDIGER Code (nur von Admins
+anleg-/editierbar) und laufen mit vollen Python-/Server-Rechten. Der Subprozess
+liefert Crash-/Timeout-Isolation, ist aber KEINE Security-Sandbox. Secrets werden
+dem Subprozess nicht vererbt (siehe script_runner.py). Wer Hooks schreiben darf,
+kann beliebigen Code ausfuehren — wie ein Plugin oder Cron-Job.
 """
 
 import json
@@ -66,7 +69,13 @@ def main() -> None:
             logs.append(line)
 
     namespace: dict[str, Any] = {
-        "__builtins__": {"print": _print},
+        # Hooks sind vertrauenswuerdiger Admin-Code (siehe Modul-Docstring): volle
+        # Builtins. exec() injiziert __builtins__ automatisch, wenn es im globals
+        # fehlt; der frueher gefilterte __builtins__ war eine WIRKUNGSLOSE
+        # Pseudo-Sandbox — jede exponierte Funktion fuehrte ueber ihr __globals__
+        # zurueck zu den echten Builtins (__import__). 'print' wird ueberschrieben,
+        # damit Ausgaben im Log landen.
+        "print": _print,
         "load_connections": load_connections,
         "save_connections": save_connections,
         "http_get": _safe_http_get,
@@ -75,15 +84,6 @@ def main() -> None:
         "log": _log,
         "result": result,
         "logs": logs,
-        # Standard-Builtins (sichere Auswahl)
-        "len": len, "range": range, "enumerate": enumerate,
-        "zip": zip, "map": map, "filter": filter, "sorted": sorted,
-        "reversed": reversed, "list": list, "dict": dict, "set": set,
-        "tuple": tuple, "str": str, "int": int, "float": float,
-        "bool": bool, "type": type, "isinstance": isinstance,
-        "hasattr": hasattr, "getattr": getattr,
-        "min": min, "max": max, "sum": sum, "abs": abs, "round": round,
-        "any": any, "all": all, "None": None, "True": True, "False": False,
         **context,
     }
 

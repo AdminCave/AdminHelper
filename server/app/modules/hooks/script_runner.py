@@ -5,9 +5,11 @@
 """
 Script-Runner für Hooks.
 
-Jedes Script wird in einem isolierten Subprozess ausgefuehrt. Dies
-verhindert, dass ein bösartiges Script den Hauptprozess kompromittieren
-kann (eigener Adressraum, killbar via Timeout, keine Builtins-Manipulation).
+Jedes Script laeuft in einem separaten Subprozess (eigener Adressraum, killbar
+via Timeout). Das ist Crash-/Timeout-Isolation, KEINE Security-Sandbox: Hook-
+Skripte sind vertrauenswuerdiger Admin-Code (nur von Admins anleg-/editierbar)
+und laufen mit vollen Rechten. Secrets (SECRET_KEY/ADMIN_PASSWORD/...) werden
+dem Subprozess bewusst NICHT vererbt.
 
 Verfügbare Variablen im Script (immer):
     load_connections()  -> list[dict]   Verbindungen laden
@@ -34,6 +36,7 @@ Schedule-Kontext:
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -77,6 +80,18 @@ def run_hook_script(
         "context": context,
     }, default=str)
 
+    # Minimiertes Environment: Hook-Subprozesse brauchen nur DB-Zugriff
+    # (DATABASE_URL, DATA_DIR) + HTTP (PATH). Secrets (SECRET_KEY, ADMIN_PASSWORD,
+    # MONITOR_API_KEY, REDIS_URL, ...) werden bewusst NICHT vererbt -> ein Hook kann
+    # sie nicht aus os.environ auslesen.
+    server_dir = str(Path(__file__).parents[3])  # server/
+    worker_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": server_dir,
+        "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
+        "DATA_DIR": os.environ.get("DATA_DIR", ""),
+    }
+
     try:
         proc = subprocess.run(
             [sys.executable, _WORKER_SCRIPT],
@@ -84,7 +99,8 @@ def run_hook_script(
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=str(Path(__file__).parents[3]),  # server/ Verzeichnis
+            cwd=server_dir,
+            env=worker_env,
         )
     except subprocess.TimeoutExpired:
         return {
