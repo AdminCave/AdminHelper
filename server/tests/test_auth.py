@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer Auth-Funktionen: Passwort-Hashing, Token-Erstellung, Token-Validierung."""
+"""Tests for auth functions: password hashing, token creation, token validation."""
 
 from datetime import timedelta
 
@@ -28,7 +28,7 @@ class TestPasswordHashing:
         assert not verify_password("falsch", hashed)
 
     def test_long_password_over_72_bytes(self):
-        """bcrypt hat ein 72-Byte-Limit; Prehash muss das abfangen."""
+        """bcrypt has a 72-byte limit; the prehash must absorb that."""
         long_pw = "A" * 200
         hashed = hash_password(long_pw)
         assert verify_password(long_pw, hashed)
@@ -123,7 +123,7 @@ class TestTokenValidation:
 
 
 class TestRefreshRotation:
-    """H-2: Refresh-Token-Rotation + Reuse-Detection."""
+    """H-2: refresh-token rotation + reuse detection."""
 
     def test_refresh_rotates_and_blacklists_old(self, test_client, admin_user):
         login = test_client.post(
@@ -138,7 +138,7 @@ class TestRefreshRotation:
         new_refresh = rot.json()["refresh_token"]
         assert new_refresh != old_refresh
 
-        # Reuse des alten Refresh-Tokens muss scheitern (Reuse-Detection)
+        # Reuse of the old refresh token must fail (reuse detection)
         reuse = test_client.post("/api/auth/refresh", json={"refresh_token": old_refresh})
         assert reuse.status_code == 401
 
@@ -157,7 +157,7 @@ class TestRefreshRotation:
         )
         assert out.status_code == 200
 
-        # Refresh nach Logout muss scheitern
+        # Refresh after logout must fail
         denied = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
         assert denied.status_code == 401
 
@@ -174,6 +174,6 @@ class TestRefreshRotation:
         )
         assert out.status_code == 200
 
-        # /me mit dem geblacklisteten Access-Token muss scheitern
+        # /me with the blacklisted access token must fail
         me = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"})
         assert me.status_code == 401

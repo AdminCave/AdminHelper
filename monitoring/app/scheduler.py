@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Hintergrund-Scheduler fuer Monitoring Checks.
+Background scheduler for monitoring checks.
 
-Eigene APScheduler-Instanz (unabhaengig vom AdminHelper-Server).
+Dedicated APScheduler instance (independent of the AdminHelper server).
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ logger = logging.getLogger("monitor.scheduler")
 
 scheduler = BackgroundScheduler(timezone="UTC")
 
-# Agent-Push-Checks werden nur vom Agent-Report-Endpoint ausgewertet,
-# nicht vom Scheduler. agent_ping ist Ausnahme: prueft ob Agent stale ist.
+# Agent push checks are evaluated only by the agent report endpoint,
+# not by the scheduler. agent_ping is the exception: checks whether the agent is stale.
 PUSH_ONLY_TYPES = {"agent_resources", "service_process", "docker_health", "proxmox_backup", "zfs_health", "smart_health"}
 
 _INTERVAL_MAP = {
@@ -37,7 +37,7 @@ _INTERVAL_MAP = {
 
 
 def _parse_trigger(interval: str):
-    """Intervall-String oder Cron-Ausdruck in APScheduler-Trigger umwandeln."""
+    """Converts an interval string or cron expression into an APScheduler trigger."""
     if interval in _INTERVAL_MAP:
         return IntervalTrigger(**_INTERVAL_MAP[interval])
     parts = interval.split()
@@ -47,10 +47,10 @@ def _parse_trigger(interval: str):
 
 
 def add_check(check_id: str, interval: str, check_type: str | None = None) -> None:
-    """Check im Scheduler registrieren oder aktualisieren.
+    """Registers or updates a check in the scheduler.
 
-    Push-Only-Checks (agent_resources, service_process, ...) werden
-    uebersprungen, da sie nur beim Agent-Report ausgewertet werden.
+    Push-only checks (agent_resources, service_process, ...) are
+    skipped, since they are only evaluated on the agent report.
     """
     if check_type and check_type in PUSH_ONLY_TYPES:
         return
@@ -68,14 +68,14 @@ def add_check(check_id: str, interval: str, check_type: str | None = None) -> No
 
 
 def remove_check(check_id: str) -> None:
-    """Check aus dem Scheduler entfernen."""
+    """Removes a check from the scheduler."""
     job_id = f"mon_{check_id}"
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
 
 
 def get_next_run(check_id: str):
-    """Naechsten geplanten Lauf abrufen."""
+    """Returns the next scheduled run."""
     job = scheduler.get_job(f"mon_{check_id}")
     if job and job.next_run_time:
         return job.next_run_time.replace(tzinfo=None)
@@ -83,7 +83,7 @@ def get_next_run(check_id: str):
 
 
 def load_all_checks() -> None:
-    """Beim Start alle aktiven Checks laden und einplanen."""
+    """Loads and schedules all active checks at startup."""
     from app.core.database import SessionLocal
     from app.models import MonitorCheck
 

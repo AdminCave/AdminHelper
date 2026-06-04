@@ -2,24 +2,24 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Hook-Posture (Befund #4): die exec()-'Sandbox' war wirkungslos (admin-gated,
-kein unauth-RCE). Fix = EHRLICHE Posture + Teil-Haertung:
+"""Hook posture (finding #4): the exec() 'sandbox' was ineffective (admin-gated,
+no unauthenticated RCE). Fix = HONEST posture + partial hardening:
 
-- Das minimierte env entfernt ADMIN_PASSWORD/MONITOR_API_KEY/REDIS_URL aus dem
-  Hook-Prozess (echte Reduktion des Secret-Footprints).
-- ABER: Hooks sind vertrauenswuerdiger Admin-Code mit DB-Zugriff. SECRET_KEY
-  (via app.core.config bzw. DATA_DIR/.secret_key) und DB-Creds (DATABASE_URL)
-  bleiben fuer einen Hook erreichbar. Das wird hier BEWUSST mit-getestet, damit
-  keine falsche Schutz-Behauptung entsteht (genau der Fehler, den der alte
-  Pseudo-Sandbox-Code gemacht hat).
+- The minimized env removes ADMIN_PASSWORD/MONITOR_API_KEY/REDIS_URL from the
+  hook process (a real reduction of the secret footprint).
+- BUT: hooks are trusted admin code with DB access. SECRET_KEY
+  (via app.core.config or DATA_DIR/.secret_key) and DB creds (DATABASE_URL)
+  remain reachable for a hook. This is DELIBERATELY tested here too so that no
+  false protection claim arises (exactly the mistake the old pseudo-sandbox
+  code made).
 """
 
 from app.modules.hooks.script_runner import run_hook_script
 
 
 def test_admin_password_not_inherited_by_worker():
-    # ADMIN_PASSWORD ist env-only (nicht datei-/config-persistiert) -> die
-    # env-Minimierung entfernt es WIRKLICH aus dem Hook-Prozess.
+    # ADMIN_PASSWORD is env-only (not file-/config-persisted) -> the env
+    # minimization REALLY removes it from the hook process.
     res = run_hook_script(
         "import os\nlog(os.environ.get('ADMIN_PASSWORD', '__ABSENT__'))",
         "webhook",
@@ -30,8 +30,8 @@ def test_admin_password_not_inherited_by_worker():
 
 
 def test_admin_password_not_reachable_in_process():
-    # Gegenprobe zur Ehrlichkeit: ADMIN_PASSWORD ist auch in-process nicht
-    # rekonstruierbar (config liest es nur aus dem env -> leer im Worker).
+    # Honesty counter-check: ADMIN_PASSWORD is also not reconstructable
+    # in-process (config reads it only from the env -> empty in the worker).
     res = run_hook_script(
         "import app.core.config as c\nlog(c.ADMIN_PASSWORD or '__EMPTY__')",
         "webhook",
@@ -42,11 +42,11 @@ def test_admin_password_not_reachable_in_process():
 
 
 def test_secret_key_reachable_in_process_BY_DESIGN():
-    # EHRLICHKEITS-ANKER: ein trusted Hook KANN den SECRET_KEY lesen (der Worker
-    # importiert beim Start app.core.config, das SECRET_KEY aus DATA_DIR/.secret_key
-    # aufloest). Das minimierte env schuetzt SECRET_KEY NICHT. Wer das jemals zu
-    # echter Isolation aendert, MUSS diesen Test bewusst anpassen — er verhindert,
-    # dass jemand faelschlich 'SECRET_KEY ist isoliert' behauptet.
+    # HONESTY ANCHOR: a trusted hook CAN read the SECRET_KEY (the worker imports
+    # app.core.config at startup, which resolves SECRET_KEY from
+    # DATA_DIR/.secret_key). The minimized env does NOT protect SECRET_KEY. Anyone
+    # who ever changes this to real isolation MUST deliberately adjust this test —
+    # it prevents someone from falsely claiming 'SECRET_KEY is isolated'.
     res = run_hook_script(
         "import app.core.config as c\nlog('present' if c.SECRET_KEY else 'absent')",
         "webhook",
@@ -57,14 +57,14 @@ def test_secret_key_reachable_in_process_BY_DESIGN():
 
 
 def test_full_builtins_imports_work():
-    # Bewusste Posture: Hooks sind trusted code und duerfen importieren.
+    # Deliberate posture: hooks are trusted code and are allowed to import.
     res = run_hook_script("import json\nlog(json.dumps({'ok': True}))", "webhook", {})
     assert res["success"] is True, res
     assert res["logs"] == ['{"ok": true}'], res["logs"]
 
 
 def test_legit_hook_api_still_works():
-    # Entfernen der Builtin-Whitelist darf legitime Hooks nicht brechen.
+    # Removing the builtin whitelist must not break legitimate hooks.
     res = run_hook_script(
         "result['id'] = uuid4()\nlog('done')\nprint('captured')\nlog(str(len([1, 2, 3])))",
         "webhook",

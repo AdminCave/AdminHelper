@@ -26,7 +26,7 @@ def pki_status(_admin=Depends(get_current_admin)):
 
 @router.post("/pki/ca")
 def create_ca(common_name: str = Query("AdminHelper FRP CA"), _admin=Depends(get_current_admin)):
-    """Generiert eine neue CA. ACHTUNG: Ueberschreibt bestehende CA!"""
+    """Generates a new CA. WARNING: overwrites any existing CA!"""
     return pki_manager.generate_ca(common_name)
 
 
@@ -35,7 +35,7 @@ def create_server_cert(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Generiert ein Server-Zertifikat fuer frps und aktualisiert die Config."""
+    """Generates a server certificate for frps and updates the config."""
     status = pki_manager.get_pki_status()
     if not status["caExists"]:
         raise HTTPException(status_code=400, detail="Zuerst eine CA generieren")
@@ -51,7 +51,7 @@ def create_server_cert(
 
 @router.post("/pki/client-cert/{client_name}")
 def create_client_cert(client_name: str, _admin=Depends(get_current_admin)):
-    """Generiert ein Client-Zertifikat fuer einen frpc-Host."""
+    """Generates a client certificate for a frpc host."""
     status = pki_manager.get_pki_status()
     if not status["caExists"]:
         raise HTTPException(status_code=400, detail="Zuerst eine CA generieren")
@@ -63,7 +63,7 @@ def create_client_cert(client_name: str, _admin=Depends(get_current_admin)):
 
 @router.get("/pki/download/{filename}")
 def download_pki_file(filename: str, _admin=Depends(get_current_admin)):
-    """Laed eine PKI-Datei herunter (.crt oder .key)."""
+    """Downloads a PKI file (.crt or .key)."""
     safe_name = Path(filename).name
     if not safe_name.endswith((".crt", ".key")):
         raise HTTPException(status_code=400, detail="Nur .crt und .key Dateien erlaubt")
@@ -76,7 +76,7 @@ def download_pki_file(filename: str, _admin=Depends(get_current_admin)):
 
 @router.get("/pki/download-client-bundle/{client_name}")
 def download_client_bundle(client_name: str, _admin=Depends(get_current_admin)):
-    """Laed ein ZIP mit ca.crt, client.crt und client.key herunter."""
+    """Downloads a ZIP with ca.crt, client.crt and client.key."""
     safe_name = Path(client_name).name
     d = pki_manager.PKI_DIR
     ca_crt = d / "ca.crt"

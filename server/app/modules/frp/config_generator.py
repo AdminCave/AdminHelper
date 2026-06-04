@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Generiert FRP-Konfigurationsdateien (TOML) aus den DB-Modellen."""
+"""Generates FRP configuration files (TOML) from the DB models."""
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
@@ -15,7 +15,7 @@ def _tls_server_block(
     server_name: str = "frps",
     pki_base_path: str = "/etc/frp/pki",
 ) -> list[str]:
-    """Generiert den [transport.tls]-Block fuer frps."""
+    """Generates the [transport.tls] block for frps."""
     return [
         '', '[transport.tls]', 'force = true',
         f'certFile = "{pki_base_path}/{server_name}.crt"',
@@ -28,7 +28,7 @@ def _tls_client_block(
     frpc_user: str = "",
     pki_base_path: str = "/etc/frp/pki",
 ) -> list[str]:
-    """Generiert den [transport.tls]-Block fuer frpc/visitor."""
+    """Generates the [transport.tls] block for frpc/visitor."""
     lines = ['', '[transport.tls]', 'enable = true']
     lines.append(f'trustedCaFile = "{pki_base_path}/ca.crt"')
     if frpc_user:
@@ -38,7 +38,7 @@ def _tls_client_block(
 
 
 def generate_frps_toml(config: FrpServerConfig) -> str:
-    """Generiert eine vollstaendige frps.toml aus der DB-Konfiguration."""
+    """Generates a complete frps.toml from the DB configuration."""
     lines = [
         f'bindPort = {config.bind_port}',
     ]
@@ -80,12 +80,12 @@ def generate_frpc_toml(
     frpc_user: str,
     allow_users: list[str] | None = None,
 ) -> str:
-    """Generiert eine frpc.toml fuer einen Zielhost.
+    """Generates a frpc.toml for a target host.
 
     Args:
-        config: Die zentrale frps-Konfiguration.
-        tunnels: Alle Tunnel die zu diesem Host gehoeren.
-        frpc_user: Der frpc user-Identifier (z.B. "k01-lnx1").
+        config: The central frps configuration.
+        tunnels: All tunnels belonging to this host.
+        frpc_user: The frpc user identifier (e.g. "k01-lnx1").
     """
     import json as _json
 
@@ -140,9 +140,9 @@ def generate_visitor_toml(
     visitor_user: str = "ops-admin",
     pki_base_path: str = "/etc/frp/pki",
 ) -> str:
-    """Generiert eine Visitor-frpc.toml fuer den Admin-PC.
+    """Generates a visitor frpc.toml for the admin PC.
 
-    Aggregiert alle STCP-Tunnel und erzeugt je einen [[visitors]]-Block.
+    Aggregates all STCP tunnels and emits one [[visitors]] block each.
     """
     lines = [
         f'serverAddr = "{config.server_addr}"',
@@ -159,9 +159,9 @@ def generate_visitor_toml(
     stcp_tunnels.sort(key=lambda t: t.visitor_port or 0)
 
     for tunnel in stcp_tunnels:
-        # FRP registriert Proxies als "{agent_user}.{proxy_name}".
-        # Der Visitor muss serverUser auf den Agent-User setzen,
-        # damit FRP den Proxy als "{serverUser}.{serverName}" findet.
+        # FRP registers proxies as "{agent_user}.{proxy_name}".
+        # The visitor must set serverUser to the agent user so that
+        # FRP finds the proxy as "{serverUser}.{serverName}".
         agent_user = tunnel.target_server.name if tunnel.target_server else ""
 
         lines.append('')

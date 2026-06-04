@@ -39,7 +39,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# Rate-Limiting: max 5 fehlgeschlagene Login-Versuche pro IP innerhalb von 60 Sekunden
+# Rate limiting: max 5 failed login attempts per IP within 60 seconds
 _MAX_ATTEMPTS = 5
 _WINDOW_SECONDS = 60
 
@@ -78,7 +78,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             detail="Ungültige Zugangsdaten",
         )
 
-    # Bei erfolgreichem Login: Zähler zurücksetzen
+    # On successful login: reset the counter
     _reset_rate_limit(ip)
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
@@ -87,9 +87,9 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh_token(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
-    # Reuse-Detection: ein bereits widerrufener Refresh-Token, der erneut
-    # eingereicht wird, ist ein Diebstahl-Signal. Unterscheidet sich von
-    # "abgelaufen/ungueltig" durch den explizit gesetzten Blacklist-Eintrag.
+    # Reuse detection: an already-revoked refresh token that is submitted
+    # again is a theft signal. It differs from "expired/invalid" by the
+    # explicitly set blacklist entry.
     if is_token_blacklisted(data.refresh_token, db):
         logger.warning(
             "Refresh-Token-Reuse erkannt von IP=%s — moeglicher Token-Diebstahl",
@@ -107,9 +107,9 @@ def refresh_token(data: RefreshRequest, request: Request, db: Session = Depends(
             detail="Ungültiger oder abgelaufener Refresh-Token",
         )
 
-    # Rotation: alten Refresh sofort blacklisten, damit er nicht nochmal verwendet
-    # werden kann. Ein paralleler Angreifer mit Kopie des Tokens scheitert dadurch
-    # ab dem naechsten Refresh des legitimen Clients.
+    # Rotation: blacklist the old refresh token immediately so it cannot be used
+    # again. A parallel attacker with a copy of the token thereby fails from the
+    # legitimate client's next refresh onward.
     blacklist_token(data.refresh_token, db)
 
     access = create_access_token({"sub": user.username})
@@ -123,7 +123,7 @@ def logout(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ):
-    """Access- und (optional) Refresh-Token auf die Blacklist setzen."""
+    """Add the access and (optionally) refresh token to the blacklist."""
     if credentials:
         blacklist_token(credentials.credentials, db)
     if data and data.refresh_token:
@@ -138,20 +138,19 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.post("/bootstrap", response_model=TokenResponse, status_code=201)
 def bootstrap(data: BootstrapRequest, request: Request, db: Session = Depends(get_db)):
-    """Legt den ersten Admin-User per Setup-Token an.
+    """Creates the first admin user using the setup token.
 
-    Aktiv nur, wenn ADMIN_PASSWORD leer/'admin' war beim ersten Start —
-    der Server hat dann einen Token nach DATA_DIR/.bootstrap_token (Hash)
-    geschrieben und ihn im WARNING-Log angezeigt. Sobald ein User existiert,
-    ist der Endpoint dauerhaft tot (409).
+    Active only if ADMIN_PASSWORD was empty/'admin' on first start —
+    the server then wrote a token to DATA_DIR/.bootstrap_token (hash) and
+    showed it in the WARNING log. As soon as a user exists, the endpoint is
+    permanently dead (409).
     """
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
 
     if db.query(User).count() > 0:
-        # Server ist bereits initialisiert – kein Bootstrap mehr moeglich.
-        # Gleiche Antwort wie 'kein Token aktiv', um Auskunft ueber DB-State
-        # zu vermeiden.
+        # Server is already initialized – bootstrap is no longer possible.
+        # Same response as 'no token active' to avoid disclosing the DB state.
         _record_failed_attempt(ip)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -183,8 +182,8 @@ def bootstrap(data: BootstrapRequest, request: Request, db: Session = Depends(ge
     db.commit()
     db.refresh(user)
 
-    # Token verbrauchen — auch wenn Datei-Loeschen scheitert, ist die
-    # 'count() > 0'-Pruefung oben weiterhin der wirksame Schutz.
+    # Consume the token — even if deleting the file fails, the 'count() > 0'
+    # check above remains the effective protection.
     try:
         BOOTSTRAP_TOKEN_FILE.unlink()
     except OSError:

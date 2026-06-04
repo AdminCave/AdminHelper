@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""add server_id to api_keys (IDOR: Agent-Keys an ihren Server binden)
+"""add server_id to api_keys (IDOR: bind agent keys to their server)
 
 Revision ID: c3a7e1f50b2d
 Revises: 0494a8f377ef
@@ -32,10 +32,10 @@ def upgrade() -> None:
         ondelete='CASCADE',
     )
 
-    # Backfill: bestehende Agent-Keys (Name 'agent-{server.name}') an ihren Server
-    # binden, damit Bestands-Agents nach dem strengen Endpoint-Check weiterlaufen.
-    # Nicht aufloesbare Keys bleiben NULL -> der betroffene Agent muss neu
-    # provisioniert werden (sicheres fail-closed-Verhalten).
+    # Backfill: bind existing agent keys (name 'agent-{server.name}') to their
+    # server so existing agents keep working after the strict endpoint check.
+    # Keys that cannot be resolved stay NULL -> the affected agent must be
+    # re-provisioned (safe fail-closed behavior).
     conn = op.get_bind()
     servers = conn.execute(sa.text("SELECT id, name FROM servers")).fetchall()
     by_name: dict[str, str] = {}

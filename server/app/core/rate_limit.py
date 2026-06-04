@@ -2,17 +2,17 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Rate-Limit-Backend mit Redis und In-Memory-Fallback.
+"""Rate-limit backend with Redis and an in-memory fallback.
 
-Redis ist erforderlich, sobald der Server mit mehreren Worker-Prozessen
-laeuft (`uvicorn --workers N`), weil sonst jeder Worker einen separaten
-Counter hat und das Limit faktisch mit N multipliziert wird. Ohne
-REDIS_URL faellt das Modul auf einen In-Memory-Counter zurueck (nur fuer
-Single-Worker-/Dev-Setups geeignet).
+Redis is required as soon as the server runs with multiple worker processes
+(`uvicorn --workers N`), because otherwise each worker has a separate
+counter and the limit is effectively multiplied by N. Without REDIS_URL the
+module falls back to an in-memory counter (suitable only for
+single-worker / dev setups).
 
-Schema: fixed-window pro Key. INCR + EXPIRE NX in einer Pipeline sorgt
-dafuer, dass die TTL nur beim ersten Hit gesetzt wird; sonst wuerde ein
-Angreifer durch Dauerfeuer den Block-Zustand verlaengern.
+Scheme: fixed window per key. INCR + EXPIRE NX in a single pipeline ensures
+the TTL is set only on the first hit; otherwise an attacker could extend the
+block state by sustained fire.
 """
 
 import logging
@@ -132,6 +132,6 @@ def get_backend() -> RateLimitBackend:
 
 
 def reset_backend_for_tests() -> None:
-    """Nur fuer Tests: zwingt Re-Initialisierung beim naechsten get_backend()."""
+    """For tests only: forces re-initialization on the next get_backend()."""
     global _backend
     _backend = None

@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""IDOR-Schutz an den frp/provision-Endpoints.
+"""IDOR protection on the frp/provision endpoints.
 
-Befund: GET /api/frp/provision/{server_id}/config (+/config-hash) gab mit JEDEM
-gueltigen read-API-Key die frpc.toml (globaler frps auth.token + STCP-Secrets)
-fuer eine BELIEBIGE server_id zurueck. Fix: API-Keys an server_id binden und am
-Endpoint strikt pruefen. Diese Tests schlagen ohne den Endpoint-Check fehl.
+Finding: GET /api/frp/provision/{server_id}/config (+/config-hash) returned the
+frpc.toml (global frps auth.token + STCP secrets) for ANY server_id with ANY
+valid read API key. Fix: bind API keys to a server_id and check strictly at the
+endpoint. These tests fail without the endpoint check.
 """
 
 import secrets
@@ -43,7 +43,7 @@ class TestFrpProvisionConfigIDOR:
         _server(db_session, "srv-a", "server-a")
         _server(db_session, "srv-b", "server-b")
         key_a = _api_key(db_session, server_id="srv-a")
-        # Fremder Server -> 403, BEVOR Existenz/Config geprueft wird.
+        # Foreign server -> 403, BEFORE existence/config is checked.
         for path in ("config", "config-hash"):
             res = test_client.get(
                 f"/api/frp/provision/srv-b/{path}", headers={"X-API-Key": key_a}
@@ -53,7 +53,7 @@ class TestFrpProvisionConfigIDOR:
     def test_bound_key_passes_scope_for_own_server(self, test_client, db_session):
         _server(db_session, "srv-a", "server-a")
         key_a = _api_key(db_session, server_id="srv-a")
-        # Scope ok -> NICHT 403 (404 'keine FRP-Config vorhanden' ist hier erwartbar).
+        # Scope ok -> NOT 403 (404 'no FRP config present' is expected here).
         res = test_client.get(
             "/api/frp/provision/srv-a/config", headers={"X-API-Key": key_a}
         )
@@ -62,7 +62,7 @@ class TestFrpProvisionConfigIDOR:
     def test_unbound_key_denied(self, test_client, db_session):
         _server(db_session, "srv-a", "server-a")
         key = _api_key(db_session, server_id=None)
-        # Strenge Posture (Option B): ungebundener Key -> 403 am provision-Endpoint.
+        # Strict posture (option B): unbound key -> 403 at the provision endpoint.
         res = test_client.get(
             "/api/frp/provision/srv-a/config", headers={"X-API-Key": key}
         )
@@ -74,7 +74,7 @@ class TestFrpProvisionConfigIDOR:
             "/api/auth/login", json={"username": "admin", "password": "adminpass"}
         )
         token = login.json()["access_token"]
-        # JWT-User (Admin) sind nicht server-gebunden -> kein 403.
+        # JWT users (admins) are not server-bound -> no 403.
         res = test_client.get(
             "/api/frp/provision/srv-a/config",
             headers={"Authorization": f"Bearer {token}"},
@@ -82,8 +82,8 @@ class TestFrpProvisionConfigIDOR:
         assert res.status_code != 403, res.text
 
     def test_non_admin_jwt_denied(self, test_client, db_session, normal_user):
-        # Rest-Lücke aus der adversarischen Abnahme: ein NICHT-Admin-JWT-User darf
-        # die frpc.toml (globaler auth.token + STCP-Secrets) NICHT lesen.
+        # Remaining gap from the adversarial review: a NON-admin JWT user must
+        # NOT read the frpc.toml (global auth.token + STCP secrets).
         _server(db_session, "srv-a", "server-a")
         login = test_client.post(
             "/api/auth/login", json={"username": "viewer", "password": "viewerpass"}

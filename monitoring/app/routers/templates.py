@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Template CRUD und Template-Assignment."""
+"""Template CRUD and template assignment."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ router = APIRouter()
 
 @router.get("/templates", dependencies=[Depends(require_internal)])
 def list_templates(db: Session = Depends(get_db)):
-    """Alle Templates auflisten mit Assignment-Counts."""
+    """Lists all templates with assignment counts."""
     templates = db.query(MonitorTemplate).order_by(MonitorTemplate.name).all()
     result = []
     for t in templates:
@@ -41,7 +41,7 @@ def list_templates(db: Session = Depends(get_db)):
 
 @router.get("/templates/assignments/{server_id}", dependencies=[Depends(require_internal)])
 def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
-    """Alle Template-Zuweisungen eines Servers abrufen."""
+    """Returns all template assignments of a server."""
     assignments = (
         db.query(MonitorTemplateAssignment)
         .filter(MonitorTemplateAssignment.server_id == server_id)
@@ -59,7 +59,7 @@ def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
 
 @router.post("/templates", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)])
 def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
-    """Neues Template erstellen."""
+    """Creates a new template."""
     check_defs = []
     for cd in data.check_definitions:
         d = cd.model_dump()
@@ -89,7 +89,7 @@ def create_template(data: TemplateCreate, db: Session = Depends(get_db)):
 
 @router.get("/templates/{template_id}", dependencies=[Depends(require_internal)])
 def get_template(template_id: str, db: Session = Depends(get_db)):
-    """Einzelnes Template mit Assignments abrufen."""
+    """Returns a single template with its assignments."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
         raise HTTPException(404, "Template nicht gefunden")
@@ -101,7 +101,7 @@ def get_template(template_id: str, db: Session = Depends(get_db)):
 
 @router.put("/templates/{template_id}", dependencies=[Depends(require_internal)])
 def update_template(template_id: str, data: TemplateUpdate, db: Session = Depends(get_db)):
-    """Template aendern — triggert Live-Sync auf alle zugewiesenen Server."""
+    """Updates a template — triggers a live sync to all assigned servers."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
         raise HTTPException(404, "Template nicht gefunden")
@@ -140,7 +140,7 @@ def update_template(template_id: str, data: TemplateUpdate, db: Session = Depend
 
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_internal)])
 def delete_template(template_id: str, db: Session = Depends(get_db)):
-    """Template loeschen — loescht alle erzeugten Checks/Alerts bei allen Servern."""
+    """Deletes a template — removes all generated checks/alerts on all servers."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
         raise HTTPException(404, "Template nicht gefunden")
@@ -162,7 +162,7 @@ def delete_template(template_id: str, db: Session = Depends(get_db)):
 
 @router.post("/templates/{template_id}/assign", dependencies=[Depends(require_internal)])
 def assign_template(template_id: str, data: TemplateAssign, db: Session = Depends(get_db)):
-    """Template einem Server zuweisen — erstellt alle Checks/Alerts."""
+    """Assigns a template to a server — creates all checks/alerts."""
     template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
     if not template:
         raise HTTPException(404, "Template nicht gefunden")
@@ -180,7 +180,7 @@ def assign_template(template_id: str, data: TemplateAssign, db: Session = Depend
 
 @router.delete("/templates/{template_id}/assign/{server_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_internal)])
 def unassign_template(template_id: str, server_id: str, db: Session = Depends(get_db)):
-    """Template-Zuweisung entfernen — loescht alle zugehoerigen Checks/Alerts."""
+    """Removes a template assignment — deletes all associated checks/alerts."""
     assignment = db.query(MonitorTemplateAssignment).filter(
         MonitorTemplateAssignment.template_id == template_id,
         MonitorTemplateAssignment.server_id == server_id,

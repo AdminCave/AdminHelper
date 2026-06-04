@@ -3,19 +3,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Isolierter Worker-Prozess fuer Hook-Scripts.
+Isolated worker process for hook scripts.
 
-Wird von script_runner.py als Subprozess gestartet. Empfaengt das Script
-und den Kontext via stdin (JSON), fuehrt das Script aus und gibt das
-Ergebnis via stdout (JSON) zurueck.
+Started by script_runner.py as a subprocess. Receives the script and the
+context via stdin (JSON), executes the script and returns the result via
+stdout (JSON).
 
-SICHERHEITSMODELL: Hook-Skripte sind VERTRAUENSWUERDIGER Code (nur von Admins
-anleg-/editierbar) und laufen mit vollen Python-/Server-Rechten. Der Subprozess
-liefert Crash-/Timeout-Isolation, ist aber KEINE Security-Sandbox. Das minimierte
-env (script_runner.py) reduziert den Secret-Footprint (kein ADMIN_PASSWORD/
-MONITOR_API_KEY/REDIS_URL), aber ein Hook kann DB-Creds (DATABASE_URL) und den
-SECRET_KEY (via Config bzw. DATA_DIR) weiterhin lesen. Wer Hooks schreiben darf,
-kann beliebigen Code ausfuehren — wie ein Plugin oder Cron-Job.
+SECURITY MODEL: Hook scripts are TRUSTED code (creatable/editable by admins
+only) and run with full Python/server privileges. The subprocess provides
+crash/timeout isolation, but is NOT a security sandbox. The minimized env
+(script_runner.py) reduces the secret footprint (no ADMIN_PASSWORD/
+MONITOR_API_KEY/REDIS_URL), but a hook can still read DB creds (DATABASE_URL) and
+the SECRET_KEY (via config or DATA_DIR). Whoever may write hooks can run
+arbitrary code — like a plugin or cron job.
 """
 
 import json
@@ -46,7 +46,7 @@ def _safe_http_post(url: str, json_data: Any = None, headers: dict | None = None
 def main() -> None:
     import uuid as _uuid
 
-    # Lazy imports — nur wenn das Script Connections braucht
+    # Lazy imports — only when the script needs connections
     from app.modules.connections.storage import load_connections, save_connections
 
     raw = sys.stdin.read()
@@ -71,12 +71,12 @@ def main() -> None:
             logs.append(line)
 
     namespace: dict[str, Any] = {
-        # Hooks sind vertrauenswuerdiger Admin-Code (siehe Modul-Docstring): volle
-        # Builtins. exec() injiziert __builtins__ automatisch, wenn es im globals
-        # fehlt; der frueher gefilterte __builtins__ war eine WIRKUNGSLOSE
-        # Pseudo-Sandbox — jede exponierte Funktion fuehrte ueber ihr __globals__
-        # zurueck zu den echten Builtins (__import__). 'print' wird ueberschrieben,
-        # damit Ausgaben im Log landen.
+        # Hooks are trusted admin code (see module docstring): full builtins.
+        # exec() injects __builtins__ automatically when it is missing from
+        # globals; the previously filtered __builtins__ was an INEFFECTIVE
+        # pseudo-sandbox — every exposed function led back to the real builtins
+        # via its __globals__ (__import__). 'print' is overridden so that output
+        # ends up in the log.
         "print": _print,
         "load_connections": load_connections,
         "save_connections": save_connections,
@@ -97,7 +97,7 @@ def main() -> None:
         logs.append(f"Fehler: {exc}")
         output = {"success": False, "result": result, "logs": logs, "error": str(exc)}
 
-    # Ergebnis als JSON nach stdout
+    # Result as JSON to stdout
     sys.stdout.write(json.dumps(output, default=str))
 
 

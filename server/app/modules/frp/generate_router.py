@@ -105,7 +105,7 @@ def gen_visitor_bundle(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Liefert TOML + PKI-Bundle als JSON fuer die Desktop-App."""
+    """Returns TOML + PKI bundle as JSON for the desktop app."""
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
@@ -156,7 +156,7 @@ def gen_bulk_zip(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Generiert ein ZIP mit frps.toml, visitor.toml und frpc.toml pro Server."""
+    """Generates a ZIP with frps.toml, visitor.toml and one frpc.toml per server."""
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:

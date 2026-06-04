@@ -6,9 +6,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.core.config import DATABASE_URL
 
-# Postgres-Pool: ThreadPoolExecutor (Hooks, 4 Worker) + APScheduler +
-# uvicorn + Web-Requests = realistisch 15-20 Connections peak.
-# pool_pre_ping=True faengt tot-Connections nach Container-Restarts.
+# Postgres pool: ThreadPoolExecutor (hooks, 4 workers) + APScheduler +
+# uvicorn + web requests = realistically 15-20 connections at peak.
+# pool_pre_ping=True catches dead connections after container restarts.
 engine = create_engine(
     DATABASE_URL,
     pool_size=10,

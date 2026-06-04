@@ -24,7 +24,7 @@ def create_auto_connection(
     tags: str | None = None,
     username: str | None = None,
 ) -> Connection | None:
-    """Auto-Connection fuer einen Tunnel erstellen (STCP oder HTTPS)."""
+    """Create an auto-connection for a tunnel (STCP or HTTPS)."""
     if tunnel_type == "stcp" and visitor_port:
         conn_kind = "ssh" if protocol == "ssh" else "rdp" if protocol == "rdp" else "web"
         return Connection(
@@ -53,7 +53,7 @@ def create_auto_connection(
 
 
 def next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int:
-    """Nächsten freien Visitor-Port aus dem konfigurierten Bereich ermitteln."""
+    """Determine the next free visitor port from the configured range."""
     query = db.query(FrpTunnel.visitor_port).filter(
         FrpTunnel.visitor_port.isnot(None),
         FrpTunnel.tunnel_type == "stcp",
@@ -71,9 +71,9 @@ def next_visitor_port(db: Session, exclude_tunnel_id: str | None = None) -> int:
 
 
 def get_allow_users(db: Session, server_id: str) -> list[str]:
-    """Ermittelt alle Usernamen, die Zugriff auf diesen Server haben.
+    """Determine all usernames that have access to this server.
 
-    Admins sind automatisch fuer alle Server berechtigt.
+    Admins are automatically authorized for all servers.
     """
     assigned = (
         db.query(User)

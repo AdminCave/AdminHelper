@@ -25,7 +25,7 @@ class MonitorCheck(Base):
     severity = Column(String, nullable=False, default="critical")
     consecutive_fails = Column(Integer, default=3)
     template_id = Column(String, nullable=True, index=True)
-    template_def_id = Column(String, nullable=True)  # stabile def_id aus Template
+    template_def_id = Column(String, nullable=True)  # stable def_id from the template
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

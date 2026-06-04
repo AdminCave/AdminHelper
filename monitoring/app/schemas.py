@@ -52,7 +52,7 @@ class AlertRuleUpdate(BaseModel):
 
 
 class TemplateCheckDef(BaseModel):
-    def_id: str | None = None  # wird auto-generiert wenn nicht gesetzt
+    def_id: str | None = None  # auto-generated if not set
     name: str
     check_type: str
     config: dict = {}

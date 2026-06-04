@@ -42,7 +42,7 @@ def list_playbooks(db: Session = Depends(get_db), _admin=Depends(get_current_adm
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_playbook(data: PlaybookCreate, db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    # YAML validieren
+    # Validate YAML
     try:
         yaml.safe_load(data.content)
     except yaml.YAMLError as e:
@@ -58,7 +58,7 @@ def create_playbook(data: PlaybookCreate, db: Session = Depends(get_db), _admin=
     )
     db.add(playbook)
 
-    # YAML auf Disk schreiben
+    # Write YAML to disk
     path = _playbook_path(playbook_id, data.filename)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data.content, encoding="utf-8")
@@ -108,14 +108,14 @@ def update_playbook(playbook_id: str, data: PlaybookUpdate, db: Session = Depend
     if "filename" in sent and data.filename:
         playbook.filename = data.filename
 
-    # Content aktualisieren
+    # Update content
     if "content" in sent and data.content is not None:
         try:
             yaml.safe_load(data.content)
         except yaml.YAMLError as e:
             raise HTTPException(status_code=422, detail=f"Ungueltiges YAML: {e}")
 
-        # Alte Datei loeschen falls Filename geaendert
+        # Delete the old file if the filename changed
         if playbook.filename != old_filename:
             old_path = _playbook_path(playbook.id, old_filename)
             if old_path.exists():
@@ -125,7 +125,7 @@ def update_playbook(playbook_id: str, data: PlaybookUpdate, db: Session = Depend
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(data.content, encoding="utf-8")
     elif "filename" in sent and playbook.filename != old_filename:
-        # Nur Filename geaendert, Datei umbenennen
+        # Only the filename changed, rename the file
         old_path = _playbook_path(playbook.id, old_filename)
         new_path = _playbook_path(playbook.id, playbook.filename)
         if old_path.exists():
@@ -145,7 +145,7 @@ def delete_playbook(playbook_id: str, db: Session = Depends(get_db), _admin=Depe
 
     fire_event("playbook.deleted", {"id": playbook.id, "name": playbook.name})
 
-    # Verzeichnis loeschen
+    # Delete the directory
     playbook_dir = PLAYBOOKS_DIR / playbook.id
     if playbook_dir.exists():
         shutil.rmtree(playbook_dir)

@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Reine-Logik-Tests fuer app/alerter.py.
+"""Pure-logic tests for app/alerter.py.
 
-Getestet ohne echte DB: Rule-Filter (_rule_matches), Cooldown-Zeitfenster
-(_is_in_cooldown ueber einen Fake-Query) und die Garantie, dass Recovery
-(new_status == 'ok') den Cooldown umgeht (process_alert).
+Tested without a real DB: rule filter (_rule_matches), cooldown time window
+(_is_in_cooldown via a fake query) and the guarantee that recovery
+(new_status == 'ok') bypasses the cooldown (process_alert).
 """
 
 from types import SimpleNamespace
@@ -16,7 +16,7 @@ from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 
 
 def make_rule(**kw):
-    """Minimaler MonitorAlertRule-Stub mit den von der Logik gelesenen Feldern."""
+    """Minimal MonitorAlertRule stub with the fields read by the logic."""
     defaults = dict(
         id="rule-1",
         name="r",
@@ -32,7 +32,7 @@ def make_rule(**kw):
 
 
 def make_check(**kw):
-    """Minimaler MonitorCheck-Stub."""
+    """Minimal MonitorCheck stub."""
     defaults = dict(
         id="check-1",
         name="c",
@@ -71,8 +71,8 @@ class TestRuleMatches:
 
 
 class _FakeFirstQuery:
-    """Imitiert db.query(...).filter(...).first() und merkt sich nur das
-    konfigurierte Ergebnis. filter() kann beliebig oft gekettet werden."""
+    """Mimics db.query(...).filter(...).first() and only remembers the
+    configured result. filter() can be chained any number of times."""
 
     def __init__(self, first_result):
         self._first = first_result
@@ -94,7 +94,7 @@ class _FakeDb:
 
 class TestIsInCooldown:
     def test_recent_success_means_in_cooldown(self):
-        # Ein vorhandener (recenter) Erfolgs-Log-Eintrag -> Cooldown aktiv.
+        # An existing (recent) success log entry -> cooldown active.
         recent_log = object()
         db = _FakeDb(first_result=recent_log)
         assert _is_in_cooldown(db, make_rule(cooldown_minutes=30), make_check()) is True
@@ -105,8 +105,8 @@ class TestIsInCooldown:
 
 
 class _CapturingDb:
-    """Fake-DB fuer process_alert: liefert die Rules-Liste, sammelt add()
-    und commit()-Aufrufe."""
+    """Fake DB for process_alert: provides the rules list, collects add()
+    and commit() calls."""
 
     def __init__(self, rules):
         self._rules = rules
@@ -135,7 +135,7 @@ class TestRecoveryBypassesCooldown:
         check = make_check()
         db = _CapturingDb([rule])
 
-        # Cooldown waere aktiv — darf bei Recovery NICHT abfragen/blocken.
+        # Cooldown would be active — on recovery it must NOT query/block.
         cooldown_calls = {"n": 0}
 
         def fake_cooldown(*a, **k):
@@ -151,7 +151,7 @@ class TestRecoveryBypassesCooldown:
         monkeypatch.setattr(alerter, "_is_in_cooldown", fake_cooldown)
         monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
 
-        # old != new und new == "ok" -> Recovery
+        # old != new and new == "ok" -> recovery
         process_alert(db, check, old_status="critical", new_status="ok")
 
         assert dispatched["n"] == 1, "Recovery muss dispatchen"
@@ -171,16 +171,16 @@ class TestRecoveryBypassesCooldown:
             alerter, "_dispatch", lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None)
         )
 
-        # Status-Verschlechterung im Cooldown -> kein Dispatch, kein Log.
+        # Status degradation during cooldown -> no dispatch, no log.
         process_alert(db, check, old_status="ok", new_status="critical")
 
         assert dispatched["n"] == 0
         assert len(db.added) == 0
-        assert db.committed is True  # commit() laeuft trotzdem (am Ende)
+        assert db.committed is True  # commit() runs anyway (at the end)
 
     def test_no_change_returns_early(self, monkeypatch):
         db = _CapturingDb([make_rule()])
-        # old == new -> sofortiger return, keine Query/kein commit.
+        # old == new -> immediate return, no query/no commit.
         process_alert(db, make_check(), old_status="ok", new_status="ok")
         assert db.added == []
         assert db.committed is False

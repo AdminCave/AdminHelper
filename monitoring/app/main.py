@@ -21,10 +21,10 @@ logger = logging.getLogger("monitor")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: Scheduler hochfahren. Schema-Anlage uebernimmt Alembic
-    (siehe monitoring/alembic/), nicht mehr Base.metadata.create_all().
-    Historische SQLite-PRAGMA-Migrationen sind ersatzlos entfernt —
-    Pre-Release, keine Bestandsdaten."""
+    """Startup: bring up the scheduler. Schema creation is handled by Alembic
+    (see monitoring/alembic/), no longer by Base.metadata.create_all().
+    Historical SQLite PRAGMA migrations have been removed without replacement —
+    pre-release, no existing data."""
     from app.scheduler import scheduler, load_all_checks
 
     load_all_checks()

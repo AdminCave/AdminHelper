@@ -2,16 +2,16 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Helpers fuer den Server-Provisioning-Flow.
+"""Helpers for the server provisioning flow.
 
-Zwei Aufgaben, die unabhaengig voneinander funktionieren muessen:
-- fetch_or_skip_monitor_key: ruft den Monitoring-Service intern auf,
-  generiert dort einen neuen Agent-Key, gibt ihn zurueck. Bei Fehler
-  (Service down, Internal-Key falsch, Netzwerk weg) wird None geliefert
-  und ein WARNING geloggt — Provisioning-Request soll nie an einem
-  ausgefallenen Monitor-Service scheitern.
-- build_frp_bundle: erzeugt frpc.toml + PKI-Bundle (base64) fuer einen
-  Server, wenn FRP konfiguriert ist UND der Server Tunnel hat. Sonst None.
+Two tasks that must work independently of each other:
+- fetch_or_skip_monitor_key: calls the monitoring service internally,
+  generates a new agent key there and returns it. On error (service down,
+  wrong internal key, network gone) it returns None and logs a WARNING —
+  a provisioning request should never fail because of a downed monitor
+  service.
+- build_frp_bundle: builds frpc.toml + PKI bundle (base64) for a server
+  if FRP is configured AND the server has tunnels. Otherwise None.
 """
 
 from __future__ import annotations
@@ -34,15 +34,15 @@ logger = logging.getLogger("adminhelper.provisioning")
 
 
 def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[str]:
-    """Fragt einen neuen Monitor-Agent-Key beim Monitoring-Service an.
+    """Requests a new monitor agent key from the monitoring service.
 
-    Achtung: erzeugt einen NEUEN Key — falls bereits einer existierte,
-    wird er invalidiert (Monitoring-Service-Endpoint loescht alte Keys
-    bei POST /agent-keys/{id}).
+    Note: creates a NEW key — if one already existed, it is invalidated
+    (the monitoring-service endpoint deletes old keys on
+    POST /agent-keys/{id}).
 
-    Bei Fehler (Service nicht erreichbar, falscher Internal-Key, etc.)
-    wird None zurueckgegeben und WARNING geloggt — Provisioning soll
-    nicht an einem ausgefallenen Monitor-Service scheitern.
+    On error (service unreachable, wrong internal key, etc.) it returns
+    None and logs a WARNING — provisioning should not fail because of a
+    downed monitor service.
     """
     if not MONITOR_API_KEY:
         logger.warning(
@@ -65,7 +65,7 @@ def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[
             )
             return None
         data = resp.json()
-        # Monitoring-Service-Antwort enthaelt 'apiKey' (raw) als one-time-Wert
+        # The monitoring-service response contains 'apiKey' (raw) as a one-time value
         return data.get("apiKey")
     except httpx.HTTPError as exc:
         logger.warning(
@@ -78,9 +78,8 @@ def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[
 
 
 def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
-    """Baut frpc.toml + PKI-Bundle fuer einen Server. Optional — wenn
-    keine FRP-Config existiert ODER der Server keine Tunnel hat,
-    wird None geliefert."""
+    """Builds frpc.toml + PKI bundle for a server. Optional — if no FRP
+    config exists OR the server has no tunnels, None is returned."""
     config = db.query(FrpServerConfig).first()
     if not config:
         return None
@@ -92,14 +91,14 @@ def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     if not tunnels:
         return None
 
-    # Server-Lookup nochmal im Helper, damit die Aufrufer keine Server-
-    # Instance reichen muessen
+    # Look up the server again in the helper so callers do not have to pass
+    # a server instance
     from app.modules.servers.models import Server
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         return None
 
-    # Falls Auto-PKI aktiv ist und das Client-Cert noch fehlt: jetzt erzeugen
+    # If auto-PKI is active and the client cert is still missing: create it now
     pki_status = pki_manager.get_pki_status()
     if pki_status["caExists"]:
         client_crt = pki_manager.PKI_DIR / f"{server.name}.crt"

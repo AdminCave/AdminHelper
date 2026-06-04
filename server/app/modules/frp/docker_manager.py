@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Schreibt generierte FRP-Configs ins Shared Volume fuer den frps-Container."""
+"""Writes generated FRP configs into the shared volume for the frps container."""
 
 import logging
 from pathlib import Path
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def write_frps_config(config) -> Path:
-    """Schreibt frps.toml ins FRP_CONFIG_DIR. Gibt den Dateipfad zurueck."""
+    """Writes frps.toml into FRP_CONFIG_DIR. Returns the file path."""
     toml = generate_frps_toml(config)
     path = FRP_CONFIG_DIR / "frps.toml"
     path.write_text(toml, encoding="utf-8")
@@ -23,7 +23,7 @@ def write_frps_config(config) -> Path:
 
 
 def remove_frps_config() -> None:
-    """Entfernt frps.toml aus dem FRP_CONFIG_DIR."""
+    """Removes frps.toml from FRP_CONFIG_DIR."""
     path = FRP_CONFIG_DIR / "frps.toml"
     if path.exists():
         path.unlink()

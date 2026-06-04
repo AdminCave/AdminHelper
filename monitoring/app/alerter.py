@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Alerter — Webhook + E-Mail Dispatch fuer Monitoring-Alerts.
+Alerter — webhook + email dispatch for monitoring alerts.
 
-Wird von check_engine aufgerufen wenn sich ein Check-Status aendert.
-Prueft Alert-Rules, Cooldown und versendet Benachrichtigungen.
+Called by check_engine when a check status changes.
+Evaluates alert rules, cooldown and sends out notifications.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from app.models import MonitorAlertRule, MonitorAlertLog, MonitorCheck, MonitorS
 
 logger = logging.getLogger("monitor.alerter")
 
-# SMTP-Konfiguration aus Umgebungsvariablen
+# SMTP configuration from environment variables
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
@@ -40,7 +40,7 @@ def process_alert(
     old_status: str,
     new_status: str,
 ) -> None:
-    """Prueft alle Alert-Rules und versendet passende Benachrichtigungen."""
+    """Evaluates all alert rules and sends out matching notifications."""
     if old_status == new_status:
         return
 
@@ -51,7 +51,7 @@ def process_alert(
     for rule in rules:
         if not _rule_matches(rule, check):
             continue
-        # Recovery-Alerts nie durch Cooldown blockieren
+        # Never block recovery alerts via cooldown
         if not is_recovery and _is_in_cooldown(db, rule, check):
             logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
             continue
@@ -73,7 +73,7 @@ def process_alert(
 
 
 def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
-    """Prueft ob eine Alert-Rule auf den Check passt."""
+    """Checks whether an alert rule matches the check."""
     if rule.match_severity and rule.match_severity != check.severity:
         return False
     if rule.match_server_id and rule.match_server_id != check.server_id:
@@ -82,7 +82,7 @@ def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
 
 
 def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) -> bool:
-    """Prueft ob fuer diese Rule+Check-Kombination noch Cooldown aktiv ist."""
+    """Checks whether cooldown is still active for this rule+check combination."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=rule.cooldown_minutes)
     recent = (
         db.query(MonitorAlertLog)
@@ -103,7 +103,7 @@ def _dispatch(
     old_status: str,
     new_status: str,
 ) -> tuple[bool, str | None]:
-    """Versendet die Benachrichtigung ueber den konfigurierten Kanal."""
+    """Sends the notification over the configured channel."""
     try:
         config = json.loads(rule.channel_config) if rule.channel_config else {}
     except (json.JSONDecodeError, TypeError):
@@ -118,7 +118,7 @@ def _dispatch(
 
 
 def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dict:
-    """Baut die Alert-Nachricht als dict."""
+    """Builds the alert message as a dict."""
     status_icons = {
         "ok": "\u2705", "warning": "\u26a0\ufe0f", "critical": "\U0001f534", "unknown": "\u2753",
     }
@@ -142,7 +142,7 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
             f"Severity: {check.severity}"
         )
 
-    # Check-State Message anhaengen (z.B. "Port 22: Connection refused")
+    # Append check-state message (e.g. "Port 22: Connection refused")
     try:
         from app.core.database import SessionLocal
         db = SessionLocal()
@@ -174,7 +174,7 @@ def _send_webhook(
     old_status: str,
     new_status: str,
 ) -> tuple[bool, str | None]:
-    """Sendet Alert an Webhook-URL."""
+    """Sends the alert to a webhook URL."""
     url = config.get("url")
     if not url:
         return False, "Keine Webhook-URL konfiguriert"
@@ -203,7 +203,7 @@ def _send_email(
     old_status: str,
     new_status: str,
 ) -> tuple[bool, str | None]:
-    """Sendet Alert per E-Mail."""
+    """Sends the alert via email."""
     recipients = config.get("recipients") or config.get("to") or []
     if isinstance(recipients, str):
         recipients = [r.strip() for r in recipients.split(",") if r.strip()]

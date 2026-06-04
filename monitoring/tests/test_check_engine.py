@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Reine-Logik-Tests fuer die Status-Uebergaenge in app/check_engine.py.
+"""Pure-logic tests for the status transitions in app/check_engine.py.
 
-Getestet werden die aus execute_check extrahierten reinen Funktionen
-next_fail_count / effective_status / is_suppressed — die consecutive_fails-
-Daempfung, ohne DB, Scheduler oder VictoriaMetrics.
+Tests the pure functions extracted from execute_check
+next_fail_count / effective_status / is_suppressed — the consecutive_fails
+damping, without DB, scheduler or VictoriaMetrics.
 """
 
 from app.check_engine import effective_status, is_suppressed, next_fail_count
@@ -50,54 +50,54 @@ class TestEffectiveStatus:
         assert effective_status("ok", 0, 3, "critical") == "ok"
 
     def test_suppressed_keeps_old_status(self):
-        # 1. Fehlschlag bei Schwelle 3 -> bleibt beim alten OK.
+        # 1st failure at threshold 3 -> stays at the old OK.
         assert effective_status("critical", 1, 3, "ok") == "ok"
 
     def test_suppressed_pending_treated_as_ok(self):
-        # Frischer Check (old_status 'pending') wird waehrend Daempfung 'ok'.
+        # Fresh check (old_status 'pending') becomes 'ok' during damping.
         assert effective_status("critical", 1, 3, "pending") == "ok"
 
     def test_threshold_reached_uses_result(self):
         assert effective_status("critical", 3, 3, "ok") == "critical"
 
     def test_suppressed_keeps_prior_failure_status(self):
-        # War es schon 'warning', bleibt es bei erneutem (gedaempftem)
-        # Fehlschlag 'warning' — nicht 'critical'.
+        # If it was already 'warning', it stays 'warning' on a renewed (damped)
+        # failure — not 'critical'.
         assert effective_status("critical", 1, 3, "warning") == "warning"
 
     def test_recovery_when_ok(self):
-        # Nach Fehlern wieder OK: next_fail_count ist 0, Status wird OK.
+        # OK again after failures: next_fail_count is 0, status becomes OK.
         assert effective_status("ok", 0, 3, "critical") == "ok"
 
 
 class TestTransitionSequence:
-    """End-to-end-Folge der reinen Logik ueber mehrere Check-Laeufe
-    (consecutive_fails = 3), wie execute_check sie verkettet."""
+    """End-to-end sequence of the pure logic over several check runs
+    (consecutive_fails = 3), as execute_check chains them."""
 
     def test_three_fails_then_recover(self):
         consecutive = 3
         old = "ok"
         prev_fails = 0
 
-        # Lauf 1: 1. Fehler -> gedaempft, bleibt ok
+        # Run 1: 1st failure -> damped, stays ok
         prev_fails = next_fail_count("critical", prev_fails)
         eff = effective_status("critical", prev_fails, consecutive, old)
         assert (prev_fails, eff) == (1, "ok")
         old = eff
 
-        # Lauf 2: 2. Fehler -> weiter gedaempft
+        # Run 2: 2nd failure -> still damped
         prev_fails = next_fail_count("critical", prev_fails)
         eff = effective_status("critical", prev_fails, consecutive, old)
         assert (prev_fails, eff) == (2, "ok")
         old = eff
 
-        # Lauf 3: 3. Fehler -> Schwelle erreicht, jetzt critical
+        # Run 3: 3rd failure -> threshold reached, now critical
         prev_fails = next_fail_count("critical", prev_fails)
         eff = effective_status("critical", prev_fails, consecutive, old)
         assert (prev_fails, eff) == (3, "critical")
         old = eff
 
-        # Lauf 4: wieder ok -> Reset und Recovery
+        # Run 4: ok again -> reset and recovery
         prev_fails = next_fail_count("ok", prev_fails)
         eff = effective_status("ok", prev_fails, consecutive, old)
         assert (prev_fails, eff) == (0, "ok")

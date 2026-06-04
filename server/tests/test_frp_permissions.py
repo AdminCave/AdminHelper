@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer Authorization-Filter im FRP-Visitor-Bundle / -TOML.
+"""Tests for the authorization filter in the FRP visitor bundle / TOML.
 
-Hintergrund: Vor diesem Test war die Logik `if server_ids: filter(...)` so,
-dass ein Non-Admin-User OHNE Server-Zuweisung *alle* Tunnel inklusive
-secret_key bekam (statt keine). Klassische Privilege-Escalation-Falle.
+Background: before this test the logic `if server_ids: filter(...)` was such
+that a non-admin user WITHOUT a server assignment got *all* tunnels including
+secret_key (instead of none). A classic privilege-escalation trap.
 """
 
 import pytest
@@ -69,7 +69,7 @@ def two_servers_with_tunnels(db_session):
 
 
 class TestVisitorBundlePermissions:
-    """Regression: Non-Admin ohne Zuweisungen darf KEINE Tunnel sehen."""
+    """Regression: a non-admin without assignments must see NO tunnels."""
 
     def test_non_admin_without_assignments_sees_no_tunnels(
         self, db_session, normal_user, two_servers_with_tunnels
@@ -107,7 +107,7 @@ class TestVisitorBundlePermissions:
 
 
 class TestVisitorTomlPermissions:
-    """Gleicher Auth-Filter im /generate/visitor-toml-Endpoint."""
+    """Same auth filter in the /generate/visitor-toml endpoint."""
 
     def test_non_admin_without_assignments_gets_empty_toml(
         self, db_session, normal_user, two_servers_with_tunnels

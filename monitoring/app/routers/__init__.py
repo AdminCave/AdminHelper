@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Monitoring-Service Router — aufgeteilt nach Domäne."""
+"""Monitoring-service routers — split by domain."""
 
 from app.routers.checks import router as checks_router
 from app.routers.agent import router as agent_router

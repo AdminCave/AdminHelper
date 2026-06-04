@@ -3,41 +3,41 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Script-Runner für Hooks.
+Script runner for hooks.
 
-Jedes Script laeuft in einem separaten Subprozess (eigener Adressraum, killbar
-via Timeout). Das ist Crash-/Timeout-Isolation, KEINE Security-Sandbox: Hook-
-Skripte sind vertrauenswuerdiger Admin-Code (nur von Admins anleg-/editierbar)
-und laufen mit vollen Server-Rechten — wie ein Cron-Job.
+Each script runs in a separate subprocess (its own address space, killable
+via timeout). This is crash/timeout isolation, NOT a security sandbox: hook
+scripts are trusted admin code (creatable/editable by admins only) and run
+with full server privileges — like a cron job.
 
-Das minimierte env (run_hook_script) haelt ADMIN_PASSWORD, MONITOR_API_KEY und
-REDIS_URL aus dem Hook-Prozess heraus. Es ist aber KEINE vollstaendige
-Secret-Isolation: ein Hook braucht DB-Zugriff (DATABASE_URL wird vererbt) und
-kann ueber die geladene app.core.config bzw. DATA_DIR/.secret_key auch den
-SECRET_KEY lesen. Wer Hooks schreiben darf, hat Server-Vollzugriff.
+The minimized env (run_hook_script) keeps ADMIN_PASSWORD, MONITOR_API_KEY and
+REDIS_URL out of the hook process. It is, however, NOT complete secret
+isolation: a hook needs DB access (DATABASE_URL is inherited) and can also read
+the SECRET_KEY via the loaded app.core.config or DATA_DIR/.secret_key. Whoever
+may write hooks has full server access.
 
-Verfügbare Variablen im Script (immer):
-    load_connections()  -> list[dict]   Verbindungen laden
-    save_connections(list[dict])        Verbindungen speichern
-    uuid4()             -> str          Neue UUID generieren
-    result              dict            Rückgabe an den Aufrufer
-    logs                list            Log-Ausgaben
-    log(msg)                            Kurzform für logs.append(str(msg))
-    http_get(url, ...)  -> dict         HTTP-GET mit Timeout
-    http_post(url, ...) -> dict         HTTP-POST mit Timeout
+Available variables in the script (always):
+    load_connections()  -> list[dict]   load connections
+    save_connections(list[dict])        save connections
+    uuid4()             -> str          generate a new UUID
+    result              dict            return value to the caller
+    logs                list            log output
+    log(msg)                            shorthand for logs.append(str(msg))
+    http_get(url, ...)  -> dict         HTTP GET with timeout
+    http_post(url, ...) -> dict         HTTP POST with timeout
 
-Webhook-Kontext:
-    payload             dict            JSON-Body des Requests
-    headers             dict            HTTP-Request-Header
-    params              dict            Query-Parameter
+Webhook context:
+    payload             dict            JSON body of the request
+    headers             dict            HTTP request headers
+    params              dict            query parameters
 
-Event-Kontext:
-    event_type          str             Name des Events (z. B. "connection.created")
-    event_data          dict            Betroffene Ressource
+Event context:
+    event_type          str             name of the event (e.g. "connection.created")
+    event_data          dict            affected resource
 
-Schedule-Kontext:
-    triggered_at        str             ISO-Zeitstempel der Ausführung
-    last_run            str|None        Letzter Lauf (ISO) oder None
+Schedule context:
+    triggered_at        str             ISO timestamp of the execution
+    last_run            str|None        last run (ISO) or None
 """
 
 import json
@@ -47,7 +47,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Konstanten
+# Constants
 # ---------------------------------------------------------------------------
 
 SCRIPT_TIMEOUT_SECONDS = 30
@@ -56,7 +56,7 @@ _WORKER_SCRIPT = str(Path(__file__).parent / "script_worker.py")
 
 
 # ---------------------------------------------------------------------------
-# Hauptfunktion
+# Main function
 # ---------------------------------------------------------------------------
 
 
@@ -66,16 +66,16 @@ def run_hook_script(
     context: dict,
     timeout: int = SCRIPT_TIMEOUT_SECONDS,
 ) -> dict:
-    """Script in einem isolierten Subprozess ausführen und Ergebnis zurückgeben."""
+    """Run the script in an isolated subprocess and return the result."""
     payload = json.dumps({
         "script": script,
         "context": context,
     }, default=str)
 
-    # Minimiertes Environment: entfernt ADMIN_PASSWORD, MONITOR_API_KEY und REDIS_URL
-    # aus dem Hook-Prozess. KEINE vollstaendige Isolation — DATABASE_URL (DB-Creds)
-    # wird bewusst vererbt (Hooks brauchen DB-Zugriff), und SECRET_KEY bleibt ueber
-    # DATA_DIR/.secret_key bzw. die geladene Config erreichbar. Hooks = trusted Code.
+    # Minimized environment: removes ADMIN_PASSWORD, MONITOR_API_KEY and REDIS_URL
+    # from the hook process. NOT complete isolation — DATABASE_URL (DB creds) is
+    # deliberately inherited (hooks need DB access), and SECRET_KEY stays reachable
+    # via DATA_DIR/.secret_key or the loaded config. Hooks = trusted code.
     server_dir = str(Path(__file__).parents[3])  # server/
     worker_env = {
         "PATH": os.environ.get("PATH", ""),

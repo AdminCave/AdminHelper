@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Agent-Key Management und Server-Cleanup."""
+"""Agent key management and server cleanup."""
 
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ router = APIRouter()
 
 @router.post("/agent-keys/{server_id}", dependencies=[Depends(require_internal)])
 def create_agent_key(server_id: str, db: Session = Depends(get_db)):
-    """Generiert einen neuen Agent-API-Key fuer einen Server.
+    """Generates a new agent API key for a server.
 
-    Der Raw-Key wird nur bei Neuerstellung zurueckgegeben. Bei bestehendem
-    Key muss dieser neu generiert werden (DELETE + POST).
+    The raw key is only returned on creation. For an existing key it must be
+    regenerated (DELETE + POST).
     """
-    # Bei bestehendem Key: alten loeschen und neu generieren
+    # If a key exists: delete the old one and regenerate
     existing = db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).first()
     if existing:
         db.delete(existing)
@@ -43,13 +43,13 @@ def create_agent_key(server_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(key)
     d = key.to_dict()
-    d["apiKey"] = raw_key  # Einmalig den Raw-Key zurueckgeben
+    d["apiKey"] = raw_key  # Return the raw key once
     return d
 
 
 @router.delete("/agent-keys/{server_id}", dependencies=[Depends(require_internal)])
 def delete_agent_key(server_id: str, db: Session = Depends(get_db)):
-    """Loescht den Agent-API-Key eines Servers."""
+    """Deletes the agent API key of a server."""
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
     db.commit()
     return {"deleted": True}
@@ -57,6 +57,6 @@ def delete_agent_key(server_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/servers/{server_id}/cleanup", dependencies=[Depends(require_internal)])
 def server_cleanup(server_id: str, db: Session = Depends(get_db)):
-    """Alle Monitoring-Daten eines Servers bereinigen."""
+    """Cleans up all monitoring data of a server."""
     result = cleanup_server(db, server_id)
     return result

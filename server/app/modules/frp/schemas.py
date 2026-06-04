@@ -23,10 +23,10 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
 
 class FrpServerConfigCreate(BaseModel):
     name: str
-    server_addr: str  # z.B. "frps.example.net"
+    server_addr: str  # e.g. "frps.example.net"
     bind_port: int = 7000
     vhost_https_port: Optional[int] = None
-    auth_token: Optional[str] = None  # wird auto-generiert wenn leer
+    auth_token: Optional[str] = None  # auto-generated if empty
     subdomain_host: Optional[str] = None
     max_ports_per_client: Optional[int] = None
     dashboard_port: Optional[int] = None
@@ -54,20 +54,20 @@ class FrpServerConfigUpdate(BaseModel):
 class FrpTunnelCreate(BaseModel):
     server_id: str
     frp_config_id: str
-    name: str  # Proxy-Name, z.B. "k01-lnx1-ssh"
-    tunnel_type: str  # "stcp" oder "https"
+    name: str  # proxy name, e.g. "k01-lnx1-ssh"
+    tunnel_type: str  # "stcp" or "https"
     protocol: str  # "ssh", "rdp", "web"
     local_ip: str = "127.0.0.1"
     local_port: int
-    secret_key: Optional[str] = None  # auto-generiert fuer STCP wenn leer
-    custom_domains: Optional[str] = None  # nur fuer HTTPS
-    visitor_port: Optional[int] = None  # nur fuer STCP
+    secret_key: Optional[str] = None  # auto-generated for STCP if empty
+    custom_domains: Optional[str] = None  # HTTPS only
+    visitor_port: Optional[int] = None  # STCP only
     connection_id: Optional[str] = None
     enabled: bool = True
     extra_config: Optional[dict] = None
     tags: list[str] = []
-    auto_create_connection: bool = False  # automatisch passende Connection erstellen
-    auto_connection_username: Optional[str] = None  # Benutzername fuer auto-erstellte Connection
+    auto_create_connection: bool = False  # automatically create a matching connection
+    auto_connection_username: Optional[str] = None  # username for the auto-created connection
 
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
 

@@ -22,4 +22,4 @@ class ApiKeyResponse(BaseModel):
 
 
 class ApiKeyCreatedResponse(ApiKeyResponse):
-    key: str  # Nur beim Erstellen zurückgegeben
+    key: str  # Returned only on creation

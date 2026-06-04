@@ -16,8 +16,8 @@ from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE
 from app.core.auth import hash_api_key, hash_password
 from app.core.middleware import IPFilterMiddleware
 
-# Models importieren, damit Base.metadata sie kennt (auch wenn Schema-Anlage
-# jetzt von Alembic uebernommen wird — wichtig fuer ORM-Queries im Lifespan).
+# Import models so Base.metadata knows about them (even though schema creation
+# is now handled by Alembic — important for ORM queries in the lifespan).
 from app.modules.users.models import User  # noqa: F401
 from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.hooks.models import Hook  # noqa: F401
@@ -28,7 +28,7 @@ from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.users.models import user_server_assoc  # noqa: F401
 from app.modules.ansible.models import Playbook  # noqa: F401
 
-# Router importieren
+# Import routers
 from app.modules.users.auth_router import router as auth_router
 from app.modules.users.router import router as users_router
 from app.modules.connections.router import router as connections_router
@@ -44,18 +44,18 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_admin(db):
-    """Stellt sicher, dass ein Admin angelegt wird oder ein Bootstrap-Pfad existiert.
+    """Ensures an admin is created or a bootstrap path exists.
 
-    - Wenn schon User existieren: nichts tun (idempotent).
-    - Wenn ADMIN_PASSWORD leer ODER 'admin': KEIN Default-User; stattdessen
-      Bootstrap-Token in DATA_DIR/.bootstrap_token, mit dem der Admin per
-      POST /api/auth/bootstrap angelegt wird (analog Vaultwarden/Gitea).
-    - Wenn ADMIN_PASSWORD anders: Admin wie bisher direkt anlegen
-      (fuer CI/Test/Power-User mit explizit gesetztem Passwort).
+    - If users already exist: do nothing (idempotent).
+    - If ADMIN_PASSWORD is empty OR 'admin': NO default user; instead a
+      bootstrap token in DATA_DIR/.bootstrap_token, used to create the admin
+      via POST /api/auth/bootstrap (similar to Vaultwarden/Gitea).
+    - If ADMIN_PASSWORD differs: create the admin directly as before
+      (for CI/test/power users with an explicitly set password).
     """
     if db.query(User).count() > 0:
-        # Schon initialisiert – Bootstrap-Token aus alten Setups aufraeumen,
-        # falls ein Admin sich anders als per Bootstrap angemeldet hat.
+        # Already initialized – clean up the bootstrap token from old setups
+        # in case an admin signed in by other means than bootstrap.
         if BOOTSTRAP_TOKEN_FILE.exists():
             try:
                 BOOTSTRAP_TOKEN_FILE.unlink()
@@ -78,7 +78,7 @@ def _ensure_admin(db):
 
 
 def _emit_bootstrap_token():
-    """Generiert und persistiert einen einmaligen Bootstrap-Token, loggt ihn prominent."""
+    """Generates and persists a one-time bootstrap token, logging it prominently."""
     token = secrets.token_urlsafe(32)
     BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(token))
     try:
@@ -105,7 +105,7 @@ def _emit_bootstrap_token():
 
 
 def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
-    """Prueft ob das Server-Cert neu generiert werden muss (fehlende/falsche SANs)."""
+    """Checks whether the server cert must be regenerated (missing/wrong SANs)."""
     import ipaddress
     from cryptography import x509 as cx509
 
@@ -125,7 +125,7 @@ def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
 
 
 def _ensure_pki(db):
-    """Generiert CA + Server-Cert automatisch wenn eine FRP-Config existiert aber PKI fehlt."""
+    """Auto-generates CA + server cert when an FRP config exists but the PKI is missing."""
     from app.modules.frp import pki as pki_manager
     from app.modules.frp.docker_manager import write_frps_config
 
@@ -150,12 +150,12 @@ def _ensure_pki(db):
 
 
 def _run_startup_tasks():
-    """Fuehrt Startup-Tasks in einer Session aus.
+    """Runs startup tasks within a single session.
 
-    Schema-Anlage uebernimmt Alembic (siehe server/alembic/), nicht mehr
-    Base.metadata.create_all(). Historische SQLite-PRAGMA-Migrationen
+    Schema creation is handled by Alembic (see server/alembic/), no longer by
+    Base.metadata.create_all(). Historical SQLite PRAGMA migrations
     (_migrate_add_columns, _migrate_connections_json, _migrate_visitors_to_users)
-    sind ersatzlos entfernt — Pre-Release, keine Bestandsdaten.
+    have been removed without replacement — pre-release, no existing data.
     """
     db = SessionLocal()
     try:
@@ -193,13 +193,13 @@ app.add_middleware(IPFilterMiddleware)
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
-    # Universale Schutz-Header fuer alle Antworten.
+    # Universal protection headers for all responses.
     response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    # CSP nur fuer SPA-HTML setzen, nicht fuer Swagger-UI unter /api/docs
-    # (laedt Inline-Scripts und CDN-Assets).
+    # Set CSP only for SPA HTML, not for the Swagger UI under /api/docs
+    # (which loads inline scripts and CDN assets).
     content_type = response.headers.get("content-type", "")
     if content_type.startswith("text/html") and not request.url.path.startswith("/api/docs"):
         response.headers.setdefault(
@@ -215,7 +215,7 @@ async def security_headers(request, call_next):
         )
     return response
 
-# Router einbinden
+# Mount routers
 app.include_router(auth_router)
 app.include_router(connections_router)
 app.include_router(users_router)
@@ -227,10 +227,10 @@ app.include_router(frp_router)
 app.include_router(monitoring_proxy_router)
 app.include_router(ansible_router)
 
-# Statische Dateien aus frontend/ ausliefern (Vite-Build-Output).
-# Im Production-Container wird der Vite-Build aus frontend-src/dist/ via
-# Multi-Stage-Dockerfile nach /app/frontend/ kopiert. Im Dev-Modus mit
-# uvicorn ohne Build existiert das Verzeichnis nicht — Mount conditional.
+# Serve static files from frontend/ (Vite build output).
+# In the production container the Vite build is copied from frontend-src/dist/
+# to /app/frontend/ via the multi-stage Dockerfile. In dev mode with uvicorn
+# and no build the directory does not exist — mount conditionally.
 static_dir = Path(__file__).parent.parent / "frontend"
 if (static_dir / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")

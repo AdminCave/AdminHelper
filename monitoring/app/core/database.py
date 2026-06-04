@@ -7,8 +7,8 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import DATABASE_URL
 
-# Postgres-Pool wie im Server-Service. APScheduler + Agent-Push-Endpoint
-# + Web-Requests = realistisch 10-15 Connections peak.
+# Postgres pool as in the server service. APScheduler + agent push endpoint
+# + web requests = realistically 10-15 connections peak.
 engine = create_engine(
     DATABASE_URL,
     pool_size=10,

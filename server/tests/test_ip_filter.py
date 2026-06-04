@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer IP-Filter-Middleware: Netzwerk-Parsing und resolve_client_ip."""
+"""Tests for the IP filter middleware: network parsing and resolve_client_ip."""
 
 from app.core.middleware import _parse_networks, _in_networks, resolve_client_ip
 
@@ -56,7 +56,7 @@ class TestInNetworks:
 
 
 class TestResolveClientIp:
-    """Tests fuer resolve_client_ip mit gemockten Requests."""
+    """Tests for resolve_client_ip with mocked requests."""
 
     class _FakeClient:
         def __init__(self, host):
@@ -76,7 +76,7 @@ class TestResolveClientIp:
         assert resolve_client_ip(req) == "1.2.3.4"
 
     def test_x_forwarded_for_without_trust(self):
-        """Ohne konfigurierte Trusted-Proxies werden Headers ignoriert."""
+        """Without configured trusted proxies, headers are ignored."""
         req = self._FakeRequest("1.2.3.4", {"X-Forwarded-For": "5.6.7.8"})
         # Default: TRUST_PROXY_HEADERS=false, TRUSTED_PROXIES=empty
         # So it should return direct IP

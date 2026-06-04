@@ -15,7 +15,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # VictoriaMetrics
 VICTORIA_METRICS_URL = os.environ.get("VICTORIA_METRICS_URL", "http://victoria:8428")
 
-# Interner API-Key fuer Service-zu-Service Kommunikation (AdminHelper -> Monitoring)
+# Internal API key for service-to-service communication (AdminHelper -> Monitoring)
 INTERNAL_API_KEY = os.environ.get("MONITOR_API_KEY", "").strip()
 if not INTERNAL_API_KEY:
     key_file = DATA_DIR / ".api_key"
@@ -27,10 +27,10 @@ if not INTERNAL_API_KEY:
         key_file.chmod(0o600)
         logger.info("MONITOR_API_KEY auto-generiert und in %s gespeichert", key_file)
 
-    # Agent-API-Keys werden jetzt pro Server in der DB gespeichert (monitor_agent_keys)
+    # Agent API keys are now stored per server in the DB (monitor_agent_keys)
 
-# DATABASE_URL: liest aus Env, faellt auf Postgres-Default fuer lokale Dev zurueck.
-# Schema-Anlage uebernimmt Alembic (siehe monitoring/alembic/), nicht mehr
+# DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
+# Schema creation is handled by Alembic (see monitoring/alembic/), no longer by
 # Base.metadata.create_all().
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",

@@ -10,25 +10,25 @@ from app.core.database import get_db
 
 
 def require_internal(request: Request) -> None:
-    """Validiert den internen API-Key (AdminHelper-Proxy -> Monitoring)."""
+    """Validates the internal API key (AdminHelper proxy -> Monitoring)."""
     key = request.headers.get("X-Internal-Key", "")
     if not key or key != INTERNAL_API_KEY:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Ungültiger interner API-Key")
 
 
 def require_agent(request: Request, db: Session = Depends(get_db)) -> str:
-    """Validiert den Agent API-Key gegen die DB. Gibt die server_id zurueck."""
+    """Validates the agent API key against the DB. Returns the server_id."""
     from app.models import MonitorAgentKey
 
     key = request.headers.get("X-API-Key", "")
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API-Key fehlt")
 
-    # Interner Key hat Zugriff auf alle Server
+    # Internal key has access to all servers
     if key == INTERNAL_API_KEY:
         return "__internal__"
 
-    # Agent-Key hashen und gegen DB vergleichen
+    # Hash the agent key and compare against the DB
     hashed = MonitorAgentKey.hash_key(key)
     agent_key = db.query(MonitorAgentKey).filter(MonitorAgentKey.hashed_key == hashed).first()
     if not agent_key:

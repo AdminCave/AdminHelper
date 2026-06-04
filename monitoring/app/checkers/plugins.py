@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Plugin-basierte Checker.
+Plugin-based checkers.
 
-Werten Agent-Push-Daten von automatisch erkannten Plugins aus
-(Proxmox, ZFS, Docker). Die Daten kommen vom adminhelper-agent,
-der die Plugins anhand installierter Binaries aktiviert.
+Evaluate agent push data from automatically detected plugins
+(Proxmox, ZFS, Docker). The data comes from the adminhelper-agent,
+which activates the plugins based on installed binaries.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ import time
 
 
 class ProxmoxBackupChecker:
-    """Prueft ob VMs/CTs aktuelle Backups haben.
+    """Checks whether VMs/CTs have up-to-date backups.
 
-    Config-Beispiel:
+    Config example:
     {
         "max_backup_age_hours": 26,
         "exclude_vmids": [999],
@@ -72,7 +72,7 @@ class ProxmoxBackupChecker:
             "proxmox_backup_outdated": len(outdated),
         }
 
-        # Strukturierte Details fuer die UI
+        # Structured details for the UI
         vm_details = []
         for vm in vms:
             vmid = vm.get("vmid")
@@ -108,9 +108,9 @@ class ProxmoxBackupChecker:
 
 
 class ZfsHealthChecker:
-    """Prueft ZFS Pool Health und Kapazitaet.
+    """Checks ZFS pool health and capacity.
 
-    Config-Beispiel:
+    Config example:
     {
         "capacity_warn": 80,
         "capacity_crit": 90
@@ -170,9 +170,9 @@ class ZfsHealthChecker:
 
 
 class DockerHealthChecker:
-    """Prueft Docker Container Status.
+    """Checks Docker container status.
 
-    Config-Beispiel:
+    Config example:
     {
         "ignore_containers": ["watchtower"],
         "check_restarts": true
@@ -208,7 +208,7 @@ class DockerHealthChecker:
             restart_policy = c.get("restart_policy", "no")
             category = "ok"
 
-            # Container mit Restart-Policy die nicht laufen
+            # Containers with a restart policy that are not running
             if restart_policy not in ("no", "") and state != "running":
                 if state in ("dead", "restarting"):
                     critical_problems.append(f"{name}: {state}")

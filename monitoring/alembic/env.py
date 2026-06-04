@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Alembic env.py — liest DATABASE_URL aus app.core.config, importiert alle
-Models, damit autogenerate die volle Base.metadata sieht."""
+"""Alembic env.py — reads DATABASE_URL from app.core.config, imports all
+models so autogenerate sees the full Base.metadata."""
 
 from logging.config import fileConfig
 
@@ -11,16 +11,16 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-# App-Imports — muessen vor target_metadata stehen.
+# App imports — must come before target_metadata.
 from app.core.config import DATABASE_URL
 from app.core.database import Base
 
-# Alle Tabellen werden in app/models.py definiert — ein einziger Import reicht.
+# All tables are defined in app/models.py — a single import is enough.
 import app.models  # noqa: F401
 
 config = context.config
 
-# DATABASE_URL aus app-config setzen (ueberschreibt sqlalchemy.url aus alembic.ini)
+# Set DATABASE_URL from app config (overrides sqlalchemy.url from alembic.ini)
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 if config.config_file_name is not None:

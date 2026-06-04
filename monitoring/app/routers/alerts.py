@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Alert-Rules CRUD und Alert-Log."""
+"""Alert-rules CRUD and alert log."""
 
 from __future__ import annotations
 
@@ -22,14 +22,14 @@ router = APIRouter()
 
 @router.get("/alerts", dependencies=[Depends(require_internal)])
 def list_alert_rules(db: Session = Depends(get_db)):
-    """Alle Alert-Rules auflisten."""
+    """Lists all alert rules."""
     rules = db.query(MonitorAlertRule).order_by(MonitorAlertRule.name).all()
     return [r.to_dict() for r in rules]
 
 
 @router.post("/alerts", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_internal)])
 def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
-    """Neue Alert-Rule erstellen."""
+    """Creates a new alert rule."""
     if data.channel not in VALID_CHANNELS:
         raise HTTPException(400, f"Ungueltiger Kanal. Erlaubt: {', '.join(sorted(VALID_CHANNELS))}")
     if data.match_severity and data.match_severity not in VALID_SEVERITIES:
@@ -53,7 +53,7 @@ def create_alert_rule(data: AlertRuleCreate, db: Session = Depends(get_db)):
 
 @router.get("/alerts/log", dependencies=[Depends(require_internal)])
 def get_alert_log(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)):
-    """Alert-Historie abrufen."""
+    """Returns the alert history."""
     logs = (
         db.query(MonitorAlertLog)
         .order_by(MonitorAlertLog.sent_at.desc())
@@ -65,7 +65,7 @@ def get_alert_log(limit: int = Query(50, ge=1, le=500), db: Session = Depends(ge
 
 @router.get("/alerts/{rule_id}", dependencies=[Depends(require_internal)])
 def get_alert_rule(rule_id: str, db: Session = Depends(get_db)):
-    """Einzelne Alert-Rule abrufen."""
+    """Returns a single alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
         raise HTTPException(404, "Alert-Rule nicht gefunden")
@@ -74,7 +74,7 @@ def get_alert_rule(rule_id: str, db: Session = Depends(get_db)):
 
 @router.put("/alerts/{rule_id}", dependencies=[Depends(require_internal)])
 def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends(get_db)):
-    """Alert-Rule aktualisieren."""
+    """Updates an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
         raise HTTPException(404, "Alert-Rule nicht gefunden")
@@ -98,7 +98,7 @@ def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends
 
 @router.delete("/alerts/{rule_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_internal)])
 def delete_alert_rule(rule_id: str, db: Session = Depends(get_db)):
-    """Alert-Rule loeschen."""
+    """Deletes an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
         raise HTTPException(404, "Alert-Rule nicht gefunden")
@@ -108,7 +108,7 @@ def delete_alert_rule(rule_id: str, db: Session = Depends(get_db)):
 
 @router.post("/alerts/{rule_id}/toggle", dependencies=[Depends(require_internal)])
 def toggle_alert_rule(rule_id: str, db: Session = Depends(get_db)):
-    """Alert-Rule ein-/ausschalten."""
+    """Enables/disables an alert rule."""
     rule = db.query(MonitorAlertRule).filter(MonitorAlertRule.id == rule_id).first()
     if not rule:
         raise HTTPException(404, "Alert-Rule nicht gefunden")

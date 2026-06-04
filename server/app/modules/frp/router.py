@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""FRP-Modul: Kombiniert alle Sub-Router zu einem gemeinsamen Router."""
+"""FRP module: combines all sub-routers into one shared router."""
 
 from fastapi import APIRouter
 

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/frp", tags=["frp"])
 
 @router.get("/status")
 async def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    """Fragt den frps-Dashboard-API ab und liefert den Status aller Proxies."""
+    """Queries the frps dashboard API and returns the status of all proxies."""
     config = db.query(FrpServerConfig).first()
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")

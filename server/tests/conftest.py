@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Shared test fixtures: Postgres via testcontainers (lokal) oder GitLab-services (CI),
-SAVEPOINT-basiertes Transaction-Rollback-Pattern fuer Test-Isolation."""
+"""Shared test fixtures: Postgres via testcontainers (local) or GitLab services (CI),
+SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
 import os
 
-# Test-Defaults setzen, BEVOR app-Module importiert werden.
+# Set test defaults BEFORE app modules are imported.
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
@@ -20,7 +20,7 @@ from app.core.database import Base, get_db
 from app.core.auth import hash_password
 from app.modules.users.models import User
 
-# Alle Models explizit importieren — sonst kennt Base.metadata sie nicht.
+# Explicitly import all models — otherwise Base.metadata does not know about them.
 import app.modules.servers.models  # noqa: F401
 import app.modules.connections.models  # noqa: F401
 import app.modules.api_keys.models  # noqa: F401
@@ -30,10 +30,10 @@ import app.modules.ansible.models  # noqa: F401
 
 
 def _normalize_postgres_url(raw_url: str) -> str:
-    """Erzwingt psycopg3-Driver — testcontainers liefert per Default
-    'postgresql+psycopg2://', GitLab-services liefert 'postgresql://',
-    beides muss auf 'postgresql+psycopg://' umgeschrieben werden, damit
-    SQLAlchemy nicht versucht, das nicht-installierte psycopg2 zu importieren."""
+    """Forces the psycopg3 driver — testcontainers provides
+    'postgresql+psycopg2://' by default, GitLab services provide 'postgresql://',
+    both must be rewritten to 'postgresql+psycopg://' so that SQLAlchemy does
+    not try to import the non-installed psycopg2."""
     for old in ("postgresql+psycopg2://", "postgresql+asyncpg://", "postgresql://"):
         if raw_url.startswith(old):
             return "postgresql+psycopg://" + raw_url[len(old):]
@@ -42,15 +42,15 @@ def _normalize_postgres_url(raw_url: str) -> str:
 
 @pytest.fixture(scope="session")
 def pg_engine():
-    """Postgres-Engine fuer die gesamte Test-Session.
+    """Postgres engine for the entire test session.
 
-    - Wenn DATABASE_URL env gesetzt ist (CI-Modus mit GitLab-services
-      oder dev-Setup mit lokalem Postgres) -> diese URL nutzen.
-    - Sonst -> testcontainers startet einen Postgres 17-alpine Container.
+    - If the DATABASE_URL env is set (CI mode with GitLab services
+      or dev setup with local Postgres) -> use that URL.
+    - Otherwise -> testcontainers starts a Postgres 17-alpine container.
 
-    Schema einmal pro Session via Base.metadata.create_all anlegen
-    (schneller als alembic upgrade head; Alembic-Drift wird im
-    test_alembic_consistency.py separat gegen das Models-Set geprueft).
+    Create the schema once per session via Base.metadata.create_all
+    (faster than alembic upgrade head; Alembic drift is checked separately
+    against the models set in test_alembic_consistency.py).
     """
     env_url = os.environ.get("DATABASE_URL", "").strip()
     if env_url:
@@ -64,7 +64,7 @@ def pg_engine():
             engine.dispose()
         return
 
-    # Lokal: testcontainers
+    # Local: testcontainers
     from testcontainers.postgres import PostgresContainer
 
     with PostgresContainer("postgres:17-alpine") as pg:
@@ -79,11 +79,11 @@ def pg_engine():
 
 @pytest.fixture()
 def db_session(pg_engine):
-    """Pro Test eine eigene Connection mit Outer-Transaction.
+    """A dedicated connection with an outer transaction per test.
 
-    SAVEPOINT-Pattern: jeder Test darf 'commit()' aufrufen, das landet
-    nur im Inner-SAVEPOINT. Am Test-Ende rollt die Outer-Transaction
-    alles zurueck — kein DROP/CREATE pro Test, keine Dateninterferenz.
+    SAVEPOINT pattern: each test may call 'commit()', which only lands in
+    the inner SAVEPOINT. At the end of the test the outer transaction rolls
+    everything back — no DROP/CREATE per test, no data interference.
     """
     connection = pg_engine.connect()
     outer = connection.begin()
@@ -91,7 +91,7 @@ def db_session(pg_engine):
     SessionLocal = sessionmaker(bind=connection, autoflush=False, autocommit=False)
     session = SessionLocal()
 
-    # Inner SAVEPOINT, der bei jedem session.commit() neu gestartet wird.
+    # Inner SAVEPOINT that is restarted on every session.commit().
     nested = connection.begin_nested()
 
     @event.listens_for(session, "after_transaction_end")
@@ -137,7 +137,7 @@ def normal_user(db_session):
 
 @pytest.fixture()
 def test_client(db_session):
-    """FastAPI TestClient mit ueberschriebener DB-Dependency."""
+    """FastAPI TestClient with an overridden DB dependency."""
     from fastapi.testclient import TestClient
     from app.main import app
 

@@ -45,7 +45,7 @@ class PingChecker:
 
 
 def _parse_rtt(output: str) -> float | None:
-    """Extrahiert Round-Trip-Time aus ping-Output."""
+    """Extracts the round-trip time from the ping output."""
     match = re.search(r"time[=<](\d+\.?\d*)", output)
     if match:
         return float(match.group(1))

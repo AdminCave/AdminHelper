@@ -81,7 +81,7 @@ def delete_server(server_id: str, db: Session = Depends(get_db), _admin=Depends(
     db.delete(server)
     db.commit()
 
-    # Monitoring-Cleanup: Alle Checks/Alerts/Assignments dieses Servers loeschen
+    # Monitoring cleanup: delete all checks/alerts/assignments of this server
     try:
         httpx.delete(
             f"{MONITOR_SERVICE_URL}/servers/{server_id}/cleanup",

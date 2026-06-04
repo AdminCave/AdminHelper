@@ -2,14 +2,14 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer den Server-Provisioning-Flow (FRP-unabhaengig).
+"""Tests for the server provisioning flow (FRP-independent).
 
-Activate-Endpoint liefert je nach Konfiguration:
-- apiKey (immer): Server-Read-API-Key
-- monitorApiKey (wenn Monitor-Service erreichbar)
-- frp (wenn FRP-Tunnel konfiguriert)
+Depending on the configuration, the activate endpoint returns:
+- apiKey (always): server read API key
+- monitorApiKey (if the monitor service is reachable)
+- frp (if FRP tunnels are configured)
 
-Mock fuer den HTTP-Aufruf an monitoring-Service via pytest-httpx.
+Mocks the HTTP call to the monitoring service via pytest-httpx.
 """
 
 from __future__ import annotations
@@ -35,10 +35,10 @@ from app.modules.servers.models import Server
 
 @pytest.fixture()
 def monitor_key_set(monkeypatch):
-    """Setzt MONITOR_API_KEY am Helper-Modul, damit der HTTP-Aufruf wirklich
-    versucht wird. Ohne diese Fixture steigt der Helper frueh mit None aus,
-    und ein registrierter pytest-httpx-Mock wuerde unverbraucht bleiben
-    (was pytest-httpx als Teardown-Error markiert).
+    """Sets MONITOR_API_KEY on the helper module so the HTTP call is actually
+    attempted. Without this fixture the helper bails out early with None, and a
+    registered pytest-httpx mock would stay unconsumed (which pytest-httpx
+    flags as a teardown error).
     """
     monkeypatch.setattr(prov_helpers, "MONITOR_API_KEY", "test-internal-key")
 
@@ -52,7 +52,7 @@ def _make_server(db, *, sid: str = "srv-prov", name: str = "test-srv"):
 
 
 def _make_token(db, *, server_id: str) -> str:
-    """Legt einen Provision-Token in der DB an, gibt den Raw-Wert zurueck."""
+    """Creates a provision token in the DB and returns the raw value."""
     raw = f"adminhelper_prov_{secrets.token_urlsafe(16)}"
     token = ProvisionToken(
         id=str(uuid.uuid4()),
@@ -95,8 +95,8 @@ class TestProvisionActivate:
     def test_activate_minimal_monitor_down(
         self, test_client, db_session, monitor_key_set, httpx_mock
     ):
-        """Server ohne FRP-Tunnel + Monitor-Service antwortet 503:
-        Endpoint liefert trotzdem 200 mit Server-API-Key, ohne Monitor/FRP."""
+        """Server without FRP tunnels + monitor service responds 503:
+        the endpoint still returns 200 with the server API key, without monitor/FRP."""
         srv = _make_server(db_session)
         raw = _make_token(db_session, server_id=srv.id)
 
@@ -123,8 +123,8 @@ class TestProvisionActivate:
         assert keys[0].permission == "read"
 
     def test_activate_no_monitor_key_configured(self, test_client, db_session):
-        """MONITOR_API_KEY leer (Default): Helper steigt vor HTTP-Aufruf aus,
-        kein Mock noetig, monitorApiKey bleibt None."""
+        """MONITOR_API_KEY empty (default): the helper bails out before the HTTP
+        call, no mock needed, monitorApiKey stays None."""
         srv = _make_server(db_session, sid="srv-no-key", name="no-key")
         raw = _make_token(db_session, server_id=srv.id)
 
@@ -192,7 +192,7 @@ class TestProvisionActivate:
         )
         assert res1.status_code == 200, res1.text
 
-        # Zweiter Versuch failt vor Helper-Aufruf — kein Mock noetig.
+        # Second attempt fails before the helper call — no mock needed.
         res2 = test_client.post(
             f"/api/servers/{srv.id}/provision/activate",
             headers={"X-Provision-Token": raw},
@@ -212,7 +212,7 @@ class TestProvisionActivate:
 
 
 class TestProvisionActivateConcurrency:
-    """TOCTOU-Schutz: ein Einmal-Token darf nie mehrfach einen Key erzeugen."""
+    """TOCTOU protection: a one-time token must never create a key more than once."""
 
     def test_conditional_consume_is_atomic(self, test_client, db_session):
         srv = _make_server(db_session, sid="srv-toctou", name="toctou")
@@ -233,7 +233,7 @@ class TestProvisionActivateConcurrency:
                 )
             )
 
-        # Genau ein Konsum gewinnt; jeder weitere Race-Teilnehmer bekommt rowcount 0.
+        # Exactly one consume wins; every other race participant gets rowcount 0.
         assert consume() == 1
         assert consume() == 0
 
@@ -243,8 +243,8 @@ class TestProvisionActivateConcurrency:
         srv = _make_server(db_session, sid="srv-race", name="race")
         raw = _make_token(db_session, server_id=srv.id)
 
-        # Simuliere: ein konkurrierender Request hat den Token bereits konsumiert,
-        # waehrend dieser Request is_valid() noch auf used_at=None sah.
+        # Simulate: a concurrent request has already consumed the token while
+        # this request still saw used_at=None in is_valid().
         token = (
             db_session.query(ProvisionToken)
             .filter(ProvisionToken.server_id == srv.id)
@@ -260,7 +260,7 @@ class TestProvisionActivateConcurrency:
             headers={"X-Provision-Token": raw},
         )
         assert res.status_code == 409, res.text
-        # Fail-closed: bei verlorenem Race wird KEIN read-API-Key erzeugt.
+        # Fail-closed: on a lost race NO read API key is created.
         assert db_session.query(ApiKey).count() == before
 
     def test_activate_twice_issues_only_one_key(
@@ -280,7 +280,7 @@ class TestProvisionActivateConcurrency:
         )
         assert r1.status_code == 200, r1.text
         assert db_session.query(ApiKey).count() == before + 1
-        # Zweiter Versuch erzeugt keinen weiteren Key (401 vom is_valid oder 409 vom Guard).
+        # Second attempt creates no further key (401 from is_valid or 409 from the guard).
         r2 = test_client.post(
             f"/api/servers/{srv.id}/provision/activate",
             headers={"X-Provision-Token": raw},

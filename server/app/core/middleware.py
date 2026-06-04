@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_networks(raw: str, var_name: str) -> list:
-    """Parst eine kommagetrennte Liste von IPs/CIDRs in ipaddress-Netzwerk-Objekte."""
+    """Parses a comma-separated list of IPs/CIDRs into ipaddress network objects."""
     networks = []
     for entry in raw.split(","):
         entry = entry.strip()
@@ -40,19 +40,19 @@ _TRUSTED_PROXIES  = _parse_networks(TRUSTED_PROXIES_RAW, "TRUSTED_PROXIES") if T
 
 
 def resolve_client_ip(request: Request) -> str:
-    """Ermittelt die echte Client-IP.
+    """Determines the real client IP.
 
-    Reihenfolge:
-    1. TRUSTED_PROXIES gesetzt → Headers nur auswerten wenn direkte
-       Verbindung von einer Trusted-Proxy-IP kommt.
-    2. TRUST_PROXY_HEADERS=true (kein TRUSTED_PROXIES) → Headers von
-       jeder direkt verbundenen IP vertrauen (weniger sicher).
-    3. Sonst → direkte Verbindungs-IP verwenden.
+    Order:
+    1. TRUSTED_PROXIES set → evaluate headers only if the direct
+       connection comes from a trusted-proxy IP.
+    2. TRUST_PROXY_HEADERS=true (no TRUSTED_PROXIES) → trust headers from
+       any directly connected IP (less secure).
+    3. Otherwise → use the direct connection IP.
     """
     direct_ip = request.client.host if request.client else ""
 
     if _TRUSTED_PROXIES:
-        # Sicherer Weg: Headers nur von bekannten Proxies akzeptieren
+        # Secure path: accept headers only from known proxies
         if _in_networks(direct_ip, _TRUSTED_PROXIES):
             real_ip = request.headers.get("X-Real-IP", "").strip()
             if real_ip:
@@ -63,7 +63,7 @@ def resolve_client_ip(request: Request) -> str:
         return direct_ip
 
     if TRUST_PROXY_HEADERS:
-        # Legacy: Headers von jeder IP auswerten (rückwärtskompatibel)
+        # Legacy: evaluate headers from any IP (backward compatible)
         real_ip = request.headers.get("X-Real-IP", "").strip()
         if real_ip:
             return real_ip
@@ -75,8 +75,8 @@ def resolve_client_ip(request: Request) -> str:
 
 
 class IPFilterMiddleware(BaseHTTPMiddleware):
-    """Blockiert Anfragen von IPs, die nicht in ALLOWED_IPS stehen.
-    Wenn ALLOWED_IPS leer ist, wird gar nicht gefiltert."""
+    """Blocks requests from IPs that are not listed in ALLOWED_IPS.
+    If ALLOWED_IPS is empty, no filtering is applied at all."""
 
     async def dispatch(self, request: Request, call_next):
         if not _ALLOWED_NETWORKS:

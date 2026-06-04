@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Interner Event-Bus für Event-Hooks.
+Internal event bus for event hooks.
 
-fire_event() wird von anderen Endpunkten aufgerufen und führt alle
-passenden aktiven Event-Hooks im Hintergrund aus.
+fire_event() is called by other endpoints and runs all matching active
+event hooks in the background.
 """
 
 import json
@@ -50,5 +50,5 @@ def _run_event(event_type: str, event_data: Any) -> None:
 
 
 def fire_event(event_type: str, event_data: Any) -> None:
-    """Event im ThreadPool an alle passenden Event-Hooks senden."""
+    """Dispatch the event to all matching event hooks in the thread pool."""
     _executor.submit(_run_event, event_type, event_data)

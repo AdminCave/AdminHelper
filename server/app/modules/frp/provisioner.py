@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Provisioning-Logik: Config-Hash, Activate-Endpoint-Hilfen."""
+"""Provisioning logic: config hash, activate-endpoint helpers."""
 
 import base64
 import hashlib
@@ -15,19 +15,19 @@ from app.modules.frp import pki as pki_manager
 
 
 def get_config_hash(config, tunnels: list, frpc_user: str, allow_users: list[str] | None = None) -> str:
-    """Berechnet SHA256-Hash der generierten frpc.toml."""
+    """Computes the SHA256 hash of the generated frpc.toml."""
     toml_content = generate_frpc_toml(config, tunnels, frpc_user, allow_users=allow_users)
     return hashlib.sha256(toml_content.encode()).hexdigest()
 
 
 def build_pki_bundle_b64(client_name: str) -> Optional[str]:
-    """Erstellt ein base64-kodiertes tar.gz mit PKI-Dateien fuer einen Client."""
+    """Creates a base64-encoded tar.gz with PKI files for a client."""
     d = pki_manager.PKI_DIR
     ca_crt = d / "ca.crt"
     client_crt = d / f"{client_name}.crt"
     client_key = d / f"{client_name}.key"
 
-    # Pruefen ob alle Dateien existieren
+    # Check that all files exist
     if not ca_crt.exists():
         return None
     if not client_crt.exists() or not client_key.exists():

@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-SMART Disk Health Checker.
+SMART disk health checker.
 
-Wertet SMART-Daten aus dem Agent-Report aus (Push-only).
-Unterstuetzt ATA (HDD + SSD) und NVMe Protokolle.
-Auf VMs ohne smartctl liefert der Agent keinen smart-Key — das ist OK, kein Fehler.
+Evaluates SMART data from the agent report (push-only).
+Supports ATA (HDD + SSD) and NVMe protocols.
+On VMs without smartctl the agent provides no smart key — that's OK, not an error.
 """
 
 from __future__ import annotations
@@ -25,16 +25,16 @@ NVME_CRITICAL_BITS = {
 
 
 def _decode_nvme_critical_warning(bits: int) -> list[str]:
-    """Uebersetzt das NVMe critical_warning Bit-Feld in lesbare Reasons."""
+    """Translates the NVMe critical_warning bit field into readable reasons."""
     if not bits:
         return []
     return [name for mask, name in NVME_CRITICAL_BITS.items() if bits & mask]
 
 
 class SmartHealthChecker:
-    """Prueft SMART-Gesundheit aller Festplatten.
+    """Checks the SMART health of all disks.
 
-    Config-Beispiel:
+    Config example:
     {
         "reallocated_warn": 1,
         "reallocated_crit": 10,
@@ -60,7 +60,7 @@ class SmartHealthChecker:
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
         smart = report.get("smart")
         if not smart:
-            # VM oder smartctl nicht installiert — kein Fehler
+            # VM or smartctl not installed — not an error
             return "ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None
 
         ignore = set(config.get("ignore_devices", []))
@@ -94,7 +94,7 @@ class SmartHealthChecker:
             kind = disk.get("kind") or ("NVMe" if protocol == "NVMe" else "HDD")
             category = "ok"
 
-            # Universelle Checks (ATA + NVMe)
+            # Universal checks (ATA + NVMe)
             if not disk.get("smart_passed", True):
                 critical_problems.append(f"{label}: SMART FAILED")
                 category = "critical"
@@ -107,9 +107,9 @@ class SmartHealthChecker:
                 critical_problems.append(f"{label}: {disk['uncorrectable']} offline uncorrectable")
                 category = "critical"
 
-            # smartctl Exit-Code auswerten (Bit-Flags).
-            # Bit 0x10 = Prefail-Attribut unter Threshold → kritisch.
-            # Bits 0x20 (past), 0x40 (error log), 0x80 (selftest fail) → warnend.
+            # Evaluate smartctl exit code (bit flags).
+            # Bit 0x10 = prefail attribute below threshold → critical.
+            # Bits 0x20 (past), 0x40 (error log), 0x80 (selftest fail) → warning.
             ec = int(disk.get("smartctl_status", 0) or 0)
             if ec & 0x10:
                 critical_problems.append(f"{label}: Prefail-Attribut unter Schwelle (smartctl 0x10)")
@@ -127,7 +127,7 @@ class SmartHealthChecker:
                 if category != "critical":
                     category = "warning"
 
-            # Temperatur pro Kind-Klasse
+            # Temperature per kind class
             temp = int(disk.get("temp_c", 0) or 0)
             temp_warn, temp_crit = temp_thresholds.get(kind, temp_thresholds["HDD"])
             if temp >= temp_crit:
@@ -138,7 +138,7 @@ class SmartHealthChecker:
                 if category != "critical":
                     category = "warning"
 
-            # ATA-spezifisch (HDD + SSD)
+            # ATA-specific (HDD + SSD)
             if protocol == "ATA":
                 category = self._check_ata(
                     disk, label, category,
@@ -146,7 +146,7 @@ class SmartHealthChecker:
                     reallocated_warn, reallocated_crit,
                     pending_warn, pending_crit,
                 )
-            # NVMe-spezifisch
+            # NVMe-specific
             elif protocol == "NVMe":
                 category = self._check_nvme(
                     disk, label, category,
@@ -183,7 +183,7 @@ class SmartHealthChecker:
             "smart_disks_critical": len(critical_problems),
         }
 
-        # Per-Disk Metriken
+        # Per-disk metrics
         for disk in smart:
             device = disk.get("device", "?")
             if device in ignore:
@@ -210,8 +210,8 @@ class SmartHealthChecker:
     @staticmethod
     def _check_ata(disk, label, category, critical_problems, warning_problems,
                    reallocated_warn, reallocated_crit, pending_warn, pending_crit):
-        """Prueft ATA-spezifische SMART-Attribute (HDD + SSD)."""
-        # Spin Retry Count — immer kritisch (mechanisches Versagen bei HDDs)
+        """Checks ATA-specific SMART attributes (HDD + SSD)."""
+        # Spin Retry Count — always critical (mechanical failure on HDDs)
         if disk.get("spin_retry_count", 0) > 0:
             critical_problems.append(f"{label}: spin_retry_count={disk['spin_retry_count']}")
             category = "critical"
@@ -257,7 +257,7 @@ class SmartHealthChecker:
     @staticmethod
     def _check_nvme(disk, label, category, critical_problems, warning_problems,
                     nvme_spare_warn, nvme_spare_crit, nvme_used_warn, nvme_used_crit):
-        """Prueft NVMe-spezifische SMART-Attribute."""
+        """Checks NVMe-specific SMART attributes."""
         cw = int(disk.get("critical_warning", 0) or 0)
         if cw != 0:
             reasons = _decode_nvme_critical_warning(cw)

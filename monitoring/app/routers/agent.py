@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Agent-Push Endpoint — empfaengt Metriken von Remote-Servern."""
+"""Agent push endpoint — receives metrics from remote servers."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ router = APIRouter()
 
 @router.post("/agent/{server_id}/report")
 def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), auth_server_id: str = Depends(require_agent)):
-    """Agent pusht Metriken direkt zum Monitoring-Service."""
+    """Agent pushes metrics directly to the monitoring service."""
     if auth_server_id != "__internal__" and auth_server_id != server_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="API-Key gehoert nicht zu diesem Server")
 
@@ -67,7 +67,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
     if uptime is not None:
         lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
-    # SMART Disk-Metriken
+    # SMART disk metrics
     for disk in report.get("smart", []):
         device = disk.get("device", "unknown")
         safe_dev = device.replace("/", "_").lstrip("_")
@@ -80,7 +80,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
     if lines:
         victoria.write(lines)
 
-    # Agent-basierte Checks fuer diesen Server auswerten
+    # Evaluate agent-based checks for this server
     checks_updated = 0
     agent_checks = (
         db.query(MonitorCheck)
@@ -117,7 +117,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
         else:
             continue
 
-        # Strukturierte Details extrahieren
+        # Extract structured details
         details = metrics.pop("_details", None) if metrics else None
 
         if metrics:
@@ -131,7 +131,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
                 extra_metrics=metrics,
             )
 
-        # State aktualisieren
+        # Update state
         state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
         old_status = state.status if state else "pending"
 
@@ -163,7 +163,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
             state.message = message
             state.details = details_json
 
-        # Alerting bei Status-Wechsel
+        # Alerting on status change
         if old_status != effective_status:
             try:
                 process_alert(db, check, old_status, effective_status)

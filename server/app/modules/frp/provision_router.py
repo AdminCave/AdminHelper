@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""FRP-Sync-Endpoints fuer den frpc-Agent.
+"""FRP sync endpoints for the frpc agent.
 
-Server-Provisioning (Token-Lifecycle, Activate) ist seit v0.23.0 in
-app.modules.provisioning ausgelagert. Hier bleiben nur die laufenden
-Sync-Operationen, die der Agent regelmaessig braucht.
+Server provisioning (token lifecycle, activate) has been moved to
+app.modules.provisioning since v0.23.0. Only the ongoing sync operations
+that the agent needs regularly remain here.
 """
 
 from __future__ import annotations
@@ -25,16 +25,16 @@ from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
-# require_admin=True: JWT-User muessen Admin sein — die frpc.toml enthaelt globale
-# FRP-Secrets (auth.token + STCP secret_keys). API-Keys werden zusaetzlich per
-# server_id-Scope geprueft (siehe _require_server_scope).
+# require_admin=True: JWT users must be admins — the frpc.toml contains global
+# FRP secrets (auth.token + STCP secret_keys). API keys are additionally checked
+# by server_id scope (see _require_server_scope).
 read_dep = ApiKeyOrUser(require_write=False, require_admin=True)
 
 
 def _require_server_scope(auth, server_id: str) -> None:
-    """IDOR-Schutz: ein API-Key (Agent) darf NUR seinen eigenen Server lesen.
-    JWT-User (interaktive Admin-Verwaltung) sind nicht server-gebunden. Die Pruefung
-    laeuft VOR der 404-Existenzpruefung, um Server-ID-Enumeration zu verhindern."""
+    """IDOR protection: an API key (agent) may read ONLY its own server.
+    JWT users (interactive admin management) are not bound to a server. The check
+    runs BEFORE the 404 existence check to prevent server-ID enumeration."""
     _user, api_key = auth
     if api_key is not None and api_key.server_id != server_id:
         raise HTTPException(status_code=403, detail="Kein Zugriff auf diesen Server")
@@ -46,7 +46,7 @@ def get_provision_config(
     db: Session = Depends(get_db),
     auth=Depends(read_dep),
 ):
-    """Liefert die aktuelle frpc.toml fuer den Sync-Agent."""
+    """Returns the current frpc.toml for the sync agent."""
     _require_server_scope(auth, server_id)
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
@@ -72,7 +72,7 @@ def get_provision_config_hash(
     db: Session = Depends(get_db),
     auth=Depends(read_dep),
 ):
-    """Liefert den SHA256-Hash der aktuellen frpc.toml."""
+    """Returns the SHA256 hash of the current frpc.toml."""
     _require_server_scope(auth, server_id)
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:

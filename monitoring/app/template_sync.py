@@ -3,13 +3,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Template-Sync — Live-Verknuepfung zwischen Templates und Checks/Alerts.
+Template sync — live link between templates and checks/alerts.
 
-Kern-Funktionen:
-  sync_template()   — Aktualisiert alle Checks/Alerts bei Template-Aenderung
-  apply_template()  — Weist Template einem Server zu + erstellt Checks
-  remove_template() — Entfernt Zuweisung + loescht zugehoerige Checks
-  cleanup_server()  — Loescht alle Monitoring-Daten eines Servers
+Core functions:
+  sync_template()   — Updates all checks/alerts when a template changes
+  apply_template()  — Assigns a template to a server + creates checks
+  remove_template() — Removes the assignment + deletes the associated checks
+  cleanup_server()  — Deletes all monitoring data of a server
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ logger = logging.getLogger("monitor.template_sync")
 # ---------------------------------------------------------------------------
 
 def substitute_variables(obj, variables: dict):
-    """Rekursiv {{key}} Platzhalter in Strings ersetzen."""
+    """Recursively replaces {{key}} placeholders in strings."""
     if isinstance(obj, str):
         for key, value in variables.items():
             obj = obj.replace(f"{{{{{key}}}}}", str(value or ""))
@@ -47,7 +47,7 @@ def substitute_variables(obj, variables: dict):
 
 
 def _build_variables(assignment: MonitorTemplateAssignment) -> dict:
-    """Baut die Variablen-Map aus einer Assignment."""
+    """Builds the variable map from an assignment."""
     return {
         "hostname": assignment.server_hostname,
         "server_name": assignment.server_name,
@@ -56,11 +56,11 @@ def _build_variables(assignment: MonitorTemplateAssignment) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Sync: Template geaendert → alle Assignments aktualisieren
+# Sync: template changed → update all assignments
 # ---------------------------------------------------------------------------
 
 def sync_template(db: Session, template: MonitorTemplate) -> dict:
-    """Synchronisiert alle Checks/Alerts fuer alle Server die dieses Template nutzen."""
+    """Synchronizes all checks/alerts for all servers that use this template."""
     assignments = (
         db.query(MonitorTemplateAssignment)
         .filter(MonitorTemplateAssignment.template_id == template.id)
@@ -99,7 +99,7 @@ def _sync_checks_for_server(
     db: Session, template_id: str, server_id: str,
     check_defs: list[dict], variables: dict,
 ) -> tuple[int, int, int]:
-    """Sync Check-Definitions fuer einen einzelnen Server."""
+    """Syncs check definitions for a single server."""
     existing = (
         db.query(MonitorCheck)
         .filter(MonitorCheck.template_id == template_id, MonitorCheck.server_id == server_id)
@@ -160,7 +160,7 @@ def _sync_checks_for_server(
                 add_check(check_id, check.interval)
             created += 1
 
-    # Delete: Checks die nicht mehr im Template sind
+    # Delete: checks that are no longer in the template
     deleted = 0
     for def_id, check in existing_by_def_id.items():
         if def_id not in target_def_ids:
@@ -175,7 +175,7 @@ def _sync_alerts_for_server(
     db: Session, template_id: str, server_id: str,
     alert_defs: list[dict], variables: dict,
 ) -> tuple[int, int, int]:
-    """Sync Alert-Definitions fuer einen einzelnen Server."""
+    """Syncs alert definitions for a single server."""
     existing = (
         db.query(MonitorAlertRule)
         .filter(MonitorAlertRule.template_id == template_id, MonitorAlertRule.match_server_id == server_id)
@@ -230,15 +230,15 @@ def _sync_alerts_for_server(
 
 
 # ---------------------------------------------------------------------------
-# Apply: Template einem Server zuweisen
+# Apply: assign a template to a server
 # ---------------------------------------------------------------------------
 
 def apply_template(
     db: Session, template: MonitorTemplate,
     server_id: str, hostname: str, server_name: str,
 ) -> dict:
-    """Weist ein Template einem Server zu und erstellt alle Checks/Alerts."""
-    # Assignment erstellen
+    """Assigns a template to a server and creates all checks/alerts."""
+    # Create assignment
     assignment = MonitorTemplateAssignment(
         id=str(uuid.uuid4()),
         template_id=template.id,
@@ -307,12 +307,12 @@ def apply_template(
 
 
 # ---------------------------------------------------------------------------
-# Remove: Template-Zuweisung entfernen
+# Remove: remove a template assignment
 # ---------------------------------------------------------------------------
 
 def remove_template(db: Session, template_id: str, server_id: str) -> dict:
-    """Entfernt Template-Zuweisung und loescht alle zugehoerigen Checks/Alerts."""
-    # Checks loeschen
+    """Removes the template assignment and deletes all associated checks/alerts."""
+    # Delete checks
     checks = (
         db.query(MonitorCheck)
         .filter(MonitorCheck.template_id == template_id, MonitorCheck.server_id == server_id)
@@ -322,7 +322,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
         remove_check(check.id)
         db.delete(check)
 
-    # Alerts loeschen
+    # Delete alerts
     alerts = (
         db.query(MonitorAlertRule)
         .filter(MonitorAlertRule.template_id == template_id, MonitorAlertRule.match_server_id == server_id)
@@ -331,7 +331,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
     for alert in alerts:
         db.delete(alert)
 
-    # Assignment loeschen
+    # Delete assignment
     db.query(MonitorTemplateAssignment).filter(
         MonitorTemplateAssignment.template_id == template_id,
         MonitorTemplateAssignment.server_id == server_id,
@@ -343,28 +343,28 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Cleanup: Server komplett bereinigen
+# Cleanup: completely clean up a server
 # ---------------------------------------------------------------------------
 
 def cleanup_server(db: Session, server_id: str) -> dict:
-    """Loescht alle Monitoring-Daten eines Servers (bei Server-Loeschung)."""
-    # Checks loeschen (inkl. States via CASCADE)
+    """Deletes all monitoring data of a server (on server deletion)."""
+    # Delete checks (incl. states via CASCADE)
     checks = db.query(MonitorCheck).filter(MonitorCheck.server_id == server_id).all()
     for check in checks:
         remove_check(check.id)
         db.delete(check)
 
-    # Alerts mit match_server_id loeschen
+    # Delete alerts with match_server_id
     alerts = db.query(MonitorAlertRule).filter(MonitorAlertRule.match_server_id == server_id).all()
     for alert in alerts:
         db.delete(alert)
 
-    # Assignments loeschen
+    # Delete assignments
     db.query(MonitorTemplateAssignment).filter(
         MonitorTemplateAssignment.server_id == server_id,
     ).delete()
 
-    # Agent-Key loeschen
+    # Delete agent key
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
 
     db.commit()

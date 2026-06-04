@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Hintergrund-Scheduler für Scheduled Hooks.
+Background scheduler for scheduled hooks.
 
-Verwendet APScheduler BackgroundScheduler (eigener Thread-Pool).
+Uses APScheduler's BackgroundScheduler (its own thread pool).
 """
 
 import logging
@@ -32,7 +32,7 @@ _INTERVAL_MAP = {
 
 
 def _parse_trigger(interval: str):
-    """Intervall-String oder Cron-Ausdruck in APScheduler-Trigger umwandeln."""
+    """Convert an interval string or cron expression into an APScheduler trigger."""
     if interval in _INTERVAL_MAP:
         return IntervalTrigger(**_INTERVAL_MAP[interval])
     parts = interval.split()
@@ -78,7 +78,7 @@ def _execute_scheduled_hook(hook_id: str) -> None:
 
 
 def add_hook(hook_id: str, interval: str) -> None:
-    """Scheduled Hook registrieren oder aktualisieren (replace_existing=True)."""
+    """Register or update a scheduled hook (replace_existing=True)."""
     trigger = _parse_trigger(interval)
     scheduler.add_job(
         _execute_scheduled_hook,
@@ -90,13 +90,13 @@ def add_hook(hook_id: str, interval: str) -> None:
 
 
 def remove_hook(hook_id: str) -> None:
-    """Scheduled Hook aus dem Scheduler entfernen."""
+    """Remove a scheduled hook from the scheduler."""
     if scheduler.get_job(hook_id):
         scheduler.remove_job(hook_id)
 
 
 def get_next_run(hook_id: str) -> datetime | None:
-    """next_run_time eines registrierten Jobs abrufen."""
+    """Get the next_run_time of a registered job."""
     job = scheduler.get_job(hook_id)
     if job and job.next_run_time:
         return job.next_run_time.replace(tzinfo=None)
@@ -104,7 +104,7 @@ def get_next_run(hook_id: str) -> datetime | None:
 
 
 def load_all_scheduled_hooks() -> None:
-    """Beim Server-Start alle aktiven Scheduled Hooks laden und einplanen."""
+    """On server start, load and schedule all active scheduled hooks."""
     from app.core.database import SessionLocal
     from app.modules.hooks.models import Hook
 
@@ -123,7 +123,7 @@ def load_all_scheduled_hooks() -> None:
             except ValueError:
                 pass
 
-        # next_run in DB aktualisieren
+        # Update next_run in the DB
         for hook in hooks:
             next_run = get_next_run(hook.id)
             if next_run:
@@ -134,15 +134,15 @@ def load_all_scheduled_hooks() -> None:
 
 
 # ---------------------------------------------------------------------------
-# System-Jobs (nicht user-konfigurierbar)
+# System jobs (not user-configurable)
 # ---------------------------------------------------------------------------
 
 _BLACKLIST_CLEANUP_JOB_ID = "system:blacklist-cleanup"
 
 
 def _run_blacklist_cleanup() -> None:
-    """Abgelaufene JWT-Blacklist-Eintraege entfernen, damit die token_blacklist-
-    Tabelle nicht unbegrenzt waechst."""
+    """Remove expired JWT blacklist entries so the token_blacklist table does
+    not grow without bound."""
     from app.core.database import SessionLocal
     from app.core.auth import cleanup_expired_blacklist
 
@@ -158,8 +158,8 @@ def _run_blacklist_cleanup() -> None:
 
 
 def schedule_blacklist_cleanup(hours: int = 6) -> None:
-    """Periodischen System-Job fuer den Blacklist-Cleanup registrieren (idempotent).
-    Laeuft beim Start einmal sofort und danach alle `hours` Stunden."""
+    """Register a periodic system job for the blacklist cleanup (idempotent).
+    Runs once immediately at start and then every `hours` hours."""
     scheduler.add_job(
         _run_blacklist_cleanup,
         trigger=IntervalTrigger(hours=hours),

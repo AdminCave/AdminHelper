@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer den Bootstrap-Flow: Erst-Admin per Setup-Token statt Default 'admin/admin'.
+"""Tests for the bootstrap flow: first admin via setup token instead of the default 'admin/admin'.
 
-Hintergrund: Pre-Release-Audit P0-6. Statt einem fixen 'admin/admin'-Default
-generiert der Server beim ersten Start einen einmaligen Token in
-DATA_DIR/.bootstrap_token. Der Endpoint POST /api/auth/bootstrap nimmt
-diesen Token entgegen und legt damit den ersten Admin an.
+Background: pre-release audit P0-6. Instead of a fixed 'admin/admin' default,
+the server generates a one-time token in DATA_DIR/.bootstrap_token on first
+start. The endpoint POST /api/auth/bootstrap accepts this token and uses it to
+create the first admin.
 """
 
 import secrets
@@ -21,7 +21,7 @@ from app.modules.users.models import User
 
 @pytest.fixture()
 def fresh_token():
-    """Schreibt einen frischen Bootstrap-Token, raeumt nach dem Test auf."""
+    """Writes a fresh bootstrap token and cleans up after the test."""
     raw = secrets.token_urlsafe(32)
     BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(raw))
     yield raw
@@ -31,7 +31,7 @@ def fresh_token():
 
 @pytest.fixture()
 def no_token_file():
-    """Stellt sicher, dass keine Bootstrap-Datei existiert (Cleanup vor + nach)."""
+    """Ensures no bootstrap file exists (cleanup before + after)."""
     if BOOTSTRAP_TOKEN_FILE.exists():
         BOOTSTRAP_TOKEN_FILE.unlink()
     yield
@@ -56,7 +56,7 @@ class TestBootstrapEndpoint:
         assert user is not None
         assert user.is_admin
 
-        # Token verbraucht
+        # Token consumed
         assert not BOOTSTRAP_TOKEN_FILE.exists()
 
     def test_wrong_token_fails_and_does_not_consume_file(
@@ -67,7 +67,7 @@ class TestBootstrapEndpoint:
             json={"token": "definitely-wrong", "username": "anyone", "password": "abcdefgh"},
         )
         assert res.status_code == 401
-        # Token-Datei muss erhalten bleiben
+        # The token file must be preserved
         assert BOOTSTRAP_TOKEN_FILE.exists()
 
     def test_no_token_file_fails(self, test_client, no_token_file):
@@ -85,20 +85,20 @@ class TestBootstrapEndpoint:
             json={"token": fresh_token, "username": "second", "password": "abcdefgh"},
         )
         assert res.status_code == 409
-        # Token-Datei bleibt — wird vom naechsten _ensure_admin aufgeraeumt
+        # Token file remains — cleaned up by the next _ensure_admin
 
     def test_idempotency_after_successful_bootstrap(
         self, test_client, db_session, fresh_token
     ):
-        # Erster Bootstrap: erfolgreich
+        # First bootstrap: successful
         res1 = test_client.post(
             "/api/auth/bootstrap",
             json={"token": fresh_token, "username": "first", "password": "abcdefgh"},
         )
         assert res1.status_code == 201
 
-        # Selbst wenn jemand die Token-Datei manipuliert und neu schreibt,
-        # blockiert der "User-existiert"-Check.
+        # Even if someone tampers with and rewrites the token file,
+        # the "user exists" check blocks it.
         BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key("recreated"))
         try:
             res2 = test_client.post(
@@ -115,5 +115,5 @@ class TestBootstrapEndpoint:
             "/api/auth/bootstrap",
             json={"token": fresh_token, "username": "anyone", "password": "short"},
         )
-        # Pydantic-Validation greift vor Endpoint-Logik
+        # Pydantic validation takes effect before the endpoint logic
         assert res.status_code == 422

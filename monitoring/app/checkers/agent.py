@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Agent-basierte Checker.
+Agent-based checkers.
 
-Werten Agent-Push-Daten gegen konfigurierbare Thresholds aus.
-Die Daten kommen vom adminhelper-agent via POST /agent/{server_id}/report.
+Evaluate agent push data against configurable thresholds.
+The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 """
 
 from __future__ import annotations
@@ -14,28 +14,28 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
-# Pseudo-Dateisysteme die bei Disk-Auswertung ignoriert werden
+# Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
-# In-Memory Map: server_id -> letzter Report-Zeitstempel (Unix)
+# In-memory map: server_id -> last report timestamp (Unix)
 _last_report: dict[str, float] = {}
 
 
 def record_agent_report(server_id: str) -> None:
-    """Wird beim Agent-Push aufgerufen um den Zeitstempel zu speichern."""
+    """Called on agent push to store the timestamp."""
     _last_report[server_id] = time.monotonic()
 
 
 class AgentPingChecker:
-    """Prueft ob der Agent sich innerhalb eines Zeitfensters gemeldet hat.
+    """Checks whether the agent has reported within a time window.
 
-    Config-Beispiel:
+    Config example:
     {
         "stale_minutes": 5
     }
 
-    Dieser Check wird vom Scheduler ausgefuehrt (nicht beim Push).
-    Er prüft den letzten Report-Zeitstempel aus der In-Memory-Map.
+    This check is run by the scheduler (not on push).
+    It checks the last report timestamp from the in-memory map.
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
@@ -67,9 +67,9 @@ class AgentPingChecker:
 
 
 class AgentResourcesChecker:
-    """Wertet Agent-Ressourcen-Metriken gegen Thresholds aus.
+    """Evaluates agent resource metrics against thresholds.
 
-    Config-Beispiel:
+    Config example:
     {
         "cpu_warn": 80,
         "cpu_crit": 95,
@@ -82,11 +82,11 @@ class AgentResourcesChecker:
     """
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
-        # Wird nicht vom Scheduler aufgerufen, sondern direkt bei Agent-Push
+        # Not called by the scheduler, but directly on agent push
         return "unknown", "Wartet auf Agent-Daten", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Wertet einen Agent-Report gegen Thresholds aus."""
+        """Evaluates an agent report against thresholds."""
         resources = report.get("resources", {})
         if not resources:
             return "unknown", "Keine Ressourcen-Daten", None
@@ -123,8 +123,8 @@ class AgentResourcesChecker:
                 if status != "critical":
                     status = "warning"
 
-        # Disks — Server-seitig Pseudo-Dateisysteme filtern
-        # Alte Agents senden kein fstype → Default "_real_" passiert den Filter
+        # Disks — filter pseudo filesystems server-side
+        # Old agents send no fstype → default "_real_" passes the filter
         raw_disks = resources.get("disks", [])
         disks = [d for d in raw_disks if d.get("fstype", "_real_") not in EXCLUDED_FSTYPES]
 
@@ -142,7 +142,7 @@ class AgentResourcesChecker:
                 if status != "critical":
                     status = "warning"
 
-        # Temperaturen (optional — VMs liefern keine Sensordaten)
+        # Temperatures (optional — VMs provide no sensor data)
         temperatures = resources.get("temperatures", [])
         if temperatures:
             temp_crit = config.get("temp_crit", 95)
@@ -194,19 +194,19 @@ class AgentResourcesChecker:
 
 
 class ServiceProcessChecker:
-    """Prueft ob Services laufen (basierend auf Agent-Push).
+    """Checks whether services are running (based on agent push).
 
-    Zwei Modi:
-    - "auto": Erkennt automatisch failed und enabled-but-inactive Units
-    - "list": Prueft nur explizit benannte Services (bisheriges Verhalten)
+    Two modes:
+    - "auto": Automatically detects failed and enabled-but-inactive units
+    - "list": Only checks explicitly named services (previous behavior)
 
-    Config-Beispiel (auto):
+    Config example (auto):
     {
         "mode": "auto",
         "ignore": ["ModemManager.service", "udisks2.service"]
     }
 
-    Config-Beispiel (list):
+    Config example (list):
     {
         "mode": "list",
         "services": ["nginx", "docker", "frpc"]
@@ -217,7 +217,7 @@ class ServiceProcessChecker:
         return "unknown", "Wartet auf Agent-Daten", None
 
     def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Wertet die Service-Daten aus dem Agent-Report aus."""
+        """Evaluates the service data from the agent report."""
         mode = config.get("mode", "list")
 
         if mode == "auto":
@@ -226,7 +226,7 @@ class ServiceProcessChecker:
 
     @staticmethod
     def _parse_ignore(raw) -> set:
-        """Ignore-Liste normalisieren: akzeptiert Array oder CSV-String."""
+        """Normalizes the ignore list: accepts an array or a CSV string."""
         if isinstance(raw, str):
             return {s.strip() for s in raw.split(",") if s.strip()}
         if isinstance(raw, list):
@@ -241,20 +241,20 @@ class ServiceProcessChecker:
 
     @staticmethod
     def _is_ignored(unit: str, ignore: set) -> bool:
-        """Prueft ob eine Unit ignoriert werden soll (mit/ohne .service-Suffix)."""
+        """Checks whether a unit should be ignored (with/without .service suffix)."""
         if unit in ignore:
             return True
-        # "nginx" soll auch "nginx.service" matchen und umgekehrt
+        # "nginx" should also match "nginx.service" and vice versa
         if unit.endswith(".service"):
             return unit[:-8] in ignore
         return f"{unit}.service" in ignore
 
     def _evaluate_auto(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Auto-Modus: prueft systemd health aus dem Report.
+        """Auto mode: checks systemd health from the report.
 
-        Unterstuetzt zwei Report-Formate:
-        - Neu (v2): systemd.all_services mit Rohdaten → Server filtert selbst
-        - Alt (v1): systemd.failed / systemd.enabled_inactive (Agent hat vorgefiltert)
+        Supports two report formats:
+        - New (v2): systemd.all_services with raw data → server filters itself
+        - Old (v1): systemd.failed / systemd.enabled_inactive (agent pre-filtered)
         """
         systemd = report.get("systemd")
         if not systemd:
@@ -263,7 +263,7 @@ class ServiceProcessChecker:
         ignore = self._parse_ignore(config.get("ignore", []))
 
         if "all_services" in systemd:
-            # Neues Format: Rohdaten vom Agent, Server filtert
+            # New format: raw data from agent, server filters
             all_svcs = systemd["all_services"]
             failed_raw = [s["unit"] for s in all_svcs if s.get("active_state") == "failed"]
             enabled_inactive_raw = [
@@ -271,12 +271,12 @@ class ServiceProcessChecker:
                 if s.get("enabled_state") == "enabled"
                 and s.get("active_state") == "inactive"
             ]
-            # Auch nicht-Service failed Units beruecksichtigen (z.B. .mount, .socket)
+            # Also include non-service failed units (e.g. .mount, .socket)
             for u in systemd.get("failed", []):
                 if u not in failed_raw:
                     failed_raw.append(u)
         else:
-            # Altes Format: Agent hat bereits gefiltert
+            # Old format: agent has already filtered
             failed_raw = systemd.get("failed", [])
             enabled_inactive_raw = systemd.get("enabled_inactive", [])
 
@@ -310,7 +310,7 @@ class ServiceProcessChecker:
         return "ok", "Alle systemd-Units OK", metrics
 
     def _evaluate_list(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """List-Modus: prueft explizit benannte Services."""
+        """List mode: checks explicitly named services."""
         expected = config.get("services", [])
         if not expected:
             return "ok", "Keine Services konfiguriert", None

@@ -28,9 +28,9 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _prehash(password: str) -> bytes:
-    """SHA-256-Prehash, damit Passwörter > 72 Bytes funktionieren (bcrypt-Limit)."""
+    """SHA-256 prehash so passwords > 72 bytes work (bcrypt limit)."""
     digest = hashlib.sha256(password.encode("utf-8")).digest()
-    return base64.b64encode(digest)  # 44 Bytes, sicher unter dem 72-Byte-Limit
+    return base64.b64encode(digest)  # 44 bytes, safely under the 72-byte limit
 
 
 def hash_password(password: str) -> str:
@@ -73,7 +73,7 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
         username: str = payload.get("sub")
         if not username:
             return None
-        # Blacklist-Pruefung: widerrufene Tokens ablehnen
+        # Blacklist check: reject revoked tokens
         jti = payload.get("jti")
         if jti and db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
             return None
@@ -83,9 +83,9 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
 
 
 def blacklist_token(token: str, db: Session) -> bool:
-    """Token auf die Blacklist setzen (z.B. bei Logout oder Refresh-Rotation).
-    Gibt True zurueck wenn neu eingetragen, False wenn bereits vorhanden oder
-    der Token ungueltig ist."""
+    """Add a token to the blacklist (e.g. on logout or refresh rotation).
+    Returns True if newly added, False if already present or the token is
+    invalid."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except InvalidTokenError:
@@ -103,9 +103,9 @@ def blacklist_token(token: str, db: Session) -> bool:
 
 
 def is_token_blacklisted(token: str, db: Session) -> bool:
-    """Prueft ob der Token (anhand seiner jti) bereits widerrufen wurde.
-    Erforderlich fuer Refresh-Reuse-Detection: ein blacklisteter Refresh,
-    der erneut eingereicht wird, ist ein Diebstahl-Signal."""
+    """Checks whether the token (by its jti) has already been revoked.
+    Required for refresh-reuse detection: a blacklisted refresh token that is
+    submitted again is a theft signal."""
     try:
         payload = jwt.decode(
             token,
@@ -122,7 +122,7 @@ def is_token_blacklisted(token: str, db: Session) -> bool:
 
 
 def cleanup_expired_blacklist(db: Session) -> int:
-    """Abgelaufene Eintraege aus der Blacklist entfernen."""
+    """Remove expired entries from the blacklist."""
     now = datetime.now(timezone.utc)
     count = db.query(TokenBlacklist).filter(TokenBlacklist.expires_at < now).delete()
     db.commit()
@@ -134,9 +134,9 @@ def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
 
 
 def _get_api_key(request: Request, db: Session) -> Optional[ApiKey]:
-    # Header bevorzugt; Query-Param-Fallback fuer Browser-Extension und
-    # Sync-URLs (curl/wget). Achtung: Query-Param landet ggf. in Server-Logs,
-    # daher in der Doku der Header-Pfad empfohlen.
+    # Header preferred; query-param fallback for the browser extension and
+    # sync URLs (curl/wget). Note: the query param may end up in server logs,
+    # so the docs recommend the header path.
     key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if not key:
         return None
@@ -170,7 +170,7 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 class ApiKeyOrUser:
-    """Dependency: akzeptiert JWT-Bearer ODER API-Key. Gibt (user_or_none, apikey_or_none) zurück."""
+    """Dependency: accepts a JWT bearer OR an API key. Returns (user_or_none, apikey_or_none)."""
 
     def __init__(self, require_write: bool = False, require_admin: bool = False):
         self.require_write = require_write
@@ -182,14 +182,14 @@ class ApiKeyOrUser:
         credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
         db: Session = Depends(get_db),
     ):
-        # API-Key prüfen
+        # Check API key
         api_key = _get_api_key(request, db)
         if api_key:
             if self.require_write and api_key.permission != "read_write":
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Schreibzugriff erforderlich")
             return None, api_key
 
-        # JWT prüfen
+        # Check JWT
         if credentials:
             user = _get_user_from_token(credentials.credentials, db)
             if user:

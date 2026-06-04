@@ -18,13 +18,13 @@ class Hook(Base):
     enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
-    # Webhook-spezifisch
+    # Webhook-specific
     hashed_token = Column(String, unique=True, nullable=True, index=True)
 
-    # Event-spezifisch: JSON-Array als String, z. B. '["connection.created"]'
+    # Event-specific: JSON array as a string, e.g. '["connection.created"]'
     event_triggers = Column(String, nullable=True)
 
-    # Schedule-spezifisch
-    schedule_interval = Column(String, nullable=True)  # "5m", "1h", … oder Cron
+    # Schedule-specific
+    schedule_interval = Column(String, nullable=True)  # "5m", "1h", … or cron
     last_run = Column(DateTime, nullable=True)
     next_run = Column(DateTime, nullable=True)

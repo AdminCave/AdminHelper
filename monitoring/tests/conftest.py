@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Test-Setup fuer die monitoring-Komponente.
+"""Test setup for the monitoring component.
 
-Bewusst KEIN Postgres/testcontainers: hier laufen nur reine-Logik-Tests
-(Line-Protocol-Escaping, Alert-Filter/Cooldown, Check-Status-Uebergaenge).
-Die getesteten Module ziehen ueber app.core.config einen schreibbaren
-DATA_DIR (legt dort ggf. einen .api_key an) — daher vor jedem Import auf
-ein tmp-Verzeichnis umbiegen.
+Deliberately NO Postgres/testcontainers: only pure-logic tests run here
+(line-protocol escaping, alert filter/cooldown, check status transitions).
+The modules under test pull a writable DATA_DIR via app.core.config (creating
+an .api_key there if needed) — so redirect it to a tmp directory before every
+import.
 """
 
 import os

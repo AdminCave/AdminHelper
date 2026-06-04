@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer FRP Config-Generator: frps.toml, frpc.toml, visitor.toml."""
+"""Tests for the FRP config generator: frps.toml, frpc.toml, visitor.toml."""
 
 from types import SimpleNamespace
 from app.modules.frp.config_generator import (
@@ -13,7 +13,7 @@ from app.modules.frp.config_generator import (
 
 
 def _make_config(**overrides):
-    """Erstellt ein FrpServerConfig-artiges Objekt fuer Tests."""
+    """Creates a FrpServerConfig-like object for tests."""
     defaults = dict(
         server_addr="frps.example.net",
         bind_port=7000,
@@ -30,7 +30,7 @@ def _make_config(**overrides):
 
 
 def _make_tunnel(**overrides):
-    """Erstellt ein FrpTunnel-artiges Objekt fuer Tests."""
+    """Creates a FrpTunnel-like object for tests."""
     defaults = dict(
         name="srv1-ssh",
         tunnel_type="stcp",

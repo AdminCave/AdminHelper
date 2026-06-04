@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Periodischer Cleanup der JWT-Blacklist.
+"""Periodic cleanup of the JWT blacklist.
 
-Befund (Dead-Code-Audit): cleanup_expired_blacklist existierte, wurde aber NIE
-aufgerufen -> die token_blacklist-Tabelle waechst unbegrenzt. Fix: als
-System-Job im Scheduler verdrahtet. Diese Tests pruefen die Cleanup-Logik und
-die Job-Registrierung.
+Finding (dead-code audit): cleanup_expired_blacklist existed but was NEVER
+called -> the token_blacklist table grows without bound. Fix: wired in as a
+system job in the scheduler. These tests check the cleanup logic and the job
+registration.
 """
 
 import datetime
@@ -32,7 +32,7 @@ def test_cleanup_removes_expired_keeps_valid(db_session):
 
 
 def test_schedule_blacklist_cleanup_registers_job():
-    # Verifiziert die Verkabelung: der System-Job wird im Scheduler registriert.
+    # Verifies the wiring: the system job is registered in the scheduler.
     sched.schedule_blacklist_cleanup()
     try:
         job = sched.scheduler.get_job(sched._BLACKLIST_CLEANUP_JOB_ID)

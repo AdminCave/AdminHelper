@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""ProvisionToken — verschoben aus app.modules.frp.models, weil Provisioning
-nicht mehr FRP-spezifisch ist (Server-zentriertes Onboarding-Token).
+"""ProvisionToken — moved out of app.modules.frp.models because provisioning
+is no longer FRP-specific (server-centric onboarding token).
 
-Tabellenname ist 'provision_tokens' (Umbenennung aus 'frp_provision_tokens'
-erfolgte in Alembic-Migration 0494a8f377ef)."""
+The table name is 'provision_tokens' (renamed from 'frp_provision_tokens'
+in Alembic migration 0494a8f377ef)."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class ProvisionToken(Base):
     )
 
     def is_valid(self) -> bool:
-        """Token ist gueltig wenn nicht abgelaufen und nicht verbraucht."""
+        """Token is valid if not expired and not consumed."""
         now = datetime.datetime.now(datetime.timezone.utc)
         expires = self.expires_at
         if expires.tzinfo is None:

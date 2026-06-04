@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Reverse-Proxy: Leitet /api/monitoring/* Anfragen an den Monitoring-Service weiter.
+Reverse proxy: forwards /api/monitoring/* requests to the monitoring service.
 
-Der Browser kommuniziert nur mit dem AdminHelper-Server. Monitoring-Anfragen werden
-intern im Docker-Netzwerk an den Monitoring-Container weitergeleitet.
+The browser communicates only with the AdminHelper server. Monitoring requests
+are forwarded internally within the Docker network to the monitoring container.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from app.core.config import MONITOR_SERVICE_URL, MONITOR_API_KEY
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
-# Erlaubte Pfad-Prefixe fuer den Monitoring-Proxy (SSRF-Schutz)
+# Allowed path prefixes for the monitoring proxy (SSRF protection)
 _ALLOWED_PATH_PREFIXES = (
     "checks", "alerts", "log", "metrics", "status",
     "templates", "agent",
@@ -28,7 +28,7 @@ _ALLOWED_PATH_PREFIXES = (
 
 @router.post("/agent/{server_id}/report")
 async def proxy_agent_report(server_id: str, request: Request):
-    """Proxy fuer Agent-Reports (Auth via X-API-Key, kein JWT noetig)."""
+    """Proxy for agent reports (auth via X-API-Key, no JWT needed)."""
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{MONITOR_SERVICE_URL}/agent/{server_id}/report",
@@ -47,8 +47,8 @@ async def proxy_agent_report(server_id: str, request: Request):
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_to_monitoring(path: str, request: Request, _admin=Depends(get_current_admin)):
-    """Proxy fuer alle Monitoring-Anfragen (nur fuer Admins)."""
-    # Path-Traversal und SSRF verhindern: nur bekannte Pfade erlauben
+    """Proxy for all monitoring requests (admins only)."""
+    # Prevent path traversal and SSRF: allow only known paths
     normalized = path.lstrip("/")
     if ".." in normalized or not any(normalized.startswith(p) for p in _ALLOWED_PATH_PREFIXES):
         raise HTTPException(status_code=400, detail="Unerlaubter Proxy-Pfad")

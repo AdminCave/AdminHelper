@@ -17,16 +17,16 @@ class FrpServerConfig(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
-    server_addr = Column(String, nullable=False)  # z.B. "frps.example.net"
+    server_addr = Column(String, nullable=False)  # e.g. "frps.example.net"
     bind_port = Column(Integer, default=7000)
-    vhost_https_port = Column(Integer, nullable=True)  # z.B. 443
+    vhost_https_port = Column(Integer, nullable=True)  # e.g. 443
     auth_token = Column(String, nullable=False)
-    subdomain_host = Column(String, nullable=True)  # z.B. "ops.example.net"
+    subdomain_host = Column(String, nullable=True)  # e.g. "ops.example.net"
     max_ports_per_client = Column(Integer, nullable=True)
-    dashboard_port = Column(Integer, nullable=True)  # frps Web-Dashboard
+    dashboard_port = Column(Integer, nullable=True)  # frps web dashboard
     dashboard_user = Column(String, nullable=True)
     dashboard_password = Column(String, nullable=True)
-    extra_config = Column(String, nullable=True)  # JSON fuer zusaetzliche frps.toml-Felder
+    extra_config = Column(String, nullable=True)  # JSON for additional frps.toml fields
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -65,14 +65,14 @@ class FrpTunnel(Base):
     id = Column(String, primary_key=True)
     server_id = Column(String, ForeignKey("servers.id", ondelete="CASCADE"), nullable=False)
     frp_config_id = Column(String, ForeignKey("frp_server_config.id", ondelete="CASCADE"), nullable=False)
-    name = Column(String, unique=True, nullable=False)  # Proxy-Name, z.B. "k01-lnx1-ssh"
-    tunnel_type = Column(String, nullable=False)  # "stcp" oder "https"
+    name = Column(String, unique=True, nullable=False)  # proxy name, e.g. "k01-lnx1-ssh"
+    tunnel_type = Column(String, nullable=False)  # "stcp" or "https"
     protocol = Column(String, nullable=False)  # "ssh", "rdp", "web"
     local_ip = Column(String, default="127.0.0.1")
     local_port = Column(Integer, nullable=False)
-    secret_key = Column(String, nullable=True)  # nur fuer STCP
-    custom_domains = Column(String, nullable=True)  # nur fuer HTTPS, komma-separiert
-    visitor_port = Column(Integer, nullable=True)  # lokaler Port am Admin-PC (STCP)
+    secret_key = Column(String, nullable=True)  # STCP only
+    custom_domains = Column(String, nullable=True)  # HTTPS only, comma-separated
+    visitor_port = Column(Integer, nullable=True)  # local port on the admin PC (STCP)
     connection_id = Column(String, ForeignKey("connections.id", ondelete="SET NULL"), nullable=True)
     enabled = Column(Boolean, default=True)
     extra_config = Column(String, nullable=True)  # JSON
@@ -104,6 +104,6 @@ class FrpTunnel(Base):
         }
 
 
-# ProvisionToken seit v0.23.0 in app.modules.provisioning.models verschoben.
-# Re-Export fuer Backwards-Kompatibilitaet (z.B. test-fixture-Imports).
+# ProvisionToken moved to app.modules.provisioning.models since v0.23.0.
+# Re-export for backwards compatibility (e.g. test-fixture imports).
 from app.modules.provisioning.models import ProvisionToken  # noqa: F401

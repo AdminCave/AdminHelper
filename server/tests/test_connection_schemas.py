@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests fuer Pydantic-Schemas: ConnectionCreate, ConnectionUpdate."""
+"""Tests for the Pydantic schemas: ConnectionCreate, ConnectionUpdate."""
 
 import pytest
 from pydantic import ValidationError

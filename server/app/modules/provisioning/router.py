@@ -2,19 +2,19 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Server-Provisioning-Endpoints (FRP-unabhaengig).
+"""Server provisioning endpoints (FRP-independent).
 
-POST /api/servers/{server_id}/provision/token       — Token erstellen (admin)
-GET  /api/servers/{server_id}/provision/tokens      — Aktive Tokens listen (admin)
-POST /api/servers/{server_id}/provision/activate    — Token einloesen (X-Provision-Token)
+POST /api/servers/{server_id}/provision/token       — create token (admin)
+GET  /api/servers/{server_id}/provision/tokens      — list active tokens (admin)
+POST /api/servers/{server_id}/provision/activate    — redeem token (X-Provision-Token)
 
-Activate-Antwort-Schema:
+Activate response schema:
 {
   "serverName": "k01-lnx1",
-  "apiKey": "...",                  // immer: Server-Read-API-Key
-  "monitorApiKey": "..." | null,    // wenn Monitor-Service erreichbar
+  "apiKey": "...",                  // always: server read API key
+  "monitorApiKey": "..." | null,    // if monitor service is reachable
   "monitorUrl": "..." | null,
-  "frp": {                          // wenn Server FRP-Tunnel konfiguriert hat
+  "frp": {                          // if the server has FRP tunnels configured
     "config": "<base64 frpc.toml>",
     "pkiBundle": "<base64 tar.gz>"
   } | null
@@ -47,7 +47,7 @@ def create_provision_token(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Erstellt einen einmaligen Server-Provision-Token (24h gueltig)."""
+    """Creates a one-time server provision token (valid for 24h)."""
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
@@ -79,7 +79,7 @@ def list_provision_tokens(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    """Listet alle Provision-Tokens fuer einen Server auf."""
+    """Lists all provision tokens for a server."""
     tokens = db.query(ProvisionToken).filter(
         ProvisionToken.server_id == server_id
     ).order_by(ProvisionToken.created_at.desc()).all()
@@ -92,8 +92,8 @@ def activate_provision(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Loest einen Provision-Token ein. Liefert Server-API-Key (immer),
-    Monitor-Agent-Key (wenn Service da), FRP-Bundle (wenn Tunnel da)."""
+    """Redeems a provision token. Returns the server API key (always),
+    monitor agent key (if service is available), FRP bundle (if tunnels exist)."""
     raw_token = request.headers.get("X-Provision-Token", "")
     if not raw_token:
         raise HTTPException(status_code=401, detail="X-Provision-Token Header fehlt")
@@ -111,9 +111,9 @@ def activate_provision(
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    # Token atomar verbrauchen (TOCTOU-Schutz): bedingtes UPDATE serialisiert
-    # parallele Einloesungen ueber die Row-Lock -> genau EIN Request gewinnt; alle
-    # weiteren bekommen rowcount 0 und werden abgewiesen, BEVOR ein Key entsteht.
+    # Consume the token atomically (TOCTOU protection): a conditional UPDATE
+    # serializes parallel redemptions via the row lock -> exactly ONE request wins;
+    # all others get rowcount 0 and are rejected BEFORE a key is created.
     consumed = (
         db.query(ProvisionToken)
         .filter(ProvisionToken.id == token.id, ProvisionToken.used_at.is_(None))
@@ -125,21 +125,21 @@ def activate_provision(
     if consumed == 0:
         raise HTTPException(status_code=409, detail="Token wurde bereits eingeloest")
 
-    # 1. Server-Read-API-Key (immer)
+    # 1. Server read API key (always)
     raw_api_key = generate_api_key()
     api_key = ApiKey(
         name=f"agent-{server.name}",
         hashed_key=hash_api_key(raw_api_key),
         permission="read",
-        server_id=server_id,  # an genau diesen Server gebunden (IDOR-Schutz)
+        server_id=server_id,  # bound to exactly this server (IDOR protection)
     )
     db.add(api_key)
     db.commit()
 
-    # 2. Monitor-Agent-Key (resilient: bei Fehler None)
+    # 2. Monitor agent key (resilient: None on error)
     monitor_key = fetch_or_skip_monitor_key(server_id)
 
-    # 3. FRP-Bundle (nur wenn FRP konfiguriert + Tunnels da)
+    # 3. FRP bundle (only if FRP is configured + tunnels exist)
     frp_bundle = build_frp_bundle(server_id, db)
 
     return {

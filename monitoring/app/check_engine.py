@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Check-Engine: Fuehrt Checks aus, aktualisiert States, schreibt Metriken.
+Check engine: runs checks, updates states, writes metrics.
 """
 
 from __future__ import annotations
@@ -23,15 +23,15 @@ logger = logging.getLogger("monitor.engine")
 
 
 def next_fail_count(result_status: str, prev_fail_count: int) -> int:
-    """Zaehlt aufeinanderfolgende Fehlschlaege. 'ok' setzt zurueck auf 0."""
+    """Counts consecutive failures. 'ok' resets to 0."""
     if result_status != "ok":
         return prev_fail_count + 1
     return 0
 
 
 def is_suppressed(result_status: str, new_fail_count: int, consecutive_fails: int) -> bool:
-    """True, solange ein nicht-OK-Ergebnis die geforderte Anzahl
-    aufeinanderfolgender Fehlschlaege noch nicht erreicht hat."""
+    """True as long as a non-OK result has not yet reached the required number
+    of consecutive failures."""
     return result_status != "ok" and new_fail_count < consecutive_fails
 
 
@@ -41,11 +41,11 @@ def effective_status(
     consecutive_fails: int,
     old_status: str,
 ) -> str:
-    """Bestimmt den effektiven Status unter Beruecksichtigung von consecutive_fails.
+    """Determines the effective status, taking consecutive_fails into account.
 
-    Solange ein nicht-OK-Ergebnis die geforderte Anzahl aufeinanderfolgender
-    Fehlschlaege noch nicht erreicht, bleibt der bisherige Status erhalten
-    ('pending' wird dabei als 'ok' behandelt). Sonst gilt das Roh-Ergebnis.
+    As long as a non-OK result has not yet reached the required number of
+    consecutive failures, the previous status is kept ('pending' is treated
+    as 'ok' here). Otherwise the raw result applies.
     """
     if is_suppressed(result_status, new_fail_count, consecutive_fails):
         return old_status if old_status != "pending" else "ok"
@@ -53,7 +53,7 @@ def effective_status(
 
 
 def execute_check(check_id: str) -> None:
-    """Wird vom Scheduler fuer jeden Check-Intervall aufgerufen."""
+    """Called by the scheduler for each check interval."""
     db = SessionLocal()
     try:
         check = (
@@ -66,7 +66,7 @@ def execute_check(check_id: str) -> None:
 
         config = json.loads(check.config) if check.config else {}
 
-        # Push-Only-Checks nicht vom Scheduler ausfuehren
+        # Do not run push-only checks from the scheduler
         from app.scheduler import PUSH_ONLY_TYPES
         if check.check_type in PUSH_ONLY_TYPES:
             return
@@ -77,7 +77,7 @@ def execute_check(check_id: str) -> None:
             logger.warning("Check %s: %s", check.name, exc)
             return
 
-        # Check ausfuehren
+        # Run the check
         start = time.monotonic()
         try:
             result_status, message, metrics = checker.run(config)
@@ -88,12 +88,12 @@ def execute_check(check_id: str) -> None:
             logger.exception("Check %s fehlgeschlagen", check.name)
         duration_ms = int((time.monotonic() - start) * 1000)
 
-        # Strukturierte Details extrahieren (nicht an VictoriaMetrics senden)
+        # Extract structured details (not sent to VictoriaMetrics)
         details = metrics.pop("_details", None) if metrics else None
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        # Metriken an VictoriaMetrics senden
+        # Send metrics to VictoriaMetrics
         victoria.write_check_result(
             check_id=check.id,
             check_type=check.check_type,
@@ -104,14 +104,14 @@ def execute_check(check_id: str) -> None:
             extra_metrics=metrics,
         )
 
-        # State aktualisieren
+        # Update state
         state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
         old_status = state.status if state else "pending"
 
         prev_fail_count = state.fail_count if state else 0
         new_fail_count = next_fail_count(result_status, prev_fail_count)
 
-        # Effektiven Status bestimmen (consecutive_fails beruecksichtigen)
+        # Determine effective status (taking consecutive_fails into account)
         eff_status = effective_status(
             result_status, new_fail_count, check.consecutive_fails, old_status
         )
@@ -146,7 +146,7 @@ def execute_check(check_id: str) -> None:
 
         db.commit()
 
-        # Alerting bei Status-Wechsel
+        # Alerting on status change
         if old_status != eff_status:
             try:
                 process_alert(db, check, old_status, eff_status)

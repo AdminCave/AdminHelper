@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""PKI-Management fuer FRP mTLS — CA, Server- und Client-Zertifikate."""
+"""PKI management for FRP mTLS — CA, server and client certificates."""
 
 import datetime
 import logging
@@ -19,15 +19,15 @@ from app.core.config import FRP_CONFIG_DIR
 logger = logging.getLogger(__name__)
 
 PKI_DIR = FRP_CONFIG_DIR / "pki"
-VALIDITY_DAYS_CA = 3650  # 10 Jahre
-VALIDITY_DAYS_CERT = 365  # 1 Jahr
+VALIDITY_DAYS_CA = 3650  # 10 years
+VALIDITY_DAYS_CERT = 365  # 1 year
 
 
 def _ensure_pki_dir() -> Path:
     PKI_DIR.mkdir(parents=True, exist_ok=True)
-    # Verzeichnis und vorhandene Privatkeys restriktiv halten — auch fuer Bestands-
-    # Deployments, deren Keys frueher world-/group-readable (umask) angelegt wurden.
-    # Idempotent; laeuft bei jedem PKI-Zugriff.
+    # Keep the directory and existing private keys restrictive — also for existing
+    # deployments whose keys were previously created world-/group-readable (umask).
+    # Idempotent; runs on every PKI access.
     try:
         PKI_DIR.chmod(0o700)
         for key_file in PKI_DIR.glob("*.key"):
@@ -42,7 +42,7 @@ def _generate_key() -> rsa.RSAPrivateKey:
 
 
 def _write_key(path: Path, key: rsa.RSAPrivateKey) -> None:
-    # Privatkeys umask-robust mit 0600 schreiben (kein kurzes world-readable Fenster).
+    # Write private keys umask-robustly with 0600 (no brief world-readable window).
     pem = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -53,7 +53,7 @@ def _write_key(path: Path, key: rsa.RSAPrivateKey) -> None:
         os.write(fd, pem)
     finally:
         os.close(fd)
-    # O_CREAT laesst den Mode einer BESTEHENDEN Datei unveraendert -> explizit nachziehen.
+    # O_CREAT leaves the mode of an EXISTING file unchanged -> enforce it explicitly.
     try:
         path.chmod(0o600)
     except OSError as exc:
@@ -65,7 +65,7 @@ def _write_cert(path: Path, cert: x509.Certificate) -> None:
 
 
 def get_pki_status() -> dict:
-    """Gibt den aktuellen PKI-Status zurueck."""
+    """Returns the current PKI status."""
     d = _ensure_pki_dir()
     ca_cert = d / "ca.crt"
     ca_key = d / "ca.key"
@@ -88,7 +88,7 @@ def get_pki_status() -> dict:
         cert = x509.load_pem_x509_certificate(server_cert.read_bytes())
         status["serverCertExpiry"] = cert.not_valid_after_utc.isoformat()
 
-    # Client-Certs auflisten
+    # List client certs
     for f in sorted(d.glob("*.crt")):
         if f.name in ("ca.crt", "frps.crt"):
             continue
@@ -103,7 +103,7 @@ def get_pki_status() -> dict:
 
 
 def generate_ca(common_name: str = "AdminHelper FRP CA") -> dict:
-    """Generiert eine neue CA (ueberschreibt bestehende!)."""
+    """Generates a new CA (overwrites any existing one!)."""
     d = _ensure_pki_dir()
     key = _generate_key()
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -151,7 +151,7 @@ def _load_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
 
 
 def generate_server_cert(server_addr: str) -> dict:
-    """Generiert ein Server-Zertifikat fuer frps, signiert von der CA."""
+    """Generates a server certificate for frps, signed by the CA."""
     import ipaddress
 
     ca_cert, ca_key = _load_ca()
@@ -164,7 +164,7 @@ def generate_server_cert(server_addr: str) -> dict:
         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AdminHelper"),
     ])
 
-    # IP-Adressen muessen als IPAddress-SAN eingetragen werden, nicht als DNSName
+    # IP addresses must be added as an IPAddress SAN, not as a DNSName
     san_entries: list[x509.GeneralName] = []
     try:
         san_entries.append(x509.IPAddress(ipaddress.ip_address(server_addr)))
@@ -206,7 +206,7 @@ _VALID_CLIENT_NAME = _re.compile(r'^[a-zA-Z0-9._-]+$')
 
 
 def generate_client_cert(client_name: str) -> dict:
-    """Generiert ein Client-Zertifikat fuer einen frpc-Host, signiert von der CA."""
+    """Generates a client certificate for a frpc host, signed by the CA."""
     safe_name = Path(client_name).name
     if (
         not safe_name

@@ -27,7 +27,7 @@ class LogoutRequest(BaseModel):
 
 
 class BootstrapRequest(BaseModel):
-    """Erstellt den ersten Admin-User mit dem Bootstrap-Token aus den Server-Logs."""
+    """Creates the first admin user using the bootstrap token from the server logs."""
     token: str
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=128)

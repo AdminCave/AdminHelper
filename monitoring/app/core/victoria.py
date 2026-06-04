@@ -15,12 +15,12 @@ logger = logging.getLogger("monitor.victoria")
 
 
 def _esc_tag(v: str) -> str:
-    """Escaped Sonderzeichen in InfluxDB Line Protocol Tag-Werten."""
+    """Escapes special characters in InfluxDB line protocol tag values."""
     return v.replace(" ", r"\ ").replace(",", r"\,").replace("=", r"\=")
 
 
 def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
-    """Formatiert eine InfluxDB Line Protocol Zeile.
+    """Formats a single InfluxDB line protocol line.
 
     Format: measurement,tag1=val1,tag2=val2 value=X timestamp
     """
@@ -35,14 +35,14 @@ def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
 
 
 class VictoriaClient:
-    """Client fuer VictoriaMetrics HTTP-API."""
+    """Client for the VictoriaMetrics HTTP API."""
 
     def __init__(self, base_url: str = VICTORIA_METRICS_URL):
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=10)
 
     def write(self, metrics: list[str]) -> None:
-        """Metriken im InfluxDB Line Protocol Format schreiben."""
+        """Writes metrics in InfluxDB line protocol format."""
         if not metrics:
             return
         body = "\n".join(metrics)
@@ -63,7 +63,7 @@ class VictoriaClient:
         duration_ms: int,
         extra_metrics: dict | None = None,
     ) -> None:
-        """Schreibt Check-Ergebnis als Metriken."""
+        """Writes the check result as metrics."""
         status_map = {"ok": 0, "warning": 1, "critical": 2, "unknown": 3}
         status_val = status_map.get(status, 3)
         ts = int(time.time())
@@ -85,7 +85,7 @@ class VictoriaClient:
         self.write(lines)
 
     def query_range(self, query: str, start: str, end: str, step: str) -> dict:
-        """PromQL Range-Query fuer Charts."""
+        """PromQL range query for charts."""
         try:
             resp = self._client.get(
                 f"{self.base_url}/api/v1/query_range",
@@ -101,7 +101,7 @@ class VictoriaClient:
             return {"status": "error", "data": {"result": []}}
 
     def query_instant(self, query: str) -> dict:
-        """PromQL Instant-Query fuer aktuelle Werte."""
+        """PromQL instant query for current values."""
         try:
             resp = self._client.get(
                 f"{self.base_url}/api/v1/query",
@@ -114,5 +114,5 @@ class VictoriaClient:
             return {"status": "error", "data": {"result": []}}
 
 
-# Singleton-Instanz
+# Singleton instance
 victoria = VictoriaClient()

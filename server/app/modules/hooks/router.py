@@ -28,7 +28,7 @@ from app.modules.hooks.models import Hook
 
 router = APIRouter(prefix="/api/hooks", tags=["hooks"])
 
-# Rate-Limiting fuer Webhook-Triggers: max 20 Aufrufe pro IP in 60 Sekunden
+# Rate limiting for webhook triggers: max 20 calls per IP in 60 seconds
 _TRIGGER_MAX = 20
 _TRIGGER_WINDOW = 60
 _trigger_attempts: dict[str, list[float]] = defaultdict(list)
@@ -49,7 +49,7 @@ def _check_trigger_rate_limit(request: Request) -> None:
 
 
 def _to_dict(hook: Hook) -> dict:
-    """ORM-Objekt in ein einfaches Dict für die Response konvertieren."""
+    """Convert the ORM object into a plain dict for the response."""
     return {
         "id": hook.id,
         "name": hook.name,
@@ -67,7 +67,7 @@ def _to_dict(hook: Hook) -> dict:
 
 def _validate_create(data: HookCreate) -> None:
     if data.hook_type == "webhook":
-        pass  # Token wird server-seitig generiert
+        pass  # token is generated server-side
     elif data.hook_type == "event":
         if not data.event_triggers:
             raise HTTPException(status_code=422, detail="event_triggers erforderlich für Event-Hooks")
@@ -134,7 +134,7 @@ def create_hook(
     return result
 
 
-# WICHTIG: /trigger/{token} muss vor /{hook_id} definiert sein
+# IMPORTANT: /trigger/{token} must be defined before /{hook_id}
 @router.post("/trigger/{token}")
 async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
     _check_trigger_rate_limit(request)

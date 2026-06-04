@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-# Private/reservierte IP-Bereiche die nicht als Check-Ziel erlaubt sind (SSRF-Schutz)
+# Private/reserved IP ranges not allowed as check targets (SSRF protection)
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("10.0.0.0/8"),
@@ -25,7 +25,7 @@ _BLOCKED_NETWORKS = [
 
 
 def _is_private_url(url: str) -> bool:
-    """Prueft ob eine URL auf eine private/reservierte IP aufloest."""
+    """Checks whether a URL resolves to a private/reserved IP."""
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:

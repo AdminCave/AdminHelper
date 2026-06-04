@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """
-Kompatibilitätsschicht für Hooks.
+Compatibility layer for hooks.
 
-load_connections() und save_connections() werden von Hooks via script_runner
-aufgerufen. Diese Funktionen arbeiten jetzt mit der Datenbank statt JSON.
+load_connections() and save_connections() are called by hooks via
+script_runner. These functions now work with the database instead of JSON.
 """
 
 from typing import Any
@@ -25,11 +25,11 @@ def load_connections() -> list[dict[str, Any]]:
 
 
 def save_connections(connections: list[dict[str, Any]]) -> None:
-    """Connections per Upsert synchronisieren (statt DELETE ALL + INSERT ALL).
+    """Synchronize connections via upsert (instead of DELETE ALL + INSERT ALL).
 
-    - Bestehende Connections werden aktualisiert
-    - Neue Connections werden eingefügt
-    - Connections die nicht mehr in der Liste sind werden gelöscht
+    - Existing connections are updated
+    - New connections are inserted
+    - Connections no longer in the list are deleted
     """
     from app.core.database import SessionLocal
     from app.modules.connections.models import Connection
@@ -39,12 +39,12 @@ def save_connections(connections: list[dict[str, Any]]) -> None:
         incoming_ids = {d.get("id") for d in connections if d.get("id")}
         existing = {c.id: c for c in db.query(Connection).all()}
 
-        # Löschen: IDs die nicht mehr in der neuen Liste sind
+        # Delete: IDs no longer in the new list
         for eid in existing:
             if eid not in incoming_ids:
                 db.delete(existing[eid])
 
-        # Upsert: Aktualisieren oder Einfügen
+        # Upsert: update or insert
         for data in connections:
             cid = data.get("id")
             if cid and cid in existing:
