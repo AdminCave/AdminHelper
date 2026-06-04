@@ -2,7 +2,7 @@
 # Build .rpm package for adminhelper-agent (unified Go agent)
 set -euo pipefail
 
-VERSION="${VERSION:-0.20.0}"
+VERSION="${VERSION:-0.22.1}"
 PKG_NAME="adminhelper-agent"
 
 echo "=== Building ${PKG_NAME} ${VERSION} (rpm) ==="

@@ -55,19 +55,21 @@ sudo dnf install adminhelper-agent</code></pre>
           <p>Grab the latest MSI from the Servers page (<em>Provision → Windows</em>) or directly from <code>https://srm.example.com/downloads/adminhelper-agent.msi</code>. Install with elevated privileges – the installer registers the Windows service.</p>
 
           <h2>Provisioning</h2>
-          <p>In the Web Panel: <em>Servers → New → Provision Token</em>. The token is valid for 24 h and redeemable exactly once.</p>
+          <p>In the Web Panel: <em>Servers → New → Provision Token</em>. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code># Linux
 sudo adminhelper-agent provision \
-  --server https://srm.example.com \
-  --token  TOKEN_VALUE</code></pre>
+  --url       https://srm.example.com \
+  --token     TOKEN_VALUE \
+  --server-id SERVER_ID</code></pre>
 
           <div class="code-header"><span>powershell</span></div>
 <pre><code># Windows (PowerShell, as Admin)
 &amp; 'C:\Program Files\AdminHelper\adminhelper-agent.exe' provision `
-    --server https://srm.example.com `
-    --token  TOKEN_VALUE</code></pre>
+    --url       https://srm.example.com `
+    --token     TOKEN_VALUE `
+    --server-id SERVER_ID</code></pre>
 
           <p>After provisioning the agent holds a client certificate signed by the FRP CA and enables the <code>adminhelper-agent.timer</code> systemd unit (Linux) or the Windows service (auto-start).</p>
 

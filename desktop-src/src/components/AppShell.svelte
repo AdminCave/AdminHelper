@@ -154,7 +154,7 @@
         <span class="sidebar-label">{$t('settings.label')}</span>
         <span class="sidebar-badge">{modeBadge}</span>
       </button>
-      <div class="sidebar-version">v0.20.0</div>
+      <div class="sidebar-version">v0.23.2</div>
     </div>
 
     <button
