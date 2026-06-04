@@ -2,9 +2,9 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Hook-Beispiel (Typ: webhook): Verbindung anlegen oder aktualisieren
+# Hook example (type: webhook): create or update a connection
 # Trigger: POST /api/hooks/trigger/<TOKEN>
-# Erwarteter JSON-Body:
+# Expected JSON body:
 # {
 #   "connection": {
 #     "id": "optional-uuid",

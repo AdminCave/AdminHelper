@@ -2,17 +2,17 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Hook-Beispiel (Typ: schedule): Tägliche Bereinigung von Duplikaten
+# Hook example (type: schedule): daily cleanup of duplicates
 #
-# Empfohlenes Intervall: 24h
+# Recommended interval: 24h
 #
-# Kontext-Variablen:
-#   triggered_at  str        – ISO-Zeitstempel dieser Ausführung
-#   last_run      str|None   – letzter Lauf (ISO) oder None beim ersten Lauf
+# Context variables:
+#   triggered_at  str        – ISO timestamp of this run
+#   last_run      str|None   – previous run (ISO) or None on the first run
 #
-# Das Script entfernt Verbindungs-Duplikate basierend auf (kind, host, port).
-# Zwei Verbindungen gelten als Duplikat, wenn diese drei Felder übereinstimmen;
-# die erste gefundene Variante bleibt erhalten.
+# The script removes duplicate connections based on (kind, host, port).
+# Two connections count as duplicates when these three fields match;
+# the first variant found is kept.
 
 connections = load_connections()
 seen = set()

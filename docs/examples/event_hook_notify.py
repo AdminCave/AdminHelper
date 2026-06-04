@@ -2,19 +2,19 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Hook-Beispiel (Typ: event): Benachrichtigung bei Verbindungsänderungen
+# Hook example (type: event): notification on connection changes
 #
-# Events auswählen: connection.created, connection.updated, connection.deleted
+# Selectable events: connection.created, connection.updated, connection.deleted
 #
-# Kontext-Variablen:
-#   event_type  str   – z. B. "connection.created"
-#   event_data  dict  – die betroffene Verbindung
+# Context variables:
+#   event_type  str   – e.g. "connection.created"
+#   event_data  dict  – the affected connection
 #
-# Beispiel-Payload für eine Chat-Benachrichtigung (z. B. Slack, Teams, Mattermost):
+# Example payload for a chat notification (e.g. Slack, Teams, Mattermost):
 #
-# Verfügbare HTTP-Helfer: http_get(url, headers=None, timeout=10)
-#                          http_post(url, json=None, headers=None, timeout=10)
-# Rückgabe: {"status": int, "body": str, "json": Any|None}
+# Available HTTP helpers: http_get(url, headers=None, timeout=10)
+#                         http_post(url, json=None, headers=None, timeout=10)
+# Return value: {"status": int, "body": str, "json": Any|None}
 
 WEBHOOK_URL = "https://hooks.example.com/services/YOUR/SLACK/WEBHOOK"
 
