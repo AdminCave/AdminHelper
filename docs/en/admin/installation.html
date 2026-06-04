@@ -63,10 +63,12 @@
             </tbody>
           </table>
 
-          <h2>Generate .env</h2>
+          <h2 id="stack">Start the Stack</h2>
+          <p>The official <code>docker-compose.yml</code> lives in the repository root. For a quick test this is enough:</p>
+
           <div class="code-header"><span>bash</span></div>
-<pre><code>git clone https://git.nevondo.com/ks98/adminhelper.git /srv/adminhelper
-cd /srv/adminhelper
+<pre><code>git clone https://git.nevondo.com/ks98/adminhelper.git
+cd adminhelper
 
 cp .env.example .env
 
@@ -74,14 +76,18 @@ cp .env.example .env
 # Idempotent: leaves any value already set untouched.
 ./scripts/init-secrets.sh
 
-# Then edit .env for the non-secret values:
-#   DOMAIN, ADMIN_PASSWORD, TZ, TRUSTED_PROXIES, ALLOWED_IPS</code></pre>
+# Then edit the non-secret values in .env:
+#   DOMAIN, ADMIN_PASSWORD, TZ, TRUSTED_PROXIES, ALLOWED_IPS
+
+docker compose pull
+docker compose up -d</code></pre>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
-              <div class="callout-title">Why <code>init-secrets.sh</code> matters</div>
-              <p>Server and monitoring containers share <code>MONITOR_API_KEY</code> as an internal secret. If the value in <code>.env</code> stays empty, the monitoring container generates its own random — but the server sends an empty key, so every <code>/api/monitoring/*</code> call returns 401 and the monitoring page looks broken. The init script fixes this.</p>
+              <div class="callout-title"><code>MONITOR_API_KEY</code> without the init script = dead monitoring UI</div>
+              <p>Server and monitoring containers share <code>MONITOR_API_KEY</code> as an internal shared secret. If the value in <code>.env</code> stays empty, the monitoring container generates its own random — but the server sends an empty key, so every <code>/api/monitoring/*</code> call ends in a 401. <code>./scripts/init-secrets.sh</code> prevents this.</p>
+              <p>Just as important: <code>SECRET_KEY</code>. If it stays at <code>change-me-in-production</code> or empty, the server generates a random value into <code>./data/.secret_key</code> on first start — it works, but it is not portable between hosts. The init script writes a fixed value into <code>.env</code> so the stack stays reproducibly migratable.</p>
             </div>
           </div>
 
@@ -124,6 +130,14 @@ cp .env.example .env
             <div>
               <div class="callout-title">CI / power users: set <code>ADMIN_PASSWORD</code> directly</div>
               <p>Setting any value other than <code>admin</code> or empty in <code>.env</code> (e.g. <code>ADMIN_PASSWORD=initialpw</code>) creates an <code>admin</code> user with that password on first start &ndash; no bootstrap step needed. Convenient for CI pipelines.</p>
+            </div>
+          </div>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2v1M19.07 4.93l-.71.71M22 12h-1M4.93 4.93l.71.71M2 12h1"/><path d="M12 17a5 5 0 0 0 5-5 5 5 0 0 0-10 0 5 5 0 0 0 5 5z"/></svg>
+            <div>
+              <div class="callout-title">Health check</div>
+              <p>The server exposes a short JSON status at <code>/api/health</code>. Use this endpoint for monitoring systems or Docker health checks.</p>
             </div>
           </div>
 

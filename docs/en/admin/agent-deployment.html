@@ -35,8 +35,8 @@
 
           <h2>Debian / Ubuntu</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://deb.ks98.de/pubkey.asc | sudo tee /etc/apt/trusted.gpg.d/ks98.asc
-echo 'deb https://deb.ks98.de/srm stable main' | sudo tee /etc/apt/sources.list.d/srm.list
+<pre><code>curl -fsSL https://apt.ks98.de/pubkey.asc | sudo tee /etc/apt/trusted.gpg.d/ks98.asc
+echo 'deb https://apt.ks98.de/ stable main' | sudo tee /etc/apt/sources.list.d/srm.list
 sudo apt update
 sudo apt install adminhelper-agent</code></pre>
 
@@ -45,9 +45,9 @@ sudo apt install adminhelper-agent</code></pre>
 <pre><code>sudo tee /etc/yum.repos.d/srm.repo &lt;&lt;'EOF'
 [srm]
 name=AdminHelper
-baseurl=https://deb.ks98.de/srm-rpm/stable
+baseurl=https://rpm.ks98.de/stable
 gpgcheck=1
-gpgkey=https://deb.ks98.de/pubkey.asc
+gpgkey=https://rpm.ks98.de/pubkey.asc
 EOF
 sudo dnf install adminhelper-agent</code></pre>
 
