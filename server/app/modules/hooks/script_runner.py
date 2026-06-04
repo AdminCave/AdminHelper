@@ -8,8 +8,13 @@ Script-Runner für Hooks.
 Jedes Script laeuft in einem separaten Subprozess (eigener Adressraum, killbar
 via Timeout). Das ist Crash-/Timeout-Isolation, KEINE Security-Sandbox: Hook-
 Skripte sind vertrauenswuerdiger Admin-Code (nur von Admins anleg-/editierbar)
-und laufen mit vollen Rechten. Secrets (SECRET_KEY/ADMIN_PASSWORD/...) werden
-dem Subprozess bewusst NICHT vererbt.
+und laufen mit vollen Server-Rechten — wie ein Cron-Job.
+
+Das minimierte env (run_hook_script) haelt ADMIN_PASSWORD, MONITOR_API_KEY und
+REDIS_URL aus dem Hook-Prozess heraus. Es ist aber KEINE vollstaendige
+Secret-Isolation: ein Hook braucht DB-Zugriff (DATABASE_URL wird vererbt) und
+kann ueber die geladene app.core.config bzw. DATA_DIR/.secret_key auch den
+SECRET_KEY lesen. Wer Hooks schreiben darf, hat Server-Vollzugriff.
 
 Verfügbare Variablen im Script (immer):
     load_connections()  -> list[dict]   Verbindungen laden
@@ -80,10 +85,10 @@ def run_hook_script(
         "context": context,
     }, default=str)
 
-    # Minimiertes Environment: Hook-Subprozesse brauchen nur DB-Zugriff
-    # (DATABASE_URL, DATA_DIR) + HTTP (PATH). Secrets (SECRET_KEY, ADMIN_PASSWORD,
-    # MONITOR_API_KEY, REDIS_URL, ...) werden bewusst NICHT vererbt -> ein Hook kann
-    # sie nicht aus os.environ auslesen.
+    # Minimiertes Environment: entfernt ADMIN_PASSWORD, MONITOR_API_KEY und REDIS_URL
+    # aus dem Hook-Prozess. KEINE vollstaendige Isolation — DATABASE_URL (DB-Creds)
+    # wird bewusst vererbt (Hooks brauchen DB-Zugriff), und SECRET_KEY bleibt ueber
+    # DATA_DIR/.secret_key bzw. die geladene Config erreichbar. Hooks = trusted Code.
     server_dir = str(Path(__file__).parents[3])  # server/
     worker_env = {
         "PATH": os.environ.get("PATH", ""),

@@ -11,8 +11,10 @@ Ergebnis via stdout (JSON) zurueck.
 
 SICHERHEITSMODELL: Hook-Skripte sind VERTRAUENSWUERDIGER Code (nur von Admins
 anleg-/editierbar) und laufen mit vollen Python-/Server-Rechten. Der Subprozess
-liefert Crash-/Timeout-Isolation, ist aber KEINE Security-Sandbox. Secrets werden
-dem Subprozess nicht vererbt (siehe script_runner.py). Wer Hooks schreiben darf,
+liefert Crash-/Timeout-Isolation, ist aber KEINE Security-Sandbox. Das minimierte
+env (script_runner.py) reduziert den Secret-Footprint (kein ADMIN_PASSWORD/
+MONITOR_API_KEY/REDIS_URL), aber ein Hook kann DB-Creds (DATABASE_URL) und den
+SECRET_KEY (via Config bzw. DATA_DIR) weiterhin lesen. Wer Hooks schreiben darf,
 kann beliebigen Code ausfuehren — wie ein Plugin oder Cron-Job.
 """
 
