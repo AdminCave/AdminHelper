@@ -167,10 +167,18 @@ Code-Änderung ohne entsprechendes Doku-Update gilt als unvollständig. Vor
   Abhängigkeiten/Komponenten, Änderungen am Docker-Compose-Setup.
 - **`CHANGELOG.md`** — bei jeder neuen Version: Keep-a-Changelog-Format +
   SemVer (`## [X.Y.Z] - YYYY-MM-DD`, Abschnitte Added/Changed/Fixed/Removed).
-- **`docs/`** — statische, **zweisprachige** HTML-Doku-Site: `docs/admin/`
-  + `docs/developer/` (DE) sowie `docs/en/admin/` + `docs/en/developer/`
-  (EN). Bei user- oder API-sichtbaren Änderungen **beide** Sprachbäume
-  nachziehen. Code-Beispiele liegen in `docs/examples/`.
+- **`docs/` — Admin-/Anwender- und Entwickler-Handbuch** (handgepflegtes,
+  zweisprachiges HTML; **kein Generator**, die HTML-Dateien sind die Quelle
+  und werden direkt editiert). Bei **jeder** user-sichtbaren Änderung —
+  Feature, Bedienung, CLI-Flags, Installation, Betrieb, Monitoring, FRP,
+  Troubleshooting — wird das **Admin-/Anwender-Handbuch immer mit
+  aktualisiert**; das ist Pflicht, kein optionales „prüfen". Deutsch unter
+  `docs/admin/`, Englisch unter `docs/en/admin/` — **beide** Sprachbäume
+  nachziehen. Entwickler-Themen analog unter `docs/developer/` bzw.
+  `docs/en/developer/`. Code-Beispiele: `docs/examples/`.
+  **Umgekehrt gilt: im Zweifel über Bedienung oder erwartetes
+  Produktverhalten zuerst ins Admin-/Anwender-Handbuch schauen** — es ist
+  die maßgebliche Beschreibung dessen, was das Produkt tut.
 
 Regeln:
 
