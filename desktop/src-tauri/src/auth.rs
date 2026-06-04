@@ -27,14 +27,22 @@ struct MeResponse {
     is_admin: bool,
 }
 
-pub fn build_client(_server_url: &str, allow_self_signed: bool) -> Result<reqwest::Client, AppError> {
+pub fn build_client(
+    _server_url: &str,
+    allow_self_signed: bool,
+) -> Result<reqwest::Client, AppError> {
     reqwest::Client::builder()
         .danger_accept_invalid_certs(allow_self_signed)
         .build()
         .map_err(AppError::from)
 }
 
-pub async fn login(server_url: &str, username: &str, password: &str, allow_self_signed: bool) -> Result<AuthSession, AppError> {
+pub async fn login(
+    server_url: &str,
+    username: &str,
+    password: &str,
+    allow_self_signed: bool,
+) -> Result<AuthSession, AppError> {
     let url = format!("{}/api/auth/login", server_url.trim_end_matches('/'));
     let client = build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({
@@ -42,11 +50,7 @@ pub async fn login(server_url: &str, username: &str, password: &str, allow_self_
         "password": password,
     });
 
-    let response = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await?;
+    let response = client.post(&url).json(&body).send().await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -74,7 +78,11 @@ pub async fn login(server_url: &str, username: &str, password: &str, allow_self_
     Ok(session)
 }
 
-async fn fetch_me(server_url: &str, token: &str, allow_self_signed: bool) -> Result<MeResponse, AppError> {
+async fn fetch_me(
+    server_url: &str,
+    token: &str,
+    allow_self_signed: bool,
+) -> Result<MeResponse, AppError> {
     let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
     let client = build_client(server_url, allow_self_signed)?;
     let response = client
@@ -122,7 +130,11 @@ pub async fn check_session(allow_self_signed: bool) -> Result<Option<AuthSession
 }
 
 /// Refresh-Token gegen neue Access- und Refresh-Tokens tauschen.
-async fn try_refresh(server_url: &str, refresh_token: &str, allow_self_signed: bool) -> Result<AuthSession, AppError> {
+async fn try_refresh(
+    server_url: &str,
+    refresh_token: &str,
+    allow_self_signed: bool,
+) -> Result<AuthSession, AppError> {
     let url = format!("{}/api/auth/refresh", server_url.trim_end_matches('/'));
     let client = build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({ "refresh_token": refresh_token });
@@ -163,7 +175,9 @@ pub async fn authenticated_get(
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         // Refresh-Token aus Keyring laden und Refresh versuchen
         if let Ok((_, _, refresh_token)) = load_session_from_keyring() {
-            if let Ok(new_session) = try_refresh(server_url, &refresh_token, allow_self_signed).await {
+            if let Ok(new_session) =
+                try_refresh(server_url, &refresh_token, allow_self_signed).await
+            {
                 let _ = save_session_to_keyring(&new_session);
                 let retry = client
                     .get(&url)
@@ -231,7 +245,7 @@ fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
     }
     #[cfg(target_os = "windows")]
     {
-        use crate::password::{windows_store_credential, to_utf16_null};
+        use crate::password::{to_utf16_null, windows_store_credential};
         windows_store_credential(KEYRING_JWT_KEY, "adminhelper", &session.token)?;
         windows_store_credential(KEYRING_REFRESH_KEY, "adminhelper", &session.refresh_token)?;
         windows_store_credential(KEYRING_SERVER_URL_KEY, "adminhelper", &session.server_url)?;
@@ -254,9 +268,7 @@ fn load_session_from_keyring() -> Result<(String, String, String), AppError> {
             .map_err(|e| AppError::Keyring(e.to_string()))?;
         let refresh_entry = Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_KEY)
             .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let refresh_token = refresh_entry
-            .get_password()
-            .unwrap_or_default();
+        let refresh_token = refresh_entry.get_password().unwrap_or_default();
         let url_entry = Entry::new(KEYRING_SERVICE, KEYRING_SERVER_URL_KEY)
             .map_err(|e| AppError::Keyring(e.to_string()))?;
         let server_url = url_entry

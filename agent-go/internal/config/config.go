@@ -10,11 +10,11 @@ import (
 // FrpcConfig enthaelt die Konfiguration fuer den FRPC-Sync Agent.
 type FrpcConfig struct {
 	AdminHelperURL string
-	APIKey   string
-	ServerID string
-	CurlSSL  string // Legacy-Feld, wird in Go nicht direkt genutzt
-	CACert   string
-	Insecure bool
+	APIKey         string
+	ServerID       string
+	CurlSSL        string // Legacy-Feld, wird in Go nicht direkt genutzt
+	CACert         string
+	Insecure       bool
 }
 
 // MonitorConfig enthaelt die Konfiguration fuer den Monitor Agent.
@@ -74,11 +74,11 @@ func LoadFrpcConfig() (*FrpcConfig, error) {
 	}
 	cfg := &FrpcConfig{
 		AdminHelperURL: kv["ADMINHELPER_URL"],
-		APIKey:   kv["API_KEY"],
-		ServerID: kv["SERVER_ID"],
-		CurlSSL:  kv["CURL_SSL"],
-		CACert:   kv["CACERT"],
-		Insecure: kv["INSECURE"] == "1",
+		APIKey:         kv["API_KEY"],
+		ServerID:       kv["SERVER_ID"],
+		CurlSSL:        kv["CURL_SSL"],
+		CACert:         kv["CACERT"],
+		Insecure:       kv["INSECURE"] == "1",
 	}
 	// Fallback: CACert aus FRP-Verzeichnis
 	if cfg.CACert == "" && cfg.CurlSSL != "" && strings.Contains(cfg.CurlSSL, "cacert") {

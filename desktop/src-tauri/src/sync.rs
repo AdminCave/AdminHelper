@@ -37,9 +37,10 @@ pub async fn fetch_connections_jwt(
     token: &str,
     allow_self_signed: bool,
 ) -> Result<Vec<Connection>, AppError> {
-    let response = crate::auth::authenticated_get(server_url, token, "/api/connections", allow_self_signed)
-        .await?
-        .error_for_status()?;
+    let response =
+        crate::auth::authenticated_get(server_url, token, "/api/connections", allow_self_signed)
+            .await?
+            .error_for_status()?;
     let connections: Vec<Connection> = response.json().await?;
     let connections = sanitize_synced_connections(connections);
     write_connections(&app, &connections)?;

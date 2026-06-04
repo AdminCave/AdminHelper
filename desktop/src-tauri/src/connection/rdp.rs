@@ -490,7 +490,14 @@ fn spawn_rdp_with_password(
         );
     }
 
-    monitor_rdp_exit(child, emitted, connected_at_ms, started_at, cid, app.clone());
+    monitor_rdp_exit(
+        child,
+        emitted,
+        connected_at_ms,
+        started_at,
+        cid,
+        app.clone(),
+    );
     Ok(())
 }
 

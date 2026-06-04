@@ -209,9 +209,9 @@ type smartctlJSON struct {
 
 	// NVMe
 	NVMeHealth struct {
-		AvailableSpare int `json:"available_spare"`
-		PercentageUsed int `json:"percentage_used"`
-		MediaErrors    int `json:"media_and_data_integrity_errors"`
+		AvailableSpare  int `json:"available_spare"`
+		PercentageUsed  int `json:"percentage_used"`
+		MediaErrors     int `json:"media_and_data_integrity_errors"`
 		CriticalWarning int `json:"critical_warning"`
 	} `json:"nvme_smart_health_information_log"`
 }

@@ -26,7 +26,10 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
     let mut groups: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
     for server in servers {
         for tag in &server.groups {
-            groups.entry(tag.as_str()).or_default().push(&server.hostname);
+            groups
+                .entry(tag.as_str())
+                .or_default()
+                .push(&server.hostname);
         }
     }
     let mut sorted_groups: Vec<_> = groups.into_iter().collect();
@@ -40,7 +43,10 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         content.push('\n');
     }
 
-    let path = std::env::temp_dir().join(format!("adminhelper_ansible_inventory_{}.ini", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "adminhelper_ansible_inventory_{}.ini",
+        std::process::id()
+    ));
     let mut file = std::fs::File::create(&path)?;
     file.write_all(content.as_bytes())?;
 

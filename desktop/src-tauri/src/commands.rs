@@ -6,10 +6,10 @@ use crate::connection;
 use crate::error::AppError;
 use crate::frpc;
 use crate::models::{AuthSession, ClientInfo, Connection, PasswordState, Settings, TunnelStatus};
-use crate::tunnel;
 use crate::password;
 use crate::storage;
 use crate::sync;
+use crate::tunnel;
 
 /// Prüft ob das Server-Zertifikat gültig ist. Gibt true zurück wenn gültig,
 /// false wenn Self-Signed/ungültig.
@@ -70,11 +70,14 @@ pub async fn api_proxy(
 
     if !status.is_success() {
         let text = response.text().await.unwrap_or_default();
-        return Err(AppError::Validation(format!("HTTP {}: {}", status.as_u16(), text)));
+        return Err(AppError::Validation(format!(
+            "HTTP {}: {}",
+            status.as_u16(),
+            text
+        )));
     }
 
-    let value: serde_json::Value = response.json().await
-        .unwrap_or(serde_json::Value::Null);
+    let value: serde_json::Value = response.json().await.unwrap_or(serde_json::Value::Null);
     Ok(value)
 }
 
@@ -190,9 +193,7 @@ pub async fn login(
 }
 
 #[tauri::command]
-pub async fn check_session(
-    app: tauri::AppHandle,
-) -> Result<Option<AuthSession>, AppError> {
+pub async fn check_session(app: tauri::AppHandle) -> Result<Option<AuthSession>, AppError> {
     let allow_self_signed = storage::load_settings(&app)
         .map(|s| s.allow_self_signed_certs)
         .unwrap_or(false);
@@ -231,7 +232,15 @@ pub async fn start_tunnel(
         .map(|s| s.allow_self_signed_certs)
         .unwrap_or(false);
     let frpc_state = state.inner().clone();
-    frpc::start_tunnel(app, frpc_state, &server_url, &token, &username, allow_self_signed).await
+    frpc::start_tunnel(
+        app,
+        frpc_state,
+        &server_url,
+        &token,
+        &username,
+        allow_self_signed,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -272,17 +281,11 @@ pub fn ansible_generate_inventory(
 }
 
 #[tauri::command]
-pub fn ansible_write_playbook(
-    filename: String,
-    content: String,
-) -> Result<String, AppError> {
+pub fn ansible_write_playbook(filename: String, content: String) -> Result<String, AppError> {
     ansible::write_playbook_temp(&filename, &content)
 }
 
 #[tauri::command]
-pub fn ansible_launch(
-    inventory_path: String,
-    playbook_path: String,
-) -> Result<(), AppError> {
+pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
     ansible::launch_ansible(&inventory_path, &playbook_path)
 }

@@ -5,11 +5,11 @@ mod connection;
 mod error;
 mod frpc;
 mod models;
-mod tunnel;
 mod password;
 mod storage;
 mod sync;
 mod terminal;
+mod tunnel;
 mod validation;
 
 use commands::{

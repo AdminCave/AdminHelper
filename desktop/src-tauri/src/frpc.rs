@@ -80,11 +80,16 @@ async fn fetch_visitor_bundle(
 
 /// Write visitor bundle (TOML + PKI files) to the app data directory.
 /// Rewrites relative PKI paths in the TOML to absolute paths.
-fn write_visitor_bundle(app: &tauri::AppHandle, bundle: &VisitorBundle) -> Result<PathBuf, AppError> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string())))?;
+fn write_visitor_bundle(
+    app: &tauri::AppHandle,
+    bundle: &VisitorBundle,
+) -> Result<PathBuf, AppError> {
+    let data_dir = app.path().app_data_dir().map_err(|e| {
+        AppError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            e.to_string(),
+        ))
+    })?;
     std::fs::create_dir_all(&data_dir)?;
 
     // Write PKI files if present
@@ -125,7 +130,9 @@ pub fn start_frpc(
     state: &FrpcState,
     visitor_name: String,
 ) -> Result<(), AppError> {
-    let mut guard = state.lock().map_err(|e| AppError::Connection(e.to_string()))?;
+    let mut guard = state
+        .lock()
+        .map_err(|e| AppError::Connection(e.to_string()))?;
 
     if guard.child.is_some() {
         return Err(AppError::Validation("frpc laeuft bereits".to_string()));
@@ -136,9 +143,9 @@ pub fn start_frpc(
         .ok_or_else(|| AppError::Validation("Ungültiger Konfigurationspfad".to_string()))?;
 
     let shell = app.shell();
-    let command = shell.sidecar("frpc").map_err(|e| {
-        AppError::Connection(format!("frpc-Sidecar nicht gefunden: {e}"))
-    })?;
+    let command = shell
+        .sidecar("frpc")
+        .map_err(|e| AppError::Connection(format!("frpc-Sidecar nicht gefunden: {e}")))?;
 
     let (mut rx, child) = command
         .args(["-c", config_str])
@@ -179,7 +186,9 @@ pub fn start_frpc(
 
 /// Stop the running frpc process.
 pub fn stop_frpc(state: &FrpcState) -> Result<(), AppError> {
-    let mut guard = state.lock().map_err(|e| AppError::Connection(e.to_string()))?;
+    let mut guard = state
+        .lock()
+        .map_err(|e| AppError::Connection(e.to_string()))?;
     if let Some(child) = guard.child.take() {
         let _ = child.kill();
     }

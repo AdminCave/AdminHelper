@@ -29,8 +29,13 @@ pub struct ResolvedConnection {
 }
 
 /// Fetch all tunnels from the server.
-pub async fn fetch_tunnels(server_url: &str, token: &str, allow_self_signed: bool) -> Result<Vec<TunnelMapping>, AppError> {
-    let response = auth::authenticated_get(server_url, token, "/api/frp/tunnels", allow_self_signed).await?;
+pub async fn fetch_tunnels(
+    server_url: &str,
+    token: &str,
+    allow_self_signed: bool,
+) -> Result<Vec<TunnelMapping>, AppError> {
+    let response =
+        auth::authenticated_get(server_url, token, "/api/frp/tunnels", allow_self_signed).await?;
 
     if !response.status().is_success() {
         return Err(AppError::Validation(
@@ -48,9 +53,9 @@ pub fn resolve_connection(
     tunnels: &[TunnelMapping],
 ) -> ResolvedConnection {
     // Find matching tunnel by connectionId
-    let tunnel = tunnels.iter().find(|t| {
-        t.enabled && t.connection_id.as_deref() == Some(&connection.id)
-    });
+    let tunnel = tunnels
+        .iter()
+        .find(|t| t.enabled && t.connection_id.as_deref() == Some(&connection.id));
 
     match tunnel {
         Some(t) => {

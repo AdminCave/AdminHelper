@@ -61,11 +61,11 @@ func collectLoad() map[string]any {
 
 // DiskInfo enthaelt die Metriken einer Partition.
 type DiskInfo struct {
-	Mount    string  `json:"mount"`
-	FSType   string  `json:"fstype"`
-	Percent  float64 `json:"percent"`
-	TotalGB  float64 `json:"total_gb"`
-	UsedGB   float64 `json:"used_gb"`
+	Mount   string  `json:"mount"`
+	FSType  string  `json:"fstype"`
+	Percent float64 `json:"percent"`
+	TotalGB float64 `json:"total_gb"`
+	UsedGB  float64 `json:"used_gb"`
 }
 
 func collectDisks() []DiskInfo {
