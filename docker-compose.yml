@@ -18,7 +18,7 @@ services:
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
 
   server:
-    image: ${SERVER_IMAGE:-docker.nevondo.com/NAMESPACE/adminhelper/server:latest}
+    image: ${SERVER_IMAGE:-ghcr.io/ks98/adminhelper/server:latest}
     ports:
       - "443:8443"
     volumes:
@@ -78,7 +78,7 @@ services:
       - server
 
   monitoring:
-    image: ${MONITORING_IMAGE:-docker.nevondo.com/ks98/adminhelper/monitoring:latest}
+    image: ${MONITORING_IMAGE:-ghcr.io/ks98/adminhelper/monitoring:latest}
     expose:
       - "8080"
     ports:
