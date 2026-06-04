@@ -107,51 +107,51 @@ Session is persisted — no re-login needed on restart. Local and Sync modes rem
 
 ---
 
-## Server (Team-Modus)
+## Server (Team mode)
 
-Der optionale **AdminHelper Server** ermöglicht zentrale Verwaltung und gemeinsamen Zugriff auf Verbindungen im Team.
+The optional **AdminHelper Server** enables centralized management and shared access to connections across a team.
 
 ### Features
 
-- **Web-Interface** im gleichen Design wie der Desktop-Client
-- **Benutzerrollen**: Admin (vollständige CRUD) und User (nur lesen)
-- **API-Keys** für programmatischen Zugriff und Client-Sync
-- **JWT-Authentifizierung** mit Refresh-Token-Mechanismus
-- **FRP-Tunnel-Verwaltung** mit Config-Generierung, Visitor-Profilen und Provisioning
-- **Monitoring-Service** mit Agent-basiertem Ressourcen-Monitoring, Templates und Alerting
-- **Server-Verwaltung** mit Tags, PKI/TLS-Management und Auto-Connection
-- **PostgreSQL 17** als gemeinsame Datenbank für Server und Monitoring
-- **Docker**-Deployment via GitLab-Registry
+- **Web interface** in the same design as the desktop client
+- **User roles**: Admin (full CRUD) and User (read-only)
+- **API keys** for programmatic access and client sync
+- **JWT authentication** with refresh-token mechanism
+- **FRP tunnel management** with config generation, visitor profiles, and provisioning
+- **Monitoring service** with agent-based resource monitoring, templates, and alerting
+- **Server management** with tags, PKI/TLS management, and auto-connection
+- **PostgreSQL 17** as the shared database for server and monitoring
+- **Docker** deployment via GitLab registry
 
-### Schnellstart
+### Quick start
 
-Das Server-Image wird direkt aus der GitLab-Registry gezogen:
+The server image is pulled directly from the GitLab registry:
 
 ```bash
-# Im Projektroot:
+# In the project root:
 cp .env.example .env
 
-# Sichere Zufalls-Secrets generieren (SECRET_KEY + MONITOR_API_KEY).
-# Idempotent: ueberschreibt nichts, was bereits gesetzt ist.
+# Generate secure random secrets (SECRET_KEY + MONITOR_API_KEY).
+# Idempotent: does not overwrite anything that is already set.
 ./scripts/init-secrets.sh
 
-# Optional: SERVER_IMAGE in .env auf eigene Registry-URL setzen.
+# Optional: set SERVER_IMAGE in .env to your own registry URL.
 
 docker compose pull
 docker compose up -d
 ```
 
-Der Server ist dann unter `http://localhost:8080` erreichbar.
+The server is then reachable at `http://localhost:8080`.
 
-**Erstanmeldung — Bootstrap-Token-Flow:**
+**First login — bootstrap-token flow:**
 
-Es gibt **keinen** Default-Login mit `admin/admin` mehr. Beim ersten Start (mit leerem `ADMIN_PASSWORD`) schreibt der Server einen einmaligen Setup-Token in `data/.bootstrap_token` und zeigt ihn im Log:
+There is **no** default `admin/admin` login anymore. On the first start (with an empty `ADMIN_PASSWORD`), the server writes a one-time setup token to `data/.bootstrap_token` and shows it in the log:
 
 ```bash
 docker compose logs server | grep -A2 'Setup-Token'
 ```
 
-Damit den ersten Admin anlegen:
+Use it to create the first admin:
 
 ```bash
 curl -k -X POST https://localhost/api/auth/bootstrap \
@@ -159,196 +159,196 @@ curl -k -X POST https://localhost/api/auth/bootstrap \
   -d '{"token":"<TOKEN>","username":"admin","password":"<eigenes-passwort>"}'
 ```
 
-Antwort enthält direkt `access_token` + `refresh_token` — kein zusätzlicher Login nötig. Token-Datei wird nach dem Bootstrap automatisch gelöscht.
+The response directly contains `access_token` + `refresh_token` — no additional login required. The token file is automatically deleted after the bootstrap.
 
-> **Warum `init-secrets.sh`?** Server- und Monitoring-Container teilen sich einen `MONITOR_API_KEY` als internes Shared Secret. Wenn der Wert in `.env` leer ist, generiert sich der Monitoring-Container einen eigenen Random — und die Server-zu-Monitoring-Aufrufe scheitern mit 401, was die Monitoring-Page in der Web-UI tot wirken lässt. Das Init-Script fixt das.
+> **Why `init-secrets.sh`?** The server and monitoring containers share a `MONITOR_API_KEY` as an internal shared secret. If the value in `.env` is empty, the monitoring container generates its own random one — and the server-to-monitoring calls fail with 401, which makes the monitoring page in the web UI appear dead. The init script fixes that.
 
-### Persistente Daten
+### Persistent data
 
-Die strukturierten Daten (Connections, Benutzer, Server, Tunnel, Monitoring) liegen in **PostgreSQL 17** (Service `postgres`, Image `postgres:17-alpine`). Server und Monitoring teilen sich einen Postgres-Cluster mit zwei Datenbanken: `adminhelper` (vom Postgres-Container als Default-DB angelegt) und `adminhelper_monitor` (beim ersten Start idempotent angelegt durch `scripts/postgres-init.sh`). Der Postgres-Container ist nur intern im Compose-Network erreichbar (kein Port-Mapping); die Daten liegen im Volume `postgres-data`.
+The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the first start by `scripts/postgres-init.sh`). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
 
-Datei-basierte Server-Daten werden im Verzeichnis `./data/` im Projektroot gespeichert (Bind-Mount). Dieses Verzeichnis ist in `.gitignore` eingetragen und wird automatisch angelegt.
+File-based server data is stored in the `./data/` directory in the project root (bind mount). This directory is listed in `.gitignore` and is created automatically.
 
 ```
-./data/           ← Bootstrap-Token, .secret_key, FRP-Config, Ansible-Playbooks, Zertifikate
+./data/           ← bootstrap token, .secret_key, FRP config, Ansible playbooks, certificates
 ```
 
-### Client-Sync konfigurieren
+### Configuring client sync
 
-1. Im Server-Web-Interface: API-Key mit Berechtigung **"Nur lesen"** anlegen
-2. Im Desktop-Client: Einstellungen → Modus: **Sync** → URL:
+1. In the server web interface: create an API key with the **"Read-only"** permission
+2. In the desktop client: Settings → Mode: **Sync** → URL:
    ```
    http://<server>:8080/api/connections?api_key=<key>
    ```
 
-### Server-API
+### Server API
 
 ```
 POST   /api/auth/login          # Login -> JWT
-GET    /api/auth/me             # Aktueller Benutzer
+GET    /api/auth/me             # Current user
 
-GET    /api/connections         # Verbindungen (User + API-Key)
-POST   /api/connections         # Erstellen (Admin)
-PUT    /api/connections/{id}    # Bearbeiten (Admin)
-DELETE /api/connections/{id}    # Loeschen (Admin)
+GET    /api/connections         # Connections (user + API key)
+POST   /api/connections         # Create (admin)
+PUT    /api/connections/{id}    # Edit (admin)
+DELETE /api/connections/{id}    # Delete (admin)
 
-GET    /api/users               # Benutzer-Liste (Admin)
-POST   /api/users               # Benutzer anlegen (Admin)
-PUT    /api/users/{id}          # Benutzer bearbeiten (Admin)
-DELETE /api/users/{id}          # Benutzer loeschen (Admin)
+GET    /api/users               # User list (admin)
+POST   /api/users               # Create user (admin)
+PUT    /api/users/{id}          # Edit user (admin)
+DELETE /api/users/{id}          # Delete user (admin)
 
-GET    /api/api-keys            # API-Keys (Admin)
-POST   /api/api-keys            # API-Key anlegen (Admin)
-DELETE /api/api-keys/{id}       # API-Key loeschen (Admin)
+GET    /api/api-keys            # API keys (admin)
+POST   /api/api-keys            # Create API key (admin)
+DELETE /api/api-keys/{id}       # Delete API key (admin)
 
-GET    /api/servers              # Server-Liste (Admin)
-POST   /api/servers              # Server anlegen (Admin)
-DELETE /api/servers/{id}         # Server loeschen (Admin)
+GET    /api/servers              # Server list (admin)
+POST   /api/servers              # Create server (admin)
+DELETE /api/servers/{id}         # Delete server (admin)
 
-GET    /api/frp/tunnels         # Tunnel-Liste (Admin)
-GET    /api/frp/visitors        # Visitor-Liste (Admin)
-GET    /api/frp/generate/visitor-toml  # Visitor-Config generieren
-GET    /api/frp/provision/{id}/config       # Aktueller frpc.toml (Sync-Agent)
-GET    /api/frp/provision/{id}/config-hash  # SHA-256 fuer Drift-Sync
+GET    /api/frp/tunnels         # Tunnel list (admin)
+GET    /api/frp/visitors        # Visitor list (admin)
+GET    /api/frp/generate/visitor-toml  # Generate visitor config
+GET    /api/frp/provision/{id}/config       # Current frpc.toml (sync agent)
+GET    /api/frp/provision/{id}/config-hash  # SHA-256 for drift sync
 
-POST   /api/servers/{id}/provision/token     # Provision-Token erzeugen (Admin)
-GET    /api/servers/{id}/provision/tokens    # Tokens auflisten (Admin)
-POST   /api/servers/{id}/provision/activate  # Token einloesen (X-Provision-Token)
+POST   /api/servers/{id}/provision/token     # Create provision token (admin)
+GET    /api/servers/{id}/provision/tokens    # List tokens (admin)
+POST   /api/servers/{id}/provision/activate  # Redeem token (X-Provision-Token)
 
-GET    /api/monitoring/checks    # Monitoring-Checks (Admin)
-GET    /api/monitoring/templates # Monitoring-Templates (Admin)
+GET    /api/monitoring/checks    # Monitoring checks (admin)
+GET    /api/monitoring/templates # Monitoring templates (admin)
 ```
 
-API-Dokumentation: `http://localhost:8080/api/docs` (Swagger UI) bzw. `/openapi.json`
+API documentation: `http://localhost:8080/api/docs` (Swagger UI) or `/openapi.json`
 
 ---
 
 ## Chrome Extension
 
-Die **AdminHelper Chrome Extension** zeigt Web-Verbindungen (`kind: web`) vom Team-Server direkt als Browser-Popup an.
+The **AdminHelper Chrome Extension** shows web connections (`kind: web`) from the team server directly as a browser popup.
 
 ### Features
 
-- Verbindungen per API-Key vom Server laden
-- **Sofortige Anzeige** aus dem Cache, im Hintergrund neu laden
-- **Live-Suche** über Name, URL, Tags und Notizen
-- **Zwei Ansichten**: flache Liste oder nach Tags gruppiert (aufklappbar)
-- **Badge** am Extension-Icon zeigt Anzahl der Web-Verbindungen
-- Automatisches **Hintergrund-Refresh** alle 5 Minuten
-- Gleiches **Dark-Theme** wie Client und Server
+- Load connections from the server via API key
+- **Instant display** from the cache, reload in the background
+- **Live search** across name, URL, tags, and notes
+- **Two views**: flat list or grouped by tags (collapsible)
+- **Badge** on the extension icon shows the number of web connections
+- Automatic **background refresh** every 5 minutes
+- Same **dark theme** as the client and server
 
 ### Installation
 
-1. `chrome://extensions` öffnen → **Entwicklermodus** aktivieren
-2. **"Entpackt laden"** → Verzeichnis `extension/` wählen
-3. Extension-Icon klicken → Server-URL und API-Key eingeben
-4. Web-Verbindungen erscheinen sofort im Popup
+1. Open `chrome://extensions` → enable **Developer mode**
+2. **"Load unpacked"** → select the `extension/` directory
+3. Click the extension icon → enter the server URL and API key
+4. Web connections appear immediately in the popup
 
-### Konfiguration
+### Configuration
 
-Über das **⚙-Icon** im Popup oder die Options-Seite:
+Via the **⚙ icon** in the popup or the options page:
 
-- **Server-URL**: z.B. `http://server:8080`
-- **API-Key**: Read-only API-Key aus dem Server-Web-Interface
+- **Server URL**: e.g. `http://server:8080`
+- **API key**: read-only API key from the server web interface
 
-### Einstellungen zwischen Geräten
+### Settings across devices
 
-Die Einstellungen (Server-URL, API-Key) werden über `chrome.storage.sync` gespeichert und bei aktivierter Chrome-Synchronisierung automatisch auf alle Geräte übertragen.
+The settings (server URL, API key) are stored via `chrome.storage.sync` and, when Chrome sync is enabled, automatically transferred to all devices.
 
 ---
 
 ## Monitoring
 
-Der **Monitoring-Service** läuft als separater Container neben dem Server und überwacht registrierte Server über einen leichtgewichtigen Agent.
+The **monitoring service** runs as a separate container alongside the server and monitors registered servers through a lightweight agent.
 
 ### Features
 
-- **Check-Typen**: Ping, TCP, HTTP, Agent-basierte Ressourcen-Checks
-- **Agent-Plugins**: CPU, RAM, Disk, Systemd Health, Docker, ZFS, Proxmox (automatisch erkannt)
-- **Templates**: Monitoring-Konfigurationen als Templates definieren und an Server zuweisen
-- **Alerting**: Webhook- und E-Mail-Benachrichtigungen mit konfigurierbarem Cooldown
-- **Recovery-Alerts**: Automatische Benachrichtigung wenn ein Check wieder OK ist
+- **Check types**: Ping, TCP, HTTP, agent-based resource checks
+- **Agent plugins**: CPU, RAM, Disk, Systemd Health, Docker, ZFS, Proxmox (auto-detected)
+- **Templates**: define monitoring configurations as templates and assign them to servers
+- **Alerting**: webhook and email notifications with a configurable cooldown
+- **Recovery alerts**: automatic notification when a check is OK again
 
-### Agent installieren
+### Installing the agent
 
-Der **Unified Go Agent** (`adminhelper-agent`) vereint FRP-Sync und Monitoring in einem einzigen Paket fuer Linux und Windows:
+The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows:
 
 ```bash
-# DEB installieren:
+# Install the DEB:
 apt install ./adminhelper-agent_0.23.2_amd64.deb
 
-# Komplett-Provisioning in einem Aufruf (Server-API-Key + optional Monitor + optional FRP):
+# Full provisioning in a single call (server API key + optional monitor + optional FRP):
 sudo adminhelper-agent provision \
   --url https://<server> \
   --token <PROVISION-TOKEN> \
   --server-id <SERVER-ID>
 
-# Dauerbetrieb starten (FRP-Sync + Monitor-Push alle 5 Min):
+# Start continuous operation (FRP sync + monitor push every 5 min):
 sudo adminhelper-agent run
 
-# Als systemd-Service installieren:
+# Install as a systemd service:
 sudo adminhelper-agent service install
 ```
 
-Der `provision`-Befehl loest den Token gegen `/api/servers/{id}/provision/activate`
-ein und installiert je nach Antwort:
+The `provision` command redeems the token against `/api/servers/{id}/provision/activate`
+and installs, depending on the response:
 
-- Server-API-Key (immer)
-- Monitor-Agent + Key (wenn Monitor-Service erreichbar)
-- FRP-Client + frpc.toml + PKI-Bundle (wenn Server FRP-Tunnel hat)
+- Server API key (always)
+- Monitor agent + key (if the monitor service is reachable)
+- FRP client + frpc.toml + PKI bundle (if the server has an FRP tunnel)
 
-Damit funktioniert Provisioning auch fuer Server **ohne** FRP-Tunnel — bis v0.22.x
-war der Flow an FRP gekoppelt. Manuelle Setups (z.B. nur Monitoring) gehen weiter
-ueber `adminhelper-agent monitor init --api-key ...`.
+This means provisioning also works for servers **without** an FRP tunnel — up to v0.22.x
+the flow was coupled to FRP. Manual setups (e.g. monitoring only) still work
+via `adminhelper-agent monitor init --api-key ...`.
 
-**Agent-Subcommands:**
+**Agent subcommands:**
 
-| Befehl | Funktion |
+| Command | Function |
 |--------|----------|
-| `adminhelper-agent provision` | Ersteinrichtung mit Provision-Token (FRP optional, Monitor optional) |
-| `adminhelper-agent run [--once]` | FRP-Sync + Monitor-Push (Loop oder einmalig) |
-| `adminhelper-agent frpc sync` | Einmaliger FRP-Config-Sync |
-| `adminhelper-agent monitor init` | Monitoring-Ersteinrichtung (manuell, ohne Token) |
-| `adminhelper-agent monitor push` | Einmaliger Metriken-Push |
-| `adminhelper-agent service install` | OS-Service registrieren (systemd/Windows) |
-| `adminhelper-agent service uninstall` | OS-Service deregistrieren |
-| `adminhelper-agent version` | Version anzeigen |
+| `adminhelper-agent provision` | Initial setup with a provision token (FRP optional, monitor optional) |
+| `adminhelper-agent run [--once]` | FRP sync + monitor push (loop or one-time) |
+| `adminhelper-agent frpc sync` | One-time FRP config sync |
+| `adminhelper-agent monitor init` | Monitoring initial setup (manual, without token) |
+| `adminhelper-agent monitor push` | One-time metrics push |
+| `adminhelper-agent service install` | Register OS service (systemd/Windows) |
+| `adminhelper-agent service uninstall` | Deregister OS service |
+| `adminhelper-agent version` | Show version |
 
-Der Agent erkennt automatisch vorhandene Subsysteme (Docker, ZFS, Proxmox) und sammelt CPU-, RAM-, Disk- und Service-Metriken. Metriken werden in **VictoriaMetrics** gespeichert (90 Tage Retention).
+The agent automatically detects available subsystems (Docker, ZFS, Proxmox) and collects CPU, RAM, disk, and service metrics. Metrics are stored in **VictoriaMetrics** (90-day retention).
 
 ---
 
 ## Ansible
 
-Die integrierte **Ansible-Verwaltung** ermoeglicht zentrale Playbook-Verwaltung ueber den Server und lokale Ausfuehrung ueber den Desktop-Client.
+The integrated **Ansible management** enables centralized playbook management via the server and local execution via the desktop client.
 
 ### Features
 
-- **Playbook-CRUD** im Server-Web-Interface (Admin-only)
-- **YAML-Validierung** beim Erstellen und Bearbeiten
-- **Tag-basierte Filterung** und Suche
-- **Desktop-Integration** mit 3-Schritt-Workflow:
-  1. Playbook auswaehlen
-  2. Ziel-Server auswaehlen (einzeln oder nach Tags)
-  3. Lokal via `ansible-playbook` ausfuehren
+- **Playbook CRUD** in the server web interface (admin-only)
+- **YAML validation** on creating and editing
+- **Tag-based filtering** and search
+- **Desktop integration** with a 3-step workflow:
+  1. Select a playbook
+  2. Select target servers (individually or by tags)
+  3. Run locally via `ansible-playbook`
 
-### Voraussetzungen
+### Requirements
 
-- `ansible-playbook` muss auf dem Desktop-Rechner installiert sein
-- Server muessen im Server-Web-Interface unter "Server" angelegt sein
+- `ansible-playbook` must be installed on the desktop machine
+- Servers must be created in the server web interface under "Servers"
 
 ### API
 
 ```
-GET    /api/ansible/playbooks              # Alle Playbooks auflisten
-POST   /api/ansible/playbooks              # Playbook erstellen (Admin)
-GET    /api/ansible/playbooks/{id}         # Playbook-Metadaten
-GET    /api/ansible/playbooks/{id}/content # YAML-Inhalt abrufen
-PUT    /api/ansible/playbooks/{id}         # Playbook aktualisieren (Admin)
-DELETE /api/ansible/playbooks/{id}         # Playbook loeschen (Admin)
+GET    /api/ansible/playbooks              # List all playbooks
+POST   /api/ansible/playbooks              # Create playbook (admin)
+GET    /api/ansible/playbooks/{id}         # Playbook metadata
+GET    /api/ansible/playbooks/{id}/content # Retrieve YAML content
+PUT    /api/ansible/playbooks/{id}         # Update playbook (admin)
+DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)
 ```
 
-Der Desktop-Client generiert automatisch ein INI-Inventory aus den ausgewaehlten Servern und startet `ansible-playbook` in einem nativen Terminal.
+The desktop client automatically generates an INI inventory from the selected servers and launches `ansible-playbook` in a native terminal.
 
 ---
 
@@ -382,69 +382,69 @@ cargo tauri build
 
 ```text
 .
-├─ desktop/                  # Tauri Desktop-Client (Wrapper)
-│  ├─ src-tauri/             # Rust-Backend
+├─ desktop/                  # Tauri desktop client (wrapper)
+│  ├─ src-tauri/             # Rust backend
 │  │  ├─ src/
-│  │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
-│  │  │  ├─ commands.rs        # IPC-Schnittstelle
-│  │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
-│  │  │  ├─ frpc.rs            # frpc-Sidecar-Prozess
-│  │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
-│  │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
-│  │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
-│  │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausfuehrung
+│  │  │  ├─ main.rs            # invoke_handler with 23 Tauri commands
+│  │  │  ├─ commands.rs        # IPC interface
+│  │  │  ├─ auth.rs            # JWT login, keyring persistence
+│  │  │  ├─ frpc.rs            # frpc sidecar process
+│  │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
+│  │  │  ├─ connection/        # SSH/RDP/Web connection logic
+│  │  │  ├─ password.rs        # OS keyring (com.adminhelper.app)
+│  │  │  ├─ ansible.rs         # inventory generation + playbook execution
 │  │  │  └─ ...
-│  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
-│  │  └─ capabilities/        # Tauri v2 Security Permissions (strikt gescopt)
-│  └─ src/                    # ALT (Plain-JS, seit v0.19.0 historisch)
-├─ desktop-src/              # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
+│  │  ├─ binaries/            # frpc sidecar (gitignored, CI download)
+│  │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
+│  └─ src/                    # OLD (plain JS, historical since v0.19.0)
+├─ desktop-src/              # PRODUCTION: Svelte 5 + TS desktop frontend
 │  ├─ src/
 │  │  ├─ lib/
-│  │  │  ├─ bridge/           # 22 typisierte invoke()-Wrapper
-│  │  │  ├─ stores/           # 12 Stores (session, connections, tunnel, …)
+│  │  │  ├─ bridge/           # 22 typed invoke() wrappers
+│  │  │  ├─ stores/           # 12 stores (session, connections, tunnel, …)
 │  │  │  ├─ models/           # connection / settings / ansible / monitoring
 │  │  │  ├─ api/, i18n/, utils/
-│  │  ├─ components/          # ~30 Components (AppShell, Login, …)
-│  │  ├─ pages/               # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
+│  │  ├─ components/          # ~30 components (AppShell, Login, …)
+│  │  ├─ pages/               # 4 pages (Dashboard, Connections, Ansible, Monitoring)
 │  │  └─ main.ts
-│  └─ vitest.setup.ts         # ~41 Vitest-Unit-Tests
-├─ frontend-src/             # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
+│  └─ vitest.setup.ts         # ~41 Vitest unit tests
+├─ frontend-src/             # PRODUCTION: Svelte 5 + TS web admin panel
 │  ├─ src/
-│  │  ├─ lib/                 # 11 API-Module + 10 Stores + i18n + Hash-Router
-│  │  ├─ pages/               # 8 Produktivseiten + Login + Placeholder
-│  │  ├─ modals/              # 19 Modal-Komponenten
+│  │  ├─ lib/                 # 11 API modules + 10 stores + i18n + hash router
+│  │  ├─ pages/               # 8 production pages + Login + placeholder
+│  │  ├─ modals/              # 19 modal components
 │  │  └─ App.svelte, main.ts
 │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
-├─ server/                   # FastAPI-Backend (modularer Monolith)
+├─ server/                   # FastAPI backend (modular monolith)
 │  ├─ app/
-│  │  ├─ main.py              # App, Lifespan, Auto-Migrationen, SPA-Fallback
+│  │  ├─ main.py              # app, lifespan, auto migrations, SPA fallback
 │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
 │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
 │  │                          #   ansible, monitoring_proxy
-│  ├─ frontend/               # ALT (Plain-JS, seit v0.17.0 historisch)
-│  ├─ Dockerfile              # NICHT mehr gebaut – Repo-Root-Dockerfile ist aktiv
+│  ├─ frontend/               # OLD (plain JS, historical since v0.17.0)
+│  ├─ Dockerfile              # NO longer built – the repo-root Dockerfile is active
 │  └─ requirements.txt
-├─ monitoring/               # Eigenstaendiger FastAPI-Microservice
+├─ monitoring/               # Standalone FastAPI microservice
 │  ├─ app/
 │  │  ├─ main.py
 │  │  ├─ models.py            # Checks, States, Templates, AlertRules, AgentKeys
 │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
 │  │  ├─ routers/             # admin, agent, alerts, checks, templates
 │  │  ├─ core/                # auth, config, database, victoria
-│  │  └─ scheduler.py         # APScheduler fuer Pull-Checks
+│  │  └─ scheduler.py         # APScheduler for pull checks
 │  └─ Dockerfile
 ├─ agent-go/                 # Unified Go Agent (Linux + Windows)
 │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
 │  ├─ internal/               # config, frpc, monitor, service
-│  ├─ deb/, rpm/              # Paket-Metadaten
+│  ├─ deb/, rpm/              # package metadata
 │  ├─ systemd/                # adminhelper-agent.service + .timer
 │  └─ Makefile                # build-linux, build-windows, deb, rpm
-├─ extension/                # Browser-Extension (Manifest V3)
-├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
-├─ data/                     # Server-Daten (gitignored, Bind-Mount)
-├─ Dockerfile                # Multi-Stage: Vite-Build (frontend-src) → Python-Runtime
+├─ extension/                # browser extension (Manifest V3)
+├─ docs/                     # documentation (DE + EN, static HTML)
+├─ data/                     # server data (gitignored, bind mount)
+├─ Dockerfile                # multi-stage: Vite build (frontend-src) → Python runtime
 ├─ docker-compose.yml
-├─ docker-compose.override.yml  # Lokale Dev-Overrides (gitignored)
+├─ docker-compose.override.yml  # local dev overrides (gitignored)
 ├─ .gitlab-ci.yml
 └─ .env.example
 ```
