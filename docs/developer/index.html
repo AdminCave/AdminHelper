@@ -60,30 +60,24 @@
           <h2>Repo-Layout</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>adminhelper/
-├── server/               FastAPI + Scheduler (Python)
-│   ├── app/
-│   │   ├── api/          Router (13 Module)
-│   │   ├── core/         Config, Auth, Logging
-│   │   ├── db/           Models, Migrations
-│   │   ├── monitoring/   Checks, Scheduler
-│   │   └── frp/          PKI + Tunnel-Management
-│   └── tests/
-├── frontend-src/         Web-Panel (Svelte 5 + Vite)
-│   ├── src/
-│   │   ├── lib/          Komponenten, Stores
-│   │   └── routes/       Hash-Router-Pages
-│   └── tests/e2e/        Playwright
-├── desktop/              Tauri-Wrapper + Rust
-│   └── src-tauri/        24 Tauri-Commands, 13 Rust-Module
-├── desktop-src/          Desktop-Frontend (Svelte 5 + Vite)
-│   └── src/lib/bridge/   Typisierte Tauri-Brücke
-├── agent-go/             Go-Agent
-│   ├── cmd/              Cobra-Commands
-│   ├── internal/         Collectors, FRP-Client, HTTP
-│   └── build-deb.sh      DEB-Pakete
-├── monitoring/           Monitoring-Service (FastAPI)
-├── extension/            Chrome-Extension (Manifest V3)
+├── apps/                 Alle lauffähigen Einheiten
+│   ├── server/           FastAPI + Scheduler (Python, 8 Module)
+│   │   ├── app/{core,modules}/
+│   │   └── tests/
+│   ├── monitoring/       Monitoring-Service (FastAPI, eigene DB)
+│   ├── agent/            Unified Go-Agent (Linux + Windows)
+│   │   ├── cmd/          Cobra-Commands
+│   │   ├── internal/     Collectors, FRP-Client, HTTP
+│   │   └── build-deb.sh  DEB-/RPM-Pakete
+│   ├── web/              Web-Panel (Svelte 5 + Vite)
+│   │   ├── src/lib/      Komponenten, Stores, API
+│   │   └── tests/e2e/    Playwright
+│   ├── desktop/          Tauri-Client (Backend + UI zusammen)
+│   │   ├── src-tauri/    24 Tauri-Commands, Rust-Module
+│   │   └── ui/           Desktop-Frontend (Svelte 5 + Vite)
+│   └── extension/        Chrome-Extension (Manifest V3)
 ├── docs/                 Diese Dokumentation
+├── scripts/              Ops-/DB-Skripte
 ├── Dockerfile            Multi-Stage (Vite-Build + Python-Runtime)
 └── .github/workflows/    CI/CD (GitHub Actions)</code></pre>
 
@@ -91,17 +85,17 @@
           <p>Jedes Unterprojekt ist eigenständig, kein Monorepo-Toolchain:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Server
-cd server && uv sync && uv run uvicorn app.main:app --reload --port 8443
+cd apps/server && uv sync && uv run uvicorn app.main:app --reload --port 8443
 
 # Web-Panel (mit Proxy zum laufenden Server)
-cd frontend-src && npm ci && npm run dev
+cd apps/web && npm ci && npm run dev
 
 # Desktop-Client (startet Tauri-Dev mit Auto-Reload)
-cd desktop-src && npm ci
+cd apps/desktop/ui && npm ci
 cd ../desktop && cargo tauri dev
 
 # Go-Agent
-cd agent-go && go run ./cmd/adminhelper-agent version</code></pre>
+cd apps/agent && go run ./cmd/adminhelper-agent version</code></pre>
 
           <h2>Lies weiter</h2>
           <ul>

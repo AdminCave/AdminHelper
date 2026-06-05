@@ -80,11 +80,11 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>
           <ul>
-            <li><code>desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri bundle</li>
-            <li><code>desktop-src/package.json</code> + <code>frontend-src/package.json</code> (+ each <code>package-lock.json</code>) &ndash; Vite builds</li>
-            <li><code>desktop-src/src/components/AppShell.svelte</code> &ndash; sidebar badge</li>
+            <li><code>apps/desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri bundle</li>
+            <li><code>apps/desktop/ui/package.json</code> + <code>apps/web/package.json</code> (+ each <code>package-lock.json</code>) &ndash; Vite builds</li>
+            <li><code>apps/desktop/ui/src/components/AppShell.svelte</code> &ndash; sidebar badge</li>
             <li><code>extension/manifest.json</code> &ndash; browser extension</li>
-            <li><code>agent-go/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; default <code>VERSION</code> (CI overrides it from the tag)</li>
+            <li><code>apps/agent/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; default <code>VERSION</code> (CI overrides it from the tag)</li>
             <li><code>docs/**/*.html</code> &ndash; footer <code>&lt;span&gt;v0.24.0&lt;/span&gt;</code> + landing &ldquo;What's new&rdquo; + code samples</li>
             <li><code>README.md</code> &ndash; agent DEB install command</li>
             <li><code>CHANGELOG.md</code> &ndash; new section at the top + link ref</li>

@@ -9,28 +9,33 @@ Code-Komponenten in vier Sprachen plus Extension:
 
 | Komponente | Pfad | Stack | Tests |
 |---|---|---|---|
-| Server (modularer Monolith, 8 Module unter `app/modules/`) | `server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`server/tests/`) |
-| Monitoring (eigener Dienst, eigene DB) | `monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | — (noch keine) |
-| Agent (Linux + Windows) | `agent-go/` | Go · cobra · gopsutil · `//go:build`-Tags | — (noch keine) |
-| Desktop-Backend | `desktop/src-tauri/` | Rust · Tauri · keyring | — |
-| Desktop-UI | `desktop-src/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
-| Web-Frontend | `frontend-src/` | Svelte · TypeScript (strict) · Vite | Playwright (E2E) |
-| Browser-Extension | `extension/` | Vanilla JS · Manifest V3 | — |
+| Server (modularer Monolith, 8 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`) |
+| Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | — (noch keine) |
+| Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | — (noch keine) |
+| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | — |
+| Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
+| Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Playwright (E2E) |
+| Browser-Extension | `apps/extension/` | Vanilla JS · Manifest V3 | — |
 
 Externe Integrationen mit eigenem Wire-Format/Protokoll: **FRP** (`frps.toml`,
 STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
 **gopsutil/SMART** (System-Metriken), **Tauri** (Desktop-IPC), **Ansible**
 (Server-Modul vorhanden; `data/ansible/` derzeit leer).
 
-**Zwei Stolperfallen, die schon Bugs erzeugt haben:**
+**Repo-Struktur:** Alle lauffähigen Einheiten liegen unter `apps/`
+(`apps/server/`, `apps/monitoring/`, `apps/agent/`, `apps/web/`,
+`apps/desktop/`, `apps/extension/`); Doku in `docs/`, Ops-Skripte in
+`scripts/`. Der Desktop-Client vereint Rust/Tauri-Backend
+(`apps/desktop/src-tauri/`) und Svelte-UI (`apps/desktop/ui/`) unter einem
+Dach — die frühere `desktop/` vs. `desktop-src/`-Geschwister-Kollision (die
+schon Bugs erzeugt hatte) wurde in v0.24.0 aufgelöst. Das alte Plain-JS-UI
+unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
 
-- **`desktop/` vs. `desktop-src/`:** Das Rust-/Tauri-Backend liegt in
-  `desktop/src-tauri/`, die Svelte-UI in `desktop-src/`. Das alte Plain-JS-UI
-  unter `desktop/src/` wurde in v0.19.0 gelöscht — nicht den falschen Baum
-  editieren.
+**Eine Stolperfalle, die schon Bugs erzeugt hat:**
+
 - **Release = mehrere Versions-Stellen synchron bumpen:** Desktop-Version in
-  `desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
-  aus dem Git-Tag ab (Default-Fallback in `agent-go/build-deb.sh` /
+  `apps/desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
+  aus dem Git-Tag ab (Default-Fallback in `apps/agent/build-deb.sh` /
   `build-rpm.sh`), die `FRP_VERSION` ist in den GitHub-Workflows
   (`.github/workflows/`) gepinnt; Server/Monitoring ziehen die Version aus dem
   Git-Tag (Docker-Build-Arg). Stellen-Liste:
@@ -98,16 +103,16 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
   ständiges Nachfragen.
 - **Vor "fertig" melden, alle Checks tatsächlich ausführen** — nicht nur
   behaupten, und nur das ausführen, was es real gibt:
-  - **Python (`server/`, `monitoring/`):** `cd server && pytest -q`
-    (`monitoring/` hat derzeit keine Tests). Linter/Formatter/Typechecker
+  - **Python (`apps/server/`, `apps/monitoring/`):** `cd apps/server && pytest -q`
+    (`apps/monitoring/` hat derzeit keine Tests). Linter/Formatter/Typechecker
     sind **nicht** konfiguriert — nichts behaupten, was nicht existiert.
-  - **Go (`agent-go/`):** `gofmt -l .`, `go vet ./...`, `go test ./...`
+  - **Go (`apps/agent/`):** `gofmt -l .`, `go vet ./...`, `go test ./...`
     (derzeit keine Tests). Build: `make build-linux` / `make build-windows`.
-  - **Rust/Tauri (`desktop/src-tauri/`):** `cargo fmt`,
+  - **Rust/Tauri (`apps/desktop/src-tauri/`):** `cargo fmt`,
     `cargo clippy -- -D warnings`, `cargo test`.
-  - **Svelte/TS (`desktop-src/`):** `npm run check` (svelte-check),
+  - **Svelte/TS (`apps/desktop/ui/`):** `npm run check` (svelte-check),
     `npm run lint` (eslint + prettier), `npm run test` (vitest).
-  - **Svelte/TS (`frontend-src/`):** `npm run check`, `npm run lint`,
+  - **Svelte/TS (`apps/web/`):** `npm run check`, `npm run lint`,
     `npm run test:e2e` (Playwright).
   - Doku & README auf den Änderungs-Stand gebracht (siehe "Doku-Pflege").
 - **Plattform-spezifisches Verhalten wird manuell verifiziert.** Bei

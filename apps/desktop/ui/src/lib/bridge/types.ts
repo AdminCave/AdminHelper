@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Rust backend mirror types.
-// Correspond 1:1 to the structs/enums in desktop/src-tauri/src/models.rs
-// and to the command signatures in desktop/src-tauri/src/commands.rs.
+// Correspond 1:1 to the structs/enums in apps/desktop/src-tauri/src/models.rs
+// and to the command signatures in apps/desktop/src-tauri/src/commands.rs.
 //
 // These types are DELIBERATELY separate from src/lib/api/types.ts (web API).
 // The Rust backend connection type is narrower (only ssh/rdp/web) than the

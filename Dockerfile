@@ -4,10 +4,10 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /build
 
-COPY frontend-src/package.json frontend-src/package-lock.json ./
+COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-COPY frontend-src/ ./
+COPY apps/web/ ./
 RUN npm run build
 
 # ---- Stage 2: Runtime (Python + FastAPI) ----
@@ -25,13 +25,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl tzdata postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
-COPY server/requirements.txt .
+COPY apps/server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server/app/ ./app/
-COPY server/alembic.ini ./alembic.ini
-COPY server/alembic/ ./alembic/
-COPY server/docker-entrypoint.sh /docker-entrypoint.sh
+COPY apps/server/app/ ./app/
+COPY apps/server/alembic.ini ./alembic.ini
+COPY apps/server/alembic/ ./alembic/
+COPY apps/server/docker-entrypoint.sh /docker-entrypoint.sh
 
 # Vite-Dist aus Stage 1 als statisches Frontend einhaengen
 COPY --from=frontend-build /build/dist/ ./frontend/

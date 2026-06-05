@@ -87,7 +87,7 @@ Abschnitt „Auflagen & Hinweise“.
 
 ---
 
-## 2. Go — Agent (`agent-go/`)
+## 2. Go — Agent (`apps/agent/`)
 
 Quelle: `go-licenses report ./cmd/adminhelper-agent`, separat für
 `GOOS=linux` und `GOOS=windows` (der Agent baut für beide Plattformen).
@@ -125,7 +125,7 @@ einkompiliert, sind aber im Modulgraph deklariert:
 
 ---
 
-## 3. Rust — Desktop-Client (`desktop/src-tauri/`, Tauri 2)
+## 3. Rust — Desktop-Client (`apps/desktop/src-tauri/`, Tauri 2)
 
 Quelle: `cargo metadata` über `Cargo.lock`. Der vollständige Graph
 umfasst 607 Crates; eine Crate-für-Crate-Auflistung ist nicht praktikabel
@@ -195,12 +195,12 @@ Apache-Zweig. Siehe Abschnitt „Auflagen & Hinweise“.
 
 ## 4. JavaScript / TypeScript — Frontends
 
-Zwei npm-Workspaces. Das Desktop-Frontend (`desktop-src/`) wird in das
-Tauri-Bundle gebaut; das Admin-Panel (`frontend-src/`) ist die
-Web-Oberfläche. Quelle: `license-checker` (für `desktop-src/`, dessen
-`node_modules` installiert ist) bzw. Manifest für `frontend-src/`.
+Zwei npm-Workspaces. Das Desktop-Frontend (`apps/desktop/ui/`) wird in das
+Tauri-Bundle gebaut; das Admin-Panel (`apps/web/`) ist die
+Web-Oberfläche. Quelle: `license-checker` (für `apps/desktop/ui/`, dessen
+`node_modules` installiert ist) bzw. Manifest für `apps/web/`.
 
-### `desktop-src/` — Laufzeit-/Bundle-Abhängigkeiten (`dependencies`)
+### `apps/desktop/ui/` — Laufzeit-/Bundle-Abhängigkeiten (`dependencies`)
 
 Nur diese landen tatsächlich im ausgelieferten Bundle:
 
@@ -210,7 +210,7 @@ Nur diese landen tatsächlich im ausgelieferten Bundle:
 | @tauri-apps/plugin-shell | 2.3.5 | MIT OR **Apache-2.0** |
 | uplot | 1.6.32 | MIT |
 
-### `desktop-src/` — Build-/Dev-Toolchain (`devDependencies`, transitiv)
+### `apps/desktop/ui/` — Build-/Dev-Toolchain (`devDependencies`, transitiv)
 
 Build-Zeit-Werkzeuge (Vite, Svelte, ESLint, Vitest, TypeScript …),
 nicht im ausgelieferten Artefakt enthalten. Aggregierte Verteilung über
@@ -228,10 +228,10 @@ den vollständigen `node_modules`-Baum:
 | 1 | je: Apache-2.0 OR MIT · MIT OR Apache-2.0 · Python-2.0 · BlueOak-1.0.0 · CC0-1.0 |
 | 1 | UNLICENSED (eigenes Paket `adminhelper-desktop`, kein Drittanbieter) |
 
-### `frontend-src/` (Admin-Panel)
+### `apps/web/` (Admin-Panel)
 
 `node_modules` zum Stichtag nicht installiert; Liste kuratiert aus
-`frontend-src/package.json`. Laufzeit-Abhängigkeit:
+`apps/web/package.json`. Laufzeit-Abhängigkeit:
 
 | Paket | Lizenz |
 |-------|--------|
@@ -242,7 +242,7 @@ Build-/Dev-Toolchain (`devDependencies`): Vite, Svelte,
 Prettier (+ `prettier-plugin-svelte`), TypeScript, Vitest,
 `@playwright/test`, `globals`, `@tsconfig/svelte`, `@types/node`.
 Diese Pakete sind durchgängig MIT- bzw. ISC/BSD-lizenziert (analog zur
-`desktop-src/`-Toolchain) und nicht Teil des ausgelieferten Artefakts.
+`apps/desktop/ui/`-Toolchain) und nicht Teil des ausgelieferten Artefakts.
 
 **Apache-2.0 (NOTICE-Pflicht):** `@tauri-apps/api`,
 `@tauri-apps/plugin-shell` (jeweils im Apache-Zweig). Siehe Abschnitt
@@ -299,12 +299,12 @@ python3 -m venv /tmp/lic && /tmp/lic/bin/pip install pip-licenses \
 
 # Go (Agent) — je Zielplattform
 go install github.com/google/go-licenses@latest
-( cd agent-go && GOOS=linux   "$(go env GOPATH)"/bin/go-licenses report ./cmd/adminhelper-agent )
-( cd agent-go && GOOS=windows "$(go env GOPATH)"/bin/go-licenses report ./cmd/adminhelper-agent )
+( cd apps/agent && GOOS=linux   "$(go env GOPATH)"/bin/go-licenses report ./cmd/adminhelper-agent )
+( cd apps/agent && GOOS=windows "$(go env GOPATH)"/bin/go-licenses report ./cmd/adminhelper-agent )
 
 # Rust (Desktop)
-( cd desktop/src-tauri && cargo metadata --format-version 1 )
+( cd apps/desktop/src-tauri && cargo metadata --format-version 1 )
 
 # npm (Desktop-Frontend)
-( cd desktop-src && npx license-checker --production --summary )
+( cd apps/desktop/ui && npx license-checker --production --summary )
 ```

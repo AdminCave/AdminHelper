@@ -44,34 +44,35 @@
           <h2>Repository Tree</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>adminhelper/
-├── server/          FastAPI backend (Python)
-├── frontend-src/    Svelte 5 web panel
-├── desktop/         Tauri + Rust backend
-├── desktop-src/     Svelte 5 frontend for desktop
-├── agent-go/        Unified Go agent
-├── monitoring/      Check-execution service
-├── extension/       Chromium Manifest V3
-├── docs/            This documentation
+├── apps/             All runnable units
+│   ├── server/       FastAPI backend (Python)
+│   ├── monitoring/   Check-execution service (own DB)
+│   ├── agent/        Unified Go agent (Linux + Windows)
+│   ├── web/          Svelte 5 web admin panel
+│   ├── desktop/      Tauri client (Rust backend + Svelte UI)
+│   └── extension/    Chromium Manifest V3
+├── docs/             This documentation
+├── scripts/          Ops/DB helpers
 └── docker-compose.yml</code></pre>
 
           <h2>Local Development</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Server
-cd server
+cd apps/server
 uv sync
 uv run uvicorn app.main:app --reload
 
 # Web panel
-cd frontend-src
+cd apps/web
 npm install
 npm run dev
 
 # Desktop
-cd desktop-src &amp;&amp; npm install
+cd apps/desktop/ui &amp;&amp; npm install
 cd ../desktop  &amp;&amp; cargo tauri dev
 
 # Go agent
-cd agent-go
+cd apps/agent
 go run ./cmd/adminhelper-agent run</code></pre>
 
           <h2>Reading Order</h2>

@@ -31,11 +31,11 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Go Agent</h1>
-          <p class="lead">Unified Go agent under <code>agent-go/</code>. Replaces the legacy shell + Python agents and merges monitoring, FRP-client setup, and service installer into a single binary that runs on Linux (systemd) and Windows (service manager) alike.</p>
+          <p class="lead">Unified Go agent under <code>apps/agent/</code>. Replaces the legacy shell + Python agents and merges monitoring, FRP-client setup, and service installer into a single binary that runs on Linux (systemd) and Windows (service manager) alike.</p>
 
           <h2>Project Layout</h2>
           <div class="code-header"><span>tree</span></div>
-<pre><code>agent-go/
+<pre><code>apps/agent/
 &#9500;&#9472;&#9472; cmd/adminhelper-agent/
 &#9474;   &#9500;&#9472;&#9472; main.go             Cobra root with five subcommand groups
 &#9474;   &#9500;&#9472;&#9472; handlers.go         Subcommand implementations
@@ -155,7 +155,7 @@
 
           <h2>Build</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>cd agent-go
+<pre><code>cd apps/agent
 make build-linux       # bin/adminhelper-agent       (ELF amd64)
 make build-windows     # bin/adminhelper-agent.exe   (PE amd64)
 

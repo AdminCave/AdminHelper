@@ -31,11 +31,11 @@
         <div class="content-inner">
           <span class="eyebrow">Entwickler-Handbuch</span>
           <h1>Web-Panel</h1>
-          <p class="lead">Das Web-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>frontend-src/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert.</p>
+          <p class="lead">Das Web-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>apps/web/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert.</p>
 
           <h2>Projekt-Struktur</h2>
           <div class="code-header"><span>tree</span></div>
-<pre><code>frontend-src/
+<pre><code>apps/web/
 &#9500;&#9472;&#9472; src/
 &#9474;   &#9500;&#9472;&#9472; lib/
 &#9474;   &#9474;   &#9500;&#9472;&#9472; api/           11 Module: client.ts + 9 Domain-Wrapper + types.ts
@@ -89,13 +89,13 @@
           <p>Playwright-Smoketests decken alle 8 Produktiv-Seiten ab. Zwei Spec-Dateien: <code>login.spec.ts</code> und <code>smoke.spec.ts</code>; Visual-Diffs liegen in <code>tests/e2e/*.spec.ts-snapshots/</code>. Toleranz ist <code>maxDiffPixelRatio: 0.02</code> (2&nbsp;%). Locale ist <code>de-DE</code>, Viewport 1280&times;800. Reports landen als CI-Artifact (<code>frontend_e2e</code>-Job).</p>
 
           <div class="code-header"><span>bash</span></div>
-<pre><code>cd frontend-src
+<pre><code>cd apps/web
 npm run check           # svelte-check + tsc
 npm run lint            # eslint + svelte-eslint
 npx playwright test     # E2E</code></pre>
 
           <h2>Build &amp; Deployment</h2>
-          <p>Der Vite-Build landet in <code>frontend-src/dist/</code> (Sourcemaps an, Target ES2022). Im Repo-Root-<code>Dockerfile</code> wird dieser Output via Multi-Stage in <code>/app/frontend/</code> kopiert, und die FastAPI-App mountet ihn als Static-Route. SPA-Fallback pr&uuml;ft vorher Datei-Existenz, bevor <code>index.html</code> zur&uuml;ckgegeben wird &ndash; das verhindert MIME-Fehler auf <code>/assets/*.js</code>.</p>
+          <p>Der Vite-Build landet in <code>apps/web/dist/</code> (Sourcemaps an, Target ES2022). Im Repo-Root-<code>Dockerfile</code> wird dieser Output via Multi-Stage in <code>/app/frontend/</code> kopiert, und die FastAPI-App mountet ihn als Static-Route. SPA-Fallback pr&uuml;ft vorher Datei-Existenz, bevor <code>index.html</code> zur&uuml;ckgegeben wird &ndash; das verhindert MIME-Fehler auf <code>/assets/*.js</code>.</p>
           <p>Im Dev-Modus l&auml;uft Vite auf Port 5173 und proxied <code>/auth</code>, <code>/api</code>, <code>/health</code> auf <code>localhost:8000</code>.</p>
 
           <div class="page-nav">

@@ -17,18 +17,18 @@ mkdir -p "${BUILD_DIR}/etc/frp"
 mkdir -p "${BUILD_DIR}/etc/adminhelper"
 
 # Control file with version
-sed "s/__VERSION__/${VERSION}/" agent-go/deb/DEBIAN/control > "${BUILD_DIR}/DEBIAN/control"
-cp agent-go/deb/DEBIAN/postinst "${BUILD_DIR}/DEBIAN/"
-cp agent-go/deb/DEBIAN/prerm    "${BUILD_DIR}/DEBIAN/"
-cp agent-go/deb/DEBIAN/postrm   "${BUILD_DIR}/DEBIAN/"
+sed "s/__VERSION__/${VERSION}/" apps/agent/deb/DEBIAN/control > "${BUILD_DIR}/DEBIAN/control"
+cp apps/agent/deb/DEBIAN/postinst "${BUILD_DIR}/DEBIAN/"
+cp apps/agent/deb/DEBIAN/prerm    "${BUILD_DIR}/DEBIAN/"
+cp apps/agent/deb/DEBIAN/postrm   "${BUILD_DIR}/DEBIAN/"
 chmod 755 "${BUILD_DIR}/DEBIAN/postinst" "${BUILD_DIR}/DEBIAN/prerm" "${BUILD_DIR}/DEBIAN/postrm"
 
 # adminhelper-agent Go binary (must exist, built by CI or make)
-if [ -f agent-go/bin/adminhelper-agent ]; then
-    cp agent-go/bin/adminhelper-agent "${BUILD_DIR}/usr/local/bin/adminhelper-agent"
+if [ -f apps/agent/bin/adminhelper-agent ]; then
+    cp apps/agent/bin/adminhelper-agent "${BUILD_DIR}/usr/local/bin/adminhelper-agent"
     chmod 755 "${BUILD_DIR}/usr/local/bin/adminhelper-agent"
 else
-    echo "FEHLER: agent-go/bin/adminhelper-agent nicht gefunden. Bitte zuerst bauen."
+    echo "FEHLER: apps/agent/bin/adminhelper-agent nicht gefunden. Bitte zuerst bauen."
     exit 1
 fi
 
@@ -44,9 +44,9 @@ else
 fi
 
 # systemd units
-cp agent-go/systemd/frpc.service                "${BUILD_DIR}/etc/systemd/system/"
-cp agent-go/systemd/adminhelper-agent.service    "${BUILD_DIR}/etc/systemd/system/"
-cp agent-go/systemd/adminhelper-agent.timer      "${BUILD_DIR}/etc/systemd/system/"
+cp apps/agent/systemd/frpc.service                "${BUILD_DIR}/etc/systemd/system/"
+cp apps/agent/systemd/adminhelper-agent.service    "${BUILD_DIR}/etc/systemd/system/"
+cp apps/agent/systemd/adminhelper-agent.timer      "${BUILD_DIR}/etc/systemd/system/"
 
 # Build
 dpkg-deb --root-owner-group --build "${BUILD_DIR}"

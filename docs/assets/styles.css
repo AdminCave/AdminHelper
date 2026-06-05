@@ -1,6 +1,6 @@
 /* ─────────────────────────────────────────────────────────────────────
    AdminHelper – Docs
-   Design-System 1:1 aus frontend-src/ und desktop-src/ portiert:
+   Design-System 1:1 aus apps/web/ und apps/desktop/ui/ portiert:
    gleiche Tokens, gleiche App-Shell (Sidebar + Header + Content),
    gleiche Buttons/Panels/Chips/Tables.
    ─────────────────────────────────────────────────────────────────── */
@@ -102,7 +102,7 @@ img, svg { max-width: 100%; display: block; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
 /* ─────────────────────────────────────────────────────────────────────
-   App-Shell (identisch zu desktop-src/app.css)
+   App-Shell (identisch zu apps/desktop/ui/app.css)
    Grid: Sidebar (260px) | Header (56px) über Content
    ─────────────────────────────────────────────────────────────────── */
 .app-shell {
@@ -381,7 +381,7 @@ img, svg { max-width: 100%; display: block; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   Buttons (direkt aus frontend-src/.btn)
+   Buttons (direkt aus apps/web/.btn)
    ─────────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -438,7 +438,7 @@ img, svg { max-width: 100%; display: block; }
 .btn-sm { padding: 6px 12px; font-size: var(--text-xs); }
 
 /* ─────────────────────────────────────────────────────────────────────
-   Panels & Cards (aus desktop-src/app.css .panel / .card)
+   Panels & Cards (aus apps/desktop/ui/app.css .panel / .card)
    ─────────────────────────────────────────────────────────────────── */
 .panel {
   background: var(--bg-panel);

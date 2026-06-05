@@ -20,17 +20,15 @@ docker-compose.override.yml
 
 # Node/Frontend-Artefakte (werden in Stage 1 frisch gebaut)
 **/node_modules/
-frontend-src/dist/
-frontend-src/test-results/
-frontend-src/playwright-report/
-frontend-src/playwright/.cache/
+apps/web/dist/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/playwright/.cache/
 
 # Rust/Tauri-Artefakte (nicht Teil des Server-Images)
-desktop/
-extension/
-agent-go/bin/
-agent-go/srm-agent
-agent-go/srm-agent.exe
+apps/desktop/
+apps/extension/
+apps/agent/bin/
 **/target/
 
 # Build-Artefakte
@@ -46,4 +44,4 @@ build-deb/
 
 # Docs/Tests (nicht im Runtime-Image)
 docs/
-server/tests/
+apps/server/tests/

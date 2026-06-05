@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Desktop Client</h1>
-          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>desktop/src-tauri/</code>) exposes 23 typed commands; the frontend (<code>desktop-src/</code>) consumes them through a 1:1 bridge.</p>
+          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>apps/desktop/src-tauri/</code>) exposes 23 typed commands; the frontend (<code>apps/desktop/ui/</code>) consumes them through a 1:1 bridge.</p>
 
           <h2>Architecture</h2>
           <div class="code-header"><span>tree</span></div>
@@ -46,10 +46,10 @@
 &#9474;   &#9474;   &#9500;&#9472;&#9472; http/             Reqwest client with auto-refresh
 &#9474;   &#9474;   &#9492;&#9472;&#9472; rdp/              Race guard with monotonic UUID
 &#9474;   &#9500;&#9472;&#9472; capabilities/         Strictly scoped Tauri capabilities
-&#9474;   &#9500;&#9472;&#9472; tauri.conf.json       <code>beforeBuildCommand</code> &rarr; <code>../desktop-src</code>
+&#9474;   &#9500;&#9472;&#9472; tauri.conf.json       <code>beforeBuildCommand</code> &rarr; <code>../apps/desktop/ui</code>
 &#9474;   &#9492;&#9472;&#9472; Cargo.toml
 &#9492;&#9472;&#9472; binaries/                 frpc sidecar per target triple
-desktop-src/
+apps/desktop/ui/
 &#9500;&#9472;&#9472; src/
 &#9474;   &#9500;&#9472;&#9472; lib/
 &#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/           index.ts + types.ts with 22 invoke() wrappers
@@ -64,7 +64,7 @@ desktop-src/
 &#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest unit tests in stores/ + models/</code></pre>
 
           <h2>Tauri Commands</h2>
-          <p>The 23 commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>desktop-src/src/lib/bridge/</code> mirrors them 1:1.</p>
+          <p>The 23 commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
           <table>
             <thead><tr><th>Area</th><th>Commands</th></tr></thead>
             <tbody>
@@ -93,7 +93,7 @@ async fn connect_rdp(
 }</code></pre>
 
           <h2>RDP Race Guard</h2>
-          <p>Clicking <em>Connect</em> multiple times in quick succession would, without protection, spawn multiple RDP processes. The Desktop Client assigns a <strong>monotonic UUID</strong> per click. If the FRP tunnel setup is still running when a newer connect ID comes in, the older one is discarded. Implementation in <code>desktop/src-tauri/src/rdp/race_guard.rs</code>.</p>
+          <p>Clicking <em>Connect</em> multiple times in quick succession would, without protection, spawn multiple RDP processes. The Desktop Client assigns a <strong>monotonic UUID</strong> per click. If the FRP tunnel setup is still running when a newer connect ID comes in, the older one is discarded. Implementation in <code>apps/desktop/src-tauri/src/rdp/race_guard.rs</code>.</p>
 
           <h2>Keyring Secrets</h2>
           <p>Passwords are stored in the OS keyring, never in the local connection file:</p>
@@ -105,7 +105,7 @@ async fn connect_rdp(
           <p>Service prefix <code>adminhelper:</code>, account = <code>&lt;connection-id&gt;</code>.</p>
 
           <h2>FRP Sidecar</h2>
-          <p>Tauri capabilities are scoped: <code>frpc</code> can only be spawned from the app binaries directory. At build time the matching target binary (<code>frpc-x86_64-unknown-linux-gnu</code>, <code>frpc-aarch64-apple-darwin</code>, …) must be dropped into <code>desktop/src-tauri/binaries/</code>.</p>
+          <p>Tauri capabilities are scoped: <code>frpc</code> can only be spawned from the app binaries directory. At build time the matching target binary (<code>frpc-x86_64-unknown-linux-gnu</code>, <code>frpc-aarch64-apple-darwin</code>, …) must be dropped into <code>apps/desktop/src-tauri/binaries/</code>.</p>
 
           <h2>Server Mode Flow</h2>
           <p>In <strong>Server mode</strong> (setting <code>mode = 'server'</code>) the client loads connections from the AdminHelper server via JWT and brings up the FRP tunnel itself. The steps wire together across <code>auth.rs</code>, <code>sync.rs</code>, <code>frpc.rs</code> and <code>tunnel.rs</code>:</p>
@@ -131,7 +131,7 @@ async fn connect_rdp(
 
           <h2>Tests &amp; Build</h2>
           <div class="code-header"><span>bash</span></div>
-<pre><code>cd desktop-src
+<pre><code>cd apps/desktop/ui
 npm run check                    # svelte-check
 npm run test                     # vitest (41 tests)
 
@@ -141,7 +141,7 @@ cargo tauri build --bundles deb  # DEB release</code></pre>
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">Since v0.19.0</div><p>Big-bang migration of the desktop client from plain JS to Svelte 5. The old <code>desktop/src/</code> is dead &ndash; kept for history only. <code>tauri.conf.json.beforeBuildCommand</code> points to <code>../desktop-src</code>.</p></div>
+            <div><div class="callout-title">Since v0.19.0</div><p>Big-bang migration of the desktop client from plain JS to Svelte 5. The old <code>desktop/src/</code> is dead &ndash; kept for history only. <code>tauri.conf.json.beforeBuildCommand</code> points to <code>../apps/desktop/ui</code>.</p></div>
           </div>
 
           <div class="page-nav">

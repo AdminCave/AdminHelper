@@ -5,7 +5,7 @@
 // Typed wrappers around tauri.invoke() for all backend commands.
 //
 // Each function maps 1:1 to a #[tauri::command] in
-// desktop/src-tauri/src/commands.rs. The signature types come from ./types.
+// apps/desktop/src-tauri/src/commands.rs. The signature types come from ./types.
 //
 // When adding/changing a command:
 //   1. Adjust commands.rs + models.rs

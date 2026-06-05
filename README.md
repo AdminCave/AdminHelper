@@ -244,7 +244,7 @@ The **AdminHelper Chrome Extension** shows web connections (`kind: web`) from th
 ### Installation
 
 1. Open `chrome://extensions` → enable **Developer mode**
-2. **"Load unpacked"** → select the `extension/` directory
+2. **"Load unpacked"** → select the `apps/extension/` directory
 3. Click the extension icon → enter the server URL and API key
 4. Web connections appear immediately in the popup
 
@@ -369,14 +369,14 @@ The desktop client automatically generates an INI inventory from the selected se
 ### Dev
 
 ```bash
-cd desktop/src-tauri
+cd apps/desktop/src-tauri
 cargo tauri dev
 ```
 
 ### Build
 
 ```bash
-cd desktop/src-tauri
+cd apps/desktop/src-tauri
 cargo tauri build
 ```
 
@@ -386,65 +386,63 @@ cargo tauri build
 
 ```text
 .
-├─ desktop/                  # Tauri desktop client (wrapper)
-│  └─ src-tauri/             # Rust backend
-│     ├─ src/
-│     │  ├─ main.rs            # invoke_handler with 23 Tauri commands
-│     │  ├─ commands.rs        # IPC interface
-│     │  ├─ auth.rs            # JWT login, keyring persistence
-│     │  ├─ frpc.rs            # frpc sidecar process
-│     │  ├─ tunnel.rs          # tunnel mapping + connection resolution
-│     │  ├─ connection/        # SSH/RDP/Web connection logic
-│     │  ├─ password.rs        # OS keyring (com.adminhelper.app)
-│     │  ├─ ansible.rs         # inventory generation + playbook execution
-│     │  └─ ...
-│     ├─ binaries/            # frpc sidecar (gitignored, CI download)
-│     └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
-├─ desktop-src/              # PRODUCTION: Svelte 5 + TS desktop frontend
-│  ├─ src/
-│  │  ├─ lib/
-│  │  │  ├─ bridge/           # 22 typed invoke() wrappers
-│  │  │  ├─ stores/           # 12 stores (session, connections, tunnel, …)
-│  │  │  ├─ models/           # connection / settings / ansible / monitoring
-│  │  │  ├─ api/, i18n/, utils/
-│  │  ├─ components/          # ~30 components (AppShell, Login, …)
-│  │  ├─ pages/               # 4 pages (Dashboard, Connections, Ansible, Monitoring)
-│  │  └─ main.ts
-│  └─ vitest.setup.ts         # ~41 Vitest unit tests
-├─ frontend-src/             # PRODUCTION: Svelte 5 + TS web admin panel
-│  ├─ src/
-│  │  ├─ lib/                 # 11 API modules + 10 stores + i18n + hash router
-│  │  ├─ pages/               # 8 production pages + Login + placeholder
-│  │  ├─ modals/              # 19 modal components
-│  │  └─ App.svelte, main.ts
-│  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
-├─ server/                   # FastAPI backend (modular monolith)
-│  ├─ app/
-│  │  ├─ main.py              # app, lifespan, auto migrations, SPA fallback
-│  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
-│  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
-│  │                          #   ansible, monitoring_proxy
-│  ├─ Dockerfile              # NO longer built – the repo-root Dockerfile is active
-│  └─ requirements.txt
-├─ monitoring/               # Standalone FastAPI microservice
-│  ├─ app/
-│  │  ├─ main.py
-│  │  ├─ models.py            # Checks, States, Templates, AlertRules, AgentKeys
-│  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
-│  │  ├─ routers/             # admin, agent, alerts, checks, templates
-│  │  ├─ core/                # auth, config, database, victoria
-│  │  └─ scheduler.py         # APScheduler for pull checks
-│  └─ Dockerfile
-├─ agent-go/                 # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
-│  ├─ internal/               # config, frpc, monitor, service
-│  ├─ deb/, rpm/              # package metadata
-│  ├─ systemd/                # adminhelper-agent.service + .timer
-│  └─ Makefile                # build-linux, build-windows, deb, rpm
-├─ extension/                # browser extension (Manifest V3)
+├─ apps/                     # all runnable / deployable units live here
+│  ├─ server/                # FastAPI backend (modular monolith, 8 modules)
+│  │  ├─ app/
+│  │  │  ├─ main.py              # app, lifespan, auto migrations, SPA fallback
+│  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
+│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
+│  │  │                          #   ansible, monitoring_proxy
+│  │  ├─ alembic/               # DB migrations
+│  │  └─ requirements.txt
+│  ├─ monitoring/            # standalone FastAPI microservice (own DB)
+│  │  ├─ app/
+│  │  │  ├─ main.py
+│  │  │  ├─ models.py            # Checks, States, Templates, AlertRules, AgentKeys
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
+│  │  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  │  ├─ core/                # auth, config, database, victoria
+│  │  │  └─ scheduler.py         # APScheduler for pull checks
+│  │  └─ Dockerfile             # built by docker.yml (own context)
+│  ├─ agent/                 # unified Go agent (Linux + Windows)
+│  │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
+│  │  ├─ internal/               # config, frpc, monitor, service
+│  │  ├─ deb/, rpm/              # package metadata
+│  │  ├─ systemd/                # adminhelper-agent.service + .timer
+│  │  └─ Makefile                # build-linux, build-windows, deb, rpm
+│  ├─ web/                   # PRODUCTION: Svelte 5 + TS web admin panel
+│  │  ├─ src/
+│  │  │  ├─ lib/                 # 11 API modules + 10 stores + i18n + hash router
+│  │  │  ├─ pages/               # 8 production pages + Login + placeholder
+│  │  │  ├─ modals/              # 19 modal components
+│  │  │  └─ App.svelte, main.ts
+│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+│  ├─ desktop/               # Tauri desktop client (backend + UI together)
+│  │  ├─ src-tauri/          # Rust/Tauri backend
+│  │  │  ├─ src/
+│  │  │  │  ├─ main.rs            # invoke_handler with 23 Tauri commands
+│  │  │  │  ├─ commands.rs        # IPC interface
+│  │  │  │  ├─ auth.rs            # JWT login, keyring persistence
+│  │  │  │  ├─ frpc.rs            # frpc sidecar process
+│  │  │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
+│  │  │  │  ├─ connection/        # SSH/RDP/Web connection logic
+│  │  │  │  ├─ password.rs        # OS keyring (com.adminhelper.app)
+│  │  │  │  ├─ ansible.rs         # inventory generation + playbook execution
+│  │  │  │  └─ ...
+│  │  │  ├─ binaries/            # frpc sidecar (gitignored, CI download)
+│  │  │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
+│  │  └─ ui/                 # PRODUCTION: Svelte 5 + TS desktop frontend
+│  │     ├─ src/
+│  │     │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 22 typed invoke() wrappers, 12 stores, …
+│  │     │  ├─ components/       # ~30 components (AppShell, Login, …)
+│  │     │  ├─ pages/            # 4 pages (Dashboard, Connections, Ansible, Monitoring)
+│  │     │  └─ main.ts
+│  │     └─ vitest.setup.ts      # ~41 Vitest unit tests
+│  └─ extension/             # browser extension (Manifest V3)
 ├─ docs/                     # documentation (DE + EN, static HTML)
+├─ scripts/                  # ops/db helpers (postgres-init, init-secrets, pg-backup)
 ├─ data/                     # server data (gitignored, bind mount)
-├─ Dockerfile                # multi-stage: Vite build (frontend-src) → Python runtime
+├─ Dockerfile                # multi-stage: Vite build (apps/web) → Python runtime (server image)
 ├─ docker-compose.yml
 ├─ docker-compose.override.yml  # local dev overrides (gitignored)
 ├─ .github/workflows/        # CI/CD (GitHub Actions): ci, docker, release

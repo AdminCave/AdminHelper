@@ -80,11 +80,11 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
           <h2>Version-Stellen</h2>
           <p>Bei einem Release muss die neue Version an mehreren Stellen parallel gesetzt werden &ndash; der Tag allein reicht nicht:</p>
           <ul>
-            <li><code>desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri-Bundle</li>
-            <li><code>desktop-src/package.json</code> + <code>frontend-src/package.json</code> (+ jeweils <code>package-lock.json</code>) &ndash; Vite-Builds</li>
-            <li><code>desktop-src/src/components/AppShell.svelte</code> &ndash; Sidebar-Badge</li>
+            <li><code>apps/desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri-Bundle</li>
+            <li><code>apps/desktop/ui/package.json</code> + <code>apps/web/package.json</code> (+ jeweils <code>package-lock.json</code>) &ndash; Vite-Builds</li>
+            <li><code>apps/desktop/ui/src/components/AppShell.svelte</code> &ndash; Sidebar-Badge</li>
             <li><code>extension/manifest.json</code> &ndash; Browser-Extension</li>
-            <li><code>agent-go/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; Default-<code>VERSION</code> (CI überschreibt sie aus dem Tag)</li>
+            <li><code>apps/agent/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; Default-<code>VERSION</code> (CI überschreibt sie aus dem Tag)</li>
             <li><code>docs/**/*.html</code> &ndash; Footer-<code>&lt;span&gt;v0.24.0&lt;/span&gt;</code> + Landing-„Was ist neu" + Code-Samples</li>
             <li><code>README.md</code> &ndash; Agent-DEB-Install-Befehl</li>
             <li><code>CHANGELOG.md</code> &ndash; neuer Abschnitt am Anfang + Link-Ref</li>

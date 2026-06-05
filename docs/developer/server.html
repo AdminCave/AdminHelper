@@ -193,7 +193,7 @@ allowUsers = ["ops-admin"]</code></pre>
           <p>Pytest-Suite unter <code>server/tests/</code>. Tests laufen gegen ein <strong>echtes Postgres 17</strong> via <code>testcontainers</code> (lokal) bzw. <code>services: postgres:17-alpine</code> (CI). SAVEPOINT-Pattern in der <code>db_session</code>-Fixture: Outer-Transaction mit <code>begin_nested</code> + <code>after_transaction_end</code>-Listener — erlaubt <code>commit()</code> im Test-Code, am Ende sauberer Rollback. Plus <code>test_alembic_consistency.py</code> als Drift-Detector zwischen <code>Base.metadata</code> und Alembic-Migrations.</p>
 
           <div class="code-header"><span>bash</span></div>
-<pre><code>cd server
+<pre><code>cd apps/server
 uv run pytest -x                 # schnell abbrechen bei Fehler
 uv run pytest --cov=app          # Coverage</code></pre>
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Synchronisiert gemeinsam genutzte Datei-Blaetter aus dem Web-Frontend
-# (frontend-src/) in das Desktop-Projekt (desktop-src/).
+# (apps/web/) in das Desktop-Projekt (apps/desktop/ui/).
 #
 # Hintergrund: Es gibt bewusst KEIN Monorepo / keine shared/-Pakete.
 # Stattdessen werden reine Daten-Module (Types, i18n-Dictionaries) kopiert
@@ -22,8 +22,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_ROOT="$(dirname "${SCRIPT_DIR}")"
-REPO_ROOT="$(dirname "${DESKTOP_ROOT}")"
-WEB_ROOT="${REPO_ROOT}/frontend-src"
+REPO_ROOT="$(cd "${DESKTOP_ROOT}/../../.." && pwd)"
+WEB_ROOT="${REPO_ROOT}/apps/web"
 
 FILES=(
   "src/lib/api/types.ts"

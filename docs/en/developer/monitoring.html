@@ -83,7 +83,7 @@
           <p>Both paths converge in <code>execute_check()</code> &rarr; status update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics write &rarr; <code>process_alert()</code> when <code>fail_count &ge; consecutive_fails</code>.</p>
 
           <h2>Push payload (agent &rarr; service)</h2>
-          <p>The Go agent assembles the report in <code>agent-go/internal/monitor/report.go</code> (<code>BuildReport</code>) and sends it as JSON via <code>POST {url}/agent/{server_id}/report</code> with the headers <code>Content-Type: application/json</code> and <code>X-API-Key</code> (<code>PushReport</code>). The server handler in <code>routers/agent.py</code> accepts the JSON as a free-form <code>dict</code>. Structure:</p>
+          <p>The Go agent assembles the report in <code>apps/agent/internal/monitor/report.go</code> (<code>BuildReport</code>) and sends it as JSON via <code>POST {url}/agent/{server_id}/report</code> with the headers <code>Content-Type: application/json</code> and <code>X-API-Key</code> (<code>PushReport</code>). The server handler in <code>routers/agent.py</code> accepts the JSON as a free-form <code>dict</code>. Structure:</p>
           <div class="code-header"><span>json</span></div>
 <pre><code>{
   "report_version": 2,

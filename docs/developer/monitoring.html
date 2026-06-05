@@ -83,7 +83,7 @@
           <p>Beide Pfade landen am Ende in <code>execute_check()</code> &rarr; Status-Update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics-Write &rarr; ggf. <code>process_alert()</code>, sobald <code>fail_count &ge; consecutive_fails</code>.</p>
 
           <h2>Push-Payload (Agent &rarr; Service)</h2>
-          <p>Der Go-Agent baut den Report in <code>agent-go/internal/monitor/report.go</code> (<code>BuildReport</code>) und sendet ihn als JSON per <code>POST {url}/agent/{server_id}/report</code> mit den Headern <code>Content-Type: application/json</code> und <code>X-API-Key</code> (<code>PushReport</code>). Der Server-Handler in <code>routers/agent.py</code> nimmt das JSON als freies <code>dict</code> entgegen. Struktur:</p>
+          <p>Der Go-Agent baut den Report in <code>apps/agent/internal/monitor/report.go</code> (<code>BuildReport</code>) und sendet ihn als JSON per <code>POST {url}/agent/{server_id}/report</code> mit den Headern <code>Content-Type: application/json</code> und <code>X-API-Key</code> (<code>PushReport</code>). Der Server-Handler in <code>routers/agent.py</code> nimmt das JSON als freies <code>dict</code> entgegen. Struktur:</p>
           <div class="code-header"><span>json</span></div>
 <pre><code>{
   "report_version": 2,

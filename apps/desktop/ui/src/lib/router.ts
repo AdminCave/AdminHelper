@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Minimal hash router. Taken 1:1 from frontend-src/src/lib/router.ts
+// Minimal hash router. Taken 1:1 from apps/web/src/lib/router.ts
 // for consistent behavior between web and desktop.
 
 import { writable, derived, get } from 'svelte/store';

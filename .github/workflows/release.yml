@@ -34,12 +34,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop/src-tauri
+          workspaces: apps/desktop/src-tauri
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: desktop-src/package-lock.json
+          cache-dependency-path: apps/desktop/ui/package-lock.json
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
       - name: frpc sidecar
@@ -47,22 +47,22 @@ jobs:
           curl -fsSL -o frpc.tar.gz \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
           tar xzf frpc.tar.gz
-          mkdir -p desktop/src-tauri/binaries
+          mkdir -p apps/desktop/src-tauri/binaries
           cp "frp_${FRP_VERSION}_linux_amd64/frpc" \
-            desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
-          chmod +x desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+            apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+          chmod +x apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
       - name: npm ci
-        working-directory: desktop-src
+        working-directory: apps/desktop/ui
         run: npm ci --no-audit --no-fund
       - name: Build bundles
-        working-directory: desktop/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: cargo tauri build --bundles deb,rpm
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp desktop/src-tauri/target/release/bundle/deb/*.deb dist/
-          cp desktop/src-tauri/target/release/bundle/rpm/*.rpm dist/
-          cp desktop/src-tauri/target/release/adminhelper dist/adminhelper-desktop-linux-x86_64
+          cp apps/desktop/src-tauri/target/release/bundle/deb/*.deb dist/
+          cp apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm dist/
+          cp apps/desktop/src-tauri/target/release/adminhelper dist/adminhelper-desktop-linux-x86_64
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux
@@ -80,12 +80,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-          cache-dependency-path: agent-go/go.sum
+          cache-dependency-path: apps/agent/go.sum
       - name: Derive version from tag
         id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Build binaries
-        working-directory: agent-go
+        working-directory: apps/agent
         run: |
           GOOS=linux GOARCH=amd64 go build \
             -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
@@ -104,18 +104,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev
-          VERSION=${{ steps.ver.outputs.version }} bash agent-go/build-deb.sh
+          VERSION=${{ steps.ver.outputs.version }} bash apps/agent/build-deb.sh
       - name: Build .rpm
         run: |
           sudo apt-get install -y --no-install-recommends rpm
-          VERSION=${{ steps.ver.outputs.version }} bash agent-go/build-rpm.sh
+          VERSION=${{ steps.ver.outputs.version }} bash apps/agent/build-rpm.sh
       - name: Collect artifacts
         run: |
           mkdir -p dist
           cp adminhelper-agent_*.deb dist/
           cp adminhelper-agent-*.rpm dist/
-          cp agent-go/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
-          cp agent-go/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
+          cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
+          cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: agent
@@ -136,12 +136,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop/src-tauri
+          workspaces: apps/desktop/src-tauri
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: desktop-src/package-lock.json
+          cache-dependency-path: apps/desktop/ui/package-lock.json
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
       - name: frpc sidecar (windows)
@@ -150,20 +150,20 @@ jobs:
           curl -fsSL -o frpc.zip \
             "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_windows_amd64.zip"
           unzip -o frpc.zip
-          mkdir -p desktop/src-tauri/binaries
+          mkdir -p apps/desktop/src-tauri/binaries
           cp "frp_${FRP_VERSION}_windows_amd64/frpc.exe" \
-            desktop/src-tauri/binaries/frpc-x86_64-pc-windows-msvc.exe
+            apps/desktop/src-tauri/binaries/frpc-x86_64-pc-windows-msvc.exe
       - name: npm ci
-        working-directory: desktop-src
+        working-directory: apps/desktop/ui
         run: npm ci --no-audit --no-fund
       - name: Build MSI
-        working-directory: desktop/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: cargo tauri build --bundles msi
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p dist
-          cp desktop/src-tauri/target/release/bundle/msi/*.msi dist/
+          cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

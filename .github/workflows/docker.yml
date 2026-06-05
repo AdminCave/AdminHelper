@@ -30,8 +30,8 @@ jobs:
             context: .
             dockerfile: Dockerfile
           - image: monitoring
-            context: monitoring
-            dockerfile: monitoring/Dockerfile
+            context: apps/monitoring
+            dockerfile: apps/monitoring/Dockerfile
     steps:
       - uses: actions/checkout@v4
 

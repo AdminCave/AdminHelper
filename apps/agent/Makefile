@@ -13,10 +13,10 @@ build-windows:
 	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY).exe ./cmd/adminhelper-agent
 
 deb: build-linux
-	cd .. && VERSION=$(VERSION) bash agent-go/build-deb.sh
+	cd ../.. && VERSION=$(VERSION) bash apps/agent/build-deb.sh
 
 rpm: build-linux
-	cd .. && VERSION=$(VERSION) bash agent-go/build-rpm.sh
+	cd ../.. && VERSION=$(VERSION) bash apps/agent/build-rpm.sh
 
 clean:
 	rm -rf bin/ build-deb/ build-rpm/

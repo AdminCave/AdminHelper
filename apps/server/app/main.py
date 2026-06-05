@@ -228,7 +228,7 @@ app.include_router(monitoring_proxy_router)
 app.include_router(ansible_router)
 
 # Serve static files from frontend/ (Vite build output).
-# In the production container the Vite build is copied from frontend-src/dist/
+# In the production container the Vite build is copied from apps/web/dist/
 # to /app/frontend/ via the multi-stage Dockerfile. In dev mode with uvicorn
 # and no build the directory does not exist — mount conditionally.
 static_dir = Path(__file__).parent.parent / "frontend"

@@ -37,7 +37,7 @@ cargo install tauri-cli
 ### Python venv (Server)
 
 ```bash
-cd server
+cd apps/server
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -80,7 +80,7 @@ sudo apt install -y openssh-client
 ### Server (lokal mit uvicorn)
 
 ```bash
-cd server
+cd apps/server
 source .venv/bin/activate
 DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```
@@ -138,17 +138,17 @@ docker compose logs -f frps
 ### Client (Tauri)
 
 ```bash
-cd desktop/src-tauri
+cd apps/desktop/src-tauri
 cargo tauri dev
 ```
 
-Der Client oeffnet sich als Desktop-Fenster. `tauri.conf.json` ruft `npm --prefix ../../desktop-src run dev` als Vite-Dev-Server auf — Aenderungen am Svelte-Frontend (`desktop-src/`) werden live uebernommen, Rust-Aenderungen loesen einen Rebuild aus. Das alte `desktop/src/` (Plain-JS) ist seit v0.19.0 historisch und wird nicht mehr gebaut.
+Der Client oeffnet sich als Desktop-Fenster. `tauri.conf.json` ruft `npm --prefix ../../apps/desktop/ui run dev` als Vite-Dev-Server auf — Aenderungen am Svelte-Frontend (`apps/desktop/ui/`) werden live uebernommen, Rust-Aenderungen loesen einen Rebuild aus. Das alte `desktop/src/` (Plain-JS) ist seit v0.19.0 historisch und wird nicht mehr gebaut.
 
 **Hinweis:** Beim ersten Build muss eine frpc-Platzhalter-Binary existieren:
 
 ```bash
-mkdir -p desktop/src-tauri/binaries
-touch desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+mkdir -p apps/desktop/src-tauri/binaries
+touch apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
 ```
 
 Diese Binary wird im CI/CD durch die echte frpc-Binary ersetzt.
@@ -156,13 +156,13 @@ Diese Binary wird im CI/CD durch die echte frpc-Binary ersetzt.
 ### Chrome Extension
 
 1. `chrome://extensions` oeffnen -> **Entwicklermodus** aktivieren
-2. **"Entpackt laden"** -> Verzeichnis `extension/` auswaehlen
+2. **"Entpackt laden"** -> Verzeichnis `apps/extension/` auswaehlen
 3. Nach Code-Aenderungen: Extension in Chrome neu laden
 
 ### Go Agent
 
 ```bash
-cd agent-go
+cd apps/agent
 
 # Linux-Binary bauen:
 make build-linux
@@ -190,7 +190,7 @@ go run ./cmd/adminhelper-agent run --once
 ### Monitoring (lokal ohne Docker)
 
 ```bash
-cd monitoring
+cd apps/monitoring
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -244,14 +244,14 @@ Zwei Terminals oeffnen:
 docker compose up --build -d
 
 # Terminal 2: Client
-cd desktop/src-tauri
+cd apps/desktop/src-tauri
 cargo tauri dev
 ```
 
 ### Nur Server-API testen
 
 ```bash
-cd server && source .venv/bin/activate
+cd apps/server && source .venv/bin/activate
 DATA_DIR=../data uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 
 # In einem anderen Terminal:
@@ -281,63 +281,63 @@ curl -sk https://localhost/api/frp/tunnels \
 
 ```text
 .
-├─ desktop/                  # Tauri Desktop-Client (Wrapper)
-│  ├─ src-tauri/             # Rust-Backend
+├─ apps/                     # alle lauffähigen Einheiten
+│  ├─ server/                # FastAPI-Backend (modularer Monolith, 8 Module)
+│  │  ├─ app/
+│  │  │  ├─ main.py
+│  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
+│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
+│  │  │                          #   ansible, monitoring_proxy
+│  │  ├─ alembic/               # DB-Migrationen
+│  │  └─ requirements.txt
+│  ├─ monitoring/            # eigenständiger FastAPI-Microservice (eigene DB)
+│  │  ├─ app/
+│  │  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
+│  │  │  ├─ routers/             # admin, agent, alerts, checks, templates
+│  │  │  ├─ core/                # auth, config, database, victoria
+│  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
+│  │  └─ Dockerfile
+│  ├─ agent/                 # Unified Go Agent (Linux + Windows)
+│  │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
+│  │  ├─ internal/               # config, frpc, monitor, service
+│  │  ├─ deb/, rpm/              # Paket-Metadaten
+│  │  ├─ systemd/                # adminhelper-agent.service + .timer
+│  │  └─ Makefile                # build-linux, build-windows, deb, rpm
+│  ├─ web/                   # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
 │  │  ├─ src/
-│  │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
-│  │  │  ├─ commands.rs        # IPC-Schnittstelle
-│  │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
-│  │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
-│  │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
-│  │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
-│  │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
-│  │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausfuehrung
-│  │  │  └─ ...
-│  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
-│  │  └─ capabilities/        # Tauri v2 Security Permissions
-│  └─ src/                    # ALT (Plain-JS, seit v0.19.0 historisch, nicht mehr gebaut)
-├─ desktop-src/              # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
-│  ├─ src/
-│  │  ├─ lib/bridge/          # 22 typisierte invoke()-Wrapper
-│  │  ├─ lib/stores/          # 12 Stores
-│  │  ├─ lib/models/          # connection, settings, ansible, monitoring (typisiert)
-│  │  ├─ components/          # ~30 Components
-│  │  └─ pages/               # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
-│  └─ vitest.setup.ts         # ~41 Vitest-Unit-Tests
-├─ frontend-src/             # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
-│  ├─ src/
-│  │  ├─ lib/api/             # 11 Module (client + 9 Domain-Wrapper + types)
-│  │  ├─ lib/stores/          # 10 Stores
-│  │  ├─ lib/i18n/            # DE/EN-Dictionaries
-│  │  ├─ pages/               # 8 Produktiv-Pages + Login + Placeholder
-│  │  └─ modals/              # 19 Modal-Komponenten
-│  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
-├─ server/                   # FastAPI-Backend (modularer Monolith)
-│  ├─ app/
-│  │  ├─ main.py
-│  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
-│  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
-│  │                          #   ansible, monitoring_proxy
-│  ├─ frontend/               # ALT (Plain-JS, seit v0.17.0 historisch, nicht mehr gebaut)
-│  ├─ Dockerfile              # NICHT mehr gebaut – Repo-Root-Dockerfile ist aktiv
-│  └─ requirements.txt
-├─ agent-go/                 # Unified Go Agent (Linux + Windows)
-│  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
-│  ├─ internal/               # config, frpc, monitor, service
-│  ├─ deb/, rpm/              # Paket-Metadaten
-│  ├─ systemd/                # adminhelper-agent.service + .timer
-│  └─ Makefile                # build-linux, build-windows, deb, rpm
-├─ monitoring/               # Eigenstaendiger FastAPI-Microservice
-│  ├─ app/
-│  │  ├─ checkers/            # agent, smart, http, ping, tcp, plugins
-│  │  ├─ routers/             # admin, agent, alerts, checks, templates
-│  │  ├─ core/                # auth, config, database, victoria
-│  │  └─ scheduler.py         # APScheduler fuer Pull-Checks
-│  └─ Dockerfile
-├─ extension/                # Browser-Extension (Manifest V3)
+│  │  │  ├─ lib/api/             # 11 Module (client + 9 Domain-Wrapper + types)
+│  │  │  ├─ lib/stores/          # 10 Stores
+│  │  │  ├─ lib/i18n/            # DE/EN-Dictionaries
+│  │  │  ├─ pages/               # 8 Produktiv-Pages + Login + Placeholder
+│  │  │  └─ modals/              # 19 Modal-Komponenten
+│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+│  ├─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
+│  │  ├─ src-tauri/          # Rust/Tauri-Backend
+│  │  │  ├─ src/
+│  │  │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
+│  │  │  │  ├─ commands.rs        # IPC-Schnittstelle
+│  │  │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
+│  │  │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
+│  │  │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
+│  │  │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
+│  │  │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
+│  │  │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausführung
+│  │  │  │  └─ ...
+│  │  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
+│  │  │  └─ capabilities/        # Tauri v2 Security Permissions
+│  │  └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
+│  │     ├─ src/
+│  │     │  ├─ lib/bridge/       # 22 typisierte invoke()-Wrapper
+│  │     │  ├─ lib/stores/       # 12 Stores
+│  │     │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
+│  │     │  ├─ components/       # ~30 Components
+│  │     │  └─ pages/            # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
+│  │     └─ vitest.setup.ts      # ~41 Vitest-Unit-Tests
+│  └─ extension/             # Browser-Extension (Manifest V3)
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
+├─ scripts/                  # Ops-/DB-Skripte (postgres-init, init-secrets, pg-backup)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
-├─ Dockerfile                # Multi-Stage: Vite-Build (frontend-src) → Python-Runtime
+├─ Dockerfile                # Multi-Stage: Vite-Build (apps/web) → Python-Runtime (Server-Image)
 ├─ docker-compose.yml
 ├─ docker-compose.override.yml  # Lokale Dev-Overrides (gitignored)
 ├─ .github/workflows/        # CI/CD (GitHub Actions): ci, docker, release
@@ -356,16 +356,16 @@ rm -rf server/.venv
 rm -rf monitoring/.venv
 
 # Rust Build-Cache leeren
-cd desktop/src-tauri && cargo clean
+cd apps/desktop/src-tauri && cargo clean
 
 # Go Build-Cache leeren
-cd agent-go && go clean
+cd apps/agent && go clean
 
 # Docker aufraeumen
 docker compose down -v
 
 # frpc-Platzhalter entfernen
-rm -rf desktop/src-tauri/binaries/
+rm -rf apps/desktop/src-tauri/binaries/
 ```
 
 Alle generierten Dateien (`.venv/`, `target/`, `data/`, `binaries/`, `__pycache__/`) sind in `.gitignore` eingetragen und landen nicht im Repository.
