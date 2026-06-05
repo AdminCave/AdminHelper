@@ -94,6 +94,11 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
         closeSettings();
         return { ok: true, needsLogin: { serverUrl: next.serverUrl ?? '' } };
       }
+      // Session still valid: reload from the (possibly new) server and start the
+      // tunnel. Without this, a server->local->server round-trip leaves stale
+      // local data and no tunnel until the app is restarted.
+      await reloadForMode(next, session);
+      void tunnelStore.startIfServerMode();
     } else if (next.mode === 'sync') {
       if (session) {
         try {
