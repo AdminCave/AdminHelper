@@ -51,17 +51,17 @@ def generate_api_key() -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    to_encode.update({"exp": expire, "type": "access", "jti": str(_uuid.uuid4())})
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire, "iat": now, "type": "access", "jti": str(_uuid.uuid4())})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh", "jti": str(_uuid.uuid4())})
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire, "iat": now, "type": "refresh", "jti": str(_uuid.uuid4())})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -79,7 +79,20 @@ def _get_user_from_token(token: str, db: Session, expected_type: str = "access")
             return None
     except InvalidTokenError:
         return None
-    return db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        return None
+    # Credential-invalidation watermark: reject tokens issued before a password
+    # reset. A token without an `iat` (issued before this claim existed) is also
+    # rejected once a watermark is set.
+    if user.tokens_valid_after is not None:
+        iat = payload.get("iat")
+        if iat is None:
+            return None
+        watermark_ts = user.tokens_valid_after.replace(tzinfo=timezone.utc).timestamp()
+        if iat < watermark_ts:
+            return None
+    return user
 
 
 def blacklist_token(token: str, db: Session) -> bool:

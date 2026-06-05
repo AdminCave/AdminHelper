@@ -32,5 +32,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+    # Credential-invalidation watermark: JWTs whose `iat` predates this are
+    # rejected (set on password reset). NULL = no revocation, all tokens valid.
+    tokens_valid_after = Column(DateTime, nullable=True)
 
     servers = relationship("Server", secondary=user_server_assoc, lazy="selectin")

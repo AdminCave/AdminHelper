@@ -71,12 +71,13 @@
           </div>
 
           <h2>Auth-Architektur</h2>
-          <p>JWT-Access-Token (HS256, 8h) und Refresh-Token (7d) werden beide als JSON-Body ausgeliefert. Token-Claims: <code>sub</code> (Username), <code>type</code> (access/refresh), <code>exp</code>, <code>jti</code> (UUID).</p>
+          <p>JWT-Access-Token (HS256, 8h) und Refresh-Token (7d) werden beide als JSON-Body ausgeliefert. Token-Claims: <code>sub</code> (Username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (Ausstellzeit), <code>jti</code> (UUID).</p>
           <ol>
             <li>Login signiert beide Tokens und gibt sie im <code>TokenResponse</code> zur&uuml;ck.</li>
             <li>Bei <code>POST /api/auth/refresh</code> pr&uuml;ft der Server Signatur, Ablauf und Blacklist.</li>
             <li>Alter <code>jti</code> wird sofort in <code>token_blacklist</code> eingetragen, dann werden neue Tokens ausgestellt (<strong>Rotation</strong>).</li>
             <li>Wird ein bereits widerrufener Refresh erneut eingereicht &rarr; <strong>Reuse-Detection</strong>: alle Sessions der betroffenen User-Kette werden invalidiert (<code>WARNING</code>-Log mit IP).</li>
+            <li><strong>Passwort-Reset widerruft Sessions</strong>: ein Passwort-Wechsel setzt <code>users.tokens_valid_after</code>; jeder Token mit <code>iat</code> davor (oder ohne <code>iat</code>) wird abgelehnt &mdash; ohne dass einzelne <code>jti</code> bekannt sein m&uuml;ssen.</li>
           </ol>
           <p>Passwort-Hashing nutzt <strong>SHA-256-Prehash &rarr; Bcrypt</strong>, weil Bcrypt nur 72 Bytes verarbeitet.</p>
           <p>API-Keys werden &uuml;ber den Header <code>X-API-Key</code> akzeptiert; die Dependency <code>ApiKeyOrUser</code> erlaubt JWT <em>oder</em> API-Key am selben Endpoint.</p>

@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -57,6 +59,9 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benutzer nicht gefunden")
     if data.password is not None:
         user.hashed_password = hash_password(data.password)
+        # Revoke all existing JWTs for this user (password reset invalidates
+        # sessions); stored naive UTC to match the other DateTime columns.
+        user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
     if data.is_admin is not None:
         user.is_admin = data.is_admin
     if data.server_ids is not None:

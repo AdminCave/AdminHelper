@@ -32,6 +32,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der interne/Agent-Key wird konstant-zeitig (`secrets.compare_digest`,
   fail-closed) verglichen.
 
+- **Server: Passwort-Reset widerruft jetzt bestehende JWTs.** Ein Passwort-Wechsel
+  setzt `users.tokens_valid_after`; Tokens mit `iat` davor (oder ohne `iat`) werden
+  abgelehnt — vorher blieben Access-(8h)/Refresh-(7d)-Tokens nach einem Reset gueltig.
+- **Server: Input-Validierung auf User-Endpunkten.** `UserCreate`/`UserUpdate`
+  erzwingen Passwort-Mindestlaenge (8) und einen Username-Charset
+  (`^[a-zA-Z0-9._-]+$`, 3–64) — der Username fliesst in FRP-TOML und PKI-Dateinamen.
+
 ### Changed
 
 - **Provisioning-Antwort `monitorUrl` ist nun ein server-relativer Pfad

@@ -122,6 +122,83 @@ class TestTokenValidation:
         assert user is None
 
 
+class TestPasswordResetRevocation:
+    """GHSA-g95r: a password reset must revoke existing JWTs via the
+    tokens_valid_after watermark + iat claim."""
+
+    def test_access_token_has_iat(self):
+        import jwt
+        from app.core.config import SECRET_KEY, ALGORITHM
+
+        payload = jwt.decode(
+            create_access_token({"sub": "admin"}), SECRET_KEY, algorithms=[ALGORITHM]
+        )
+        assert "iat" in payload
+
+    def test_token_before_watermark_rejected(self, db_session, admin_user):
+        from datetime import datetime, timedelta, timezone
+
+        token = create_access_token({"sub": admin_user.username})
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Watermark set AFTER the token was issued -> token is stale.
+        admin_user.tokens_valid_after = now + timedelta(hours=1)
+        db_session.commit()
+        assert _get_user_from_token(token, db_session) is None
+
+    def test_token_after_watermark_accepted(self, db_session, admin_user):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Watermark in the past -> a freshly issued token is still valid.
+        admin_user.tokens_valid_after = now - timedelta(hours=1)
+        db_session.commit()
+        token = create_access_token({"sub": admin_user.username})
+        user = _get_user_from_token(token, db_session)
+        assert user is not None and user.username == "admin"
+
+    def test_token_without_iat_rejected_when_watermark_set(self, db_session, admin_user):
+        import jwt
+        from datetime import datetime, timedelta, timezone
+        from app.core.config import SECRET_KEY, ALGORITHM
+
+        admin_user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
+        db_session.commit()
+        # A pre-fix token shape without an iat claim.
+        legacy = jwt.encode(
+            {
+                "sub": admin_user.username,
+                "type": "access",
+                "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+                "jti": "legacy-no-iat",
+            },
+            SECRET_KEY,
+            algorithm=ALGORITHM,
+        )
+        assert _get_user_from_token(legacy, db_session) is None
+
+    def test_password_change_revokes_existing_session(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "adminpass"}
+        )
+        access = login.json()["access_token"]
+        assert test_client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {access}"}
+        ).status_code == 200
+
+        upd = test_client.put(
+            f"/api/users/{admin_user.id}",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"password": "brand-new-pass-123"},
+        )
+        assert upd.status_code == 200
+
+        # The pre-reset token must no longer authenticate.
+        me2 = test_client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {access}"}
+        )
+        assert me2.status_code == 401
+
+
 class TestRefreshRotation:
     """H-2: refresh-token rotation + reuse detection."""
 
