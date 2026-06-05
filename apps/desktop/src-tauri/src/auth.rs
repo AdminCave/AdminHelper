@@ -286,8 +286,11 @@ fn load_session_from_keyring() -> Result<(String, String, String), AppError> {
     }
     #[cfg(target_os = "windows")]
     {
-        // TODO: Windows keyring read for JWT
-        Err(AppError::Keyring("Nicht implementiert".to_string()))
+        use crate::password::windows_read_credential;
+        let token = windows_read_credential(KEYRING_JWT_KEY)?;
+        let refresh_token = windows_read_credential(KEYRING_REFRESH_KEY).unwrap_or_default();
+        let server_url = windows_read_credential(KEYRING_SERVER_URL_KEY)?;
+        Ok((server_url, token, refresh_token))
     }
     #[cfg(not(any(target_os = "windows", unix)))]
     {

@@ -176,6 +176,56 @@ pub fn windows_credential_exists(target: &str) -> Result<bool, AppError> {
     )))
 }
 
+/// Reads the secret stored under `target` by `windows_store_credential`. The
+/// blob is the value encoded as UTF-16LE bytes (see `utf16_bytes`), so decode it
+/// back the same way. Mirrors the `CredReadW`/`CredFree` pattern of
+/// `windows_credential_exists`.
+#[cfg(target_os = "windows")]
+pub fn windows_read_credential(target: &str) -> Result<String, AppError> {
+    use std::ptr::null_mut;
+    use std::slice;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::GetLastError;
+    use windows::Win32::Security::Credentials::{
+        CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
+    };
+
+    let target_w = to_utf16_null(target);
+    let mut credential_ptr: *mut CREDENTIALW = null_mut();
+    let ok = unsafe {
+        CredReadW(
+            PCWSTR(target_w.as_ptr()),
+            CRED_TYPE_GENERIC,
+            0,
+            &mut credential_ptr,
+        )
+    }
+    .is_ok();
+    if !ok {
+        let err = unsafe { GetLastError() };
+        return Err(AppError::Keyring(format!(
+            "Credential Manager Fehler: {}",
+            err.0
+        )));
+    }
+
+    // Copy the blob out before freeing the credential.
+    let cred = unsafe { &*credential_ptr };
+    let size = cred.CredentialBlobSize as usize;
+    let value = if size == 0 || cred.CredentialBlob.is_null() {
+        String::new()
+    } else {
+        let bytes = unsafe { slice::from_raw_parts(cred.CredentialBlob, size) };
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    };
+    unsafe { CredFree(credential_ptr as *const _) };
+    Ok(value)
+}
+
 #[cfg(target_os = "windows")]
 pub fn windows_store_credential(
     target: &str,
