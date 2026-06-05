@@ -6,7 +6,7 @@ use std::path::{Component, Path};
 
 use crate::error::AppError;
 use crate::models::{Connection, ConnectionKind};
-use url::Url;
+use url::{Host, Url};
 
 pub fn validate_host(host: &str) -> Result<(), AppError> {
     let trimmed = host.trim();
@@ -74,6 +74,38 @@ pub fn validate_connection_input(connection: &Connection) -> Result<(), AppError
         }
     }
     Ok(())
+}
+
+/// True only for hosts whose traffic never leaves the machine: the loopback
+/// IPs (127.0.0.0/8, ::1) and the literal `localhost`. Subdomains of
+/// `.localhost` are deliberately *not* accepted — not every resolver maps them
+/// to loopback (RFC 6761 is advisory), so trusting them could leak to a real host.
+fn is_loopback_host(host: Option<Host<&str>>) -> bool {
+    match host {
+        Some(Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+        None => false,
+    }
+}
+
+/// Enforces TLS on an AdminHelper server URL before any credential (password,
+/// JWT, refresh token) is sent to it. `https://` is always allowed; `http://`
+/// is allowed *only* for loopback hosts, so local development keeps working
+/// while no secret ever crosses a network in cleartext.
+///
+/// The public read-only sync URL has its own stricter `validate_https_url`
+/// (no loopback exception) in sync.rs; this guards the authenticated JWT path
+/// funnelled through `auth::build_client`.
+pub fn validate_server_url_secure(raw: &str) -> Result<(), AppError> {
+    let url = Url::parse(raw)?;
+    match url.scheme() {
+        "https" => Ok(()),
+        "http" if is_loopback_host(url.host()) => Ok(()),
+        _ => Err(AppError::Validation(
+            "Server-URL muss https:// verwenden (http:// nur fuer localhost)".to_string(),
+        )),
+    }
 }
 
 /// Validates a server-supplied PKI filename before it is joined onto the local
@@ -219,6 +251,42 @@ mod tests {
     #[test]
     fn validate_no_control_chars_accepts_plain_text() {
         assert!(validate_no_control_chars("administrator", "Benutzer").is_ok());
+    }
+
+    #[test]
+    fn validate_server_url_secure_accepts_https_and_loopback_http() {
+        for url in [
+            "https://example.com",
+            "https://example.com:8443/api",
+            "http://localhost",
+            "http://localhost:8000/api",
+            "http://LOCALHOST:8000",
+            "http://127.0.0.1",
+            "http://127.0.0.5:9000", // whole 127.0.0.0/8 is loopback
+            "http://[::1]:8000",
+        ] {
+            assert!(
+                validate_server_url_secure(url).is_ok(),
+                "{url} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_server_url_secure_rejects_cleartext_network_and_other_schemes() {
+        for url in [
+            "http://example.com",        // cleartext over the network
+            "http://192.168.1.10:8000",  // private LAN IP, still a network
+            "http://10.0.0.1",           // private LAN IP
+            "http://attacker.localhost", // subdomain is not guaranteed loopback
+            "http://localhost.evil.com", // looks loopback, is not
+            "ftp://example.com",         // wrong scheme
+        ] {
+            assert!(
+                validate_server_url_secure(url).is_err(),
+                "{url} must be rejected"
+            );
+        }
     }
 
     #[test]

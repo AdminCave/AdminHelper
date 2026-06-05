@@ -32,9 +32,13 @@ struct MeResponse {
 }
 
 pub fn build_client(
-    _server_url: &str,
+    server_url: &str,
     allow_self_signed: bool,
 ) -> Result<reqwest::Client, AppError> {
+    // Choke point for every authenticated request (login, refresh, me, get,
+    // logout): refuse to send credentials to a non-TLS server. allow_self_signed
+    // only relaxes cert *validation* on https, never the scheme itself.
+    crate::validation::validate_server_url_secure(server_url)?;
     reqwest::Client::builder()
         .danger_accept_invalid_certs(allow_self_signed)
         .build()
