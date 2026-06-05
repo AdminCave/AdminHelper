@@ -57,13 +57,19 @@ def create_playbook(data: PlaybookCreate, db: Session = Depends(get_db), _admin=
         tags=json.dumps(data.tags) if data.tags else None,
     )
     db.add(playbook)
+    db.flush()  # surface DB constraint errors before touching the disk
 
-    # Write YAML to disk
+    # Write YAML to disk, then commit. On a commit failure remove the file again
+    # so a partial write can't orphan a file that has no DB row.
     path = _playbook_path(playbook_id, data.filename)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data.content, encoding="utf-8")
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        shutil.rmtree(PLAYBOOKS_DIR / playbook_id, ignore_errors=True)
+        raise
     db.refresh(playbook)
     fire_event("playbook.created", {"id": playbook.id, "name": playbook.name})
     return playbook.to_dict()
@@ -143,12 +149,14 @@ def delete_playbook(playbook_id: str, db: Session = Depends(get_db), _admin=Depe
     if not playbook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playbook nicht gefunden")
 
-    fire_event("playbook.deleted", {"id": playbook.id, "name": playbook.name})
-
-    # Delete the directory
-    playbook_dir = PLAYBOOKS_DIR / playbook.id
-    if playbook_dir.exists():
-        shutil.rmtree(playbook_dir)
+    pb_id, pb_name = playbook.id, playbook.name
 
     db.delete(playbook)
     db.commit()
+
+    # Remove files only after the DB row is committed-deleted: a failed commit
+    # must not orphan the row (which would 404 on a "live" playbook).
+    playbook_dir = PLAYBOOKS_DIR / pb_id
+    if playbook_dir.exists():
+        shutil.rmtree(playbook_dir, ignore_errors=True)
+    fire_event("playbook.deleted", {"id": pb_id, "name": pb_name})
