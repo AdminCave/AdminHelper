@@ -31,6 +31,12 @@ func runCmd() *cobra.Command {
 				runOnce()
 				return nil
 			}
+			// On Windows, run under the SCM when started as a service (reports
+			// SERVICE_RUNNING; otherwise sc start times out with error 1053).
+			// Interactive runs and all other platforms fall through to runLoop.
+			if handled, err := runService(); handled {
+				return err
+			}
 			return runLoop()
 		},
 	}

@@ -4,6 +4,7 @@
 *.deb
 *.rpm
 
-# Compiled binaries
-adminhelper-agent
-adminhelper-agent.exe
+# Compiled binaries (anchored so they don't also ignore the
+# cmd/adminhelper-agent/ source directory).
+/adminhelper-agent
+/adminhelper-agent.exe
