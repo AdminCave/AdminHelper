@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Browser Extension</h1>
-          <p class="lead">The AdminHelper extension adds a toolbar popup to Chromium-based browsers that launches HTTP/HTTPS connections directly. Manifest V3, three permissions, no content scripts.</p>
+          <p class="lead">The AdminHelper extension adds a toolbar popup to Chromium-based browsers that launches HTTP/HTTPS connections directly. Manifest V3, two permissions, no content scripts.</p>
 
           <h2>Deployment</h2>
           <ol>
@@ -56,7 +56,6 @@
           <h2>Permissions</h2>
           <ul>
             <li><code>storage</code> – Server URL and API key in <code>chrome.storage.sync</code>; cached connections in <code>chrome.storage.local</code>.</li>
-            <li><code>tabs</code> – Open new tabs from the popup.</li>
             <li><code>alarms</code> – 5-minute refresh job in the background service worker.</li>
           </ul>
 

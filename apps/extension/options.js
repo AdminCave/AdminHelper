@@ -79,8 +79,8 @@ testBtn.addEventListener('click', async () => {
   showStatus(statusTest, 'info', 'Verbinde...');
 
   try {
-    const fetchUrl = url.replace(/\/$/, '') + '/api/connections?api_key=' + encodeURIComponent(key);
-    const res = await fetch(fetchUrl);
+    const fetchUrl = url.replace(/\/$/, '') + '/api/connections';
+    const res = await fetch(fetchUrl, { headers: { 'X-API-Key': key } });
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} – ${res.statusText}`);

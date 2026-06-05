@@ -104,6 +104,10 @@ function buildCard(conn) {
 
 function openUrl(url) {
   if (!url) return;
+  // Only open http(s): never javascript:/data:/file: from a stored connection.
+  let parsed;
+  try { parsed = new URL(url); } catch { return; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
   chrome.tabs.create({ url });
 }
 
@@ -210,8 +214,8 @@ function render() {
 
 // ─── Loading from cache + server ──────────────────────────────────────────────
 async function loadFromServer(serverUrl, apiKey) {
-  const url = serverUrl.replace(/\/$/, '') + '/api/connections?api_key=' + encodeURIComponent(apiKey);
-  const res = await fetch(url);
+  const url = serverUrl.replace(/\/$/, '') + '/api/connections';
+  const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   const conns = Array.isArray(data) ? data : (data.connections ?? []);

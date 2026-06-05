@@ -30,8 +30,8 @@ async function fetchAndCache() {
   if (!serverUrl || !apiKey) return;
 
   try {
-    const url = serverUrl.replace(/\/$/, '') + '/api/connections?api_key=' + encodeURIComponent(apiKey);
-    const res = await fetch(url);
+    const url = serverUrl.replace(/\/$/, '') + '/api/connections';
+    const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();

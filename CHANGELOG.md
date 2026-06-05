@@ -39,6 +39,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erzwingen Passwort-Mindestlaenge (8) und einen Username-Charset
   (`^[a-zA-Z0-9._-]+$`, 3–64) — der Username fliesst in FRP-TOML und PKI-Dateinamen.
 
+- **Extension: API-Key nicht mehr im URL-Query-String.** `background.js`/`popup.js`/
+  `options.js` senden den Key jetzt über den `X-API-Key`-Header statt `?api_key=`
+  (vorher landete der langlebige Key in Access-/Proxy-Logs, Referer, History).
+  Zusätzlich: überflüssige `tabs`-Permission entfernt, und Verbindungs-URLs werden
+  vor dem Öffnen auf `http(s)` geprüft.
 - **Agent: `--insecure` persistiert nicht mehr in die Schleife.** Statt `INSECURE=1`
   dauerhaft zu speichern (TLS-Verify dauerhaft aus + API-Key-Leak pro Zyklus),
   erfasst der Agent beim Provisioning das Server-Zertifikat und pinnt es (TOFU) —
