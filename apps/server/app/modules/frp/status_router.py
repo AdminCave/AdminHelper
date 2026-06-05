@@ -14,8 +14,13 @@ router = APIRouter(prefix="/api/frp", tags=["frp"])
 
 
 @router.get("/status")
-async def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
-    """Queries the frps dashboard API and returns the status of all proxies."""
+def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
+    """Queries the frps dashboard API and returns the status of all proxies.
+
+    Sync def on purpose: it mixes a synchronous (psycopg) DB session with HTTP
+    calls. As a sync endpoint FastAPI runs it in a threadpool, so neither the DB
+    query nor the dashboard request blocks the event loop.
+    """
     config = db.query(FrpServerConfig).first()
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
@@ -28,11 +33,11 @@ async def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_
 
     proxies = []
     reachable = False
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    with httpx.Client(timeout=5.0) as client:
         for proxy_type in ["stcp", "https", "tcp", "udp"]:
             for url in [base_url, fallback_url]:
                 try:
-                    resp = await client.get(
+                    resp = client.get(
                         f"{url}/api/proxy/{proxy_type}",
                         auth=auth,
                     )
