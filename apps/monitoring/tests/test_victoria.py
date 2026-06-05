@@ -5,6 +5,8 @@
 """Pure-logic tests for the InfluxDB line protocol formatting in
 app/core/victoria.py: _esc_tag (escaping) and format_line (int/float/str)."""
 
+import pytest
+
 from app.core.victoria import _esc_tag, format_line
 
 
@@ -41,13 +43,16 @@ class TestFormatLine:
     def test_float_no_i_suffix(self):
         assert format_line("m", {"host": "srv"}, 1.5, 100) == "m,host=srv value=1.5 100"
 
-    def test_str_value_raw(self):
-        assert format_line("m", {"host": "srv"}, "up", 100) == "m,host=srv value=up 100"
+    def test_str_value_rejected(self):
+        # A non-numeric value would be written verbatim into the field position
+        # (line-protocol injection); it is now rejected.
+        with pytest.raises(TypeError):
+            format_line("m", {"host": "srv"}, "up", 100)
 
-    def test_bool_is_not_treated_as_int(self):
-        # bool is an int subclass in Python -> isinstance(True, float) is
-        # False, isinstance(True, int) is True -> lands in the int branch with 'i'.
-        assert format_line("m", {"host": "srv"}, True, 100) == "m,host=srv value=Truei 100"
+    def test_bool_value_rejected(self):
+        # bool is an int subclass; "value=Truei" is nonsense and a non-metric.
+        with pytest.raises(TypeError):
+            format_line("m", {"host": "srv"}, True, 100)
 
     def test_multiple_tags_joined_with_comma(self):
         line = format_line("m", {"a": "1", "b": "2"}, 7, 100)

@@ -14,24 +14,52 @@ from app.core.config import VICTORIA_METRICS_URL
 logger = logging.getLogger("monitor.victoria")
 
 
+_CONTROL_TO_SPACE = str.maketrans({"\n": " ", "\r": " ", "\t": " "})
+
+
 def _esc_tag(v: str) -> str:
-    """Escapes special characters in InfluxDB line protocol tag values."""
+    """Escape an InfluxDB line-protocol tag value.
+
+    Control chars (newline/CR/tab) have NO line-protocol escape — a raw newline
+    ends the line, so a caller-supplied tag value (mount/sensor/device/check
+    name) could inject a whole second metric line with a foreign server_id.
+    We neutralise control chars, escape backslash, then the LP specials
+    (space, comma, equals).
+    """
+    v = v.translate(_CONTROL_TO_SPACE)
+    v = v.replace("\\", "\\\\")
     return v.replace(" ", r"\ ").replace(",", r"\,").replace("=", r"\=")
+
+
+def _esc_measurement(m: str) -> str:
+    """Escape an InfluxDB measurement name (escapes comma + space, not equals;
+    neutralises control chars). The dynamic part of some measurement names is a
+    device id, so the same line-break injection applies here."""
+    m = m.translate(_CONTROL_TO_SPACE)
+    m = m.replace("\\", "\\\\")
+    return m.replace(" ", r"\ ").replace(",", r"\,")
 
 
 def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
     """Formats a single InfluxDB line protocol line.
 
     Format: measurement,tag1=val1,tag2=val2 value=X timestamp
+
+    ``value`` MUST be a real number (int or float, not bool). A non-numeric
+    value is rejected: it would otherwise be written verbatim into the field
+    position, allowing line-protocol injection. Every metric write in this
+    codebase passes a numeric value.
     """
-    tag_str = ",".join(f"{k}={_esc_tag(v)}" for k, v in tags.items() if v)
-    if isinstance(value, float):
-        field = f"value={value}"
-    elif isinstance(value, int):
+    tag_str = ",".join(f"{_esc_tag(k)}={_esc_tag(v)}" for k, v in tags.items() if v)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(
+            f"format_line value must be a real number, got {type(value).__name__}: {value!r}"
+        )
+    if isinstance(value, int):
         field = f"value={value}i"
     else:
         field = f"value={value}"
-    return f"{measurement},{tag_str} {field} {ts}"
+    return f"{_esc_measurement(measurement)},{tag_str} {field} {ts}"
 
 
 class VictoriaClient:
@@ -79,7 +107,8 @@ class VictoriaClient:
 
         if extra_metrics:
             for key, value in extra_metrics.items():
-                if isinstance(value, (int, float)):
+                # bool is an int subclass; exclude it (format_line rejects bools).
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
                     lines.append(format_line(f"monitor_{key}", tags, value, ts))
 
         self.write(lines)

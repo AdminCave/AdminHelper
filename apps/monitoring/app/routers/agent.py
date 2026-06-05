@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 import logging
 from datetime import datetime, timezone
 
@@ -23,6 +24,26 @@ from app.models import MonitorCheck, MonitorState
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _num(v):
+    """Coerce an agent-supplied metric value to int/float, else None.
+
+    Agent values flow into the InfluxDB line protocol; a non-numeric value must
+    never reach format_line (it would be a line-protocol injection vector — see
+    app/core/victoria.py — and would otherwise raise/500). Numeric strings are
+    accepted for leniency; anything else (incl. bool) is dropped.
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return None
 
 
 @router.post("/agent/{server_id}/report")
@@ -45,7 +66,7 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
     resources = report.get("resources", {})
     if resources:
         for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
-            val = resources.get(key)
+            val = _num(resources.get(key))
             if val is not None:
                 lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
@@ -54,28 +75,35 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
                 continue
             mount = disk.get("mount", "/")
             disk_tags = {**base_tags, "mount": mount}
-            if disk.get("percent") is not None:
-                lines.append(format_line("monitor_agent_disk_percent", disk_tags, disk["percent"], ts))
+            pct = _num(disk.get("percent"))
+            if pct is not None:
+                lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
 
         for sensor in resources.get("temperatures", []):
-            temp_c = sensor.get("temp_c", 0)
-            if temp_c > 0:
+            temp_c = _num(sensor.get("temp_c"))
+            if temp_c is not None and temp_c > 0:
                 sensor_tags = {**base_tags, "sensor": sensor.get("sensor", "unknown")}
                 lines.append(format_line("monitor_agent_temp", sensor_tags, temp_c, ts))
 
-    uptime = report.get("uptime_seconds")
+    uptime = _num(report.get("uptime_seconds"))
     if uptime is not None:
         lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
     # SMART disk metrics
     for disk in report.get("smart", []):
         device = disk.get("device", "unknown")
-        safe_dev = device.replace("/", "_").lstrip("_")
+        # Allowlist the device id used in the (otherwise-unescaped) measurement name.
+        safe_dev = re.sub(r"[^A-Za-z0-9_]", "_", str(device)).strip("_") or "unknown"
         smart_tags = {**base_tags, "device": device}
-        if disk.get("temp_c", 0) > 0:
-            lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, disk["temp_c"], ts))
-        lines.append(format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, disk.get("reallocated_sectors", 0), ts))
-        lines.append(format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, disk.get("pending_sectors", 0), ts))
+        dtemp = _num(disk.get("temp_c"))
+        if dtemp is not None and dtemp > 0:
+            lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, dtemp, ts))
+        realloc = _num(disk.get("reallocated_sectors", 0))
+        if realloc is not None:
+            lines.append(format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, realloc, ts))
+        pending = _num(disk.get("pending_sectors", 0))
+        if pending is not None:
+            lines.append(format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, pending, ts))
 
     if lines:
         victoria.write(lines)
