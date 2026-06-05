@@ -44,6 +44,13 @@ export function requestPassword(
   password?: string;
   remember?: boolean;
 }> {
+  // A second request while a prompt is still open would overwrite the existing
+  // continuation and permanently hang the first awaited promise. Cancel the
+  // in-flight one first so its awaiter unblocks.
+  const prev = _stateSnapshot();
+  if (prev.open && prev.continuation) {
+    prev.continuation({ cancelled: true });
+  }
   return new Promise((resolve) => {
     _state.set({
       open: true,
