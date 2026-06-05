@@ -161,6 +161,7 @@ pub fn start_frpc(
 
     // Log frpc output in background
     let app_handle = app.clone();
+    let state_for_task = state.clone();
     tauri::async_runtime::spawn(async move {
         use tauri_plugin_shell::process::CommandEvent;
         while let Some(event) = rx.recv().await {
@@ -173,6 +174,14 @@ pub fn start_frpc(
                 }
                 CommandEvent::Terminated(payload) => {
                     eprintln!("[frpc] Prozess beendet: {:?}", payload);
+                    // Reconcile the shared state so a stale `child` doesn't block a
+                    // later restart with "frpc laeuft bereits". The lock waits for
+                    // start_frpc to finish its own guard first (same mutex).
+                    if let Ok(mut guard) = state_for_task.lock() {
+                        guard.child = None;
+                        guard.visitor_name = None;
+                        guard.connected_since = None;
+                    }
                     let _ = app_handle.emit("frpc-terminated", payload.code);
                 }
                 CommandEvent::Error(err) => {
