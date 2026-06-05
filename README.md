@@ -387,20 +387,19 @@ cargo tauri build
 ```text
 .
 ├─ desktop/                  # Tauri desktop client (wrapper)
-│  ├─ src-tauri/             # Rust backend
-│  │  ├─ src/
-│  │  │  ├─ main.rs            # invoke_handler with 23 Tauri commands
-│  │  │  ├─ commands.rs        # IPC interface
-│  │  │  ├─ auth.rs            # JWT login, keyring persistence
-│  │  │  ├─ frpc.rs            # frpc sidecar process
-│  │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
-│  │  │  ├─ connection/        # SSH/RDP/Web connection logic
-│  │  │  ├─ password.rs        # OS keyring (com.adminhelper.app)
-│  │  │  ├─ ansible.rs         # inventory generation + playbook execution
-│  │  │  └─ ...
-│  │  ├─ binaries/            # frpc sidecar (gitignored, CI download)
-│  │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
-│  └─ src/                    # OLD (plain JS, historical since v0.19.0)
+│  └─ src-tauri/             # Rust backend
+│     ├─ src/
+│     │  ├─ main.rs            # invoke_handler with 23 Tauri commands
+│     │  ├─ commands.rs        # IPC interface
+│     │  ├─ auth.rs            # JWT login, keyring persistence
+│     │  ├─ frpc.rs            # frpc sidecar process
+│     │  ├─ tunnel.rs          # tunnel mapping + connection resolution
+│     │  ├─ connection/        # SSH/RDP/Web connection logic
+│     │  ├─ password.rs        # OS keyring (com.adminhelper.app)
+│     │  ├─ ansible.rs         # inventory generation + playbook execution
+│     │  └─ ...
+│     ├─ binaries/            # frpc sidecar (gitignored, CI download)
+│     └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
 ├─ desktop-src/              # PRODUCTION: Svelte 5 + TS desktop frontend
 │  ├─ src/
 │  │  ├─ lib/
@@ -425,7 +424,6 @@ cargo tauri build
 │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
 │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
 │  │                          #   ansible, monitoring_proxy
-│  ├─ frontend/               # OLD (plain JS, historical since v0.17.0)
 │  ├─ Dockerfile              # NO longer built – the repo-root Dockerfile is active
 │  └─ requirements.txt
 ├─ monitoring/               # Standalone FastAPI microservice
