@@ -136,7 +136,7 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
 
 - **Conventional Commits:** `feat:` / `fix:` / `chore:` / `refactor:` /
   `docs:` / `test:` / `perf:` / `tune:`. Pro logischem Schritt einen
-  Commit. Commit-Messages auf Deutsch, Release-Tags `vX.Y.Z`.
+  Commit. Commit-Messages auf Englisch, Release-Tags `vX.Y.Z`.
 - **Rust:** `cargo fmt` + `cargo clippy -- -D warnings` müssen sauber
   durchlaufen.
 - **TypeScript:** Strict Mode, kein `any`, ESLint + Prettier sauber.
