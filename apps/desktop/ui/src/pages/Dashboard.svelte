@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { navigate } from '$lib/router';
   import {
     connections,
@@ -32,7 +32,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     refresh();
   });
 
-  connections.subscribe(refresh);
+  const unsubscribe = connections.subscribe(refresh);
+  onDestroy(unsubscribe);
 
   function kindColor(kind: Connection['kind']): string {
     if (kind === 'ssh') return 'var(--accent)';
