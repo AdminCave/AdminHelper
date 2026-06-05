@@ -101,6 +101,9 @@ fn write_visitor_bundle(
     if !bundle.pki.is_empty() {
         std::fs::create_dir_all(&pki_dir)?;
         for (filename, content) in &bundle.pki {
+            // The server controls these filenames; reject anything that is not a
+            // plain file name before joining, or it could escape pki_dir (zip-slip).
+            crate::validation::validate_pki_filename(filename)?;
             let file_path = pki_dir.join(filename);
             // Write private keys (.key) restrictively; certs may stay 0644.
             if filename.ends_with(".key") {
