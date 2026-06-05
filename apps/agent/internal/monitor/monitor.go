@@ -41,6 +41,14 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		logMsg("CA-Zertifikat kopiert: %s", dest)
 	}
 
+	// Preserve an existing SERVICES line on re-provisioning: a token rotation
+	// passes empty services and must not wipe the configured watch list.
+	if services == "" {
+		if existing, err := config.LoadMonitorConfig(); err == nil && len(existing.Services) > 0 {
+			services = strings.Join(existing.Services, ",")
+		}
+	}
+
 	// Write the config
 	entries := []config.KeyValue{
 		{Key: "MONITOR_URL", Value: url},
