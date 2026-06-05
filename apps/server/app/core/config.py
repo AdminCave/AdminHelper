@@ -56,9 +56,17 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 
 BOOTSTRAP_TOKEN_FILE = DATA_DIR / ".bootstrap_token"
 
-# FRP config directory (shared volume with the frps container)
+# FRP config directory (shared volume with the internet-facing frps container).
+# frps reads frps.toml + the published cert subset (ca.crt/frps.crt/frps.key) here.
 FRP_CONFIG_DIR = Path(os.environ.get("FRP_CONFIG_DIR", str(DATA_DIR / "frp-config")))
 FRP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+# FRP master PKI directory (server-private; NEVER mounted into frps). Holds the
+# CA private key and all client keys. Defaulting it outside FRP_CONFIG_DIR keeps
+# those secrets out of the internet-facing volume even if the compose file is
+# not updated. See app.modules.frp.pki for the master/published split.
+FRP_PKI_DIR = Path(os.environ.get("FRP_PKI_DIR", str(DATA_DIR / "frp-pki")))
+FRP_PKI_DIR.mkdir(parents=True, exist_ok=True)
 
 # Visitor port range for automatic assignment (STCP tunnels)
 VISITOR_PORT_START = int(os.environ.get("VISITOR_PORT_START", "6000"))

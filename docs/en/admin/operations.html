@@ -41,7 +41,8 @@
               <tr><td><code>postgres-data</code> (volume)</td><td>PostgreSQL cluster with two DBs: <code>adminhelper</code> (users, connections, servers, hooks) and <code>adminhelper_monitor</code> (checks, alerts, templates, agent keys).</td></tr>
               <tr><td><code>/data/.bootstrap_token</code></td><td>One-time setup-token hash for the first admin (see installation guide).</td></tr>
               <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete without re-issuing all tokens.</td></tr>
-              <tr><td><code>/data/frp-config/pki/</code></td><td>FRP root CA (10 y) + server cert + per-client certs.</td></tr>
+              <tr><td><code>frp-pki</code> (volume)</td><td><strong>FRP master PKI</strong>: root CA incl. private key (10 y) + all client keys. The most important secret to back up — losing it means re-issuing the entire mTLS trust domain.</td></tr>
+              <tr><td><code>frp-config</code> (volume)</td><td>Generated <code>frps.toml</code> + the published cert subset frps reads (<code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code> — no CA private key, no client keys).</td></tr>
               <tr><td><code>/data/certs/</code></td><td>Self-signed TLS for the FastAPI port 8443.</td></tr>
               <tr><td><code>victoria-data</code> (volume)</td><td>VictoriaMetrics storage – 90 d retention (separate, not in this scope).</td></tr>
             </tbody>

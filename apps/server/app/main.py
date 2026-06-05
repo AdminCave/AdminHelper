@@ -130,6 +130,10 @@ def _ensure_pki(db):
     from app.modules.frp.docker_manager import write_frps_config
 
     try:
+        # Relocate any pre-split master PKI (CA key + client keys) out of the
+        # internet-facing frp-config volume before anything reads/writes it.
+        pki_manager.migrate_master_pki_out_of_shared()
+
         config = db.query(FrpServerConfig).first()
         if not config:
             return
@@ -142,6 +146,10 @@ def _ensure_pki(db):
         if _server_cert_needs_regen(pki_manager.PKI_DIR, config.server_addr):
             pki_manager.generate_server_cert(config.server_addr)
             logger.info("Auto-PKI: Server-Cert fuer %s generiert", config.server_addr)
+
+        # Ensure the shared volume holds the current frps cert subset even when
+        # nothing was regenerated this start (e.g. fresh frp-config volume).
+        pki_manager.publish_frps_materials()
 
         write_frps_config(config)
         logger.info("Auto-PKI: frps.toml neu geschrieben")

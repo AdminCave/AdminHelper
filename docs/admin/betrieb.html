@@ -74,8 +74,8 @@
               <tr><td><code>postgres-data</code> (Docker-Volume)</td><td>PostgreSQL-Cluster mit zwei DBs: <code>adminhelper</code> (Benutzer, Verbindungen, Server, API-Keys, Hooks) und <code>adminhelper_monitor</code> (Checks, Alerts, Templates, Agent-Keys).</td></tr>
               <tr><td><code>data/.bootstrap_token</code></td><td>Einmaliger Setup-Token-Hash für den ersten Admin (siehe Erstanmeldung in der Installations-Doku).</td></tr>
               <tr><td><code>data/.secret_key</code></td><td>Auto-generierter JWT-Key (sofern <code>SECRET_KEY</code> nicht gesetzt).</td></tr>
-              <tr><td><code>data/frp-config/</code></td><td>Generierte <code>frps.toml</code> + Server-Zertifikate (PKI).</td></tr>
-              <tr><td><code>data/pki/</code></td><td>CA-Material, Client-Zertifikate, CRL.</td></tr>
+              <tr><td><code>frp-pki</code> (Docker-Volume)</td><td><strong>FRP-Master-PKI</strong>: Root-CA inkl. Private-Key (10 J.) + alle Client-Keys. Das wichtigste Backup-Ziel — Verlust bedeutet Neuausstellung der gesamten mTLS-Trust-Domain.</td></tr>
+              <tr><td><code>frp-config</code> (Docker-Volume)</td><td>Generierte <code>frps.toml</code> + die publizierte Cert-Teilmenge, die frps liest (<code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code> — kein CA-Private-Key, keine Client-Keys).</td></tr>
               <tr><td><code>data/certs/</code></td><td>Self-Signed-TLS für den FastAPI-Port <code>8443</code>.</td></tr>
               <tr><td><code>victoria-data</code> (Docker-Volume)</td><td>VictoriaMetrics-Speicher – Retention 90&nbsp;Tage (eigenes Volume, nicht Teil dieses Datenverzeichnisses).</td></tr>
             </tbody>

@@ -22,6 +22,7 @@ def _mode(path) -> int:
 def test_pki_keys_written_owner_only(tmp_path, monkeypatch):
     pki_dir = tmp_path / "pki"
     monkeypatch.setattr(pki, "PKI_DIR", pki_dir)
+    monkeypatch.setattr(pki, "PUBLISHED_PKI_DIR", tmp_path / "published")
     # Deliberately loose umask -> proves the umask robustness of the fix.
     old_umask = os.umask(0o022)
     try:
@@ -41,6 +42,7 @@ def test_pki_keys_written_owner_only(tmp_path, monkeypatch):
 def test_pki_dir_tightens_existing_lax_keys(tmp_path, monkeypatch):
     pki_dir = tmp_path / "pki"
     monkeypatch.setattr(pki, "PKI_DIR", pki_dir)
+    monkeypatch.setattr(pki, "PUBLISHED_PKI_DIR", tmp_path / "published")
     pki.generate_ca()
     # Simulate an old, world-readable deployment.
     (pki_dir / "ca.key").chmod(0o644)

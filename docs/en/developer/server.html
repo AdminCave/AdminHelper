@@ -134,7 +134,8 @@ secretKey = "&lt;secret&gt;"
 allowUsers = ["ops-admin"]</code></pre>
 
           <h2>FRP PKI &amp; TLS</h2>
-          <p><code>modules/frp/pki.py</code> manages the mTLS PKI for FRP using the <code>cryptography</code> library. All artifacts live under <code>PKI_DIR = FRP_CONFIG_DIR/pki</code>. Keys are RSA-4096, signatures SHA-256.</p>
+          <p><code>modules/frp/pki.py</code> manages the mTLS PKI for FRP using the <code>cryptography</code> library. Keys are RSA-4096, signatures SHA-256.</p>
+          <p><strong>Master/published split (least privilege):</strong> the full PKI &mdash; CA <em>private key</em> and all client keys &mdash; lives server-private under <code>PKI_DIR = FRP_PKI_DIR</code> (default <code>DATA_DIR/frp-pki</code>, compose volume <code>frp-pki</code>, mounted on the server only). Only the subset frps needs is written into the volume shared with the internet-facing <code>frps</code> (<code>FRP_CONFIG_DIR/pki</code>) via <code>_publish_frps_materials()</code>: <code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code>. frps verifies clients against <code>ca.crt</code> (public) and never needs the CA key. Deployments created before the split (where the whole PKI used to sit in the shared volume) are relocated once at startup by <code>migrate_master_pki_out_of_shared()</code> &mdash; the CA key and client keys leave the exposed volume without re-issuing the CA.</p>
           <table>
             <thead><tr><th>Function</th><th>Produces</th><th>Properties</th></tr></thead>
             <tbody>
@@ -175,19 +176,25 @@ allowUsers = ["ops-admin"]</code></pre>
           <p>State splits across two locations:</p>
           <ul>
             <li><strong>PostgreSQL</strong> (compose volume <code>postgres-data</code>): two DBs <code>adminhelper</code> (server) and <code>adminhelper_monitor</code> (monitoring).</li>
-            <li><strong>File system under <code>DATA_DIR</code></strong> (default <code>/app/data</code>): bootstrap token, JWT secret, FRP PKI, Ansible playbook files.</li>
+            <li><strong>File system under <code>DATA_DIR</code></strong> (default <code>/app/data</code>): bootstrap token, JWT secret, Ansible playbook files.</li>
+            <li><strong>Master PKI</strong> (volume <code>frp-pki</code>, server-only): CA key + all client keys.</li>
+            <li><strong>Shared volume <code>frp-config</code></strong> (frps mounts it <code>:ro</code> at <code>/etc/frp</code>): <code>frps.toml</code> + the published cert subset.</li>
           </ul>
           <div class="code-header"><span>tree</span></div>
-<pre><code>/app/data/
+<pre><code>/app/data/                         # DATA_DIR (server-only)
 &#9500;&#9472;&#9472; .bootstrap_token            # one-time setup-token hash (P0-6)
 &#9500;&#9472;&#9472; .secret_key                 # auto-gen JWT secret
-&#9500;&#9472;&#9472; frp-config/
-&#9474;   &#9500;&#9472;&#9472; frps.toml
-&#9474;   &#9492;&#9472;&#9472; pki/
-&#9474;       &#9500;&#9472;&#9472; ca.crt, ca.key
-&#9474;       &#9500;&#9472;&#9472; frps.crt, frps.key
-&#9474;       &#9492;&#9472;&#9472; {client}.crt, {client}.key
-&#9492;&#9472;&#9472; ansible/playbooks/{id}/{file}.yaml</code></pre>
+&#9492;&#9472;&#9472; ansible/playbooks/{id}/{file}.yaml
+
+/app/frp-pki/                      # master PKI, server-only (volume frp-pki)
+&#9500;&#9472;&#9472; ca.crt, ca.key             # CA incl. PRIVATE key &mdash; never leaves the server
+&#9500;&#9472;&#9472; frps.crt, frps.key
+&#9492;&#9472;&#9472; {client}.crt, {client}.key
+
+/app/frp-config/                   # shared with frps (volume frp-config, :ro for frps)
+&#9500;&#9472;&#9472; frps.toml
+&#9492;&#9472;&#9472; pki/
+    &#9492;&#9472;&#9472; ca.crt, frps.crt, frps.key   # published subset &mdash; NO ca.key, NO client keys</code></pre>
 
           <h2>Tests</h2>
           <p>Pytest suite under <code>server/tests/</code>. Tests run against a <strong>real Postgres 17</strong> via <code>testcontainers</code> (local) or <code>services: postgres:17-alpine</code> (CI). SAVEPOINT pattern in the <code>db_session</code> fixture: outer transaction + <code>begin_nested</code> + <code>after_transaction_end</code> listener — tests can call <code>commit()</code>, everything is rolled back at the end. Plus <code>test_alembic_consistency.py</code> as drift detector between <code>Base.metadata</code> and Alembic migrations.</p>

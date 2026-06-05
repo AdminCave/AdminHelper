@@ -14,13 +14,118 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.core.config import FRP_CONFIG_DIR
+from app.core.config import FRP_CONFIG_DIR, FRP_PKI_DIR
 
 logger = logging.getLogger(__name__)
 
-PKI_DIR = FRP_CONFIG_DIR / "pki"
+# Master PKI (server-private): CA private key + all client keys. Source of truth.
+PKI_DIR = FRP_PKI_DIR
+# Published subset the internet-facing frps actually needs, living in the shared
+# frp-config volume. MUST only ever contain these three files — never the CA
+# private key or any client key. frps verifies clients with ca.crt (public) and
+# never needs the CA key.
+PUBLISHED_PKI_DIR = FRP_CONFIG_DIR / "pki"
+_FRPS_PUBLISHED_FILES = ("ca.crt", "frps.crt", "frps.key")
 VALIDITY_DAYS_CA = 3650  # 10 years
 VALIDITY_DAYS_CERT = 365  # 1 year
+
+
+def _publish_frps_materials() -> None:
+    """Copies only the files frps needs (ca.crt, frps.crt, frps.key) from the
+    master PKI into the shared frp-config volume. The CA private key and every
+    client key deliberately stay in PKI_DIR and never reach the frps container."""
+    PUBLISHED_PKI_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        PUBLISHED_PKI_DIR.chmod(0o755)  # frps must traverse + read its certs
+    except OSError as exc:
+        logger.warning("Konnte Published-PKI-Dir-Permissions nicht setzen: %s", exc)
+    for name in _FRPS_PUBLISHED_FILES:
+        src = PKI_DIR / name
+        if not src.exists():
+            continue
+        dst = PUBLISHED_PKI_DIR / name
+        if name.endswith(".key"):
+            # frps' own key: restrictive, but frps (same uid as server today) reads it.
+            fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, src.read_bytes())
+            finally:
+                os.close(fd)
+            dst.chmod(0o600)
+        else:
+            dst.write_bytes(src.read_bytes())
+            dst.chmod(0o644)
+
+
+def publish_frps_materials() -> None:
+    """Public, idempotent wrapper used by startup to ensure the shared volume
+    holds the current frps cert subset even when nothing was regenerated."""
+    _publish_frps_materials()
+
+
+def _prune_shared_secrets() -> None:
+    """Removes everything except the published frps subset from the shared
+    (frps-visible) PKI dir — i.e. deletes a leftover CA key and client keys."""
+    if not PUBLISHED_PKI_DIR.exists():
+        return
+    keep = set(_FRPS_PUBLISHED_FILES)
+    for f in PUBLISHED_PKI_DIR.iterdir():
+        if f.is_file() and f.name not in keep:
+            try:
+                f.unlink()
+            except OSError as exc:
+                logger.warning("Konnte Alt-Secret nicht aus Shared-Volume loeschen (%s): %s", f, exc)
+
+
+def migrate_master_pki_out_of_shared() -> bool:
+    """One-time migration for deployments created before the master/published
+    split, where the full PKI (incl. ca.key + client keys) lived in the shared
+    frp-config volume. Moves every master secret into the server-private PKI_DIR
+    and re-publishes only the frps subset, so the CA key and client keys leave
+    the internet-facing volume. Idempotent. Returns True if files were moved."""
+    if PKI_DIR == PUBLISHED_PKI_DIR:
+        return False  # degenerate config; nothing to separate
+    legacy_ca_key = PUBLISHED_PKI_DIR / "ca.key"
+    if not legacy_ca_key.exists():
+        # No legacy master in the shared volume. Still prune in case a stray
+        # client key lingers from an interrupted earlier migration.
+        _prune_shared_secrets()
+        return False
+    if (PKI_DIR / "ca.key").exists():
+        # Master already populated (migration ran before); just clean the shared dir.
+        _prune_shared_secrets()
+        return False
+
+    PKI_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        PKI_DIR.chmod(0o700)
+    except OSError as exc:
+        logger.warning("Konnte Master-PKI-Dir nicht auf 0700 setzen: %s", exc)
+
+    # Copy every PKI file into the master dir (cross-filesystem safe: the two
+    # volumes are different mounts, so os.replace/rename would fail with EXDEV).
+    for f in sorted(PUBLISHED_PKI_DIR.iterdir()):
+        if not f.is_file():
+            continue
+        data = f.read_bytes()
+        dst = PKI_DIR / f.name
+        if f.suffix == ".key":
+            fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, data)
+            finally:
+                os.close(fd)
+            dst.chmod(0o600)
+        else:
+            dst.write_bytes(data)
+
+    _prune_shared_secrets()
+    _publish_frps_materials()
+    logger.warning(
+        "FRP-PKI migriert: Master-Secrets nach %s verschoben, frps-Volume (%s) bereinigt",
+        PKI_DIR, PUBLISHED_PKI_DIR,
+    )
+    return True
 
 
 def _ensure_pki_dir() -> Path:
@@ -133,6 +238,7 @@ def generate_ca(common_name: str = "AdminHelper FRP CA") -> dict:
 
     _write_key(d / "ca.key", key)
     _write_cert(d / "ca.crt", cert)
+    _publish_frps_materials()  # ca.crt -> shared volume; ca.key stays here
     logger.info("CA generiert: %s (gueltig bis %s)", common_name, cert.not_valid_after_utc)
 
     return {
@@ -190,6 +296,7 @@ def generate_server_cert(server_addr: str) -> dict:
 
     _write_key(d / "frps.key", key)
     _write_cert(d / "frps.crt", cert)
+    _publish_frps_materials()  # frps.crt/frps.key -> shared volume for frps
     logger.info("Server-Cert generiert fuer: %s", server_addr)
 
     return {

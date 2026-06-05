@@ -134,7 +134,8 @@ secretKey = "&lt;secret&gt;"
 allowUsers = ["ops-admin"]</code></pre>
 
           <h2>FRP-PKI &amp; TLS</h2>
-          <p><code>modules/frp/pki.py</code> verwaltet die mTLS-PKI fuer FRP mit der <code>cryptography</code>-Lib. Alle Artefakte liegen unter <code>PKI_DIR = FRP_CONFIG_DIR/pki</code>. Schluessel sind RSA-4096, Signatur SHA-256.</p>
+          <p><code>modules/frp/pki.py</code> verwaltet die mTLS-PKI fuer FRP mit der <code>cryptography</code>-Lib. Schluessel sind RSA-4096, Signatur SHA-256.</p>
+          <p><strong>Master-/Published-Split (Least Privilege):</strong> Die vollstaendige PKI &mdash; CA-<em>Private-Key</em> und alle Client-Keys &mdash; liegt server-privat unter <code>PKI_DIR = FRP_PKI_DIR</code> (Default <code>DATA_DIR/frp-pki</code>, Compose-Volume <code>frp-pki</code>, nur am Server gemountet). In das mit dem internet-zugewandten <code>frps</code> geteilte Volume (<code>FRP_CONFIG_DIR/pki</code>) wird per <code>_publish_frps_materials()</code> ausschliesslich die Teilmenge geschrieben, die frps braucht: <code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code>. frps verifiziert Clients gegen <code>ca.crt</code> (oeffentlich) und braucht den CA-Key nie. Bestandsdeployments (PKI lag frueher komplett im Shared-Volume) werden beim Startup per <code>migrate_master_pki_out_of_shared()</code> einmalig umgezogen &mdash; der CA-Key und die Client-Keys verlassen so das exponierte Volume, ohne die CA neu auszustellen.</p>
           <table>
             <thead><tr><th>Funktion</th><th>Erzeugt</th><th>Eigenschaften</th></tr></thead>
             <tbody>
@@ -175,19 +176,25 @@ allowUsers = ["ops-admin"]</code></pre>
           <p>Stateful-Daten verteilen sich auf zwei Stellen:</p>
           <ul>
             <li><strong>PostgreSQL</strong> (Compose-Volume <code>postgres-data</code>): zwei DBs <code>adminhelper</code> (Server) und <code>adminhelper_monitor</code> (Monitoring).</li>
-            <li><strong>File-System unter <code>DATA_DIR</code></strong> (Default <code>/app/data</code>): Bootstrap-Token, JWT-Secret, FRP-PKI, Ansible-Playbook-Dateien.</li>
+            <li><strong>File-System unter <code>DATA_DIR</code></strong> (Default <code>/app/data</code>): Bootstrap-Token, JWT-Secret, Ansible-Playbook-Dateien.</li>
+            <li><strong>Master-PKI</strong> (Volume <code>frp-pki</code>, server-only): CA-Key + alle Client-Keys.</li>
+            <li><strong>Shared-Volume <code>frp-config</code></strong> (frps mountet es <code>:ro</code> unter <code>/etc/frp</code>): <code>frps.toml</code> + die publizierte Cert-Teilmenge.</li>
           </ul>
           <div class="code-header"><span>tree</span></div>
-<pre><code>/app/data/
+<pre><code>/app/data/                         # DATA_DIR (server-only)
 &#9500;&#9472;&#9472; .bootstrap_token            # Einmaliger Setup-Token-Hash (P0-6)
 &#9500;&#9472;&#9472; .secret_key                 # Auto-Gen JWT-Secret
-&#9500;&#9472;&#9472; frp-config/
-&#9474;   &#9500;&#9472;&#9472; frps.toml
-&#9474;   &#9492;&#9472;&#9472; pki/
-&#9474;       &#9500;&#9472;&#9472; ca.crt, ca.key
-&#9474;       &#9500;&#9472;&#9472; frps.crt, frps.key
-&#9474;       &#9492;&#9472;&#9472; {client}.crt, {client}.key
-&#9492;&#9472;&#9472; ansible/playbooks/{id}/{file}.yaml</code></pre>
+&#9492;&#9472;&#9472; ansible/playbooks/{id}/{file}.yaml
+
+/app/frp-pki/                      # Master-PKI, server-only (Volume frp-pki)
+&#9500;&#9472;&#9472; ca.crt, ca.key             # CA inkl. PRIVATE Key &mdash; verlaesst den Server nie
+&#9500;&#9472;&#9472; frps.crt, frps.key
+&#9492;&#9472;&#9472; {client}.crt, {client}.key
+
+/app/frp-config/                   # Shared mit frps (Volume frp-config, :ro fuer frps)
+&#9500;&#9472;&#9472; frps.toml
+&#9492;&#9472;&#9472; pki/
+    &#9492;&#9472;&#9472; ca.crt, frps.crt, frps.key   # publizierte Teilmenge &mdash; KEIN ca.key, KEINE Client-Keys</code></pre>
 
           <h2>Tests</h2>
           <p>Pytest-Suite unter <code>server/tests/</code>. Tests laufen gegen ein <strong>echtes Postgres 17</strong> via <code>testcontainers</code> (lokal) bzw. <code>services: postgres:17-alpine</code> (CI). SAVEPOINT-Pattern in der <code>db_session</code>-Fixture: Outer-Transaction mit <code>begin_nested</code> + <code>after_transaction_end</code>-Listener — erlaubt <code>commit()</code> im Test-Code, am Ende sauberer Rollback. Plus <code>test_alembic_consistency.py</code> als Drift-Detector zwischen <code>Base.metadata</code> und Alembic-Migrations.</p>
