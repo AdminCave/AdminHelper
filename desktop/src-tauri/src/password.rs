@@ -161,7 +161,7 @@ pub fn windows_credential_exists(target: &str) -> Result<bool, AppError> {
             &mut credential_ptr,
         )
     }
-    .as_bool();
+    .is_ok();
     if ok {
         unsafe { CredFree(credential_ptr as *const _) };
         return Ok(true);
@@ -200,7 +200,7 @@ pub fn windows_store_credential(
     credential.CredentialBlob = secret_bytes.as_mut_ptr();
     credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
 
-    let ok = unsafe { CredWriteW(&credential, 0) }.as_bool();
+    let ok = unsafe { CredWriteW(&credential, 0) }.is_ok();
     for byte in &mut secret_bytes {
         *byte = 0;
     }
@@ -222,7 +222,7 @@ pub fn windows_delete_credential(target: &str) -> Result<(), AppError> {
     use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
 
     let target_w = to_utf16_null(target);
-    let ok = unsafe { CredDeleteW(PCWSTR(target_w.as_ptr()), CRED_TYPE_GENERIC, 0) }.as_bool();
+    let ok = unsafe { CredDeleteW(PCWSTR(target_w.as_ptr()), CRED_TYPE_GENERIC, 0) }.is_ok();
     if ok {
         return Ok(());
     }
