@@ -91,7 +91,7 @@
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <div><div class="callout-title">Ingest-Authentifizierung</div><p>Die <code>/api/monitoring/ingest</code>-Endpunkte erwarten den <code>MONITOR_API_KEY</code>-Header. Der Agent nutzt denselben Key, den du zentral in der <code>.env</code> setzt – unbedingt identisch zwischen Server- und Monitoring-Container.</p></div>
+            <div><div class="callout-title">Ingest-Authentifizierung</div><p>Der Agent sendet seine Metriken per <code>POST /api/monitoring/agent/{server_id}/report</code> an den AdminHelper-Server (Port 443, tunnelfrei) und authentifiziert mit seinem <strong>server-spezifischen</strong> <code>X-API-Key</code> (beim Provisioning vergeben). Der geteilte <code>MONITOR_API_KEY</code> ist davon getrennt: er sichert nur die interne Server&rarr;Monitoring-Proxy-Strecke (<code>X-Internal-Key</code>) und muss zwischen Server- und Monitoring-Container identisch sein.</p></div>
           </div>
 
           <h2>Charts im Web-Panel</h2>

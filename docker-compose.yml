@@ -83,10 +83,11 @@ services:
 
   monitoring:
     image: ${MONITORING_IMAGE:-ghcr.io/ks98/adminhelper/monitoring:latest}
+    # Internal-only (like postgres/redis/victoria): agents push metrics via the
+    # server's public 443 proxy at /api/monitoring/agent/{id}/report, so the
+    # monitoring admin API + /docs are never reachable directly from the host.
     expose:
       - "8080"
-    ports:
-      - "${MONITOR_AGENT_PORT:-8480}:8080"
     volumes:
       - monitoring-data:/app/data
     environment:

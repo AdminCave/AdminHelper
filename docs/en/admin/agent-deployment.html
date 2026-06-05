@@ -67,7 +67,7 @@ sudo adminhelper-agent provision \
     --token     TOKEN_VALUE `
     --server-id SERVER_ID</code></pre>
 
-          <p>After provisioning the agent holds a client certificate signed by the FRP CA and enables the <code>adminhelper-agent.timer</code> systemd unit (Linux) or the Windows service (auto-start).</p>
+          <p>After provisioning the agent holds a client certificate signed by the FRP CA and enables the <code>adminhelper-agent.timer</code> systemd unit (Linux) or the Windows service (auto-start). Metrics are then pushed tunnel-free to the AdminHelper server (port 443) at <code>POST /api/monitoring/agent/{server_id}/report</code> using the server-specific <code>X-API-Key</code>; the server forwards them internally to the monitoring service. No separate monitoring port needs to be reachable. <em>Upgrade note:</em> when moving to the internal-only monitoring (server proxy instead of the host port <code>8480</code>), existing agents must be <strong>re-provisioned</strong> once so their stored <code>MONITOR_URL</code> switches to <code>/api/monitoring</code>.</p>
 
           <h2>Subcommand reference</h2>
           <p>All subcommands of the agent binary. Required flags are marked with <strong>*</strong>.</p>

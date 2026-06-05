@@ -19,6 +19,11 @@ from app.core.config import MONITOR_SERVICE_URL, MONITOR_API_KEY
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
+# Normalize once: a trailing slash would make the forwards below emit a double
+# slash (http://monitoring:8080//agent/...), which the no-prefix monitoring
+# routes do NOT match -> 404. Mirrors the rstrip in provisioning/helpers.py.
+_MONITOR_BASE = MONITOR_SERVICE_URL.rstrip("/")
+
 # Allowed path prefixes for the monitoring proxy (SSRF protection)
 _ALLOWED_PATH_PREFIXES = (
     "checks", "alerts", "log", "metrics", "status",
@@ -31,7 +36,7 @@ async def proxy_agent_report(server_id: str, request: Request):
     """Proxy for agent reports (auth via X-API-Key, no JWT needed)."""
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{MONITOR_SERVICE_URL}/agent/{server_id}/report",
+            f"{_MONITOR_BASE}/agent/{server_id}/report",
             content=await request.body(),
             headers={
                 "X-API-Key": request.headers.get("x-api-key", ""),
@@ -54,7 +59,7 @@ async def proxy_to_monitoring(path: str, request: Request, _admin=Depends(get_cu
         raise HTTPException(status_code=400, detail="Unerlaubter Proxy-Pfad")
 
     async with httpx.AsyncClient(timeout=30) as client:
-        target_url = f"{MONITOR_SERVICE_URL}/{path}"
+        target_url = f"{_MONITOR_BASE}/{path}"
         resp = await client.request(
             method=request.method,
             url=target_url,

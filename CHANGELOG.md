@@ -5,6 +5,49 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Security
+
+- **Desktop: Path-Traversal (Zip-Slip) beim Schreiben server-gelieferter
+  PKI-Dateinamen geschlossen.** Ein boesartiger/kompromittierter Server konnte
+  ueber den Visitor-Bundle-Dateinamen (`pki_dir.join(filename)`) beliebige Dateien
+  auf dem Client schreiben. Dateinamen werden jetzt als einzelne, separator-freie
+  Pfad-Komponente validiert.
+- **Desktop: TLS auf der authentifizierten Server-URL erzwungen.** Login/Refresh/
+  Logout/`authenticated_get` senden Passwort + Tokens nur noch ueber `https://`
+  (Ausnahme: Loopback fuer lokale Entwicklung) — kein Klartext mehr ueber das Netz.
+- **Monitoring: VictoriaMetrics-Line-Protocol-Injection geschlossen.** Agent-Report-
+  Felder werden numerisch erzwungen, Tags/Measurements escaped (Backslash/Newline/
+  Control-Chars) — ein Agent-Key kann keine fremden Zeitreihen mehr faelschen.
+- **FRP-PKI: CA-Private-Key + alle Client-Keys aus dem internet-zugewandten
+  frps-Volume entfernt.** Master-PKI liegt jetzt server-privat (Volume `frp-pki`);
+  ins geteilte `frp-config`-Volume wird nur noch die frps-Teilmenge
+  (`ca.crt`/`frps.crt`/`frps.key`) publiziert. Bestandsdeployments werden beim
+  Startup einmalig migriert (CA bleibt erhalten).
+- **Monitoring: Admin-API nicht mehr direkt zum Host exponiert.** Agent-Metriken
+  laufen jetzt tunnelfrei ueber den Server-Proxy (`POST /api/monitoring/agent/
+  {id}/report` auf 443); der Monitoring-Dienst ist nur noch intern erreichbar.
+  `/docs`+`/openapi.json` sind standardmaessig aus (Env `MONITOR_ENABLE_DOCS`),
+  der interne/Agent-Key wird konstant-zeitig (`secrets.compare_digest`,
+  fail-closed) verglichen.
+
+### Changed
+
+- **Provisioning-Antwort `monitorUrl` ist nun ein server-relativer Pfad
+  (`/api/monitoring`).** Der Agent setzt ihn an die bereits TLS-vertraute
+  Server-URL, gegen die er provisioniert wurde — der Metrik-Push trifft so immer
+  denselben Host/Cert, ohne dass der Server seine oeffentliche Adresse kennen muss.
+
+### Removed
+
+- **Monitoring-Host-Port (`MONITOR_AGENT_PORT`/`8480`) aus `docker-compose.yml`
+  entfernt** (nur noch `expose: 8080`).
+  **Breaking (Ops):** Nach dem Upgrade muessen bereits provisionierte Agents
+  **neu provisioniert** werden — ihre gespeicherte `MONITOR_URL` zeigt sonst auf
+  den weggefallenen Port. Wer direkt gegen `:8480` skriptet, stellt auf
+  `https://<server>/api/monitoring/agent/{id}/report` um.
+
 ## [0.24.0] - 2026-06-04
 
 ### Security

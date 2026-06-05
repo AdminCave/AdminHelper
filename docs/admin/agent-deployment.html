@@ -35,9 +35,9 @@
 
           <h2>Was macht der Agent?</h2>
           <ul>
-            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet an <code>/api/monitoring/ingest</code>.</li>
+            <li><strong>Monitoring</strong>: läuft alle 5 Minuten (systemd.timer mit Jitter), sammelt CPU, RAM, Disk, SMART, Docker-Container-Status, ZFS-Pools, sendet die Metriken tunnelfrei an den AdminHelper-Server (Port 443) unter <code>POST /api/monitoring/agent/{server_id}/report</code>, der sie intern an den Monitoring-Dienst weiterreicht.</li>
             <li><strong>FRP-Client</strong>: lädt beim Erst-Start mit einem Provision-Token sein Client-Zertifikat und startet <code>frpc.service</code>.</li>
-            <li><strong>Updates</strong>: neues DEB/RPM von der GitHub-Releases-Seite installieren; Konfig und Service werden bei Upgrades nicht überschrieben.</li>
+            <li><strong>Updates</strong>: neues DEB/RPM von der GitHub-Releases-Seite installieren; Konfig und Service werden bei Upgrades nicht überschrieben. <em>Hinweis:</em> Beim Umstieg auf das interne-only-Monitoring (Server-Proxy statt Host-Port <code>8480</code>) müssen bestehende Agents einmal <strong>neu provisioniert</strong> werden, damit ihre gespeicherte <code>MONITOR_URL</code> auf <code>/api/monitoring</code> umgestellt wird.</li>
           </ul>
 
           <h2>Paket installieren (Debian/Ubuntu)</h2>

@@ -108,7 +108,7 @@ docker compose up --build -d
 Das startet:
 - **Server** auf `https://localhost:443` (selbstsigniertes Zertifikat)
 - **frps** auf Port 7000 (FRP-Protokoll) und 7443 (HTTPS-vhosts)
-- **Monitoring** auf Port 8480 (Agent-API)
+- **Monitoring** nur intern im Compose-Network (`expose 8080`, kein Host-Port); Agent-Metriken laufen tunnelfrei über den Server unter `/api/monitoring`
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
 - **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start von `scripts/postgres-init.sh` angelegt
 

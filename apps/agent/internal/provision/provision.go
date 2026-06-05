@@ -61,11 +61,21 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Printf("Provisioning fuer Server %q gestartet.\n", resp.ServerName)
 
-	// 1. Monitor init only if the service returned a key.
-	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" &&
-		resp.MonitorURL != nil && *resp.MonitorURL != "" {
+	// 1. Monitor init only if the service returned a key. The agent owns the
+	// host: it builds the monitoring base from the SAME server URL it just
+	// provisioned against (already TLS-trusted) plus the server-declared path,
+	// so the metrics push always hits the same host/cert — no reliance on the
+	// server knowing its own public address. MonitorURL carries the relative
+	// path (e.g. "/api/monitoring"); older/absolute values fall back to the
+	// well-known path.
+	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" {
+		monitorPath := "/api/monitoring"
+		if resp.MonitorURL != nil && strings.HasPrefix(*resp.MonitorURL, "/") {
+			monitorPath = *resp.MonitorURL
+		}
+		monitorURL := adminHelperURL + monitorPath
 		fmt.Println("→ Monitor-Agent wird eingerichtet...")
-		if err := monitor.Init(*resp.MonitorURL, *resp.MonitorAPIKey, serverID, "", cacert, insecure); err != nil {
+		if err := monitor.Init(monitorURL, *resp.MonitorAPIKey, serverID, "", cacert, insecure); err != nil {
 			return fmt.Errorf("Monitor-Init fehlgeschlagen: %w", err)
 		}
 	} else {

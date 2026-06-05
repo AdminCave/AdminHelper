@@ -157,7 +157,8 @@ class TestProvisionActivate:
         assert res.status_code == 200, res.text
         body = res.json()
         assert body["monitorApiKey"] == "mocked-monitor-key-xyz"
-        assert body["monitorUrl"] == MONITOR_SERVICE_URL.rstrip("/")
+        # Server-relative path; the agent joins it to its own trusted server URL.
+        assert body["monitorUrl"] == "/api/monitoring"
 
     def test_activate_wrong_token_fails(self, test_client, db_session):
         srv = _make_server(db_session)

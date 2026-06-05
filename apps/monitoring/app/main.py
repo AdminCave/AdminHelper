@@ -9,6 +9,7 @@ AdminHelper — Monitoring Service
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -37,10 +38,17 @@ async def lifespan(app: FastAPI):
     logger.info("Scheduler gestoppt")
 
 
+# The monitoring service is internal-only (reached via the server's
+# /api/monitoring proxy). Interactive docs + the OpenAPI schema stay off unless
+# explicitly enabled for local development — both must be gated, since docs_url
+# alone still serves /openapi.json.
+_DOCS_ENABLED = os.environ.get("MONITOR_ENABLE_DOCS", "").lower() in ("1", "true", "yes")
+
 app = FastAPI(
     title="AdminHelper Monitoring Service",
-    docs_url="/docs",
+    docs_url="/docs" if _DOCS_ENABLED else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
     lifespan=lifespan,
 )
 

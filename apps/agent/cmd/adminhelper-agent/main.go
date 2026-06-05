@@ -110,7 +110,7 @@ func monitorInitCmd() *cobra.Command {
 			return monitorInitRun(url, apiKey, serverID, services, cacert, insecure)
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Service URL (erforderlich)")
+	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Basis-URL: AdminHelper-Server + /api/monitoring (z.B. https://srm.example.com/api/monitoring) (erforderlich)")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "API-Key (erforderlich)")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
 	cmd.Flags().StringVar(&services, "services", "", "Kommagetrennte Service-Namen")

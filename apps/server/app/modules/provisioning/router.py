@@ -13,7 +13,8 @@ Activate response schema:
   "serverName": "k01-lnx1",
   "apiKey": "...",                  // always: server read API key
   "monitorApiKey": "..." | null,    // if monitor service is reachable
-  "monitorUrl": "..." | null,
+  "monitorUrl": "/api/monitoring" | null,  // server-relative path; the agent
+                                    // joins it to its own trusted server URL
   "frp": {                          // if the server has FRP tunnels configured
     "config": "<base64 frpc.toml>",
     "pkiBundle": "<base64 tar.gz>"
@@ -32,7 +33,6 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.auth import get_current_admin, hash_api_key, generate_api_key
-from app.core.config import MONITOR_SERVICE_URL
 from app.modules.api_keys.models import ApiKey
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
@@ -146,6 +146,10 @@ def activate_provision(
         "serverName": server.name,
         "apiKey": raw_api_key,
         "monitorApiKey": monitor_key,
-        "monitorUrl": MONITOR_SERVICE_URL.rstrip("/") if monitor_key else None,
+        # Server-relative path under the public API. The agent prepends the same
+        # server URL it provisioned against (already TLS-trusted), so the metrics
+        # push reaches monitoring via the server proxy on 443 without the server
+        # needing to know its own public address. None when monitoring is down.
+        "monitorUrl": "/api/monitoring" if monitor_key else None,
         "frp": frp_bundle,
     }
