@@ -21,6 +21,9 @@ from app.modules.users.models import User
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 read_dep = ApiKeyOrUser(require_write=False)
+# write = a read_write API key OR an admin JWT user (BY DESIGN — read_write keys
+# are documented to read AND write). require_admin gates only the JWT path; the
+# API-key path is gated by require_write. Pinned by tests/test_connections_authz.py.
 write_dep = ApiKeyOrUser(require_write=True, require_admin=True)
 
 

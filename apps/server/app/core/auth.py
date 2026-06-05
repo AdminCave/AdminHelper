@@ -170,7 +170,23 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 class ApiKeyOrUser:
-    """Dependency: accepts a JWT bearer OR an API key. Returns (user_or_none, apikey_or_none)."""
+    """Dependency: accepts a JWT bearer OR an API key. Returns (user_or_none, apikey_or_none).
+
+    Authorization is intentionally per-auth-method:
+
+    - **API-key path** is gated by ``require_write`` (a ``read_write`` key is
+      required) plus any endpoint-specific scope check (e.g. the ``server_id``
+      check on frp/provision). API keys have **no admin concept**, so
+      ``require_admin`` does NOT apply to them.
+    - **JWT/user path** is gated by ``require_admin`` (``is_admin``).
+
+    Net effect for e.g. connection writes (``require_write=True,
+    require_admin=True``): *write = a read_write API key OR an admin user*. A
+    ``read_write`` key writing connections is **by design** (docs: read_write =
+    read and write) and is pinned by ``tests/test_connections_authz.py`` — do
+    NOT "fix" this into rejecting API keys. For genuinely admin-only endpoints
+    that must reject API keys, depend on ``get_current_admin`` directly instead.
+    """
 
     def __init__(self, require_write: bool = False, require_admin: bool = False):
         self.require_write = require_write
