@@ -6,7 +6,7 @@
 
 -r requirements.txt
 
-pytest>=8.0
-pytest-asyncio>=1.0
-testcontainers[postgres]>=4.7
-pytest-httpx>=0.30
+pytest>=9.0.3
+pytest-asyncio>=1.4.0
+testcontainers[postgres]>=4.14.2
+pytest-httpx>=0.36.2
