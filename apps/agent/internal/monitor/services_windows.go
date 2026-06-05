@@ -34,16 +34,23 @@ func collectServiceHealth() map[string]any {
 		currentState    string
 	)
 
+	// Flush the in-progress service entry. Called both when a new SERVICE_NAME
+	// starts the next record AND once after the loop, so the LAST service's
+	// STOPPED->enabledInactive classification isn't dropped (off-by-one).
+	flush := func() {
+		if currentName == "" {
+			return
+		}
+		allServices = append(allServices, mapWindowsService(currentName, currentState))
+		if currentState == "STOPPED" {
+			enabledInactive = append(enabledInactive, currentName)
+		}
+	}
+
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "SERVICE_NAME:") {
-			if currentName != "" {
-				svc := mapWindowsService(currentName, currentState)
-				allServices = append(allServices, svc)
-				if currentState == "STOPPED" {
-					enabledInactive = append(enabledInactive, currentName)
-				}
-			}
+			flush()
 			currentName = strings.TrimSpace(strings.TrimPrefix(line, "SERVICE_NAME:"))
 			currentState = ""
 		} else if strings.HasPrefix(line, "STATE") {
@@ -56,10 +63,7 @@ func collectServiceHealth() map[string]any {
 			}
 		}
 	}
-	if currentName != "" {
-		svc := mapWindowsService(currentName, currentState)
-		allServices = append(allServices, svc)
-	}
+	flush()
 
 	result["all_services"] = allServices
 	result["failed"] = failed
