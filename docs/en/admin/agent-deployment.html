@@ -86,6 +86,7 @@ sudo adminhelper-agent provision \
               <tr><td><code>service uninstall</code></td><td>Deregister the OS service</td><td>—</td></tr>
             </tbody>
           </table>
+          <p><strong><code>--insecure</code> applies only to the one-off <code>provision</code> call:</strong> the agent captures the certificate the server presents and pins it (trust-on-first-use), so the recurring sync/push loop verifies again &mdash; instead of disabling TLS verification permanently. With <code>--cacert</code> nothing is skipped at all.</p>
 
           <h2>Verification</h2>
           <div class="code-header"><span>bash</span></div>

@@ -28,9 +28,13 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 
 	frpDir := config.FrpDir()
 	pkiDir := config.FrpPkiDir()
-	if err := os.MkdirAll(pkiDir, 0755); err != nil {
+	// Secret-bearing dirs (CA cert, client keys, the auth token in the conf) ->
+	// 0700, also for raw-binary provisioning where no postinst tightens them.
+	if err := os.MkdirAll(pkiDir, 0700); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
+	_ = os.Chmod(frpDir, 0700)
+	_ = os.Chmod(pkiDir, 0700)
 
 	// Copy the CA cert if provided
 	if cacert != "" {
@@ -156,8 +160,8 @@ func extractPkiBundle(b64 string, destDir string) error {
 				return err
 			}
 			// Safe default permission; .key additionally gets 0600.
-			mode := os.FileMode(hdr.Mode) & 0644
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			// Default 0600 (covers the private keys); only public certs widen to 0644.
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 			if err != nil {
 				return err
 			}
@@ -176,8 +180,8 @@ func extractPkiBundle(b64 string, destDir string) error {
 			}
 			totalBytes += written
 			f.Close()
-			if strings.HasSuffix(hdr.Name, ".key") {
-				if err := os.Chmod(target, 0600); err != nil {
+			if strings.HasSuffix(hdr.Name, ".crt") {
+				if err := os.Chmod(target, 0644); err != nil {
 					return err
 				}
 			}

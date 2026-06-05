@@ -39,6 +39,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erzwingen Passwort-Mindestlaenge (8) und einen Username-Charset
   (`^[a-zA-Z0-9._-]+$`, 3–64) — der Username fliesst in FRP-TOML und PKI-Dateinamen.
 
+- **Agent: `--insecure` persistiert nicht mehr in die Schleife.** Statt `INSECURE=1`
+  dauerhaft zu speichern (TLS-Verify dauerhaft aus + API-Key-Leak pro Zyklus),
+  erfasst der Agent beim Provisioning das Server-Zertifikat und pinnt es (TOFU) —
+  `--insecure` gilt nur noch für den einmaligen Activate-Aufruf. Zusätzlich:
+  Secret-Verzeichnisse `0700` (auch bei Raw-Binary-Provisioning), Config-Writer
+  lehnt Steuerzeichen ab (verhindert `INSECURE=1`-Injection via Newline),
+  PKI-Bundle-Dateien default `0600` (nur `.crt` auf `0644`).
 - **Container laufen nicht mehr als root.** Server- und Monitoring-Image starten
   nur kurz als root (chownt die gemounteten Pfade), droppen dann via `gosu` auf
   einen Non-root-User (uid 10001) — uvicorn, Alembic, Cert-Generierung und

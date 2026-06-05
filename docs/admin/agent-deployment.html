@@ -90,6 +90,7 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
               <tr><td><code>service uninstall</code></td><td>OS-Service deregistrieren</td><td>—</td></tr>
             </tbody>
           </table>
+          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen.</p>
 
           <h2>Windows (MSI)</h2>
           <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>

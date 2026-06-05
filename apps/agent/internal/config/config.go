@@ -55,10 +55,15 @@ func LoadKeyValue(path string) (map[string]string, error) {
 	return kv, scanner.Err()
 }
 
-// WriteKeyValue writes a Key=Value config file.
+// WriteKeyValue writes a Key=Value config file. Values are server-/user-supplied,
+// so reject control characters and quotes that would break out of the quoted
+// value and inject another entry (e.g. a newline smuggling in INSECURE=1).
 func WriteKeyValue(path string, entries []KeyValue) error {
 	var b strings.Builder
 	for _, e := range entries {
+		if strings.ContainsAny(e.Key, "\n\r\"=") || strings.ContainsAny(e.Value, "\n\r\"") {
+			return fmt.Errorf("ungueltiges Zeichen in Config-Eintrag %q", e.Key)
+		}
 		fmt.Fprintf(&b, "%s=\"%s\"\n", e.Key, e.Value)
 	}
 	return os.WriteFile(path, []byte(b.String()), 0600)

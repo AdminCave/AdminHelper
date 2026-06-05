@@ -216,3 +216,31 @@ func TestFrpcConfigNoFallbackWhenCurlSSLEmpty(t *testing.T) {
 		t.Error("ohne INSECURE sollte Insecure=false sein")
 	}
 }
+
+func TestWriteKeyValueRejectsControlChars(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.conf")
+
+	// A newline in a server-supplied value must be rejected: otherwise it could
+	// smuggle a second entry (e.g. INSECURE=1) into the config.
+	for _, bad := range []string{"https://x\nINSECURE=1", "a\rb", "a\"b"} {
+		if err := WriteKeyValue(path, []KeyValue{{Key: "MONITOR_URL", Value: bad}}); err == nil {
+			t.Fatalf("Wert %q haette abgelehnt werden muessen", bad)
+		}
+	}
+
+	// Clean entries round-trip.
+	if err := WriteKeyValue(path, []KeyValue{
+		{Key: "API_KEY", Value: "abc-123"},
+		{Key: "MONITOR_URL", Value: "https://srv.example/api/monitoring"},
+	}); err != nil {
+		t.Fatalf("sauberer Write fehlgeschlagen: %v", err)
+	}
+	kv, err := LoadKeyValue(path)
+	if err != nil {
+		t.Fatalf("LoadKeyValue: %v", err)
+	}
+	if kv["API_KEY"] != "abc-123" || kv["MONITOR_URL"] != "https://srv.example/api/monitoring" {
+		t.Fatalf("round-trip falsch: %#v", kv)
+	}
+}

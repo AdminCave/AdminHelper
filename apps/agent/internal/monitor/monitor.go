@@ -17,9 +17,11 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 	url = strings.TrimRight(url, "/")
 
 	monitorDir := config.MonitorDir()
-	if err := os.MkdirAll(monitorDir, 0755); err != nil {
+	// Holds the agent API key + pinned CA cert -> 0700.
+	if err := os.MkdirAll(monitorDir, 0700); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
+	_ = os.Chmod(monitorDir, 0700)
 
 	// Copy the CA cert if provided
 	storedCACert := ""
