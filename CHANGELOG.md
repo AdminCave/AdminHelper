@@ -5,7 +5,7 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.25.0] - 2026-06-06
 
 ### Security
 
@@ -125,6 +125,33 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   separat zu testen.)
 - **Server: totes `requests`-Dependency entfernt** (`apps/server/requirements.txt`);
   der einzige HTTP-Client ist `httpx` (`monitoring_proxy.py`).
+
+### Fixed
+
+- **Desktop:** frpc-Status wird nach Prozess-Ende zurueckgesetzt (Restart war
+  zuvor mit „frpc laeuft bereits" blockiert). (#2)
+- **Desktop:** Dashboard-Connections-Subscription wird in `onDestroy` aufgeraeumt
+  (Subscription-Leak pro Navigation). (#6)
+- **Desktop:** Wechsel in den Server-Modus mit gueltiger Session laedt jetzt
+  neu und startet den Tunnel (zuvor erst nach Neustart). (#7)
+- **Desktop:** re-entrantes `requestPassword` haengt nicht mehr den ersten
+  Connect-Flow (in-flight-Prompt wird als „cancelled" aufgeloest). (#8)
+- **Windows-Desktop:** Session-Load implementiert (`CredReadW`) — kein
+  Re-Login mehr bei jedem Start. (#4)
+- **Windows-Agent:** Service ist SCM-aware (`svc.Run`) — `sc start` laeuft nicht
+  mehr in Fehler 1053. (#3)
+- **Agent:** Watched-Service-Health wird pro Zyklus nur einmal erhoben (#5);
+  letzter STOPPED-Service auf Windows korrekt als `enabled_inactive` (#11);
+  re-Provisioning ueberschreibt `SERVICES` nicht mehr mit leer (#12).
+- **Server:** `GET /api/frp/status` blockiert den Event-Loop nicht mehr
+  (sync-Endpoint) (#9); Ansible-Playbook-Schreib/Loeschvorgaenge sind mit der
+  DB-Transaktion geordnet (keine verwaisten Dateien/Rows) (#10).
+- **Frontend:** englischsprachige Nutzer sehen keine deutschen Strings mehr
+  (Tunnel-Status-Labels + ~54 `'Fehler'`-Toast-Fallbacks i18n-isiert) (#13);
+  Metrik-Fetches bei schnellem Perioden-Wechsel werden sequenziert
+  (kein Stale-Overwrite) (#14).
+
+### Removed
 
 - **Monitoring-Host-Port (`MONITOR_AGENT_PORT`/`8480`) aus `docker-compose.yml`
   entfernt** (nur noch `expose: 8080`).
@@ -687,6 +714,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.25.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.25.0
 [0.24.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.24.0
 [0.23.2]: https://github.com/ks98/AdminHelper/releases/tag/v0.23.2
 [0.23.1]: https://github.com/ks98/AdminHelper/releases/tag/v0.23.1

@@ -126,7 +126,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.24.0</span>
+          <span>v0.25.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -159,7 +159,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.24.0 · 2026-06-04</span>
+            <span class="eyebrow">Version 0.25.0 · 2026-06-06</span>
             <h1>AdminHelper – Documentation</h1>
             <p class="lead">
               A modular monolith for centrally managing remote access,
@@ -267,7 +267,23 @@
             </div>
           </div>
 
-          <h2>What's new in 0.24.0?</h2>
+          <h2>What's new in 0.25.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.25.0 &ndash; Security hardening release (2026-06-06)</div>
+              <p>
+                Closes 7 security advisories and 13 functional bugs: desktop
+                zip-slip + TLS enforcement, CA-key isolation from the
+                internet-facing frps, tunnel-free monitoring with no host port,
+                JWT revocation on password reset, non-root containers + CI
+                supply-chain pinning, agent TOFU instead of a persisted
+                <code>--insecure</code>, extension key via header.
+                <strong>Breaking (ops):</strong> the monitoring port 8480 is gone
+                (re-provision agents); containers now run as non-root.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

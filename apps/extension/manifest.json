@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AdminHelper",
   "description": "AdminHelper Browser-Extension — Remote-Verbindungen (HTTP/HTTPS) direkt aus dem Browser oeffnen und verwalten",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "permissions": ["storage", "alarms"],
   "action": {
     "default_popup": "popup.html",

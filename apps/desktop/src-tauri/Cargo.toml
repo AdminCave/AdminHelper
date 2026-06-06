@@ -1,6 +1,6 @@
 [package]
 name = "adminhelper"
-version = "0.24.0"
+version = "0.25.0"
 description = "AdminHelper Desktop-Client — Remote-Verwaltung mit FRP-Tunneln"
 authors = ["Kevin Stenzel <kevin@ks98.de>"]
 edition = "2021"
