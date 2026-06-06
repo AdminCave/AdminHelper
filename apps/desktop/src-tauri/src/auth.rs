@@ -304,7 +304,7 @@ fn clear_keyring() -> Result<(), AppError> {
         use keyring::{Entry, Error as KeyringError};
         for key in [KEYRING_JWT_KEY, KEYRING_REFRESH_KEY, KEYRING_SERVER_URL_KEY] {
             if let Ok(entry) = Entry::new(KEYRING_SERVICE, key) {
-                match entry.delete_password() {
+                match entry.delete_credential() {
                     Ok(_) | Err(KeyringError::NoEntry) => {}
                     Err(e) => return Err(AppError::Keyring(e.to_string())),
                 }

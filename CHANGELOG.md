@@ -71,8 +71,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (`/api/monitoring`).** Der Agent setzt ihn an die bereits TLS-vertraute
   Server-URL, gegen die er provisioniert wurde — der Metrik-Push trifft so immer
   denselben Host/Cert, ohne dass der Server seine oeffentliche Adresse kennen muss.
-
-### Removed
+- **Desktop: `keyring`-Crate von 2.3 auf 3.6 angehoben.** Verhalten unveraendert
+  (gleiche Backends: Linux `secret-service`/zbus + `crypto-rust`, macOS Keychain,
+  Windows Credential Manager). Der Major-Bump zieht ein neueres `zbus` (4.x) nach
+  und entfernt damit die als **unmaintained** geflaggte transitive Abhaengigkeit
+  `derivative` (RUSTSEC-2024-0388); netto **-12** Crates im Lockfile. Dependabots
+  vorgeschlagener Sprung auf `keyring` 4.0 wurde bewusst **nicht** uebernommen: Die
+  4.x-Crate ist auf Sample-/CLI-Code umgebaut (re-exportiert `Entry`/`Error` nicht
+  mehr → unbaubar) und zieht ueber den unbedingten `db-keystore`-Store eine ganze
+  SQL-Engine (Turso) + Volltextsuche (Tantivy) + `bindgen` herein (+160 Crates).
 
 - **Monitoring-Host-Port (`MONITOR_AGENT_PORT`/`8480`) aus `docker-compose.yml`
   entfernt** (nur noch `expose: 8080`).

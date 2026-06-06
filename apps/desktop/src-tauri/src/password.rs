@@ -96,7 +96,7 @@ pub fn delete_password_keyring(connection: &Connection) -> Result<(), AppError> 
     };
     let entry =
         Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
-    match entry.delete_password() {
+    match entry.delete_credential() {
         Ok(_) => Ok(()),
         Err(KeyringError::NoEntry) => Ok(()),
         Err(err) => Err(AppError::Keyring(err.to_string())),

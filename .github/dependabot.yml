@@ -62,3 +62,12 @@ updates:
     groups:
       cargo:
         patterns: ["*"]
+    ignore:
+      # keyring 4.x is the CLI/sample crate: it no longer re-exports Entry/Error
+      # (the library moved to keyring-core) and its unconditional db-keystore
+      # dependency drags in a full SQL engine (Turso) + full-text search (Tantivy)
+      # + bindgen (+160 crates) just to store a few secrets. We stay on the lean
+      # 3.x library line; revisit only if a keyring CVE appears or a v4-only
+      # feature is needed.
+      - dependency-name: "keyring"
+        update-types: ["version-update:semver-major"]
