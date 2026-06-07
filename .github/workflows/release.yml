@@ -13,10 +13,10 @@ permissions:
   contents: read
 
 env:
-  FRP_VERSION: "0.61.1"
+  FRP_VERSION: "0.69.1"
   # Pinned SHA-256 of the official frp release artifacts (verified before use).
-  FRP_SHA256_LINUX_AMD64: "bff260b68ca7b1461182a46c4f34e9709ba32764eed30a15dd94ac97f50a2c40"
-  FRP_SHA256_WINDOWS_AMD64: "e0094cd0baf03d5ff9ce9739199406871ad8788cf51e766f00ad3a9e7a836f3a"
+  FRP_SHA256_LINUX_AMD64: "7be257b72dbbc60bcb3e0e25a5afd1dfac7b63f897084864d3c956dd3d5674e1"
+  FRP_SHA256_WINDOWS_AMD64: "829ac915f8655d4d4e021b8db61b46c3445205ed80d32b04cda7fa89d87c46e0"
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────

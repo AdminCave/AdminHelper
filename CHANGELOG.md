@@ -5,6 +5,19 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Changed
+
+- **FRP von 0.61.1 auf 0.69.1 angehoben** — frps-Image (`docker-compose.yml`),
+  gebundeltes frpc (CI/Release) und die SHA-256-Pins der frp-Artefakte im
+  Gleichschritt. Das Wire-Protokoll bleibt v1 (Default in 0.69), daher
+  abwaerts­kompatibel; v2 ist opt-in (`transport.wireProtocol`) und wird nicht
+  gesetzt. **Tunnel-getestet:** frps+frpc 0.69.1 mit der vom `config_generator`
+  erzeugten Struktur (STCP-Proxy + `allowUsers`, Visitor mit `serverUser`,
+  mutual `transport.tls` gegen eine eigene CA) — `verify` akzeptiert die Config
+  und Nutzdaten fliessen durch den Tunnel.
+
 ## [0.25.0] - 2026-06-06
 
 ### Security

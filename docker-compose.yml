@@ -74,7 +74,7 @@ services:
     # Pinned to match the bundled frpc (FRP_VERSION in .github/workflows/*.yml).
     # Keep both in lockstep — a floating :latest can jump the server ahead of
     # the client and break the tunnel (e.g. wire-protocol changes).
-    image: snowdreamtech/frps:0.61.1
+    image: snowdreamtech/frps:0.69.1
     ports:
       - "${FRP_BIND_PORT:-7000}:7000"
       - "${FRP_HTTPS_PORT:-7443}:443"
