@@ -157,7 +157,7 @@ pub fn windows_credential_exists(target: &str) -> Result<bool, AppError> {
         CredReadW(
             PCWSTR(target_w.as_ptr()),
             CRED_TYPE_GENERIC,
-            0,
+            Some(0),
             &mut credential_ptr,
         )
     }
@@ -196,7 +196,7 @@ pub fn windows_read_credential(target: &str) -> Result<String, AppError> {
         CredReadW(
             PCWSTR(target_w.as_ptr()),
             CRED_TYPE_GENERIC,
-            0,
+            Some(0),
             &mut credential_ptr,
         )
     }
@@ -272,7 +272,7 @@ pub fn windows_delete_credential(target: &str) -> Result<(), AppError> {
     use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
 
     let target_w = to_utf16_null(target);
-    let ok = unsafe { CredDeleteW(PCWSTR(target_w.as_ptr()), CRED_TYPE_GENERIC, 0) }.is_ok();
+    let ok = unsafe { CredDeleteW(PCWSTR(target_w.as_ptr()), CRED_TYPE_GENERIC, Some(0)) }.is_ok();
     if ok {
         return Ok(());
     }

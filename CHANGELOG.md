@@ -80,6 +80,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   4.x-Crate ist auf Sample-/CLI-Code umgebaut (re-exportiert `Entry`/`Error` nicht
   mehr → unbaubar) und zieht ueber den unbedingten `db-keystore`-Store eine ganze
   SQL-Engine (Turso) + Volltextsuche (Tantivy) + `bindgen` herein (+160 Crates).
+- **Desktop: `windows`-Crate von 0.56 auf 0.61 angehoben.** Der `flags`-Parameter
+  von `CredReadW`/`CredDeleteW` ist in 0.61 `Option<u32>` statt `u32` — der
+  Windows-Credential-Code (`password.rs`) wurde entsprechend von `0` auf `Some(0)`
+  angepasst. Verhalten unveraendert (`0` ≙ keine Flags). Nur subtraktiv im Lockfile
+  (-5 Crates: doppelter 0.56-Subtree entfernt, 0.61.3 war via Tauri bereits
+  vorhanden). Verifiziert per isoliertem Cross-Compile gegen `x86_64-pc-windows-gnu`,
+  da der Linux-CI-Job den `#[cfg(windows)]`-Pfad nicht kompiliert.
 
 - **Monitoring-Host-Port (`MONITOR_AGENT_PORT`/`8480`) aus `docker-compose.yml`
   entfernt** (nur noch `expose: 8080`).
