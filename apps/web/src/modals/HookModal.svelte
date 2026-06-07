@@ -62,6 +62,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   function toggleEvent(evt: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient copy; reactivity comes from the reassignment to $state below
     const next = new Set(events);
     if (next.has(evt)) next.delete(evt);
     else next.add(evt);

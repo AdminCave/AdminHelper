@@ -67,6 +67,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   const standalone = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, not reactive state
     const assigned = new Set<string>();
     $servers.forEach((s) => (s.connections ?? []).forEach((c) => assigned.add(c.id)));
     return $connections.filter((c) => !assigned.has(c.id) && !c.serverId);

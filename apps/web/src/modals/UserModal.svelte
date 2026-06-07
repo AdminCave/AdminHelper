@@ -37,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   function toggleServer(id: string) {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient copy; reactivity comes from the reassignment to $state below
     const next = new Set(selectedServerIds);
     if (next.has(id)) next.delete(id);
     else next.add(id);

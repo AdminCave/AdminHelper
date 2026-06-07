@@ -60,6 +60,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   const serverMap = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, not reactive state
     const m = new Map<string, string>();
     for (const s of $serversStore) m.set(s.id, s.name);
     return m;
@@ -111,6 +112,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
   const typesInUse = $derived(Array.from(new Set($monitorChecks.map((c) => c.checkType))).sort());
   const tagsInUse = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, not reactive state
     const set = new Set<string>();
     for (const id of serverIdsInUse) {
       const s = $serversStore.find((srv) => srv.id === id);
@@ -128,6 +130,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   const checkGroups = $derived.by<CheckGroup[]>(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, not reactive state
     const byServer = new Map<string, MonitorCheck[]>();
     const noServer: MonitorCheck[] = [];
     for (const c of filteredChecks) {

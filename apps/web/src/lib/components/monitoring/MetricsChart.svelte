@@ -33,6 +33,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   function render() {
     destroy();
     if (!container) return;
+    // eslint-disable-next-line svelte/no-dom-manipulating -- container is owned by uPlot (canvas lib); Svelte renders no children into it
     container.innerHTML = '';
     if (!data) return;
 

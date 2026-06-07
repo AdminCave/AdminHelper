@@ -81,7 +81,7 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
 
   if (res.status === 204) return null as T;
 
-  let data: unknown = null;
+  let data: unknown;
   try {
     data = await res.json();
   } catch {

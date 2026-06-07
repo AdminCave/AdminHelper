@@ -76,6 +76,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   const grouped = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, not reactive state
     const map = new Map<string, FrpTunnel[]>();
     filtered.forEach((tn) => {
       const sid = tn.serverId || '__none__';

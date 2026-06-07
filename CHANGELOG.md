@@ -98,6 +98,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   kollisionsfreie Keys). Drei Regel-Treffer waren Fehlalarme (uPlot-DOM-Interop,
   transiente `Map` in `$derived.by`, bewusste `$effect`-Dependency-Registrierung)
   und sind mit begründeten `eslint-disable`-Kommentaren versehen.
+- **Web-Frontend: Build-Toolchain modernisiert** — Vite 5→8, TypeScript 5→6,
+  ESLint 9→10, Vitest 2→4, `@sveltejs/vite-plugin-svelte` 4→7,
+  `eslint-plugin-svelte` 2→3, Svelte 5.1→5.56, `typescript-eslint`,
+  `@playwright/test`, `svelte-check`, `@types/node`, `globals`,
+  `prettier-plugin-svelte`. Fehlendes direktes `@eslint/js` ergänzt (wurde unter
+  ESLint 9 nur transitiv aufgelöst, unter 10 nicht mehr). `tsconfig.json` auf
+  relative `paths` ohne `baseUrl` umgestellt (TS-7-fest). In `client.ts` eine tote
+  `null`-Initialisierung entfernt. Die sieben `prefer-svelte-reactivity`- und der
+  eine `no-dom-manipulating`-Treffer waren allesamt Fehlalarme (transiente
+  `Map`/`Set` in `$derived.by`, Copy-then-reassign-Pattern, uPlot-DOM-Interop) und
+  sind mit begründeten `eslint-disable`-Kommentaren versehen.
 
 - **Monitoring-Host-Port (`MONITOR_AGENT_PORT`/`8480`) aus `docker-compose.yml`
   entfernt** (nur noch `expose: 8080`).
