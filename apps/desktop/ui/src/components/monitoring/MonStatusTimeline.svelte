@@ -13,6 +13,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let { statusHistory }: Props = $props();
 
   interface Segment {
+    start: number;
     widthPct: number;
     color: string;
   }
@@ -36,6 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       const curStatus = i < total ? Math.round(parseFloat(values[i][1])) : -1;
       if (curStatus !== segStatus) {
         out.push({
+          start: segStart,
           widthPct: ((i - segStart) / total) * 100,
           color: STATUS_COLORS[segStatus] ?? STATUS_COLORS[3],
         });
@@ -50,7 +52,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 {#if segments.length > 0}
   <div class="mon-status-timeline">
     <div class="mon-timeline-bar">
-      {#each segments as s}
+      {#each segments as s (s.start)}
         <div
           class="mon-timeline-seg"
           style="width: {s.widthPct}%; background-color: {s.color};"

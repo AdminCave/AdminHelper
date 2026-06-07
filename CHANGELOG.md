@@ -87,6 +87,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (-5 Crates: doppelter 0.56-Subtree entfernt, 0.61.3 war via Tauri bereits
   vorhanden). Verifiziert per isoliertem Cross-Compile gegen `x86_64-pc-windows-gnu`,
   da der Linux-CI-Job den `#[cfg(windows)]`-Pfad nicht kompiliert.
+- **Desktop-UI: Build-Toolchain modernisiert** — Vite 5→8, TypeScript 5→6,
+  ESLint 9→10, `@sveltejs/vite-plugin-svelte` 4→7, `eslint-plugin-svelte` 2→3
+  (+ `svelte-eslint-parser`, `globals`, `prettier-plugin-svelte`, `@types/node`).
+  `tsconfig.json` auf relative `paths` ohne `baseUrl` umgestellt (TS-7-fest).
+  Der strengere `eslint-plugin-svelte@3`-Regelsatz deckte echte Mängel auf, die
+  **gefixt** statt unterdrückt wurden: 18 `{#each}`-Blöcke in den Monitoring-Views
+  haben jetzt stabile `(key)` (korrekte DOM-Reconciliation beim Umsortieren/Entfernen),
+  und `normalizeConnection` dedupliziert Connection-Tags (keine doppelten Tag-Chips,
+  kollisionsfreie Keys). Drei Regel-Treffer waren Fehlalarme (uPlot-DOM-Interop,
+  transiente `Map` in `$derived.by`, bewusste `$effect`-Dependency-Registrierung)
+  und sind mit begründeten `eslint-disable`-Kommentaren versehen.
 
 - **Monitoring-Host-Port (`MONITOR_AGENT_PORT`/`8480`) aus `docker-compose.yml`
   entfernt** (nur noch `expose: 8080`).

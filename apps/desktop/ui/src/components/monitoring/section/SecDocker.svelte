@@ -93,7 +93,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
               <div class="mon-expand-hint">
                 {$t('monitoring.docker.allOkHint', { count: i.total })}
               </div>
-              {#each i.containers as c}
+              {#each i.containers as c (c.name)}
                 <div class="mon-expand-row level-ok">
                   <span class="mon-dot mon-ok"></span>
                   {#if c.image}
@@ -106,7 +106,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             </div>
           {:else}
             <div class="mon-expand-list">
-              {#each i.containers.filter((c) => c.category !== 'ok') as c}
+              {#each i.containers.filter((c) => c.category !== 'ok') as c (c.name)}
                 <div class="mon-expand-row level-{c.category === 'critical' ? 'crit' : 'warn'}">
                   <span class="mon-dot mon-{c.category}"></span>
                   {#if c.image}
@@ -116,7 +116,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   <span class="mon-expand-note">{c.state}</span>
                 </div>
               {/each}
-              {#each i.containers.filter((c) => c.category === 'ok') as c}
+              {#each i.containers.filter((c) => c.category === 'ok') as c (c.name)}
                 <div class="mon-expand-row level-ok">
                   <span class="mon-dot mon-ok"></span>
                   {#if c.image}

@@ -111,6 +111,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   $effect(() => {
     if (!container) return;
     if (!metrics) {
+      // eslint-disable-next-line svelte/no-dom-manipulating -- container is owned by uPlot (imperative canvas lib); Svelte renders no children into it
       container.innerHTML = `<div class="mon-chart-loading">${tNow('monitoring.chart.loading')}</div>`;
       return;
     }

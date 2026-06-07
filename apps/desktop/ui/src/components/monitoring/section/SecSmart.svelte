@@ -94,7 +94,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
         {#snippet extraBody()}
           <div class="mon-hero-bars">
-            {#each disks as d}
+            {#each disks as d (d.device)}
               {@const temp = num(d.temp_c)}
               {@const warn = num(d.temp_warn) || 60}
               {@const crit = num(d.temp_crit) || 70}

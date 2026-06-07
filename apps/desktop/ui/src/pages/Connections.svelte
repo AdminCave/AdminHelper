@@ -84,6 +84,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let treeNodes = $derived.by<TreeNode[]>(() => {
     const untagged = $t('tree.untagged');
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- transient builder inside $derived.by, never held as reactive state
     const m = new Map<string, TreeNode>();
     if ($groupFilter === 'grouped') {
       for (const grp of $groupedConnections) {
@@ -182,7 +183,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {/if}
             {#if conn.tags && conn.tags.length > 0}
               <div class="card-tags">
-                {#each conn.tags as tag}
+                {#each conn.tags as tag (tag)}
                   <span class="tag">{tag}</span>
                 {/each}
               </div>
@@ -230,7 +231,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             </div>
           </div>
           <div class="card-actions">
-            {#each ['ssh', 'rdp', 'web'] as kind}
+            {#each ['ssh', 'rdp', 'web'] as kind (kind)}
               {#if group.byKind[kind as ConnectionKind]}
                 <button
                   class="btn small accent"
@@ -305,7 +306,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                       </div>
                     </div>
                     <div class="card-actions">
-                      {#each ['ssh', 'rdp', 'web'] as kind}
+                      {#each ['ssh', 'rdp', 'web'] as kind (kind)}
                         {#if group.byKind[kind as ConnectionKind]}
                           <button
                             class="btn small accent"

@@ -14,11 +14,10 @@
     "strictNullChecks": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "baseUrl": ".",
     "paths": {
-      "$lib": ["src/lib"],
-      "$lib/*": ["src/lib/*"],
-      "$modals/*": ["src/modals/*"]
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"],
+      "$modals/*": ["./src/modals/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", "src/**/*.d.ts"],

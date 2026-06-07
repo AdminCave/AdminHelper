@@ -92,7 +92,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
         {#snippet extraBody()}
           <div class="mon-expand-list">
-            {#each [...i.vms].sort( (a) => (a.backupStatus === 'missing' ? -1 : a.backupStatus === 'outdated' ? 0 : 1), ) as v}
+            {#each [...i.vms].sort( (a) => (a.backupStatus === 'missing' ? -1 : a.backupStatus === 'outdated' ? 0 : 1), ) as v (v.vmid)}
               <div
                 class="mon-expand-row level-{v.backupStatus === 'missing'
                   ? 'crit'

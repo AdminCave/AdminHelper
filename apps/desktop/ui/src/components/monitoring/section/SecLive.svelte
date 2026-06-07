@@ -114,7 +114,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
         {#snippet value()}
           <span class="mon-live-summary">
-            {#each rings(check) as r}
+            {#each rings(check) as r (r.label)}
               <span class="mon-live-pill level-{r.level}">{r.label} {r.pct.toFixed(0)}%</span>
             {/each}
             {#if disks(check).length > 0}
@@ -128,7 +128,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <div class="mon-live-detail">
             {#if rings(check).length > 0}
               <div class="mon-ring-row">
-                {#each rings(check) as r}
+                {#each rings(check) as r (r.label)}
                   <div class="mon-ring level-{r.level}">
                     <svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
                       <circle
@@ -160,7 +160,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {/if}
             {#if disks(check).length > 0}
               <div class="mon-hero-bars">
-                {#each disks(check) as d}
+                {#each disks(check) as d (d.mount)}
                   <div class="mon-hero-bar-row">
                     <span class="mon-hero-bar-label">{d.mount}</span>
                     <div class="mon-hero-bar">

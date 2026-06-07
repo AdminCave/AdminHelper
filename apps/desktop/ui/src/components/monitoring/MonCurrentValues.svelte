@@ -40,7 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 {#if entries.length > 0}
   <div class="mon-detail-current">
-    {#each entries as e}
+    {#each entries as e (e.label)}
       <span class="mon-current-item"><strong>{e.label}</strong> {e.value}</span>
     {/each}
   </div>

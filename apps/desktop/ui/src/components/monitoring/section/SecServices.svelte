@@ -97,7 +97,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             </div>
           {:else}
             <div class="mon-expand-list">
-              {#each i.problems as s}
+              {#each i.problems as s (s.name)}
                 <div class="mon-expand-row level-{s.status}">
                   <span class="mon-dot mon-{s.status === 'crit' ? 'critical' : 'warning'}"></span>
                   <span class="mon-expand-name">{s.name}</span>

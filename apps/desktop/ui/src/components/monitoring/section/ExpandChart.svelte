@@ -40,6 +40,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   $effect(() => {
+    // Register activePeriod as a synchronous dependency: load() can early-return
+    // before reading it (no session), so this guarantees the effect re-runs when
+    // the period changes regardless of that path.
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     activePeriod;
     void load();
   });
@@ -53,7 +57,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <MonCurrentValues {metrics} checkType={check.checkType} />
 
   <div class="mon-segmented">
-    {#each PERIODS as p}
+    {#each PERIODS as p (p)}
       <button class="mon-seg-btn" class:active={p === activePeriod} onclick={() => setPeriod(p)}>
         {p}
       </button>

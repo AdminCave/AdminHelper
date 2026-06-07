@@ -25,7 +25,11 @@ export function normalizeConnection(
   const notes = String(raw.notes ?? '').trim();
   const trustCert = Boolean(raw.trustCert);
   const tags = Array.isArray(raw.tags)
-    ? (raw.tags as unknown[]).map((tag) => String(tag).trim()).filter((tag) => tag.length > 0)
+    ? [
+        ...new Set(
+          (raw.tags as unknown[]).map((tag) => String(tag).trim()).filter((tag) => tag.length > 0),
+        ),
+      ]
     : [];
 
   let port: number | null = null;

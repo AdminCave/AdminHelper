@@ -64,7 +64,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {#if pools.length === 0}
             <span class="mon-line-pill">—</span>
           {:else}
-            {#each pools as p}
+            {#each pools as p (p.name)}
               {@const lvl = levelOf(p.capacityPercent, capWarn, capCrit)}
               {@const h = healthClass(p.health)}
               {@const worstPill =
@@ -81,7 +81,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/snippet}
         {#snippet extraBody()}
           <div class="mon-hero-bars">
-            {#each pools as p}
+            {#each pools as p (p.name)}
               {@const lvl = levelOf(p.capacityPercent, capWarn, capCrit)}
               {@const h = healthClass(p.health)}
               <div class="mon-hero-bar-row">
