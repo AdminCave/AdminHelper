@@ -50,6 +50,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (Audit). Der langlebige Key wird nicht mehr über den Browser-Account auf alle
   Geräte synchronisiert; eine einmalige Migration verschiebt bestehende Keys und
   löscht die Cloud-Kopie.
+- **`SECURITY.md`: Trust-Modell + Audit-Residuen dokumentiert** — FRP-`secretKey`
+  als eigentliche Authz-Grenze (nicht `allowUsers`), globaler `auth.token` als
+  akzeptiertes SPOF mit Rotations-Empfehlung, Single-Worker-Verfügbarkeitsprofil,
+  und das vollständige Register der bewusst zurückgestellten/akzeptierten Funde
+  (Desktop-TOFU, httpOnly, Hash-Lockfile, frps-Caps …) mit Begründung + Plan.
 
 ## [0.26.0] - 2026-06-07
 
