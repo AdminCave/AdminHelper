@@ -5,6 +5,18 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Security
+
+- **Server: Per-User-Isolation auf `/api/connections` durchgesetzt** (Audit-Fund).
+  Non-Admins (und server-gebundene API-Keys) sehen und „touchen" nur noch
+  Connections ihrer zugewiesenen Server — vorher lieferte die Liste **jedem**
+  Non-Admin Host, Username und FRP-Visitor-Ports **aller** Server (IDOR). Spiegelt
+  die bereits bestehende FRP-Visitor-Scoping-Invariante (`frp/generate_router.py`).
+- **Server: Der letzte Admin kann nicht mehr per `update_user` herabgestuft
+  werden** — verhindert den irreversiblen Self-Lockout aller admin-only-Endpunkte.
+
 ## [0.26.0] - 2026-06-07
 
 ### Changed

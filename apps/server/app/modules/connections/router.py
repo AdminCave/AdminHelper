@@ -27,9 +27,27 @@ read_dep = ApiKeyOrUser(require_write=False)
 write_dep = ApiKeyOrUser(require_write=True, require_admin=True)
 
 
+def _scope_connections(query, auth):
+    """Restrict a Connection query to what the calling principal may see.
+
+    Non-admin users are isolated to the connections of their assigned servers
+    (mirrors the FRP-visitor scoping in frp/generate_router.py — the same
+    per-user isolation invariant); a server-bound API key is restricted to its
+    server. Admin users and global (no server_id) API keys are unrestricted by
+    design. Connections with no server_id are admin/global-only for non-admins.
+    """
+    user, api_key = auth
+    if user is not None and not user.is_admin:
+        server_ids = [s.id for s in user.servers]
+        return query.filter(Connection.server_id.in_(server_ids))
+    if api_key is not None and api_key.server_id:
+        return query.filter(Connection.server_id == api_key.server_id)
+    return query
+
+
 @router.get("", response_model=list[dict[str, Any]])
 def get_connections(db: Session = Depends(get_db), auth=Depends(read_dep)):
-    connections = db.query(Connection).all()
+    connections = _scope_connections(db.query(Connection), auth).all()
     return [c.to_dict() for c in connections]
 
 
@@ -60,9 +78,10 @@ def update_connection(conn_id: str, connection: ConnectionUpdate, db: Session = 
 
 
 @router.post("/{conn_id}/touch", response_model=dict[str, Any])
-def touch_connection(conn_id: str, db: Session = Depends(get_db), _auth=Depends(read_dep)):
-    """Setzt last_used auf jetzt. Auth: jeder Lesezugriff genuegt (Nutzung == Lesen)."""
-    conn = db.query(Connection).filter(Connection.id == conn_id).first()
+def touch_connection(conn_id: str, db: Session = Depends(get_db), auth=Depends(read_dep)):
+    """Setzt last_used auf jetzt. Auth: jeder Lesezugriff genuegt (Nutzung == Lesen),
+    aber per-User/Key-Scope wie bei der Liste (kein Touch fremder Connections)."""
+    conn = _scope_connections(db.query(Connection), auth).filter(Connection.id == conn_id).first()
     if not conn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden")
     conn.last_used = datetime.now(timezone.utc).isoformat()

@@ -63,6 +63,15 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), _
         # sessions); stored naive UTC to match the other DateTime columns.
         user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
     if data.is_admin is not None:
+        # Never let the last admin be demoted — that would brick all management
+        # (admin-only endpoints) with no recovery path short of a DB edit.
+        if user.is_admin and not data.is_admin:
+            admin_count = db.query(User).filter(User.is_admin.is_(True)).count()
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Der letzte Admin kann nicht herabgestuft werden",
+                )
         user.is_admin = data.is_admin
     if data.server_ids is not None:
         servers = db.query(Server).filter(Server.id.in_(data.server_ids)).all()
