@@ -46,6 +46,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Agent: Argument-Injection in watched-services geschlossen** (Audit). `--`
   vor dem server-gelieferten Service-Namen verhindert Flag-Confusion in den
   `systemctl`-Aufrufen (kein RCE — exec ohne Shell — aber Flag-Verwechslung).
+- **Extension: API-Key wandert von `chrome.storage.sync` nach `chrome.storage.local`**
+  (Audit). Der langlebige Key wird nicht mehr über den Browser-Account auf alle
+  Geräte synchronisiert; eine einmalige Migration verschiebt bestehende Keys und
+  löscht die Cloud-Kopie.
 
 ## [0.26.0] - 2026-06-07
 

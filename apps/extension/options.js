@@ -14,7 +14,7 @@ const statusTest     = document.getElementById('status-test');
 
 // ─── Load saved settings ──────────────────────────────────────────────────────
 async function loadSettings() {
-  const data = await chrome.storage.sync.get(['serverUrl', 'apiKey']);
+  const data = await chrome.storage.local.get(['serverUrl', 'apiKey']);
   if (data.serverUrl) serverUrlInput.value = data.serverUrl;
   if (data.apiKey)    apiKeyInput.value    = data.apiKey;
 }
@@ -51,7 +51,7 @@ saveBtn.addEventListener('click', async () => {
     return;
   }
 
-  await chrome.storage.sync.set({ serverUrl: url, apiKey: key });
+  await chrome.storage.local.set({ serverUrl: url, apiKey: key });
   showStatus(statusSave, 'success', '✓ Einstellungen gespeichert.');
 });
 

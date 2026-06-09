@@ -264,7 +264,7 @@ async function init() {
   }
 
   // Load config
-  const syncData = await chrome.storage.sync.get(['serverUrl', 'apiKey']);
+  const syncData = await chrome.storage.local.get(['serverUrl', 'apiKey']);
   const serverUrl = syncData.serverUrl;
   const apiKey    = syncData.apiKey;
 
@@ -324,7 +324,7 @@ btnTagView.addEventListener('click', () => {
 });
 
 btnRefresh.addEventListener('click', async () => {
-  const syncData = await chrome.storage.sync.get(['serverUrl', 'apiKey']);
+  const syncData = await chrome.storage.local.get(['serverUrl', 'apiKey']);
   if (syncData.serverUrl && syncData.apiKey) {
     await refresh(syncData.serverUrl, syncData.apiKey);
   }
@@ -362,7 +362,7 @@ setupSaveBtn.addEventListener('click', async () => {
 
   try {
     const webConns = await loadFromServer(url, key);
-    await chrome.storage.sync.set({ serverUrl: url, apiKey: key });
+    await chrome.storage.local.set({ serverUrl: url, apiKey: key });
     allConnections = webConns;
     await chrome.storage.local.set({ cachedConnections: { connections: webConns, ts: Date.now() } });
     updateBadge(webConns.length);
