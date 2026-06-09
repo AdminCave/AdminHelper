@@ -36,6 +36,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lehnen jetzt Anführungszeichen/Backslash/Steuerzeichen ab; `secret_key`/
   `auth_token` haben einen Entropie-Floor (≥16 Zeichen). `get_allow_users` fällt
   zudem **fail-closed** (leere Allow-Liste statt `["*"]`).
+- **Monitoring: MetricsQL-Label-Injection geschlossen** (Audit). `server_id`/
+  `check_id` werden vor der Interpolation in Label-Matcher escaped — ein
+  präparierter Wert kann nicht mehr aus dem Matcher ausbrechen und fremde
+  Server-Metriken lesen.
+- **Server: Agent-Report-Ingest (`/api/monitoring/agent/{id}/report`) ist
+  rate-limitiert** (Audit) — der öffentliche, JWT-freie Proxy-Endpunkt cappt jetzt
+  pro IP, statt eine unauthentifizierte Flut ungebremst durchzureichen.
 
 ## [0.26.0] - 2026-06-07
 

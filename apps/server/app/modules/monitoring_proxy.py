@@ -16,8 +16,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.auth import get_current_admin
 from app.core.config import MONITOR_SERVICE_URL, MONITOR_API_KEY
+from app.core.middleware import resolve_client_ip
+from app.core.rate_limit import get_backend
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
+
+# The agent-report ingest is public (X-API-Key, no JWT). Cap per-IP so an
+# unauthenticated flood can't drive the proxy-forward + monitoring auth path.
+# Generous for legit agents (they report ~once/minute).
+_INGEST_MAX = 120
+_INGEST_WINDOW = 60
 
 # Normalize once: a trailing slash would make the forwards below emit a double
 # slash (http://monitoring:8080//agent/...), which the no-prefix monitoring
@@ -34,6 +42,9 @@ _ALLOWED_PATH_PREFIXES = (
 @router.post("/agent/{server_id}/report")
 async def proxy_agent_report(server_id: str, request: Request):
     """Proxy for agent reports (auth via X-API-Key, no JWT needed)."""
+    ip = resolve_client_ip(request)
+    if get_backend().increment(f"agent_ingest:{ip}", _INGEST_WINDOW) > _INGEST_MAX:
+        raise HTTPException(status_code=429, detail="Zu viele Agent-Reports")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{_MONITOR_BASE}/agent/{server_id}/report",

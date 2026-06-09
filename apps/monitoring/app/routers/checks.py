@@ -19,6 +19,17 @@ from app.models import MonitorCheck, MonitorState
 from app.schemas import CheckCreate, CheckUpdate, VALID_CHECK_TYPES, VALID_INTERVALS, VALID_SEVERITIES
 from app.scheduler import add_check, remove_check
 
+
+def _escape_label(value) -> str:
+    """Escape a value for a MetricsQL/PromQL label matcher string.
+
+    server_id / check_id are interpolated into label matchers; without escaping a
+    value containing a quote or backslash could break out of the matcher and read
+    other servers' metrics (query injection). PromQL label-value escaping = `\\`
+    then `"`.
+    """
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
 router = APIRouter()
 
 # Type-specific metrics written to VictoriaMetrics.
@@ -255,7 +266,11 @@ def get_check_metrics(
     agent_types = {"agent_ping", "agent_resources", "service_process",
                    "docker_health", "proxmox_backup", "zfs_health"}
     use_server_id = check.check_type in agent_types and check.server_id
-    filter_label = f'server_id="{check.server_id}"' if use_server_id else f'check_id="{check_id}"'
+    filter_label = (
+        f'server_id="{_escape_label(check.server_id)}"'
+        if use_server_id
+        else f'check_id="{_escape_label(check_id)}"'
+    )
 
     # Query type-specific metrics
     metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
@@ -272,7 +287,7 @@ def get_check_metrics(
         all_results.extend(result.get("data", {}).get("result", []))
 
     # Status timeline (always, with _value suffix)
-    status_query = f'monitor_check_status_value{{check_id="{check_id}"}}'
+    status_query = f'monitor_check_status_value{{check_id="{_escape_label(check_id)}"}}'
     status_result = victoria.query_range(query=status_query, start=f"now-{duration}", end="now", step=step)
 
     return {
