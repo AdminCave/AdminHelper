@@ -30,6 +30,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Server: Rate-Limit fällt bei Redis-Ausfall nicht mehr „offen"** (Audit). Statt
   bei Redis-Fehlern still `0` zu liefern (Brute-Force-Schutz aus), **degradiert**
   das Backend auf einen lokalen In-Memory-Zähler — das Limit bleibt durchgesetzt.
+- **Server/FRP: TOML-Injection an der Boundary geschlossen** (Audit). Felder, die
+  roh in `frps.toml`/`frpc.toml`/Visitor-Config interpoliert werden (Tunnel-/
+  Server-Name, `secret_key`, `auth_token`, `custom_domains`, `extra_config` …),
+  lehnen jetzt Anführungszeichen/Backslash/Steuerzeichen ab; `secret_key`/
+  `auth_token` haben einen Entropie-Floor (≥16 Zeichen). `get_allow_users` fällt
+  zudem **fail-closed** (leere Allow-Liste statt `["*"]`).
 
 ## [0.26.0] - 2026-06-07
 

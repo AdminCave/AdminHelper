@@ -83,4 +83,8 @@ def get_allow_users(db: Session, server_id: str) -> list[str]:
     )
     admins = db.query(User).filter(User.is_admin.is_(True)).all()
     names = list({u.username for u in [*assigned, *admins]})
-    return names if names else ["*"]
+    # Fail CLOSED: if nobody resolves (no assigned users AND no admins — only
+    # reachable if all admins were demoted, which update_user now also blocks),
+    # return an empty allow-list (the config_generator then falls back to the
+    # admin visitor), NOT ["*"] which would let ANY visitor reach the tunnel.
+    return names
