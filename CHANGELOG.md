@@ -43,6 +43,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Server: Agent-Report-Ingest (`/api/monitoring/agent/{id}/report`) ist
   rate-limitiert** (Audit) — der öffentliche, JWT-freie Proxy-Endpunkt cappt jetzt
   pro IP, statt eine unauthentifizierte Flut ungebremst durchzureichen.
+- **Agent: Argument-Injection in watched-services geschlossen** (Audit). `--`
+  vor dem server-gelieferten Service-Namen verhindert Flag-Confusion in den
+  `systemctl`-Aufrufen (kein RCE — exec ohne Shell — aber Flag-Verwechslung).
 
 ## [0.26.0] - 2026-06-07
 

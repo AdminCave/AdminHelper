@@ -101,10 +101,13 @@ func collectWatchedServices(names []string) []map[string]any {
 	var services []map[string]any
 	for _, name := range names {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
-		out, err := exec.Command("systemctl", "is-active", name).Output()
+		// `--` terminates option parsing so a server-supplied service name
+		// beginning with '-' is treated as an operand, not a systemctl flag
+		// (argument/flag-confusion hardening; exec.Command uses no shell).
+		out, err := exec.Command("systemctl", "is-active", "--", name).Output()
 		if err == nil && strings.TrimSpace(string(out)) == "active" {
 			svc["running"] = true
-			pidOut, err := exec.Command("systemctl", "show", "-p", "MainPID", name).Output()
+			pidOut, err := exec.Command("systemctl", "show", "-p", "MainPID", "--", name).Output()
 			if err == nil {
 				parts := strings.SplitN(strings.TrimSpace(string(pidOut)), "=", 2)
 				if len(parts) == 2 && parts[1] != "0" && parts[1] != "" {
