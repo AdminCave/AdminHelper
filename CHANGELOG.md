@@ -16,6 +16,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   die bereits bestehende FRP-Visitor-Scoping-Invariante (`frp/generate_router.py`).
 - **Server: Der letzte Admin kann nicht mehr per `update_user` herabgestuft
   werden** — verhindert den irreversiblen Self-Lockout aller admin-only-Endpunkte.
+- **Server: Webhook-Ausführung blockiert nicht mehr den Event-Loop** (Audit-Fund).
+  `run_hook_script` läuft jetzt über `run_in_threadpool` — ein einzelner langsamer
+  Hook fror vorher das komplette Single-Worker-Backend (Login/APIs/Health) bis zum
+  Timeout ein. Zusätzlich: eine Semaphore begrenzt gleichzeitige Hook-Subprozesse,
+  und das Webhook-Trigger-Rate-Limit nutzt jetzt das zentrale `rate_limit`-Backend
+  (mit Eviction/TTL) statt eines unbegrenzt wachsenden Per-IP-Dicts (Memory-DoS bei
+  gefälschten `X-Forwarded-For`).
 
 ## [0.26.0] - 2026-06-07
 

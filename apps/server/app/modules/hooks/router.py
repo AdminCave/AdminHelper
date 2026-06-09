@@ -3,13 +3,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
-import time
 import uuid
-from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.database import get_db
@@ -28,24 +27,25 @@ from app.modules.hooks.models import Hook
 
 router = APIRouter(prefix="/api/hooks", tags=["hooks"])
 
-# Rate limiting for webhook triggers: max 20 calls per IP in 60 seconds
+# Rate limiting for webhook triggers: max 20 calls per IP in 60 seconds.
+# Uses the central rate_limit backend (in-memory eviction / Redis TTL) — the
+# previous hand-rolled per-IP dict grew unbounded under spoofed X-Forwarded-For
+# (TRUST_PROXY_HEADERS), a memory-DoS vector.
 _TRIGGER_MAX = 20
 _TRIGGER_WINDOW = 60
-_trigger_attempts: dict[str, list[float]] = defaultdict(list)
 
 
 def _check_trigger_rate_limit(request: Request) -> None:
     from app.core.middleware import resolve_client_ip
+    from app.core.rate_limit import get_backend
+
     ip = resolve_client_ip(request)
-    now = time.monotonic()
-    attempts = _trigger_attempts[ip]
-    _trigger_attempts[ip] = [t for t in attempts if now - t < _TRIGGER_WINDOW]
-    if len(_trigger_attempts[ip]) >= _TRIGGER_MAX:
+    count = get_backend().increment(f"hook_trigger:{ip}", _TRIGGER_WINDOW)
+    if count > _TRIGGER_MAX:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Zu viele Anfragen. Bitte {_TRIGGER_WINDOW} Sekunden warten.",
         )
-    _trigger_attempts[ip].append(now)
 
 
 def _to_dict(hook: Hook) -> dict:
@@ -155,7 +155,11 @@ async def trigger_webhook(token: str, request: Request, db: Session = Depends(ge
         payload = {}
 
     try:
-        result = run_hook_script(
+        # Offload the blocking subprocess off the event loop — otherwise a single
+        # slow hook (e.g. slow http_get) freezes the entire single-worker backend
+        # (login, all APIs, health check) for up to the hook timeout.
+        result = await run_in_threadpool(
+            run_hook_script,
             script=hook.script,
             hook_type="webhook",
             context={

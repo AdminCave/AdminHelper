@@ -44,6 +44,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -51,6 +52,14 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SCRIPT_TIMEOUT_SECONDS = 30
+
+# Defense-in-depth: bound the number of concurrent hook subprocesses so a burst
+# of (slow) hooks can't spawn unbounded processes / exhaust the threadpool +
+# DB pool. A caller that can't acquire within the timeout gets a busy error
+# instead of piling up. Acquire/release wrap only the blocking subprocess.run.
+_MAX_CONCURRENT_HOOKS = 8
+_HOOK_ACQUIRE_TIMEOUT = 10
+_hook_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_HOOKS)
 
 _WORKER_SCRIPT = str(Path(__file__).parent / "script_worker.py")
 
@@ -84,6 +93,13 @@ def run_hook_script(
         "DATA_DIR": os.environ.get("DATA_DIR", ""),
     }
 
+    if not _hook_semaphore.acquire(timeout=_HOOK_ACQUIRE_TIMEOUT):
+        return {
+            "success": False,
+            "result": {},
+            "logs": ["Server ausgelastet: zu viele gleichzeitige Hook-Ausführungen"],
+            "error": "Server ausgelastet (Hook-Limit erreicht)",
+        }
     try:
         proc = subprocess.run(
             [sys.executable, _WORKER_SCRIPT],
@@ -101,6 +117,8 @@ def run_hook_script(
             "logs": [f"Script abgebrochen: Timeout nach {timeout}s"],
             "error": f"Timeout nach {timeout}s",
         }
+    finally:
+        _hook_semaphore.release()
 
     if proc.returncode != 0:
         stderr = proc.stderr.strip()
