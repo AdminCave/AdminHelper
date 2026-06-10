@@ -145,11 +145,12 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
     # Append check-state message (e.g. "Port 22: Connection refused")
     try:
         from app.core.database import SessionLocal
-        db = SessionLocal()
-        state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
-        if state and state.message:
-            text += f"\nDetails: {state.message}"
-        db.close()
+        # Context manager: without it, an exception between open and close
+        # leaked the connection (pool exhaustion under repeated failures).
+        with SessionLocal() as db:
+            state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+            if state and state.message:
+                text += f"\nDetails: {state.message}"
     except Exception:
         logger.warning("State-Message fuer Check '%s' konnte nicht geladen werden", check.name, exc_info=True)
 

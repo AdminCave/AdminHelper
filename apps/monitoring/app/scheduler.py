@@ -11,14 +11,32 @@ Dedicated APScheduler instance (independent of the AdminHelper server).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger("monitor.scheduler")
 
-scheduler = BackgroundScheduler(timezone="UTC")
+# Explicit instead of APScheduler defaults (audit, target 250-500 servers):
+# - misfire_grace_time: the default of 1s silently DROPS a run that starts
+#   late (e.g. the pool is busy with slow HTTP/TCP checks) — 30s keeps the
+#   data point instead of leaving a gap in the time series.
+# - 30 workers: checks are I/O-bound (timeouts up to ~10s); the default pool
+#   of 10 saturates with a few hundred scheduled checks per minute.
+# - coalesce/max_instances are the defaults, pinned here as a decision:
+#   several missed runs collapse into one, a check never overlaps itself.
+scheduler = BackgroundScheduler(
+    timezone="UTC",
+    executors={"default": ThreadPoolExecutor(30)},
+    job_defaults={
+        "coalesce": True,
+        "max_instances": 1,
+        "misfire_grace_time": 30,
+    },
+)
 
 # Agent push checks are evaluated only by the agent report endpoint,
 # not by the scheduler. agent_ping is the exception: checks whether the agent is stale.
@@ -108,3 +126,48 @@ def load_all_checks() -> None:
         logger.info("%d Monitoring-Checks geladen (%d Push-Only uebersprungen)", count, skipped)
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# System jobs (not user-configurable)
+# ---------------------------------------------------------------------------
+
+_ALERT_LOG_CLEANUP_JOB_ID = "system:alert-log-cleanup"
+ALERT_LOG_RETENTION_DAYS = 90
+
+
+def _run_alert_log_cleanup() -> None:
+    """Delete alert-log entries older than the retention window so
+    monitor_alert_log does not grow without bound (flapping checks write an
+    entry per transition). Same pattern as the server's blacklist cleanup."""
+    from app.core.database import SessionLocal
+    from app.models import MonitorAlertLog
+
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=ALERT_LOG_RETENTION_DAYS)
+    db = SessionLocal()
+    try:
+        removed = (
+            db.query(MonitorAlertLog)
+            .filter(MonitorAlertLog.sent_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if removed:
+            logger.info("Alert-Log-Cleanup: %d Eintraege aelter als %d Tage entfernt", removed, ALERT_LOG_RETENTION_DAYS)
+    except Exception:
+        db.rollback()
+        logger.exception("Alert-Log-Cleanup fehlgeschlagen")
+    finally:
+        db.close()
+
+
+def schedule_alert_log_cleanup(hours: int = 24) -> None:
+    """Register the periodic alert-log cleanup (idempotent). Runs once
+    immediately at start and then every `hours` hours."""
+    scheduler.add_job(
+        _run_alert_log_cleanup,
+        trigger=IntervalTrigger(hours=hours),
+        id=_ALERT_LOG_CLEANUP_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )

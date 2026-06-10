@@ -17,7 +17,17 @@ logger = logging.getLogger(__name__)
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-scheduler = BackgroundScheduler(timezone="UTC")
+# misfire_grace_time explicit (audit): the APScheduler default of 1s silently
+# drops a run that starts late (busy pool) — 30s executes it instead.
+# coalesce/max_instances are the defaults, pinned as a decision.
+scheduler = BackgroundScheduler(
+    timezone="UTC",
+    job_defaults={
+        "coalesce": True,
+        "max_instances": 1,
+        "misfire_grace_time": 30,
+    },
+)
 
 _INTERVAL_MAP = {
     "1m":  {"minutes": 1},

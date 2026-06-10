@@ -169,6 +169,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: RDP-Fehlertoast bei extrem schnellen Verbindungen** —
   „verbunden"-Erkennung nutzt jetzt ein eigenes Flag statt des
   `connected_at_ms == 0`-Sentinels (Doppeldeutung bei <1 ms).
+- **Monitoring: Connection-Leak im Alerter geschlossen** (Audit). Die
+  Zweit-Session in `_build_message` wurde nur im Happy-Path geschlossen —
+  bei Fehlern blieb die Pool-Verbindung hängen; jetzt Context-Manager.
+- **Monitoring/Server: APScheduler-Defaults explizit gesetzt** (Audit, Ziel
+  250–500 Server). `misfire_grace_time=30` statt 1 s (verspätete Runs wurden
+  still verworfen → Zeitreihen-Lücken), Monitoring-Pool auf 30 Worker für
+  I/O-gebundene Checks; `coalesce`/`max_instances` als Entscheidung gepinnt.
 - **Desktop-UI: Alert-Ladefehler sind sichtbar** (Audit). `loadAlerts`/
   `loadAlertLog` schluckten API-Fehler still — ein toter Monitoring-Service
   sah aus wie „keine Alerts". Jetzt `reportError` wie in `loadMonitoring`
@@ -181,6 +188,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   250–500 Servern pollen Hintergrund-Tabs damit nicht. Dezente „zuletzt
   aktualisiert"-Anzeige im Seitenkopf; Run-now-Button hat jetzt ein
   `aria-label`.
+- **Monitoring: Retention-Cleanup für `monitor_alert_log`** (Audit). Täglicher
+  System-Job löscht Einträge älter als 90 Tage — flatternde Checks schrieben
+  die Tabelle vorher unbegrenzt voll (analog zum Blacklist-Cleanup des
+  Servers). Dazu Tests für Trigger-Parsing, Push-Only-Skip und Cleanup.
 - **Frontend: Tests für Token-Refresh und i18n-Parität** (Audit T3/T5).
   `client.ts` (401→Refresh→Retry, Refresh-Fehlschlag→Logout, parallele
   Requests teilen einen Refresh, 204→null) war als sicherheitskritischste

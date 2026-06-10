@@ -26,9 +26,10 @@ async def lifespan(app: FastAPI):
     (see monitoring/alembic/), no longer by Base.metadata.create_all().
     Historical SQLite PRAGMA migrations have been removed without replacement —
     pre-release, no existing data."""
-    from app.scheduler import scheduler, load_all_checks
+    from app.scheduler import scheduler, load_all_checks, schedule_alert_log_cleanup
 
     load_all_checks()
+    schedule_alert_log_cleanup()
     scheduler.start()
     logger.info("Scheduler gestartet")
 
