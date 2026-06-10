@@ -162,6 +162,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: RDP-Fehlertoast bei extrem schnellen Verbindungen** —
   „verbunden"-Erkennung nutzt jetzt ein eigenes Flag statt des
   `connected_at_ms == 0`-Sentinels (Doppeldeutung bei <1 ms).
+- **Agent: Tests für SMART-Parsing, Report-Aufbau und Push-Retry** —
+  smartctl-7.x-JSON-Fixtures (ATA + NVMe + Degenerat-Fälle), `BuildReport`-
+  Grundstruktur, Retry-Verhalten gegen httptest-Server, `hasPrefix`/`getFloat`.
 - **Desktop: RDP-Fehlerklassifizierung testbar extrahiert**
   (`connection/rdp_logic.rs`) — `parse_freerdp_error` als datengetriebene
   Regel-Tabelle (verhaltensgleich), dazu 25 neue Tests (FreeRDP-Fehlerklassen,
