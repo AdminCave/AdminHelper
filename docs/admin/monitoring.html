@@ -95,7 +95,7 @@
           </div>
 
           <h2>Charts im Web-Panel</h2>
-          <p>Die Monitoring-Seite kombiniert uPlot-Liniencharts mit einer Alert-Liste. Zeitfenster wählbar: 1h, 6h, 24h, 7d, 30d. Klick auf eine Linie öffnet Detail-Ansicht mit Rohdaten.</p>
+          <p>Die Monitoring-Seite kombiniert uPlot-Liniencharts mit einer Alert-Liste. Zeitfenster wählbar: 1h, 6h, 24h, 7d, 30d. Klick auf eine Linie öffnet Detail-Ansicht mit Rohdaten. Die Seite aktualisiert sich alle 30&nbsp;s automatisch; bei verstecktem Browser-Tab pausiert der Refresh (beim Zurückkehren wird sofort nachgeladen). Der Zeitpunkt der letzten Aktualisierung steht im Seitenkopf.</p>
 
           <h2>Templates</h2>
           <p>Ein <strong>Monitoring-Template</strong> bündelt mehrere Check- und Alert-Definitionen und wird einem Server zugewiesen, statt jeden Check einzeln anzulegen. Beim Zuweisen werden aus den Definitionen echte Checks und Alert-Regeln für den Server erzeugt.</p>
@@ -125,7 +125,7 @@
             </tbody>
           </table>
           <p><strong>Cooldown:</strong> Nach einem erfolgreich versendeten Alert unterdrückt <code>cooldown_minutes</code> (Default 30) weitere Alerts derselben Regel für denselben Check.</p>
-          <p><strong>Recovery:</strong> Geht ein Check zurück auf <code>ok</code>, wird eine Recovery-Benachrichtigung versendet – diese umgeht den Cooldown bewusst, damit die Entwarnung immer ankommt. Jeder Versand wird im Alert-Log mit Erfolg/Fehler protokolliert.</p>
+          <p><strong>Recovery:</strong> Geht ein Check zurück auf <code>ok</code>, wird eine Recovery-Benachrichtigung versendet – diese umgeht den Cooldown bewusst, damit die Entwarnung immer ankommt. Jeder Versand wird im Alert-Log mit Erfolg/Fehler protokolliert. Das Alert-Log wird täglich automatisch bereinigt (Retention 90 Tage).</p>
 
           <div class="page-nav">
             <a class="prev" href="./agent-deployment.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Agent-Deployment</span></a>

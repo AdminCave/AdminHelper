@@ -89,7 +89,7 @@ interval_sec: 60</code></pre>
           </div>
 
           <h2>Charts</h2>
-          <p>Charts on the Server details page query VictoriaMetrics via the AdminHelper proxy – the allowlist permits only <code>/api/v1/query</code> and <code>/api/v1/query_range</code>, so raw-host SSRF is impossible.</p>
+          <p>Charts on the Server details page query VictoriaMetrics via the AdminHelper proxy – the allowlist permits only <code>/api/v1/query</code> and <code>/api/v1/query_range</code>, so raw-host SSRF is impossible. The monitoring page of the web panel auto-refreshes every 30&nbsp;s; the refresh pauses while the browser tab is hidden (and reloads immediately on return). The time of the last update is shown in the page header.</p>
 
           <h2>Templates</h2>
           <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
@@ -119,7 +119,7 @@ interval_sec: 60</code></pre>
             </tbody>
           </table>
           <p><strong>Cooldown:</strong> After a successfully sent alert, <code>cooldown_minutes</code> (default 30) suppresses further alerts from the same rule for the same check.</p>
-          <p><strong>Recovery:</strong> When a check returns to <code>ok</code>, a recovery notification is sent – it deliberately bypasses the cooldown so the all-clear always gets through. Every dispatch is recorded in the alert log with success/error.</p>
+          <p><strong>Recovery:</strong> When a check returns to <code>ok</code>, a recovery notification is sent – it deliberately bypasses the cooldown so the all-clear always gets through. Every dispatch is recorded in the alert log with success/error. The alert log is pruned automatically every day (90-day retention).</p>
 
           <div class="page-nav">
             <a class="prev" href="./agent-deployment.html"><span class="label">← Previous chapter</span><span class="title">Agent Deployment</span></a>

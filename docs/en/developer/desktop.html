@@ -146,13 +146,13 @@ async fn connect_rdp(
 npm run check                    # svelte-check
 npm run test                     # vitest (41 tests)
 
-cd ../desktop
+cd ..                            # apps/desktop/
 cargo tauri dev                  # hot-reload dev mode
 cargo tauri build --bundles deb  # DEB release</code></pre>
 
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-            <div><div class="callout-title">Since v0.19.0</div><p>Big-bang migration of the desktop client from plain JS to Svelte 5. The old <code>desktop/src/</code> is dead &ndash; kept for history only. <code>tauri.conf.json.beforeBuildCommand</code> points to <code>../apps/desktop/ui</code>.</p></div>
+            <div><div class="callout-title">Since v0.19.0</div><p>Big-bang migration of the desktop client from plain JS to Svelte 5. The old <code>desktop/src/</code> has been deleted &ndash; it only lives in git history. <code>tauri.conf.json.beforeBuildCommand</code> is <code>npm --prefix ui run build</code>; Tauri works from <code>apps/desktop/</code> with the UI sitting next to it in <code>ui/</code>.</p></div>
           </div>
 
           <div class="page-nav">

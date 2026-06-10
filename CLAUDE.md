@@ -9,13 +9,13 @@ Code-Komponenten in vier Sprachen plus Extension:
 
 | Komponente | Pfad | Stack | Tests |
 |---|---|---|---|
-| Server (modularer Monolith, 8 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`) |
-| Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | — (noch keine) |
-| Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | — (noch keine) |
-| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | — |
+| Server (modularer Monolith, 8 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`, inkl. Alembic-Smoke) |
+| Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest` (`apps/monitoring/tests/`) |
+| Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `go test` (`internal/*/..._test.go`) |
+| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo test` (`#[cfg(test)]` in den Modulen) |
 | Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
-| Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Playwright (E2E) |
-| Browser-Extension | `apps/extension/` | Vanilla JS · Manifest V3 | — |
+| Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Vitest (Unit) + Playwright (E2E) |
+| Browser-Extension | `apps/extension/` | Vanilla JS · Manifest V3 | `node --test` (`popup.test.mjs`) |
 
 Externe Integrationen mit eigenem Wire-Format/Protokoll: **FRP** (`frps.toml`,
 STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
@@ -35,11 +35,13 @@ unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
 
 - **Release = mehrere Versions-Stellen synchron bumpen:** Desktop-Version in
   `apps/desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
-  aus dem Git-Tag ab (Default-Fallback in `apps/agent/build-deb.sh` /
-  `build-rpm.sh`), die `FRP_VERSION` ist in den GitHub-Workflows
-  (`.github/workflows/`) gepinnt; Server/Monitoring ziehen die Version aus dem
-  Git-Tag (Docker-Build-Arg). Stellen-Liste:
-  `.claude/agent-memory/adminhelper-release-manager/version_locations.md`.
+  aus dem Git-Tag ab (`apps/agent/build-deb.sh` / `build-rpm.sh` brechen ohne
+  gesetzte `VERSION` ab), die `FRP_VERSION` ist in den GitHub-Workflows
+  (`.github/workflows/`) gepinnt — ein CI-Job prüft die drei Pin-Stellen auf
+  Gleichstand; Server/Monitoring ziehen die Version aus dem Git-Tag
+  (Docker-Build-Arg). Detaillierte Stellen-Liste: lokale Agent-Memory
+  `.claude/agent-memory/adminhelper-release-manager/version_locations.md`
+  (gitignored — existiert nur auf dem Dev-Rechner, nicht im Clone).
 
 ## 1. Arbeitsweise & Mindset
 

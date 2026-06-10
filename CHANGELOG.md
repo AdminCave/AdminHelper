@@ -184,6 +184,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: RDP-Fehlertoast bei extrem schnellen Verbindungen** —
   „verbunden"-Erkennung nutzt jetzt ein eigenes Flag statt des
   `connected_at_ms == 0`-Sentinels (Doppeldeutung bei <1 ms).
+- **Produkt-Doku (DE+EN) auf den Code-Stand gebracht** (Audit X3/X5): alle
+  Prä-v0.24-Pfade ohne `apps/`-Präfix korrigiert, Agent-Pfade
+  (`/usr/bin`, `adminhelper.conf`, `%ProgramData%\AdminHelper`),
+  HttpOnly-Cookie-Realität in der API-Referenz; neu dokumentiert:
+  Pagination, Push-Retry/Inventar-Drosselung, Web-Auto-Refresh,
+  Scheduler-Defaults, Alert-Log-Retention, alle neuen CI-Gates.
+  CLAUDE.md-Testspalte korrigiert (alle Komponenten haben Tests; der
+  `version_locations`-Verweis ist als lokale, gitignorte Agent-Memory
+  gekennzeichnet).
 - **Doku-Drift behoben** (Audit X1/X2/X6): README-Quick-Start zeigte auf das
   nicht existierende `http://localhost:8080` (richtig: `https://localhost`,
   Compose published nur 443); DEVELOPMENT.md beschrieb den entfernten

@@ -49,7 +49,7 @@
 [Web-Panel] -> /api/monitoring/* (admin) -> AdminHelper-Server -> /monitor/* (X-Internal-Key) -> Monitoring-Service</code></pre>
 
           <h2>AdminHelper-seitig: <code>monitoring_proxy</code></h2>
-          <p>Im AdminHelper-Server gibt es kein eigenes Monitoring-Modul mehr; alles l&auml;uft durch <code>server/app/modules/monitoring_proxy.py</code>:</p>
+          <p>Im AdminHelper-Server gibt es kein eigenes Monitoring-Modul mehr; alles l&auml;uft durch <code>apps/server/app/modules/monitoring_proxy.py</code>:</p>
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>&ouml;ffentlich</strong> (X-API-Key), reicht 1:1 an den Service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, intern erweitert um <code>X-Internal-Key: $MONITOR_API_KEY</code></li>
@@ -59,7 +59,7 @@
 
           <h2>Monitoring-Service-Struktur</h2>
           <div class="code-header"><span>tree</span></div>
-<pre><code>monitoring/app/
+<pre><code>apps/monitoring/app/
 &#9500;&#9472;&#9472; main.py            FastAPI-App, Lifespan (Scheduler-Start), Routen-Registrierung
 &#9500;&#9472;&#9472; models.py          MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey
 &#9500;&#9472;&#9472; schemas.py         Pydantic Input-Schemas (CheckCreate, AlertRuleCreate, TemplateCreate)
@@ -81,6 +81,7 @@
             </tbody>
           </table>
           <p>Beide Pfade landen am Ende in <code>execute_check()</code> &rarr; Status-Update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics-Write &rarr; ggf. <code>process_alert()</code>, sobald <code>fail_count &ge; consecutive_fails</code>.</p>
+          <p>Der APScheduler (<code>scheduler.py</code>) l&auml;uft mit einem ThreadPool von 30 Workern und <code>misfire_grace_time=30&nbsp;s</code> &ndash; verz&ouml;gert startende Runs werden bis 30&nbsp;s nachgeholt statt verworfen. Ein t&auml;glicher Cleanup-Job bereinigt au&szlig;erdem <code>monitor_alert_log</code> (Retention 90&nbsp;Tage).</p>
 
           <h2>Push-Payload (Agent &rarr; Service)</h2>
           <p>Der Go-Agent baut den Report in <code>apps/agent/internal/monitor/report.go</code> (<code>BuildReport</code>) und sendet ihn als JSON per <code>POST {url}/agent/{server_id}/report</code> mit den Headern <code>Content-Type: application/json</code> und <code>X-API-Key</code> (<code>PushReport</code>). Der Server-Handler in <code>routers/agent.py</code> nimmt das JSON als freies <code>dict</code> entgegen. Struktur:</p>
@@ -113,6 +114,7 @@
                  "reallocated_sectors": 0, "pending_sectors": 0 } ]
 }</code></pre>
           <p>Felder sind optional: <code>docker</code>/<code>proxmox</code>/<code>zfs</code>/<code>smart</code> erscheinen nur, wenn der Agent das jeweilige Subsystem erkennt; VMs ohne Sensoren liefern keine <code>temperatures</code>. <code>services</code> ist ein Legacy-Key parallel zu <code>systemd</code>. Der Handler iteriert &uuml;ber <code>resources</code> (CPU/RAM/Load/Disk/Temp), <code>uptime_seconds</code> und <code>smart</code>, schreibt daraus VictoriaMetrics-Zeilen (Pseudo-Dateisysteme aus <code>EXCLUDED_FSTYPES</code> werden &uuml;bersprungen) und wertet anschlie&szlig;end die fuer den Server konfigurierten Push-Checks gegen den Report aus. Antwort: <code>{"status":"ok","metricsWritten":N,"checksUpdated":M}</code>.</p>
+          <p><code>systemd.all_services</code> ist zus&auml;tzlich gedrosselt: der Agent sendet das volle Inventar nur, wenn sich dessen Hash ge&auml;ndert hat oder der letzte Voll-Send &uuml;ber 1&nbsp;h zur&uuml;ckliegt. Fehlt der Key, f&auml;llt der <code>ServiceProcessChecker</code> auf die immer mitgesendeten Keys <code>failed</code>/<code>enabled_inactive</code> zur&uuml;ck &ndash; fehlender Key &ne; leere Liste (leere Liste hei&szlig;t: wirklich keine Services).</p>
 
           <h2>Checker im &Uuml;berblick</h2>
           <p>Jeder Checker liefert ein Tripel <code>(status, message, metrics)</code> mit <code>status &isin; {ok, warning, critical, unknown}</code>. Pull-Checker haben eine <code>run(config)</code>-Methode; Agent-/Push-Checker werten in <code>evaluate(config, report)</code> direkt den Push-Report aus.</p>

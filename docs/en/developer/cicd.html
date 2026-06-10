@@ -37,9 +37,10 @@
           <table>
             <thead><tr><th>Workflow</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code>, Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), extension (<code>node --test</code>), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>)</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), extension (<code>node --test</code>), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo check</code> on Windows, a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>). Coverage runs report-only in the test jobs (no gate)</td></tr>
               <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/ks98/adminhelper/{server,monitoring}</code></td></tr>
-              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code>, draft release</td></tr>
+              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), extension zip, <code>SHA256SUMS</code>, draft release</td></tr>
+              <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
             </tbody>
           </table>
 
@@ -50,6 +51,7 @@
               <tr><td>Pull request</td><td><code>ci.yml</code> (must pass)</td></tr>
               <tr><td>Push to <code>main</code></td><td><code>ci.yml</code> + <code>docker.yml</code> (image tags <code>:main</code> + <code>:sha-&hellip;</code>)</td></tr>
               <tr><td>Tag <code>v*</code></td><td><code>docker.yml</code> (tags <code>:0.26.0</code> + <code>:latest</code> + <code>:sha-&hellip;</code>) + <code>release.yml</code> (draft release with artifacts)</td></tr>
+              <tr><td>Schedule (weekly)</td><td><code>audit.yml</code> (dependency audit)</td></tr>
             </tbody>
           </table>
 
@@ -73,9 +75,10 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
+            <li>Browser extension: <code>adminhelper-extension-X.Y.Z.zip</code> (packed versioned from <code>apps/extension/</code>)</li>
             <li><code>SHA256SUMS</code> over all assets</li>
           </ul>
-          <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>.</p>
+          <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>. The <code>tauri-cli</code> is pinned to an exact version in CI and release (<code>cargo install tauri-cli --locked --version &hellip;</code>) so a new CLI release cannot break a tag build.</p>
 
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>
@@ -83,7 +86,7 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
             <li><code>apps/desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri bundle</li>
             <li><code>apps/desktop/ui/package.json</code> + <code>apps/web/package.json</code> (+ each <code>package-lock.json</code>) &ndash; Vite builds</li>
             <li><code>apps/desktop/ui/src/components/AppShell.svelte</code> &ndash; sidebar badge</li>
-            <li><code>extension/manifest.json</code> &ndash; browser extension</li>
+            <li><code>apps/extension/manifest.json</code> &ndash; browser extension</li>
             <li><code>apps/agent/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; default <code>VERSION</code> (CI overrides it from the tag)</li>
             <li><code>docs/**/*.html</code> &ndash; footer <code>&lt;span&gt;v0.24.0&lt;/span&gt;</code> + landing &ldquo;What's new&rdquo; + code samples</li>
             <li><code>README.md</code> &ndash; agent DEB install command</li>

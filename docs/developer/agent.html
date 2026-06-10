@@ -72,8 +72,8 @@
           <h2>Konfiguration</h2>
           <p>Zwei Konfigurationsdateien im Key=Value-Format (Anf&uuml;hrungszeichen erlaubt). Pfade pro OS:</p>
           <ul>
-            <li>Linux: <code>/etc/frp/frp.conf</code> und <code>/etc/adminhelper/monitor.conf</code></li>
-            <li>Windows: unter <code>%ProgramData%\adminhelper\</code></li>
+            <li>Linux: <code>/etc/frp/adminhelper.conf</code> und <code>/etc/adminhelper/monitor.conf</code></li>
+            <li>Windows: unter <code>%ProgramData%\AdminHelper\</code></li>
           </ul>
           <p><code>FrpcConfig</code>-Felder: <code>ADMINHELPER_URL</code>, <code>API_KEY</code>, <code>SERVER_ID</code>, <code>CACERT</code>, <code>INSECURE</code>. <code>MonitorConfig</code> erg&auml;nzt zus&auml;tzlich <code>MONITOR_URL</code> und <code>SERVICES</code> (kommagetrennt).</p>
 
@@ -93,6 +93,13 @@
             <li><code>collectSmart()</code> &ndash; <code>smartctl --scan-open</code> + <code>--all --json=cv</code>; ATA- und NVMe-Pfade getrennt geparst</li>
           </ul>
           <p>Alle Daten landen unter dem JSON-Key <code>resources</code> in <code>POST /agent/{server_id}/report</code> am Monitoring-Service.</p>
+
+          <h2>Push-Verhalten</h2>
+          <ul>
+            <li><strong>Retry:</strong> Schl&auml;gt der Metrik-Push fehl, macht <code>PushReport</code> (<code>internal/monitor/report.go</code>) genau einen Retry nach 10&nbsp;s &ndash; ein verlorener Push kostet sonst ein volles 5-Minuten-Fenster.</li>
+            <li><strong>Inventar-Drosselung:</strong> Das <code>all_services</code>-Inventar (100&ndash;300 gr&ouml;&szlig;tenteils statische Units) wird nur gesendet, wenn sich sein SHA-256-Hash &auml;ndert oder der letzte Voll-Send &gt;1&nbsp;h her ist; sonst fehlt der Key im Report. Der Drossel-Zustand liegt in <code>.inventory-state.json</code> neben <code>monitor.conf</code> (Linux <code>/etc/adminhelper/</code>, Windows <code>%ProgramData%\AdminHelper\</code>) und wird erst nach erfolgreichem Push persistiert. Watched Services sowie <code>failed</code>/<code>enabled_inactive</code> gehen weiterhin bei jedem Push mit.</li>
+            <li><strong>Docker-Timeouts:</strong> Jeder Docker-CLI-Aufruf des <code>docker_health</code>-Plugins hat ein 10-s-Timeout &ndash; ein h&auml;ngender Daemon blockiert den Push nicht.</li>
+          </ul>
 
           <h2>Plattform-Splits: Linux vs. Windows</h2>
           <p>Collector, Service-Aktivierung und Pfade sind &uuml;ber Go-Build-Tags (<code>//go:build linux</code> / <code>//go:build windows</code>) getrennt. Die folgende Tabelle listet je Funktion das konkrete Plattform-Verhalten.</p>
@@ -161,7 +168,7 @@ make build-windows     # bin/adminhelper-agent.exe   (PE amd64)
 
 VERSION=0.26.0 bash build-deb.sh
 VERSION=0.26.0 bash build-rpm.sh</code></pre>
-          <p>Das DEB-Paket installiert <code>/usr/local/bin/adminhelper-agent</code> sowie <code>/usr/bin/frpc</code> (in der CI heruntergeladen) und legt die Systemd-Unit + Timer an.</p>
+          <p>DEB- und RPM-Paket installieren <code>/usr/bin/adminhelper-agent</code> sowie <code>/usr/bin/frpc</code> (in der CI heruntergeladen) und legen die Systemd-Unit + Timer an.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

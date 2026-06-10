@@ -37,9 +37,10 @@
           <table>
             <thead><tr><th>Workflow</th><th>Aufgabe</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code>, Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Extension (<code>node --test</code>), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>)</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Extension (<code>node --test</code>), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo check</code> auf Windows, <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>). Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate)</td></tr>
               <tr><td><code>docker.yml</code></td><td>Server- + Monitoring-Image bauen &amp; nach <code>ghcr.io/ks98/adminhelper/{server,monitoring}</code> pushen</td></tr>
-              <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), <code>SHA256SUMS</code>, Draft-Release</td></tr>
+              <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), Extension-Zip, <code>SHA256SUMS</code>, Draft-Release</td></tr>
+              <tr><td><code>audit.yml</code></td><td>W&ouml;chentlicher Dependency-Audit (Montag fr&uuml;h, auch manuell per <code>workflow_dispatch</code>): <code>pip-audit</code> (Server- + Monitoring-Locks), <code>cargo audit</code> (Desktop), <code>govulncheck</code> (Agent), <code>npm audit</code> (Web + Desktop-UI)</td></tr>
             </tbody>
           </table>
 
@@ -50,6 +51,7 @@
               <tr><td>Pull Request</td><td><code>ci.yml</code> (muss grün sein)</td></tr>
               <tr><td>Push auf <code>main</code></td><td><code>ci.yml</code> + <code>docker.yml</code> (Image-Tags <code>:main</code> + <code>:sha-&hellip;</code>)</td></tr>
               <tr><td>Tag <code>v*</code></td><td><code>docker.yml</code> (Tags <code>:0.26.0</code> + <code>:latest</code> + <code>:sha-&hellip;</code>) + <code>release.yml</code> (Draft-Release mit Artefakten)</td></tr>
+              <tr><td>Schedule (w&ouml;chentlich)</td><td><code>audit.yml</code> (Dependency-Audit)</td></tr>
             </tbody>
           </table>
 
@@ -73,9 +75,10 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
             <li>Desktop-Client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF-Binary</li>
             <li>Go-Agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>-Binaries</li>
             <li>Desktop-Client Windows-<code>.msi</code> (best-effort &ndash; blockiert das Release nicht, wenn der Windows-Build fehlschlägt)</li>
+            <li>Browser-Extension: <code>adminhelper-extension-X.Y.Z.zip</code> (versioniert aus <code>apps/extension/</code> gepackt)</li>
             <li><code>SHA256SUMS</code> über alle Assets</li>
           </ul>
-          <p>Die Agent-Version wird aus dem Tag abgeleitet (<code>${GITHUB_REF_NAME#v}</code>) und per <code>-ldflags "-X main.version=$VERSION"</code> in die Binaries geschrieben.</p>
+          <p>Die Agent-Version wird aus dem Tag abgeleitet (<code>${GITHUB_REF_NAME#v}</code>) und per <code>-ldflags "-X main.version=$VERSION"</code> in die Binaries geschrieben. Die <code>tauri-cli</code> wird in CI und Release auf eine exakte Version gepinnt (<code>cargo install tauri-cli --locked --version &hellip;</code>), damit ein neues CLI-Release keinen Tag-Build brechen kann.</p>
 
           <h2>Version-Stellen</h2>
           <p>Bei einem Release muss die neue Version an mehreren Stellen parallel gesetzt werden &ndash; der Tag allein reicht nicht:</p>
@@ -83,7 +86,7 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
             <li><code>apps/desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri-Bundle</li>
             <li><code>apps/desktop/ui/package.json</code> + <code>apps/web/package.json</code> (+ jeweils <code>package-lock.json</code>) &ndash; Vite-Builds</li>
             <li><code>apps/desktop/ui/src/components/AppShell.svelte</code> &ndash; Sidebar-Badge</li>
-            <li><code>extension/manifest.json</code> &ndash; Browser-Extension</li>
+            <li><code>apps/extension/manifest.json</code> &ndash; Browser-Extension</li>
             <li><code>apps/agent/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; Default-<code>VERSION</code> (CI überschreibt sie aus dem Tag)</li>
             <li><code>docs/**/*.html</code> &ndash; Footer-<code>&lt;span&gt;v0.24.0&lt;/span&gt;</code> + Landing-„Was ist neu" + Code-Samples</li>
             <li><code>README.md</code> &ndash; Agent-DEB-Install-Befehl</li>

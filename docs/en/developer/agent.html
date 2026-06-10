@@ -72,8 +72,8 @@
           <h2>Configuration</h2>
           <p>Two config files in key=value format (quotes allowed). OS paths:</p>
           <ul>
-            <li>Linux: <code>/etc/frp/frp.conf</code> and <code>/etc/adminhelper/monitor.conf</code></li>
-            <li>Windows: under <code>%ProgramData%\adminhelper\</code></li>
+            <li>Linux: <code>/etc/frp/adminhelper.conf</code> and <code>/etc/adminhelper/monitor.conf</code></li>
+            <li>Windows: under <code>%ProgramData%\AdminHelper\</code></li>
           </ul>
           <p><code>FrpcConfig</code> fields: <code>ADMINHELPER_URL</code>, <code>API_KEY</code>, <code>SERVER_ID</code>, <code>CACERT</code>, <code>INSECURE</code>. <code>MonitorConfig</code> additionally carries <code>MONITOR_URL</code> and <code>SERVICES</code> (comma-separated).</p>
 
@@ -93,6 +93,13 @@
             <li><code>collectSmart()</code> &ndash; <code>smartctl --scan-open</code> + <code>--all --json=cv</code>; ATA and NVMe paths parsed separately</li>
           </ul>
           <p>All data is shipped under the <code>resources</code> JSON key in <code>POST /agent/{server_id}/report</code> at the monitoring service.</p>
+
+          <h2>Push Behaviour</h2>
+          <ul>
+            <li><strong>Retry:</strong> When the metrics push fails, <code>PushReport</code> (<code>internal/monitor/report.go</code>) does exactly one retry after 10&nbsp;s &ndash; a lost push otherwise wastes a full 5-minute slot.</li>
+            <li><strong>Inventory throttling:</strong> The <code>all_services</code> inventory (100&ndash;300 mostly static units) is only sent when its SHA-256 hash changes or the last full send is &gt;1&nbsp;h ago; otherwise the key is omitted from the report. The throttle state lives in <code>.inventory-state.json</code> next to <code>monitor.conf</code> (Linux <code>/etc/adminhelper/</code>, Windows <code>%ProgramData%\AdminHelper\</code>) and is only persisted after a successful push. Watched services plus <code>failed</code>/<code>enabled_inactive</code> still go with every push.</li>
+            <li><strong>Docker timeouts:</strong> Every docker CLI call of the <code>docker_health</code> plugin has a 10-second timeout &ndash; a hanging daemon does not stall the push.</li>
+          </ul>
 
           <h2>Platform Splits: Linux vs. Windows</h2>
           <p>Collector, service activation, and paths are separated via Go build tags (<code>//go:build linux</code> / <code>//go:build windows</code>). The table below lists the concrete per-function behaviour on each platform.</p>
@@ -161,7 +168,7 @@ make build-windows     # bin/adminhelper-agent.exe   (PE amd64)
 
 VERSION=0.26.0 bash build-deb.sh
 VERSION=0.26.0 bash build-rpm.sh</code></pre>
-          <p>The DEB package installs <code>/usr/local/bin/adminhelper-agent</code> plus <code>/usr/bin/frpc</code> (downloaded in CI) and registers the systemd unit + timer.</p>
+          <p>The DEB and RPM packages install <code>/usr/bin/adminhelper-agent</code> plus <code>/usr/bin/frpc</code> (downloaded in CI) and register the systemd unit + timer.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

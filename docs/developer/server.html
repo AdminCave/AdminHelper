@@ -37,18 +37,18 @@
           <table>
             <thead><tr><th>Datei</th><th>Zweck</th></tr></thead>
             <tbody>
-              <tr><td><code>server/app/main.py</code></td><td>FastAPI-App, Lifespan, Middleware-Stack, Static-Mounts für Vite-Output, Auto-Migrationen, SPA-Fallback.</td></tr>
-              <tr><td><code>server/app/core/config.py</code></td><td>Env-Var-Resolution, JWT-Settings, Secret-Key-Persistenz (<code>.secret_key</code>-Datei).</td></tr>
-              <tr><td><code>server/app/core/auth.py</code></td><td>JWT-Encode/Decode, Bcrypt-Hashing mit SHA-256-Prehash, Refresh-Rotation, Token-Blacklist, API-Key-Auth.</td></tr>
-              <tr><td><code>server/app/core/database.py</code></td><td>SQLAlchemy-Engine + <code>SessionLocal</code>; PostgreSQL via psycopg3, Pool-Konfig (size=10, overflow=20, pre-ping, recycle=3600).</td></tr>
-              <tr><td><code>server/app/core/rate_limit.py</code></td><td>Redis-basierter Fixed-Window-Limiter mit In-Memory-Fallback.</td></tr>
-              <tr><td><code>server/app/core/middleware.py</code></td><td>IP-Filter (<code>ALLOWED_IPS</code>) und Proxy-Trust (<code>TRUSTED_PROXIES</code>).</td></tr>
-              <tr><td><code>server/app/core/events.py</code></td><td>Async Event-Bus für Hooks (ThreadPoolExecutor mit 4 Workern, Fire-and-Forget).</td></tr>
+              <tr><td><code>apps/server/app/main.py</code></td><td>FastAPI-App, Lifespan, Middleware-Stack, Static-Mounts für Vite-Output, Auto-Migrationen, SPA-Fallback.</td></tr>
+              <tr><td><code>apps/server/app/core/config.py</code></td><td>Env-Var-Resolution, JWT-Settings, Secret-Key-Persistenz (<code>.secret_key</code>-Datei).</td></tr>
+              <tr><td><code>apps/server/app/core/auth.py</code></td><td>JWT-Encode/Decode, Bcrypt-Hashing mit SHA-256-Prehash, Refresh-Rotation, Token-Blacklist, API-Key-Auth.</td></tr>
+              <tr><td><code>apps/server/app/core/database.py</code></td><td>SQLAlchemy-Engine + <code>SessionLocal</code>; PostgreSQL via psycopg3, Pool-Konfig (size=10, overflow=20, pre-ping, recycle=3600).</td></tr>
+              <tr><td><code>apps/server/app/core/rate_limit.py</code></td><td>Redis-basierter Fixed-Window-Limiter mit In-Memory-Fallback.</td></tr>
+              <tr><td><code>apps/server/app/core/middleware.py</code></td><td>IP-Filter (<code>ALLOWED_IPS</code>) und Proxy-Trust (<code>TRUSTED_PROXIES</code>).</td></tr>
+              <tr><td><code>apps/server/app/core/events.py</code></td><td>Async Event-Bus für Hooks (ThreadPoolExecutor mit 4 Workern, Fire-and-Forget).</td></tr>
             </tbody>
           </table>
 
           <h2>Router-Übersicht</h2>
-          <p>10 Top-Level-Router unter <code>server/app/modules/</code>; jedes Modul kapselt Models, Schemas und Routen.</p>
+          <p>10 Top-Level-Router unter <code>apps/server/app/modules/</code>; jedes Modul kapselt Models, Schemas und Routen.</p>
           <table>
             <thead><tr><th>Prefix</th><th>Modul</th><th>Funktion</th></tr></thead>
             <tbody>

@@ -37,18 +37,18 @@
           <table>
             <thead><tr><th>File</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>server/app/main.py</code></td><td>FastAPI app, lifespan, middleware stack, static mounts for Vite output, auto-migrations, SPA fallback.</td></tr>
-              <tr><td><code>server/app/core/config.py</code></td><td>Env-var resolution, JWT settings, secret-key persistence (<code>.secret_key</code> file).</td></tr>
-              <tr><td><code>server/app/core/auth.py</code></td><td>JWT encode/decode, bcrypt hashing with SHA-256 prehash, refresh rotation, token blacklist, API-key auth.</td></tr>
-              <tr><td><code>server/app/core/database.py</code></td><td>SQLAlchemy engine + <code>SessionLocal</code>; PostgreSQL via psycopg3, pool config (size=10, overflow=20, pre-ping, recycle=3600).</td></tr>
-              <tr><td><code>server/app/core/rate_limit.py</code></td><td>Redis-based fixed-window limiter with in-memory fallback.</td></tr>
-              <tr><td><code>server/app/core/middleware.py</code></td><td>IP filter (<code>ALLOWED_IPS</code>) and proxy trust (<code>TRUSTED_PROXIES</code>).</td></tr>
-              <tr><td><code>server/app/core/events.py</code></td><td>Async event bus for hooks (ThreadPoolExecutor with 4 workers, fire-and-forget).</td></tr>
+              <tr><td><code>apps/server/app/main.py</code></td><td>FastAPI app, lifespan, middleware stack, static mounts for Vite output, auto-migrations, SPA fallback.</td></tr>
+              <tr><td><code>apps/server/app/core/config.py</code></td><td>Env-var resolution, JWT settings, secret-key persistence (<code>.secret_key</code> file).</td></tr>
+              <tr><td><code>apps/server/app/core/auth.py</code></td><td>JWT encode/decode, bcrypt hashing with SHA-256 prehash, refresh rotation, token blacklist, API-key auth.</td></tr>
+              <tr><td><code>apps/server/app/core/database.py</code></td><td>SQLAlchemy engine + <code>SessionLocal</code>; PostgreSQL via psycopg3, pool config (size=10, overflow=20, pre-ping, recycle=3600).</td></tr>
+              <tr><td><code>apps/server/app/core/rate_limit.py</code></td><td>Redis-based fixed-window limiter with in-memory fallback.</td></tr>
+              <tr><td><code>apps/server/app/core/middleware.py</code></td><td>IP filter (<code>ALLOWED_IPS</code>) and proxy trust (<code>TRUSTED_PROXIES</code>).</td></tr>
+              <tr><td><code>apps/server/app/core/events.py</code></td><td>Async event bus for hooks (ThreadPoolExecutor with 4 workers, fire-and-forget).</td></tr>
             </tbody>
           </table>
 
           <h2>Router Overview</h2>
-          <p>Ten top-level routers under <code>server/app/modules/</code>; each module bundles models, schemas and routes.</p>
+          <p>Ten top-level routers under <code>apps/server/app/modules/</code>; each module bundles models, schemas and routes.</p>
           <table>
             <thead><tr><th>Prefix</th><th>Module</th><th>Purpose</th></tr></thead>
             <tbody>

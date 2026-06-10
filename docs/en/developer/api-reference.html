@@ -36,9 +36,12 @@
           <h2>Authentication</h2>
           <p>Two mechanisms, depending on the caller:</p>
           <ul>
-            <li><strong>JWT bearer</strong> (web panel, desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Both access and refresh tokens are returned in the JSON body &ndash; <em>no</em> httpOnly cookie.</li>
+            <li><strong>JWT bearer</strong> (web panel, desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access and refresh tokens come in the JSON body; for browsers the server additionally sets the refresh token as an HttpOnly cookie (<code>Secure; SameSite=Strict</code>, path <code>/api/auth</code>) &ndash; desktop/CLI clients keep sending it in the body.</li>
             <li><strong>API key</strong> (agents, extension, third parties): header <code>X-API-Key</code>. Permission is <code>read</code> or <code>read_write</code>.</li>
           </ul>
+
+          <h2>Pagination (list endpoints)</h2>
+          <p>The list endpoints <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code> plus the monitoring lists (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) accept optional <code>limit</code> (1&ndash;1000) and <code>offset</code> (&ge;&nbsp;0) query parameters and return the pre-pagination total in the <code>X-Total-Count</code> header (the monitoring proxy forwards that header). Without parameters the behaviour is unchanged: full list.</p>
 
           <h2>Auth</h2>
           <div class="endpoint">
@@ -47,7 +50,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/refresh</code>
-            <p>Body: <code>{ "refresh_token" }</code>. Rotates both tokens, blacklists the old <code>jti</code>. Reusing an already-revoked refresh token invalidates all sessions of the affected user chain.</p>
+            <p>Body: <code>{ "refresh_token" }</code> <em>or</em> HttpOnly cookie (browsers; the body may then be empty). Rotates both tokens, blacklists the old <code>jti</code>. Reusing an already-revoked refresh token invalidates all sessions of the affected user chain.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>

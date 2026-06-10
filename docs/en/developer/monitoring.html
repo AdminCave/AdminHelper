@@ -49,7 +49,7 @@
 [Web panel] -> /api/monitoring/* (admin) -> AdminHelper server -> /monitor/* (X-Internal-Key) -> Monitoring service</code></pre>
 
           <h2>AdminHelper side: <code>monitoring_proxy</code></h2>
-          <p>There is no dedicated monitoring module on the AdminHelper server anymore; everything goes through <code>server/app/modules/monitoring_proxy.py</code>:</p>
+          <p>There is no dedicated monitoring module on the AdminHelper server anymore; everything goes through <code>apps/server/app/modules/monitoring_proxy.py</code>:</p>
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>public</strong> (X-API-Key), forwarded 1:1 to the service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, internally augmented with <code>X-Internal-Key: $MONITOR_API_KEY</code></li>
@@ -59,7 +59,7 @@
 
           <h2>Monitoring service structure</h2>
           <div class="code-header"><span>tree</span></div>
-<pre><code>monitoring/app/
+<pre><code>apps/monitoring/app/
 &#9500;&#9472;&#9472; main.py            FastAPI app, lifespan (scheduler start), route registration
 &#9500;&#9472;&#9472; models.py          MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey
 &#9500;&#9472;&#9472; schemas.py         Pydantic input schemas (CheckCreate, AlertRuleCreate, TemplateCreate)
@@ -81,6 +81,7 @@
             </tbody>
           </table>
           <p>Both paths converge in <code>execute_check()</code> &rarr; status update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics write &rarr; <code>process_alert()</code> when <code>fail_count &ge; consecutive_fails</code>.</p>
+          <p>APScheduler (<code>scheduler.py</code>) runs with a thread pool of 30 workers and <code>misfire_grace_time=30&nbsp;s</code> &ndash; runs that start late are caught up within 30&nbsp;s instead of being dropped. A daily cleanup job additionally prunes <code>monitor_alert_log</code> (90-day retention).</p>
 
           <h2>Push payload (agent &rarr; service)</h2>
           <p>The Go agent assembles the report in <code>apps/agent/internal/monitor/report.go</code> (<code>BuildReport</code>) and sends it as JSON via <code>POST {url}/agent/{server_id}/report</code> with the headers <code>Content-Type: application/json</code> and <code>X-API-Key</code> (<code>PushReport</code>). The server handler in <code>routers/agent.py</code> accepts the JSON as a free-form <code>dict</code>. Structure:</p>
@@ -113,6 +114,7 @@
                  "reallocated_sectors": 0, "pending_sectors": 0 } ]
 }</code></pre>
           <p>Fields are optional: <code>docker</code>/<code>proxmox</code>/<code>zfs</code>/<code>smart</code> appear only when the agent detects the respective subsystem; VMs without sensors send no <code>temperatures</code>. <code>services</code> is a legacy key alongside <code>systemd</code>. The handler iterates over <code>resources</code> (CPU/RAM/load/disk/temp), <code>uptime_seconds</code> and <code>smart</code>, writes VictoriaMetrics lines from them (pseudo filesystems in <code>EXCLUDED_FSTYPES</code> are skipped), then evaluates the push checks configured for the server against the report. Response: <code>{"status":"ok","metricsWritten":N,"checksUpdated":M}</code>.</p>
+          <p><code>systemd.all_services</code> is additionally throttled: the agent sends the full inventory only when its hash has changed or the last full send is more than 1&nbsp;h ago. When the key is missing, the <code>ServiceProcessChecker</code> falls back to the always-sent keys <code>failed</code>/<code>enabled_inactive</code> &ndash; a missing key &ne; an empty list (an empty list means: genuinely no services).</p>
 
           <h2>Checkers at a glance</h2>
           <p>Each checker returns a triple <code>(status, message, metrics)</code> with <code>status &isin; {ok, warning, critical, unknown}</code>. Pull checkers expose a <code>run(config)</code> method; agent/push checkers evaluate the push report directly in <code>evaluate(config, report)</code>.</p>

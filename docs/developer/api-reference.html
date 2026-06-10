@@ -36,9 +36,12 @@
           <h2>Authentifizierung</h2>
           <p>Zwei Mechanismen, je nach Aufrufer:</p>
           <ul>
-            <li><strong>JWT-Bearer</strong> (Web-Panel, Desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access- und Refresh-Token werden beide im JSON-Body geliefert &ndash; <em>kein</em> httpOnly-Cookie.</li>
+            <li><strong>JWT-Bearer</strong> (Web-Panel, Desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access- und Refresh-Token kommen im JSON-Body; f&uuml;r Browser setzt der Server den Refresh-Token zus&auml;tzlich als HttpOnly-Cookie (<code>Secure; SameSite=Strict</code>, Pfad <code>/api/auth</code>) &ndash; Desktop/CLI senden ihn weiterhin im Body.</li>
             <li><strong>API-Key</strong> (Agents, Extension, Drittanbieter): Header <code>X-API-Key</code>. Permission ist <code>read</code> oder <code>read_write</code>.</li>
           </ul>
+
+          <h2>Pagination (Listen-Endpunkte)</h2>
+          <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter bleibt das Verhalten unver&auml;ndert: volle Liste.</p>
 
           <h2>Auth</h2>
           <div class="endpoint">
@@ -47,7 +50,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/refresh</code>
-            <p>Body: <code>{ "refresh_token" }</code>. Rotiert beide Tokens, blacklisted den alten <code>jti</code>. Reuse eines bereits widerrufenen Refresh-Tokens invalidiert alle Sessions der betroffenen User-Kette.</p>
+            <p>Body: <code>{ "refresh_token" }</code> <em>oder</em> HttpOnly-Cookie (Browser, Body darf dann leer sein). Rotiert beide Tokens, blacklisted den alten <code>jti</code>. Reuse eines bereits widerrufenen Refresh-Tokens invalidiert alle Sessions der betroffenen User-Kette.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
