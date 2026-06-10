@@ -18,7 +18,7 @@ systemctl daemon-reload
 
 # Timer aktivieren: laeuft ohne Config harmlos (Sync/Push skippen still).
 # frpc.service nur reaktivieren, wenn bereits provisioniert (frpc.toml existiert).
-# Schuetzt vor Restart-Loop auf frisch installierten Systemen ohne frpc init.
+# Schuetzt vor Restart-Loop auf frisch installierten Systemen ohne Provisionierung.
 if [ "$1" = "configure" ]; then
     systemctl enable --now adminhelper-agent.timer >/dev/null 2>&1 || true
     if [ -f /etc/frp/frpc.toml ]; then
@@ -27,5 +27,5 @@ if [ "$1" = "configure" ]; then
 fi
 
 echo "adminhelper-agent installiert. Timer ist aktiv (laeuft alle 5 Minuten)."
-echo "FRPC Einrichtung:    sudo adminhelper-agent frpc init --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
-echo "Monitor Einrichtung: sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"
+echo "Einrichtung (Server + Monitor + FRP): sudo adminhelper-agent provision --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
+echo "Nur Monitoring (alternativ):          sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"

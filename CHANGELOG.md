@@ -113,6 +113,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent-Pakete installieren nach `/usr/bin`** (vorher `/usr/local/bin` —
+  FHS-untypisch für Paketmanager-Inhalte, `rpmlint`-Fehler). deb und rpm
+  teilen sich die Unit-Datei, daher beide umgestellt; dpkg/rpm räumen den
+  alten Pfad beim Upgrade ab. Build-Skripte brechen außerdem ab statt still
+  ein Dummy-`frpc` zu packen oder eine geratene Default-Version zu bauen;
+  rpm deklariert jetzt `Conflicts:` für die alten `srm-*`-Pakete; die
+  Install-Hinweise nennen `provision` statt des entfernten `frpc init`.
 - **Dependabot entfernt** (`.github/dependabot.yml`) — Dependency-Updates laufen
   künftig agent-getrieben (verträgt sich besser mit den gehashten Python-Locks und
   erlaubt koordinierte, getestete Bumps über alle Ökosysteme). GitHubs separate

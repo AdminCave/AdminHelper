@@ -18,6 +18,9 @@ Requires:       systemd
 Obsoletes:      srm-frpc-client < %{version}
 Obsoletes:      srm-monitor-agent < %{version}
 Obsoletes:      srm-agent < %{version}
+Conflicts:      srm-frpc-client
+Conflicts:      srm-monitor-agent
+Conflicts:      srm-agent
 
 %description
 Unified agent for AdminHelper. Combines FRP Client
@@ -29,12 +32,11 @@ Go binary. Replaces srm-frpc-client, srm-monitor-agent, and srm-agent packages.
 
 %install
 mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/usr/local/bin
 mkdir -p %{buildroot}/etc/systemd/system
 mkdir -p %{buildroot}/etc/frp/pki
 mkdir -p %{buildroot}/etc/adminhelper
 
-cp usr/local/bin/adminhelper-agent %{buildroot}/usr/local/bin/adminhelper-agent
+cp usr/bin/adminhelper-agent %{buildroot}/usr/bin/adminhelper-agent
 cp usr/bin/frpc %{buildroot}/usr/bin/frpc
 
 cp etc/systemd/system/frpc.service %{buildroot}/etc/systemd/system/
@@ -42,7 +44,7 @@ cp etc/systemd/system/adminhelper-agent.service %{buildroot}/etc/systemd/system/
 cp etc/systemd/system/adminhelper-agent.timer %{buildroot}/etc/systemd/system/
 
 %files
-%attr(755,root,root) /usr/local/bin/adminhelper-agent
+%attr(755,root,root) /usr/bin/adminhelper-agent
 %attr(755,root,root) /usr/bin/frpc
 /etc/systemd/system/frpc.service
 /etc/systemd/system/adminhelper-agent.service
@@ -70,8 +72,8 @@ if [ -f /etc/frp/frpc.toml ]; then
     systemctl enable --now frpc.service >/dev/null 2>&1 || true
 fi
 echo "adminhelper-agent installiert. Timer ist aktiv (laeuft alle 5 Minuten)."
-echo "FRPC Einrichtung:    sudo adminhelper-agent frpc init --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
-echo "Monitor Einrichtung: sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"
+echo "Einrichtung (Server + Monitor + FRP): sudo adminhelper-agent provision --url <ADMINHELPER_URL> --token <TOKEN> --server-id <ID>"
+echo "Nur Monitoring (alternativ):          sudo adminhelper-agent monitor init --url <MONITOR_URL> --api-key <KEY> --server-id <ID>"
 
 %preun
 # $1 == 0: Uninstall (stop + disable), $1 == 1: Upgrade (nur stop)
