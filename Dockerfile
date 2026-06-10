@@ -25,8 +25,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl tzdata postgresql-client gosu \
  && rm -rf /var/lib/apt/lists/*
 
+# Hashed lockfile: apps/server/requirements.in (intent) -> requirements.txt
+# (pinned + hashed via pip-compile --generate-hashes). --require-hashes fails the
+# build if any downloaded artifact's hash doesn't match — supply-chain integrity.
 COPY apps/server/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY apps/server/app/ ./app/
 COPY apps/server/alembic.ini ./alembic.ini

@@ -64,15 +64,14 @@ already supports it).
 ## Audit residuals
 
 The deep audit's exploitable findings (2 high, several medium) are fixed and
-tested (`CHANGELOG.md`). The following are **deliberately not changed in code** —
-either deferred because a safe fix needs dedicated, manually-tested work, or
-accepted because the current behaviour is the correct trade-off.
-
-### Deferred (needs dedicated, manually-tested work)
-
-- **Python deps — hashed lockfile.** No `uv`/`pip-tools` in this environment; a
-  half-pinned file is worse than none. Plan: `pip-compile --generate-hashes`
-  (or `uv pip compile`) → install with `pip install --require-hashes`.
+tested (`CHANGELOG.md`). Every item that was initially **deferred** for dedicated,
+manually-tested work has since been implemented and verified: the desktop TLS
+**TOFU certificate pinning** and its `api_proxy` token-destination pin, `ansible`
+path confinement and tightened `connect-src` CSP; the web refresh token moved to
+an **`HttpOnly` cookie**; and **hashed Python lockfiles** (`pip-compile
+--generate-hashes` + `--require-hashes`, verified by a real Docker build). The
+entries below are **accepted** — deliberately left as-is because the current
+behaviour is the correct trade-off.
 
 ### Accepted (deliberate, with rationale)
 
@@ -92,5 +91,5 @@ accepted because the current behaviour is the correct trade-off.
 - **`style-src 'unsafe-inline'`** — required by Svelte inline styles; `script-src`
   stays strict `'self'`.
 - **Base-image / GitHub-Action tag pinning, SMART device-id sanitization,
-  `MONITOR_API_KEY` divergence** — defense-in-depth / marginal; Dependabot keeps
-  Actions current.
+  `MONITOR_API_KEY` divergence** — defense-in-depth / marginal; Actions and base
+  images are kept current via the agent-driven dependency updates.

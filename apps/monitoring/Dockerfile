@@ -9,8 +9,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends iputils-ping tzdata postgresql-client gosu \
  && rm -rf /var/lib/apt/lists/*
 
+# Hashed lockfile: requirements.in (intent) -> requirements.txt (pinned + hashed
+# via pip-compile --generate-hashes). --require-hashes enforces artifact integrity.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY app/ ./app/
 COPY alembic.ini ./alembic.ini

@@ -40,8 +40,35 @@ cargo install tauri-cli
 cd apps/server
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # zieht requirements.in (lose) + Test-Deps
 ```
+
+### Python-Dependencies & Lockfiles
+
+`apps/server` und `apps/monitoring` trennen **Intent** von **Lock**:
+
+- `requirements.in` — die editierbare Quelle (lose `>=`-Constraints). Hier
+  Dependencies hinzufügen/ändern.
+- `requirements.txt` — die **generierte, gepinnte + gehashte** Lockfile, die der
+  Production-Container per `pip install --require-hashes` installiert
+  (Supply-Chain-Integrität). **Nicht von Hand editieren.**
+
+Lock neu erzeugen (im passenden Python wie im Dockerfile, derzeit 3.12):
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$PWD/apps/server:/w" -w /w python:3.12-slim \
+  sh -c "pip install -q --user pip-tools && \
+         python -m piptools compile --generate-hashes \
+           --output-file=requirements.txt requirements.in"
+```
+
+Tests/CI installieren `requirements.in` (lose, ungehasht) — `--require-hashes`
+verträgt keine Mischung aus gehashten und ungehashten Zeilen.
+
+**Dependency-Updates laufen agent-getrieben** (kein Dependabot mehr): Versionen
+in der `.in` anheben bzw. `pip-compile --upgrade` fahren, Lock regenerieren,
+Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Befehle.
 
 ### Go Toolchain (Agent)
 
@@ -193,7 +220,7 @@ go run ./cmd/adminhelper-agent run --once
 cd apps/monitoring
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.in   # lose Quelle; requirements.txt ist die Lock
 
 VICTORIA_METRICS_URL=http://localhost:8428 \
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8081

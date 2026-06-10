@@ -89,11 +89,26 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   hier Over-Engineering. Der Web-Client hält den Refresh-Token nicht mehr und
   räumt Altbestände aus `localStorage`. Verifiziert per pytest (Cookie-Setzen/
   Rotation/Reuse-Detection/Logout-Clear + Body-Backward-Compat) und Playwright-E2E.
+- **Server/Monitoring: gehashte Python-Lockfiles** (Audit, Supply-Chain). Die
+  Production-Images installieren ihre Dependencies jetzt aus einer gepinnten +
+  SHA-256-gehashten `requirements.txt` (generiert via `pip-compile
+  --generate-hashes`) mit `pip install --require-hashes` — ein manipuliertes oder
+  getauschtes Artefakt vom Index lässt den Build fehlschlagen. `requirements.in`
+  ist die lose Intent-Quelle; Tests/CI nutzen sie (ungehasht). Verifiziert per
+  realem Docker-Build (`--require-hashes`, exit 0) für beide Dienste.
 - **`SECURITY.md`: Trust-Modell + Audit-Residuen dokumentiert** — FRP-`secretKey`
   als eigentliche Authz-Grenze (nicht `allowUsers`), globaler `auth.token` als
   akzeptiertes SPOF mit Rotations-Empfehlung, Single-Worker-Verfügbarkeitsprofil,
   und das Register der bewusst zurückgestellten/akzeptierten Funde
-  (httpOnly, Hash-Lockfile, frps-Caps …) mit Begründung + Plan.
+  (frps-Caps, Pagination, Watermark-Subsekunden …) mit Begründung + Plan.
+
+### Changed
+
+- **Dependabot entfernt** (`.github/dependabot.yml`) — Dependency-Updates laufen
+  künftig agent-getrieben (verträgt sich besser mit den gehashten Python-Locks und
+  erlaubt koordinierte, getestete Bumps über alle Ökosysteme). GitHubs separate
+  Security-Alerts bleiben als Sicherheitsnetz unberührt. Neuer Workflow in
+  `DEVELOPMENT.md` dokumentiert.
 
 ## [0.26.0] - 2026-06-07
 

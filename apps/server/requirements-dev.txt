@@ -1,10 +1,14 @@
 # Dev-Dependencies fuer lokale Tests + CI. NICHT im Production-Container
-# noetig (Dockerfile installiert nur requirements.txt).
+# noetig (Dockerfile installiert die gehashte requirements.txt-Lockfile).
 #
-# Lokal:  pip install -r requirements.txt -r requirements-dev.txt
+# Verweist auf requirements.in (lose, ungehasht), NICHT auf die gehashte
+# requirements.txt: sobald eine Zeile einen Hash traegt, verlangt pip Hashes
+# fuer ALLE Pakete — das wuerde die ungehashten Dev-Deps unten brechen.
+#
+# Lokal:  pip install -r requirements.in -r requirements-dev.txt
 # CI:     same in der server_test-Job-before_script
 
--r requirements.txt
+-r requirements.in
 
 pytest>=9.0.3
 pytest-asyncio>=1.4.0
