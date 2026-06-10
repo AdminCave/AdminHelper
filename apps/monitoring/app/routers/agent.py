@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.alerter import process_alert
+from app.check_engine import effective_status, is_suppressed, next_fail_count
 from app.checkers.agent import EXCLUDED_FSTYPES
 from app.core.auth import require_agent
 from app.core.database import get_db
@@ -159,42 +160,42 @@ def agent_report(server_id: str, report: dict, db: Session = Depends(get_db), au
                 extra_metrics=metrics,
             )
 
-        # Update state
+        # Update state — same damping logic as the scheduler path; the
+        # check_engine pure functions are the single source (audit: the
+        # previous inline copy could drift from the tested implementation).
         state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
         old_status = state.status if state else "pending"
 
-        if result_status != "ok":
-            new_fail_count = (state.fail_count + 1) if state else 1
-        else:
-            new_fail_count = 0
-
-        if result_status != "ok" and new_fail_count < check.consecutive_fails:
-            effective_status = old_status if old_status != "pending" else "ok"
-        else:
-            effective_status = result_status
+        prev_fail_count = state.fail_count if state else 0
+        new_fail_count = next_fail_count(result_status, prev_fail_count)
+        eff_status = effective_status(
+            result_status, new_fail_count, check.consecutive_fails, old_status
+        )
+        if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
+            message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
 
         details_json = json.dumps(details) if details else None
 
         if not state:
             state = MonitorState(
-                check_id=check.id, status=effective_status, since=now,
+                check_id=check.id, status=eff_status, since=now,
                 last_check=now, fail_count=new_fail_count, message=message,
                 details=details_json,
             )
             db.add(state)
         else:
-            if effective_status != state.status:
+            if eff_status != state.status:
                 state.since = now
-            state.status = effective_status
+            state.status = eff_status
             state.fail_count = new_fail_count
             state.last_check = now
             state.message = message
             state.details = details_json
 
         # Alerting on status change
-        if old_status != effective_status:
+        if old_status != eff_status:
             try:
-                process_alert(db, check, old_status, effective_status)
+                process_alert(db, check, old_status, eff_status)
             except Exception:
                 logger.exception("Alerting fuer Check '%s' fehlgeschlagen", check.name)
 

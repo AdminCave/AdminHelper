@@ -176,6 +176,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   250–500 Server). `misfire_grace_time=30` statt 1 s (verspätete Runs wurden
   still verworfen → Zeitreihen-Lücken), Monitoring-Pool auf 30 Worker für
   I/O-gebundene Checks; `coalesce`/`max_instances` als Entscheidung gepinnt.
+- **Monitoring: Push- und Scheduler-Checks nutzen dieselbe Damping-Logik**
+  (Audit Q1). Der Agent-Report-Pfad hatte die `consecutive_fails`-Transition
+  inline reimplementiert (ungetestete Kopie der getesteten
+  `check_engine`-Funktionen, Drift-Gefahr) — jetzt eine Quelle; unterdrückte
+  Meldungen tragen auch im Push-Pfad das „(Fehler n/m)"-Suffix.
 - **Desktop-UI: Alert-Ladefehler sind sichtbar** (Audit). `loadAlerts`/
   `loadAlertLog` schluckten API-Fehler still — ein toter Monitoring-Service
   sah aus wie „keine Alerts". Jetzt `reportError` wie in `loadMonitoring`
@@ -192,6 +197,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   System-Job löscht Einträge älter als 90 Tage — flatternde Checks schrieben
   die Tabelle vorher unbegrenzt voll (analog zum Blacklist-Cleanup des
   Servers). Dazu Tests für Trigger-Parsing, Push-Only-Skip und Cleanup.
+- **Monitoring: Tests für `template_sync` und den Agent-Report-Pfad** (Audit
+  T2 — die komplexeste, bisher ungetestete Monitoring-Logik). Variablen-
+  Substitution, Create/Update/Delete-Diffing über mehrere Server, Schutz
+  manueller Checks, Assignment-Entfernung, Server-Cleanup; dazu
+  Endpoint-Verhaltenstests für das `consecutive_fails`-Damping im Push-Pfad.
+  Monitoring-Suite 53 → 72 Tests.
 - **Frontend: Tests für Token-Refresh und i18n-Parität** (Audit T3/T5).
   `client.ts` (401→Refresh→Retry, Refresh-Fehlschlag→Logout, parallele
   Requests teilen einen Refresh, 204→null) war als sicherheitskritischste
