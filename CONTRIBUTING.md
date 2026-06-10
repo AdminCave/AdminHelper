@@ -14,8 +14,10 @@ Thanks for your interest in AdminHelper!
   touched (mirrored in `.github/workflows/ci.yml`):
   - Server / Monitoring (`apps/server/`, `apps/monitoring/`): `pytest -q`
   - Go agent (`apps/agent/`): `gofmt -l .`, `go vet ./...`, `go test ./...`
-  - Desktop UI / Web frontend (`apps/desktop/ui/`, `apps/web/`): `npm run check`,
-    `npm run lint`, `npm run test` (frontend additionally `npm run test:e2e`)
+  - Desktop UI (`apps/desktop/ui/`): `npm run check`, `npm run lint`,
+    `npm run test`
+  - Web frontend (`apps/web/`): `npm run check`, `npm run lint`,
+    `npm run test:unit`, `npm run test:e2e`
   - Desktop backend (`apps/desktop/src-tauri/`): `cargo fmt --check`,
     `cargo clippy -- -D warnings`, `cargo test`
 - **Docs:** user-facing changes must update `docs/` in **both** languages

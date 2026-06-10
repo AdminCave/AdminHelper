@@ -73,11 +73,22 @@ Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Bef
 ### Go Toolchain (Agent)
 
 ```bash
-# Go 1.24+ installieren (siehe https://go.dev/dl/)
+# Go 1.25+ installieren (siehe https://go.dev/dl/ — go.mod verlangt 1.25)
 sudo apt install -y golang-go
-# Oder manuell:
-# wget https://go.dev/dl/go1.24.2.linux-amd64.tar.gz
-# sudo tar -C /usr/local -xzf go1.24.2.linux-amd64.tar.gz
+# Oder manuell (Version von https://go.dev/dl/ einsetzen):
+# wget https://go.dev/dl/go1.25.x.linux-amd64.tar.gz
+# sudo tar -C /usr/local -xzf go1.25.x.linux-amd64.tar.gz
+```
+
+### Node.js + npm (Desktop-UI und Web-Frontend)
+
+Beide Svelte-Frontends (und `cargo tauri dev`, das den Vite-Dev-Server
+startet) brauchen Node.js 22+:
+
+```bash
+# Z. B. via NodeSource oder nvm; danach in beiden Projekten:
+cd apps/desktop/ui && npm ci
+cd apps/web && npm ci
 ```
 
 ### Docker (Server + frps + Monitoring)
@@ -129,8 +140,13 @@ in der `.env`:
 cp .env.example .env
 ./scripts/init-secrets.sh
 
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 ```
+
+(`--build` greift nur, wenn eine `docker-compose.override.yml` mit
+`build:`-Sektion existiert — die Standard-Compose nutzt fertige
+ghcr.io-Images, siehe unten.)
 
 Das startet:
 - **Server** auf `https://localhost:443` (selbstsigniertes Zertifikat)
@@ -139,21 +155,29 @@ Das startet:
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
 - **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start von `scripts/postgres-init.sh` angelegt
 
-**Login:** `admin` / `admin`
+**Erstanmeldung:** Es gibt keinen Default-Login. Entweder den
+Bootstrap-Token-Flow nutzen (`docker compose logs server | grep -A2
+'Setup-Token'`, dann `POST /api/auth/bootstrap` — siehe README) oder fuer
+lokale Entwicklung `ADMIN_PASSWORD=dev` in der `.env`/Override setzen, dann
+existiert direkt ein Admin `admin`/`dev`.
 
 Docker Compose laedt automatisch `docker-compose.override.yml`, falls vorhanden. Diese Datei ist in `.gitignore` und eignet sich fuer lokale Anpassungen:
 
 ```yaml
-# docker-compose.override.yml (Beispiel)
+# docker-compose.override.yml (Beispiel: Server-Image lokal bauen)
 services:
   server:
     build:
-      context: ./server
+      context: .            # Server-Image baut aus dem Root-Dockerfile
+      dockerfile: Dockerfile
     image: adminhelper-server:dev
     environment:
       - DOMAIN=localhost
       - ADMIN_PASSWORD=dev   # nur fuer lokale Entwicklung; Production: leer lassen + Bootstrap-Token
 ```
+
+Mit so einer Override-Datei startet `docker compose up --build -d` den
+lokal gebauten Stand.
 
 **Logs ansehen:**
 
@@ -169,7 +193,7 @@ cd apps/desktop/src-tauri
 cargo tauri dev
 ```
 
-Der Client oeffnet sich als Desktop-Fenster. `tauri.conf.json` ruft `npm --prefix ../../apps/desktop/ui run dev` als Vite-Dev-Server auf — Aenderungen am Svelte-Frontend (`apps/desktop/ui/`) werden live uebernommen, Rust-Aenderungen loesen einen Rebuild aus. Das alte `desktop/src/` (Plain-JS) ist seit v0.19.0 historisch und wird nicht mehr gebaut.
+Der Client oeffnet sich als Desktop-Fenster. `tauri.conf.json` ruft `npm --prefix ui run dev` (relativ zu `apps/desktop/`) als Vite-Dev-Server auf — Aenderungen am Svelte-Frontend (`apps/desktop/ui/`) werden live uebernommen, Rust-Aenderungen loesen einen Rebuild aus. Das alte `desktop/src/` (Plain-JS) ist seit v0.19.0 historisch und wird nicht mehr gebaut.
 
 **Hinweis:** Beim ersten Build muss eine frpc-Platzhalter-Binary existieren:
 
@@ -377,10 +401,10 @@ curl -sk https://localhost/api/frp/tunnels \
 
 ```bash
 # Server venv entfernen
-rm -rf server/.venv
+rm -rf apps/server/.venv
 
 # Monitoring venv entfernen
-rm -rf monitoring/.venv
+rm -rf apps/monitoring/.venv
 
 # Rust Build-Cache leeren
 cd apps/desktop/src-tauri && cargo clean

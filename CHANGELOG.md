@@ -184,6 +184,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Desktop: RDP-Fehlertoast bei extrem schnellen Verbindungen** —
   „verbunden"-Erkennung nutzt jetzt ein eigenes Flag statt des
   `connected_at_ms == 0`-Sentinels (Doppeldeutung bei <1 ms).
+- **Doku-Drift behoben** (Audit X1/X2/X6): README-Quick-Start zeigte auf das
+  nicht existierende `http://localhost:8080` (richtig: `https://localhost`,
+  Compose published nur 443); DEVELOPMENT.md beschrieb den entfernten
+  `admin/admin`-Login, verlangte Go 1.24 (go.mod: 1.25), verschwieg die
+  Node.js-Voraussetzung und zeigte ein Override-Beispiel mit totem
+  Build-Context; CONTRIBUTING verlangte ein nicht existierendes
+  `npm run test` fürs Web.
 - **Monitoring: Connection-Leak im Alerter geschlossen** (Audit). Die
   Zweit-Session in `_build_message` wurde nur im Happy-Path geschlossen —
   bei Fehlern blieb die Pool-Verbindung hängen; jetzt Context-Manager.

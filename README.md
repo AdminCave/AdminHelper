@@ -145,7 +145,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The server is then reachable at `http://localhost:8080`.
+The server is then reachable at `https://localhost` (Compose publishes only `443:8443`, TLS with a self-signed certificate unless you place your own in `certs/`).
 
 **First login — bootstrap-token flow:**
 
@@ -182,7 +182,7 @@ File-based server data is stored in the `./data/` directory in the project root 
 1. In the server web interface: create an API key with the **"Read-only"** permission
 2. In the desktop client: Settings → Mode: **Sync** → URL:
    ```
-   http://<server>:8080/api/connections?api_key=<key>
+   https://<server>/api/connections?api_key=<key>
    ```
 
 ### Server API
@@ -223,7 +223,7 @@ GET    /api/monitoring/checks    # Monitoring checks (admin)
 GET    /api/monitoring/templates # Monitoring templates (admin)
 ```
 
-API documentation: `http://localhost:8080/api/docs` (Swagger UI) or `/openapi.json`
+API documentation: `https://localhost/api/docs` (Swagger UI) or `/openapi.json`
 
 ---
 
@@ -252,7 +252,7 @@ The **AdminHelper Chrome Extension** shows web connections (`kind: web`) from th
 
 Via the **⚙ icon** in the popup or the options page:
 
-- **Server URL**: e.g. `http://server:8080`
+- **Server URL**: e.g. `https://server`
 - **API key**: read-only API key from the server web interface
 
 ### Settings across devices
