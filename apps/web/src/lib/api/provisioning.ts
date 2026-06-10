@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { http } from './client';
-import type { ProvisionToken, ProvisionTokenCreateResult } from './types';
+import type { FrpProvisionToken, FrpProvisionTokenCreateResult } from './types';
 
-export function listProvisionTokens(serverId: string): Promise<ProvisionToken[]> {
-  return http.get<ProvisionToken[]>(`/api/servers/${serverId}/provision/tokens`);
+export function listProvisionTokens(serverId: string): Promise<FrpProvisionToken[]> {
+  return http.get<FrpProvisionToken[]>(`/api/servers/${serverId}/provision/tokens`);
 }
 
-export function createProvisionToken(serverId: string): Promise<ProvisionTokenCreateResult> {
-  return http.post<ProvisionTokenCreateResult>(`/api/servers/${serverId}/provision/token`);
+export function createProvisionToken(serverId: string): Promise<FrpProvisionTokenCreateResult> {
+  return http.post<FrpProvisionTokenCreateResult>(`/api/servers/${serverId}/provision/token`);
 }

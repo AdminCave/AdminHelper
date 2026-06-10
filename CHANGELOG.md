@@ -153,6 +153,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Agent: TLS-HTTP-Client dedupliziert** (`internal/httpclient`) — die
   dreifach kopierte CA-Pinning-Logik (monitor/frpc/provision) hat jetzt eine
   Quelle; Timeout ist der einzige Parameter.
+- **Web/Desktop: `types.ts`-Drift aufgelöst, Dictionaries entkoppelt** (Audit,
+  Kritisch-Fund). Das Web übernimmt die Desktop-Typnamen (`FrpProvisionToken`,
+  `FrpProvisionTokenCreateResult`, + `MonitoringAgentKeyResult`) — beide
+  `lib/api/types.ts` sind wieder byte-identisch. `sync-from-web.sh`
+  synchronisiert nur noch `types.ts` (die i18n-Dictionaries sind bewusst
+  getrennte Produkte, ein `--apply` hätte ~200 Desktop-Keys still gelöscht)
+  und bricht ab, wenn das Ziel Exporte enthält, die in der Quelle fehlen.
 - **Desktop: TOFU-Pin-Cache übersteht Thread-Panics** — alle vier
   `.lock().unwrap()`-Stellen auf dem Pin-Cache-Mutex nutzen jetzt das
   Poison-tolerante Muster aus `frpc.rs`; vorher hätte ein einzelner Panic

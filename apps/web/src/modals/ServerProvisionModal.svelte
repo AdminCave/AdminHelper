@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t, language } from '$lib/i18n';
   import { showToast } from '$lib/stores/notifications';
   import * as api from '$lib/api/provisioning';
-  import type { ProvisionToken, Server } from '$lib/api/types';
+  import type { FrpProvisionToken, Server } from '$lib/api/types';
 
   interface Props {
     open: boolean;
@@ -20,7 +20,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { open, server, onClose }: Props = $props();
 
-  let tokens = $state<ProvisionToken[]>([]);
+  let tokens = $state<FrpProvisionToken[]>([]);
   let command = $state<string>('');
   let loading = $state(false);
 
@@ -81,7 +81,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  function tokenStatus(tk: ProvisionToken): { label: string; color: string } {
+  function tokenStatus(tk: FrpProvisionToken): { label: string; color: string } {
     if (tk.usedAt) {
       return {
         label: $t('frp.provision.used', { time: formatDateTime(tk.usedAt) }),

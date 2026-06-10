@@ -304,7 +304,7 @@ export interface FrpStatus {
   error?: string;
 }
 
-export interface ProvisionToken {
+export interface FrpProvisionToken {
   id: string;
   serverId: string;
   expiresAt: string;
@@ -313,14 +313,19 @@ export interface ProvisionToken {
   createdAt?: string | null;
 }
 
-export interface ProvisionTokenCreateResult {
+export interface FrpProvisionTokenCreateResult {
   token: string;
   expiresAt: string;
   serverId: string;
   serverName: string;
 }
 
-// ── Monitoring (full payloads from the monitoring service) ─────────────
+export interface MonitoringAgentKeyResult {
+  apiKey: string;
+  serverId: string;
+}
+
+// ── Monitoring (full payloads from the monitoring service) ──────────────
 export type MonitorCheckType =
   | 'ping'
   | 'tcp'
