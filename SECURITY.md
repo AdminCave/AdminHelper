@@ -70,9 +70,6 @@ accepted because the current behaviour is the correct trade-off.
 
 ### Deferred (needs dedicated, manually-tested work)
 
-- **Web — move the refresh token from `localStorage` to an `HttpOnly` cookie.**
-  Half-doing it (cookie without CSRF protection) introduces a CSRF hole; needs
-  `HttpOnly; Secure; SameSite` + CSRF tokens + a CORS review, tested end to end.
 - **Python deps — hashed lockfile.** No `uv`/`pip-tools` in this environment; a
   half-pinned file is worse than none. Plan: `pip-compile --generate-hashes`
   (or `uv pip compile`) → install with `pip install --require-hashes`.

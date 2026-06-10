@@ -24,7 +24,9 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Optional: browser clients send the refresh token via the HttpOnly cookie
+    # instead of the body; non-browser clients (desktop, CLI) still send it here.
+    refresh_token: Optional[str] = None
 
 
 class LogoutRequest(BaseModel):

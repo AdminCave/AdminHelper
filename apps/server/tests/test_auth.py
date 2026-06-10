@@ -254,3 +254,72 @@ class TestRefreshRotation:
         # /me with the blacklisted access token must fail
         me = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {access}"})
         assert me.status_code == 401
+
+
+class TestRefreshCookie:
+    """B4: browser clients carry the long-lived refresh token in an HttpOnly
+    cookie instead of localStorage; non-browser clients keep using the body."""
+
+    def test_login_sets_hardened_refresh_cookie(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "adminpass"}
+        )
+        assert login.status_code == 200
+        set_cookie = login.headers.get("set-cookie", "").lower()
+        assert "refresh_token=" in set_cookie
+        assert "httponly" in set_cookie
+        assert "samesite=strict" in set_cookie
+        assert "path=/api/auth" in set_cookie
+        assert test_client.cookies.get("refresh_token")
+
+    def test_refresh_via_cookie_only(self, test_client, admin_user):
+        test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+        # No body and no Authorization header — only the cookie carries the token.
+        rot = test_client.post("/api/auth/refresh")
+        assert rot.status_code == 200
+        assert rot.json()["access_token"]
+
+    def test_refresh_cookie_rotates_and_detects_reuse(self, test_client, admin_user):
+        test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+        old = test_client.cookies.get("refresh_token")
+        rot = test_client.post("/api/auth/refresh")
+        assert rot.status_code == 200
+        new = test_client.cookies.get("refresh_token")
+        assert new and new != old
+        # Replaying the rotated-out token (here via body) is a theft signal -> 401.
+        reuse = test_client.post("/api/auth/refresh", json={"refresh_token": old})
+        assert reuse.status_code == 401
+
+    def test_refresh_without_cookie_or_body_is_401(self, test_client):
+        denied = test_client.post("/api/auth/refresh")
+        assert denied.status_code == 401
+
+    def test_logout_clears_and_blacklists_cookie(self, test_client, admin_user):
+        login = test_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "adminpass"}
+        )
+        access = login.json()["access_token"]
+        refresh_before = test_client.cookies.get("refresh_token")
+
+        out = test_client.post(
+            "/api/auth/logout", headers={"Authorization": f"Bearer {access}"}
+        )
+        assert out.status_code == 200
+        # The response instructs the browser to delete the cookie.
+        assert "refresh_token=" in out.headers.get("set-cookie", "")
+        # The blacklisted token can no longer refresh.
+        denied = test_client.post("/api/auth/refresh", json={"refresh_token": refresh_before})
+        assert denied.status_code == 401
+
+    def test_body_refresh_still_works_for_non_browser_clients(self, test_client, admin_user):
+        # Backward compatibility: desktop/CLI send the token in the body and must
+        # keep working unchanged.
+        login = test_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "adminpass"}
+        )
+        refresh = login.json()["refresh_token"]
+        # Drop the cookie so only the body token is available.
+        test_client.cookies.clear()
+        rot = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
+        assert rot.status_code == 200
+        assert rot.json()["access_token"]

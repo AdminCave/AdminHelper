@@ -5,7 +5,11 @@
 import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 
 const TOKEN_KEY = 'adminhelper_token';
-const REFRESH_KEY = 'adminhelper_refresh_token';
+
+// The long-lived refresh token now lives in an HttpOnly cookie (set by the
+// server), out of reach of JavaScript/XSS. Purge any copy left in localStorage
+// by an older build.
+localStorage.removeItem('adminhelper_refresh_token');
 
 let accessToken: string | null = localStorage.getItem(TOKEN_KEY);
 let refreshInFlight: Promise<boolean> | null = null;
@@ -15,20 +19,16 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_KEY);
-}
-
-export function setTokens(access: string, refresh: string): void {
+export function setAccessToken(access: string): void {
   accessToken = access;
   localStorage.setItem(TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
 }
 
 export function clearTokens(): void {
   accessToken = null;
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  // The refresh token lives in an HttpOnly cookie, cleared server-side by
+  // POST /api/auth/logout.
 }
 
 export function registerAuthFailureHandler(handler: () => void): void {
@@ -37,19 +37,19 @@ export function registerAuthFailureHandler(handler: () => void): void {
 
 async function tryRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
-  const refreshToken = localStorage.getItem(REFRESH_KEY);
-  if (!refreshToken) return false;
 
   refreshInFlight = (async () => {
     try {
+      // The refresh token rides along as the HttpOnly cookie (same-origin
+      // request → sent automatically); the body is intentionally empty.
       const res = await fetch('/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        body: '{}',
       });
       if (!res.ok) return false;
       const data = (await res.json()) as RefreshResponse;
-      setTokens(data.access_token, data.refresh_token);
+      setAccessToken(data.access_token);
       return true;
     } catch {
       return false;

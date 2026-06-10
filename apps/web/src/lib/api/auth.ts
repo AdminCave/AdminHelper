@@ -2,19 +2,21 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { http, setTokens, clearTokens, getRefreshToken } from './client';
+import { http, setAccessToken, clearTokens } from './client';
 import type { LoginResponse, User } from './types';
 
 export async function login(username: string, password: string): Promise<User> {
   const tokens = await http.post<LoginResponse>('/api/auth/login', { username, password });
-  setTokens(tokens.access_token, tokens.refresh_token);
+  // The refresh token is set by the server as an HttpOnly cookie; only the
+  // short-lived access token is kept client-side.
+  setAccessToken(tokens.access_token);
   return me();
 }
 
 export async function logout(): Promise<void> {
-  const refresh = getRefreshToken();
   try {
-    await http.post('/api/auth/logout', refresh ? { refresh_token: refresh } : undefined);
+    // The refresh cookie is sent automatically and cleared by the server.
+    await http.post('/api/auth/logout');
   } catch {
     // The local clear must happen in any case (e.g. if the server is unreachable).
   } finally {

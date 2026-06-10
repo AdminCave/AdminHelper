@@ -62,7 +62,7 @@
           <table>
             <thead><tr><th>Store</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>auth</code></td><td>Login, logout, refresh, current user; tokens in <code>localStorage</code> (<code>adminhelper_token</code>, <code>adminhelper_refresh_token</code>).</td></tr>
+              <tr><td><code>auth</code></td><td>Login, logout, refresh, current user; only the short-lived access token is in <code>localStorage</code> (<code>adminhelper_token</code>), the long-lived refresh token lives in an <code>HttpOnly</code> cookie (set by the server, unreadable to JS/XSS).</td></tr>
               <tr><td><code>connections</code></td><td>Live list, search, group filter, tag hierarchy.</td></tr>
               <tr><td><code>servers</code></td><td>Server inventory, provision token, user assignment.</td></tr>
               <tr><td><code>users</code></td><td>User CRUD incl. server mapping.</td></tr>

@@ -52,7 +52,7 @@
           <table>
             <thead><tr><th>Prefix</th><th>Modul</th><th>Funktion</th></tr></thead>
             <tbody>
-              <tr><td><code>/api/auth</code></td><td><code>modules/users/auth_router.py</code></td><td>Login, Refresh (Body, kein Cookie), Logout, <code>/me</code>.</td></tr>
+              <tr><td><code>/api/auth</code></td><td><code>modules/users/auth_router.py</code></td><td>Login, Refresh (Cookie <em>oder</em> Body), Logout, <code>/me</code>.</td></tr>
               <tr><td><code>/api/users</code></td><td><code>modules/users/</code></td><td>Benutzer-CRUD (admin), <code>/me/servers</code> für eigenen Zugriff.</td></tr>
               <tr><td><code>/api/connections</code></td><td><code>modules/connections/</code></td><td>Verbindungs-CRUD, <code>/touch</code>, <code>/export</code>, <code>/import</code> (replace/merge).</td></tr>
               <tr><td><code>/api/servers</code></td><td><code>modules/servers/</code></td><td>Server-Inventory mit User-Zuordnung; Cleanup-Hook ans Monitoring beim Delete.</td></tr>
@@ -71,7 +71,7 @@
           </div>
 
           <h2>Auth-Architektur</h2>
-          <p>JWT-Access-Token (HS256, 8h) und Refresh-Token (7d) werden beide als JSON-Body ausgeliefert. Token-Claims: <code>sub</code> (Username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (Ausstellzeit), <code>jti</code> (UUID).</p>
+          <p>JWT-Access-Token (HS256, 8h) und Refresh-Token (7d) werden im JSON-Body ausgeliefert; der Refresh-Token wird zusätzlich als <code>HttpOnly; Secure; SameSite=Strict</code>-Cookie (Pfad <code>/api/auth</code>) gesetzt, das Browser-Clients statt <code>localStorage</code> nutzen (Desktop/CLI bleiben beim Body). Token-Claims: <code>sub</code> (Username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (Ausstellzeit), <code>jti</code> (UUID).</p>
           <ol>
             <li>Login signiert beide Tokens und gibt sie im <code>TokenResponse</code> zur&uuml;ck.</li>
             <li>Bei <code>POST /api/auth/refresh</code> pr&uuml;ft der Server Signatur, Ablauf und Blacklist.</li>

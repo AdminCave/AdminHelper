@@ -78,6 +78,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `'self' ipc: http://ipc.localhost` verengt — schließt den XSS-Exfiltrations-
   Kanal; sämtlicher Server-Verkehr läuft ohnehin über den Rust-`api_proxy`, nie
   über Webview-`fetch`. (CSP-Änderung auf Windows manuell zu verifizieren.)
+- **Web: Refresh-Token von `localStorage` in ein `HttpOnly`-Cookie verlagert**
+  (Audit). Der langlebige Refresh-Token ist damit für JavaScript — und somit für
+  XSS — unlesbar. Der Server setzt ihn auf `/login`, `/refresh` und `/bootstrap`
+  als `HttpOnly; Secure; SameSite=Strict`-Cookie (Pfad `/api/auth`); `/refresh`
+  und `/logout` lesen ihn aus Cookie **oder** Body, sodass Desktop- und CLI-
+  Clients unverändert weiterlaufen (`Secure` folgt dem Request-Schema, damit
+  localhost-Dev und Tests funktionieren). `SameSite=Strict` auf dem einzigen
+  Cookie-lesenden Endpunkt ist der CSRF-Schutz — ein separates CSRF-Token wäre
+  hier Over-Engineering. Der Web-Client hält den Refresh-Token nicht mehr und
+  räumt Altbestände aus `localStorage`. Verifiziert per pytest (Cookie-Setzen/
+  Rotation/Reuse-Detection/Logout-Clear + Body-Backward-Compat) und Playwright-E2E.
 - **`SECURITY.md`: Trust-Modell + Audit-Residuen dokumentiert** — FRP-`secretKey`
   als eigentliche Authz-Grenze (nicht `allowUsers`), globaler `auth.token` als
   akzeptiertes SPOF mit Rotations-Empfehlung, Single-Worker-Verfügbarkeitsprofil,

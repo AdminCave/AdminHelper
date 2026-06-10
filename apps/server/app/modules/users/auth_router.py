@@ -5,7 +5,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -21,7 +21,7 @@ from app.core.auth import (
     is_token_blacklisted,
     username_from_token_unverified,
 )
-from app.core.config import BOOTSTRAP_TOKEN_FILE
+from app.core.config import BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -67,8 +67,50 @@ def _reset_rate_limit(ip: str) -> None:
     get_rate_limit_backend().reset(_rate_limit_key(ip))
 
 
+# ── Refresh-token cookie ──────────────────────────────────────────────
+# Browser clients keep the long-lived refresh token in an HttpOnly cookie so
+# JavaScript (and thus an XSS) cannot read it; it is scoped to /api/auth and
+# SameSite=Strict so it is never sent cross-site (the only CSRF protection
+# needed, since /refresh + /logout are the only cookie-reading endpoints and
+# the access token stays a Bearer header). Non-browser clients (desktop, CLI)
+# ignore the cookie and keep using the request body — both paths are accepted.
+REFRESH_COOKIE_NAME = "refresh_token"
+_REFRESH_COOKIE_PATH = "/api/auth"
+_REFRESH_COOKIE_MAX_AGE = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+
+
+def _set_refresh_cookie(request: Request, response: Response, token: str) -> None:
+    # Secure follows the request scheme: True on real https (and proxies that
+    # forward the proto), False on http://localhost dev / the test client, where
+    # the browser would otherwise drop the cookie. HttpOnly + SameSite hold either way.
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=_REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        path=_REFRESH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path=_REFRESH_COOKIE_PATH)
+
+
+def _resolve_refresh_token(request: Request, body_token: str | None) -> str | None:
+    """Refresh token from the request body (non-browser clients) or, failing
+    that, the HttpOnly cookie (browser)."""
+    return body_token or request.cookies.get(REFRESH_COOKIE_NAME)
+
+
 @router.post("/login", response_model=TokenResponse)
-def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(
+    data: LoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     ip = resolve_client_ip(request)
     _check_rate_limit(ip)
 
@@ -84,15 +126,28 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     _reset_rate_limit(ip)
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
+    _set_refresh_cookie(request, response, refresh)
     return TokenResponse(access_token=access, refresh_token=refresh)
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_token(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
+def refresh_token(
+    request: Request,
+    response: Response,
+    data: RefreshRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    token = _resolve_refresh_token(request, data.refresh_token if data else None)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ungültiger oder abgelaufener Refresh-Token",
+        )
+
     # Reuse detection: an already-revoked refresh token that is submitted
     # again is a theft signal. It differs from "expired/invalid" by the
     # explicitly set blacklist entry.
-    if is_token_blacklisted(data.refresh_token, db):
+    if is_token_blacklisted(token, db):
         logger.warning(
             "Refresh-Token-Reuse erkannt von IP=%s — moeglicher Token-Diebstahl",
             resolve_client_ip(request),
@@ -102,7 +157,7 @@ def refresh_token(data: RefreshRequest, request: Request, db: Session = Depends(
         # watermark — otherwise the attacker's already-rotated chain (which they
         # obtained by refreshing first) stays valid indefinitely; only the single
         # replayed token would be blocked.
-        reused_username = username_from_token_unverified(data.refresh_token)
+        reused_username = username_from_token_unverified(token)
         if reused_username:
             reused_user = db.query(User).filter(User.username == reused_username).first()
             if reused_user is not None:
@@ -113,7 +168,7 @@ def refresh_token(data: RefreshRequest, request: Request, db: Session = Depends(
             detail="Ungültiger oder abgelaufener Refresh-Token",
         )
 
-    user = get_user_from_refresh_token(data.refresh_token, db)
+    user = get_user_from_refresh_token(token, db)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -123,24 +178,30 @@ def refresh_token(data: RefreshRequest, request: Request, db: Session = Depends(
     # Rotation: blacklist the old refresh token immediately so it cannot be used
     # again. A parallel attacker with a copy of the token thereby fails from the
     # legitimate client's next refresh onward.
-    blacklist_token(data.refresh_token, db)
+    blacklist_token(token, db)
 
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
+    _set_refresh_cookie(request, response, refresh)
     return TokenResponse(access_token=access, refresh_token=refresh)
 
 
 @router.post("/logout")
 def logout(
+    request: Request,
+    response: Response,
     data: LogoutRequest | None = None,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ):
-    """Add the access and (optionally) refresh token to the blacklist."""
+    """Add the access and (optionally) refresh token to the blacklist and clear
+    the refresh cookie."""
     if credentials:
         blacklist_token(credentials.credentials, db)
-    if data and data.refresh_token:
-        blacklist_token(data.refresh_token, db)
+    refresh = _resolve_refresh_token(request, data.refresh_token if data else None)
+    if refresh:
+        blacklist_token(refresh, db)
+    _clear_refresh_cookie(response)
     return {"detail": "Abgemeldet"}
 
 
@@ -150,7 +211,12 @@ def me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/bootstrap", response_model=TokenResponse, status_code=201)
-def bootstrap(data: BootstrapRequest, request: Request, db: Session = Depends(get_db)):
+def bootstrap(
+    data: BootstrapRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """Creates the first admin user using the setup token.
 
     Active only if ADMIN_PASSWORD was empty/'admin' on first start —
@@ -207,4 +273,5 @@ def bootstrap(data: BootstrapRequest, request: Request, db: Session = Depends(ge
 
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
+    _set_refresh_cookie(request, response, refresh)
     return TokenResponse(access_token=access, refresh_token=refresh)

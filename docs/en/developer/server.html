@@ -52,7 +52,7 @@
           <table>
             <thead><tr><th>Prefix</th><th>Module</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>/api/auth</code></td><td><code>modules/users/auth_router.py</code></td><td>Login, refresh (body, no cookie), logout, <code>/me</code>.</td></tr>
+              <tr><td><code>/api/auth</code></td><td><code>modules/users/auth_router.py</code></td><td>Login, refresh (cookie <em>or</em> body), logout, <code>/me</code>.</td></tr>
               <tr><td><code>/api/users</code></td><td><code>modules/users/</code></td><td>User CRUD (admin), <code>/me/servers</code> for self access.</td></tr>
               <tr><td><code>/api/connections</code></td><td><code>modules/connections/</code></td><td>Connection CRUD, <code>/touch</code>, <code>/export</code>, <code>/import</code> (replace/merge).</td></tr>
               <tr><td><code>/api/servers</code></td><td><code>modules/servers/</code></td><td>Server inventory with user assignments; cleanup hook to monitoring on delete.</td></tr>
@@ -71,7 +71,7 @@
           </div>
 
           <h2>Auth Architecture</h2>
-          <p>JWT access token (HS256, 8 h) and refresh token (7 d) are both returned in the JSON body. Token claims: <code>sub</code> (username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (issued-at), <code>jti</code> (UUID).</p>
+          <p>JWT access token (HS256, 8 h) and refresh token (7 d) are returned in the JSON body; the refresh token is additionally set as an <code>HttpOnly; Secure; SameSite=Strict</code> cookie (path <code>/api/auth</code>) that browser clients use instead of <code>localStorage</code> (desktop/CLI keep using the body). Token claims: <code>sub</code> (username), <code>type</code> (access/refresh), <code>exp</code>, <code>iat</code> (issued-at), <code>jti</code> (UUID).</p>
           <ol>
             <li>Login signs both tokens and returns them in <code>TokenResponse</code>.</li>
             <li>On <code>POST /api/auth/refresh</code> the server checks signature, expiry and blacklist.</li>
