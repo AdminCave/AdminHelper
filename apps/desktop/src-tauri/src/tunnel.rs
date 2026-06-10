@@ -99,3 +99,146 @@ pub fn resolve_connection(
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ConnectionKind;
+
+    fn connection(id: &str) -> Connection {
+        Connection {
+            id: id.to_string(),
+            name: "Test".to_string(),
+            kind: ConnectionKind::Rdp,
+            host: Some("server.internal".to_string()),
+            port: Some(3389),
+            username: None,
+            domain: None,
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: Vec::new(),
+            trust_cert: false,
+            last_used: None,
+        }
+    }
+
+    fn tunnel(connection_id: &str, tunnel_type: &str, protocol: &str) -> TunnelMapping {
+        TunnelMapping {
+            id: "t1".to_string(),
+            server_id: "s1".to_string(),
+            tunnel_type: tunnel_type.to_string(),
+            protocol: protocol.to_string(),
+            local_port: 3389,
+            visitor_port: Some(13389),
+            custom_domains: None,
+            connection_id: Some(connection_id.to_string()),
+            enabled: true,
+            name: "tunnel-1".to_string(),
+        }
+    }
+
+    #[test]
+    fn no_tunnels_returns_connection_unchanged() {
+        let conn = connection("c1");
+        let resolved = resolve_connection(&conn, &[]);
+        assert!(!resolved.via_tunnel);
+        assert_eq!(resolved.tunnel_name, None);
+        assert_eq!(resolved.tunnel_type, None);
+        assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
+        assert_eq!(resolved.connection.port, Some(3389));
+    }
+
+    #[test]
+    fn tunnel_for_other_connection_is_ignored() {
+        let conn = connection("c1");
+        let resolved = resolve_connection(&conn, &[tunnel("other", "stcp", "rdp")]);
+        assert!(!resolved.via_tunnel);
+    }
+
+    #[test]
+    fn disabled_tunnel_is_ignored() {
+        let conn = connection("c1");
+        let mut mapping = tunnel("c1", "stcp", "rdp");
+        mapping.enabled = false;
+        let resolved = resolve_connection(&conn, &[mapping]);
+        assert!(!resolved.via_tunnel);
+    }
+
+    #[test]
+    fn stcp_rewrites_host_and_port_to_local_visitor() {
+        let conn = connection("c1");
+        let resolved = resolve_connection(&conn, &[tunnel("c1", "stcp", "rdp")]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(resolved.tunnel_name.as_deref(), Some("tunnel-1"));
+        assert_eq!(resolved.tunnel_type.as_deref(), Some("stcp"));
+        assert_eq!(resolved.connection.host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(resolved.connection.port, Some(13389));
+        assert_eq!(resolved.connection.url, None);
+    }
+
+    #[test]
+    fn stcp_web_protocol_sets_local_url() {
+        let conn = connection("c1");
+        let resolved = resolve_connection(&conn, &[tunnel("c1", "stcp", "web")]);
+        assert_eq!(
+            resolved.connection.url.as_deref(),
+            Some("http://127.0.0.1:13389")
+        );
+    }
+
+    #[test]
+    fn stcp_without_visitor_port_keeps_original_target() {
+        let conn = connection("c1");
+        let mut mapping = tunnel("c1", "stcp", "rdp");
+        mapping.visitor_port = None;
+        let resolved = resolve_connection(&conn, &[mapping]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
+        assert_eq!(resolved.connection.port, Some(3389));
+    }
+
+    #[test]
+    fn https_uses_first_custom_domain() {
+        let conn = connection("c1");
+        let mut mapping = tunnel("c1", "https", "web");
+        mapping.custom_domains = Some("a.example.com, b.example.com".to_string());
+        let resolved = resolve_connection(&conn, &[mapping]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(
+            resolved.connection.url.as_deref(),
+            Some("https://a.example.com")
+        );
+        // Host/port are not rewritten on the https path.
+        assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
+        assert_eq!(resolved.connection.port, Some(3389));
+    }
+
+    #[test]
+    fn https_with_empty_or_missing_domains_keeps_url_unset() {
+        let conn = connection("c1");
+
+        let mut mapping = tunnel("c1", "https", "web");
+        mapping.custom_domains = Some("".to_string());
+        let resolved = resolve_connection(&conn, &[mapping]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(resolved.connection.url, None);
+
+        let mut mapping = tunnel("c1", "https", "web");
+        mapping.custom_domains = None;
+        let resolved = resolve_connection(&conn, &[mapping]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(resolved.connection.url, None);
+    }
+
+    #[test]
+    fn unknown_tunnel_type_keeps_connection_unchanged_but_marks_tunnel() {
+        let conn = connection("c1");
+        let resolved = resolve_connection(&conn, &[tunnel("c1", "tcp", "rdp")]);
+        assert!(resolved.via_tunnel);
+        assert_eq!(resolved.tunnel_type.as_deref(), Some("tcp"));
+        assert_eq!(resolved.connection.host.as_deref(), Some("server.internal"));
+        assert_eq!(resolved.connection.port, Some(3389));
+        assert_eq!(resolved.connection.url, None);
+    }
+}

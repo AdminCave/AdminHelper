@@ -132,6 +132,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   liefen als einzige sync-I/O-Reste direkt im Event-Loop des async-Handlers —
   jetzt via `run_in_threadpool`, konsistent zum bereits ausgelagerten
   Hook-Subprozess.
+- **Desktop: TOFU-Pin-Cache übersteht Thread-Panics** — alle vier
+  `.lock().unwrap()`-Stellen auf dem Pin-Cache-Mutex nutzen jetzt das
+  Poison-tolerante Muster aus `frpc.rs`; vorher hätte ein einzelner Panic
+  jede weitere TLS-Verifikation mitgerissen.
+- **Desktop: `api_proxy` meldet kaputtes Antwort-JSON als Fehler** statt es
+  still auf `null` zu mappen (leerer 2xx-Body bleibt zulässig).
+- **Desktop: RDP-Fehlertoast bei extrem schnellen Verbindungen** —
+  „verbunden"-Erkennung nutzt jetzt ein eigenes Flag statt des
+  `connected_at_ms == 0`-Sentinels (Doppeldeutung bei <1 ms).
+- **Desktop: RDP-Fehlerklassifizierung testbar extrahiert**
+  (`connection/rdp_logic.rs`) — `parse_freerdp_error` als datengetriebene
+  Regel-Tabelle (verhaltensgleich), dazu 25 neue Tests (FreeRDP-Fehlerklassen,
+  `parse_custom_size`, `hdpi_scale`, `resolve_connection`-Tunnel-Mapping,
+  Windows-Cmdline-Quoting); Rust-Suite 24 → 49 Tests.
 
 ## [0.26.0] - 2026-06-07
 

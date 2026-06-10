@@ -130,3 +130,42 @@ pub fn windows_quote(value: &str) -> String {
         .collect();
     format!("\"{escaped}\"")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_quote_passes_safe_values_through() {
+        assert_eq!(windows_quote("ssh"), "ssh");
+        assert_eq!(windows_quote("C:\\Tools\\ssh.exe"), "C:\\Tools\\ssh.exe");
+        assert_eq!(windows_quote("user@host"), "user@host");
+        assert_eq!(windows_quote("-p"), "-p");
+    }
+
+    #[test]
+    fn windows_quote_quotes_and_escapes_metacharacters() {
+        assert_eq!(windows_quote("two words"), "\"two words\"");
+        assert_eq!(windows_quote("a\"b"), "\"a^\"b\"");
+        assert_eq!(windows_quote("100%"), "\"100^%\"");
+        assert_eq!(windows_quote("a&b|c"), "\"a^&b^|c\"");
+        assert_eq!(windows_quote("x>y<z"), "\"x^>y^<z\"");
+        assert_eq!(windows_quote("(test)"), "\"^(test^)\"");
+        assert_eq!(windows_quote("bang!"), "\"bang^!\"");
+        assert_eq!(windows_quote("car^et"), "\"car^^et\"");
+    }
+
+    #[test]
+    fn build_windows_cmdline_joins_quoted_parts() {
+        let args = vec![
+            "-p".to_string(),
+            "2222".to_string(),
+            "user@host name".to_string(),
+        ];
+        assert_eq!(
+            build_windows_cmdline("ssh", &args),
+            "ssh -p 2222 \"user@host name\""
+        );
+        assert_eq!(build_windows_cmdline("ssh", &[]), "ssh");
+    }
+}

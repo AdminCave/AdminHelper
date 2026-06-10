@@ -7,6 +7,11 @@ use crate::models::{ClientInfo, Connection, RdpErrorPayload, RdpOptions};
 #[cfg(any(unix, target_os = "windows"))]
 use crate::models::{RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
 
+#[cfg(any(unix, target_os = "windows"))]
+use super::rdp_logic::parse_custom_size;
+#[cfg(unix)]
+use super::rdp_logic::{buffer_has_connected, fit_window_size, hdpi_scale, parse_freerdp_error};
+
 #[cfg(unix)]
 fn emit_rdp_error(app: &tauri::AppHandle, correlation_id: &str, message: impl Into<String>) {
     let _ = app.emit(
@@ -249,58 +254,6 @@ fn build_rdp_args(
 }
 
 #[cfg(unix)]
-fn fit_window_size(client: Option<&ClientInfo>) -> (u32, u32) {
-    let (screen_w, screen_h) = client
-        .and_then(|info| match (info.screen_width, info.screen_height) {
-            (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
-            _ => None,
-        })
-        .unwrap_or((1280, 800));
-
-    let width = ((screen_w as f64) * 0.85) as u32;
-    let height = (((screen_h as f64) * 0.85) as u32).saturating_sub(80);
-    let width = width.max(1024);
-    let height = height.max(720);
-    (width, height)
-}
-
-fn parse_custom_size(raw: Option<&str>) -> Result<(u32, u32), AppError> {
-    let value = raw
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            AppError::Validation(
-                "Benutzerdefinierte RDP-Groesse fehlt (Format WxH, z.B. 1920x1080)".to_string(),
-            )
-        })?;
-    let lower = value.to_ascii_lowercase();
-    let parts: Vec<&str> = lower.split('x').collect();
-    if parts.len() != 2 {
-        return Err(AppError::Validation(format!(
-            "Ungueltige RDP-Groesse '{value}'. Format: WxH (z.B. 1920x1080)"
-        )));
-    }
-    let width: u32 = parts[0].parse().map_err(|_| {
-        AppError::Validation(format!(
-            "Ungueltige RDP-Breite '{}'. Muss eine Zahl sein.",
-            parts[0]
-        ))
-    })?;
-    let height: u32 = parts[1].parse().map_err(|_| {
-        AppError::Validation(format!(
-            "Ungueltige RDP-Hoehe '{}'. Muss eine Zahl sein.",
-            parts[1]
-        ))
-    })?;
-    if !(640..=7680).contains(&width) || !(480..=4320).contains(&height) {
-        return Err(AppError::Validation(format!(
-            "RDP-Groesse {width}x{height} ausserhalb des gueltigen Bereichs (640x480 bis 7680x4320)"
-        )));
-    }
-    Ok((width, height))
-}
-
-#[cfg(unix)]
 fn performance_args(profile: RdpPerformanceProfile) -> Vec<String> {
     match profile {
         RdpPerformanceProfile::Auto => {
@@ -345,6 +298,7 @@ fn linux_keyboard_layout_arg_from_ui_language(ui_language: Option<&str>) -> Stri
 fn spawn_output_monitor(
     mut reader: impl Read + Send + 'static,
     emitted: Arc<AtomicBool>,
+    connected: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
     correlation_id: String,
@@ -363,9 +317,12 @@ fn spawn_output_monitor(
             if buffer.len() > 8192 {
                 buffer.drain(0..buffer.len().saturating_sub(8192));
             }
-            if connected_at_ms.load(Ordering::SeqCst) == 0 && buffer_has_connected(&buffer) {
+            if !connected.load(Ordering::SeqCst) && buffer_has_connected(&buffer) {
                 let elapsed_ms = started_at.elapsed().as_millis() as u64;
+                // Timestamp first, then the flag: a reader that sees
+                // `connected == true` must observe the final timestamp.
                 connected_at_ms.store(elapsed_ms, Ordering::SeqCst);
+                connected.store(true, Ordering::SeqCst);
             }
             if let Some(message) = parse_freerdp_error(&buffer) {
                 if !emitted.swap(true, Ordering::SeqCst) {
@@ -381,6 +338,7 @@ fn spawn_output_monitor(
 fn monitor_rdp_exit(
     mut child: std::process::Child,
     emitted: Arc<AtomicBool>,
+    connected: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
     correlation_id: String,
@@ -389,13 +347,12 @@ fn monitor_rdp_exit(
     // Timeout thread
     {
         let emitted = emitted.clone();
-        let connected_at_ms = connected_at_ms.clone();
+        let connected = connected.clone();
         let app = app.clone();
         let correlation_id = correlation_id.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(12));
-            if connected_at_ms.load(Ordering::SeqCst) == 0 && !emitted.swap(true, Ordering::SeqCst)
-            {
+            if !connected.load(Ordering::SeqCst) && !emitted.swap(true, Ordering::SeqCst) {
                 emit_rdp_error(
                     &app,
                     &correlation_id,
@@ -409,14 +366,13 @@ fn monitor_rdp_exit(
     std::thread::spawn(move || {
         if child.wait().is_ok() && !emitted.load(Ordering::SeqCst) {
             let elapsed_ms = started_at.elapsed().as_millis() as u64;
-            let connected_ms = connected_at_ms.load(Ordering::SeqCst);
-            if connected_ms == 0 {
+            if !connected.load(Ordering::SeqCst) {
                 emit_rdp_error(
                     &app,
                     &correlation_id,
                     "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
                 );
-            } else if elapsed_ms.saturating_sub(connected_ms) < 8000 {
+            } else if elapsed_ms.saturating_sub(connected_at_ms.load(Ordering::SeqCst)) < 8000 {
                 emit_rdp_error(
                     &app,
                     &correlation_id,
@@ -451,6 +407,10 @@ fn spawn_rdp_with_password(
     }
 
     let emitted = Arc::new(AtomicBool::new(false));
+    // Separate "connected" flag instead of `connected_at_ms == 0`: a
+    // sub-millisecond connect would also store 0 and look like "never
+    // connected", producing a false connection-failed toast.
+    let connected = Arc::new(AtomicBool::new(false));
     let connected_at_ms = Arc::new(AtomicU64::new(0));
     let cid = correlation_id.to_string();
 
@@ -458,6 +418,7 @@ fn spawn_rdp_with_password(
         spawn_output_monitor(
             stdout,
             emitted.clone(),
+            connected.clone(),
             connected_at_ms.clone(),
             started_at,
             cid.clone(),
@@ -469,6 +430,7 @@ fn spawn_rdp_with_password(
         spawn_output_monitor(
             stderr,
             emitted.clone(),
+            connected.clone(),
             connected_at_ms.clone(),
             started_at,
             cid.clone(),
@@ -479,6 +441,7 @@ fn spawn_rdp_with_password(
     monitor_rdp_exit(
         child,
         emitted,
+        connected,
         connected_at_ms,
         started_at,
         cid,
@@ -521,83 +484,6 @@ fn spawn_rdp_interactive(
         }
     });
     Ok(())
-}
-
-#[cfg(unix)]
-pub fn parse_freerdp_error(stderr: &[u8]) -> Option<String> {
-    let output = String::from_utf8_lossy(stderr);
-    for line in output.lines() {
-        let lower = line.to_lowercase();
-        let is_auth = lower.contains("authentication") && lower.contains("failed");
-        let is_logon =
-            lower.contains("logon") && (lower.contains("failure") || lower.contains("failed"));
-        let has_errconnect = lower.contains("errconnect_");
-
-        if lower.contains("errconnect_logon_failure")
-            || lower.contains("errconnect_authentication_failed")
-            || lower.contains("errconnect_password_expired")
-            || lower.contains("errconnect_account_locked_out")
-            || lower.contains("errconnect_account_disabled")
-            || lower.contains("errconnect_username_password_missing")
-            || lower.contains("nt_status_logon_failure")
-            || lower.contains("status_logon_failure")
-            || lower.contains("status_password_expired")
-            || lower.contains("status_account_locked_out")
-            || lower.contains("status_account_disabled")
-            || is_auth
-            || is_logon
-            || (has_errconnect && lower.contains("auth"))
-            || (lower.contains("credssp") && lower.contains("failed"))
-            || (lower.contains("account") && lower.contains("locked"))
-            || (lower.contains("password") && lower.contains("expired"))
-        {
-            return Some(
-                "RDP Anmeldung fehlgeschlagen. Bitte Benutzer, Passwort und Domaene pruefen."
-                    .to_string(),
-            );
-        }
-
-        if has_errconnect
-            || (lower.contains("connect")
-                && (lower.contains("failed") || lower.contains("failure")))
-            || (lower.contains("transport") && lower.contains("failed"))
-            || (lower.contains("dns") && lower.contains("error"))
-            || (lower.contains("name") && lower.contains("resolve") && lower.contains("fail"))
-            || lower.contains("connection timeout")
-            || lower.contains("connection timed out")
-        {
-            return Some(
-                "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.".to_string(),
-            );
-        }
-    }
-    None
-}
-
-#[cfg(unix)]
-pub fn buffer_has_connected(buffer: &[u8]) -> bool {
-    let output = String::from_utf8_lossy(buffer);
-    let lower = output.to_lowercase();
-    lower.contains("connected to") || lower.contains("connection established")
-}
-
-#[cfg(unix)]
-pub fn hdpi_scale(client: Option<&ClientInfo>) -> Option<u32> {
-    let info = client?;
-    let scale_factor = info.scale_factor.unwrap_or(1.0);
-    let width = info.screen_width.unwrap_or(0) as f64;
-    let height = info.screen_height.unwrap_or(0) as f64;
-
-    let is_hdpi = scale_factor >= 1.5 || (width >= 3000.0 && height >= 1600.0);
-    if !is_hdpi {
-        return None;
-    }
-
-    if scale_factor >= 2.0 || width >= 3800.0 || height >= 2100.0 {
-        Some(180)
-    } else {
-        Some(140)
-    }
 }
 
 #[cfg(unix)]

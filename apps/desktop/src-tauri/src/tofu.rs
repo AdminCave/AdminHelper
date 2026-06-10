@@ -101,6 +101,8 @@ trait PinStore: Send + Sync {
 /// keyring on every single request — only the first read and the first-use write.
 struct KeyringPinStore;
 
+// A poisoned lock only means another thread panicked mid-access; the map
+// itself stays consistent, so recover the guard instead of panicking too.
 fn cache() -> &'static Mutex<HashMap<String, String>> {
     static CACHE: LazyLock<Mutex<HashMap<String, String>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -109,14 +111,19 @@ fn cache() -> &'static Mutex<HashMap<String, String>> {
 
 impl PinStore for KeyringPinStore {
     fn load(&self, identity: &str) -> Option<String> {
-        if let Some(hit) = cache().lock().unwrap().get(identity).cloned() {
+        if let Some(hit) = cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(identity)
+            .cloned()
+        {
             return Some(hit);
         }
         let stored = keyring_read(identity);
         if let Some(ref fingerprint) = stored {
             cache()
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert(identity.to_string(), fingerprint.clone());
         }
         stored
@@ -126,7 +133,7 @@ impl PinStore for KeyringPinStore {
         keyring_write(identity, fingerprint);
         cache()
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(identity.to_string(), fingerprint.to_string());
     }
 }
@@ -315,7 +322,10 @@ pub fn pinning_client(server_url: &str) -> Result<reqwest::Client, AppError> {
 /// (TOFU first use). For recovering from a legitimate certificate rotation.
 pub fn forget_pin(server_url: &str) {
     let identity = pin_identity(server_url);
-    cache().lock().unwrap().remove(&identity);
+    cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&identity);
     keyring_delete(&identity);
 }
 

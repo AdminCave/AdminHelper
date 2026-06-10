@@ -107,7 +107,13 @@ pub async fn api_proxy(
         )));
     }
 
-    let value: serde_json::Value = response.json().await.unwrap_or(serde_json::Value::Null);
+    // An empty 2xx body (no JSON payload) stays Null; an actually malformed
+    // body is a real error and must not be silently mapped to Null.
+    let text = response.text().await?;
+    if text.is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    let value: serde_json::Value = serde_json::from_str(&text)?;
     Ok(value)
 }
 

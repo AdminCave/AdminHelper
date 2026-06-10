@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 pub mod rdp;
+pub mod rdp_logic;
 pub mod ssh;
 pub mod web;
 
