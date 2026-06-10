@@ -255,6 +255,13 @@ class ServiceProcessChecker:
         Supports two report formats:
         - New (v2): systemd.all_services with raw data → server filters itself
         - Old (v1): systemd.failed / systemd.enabled_inactive (agent pre-filtered)
+
+        The key-presence check below is load-bearing: v2 agents throttle the
+        large, mostly-static all_services inventory and OMIT the key on most
+        pushes, while failed/enabled_inactive are always sent — a missing key
+        means "fall back to the legacy keys", only an empty list means
+        "genuinely no services". The inventory is not persisted server-side,
+        so nothing is lost by a throttled push.
         """
         systemd = report.get("systemd")
         if not systemd:

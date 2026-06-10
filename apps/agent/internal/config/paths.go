@@ -19,3 +19,11 @@ func FrpHashFile() string        { return filepath.Join(FrpDir(), ".config-hash"
 func FrpPkiDir() string          { return filepath.Join(FrpDir(), "pki") }
 func FrpCACert() string          { return filepath.Join(FrpDir(), "ca.crt") }
 func MonitorConfFile() string    { return filepath.Join(MonitorDir(), "monitor.conf") }
+
+// MonitorInventoryStateFile persists the service-inventory throttle state
+// ({hash, last_full_sent_unix}). It lives next to monitor.conf because the
+// agent runs as a oneshot (systemd timer / scheduled task) — in-memory state
+// does not survive between pushes.
+func MonitorInventoryStateFile() string {
+	return filepath.Join(MonitorDir(), ".inventory-state.json")
+}

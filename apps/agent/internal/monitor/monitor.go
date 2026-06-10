@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"adminhelper-agent/internal/config"
 )
@@ -109,9 +110,18 @@ func Push() error {
 	}
 
 	report := BuildReport(cfg.Services)
+	statePath := config.MonitorInventoryStateFile()
+	newState, sentFull := throttleInventory(report, statePath, time.Now())
 	if err := PushReport(cfg.MonitorURL, cfg.APIKey, cfg.ServerID, report, cfg.CACert, cfg.Insecure); err != nil {
 		logMsg("Report senden fehlgeschlagen: %v", err)
 		return err
+	}
+	if sentFull {
+		// A write failure must never block the push flow — the next run then
+		// simply sends the full inventory again.
+		if err := saveInventoryState(statePath, newState); err != nil {
+			logMsg("WARNUNG: Inventory-State speichern fehlgeschlagen: %v", err)
+		}
 	}
 	logMsg("Report gesendet")
 	return nil

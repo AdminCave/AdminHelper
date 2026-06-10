@@ -27,24 +27,26 @@ func collectServiceHealth() map[string]any {
 	}
 
 	var (
-		allServices     []map[string]string
-		failed          []string
-		enabledInactive []string
-		currentName     string
-		currentState    string
+		allServices  []map[string]string
+		currentName  string
+		currentState string
 	)
 
 	// Flush the in-progress service entry. Called both when a new SERVICE_NAME
-	// starts the next record AND once after the loop, so the LAST service's
-	// STOPPED->enabledInactive classification isn't dropped (off-by-one).
+	// starts the next record AND once after the loop, so the LAST service
+	// isn't dropped (off-by-one).
+	//
+	// STOPPED services are deliberately NOT classified as enabled_inactive:
+	// `sc query` does not expose the start type, so "enabled but inactive" is
+	// unknowable here. The monitoring service derives the same empty result
+	// from all_services (enabled_state is always "unknown" on Windows); the
+	// legacy key must match, because it becomes the fallback when the
+	// throttled push omits all_services.
 	flush := func() {
 		if currentName == "" {
 			return
 		}
 		allServices = append(allServices, mapWindowsService(currentName, currentState))
-		if currentState == "STOPPED" {
-			enabledInactive = append(enabledInactive, currentName)
-		}
 	}
 
 	for _, line := range strings.Split(string(out), "\n") {
@@ -66,8 +68,6 @@ func collectServiceHealth() map[string]any {
 	flush()
 
 	result["all_services"] = allServices
-	result["failed"] = failed
-	result["enabled_inactive"] = enabledInactive
 	return result
 }
 

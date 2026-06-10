@@ -113,6 +113,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Agent: Service-Inventar wird nur noch bei Änderung gesendet** (Audit R8,
+  Ziel 250–500 Agenten). `all_services` (100–300 weitgehend statische
+  systemd-Units) geht nur noch mit, wenn sich der SHA-256-Hash des Inventars
+  ändert oder der letzte Full-Send >1 h her ist (State-Datei
+  `.inventory-state.json` neben `monitor.conf`, oneshot-fest; Fehler ⇒
+  Full-Send, nie Push-Abbruch). Watched-Services und Legacy-Fallback-Keys
+  gehen weiterhin bei jedem Push; serverseitig ist „Key fehlt ≠ leeres
+  Inventar" jetzt dokumentiert und durch Tests festgenagelt. Windows
+  meldet gestoppte Dienste nicht mehr fälschlich als `enabled_inactive`.
 - **Agent-Pakete installieren nach `/usr/bin`** (vorher `/usr/local/bin` —
   FHS-untypisch für Paketmanager-Inhalte, `rpmlint`-Fehler). deb und rpm
   teilen sich die Unit-Datei, daher beide umgestellt; dpkg/rpm räumen den
