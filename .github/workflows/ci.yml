@@ -71,6 +71,24 @@ jobs:
   monitoring:
     name: Monitoring (pytest)
     runs-on: ubuntu-latest
+    services:
+      # Only consumed by tests/test_migrations_smoke.py (alembic upgrade head
+      # against a fresh DB); all other monitoring tests stay DB-free.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper_monitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper_monitor"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

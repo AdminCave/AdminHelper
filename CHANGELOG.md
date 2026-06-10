@@ -197,6 +197,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   System-Job löscht Einträge älter als 90 Tage — flatternde Checks schrieben
   die Tabelle vorher unbegrenzt voll (analog zum Blacklist-Cleanup des
   Servers). Dazu Tests für Trigger-Parsing, Push-Only-Skip und Cleanup.
+- **Migrations-Smoke-Tests für Server und Monitoring** (Audit T1 — größter
+  Test-Blindspot). Die Suite lief bisher ausschließlich gegen
+  `create_all()`-Schemata; die echte Alembic-Kette wurde nie ausgeführt —
+  eine kaputte Migration wäre grün durchgerutscht und erst im Deployment
+  aufgefallen. Jetzt: `alembic upgrade head` gegen eine frische DB +
+  `compare_metadata`-Abgleich (Server zusätzlich: Reentrance). Der
+  Monitoring-CI-Job bekommt dafür einen Postgres-Service; lokal skippt der
+  Monitoring-Smoke ohne `DATABASE_URL`.
 - **Monitoring: Tests für `template_sync` und den Agent-Report-Pfad** (Audit
   T2 — die komplexeste, bisher ungetestete Monitoring-Logik). Variablen-
   Substitution, Create/Update/Delete-Diffing über mehrere Server, Schutz
