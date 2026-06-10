@@ -56,6 +56,8 @@ journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
 
           <p>Common causes: clock skew &gt; 5 min, expired client cert, DNS failure, firewall blocking <code>7443/tcp</code>.</p>
 
+          <p><strong>Desktop client, “Allow self-signed certificates”:</strong> the first connection <em>pins</em> the server certificate's SHA-256 fingerprint (trust-on-first-use, like SSH <code>known_hosts</code>) in the OS keyring; afterwards only that exact certificate is accepted and any change is rejected as a possible MITM. If a <em>legitimate</em> certificate rotation triggers <code>AdminHelper TOFU: … changed</code>, click <em>Reset pinned certificate</em> in the desktop settings and reconnect (re-pins on next connect).</p>
+
           <h2>Monitoring ingest dropping samples</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Check auth

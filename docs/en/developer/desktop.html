@@ -38,7 +38,7 @@
 <pre><code>desktop/
 &#9500;&#9472;&#9472; src-tauri/
 &#9474;   &#9500;&#9472;&#9472; src/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri app setup, invoke_handler with 23 commands
+&#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri app setup, invoke_handler with 24 commands
 &#9474;   &#9474;   &#9500;&#9472;&#9472; commands/         #[tauri::command] (auth, connect, frp, &hellip;)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; connection/       RDP/SSH/VNC/HTTP launcher
 &#9474;   &#9474;   &#9500;&#9472;&#9472; frp/              FRP sidecar management
@@ -64,12 +64,12 @@ apps/desktop/ui/
 &#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest unit tests in stores/ + models/</code></pre>
 
           <h2>Tauri Commands</h2>
-          <p>The 23 commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
+          <p>The 24 commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
           <table>
             <thead><tr><th>Area</th><th>Commands</th></tr></thead>
             <tbody>
               <tr><td>Persistence</td><td><code>load_connections</code>, <code>save_connections</code>, <code>load_settings</code>, <code>save_settings</code></td></tr>
-              <tr><td>Auth</td><td><code>login</code>, <code>logout</code>, <code>check_session</code>, <code>check_server_cert</code></td></tr>
+              <tr><td>Auth</td><td><code>login</code>, <code>logout</code>, <code>check_session</code>, <code>check_server_cert</code>, <code>reset_server_cert_pin</code></td></tr>
               <tr><td>Server API</td><td><code>api_proxy</code>, <code>fetch_connections_jwt</code>, <code>sync_connections</code>, <code>fetch_tunnels</code></td></tr>
               <tr><td>Connect flow</td><td><code>open_connection</code>, <code>open_connection_stored</code>, <code>resolve_connection</code></td></tr>
               <tr><td>Keyring</td><td><code>password_state</code>, <code>save_password</code>, <code>delete_password</code></td></tr>
@@ -103,6 +103,16 @@ async fn connect_rdp(
             <li>Windows: Credential Manager</li>
           </ul>
           <p>Service prefix <code>adminhelper:</code>, account = <code>&lt;connection-id&gt;</code>.</p>
+
+          <h2>TLS certificate pinning (TOFU)</h2>
+          <p>When the user enables <em>&ldquo;Allow self-signed certificates&rdquo;</em>, TLS verification is <strong>not</strong> turned off (the old <code>danger_accept_invalid_certs(true)</code> disabled chain <em>and</em> hostname checks with no pinning &ndash; open to MITM). Instead <code>tofu.rs</code> pins the server certificate using the <strong>trust-on-first-use</strong> model (like SSH <code>known_hosts</code>):</p>
+          <ul>
+            <li><strong>Single choke point</strong>: on the self-signed path <code>auth::build_client</code> builds a reqwest client with a custom rustls <code>ServerCertVerifier</code> (<code>use_preconfigured_tls</code>, ring provider). This covers <em>every</em> credential-carrying path &ndash; login, refresh, <code>api_proxy</code>, the tunnel/connection fetches and sync.</li>
+            <li><strong>Pin</strong> = SHA-256 of the leaf DER. Captured on first connect and stored in the OS keyring (key <code>tofu|cert|&lt;host:port&gt;</code>, service <code>com.adminhelper.app</code>) with an in-memory cache so the enforcement path does not hit the keyring per request. Afterwards: accept <em>only</em> on an exact fingerprint match, otherwise reject (possible MITM). Hostname/expiry are intentionally irrelevant &ndash; the pin <em>is</em> the identity.</li>
+            <li>The handshake signature is still verified against the presented public key (delegated to the ring provider), so a captured certificate cannot be replayed without its private key.</li>
+            <li><strong>Recovery</strong> after a legitimate certificate rotation: <code>reset_server_cert_pin</code> clears the pin (keyring + cache) &ndash; UI button <em>&ldquo;Reset pinned certificate&rdquo;</em> in settings.</li>
+            <li><strong>Verification</strong>: a real-handshake test in <code>tofu.rs</code> (tokio-rustls server, two distinct certificates) proves first-use pinning, reconnect with the same cert, and rejection on a cert change.</li>
+          </ul>
 
           <h2>FRP Sidecar</h2>
           <p>Tauri capabilities are scoped: <code>frpc</code> can only be spawned from the app binaries directory. At build time the matching target binary (<code>frpc-x86_64-unknown-linux-gnu</code>, <code>frpc-aarch64-apple-darwin</code>, …) must be dropped into <code>apps/desktop/src-tauri/binaries/</code>.</p>

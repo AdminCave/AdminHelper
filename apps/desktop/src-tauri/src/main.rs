@@ -13,6 +13,7 @@ mod password;
 mod storage;
 mod sync;
 mod terminal;
+mod tofu;
 mod tunnel;
 mod validation;
 
@@ -20,8 +21,8 @@ use commands::{
     ansible_generate_inventory, ansible_launch, ansible_write_playbook, api_proxy,
     check_server_cert, check_session, delete_password, fetch_connections_jwt, fetch_tunnels,
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
-    password_state, resolve_connection, save_connections, save_password, save_settings,
-    start_tunnel, stop_tunnel, sync_connections, tunnel_status,
+    password_state, reset_server_cert_pin, resolve_connection, save_connections, save_password,
+    save_settings, start_tunnel, stop_tunnel, sync_connections, tunnel_status,
 };
 use tauri::Manager;
 
@@ -64,6 +65,7 @@ fn main() {
             resolve_connection,
             api_proxy,
             check_server_cert,
+            reset_server_cert_pin,
             ansible_generate_inventory,
             ansible_write_playbook,
             ansible_launch

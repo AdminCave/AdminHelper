@@ -13,6 +13,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     serverLogout,
   } from '$lib/stores/settings';
   import { t } from '$lib/i18n';
+  import { resetServerCertPin } from '$lib/bridge';
   import {
     RDP_WINDOW_MODES,
     RDP_PERFORMANCE_PROFILES,
@@ -39,6 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpCustomSize = $state('1920x1080');
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>('auto');
   let serverUrl = $state('');
+  let pinResetMsgKey = $state('');
 
   $effect(() => {
     if (!$settingsModalOpen) return;
@@ -54,7 +56,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdpCustomSize = s.rdpCustomSize ?? '1920x1080';
     rdpPerformanceProfile = s.rdpPerformanceProfile ?? 'auto';
     serverUrl = s.serverUrl ?? '';
+    pinResetMsgKey = '';
   });
+
+  async function onResetPin(): Promise<void> {
+    const target = (mode === 'sync' ? url : serverUrl).trim();
+    if (!target) {
+      pinResetMsgKey = 'settings.resetCertPin.missingUrl';
+      return;
+    }
+    try {
+      await resetServerCertPin(target);
+      pinResetMsgKey = 'settings.resetCertPin.done';
+    } catch {
+      pinResetMsgKey = '';
+    }
+  }
 
   async function onSave(): Promise<void> {
     const next: Settings = {
@@ -189,6 +206,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <button class="btn ghost small" onclick={onLogout}>{$t('settings.logout')}</button>
           </div>
         {/if}
+      {/if}
+
+      {#if mode === 'sync' || mode === 'server'}
+        <div class="sm-reset-pin">
+          <button class="btn ghost small" onclick={onResetPin}>{$t('settings.resetCertPin')}</button
+          >
+          <span class="field-label">{$t('settings.resetCertPin.hint')}</span>
+          {#if pinResetMsgKey}<span class="sm-reset-msg">{$t(pinResetMsgKey)}</span>{/if}
+        </div>
       {/if}
 
       <div class="sm-section">
@@ -346,6 +372,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     align-items: center;
     gap: var(--sp-3);
     padding: var(--sp-2) 0;
+  }
+  .sm-reset-pin {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2) var(--sp-3);
+  }
+  .sm-reset-msg {
+    font-size: 12px;
+    color: var(--accent);
   }
   .panel-actions {
     display: flex;

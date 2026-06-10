@@ -73,6 +73,12 @@ export function checkServerCert(serverUrl: string): Promise<boolean> {
   return invoke<boolean>('check_server_cert', { serverUrl });
 }
 
+// Forget the pinned (TOFU) certificate for a server so the next connection
+// re-pins on first use — for recovering from a legitimate certificate rotation.
+export function resetServerCertPin(serverUrl: string): Promise<void> {
+  return invoke('reset_server_cert_pin', { serverUrl });
+}
+
 // ─────────────────────────── Server API proxy ────────────────────
 
 export function apiProxy<T = unknown>(

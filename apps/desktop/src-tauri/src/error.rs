@@ -19,7 +19,18 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::Validation(msg) => write!(f, "{msg}"),
             AppError::Io(err) => write!(f, "{err}"),
-            AppError::Network(err) => write!(f, "{err}"),
+            AppError::Network(err) => {
+                // reqwest's top-level message is generic ("error sending request");
+                // walk the source chain so the real cause — e.g. the TOFU
+                // pin-mismatch message from the rustls verifier — reaches the user.
+                write!(f, "{err}")?;
+                let mut source = std::error::Error::source(err);
+                while let Some(cause) = source {
+                    write!(f, ": {cause}")?;
+                    source = cause.source();
+                }
+                Ok(())
+            }
             AppError::Connection(msg) => write!(f, "{msg}"),
             AppError::Keyring(msg) => write!(f, "{msg}"),
             AppError::Json(err) => write!(f, "{err}"),

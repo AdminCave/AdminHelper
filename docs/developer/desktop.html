@@ -38,7 +38,7 @@
 <pre><code>desktop/
 &#9500;&#9472;&#9472; src-tauri/
 &#9474;   &#9500;&#9472;&#9472; src/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri-App-Setup, invoke_handler mit 23 Commands
+&#9474;   &#9474;   &#9500;&#9472;&#9472; main.rs           Tauri-App-Setup, invoke_handler mit 24 Commands
 &#9474;   &#9474;   &#9500;&#9472;&#9472; commands/         #[tauri::command] (auth, connect, frp, &hellip;)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; connection/       RDP/SSH/VNC/HTTP-Launcher
 &#9474;   &#9474;   &#9500;&#9472;&#9472; frp/              FRP-Sidecar-Verwaltung
@@ -64,12 +64,12 @@ apps/desktop/ui/
 &#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest-Unit-Tests in stores/ + models/</code></pre>
 
           <h2>Tauri-Commands</h2>
-          <p>Die 23 Commands sind in <code>src/main.rs</code> als <code>invoke_handler</code> registriert und decken Auth, Connection-Persistenz, Connect-Flow, FRP-Tunnel, Keyring, API-Proxy und Ansible ab. Jeder Command ist typisiert &ndash; die Bridge in <code>apps/desktop/ui/src/lib/bridge/</code> spiegelt sie 1:1.</p>
+          <p>Die 24 Commands sind in <code>src/main.rs</code> als <code>invoke_handler</code> registriert und decken Auth, Connection-Persistenz, Connect-Flow, FRP-Tunnel, Keyring, API-Proxy und Ansible ab. Jeder Command ist typisiert &ndash; die Bridge in <code>apps/desktop/ui/src/lib/bridge/</code> spiegelt sie 1:1.</p>
           <table>
             <thead><tr><th>Bereich</th><th>Commands</th></tr></thead>
             <tbody>
               <tr><td>Persistenz</td><td><code>load_connections</code>, <code>save_connections</code>, <code>load_settings</code>, <code>save_settings</code></td></tr>
-              <tr><td>Auth</td><td><code>login</code>, <code>logout</code>, <code>check_session</code>, <code>check_server_cert</code></td></tr>
+              <tr><td>Auth</td><td><code>login</code>, <code>logout</code>, <code>check_session</code>, <code>check_server_cert</code>, <code>reset_server_cert_pin</code></td></tr>
               <tr><td>Server-API</td><td><code>api_proxy</code>, <code>fetch_connections_jwt</code>, <code>sync_connections</code>, <code>fetch_tunnels</code></td></tr>
               <tr><td>Connect-Flow</td><td><code>open_connection</code>, <code>open_connection_stored</code>, <code>resolve_connection</code></td></tr>
               <tr><td>Keyring</td><td><code>password_state</code>, <code>save_password</code>, <code>delete_password</code></td></tr>
@@ -103,6 +103,16 @@ async fn connect_rdp(
             <li>Windows: Credential Manager</li>
           </ul>
           <p>Service-Prefix <code>adminhelper:</code>, Account = <code>&lt;connection-id&gt;</code>.</p>
+
+          <h2>TLS-Zertifikat-Pinning (TOFU)</h2>
+          <p>Aktiviert der Nutzer <em>„Selbstsignierte Zertifikate erlauben"</em>, wird <strong>nicht</strong> die TLS-Prüfung abgeschaltet (das alte <code>danger_accept_invalid_certs(true)</code> deaktivierte Chain <em>und</em> Hostname ohne Pinning &ndash; offen für MITM). Stattdessen pinnt <code>tofu.rs</code> das Server-Zertifikat nach dem <strong>Trust-On-First-Use</strong>-Modell (wie SSH <code>known_hosts</code>):</p>
+          <ul>
+            <li><strong>Zentraler Choke-Point</strong>: <code>auth::build_client</code> baut auf dem Self-Signed-Pfad einen reqwest-Client mit einem custom rustls <code>ServerCertVerifier</code> (<code>use_preconfigured_tls</code>, ring-Provider). Damit sind <em>alle</em> credential-tragenden Pfade abgedeckt &ndash; Login, Refresh, <code>api_proxy</code>, Tunnel-, Connection- und der Sync-Abruf.</li>
+            <li><strong>Pin</strong> = SHA-256 des Leaf-DER. Beim ersten Verbinden wird er erfasst und im OS-Keyring abgelegt (Key <code>tofu|cert|&lt;host:port&gt;</code>, Service <code>com.adminhelper.app</code>), plus In-Memory-Cache, damit der Enforce-Pfad nicht pro Request den Keyring trifft. Danach: Akzeptanz <em>nur</em> bei exaktem Fingerprint-Match, sonst Reject (mögliche MITM). Hostname/Ablauf sind bewusst irrelevant &ndash; der Pin <em>ist</em> die Identität.</li>
+            <li>Die Handshake-Signatur wird weiterhin gegen den präsentierten Public-Key geprüft (an den ring-Provider delegiert), ein erfasstes Zertifikat ist also ohne den privaten Schlüssel nicht wiederverwendbar.</li>
+            <li><strong>Recovery</strong> bei legitimer Cert-Rotation: <code>reset_server_cert_pin</code> löscht den Pin (Keyring + Cache) &ndash; UI-Button <em>„Gepinntes Zertifikat zurücksetzen"</em> in den Einstellungen.</li>
+            <li><strong>Verifikation</strong>: Echt-Handshake-Test in <code>tofu.rs</code> (tokio-rustls-Server, zwei verschiedene Zertifikate) beweist First-Use-Pinning, Reconnect mit gleichem Cert und Reject bei Cert-Wechsel.</li>
+          </ul>
 
           <h2>FRP-Sidecar</h2>
           <p>Tauri-Capabilities sind geschärft: <code>frpc</code> darf nur aus dem App-Binaries-Verzeichnis gestartet werden. Beim Build wird die passende Target-Binary (<code>frpc-x86_64-unknown-linux-gnu</code>, <code>frpc-aarch64-apple-darwin</code>, …) in <code>apps/desktop/src-tauri/binaries/</code> erwartet.</p>

@@ -50,11 +50,26 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (Audit). Der langlebige Key wird nicht mehr über den Browser-Account auf alle
   Geräte synchronisiert; eine einmalige Migration verschiebt bestehende Keys und
   löscht die Cloud-Kopie.
+- **Desktop: TLS-Bypass durch TOFU-Zertifikat-Pinning ersetzt** (Audit-Fund,
+  der einzige bestätigte MITM-Credential-Theft-Pfad). „Selbstsignierte
+  Zertifikate erlauben" schaltete vorher via `danger_accept_invalid_certs(true)`
+  die **komplette** TLS-Prüfung ab (Chain **und** Hostname, ohne Pinning) — ein
+  On-Path-Angreifer konnte Login-Passwort, JWT-Access/Refresh-Token sowie den
+  FRP-Client-Private-Key + `auth.token` aus dem Visitor-Bundle abgreifen. Jetzt
+  pinnt der zentrale `auth::build_client` (und damit alle Pfade: Login, Refresh,
+  `api_proxy`, Tunnel-, Connection- und Sync-Abrufe) beim ersten Verbinden den
+  SHA-256-Fingerprint des Server-Leaf-Zertifikats (SSH-`known_hosts`-Modell,
+  custom rustls `ServerCertVerifier`) und akzeptiert danach **nur** noch genau
+  dieses Zertifikat; ein Wechsel wird abgelehnt (mögliche MITM). Der Pin liegt
+  im OS-Keyring; neue Einstellung **„Gepinntes Zertifikat zurücksetzen"** stellt
+  nach legitimer Cert-Rotation den First-Use wieder her. `check_server_cert`
+  prüft zusätzlich das URL-Schema (kein Cleartext-Probe). Verifiziert per
+  Echt-Handshake-Test (tokio-rustls-Server, Cert-Wechsel → reject).
 - **`SECURITY.md`: Trust-Modell + Audit-Residuen dokumentiert** — FRP-`secretKey`
   als eigentliche Authz-Grenze (nicht `allowUsers`), globaler `auth.token` als
   akzeptiertes SPOF mit Rotations-Empfehlung, Single-Worker-Verfügbarkeitsprofil,
-  und das vollständige Register der bewusst zurückgestellten/akzeptierten Funde
-  (Desktop-TOFU, httpOnly, Hash-Lockfile, frps-Caps …) mit Begründung + Plan.
+  und das Register der bewusst zurückgestellten/akzeptierten Funde
+  (httpOnly, Hash-Lockfile, frps-Caps …) mit Begründung + Plan.
 
 ## [0.26.0] - 2026-06-07
 

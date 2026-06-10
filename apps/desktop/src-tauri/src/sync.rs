@@ -25,9 +25,9 @@ pub async fn sync_connections(
     allow_self_signed: bool,
 ) -> Result<Vec<Connection>, AppError> {
     validate_https_url(&url)?;
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(allow_self_signed)
-        .build()?;
+    // Same TOFU-pinning client as the authenticated paths (https-only is enforced
+    // above; build_client adds the pinning on the self-signed path).
+    let client = crate::auth::build_client(&url, allow_self_signed)?;
     let response = client.get(&url).send().await?.error_for_status()?;
     let connections: Vec<Connection> = response.json().await?;
     let connections = sanitize_synced_connections(connections);

@@ -651,6 +651,11 @@ export const translations: Translations = {
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Intervall (Minuten)',
     'settings.allowSelfSigned': 'Selbstsignierte Zertifikate erlauben',
+    'settings.resetCertPin': 'Gepinntes Zertifikat zurücksetzen',
+    'settings.resetCertPin.hint':
+      'Nur nach einem legitimen Zertifikatswechsel des Servers nötig — beim nächsten Verbinden wird neu gepinnt.',
+    'settings.resetCertPin.done': 'Zertifikat-Pin zurückgesetzt.',
+    'settings.resetCertPin.missingUrl': 'Bitte zuerst eine Server-URL eintragen.',
     'settings.serverUrl': 'Server-URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Angemeldet als',
@@ -1470,6 +1475,11 @@ export const translations: Translations = {
     'settings.syncUrl.placeholder': 'https://…/connections.json',
     'settings.interval': 'Interval (minutes)',
     'settings.allowSelfSigned': 'Allow self-signed certificates',
+    'settings.resetCertPin': 'Reset pinned certificate',
+    'settings.resetCertPin.hint':
+      'Only needed after a legitimate server certificate change — the next connection re-pins.',
+    'settings.resetCertPin.done': 'Certificate pin reset.',
+    'settings.resetCertPin.missingUrl': 'Please enter a server URL first.',
     'settings.serverUrl': 'Server URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Signed in as',

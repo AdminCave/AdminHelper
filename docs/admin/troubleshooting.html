@@ -55,6 +55,7 @@
           <ul>
             <li><strong>Browser warnt vor Self-Signed</strong>: Normal, wenn ohne Reverse-Proxy betrieben. Reverse-Proxy mit Let's Encrypt davor setzen – siehe <a href="./installation.html#reverseproxy">Installation</a>.</li>
             <li><strong>Desktop-Client meldet <code>certificate verify failed</code></strong>: Eigene CA in die System-Trust-Store des Clients importieren oder in den Desktop-Einstellungen <em>Self-Signed akzeptieren</em> aktivieren.</li>
+            <li><strong>Desktop-Client, „Selbstsignierte Zertifikate erlauben"</strong>: Beim ersten Verbinden wird der SHA-256-Fingerprint des Server-Zertifikats <em>gepinnt</em> (Trust-On-First-Use, wie SSH <code>known_hosts</code>) und im OS-Keyring abgelegt — danach wird <em>nur</em> noch genau dieses Zertifikat akzeptiert; ein Wechsel wird als mögliche MITM-Attacke abgelehnt. Erscheint nach einer <em>legitimen</em> Zertifikats-Rotation die Meldung <code>AdminHelper TOFU: … hat sich geändert</code>, in den Desktop-Einstellungen <em>Gepinntes Zertifikat zurücksetzen</em> klicken und neu verbinden (pinnt dann neu).</li>
           </ul>
 
           <h2>Agent meldet sich nicht mehr</h2>

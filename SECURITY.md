@@ -70,14 +70,16 @@ accepted because the current behaviour is the correct trade-off.
 
 ### Deferred (needs dedicated, manually-tested work)
 
-- **Desktop TLS — replace the `allow_self_signed_certs` blanket bypass with TOFU
-  pinning.** `danger_accept_invalid_certs(true)` disables chain + hostname
-  checks. Proper pinning in `reqwest` needs a **custom rustls `ServerCertVerifier`**
-  and a live server + MITM to verify; shipping it under-verified would risk a
-  MITM-open or can't-connect bug. Plan: mirror the Go agent's TOFU (capture +
-  pin the leaf on first connect, `add_root_certificate`, full validation, reject
-  changes). Bundle the related `api_proxy` token-destination pin, `connect-src`
-  CSP, `ansible_*` path confinement and `check_server_cert` scheme check with it.
+- **Desktop — remaining defense-in-depth around the now-pinned TLS path.** The
+  core item here is **fixed**: the `allow_self_signed_certs` blanket bypass
+  (`danger_accept_invalid_certs(true)`) is replaced by **TOFU certificate
+  pinning** — a custom rustls `ServerCertVerifier` pins the leaf's SHA-256 on
+  first use (`src-tauri/src/tofu.rs`), enforced through the single
+  `auth::build_client` choke point and verified by a real-handshake test
+  (cert change → reject). The `check_server_cert` scheme check shipped with it.
+  Still open as lower-priority hardening: the `api_proxy` token-destination pin
+  (only send the JWT to the session's pinned server URL), a tighter `connect-src`
+  CSP, and `ansible_*` path confinement.
 - **Web — move the refresh token from `localStorage` to an `HttpOnly` cookie.**
   Half-doing it (cookie without CSRF protection) introduces a CSRF hole; needs
   `HttpOnly; Secure; SameSite` + CSRF tokens + a CORS review, tested end to end.

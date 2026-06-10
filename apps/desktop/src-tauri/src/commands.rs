@@ -15,12 +15,16 @@ use crate::models::{
 use crate::password;
 use crate::storage;
 use crate::sync;
+use crate::tofu;
 use crate::tunnel;
+use crate::validation;
 
 /// Checks whether the server certificate is valid. Returns true if valid,
 /// false if self-signed/invalid.
 #[tauri::command]
 pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
+    // Never probe a cleartext network URL (https, or http only for loopback).
+    validation::validate_server_url_secure(&server_url)?;
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(false)
         .build()
@@ -32,6 +36,15 @@ pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
         Err(e) if e.is_connect() => Ok(false), // TLS/connection error
         Err(_) => Ok(false),
     }
+}
+
+/// Forget the pinned (TOFU) certificate for a server, so the next connection
+/// re-pins on first use. For recovering from a legitimate certificate rotation
+/// after the pin-mismatch error.
+#[tauri::command]
+pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
+    tofu::forget_pin(&server_url);
+    Ok(())
 }
 
 /// Generic API proxy: forwards requests to the server via reqwest.

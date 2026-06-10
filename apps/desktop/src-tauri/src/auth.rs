@@ -36,13 +36,18 @@ pub fn build_client(
     allow_self_signed: bool,
 ) -> Result<reqwest::Client, AppError> {
     // Choke point for every authenticated request (login, refresh, me, get,
-    // logout): refuse to send credentials to a non-TLS server. allow_self_signed
-    // only relaxes cert *validation* on https, never the scheme itself.
+    // logout) plus api_proxy and the tunnel/connection JWT paths: refuse to send
+    // credentials to a non-TLS server. The scheme is never relaxed.
     crate::validation::validate_server_url_secure(server_url)?;
-    reqwest::Client::builder()
-        .danger_accept_invalid_certs(allow_self_signed)
-        .build()
-        .map_err(AppError::from)
+    if allow_self_signed {
+        // NOT danger_accept_invalid_certs(true) — that would disable chain AND
+        // hostname checks with no pinning, leaving every credential open to an
+        // on-path MITM. Pin the server's certificate on first use instead.
+        crate::tofu::pinning_client(server_url)
+    } else {
+        // Public-CA path: reqwest's default full validation against webpki-roots.
+        reqwest::Client::builder().build().map_err(AppError::from)
+    }
 }
 
 pub async fn login(
