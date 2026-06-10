@@ -173,6 +173,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `loadAlertLog` schluckten API-Fehler still — ein toter Monitoring-Service
   sah aus wie „keine Alerts". Jetzt `reportError` wie in `loadMonitoring`
   (Session-Expiry weiterhin ausgenommen).
+### Added
+
+- **Web: Monitoring aktualisiert sich automatisch** (Entscheidung nach Audit).
+  30-s-Polling wie im Desktop, aber pausiert bei verstecktem Tab
+  (`visibilitychange`; beim Sichtbarwerden sofortiger Refresh) — bei
+  250–500 Servern pollen Hintergrund-Tabs damit nicht. Dezente „zuletzt
+  aktualisiert"-Anzeige im Seitenkopf; Run-now-Button hat jetzt ein
+  `aria-label`.
 - **Agent: Tests für SMART-Parsing, Report-Aufbau und Push-Retry** —
   smartctl-7.x-JSON-Fixtures (ATA + NVMe + Degenerat-Fälle), `BuildReport`-
   Grundstruktur, Retry-Verhalten gegen httptest-Server, `hasPrefix`/`getFloat`.

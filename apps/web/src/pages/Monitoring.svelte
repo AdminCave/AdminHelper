@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import 'uplot/dist/uPlot.min.css';
   import { t, language } from '$lib/i18n';
   import { monitorChecks, alertRules, alertLog, monitoringTemplates } from '$lib/stores/monitoring';
@@ -46,7 +46,44 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let logLoaded = $state(false);
 
+  // ── Auto-Refresh (30 s, pausiert bei verstecktem Tab) ─────────────────
+  const REFRESH_INTERVAL_MS = 30_000;
+  let lastUpdated = $state<Date | null>(null);
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function pollChecks() {
+    try {
+      await monitorChecks.refresh();
+      lastUpdated = new Date();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+    }
+  }
+
+  function startPolling() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(() => void pollChecks(), REFRESH_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      void pollChecks();
+      startPolling();
+    }
+  }
+
   onMount(async () => {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (!document.hidden) startPolling();
     try {
       await Promise.all([
         monitorChecks.refresh(),
@@ -54,9 +91,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
         monitoringTemplates.refresh(),
         $serversStore.length === 0 ? serversStore.refresh() : Promise.resolve(),
       ]);
+      lastUpdated = new Date();
     } catch (err) {
       showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
     }
+  });
+
+  onDestroy(() => {
+    stopPolling();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
 
   const serverMap = $derived.by(() => {
@@ -321,6 +364,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="page-title">{$t('page.monitoring.title')}</div>
       <div class="page-subtitle">{$t('page.monitoring.subtitle')}</div>
     </div>
+    {#if lastUpdated}
+      <div style="color:var(--text-muted);font-size:12px">
+        {$t('monitor.lastUpdated', { time: formatTime(lastUpdated.toISOString(), $language) })}
+      </div>
+    {/if}
   </div>
 
   <div class="monitor-tabs">
@@ -478,6 +526,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                             <button
                               class="btn small"
                               title={$t('monitor.runNow')}
+                              aria-label={$t('monitor.runNow')}
                               onclick={() => runCheckNow(c)}>&#x25B6;</button
                             >
                             <button class="btn small" onclick={() => editCheck(c)}>
