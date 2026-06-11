@@ -83,32 +83,23 @@
           </table>
 
           <h2>Backup</h2>
-          <p>Zwei Backup-Pfade — <strong>beide laufen kombinieren</strong> für ein vollständiges Restore:</p>
-          <h3>1. PostgreSQL-Dump (DBs)</h3>
+          <p><code>scripts/backup.sh</code> sichert den kompletten Stand inklusive des <strong>CA-Kronjuwels</strong> in <em>ein</em> Tarball — bei laufendem Stack:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Manueller Dump beider DBs (lokal, ohne Stop):
-docker compose exec postgres pg_dump -U adminhelper -d adminhelper -Fc -f /tmp/adminhelper.dump
-docker compose exec postgres pg_dump -U adminhelper -d adminhelper_monitor -Fc -f /tmp/adminhelper_monitor.dump
-docker compose cp postgres:/tmp/adminhelper.dump ./backups/
-docker compose cp postgres:/tmp/adminhelper_monitor.dump ./backups/
+<pre><code>./scripts/backup.sh                 # -> ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz
+./scripts/backup.sh --with-victoria # zusätzlich die (große) Metrik-Historie</code></pre>
+          <p>Enthalten: <code>ca-pki</code> (Root + Intermediates), <code>pg_dump</code> beider DBs, <code>monitoring-data</code>, optional <code>victoria-data</code> und die <code>.env</code>. <strong>Nicht</strong> enthalten — und auch nicht nötig — sind <code>gateway-certs</code>/<code>frps-certs</code>: der <code>ca-issuer</code> regeneriert sie beim Start aus <code>ca-pki</code>.</p>
 
-# Oder via mitgeliefertem Script:
-docker compose exec postgres /usr/local/bin/pg-backup.sh    # falls scripts/ gemountet</code></pre>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title"><code>CA_ROOT_PASSPHRASE</code> getrennt aufbewahren</div><p>Die Passphrase wird bewusst <em>nicht</em> ins Backup geschrieben — sie verschlüsselt den mit-gesicherten Root-Key, beides zusammen wäre wertlos (ADR 0001 §5/D7). Im Passwortmanager getrennt halten. Der restaurierte Stack läuft auch ohne sie; gebraucht wird sie nur zum Rotieren der Intermediates.</p></div>
+          </div>
 
-          <p>Für automatische tägliche Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren — schreibt nach <code>./backups/</code>, Retention 7 Tage.</p>
-
-          <h3>2. File-Daten (PKI, Bootstrap-Token, Zertifikate)</h3>
-          <div class="code-header"><span>bash</span></div>
-<pre><code>tar czf adminhelper-files-$(date +%F).tar.gz data/</code></pre>
+          <p>Für automatische tägliche DB-Backups: den auskommentierten <code>pg-backup</code>-Service in <code>docker-compose.yml</code> einkommentieren (nur DBs, Retention 7 Tage) — ersetzt nicht das vollständige <code>backup.sh</code> inkl. CA.</p>
 
           <h3>Restore</h3>
           <div class="code-header"><span>bash</span></div>
-<pre><code># DB zurueckspielen:
-docker compose cp ./backups/adminhelper-2026-05-02.dump postgres:/tmp/restore.dump
-docker compose exec postgres pg_restore -U adminhelper -d adminhelper --clean --if-exists --no-owner /tmp/restore.dump
-
-# Files:
-tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
+<pre><code>./scripts/restore.sh ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz</code></pre>
+          <p>Stoppt den Stack, stellt Volumes + DBs wieder her und fährt hoch. Die restaurierte Root ist <strong>identisch</strong> — bereits enrollte Agenten bleiben vertraut, ohne Re-Enrollment. Die <code>.env</code> aus dem Backup wird als <code>.env.restored</code> abgelegt (überschreibt eine vorhandene <code>.env</code> nicht); auf einem frischen Host die getrennt aufbewahrte <code>CA_ROOT_PASSPHRASE</code> ergänzen und nach <code>.env</code> übernehmen.</p>
 
           <h2>Logs</h2>
           <p>Die Container schreiben auf stdout; <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg.</p>

@@ -247,7 +247,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   aussperren"-Prozedur (Bootstrap-Token) dokumentiert.
 - **Aufwand:** M · **Risiko:** **HOCH** (Lock-out-Moment) — gestaffelt + Rollback bereit · **Abh.:** A3,A4,A5,A6,A7
 
-### A9 — Backup/Restore inkl. CA-Kronjuwel (parallel ab A1)
+### A9 — Backup/Restore inkl. CA-Kronjuwel (parallel ab A1) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** `scripts/backup.sh` / `restore.sh`: `ca-issuer`-Volume (Root+Intermediates),
   `./certs`, `.env`, `pg_dump` beider DBs, `monitoring-data`; `victoria-data` optional. Root-
   Passphrase **getrennt** (Doku). `pg-backup.sh`-Scope erweitern.
@@ -255,6 +255,23 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Akzeptanz:** Backup → Wipe → Restore reproduziert lauffähigen Stack inkl. CA (Agenten weiter
   vertraut); Passphrase nicht im Tarball.
 - **Aufwand:** M · **Risiko:** mittel · **Abh.:** A1
+- **Umsetzung ✅ ABGESCHLOSSEN 2026-06-11:**
+  - **`scripts/backup.sh`** (Stack up, via `docker compose exec` — keine Volume-Namen nötig)
+    bündelt in *ein* Tarball: `ca-pki` (Kronjuwel), `pg_dump` beider DBs, `monitoring-data`,
+    optional `victoria-data` (`--with-victoria`), `.env` **ohne `CA_ROOT_PASSPHRASE`** + Manifest.
+    **Nicht** gesichert: `gateway-certs`/`frps-certs` (der Issuer regeneriert sie aus `ca-pki`)
+    und das obsolete `./certs`.
+  - **`scripts/restore.sh`** (Stack down, Volume-Restore via `docker run` mit projekt-präfigiertem
+    Volume-Namen — `COMPOSE_PROJECT_NAME`/Basename — funktioniert auch auf frischem Host;
+    DB-Restore mit hochgefahrenem Postgres). Schreibt die `.env` als `.env.restored` (überschreibt
+    nichts).
+  - **Präzisierung gegenüber dem Entwurf:** Backup-Ziel ist das **`ca-pki`-Volume**, nicht `./certs`
+    (das ist seit A2 weg); die regenerierbaren Cert-Volumes bleiben bewusst draußen.
+  - **Verifiziert (echter DR-Test, lokal):** Root-Fingerprint gemerkt → `backup.sh` → `ca-pki`-Volume
+    **komplett gelöscht** → `restore.sh` → restaurierte **Root byte-identisch** (Vertrauen erhalten,
+    Agenten ohne Re-Enrollment); regenerierte gateway/frps-Certs ketten zur restaurierten Root;
+    `/healthz` grün, Web-UI `:443` → 200; DB mit 14 Tabellen zurück; `CA_ROOT_PASSPHRASE` **0 Treffer**
+    im Tarball. Docs DE+EN (Betrieb/Operations-Backup) nachgezogen.
 
 ### A10 — Doku DE+EN + CHANGELOG + ADR-Status
 - **Beschreibung:** `docs/` (admin + developer, beide Sprachen): PKI/mTLS-Modell, Enrollment,

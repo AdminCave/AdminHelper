@@ -50,33 +50,23 @@
           </table>
 
           <h2>Backups</h2>
-          <p>Two backup paths — combine both for a complete restore:</p>
-
-          <h3>1. PostgreSQL dump (databases)</h3>
+          <p><code>scripts/backup.sh</code> bundles the whole state — including the <strong>CA crown jewel</strong> — into one tarball, with the stack running:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Manual dump of both DBs (no stop required):
-docker compose exec postgres pg_dump -U adminhelper -d adminhelper -Fc -f /tmp/adminhelper.dump
-docker compose exec postgres pg_dump -U adminhelper -d adminhelper_monitor -Fc -f /tmp/adminhelper_monitor.dump
-docker compose cp postgres:/tmp/adminhelper.dump ./backups/
-docker compose cp postgres:/tmp/adminhelper_monitor.dump ./backups/
+<pre><code>./scripts/backup.sh                 # -> ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz
+./scripts/backup.sh --with-victoria # also the (large) metric history</code></pre>
+          <p>Included: <code>ca-pki</code> (Root + intermediates), <code>pg_dump</code> of both DBs, <code>monitoring-data</code>, optionally <code>victoria-data</code>, and <code>.env</code>. <strong>Not</strong> included — and not needed — are <code>gateway-certs</code>/<code>frps-certs</code>: the <code>ca-issuer</code> re-provisions them from <code>ca-pki</code> on boot.</p>
 
-# Or via the bundled script:
-docker compose exec postgres /usr/local/bin/pg-backup.sh    # if scripts/ is mounted</code></pre>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Keep <code>CA_ROOT_PASSPHRASE</code> separately</div><p>The passphrase is intentionally <em>not</em> written into the backup — it encrypts the Root key, which IS in the backup; storing both together would defeat the encryption (ADR 0001 §5/D7). Keep it in a password manager. A restored stack runs without it; it is only needed to rotate intermediates.</p></div>
+          </div>
 
-          <p>For automatic daily backups, uncomment the <code>pg-backup</code> service in <code>docker-compose.yml</code> — writes to <code>./backups/</code>, 7-day rolling retention.</p>
-
-          <h3>2. File data (PKI, bootstrap token, certificates)</h3>
-          <div class="code-header"><span>bash</span></div>
-<pre><code>tar czf adminhelper-files-$(date +%F).tar.gz data/</code></pre>
+          <p>For automatic daily DB backups, uncomment the <code>pg-backup</code> service in <code>docker-compose.yml</code> (DBs only, 7-day retention) — it does not replace the full <code>backup.sh</code> incl. the CA.</p>
 
           <h3>Restore</h3>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Restore DB:
-docker compose cp ./backups/adminhelper-2026-05-02.dump postgres:/tmp/restore.dump
-docker compose exec postgres pg_restore -U adminhelper -d adminhelper --clean --if-exists --no-owner /tmp/restore.dump
-
-# Files:
-tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
+<pre><code>./scripts/restore.sh ./backups/adminhelper-backup-&lt;ts&gt;.tar.gz</code></pre>
+          <p>Stops the stack, restores the volumes + DBs and brings it back up. The restored Root is <strong>identical</strong> — already-enrolled agents stay trusted, no re-enrollment. The backed-up <code>.env</code> is written to <code>.env.restored</code> (it never overwrites an existing <code>.env</code>); on a fresh host, add the separately kept <code>CA_ROOT_PASSPHRASE</code> and move it to <code>.env</code>.</p>
 
           <h2>Logging</h2>
           <p>The server container uses named loggers prefixed <code>adminhelper.*</code>; some modules log under their module path <code>app.*</code>. Useful logger names:</p>

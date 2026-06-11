@@ -74,6 +74,9 @@ build-deb/
 # TLS-Zertifikate (auto-generiert oder eigene)
 /certs/
 
+# Backup-Tarballs (enthalten Secrets: DB-Dumps, .env, verschluesselter Root-Key)
+/backups/
+
 # Playwright
 /apps/web/test-results/
 /apps/web/playwright-report/

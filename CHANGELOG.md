@@ -21,6 +21,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Volumes `ca-pki` (issuer-privat) und `gateway-certs`.
 - **`CA_ROOT_PASSPHRASE`** in `.env.example` + `scripts/init-secrets.sh` — verschlüsselt den
   kalten PKI-Root-Key at-rest (ADR 0001 D7); **getrennt sichern, nicht ins Backup legen**.
+- **Full-Stack-Backup/Restore inkl. CA-Kronjuwel** (`scripts/backup.sh` / `scripts/restore.sh`,
+  ADR 0001 §5). `backup.sh` bündelt `ca-pki` (Root + Intermediates), `pg_dump` beider DBs,
+  `monitoring-data`, optional `victoria-data` und die `.env` **ohne `CA_ROOT_PASSPHRASE`** in ein
+  Tarball; `restore.sh` stellt Volumes + DBs wieder her. Die restaurierte Root ist identisch —
+  bereits enrollte Clients bleiben vertraut. `gateway-certs`/`frps-certs` werden nicht gesichert
+  (der `ca-issuer` regeneriert sie aus `ca-pki`).
 - **Server: Per-Route-mTLS-Scope-Schicht** (`app/core/identity.py`, ADR 0001 D8) — der Server
   liest die vom Gateway weitergereichte, verifizierte Client-Identität und prüft pro Route den
   Cert-Scope (`access` = Mensch, `tunnel` = Agent). **In dieser Phase permissiv** (`MTLS_ENFORCE`
