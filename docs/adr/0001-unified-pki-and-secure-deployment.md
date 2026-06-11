@@ -51,6 +51,8 @@ Client-Identität trägt — als Fundament für mTLS-Pflicht über alle Zugänge
 | D7 | **Root-Key kalt + passphrase-verschlüsselt**; online-Intermediates im Issuer unbeaufsichtigt nutzbar | Root nur bei Intermediate-Rotation angefasst; Renewals laufen unbeaufsichtigt (F6) |
 | D8 | **Human + Agent teilen `:443`**, getrennt durch **Cert-Scope + Per-Route-Authz** (kein separater Agent-Port) | Cert-Scoping erzwingt die Autorisierung bereits; ein dritter öffentlicher Port wäre Over-Engineering (Capability- statt Zielgruppen-Trennung) |
 | D9 | **Keine Migration** — frische Hierarchie ab Tag 1 | Es gibt noch keine produktiven Server/Agenten (F4 entfällt) |
+| D10 | **ECDSA-P-256-Leaves** (statt RSA-2048) | Passen in das 2560-Byte-Limit des Windows Credential Manager (V4), modern, ideal für kurzlebige Certs |
+| D11 | **Ein nginx TLS/mTLS-Gateway** vor den **HTTP-Planes** (`server` + `ca-issuer`); **frps ausgenommen** | uvicorn reicht Client-Certs nicht nativ durch (V1) → Gateway terminiert TLS+mTLS zentral und reicht die verifizierte Identität als Header weiter. frp spricht ein eigenes Protokoll mit eingebackener mTLS → kann nicht generisch geproxt werden, bleibt eigene Kante |
 
 ---
 
@@ -73,25 +75,34 @@ Root CA  (kalt, passphrase-verschlüsselt, nur zum Intermediate-Rotieren)
 ### 3.2 Topologie (Container / Planes)
 
 ```
-ÖFFENTLICH                                   INTERN (kein Host-Port)
-─────────                                    ──────────────────────
-server   :443    mTLS-PFLICHT + Pinning      monitoring   (via Server-Proxy)
-                 ◄── Mensch + Agent           victoria
-                     (per Cert-Scope getrennt) postgres / redis
-frps     :7xxx   mTLS (tunnel-Intermediate)
-ca-issuer :<P>   PKI-Schiene, minimal:        ── liest intern: Token-/Deprovision-Liste (DB)
-                 /enroll  (Token, certless)   ── hält ALS EINZIGER die online-Intermediate-Keys
-                 /renew   (mTLS, akt. Cert)   ── Root-Key verschlüsselt daneben (kalt)
+ÖFFENTLICH                                          INTERN (kein Host-Port)
+─────────                                           ──────────────────────
+gateway (nginx)  :443    TLS/mTLS-Terminierung      server     (plain HTTP)
+                         • :443  ssl_verify_client ON  → Datenebene (Mensch+Agent, Cert-Scope)
+                         • enroll-Listener: Token, KEIN Cert  → ca-issuer (plain HTTP, signiert)
+                         • setzt X-Client-Cert-* aus verif. Cert   monitoring (via Server-Proxy)
+                         • streift eingehende X-Client-* ab         victoria / postgres / redis
+
+frps             :7xxx   EIGENE TLS-Kante (frp-Protokoll, mTLS) — NICHT hinter dem Gateway
 ```
 
-- **`server :443`** — die eigentliche Anwendung. Signiert **nie** Zertifikate.
-  - **mTLS-Terminierung (Befund V1):** Starlette/uvicorn reicht das verifizierte Client-Cert
-    *nicht* zuverlässig an die App (offener uvicorn-Issue). Für die Per-Route-Authz (D8) daher
-    empfohlen: ein **TLS-terminierender Reverse-Proxy** (z.B. nginx) auf `:443` mit
-    `ssl_verify_client on` gegen die `access`-CA, der die verifizierte Identität als
-    vertrauenswürdigen Header (`X-Client-Cert-CN` o.ä.) an den Server weiterreicht. Der Proxy
-    signiert nichts → D6 bleibt gewahrt. (Endgültige Wahl Proxy vs. uvicorn-nativ = Phase-A-
-    Entscheidung; siehe offene Frage am Ende.)
+- **`gateway` (nginx, D11)** — einzige öffentliche TLS/mTLS-Instanz für die HTTP-Planes.
+  Hält das `access`-Leaf (Terminierung) + CA-*Certs* (public, Client-Verifikation), **keinen
+  Signier-Schlüssel**. Pro Listener eigene Client-Auth-Policy (Datenebene `CERT_REQUIRED`,
+  Enroll certless+Token). Natürlicher Ort für späteres ACME (Phase C).
+- **`server`** — die Anwendung, lauscht **nur intern plain-HTTP**, nie öffentlich. Signiert
+  **nie** Zertifikate. Liest die verifizierte Identität aus dem vom Gateway gesetzten Header.
+- **`ca-issuer`** — minimal, lauscht **nur intern**; einzige Signier-Capability; `/enroll`
+  (Token) + `/renew` (Cert). Liest intern Token-/Deprovision-Liste (DB). Root-Key verschlüsselt
+  daneben (kalt).
+- **`frps`** — bleibt eigene TLS-Kante (siehe D11-Begründung); direkt auf seinen Ports.
+
+**Gateway-Sicherheitsbedingungen (nicht verhandelbar):** (1) `server`/`ca-issuer` nur im
+internen Docker-Netz, kein Host-Port — sonst ist der Identitäts-Header umgehbar; (2) Gateway
+**streift eingehende `X-Client-*`-Header ab** und setzt sie ausschließlich aus dem real
+verifizierten Cert — sonst Header-Spoofing; (3) Gateway hält keinen Signier-Schlüssel → die
+Capability-Isolation (D6) bleibt erhalten, ein kompromittiertes Gateway bedroht die
+Header-Integrität der Datenebene, nicht die CA.
 - **`ca-issuer`** — eigener, minimaler Container, der **alles rund ums Zertifikat** macht
   und **selbst** autorisiert (Türsteher-Prinzip): kein Client und nicht der Server kann
   ihn zum freien Signieren bringen.
