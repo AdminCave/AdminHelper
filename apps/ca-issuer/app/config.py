@@ -13,6 +13,10 @@ from pathlib import Path
 DATA_DIR = Path(os.environ.get("CA_DATA_DIR", "/app/data"))
 PKI_DIR = DATA_DIR / "pki"
 
+# Shared AdminHelper DB (read enrollment tokens + revocations). Empty -> the
+# in-memory token store is used (tests/dev).
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
 # Passphrase that encrypts the cold Root key at rest (D7). Required to create
 # the hierarchy on first boot; not needed for normal leaf signing (the root is
 # never touched once the intermediates exist).

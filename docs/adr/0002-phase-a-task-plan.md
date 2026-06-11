@@ -50,7 +50,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   Nuance für A2/A8: nginx liefert ohne Cert HTTP 400 statt Handshake-Drop — Upstream bleibt
   unerreichbar, ggf. `444` (Drop) erwägen.
 
-### A1 — PKI-Kernbibliothek + `ca-issuer`-Container (Issuance ohne Enforcement)
+### A1 — PKI-Kernbibliothek + `ca-issuer`-Container (Issuance ohne Enforcement) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** Neuer Dienst `apps/ca-issuer/` (Python/FastAPI). Zertifikats-Primitive aus
   `apps/server/app/modules/frp/pki.py` in ein gemeinsames Modul extrahieren und hierher
   verlagern (**Server signiert künftig nicht mehr**, D6). Root (ECDSA P-256, at-rest
@@ -68,10 +68,12 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Fortschritt:** Inkrement 1 (PKI-Engine) ✅, Inkrement 2 (Issuer-Dienst `/enroll`+`/renew`,
   26 Tests) ✅, Inkrement 3 (Dockerfile/Entrypoint/gehashte Lock, First-Boot lokal verifiziert:
   PKI erzeugt, root.key.enc verschlüsselt, Inter-Keys 0600, /healthz ok) ✅. **Offen:**
-  Inkrement 4 (`enrollment_tokens`-Tabelle im Server + Alembic-Migration + DB-gestützter
-  `TokenStore`) **sowie** Compose-Wiring + CI/ghcr-Publish des Dienstes — Letzteres bewusst
-  zurückgestellt, bis der Gateway/Server (A2) den Dienst konsumiert, um keine unpublizierte
-  Image-Referenz in die Produktiv-Compose zu legen.
+  Inkrement 4 (`enrollment_tokens` + `revoked_identities` im Server, Migration `9aa48c0eaecb`,
+  Migrations-Smoke grün; DB-gestützter `TokenStore` im ca-issuer mit atomarem One-Time-Consume
+  via `UPDATE … RETURNING`, sqlite-getestet) ✅. **A1 komplett** (23 ca-issuer- + 163 Server-Tests
+  grün). **Bewusst zurückgestellt** (gehört zu A2, wenn der Gateway/Server den Dienst konsumiert):
+  Compose-Wiring + CI/ghcr-Publish des ca-issuer + der server-seitige Admin-Endpunkt zum Minten
+  von Enrollment-Tokens (Tabelle + Issuer-Konsum stehen, das Mint-UI ist die Konsumentenseite).
 
 ### A2 — nginx-Gateway + interne-only Listener (permissive)
 - **Beschreibung:** `gateway`-Container (nginx) vor `:443`. `server` + `ca-issuer` auf

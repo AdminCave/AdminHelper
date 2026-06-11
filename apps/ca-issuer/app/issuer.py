@@ -33,7 +33,7 @@ def _leaf_days(grant: EnrollmentGrant) -> int:
 class Issuer:
     def __init__(self, intermediates: dict[str, Intermediate], tokens: TokenStore) -> None:
         self._inter = intermediates
-        self._tokens = tokens
+        self.tokens = tokens  # public: lifespan exposes it on app.state for minting/tests
 
     def _intermediate(self, scope: str) -> Intermediate:
         inter = self._inter.get(scope)
@@ -54,7 +54,7 @@ class Issuer:
         }
 
     def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
-        grant = self._tokens.consume(token)
+        grant = self.tokens.consume(token)
         if grant is None:
             raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
         try:
@@ -83,7 +83,7 @@ class Issuer:
         cn, scope = pki.read_identity(current)
         if not cn or not scope:
             raise IssuanceError("Vorgelegtes Cert trägt keine Identität/Scope")
-        if not self._tokens.is_active(cn, scope):
+        if not self.tokens.is_active(cn, scope):
             raise IssuanceError("Identität ist deprovisioniert")
 
         try:

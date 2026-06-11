@@ -31,19 +31,26 @@ logger = logging.getLogger("ca-issuer")
 def build_issuer(token_store: TokenStore | None = None) -> Issuer:
     """Construct the issuer: load/create the hierarchy, wire a token store.
 
-    The DB-backed token store lands in A1 increment 4; until then an in-memory
-    store is wired (the server mints into the DB; tests inject their own)."""
+    With DATABASE_URL set, tokens come from the shared AdminHelper DB; otherwise
+    an in-memory store is used (tests/dev). Tests may inject their own store."""
     intermediates = ensure_hierarchy(config.PKI_DIR, config.ROOT_PASSPHRASE)
-    return Issuer(intermediates, token_store or InMemoryTokenStore())
+    if token_store is None:
+        if config.DATABASE_URL:
+            from app.db import DbTokenStore, make_engine
+
+            token_store = DbTokenStore(make_engine(config.DATABASE_URL))
+            logger.info("Token-Store: DB")
+        else:
+            token_store = InMemoryTokenStore()
+            logger.info("Token-Store: in-memory (kein DATABASE_URL)")
+    return Issuer(intermediates, token_store)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # In-memory store as a placeholder until the DB-backed store (increment 4);
-    # stashed on app.state so the server's mint flow / tests can reach it.
-    store = InMemoryTokenStore()
-    app.state.token_store = store
-    app.state.issuer = build_issuer(store)
+    issuer = build_issuer()  # auto-selects DB store (DATABASE_URL) or in-memory
+    app.state.issuer = issuer
+    app.state.token_store = issuer.tokens  # exposed for tests / the server mint flow
     logger.info("ca-issuer bereit (PKI geladen)")
     yield
 

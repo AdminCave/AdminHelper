@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 import app.modules.ansible.models  # noqa: F401
 import app.modules.api_keys.models  # noqa: F401
 import app.modules.connections.models  # noqa: F401
+import app.modules.enrollment.models  # noqa: F401
 import app.modules.frp.models  # noqa: F401
 import app.modules.hooks.models  # noqa: F401
 
