@@ -180,9 +180,38 @@ class LeafSpec:
     lifetime_days: int
     server_auth: bool = False
     client_auth: bool = True
-    # Optional SAN override; if empty the CSR's SAN (or none) is used.
+    # Identity is dictated by the issuer (from the server-minted grant), NOT
+    # taken from the CSR — otherwise a client could request a cert for any
+    # identity. If subject_cn is None the CSR's subject is used (server-leaf case).
+    subject_cn: str | None = None
+    # Scope ("tunnel"/"access"/"internal") embedded as an OU so /renew can read
+    # it back from the verified client cert without a DB lookup.
+    scope: str | None = None
     dns_names: tuple[str, ...] = ()
     ip_addresses: tuple[str, ...] = ()
+
+
+def _leaf_subject(spec: LeafSpec, csr: x509.CertificateSigningRequest) -> x509.Name:
+    if spec.subject_cn is None:
+        return csr.subject
+    attrs = [
+        x509.NameAttribute(NameOID.COMMON_NAME, spec.subject_cn),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, _ORG),
+    ]
+    if spec.scope:
+        attrs.append(x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, spec.scope))
+    return x509.Name(attrs)
+
+
+def read_identity(cert: x509.Certificate) -> tuple[str | None, str | None]:
+    """Extract (CN, scope-OU) from a leaf — used on renewal to re-issue the
+    same identity/scope from the verified client cert."""
+
+    def _first(oid):
+        attrs = cert.subject.get_attributes_for_oid(oid)
+        return attrs[0].value if attrs else None
+
+    return _first(NameOID.COMMON_NAME), _first(NameOID.ORGANIZATIONAL_UNIT_NAME)
 
 
 def sign_leaf(
@@ -210,7 +239,7 @@ def sign_leaf(
     now = _now()
     builder = (
         x509.CertificateBuilder()
-        .subject_name(csr.subject)
+        .subject_name(_leaf_subject(spec, csr))
         .issuer_name(issuer_cert.subject)
         .public_key(csr.public_key())
         .serial_number(x509.random_serial_number())
