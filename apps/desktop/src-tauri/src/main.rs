@@ -6,6 +6,7 @@ mod ansible;
 mod auth;
 mod commands;
 mod connection;
+mod enrollment;
 mod error;
 mod frpc;
 mod models;
