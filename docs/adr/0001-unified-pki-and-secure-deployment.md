@@ -85,6 +85,13 @@ ca-issuer :<P>   PKI-Schiene, minimal:        ── liest intern: Token-/Deprov
 ```
 
 - **`server :443`** — die eigentliche Anwendung. Signiert **nie** Zertifikate.
+  - **mTLS-Terminierung (Befund V1):** Starlette/uvicorn reicht das verifizierte Client-Cert
+    *nicht* zuverlässig an die App (offener uvicorn-Issue). Für die Per-Route-Authz (D8) daher
+    empfohlen: ein **TLS-terminierender Reverse-Proxy** (z.B. nginx) auf `:443` mit
+    `ssl_verify_client on` gegen die `access`-CA, der die verifizierte Identität als
+    vertrauenswürdigen Header (`X-Client-Cert-CN` o.ä.) an den Server weiterreicht. Der Proxy
+    signiert nichts → D6 bleibt gewahrt. (Endgültige Wahl Proxy vs. uvicorn-nativ = Phase-A-
+    Entscheidung; siehe offene Frage am Ende.)
 - **`ca-issuer`** — eigener, minimaler Container, der **alles rund ums Zertifikat** macht
   und **selbst** autorisiert (Türsteher-Prinzip): kein Client und nicht der Server kann
   ihn zum freien Signieren bringen.
@@ -99,6 +106,10 @@ ca-issuer :<P>   PKI-Schiene, minimal:        ── liest intern: Token-/Deprov
 - Native Clients (Desktop/Agent): erzeugen **on-device** ein Schlüsselpaar + CSR, der Issuer
   signiert. **Privater Key verlässt das Gerät nie.** Cert+Key → OS-Keyring (Desktop) bzw.
   0600-Datei (Agent); Root-CA wird lokal gepinnt.
+- **Leaf-Schlüssel = ECDSA P-256** (verifiziert, siehe §7/V4): RSA-2048 PEM (Key+Cert)
+  sprengt das Windows-Credential-Manager-Limit von 2560 Bytes; ECDSA P-256 (~1 KB) passt,
+  ist modern und für kurzlebige Certs ohnehin die bessere Wahl. Fallback auf 0600-Datei im
+  App-Data, falls der Keyring doch zu klein ist.
 - Browser: kann nicht programmatisch CSR erzeugen → P12 wird bereitgestellt. Bevorzugt
   **vom Desktop-Client erzeugt+exportiert** (Key entsteht auf einem kontrollierten Gerät);
   Fallback: Issuer erzeugt das P12 für token-basiertes Browser-Enroll (Key issuer-seitig
@@ -173,19 +184,32 @@ HSM/Vault, Migration (D9).
 
 ---
 
-## 7. Offene Verifikationspunkte (vor Implementierung gegen offizielle Doku prüfen)
+## 7. Verifikation (abgeschlossen 2026-06-11, gegen offizielle Quellen)
 
-1. **uvicorn/Starlette:** `--ssl-cert-reqs=CERT_REQUIRED` + `--ssl-ca-certs`, und wie das
-   verifizierte Client-Cert für die Per-Route-Authz an die App durchgereicht wird
-   (Scope/Transport). `[zu verifizieren]`
-2. **frp-TLS:** wie frps Client-Certs gegen die `tunnel`-Intermediate-Kette verifiziert
-   (Intermediate-Bundle nötig?); CRL-Support (erwartet: keiner → bestätigt D4). `[zu verifizieren]`
-3. **reqwest (Desktop/Agent):** Client-`Identity` + ausschließlicher Custom-Root
-   (`add_root_certificate` + System-Roots aus) — bekannt machbar, Detail prüfen. `[zu verifizieren]`
-4. **OS-Keyring-Größenlimit** (v.a. Windows Credential Manager ~2,5 KB/Blob): Cert+Key
-   ggf. zu groß → Fallback auf 0600-Datei im App-Data. `[zu verifizieren]`
-5. **Browser-Extension** unter mTLS-Pflicht: Client-Cert-Auswahl beim `fetch` hängt am
-   OS/Browser-Store (nicht programmatisch wählbar) — Kompatibilität bestätigen. `[zu verifizieren]`
+- **V1 — uvicorn/Starlette mTLS: TLS-Ebene ✅, App-Durchreichung ⚠️.**
+  `--ssl-cert-reqs 2` (= `ssl.CERT_REQUIRED`) + `--ssl-ca-certs` erzwingen Client-Certs am
+  Handshake — bestätigt. **Aber:** Starlette legt das verifizierte Cert *nicht* nativ in den
+  Request-Scope (offener uvicorn-Issue #745, FastAPI #2224/#7176). **Konsequenz:** Per-Route-
+  Cert-Authz (D8) braucht entweder fragiles Transport-Extrahieren *oder* — empfohlen — einen
+  **Reverse-Proxy** (nginx) zur mTLS-Terminierung + Header-Weitergabe. Siehe §3.2 + offene Frage.
+- **V2 — frp-mTLS ✅, CRL bestätigt NICHT vorhanden ✅ (validiert D4).**
+  `transport.tls.certFile/keyFile/trustedCaFile` unterstützen bidirektionale Verifikation
+  (frps prüft frpc-Certs gegen die CA). CRL wird beim Handshake **nicht** erzwungen (offener
+  frp-Issue #4592) → unsere Entscheidung „Revocation = Ablauf, kein CRL" ist nicht nur Wahl,
+  sondern bei frp ohnehin die einzige verlässliche Option. Intermediate-Kette: CA-Datei muss
+  die Kette enthalten (Mechanismus vorhanden, praktischer Test in Phase A).
+- **V3 — reqwest ✅.** Client-Cert via `identity(Identity)` (PEM/PKCS12), ausschließlicher
+  Custom-Root via `tls_certs_only()` (deaktiviert System-Roots) — beides offiziell, rustls-Feature.
+- **V4 — Windows-Keyring-Limit bestätigt: 2560 Bytes** (`CRED_MAX_CREDENTIAL_BLOB_SIZE = 5*512`).
+  → **ECDSA-P-256-Leaves** (passen, ~1 KB) statt RSA-2048; Fallback 0600-Datei. In §3.3 verankert.
+- **V5 — Extension bestätigt betroffen.** Sie ruft den Server per `fetch(..., {headers:{'X-API-Key'}})`
+  (`background.js`/`popup.js`/`options.js`) — also Browser-Kontext. Unter mTLS-Pflicht muss der
+  Host ein Client-Cert im OS/Browser-Store haben (nicht programmatisch wählbar). Funktioniert für
+  Admin-Nutzung, aber als Kompatibilitäts-Konsequenz dokumentiert.
+
+Quellen: uvicorn.org/settings, github.com/fastapi/fastapi#2224 + Kludex/uvicorn#745,
+gofrp.org/en/docs/features/common/network/network-tls + fatedier/frp#4592,
+docs.rs/reqwest ClientBuilder, Microsoft Learn wincred.h (CREDENTIALW).
 
 ---
 
