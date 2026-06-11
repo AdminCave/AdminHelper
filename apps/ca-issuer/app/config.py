@@ -30,6 +30,15 @@ GATEWAY_CERT_DIR = os.environ.get("CA_GATEWAY_CERT_DIR", "").strip()
 GATEWAY_DOMAIN = os.environ.get("DOMAIN", "localhost").strip() or "localhost"
 GATEWAY_EXTRA_SANS = os.environ.get("EXTRA_SANS", "").strip()
 
+# When set, the issuer provisions the frps server cert + tunnel trust bundle here
+# on boot (A7); frps mounts this dir read-only. Empty -> no frps provisioning.
+FRPS_CERT_DIR = os.environ.get("CA_FRPS_CERT_DIR", "").strip()
+# CN + primary SAN of the frps leaf = the public frps address frpc connects to.
+# Defaults to DOMAIN; set CA_FRPS_SERVER_ADDR if frps is reached under a different
+# name/IP than the gateway.
+FRPS_SERVER_ADDR = os.environ.get("CA_FRPS_SERVER_ADDR", "").strip() or GATEWAY_DOMAIN
+FRPS_EXTRA_SANS = os.environ.get("EXTRA_SANS", "").strip()
+
 # Header the gateway sets from the verified client cert (ADR 0001 §3.2). The
 # issuer trusts these only because the internal listener is reachable solely
 # from the gateway (no host port).

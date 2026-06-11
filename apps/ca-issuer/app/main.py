@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app import config
 from app.issuer import IssuanceError, Issuer
-from app.storage import ensure_gateway_cert, ensure_hierarchy
+from app.storage import ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -43,6 +43,15 @@ def build_issuer(token_store: TokenStore | None = None) -> Issuer:
             intermediates["access"],
             config.GATEWAY_DOMAIN,
             config.GATEWAY_EXTRA_SANS,
+        )
+    # First-boot bootstrap: hand frps a tunnel-signed server cert + the tunnel
+    # trust bundle (A7), replacing its former self-run FRP CA.
+    if config.FRPS_CERT_DIR:
+        ensure_frps_cert(
+            Path(config.FRPS_CERT_DIR),
+            intermediates["tunnel"],
+            config.FRPS_SERVER_ADDR,
+            config.FRPS_EXTRA_SANS,
         )
     if token_store is None:
         if config.DATABASE_URL:

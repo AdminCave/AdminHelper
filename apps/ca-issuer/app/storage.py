@@ -90,9 +90,9 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     return out
 
 
-def _gateway_sans(domain: str, extra_sans: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Split DOMAIN + EXTRA_SANS into (dns_names, ip_addresses). localhost +
-    127.0.0.1 are always added so local/compose access validates against the
+def _classify_sans(primary: str, extra_sans: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split a primary name + EXTRA_SANS into (dns_names, ip_addresses). localhost
+    + 127.0.0.1 are always added so local/compose access validates against the
     pinned Root."""
     import ipaddress
 
@@ -111,7 +111,7 @@ def _gateway_sans(domain: str, extra_sans: str) -> tuple[tuple[str, ...], tuple[
             if entry not in dns:
                 dns.append(entry)
 
-    add(domain)
+    add(primary)
     add("localhost")
     add("127.0.0.1")
     for entry in extra_sans.split(","):
@@ -143,11 +143,44 @@ def ensure_gateway_cert(
     if fullchain.exists() and key_path.exists():
         return
 
-    dns_names, ip_addresses = _gateway_sans(domain, extra_sans)
+    dns_names, ip_addresses = _classify_sans(domain, extra_sans)
     leaf, leaf_key = pki.build_server_leaf(access.cert, access.key, domain, dns_names, ip_addresses)
     # fullchain = leaf + access intermediate (what nginx presents on :443).
     fullchain.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(access.cert))
     _write_private(key_path, pki.key_to_pem(leaf_key))
     logger.info(
         "Gateway-Cert provisioniert (CN=%s, DNS=%s, IP=%s)", domain, dns_names, ip_addresses
+    )
+
+
+def ensure_frps_cert(
+    out_dir: Path, tunnel: Intermediate, server_addr: str, extra_sans: str = ""
+) -> None:
+    """Provision the frps server TLS material under the tunnel intermediate
+    (ADR 0001 §3.1 / A7). frps mounts these read-only:
+        ca.crt    tunnel intermediate + root (verify frpc/agent client certs)
+        frps.crt  server leaf + tunnel intermediate (server_auth, SAN=server_addr)
+        frps.key  the leaf's private key (0600)
+
+    The CA private key never reaches the internet-facing frps — only the public
+    chain (the GHSA-rv39 master/published split, now under the unified PKI).
+    Idempotent like the gateway cert."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Trust bundle frps verifies agent/visitor tunnel certs against.
+    (out_dir / "ca.crt").write_bytes(tunnel.chain)
+
+    cert_path = out_dir / "frps.crt"
+    key_path = out_dir / "frps.key"
+    if cert_path.exists() and key_path.exists():
+        return
+
+    dns_names, ip_addresses = _classify_sans(server_addr, extra_sans)
+    leaf, leaf_key = pki.build_server_leaf(
+        tunnel.cert, tunnel.key, server_addr, dns_names, ip_addresses
+    )
+    # fullchain = leaf + tunnel intermediate (what frps presents to frpc).
+    cert_path.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(tunnel.cert))
+    _write_private(key_path, pki.key_to_pem(leaf_key))
+    logger.info(
+        "frps-Cert provisioniert (CN=%s, DNS=%s, IP=%s)", server_addr, dns_names, ip_addresses
     )
