@@ -7,6 +7,7 @@ use tauri::State;
 use crate::ansible;
 use crate::auth;
 use crate::connection;
+use crate::enrollment;
 use crate::error::AppError;
 use crate::frpc;
 use crate::models::{
@@ -45,6 +46,25 @@ pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
 pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
     tofu::forget_pin(&server_url);
     Ok(())
+}
+
+/// Enroll this device for mTLS: mint an access-scoped token (using the session
+/// JWT), generate an on-device key + CSR, and fetch + store the client cert from
+/// the ca-issuer (A5). The cert is presented on later requests by build_client
+/// (next increment). Idempotent from the user's view — re-running re-enrolls.
+#[tauri::command]
+pub async fn enroll_device(
+    app: tauri::AppHandle,
+    server_url: String,
+    token: String,
+    allow_self_signed: Option<bool>,
+) -> Result<(), AppError> {
+    let self_signed = allow_self_signed.unwrap_or_else(|| {
+        storage::load_settings(&app)
+            .map(|s| s.allow_self_signed_certs)
+            .unwrap_or(false)
+    });
+    enrollment::enroll(&server_url, &token, self_signed).await
 }
 
 /// Generic API proxy: forwards requests to the server via reqwest.

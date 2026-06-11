@@ -11,17 +11,22 @@
 //! access-scoped client leaf; the desktop pins the returned CA chain and presents
 //! the cert on every later request.
 //!
-//! This module currently provides the pure, unit-tested core (keygen + CSR, the
-//! wire types, the enroll-URL derivation). The HTTP orchestration + keyring/file
-//! storage + the mTLS `build_client` wiring follow in the next increment — until
-//! then these items are exercised only by the unit tests, so the staged-work
-//! allow below keeps `clippy -D warnings` clean. The next increment removes it.
-#![allow(dead_code)]
+//! The mTLS `build_client` wiring + CA-pinning (presenting the stored cert) is
+//! the next increment; this one obtains and stores the identity.
 
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::AppError;
+
+/// Keyring service shared with `auth.rs` / `tofu.rs`.
+const KEYRING_SERVICE: &str = "com.adminhelper.app";
+// Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
+// is the only secret; cert/ca are public but kept in the same secure store so
+// `build_client` can load the identity without an AppHandle.
+const KEYRING_KEY: &str = "enroll|key"; // the EC private key (PKCS#8 PEM)
+const KEYRING_CERT: &str = "enroll|cert"; // fullchain: leaf + access intermediate
+const KEYRING_CA: &str = "enroll|ca"; // chain: access intermediate + root
 
 /// The grant the server returns from `POST /api/enrollment/token`. The host is
 /// not carried — the desktop reuses the (already TLS-trusted) server URL it is
@@ -43,14 +48,13 @@ pub struct EnrollRequest<'a> {
     pub csr: &'a str,
 }
 
-/// What `/enroll` (and later `/renew`) returns.
+/// What `/enroll` (and later `/renew`) returns (the bare `cert` leaf is ignored —
+/// we present and pin chains).
 ///
-/// * `cert`      the leaf alone
 /// * `fullchain` leaf + access intermediate (what we present in mTLS)
 /// * `chain`     access intermediate + root (what we pin and verify against)
 #[derive(Debug, Deserialize)]
 pub struct IssuedIdentity {
-    pub cert: String,
     pub fullchain: String,
     pub chain: String,
 }
@@ -100,6 +104,119 @@ pub fn enroll_endpoint(server_url: &str, port: u16) -> Result<String, AppError> 
     url.set_path("/enroll");
     url.set_query(None);
     Ok(url.to_string())
+}
+
+// ── Identity storage (keyring) ────────────────────────────────────────────
+
+#[cfg(unix)]
+fn keyring_set(key: &str, value: &str) -> Result<(), AppError> {
+    use keyring::Entry;
+    Entry::new(KEYRING_SERVICE, key)
+        .and_then(|entry| entry.set_password(value))
+        .map_err(|e| AppError::Keyring(e.to_string()))
+}
+
+#[cfg(target_os = "windows")]
+fn keyring_set(key: &str, value: &str) -> Result<(), AppError> {
+    crate::password::windows_store_credential(key, "adminhelper", value)
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn keyring_set(_key: &str, _value: &str) -> Result<(), AppError> {
+    Err(AppError::Keyring("Plattform nicht unterstützt".to_string()))
+}
+
+/// Persist the enrolled identity: key + fullchain + pinned CA chain. The private
+/// key is written first, so a partial failure cannot leave a cert without a key.
+fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError> {
+    keyring_set(KEYRING_KEY, key_pem)?;
+    keyring_set(KEYRING_CERT, &issued.fullchain)?;
+    keyring_set(KEYRING_CA, &issued.chain)?;
+    Ok(())
+}
+
+// ── Enrollment orchestration ──────────────────────────────────────────────
+
+/// Run the full enrollment: mint an access-scoped token (JWT), generate an
+/// on-device key + CSR, redeem it at the gateway enroll plane, and store the
+/// issued identity. The TLS trust for both calls is the same the login used
+/// (the TOFU-pinned gateway cert — the enroll plane presents the same leaf).
+pub async fn enroll(server_url: &str, jwt: &str, allow_self_signed: bool) -> Result<(), AppError> {
+    let grant = mint_token(server_url, jwt, allow_self_signed).await?;
+    // The desktop is a human client — refuse anything but an access-scoped grant.
+    if grant.scope != "access" {
+        return Err(AppError::Validation(format!(
+            "Unerwarteter Enrollment-Scope '{}' (erwartet 'access')",
+            grant.scope
+        )));
+    }
+    let key_and_csr = generate_key_and_csr(&grant.subject_id)?;
+    let endpoint = enroll_endpoint(server_url, grant.enroll_port)?;
+    let issued = redeem(
+        &endpoint,
+        &grant.token,
+        &key_and_csr.csr_pem,
+        server_url,
+        allow_self_signed,
+    )
+    .await?;
+    store_identity(&key_and_csr.key_pem, &issued)
+}
+
+async fn mint_token(
+    server_url: &str,
+    jwt: &str,
+    allow_self_signed: bool,
+) -> Result<EnrollGrant, AppError> {
+    let client = crate::auth::build_client(server_url, allow_self_signed)?;
+    let url = format!("{}/api/enrollment/token", server_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::Validation(format!(
+            "Enrollment-Token anfordern fehlgeschlagen ({status}): {text}"
+        )));
+    }
+    Ok(resp.json().await?)
+}
+
+async fn redeem(
+    endpoint: &str,
+    token: &str,
+    csr_pem: &str,
+    server_url: &str,
+    allow_self_signed: bool,
+) -> Result<IssuedIdentity, AppError> {
+    // build_client pins by the login host; the gateway presents the same leaf on
+    // the enroll plane, so that pin applies to this call too.
+    let client = crate::auth::build_client(server_url, allow_self_signed)?;
+    let resp = client
+        .post(endpoint)
+        .json(&EnrollRequest {
+            token,
+            csr: csr_pem,
+        })
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::Validation(format!(
+            "Enrollment am ca-issuer fehlgeschlagen ({status}): {text}"
+        )));
+    }
+    let issued: IssuedIdentity = resp.json().await?;
+    if issued.fullchain.is_empty() || issued.chain.is_empty() {
+        return Err(AppError::Validation(
+            "Unvollständige Enrollment-Antwort (fullchain/chain fehlt)".to_string(),
+        ));
+    }
+    Ok(issued)
 }
 
 #[cfg(test)]
