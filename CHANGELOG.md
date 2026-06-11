@@ -26,6 +26,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Cert-Scope (`access` = Mensch, `tunnel` = Agent). **In dieser Phase permissiv** (`MTLS_ENFORCE`
   default `false`): ein Mismatch wird nur geloggt, der Request läuft durch — das System bleibt
   nutzbar, bis alle Clients Certs haben. Das Scharfschalten auf `CERT_REQUIRED` folgt später.
+- **Agent: automatisches mTLS-Enrollment + Auto-Renew.** Beim Provisioning erzeugt der Agent
+  on-device einen ECDSA-Key, holt über die Enroll-Plane des Gateways (Port `8444`) ein
+  `tunnel`-scoped Client-Zertifikat vom `ca-issuer`, legt es unter `/etc/adminhelper/identity/`
+  (Key `0600`) ab und pinnt die interne Root-CA. Danach weist er sich bei allen Server-Pushes
+  (Monitor-Report, FRPC-Sync) mit diesem Cert aus (custom-root-only, ADR 0001 D2) und erneuert es
+  automatisch bei ~50&nbsp;% Laufzeit via `/ca/renew`. **Best-effort:** ohne erfolgreiches
+  Enrollment läuft der Agent vorerst mit dem API-Key weiter. `provision/activate` liefert dafür
+  einen einmaligen Enrollment-Token mit.
 
 ### Changed
 

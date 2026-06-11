@@ -150,7 +150,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     auf Admin-Route, dual-use akzeptiert tunnel, Bootstrap nie 403. **181 Server-Tests grün**
     (keine Regression — permissiv = durchlässig). Developer-Doku zum Scope-Modell bleibt A10.
 
-### A4 — Agent: Auto-Enrollment + mTLS (Go)
+### A4 — Agent: Auto-Enrollment + mTLS (Go) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** Beim Provisioning (bestehender Einmal-Token-Flow) ECDSA-Keypair + CSR
   on-device, `ca-issuer/enroll` über Gateway, Cert+Key als 0600-Datei, CA pinnen. Client-Cert
   für alle Server-Pushes (gemeinsamer `internal/httpclient` bekommt `Identity` + custom-root-only).
@@ -160,6 +160,29 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Akzeptanz:** Go-Tests (Keygen/CSR/Renew-Entscheidung); lokale Integration: Agent enrollt,
   pusht mit Client-Cert, erneuert. Cross-Builds linux+windows grün.
 - **Aufwand:** L · **Risiko:** mittel · **Abh.:** A1, A2, A3
+- **Fortschritt ✅ ABGESCHLOSSEN 2026-06-11:**
+  - **Inkrement 1 (Server, die in A1 zurückgestellte Mint-Seite):** `provision/activate` mintet
+    beim Einlösen einen einmaligen, `tunnel`-scoped Enrollment-Token (CN = stabile `server_id`,
+    nicht aus der CSR; 10-min-TTL; SHA-256-gehasht wie der ca-issuer konsumiert) und liefert ihn
+    im `enrollment`-Block {token, subjectId, scope, enrollPort}. Pytest.
+  - **Inkrement 2 (Agent enroll):** neues `internal/enroll` — ECDSA-P-256-Keygen on-device, CSR,
+    Token-Einlösung an der Enroll-Plane `:8444`, Persistenz unter `<MonitorDir>/identity`
+    (Key 0600, fullchain, gepinnte Root). Verdrahtet in `provision.Run` (best-effort). Trust-
+    Bootstrap: TOFU auf das Gateway-Cert (gleiches Leaf wie `:443`), Root aus der Enroll-Antwort
+    permanent gepinnt. Agent leitet die Enroll-URL aus seiner Server-URL + Port ab.
+  - **Inkrement 3 (mTLS-Push + Renew):** `httpclient.NewMTLS` (Client-Cert + custom-root-only,
+    D2); `enroll.ServerClient` wählt mTLS-Client wenn enrollt, sonst Legacy-Fallback; Monitor-Push
+    + FRPC-Sync nutzen ihn. Renew (`NeedsRenewal`/`Renew`/`MaybeRenew`) als Check-pro-Lauf in
+    `runOnce` (oneshot-tauglich), `/ca/renew` über `:443` mit dem aktuellen Cert.
+  - **Entscheidungen:** Agent-Scope = `tunnel` (= A3 `SCOPE_AGENT`); Cert-CN = `server_id`
+    (stabil, Revocation keyt darauf); Client-Cert **additiv** zum API-Key (A3 permissiv) —
+    nichts bricht ohne Cert. Keine neuen Go-Deps (stdlib crypto).
+  - **Verifiziert:** Go-Tests (Keygen/CSR/Submit/Store/NeedsRenewal/ServerClient + Renew gegen
+    TLS-Test-Server), gofmt/vet sauber, `go test ./...` (inkl. `-race`) grün, Cross-Builds
+    linux+windows. **Live-Integration gegen den laufenden Stack:** DB-gemiteter tunnel-Token →
+    `:8444/enroll` (echte CSR) → Cert `CN=…, OU=tunnel`, Issuer „Tunnel Intermediate"; `:443/ca/renew`
+    (mTLS) → neues Cert mit **erhaltener** Identität (Renew-CSR-CN verworfen ⇒ Issuer leitet
+    Identität aus dem vorgelegten Cert ab, nicht der CSR). Docs (agent-deployment DE+EN) ergänzt.
 
 ### A5 — Desktop: Auto-Enrollment + mTLS + Browser-P12-Export (Rust/Tauri)
 - **Beschreibung:** Beim ersten Server-Login ECDSA-Keypair+CSR (`rcgen`), Enroll via

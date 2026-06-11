@@ -67,6 +67,7 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
             </li>
           </ol>
           <p>Der Agent ruft <code>/api/servers/{id}/provision/activate</code> auf, bekommt je nach Konfiguration Server-API-Key, Monitor-Key, <code>frpc.toml</code> + PKI-Bundle, aktiviert <code>adminhelper-agent.timer</code> und (falls FRP) <code>frpc.service</code>. Der Token wird nach Einlösung ungültig.</p>
+          <p><strong>mTLS-Enrollment (automatisch):</strong> Beim Provisioning holt der Agent zusätzlich ein eigenes Client-Zertifikat vom <code>ca-issuer</code> &mdash; ECDSA-Key on-device (verlässt den Host nie), CSR über die Enroll-Plane des Gateways auf Port <code>8444</code>. Cert + Key landen unter <code>/etc/adminhelper/identity/</code> (Key <code>0600</code>), die interne Root-CA wird gepinnt. Danach weist sich der Agent bei allen Server-Pushes mit diesem Cert aus und erneuert es automatisch bei ~50&nbsp;% Laufzeit. <em>Best-effort:</em> schlägt das Enrollment fehl (z.&nbsp;B. Port 8444 nicht erreichbar), läuft der Agent vorerst mit dem API-Key weiter.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
