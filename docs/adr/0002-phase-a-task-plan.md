@@ -35,7 +35,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 
 ## Tasks
 
-### A0 — Verifikations-Spikes (Restunsicherheiten schließen)
+### A0 — Verifikations-Spikes (Restunsicherheiten schließen) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** Zwei Wegwerf-Spikes, die die zwei riskantesten Mechanismen *vor* dem
   echten Bau beweisen: (1) nginx mTLS-Terminierung → verifizierte Identität als Header an
   einen Upstream, der ihn echot; (2) frps verifiziert ein Client-Cert, das von einem
@@ -44,6 +44,11 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Akzeptanz:** beides lokal demonstrierbar grün; Erkenntnisse (Header-Name, Ketten-Format)
   in ADR 0001 §7 nachgetragen.
 - **Aufwand:** M · **Risiko:** niedrig · **Abh.:** —
+- **Ergebnis:** Beide Spikes grün (Details ADR 0001 §7 „Spike-Ergebnisse"). nginx-Setup für
+  A2 bestätigt (`ssl_verify_client on`/`ssl_verify_depth 2`/`$ssl_client_s_dn`-Header +
+  `proxy_set_header`-Hygiene); Intermediate-Kette für A7 trägt; ECDSA-Größe (D10) bestätigt.
+  Nuance für A2/A8: nginx liefert ohne Cert HTTP 400 statt Handshake-Drop — Upstream bleibt
+  unerreichbar, ggf. `444` (Drop) erwägen.
 
 ### A1 — PKI-Kernbibliothek + `ca-issuer`-Container (Issuance ohne Enforcement)
 - **Beschreibung:** Neuer Dienst `apps/ca-issuer/` (Python/FastAPI). Zertifikats-Primitive aus

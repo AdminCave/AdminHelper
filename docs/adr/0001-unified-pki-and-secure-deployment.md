@@ -222,6 +222,22 @@ Quellen: uvicorn.org/settings, github.com/fastapi/fastapi#2224 + Kludex/uvicorn#
 gofrp.org/en/docs/features/common/network/network-tls + fatedier/frp#4592,
 docs.rs/reqwest ClientBuilder, Microsoft Learn wincred.h (CREDENTIALW).
 
+### Spike-Ergebnisse (A0, lokal verifiziert 2026-06-11)
+
+Mit echter ECDSA-Test-PKI (Root → `access`-Intermediate → Server-/Client-Leaf):
+
+- **Spike 1 — nginx mTLS + Header (V1 bestätigt):** `ssl_verify_client on` +
+  `ssl_verify_depth 2` + `ssl_client_certificate=root+intermediate`. Gültiges Client-Cert →
+  Upstream erhält `X-Client-Cert-CN: CN=test-agent-01` und `X-Client-Verify: SUCCESS`. Ohne
+  Cert → **HTTP 400, Upstream nie erreicht** (nginx beantwortet mit 400 statt Handshake-Abbruch
+  — Schutz hält, App unerreichbar). Vom Client gespoofter `X-Client-Cert-CN` wird durch
+  `proxy_set_header` mit der echten DN **überschrieben** (Header-Hygiene bestätigt).
+- **Spike 2 — Intermediate-Kette (V2 bestätigt):** mutual TLS mit Intermediate-signierten
+  Leaves beidseitig, `CAfile=root+intermediate`, `-Verify 2` → `Verify return code: 0 (ok)`.
+  Die `tunnel`-Intermediate-Kette für frps trägt also (CA-Datei = Kette, depth 2).
+- **D10 bestätigt:** ECDSA-P-256 Key+Cert in PEM = **858 Bytes** (< 2560 Windows-Keyring-Limit;
+  RSA-2048 wäre ~3 KB gewesen).
+
 ---
 
 ## 8. Bezug zum Install/Update-Plan
