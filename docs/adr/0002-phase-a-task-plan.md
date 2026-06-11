@@ -87,6 +87,15 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   Identität; gespoofter `X-Client-*` wird gestreift; `server`/`ca-issuer` vom Host nicht direkt
   erreichbar (Port-Check).
 - **Aufwand:** L · **Risiko:** mittel (Topologie-Wechsel) · **Abh.:** A1
+- **Fortschritt:** Inkrement 1 (Gateway-Config + Dockerfile, `apps/gateway/`) ✅ — additiv,
+  noch NICHT in die Produktiv-Compose verdrahtet. Lokal mit der echten `nginx.conf` verifiziert:
+  `nginx -t` ok; Datenebene routet zu `app` und setzt `X-Client-Verify`/`-Cert-CN` aus dem
+  verifizierten Cert (permissive: ohne Cert `Verify=NONE`, erreicht App trotzdem);
+  `/ca/renew`→issuer mit weitergereichtem Cert; Enroll-Plane `:8444` certless→issuer/enroll,
+  gespoofte `X-Client-*`-Header gestrippt; Fremdpfad→404. **Offen (Inkrement 2, der brechende
+  Teil):** Produktiv-Compose umverdrahten — `server` + `ca-issuer` auf internes Netz/plain-HTTP
+  (kein Host-Port), Gateway auf `:443`, Cert-Bereitstellung fürs Gateway (Bootstrap self-signed
+  vs. access-Leaf), `docker-entrypoint.sh` des Servers (TLS-Terminierung raus), Stack-Up-Verifikation.
 
 ### A3 — Server: Cert-Scope + Per-Route-Authz auf dem Header (permissive)
 - **Beschreibung:** App liest die Gateway-Identität; Dependency, die CN/Scope → Identität
