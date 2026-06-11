@@ -181,7 +181,7 @@ allowUsers = ["ops-admin"]</code></pre>
             <li><strong>Master-PKI</strong> (Volume <code>frp-pki</code>, server-only): CA-Key + alle Client-Keys.</li>
             <li><strong>Shared-Volume <code>frp-config</code></strong> (frps mountet es <code>:ro</code> unter <code>/etc/frp</code>): <code>frps.toml</code> (<code>0600</code>) + die publizierte Cert-Teilmenge.</li>
           </ul>
-          <p>Der Container startet nur kurz als root, um die gemounteten Pfade zu chownen, und droppt dann via <code>gosu</code> auf einen Non-root-User (uid <code>10001</code>) — uvicorn, Alembic, Cert-Generierung und Hook-Subprozesse laufen unprivilegiert.</p>
+          <p>Der Container startet nur kurz als root, um die gemounteten Pfade zu chownen, und droppt dann via <code>gosu</code> auf einen Non-root-User (uid <code>10001</code>) — uvicorn, Alembic und Hook-Subprozesse laufen unprivilegiert. uvicorn lauscht plain-HTTP auf <code>8080</code> (kein Host-Port); TLS terminiert das vorgelagerte <code>gateway</code> (nginx), nicht der Server.</p>
           <div class="code-header"><span>tree</span></div>
 <pre><code>/app/data/                         # DATA_DIR (server-only)
 &#9500;&#9472;&#9472; .bootstrap_token            # Einmaliger Setup-Token-Hash (P0-6)

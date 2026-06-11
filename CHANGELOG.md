@@ -5,6 +5,31 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- **Internes TLS/mTLS-Gateway (`apps/gateway/`, nginx) als einzige öffentliche TLS-Kante**
+  auf `:443` (Web/API) und `:8444` (Enrollment, certless + token-gated). Es terminiert TLS und
+  reicht die verifizierte Client-Identität als `X-Client-*`-Header an die internen Dienste weiter
+  (in dieser Phase **permissiv** — `ssl_verify_client optional`; die mTLS-Pflicht folgt später).
+  Ein externer Reverse-Proxy ist nicht mehr nötig (ADR 0001 D11).
+- **`ca-issuer`-Dienst in die Produktiv-Compose verdrahtet** (+ ghcr-Publish). Er erzeugt beim
+  ersten Start die interne PKI (Root + `tunnel`/`access`/`internal`-Intermediates) und stellt dem
+  Gateway dabei dessen TLS-Leaf bereit — **access-signiert**, kettet zur gepinnten Root, sodass
+  native Clients es akzeptieren (das Gateway hält keinen Signier-Schlüssel, ADR 0001 D6). Neue
+  Volumes `ca-pki` (issuer-privat) und `gateway-certs`.
+- **`CA_ROOT_PASSPHRASE`** in `.env.example` + `scripts/init-secrets.sh` — verschlüsselt den
+  kalten PKI-Root-Key at-rest (ADR 0001 D7); **getrennt sichern, nicht ins Backup legen**.
+
+### Changed
+
+- **Der Server terminiert kein TLS mehr selbst.** Er lauscht plain-HTTP intern auf `:8080` hinter
+  dem Gateway und hat **keinen Host-Port** mehr; `server` und `ca-issuer` sind nur noch im
+  Compose-Netz erreichbar. Dadurch ist der vom Gateway gesetzte Identitäts-Header von außen
+  unfälschbar. Die frühere Self-Signed-Zertifikat-Erzeugung im Server-Entrypoint entfällt
+  (das TLS-Zertifikat kommt jetzt vom `ca-issuer`). **frps** bleibt seine eigene TLS-Kante.
+
 ## [0.27.0] - 2026-06-10
 
 ### Security

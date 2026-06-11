@@ -85,7 +85,7 @@
           <p>Jedes Unterprojekt ist eigenständig, kein Monorepo-Toolchain:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code># Server
-cd apps/server && uv sync && uv run uvicorn app.main:app --reload --port 8443
+cd apps/server && uv sync && uv run uvicorn app.main:app --reload --port 8080
 
 # Web-Panel (mit Proxy zum laufenden Server)
 cd apps/web && npm ci && npm run dev

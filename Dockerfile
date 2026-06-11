@@ -22,7 +22,7 @@ ENV APP_VERSION=$VERSION \
 WORKDIR /app
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl tzdata postgresql-client gosu \
+ && apt-get install -y --no-install-recommends tzdata postgresql-client gosu \
  && rm -rf /var/lib/apt/lists/*
 
 # Hashed lockfile: apps/server/requirements.in (intent) -> requirements.txt
@@ -43,9 +43,9 @@ COPY --from=frontend-build /build/dist/ ./frontend/
 # can chown the mounted paths (bind mounts + named volumes), then drops to this
 # user via gosu before exec'ing uvicorn (see docker-entrypoint.sh).
 RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
- && mkdir -p /app/data /app/certs /app/frp-config /app/frp-pki \
+ && mkdir -p /app/data /app/frp-config /app/frp-pki \
  && chown -R app:app /app
 
-EXPOSE 8443
+EXPOSE 8080
 
 ENTRYPOINT ["/bin/sh", "/docker-entrypoint.sh"]

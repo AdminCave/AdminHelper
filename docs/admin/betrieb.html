@@ -76,7 +76,8 @@
               <tr><td><code>data/.secret_key</code></td><td>Auto-generierter JWT-Key (sofern <code>SECRET_KEY</code> nicht gesetzt).</td></tr>
               <tr><td><code>frp-pki</code> (Docker-Volume)</td><td><strong>FRP-Master-PKI</strong>: Root-CA inkl. Private-Key (10 J.) + alle Client-Keys. Das wichtigste Backup-Ziel — Verlust bedeutet Neuausstellung der gesamten mTLS-Trust-Domain.</td></tr>
               <tr><td><code>frp-config</code> (Docker-Volume)</td><td>Generierte <code>frps.toml</code> + die publizierte Cert-Teilmenge, die frps liest (<code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code> — kein CA-Private-Key, keine Client-Keys).</td></tr>
-              <tr><td><code>data/certs/</code></td><td>Self-Signed-TLS für den FastAPI-Port <code>8443</code>.</td></tr>
+              <tr><td><code>ca-pki</code> (Docker-Volume)</td><td><strong>PKI-Hierarchie des <code>ca-issuer</code></strong>: Root (passphrase-verschlüsselt) + Intermediates (<code>tunnel</code>/<code>access</code>/<code>internal</code>). Das zentrale Backup-Ziel der internen CA — Verlust bedeutet, dass alle Clients neu enrollen müssen. Issuer-privat, nie ins Gateway/frps gemountet.</td></tr>
+              <tr><td><code>gateway-certs</code> (Docker-Volume)</td><td>TLS-Material des Gateways (access-signiertes Leaf + Key + CA-Trust-Bundle), vom <code>ca-issuer</code> bereitgestellt. Wiederherstellbar — der Issuer provisioniert es neu.</td></tr>
               <tr><td><code>victoria-data</code> (Docker-Volume)</td><td>VictoriaMetrics-Speicher – Retention 90&nbsp;Tage (eigenes Volume, nicht Teil dieses Datenverzeichnisses).</td></tr>
             </tbody>
           </table>
@@ -139,14 +140,14 @@ docker compose up -d server</code></pre>
           <p>Standardmäßig läuft ein einzelner Uvicorn-Worker. Für höhere Last:</p>
           <ol>
             <li><code>REDIS_URL</code> setzen (sonst wird das In-Memory-Rate-Limit inkonsistent)</li>
-            <li>Im <code>docker-compose.override.yml</code> <code>command</code> überschreiben: <code>uvicorn app.main:app --host 0.0.0.0 --port 8443 --workers 4 --ssl-keyfile ... --ssl-certfile ...</code></li>
+            <li>Im <code>docker-compose.override.yml</code> <code>command</code> überschreiben: <code>uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4</code> (plain-HTTP intern; TLS terminiert das Gateway)</li>
           </ol>
 
           <h2>Zeitzone</h2>
           <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Das beeinflusst Audit-Log-Zeitstempel und Cron-ähnliche Hook-Jobs.</p>
 
           <h2>Zertifikate erneuern</h2>
-          <p>Die internen TLS-Zertifikate des FastAPI-Ports haben 10 Jahre Gültigkeit. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>
+          <p>Das TLS-Zertifikat des Gateways stellt der <code>ca-issuer</code> aus (access-signiert, 365&nbsp;Tage). Es wird beim ersten Start ins <code>gateway-certs</code>-Volume provisioniert; ein Redeploy/Neustart des <code>ca-issuer</code> erneuert es bei Bedarf. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>
 
           <div class="page-nav">
             <a class="prev" href="./installation.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Installation</span></a>

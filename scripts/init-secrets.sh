@@ -5,8 +5,10 @@
 # Ruhe, fuellt nur leere oder als Default markierte Felder.
 #
 # Behandelte Variablen:
-#   - SECRET_KEY        (JWT-Signierung; Default 'change-me-in-production')
-#   - MONITOR_API_KEY   (Shared Secret AdminHelper <-> Monitoring; Default leer)
+#   - SECRET_KEY         (JWT-Signierung; Default 'change-me-in-production')
+#   - MONITOR_API_KEY    (Shared Secret AdminHelper <-> Monitoring; Default leer)
+#   - POSTGRES_PASSWORD  (Postgres-Cluster Server + Monitoring; Default leer)
+#   - CA_ROOT_PASSPHRASE (verschluesselt den kalten PKI-Root-Key; Default leer)
 #
 # Usage:
 #   ./scripts/init-secrets.sh           # operiert auf ./.env
@@ -85,6 +87,16 @@ if is_set_safely "POSTGRES_PASSWORD"; then
 else
     upsert "POSTGRES_PASSWORD" "$(openssl rand -hex 32)"
     generated+=("POSTGRES_PASSWORD")
+fi
+
+# CA_ROOT_PASSPHRASE (verschluesselt den kalten PKI-Root-Key, ADR 0001 D7) —
+# 32 Bytes hex. Nur beim ersten Start des ca-issuer noetig (Hierarchie-Erzeugung).
+# Getrennt sichern und NICHT in Backups legen.
+if is_set_safely "CA_ROOT_PASSPHRASE"; then
+    left_alone+=("CA_ROOT_PASSPHRASE")
+else
+    upsert "CA_ROOT_PASSPHRASE" "$(openssl rand -hex 32)"
+    generated+=("CA_ROOT_PASSPHRASE")
 fi
 
 # Permission auf 0600 setzen — Secrets sollen nicht weltlesbar sein

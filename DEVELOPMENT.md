@@ -142,8 +142,8 @@ Umgebungsvariablen koennen ueber eine `.env`-Datei im Projektroot gesetzt werden
 ### Server + frps (Docker, empfohlen)
 
 Fuer das vollstaendige Setup inkl. FRP-Server. Beim ersten Start einmal
-die Secrets initialisieren — generiert `SECRET_KEY` und `MONITOR_API_KEY`
-in der `.env`:
+die Secrets initialisieren — generiert `SECRET_KEY`, `MONITOR_API_KEY`,
+`POSTGRES_PASSWORD` und `CA_ROOT_PASSPHRASE` in der `.env`:
 
 ```bash
 # Im Projektroot:
@@ -159,7 +159,12 @@ docker compose up -d
 ghcr.io-Images, siehe unten.)
 
 Das startet:
-- **Server** auf `https://localhost:443` (selbstsigniertes Zertifikat)
+- **Gateway** (nginx) als einzige öffentliche TLS-Kante auf `443` (Web/API) und `8444`
+  (Enrollment); terminiert TLS und proxyt intern an den Server
+- **Server** nur intern im Compose-Network (plain-HTTP `8080`, kein Host-Port); erreichbar
+  über das Gateway unter `https://localhost`
+- **ca-issuer** nur intern (kein Host-Port): erzeugt beim ersten Start die interne PKI und
+  stellt dem Gateway sein TLS-Leaf bereit
 - **frps** auf Port 7000 (FRP-Protokoll) und 7443 (HTTPS-vhosts)
 - **Monitoring** nur intern im Compose-Network (`expose 8080`, kein Host-Port); Agent-Metriken laufen tunnelfrei über den Server unter `/api/monitoring`
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
@@ -174,7 +179,7 @@ existiert direkt ein Admin `admin`/`dev`.
 Docker Compose laedt automatisch `docker-compose.override.yml`, falls vorhanden. Diese Datei ist in `.gitignore` und eignet sich fuer lokale Anpassungen:
 
 ```yaml
-# docker-compose.override.yml (Beispiel: Server-Image lokal bauen)
+# docker-compose.override.yml (Beispiel: alle Images lokal bauen)
 services:
   server:
     build:
@@ -184,6 +189,18 @@ services:
     environment:
       - DOMAIN=localhost
       - ADMIN_PASSWORD=dev   # nur fuer lokale Entwicklung; Production: leer lassen + Bootstrap-Token
+  monitoring:
+    build:
+      context: ./apps/monitoring
+    image: adminhelper-monitoring:dev
+  ca-issuer:
+    build:
+      context: ./apps/ca-issuer
+    image: adminhelper-ca-issuer:dev
+  gateway:
+    build:
+      context: ./apps/gateway
+    image: adminhelper-gateway:dev
 ```
 
 Mit so einer Override-Datei startet `docker compose up --build -d` den

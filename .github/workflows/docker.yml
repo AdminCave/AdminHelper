@@ -32,6 +32,12 @@ jobs:
           - image: monitoring
             context: apps/monitoring
             dockerfile: apps/monitoring/Dockerfile
+          - image: ca-issuer
+            context: apps/ca-issuer
+            dockerfile: apps/ca-issuer/Dockerfile
+          - image: gateway
+            context: apps/gateway
+            dockerfile: apps/gateway/Dockerfile
     steps:
       - uses: actions/checkout@v6
 

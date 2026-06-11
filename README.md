@@ -135,7 +135,8 @@ cd AdminHelper
 # In the project root:
 cp .env.example .env
 
-# Generate secure random secrets (SECRET_KEY + MONITOR_API_KEY).
+# Generate secure random secrets (SECRET_KEY, MONITOR_API_KEY,
+# POSTGRES_PASSWORD, CA_ROOT_PASSPHRASE).
 # Idempotent: does not overwrite anything that is already set.
 ./scripts/init-secrets.sh
 
@@ -145,7 +146,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The server is then reachable at `https://localhost` (Compose publishes only `443:8443`, TLS with a self-signed certificate unless you place your own in `certs/`).
+The web UI/API is then reachable at `https://localhost` — served by the built-in TLS gateway (nginx) on `443`, which terminates TLS and proxies to the internal `server` (the `server` and `ca-issuer` have no host port). The gateway's certificate is issued by the internal `ca-issuer` (access-signed by the internal CA), so the browser shows an "untrusted" warning until you trust the internal root CA. Enrollment is exposed on `8444`.
 
 **First login — bootstrap-token flow:**
 

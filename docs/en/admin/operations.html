@@ -43,7 +43,8 @@
               <tr><td><code>/data/.secret_key</code></td><td>Auto-generated 256-bit secret; <strong>never</strong> delete without re-issuing all tokens.</td></tr>
               <tr><td><code>frp-pki</code> (volume)</td><td><strong>FRP master PKI</strong>: root CA incl. private key (10 y) + all client keys. The most important secret to back up — losing it means re-issuing the entire mTLS trust domain.</td></tr>
               <tr><td><code>frp-config</code> (volume)</td><td>Generated <code>frps.toml</code> + the published cert subset frps reads (<code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code> — no CA private key, no client keys).</td></tr>
-              <tr><td><code>/data/certs/</code></td><td>Self-signed TLS for the FastAPI port 8443.</td></tr>
+              <tr><td><code>ca-pki</code> (volume)</td><td><strong>PKI hierarchy of the <code>ca-issuer</code></strong>: root (passphrase-encrypted) + intermediates (<code>tunnel</code>/<code>access</code>/<code>internal</code>). The central backup target of the internal CA — losing it means every client must re-enroll. Issuer-private, never mounted into the gateway/frps.</td></tr>
+              <tr><td><code>gateway-certs</code> (volume)</td><td>The gateway's TLS material (access-signed leaf + key + CA trust bundle), provisioned by the <code>ca-issuer</code>. Recoverable — the issuer re-provisions it.</td></tr>
               <tr><td><code>victoria-data</code> (volume)</td><td>VictoriaMetrics storage – 90 d retention (separate, not in this scope).</td></tr>
             </tbody>
           </table>
@@ -106,7 +107,7 @@ tar xzf adminhelper-files-2026-05-02.tar.gz</code></pre>
           <p><code>TZ</code> is passed to all containers. Default <code>Europe/Berlin</code>. It affects audit-log timestamps and cron-like hook jobs.</p>
 
           <h2>Renewing certificates</h2>
-          <p>The internal TLS certificates of the FastAPI port are valid for 10 years. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
+          <p>The gateway's TLS certificate is issued by the <code>ca-issuer</code> (access-signed, 365 days). It is provisioned into the <code>gateway-certs</code> volume on first start; a redeploy/restart of the <code>ca-issuer</code> renews it when needed. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
 
           <div class="page-nav">
             <a class="prev" href="./installation.html"><span class="label">← Previous chapter</span><span class="title">Installation</span></a>

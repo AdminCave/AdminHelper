@@ -75,7 +75,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   Compose-Wiring + CI/ghcr-Publish des ca-issuer + der server-seitige Admin-Endpunkt zum Minten
   von Enrollment-Tokens (Tabelle + Issuer-Konsum stehen, das Mint-UI ist die Konsumentenseite).
 
-### A2 — nginx-Gateway + interne-only Listener (permissive)
+### A2 — nginx-Gateway + interne-only Listener (permissive) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** `gateway`-Container (nginx) vor `:443`. `server` + `ca-issuer` auf
   **internes Netz, plain-HTTP, kein Host-Port** umstellen. Gateway terminiert TLS (access-Leaf,
   vom Issuer ausgestellt), pro Listener: Datenebene **`CERT_OPTIONAL` (permissive!)**,
@@ -87,15 +87,34 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   Identität; gespoofter `X-Client-*` wird gestreift; `server`/`ca-issuer` vom Host nicht direkt
   erreichbar (Port-Check).
 - **Aufwand:** L · **Risiko:** mittel (Topologie-Wechsel) · **Abh.:** A1
-- **Fortschritt:** Inkrement 1 (Gateway-Config + Dockerfile, `apps/gateway/`) ✅ — additiv,
-  noch NICHT in die Produktiv-Compose verdrahtet. Lokal mit der echten `nginx.conf` verifiziert:
-  `nginx -t` ok; Datenebene routet zu `app` und setzt `X-Client-Verify`/`-Cert-CN` aus dem
-  verifizierten Cert (permissive: ohne Cert `Verify=NONE`, erreicht App trotzdem);
-  `/ca/renew`→issuer mit weitergereichtem Cert; Enroll-Plane `:8444` certless→issuer/enroll,
-  gespoofte `X-Client-*`-Header gestrippt; Fremdpfad→404. **Offen (Inkrement 2, der brechende
-  Teil):** Produktiv-Compose umverdrahten — `server` + `ca-issuer` auf internes Netz/plain-HTTP
-  (kein Host-Port), Gateway auf `:443`, Cert-Bereitstellung fürs Gateway (Bootstrap self-signed
-  vs. access-Leaf), `docker-entrypoint.sh` des Servers (TLS-Terminierung raus), Stack-Up-Verifikation.
+- **Fortschritt:** Inkrement 1 (Gateway-Config + Dockerfile, `apps/gateway/`) ✅ — additiv.
+  Lokal mit der echten `nginx.conf` verifiziert: `nginx -t` ok; Datenebene routet zu `app` und
+  setzt `X-Client-Verify`/`-Cert-CN` aus dem verifizierten Cert (permissive: ohne Cert
+  `Verify=NONE`, erreicht App trotzdem); `/ca/renew`→issuer; Enroll-Plane `:8444`
+  certless→issuer/enroll, gespoofte `X-Client-*`-Header gestrippt; Fremdpfad→404.
+- **Inkrement 2 (der brechende Teil) ✅ ABGESCHLOSSEN 2026-06-11:** Produktiv-Compose umverdrahtet.
+  - **Cert-Entscheidung: access-Leaf vom ca-issuer** (nicht Bootstrap-self-signed). Begründung:
+    native Clients (Desktop/Agent, A4/A5) pinnen die Root und validieren jedes Leaf dagegen (D2)
+    — ein self-signed Gateway-Leaf würde abgelehnt. Henne-Ei gelöst: der ca-issuer mintet beim
+    First-Boot das access-signierte Gateway-Leaf selbst (`pki.build_server_leaf` →
+    `storage.ensure_gateway_cert`, env-gated `CA_GATEWAY_CERT_DIR`) und legt
+    `gateway-fullchain.pem`/`gateway.key`/`client-ca.pem` ins gemeinsame `gateway-certs`-Volume;
+    das Gateway-Entrypoint wartet darauf, dann `nginx`. **D6 gewahrt** — das Gateway hält nur ein
+    Leaf, keinen Signier-Key (Inkrement 2a, 6 neue Tests).
+  - **Topologie (Inkrement 2b):** `server` lauscht plain-HTTP `:8080` (TLS-Terminierung +
+    Self-Signed-Block aus `docker-entrypoint.sh` raus, openssl/`/app/certs` als Orphans entfernt);
+    `server` + `ca-issuer` ohne Host-Port (nur Compose-Netz); `gateway` auf `:443` + Enroll `:8444`;
+    neue Volumes `ca-pki` (issuer-privat) + `gateway-certs`; ca-issuer in Compose + ghcr-Publish
+    (`docker.yml`-Matrix); `CA_ROOT_PASSPHRASE` in `.env.example` + `init-secrets.sh`.
+  - **Bug gefunden & gefixt (Stack-Up):** frisches `gateway-certs`-Named-Volume ist root-owned —
+    der ca-issuer-Entrypoint chownt es jetzt vor dem gosu-Drop.
+  - **Verifiziert (`docker compose up`, lokal):** Web/API über `:443` permissiv ohne Client-Cert
+    → 200; Gateway-Leaf `CN=localhost`/issuer `Access Intermediate` (kettet zur Root, nicht
+    self-signed); `ca-issuer` + `server` vom Host nicht erreichbar (8090/8080/8443 refused);
+    `/healthz` grün; gespoofter `X-Client-Verify: SUCCESS` vom Gateway überschrieben → issuer 401;
+    Enroll `:8444` route (Fremdpfad 404, bogus Token 403). Docs DE+EN nachgezogen (Installation/
+    Betrieb/Troubleshooting/Developer); das **vollständige** PKI/mTLS-Modell bleibt A10.
+  - **Datenebene weiterhin permissiv** (`ssl_verify_client optional`); Scharfschalten ist A8.
 
 ### A3 — Server: Cert-Scope + Per-Route-Authz auf dem Header (permissive)
 - **Beschreibung:** App liest die Gateway-Identität; Dependency, die CN/Scope → Identität
