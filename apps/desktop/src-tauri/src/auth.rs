@@ -39,6 +39,13 @@ pub fn build_client(
     // logout) plus api_proxy and the tunnel/connection JWT paths: refuse to send
     // credentials to a non-TLS server. The scheme is never relaxed.
     crate::validation::validate_server_url_secure(server_url)?;
+    // Once this device is enrolled (A5), present the mTLS client cert and verify
+    // the server against the pinned CA chain. This supersedes the self-signed /
+    // public-CA paths below — the pinned CA is a stronger trust anchor than a
+    // single leaf pin and survives gateway leaf rotation (D2).
+    if crate::enrollment::is_enrolled() {
+        return crate::enrollment::enrolled_client();
+    }
     if allow_self_signed {
         // NOT danger_accept_invalid_certs(true) — that would disable chain AND
         // hostname checks with no pinning, leaving every credential open to an
@@ -212,6 +219,9 @@ pub async fn logout(allow_self_signed: bool) -> Result<(), AppError> {
     if let Ok((server_url, token, refresh_token)) = load_session_from_keyring() {
         let _ = notify_server_logout(&server_url, &token, &refresh_token, allow_self_signed).await;
     }
+    // The enrolled cert carries the user's identity (CN = username), so it must
+    // not outlive the session — a different user on this device must re-enroll.
+    crate::enrollment::clear_identity();
     clear_keyring()
 }
 

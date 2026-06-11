@@ -206,8 +206,9 @@ fn keyring_delete(_identity: &str) {}
 
 /// The ring provider, matched to the backend reqwest's `rustls-tls` resolves.
 /// Built once: `builder_with_provider` requires an explicit provider because
-/// reqwest does not install a process-default one.
-fn ring_provider() -> Arc<CryptoProvider> {
+/// reqwest does not install a process-default one. Shared with `enrollment.rs`
+/// so the enrolled mTLS client uses the same provider.
+pub(crate) fn ring_provider() -> Arc<CryptoProvider> {
     static PROVIDER: LazyLock<Arc<CryptoProvider>> =
         LazyLock::new(|| Arc::new(rustls::crypto::ring::default_provider()));
     PROVIDER.clone()

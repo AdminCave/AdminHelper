@@ -14,6 +14,14 @@
 //! The mTLS `build_client` wiring + CA-pinning (presenting the stored cert) is
 //! the next increment; this one obtains and stores the identity.
 
+use std::sync::Arc;
+
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use rustls::{
+    CertificateError, DigitallySignedStruct, Error as TlsError, RootCertStore, SignatureScheme,
+};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -135,6 +143,61 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
     Ok(())
 }
 
+#[cfg(unix)]
+fn keyring_get(key: &str) -> Option<String> {
+    use keyring::Entry;
+    Entry::new(KEYRING_SERVICE, key).ok()?.get_password().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn keyring_get(key: &str) -> Option<String> {
+    crate::password::windows_read_credential(key)
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn keyring_get(_key: &str) -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
+fn keyring_del(key: &str) {
+    use keyring::Entry;
+    if let Ok(entry) = Entry::new(KEYRING_SERVICE, key) {
+        let _ = entry.delete_credential();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn keyring_del(key: &str) {
+    let _ = crate::password::windows_delete_credential(key);
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn keyring_del(_key: &str) {}
+
+/// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled.
+fn load_identity() -> Option<(String, String, String)> {
+    Some((
+        keyring_get(KEYRING_KEY)?,
+        keyring_get(KEYRING_CERT)?,
+        keyring_get(KEYRING_CA)?,
+    ))
+}
+
+/// Whether this device has an enrolled mTLS identity (key + cert present).
+pub fn is_enrolled() -> bool {
+    keyring_get(KEYRING_KEY).is_some() && keyring_get(KEYRING_CERT).is_some()
+}
+
+/// Forget the enrolled identity (on logout). The next login re-enrolls.
+pub fn clear_identity() {
+    keyring_del(KEYRING_KEY);
+    keyring_del(KEYRING_CERT);
+    keyring_del(KEYRING_CA);
+}
+
 // ── Enrollment orchestration ──────────────────────────────────────────────
 
 /// Run the full enrollment: mint an access-scoped token (JWT), generate an
@@ -219,6 +282,121 @@ async fn redeem(
     Ok(issued)
 }
 
+// ── mTLS client (CA-pinning, hostname-agnostic) ───────────────────────────
+
+/// Server verifier that pins the enrolled CA chain: it accepts a server cert
+/// that chains to the pinned CA but, unlike standard validation, does NOT check
+/// the hostname — the pin is the CA, the way TOFU treats the leaf as the
+/// identity. So an enrolled device never breaks because it reaches the server by
+/// a host/IP outside the gateway leaf's SANs, while still rejecting any cert that
+/// does not chain to our CA (and surviving gateway leaf rotation, D2).
+#[derive(Debug)]
+struct CaPinVerifier {
+    inner: Arc<WebPkiServerVerifier>,
+}
+
+impl ServerCertVerifier for CaPinVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, TlsError> {
+        match self.inner.verify_server_cert(
+            end_entity,
+            intermediates,
+            server_name,
+            ocsp_response,
+            now,
+        ) {
+            Ok(verified) => Ok(verified),
+            // webpki validates the chain to a trust anchor BEFORE the name, so a
+            // name error means the chain already validated against our pinned CA —
+            // accept it (hostname intentionally not enforced). rustls 0.23 reports
+            // this as either NotValidForName or the richer NotValidForNameContext.
+            Err(TlsError::InvalidCertificate(
+                CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. },
+            )) => Ok(ServerCertVerified::assertion()),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
+/// Build the mTLS client from PEM material: present the client cert and verify
+/// the server against the pinned CA (hostname-agnostic, ring provider matched to
+/// the rest of the app). Split out from `enrolled_client` so it is unit-testable
+/// without a keyring.
+fn build_mtls_client(
+    key_pem: &str,
+    cert_pem: &str,
+    ca_pem: &str,
+) -> Result<reqwest::Client, AppError> {
+    let mut roots = RootCertStore::empty();
+    for cert in rustls_pemfile::certs(&mut ca_pem.as_bytes()) {
+        let cert = cert.map_err(|e| AppError::Validation(format!("CA-Kette nicht lesbar: {e}")))?;
+        roots
+            .add(cert)
+            .map_err(|e| AppError::Validation(format!("CA ungültig: {e}")))?;
+    }
+    let verifier =
+        WebPkiServerVerifier::builder_with_provider(Arc::new(roots), crate::tofu::ring_provider())
+            .build()
+            .map_err(|e| AppError::Validation(format!("CA-Verifier: {e}")))?;
+
+    let client_certs: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut cert_pem.as_bytes())
+            .collect::<Result<_, _>>()
+            .map_err(|e| AppError::Validation(format!("Client-Zertifikat nicht lesbar: {e}")))?;
+    let client_key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut key_pem.as_bytes())
+        .map_err(|e| AppError::Validation(format!("Client-Schlüssel nicht lesbar: {e}")))?
+        .ok_or_else(|| AppError::Validation("Kein Client-Schlüssel im PEM".to_string()))?;
+
+    let tls = rustls::ClientConfig::builder_with_provider(crate::tofu::ring_provider())
+        .with_safe_default_protocol_versions()
+        .map_err(|e| AppError::Connection(format!("TLS-Konfiguration: {e}")))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(CaPinVerifier { inner: verifier }))
+        .with_client_auth_cert(client_certs, client_key)
+        .map_err(|e| AppError::Validation(format!("Client-Auth: {e}")))?;
+
+    reqwest::Client::builder()
+        .use_preconfigured_tls(tls)
+        .build()
+        .map_err(AppError::from)
+}
+
+/// The reqwest client for the enrolled state: present our client cert + CA-pin
+/// the server. Loads the identity from the keyring (no AppHandle needed).
+pub fn enrolled_client() -> Result<reqwest::Client, AppError> {
+    let (key_pem, cert_pem, ca_pem) =
+        load_identity().ok_or_else(|| AppError::Keyring("Keine enrollte Identität".to_string()))?;
+    build_mtls_client(&key_pem, &cert_pem, &ca_pem)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +445,159 @@ mod tests {
         assert_eq!(grant.subject_id, "admin");
         assert_eq!(grant.scope, "access");
         assert_eq!(grant.enroll_port, 8444);
+    }
+
+    // Real-handshake proof of the enrolled mTLS client: an in-process TLS server
+    // that REQUIRES a client cert (trusting a test CA) and presents a server cert
+    // under the same CA. The client built by build_mtls_client must present its
+    // cert, accept the server because it chains to the pinned CA — even when the
+    // hostname does not match (connect by IP, server SAN is "localhost") — and
+    // reject a server cert under a foreign CA.
+    mod mtls {
+        use super::*;
+        use std::time::Duration;
+
+        use rcgen::{
+            BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+            PKCS_ECDSA_P256_SHA256,
+        };
+        use rustls::server::WebPkiClientVerifier;
+        use rustls::ServerConfig;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+        use tokio_rustls::TlsAcceptor;
+
+        struct Ca {
+            cert: rcgen::Certificate,
+            key: KeyPair,
+        }
+
+        fn make_ca() -> Ca {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut params = CertificateParams::new(vec![]).unwrap();
+            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            params
+                .distinguished_name
+                .push(DnType::CommonName, "Test CA");
+            let cert = params.self_signed(&key).unwrap();
+            Ca { cert, key }
+        }
+
+        /// (cert_pem, key_pem) for a leaf signed by `ca`.
+        fn make_leaf(
+            ca: &Ca,
+            cn: &str,
+            sans: Vec<String>,
+            eku: ExtendedKeyUsagePurpose,
+        ) -> (String, String) {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut params = CertificateParams::new(sans).unwrap();
+            params.distinguished_name.push(DnType::CommonName, cn);
+            params.extended_key_usages.push(eku);
+            let cert = params.signed_by(&key, &ca.cert, &ca.key).unwrap();
+            (cert.pem(), key.serialize_pem())
+        }
+
+        fn server_config(ca: &Ca, srv_cert_pem: &str, srv_key_pem: &str) -> Arc<ServerConfig> {
+            let mut roots = RootCertStore::empty();
+            roots.add(ca.cert.der().clone()).unwrap();
+            let verifier = WebPkiClientVerifier::builder_with_provider(
+                Arc::new(roots),
+                crate::tofu::ring_provider(),
+            )
+            .build()
+            .unwrap();
+            let certs: Vec<CertificateDer<'static>> =
+                rustls_pemfile::certs(&mut srv_cert_pem.as_bytes())
+                    .collect::<Result<_, _>>()
+                    .unwrap();
+            let key = rustls_pemfile::private_key(&mut srv_key_pem.as_bytes())
+                .unwrap()
+                .unwrap();
+            let config = ServerConfig::builder_with_provider(crate::tofu::ring_provider())
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_client_cert_verifier(verifier)
+                .with_single_cert(certs, key)
+                .unwrap();
+            Arc::new(config)
+        }
+
+        async fn serve_once(listener: TcpListener, config: Arc<ServerConfig>) {
+            let acceptor = TlsAcceptor::from(config);
+            if let Ok((tcp, _)) = listener.accept().await {
+                if let Ok(mut tls) = acceptor.accept(tcp).await {
+                    let mut buf = [0u8; 1024];
+                    let _ = tls.read(&mut buf).await;
+                    let _ = tls
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                        )
+                        .await;
+                    let _ = tls.flush().await;
+                    let _ = tls.shutdown().await;
+                }
+            }
+        }
+
+        async fn get(client: &reqwest::Client, port: u16) -> Result<reqwest::StatusCode, ()> {
+            // Connect by IP, not the server cert's "localhost" SAN — proves the
+            // CA-pin path does not enforce the hostname.
+            let url = format!("https://127.0.0.1:{port}/");
+            match tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await {
+                Ok(Ok(resp)) => Ok(resp.status()),
+                _ => Err(()),
+            }
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn presents_cert_and_pins_ca_ignoring_hostname() {
+            let ca = make_ca();
+            let (srv_cert, srv_key) = make_leaf(
+                &ca,
+                "server",
+                vec!["localhost".to_string()],
+                ExtendedKeyUsagePurpose::ServerAuth,
+            );
+            let (cli_cert, cli_key) =
+                make_leaf(&ca, "user-01", vec![], ExtendedKeyUsagePurpose::ClientAuth);
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(serve_once(
+                listener,
+                server_config(&ca, &srv_cert, &srv_key),
+            ));
+
+            let client = build_mtls_client(&cli_key, &cli_cert, &ca.cert.pem()).unwrap();
+            assert_eq!(get(&client, port).await, Ok(reqwest::StatusCode::OK));
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn rejects_server_cert_under_a_foreign_ca() {
+            let ca = make_ca();
+            let foreign = make_ca();
+            // Server cert is signed by the FOREIGN CA; the client pins OUR ca.
+            let (srv_cert, srv_key) = make_leaf(
+                &foreign,
+                "server",
+                vec!["localhost".to_string()],
+                ExtendedKeyUsagePurpose::ServerAuth,
+            );
+            // The server still trusts OUR ca for client auth, so the client cert
+            // is accepted server-side; the rejection must come from the client.
+            let (cli_cert, cli_key) =
+                make_leaf(&ca, "user-01", vec![], ExtendedKeyUsagePurpose::ClientAuth);
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(serve_once(
+                listener,
+                server_config(&ca, &srv_cert, &srv_key),
+            ));
+
+            let client = build_mtls_client(&cli_key, &cli_cert, &ca.cert.pem()).unwrap();
+            assert_eq!(get(&client, port).await, Err(()));
+        }
     }
 }
