@@ -7,13 +7,14 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.auth import hash_api_key, hash_password
 from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE
 from app.core.database import SessionLocal
+from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware
 from app.modules.ansible.models import Playbook  # noqa: F401
 from app.modules.ansible.router import router as ansible_router
@@ -227,17 +228,24 @@ async def security_headers(request, call_next):
     return response
 
 
-# Mount routers
+# Mount routers.
+# Per-route mTLS scope (ADR 0001 D8, permissive in this phase): the data-plane
+# routers that are purely human/admin get a router-level `access`-scope guard.
+# Mixed routers (frp = admin + agent sync, monitoring/provisioning = admin +
+# agent/bootstrap) wire scope per route inside the router. Deliberately left
+# open here: auth (login/bootstrap), hooks (public webhook trigger) — their
+# enforcement nuance (certless bootstrap, public ingest) is handled in A8.
+_access = [Depends(require_scope(SCOPE_ACCESS))]
 app.include_router(auth_router)
-app.include_router(connections_router)
-app.include_router(users_router)
-app.include_router(api_keys_router)
+app.include_router(connections_router, dependencies=_access)
+app.include_router(users_router, dependencies=_access)
+app.include_router(api_keys_router, dependencies=_access)
 app.include_router(hooks_router)
-app.include_router(servers_router)
+app.include_router(servers_router, dependencies=_access)
 app.include_router(provisioning_router)
 app.include_router(frp_router)
 app.include_router(monitoring_proxy_router)
-app.include_router(ansible_router)
+app.include_router(ansible_router, dependencies=_access)
 
 # Serve static files from frontend/ (Vite build output).
 # In the production container the Vite build is copied from apps/web/dist/

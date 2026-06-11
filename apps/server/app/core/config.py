@@ -98,3 +98,10 @@ MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")
 # Redis (for rate limiting across multiple workers). Empty = in-memory fallback
 # (safe only for single-worker / dev setups).
 REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+
+# mTLS scope enforcement (ADR 0001 D3/D8, Phase A). The gateway forwards the
+# verified client identity as headers; per-route scope guards (app.core.identity)
+# read it. During the permissive rollout (A3–A7) this stays False: mismatches are
+# logged but allowed, so the system is usable before all clients have certs. A8
+# flips it to True (CERT_REQUIRED at the gateway + enforced app-side scope).
+MTLS_ENFORCE = os.environ.get("MTLS_ENFORCE", "false").lower() in ("1", "true", "yes")

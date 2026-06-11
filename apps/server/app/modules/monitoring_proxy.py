@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.auth import get_current_admin
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
+from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend
 
@@ -45,8 +46,12 @@ _ALLOWED_PATH_PREFIXES = (
 
 
 @router.post("/agent/{server_id}/report")
-async def proxy_agent_report(server_id: str, request: Request):
-    """Proxy for agent reports (auth via X-API-Key, no JWT needed)."""
+async def proxy_agent_report(
+    server_id: str,
+    request: Request,
+    _scope=Depends(require_scope(SCOPE_AGENT)),
+):
+    """Proxy for agent reports (auth via X-API-Key, no JWT needed; agent scope)."""
     ip = resolve_client_ip(request)
     if get_backend().increment(f"agent_ingest:{ip}", _INGEST_WINDOW) > _INGEST_MAX:
         raise HTTPException(status_code=429, detail="Zu viele Agent-Reports")
@@ -67,7 +72,12 @@ async def proxy_agent_report(server_id: str, request: Request):
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_to_monitoring(path: str, request: Request, _admin=Depends(get_current_admin)):
+async def proxy_to_monitoring(
+    path: str,
+    request: Request,
+    _admin=Depends(get_current_admin),
+    _scope=Depends(require_scope(SCOPE_ACCESS)),
+):
     """Proxy for all monitoring requests (admins only)."""
     # Prevent path traversal and SSRF: allow only known paths
     normalized = path.lstrip("/")

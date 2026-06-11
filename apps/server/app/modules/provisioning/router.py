@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.database import get_db
+from app.core.identity import SCOPE_ACCESS, require_scope
 from app.modules.api_keys.models import ApiKey
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
@@ -46,6 +47,7 @@ def create_provision_token(
     server_id: str,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
+    _scope=Depends(require_scope(SCOPE_ACCESS)),
 ):
     """Creates a one-time server provision token (valid for 24h)."""
     server = db.query(Server).filter(Server.id == server_id).first()
@@ -78,6 +80,7 @@ def list_provision_tokens(
     server_id: str,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
+    _scope=Depends(require_scope(SCOPE_ACCESS)),
 ):
     """Lists all provision tokens for a server."""
     tokens = (
@@ -96,7 +99,11 @@ def activate_provision(
     db: Session = Depends(get_db),
 ):
     """Redeems a provision token. Returns the server API key (always),
-    monitor agent key (if service is available), FRP bundle (if tunnels exist)."""
+    monitor agent key (if service is available), FRP bundle (if tunnels exist).
+
+    Deliberately NO mTLS scope guard: this is a bootstrap door — the agent has no
+    cert yet (it gets its identity here / via enroll). It stays token-gated +
+    certless even under enforcement (A8), like the ca-issuer enroll plane."""
     raw_token = request.headers.get("X-Provision-Token", "")
     if not raw_token:
         raise HTTPException(status_code=401, detail="X-Provision-Token Header fehlt")

@@ -116,7 +116,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     Betrieb/Troubleshooting/Developer); das **vollständige** PKI/mTLS-Modell bleibt A10.
   - **Datenebene weiterhin permissiv** (`ssl_verify_client optional`); Scharfschalten ist A8.
 
-### A3 — Server: Cert-Scope + Per-Route-Authz auf dem Header (permissive)
+### A3 — Server: Cert-Scope + Per-Route-Authz auf dem Header (permissive) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** App liest die Gateway-Identität; Dependency, die CN/Scope → Identität
   mappt; Per-Route-Guards (Agent-Routen ⇒ Agent-Scope, Admin-Routen ⇒ access-Scope).
   Zunächst **log-only/permissive** (warnt, erlaubt), bis Clients Certs haben.
@@ -125,6 +125,30 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Akzeptanz:** Tests: Agent-Scope auf Agent-Route ok / (enforced) auf Admin-Route abgelehnt
   und umgekehrt; permissive loggt, erlaubt.
 - **Aufwand:** M · **Risiko:** niedrig-mittel · **Abh.:** A2
+- **Fortschritt ✅ ABGESCHLOSSEN 2026-06-11:** Scope-Schicht in **neuem** `app/core/identity.py`
+  (statt `auth.py` — die mTLS-Identität ist orthogonal zu JWT/API-Key, zweiter Faktor D3):
+  `ClientIdentity` + `get_client_identity` (parst den vom Gateway weitergereichten Cert-PEM
+  authoritativ, wie der ca-issuer auf `/renew`) + `require_scope(*allowed)` (Factory).
+  - **Scope-Entscheidung:** `access` = Mensch (Desktop/Browser/Extension), **`tunnel` = Agent**
+    (ADR §3.1: Agent-/Visitor-Certs unter der tunnel-Intermediate; D8 trennt Mensch/Agent auf
+    `:443` per Scope). Zentral als Konstanten `SCOPE_ACCESS`/`SCOPE_AGENT` — A4 kann es bei der
+    Enrollment-Umsetzung bestätigen/anpassen.
+  - **Permissiv-Schalter:** `MTLS_ENFORCE` (Default `false`, `core/config.py`). Permissiv: ein
+    Mismatch wird geloggt (WARNING nur bei *falschem* Cert-Scope, DEBUG beim erwarteten
+    „noch-kein-Cert"), Request **läuft durch**. A8 setzt `MTLS_ENFORCE=true` → 403.
+  - **Guards angewandt:** Router-Level `access` für pure Human/Admin-Router (users, api_keys,
+    connections, ansible, servers + frp config/tunnel/generate/status/pki); per-Route `tunnel`
+    für Agent-Push (`/api/monitoring/agent/{id}/report`); **`tunnel`+`access`** für den dual-use
+    frpc-Sync (`frp/provision_router`, Agent *oder* Admin lesen dieselbe Config); `access` für
+    Monitoring-Proxy-Admin + Provision-Token-Mint/List.
+  - **Bewusst offen gelassen** (Enforcement-Nuance = A8): `auth_router` (Login/Bootstrap),
+    `hooks/trigger/{token}` (öffentlicher Webhook-Ingest, externe Aufrufer ohne Cert),
+    `provision/activate` (Bootstrap-Tür, certless wie enroll), SPA/Static.
+  - **Tests:** `tests/test_mtls_scope.py` (18) — Identity-Parsing + `require_scope` permissiv/
+    enforced (inkl. dual-use) als Unit; Integration via TestClient: permissiv durchlässig (401
+    von Auth statt 403), enforced 403 ohne Cert, 200 mit access-Cert+JWT, 403 mit tunnel-Cert
+    auf Admin-Route, dual-use akzeptiert tunnel, Bootstrap nie 403. **181 Server-Tests grün**
+    (keine Regression — permissiv = durchlässig). Developer-Doku zum Scope-Modell bleibt A10.
 
 ### A4 — Agent: Auto-Enrollment + mTLS (Go)
 - **Beschreibung:** Beim Provisioning (bestehender Einmal-Token-Flow) ECDSA-Keypair + CSR

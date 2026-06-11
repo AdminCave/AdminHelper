@@ -21,6 +21,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Volumes `ca-pki` (issuer-privat) und `gateway-certs`.
 - **`CA_ROOT_PASSPHRASE`** in `.env.example` + `scripts/init-secrets.sh` — verschlüsselt den
   kalten PKI-Root-Key at-rest (ADR 0001 D7); **getrennt sichern, nicht ins Backup legen**.
+- **Server: Per-Route-mTLS-Scope-Schicht** (`app/core/identity.py`, ADR 0001 D8) — der Server
+  liest die vom Gateway weitergereichte, verifizierte Client-Identität und prüft pro Route den
+  Cert-Scope (`access` = Mensch, `tunnel` = Agent). **In dieser Phase permissiv** (`MTLS_ENFORCE`
+  default `false`): ein Mismatch wird nur geloggt, der Request läuft durch — das System bleibt
+  nutzbar, bis alle Clients Certs haben. Das Scharfschalten auf `CERT_REQUIRED` folgt später.
 
 ### Changed
 
