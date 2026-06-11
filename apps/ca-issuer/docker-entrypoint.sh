@@ -8,6 +8,7 @@ set -e
 if [ "$(id -u)" = "0" ]; then
     chown -R app:app /app/data
     [ -d /app/gateway-certs ] && chown -R app:app /app/gateway-certs
+    [ -d /app/frps-certs ] && chown -R app:app /app/frps-certs
     exec gosu app:app sh "$0" "$@"
 fi
 

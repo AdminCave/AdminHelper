@@ -123,12 +123,17 @@ class TestGenerateFrpcToml:
         assert 'bandwidth = "10MB"' in toml
         assert "useCompression = true" in toml
 
-    def test_tls_client_block(self):
+    def test_tls_agent_block_uses_enrolled_identity(self):
+        # A7: the agent's frpc presents its enrolled tunnel cert (A4), not a
+        # server-minted per-user cert under /etc/frp/pki.
         config = _make_config()
         toml = generate_frpc_toml(config, [], "client1")
         assert "[transport.tls]" in toml
         assert "enable = true" in toml
-        assert 'certFile = "/etc/frp/pki/client1.crt"' in toml
+        assert 'certFile = "/etc/adminhelper/identity/agent.crt"' in toml
+        assert 'keyFile = "/etc/adminhelper/identity/agent.key"' in toml
+        assert 'trustedCaFile = "/etc/adminhelper/identity/ca.crt"' in toml
+        assert "/etc/frp/pki" not in toml
 
     def test_multiple_tunnels(self):
         config = _make_config()

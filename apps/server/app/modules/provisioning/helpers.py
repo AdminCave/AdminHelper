@@ -24,8 +24,6 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
-from app.modules.frp import pki as pki_manager
-from app.modules.frp import provisioner
 from app.modules.frp._helpers import get_allow_users
 from app.modules.frp.config_generator import generate_frpc_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -103,18 +101,13 @@ def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     if not server:
         return None
 
-    # If auto-PKI is active and the client cert is still missing: create it now
-    pki_status = pki_manager.get_pki_status()
-    if pki_status["caExists"]:
-        client_crt = pki_manager.PKI_DIR / f"{server.name}.crt"
-        if not client_crt.exists():
-            pki_manager.generate_client_cert(server.name)
-
     allow_users = get_allow_users(db, server_id)
     frpc_toml = generate_frpc_toml(config, tunnels, server.name, allow_users)
-    pki_bundle = provisioner.build_pki_bundle_b64(server.name)
 
+    # A7: no server-minted frp client cert anymore. The agent presents the
+    # tunnel-scoped cert it enrolled at the ca-issuer (A4); the generated
+    # frpc.toml points at that identity, so the bundle carries only the config.
     return {
         "config": base64.b64encode(frpc_toml.encode()).decode(),
-        "pkiBundle": pki_bundle or "",
+        "pkiBundle": "",
     }

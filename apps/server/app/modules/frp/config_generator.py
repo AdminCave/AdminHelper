@@ -11,12 +11,20 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.modules.frp.models import FrpServerConfig, FrpTunnel
 
+# Where frps finds its TLS material — the volume the ca-issuer provisions under
+# the tunnel intermediate (A7), no longer the server's self-run FRP CA.
+_FRPS_CERT_DIR = "/etc/frp-pki"
+# Where the agent's frpc finds its mTLS identity: the cert it enrolled at the
+# ca-issuer (A4). The frp tunnel reuses that single tunnel-scoped identity rather
+# than a separate server-minted client cert.
+_AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
+
 
 def _tls_server_block(
     server_name: str = "frps",
-    pki_base_path: str = "/etc/frp/pki",
+    pki_base_path: str = _FRPS_CERT_DIR,
 ) -> list[str]:
-    """Generates the [transport.tls] block for frps."""
+    """Generates the [transport.tls] block for frps (tunnel-signed cert + chain)."""
     return [
         "",
         "[transport.tls]",
@@ -27,11 +35,26 @@ def _tls_server_block(
     ]
 
 
+def _tls_agent_block() -> list[str]:
+    """Generates the [transport.tls] block for the agent's frpc, pointing at the
+    enrolled mTLS identity (A4/A7) — one tunnel-scoped cert for both server pushes
+    and the frp tunnel."""
+    return [
+        "",
+        "[transport.tls]",
+        "enable = true",
+        f'trustedCaFile = "{_AGENT_IDENTITY_DIR}/ca.crt"',
+        f'certFile = "{_AGENT_IDENTITY_DIR}/agent.crt"',
+        f'keyFile = "{_AGENT_IDENTITY_DIR}/agent.key"',
+    ]
+
+
 def _tls_client_block(
     frpc_user: str = "",
     pki_base_path: str = "/etc/frp/pki",
 ) -> list[str]:
-    """Generates the [transport.tls] block for frpc/visitor."""
+    """Generates the [transport.tls] block for a visitor (still the legacy
+    server-minted cert layout; the desktop visitor moves to enrollment in A5)."""
     lines = ["", "[transport.tls]", "enable = true"]
     lines.append(f'trustedCaFile = "{pki_base_path}/ca.crt"')
     if frpc_user:
@@ -101,7 +124,7 @@ def generate_frpc_toml(
         f'auth.token = "{config.auth_token}"',
     ]
 
-    lines.extend(_tls_client_block(frpc_user))
+    lines.extend(_tls_agent_block())
 
     active_tunnels = [t for t in tunnels if t.enabled]
 

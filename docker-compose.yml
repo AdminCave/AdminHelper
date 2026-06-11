@@ -98,6 +98,8 @@ services:
       - ca-pki:/app/data
       # Outbound drop for the gateway's TLS material (leaf + key + CA bundle).
       - gateway-certs:/app/gateway-certs
+      # Outbound drop for the frps TLS material (tunnel-signed leaf + key + chain).
+      - frps-certs:/app/frps-certs
     environment:
       - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
@@ -106,6 +108,11 @@ services:
       # the hierarchy. Set via ./scripts/init-secrets.sh; keep it OUT of backups.
       - CA_ROOT_PASSPHRASE=${CA_ROOT_PASSPHRASE:-}
       - CA_GATEWAY_CERT_DIR=/app/gateway-certs
+      # frps server cert under the tunnel intermediate (A7). SERVER_ADDR must match
+      # the public frps address frpc connects to (the DB's server_addr); defaults
+      # to DOMAIN.
+      - CA_FRPS_CERT_DIR=/app/frps-certs
+      - CA_FRPS_SERVER_ADDR=${FRP_SERVER_ADDR:-${DOMAIN:-localhost}}
       # Reads enrollment tokens + identity revocations from the shared DB (the
       # server's tables); the issuer only ever READS them.
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
@@ -140,9 +147,15 @@ services:
       - "${FRP_HTTPS_PORT:-7443}:443"
     volumes:
       - frp-config:/etc/frp:ro
+      # TLS material under the tunnel intermediate, provisioned by the ca-issuer
+      # (A7) — the CA private key never reaches this internet-facing container.
+      - frps-certs:/etc/frp-pki:ro
     restart: unless-stopped
     depends_on:
-      - server
+      server:
+        condition: service_started
+      ca-issuer:
+        condition: service_healthy
 
   monitoring:
     image: ${MONITORING_IMAGE:-ghcr.io/ks98/adminhelper/monitoring:latest}
@@ -213,6 +226,8 @@ volumes:
   ca-pki:
   # Gateway TLS material the issuer provisions and the gateway consumes (ro).
   gateway-certs:
+  # frps TLS material the issuer provisions (tunnel-signed) and frps consumes (ro).
+  frps-certs:
   monitoring-data:
   victoria-data:
   postgres-data:
