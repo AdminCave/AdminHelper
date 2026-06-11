@@ -88,3 +88,66 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
         chain = (pki_dir / f"{scope}-chain.pem").read_bytes()
         out[scope] = Intermediate(scope=scope, cert=cert, key=key, chain=chain)
     return out
+
+
+def _gateway_sans(domain: str, extra_sans: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split DOMAIN + EXTRA_SANS into (dns_names, ip_addresses). localhost +
+    127.0.0.1 are always added so local/compose access validates against the
+    pinned Root."""
+    import ipaddress
+
+    dns: list[str] = []
+    ips: list[str] = []
+
+    def add(entry: str) -> None:
+        entry = entry.strip()
+        if not entry:
+            return
+        try:
+            ipaddress.ip_address(entry)
+            if entry not in ips:
+                ips.append(entry)
+        except ValueError:
+            if entry not in dns:
+                dns.append(entry)
+
+    add(domain)
+    add("localhost")
+    add("127.0.0.1")
+    for entry in extra_sans.split(","):
+        add(entry)
+    return tuple(dns), tuple(ips)
+
+
+def ensure_gateway_cert(
+    out_dir: Path, access: Intermediate, domain: str, extra_sans: str = ""
+) -> None:
+    """Provision the gateway's TLS material into a shared volume (ADR 0001 §3.2).
+
+    Writes three files the gateway mounts read-only:
+        client-ca.pem            access intermediate + root (verify client certs)
+        gateway-fullchain.pem    server leaf + access intermediate (TLS terminate)
+        gateway.key              the leaf's private key (0600)
+
+    The leaf chains to the pinned Root so native clients (which pin the Root and
+    validate every leaf against it, D2) accept the gateway on :443. Idempotent:
+    the trust bundle is always refreshed (cheap, tracks rotations), the leaf is
+    minted only when absent so restarts keep a stable cert."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Trust bundle for client-cert verification — always (re)written so it
+    # follows the current hierarchy even if intermediates were rotated.
+    (out_dir / "client-ca.pem").write_bytes(access.chain)
+
+    fullchain = out_dir / "gateway-fullchain.pem"
+    key_path = out_dir / "gateway.key"
+    if fullchain.exists() and key_path.exists():
+        return
+
+    dns_names, ip_addresses = _gateway_sans(domain, extra_sans)
+    leaf, leaf_key = pki.build_server_leaf(access.cert, access.key, domain, dns_names, ip_addresses)
+    # fullchain = leaf + access intermediate (what nginx presents on :443).
+    fullchain.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(access.cert))
+    _write_private(key_path, pki.key_to_pem(leaf_key))
+    logger.info(
+        "Gateway-Cert provisioniert (CN=%s, DNS=%s, IP=%s)", domain, dns_names, ip_addresses
+    )

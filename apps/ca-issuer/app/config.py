@@ -22,6 +22,14 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 # never touched once the intermediates exist).
 ROOT_PASSPHRASE = os.environ.get("CA_ROOT_PASSPHRASE", "").encode() or None
 
+# When set, the issuer provisions the gateway's TLS material here on boot
+# (access-signed server leaf + key + the access trust bundle); the gateway mounts
+# this dir read-only. Empty -> no gateway provisioning (tests/dev).
+GATEWAY_CERT_DIR = os.environ.get("CA_GATEWAY_CERT_DIR", "").strip()
+# CN + primary SAN of the gateway leaf; EXTRA_SANS adds further DNS/IP SANs.
+GATEWAY_DOMAIN = os.environ.get("DOMAIN", "localhost").strip() or "localhost"
+GATEWAY_EXTRA_SANS = os.environ.get("EXTRA_SANS", "").strip()
+
 # Header the gateway sets from the verified client cert (ADR 0001 §3.2). The
 # issuer trusts these only because the internal listener is reachable solely
 # from the gateway (no host port).

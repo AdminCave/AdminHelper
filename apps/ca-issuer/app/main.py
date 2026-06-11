@@ -15,13 +15,14 @@ from __future__ import annotations
 import logging
 import urllib.parse
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app import config
 from app.issuer import IssuanceError, Issuer
-from app.storage import ensure_hierarchy
+from app.storage import ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -34,6 +35,15 @@ def build_issuer(token_store: TokenStore | None = None) -> Issuer:
     With DATABASE_URL set, tokens come from the shared AdminHelper DB; otherwise
     an in-memory store is used (tests/dev). Tests may inject their own store."""
     intermediates = ensure_hierarchy(config.PKI_DIR, config.ROOT_PASSPHRASE)
+    # First-boot bootstrap: hand the gateway an access-signed TLS leaf + trust
+    # bundle (resolves the chicken-egg — the gateway can't sign its own leaf, D6).
+    if config.GATEWAY_CERT_DIR:
+        ensure_gateway_cert(
+            Path(config.GATEWAY_CERT_DIR),
+            intermediates["access"],
+            config.GATEWAY_DOMAIN,
+            config.GATEWAY_EXTRA_SANS,
+        )
     if token_store is None:
         if config.DATABASE_URL:
             from app.db import DbTokenStore, make_engine

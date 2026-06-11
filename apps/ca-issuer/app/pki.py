@@ -36,6 +36,10 @@ VALIDITY_DAYS_INTERMEDIATE = 1825  # 5 years
 # Leaf lifetimes per audience (D5): native short + auto-renew, browser long + manual.
 LEAF_DAYS_NATIVE = 90
 LEAF_DAYS_BROWSER = 365
+# Gateway TLS leaf: long-lived because the gateway has no auto-renew yet (a
+# later task). The issuer re-provisions it on demand; until then a deploy/restart
+# rotates it (clients pin the Root, not the leaf, so rotation is transparent).
+LEAF_DAYS_GATEWAY = 365
 
 SCOPES = ("tunnel", "access", "internal")
 
@@ -273,6 +277,32 @@ def sign_leaf(
         builder = builder.add_extension(san, critical=False)
 
     return builder.sign(issuer_key, _HASH)
+
+
+def build_server_leaf(
+    issuer_cert: x509.Certificate,
+    issuer_key: ec.EllipticCurvePrivateKey,
+    common_name: str,
+    dns_names: tuple[str, ...] = (),
+    ip_addresses: tuple[str, ...] = (),
+    lifetime_days: int = LEAF_DAYS_GATEWAY,
+) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """Mint a fresh server-auth leaf (key generated here) under the given
+    intermediate. Unlike the CSR-driven client flow, the issuer both creates the
+    key and signs the cert — used to provision the gateway's TLS material, which
+    no on-device CSR exists for (ADR 0001 §3.2). The gateway thereby holds a
+    leaf, never a signing key (D6 intact)."""
+    key = generate_key()
+    csr = x509.CertificateSigningRequestBuilder().subject_name(_name(common_name)).sign(key, _HASH)
+    spec = LeafSpec(
+        lifetime_days=lifetime_days,
+        server_auth=True,
+        client_auth=False,
+        subject_cn=common_name,
+        dns_names=tuple(dns_names),
+        ip_addresses=tuple(ip_addresses),
+    )
+    return sign_leaf(csr, issuer_cert, issuer_key, spec), key
 
 
 def _build_san(spec: LeafSpec) -> x509.SubjectAlternativeName | None:
