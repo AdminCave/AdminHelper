@@ -20,11 +20,16 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/enroll"
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/monitor"
@@ -35,12 +40,23 @@ type frpBundle struct {
 	PkiBundle string `json:"pkiBundle"`
 }
 
+// enrollmentInfo is the one-time grant the server returns so the agent can fetch
+// its mTLS client cert from the ca-issuer (A4). The host is not carried: the
+// agent reuses the server URL it already provisioned against + this port.
+type enrollmentInfo struct {
+	Token      string `json:"token"`
+	SubjectID  string `json:"subjectId"`
+	Scope      string `json:"scope"`
+	EnrollPort int    `json:"enrollPort"`
+}
+
 type activateResponse struct {
-	ServerName    string     `json:"serverName"`
-	APIKey        string     `json:"apiKey"`
-	MonitorAPIKey *string    `json:"monitorApiKey"`
-	MonitorURL    *string    `json:"monitorUrl"`
-	FRP           *frpBundle `json:"frp"`
+	ServerName    string          `json:"serverName"`
+	APIKey        string          `json:"apiKey"`
+	MonitorAPIKey *string         `json:"monitorApiKey"`
+	MonitorURL    *string         `json:"monitorUrl"`
+	FRP           *frpBundle      `json:"frp"`
+	Enrollment    *enrollmentInfo `json:"enrollment"`
 }
 
 // Run redeems a provision token against the server endpoint and
@@ -79,6 +95,20 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 		fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
 	}
 
+	// 0. mTLS enrollment: fetch the agent's client cert from the ca-issuer with
+	// the one-time token. Best-effort — during the permissive rollout (A4) the
+	// agent still works via API key alone, so a failed enroll must not abort
+	// provisioning. The TLS trust for this bootstrap call is the same one the
+	// activate call used (TOFU-pinned gateway cert); the enroll response's chain
+	// is then persisted as the permanent pinned root.
+	if resp.Enrollment != nil && resp.Enrollment.Token != "" {
+		if err := runEnrollment(adminHelperURL, resp.Enrollment, effectiveCacert, effectiveInsecure); err != nil {
+			fmt.Printf("→ Enrollment uebersprungen (%v) — Agent nutzt vorerst nur den API-Key.\n", err)
+		} else {
+			fmt.Println("→ mTLS-Client-Zertifikat enrollt und gepinnt.")
+		}
+	}
+
 	// 1. Monitor init only if the service returned a key. The agent owns the
 	// host: it builds the monitoring base from the SAME server URL it just
 	// provisioned against (already TLS-trusted) plus the server-declared path,
@@ -112,6 +142,53 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Println("OK: Provisioning abgeschlossen.")
 	return nil
+}
+
+// runEnrollment generates an on-device key + CSR and redeems the enrollment
+// token at the gateway's enroll plane, persisting the issued identity.
+func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, insecure bool) error {
+	port := info.EnrollPort
+	if port == 0 {
+		port = 8444 // the gateway's default enroll plane
+	}
+	endpoint, err := enrollEndpoint(adminHelperURL, port)
+	if err != nil {
+		return fmt.Errorf("Enroll-URL bilden: %w", err)
+	}
+	client, err := httpclient.New(cacert, insecure, 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("HTTP-Client: %w", err)
+	}
+	key, err := enroll.GenerateKey()
+	if err != nil {
+		return err
+	}
+	csr, err := enroll.BuildCSR(key, info.SubjectID)
+	if err != nil {
+		return err
+	}
+	issued, err := enroll.Submit(client, endpoint, enroll.EnrollRequest{Token: info.Token, CSR: string(csr)})
+	if err != nil {
+		return err
+	}
+	return enroll.Store(config.AgentPkiDir(), key, issued)
+}
+
+// enrollEndpoint reuses the host of the already-trusted server URL and swaps in
+// the gateway's enroll port — the server cannot know its own public address.
+func enrollEndpoint(adminHelperURL string, port int) (string, error) {
+	u, err := url.Parse(adminHelperURL)
+	if err != nil {
+		return "", err
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("kein Host in %q", adminHelperURL)
+	}
+	u.Host = net.JoinHostPort(host, strconv.Itoa(port))
+	u.Path = "/enroll"
+	u.RawQuery = ""
+	return u.String(), nil
 }
 
 func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool) (*activateResponse, []byte, error) {
