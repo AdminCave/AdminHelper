@@ -65,6 +65,13 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   ungültig/abgelaufen/verbraucht ab; `/renew` für gültige Identität, verweigert bei
   Deprovision. Container baut, startet, erzeugt Root+Intermediates ins Volume.
 - **Aufwand:** L · **Risiko:** mittel (neuer Dienst, Key-Handling) · **Abh.:** A0
+- **Fortschritt:** Inkrement 1 (PKI-Engine) ✅, Inkrement 2 (Issuer-Dienst `/enroll`+`/renew`,
+  26 Tests) ✅, Inkrement 3 (Dockerfile/Entrypoint/gehashte Lock, First-Boot lokal verifiziert:
+  PKI erzeugt, root.key.enc verschlüsselt, Inter-Keys 0600, /healthz ok) ✅. **Offen:**
+  Inkrement 4 (`enrollment_tokens`-Tabelle im Server + Alembic-Migration + DB-gestützter
+  `TokenStore`) **sowie** Compose-Wiring + CI/ghcr-Publish des Dienstes — Letzteres bewusst
+  zurückgestellt, bis der Gateway/Server (A2) den Dienst konsumiert, um keine unpublizierte
+  Image-Referenz in die Produktiv-Compose zu legen.
 
 ### A2 — nginx-Gateway + interne-only Listener (permissive)
 - **Beschreibung:** `gateway`-Container (nginx) vor `:443`. `server` + `ca-issuer` auf
