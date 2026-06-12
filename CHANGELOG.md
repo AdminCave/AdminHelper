@@ -25,6 +25,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **`scripts/update.sh`** kann mit `--ref` die Laufzeit-Dateien (Compose + Skripte) für eine
   Zielversion frischen, bevor es Images zieht + neu startet (Backup-first bleibt).
 
+### Fixed
+
+- **Einzeiler-Robustheit (`curl … | bash`).** `install.sh` zieht die Images jetzt explizit
+  (`docker compose pull`), bevor es startet — ein veraltetes lokal gecachtes `:latest` würde sonst
+  stillschweigend weiterlaufen. Zusätzlich bekommt jeder `docker compose`-Aufruf `</dev/null`: unter
+  `curl | bash` liest bash das Script aus der Pipe, und ein Subprozess, der dieselbe stdin erbt,
+  verschluckte sonst den Rest des Scripts (der Stack kam hoch, aber ohne Erst-Admin).
+
 ## [0.29.0] - 2026-06-12
 
 ### Added
