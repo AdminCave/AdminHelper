@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"crypto/x509"
@@ -131,6 +132,58 @@ func TestStoreAndProvisioned(t *testing.T) {
 		info, _ := os.Stat(KeyPath(dir))
 		if perm := info.Mode().Perm(); perm != 0600 {
 			t.Fatalf("agent.key Perm = %o, erwartet 600", perm)
+		}
+	}
+}
+
+// TestStoreStagesBeforeCommit reproduces the F5 lockout window: a renewal mints a
+// NEW key, so a crash between writing the key and the cert must NOT leave a new
+// key paired with the old cert (the mismatch breaks mTLS → silent lockout, ADR
+// 0001 §3.3). The staged write keeps the live identity untouched until the
+// atomic commit, so an interrupted renew leaves the consistent old pair.
+func TestStoreStagesBeforeCommit(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "identity")
+
+	keyA, _ := GenerateKey()
+	respA := &IssueResponse{Cert: "leafA", Fullchain: "fullA", Chain: "chainA"}
+	if err := Store(dir, keyA, respA); err != nil {
+		t.Fatalf("Store A: %v", err)
+	}
+	keyABytes, _ := os.ReadFile(KeyPath(dir))
+
+	// Stage a renewal (new key + new cert) but do NOT commit — this is the
+	// power-loss-before-rename window.
+	keyB, _ := GenerateKey()
+	respB := &IssueResponse{Cert: "leafB", Fullchain: "fullB", Chain: "chainB"}
+	commit, err := stageIdentity(dir, keyB, respB)
+	if err != nil {
+		t.Fatalf("stageIdentity B: %v", err)
+	}
+
+	// Before the commit the live identity must still be the consistent A pair.
+	if b, _ := os.ReadFile(CertPath(dir)); string(b) != "fullA" {
+		t.Fatalf("vor commit: agent.crt = %q, erwartet fullA", string(b))
+	}
+	if b, _ := os.ReadFile(KeyPath(dir)); string(b) != string(keyABytes) {
+		t.Fatal("vor commit: agent.key wurde bereits veraendert (Mismatch-Fenster!)")
+	}
+
+	// The commit swaps atomically to B.
+	if err := commit(); err != nil {
+		t.Fatalf("commit B: %v", err)
+	}
+	if b, _ := os.ReadFile(CertPath(dir)); string(b) != "fullB" {
+		t.Fatalf("nach commit: agent.crt = %q, erwartet fullB", string(b))
+	}
+	if b, _ := os.ReadFile(CAPath(dir)); string(b) != "chainB" {
+		t.Fatalf("nach commit: ca.crt = %q, erwartet chainB", string(b))
+	}
+
+	// No staging leftovers in the identity dir.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), tmpSuffix) {
+			t.Fatalf("Staging-Datei nicht aufgeraeumt: %s", e.Name())
 		}
 	}
 }

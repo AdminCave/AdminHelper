@@ -89,13 +89,10 @@ pub struct KeyAndCsr {
     pub csr_pem: String,
 }
 
-/// Generate an ECDSA P-256 keypair and a CSR for `common_name` (D10: fits the
-/// Windows keyring limit, modern, ideal for short-lived certs).
-pub fn generate_key_and_csr(common_name: &str) -> Result<KeyAndCsr, AppError> {
-    use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
-
-    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
-        .map_err(|e| AppError::Validation(format!("Schlüssel erzeugen: {e}")))?;
+/// Serialize a PEM CSR for `common_name` signed by `key_pair`. The issuer
+/// dictates the real identity, so the CSR subject is only cosmetic.
+fn build_csr(key_pair: &rcgen::KeyPair, common_name: &str) -> Result<String, AppError> {
+    use rcgen::{CertificateParams, DistinguishedName, DnType};
 
     let mut params =
         CertificateParams::new(vec![]).map_err(|e| AppError::Validation(format!("CSR: {e}")))?;
@@ -104,16 +101,36 @@ pub fn generate_key_and_csr(common_name: &str) -> Result<KeyAndCsr, AppError> {
     params.distinguished_name = dn;
 
     let csr = params
-        .serialize_request(&key_pair)
+        .serialize_request(key_pair)
         .map_err(|e| AppError::Validation(format!("CSR signieren: {e}")))?;
-    let csr_pem = csr
-        .pem()
-        .map_err(|e| AppError::Validation(format!("CSR-PEM: {e}")))?;
+    csr.pem()
+        .map_err(|e| AppError::Validation(format!("CSR-PEM: {e}")))
+}
+
+/// Generate an ECDSA P-256 keypair and a CSR for `common_name` (D10: fits the
+/// Windows keyring limit, modern, ideal for short-lived certs).
+pub fn generate_key_and_csr(common_name: &str) -> Result<KeyAndCsr, AppError> {
+    use rcgen::{KeyPair, PKCS_ECDSA_P256_SHA256};
+
+    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
+        .map_err(|e| AppError::Validation(format!("Schlüssel erzeugen: {e}")))?;
+    let csr_pem = build_csr(&key_pair, common_name)?;
 
     Ok(KeyAndCsr {
         key_pem: key_pair.serialize_pem(),
         csr_pem,
     })
+}
+
+/// Build a CSR for an EXISTING on-device key (renewal reuses the key). Reusing
+/// the key is what keeps the keyring swap crash-safe: the keyring cannot
+/// atomically replace a key+cert pair, so minting a fresh key would risk leaving
+/// a new key paired with the old cert if interrupted between the two writes — a
+/// mismatch that breaks mTLS and locks the device out (F5 / ADR 0001 §3.3).
+fn csr_for_existing_key(key_pem: &str, common_name: &str) -> Result<String, AppError> {
+    let key_pair = rcgen::KeyPair::from_pem(key_pem)
+        .map_err(|e| AppError::Validation(format!("Vorhandenen Schlüssel laden: {e}")))?;
+    build_csr(&key_pair, common_name)
 }
 
 /// Derive the gateway enroll endpoint from the trusted server URL + the enroll
@@ -148,8 +165,11 @@ fn keyring_set(_key: &str, _value: &str) -> Result<(), AppError> {
     Err(AppError::Keyring("Plattform nicht unterstützt".to_string()))
 }
 
-/// Persist the enrolled identity: key + fullchain + pinned CA chain. The private
-/// key is written first, so a partial failure cannot leave a cert without a key.
+/// Persist the enrolled identity: key + fullchain + pinned CA chain. On first
+/// enroll the key is written first, so a partial failure cannot leave a cert
+/// without a key. On renew the key is unchanged (the cert is re-issued for the
+/// same key, see `renew`), so a partial write can never produce a key/cert
+/// mismatch — the keyring's lack of an atomic multi-entry swap is thereby moot.
 fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError> {
     keyring_set(KEYRING_KEY, key_pem)?;
     keyring_set(KEYRING_CERT, &issued.fullchain)?;
@@ -363,13 +383,16 @@ fn now_unix() -> i64 {
 /// issuer re-uses the presented cert's identity, so the CSR subject is cosmetic.
 async fn renew(server_url: &str) -> Result<(), AppError> {
     let client = enrolled_client()?;
-    let key_and_csr = generate_key_and_csr("renew")?;
+    // Reuse the existing private key (see `csr_for_existing_key`): the keyring
+    // cannot atomically swap a key+cert pair, so keeping the key stable means
+    // every crash state stays consistent — the cert always matches the key.
+    let (key_pem, _, _) =
+        load_identity().ok_or_else(|| AppError::Keyring("Keine enrollte Identität".to_string()))?;
+    let csr_pem = csr_for_existing_key(&key_pem, "renew")?;
     let url = format!("{}/ca/renew", server_url.trim_end_matches('/'));
     let resp = client
         .post(&url)
-        .json(&RenewRequest {
-            csr: &key_and_csr.csr_pem,
-        })
+        .json(&RenewRequest { csr: &csr_pem })
         .send()
         .await?;
     if !resp.status().is_success() {
@@ -385,7 +408,8 @@ async fn renew(server_url: &str) -> Result<(), AppError> {
             "Unvollständige Renew-Antwort".to_string(),
         ));
     }
-    store_identity(&key_and_csr.key_pem, &issued)
+    // Same key, new cert + chain — the pair stays consistent through the write.
+    store_identity(&key_pem, &issued)
 }
 
 /// Renew the enrolled identity if it is due. Returns whether a renewal happened.
@@ -606,6 +630,33 @@ mod tests {
         let a = generate_key_and_csr("x").unwrap();
         let b = generate_key_and_csr("x").unwrap();
         assert_ne!(a.key_pem, b.key_pem);
+    }
+
+    #[test]
+    fn renew_reuses_the_existing_key() {
+        // F5: renewal must NOT mint a new key — the CSR it submits must carry the
+        // SAME public key as the stored key, so a crash during the keyring write
+        // can never leave a new key paired with the old cert (mismatch → lockout).
+        use x509_parser::prelude::FromDer;
+
+        let original = generate_key_and_csr("device").unwrap();
+        let want_spki = rcgen::KeyPair::from_pem(&original.key_pem)
+            .unwrap()
+            .public_key_der();
+
+        let csr_pem = csr_for_existing_key(&original.key_pem, "renew").unwrap();
+        let (pem, _) =
+            x509_parser::pem::Pem::read(std::io::Cursor::new(csr_pem.as_bytes())).unwrap();
+        let (_, csr) =
+            x509_parser::certification_request::X509CertificationRequest::from_der(&pem.contents)
+                .unwrap();
+        let got_spki = csr.certification_request_info.subject_pki.raw;
+
+        assert_eq!(
+            got_spki,
+            want_spki.as_slice(),
+            "Renew muss den vorhandenen Schlüssel wiederverwenden, nicht neu erzeugen"
+        );
     }
 
     #[test]
