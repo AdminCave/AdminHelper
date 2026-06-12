@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
-from app.modules.frp import pki as pki_manager
 from app.modules.frp._helpers import get_allow_users
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
@@ -115,7 +114,12 @@ def gen_visitor_bundle(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Returns TOML + PKI bundle as JSON for the desktop app."""
+    """Returns the visitor TOML as JSON for the desktop app.
+
+    The PKI material is no longer server-minted (F2/F3: the server holds no
+    signing capability, D6). The desktop supplies its own enrolled access identity
+    for the visitor's mTLS, so the bundle carries only the TOML; ``pki`` stays
+    empty for backward compatibility with the desktop's response shape."""
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
@@ -137,27 +141,9 @@ def gen_visitor_bundle(
             tunnels = []
         else:
             tunnels = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids)).all()
-    toml = generate_visitor_toml(config, tunnels, current_user.username, pki_base_path="pki")
+    toml = generate_visitor_toml(config, tunnels, current_user.username)
 
-    pki = {}
-    pki_status = pki_manager.get_pki_status()
-    if pki_status["caExists"]:
-        username = current_user.username
-        client_crt = pki_manager.PKI_DIR / f"{username}.crt"
-        if not client_crt.exists():
-            pki_manager.generate_client_cert(username)
-
-        ca_crt = pki_manager.PKI_DIR / "ca.crt"
-        client_key = pki_manager.PKI_DIR / f"{username}.key"
-
-        if ca_crt.exists():
-            pki["ca.crt"] = ca_crt.read_text()
-        if client_crt.exists():
-            pki[f"{username}.crt"] = client_crt.read_text()
-        if client_key.exists():
-            pki[f"{username}.key"] = client_key.read_text()
-
-    return {"toml": toml, "pki": pki}
+    return {"toml": toml, "pki": {}}
 
 
 @router.get("/generate/bulk-zip")

@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
 from app.modules.frp.config_router import router as config_router
 from app.modules.frp.generate_router import router as generate_router
-from app.modules.frp.pki_router import router as pki_router
 from app.modules.frp.provision_router import router as provision_router
 from app.modules.frp.status_router import router as status_router
 from app.modules.frp.tunnel_router import router as tunnel_router
@@ -26,5 +25,4 @@ router.include_router(config_router, dependencies=_admin)
 router.include_router(tunnel_router, dependencies=_admin)
 router.include_router(generate_router, dependencies=_admin)
 router.include_router(status_router, dependencies=_admin)
-router.include_router(pki_router, dependencies=_admin)
 router.include_router(provision_router, dependencies=_agent_or_admin)

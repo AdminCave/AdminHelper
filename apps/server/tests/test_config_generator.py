@@ -173,3 +173,16 @@ class TestGenerateVisitorToml:
         config = _make_config()
         toml = generate_visitor_toml(config, [], visitor_user="custom-admin")
         assert 'user = "custom-admin"' in toml
+
+    def test_tls_block_uses_enrolled_identity(self):
+        # F2: the visitor presents the desktop's enrolled access identity (exported
+        # to the relative identity/ dir the desktop rewrites), not a server-minted
+        # cert under the old /etc/frp/pki CA.
+        config = _make_config()
+        toml = generate_visitor_toml(config, [])
+        assert "[transport.tls]" in toml
+        assert "enable = true" in toml
+        assert 'trustedCaFile = "identity/ca.crt"' in toml
+        assert 'certFile = "identity/cert.pem"' in toml
+        assert 'keyFile = "identity/key.pem"' in toml
+        assert "/etc/frp/pki" not in toml

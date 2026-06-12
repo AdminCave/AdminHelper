@@ -27,10 +27,10 @@ services:
       - "8080"
     volumes:
       - ./data:/app/data
+      # frps.toml only (non-secret); frps reads it read-only. The frps TLS
+      # material now comes from the ca-issuer under the tunnel intermediate (A7),
+      # not a server-run FRP CA (D6/F3 — the old frp-pki master volume is gone).
       - frp-config:/app/frp-config
-      # Master PKI (CA private key + client keys) — server-only, NEVER mounted
-      # into the internet-facing frps container.
-      - frp-pki:/app/frp-pki
     environment:
       - TZ=${TZ:-Europe/Berlin}
       - DOMAIN=${DOMAIN:-localhost}
@@ -42,7 +42,6 @@ services:
       # flipped together with the gateway's MTLS_ENFORCE. See docs (Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-false}
       - FRP_CONFIG_DIR=/app/frp-config
-      - FRP_PKI_DIR=/app/frp-pki
       # Postgres
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
       - PGHOST=postgres
@@ -103,8 +102,8 @@ services:
     expose:
       - "8090"
     volumes:
-      # The PKI hierarchy (Root + intermediates) — issuer-only, like frp-pki is
-      # server-only. NEVER mounted into the gateway or frps.
+      # The PKI hierarchy (Root + intermediates) — issuer-only. NEVER mounted
+      # into the gateway or frps (the signing keys stay here, D6).
       - ca-pki:/app/data
       # Outbound drop for the gateway's TLS material (leaf + key + CA bundle).
       - gateway-certs:/app/gateway-certs
@@ -230,9 +229,8 @@ services:
 
 volumes:
   frp-config:
-  frp-pki:
   # PKI hierarchy of the ca-issuer (Root + intermediates) — the backup crown
-  # jewel (ADR 0001 §5). Isolated from the gateway/frps, like frp-pki.
+  # jewel (ADR 0001 §5). Isolated from the gateway/frps.
   ca-pki:
   # Gateway TLS material the issuer provisions and the gateway consumes (ro).
   gateway-certs:

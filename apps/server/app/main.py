@@ -108,58 +108,22 @@ def _emit_bootstrap_token():
     logger.warning(bar)
 
 
-def _server_cert_needs_regen(pki_dir, server_addr: str) -> bool:
-    """Checks whether the server cert must be regenerated (missing/wrong SANs)."""
-    import ipaddress
-
-    from cryptography import x509 as cx509
-
-    cert_path = pki_dir / "frps.crt"
-    if not cert_path.exists():
-        return True
-    try:
-        cert = cx509.load_pem_x509_certificate(cert_path.read_bytes())
-        san = cert.extensions.get_extension_for_class(cx509.SubjectAlternativeName)
-        try:
-            addr = ipaddress.ip_address(server_addr)
-            return addr not in san.value.get_values_for_type(cx509.IPAddress)
-        except ValueError:
-            return server_addr not in san.value.get_values_for_type(cx509.DNSName)
-    except Exception:
-        return True
-
-
-def _ensure_pki(db):
-    """Auto-generates CA + server cert when an FRP config exists but the PKI is missing."""
-    from app.modules.frp import pki as pki_manager
+def _ensure_frps_config(db):
+    """Write frps.toml from the DB config on startup. The frps TLS material now
+    comes from the ca-issuer under the tunnel intermediate (A7) — the server no
+    longer runs its own FRP CA (D6/F3): no CA generation, no cert minting, no
+    publish. Only the non-secret frps.toml (ports, auth token, TLS file paths
+    pointing at /etc/frp-pki) is regenerated here."""
     from app.modules.frp.docker_manager import write_frps_config
 
     try:
-        # Relocate any pre-split master PKI (CA key + client keys) out of the
-        # internet-facing frp-config volume before anything reads/writes it.
-        pki_manager.migrate_master_pki_out_of_shared()
-
         config = db.query(FrpServerConfig).first()
         if not config:
             return
-
-        pki_status = pki_manager.get_pki_status()
-        if not pki_status["caExists"]:
-            pki_manager.generate_ca("AdminHelper CA")
-            logger.info("Auto-PKI: CA generiert")
-
-        if _server_cert_needs_regen(pki_manager.PKI_DIR, config.server_addr):
-            pki_manager.generate_server_cert(config.server_addr)
-            logger.info("Auto-PKI: Server-Cert fuer %s generiert", config.server_addr)
-
-        # Ensure the shared volume holds the current frps cert subset even when
-        # nothing was regenerated this start (e.g. fresh frp-config volume).
-        pki_manager.publish_frps_materials()
-
         write_frps_config(config)
-        logger.info("Auto-PKI: frps.toml neu geschrieben")
+        logger.info("frps.toml neu geschrieben")
     except Exception:
-        logger.exception("Auto-PKI fehlgeschlagen")
+        logger.exception("frps.toml schreiben fehlgeschlagen")
 
 
 def _run_startup_tasks():
@@ -173,7 +137,7 @@ def _run_startup_tasks():
     db = SessionLocal()
     try:
         _ensure_admin(db)
-        _ensure_pki(db)
+        _ensure_frps_config(db)
     finally:
         db.close()
 

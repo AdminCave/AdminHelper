@@ -18,6 +18,11 @@ _FRPS_CERT_DIR = "/etc/frp-pki"
 # ca-issuer (A4). The frp tunnel reuses that single tunnel-scoped identity rather
 # than a separate server-minted client cert.
 _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
+# Where the desktop STCP visitor finds its mTLS identity: the desktop exports its
+# enrolled ACCESS identity (key + cert + CA) from the keyring into this dir and
+# rewrites the relative paths to absolute (F2). frps trusts the access
+# intermediate (ca-issuer extra_trust) so this access cert is accepted.
+_VISITOR_IDENTITY_DIR = "identity"
 
 
 def _tls_server_block(
@@ -49,18 +54,20 @@ def _tls_agent_block() -> list[str]:
     ]
 
 
-def _tls_client_block(
-    frpc_user: str = "",
-    pki_base_path: str = "/etc/frp/pki",
-) -> list[str]:
-    """Generates the [transport.tls] block for a visitor (still the legacy
-    server-minted cert layout; the desktop visitor moves to enrollment in A5)."""
-    lines = ["", "[transport.tls]", "enable = true"]
-    lines.append(f'trustedCaFile = "{pki_base_path}/ca.crt"')
-    if frpc_user:
-        lines.append(f'certFile = "{pki_base_path}/{frpc_user}.crt"')
-        lines.append(f'keyFile = "{pki_base_path}/{frpc_user}.key"')
-    return lines
+def _tls_client_block() -> list[str]:
+    """Generates the [transport.tls] block for a STCP visitor (frpc). The desktop
+    presents its enrolled ACCESS identity (F2): it exports key/cert/CA from its
+    keyring into the visitor identity dir and rewrites these relative paths to
+    absolute. frps trusts the access intermediate (ca-issuer extra_trust), so the
+    access cert is accepted on the frp plane (ADR 0001 D8)."""
+    return [
+        "",
+        "[transport.tls]",
+        "enable = true",
+        f'trustedCaFile = "{_VISITOR_IDENTITY_DIR}/ca.crt"',
+        f'certFile = "{_VISITOR_IDENTITY_DIR}/cert.pem"',
+        f'keyFile = "{_VISITOR_IDENTITY_DIR}/key.pem"',
+    ]
 
 
 def generate_frps_toml(config: FrpServerConfig) -> str:
@@ -168,11 +175,11 @@ def generate_visitor_toml(
     config: FrpServerConfig,
     tunnels: list[FrpTunnel],
     visitor_user: str = "ops-admin",
-    pki_base_path: str = "/etc/frp/pki",
 ) -> str:
     """Generates a visitor frpc.toml for the admin PC.
 
-    Aggregates all STCP tunnels and emits one [[visitors]] block each.
+    Aggregates all STCP tunnels and emits one [[visitors]] block each. The TLS
+    block points at the desktop's enrolled identity (F2), which it supplies itself.
     """
     lines = [
         f'serverAddr = "{config.server_addr}"',
@@ -183,7 +190,7 @@ def generate_visitor_toml(
         f'auth.token = "{config.auth_token}"',
     ]
 
-    lines.extend(_tls_client_block(visitor_user, pki_base_path))
+    lines.extend(_tls_client_block())
 
     stcp_tunnels = [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
     stcp_tunnels.sort(key=lambda t: t.visitor_port or 0)
