@@ -143,8 +143,11 @@ abgrenzbarer Phase-B-Block, test-/commitbar pro Komponente — **kein** „big b
   unbekannter User → `404`, Nicht-Admin → `403`. Mint-Logik mit dem Self-Service-Endpoint in einem
   `_mint_token`-Helper geteilt. 4 neue Tests (`test_enrollment_mint.py`), Server-Suite **190 grün**,
   ruff sauber. API-Referenz DE+EN ergänzt. Hängt an keiner der §6-Entscheidungen.
-- **Increment 2 — Gateway:** kein Code nötig — `:8444` bleibt per Entscheidung #1 minimal (nur
-  `/enroll`); das war bereits der Stand und ist in `nginx.conf` so dokumentiert.
+- **Increment 2 — Gateway:** Die Allowlist bleibt per Entscheidung #1 minimal (nur `/enroll`); das
+  war bereits der Stand. **Nachgezogen (F8):** das in §5 versprochene Rate-Limit war nie konfiguriert
+  — jetzt begrenzt ein `limit_req_zone`/`limit_req` (per-IP, 10 r/s, burst 20, Status 429) die
+  certless `/enroll`-Route gegen Token-Brute-Force/Enroll-Flooding (`nginx -t` in beiden
+  `MTLS_ENFORCE`-Modi grün).
 - **Increment 3 — Desktop: „Mit Token enrollen"-Flow ✅ 2026-06-12.** `enrollment::enroll_with_token`
   (Rust) überspringt `mint_token` (kein JWT) und löst das vorgegebene Token direkt an der
   Default-Enroll-Plane `:8444` ein — CSR-CN nur Platzhalter (Issuer diktiert die CN aus dem Token),
