@@ -1,35 +1,41 @@
 #!/usr/bin/env bash
 #
-# update.sh — backup-first AdminHelper update.
+# update.sh — update an existing AdminHelper install.
 #
-# Takes a full backup (incl. the CA crown jewel), pulls the pinned images,
-# recreates the stack and waits for it to come back. Alembic migrations run
-# automatically on the server's start. On trouble, restore from the backup
-# this script just wrote.
+# Backup-first (incl. the CA crown jewel), optionally refresh the runtime files
+# (compose + ops scripts) for a target ref, then pull the images and recreate.
+# Alembic migrations run automatically on the server's start. On trouble, restore
+# from the backup this script just wrote.
 #
-# Version pinning: set the image tags in .env (SERVER_IMAGE, GATEWAY_IMAGE,
-# CA_ISSUER_IMAGE, MONITORING_IMAGE) to the target release; this script only
-# pulls + recreates. Leaving them at :latest tracks the newest published image.
+# Usage (from the install directory):
+#   ./scripts/update.sh [--ref vX.Y.Z] [--skip-backup] [--with-victoria]
 #
-# Usage (from the repository root):
-#   ./scripts/update.sh [--skip-backup] [--with-victoria]
+# --ref re-downloads docker-compose.yml + the ops scripts for that ref (handles
+# compose changes between versions); without it, only the images are pulled.
+# Image version pinning: set the *_IMAGE tags in .env to the target release.
 
 set -euo pipefail
 
+REF=""
+RAW_BASE="https://raw.githubusercontent.com/ks98/AdminHelper"
+# Note: update.sh itself is intentionally NOT in this list (no self-overwrite
+# while running). Re-fetch it via the install one-liner if it ever changes.
+REFRESH_FILES="docker-compose.yml scripts/init-secrets.sh scripts/install.sh scripts/backup.sh scripts/restore.sh"
 SKIP_BACKUP=0
 BACKUP_ARGS=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --ref) REF="${2:?}"; shift ;;
         --skip-backup) SKIP_BACKUP=1 ;;
         --with-victoria) BACKUP_ARGS+=(--with-victoria) ;;
-        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
     esac
     shift
 done
 
-[ -f docker-compose.yml ] || { echo "FEHLER: aus dem Repo-Root ausfuehren." >&2; exit 1; }
+[ -f docker-compose.yml ] || { echo "FEHLER: aus dem Install-Verzeichnis ausfuehren." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
 
 if [ "$SKIP_BACKUP" != 1 ]; then
@@ -39,18 +45,30 @@ else
     echo "[update] Backup uebersprungen (--skip-backup)."
 fi
 
-echo "[update] Ziehe die gepinnten Images..."
+if [ -n "$REF" ]; then
+    command -v curl >/dev/null 2>&1 || { echo "FEHLER: curl fehlt (fuer --ref)." >&2; exit 1; }
+    echo "[update] Frische Laufzeit-Dateien (ref ${REF})..."
+    mkdir -p scripts
+    for f in $REFRESH_FILES; do
+        curl -fsSL "${RAW_BASE}/${REF}/${f}" -o "$f" \
+            || { echo "FEHLER: ${f} (ref ${REF}) nicht ladbar." >&2; exit 1; }
+    done
+    chmod +x scripts/*.sh
+fi
+
+echo "[update] Ziehe die Images..."
 docker compose pull
 
-echo "[update] Starte den Stack neu (Alembic-Migration laeuft beim Server-Start)..."
+echo "[update] Starte den Stack neu (Alembic laeuft beim Server-Start)..."
 docker compose up -d
 
 echo "[update] Warte auf den Server..."
 ATTEMPT=0
-until [ "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 3 "https://localhost/" 2>/dev/null)" != "000" ]; do
+until docker compose exec -T server \
+        python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" >/dev/null 2>&1; do
     ATTEMPT=$((ATTEMPT + 1))
     if [ "$ATTEMPT" -gt 120 ]; then
-        echo "FEHLER: Stack nach 120s nicht bereit. Bei Problemen: ./scripts/restore.sh <backup.tar.gz>" >&2
+        echo "FEHLER: Server nach 240s nicht bereit. Restore: ./scripts/restore.sh <backup.tar.gz>" >&2
         exit 1
     fi
     sleep 2

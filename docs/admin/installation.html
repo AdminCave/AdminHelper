@@ -86,15 +86,14 @@
             <li>Kein externer Reverse-Proxy nötig: der Stack bringt ein eigenes TLS-Gateway (nginx) mit, das auf <code>443</code> terminiert (siehe unten)</li>
           </ul>
 
-          <h2 id="schnell-install">Schnell-Install (empfohlen)</h2>
-          <p><code>scripts/install.sh</code> erledigt alles in einem Durchlauf: Secrets generieren, Stack starten, Erst-Admin samt einmaligem Enrollment-Token anlegen und am Ende mTLS scharfschalten — so ist ein frischer Install sofort mit erzwungenem mTLS nutzbar, ohne manuelles permissives Fenster.</p>
+          <h2 id="schnell-install">Schnell-Install (ein Befehl)</h2>
+          <p>Der Installer lädt <strong>nur die Laufzeit-Dateien</strong> (die selbstgenügsame <code>docker-compose.yml</code> + ein paar Ops-Skripte, <em>nicht</em> den Quellbaum), fährt den Stack hoch, legt den Erst-Admin samt einmaligem Enrollment-Token an und lässt mTLS <strong>per Default erzwungen</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>git clone https://github.com/ks98/AdminHelper.git
-cd AdminHelper
-./scripts/install.sh --domain srm.example.com --admin-user kevin
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.0/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.0
 # fragt das Admin-Passwort ab. Non-interaktiv: --admin-password … --yes.
-# --no-enforce laesst den Stack permissiv (kein Scharfschalten).</code></pre>
-          <p>Am Ende gibt das Script die Zugangsdaten aus: URL, Admin-Login und einen <strong>Enrollment-Token</strong>. Den Token im Desktop-Client unter <em>„Mit Token enrollen"</em> (Server-URL + Token) einlösen — der Client erzeugt sein mTLS-Zertifikat <strong>on-device</strong> — danach normaler Login. Die Browser-<code>.p12</code> exportiert man anschliessend im Desktop über den Export-Knopf.</p>
+# --permissive laesst den Stack permissiv (kein erzwungenes mTLS).</code></pre>
+          <p>Am Ende gibt das Script die Zugangsdaten aus: URL, Admin-Login und einen <strong>Enrollment-Token</strong>. Den Token im Desktop-Client unter <em>„Mit Token enrollen"</em> (Server-URL + Token) einlösen — der Client erzeugt sein mTLS-Zertifikat <strong>on-device</strong> — danach normaler Login. Die Browser-<code>.p12</code> exportiert man anschliessend im Desktop über den Export-Knopf. Updates: <code>./scripts/update.sh</code> im erzeugten <code>adminhelper/</code>-Verzeichnis.</p>
           <p>Warum der Token? Unter erzwungenem mTLS weist die Datenebene <code>:443</code> (inkl. Login) certlose Clients schon am TLS-Handshake ab. Der allererste Admin kann sich sein Cert also nicht per Login holen; das Script mintet den Token out-of-band über das interne Netz. Folge-Nutzer onboardet der Admin danach selbst (<a href="../developer/index.html">ADR 0003</a>).</p>
 
           <h2 id="stack">Stack starten (manuell)</h2>

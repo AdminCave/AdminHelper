@@ -123,28 +123,50 @@ The optional **AdminHelper Server** enables centralized management and shared ac
 - **PostgreSQL 17** as the shared database for server and monitoring
 - **Docker** deployment via GitHub Container Registry (ghcr.io)
 
-### Quick start
+### Quick start (one command)
 
-The server image is pulled directly from the GitHub Container Registry (ghcr.io):
+Download and run the installer — it fetches just the runtime files (the
+self-contained `docker-compose.yml` + a few ops scripts, **not** the source),
+brings up the stack, creates the first admin plus a one-time enrollment token,
+and leaves mTLS **enforced by default**:
 
 ```bash
-# Clone the repository:
+curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.0/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.0
+```
+
+It prints the admin login and an **enrollment token**. Redeem the token in the
+desktop client under *"enroll with token"* (server URL + token) — the client
+generates its mTLS cert **on-device** — then log in normally; export the browser
+`.p12` afterwards from the desktop. Flags: `--admin-password … --yes`
+(non-interactive), `--permissive` (opt out of enforced mTLS). Updates:
+`./scripts/update.sh` inside the created `adminhelper/` directory.
+
+<details>
+<summary><b>Manual / development setup</b></summary>
+
+The production `docker-compose.yml` is a single self-contained file (images from
+ghcr.io; no repo-file bind mounts). For development you can also clone the source:
+
+```bash
 git clone https://github.com/ks98/AdminHelper.git
 cd AdminHelper
 
-# In the project root:
 cp .env.example .env
-
-# Generate secure random secrets (SECRET_KEY, MONITOR_API_KEY,
-# POSTGRES_PASSWORD, CA_ROOT_PASSPHRASE).
-# Idempotent: does not overwrite anything that is already set.
+# Generate secure random secrets (idempotent):
 ./scripts/init-secrets.sh
-
-# Optional: set SERVER_IMAGE in .env to your own registry URL.
 
 docker compose pull
 docker compose up -d
+# Then create the first admin + a token via the in-container CLI:
+docker compose exec server python -m app.cli create-admin --username admin --password '<pw>'
+docker compose exec server python -m app.cli mint-enroll-token --username admin
 ```
+
+Under the enforced default the `:443` data plane needs a client cert, so the
+certless bootstrap-token flow below requires a one-time `MTLS_ENFORCE=false`
+window (or just use `install.sh`).
+</details>
 
 The web UI/API is then reachable at `https://localhost` — served by the built-in TLS gateway (nginx) on `443`, which terminates TLS and proxies to the internal `server` (the `server` and `ca-issuer` have no host port). The gateway's certificate is issued by the internal `ca-issuer` (access-signed by the internal CA), so the browser shows an "untrusted" warning until you trust the internal root CA. Enrollment is exposed on `8444`.
 

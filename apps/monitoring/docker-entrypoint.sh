@@ -24,6 +24,21 @@ until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; do
     fi
     sleep 1
 done
+
+# Ensure the monitoring database exists. This used to be a bind-mounted
+# postgres-init.sh; doing it here (the monitoring service owns this DB and
+# already talks to Postgres) keeps docker-compose.yml free of repo-file
+# bind mounts, so it can be distributed as a single self-contained file.
+# Idempotent; connects to the always-present default DB to issue CREATE.
+MONITOR_DB="${MONITOR_DB:-adminhelper_monitor}"
+ADMIN_DB="${ADMIN_DB:-adminhelper}"
+if ! PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" \
+        -tAc "SELECT 1 FROM pg_database WHERE datname='$MONITOR_DB'" 2>/dev/null | grep -q 1; then
+    echo "[entrypoint] Lege Datenbank $MONITOR_DB an..."
+    PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" \
+        -c "CREATE DATABASE $MONITOR_DB"
+fi
+
 echo "[entrypoint] Postgres ready, fuehre Alembic-Migration aus..."
 alembic upgrade head
 echo "[entrypoint] Alembic-Migration abgeschlossen."

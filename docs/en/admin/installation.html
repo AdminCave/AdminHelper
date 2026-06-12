@@ -64,15 +64,14 @@
             </tbody>
           </table>
 
-          <h2 id="quick-install">Quick install (recommended)</h2>
-          <p><code>scripts/install.sh</code> does everything in one go: generate secrets, start the stack, create the first admin with a one-time enrollment token, and arm enforced mTLS at the end — so a fresh install is immediately usable with enforced mTLS, no manual permissive window.</p>
+          <h2 id="quick-install">Quick install (one command)</h2>
+          <p>The installer fetches <strong>only the runtime files</strong> (the self-contained <code>docker-compose.yml</code> + a few ops scripts, <em>not</em> the source tree), brings up the stack, creates the first admin with a one-time enrollment token, and leaves mTLS <strong>enforced by default</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>git clone https://github.com/ks98/AdminHelper.git
-cd AdminHelper
-./scripts/install.sh --domain srm.example.com --admin-user kevin
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.0/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.0
 # prompts for the admin password. Non-interactive: --admin-password … --yes.
-# --no-enforce leaves the stack permissive (no arming).</code></pre>
-          <p>At the end the script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client under <em>"Enroll with token"</em> (server URL + token) — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button.</p>
+# --permissive leaves the stack permissive (no enforced mTLS).</code></pre>
+          <p>The script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client under <em>"Enroll with token"</em> (server URL + token) — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button. Updates: <code>./scripts/update.sh</code> inside the created <code>adminhelper/</code> directory.</p>
           <p>Why the token? Under enforced mTLS the data plane <code>:443</code> (including login) rejects certless clients at the TLS handshake. The very first admin therefore cannot fetch a cert via login; the script mints the token out-of-band over the internal network. The admin onboards follow-up users afterwards (<a href="../developer/index.html">ADR 0003</a>).</p>
           <p>Updates: <code>./scripts/update.sh</code> takes a backup first (incl. the CA crown jewel), pulls the pinned images and recreates the stack. Pin a version via the <code>*_IMAGE</code> tags in <code>.env</code>.</p>
 

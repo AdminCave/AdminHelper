@@ -8,7 +8,10 @@ services:
       - TZ=${TZ:-Europe/Berlin}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./scripts/postgres-init.sh:/docker-entrypoint-initdb.d/01-create-monitor-db.sh:ro
+      # The monitoring DB (adminhelper_monitor) is created by the monitoring
+      # service's entrypoint, not a bind-mounted init script — this keeps
+      # docker-compose.yml free of repo-file bind mounts (single self-contained
+      # file, distributable on its own).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U adminhelper -d adminhelper"]
       interval: 5s
