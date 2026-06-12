@@ -18,7 +18,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import FrpConfigModal from '$modals/FrpConfigModal.svelte';
   import TunnelModal from '$modals/TunnelModal.svelte';
   import FrpConfigPreviewModal from '$modals/FrpConfigPreviewModal.svelte';
-  import FrpPkiModal from '$modals/FrpPkiModal.svelte';
   import FrpStatusModal from '$modals/FrpStatusModal.svelte';
   import type { FrpTunnel } from '$lib/api/types';
 
@@ -33,7 +32,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let previewTitle = $state('');
   let previewContent = $state('');
 
-  let pkiOpen = $state(false);
   let statusOpen = $state(false);
 
   onMount(() => {
@@ -179,7 +177,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <Button variant="ghost" onclick={downloadBulkZip}>
           {$t('page.frp.bulkZip')}
         </Button>
-        <Button variant="ghost" onclick={() => (pkiOpen = true)}>PKI</Button>
         <Button variant="ghost" onclick={() => (statusOpen = true)}>
           {$t('page.frp.status')}
         </Button>
@@ -327,5 +324,4 @@ SPDX-License-Identifier: GPL-3.0-or-later
   content={previewContent}
   onClose={() => (previewOpen = false)}
 />
-<FrpPkiModal open={pkiOpen} onClose={() => (pkiOpen = false)} />
 <FrpStatusModal open={statusOpen} onClose={() => (statusOpen = false)} />

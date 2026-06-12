@@ -3,14 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { http, getAccessToken } from './client';
-import type {
-  FrpConfig,
-  FrpConfigInput,
-  FrpTunnel,
-  FrpTunnelInput,
-  FrpPkiStatus,
-  FrpStatus,
-} from './types';
+import type { FrpConfig, FrpConfigInput, FrpTunnel, FrpTunnelInput, FrpStatus } from './types';
 
 export function listConfigs(): Promise<FrpConfig[]> {
   return http.get<FrpConfig[]>('/api/frp/server-config');
@@ -90,30 +83,6 @@ export function getFrpcToml(serverId: string): Promise<string> {
 
 export function getBulkZip(): Promise<Blob> {
   return _fetchBlob('/api/frp/generate/bulk-zip');
-}
-
-export function pkiStatus(): Promise<FrpPkiStatus> {
-  return http.get<FrpPkiStatus>('/api/frp/pki/status');
-}
-
-export function pkiGenerateCA(): Promise<{ expiry: string }> {
-  return http.post<{ expiry: string }>('/api/frp/pki/ca');
-}
-
-export function pkiGenerateServerCert(): Promise<{ commonName: string }> {
-  return http.post<{ commonName: string }>('/api/frp/pki/server-cert', {});
-}
-
-export function pkiGenerateClientCert(name: string): Promise<{ commonName: string }> {
-  return http.post<{ commonName: string }>(`/api/frp/pki/client-cert/${encodeURIComponent(name)}`);
-}
-
-export function pkiDownload(filename: string): Promise<Blob> {
-  return _fetchBlob(`/api/frp/pki/download/${encodeURIComponent(filename)}`);
-}
-
-export function pkiDownloadBundle(clientName: string): Promise<Blob> {
-  return _fetchBlob(`/api/frp/pki/download-client-bundle/${encodeURIComponent(clientName)}`);
 }
 
 export function status(): Promise<FrpStatus> {

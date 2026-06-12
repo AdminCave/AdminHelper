@@ -272,20 +272,6 @@ export interface FrpTunnelInput {
   tags: string[];
 }
 
-export interface FrpPkiClientCert {
-  name: string;
-  expiry: string;
-}
-
-export interface FrpPkiStatus {
-  pkiDir: string;
-  caExists: boolean;
-  serverCertExists: boolean;
-  caExpiry?: string | null;
-  serverCertExpiry?: string | null;
-  clientCerts: FrpPkiClientCert[];
-}
-
 export interface FrpStatusProxy {
   name: string;
   type: string;
