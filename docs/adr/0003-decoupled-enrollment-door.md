@@ -143,6 +143,16 @@ abgrenzbarer Phase-B-Block, test-/commitbar pro Komponente — **kein** „big b
   unbekannter User → `404`, Nicht-Admin → `403`. Mint-Logik mit dem Self-Service-Endpoint in einem
   `_mint_token`-Helper geteilt. 4 neue Tests (`test_enrollment_mint.py`), Server-Suite **190 grün**,
   ruff sauber. API-Referenz DE+EN ergänzt. Hängt an keiner der §6-Entscheidungen.
-- **Offen:** Increment 2 (Gateway-`:8444`-Allowlist bleibt minimal — nichts zu tun, außer das in
-  der nginx-Config/Doku festzuhalten), Increment 3 (Desktop „Mit Token enrollen"-Erst-Start-Flow),
-  Increment 4 (Onboarding-Doku unter Enforcement, ersetzt das permissive Fenster für Folge-Clients).
+- **Increment 2 — Gateway:** kein Code nötig — `:8444` bleibt per Entscheidung #1 minimal (nur
+  `/enroll`); das war bereits der Stand und ist in `nginx.conf` so dokumentiert.
+- **Increment 3 — Desktop: „Mit Token enrollen"-Flow ✅ 2026-06-12.** `enrollment::enroll_with_token`
+  (Rust) überspringt `mint_token` (kein JWT) und löst das vorgegebene Token direkt an der
+  Default-Enroll-Plane `:8444` ein — CSR-CN nur Platzhalter (Issuer diktiert die CN aus dem Token),
+  TLS-Trust per TOFU wie beim Agent. Tauri-Command `enroll_with_token` + Bridge-Wrapper. Das
+  `Login.svelte` bekommt einen Modus-Umschalter „Erstes Mal? Gerät mit Token einrichten" (Server-URL
+  + Token → enrollen → danach normaler Login). i18n DE+EN. Checks grün: cargo fmt/clippy/test **58**,
+  svelte-check 0, eslint/prettier, vitest **73** (inkl. i18n-Parität). Manuelle Real-Enroll-/
+  Windows-Keyring-Verifikation bleibt offen (CI-Blindspot, wie A5).
+- **Offen:** Increment 4 (Onboarding-Doku unter Enforcement: der vollständige Ablauf „Admin mintet →
+  out-of-band → neuer Nutzer enrollt im Desktop → Login", ersetzt das permissive Fenster für
+  **Folge**-Clients; das Fenster bleibt nur für den allerersten Admin).

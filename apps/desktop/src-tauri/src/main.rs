@@ -20,9 +20,9 @@ mod validation;
 
 use commands::{
     ansible_generate_inventory, ansible_launch, ansible_write_playbook, api_proxy,
-    check_server_cert, check_session, delete_password, enroll_device, export_browser_p12,
-    fetch_connections_jwt, fetch_tunnels, load_connections, load_settings, login, logout,
-    open_connection, open_connection_stored, password_state, reset_server_cert_pin,
+    check_server_cert, check_session, delete_password, enroll_device, enroll_with_token,
+    export_browser_p12, fetch_connections_jwt, fetch_tunnels, load_connections, load_settings,
+    login, logout, open_connection, open_connection_stored, password_state, reset_server_cert_pin,
     resolve_connection, save_connections, save_password, save_settings, start_tunnel, stop_tunnel,
     sync_connections, tunnel_status,
 };
@@ -69,6 +69,7 @@ fn main() {
             check_server_cert,
             reset_server_cert_pin,
             enroll_device,
+            enroll_with_token,
             export_browser_p12,
             ansible_generate_inventory,
             ansible_write_playbook,

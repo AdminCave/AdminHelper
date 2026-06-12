@@ -729,6 +729,13 @@ export const translations: Translations = {
     'login.signingIn': 'Anmelden…',
     'login.signIn': 'Anmelden',
     'login.back': 'Zurueck zu Einstellungen',
+    'login.enroll.switch': 'Erstes Mal? Gerät mit Token einrichten',
+    'login.enroll.token': 'Enrollment-Token',
+    'login.enroll.token.placeholder': 'Token vom Administrator',
+    'login.enroll.submit': 'Gerät enrollen',
+    'login.enroll.working': 'Enrolle…',
+    'login.enroll.back': 'Zurück zur Anmeldung',
+    'login.enroll.done': 'Gerät enrollt — jetzt anmelden.',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Verbindungen gesamt',
@@ -1561,6 +1568,13 @@ export const translations: Translations = {
     'login.signingIn': 'Signing in…',
     'login.signIn': 'Sign in',
     'login.back': 'Back to settings',
+    'login.enroll.switch': 'First time? Set up this device with a token',
+    'login.enroll.token': 'Enrollment token',
+    'login.enroll.token.placeholder': 'Token from your administrator',
+    'login.enroll.submit': 'Enroll device',
+    'login.enroll.working': 'Enrolling…',
+    'login.enroll.back': 'Back to sign in',
+    'login.enroll.done': 'Device enrolled — sign in now.',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Connections total',

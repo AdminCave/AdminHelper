@@ -1149,6 +1149,18 @@ body {
   font-size: var(--text-xs);
 }
 
+.login-info {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  margin: var(--sp-2) 0;
+  text-align: left;
+}
+
+.login-secondary {
+  margin-top: var(--sp-3);
+  font-size: var(--text-xs);
+}
+
 .login-logo {
   margin-bottom: 4px;
 }

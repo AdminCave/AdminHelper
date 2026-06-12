@@ -67,6 +67,24 @@ pub async fn enroll_device(
     enrollment::enroll(&server_url, &token, self_signed).await
 }
 
+/// Decoupled enrollment (ADR 0003): enroll using a one-time token an admin minted
+/// out-of-band and handed over, WITHOUT a prior login. Lets a brand-new client
+/// obtain its cert under enforced mTLS, where it cannot reach the login on :443.
+#[tauri::command]
+pub async fn enroll_with_token(
+    app: tauri::AppHandle,
+    server_url: String,
+    token: String,
+    allow_self_signed: Option<bool>,
+) -> Result<(), AppError> {
+    let self_signed = allow_self_signed.unwrap_or_else(|| {
+        storage::load_settings(&app)
+            .map(|s| s.allow_self_signed_certs)
+            .unwrap_or(false)
+    });
+    enrollment::enroll_with_token(&server_url, &token, self_signed).await
+}
+
 /// Enroll a long-lived browser cert (A5c), write it as a password-protected
 /// PKCS12 (.p12) into the app data dir, and return the path for the user to
 /// import into their browser's cert store. The desktop has no file-save dialog

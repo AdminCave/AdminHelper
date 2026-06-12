@@ -65,6 +65,11 @@ struct RenewRequest<'a> {
 /// a briefly unreachable issuer never locks the user out.
 const RENEWAL_FRACTION: f64 = 0.5;
 
+/// The gateway's certless enroll-plane port (ADR 0001 §3.2 / D11). The coupled
+/// flow learns it from the server grant; the decoupled flow (ADR 0003) assumes
+/// this default — matching the server's `ENROLL_PORT` default and the Go agent.
+const DEFAULT_ENROLL_PORT: u16 = 8444;
+
 /// What `/enroll` (and later `/renew`) returns (the bare `cert` leaf is ignored —
 /// we present and pin chains).
 ///
@@ -227,6 +232,33 @@ pub async fn enroll(server_url: &str, jwt: &str, allow_self_signed: bool) -> Res
     let issued = redeem(
         &endpoint,
         &grant.token,
+        &key_and_csr.csr_pem,
+        server_url,
+        allow_self_signed,
+    )
+    .await?;
+    store_identity(&key_and_csr.key_pem, &issued)
+}
+
+/// Decoupled enrollment (ADR 0003): enroll with a one-time token an admin minted
+/// out-of-band (`POST /api/enrollment/token/for`) and handed over — **without** a
+/// prior login. Skips `mint_token` (the token already exists), so it works under
+/// enforced mTLS where a certless client cannot reach the login on `:443`. The
+/// issuer dictates the cert CN from the token's subject (issuer.py:
+/// `subject_cn=grant.subject_id`), so the CSR CN here is only a placeholder.
+/// TLS trust is TOFU-pinned on first contact with the enroll plane (same gateway
+/// leaf as `:443`), like the agent's first enrollment. Assumes the default enroll
+/// port; a non-default port must be reachable under that name.
+pub async fn enroll_with_token(
+    server_url: &str,
+    token: &str,
+    allow_self_signed: bool,
+) -> Result<(), AppError> {
+    let key_and_csr = generate_key_and_csr("adminhelper-enrollment")?;
+    let endpoint = enroll_endpoint(server_url, DEFAULT_ENROLL_PORT)?;
+    let issued = redeem(
+        &endpoint,
+        token,
         &key_and_csr.csr_pem,
         server_url,
         allow_self_signed,
@@ -584,6 +616,17 @@ mod tests {
         );
         assert_eq!(
             enroll_endpoint("https://srm.example", 8444).unwrap(),
+            "https://srm.example:8444/enroll"
+        );
+    }
+
+    #[test]
+    fn decoupled_enroll_targets_the_default_enroll_plane() {
+        // ADR 0003: the token-direct flow has no server grant, so it must derive
+        // the enroll plane from the default port — the certless :8444 /enroll.
+        assert_eq!(DEFAULT_ENROLL_PORT, 8444);
+        assert_eq!(
+            enroll_endpoint("https://srm.example", DEFAULT_ENROLL_PORT).unwrap(),
             "https://srm.example:8444/enroll"
         );
     }

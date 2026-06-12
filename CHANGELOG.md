@@ -74,6 +74,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   reicht es out-of-band weiter; der neue Nutzer löst es certless an der Enroll-Plane `:8444` ein.
   Erster Baustein der **entkoppelten Enrollment-Tür** (ADR 0003), damit neue Clients auch bei
   erzwungenem mTLS ohne permissives Fenster onboarden können (CN = Ziel-Username, issuer-diktiert).
+- **Desktop: „Mit Token enrollen"-Erst-Start-Flow** (ADR 0003, entkoppelte Enrollment-Tür). Der
+  Login-Screen hat jetzt einen Umschalter „Erstes Mal? Gerät mit Token einrichten": mit Server-URL +
+  einem (vom Admin out-of-band erhaltenen) Enrollment-Token holt der Client sein mTLS-Zertifikat
+  **ohne vorigen Login** an der certless Enroll-Plane `:8444` und meldet sich danach normal an. Damit
+  lässt sich ein neuer Nutzer auch bei erzwungenem mTLS onboarden, ohne die Datenebene kurzzeitig
+  permissiv zu schalten (das bleibt nur für den allerersten Admin nötig).
 
 ### Changed
 

@@ -79,6 +79,17 @@ export function resetServerCertPin(serverUrl: string): Promise<void> {
   return invoke('reset_server_cert_pin', { serverUrl });
 }
 
+// Decoupled enrollment (ADR 0003): enroll this device with a one-time token an
+// admin minted out-of-band — without a prior login. Lets a brand-new client get
+// its mTLS cert under enforced mTLS, where it can't reach the login on :443.
+export function enrollWithToken(
+  serverUrl: string,
+  token: string,
+  allowSelfSigned?: boolean,
+): Promise<void> {
+  return invoke('enroll_with_token', { serverUrl, token, allowSelfSigned });
+}
+
 // Enroll a long-lived browser certificate and write it as a password-protected
 // .p12 into the app data dir; resolves to the absolute path the user imports
 // into their browser's certificate store (needed once mTLS is enforced).
