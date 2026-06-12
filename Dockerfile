@@ -43,7 +43,7 @@ COPY --from=frontend-build /build/dist/ ./frontend/
 # can chown the mounted paths (bind mounts + named volumes), then drops to this
 # user via gosu before exec'ing uvicorn (see docker-entrypoint.sh).
 RUN groupadd -r app && useradd -r -g app -u 10001 -d /app app \
- && mkdir -p /app/data /app/frp-config /app/frp-pki \
+ && mkdir -p /app/data /app/frp-config \
  && chown -R app:app /app
 
 EXPOSE 8080
