@@ -6,10 +6,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Phase A — Detaillierter Task-Plan (Umsetzung der PKI/mTLS-Grundlage)
 
-- **Status:** **Phase-A-Kern umgesetzt (permissiv)** — Stand 2026-06-12. Abgeschlossen:
-  A0–A7, A9, der A8-Schalter (`MTLS_ENFORCE`, Default permissiv, `nginx -t`-verifiziert) + der
-  A10-Konsolidierungs-Pass. Ausstehend: das tatsächliche `MTLS_ENFORCE=true` (Operator-Aktion nach
-  manueller Browser-/Windows-Verifikation, A5/A6) und der A10-Schluss-Pass danach.
+- **Status:** **Phase A code-seitig vollständig (permissiv per Default)** — Stand 2026-06-12.
+  Abgeschlossen: A0–A9 inkl. des A8-Schalters (`MTLS_ENFORCE`), der **end-to-end verifiziert** ist
+  (permissiv↔enforced↔rollback am laufenden Stack) + der A10-Konsolidierungs-Pass. Es bleibt **keine
+  Code-Arbeit**, nur Operator-Aktionen: das tatsächliche `MTLS_ENFORCE=true` in einem Deployment, die
+  manuelle GUI-Verifikation (Windows-Desktop-Enrollment, Browser-`.p12`-Import) und danach der
+  A10-Schluss-Pass (ADR 0001 → vollständig „Implemented").
 - **Datum:** 2026-06-11 (Bauplan), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Basis:** [ADR 0001](0001-unified-pki-and-secure-deployment.md) (D1–D11), alle Verifikationspunkte geklärt.
 
@@ -292,7 +294,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   nur noch Visitor) wird mit A5 entfernt. Voller STCP-Roundtrip mit 2 frp-Prozessen ist über die
   bidirektionale `openssl verify` + den A0-Spike (V2, depth 2) belegt.
 
-### A8 — Enforcement umlegen (permissive → `CERT_REQUIRED`)  ⚠ Schlüssel-Task — Mechanismus ✅ 2026-06-12, Flip = Operator-Aktion
+### A8 — Enforcement umlegen (permissive → `CERT_REQUIRED`)  ⚠ Schlüssel-Task — Mechanismus ✅ + e2e-verifiziert 2026-06-12, Flip = Operator-Aktion
 - **Beschreibung:** Gateway-Datenlistener auf `CERT_REQUIRED`, App-Authz von permissive auf
   enforced. **Erst** wenn A3–A7 beweisen, dass alle Clients enrollen+vorweisen können.
   Bootstrap-Ausnahme: Enroll-Listener bleibt certless+Token.
@@ -308,7 +310,10 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   Gateway **und** Server verdrahtet, `.env.example` dokumentiert, Default `false` → kein Verhalten
   ändert sich, bis ein Operator umlegt. **Verifiziert:** Snippet-Logik (true/yes/1→`on`, sonst
   `optional`) + `nginx -t` **beide Modi grün** (Docker, echte `nginx.conf`), `docker compose config`
-  valide. Betriebsdoku DE+EN (Scharfschalten/Rollback/Bootstrap-Fenster).
+  valide. **End-to-end am laufenden Stack** (ADR 0001 §7): permissiv → certlos `GET /` = `200`;
+  enforced → certlos = `400` „No required SSL certificate" (Handshake-Abweisung) bei weiterhin
+  offener Enroll-Plane `:8444`; Rollback → wieder `200`. Betriebsdoku DE+EN (Scharfschalten/
+  Rollback/Bootstrap-Fenster).
 - **Offen (Operator-Aktion, nicht Code):** das tatsächliche `MTLS_ENFORCE=true` in Produktion —
   **erst** nach den manuellen Hardware-Checks (Windows-Desktop-Enrollment, Browser-Import; A5/A6).
   Rollback = ein Flag zurück + Gateway-Neustart.

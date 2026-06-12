@@ -6,9 +6,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0001 — Einheitliche interne PKI + sichere Installation/Updates
 
-- **Status:** **Implementiert (Phase-A-Kern, permissiv)** — Stand 2026-06-12.
-  Ausstehend: das tatsächliche Scharfschalten (A8 — Schalter `MTLS_ENFORCE` umgesetzt & verifiziert,
-  Default permissiv; der Flip auf `CERT_REQUIRED` ist eine Operator-Aktion nach Hardware-Verifikation).
+- **Status:** **Implementiert (Phase A, permissiv per Default)** — Stand 2026-06-12.
+  Der `MTLS_ENFORCE`-Schalter ist umgesetzt und **end-to-end verifiziert** (permissiv↔enforced↔
+  rollback am laufenden Stack, §7). Ausstehend ist keine Code-Arbeit mehr, nur Operator-Aktionen:
+  das tatsächliche `MTLS_ENFORCE=true` in einem Deployment + die manuelle GUI-Verifikation
+  (Windows-Desktop-Enrollment, Browser-`.p12`-Import).
 - **Datum:** 2026-06-11 (Entwurf), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Betrifft:** Server, ca-issuer (neu), Desktop-Client, Go-Agent, Web-Frontend, frps, Install/Update/Backup-Skripte
 - **Umsetzung:** siehe [ADR 0002](0002-phase-a-task-plan.md) (Task-Plan A0–A10 mit Fortschritt)
@@ -26,7 +28,7 @@ das ist der bewusst isolierte Schlüssel-Task A8.
 |---|---|
 | D1 Root → tunnel/access/internal | ✅ `ca-issuer` erzeugt die Hierarchie beim First-Boot |
 | D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); Agent pinnt die Root |
-| D3 mTLS-Pflicht `:443` | ⏳ **permissiv** per Default; Scharfschalten per `MTLS_ENFORCE=true` (Schalter umgesetzt + `nginx -t`-verifiziert, A8) |
+| D3 mTLS-Pflicht `:443` | ⏳ **permissiv** per Default; Scharfschalten per `MTLS_ENFORCE=true` (Schalter umgesetzt + **end-to-end verifiziert**: permissiv↔enforced↔rollback, A8) |
 | D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; `revoked_identities` als Schnell-Widerruf |
 | D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |
 | D6 eigener `ca-issuer`, Server nie im Signier-Pfad | ✅ einzige Signier-Capability; Gateway hält nur ein Leaf |
@@ -267,6 +269,23 @@ Mit echter ECDSA-Test-PKI (Root → `access`-Intermediate → Server-/Client-Lea
   Die `tunnel`-Intermediate-Kette für frps trägt also (CA-Datei = Kette, depth 2).
 - **D10 bestätigt:** ECDSA-P-256 Key+Cert in PEM = **858 Bytes** (< 2560 Windows-Keyring-Limit;
   RSA-2048 wäre ~3 KB gewesen).
+
+### A8-Enforcement: End-to-End am laufenden Stack (lokal verifiziert 2026-06-12)
+
+Der `MTLS_ENFORCE`-Schalter wurde nicht nur per `nginx -t` (beide Modi), sondern **end-to-end gegen
+den hochgefahrenen Stack** (postgres/redis/ca-issuer/server/gateway, lokal gebaute Images) geprüft:
+
+| Modus | certloser `GET /` (`:443`) | certloser `POST /enroll` (`:8444`) |
+|---|---|---|
+| **permissiv** (Default) | `200` — erreicht die App | — |
+| **enforced** (`MTLS_ENFORCE=true`) | `400` „No required SSL certificate was sent" — am TLS-Handshake abgewiesen | `403` — Plane erreichbar (Handshake gelang), Issuer lehnt Bogus-Token ab |
+| **Rollback** (Flag zurück + Gateway-Neustart) | `200` — permissiv sofort wiederhergestellt |
+
+Der Gateway-Log bestätigt den Modus beim Start (`mTLS ENFORCED (CERT_REQUIRED)` / `mTLS permissive`).
+Die certlose `400`-Abweisung reproduziert die A0-Spike-1-Beobachtung gegen das **echte** Gateway-Image;
+der „gültiger Cert → Upstream erreicht"-Pfad ist durch Spike 1 (identische `ssl_verify_client on`-
+Direktive) belegt. **Offen bleibt** nur die manuelle GUI-Verifikation (Windows-Desktop-Enrollment,
+Browser-`.p12`-Import) — nicht automatisierbar.
 
 ---
 

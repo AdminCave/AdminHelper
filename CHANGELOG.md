@@ -64,9 +64,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   weist geschützte Routen ohne gültigen Cert-Scope mit `403` ab. In `docker-compose.yml` an Gateway
   **und** Server verdrahtet, `.env.example` dokumentiert. **Default `false`** (permissiv) — nichts
   ändert sich, bis ein Operator umlegt; Rollback ist ein Flag zurück + Gateway-Neustart. Beide
-  nginx-Modi mit `nginx -t` verifiziert. Betriebs-Anleitung (Scharfschalten, Rollback,
+  nginx-Modi mit `nginx -t` **und end-to-end am laufenden Stack** verifiziert (permissiv → certlos
+  `GET /` = 200; enforced → certlos = 400 „No required SSL certificate" am Handshake, Enroll-Plane
+  `:8444` weiter offen; Rollback → 200). Betriebs-Anleitung (Scharfschalten, Rollback,
   Lock-out-Vermeidung, Bootstrap-Fenster) unter „Betrieb &amp; Konfiguration" (DE+EN). Das
-  tatsächliche Scharfschalten bleibt eine bewusste Operator-Aktion nach Hardware-Verifikation.
+  tatsächliche Scharfschalten bleibt eine bewusste Operator-Aktion nach GUI-Hardware-Verifikation.
 
 ### Changed
 
