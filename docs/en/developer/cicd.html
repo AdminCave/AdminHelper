@@ -16,8 +16,8 @@
         <a class="sidebar-brand" href="../index.html"><span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 15 L12 7 L16 15"/><path d="M9.5 12 L14.5 12"/></svg></span><span class="brand-text"><span class="brand-name">AdminHelper</span><span class="brand-sub">Documentation</span></span></a>
         <nav class="sidebar-nav">
           <div class="nav-group"><a href="../index.html">Welcome</a></div>
-          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/extension.html">Browser Extension</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
-          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./extension.html">Browser Extension</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
+          <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
+          <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
         <div class="sidebar-footer"><span>v0.27.0</span><span id="year"></span></div>
       </aside>
@@ -37,9 +37,9 @@
           <table>
             <thead><tr><th>Workflow</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), extension (<code>node --test</code>), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo check</code> on Windows, a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>). Coverage runs report-only in the test jobs (no gate)</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo check</code> on Windows, a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>). Coverage runs report-only in the test jobs (no gate)</td></tr>
               <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/ks98/adminhelper/{server,monitoring}</code></td></tr>
-              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), extension zip, <code>SHA256SUMS</code>, draft release</td></tr>
+              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code>, draft release</td></tr>
               <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
             </tbody>
           </table>
@@ -75,7 +75,6 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
-            <li>Browser extension: <code>adminhelper-extension-X.Y.Z.zip</code> (packed versioned from <code>apps/extension/</code>)</li>
             <li><code>SHA256SUMS</code> over all assets</li>
           </ul>
           <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>. The <code>tauri-cli</code> is pinned to an exact version in CI and release (<code>cargo install tauri-cli --locked --version &hellip;</code>) so a new CLI release cannot break a tag build.</p>
@@ -86,7 +85,6 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
             <li><code>apps/desktop/src-tauri/tauri.conf.json</code> + <code>Cargo.toml</code> + <code>Cargo.lock</code> &ndash; Tauri bundle</li>
             <li><code>apps/desktop/ui/package.json</code> + <code>apps/web/package.json</code> (+ each <code>package-lock.json</code>) &ndash; Vite builds</li>
             <li><code>apps/desktop/ui/src/components/AppShell.svelte</code> &ndash; sidebar badge</li>
-            <li><code>apps/extension/manifest.json</code> &ndash; browser extension</li>
             <li><code>apps/agent/build-deb.sh</code> + <code>build-rpm.sh</code> &ndash; default <code>VERSION</code> (CI overrides it from the tag)</li>
             <li><code>docs/**/*.html</code> &ndash; footer <code>&lt;span&gt;v0.24.0&lt;/span&gt;</code> + landing &ldquo;What's new&rdquo; + code samples</li>
             <li><code>README.md</code> &ndash; agent DEB install command</li>

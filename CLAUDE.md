@@ -5,7 +5,7 @@
 **AdminHelper** (GitHub-Repo `ks98/AdminHelper`) ist ein Multi-Komponenten-Remote-
 Management-System: zentrale Verwaltung von SSH-/RDP-/Web-Verbindungen,
 Server-Inventar, Monitoring, FRP-Tunneln und Ansible-Playbooks. Fünf
-Code-Komponenten in vier Sprachen plus Extension:
+Code-Komponenten in vier Sprachen:
 
 | Komponente | Pfad | Stack | Tests |
 |---|---|---|---|
@@ -15,7 +15,6 @@ Code-Komponenten in vier Sprachen plus Extension:
 | Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo test` (`#[cfg(test)]` in den Modulen) |
 | Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
 | Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Vitest (Unit) + Playwright (E2E) |
-| Browser-Extension | `apps/extension/` | Vanilla JS · Manifest V3 | `node --test` (`popup.test.mjs`) |
 
 Externe Integrationen mit eigenem Wire-Format/Protokoll: **FRP** (`frps.toml`,
 STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
@@ -24,7 +23,7 @@ STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
 
 **Repo-Struktur:** Alle lauffähigen Einheiten liegen unter `apps/`
 (`apps/server/`, `apps/monitoring/`, `apps/agent/`, `apps/web/`,
-`apps/desktop/`, `apps/extension/`); Doku in `docs/`, Ops-Skripte in
+`apps/desktop/`); Doku in `docs/`, Ops-Skripte in
 `scripts/`. Der Desktop-Client vereint Rust/Tauri-Backend
 (`apps/desktop/src-tauri/`) und Svelte-UI (`apps/desktop/ui/`) unter einem
 Dach — die frühere `desktop/` vs. `desktop-src/`-Geschwister-Kollision (die

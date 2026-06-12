@@ -24,7 +24,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
                                 ├─► A4 Agent-Enrollment ───────────────────┤
                                 ├─► A5 Desktop-Enrollment ─────────────────┤
                                 ├─► A7 frps unter tunnel-Intermediate ─────┤
-                                └─► A6 Browser/Extension ──────────────────┤
+                                └─► A6 Browser (Web-SPA) ──────────────────┤
                                                                            ▼
                           A9 Backup/Restore (parallel ab A1)        A8 ENFORCE (CERT_REQUIRED)
                                                                            │
@@ -129,7 +129,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   (statt `auth.py` — die mTLS-Identität ist orthogonal zu JWT/API-Key, zweiter Faktor D3):
   `ClientIdentity` + `get_client_identity` (parst den vom Gateway weitergereichten Cert-PEM
   authoritativ, wie der ca-issuer auf `/renew`) + `require_scope(*allowed)` (Factory).
-  - **Scope-Entscheidung:** `access` = Mensch (Desktop/Browser/Extension), **`tunnel` = Agent**
+  - **Scope-Entscheidung:** `access` = Mensch (Desktop/Browser), **`tunnel` = Agent**
     (ADR §3.1: Agent-/Visitor-Certs unter der tunnel-Intermediate; D8 trennt Mensch/Agent auf
     `:443` per Scope). Zentral als Konstanten `SCOPE_ACCESS`/`SCOPE_AGENT` — A4 kann es bei der
     Enrollment-Umsetzung bestätigen/anpassen.
@@ -233,18 +233,20 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   - **Ehrliche Verifikationslücke:** der *echte* Browser-Import + mTLS-Connect ist hier nicht
     automatisierbar — nur strukturell geprüft. Vor Produktiv-Einsatz manuell gegen einen echten
     Browser testen.
-  - **Bewusst NICHT (User-Vorgabe):** die **Browser-Erweiterung** (`apps/extension/`, A6-Extension-
-    Teil) bleibt vorerst weg.
+  - **Browser-Erweiterung entfernt (User-Entscheidung 2026-06-12):** die frühere `apps/extension/`
+    wurde **vollständig aus dem Projekt entfernt** (Code, CI-/Release-Jobs, Doku) — sie ist kein
+    mTLS-Client mehr und entfällt aus dem Plan (A6 ist jetzt reine Web-SPA-Doku).
 
-### A6 — Browser + Extension
-- **Beschreibung:** Web-SPA hinter mTLS (kein `fetch`-Code-Change, aber P12-Import dokumentieren);
-  token-gegateter Enroll-Pfad (certless Listener), der ein Browser-P12 liefert (Fallback zum
-  Desktop-Export). Extension: Host braucht importiertes Cert (V5) — dokumentieren/abfangen.
-- **Betroffen:** `apps/web/` (Doku/Onboarding-Hinweis), `apps/extension/` (Doku),
-  Enroll-Endpoint (P12-Variante).
+### A6 — Browser (Web-SPA)
+- **Beschreibung:** Web-SPA hinter mTLS (kein `fetch`-Code-Change, aber P12-Import dokumentieren).
+  Der Browser-P12 kommt aus dem Desktop-Export (A5c, bereits umgesetzt); hier bleibt nur der
+  Onboarding-Hinweis im Web-Panel + die Import-Doku.
+- **Betroffen:** `apps/web/` (Doku/Onboarding-Hinweis).
 - **Akzeptanz:** mit importiertem P12 lädt die SPA + Login funktioniert; ohne → Handshake
-  scheitert (erwartet). Extension erreicht API bei vorhandenem Host-Cert.
-- **Aufwand:** M · **Risiko:** mittel (Browser-UX) · **Abh.:** A2, A5c
+  scheitert (erwartet).
+- **Aufwand:** S · **Risiko:** niedrig (nur Doku/Onboarding) · **Abh.:** A2, A5c
+- **Hinweis:** Die frühere Browser-Erweiterung (`apps/extension/`) wurde am 2026-06-12 vollständig
+  aus dem Projekt entfernt und ist **kein** Bestandteil dieses Tasks mehr.
 
 ### A7 — frps unter die `tunnel`-Intermediate ✅ ABGESCHLOSSEN 2026-06-11 (Provider-Seite; Visitor → A5)
 - **Beschreibung:** `ca-issuer` signiert frps-Server-Cert + Agent-Tunnel-Client-Certs unter
@@ -321,7 +323,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
 - **Aufwand:** M · **Risiko:** niedrig · **Abh.:** alle
 - **Konsolidierungs-Pass (Phase-A-Kern) ✅ 2026-06-12:**
   - **ADR 0001 → „Implementiert (Phase-A-Kern, permissiv)"** + Umsetzungsstand-Tabelle (D1–D11 live/
-    pending), Enforcement (A8) + Browser-Extension (A6) als ausstehend markiert.
+    pending), Enforcement (A8) als ausstehend markiert.
   - **Kohärente PKI/mTLS-Übersicht** in `developer/index.html` (DE+EN): Trust-Kette, ca-issuer/
     gateway, Enrollment-Muster (ein Token → On-Device-Key → CSR), Scopes, permissiv→A8, Backup —
     mit Verweis auf ADR 0001 als kanonisches Modell. Bewusst **keine neue Nav-Seite** (Sidebar-Nav
@@ -330,8 +332,8 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     frp-Cert) — `developer/server` DE+EN, `admin/agent-deployment`, `api-reference` DE+EN, `README`.
   - **API-Referenz** (DE+EN): `enrollment`-Block in der activate-Antwort + neuer `/api/enrollment/token`.
   - **Installation** (DE+EN): Client-Cert/PKCS12-Import-Notiz (permissiv-Hinweis).
-  - **Offen (Schluss-Pass):** nach A8 (Enforcement) + A6 (Browser-Extension) ein finaler Durchgang —
-    Enforcement-Betriebsdoku, Extension-mTLS, ADR 0001 → vollständig „Implemented".
+  - **Offen (Schluss-Pass):** nach A8 (Enforcement) + A6 (Browser-Web-SPA-Doku) ein finaler Durchgang —
+    Enforcement-Betriebsdoku, ADR 0001 → vollständig „Implemented".
 
 ---
 

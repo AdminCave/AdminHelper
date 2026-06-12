@@ -177,9 +177,9 @@ def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
 
 
 def _get_api_key(request: Request, db: Session) -> Optional[ApiKey]:
-    # Header preferred; query-param fallback for the browser extension and
-    # sync URLs (curl/wget). Note: the query param may end up in server logs,
-    # so the docs recommend the header path.
+    # Header preferred; query-param fallback for sync URLs (curl/wget). Note:
+    # the query param may end up in server logs, so the docs recommend the
+    # header path.
     key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if not key:
         return None

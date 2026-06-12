@@ -7,9 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # ADR 0001 — Einheitliche interne PKI + sichere Installation/Updates
 
 - **Status:** **Implementiert (Phase-A-Kern, permissiv)** — Stand 2026-06-12.
-  Ausstehend: Enforcement-Scharfschaltung (A8) und die Browser-Extension (A6).
+  Ausstehend: Enforcement-Scharfschaltung (A8).
 - **Datum:** 2026-06-11 (Entwurf), 2026-06-12 (Phase-A-Kern umgesetzt)
-- **Betrifft:** Server, ca-issuer (neu), Desktop-Client, Go-Agent, Web-Frontend, Extension, frps, Install/Update/Backup-Skripte
+- **Betrifft:** Server, ca-issuer (neu), Desktop-Client, Go-Agent, Web-Frontend, frps, Install/Update/Backup-Skripte
 - **Umsetzung:** siehe [ADR 0002](0002-phase-a-task-plan.md) (Task-Plan A0–A10 mit Fortschritt)
   und den Abschnitt „Umsetzungsstand (Phase A)" unten.
 
@@ -36,10 +36,9 @@ das ist der bewusst isolierte Schlüssel-Task A8.
 | D11 ein nginx-Gateway vor den HTTP-Planes; frps ausgenommen | ✅ Gateway `:443`/`:8444`; frps eigene TLS-Kante (unter `tunnel`) |
 
 **Client-Enrollment-Stand:** Go-Agent ✅ (A4), Desktop ✅ (A5: Enroll+mTLS+Renew+P12), frps/Tunnel ✅
-(A7). **Browser** kann über den Desktop-P12-Export ein Cert bekommen (A5c); die **Browser-Extension**
-(`apps/extension/`) ist noch nicht mTLS-fähig (A6 zurückgestellt) — vor A8 nachzuziehen oder
-auszunehmen, sonst sperrt das Scharfschalten die Extension aus. **Backup/Restore** inkl. CA-Kronjuwel
-ist umgesetzt + DR-getestet (A9).
+(A7). **Browser** kann über den Desktop-P12-Export ein Cert bekommen (A5c) — der einzige verbleibende
+menschliche Client neben dem Desktop. **Backup/Restore** inkl. CA-Kronjuwel ist umgesetzt +
+DR-getestet (A9).
 
 Die mit `[zu verifizieren]` markierten Punkte des Entwurfs sind alle geklärt (§7 „Verifikation").
 
@@ -92,7 +91,7 @@ Client-Identität trägt — als Fundament für mTLS-Pflicht über alle Zugänge
 Root CA  (kalt, passphrase-verschlüsselt, nur zum Intermediate-Rotieren)
    │   ← Clients PINNEN diese CA beim Enrollment (TOFU-Moment über token-gesicherten Kanal)
    ├─ Intermediate "tunnel"    → frps-Server-Cert + Agent/Visitor-mTLS-Certs
-   ├─ Intermediate "access"    → Server-Leaf (:443) + Client-Certs (Desktop/Browser/Extension)
+   ├─ Intermediate "access"    → Server-Leaf (:443) + Client-Certs (Desktop/Browser)
    └─ Intermediate "internal"  → (Phase B) Dienst-zu-Dienst-mTLS, z.B. Server↔Monitoring
 ```
 
@@ -241,10 +240,12 @@ HSM/Vault, Migration (D9).
   Custom-Root via `tls_certs_only()` (deaktiviert System-Roots) — beides offiziell, rustls-Feature.
 - **V4 — Windows-Keyring-Limit bestätigt: 2560 Bytes** (`CRED_MAX_CREDENTIAL_BLOB_SIZE = 5*512`).
   → **ECDSA-P-256-Leaves** (passen, ~1 KB) statt RSA-2048; Fallback 0600-Datei. In §3.3 verankert.
-- **V5 — Extension bestätigt betroffen.** Sie ruft den Server per `fetch(..., {headers:{'X-API-Key'}})`
-  (`background.js`/`popup.js`/`options.js`) — also Browser-Kontext. Unter mTLS-Pflicht muss der
-  Host ein Client-Cert im OS/Browser-Store haben (nicht programmatisch wählbar). Funktioniert für
-  Admin-Nutzung, aber als Kompatibilitäts-Konsequenz dokumentiert.
+- **V5 — Browser-Extension (entfallen, 2026-06-12).** Die frühere Extension rief den Server im
+  Browser-Kontext per `fetch(..., {headers:{'X-API-Key'}})` und hätte unter mTLS-Pflicht ein
+  Host-Client-Cert im OS/Browser-Store gebraucht (nicht programmatisch wählbar). Sie wurde
+  **vollständig aus dem Projekt entfernt** (`apps/extension/` gelöscht, CI-/Release-Jobs raus) —
+  die mTLS-Kompatibilitätsfrage entfällt damit ersatzlos. Menschliche Browser-Nutzung läuft über
+  das vom Desktop exportierte P12 (A5c).
 
 Quellen: uvicorn.org/settings, github.com/fastapi/fastapi#2224 + Kludex/uvicorn#745,
 gofrp.org/en/docs/features/common/network/network-tls + fatedier/frp#4592,

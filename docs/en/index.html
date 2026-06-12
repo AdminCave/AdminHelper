@@ -70,10 +70,6 @@
               <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
               FRP Tunnel
             </a>
-            <a href="./admin/extension.html">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM4 14h6v6H4z"/></svg>
-              Browser Extension
-            </a>
             <a href="./admin/troubleshooting.html">
               <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
               Troubleshooting
@@ -105,10 +101,6 @@
             <a href="./developer/monitoring.html">
               <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9-6-18-3 9H2"/></svg>
               Monitoring Stack
-            </a>
-            <a href="./developer/extension.html">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM4 14h6v6H4z"/></svg>
-              Browser Extension
             </a>
             <a href="./developer/api-reference.html">
               <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 4v16"/></svg>
@@ -185,9 +177,8 @@
               <h2>For Admins</h2>
               <p>
                 Installation, operations, users, agent deployment,
-                monitoring, FRP tunnel, browser extension, and
-                troubleshooting – everything you need to run AdminHelper in
-                production.
+                monitoring, FRP tunnel, and troubleshooting – everything you
+                need to run AdminHelper in production.
               </p>
               <span class="choice-meta">Read the Admin Guide</span>
             </a>
@@ -280,8 +271,8 @@
                 Scale preparation for 250&ndash;500 servers: API pagination, FK
                 indexes, throttled agent service inventory, scheduler tuning,
                 alert-log retention. The web monitoring page auto-refreshes;
-                agent packages install to <code>/usr/bin</code> and the extension
-                ships with the release as a zip. Over 130 new tests.
+                agent packages install to <code>/usr/bin</code>.
+                Over 130 new tests.
               </p>
             </div>
           </div>
@@ -306,7 +297,7 @@
                 internet-facing frps, tunnel-free monitoring with no host port,
                 JWT revocation on password reset, non-root containers + CI
                 supply-chain pinning, agent TOFU instead of a persisted
-                <code>--insecure</code>, extension key via header.
+                <code>--insecure</code>.
                 <strong>Breaking (ops):</strong> the monitoring port 8480 is gone
                 (re-provision agents); containers now run as non-root.
               </p>

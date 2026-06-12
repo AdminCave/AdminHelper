@@ -228,18 +228,6 @@ jobs:
             apps/web/test-results/
           retention-days: 7
 
-  extension:
-    name: Extension (node --test)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-      - name: node --test
-        working-directory: apps/extension
-        run: node --test
-
   rust:
     name: Desktop-Backend (fmt + clippy + test)
     runs-on: ubuntu-latest

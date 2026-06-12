@@ -68,6 +68,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   unfälschbar. Die frühere Self-Signed-Zertifikat-Erzeugung im Server-Entrypoint entfällt
   (das TLS-Zertifikat kommt jetzt vom `ca-issuer`). **frps** bleibt seine eigene TLS-Kante.
 
+### Removed
+
+- **Browser-Erweiterung (`apps/extension/`) vollständig entfernt.** Die Chrome/Edge-MV3-Extension,
+  die gespeicherte Web-Verbindungen als Popup anzeigte, wurde mitsamt Code, CI-Job (`ci.yml`),
+  Release-Artefakt (`adminhelper-extension-*.zip` in `release.yml`) und Dokumentation (Admin-/
+  Developer-Kapitel, README, `DEVELOPMENT.md`) aus dem Projekt gelöscht. Sie nutzte ausschließlich
+  den **geteilten** `GET /api/connections`-Endpunkt mit einem `X-API-Key`-Header — es gab keine
+  extension-exklusive Server-Schnittstelle, daher entfällt serverseitig nichts außer einigen
+  Kommentar-Verweisen. Menschliche Browser-Nutzung läuft über das vom Desktop exportierte
+  PKCS12-Client-Zertifikat (mTLS, A5c). Im PKI/mTLS-Plan (ADR 0001/0002) entfällt damit der
+  Extension-Teil von A6.
+
 ## [0.27.0] - 2026-06-10
 
 ### Security

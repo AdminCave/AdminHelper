@@ -16,7 +16,7 @@ class ApiKey(Base):
     hashed_key = Column(String, unique=True, nullable=False)
     permission = Column(String, nullable=False)  # "read" or "read_write"
     # Optional binding to exactly one server (IDOR protection for agent keys on
-    # the frp/provision endpoints). NULL = global key (browser extension/sync URLs).
+    # the frp/provision endpoints). NULL = global key (sync URLs).
     server_id = Column(
         String, ForeignKey("servers.id", ondelete="CASCADE"), nullable=True, index=True
     )

@@ -228,40 +228,6 @@ API documentation: `https://localhost/api/docs` (Swagger UI) or `/openapi.json`
 
 ---
 
-## Chrome Extension
-
-The **AdminHelper Chrome Extension** shows web connections (`kind: web`) from the team server directly as a browser popup.
-
-### Features
-
-- Load connections from the server via API key
-- **Instant display** from the cache, reload in the background
-- **Live search** across name, URL, tags, and notes
-- **Two views**: flat list or grouped by tags (collapsible)
-- **Badge** on the extension icon shows the number of web connections
-- Automatic **background refresh** every 5 minutes
-- Same **dark theme** as the client and server
-
-### Installation
-
-1. Open `chrome://extensions` → enable **Developer mode**
-2. **"Load unpacked"** → select the `apps/extension/` directory
-3. Click the extension icon → enter the server URL and API key
-4. Web connections appear immediately in the popup
-
-### Configuration
-
-Via the **⚙ icon** in the popup or the options page:
-
-- **Server URL**: e.g. `https://server`
-- **API key**: read-only API key from the server web interface
-
-### Settings across devices
-
-The settings (server URL, API key) are stored via `chrome.storage.sync` and, when Chrome sync is enabled, automatically transferred to all devices.
-
----
-
 ## Monitoring
 
 The **monitoring service** runs as a separate container alongside the server and monitors registered servers through a lightweight agent.
@@ -421,28 +387,27 @@ cargo tauri build
 │  │  │  ├─ modals/              # 19 modal components
 │  │  │  └─ App.svelte, main.ts
 │  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
-│  ├─ desktop/               # Tauri desktop client (backend + UI together)
-│  │  ├─ src-tauri/          # Rust/Tauri backend
-│  │  │  ├─ src/
-│  │  │  │  ├─ main.rs            # invoke_handler with 23 Tauri commands
-│  │  │  │  ├─ commands.rs        # IPC interface
-│  │  │  │  ├─ auth.rs            # JWT login, keyring persistence
-│  │  │  │  ├─ frpc.rs            # frpc sidecar process
-│  │  │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
-│  │  │  │  ├─ connection/        # SSH/RDP/Web connection logic
-│  │  │  │  ├─ password.rs        # OS keyring (com.adminhelper.app)
-│  │  │  │  ├─ ansible.rs         # inventory generation + playbook execution
-│  │  │  │  └─ ...
-│  │  │  ├─ binaries/            # frpc sidecar (gitignored, CI download)
-│  │  │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
-│  │  └─ ui/                 # PRODUCTION: Svelte 5 + TS desktop frontend
-│  │     ├─ src/
-│  │     │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 22 typed invoke() wrappers, 12 stores, …
-│  │     │  ├─ components/       # ~30 components (AppShell, Login, …)
-│  │     │  ├─ pages/            # 4 pages (Dashboard, Connections, Ansible, Monitoring)
-│  │     │  └─ main.ts
-│  │     └─ vitest.setup.ts      # ~41 Vitest unit tests
-│  └─ extension/             # browser extension (Manifest V3)
+│  └─ desktop/               # Tauri desktop client (backend + UI together)
+│     ├─ src-tauri/          # Rust/Tauri backend
+│     │  ├─ src/
+│     │  │  ├─ main.rs            # invoke_handler with 23 Tauri commands
+│     │  │  ├─ commands.rs        # IPC interface
+│     │  │  ├─ auth.rs            # JWT login, keyring persistence
+│     │  │  ├─ frpc.rs            # frpc sidecar process
+│     │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
+│     │  │  ├─ connection/        # SSH/RDP/Web connection logic
+│     │  │  ├─ password.rs        # OS keyring (com.adminhelper.app)
+│     │  │  ├─ ansible.rs         # inventory generation + playbook execution
+│     │  │  └─ ...
+│     │  ├─ binaries/            # frpc sidecar (gitignored, CI download)
+│     │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
+│     └─ ui/                 # PRODUCTION: Svelte 5 + TS desktop frontend
+│        ├─ src/
+│        │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 22 typed invoke() wrappers, 12 stores, …
+│        │  ├─ components/       # ~30 components (AppShell, Login, …)
+│        │  ├─ pages/            # 4 pages (Dashboard, Connections, Ansible, Monitoring)
+│        │  └─ main.ts
+│        └─ vitest.setup.ts      # ~41 Vitest unit tests
 ├─ docs/                     # documentation (DE + EN, static HTML)
 ├─ scripts/                  # ops/db helpers (postgres-init, init-secrets, pg-backup)
 ├─ data/                     # server data (gitignored, bind mount)

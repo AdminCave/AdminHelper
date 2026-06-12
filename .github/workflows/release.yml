@@ -184,41 +184,17 @@ jobs:
           if-no-files-found: ignore
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Browser extension: versioned zip (audit C5 — was tested in CI but never
-  # shipped; distribution used to be "load unpacked from a git clone" only).
-  # ─────────────────────────────────────────────────────────────────────────
-  extension:
-    name: Extension (zip)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Derive version from tag
-        id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Pack extension
-        run: |
-          mkdir -p dist
-          cd apps/extension
-          zip -r "../../dist/adminhelper-extension-${{ steps.ver.outputs.version }}.zip" . \
-            -x "*.test.mjs"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: extension
-          path: dist/
-          if-no-files-found: error
-
-  # ─────────────────────────────────────────────────────────────────────────
   # Gather every artifact, build SHA256SUMS, publish a DRAFT release.
   # draft: true -> nothing is public until a human presses "Publish".
   # ─────────────────────────────────────────────────────────────────────────
   release:
     name: Draft GitHub Release
-    needs: [desktop-linux, agent, desktop-windows, extension]
+    needs: [desktop-linux, agent, desktop-windows]
     # Gate on the MANDATORY Linux builds only. desktop-windows is best-effort
     # (continue-on-error), so its failure must not block the draft — but a
-    # failed desktop-linux, agent or extension build must, to avoid a
-    # partial-asset draft that looks complete while missing core assets.
-    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.extension.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    # failed desktop-linux or agent build must, to avoid a partial-asset draft
+    # that looks complete while missing core assets.
+    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

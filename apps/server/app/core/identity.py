@@ -11,7 +11,7 @@ reachable solely through the gateway, which strips any client-supplied
 ``X-Client-*`` headers and sets them from the real, verified cert.
 
 Scopes map to the PKI intermediates (ADR 0001 §3.1): ``access`` = humans
-(desktop / browser / extension), ``tunnel`` = agents (they live under the tunnel
+(desktop / browser), ``tunnel`` = agents (they live under the tunnel
 intermediate). The scope is carried in the cert's OU, set by the ca-issuer from
 the enrollment grant — a client cannot widen it via its CSR.
 
@@ -36,7 +36,7 @@ logger = logging.getLogger("adminhelper.identity")
 
 # Cert OU values (the enrollment scope). Centralized so the human/agent split is
 # defined in exactly one place (A4 enrolls agents under SCOPE_AGENT).
-SCOPE_ACCESS = "access"  # humans: desktop / browser / extension
+SCOPE_ACCESS = "access"  # humans: desktop / browser
 SCOPE_AGENT = "tunnel"  # agents (under the tunnel intermediate, ADR 0001 §3.1)
 
 # Gateway headers (lowercased). nginx sets these from the verified cert; the

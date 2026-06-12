@@ -1,6 +1,6 @@
 # Entwicklungsumgebung einrichten
 
-Anleitung zum lokalen Entwickeln von Client, Server und Extension auf **Debian 13 (Trixie)**.
+Anleitung zum lokalen Entwickeln von Client und Server auf **Debian 13 (Trixie)**.
 
 ## Voraussetzungen
 
@@ -231,12 +231,6 @@ touch apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
 
 Diese Binary wird im CI/CD durch die echte frpc-Binary ersetzt.
 
-### Chrome Extension
-
-1. `chrome://extensions` oeffnen -> **Entwicklermodus** aktivieren
-2. **"Entpackt laden"** -> Verzeichnis `apps/extension/` auswaehlen
-3. Nach Code-Aenderungen: Extension in Chrome neu laden
-
 ### Go Agent
 
 ```bash
@@ -389,29 +383,28 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  │  ├─ pages/               # 8 Produktiv-Pages + Login + Placeholder
 │  │  │  └─ modals/              # 19 Modal-Komponenten
 │  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
-│  ├─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
-│  │  ├─ src-tauri/          # Rust/Tauri-Backend
-│  │  │  ├─ src/
-│  │  │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
-│  │  │  │  ├─ commands.rs        # IPC-Schnittstelle
-│  │  │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
-│  │  │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
-│  │  │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
-│  │  │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
-│  │  │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
-│  │  │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausführung
-│  │  │  │  └─ ...
-│  │  │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
-│  │  │  └─ capabilities/        # Tauri v2 Security Permissions
-│  │  └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
-│  │     ├─ src/
-│  │     │  ├─ lib/bridge/       # 22 typisierte invoke()-Wrapper
-│  │     │  ├─ lib/stores/       # 12 Stores
-│  │     │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
-│  │     │  ├─ components/       # ~30 Components
-│  │     │  └─ pages/            # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
-│  │     └─ vitest.setup.ts      # ~41 Vitest-Unit-Tests
-│  └─ extension/             # Browser-Extension (Manifest V3)
+│  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
+│     ├─ src-tauri/          # Rust/Tauri-Backend
+│     │  ├─ src/
+│     │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
+│     │  │  ├─ commands.rs        # IPC-Schnittstelle
+│     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
+│     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
+│     │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
+│     │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
+│     │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
+│     │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausführung
+│     │  │  └─ ...
+│     │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)
+│     │  └─ capabilities/        # Tauri v2 Security Permissions
+│     └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
+│        ├─ src/
+│        │  ├─ lib/bridge/       # 22 typisierte invoke()-Wrapper
+│        │  ├─ lib/stores/       # 12 Stores
+│        │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
+│        │  ├─ components/       # ~30 Components
+│        │  └─ pages/            # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
+│        └─ vitest.setup.ts      # ~41 Vitest-Unit-Tests
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ scripts/                  # Ops-/DB-Skripte (postgres-init, init-secrets, pg-backup)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)

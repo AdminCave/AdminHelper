@@ -8,10 +8,8 @@ A security audit flagged that `ApiKeyOrUser(require_write=True, require_admin=Tr
 lets a (non-admin) `read_write` API key write connections. That is **by design**,
 not a bug:
 
-- `docs/admin/users.html`: `read_write` = "read and write".
-- `docs/en/admin/extension.html`: warns to *never* give the extension a key with
-  "connection-write ... privileges" — i.e. a read_write key has connection-write
-  by design.
+- `docs/admin/users.html`: `read_write` = "read and write" — i.e. a read_write
+  key has connection-write by design.
 - It is also the only write endpoint guarded by `require_write`; rejecting API
   keys here would make the `read_write` permission dead.
 
