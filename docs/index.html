@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.29.0</span>
+          <span>v0.30.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.29.0 · 2026-06-12</span>
+            <span class="eyebrow">Version 0.30.0 · 2026-06-12</span>
             <h1>AdminHelper – Dokumentation</h1>
             <p class="lead">
               Ein modularer Monolith zur zentralen Verwaltung von
@@ -259,7 +259,22 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.29.0?</h2>
+          <h2>Was ist neu in 0.30.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.30.0 &ndash; Ein-Befehl-Installer + selbstgenügsame Compose (2026-06-12)</div>
+              <p>
+                Installation jetzt per <strong>einem Befehl</strong>
+                (<code>curl … install.sh | bash</code>): der Installer lädt <strong>nur die
+                Laufzeit-Dateien</strong> (die <code>docker-compose.yml</code> ist jetzt
+                selbstgenügsam — die Monitoring-DB legt der Stack selbst an, keine
+                Repo-Datei-Bind-Mounts mehr), fährt hoch, legt Erst-Admin + Token an, fertig.
+                Kein Quellbaum-Clone nötig. <code>update.sh</code> kann die Laufzeit-Dateien
+                pro Version frischen.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

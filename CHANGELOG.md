@@ -5,6 +5,26 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.30.0] - 2026-06-12
+
+### Added
+
+- **Ein-Befehl-Installer (`curl … install.sh | bash`).** `scripts/install.sh` kennt jetzt einen
+  Bootstrap-Modus: per `curl | bash` ohne lokalen Checkout lädt es nur die **Laufzeit-Dateien**
+  (die `docker-compose.yml` + ein paar Ops-Skripte, **nicht** den Quellbaum) für einen gepinnten
+  Ref herunter und macht dann das Setup. Da mTLS per Default erzwungen ist, gibt es keinen
+  Scharfschalt- oder permissiven Schritt — Erst-Admin + Token entstehen über die Container-CLI.
+  README + Installations-Doku (DE+EN) führen mit dem Einzeiler.
+
+### Changed
+
+- **`docker-compose.yml` ist jetzt selbstgenügsam** — keine Repo-Datei-Bind-Mounts mehr. Die
+  Monitoring-DB (`adminhelper_monitor`) legt der Monitoring-Service in seinem Entrypoint selbst an
+  (statt eines gemounteten `postgres-init.sh`). Damit ist die Compose eine **einzelne, eigenständig
+  verteilbare Datei** (Images aus ghcr); ein Operator braucht den Quellbaum nicht mehr zum Betrieb.
+- **`scripts/update.sh`** kann mit `--ref` die Laufzeit-Dateien (Compose + Skripte) für eine
+  Zielversion frischen, bevor es Images zieht + neu startet (Backup-first bleibt).
+
 ## [0.29.0] - 2026-06-12
 
 ### Added
@@ -1169,6 +1189,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.30.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.0
 [0.29.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.29.0
 [0.28.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.28.0
 [0.27.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.27.0
