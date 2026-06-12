@@ -105,9 +105,13 @@ echo "[install] Starte den Stack..."
 docker compose up -d
 
 echo "[install] Warte auf den Server (Migration + uvicorn)..."
+# `</dev/null` on every `docker compose exec` is load-bearing under `curl | bash`:
+# bash reads this script from stdin (the pipe), and an exec'd process that
+# inherits that stdin would swallow the rest of the script, so bash would hit
+# EOF and exit 0 before create-admin ever runs.
 ATTEMPT=0
 until docker compose exec -T server \
-        python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" >/dev/null 2>&1; do
+        python -c "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()" </dev/null >/dev/null 2>&1; do
     ATTEMPT=$((ATTEMPT + 1))
     if [ "$ATTEMPT" -gt 120 ]; then echo "FEHLER: Server nach 240s nicht bereit." >&2; exit 1; fi
     sleep 2
@@ -115,9 +119,9 @@ done
 
 # --- Erst-Admin + Enroll-Token (in-container CLI, umgeht das enforced :443) --
 docker compose exec -T server python -m app.cli create-admin \
-    --username "$ADMIN_USER" --password "$ADMIN_PASSWORD"
+    --username "$ADMIN_USER" --password "$ADMIN_PASSWORD" </dev/null
 ENROLL_TOKEN=$(docker compose exec -T server python -m app.cli mint-enroll-token \
-    --username "$ADMIN_USER" --ttl-minutes "$ENROLL_TTL" | tr -d '\r')
+    --username "$ADMIN_USER" --ttl-minutes "$ENROLL_TTL" </dev/null | tr -d '\r')
 
 # --- Zusammenfassung --------------------------------------------------------
 cat <<EOF
