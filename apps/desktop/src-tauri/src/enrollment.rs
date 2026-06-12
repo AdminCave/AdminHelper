@@ -56,6 +56,17 @@ pub struct EnrollRequest<'a> {
     pub csr: &'a str,
 }
 
+/// Body for `/ca/renew` (CSR only; the issuer derives the identity from the
+/// presented client cert, verified by the gateway — not from the CSR).
+#[derive(Debug, Serialize)]
+struct RenewRequest<'a> {
+    csr: &'a str,
+}
+
+/// Renew once the leaf is half through its lifetime (ADR 0001 §3.3) — overlap so
+/// a briefly unreachable issuer never locks the user out.
+const RENEWAL_FRACTION: f64 = 0.5;
+
 /// What `/enroll` (and later `/renew`) returns (the bare `cert` leaf is ignored —
 /// we present and pin chains).
 ///
@@ -282,6 +293,79 @@ async fn redeem(
     Ok(issued)
 }
 
+// ── Renewal ────────────────────────────────────────────────────────────────
+
+/// Whether the leaf in `cert_pem` is past `fraction` of its lifetime at
+/// `now_unix` (seconds since the epoch). `now` is a parameter so the decision is
+/// deterministically testable.
+fn needs_renewal(cert_pem: &str, fraction: f64, now_unix: i64) -> Result<bool, AppError> {
+    let leaf = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+        .next()
+        .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
+        .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
+    let (_, cert) = x509_parser::parse_x509_certificate(&leaf)
+        .map_err(|e| AppError::Validation(format!("Zertifikat parsen: {e}")))?;
+    let not_before = cert.validity().not_before.timestamp();
+    let not_after = cert.validity().not_after.timestamp();
+    let total = not_after - not_before;
+    if total <= 0 {
+        return Ok(true); // malformed / already expired -> renew
+    }
+    Ok((now_unix - not_before) as f64 >= total as f64 * fraction)
+}
+
+fn now_unix() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Renew the enrolled identity: present the CURRENT cert (mTLS) to
+/// `<server_url>/ca/renew` with a fresh CSR, then store the new key + cert. The
+/// issuer re-uses the presented cert's identity, so the CSR subject is cosmetic.
+async fn renew(server_url: &str) -> Result<(), AppError> {
+    let client = enrolled_client()?;
+    let key_and_csr = generate_key_and_csr("renew")?;
+    let url = format!("{}/ca/renew", server_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .json(&RenewRequest {
+            csr: &key_and_csr.csr_pem,
+        })
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppError::Validation(format!(
+            "Zertifikat-Renew fehlgeschlagen ({status}): {text}"
+        )));
+    }
+    let issued: IssuedIdentity = resp.json().await?;
+    if issued.fullchain.is_empty() || issued.chain.is_empty() {
+        return Err(AppError::Validation(
+            "Unvollständige Renew-Antwort".to_string(),
+        ));
+    }
+    store_identity(&key_and_csr.key_pem, &issued)
+}
+
+/// Renew the enrolled identity if it is due. Returns whether a renewal happened.
+/// A no-op when not enrolled. Best-effort at the call site — a transient issuer
+/// outage must not lock the user out (the current cert is still valid).
+pub async fn maybe_renew(server_url: &str) -> Result<bool, AppError> {
+    let Some((_, cert_pem, _)) = load_identity() else {
+        return Ok(false);
+    };
+    if !needs_renewal(&cert_pem, RENEWAL_FRACTION, now_unix())? {
+        return Ok(false);
+    }
+    renew(server_url).await?;
+    Ok(true)
+}
+
 // ── mTLS client (CA-pinning, hostname-agnostic) ───────────────────────────
 
 /// Server verifier that pins the enrolled CA chain: it accepts a server cert
@@ -445,6 +529,31 @@ mod tests {
         assert_eq!(grant.subject_id, "admin");
         assert_eq!(grant.scope, "access");
         assert_eq!(grant.enroll_port, 8444);
+    }
+
+    #[test]
+    fn needs_renewal_decides_by_lifetime_fraction() {
+        use rcgen::{date_time_ymd, CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+        let make = |nb, na| -> String {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut p = CertificateParams::new(vec![]).unwrap();
+            p.not_before = nb;
+            p.not_after = na;
+            p.self_signed(&key).unwrap().pem()
+        };
+
+        let nb = date_time_ymd(2026, 1, 1);
+        let na = date_time_ymd(2026, 12, 31); // ~1 year
+        let cert = make(nb, na);
+
+        // ~9 % elapsed -> not due.
+        assert!(!needs_renewal(&cert, 0.5, date_time_ymd(2026, 2, 1).unix_timestamp()).unwrap());
+        // ~58 % elapsed -> due.
+        assert!(needs_renewal(&cert, 0.5, date_time_ymd(2026, 8, 1).unix_timestamp()).unwrap());
+        // Degenerate window (not_before == not_after) -> due.
+        let degen = make(nb, nb);
+        assert!(needs_renewal(&degen, 0.5, nb.unix_timestamp()).unwrap());
     }
 
     // Real-handshake proof of the enrolled mTLS client: an in-process TLS server

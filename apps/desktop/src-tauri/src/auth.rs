@@ -126,17 +126,23 @@ pub async fn check_session(allow_self_signed: bool) -> Result<Option<AuthSession
 
     // Try with the current access token
     match fetch_me(&server_url, &token, allow_self_signed).await {
-        Ok(me) => Ok(Some(AuthSession {
-            server_url,
-            token,
-            refresh_token,
-            username: me.username,
-            is_admin: me.is_admin,
-        })),
+        Ok(me) => {
+            // Opportunistic auto-renew of the enrolled mTLS cert (~50% lifetime).
+            // Best-effort: a transient failure must not break the session check.
+            let _ = crate::enrollment::maybe_renew(&server_url).await;
+            Ok(Some(AuthSession {
+                server_url,
+                token,
+                refresh_token,
+                username: me.username,
+                is_admin: me.is_admin,
+            }))
+        }
         Err(_) => {
             // Access token expired — try to refresh
             match try_refresh(&server_url, &refresh_token, allow_self_signed).await {
                 Ok(session) => {
+                    let _ = crate::enrollment::maybe_renew(&session.server_url).await;
                     save_session_to_keyring(&session)?;
                     Ok(Some(session))
                 }

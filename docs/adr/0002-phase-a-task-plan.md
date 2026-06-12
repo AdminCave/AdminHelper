@@ -184,7 +184,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     (mTLS) → neues Cert mit **erhaltener** Identität (Renew-CSR-CN verworfen ⇒ Issuer leitet
     Identität aus dem vorgelegten Cert ab, nicht der CSR). Docs (agent-deployment DE+EN) ergänzt.
 
-### A5 — Desktop: Auto-Enrollment + mTLS + Browser-P12-Export (Rust/Tauri) — A5a ✅ (A5b/A5c offen)
+### A5 — Desktop: Auto-Enrollment + mTLS + Browser-P12-Export (Rust/Tauri) — A5a/A5b ✅ (A5c offen)
 - **Beschreibung:** Beim ersten Server-Login ECDSA-Keypair+CSR (`rcgen`), Enroll via
   `ca-issuer`, Cert+Key in den Keyring (ECDSA passt; **Datei-Fallback** bei Windows-Limit),
   CA pinnen (`tofu.rs`: CA statt Leaf), `reqwest` `identity()` + `tls_certs_only()`. Auto-Renew.
@@ -216,8 +216,14 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     einen echten Bug (rustls liefert `NotValidForNameContext`, nicht `NotValidForName`).
   - **Plattform-Hinweis ([[project_ci_windows_blindspot]]):** Linux verifiziert; der Windows-
     Keyring-Pfad (`password.rs`) ist nicht e2e getestet — vor A8 manuell auf echtem Windows prüfen.
-  - **Offen:** **A5b** (Auto-Renew bei ~50 % via `/ca/renew` mit dem aktuellen Cert — die
-    Renew-Bausteine existieren bereits im Go-Agent als Vorlage) und **A5c** (Browser-P12-Export).
+- **A5b (Auto-Renew) ✅ ABGESCHLOSSEN 2026-06-12:** `needs_renewal` (parst die Leaf-Gültigkeit
+  via `x509-parser`, `now` als Parameter → deterministisch testbar) + `renew` (präsentiert das
+  **aktuelle** Cert per `enrolled_client` an `/ca/renew`, neue CSR, speichert das neue Identity-
+  Tripel — der Issuer leitet die Identität aus dem vorgelegten Cert ab) + `maybe_renew` (bei
+  ≥50 % Laufzeit). Verdrahtet **best-effort in `check_session`** (Auto-Trigger beim App-Start,
+  analog zum Per-Run-Check des Go-Agents — der Desktop ist langlaufend, kein oneshot). Test:
+  Renew-Entscheidung über mehrere Cert-Alter (rcgen-Festdatums-Certs). **56 cargo-Tests grün.**
+  - **Offen:** **A5c** (Browser-P12-Export — Cert/Key als PKCS12 für den Browser-Import).
 
 ### A6 — Browser + Extension
 - **Beschreibung:** Web-SPA hinter mTLS (kein `fetch`-Code-Change, aber P12-Import dokumentieren);
