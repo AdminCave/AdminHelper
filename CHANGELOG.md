@@ -5,6 +5,28 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.29.0] - 2026-06-12
+
+### Added
+
+- **One-Shot-Installer `scripts/install.sh`.** Bringt den Stack hoch, legt den Erst-Admin samt
+  einmaligem Enrollment-Token **out-of-band** an (über eine neue interne Management-CLI
+  `python -m app.cli` mit `create-admin` + `mint-enroll-token`) und schaltet am Ende mTLS scharf.
+  Das löst die Henne-Ei-Lage des Erst-Admins unter erzwungenem mTLS: ein brandneuer certloser
+  Client kommt nicht durch den `:443`-Handshake zum Login, also mintet das Script (mit internem
+  Netz-Zugriff) das erste Token direkt. Der Admin löst es im Desktop unter „Mit Token enrollen" ein
+  (Cert entsteht on-device), dann normaler Login.
+- **Update-Script `scripts/update.sh`** — Backup-first (inkl. CA-Kronjuwel) → gepinnter
+  `docker compose pull` → Recreate → Healthcheck. Version pinnen über die `*_IMAGE`-Tags in `.env`.
+
+### Changed
+
+- **mTLS ist jetzt per Default erzwungen** (`MTLS_ENFORCE=true` in `docker-compose.yml` +
+  `.env.example`). **BREAKING:** die Datenebene `:443` verlangt ab Werk ein Client-Cert. Ein
+  frischer Install ist via `install.sh` sofort enforced nutzbar; ein manueller Bootstrap ohne Script
+  braucht einmalig `MTLS_ENFORCE=false`. Die Token-Mint-Logik wurde in
+  `enrollment/service.mint_enrollment_token` extrahiert (von HTTP-API + CLI geteilt).
+
 ## [0.28.0] - 2026-06-12
 
 ### Added
@@ -1147,6 +1169,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.29.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.29.0
 [0.28.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.28.0
 [0.27.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.27.0
 [0.26.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.26.0
