@@ -367,8 +367,14 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   - **Installation** (DE+EN): Client-Cert/PKCS12-Import-Notiz (permissiv-Hinweis).
   - **Erledigt 2026-06-12:** A6-Browser-Import-Doku (Benutzer/Users DE+EN) und die
     Enforcement-Betriebsdoku (Betrieb/Operations DE+EN: Scharfschalten/Rollback/Bootstrap).
-  - **Offen (Schluss-Pass):** nach dem tatsächlichen `MTLS_ENFORCE=true` ein finaler Durchgang —
-    Betriebserfahrung aus dem scharfen Modus einpflegen, ADR 0001 → vollständig „Implemented".
+  - **Schluss-Pass ✅ 2026-06-12:** ADR 0001 → **„Implementiert (Phase A)"** (Status, §0-Tabelle/
+    Client-Enrollment-Stand, §6-Phasen auf den Gesamtstand inkl. A8-Verifikation und der entkoppelten
+    Enrollment-Tür [ADR 0003] gebracht); Onboarding-Walkthrough unter Enforcement (Benutzer/Users
+    DE+EN). Bewusst **kein** nacktes „vollständig Implemented": die GUI-Hardware-Pfade (Windows-
+    Keyring, Browser-Import) sind nicht automatisiert verifizierbar.
+  - **Offen (Betreiber-Preflight, kein Code/Doku):** das tatsächliche `MTLS_ENFORCE=true` in einem
+    Deployment + die manuelle GUI-Hardware-Verifikation. Danach kann „Phase A" abschließend als
+    produktiv-bestätigt markiert und etwaige Betriebserfahrung nachgetragen werden.
 
 ---
 

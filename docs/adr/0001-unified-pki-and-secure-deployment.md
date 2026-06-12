@@ -6,11 +6,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0001 — Einheitliche interne PKI + sichere Installation/Updates
 
-- **Status:** **Implementiert (Phase A, permissiv per Default)** — Stand 2026-06-12.
-  Der `MTLS_ENFORCE`-Schalter ist umgesetzt und **end-to-end verifiziert** (permissiv↔enforced↔
-  rollback am laufenden Stack, §7). Ausstehend ist keine Code-Arbeit mehr, nur Operator-Aktionen:
-  das tatsächliche `MTLS_ENFORCE=true` in einem Deployment + die manuelle GUI-Verifikation
-  (Windows-Desktop-Enrollment, Browser-`.p12`-Import).
+- **Status:** **Implementiert (Phase A) — permissiv per Default.** Stand 2026-06-12. Umgesetzt: die
+  einheitliche PKI, das mTLS-Gateway, Per-Route-Scopes, Auto-Enrollment (Agent/Desktop), Browser-
+  P12-Export, der `MTLS_ENFORCE`-Enforcement-Schalter (**end-to-end verifiziert**, §7) und Backup/
+  Restore inkl. CA. Die **entkoppelte Enrollment-Tür** ([ADR 0003](0003-decoupled-enrollment-door.md))
+  erlaubt Onboarding auch im scharfen Modus ohne permissives Fenster. **Keine Code-Arbeit mehr offen**
+  — als Betreiber-Preflight bleiben nur das tatsächliche `MTLS_ENFORCE=true` in einem Deployment und
+  die manuelle GUI-Hardware-Verifikation (Windows-Desktop-Keyring, Browser-`.p12`-Import; CI-Blindspot).
 - **Datum:** 2026-06-11 (Entwurf), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Betrifft:** Server, ca-issuer (neu), Desktop-Client, Go-Agent, Web-Frontend, frps, Install/Update/Backup-Skripte
 - **Umsetzung:** siehe [ADR 0002](0002-phase-a-task-plan.md) (Task-Plan A0–A10 mit Fortschritt)
@@ -20,9 +22,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## 0. Umsetzungsstand (Phase A) — Stand 2026-06-12
 
-Der **Kern** dieses Entwurfs ist umgesetzt und läuft **permissiv** (nutzbar, ohne dass schon ein
-Client ausgesperrt wird). Die Datenebene wird **noch nicht** auf `CERT_REQUIRED` scharfgeschaltet —
-das ist der bewusst isolierte Schlüssel-Task A8.
+Der **Kern** dieses Entwurfs ist umgesetzt und läuft per Default **permissiv** (nutzbar, ohne dass
+schon ein Client ausgesperrt wird). Das Scharfschalten auf `CERT_REQUIRED` ist der `MTLS_ENFORCE`-
+Schalter (A8) — umgesetzt und end-to-end verifiziert (§7), aber bewusst per Default aus; der Flip
+ist eine Operator-Entscheidung.
 
 | Entscheidung | Stand |
 |---|---|
@@ -33,15 +36,16 @@ das ist der bewusst isolierte Schlüssel-Task A8.
 | D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |
 | D6 eigener `ca-issuer`, Server nie im Signier-Pfad | ✅ einzige Signier-Capability; Gateway hält nur ein Leaf |
 | D7 Root kalt + passphrase-verschlüsselt | ✅ `root.key.enc`; `CA_ROOT_PASSPHRASE` getrennt vom Backup |
-| D8 Human+Agent teilen `:443` per Scope | ✅ `access` (Mensch) / `tunnel` (Agent), Per-Route-Guards (permissiv) |
+| D8 Human+Agent teilen `:443` per Scope | ✅ `access` (Mensch) / `tunnel` (Agent), Per-Route-Guards (permissiv per Default, enforced via `MTLS_ENFORCE`) |
 | D9 keine Migration | ✅ frische Hierarchie ab Tag 1 |
 | D10 ECDSA-P-256-Leaves | ✅ Agent (Go) + Desktop (rcgen) |
 | D11 ein nginx-Gateway vor den HTTP-Planes; frps ausgenommen | ✅ Gateway `:443`/`:8444`; frps eigene TLS-Kante (unter `tunnel`) |
 
 **Client-Enrollment-Stand:** Go-Agent ✅ (A4), Desktop ✅ (A5: Enroll+mTLS+Renew+P12), frps/Tunnel ✅
-(A7). **Browser** kann über den Desktop-P12-Export ein Cert bekommen (A5c) — der einzige verbleibende
-menschliche Client neben dem Desktop. **Backup/Restore** inkl. CA-Kronjuwel ist umgesetzt +
-DR-getestet (A9).
+(A7). **Browser** bekommt sein Cert über den Desktop-P12-Export (A5c). Neue Clients können auch im
+scharfen Modus ohne permissives Fenster onboarden — über die **entkoppelte Enrollment-Tür**
+([ADR 0003](0003-decoupled-enrollment-door.md): ein Admin mintet ein Token, der Client enrollt
+certless an `:8444` ohne Login). **Backup/Restore** inkl. CA-Kronjuwel ist umgesetzt + DR-getestet (A9).
 
 Die mit `[zu verifizieren]` markierten Punkte des Entwurfs sind alle geklärt (§7 „Verifikation").
 
@@ -215,7 +219,8 @@ Das ist der praktische Schnell-Widerruf ohne CRL-Maschinerie.
   `/enroll`+`/renew`; `:443` auf mTLS-Pflicht; Per-Route-Cert-Scope (Human vs Agent);
   Desktop-/Agent-Auto-Enrollment; Browser-P12-Export; vollständiges Backup inkl. CA.
 - **Phase B (Härtung):** Intermediate `internal`; Server↔Monitoring von `MONITOR_API_KEY`
-  auf mTLS umstellen.
+  auf mTLS umstellen. Die **entkoppelte Enrollment-Tür** ([ADR 0003](0003-decoupled-enrollment-door.md))
+  ist als Phase-B-Baustein bereits umgesetzt; `internal`/Monitoring-mTLS stehen noch aus.
 - **Phase C (optional/später):** öffentliches ACME (Let's Encrypt) als *zusätzlicher*
   Browser-Trust-Pfad, falls je nötig; ggf. separate Agent-Ingest-Schiene **nur** bei
   belegter Last/Assurance-Anforderung.
