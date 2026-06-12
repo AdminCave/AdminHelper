@@ -3,12 +3,11 @@ set -e
 
 # --- Drop to the non-root app user -----------------------------------------
 # The container starts as root only so we can fix ownership of the mounted
-# paths (bind mount ./data, named volumes frp-config + frp-pki) — existing
-# deployments may hold root-owned files. We then re-exec ourselves as the
-# unprivileged app user; everything below (alembic, uvicorn, hook subprocesses)
-# runs as that user.
+# paths (bind mount ./data, named volume frp-config) — existing deployments may
+# hold root-owned files. We then re-exec ourselves as the unprivileged app user;
+# everything below (alembic, uvicorn, hook subprocesses) runs as that user.
 if [ "$(id -u)" = "0" ]; then
-    chown -R app:app /app/data /app/frp-config /app/frp-pki
+    chown -R app:app /app/data /app/frp-config
     exec gosu app:app sh "$0" "$@"
 fi
 
