@@ -6,8 +6,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Phase A — Detaillierter Task-Plan (Umsetzung der PKI/mTLS-Grundlage)
 
-- **Status:** Bauplan (noch kein Code)
-- **Datum:** 2026-06-11
+- **Status:** **Phase-A-Kern umgesetzt (permissiv)** — Stand 2026-06-12. Abgeschlossen:
+  A0–A5, A7, A9 + der A10-Konsolidierungs-Pass. Ausstehend: A6 (Browser-Web-SPA-Onboarding-Doku),
+  A8 (Enforcement-Scharfschaltung) und der A10-Schluss-Pass nach A8.
+- **Datum:** 2026-06-11 (Bauplan), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Basis:** [ADR 0001](0001-unified-pki-and-secure-deployment.md) (D1–D11), alle Verifikationspunkte geklärt.
 
 ## Leitprinzip: permissive → enforced
