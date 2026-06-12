@@ -300,7 +300,10 @@ and installs, depending on the response:
 
 - Server API key (always)
 - Monitor agent + key (if the monitor service is reachable)
-- FRP client + frpc.toml + PKI bundle (if the server has an FRP tunnel)
+- FRP client + frpc.toml (if the server has an FRP tunnel)
+- **mTLS client certificate**: the agent generates an ECDSA key on-device and enrolls its
+  cert at the internal `ca-issuer` (via the gateway). The same cert is used for the server
+  pushes and the FRP tunnel and is auto-renewed — no server-minted PKI bundle anymore.
 
 This means provisioning also works for servers **without** an FRP tunnel — up to v0.22.x
 the flow was coupled to FRP. Manual setups (e.g. monitoring only) still work

@@ -91,7 +91,7 @@
           <p>New servers are onboarded via one-time tokens with a 24-hour TTL &mdash; since v0.23.2 FRP-independent inside the server module:</p>
           <ol>
             <li>Admin calls <code>POST /api/servers/{server_id}/provision/token</code> and receives <code>{token, expiresAt, serverId, serverName}</code>.</li>
-            <li>The agent redeems it with <code>POST /api/servers/{server_id}/provision/activate</code> (header <code>X-Provision-Token</code>) and gets back: a fresh server API key (always), monitor agent key + URL (when the monitor service is reachable), <code>frpc.toml</code> + PKI bundle (when the server has FRP tunnels). Fields are <code>null</code> when the respective component is not configured &mdash; an unreachable monitor service does not block provisioning.</li>
+            <li>The agent redeems it with <code>POST /api/servers/{server_id}/provision/activate</code> (header <code>X-Provision-Token</code>) and gets back: a fresh server API key (always), monitor agent key + URL (when the monitor service is reachable), <code>frpc.toml</code> (when the server has FRP tunnels) and a one-time <code>enrollment</code> token. Fields are <code>null</code> when the respective component is not configured &mdash; an unreachable monitor service does not block provisioning. A per-client PKI bundle is <strong>no longer</strong> shipped: the agent enrolls its own mTLS/tunnel cert at the <code>ca-issuer</code> (A4/A7).</li>
             <li>Tokens are one-time: <code>used_at</code> is set, further activations fail.</li>
             <li>At runtime the agent syncs its <code>frpc.toml</code> via <code>GET /api/frp/provision/{server_id}/config</code> + <code>config-hash</code> (only when FRP is configured).</li>
           </ol>

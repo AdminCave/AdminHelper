@@ -6,14 +6,42 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0001 — Einheitliche interne PKI + sichere Installation/Updates
 
-- **Status:** Akzeptiert (Bauplan; noch nicht implementiert)
-- **Datum:** 2026-06-11
+- **Status:** **Implementiert (Phase-A-Kern, permissiv)** — Stand 2026-06-12.
+  Ausstehend: Enforcement-Scharfschaltung (A8) und die Browser-Extension (A6).
+- **Datum:** 2026-06-11 (Entwurf), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Betrifft:** Server, ca-issuer (neu), Desktop-Client, Go-Agent, Web-Frontend, Extension, frps, Install/Update/Backup-Skripte
-- **Kein Code geändert** — dieses Dokument ist der abgestimmte Entwurf, gegen den implementiert wird.
+- **Umsetzung:** siehe [ADR 0002](0002-phase-a-task-plan.md) (Task-Plan A0–A10 mit Fortschritt)
+  und den Abschnitt „Umsetzungsstand (Phase A)" unten.
 
-> Dies ist ein **Entwurf**. Mit `[zu verifizieren]` markierte Aussagen über externes
-> Verhalten (uvicorn-TLS, frp-TLS, reqwest, keyring-Limits) müssen vor der Umsetzung
-> gegen die offizielle Doku geprüft werden (siehe Abschnitt „Offene Verifikationspunkte").
+---
+
+## 0. Umsetzungsstand (Phase A) — Stand 2026-06-12
+
+Der **Kern** dieses Entwurfs ist umgesetzt und läuft **permissiv** (nutzbar, ohne dass schon ein
+Client ausgesperrt wird). Die Datenebene wird **noch nicht** auf `CERT_REQUIRED` scharfgeschaltet —
+das ist der bewusst isolierte Schlüssel-Task A8.
+
+| Entscheidung | Stand |
+|---|---|
+| D1 Root → tunnel/access/internal | ✅ `ca-issuer` erzeugt die Hierarchie beim First-Boot |
+| D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); Agent pinnt die Root |
+| D3 mTLS-Pflicht `:443` | ⏳ **permissiv** (`ssl_verify_client optional`); Scharfschalten = A8 |
+| D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; `revoked_identities` als Schnell-Widerruf |
+| D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |
+| D6 eigener `ca-issuer`, Server nie im Signier-Pfad | ✅ einzige Signier-Capability; Gateway hält nur ein Leaf |
+| D7 Root kalt + passphrase-verschlüsselt | ✅ `root.key.enc`; `CA_ROOT_PASSPHRASE` getrennt vom Backup |
+| D8 Human+Agent teilen `:443` per Scope | ✅ `access` (Mensch) / `tunnel` (Agent), Per-Route-Guards (permissiv) |
+| D9 keine Migration | ✅ frische Hierarchie ab Tag 1 |
+| D10 ECDSA-P-256-Leaves | ✅ Agent (Go) + Desktop (rcgen) |
+| D11 ein nginx-Gateway vor den HTTP-Planes; frps ausgenommen | ✅ Gateway `:443`/`:8444`; frps eigene TLS-Kante (unter `tunnel`) |
+
+**Client-Enrollment-Stand:** Go-Agent ✅ (A4), Desktop ✅ (A5: Enroll+mTLS+Renew+P12), frps/Tunnel ✅
+(A7). **Browser** kann über den Desktop-P12-Export ein Cert bekommen (A5c); die **Browser-Extension**
+(`apps/extension/`) ist noch nicht mTLS-fähig (A6 zurückgestellt) — vor A8 nachzuziehen oder
+auszunehmen, sonst sperrt das Scharfschalten die Extension aus. **Backup/Restore** inkl. CA-Kronjuwel
+ist umgesetzt + DR-getestet (A9).
+
+Die mit `[zu verifizieren]` markierten Punkte des Entwurfs sind alle geklärt (§7 „Verifikation").
 
 ---
 

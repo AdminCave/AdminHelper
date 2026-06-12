@@ -313,12 +313,25 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     `/healthz` grün, Web-UI `:443` → 200; DB mit 14 Tabellen zurück; `CA_ROOT_PASSPHRASE` **0 Treffer**
     im Tarball. Docs DE+EN (Betrieb/Operations-Backup) nachgezogen.
 
-### A10 — Doku DE+EN + CHANGELOG + ADR-Status
+### A10 — Doku DE+EN + CHANGELOG + ADR-Status — Phase-A-Kern ✅ (Schluss-Pass nach A8/A6)
 - **Beschreibung:** `docs/` (admin + developer, beide Sprachen): PKI/mTLS-Modell, Enrollment,
   P12-Import, Backup; README; CHANGELOG; ADR 0001 → „Implemented".
 - **Betroffen:** `docs/**`, `README.md`, `CHANGELOG.md`, ADRs.
 - **Akzeptanz:** frischer Clone/Quick-Start stimmt; DE+EN synchron.
 - **Aufwand:** M · **Risiko:** niedrig · **Abh.:** alle
+- **Konsolidierungs-Pass (Phase-A-Kern) ✅ 2026-06-12:**
+  - **ADR 0001 → „Implementiert (Phase-A-Kern, permissiv)"** + Umsetzungsstand-Tabelle (D1–D11 live/
+    pending), Enforcement (A8) + Browser-Extension (A6) als ausstehend markiert.
+  - **Kohärente PKI/mTLS-Übersicht** in `developer/index.html` (DE+EN): Trust-Kette, ca-issuer/
+    gateway, Enrollment-Muster (ein Token → On-Device-Key → CSR), Scopes, permissiv→A8, Backup —
+    mit Verweis auf ADR 0001 als kanonisches Modell. Bewusst **keine neue Nav-Seite** (Sidebar-Nav
+    ist in jede HTML-Datei dupliziert → zu invasiv); Konsolidierung über die Landing-Seite + Querlinks.
+  - **Stale-Sweep:** „PKI-Bundle"-Reste aus der Provision-Doku gefangen (A7 entfernte das per-Client-
+    frp-Cert) — `developer/server` DE+EN, `admin/agent-deployment`, `api-reference` DE+EN, `README`.
+  - **API-Referenz** (DE+EN): `enrollment`-Block in der activate-Antwort + neuer `/api/enrollment/token`.
+  - **Installation** (DE+EN): Client-Cert/PKCS12-Import-Notiz (permissiv-Hinweis).
+  - **Offen (Schluss-Pass):** nach A8 (Enforcement) + A6 (Browser-Extension) ein finaler Durchgang —
+    Enforcement-Betriebsdoku, Extension-mTLS, ADR 0001 → vollständig „Implemented".
 
 ---
 

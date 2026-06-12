@@ -75,6 +75,17 @@ cd ../desktop  &amp;&amp; cargo tauri dev
 cd apps/agent
 go run ./cmd/adminhelper-agent run</code></pre>
 
+          <h2>Unified PKI &amp; mTLS</h2>
+          <p>AdminHelper runs its <strong>own internal PKI</strong> as the foundation for mTLS across all entrances. The full, canonical model (decisions D1–D11, trust, lifecycle, backup) is in <a href="../../adr/0001-unified-pki-and-secure-deployment.md">ADR 0001</a>; the implementation status in <a href="../../adr/0002-phase-a-task-plan.md">ADR 0002</a>. In brief:</p>
+          <ul>
+            <li><strong>Trust chain:</strong> one Root → scoped intermediates <code>tunnel</code> (frps + agents), <code>access</code> (humans: desktop/browser), <code>internal</code> (phase B). Clients pin the <em>Root/CA</em>, not a leaf — server certs rotate freely (D2).</li>
+            <li><strong><code>ca-issuer</code></strong> (own container) is the <em>only</em> signing capability (D6): creates the hierarchy on first boot, holds the online intermediates, signs via <code>/enroll</code> (one-time token) and <code>/renew</code> (presented cert). The Root key stays cold + passphrase-encrypted (D7).</li>
+            <li><strong><code>gateway</code></strong> (nginx) is the single public TLS edge (`:443` data, `:8444` enroll). It terminates TLS/mTLS and forwards the verified identity as <code>X-Client-*</code> headers to the internal services — uvicorn can't see the cert itself (V1). <code>server</code>/<code>ca-issuer</code> have no host port, so the header is unforgeable.</li>
+            <li><strong>Enrollment (one pattern, three clients):</strong> one-time token → on-device ECDSA key + CSR → issuer signs (identity issuer-dictated, the CSR subject cosmetic). Go agent (at provisioning), desktop (after login), frps/tunnel certs. Native clients auto-renew at ~50% lifetime; the browser gets a long-lived cert as a <strong>PKCS12 export</strong> from the desktop (D5).</li>
+            <li><strong>Per-route scope:</strong> <code>access</code> = human, <code>tunnel</code> = agent (D8). <strong>Currently permissive</strong> (`MTLS_ENFORCE=false`): a scope mismatch is logged, the request proceeds — flipping to <code>CERT_REQUIRED</code> is <strong>A8</strong>.</li>
+            <li><strong>Backup crown jewel</strong> is the <code>ca-pki</code> volume (Root + intermediates) — <code>scripts/backup.sh</code>/<code>restore.sh</code> back it up; the regenerable cert volumes are deliberately excluded (ADR 0001 §5).</li>
+          </ul>
+
           <h2>Reading Order</h2>
           <ol>
             <li><a href="./server.html">Server (Backend)</a></li>
