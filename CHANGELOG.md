@@ -69,6 +69,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `:8444` weiter offen; Rollback → 200). Betriebs-Anleitung (Scharfschalten, Rollback,
   Lock-out-Vermeidung, Bootstrap-Fenster) unter „Betrieb &amp; Konfiguration" (DE+EN). Das
   tatsächliche Scharfschalten bleibt eine bewusste Operator-Aktion nach GUI-Hardware-Verifikation.
+- **Admin-Enrollment-Token für fremde Identitäten** (`POST /api/enrollment/token/for`, admin-only).
+  Ein Admin mintet ein einmaliges `access`-Enrollment-Token für einen existierenden Ziel-User und
+  reicht es out-of-band weiter; der neue Nutzer löst es certless an der Enroll-Plane `:8444` ein.
+  Erster Baustein der **entkoppelten Enrollment-Tür** (ADR 0003), damit neue Clients auch bei
+  erzwungenem mTLS ohne permissives Fenster onboarden können (CN = Ziel-Username, issuer-diktiert).
 
 ### Changed
 

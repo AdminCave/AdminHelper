@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0003 — Entkoppelte Enrollment-Tür (Bootstrap unter erzwungenem mTLS)
 
-- **Status:** **Entwurf / Skizze (Phase B)** — Stand 2026-06-12. Noch kein Code, keine
-  Verbindlichkeit. Dient als Diskussions- und Entscheidungsgrundlage.
+- **Status:** **In Umsetzung (Phase B)** — Stand 2026-06-12. Entscheidungen getroffen (§6,
+  vorläufig/umlenkbar), Increment 1 (Server-Token-Mint für fremde Identität) ✅ — siehe §9.
 - **Betrifft:** `apps/gateway` (Enroll-Plane `:8444`), `apps/server` (Token-Mint + Bootstrap),
   `apps/desktop` (Erst-Enrollment-Flow), Doku.
 - **Basis:** [ADR 0001](0001-unified-pki-and-secure-deployment.md) (D3, D8), die A8-„Bekannte
@@ -106,17 +106,20 @@ Das Modell aus B ist exakt die Verallgemeinerung von C auf den `access`-Scope.
 - **Optionale Härtung:** Da Onboarding selten ist, kann `:8444` netzseitig enger gebunden werden
   (z. B. nur aus Admin-Netzen erreichbar) — unabhängig von dieser Skizze.
 
-## 6. Offene Entscheidungen (für dich)
+## 6. Entscheidungen (Stand 2026-06-12 — vorläufig, umlenkbar)
 
-1. **Erst-Admin-Bootstrap auf `:8444`?** Sauber (kein permissives Fenster je nötig), aber exponiert
-   `/auth/bootstrap` certless. Alternative: das permissive Fenster **nur** für das allererste
-   Setup behalten (seltenes Einmal-Ereignis) und `:8444` minimal auf `/enroll` lassen.
-2. **Authz-Modell „wer enrollt wen":** Darf jeder Admin für beliebige Identitäten Enroll-Token
-   ausstellen? Pro Rolle/Scope begrenzt? (Beim Agent: jeder Admin, pro Server-ID.)
-3. **Token-Zustellung:** Copy-Paste reicht für v1 (wie Agent heute); QR/E-Mail wären Komfort,
-   nicht Pflicht.
-4. **Desktop-UX:** „Mit Token enrollen" als eigener Erst-Start-Schritt vs. in den Login-Dialog
-   integriert.
+1. **`:8444` bleibt minimal — nur `/enroll`.** Der allererste Admin wird über das **einmalige
+   permissive Setup-Fenster** gelöst, **nicht** über eine certlose `/auth/bootstrap`-Route.
+   Begründung: kleinste certlose Angriffsfläche; der Erst-Admin-Bootstrap ist ein seltenes
+   Einmal-Ereignis, für das ein kurzes permissives Fenster vertretbar ist.
+2. **Authz: jeder Admin darf für beliebige (existierende) Identitäten minten** — analog zum
+   Agent-Provision (jeder Admin, pro Identität ein Einmal-Token). Ziel-User muss existieren.
+3. **Token-Zustellung: Copy-Paste (out-of-band)** in v1; QR/E-Mail wären Komfort, nicht Pflicht.
+4. **Desktop-UX: eigener „Mit Token enrollen"-Erst-Start-Schritt**, analog zum Agent-`provision`-
+   Subcommand (getrennt vom Login).
+
+> Diese Entscheidungen sind bewusst **vorläufig** — sie folgen dem Prinzip „certlose Tür klein
+> halten". Increment 1 (§9) hängt an **keiner** davon und bleibt auch bei einer Kursänderung gültig.
 
 ## 7. Bewusst NICHT (YAGNI)
 
@@ -131,3 +134,15 @@ Das Modell aus B ist exakt die Verallgemeinerung von C auf den `access`-Scope.
 Gateway-Allowlist **S**, Server-Token-Mint-für-Subject + Bootstrap-Erweiterung **M** (inkl. Authz +
 Tests), Desktop-„Mit-Token-enrollen"-Flow **M** (Rust + UI + Tests), Doku **S**. Gesamt: ein
 abgrenzbarer Phase-B-Block, test-/commitbar pro Komponente — **kein** „big bang".
+
+## 9. Umsetzungsstand
+
+- **Increment 1 — Server: Admin mintet für fremde Identität ✅ 2026-06-12.**
+  `POST /api/enrollment/token/for` (admin-only, `get_current_admin`): mintet ein einmaliges
+  `access`-Token für einen **existierenden** Ziel-User (CN = dessen Username, issuer-diktiert),
+  unbekannter User → `404`, Nicht-Admin → `403`. Mint-Logik mit dem Self-Service-Endpoint in einem
+  `_mint_token`-Helper geteilt. 4 neue Tests (`test_enrollment_mint.py`), Server-Suite **190 grün**,
+  ruff sauber. API-Referenz DE+EN ergänzt. Hängt an keiner der §6-Entscheidungen.
+- **Offen:** Increment 2 (Gateway-`:8444`-Allowlist bleibt minimal — nichts zu tun, außer das in
+  der nginx-Config/Doku festzuhalten), Increment 3 (Desktop „Mit Token enrollen"-Erst-Start-Flow),
+  Increment 4 (Onboarding-Doku unter Enforcement, ersetzt das permissive Fenster für Folge-Clients).
