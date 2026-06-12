@@ -82,6 +82,21 @@
             <div><div class="callout-title">Aktuell permissiv</div><p>Die Datenebene läuft noch <strong>permissiv</strong> – ein Browser-Zertifikat ist <em>noch nicht</em> Pflicht, das Web-Panel lädt auch ohne. Du kannst die <code>.p12</code> aber jetzt schon verteilen, damit beim Scharfschalten (<code>CERT_REQUIRED</code>) niemand ausgesperrt wird. Das Browser-Zertifikat ist langlebig und erneuert sich <em>nicht</em> automatisch – vor Ablauf einfach neu exportieren und importieren.</p></div>
           </div>
 
+          <h2>Neuen Nutzer unter erzwungenem mTLS onboarden</h2>
+          <p>Ist die Datenebene scharf (<code>CERT_REQUIRED</code>, siehe <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>), kommt ein brandneuer Client ohne Zertifikat nicht durch den <code>:443</code>-Handshake – auch nicht zum Login. Das Onboarding läuft daher über die <strong>entkoppelte Enrollment-Tür</strong> (<a href="../adr/0003-decoupled-enrollment-door.md">ADR 0003</a>): <em>erst Zertifikat per Token, dann Login.</em></p>
+          <ol>
+            <li><strong>Benutzer anlegen</strong> (Admin) – wie oben unter „Benutzer anlegen". Der spätere Zertifikats-CN ist genau dieser Username.</li>
+            <li><strong>Enrollment-Token ausstellen</strong> (Admin, selbst bereits mit Cert): <code>POST /api/enrollment/token/for</code> mit <code>{ "username": "&lt;neuer-user&gt;" }</code>. Die Antwort enthält ein einmaliges, 10&nbsp;Minuten gültiges <code>token</code>.</li>
+            <li><strong>Token out-of-band übergeben</strong> – per sicherem Kanal an den neuen Nutzer (Copy-Paste). Es ist single-use und kurzlebig.</li>
+            <li><strong>Gerät enrollen</strong> (neuer Nutzer): im Desktop-Client <em>„Erstes Mal? Gerät mit Token einrichten"</em> wählen, Server-URL + Token eingeben → <em>Gerät enrollen</em>. Der Client erzeugt on-device einen Schlüssel, holt sein Zertifikat an <code>:8444</code> und legt es im OS-Keyring ab. <strong>Kein Login nötig.</strong></li>
+            <li><strong>Anmelden</strong> – danach normaler Login (Username/Passwort); der Client präsentiert jetzt sein Zertifikat am Handshake.</li>
+            <li><strong>Optional Browser</strong> – für das Web-Panel exportiert der Nutzer aus dem Desktop ein <code>.p12</code> und importiert es (siehe „Browser-Zugriff" oben).</li>
+          </ol>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Ausnahme: der allererste Admin</div><p>Für den <strong>ersten</strong> Admin gibt es noch niemanden, der ein Token ausstellen könnte. Diesen einen Fall löst ein <strong>einmaliges</strong> permissives Fenster: <code>MTLS_ENFORCE=false</code>, ersten Admin per Bootstrap-Token anlegen + Desktop enrollen, dann <code>MTLS_ENFORCE=true</code>. Ab da läuft jedes weitere Onboarding über die Token-Tür – ohne erneutes Lockern.</p></div>
+          </div>
+
           <h2>API-Keys</h2>
           <p>API-Keys authentifizieren nicht-interaktive Clients (Go-Agent, Skripte, CI-Jobs). Unterschiede zu User-Credentials:</p>
           <ul>

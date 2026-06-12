@@ -76,6 +76,21 @@
             <div><div class="callout-title">Currently permissive</div><p>The data plane still runs <strong>permissive</strong> — a browser certificate is <em>not yet</em> required, the web panel loads without one. You can hand out the <code>.p12</code> now so that nobody is locked out when you switch to <code>CERT_REQUIRED</code>. The browser certificate is long-lived and does <em>not</em> auto-renew — just export and import a fresh one before it expires.</p></div>
           </div>
 
+          <h2>Onboarding a new user under enforced mTLS</h2>
+          <p>Once the data plane is enforced (<code>CERT_REQUIRED</code>, see <a href="./operations.html">Operations &amp; Config</a>), a brand-new client without a certificate can't get through the <code>:443</code> handshake — not even to log in. Onboarding therefore goes through the <strong>decoupled enrollment door</strong> (<a href="../../adr/0003-decoupled-enrollment-door.md">ADR 0003</a>): <em>cert first via a token, login second.</em></p>
+          <ol>
+            <li><strong>Create the user</strong> (admin) – as under "Creating a user" above. The certificate CN will be exactly this username.</li>
+            <li><strong>Issue an enrollment token</strong> (admin, who already holds a cert): <code>POST /api/enrollment/token/for</code> with <code>{ "username": "&lt;new-user&gt;" }</code>. The response carries a one-time <code>token</code>, valid for 10&nbsp;minutes.</li>
+            <li><strong>Hand the token over out-of-band</strong> – via a secure channel to the new user (copy-paste). It is single-use and short-lived.</li>
+            <li><strong>Enroll the device</strong> (new user): in the desktop client pick <em>"First time? Set up this device with a token"</em>, enter the server URL + token → <em>Enroll device</em>. The client generates a key on-device, fetches its certificate at <code>:8444</code> and stores it in the OS keyring. <strong>No login needed.</strong></li>
+            <li><strong>Sign in</strong> – then the normal login (username/password); the client now presents its certificate at the handshake.</li>
+            <li><strong>Optional browser</strong> – for the web panel the user exports a <code>.p12</code> from the desktop and imports it (see "Browser access" above).</li>
+          </ol>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Exception: the very first admin</div><p>For the <strong>first</strong> admin there is nobody yet who could issue a token. That single case is handled with a <strong>one-time</strong> permissive window: <code>MTLS_ENFORCE=false</code>, create the first admin via the bootstrap token + enroll the desktop, then <code>MTLS_ENFORCE=true</code>. From then on every further onboarding goes through the token door — no more loosening.</p></div>
+          </div>
+
           <h2>API keys</h2>
           <p>API keys authenticate non-interactive clients (Go agent, scripts, CI jobs). Differences from user credentials:</p>
           <ul>

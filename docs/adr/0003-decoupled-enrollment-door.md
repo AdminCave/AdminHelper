@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # ADR 0003 — Entkoppelte Enrollment-Tür (Bootstrap unter erzwungenem mTLS)
 
-- **Status:** **In Umsetzung (Phase B)** — Stand 2026-06-12. Entscheidungen getroffen (§6,
-  vorläufig/umlenkbar), Increment 1 (Server-Token-Mint für fremde Identität) ✅ — siehe §9.
+- **Status:** **Umgesetzt (Phase B, code- + doku-seitig)** — Stand 2026-06-12. Increments 1–4 ✅
+  (§9); Entscheidungen in §6 (vorläufig/umlenkbar). Offen nur die manuelle Hardware-Verifikation.
 - **Betrifft:** `apps/gateway` (Enroll-Plane `:8444`), `apps/server` (Token-Mint + Bootstrap),
   `apps/desktop` (Erst-Enrollment-Flow), Doku.
 - **Basis:** [ADR 0001](0001-unified-pki-and-secure-deployment.md) (D3, D8), die A8-„Bekannte
@@ -153,6 +153,11 @@ abgrenzbarer Phase-B-Block, test-/commitbar pro Komponente — **kein** „big b
   + Token → enrollen → danach normaler Login). i18n DE+EN. Checks grün: cargo fmt/clippy/test **58**,
   svelte-check 0, eslint/prettier, vitest **73** (inkl. i18n-Parität). Manuelle Real-Enroll-/
   Windows-Keyring-Verifikation bleibt offen (CI-Blindspot, wie A5).
-- **Offen:** Increment 4 (Onboarding-Doku unter Enforcement: der vollständige Ablauf „Admin mintet →
-  out-of-band → neuer Nutzer enrollt im Desktop → Login", ersetzt das permissive Fenster für
-  **Folge**-Clients; das Fenster bleibt nur für den allerersten Admin).
+- **Increment 4 — Onboarding-Doku ✅ 2026-06-12.** Schritt-für-Schritt-Walkthrough „Neuen Nutzer
+  unter erzwungenem mTLS onboarden" (Benutzer/Users DE+EN): Benutzer anlegen → Token minten
+  (`/token/for`) → out-of-band übergeben → Desktop „Mit Token enrollen" → Login → optional Browser-
+  P12; plus der Sonderfall „allererster Admin" (einmaliges permissives Fenster). Betrieb/Operations
+  verweist darauf; Querlinks zu ADR 0003.
+- **Damit ist Phase B (entkoppelte Enrollment-Tür) code- und doku-seitig vollständig.** Offen bleibt
+  nur die manuelle Real-Enroll-/Windows-Keyring-/Browser-Verifikation auf echter Hardware (CI-
+  Blindspot, dieselbe Lücke wie A5/A6/A8).
