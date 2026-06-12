@@ -69,3 +69,21 @@ def test_frps_key_is_0600(tmp_path):
     tunnel, _ = _tunnel_intermediate()
     ensure_frps_cert(tmp_path, tunnel, "frp.example")
     assert (tmp_path / "frps.key").stat().st_mode & 0o777 == 0o600
+
+
+def test_remints_frps_leaf_once_past_half_life(tmp_path, monkeypatch):
+    import datetime
+
+    tunnel, _ = _tunnel_intermediate()
+
+    # First boot: mint an frps leaf dated ~300 days ago (past half of its life).
+    past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=300)
+    monkeypatch.setattr(pki, "_now", lambda: past)
+    ensure_frps_cert(tmp_path, tunnel, "frp.example")
+    aged = (tmp_path / "frps.crt").read_bytes()
+    monkeypatch.undo()
+
+    # Second boot (real clock): the aged frps leaf is re-minted before it expires
+    # and breaks the tunnel edge (F4).
+    ensure_frps_cert(tmp_path, tunnel, "frp.example")
+    assert (tmp_path / "frps.crt").read_bytes() != aged

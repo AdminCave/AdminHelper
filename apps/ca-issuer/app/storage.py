@@ -16,6 +16,7 @@ decrypted solely to create/rotate intermediates.
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 from dataclasses import dataclass
@@ -27,6 +28,30 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from app import pki
 
 logger = logging.getLogger("ca-issuer.storage")
+
+# Re-mint a provisioned server leaf (gateway/frps) once it is past this much of
+# its lifetime. Unlike native client certs these leaves have no client-side
+# auto-renew, so a stack restart refreshes them through this check — well before
+# they expire and take :443/:8444 (or frps) down (F4). Clients pin the Root, so
+# the rotation is transparent (D2).
+LEAF_REMINT_FRACTION = 0.5
+
+
+def _leaf_needs_remint(fullchain_path: Path, fraction: float = LEAF_REMINT_FRACTION) -> bool:
+    """True if the leaf in fullchain_path is missing, unreadable, or already past
+    `fraction` of its validity, so the caller re-mints it on boot. The first cert
+    in the fullchain is the leaf."""
+    try:
+        leaf = x509.load_pem_x509_certificate(fullchain_path.read_bytes())
+    except (OSError, ValueError):
+        return True
+    total = (leaf.not_valid_after_utc - leaf.not_valid_before_utc).total_seconds()
+    if total <= 0:
+        return True
+    elapsed = (
+        datetime.datetime.now(datetime.timezone.utc) - leaf.not_valid_before_utc
+    ).total_seconds()
+    return elapsed >= total * fraction
 
 
 @dataclass
@@ -131,8 +156,9 @@ def ensure_gateway_cert(
 
     The leaf chains to the pinned Root so native clients (which pin the Root and
     validate every leaf against it, D2) accept the gateway on :443. Idempotent:
-    the trust bundle is always refreshed (cheap, tracks rotations), the leaf is
-    minted only when absent so restarts keep a stable cert."""
+    the trust bundle is always refreshed (cheap, tracks rotations); the leaf is
+    kept across restarts but re-minted once past half its life (F4) so it never
+    expires under a long-running stack and takes the gateway down."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Trust bundle for client-cert verification — always (re)written so it
     # follows the current hierarchy even if intermediates were rotated.
@@ -140,7 +166,7 @@ def ensure_gateway_cert(
 
     fullchain = out_dir / "gateway-fullchain.pem"
     key_path = out_dir / "gateway.key"
-    if fullchain.exists() and key_path.exists():
+    if fullchain.exists() and key_path.exists() and not _leaf_needs_remint(fullchain):
         return
 
     dns_names, ip_addresses = _classify_sans(domain, extra_sans)
@@ -164,14 +190,14 @@ def ensure_frps_cert(
 
     The CA private key never reaches the internet-facing frps — only the public
     chain (the GHSA-rv39 master/published split, now under the unified PKI).
-    Idempotent like the gateway cert."""
+    Idempotent like the gateway cert; re-minted once past half its life (F4)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Trust bundle frps verifies agent/visitor tunnel certs against.
     (out_dir / "ca.crt").write_bytes(tunnel.chain)
 
     cert_path = out_dir / "frps.crt"
     key_path = out_dir / "frps.key"
-    if cert_path.exists() and key_path.exists():
+    if cert_path.exists() and key_path.exists() and not _leaf_needs_remint(cert_path):
         return
 
     dns_names, ip_addresses = _classify_sans(server_addr, extra_sans)

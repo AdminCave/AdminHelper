@@ -36,9 +36,10 @@ VALIDITY_DAYS_INTERMEDIATE = 1825  # 5 years
 # Leaf lifetimes per audience (D5): native short + auto-renew, browser long + manual.
 LEAF_DAYS_NATIVE = 90
 LEAF_DAYS_BROWSER = 365
-# Gateway TLS leaf: long-lived because the gateway has no auto-renew yet (a
-# later task). The issuer re-provisions it on demand; until then a deploy/restart
-# rotates it (clients pin the Root, not the leaf, so rotation is transparent).
+# Gateway/frps TLS leaf: long-lived because there is no client-side auto-renew
+# for a server leaf. The issuer re-mints it on boot once it is past half its life
+# (storage._leaf_needs_remint, F4), so a stack restart refreshes it well before
+# expiry. Clients pin the Root, not the leaf, so the rotation is transparent (D2).
 LEAF_DAYS_GATEWAY = 365
 
 SCOPES = ("tunnel", "access", "internal")

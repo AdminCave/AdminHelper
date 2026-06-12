@@ -105,3 +105,39 @@ def test_gateway_key_is_0600(tmp_path):
     access, _ = _access_intermediate()
     ensure_gateway_cert(tmp_path, access, "localhost")
     assert (tmp_path / "gateway.key").stat().st_mode & 0o777 == 0o600
+
+
+# --- F4: re-mint the leaf before it expires ----------------------------------
+
+
+def test_leaf_needs_remint_detects_missing_and_fresh(tmp_path):
+    from app.storage import _leaf_needs_remint
+
+    assert _leaf_needs_remint(tmp_path / "nope.pem") is True  # missing -> re-mint
+
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    assert _leaf_needs_remint(tmp_path / "gateway-fullchain.pem") is False  # fresh -> keep
+
+
+def test_remints_leaf_once_past_half_life(tmp_path, monkeypatch):
+    import datetime
+
+    access, _ = _access_intermediate()
+
+    # First boot: mint a leaf dated ~300 days ago (well past half of its 365-day
+    # life) by pinning the issuer clock to the past for this call only. The leaf
+    # has no client-side auto-renew, so without F4 it would simply expire and take
+    # the gateway down with it.
+    past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=300)
+    monkeypatch.setattr(pki, "_now", lambda: past)
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    aged = (tmp_path / "gateway-fullchain.pem").read_bytes()
+    monkeypatch.undo()  # back to the real clock
+
+    # Second boot (real clock): the aged leaf is re-minted before it can expire.
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    fresh = (tmp_path / "gateway-fullchain.pem").read_bytes()
+    assert fresh != aged
+    leaf = x509.load_pem_x509_certificates(fresh)[0]
+    assert leaf.not_valid_before_utc > past + datetime.timedelta(days=200)
