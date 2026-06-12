@@ -140,6 +140,24 @@ docker compose up -d server</code></pre>
           <h2>Zertifikate erneuern</h2>
           <p>Das TLS-Zertifikat des Gateways stellt der <code>ca-issuer</code> aus (access-signiert, 365&nbsp;Tage). Es wird beim ersten Start ins <code>gateway-certs</code>-Volume provisioniert; ein Redeploy/Neustart des <code>ca-issuer</code> erneuert es bei Bedarf. Die FRP-Client-Zertifikate laufen nach 12 Monaten ab – siehe <a href="./frp-tunnel.html">FRP-Tunnel</a> für Rotation.</p>
 
+          <h2>mTLS scharfschalten (CERT_REQUIRED)</h2>
+          <p>Die Datenebene (<code>:443</code>) läuft per Default <strong>permissiv</strong>: Clients ohne Zertifikat kommen durch, der Server <em>loggt</em> nur einen fehlenden oder falschen Cert-Scope. Beim Scharfschalten verlangt das Gateway am TLS-Handshake ein gültiges Client-Zertifikat (<code>CERT_REQUIRED</code>) <em>und</em> der Server weist geschützte Routen ohne gültigen Scope mit <code>403</code> ab. Beides steuert <strong>eine</strong> Variable: <code>MTLS_ENFORCE</code>.</p>
+          <div class="callout callout-danger" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Erst alle Clients enrollen, dann umlegen</div><p>Schalte <strong>erst</strong> scharf, wenn <em>jeder</em> Client – Agent, Desktop <strong>und dein eigener Browser</strong> – ein Zertifikat hat, sonst sperrst du dich selbst aus. Agent und Desktop enrollen automatisch; den Browser bereitest du über den Desktop-P12-Export vor (<a href="./benutzer.html">Benutzer &amp; Zugriff → Browser-Zugriff</a>). <strong>Vorher</strong> auf echter Hardware testen: Windows-Desktop-Enrollment und Browser-Import.</p></div>
+          </div>
+          <p>Scharfschalten:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># in der .env setzen:
+MTLS_ENFORCE=true
+
+# Gateway + Server neu starten (lesen die Variable beim Start):
+docker compose up -d gateway server</code></pre>
+          <p>Der Gateway-Log bestätigt den Modus beim Start: <code>mTLS ENFORCED (CERT_REQUIRED)</code> bzw. <code>mTLS permissive</code>.</p>
+          <p><strong>Rollback</strong> (jederzeit, verlustfrei): <code>MTLS_ENFORCE=false</code> setzen und <code>docker compose up -d gateway server</code> – die Datenebene ist sofort wieder permissiv.</p>
+          <h3>Neue Clients nach dem Scharfschalten</h3>
+          <p>Die <strong>Enrollment-Plane</strong> (<code>:8444</code>) bleibt immer certless und token-gegated – neue Agenten und Desktops holen ihr erstes Zertifikat dort, unabhängig vom Enforcement. Aber: der <em>erste Login</em> des Desktop-Clients läuft über <code>:443</code>, und unter <code>CERT_REQUIRED</code> kommt ein brandneuer Client ohne Zertifikat dort nicht durch den Handshake. Onboarding daher in einem kurzen permissiven Fenster: <code>MTLS_ENFORCE=false</code>, Client enrollen lassen, wieder <code>true</code>.</p>
+
           <div class="page-nav">
             <a class="prev" href="./installation.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Installation</span></a>
             <a class="next" href="./benutzer.html"><span class="label">Nächstes Kapitel</span><span class="title">Benutzer &amp; Zugriff →</span></a>

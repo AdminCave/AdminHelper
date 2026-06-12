@@ -99,6 +99,24 @@
           <h2>Renewing certificates</h2>
           <p>The gateway's TLS certificate is issued by the <code>ca-issuer</code> (access-signed, 365 days). It is provisioned into the <code>gateway-certs</code> volume on first start; a redeploy/restart of the <code>ca-issuer</code> renews it when needed. The FRP client certificates expire after 12 months – see <a href="./frp-tunnel.html">FRP Tunnel</a> for rotation.</p>
 
+          <h2>Enforcing mTLS (CERT_REQUIRED)</h2>
+          <p>The data plane (<code>:443</code>) runs <strong>permissive</strong> by default: clients without a certificate get through, the server only <em>logs</em> a missing or wrong cert scope. Enforcing makes the gateway require a valid client certificate at the TLS handshake (<code>CERT_REQUIRED</code>) <em>and</em> the server reject protected routes without a valid scope with <code>403</code>. Both are driven by <strong>one</strong> variable: <code>MTLS_ENFORCE</code>.</p>
+          <div class="callout callout-danger" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Enroll every client first, then flip</div><p>Only enforce once <em>every</em> client – agent, desktop <strong>and your own browser</strong> – holds a certificate, otherwise you lock yourself out. Agent and desktop enroll automatically; prepare the browser via the desktop P12 export (<a href="./users.html">Users &amp; Access → Browser access</a>). Test on real hardware <strong>first</strong>: Windows desktop enrollment and the browser import.</p></div>
+          </div>
+          <p>Enforce:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># in your .env:
+MTLS_ENFORCE=true
+
+# restart gateway + server (they read the variable at startup):
+docker compose up -d gateway server</code></pre>
+          <p>The gateway log confirms the mode at startup: <code>mTLS ENFORCED (CERT_REQUIRED)</code> or <code>mTLS permissive</code>.</p>
+          <p><strong>Rollback</strong> (any time, lossless): set <code>MTLS_ENFORCE=false</code> and <code>docker compose up -d gateway server</code> – the data plane is permissive again immediately.</p>
+          <h3>New clients after enforcing</h3>
+          <p>The <strong>enrollment plane</strong> (<code>:8444</code>) always stays certless and token-gated – new agents and desktops fetch their first certificate there regardless of enforcement. However, the desktop client's <em>first login</em> goes over <code>:443</code>, and under <code>CERT_REQUIRED</code> a brand-new client without a certificate cannot get through the handshake there. So onboard inside a short permissive window: <code>MTLS_ENFORCE=false</code>, let the client enroll, then back to <code>true</code>.</p>
+
           <div class="page-nav">
             <a class="prev" href="./installation.html"><span class="label">← Previous chapter</span><span class="title">Installation</span></a>
             <a class="next" href="./users.html"><span class="label">Next chapter</span><span class="title">Users &amp; Access →</span></a>

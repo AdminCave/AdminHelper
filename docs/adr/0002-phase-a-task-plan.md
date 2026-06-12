@@ -7,8 +7,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # Phase A — Detaillierter Task-Plan (Umsetzung der PKI/mTLS-Grundlage)
 
 - **Status:** **Phase-A-Kern umgesetzt (permissiv)** — Stand 2026-06-12. Abgeschlossen:
-  A0–A7, A9 + der A10-Konsolidierungs-Pass. Ausstehend: A8 (Enforcement-Scharfschaltung) und der
-  A10-Schluss-Pass nach A8; vor A8 noch die manuelle Browser-/Windows-Verifikation (A5/A6).
+  A0–A7, A9, der A8-Schalter (`MTLS_ENFORCE`, Default permissiv, `nginx -t`-verifiziert) + der
+  A10-Konsolidierungs-Pass. Ausstehend: das tatsächliche `MTLS_ENFORCE=true` (Operator-Aktion nach
+  manueller Browser-/Windows-Verifikation, A5/A6) und der A10-Schluss-Pass danach.
 - **Datum:** 2026-06-11 (Bauplan), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Basis:** [ADR 0001](0001-unified-pki-and-secure-deployment.md) (D1–D11), alle Verifikationspunkte geklärt.
 
@@ -291,7 +292,7 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   nur noch Visitor) wird mit A5 entfernt. Voller STCP-Roundtrip mit 2 frp-Prozessen ist über die
   bidirektionale `openssl verify` + den A0-Spike (V2, depth 2) belegt.
 
-### A8 — Enforcement umlegen (permissive → `CERT_REQUIRED`)  ⚠ Schlüssel-Task
+### A8 — Enforcement umlegen (permissive → `CERT_REQUIRED`)  ⚠ Schlüssel-Task — Mechanismus ✅ 2026-06-12, Flip = Operator-Aktion
 - **Beschreibung:** Gateway-Datenlistener auf `CERT_REQUIRED`, App-Authz von permissive auf
   enforced. **Erst** wenn A3–A7 beweisen, dass alle Clients enrollen+vorweisen können.
   Bootstrap-Ausnahme: Enroll-Listener bleibt certless+Token.
@@ -300,6 +301,21 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   funktioniert weiter; **getesteter Rollback** (zurück auf permissive); „kann mich nicht
   aussperren"-Prozedur (Bootstrap-Token) dokumentiert.
 - **Aufwand:** M · **Risiko:** **HOCH** (Lock-out-Moment) — gestaffelt + Rollback bereit · **Abh.:** A3,A4,A5,A6,A7
+- **Fortschritt ✅ 2026-06-12 (Mechanismus, Default permissiv):** **Ein** Schalter `MTLS_ENFORCE`
+  steuert beide Ebenen. Gateway: der Entrypoint generiert das `ssl_verify_client`-Snippet
+  (`optional` per Default, `on` bei `MTLS_ENFORCE=true`), das die `nginx.conf` per `include` zieht;
+  App: `MTLS_ENFORCE` (aus A3, getestet) schaltet die Per-Route-403. In `docker-compose.yml` an
+  Gateway **und** Server verdrahtet, `.env.example` dokumentiert, Default `false` → kein Verhalten
+  ändert sich, bis ein Operator umlegt. **Verifiziert:** Snippet-Logik (true/yes/1→`on`, sonst
+  `optional`) + `nginx -t` **beide Modi grün** (Docker, echte `nginx.conf`), `docker compose config`
+  valide. Betriebsdoku DE+EN (Scharfschalten/Rollback/Bootstrap-Fenster).
+- **Offen (Operator-Aktion, nicht Code):** das tatsächliche `MTLS_ENFORCE=true` in Produktion —
+  **erst** nach den manuellen Hardware-Checks (Windows-Desktop-Enrollment, Browser-Import; A5/A6).
+  Rollback = ein Flag zurück + Gateway-Neustart.
+- **Bekannte Grenze (Bootstrap):** der erste Desktop-Login läuft über `:443`; unter `CERT_REQUIRED`
+  kann ein brandneuer certloser Client sich dort nicht anmelden → Onboarding in einem kurzen
+  permissiven Fenster (dokumentiert). Eine vom Login entkoppelte Enrollment-Tür wäre die saubere
+  Phase-B-Lösung.
 
 ### A9 — Backup/Restore inkl. CA-Kronjuwel (parallel ab A1) ✅ ABGESCHLOSSEN 2026-06-11
 - **Beschreibung:** `scripts/backup.sh` / `restore.sh`: `ca-issuer`-Volume (Root+Intermediates),
@@ -344,8 +360,10 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
     frp-Cert) — `developer/server` DE+EN, `admin/agent-deployment`, `api-reference` DE+EN, `README`.
   - **API-Referenz** (DE+EN): `enrollment`-Block in der activate-Antwort + neuer `/api/enrollment/token`.
   - **Installation** (DE+EN): Client-Cert/PKCS12-Import-Notiz (permissiv-Hinweis).
-  - **Offen (Schluss-Pass):** nach A8 (Enforcement) + A6 (Browser-Web-SPA-Doku) ein finaler Durchgang —
-    Enforcement-Betriebsdoku, ADR 0001 → vollständig „Implemented".
+  - **Erledigt 2026-06-12:** A6-Browser-Import-Doku (Benutzer/Users DE+EN) und die
+    Enforcement-Betriebsdoku (Betrieb/Operations DE+EN: Scharfschalten/Rollback/Bootstrap).
+  - **Offen (Schluss-Pass):** nach dem tatsächlichen `MTLS_ENFORCE=true` ein finaler Durchgang —
+    Betriebserfahrung aus dem scharfen Modus einpflegen, ADR 0001 → vollständig „Implemented".
 
 ---
 

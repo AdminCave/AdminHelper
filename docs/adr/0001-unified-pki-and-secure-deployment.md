@@ -7,7 +7,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 # ADR 0001 — Einheitliche interne PKI + sichere Installation/Updates
 
 - **Status:** **Implementiert (Phase-A-Kern, permissiv)** — Stand 2026-06-12.
-  Ausstehend: Enforcement-Scharfschaltung (A8).
+  Ausstehend: das tatsächliche Scharfschalten (A8 — Schalter `MTLS_ENFORCE` umgesetzt & verifiziert,
+  Default permissiv; der Flip auf `CERT_REQUIRED` ist eine Operator-Aktion nach Hardware-Verifikation).
 - **Datum:** 2026-06-11 (Entwurf), 2026-06-12 (Phase-A-Kern umgesetzt)
 - **Betrifft:** Server, ca-issuer (neu), Desktop-Client, Go-Agent, Web-Frontend, frps, Install/Update/Backup-Skripte
 - **Umsetzung:** siehe [ADR 0002](0002-phase-a-task-plan.md) (Task-Plan A0–A10 mit Fortschritt)
@@ -25,7 +26,7 @@ das ist der bewusst isolierte Schlüssel-Task A8.
 |---|---|
 | D1 Root → tunnel/access/internal | ✅ `ca-issuer` erzeugt die Hierarchie beim First-Boot |
 | D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); Agent pinnt die Root |
-| D3 mTLS-Pflicht `:443` | ⏳ **permissiv** (`ssl_verify_client optional`); Scharfschalten = A8 |
+| D3 mTLS-Pflicht `:443` | ⏳ **permissiv** per Default; Scharfschalten per `MTLS_ENFORCE=true` (Schalter umgesetzt + `nginx -t`-verifiziert, A8) |
 | D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; `revoked_identities` als Schnell-Widerruf |
 | D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |
 | D6 eigener `ca-issuer`, Server nie im Signier-Pfad | ✅ einzige Signier-Capability; Gateway hält nur ein Leaf |

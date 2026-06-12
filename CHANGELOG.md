@@ -58,6 +58,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   mTLS-Zwang vorbereiten — Import-Anleitung (Chrome/Edge + Firefox) DE+EN unter „Benutzer &amp;
   Zugriff → Browser-Zugriff". Das Backend-Command bestand seit dem Desktop-Enrollment, war aber nie
   ins UI verdrahtet; die Datei schreibt — mangels FS-/Dialog-Plugin — der Rust-Layer.
+- **mTLS-Enforcement-Schalter `MTLS_ENFORCE` (A8).** Eine einzige Variable schaltet die Datenebene
+  von permissiv auf erzwungen: das Gateway generiert beim Start sein `ssl_verify_client`-Snippet
+  (`optional` per Default, `on` = `CERT_REQUIRED` bei `MTLS_ENFORCE=true`), der Server (seit A3)
+  weist geschützte Routen ohne gültigen Cert-Scope mit `403` ab. In `docker-compose.yml` an Gateway
+  **und** Server verdrahtet, `.env.example` dokumentiert. **Default `false`** (permissiv) — nichts
+  ändert sich, bis ein Operator umlegt; Rollback ist ein Flag zurück + Gateway-Neustart. Beide
+  nginx-Modi mit `nginx -t` verifiziert. Betriebs-Anleitung (Scharfschalten, Rollback,
+  Lock-out-Vermeidung, Bootstrap-Fenster) unter „Betrieb &amp; Konfiguration" (DE+EN). Das
+  tatsächliche Scharfschalten bleibt eine bewusste Operator-Aktion nach Hardware-Verifikation.
 
 ### Changed
 
