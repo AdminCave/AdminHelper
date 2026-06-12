@@ -55,7 +55,7 @@
           </div>
 
           <h2>Client-Zertifikate rotieren</h2>
-          <p>Das Agent-Tunnel-Cert wird vom Agent <strong>automatisch erneuert</strong>, sobald es ~50&nbsp;% seiner Laufzeit erreicht (über <code>/ca/renew</code>, mit dem aktuellen Cert als Nachweis) — kein manueller Rotate-Trigger nötig. (Der Desktop-Visitor nutzt noch die ältere Rotation, bis A5 ihn auf Enrollment umstellt.)</p>
+          <p>Das Agent-Tunnel-Cert wird vom Agent <strong>automatisch erneuert</strong>, sobald es ~50&nbsp;% seiner Laufzeit erreicht (über <code>/ca/renew</code>, mit dem aktuellen Cert als Nachweis) — kein manueller Rotate-Trigger nötig. Der Desktop-Visitor präsentiert seit der PKI-Migration seine enrollte <code>access</code>-Identität (dieselbe wie für den Web-/API-Zugriff) und erneuert sie automatisch — kein server-gemüntztes Visitor-Cert mehr.</p>
 
           <h2>Provision-Token</h2>
           <p>Jeder neue Agent bekommt beim Registrieren einen Einmal-Token. Token-Eigenschaften:</p>

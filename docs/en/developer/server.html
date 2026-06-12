@@ -60,7 +60,7 @@
               <tr><td><code>/api/hooks</code></td><td><code>modules/hooks/</code></td><td>Hook CRUD, public <code>/trigger/{token}</code>, <code>/run</code> for manual test, <code>/rotate</code> for webhook token.</td></tr>
               <tr><td><code>/api/ansible/playbooks</code></td><td><code>modules/ansible/</code></td><td>Playbook CRUD with YAML validation, disk storage under <code>/data/ansible/playbooks/{id}/</code>.</td></tr>
               <tr><td><code>/api/servers/{id}/provision</code></td><td><code>modules/provisioning/</code></td><td>Server-centric provisioning: token lifecycle and activate (FRP-independent). Returns server API key, optional monitor key, optional FRP bundle.</td></tr>
-              <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Five sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, <code>pki</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
+              <tr><td><code>/api/frp</code></td><td><code>modules/frp/</code></td><td>Four sub-routers: <code>config</code>, <code>tunnel</code>, <code>generate</code>, <code>status</code>, plus <code>provision/{id}/config</code> + <code>config-hash</code> for the running FRPC sync.</td></tr>
               <tr><td><code>/api/monitoring</code></td><td><code>modules/monitoring_proxy.py</code></td><td>Reverse proxy to the monitoring microservice; public agent push endpoint <code>/agent/{id}/report</code>.</td></tr>
             </tbody>
           </table>
@@ -135,19 +135,10 @@ secretKey = "&lt;secret&gt;"
 allowUsers = ["ops-admin"]</code></pre>
 
           <h2>FRP PKI &amp; TLS</h2>
-          <p><strong>As of A7</strong> the frps server cert <em>and</em> the agent tunnel cert come from the <code>ca-issuer</code>'s <code>tunnel</code> intermediate (ECDSA P-256, a single trust root): frps mounts the issuer-provisioned material (<code>frps.crt</code>/<code>frps.key</code>/<code>ca.crt</code>) read-only at <code>/etc/frp-pki</code>, and the agent uses the tunnel cert it enrolled (A4) at <code>/etc/adminhelper/identity</code> &mdash; one cert for server pushes <em>and</em> the frp tunnel, auto-renewed at ~50&nbsp;% of its lifetime. <code>trustedCaFile</code> is the <code>tunnel</code> chain on both sides. The server-run <code>modules/frp/pki.py</code> CA (RSA-4096) below now serves only the legacy desktop visitor, until A5 moves it to enrollment too.</p>
-          <p><code>modules/frp/pki.py</code> manages that (now visitor-only) FRP CA using the <code>cryptography</code> library. Keys are RSA-4096, signatures SHA-256.</p>
-          <p><strong>Master/published split (least privilege):</strong> the full PKI &mdash; CA <em>private key</em> and all client keys &mdash; lives server-private under <code>PKI_DIR = FRP_PKI_DIR</code> (default <code>DATA_DIR/frp-pki</code>, compose volume <code>frp-pki</code>, mounted on the server only). Only the subset frps needs is written into the volume shared with the internet-facing <code>frps</code> (<code>FRP_CONFIG_DIR/pki</code>) via <code>_publish_frps_materials()</code>: <code>ca.crt</code>, <code>frps.crt</code>, <code>frps.key</code>. frps verifies clients against <code>ca.crt</code> (public) and never needs the CA key. Deployments created before the split (where the whole PKI used to sit in the shared volume) are relocated once at startup by <code>migrate_master_pki_out_of_shared()</code> &mdash; the CA key and client keys leave the exposed volume without re-issuing the CA.</p>
-          <table>
-            <thead><tr><th>Function</th><th>Produces</th><th>Properties</th></tr></thead>
-            <tbody>
-              <tr><td><code>generate_ca(common_name)</code></td><td><code>ca.crt</code> + <code>ca.key</code></td><td>Self-signed, <code>BasicConstraints(ca=True)</code>, <code>KeyUsage</code> with <code>keyCertSign</code>/<code>crlSign</code>. Valid 10 years (<code>VALIDITY_DAYS_CA = 3650</code>). <strong>Overwrites</strong> an existing CA.</td></tr>
-              <tr><td><code>generate_server_cert(server_addr)</code></td><td><code>frps.crt</code> + <code>frps.key</code></td><td>CA-signed, <code>SubjectAlternativeName</code> = IP SAN for an IP address, otherwise DNS SAN; EKU <code>SERVER_AUTH</code>. Valid 1 year (<code>VALIDITY_DAYS_CERT = 365</code>).</td></tr>
-              <tr><td><code>generate_client_cert(client_name)</code></td><td><code>{client}.crt</code> + <code>{client}.key</code></td><td>CA-signed, EKU <code>CLIENT_AUTH</code>, 1 year. <code>client_name</code> is validated against <code>^[a-zA-Z0-9._-]+$</code> (max 64 chars, no <code>..</code>) — path-traversal guard.</td></tr>
-            </tbody>
-          </table>
-          <p><code>get_pki_status()</code> reports CA/server-cert existence with expiry dates and lists all client certs (every <code>*.crt</code> except <code>ca.crt</code>/<code>frps.crt</code>). In the <code>main.py</code> lifespan, <code>_ensure_pki()</code> auto-generates the CA and server cert as soon as a <code>FrpServerConfig</code> exists; the server cert is re-issued when <code>server_addr</code> is no longer in the SANs.</p>
-          <p>The TLS wiring in <code>frps.toml</code>/<code>frpc.toml</code> is produced by the <code>config_generator</code>: the server block (<code>force = true</code>) points at the issuer-provisioned material under <code>/etc/frp-pki</code>; the agent block (<code>enable = true</code>) at the enrolled tunnel cert under <code>/etc/adminhelper/identity</code>. Both sides verify against the <code>tunnel</code> chain — mutual TLS against the one internal trust root. (The visitor block still uses the legacy <code>/etc/frp/pki</code> layout until A5.)</p>
+          <p><strong>As of A7</strong> the frps server cert <em>and</em> the agent tunnel cert come from the <code>ca-issuer</code>'s <code>tunnel</code> intermediate (ECDSA P-256, a single trust root): frps mounts the issuer-provisioned material (<code>frps.crt</code>/<code>frps.key</code>/<code>ca.crt</code>) read-only at <code>/etc/frp-pki</code>, and the agent uses the tunnel cert it enrolled (A4) at <code>/etc/adminhelper/identity</code> &mdash; one cert for server pushes <em>and</em> the frp tunnel, auto-renewed at ~50&nbsp;% of its lifetime.</p>
+          <p><strong>The server no longer signs FRP certificates (D6, F3).</strong> The former server-run FRP CA (<code>modules/frp/pki.py</code> + <code>pki_router.py</code> with the <code>/api/frp/pki/*</code> endpoints + the startup CA generation in <code>_ensure_pki()</code>) was <strong>fully removed</strong> with the PKI migration, along with the <code>frp-pki</code> volume and the former master/published split. <code>_ensure_frps_config()</code> only writes the non-secret <code>frps.toml</code> at startup.</p>
+          <p>The <strong>desktop STCP visitor</strong> now presents its enrolled <code>access</code> identity as its frpc client cert (the desktop exports key/cert/CA from its keyring into files under <code>identity/</code>). For frps to accept it, the <code>ca-issuer</code> adds the <code>access</code> intermediate to frps's <code>ca.crt</code> (<code>ensure_frps_cert(..., extra_trust)</code>); the real per-tunnel authorization stays the STCP <code>secretKey</code> + server-side bundle filtering, not the cert scope.</p>
+          <p>The TLS wiring in <code>frps.toml</code>/<code>frpc.toml</code> is produced by the <code>config_generator</code>: the server block (<code>force = true</code>) points at the issuer-provisioned material under <code>/etc/frp-pki</code>; the agent block (<code>enable = true</code>) at the enrolled tunnel cert under <code>/etc/adminhelper/identity</code>; the visitor block at the desktop's exported enrolled identity (relative <code>identity/</code>, rewritten to absolute paths at runtime).</p>
 
           <h2>SQLAlchemy Models</h2>
           <p>Tables live in their respective modules (e.g. <code>modules/users/models.py</code>) and are created at startup via <code>Base.metadata.create_all()</code>. Idempotent column migrations run through <code>_migrate_add_columns()</code> with <code>PRAGMA table_info</code>.</p>
@@ -179,8 +170,7 @@ allowUsers = ["ops-admin"]</code></pre>
           <ul>
             <li><strong>PostgreSQL</strong> (compose volume <code>postgres-data</code>): two DBs <code>adminhelper</code> (server) and <code>adminhelper_monitor</code> (monitoring).</li>
             <li><strong>File system under <code>DATA_DIR</code></strong> (default <code>/app/data</code>): bootstrap token, JWT secret, Ansible playbook files.</li>
-            <li><strong>Master PKI</strong> (volume <code>frp-pki</code>, server-only): CA key + all client keys.</li>
-            <li><strong>Shared volume <code>frp-config</code></strong> (frps mounts it <code>:ro</code> at <code>/etc/frp</code>): <code>frps.toml</code> (<code>0600</code>) + the published cert subset.</li>
+            <li><strong>Shared volume <code>frp-config</code></strong> (frps mounts it <code>:ro</code> at <code>/etc/frp</code>): only the non-secret <code>frps.toml</code> (<code>0600</code>). The FRP TLS material is provided by the <code>ca-issuer</code> (volume <code>frps-certs</code>); the PKI crown jewel is its <code>ca-pki</code> volume.</li>
           </ul>
           <p>The container starts as root only briefly to chown the mounted paths, then drops via <code>gosu</code> to a non-root user (uid <code>10001</code>) — uvicorn, Alembic and hook subprocesses all run unprivileged. uvicorn listens plain-HTTP on <code>8080</code> (no host port); TLS is terminated by the upstream <code>gateway</code> (nginx), not the server.</p>
           <div class="code-header"><span>tree</span></div>
@@ -188,11 +178,6 @@ allowUsers = ["ops-admin"]</code></pre>
 &#9500;&#9472;&#9472; .bootstrap_token            # one-time setup-token hash (P0-6)
 &#9500;&#9472;&#9472; .secret_key                 # auto-gen JWT secret
 &#9492;&#9472;&#9472; ansible/playbooks/{id}/{file}.yaml
-
-/app/frp-pki/                      # master PKI, server-only (volume frp-pki)
-&#9500;&#9472;&#9472; ca.crt, ca.key             # CA incl. PRIVATE key &mdash; never leaves the server
-&#9500;&#9472;&#9472; frps.crt, frps.key
-&#9492;&#9472;&#9472; {client}.crt, {client}.key
 
 /app/frp-config/                   # shared with frps (volume frp-config, :ro for frps)
 &#9500;&#9472;&#9472; frps.toml

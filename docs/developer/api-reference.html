@@ -144,14 +144,9 @@
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/provision/{server_id}/config</code><p>Aktueller <code>frpc.toml</code>-Plaintext (JWT oder API-Key) &ndash; nur fuer den laufenden Sync.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/provision/{server_id}/config-hash</code><p>SHA-256 zur drift-freien Synchronisation.</p></div>
 
-          <h2>FRP &ndash; Status &amp; PKI</h2>
+          <h2>FRP &ndash; Status</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/status</code><p>Merged frps-Dashboard mit DB-Tunneln.</p></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/pki/status</code></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/pki/ca?common_name=…</code></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/pki/server-cert</code></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/pki/client-cert/{name}</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/pki/download/{filename}</code></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/pki/download-client-bundle/{client_name}</code><p>ZIP mit <code>ca.crt</code>, <code>client.crt</code>, <code>client.key</code>.</p></div>
+          <p class="note">Die fr&uuml;heren <code>/api/frp/pki/*</code>-Endpunkte (CA-/Cert-Erzeugung) sind entfernt &ndash; der Server signiert keine Zertifikate mehr (D6); die FRP-TLS-Materialien kommen ausschlie&szlig;lich vom <code>ca-issuer</code>.</p>
 
           <h2>Monitoring (Reverse-Proxy)</h2>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/monitoring/agent/{server_id}/report</code><p><strong>&Ouml;ffentlich</strong> (X-API-Key). Reicht den Agent-Push 1:1 an den Monitoring-Microservice durch.</p></div>

@@ -25,7 +25,13 @@ from app.core.database import Base
 
 class EnrollmentToken(Base):
     """One-time grant: the bearer may enroll as exactly this identity/scope.
-    Identity is fixed by the server here, never taken from the client's CSR."""
+    Identity is fixed by the server here, never taken from the client's CSR.
+
+    Timezone convention (F7): the DateTime columns are tz-naive and store UTC.
+    The server writes them via ``datetime.now(UTC).replace(tzinfo=None)`` and the
+    ca-issuer (a separate service) compares against the same naive-UTC ``now``
+    (``app.db._now_naive``). Keep both sides naive-UTC, or a switch to
+    TIMESTAMPTZ would silently drift the cross-service expiry check."""
 
     __tablename__ = "enrollment_tokens"
 

@@ -80,6 +80,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   **ohne vorigen Login** an der certless Enroll-Plane `:8444` und meldet sich danach normal an. Damit
   lässt sich ein neuer Nutzer auch bei erzwungenem mTLS onboarden, ohne die Datenebene kurzzeitig
   permissiv zu schalten (das bleibt nur für den allerersten Admin nötig).
+- **Sofortiger Identitäts-Widerruf (Schnell-Widerruf ohne CRL, ADR 0001 §3.4).** Das Löschen eines
+  Benutzers bzw. Servers schreibt jetzt einen `revoked_identities`-Eintrag: der `ca-issuer`
+  verweigert dem Cert die Erneuerung (`/renew`) **und** die Datenebene weist es im erzwungenen Modus
+  pro Request mit `403` ab (vorher wurde die Liste nie befüllt — der Widerruf war wirkungslos). Das
+  Neuanlegen eines gleichnamigen Benutzers räumt einen veralteten Eintrag.
+- **Cleanup-Job für `enrollment_tokens`.** Verbrauchte/abgelaufene Enrollment-Token werden periodisch
+  gelöscht (analog zur JWT-Blacklist), statt die Tabelle unbegrenzt wachsen zu lassen.
+- **Rate-Limit auf der certless Enroll-Plane `:8444`** (`limit_req`, per-IP, 10 r/s, Status 429) gegen
+  Token-Brute-Force/Enroll-Flooding (das in ADR 0003 §5 versprochene Limit war nie konfiguriert).
 
 ### Changed
 
@@ -90,12 +99,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   read-only unter `/etc/frp-pki` mountet; der Agent nutzt für den frp-Tunnel **dasselbe**
   enrollte Tunnel-Cert wie für seine Server-Pushes. `trustedCaFile` ist beidseitig die
   tunnel-Kette; der Server mintet kein per-Client-frp-Zertifikat mehr. Der **Desktop-Visitor**
-  bleibt vorerst auf dem bisherigen Cert-Layout (Umstellung folgt).
+  ist inzwischen ebenfalls migriert (siehe „Changed → STCP-Visitor"/„Removed → FRP-CA").
 - **Der Server terminiert kein TLS mehr selbst.** Er lauscht plain-HTTP intern auf `:8080` hinter
   dem Gateway und hat **keinen Host-Port** mehr; `server` und `ca-issuer` sind nur noch im
   Compose-Netz erreichbar. Dadurch ist der vom Gateway gesetzte Identitäts-Header von außen
   unfälschbar. Die frühere Self-Signed-Zertifikat-Erzeugung im Server-Entrypoint entfällt
   (das TLS-Zertifikat kommt jetzt vom `ca-issuer`). **frps** bleibt seine eigene TLS-Kante.
+- **STCP-Visitor (Desktop) auf die einheitliche PKI migriert.** Der Visitor präsentiert jetzt seine
+  **enrollte access-Identität** als frpc-Client-Cert (der Desktop exportiert Key/Cert/CA aus dem
+  Keyring in Dateien für den frpc-Sidecar) statt eines server-gemünzten Certs der alten FRP-CA. frps
+  vertraut dafür zusätzlich der `access`-Intermediate (der `ca-issuer` trägt sie in frps' `ca.crt`
+  ein); die echte Per-Tunnel-Autorisierung bleibt der STCP-`secretKey` + die server-seitige
+  Bundle-Filterung. **Real-Roundtrip nur manuell verifizierbar** (kein CI-Schutz).
+- **Renew schreibt die Identität crash-sicher** (Agent: Staging + atomarer Rename; Desktop:
+  Schlüssel-Wiederverwendung). Ein Absturz mitten im Renew kann keine unbrauchbare Key/Cert-Paarung
+  mehr hinterlassen (vorher: stiller Lock-out bis zur Neu-Provisionierung).
+- **Gateway-/frps-Leaf wird vor Ablauf erneuert.** Der `ca-issuer` mintet ein bereitgestelltes
+  Server-Leaf beim Boot neu, sobald es die Hälfte seiner Laufzeit überschritten hat — ein
+  langlaufender Stack verliert `:443`/`:8444` (bzw. frps) nicht mehr durch ein abgelaufenes Cert.
 
 ### Removed
 
@@ -108,6 +129,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Kommentar-Verweisen. Menschliche Browser-Nutzung läuft über das vom Desktop exportierte
   PKCS12-Client-Zertifikat (mTLS, A5c). Im PKI/mTLS-Plan (ADR 0001/0002) entfällt damit der
   Extension-Teil von A6.
+- **Alte server-eigene FRP-CA vollständig entfernt** (D6 wirklich erfüllt — keine zweite
+  Signier-Capability mehr im exponierten Server). Gelöscht: `app/modules/frp/pki.py` +
+  `pki_router.py` (die `POST /api/frp/pki/ca|server-cert|client-cert`-Endpunkte), die
+  CA-Erzeugung im Server-Start, das `frp-pki`-Volume sowie die **FRP-PKI-Admin-UI** im
+  Web-Frontend (Modal, „CA generieren"-Knopf, API-Client, i18n-Strings). Die FRP-TLS-Materialien
+  kommen seit der Provider-Migration ausschließlich aus dem `ca-issuer`.
 
 ## [0.27.0] - 2026-06-10
 

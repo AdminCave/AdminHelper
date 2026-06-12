@@ -289,10 +289,14 @@ A0 Spikes ─► A1 ca-issuer ─► A2 Gateway ─► A3 Per-Route-Authz(permis
   gegen die tunnel-Kette — `frps.crt` (frpc würde frps akzeptieren) **und** ein frisch enrolltes
   `OU=tunnel`-Agent-Cert (frps würde den Agenten akzeptieren). 182 Server-Tests grün; Docs DE+EN
   (developer/server, admin/frp-tunnel) korrigiert.
-- **Bewusst zurückgestellt:** der Desktop-**Visitor** bleibt auf dem Legacy-`/etc/frp/pki`-Layout
-  (bricht bis A5 — akzeptiert); die jetzt **dormante** server-eigene FRP-CA (`modules/frp/pki.py`,
-  nur noch Visitor) wird mit A5 entfernt. Voller STCP-Roundtrip mit 2 frp-Prozessen ist über die
-  bidirektionale `openssl verify` + den A0-Spike (V2, depth 2) belegt.
+- **Nachgezogen (F2/F3, 0.28.0):** Der Desktop-**Visitor** ist auf die einheitliche PKI migriert —
+  er präsentiert seine enrollte **access**-Identität, die der ca-issuer in frps' `ca.crt` als
+  zusätzlichen Trust-Anchor einträgt (`extra_trust`). Die alte server-eigene FRP-CA
+  (`modules/frp/pki.py`, `pki_router.py`, `_ensure_pki`-CA-Erzeugung) ist **vollständig entfernt**
+  (D6 wirklich erfüllt — keine Signier-Capability mehr im Server), ebenso das `frp-pki`-Volume und die
+  FRP-PKI-Admin-UI. Voller STCP-Roundtrip mit 2 frp-Prozessen ist nicht CI-automatisierbar (manuelle
+  Hardware-Verifikation, wie A5/A6); die Kettenvalidierung ist über `openssl verify` + den A0-Spike
+  (V2, depth 2) belegt.
 
 ### A8 — Enforcement umlegen (permissive → `CERT_REQUIRED`)  ⚠ Schlüssel-Task — Mechanismus ✅ + e2e-verifiziert 2026-06-12, Flip = Operator-Aktion
 - **Beschreibung:** Gateway-Datenlistener auf `CERT_REQUIRED`, App-Authz von permissive auf
