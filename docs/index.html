@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.27.0</span>
+          <span>v0.28.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.27.0 · 2026-06-10</span>
+            <span class="eyebrow">Version 0.28.0 · 2026-06-12</span>
             <h1>AdminHelper – Dokumentation</h1>
             <p class="lead">
               Ein modularer Monolith zur zentralen Verwaltung von
@@ -259,7 +259,24 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.27.0?</h2>
+          <h2>Was ist neu in 0.28.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.28.0 &ndash; PKI/mTLS-H&auml;rtung + FRP-Visitor-Migration (2026-06-12)</div>
+              <p>
+                H&auml;rtungs-Pass auf der internen PKI/mTLS-Oberfl&auml;che: sofortiger
+                Identit&auml;ts-Widerruf (Renewal-Verweigerung <em>und</em> Datenebenen-Sperre
+                pro Request beim L&ouml;schen eines Users/Servers), crash-sichere
+                Cert-Erneuerung, automatische Erneuerung des Gateway-/frps-Leafs vor Ablauf,
+                Cleanup verbrauchter Enrollment-Token, Rate-Limit auf der certless
+                Enroll-Plane <code>:8444</code>. Der Desktop-STCP-Visitor ist auf die
+                einheitliche PKI migriert (er pr&auml;sentiert seine enrollte
+                <code>access</code>-Identit&auml;t); die alte server-eigene FRP-CA samt
+                PKI-Admin-UI ist entfernt &ndash; der Server signiert keine Zertifikate mehr (D6).
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
