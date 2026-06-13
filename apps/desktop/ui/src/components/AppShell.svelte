@@ -15,6 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t, tNow } from '$lib/i18n';
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
+  import Infrastructure from '../pages/Infrastructure.svelte';
   import Monitoring from '../pages/Monitoring.svelte';
   import Ansible from '../pages/Ansible.svelte';
   import ConnectionEditor from './ConnectionEditor.svelte';
@@ -25,7 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { openSettings, startSyncTimer, stopSyncTimer } from '$lib/stores/settings';
 
   interface NavItem {
-    id: 'dashboard' | 'connections' | 'monitoring' | 'ansible';
+    id: 'dashboard' | 'connections' | 'infrastructure' | 'monitoring' | 'ansible';
     labelKey: string;
     href: string;
     icon: string;
@@ -44,6 +45,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       labelKey: 'nav.connections',
       href: '/connections',
       icon: 'M21 2H3a1 1 0 0 0-1 1v18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1zm-1 18H4V4h16v16zM7 7h2v2H7V7zm0 4h2v2H7v-2zm0 4h2v2H7v-2zm4-8h6v2h-6V7zm0 4h6v2h-6v-2zm0 4h6v2h-6v-2z',
+    },
+    {
+      id: 'infrastructure',
+      labelKey: 'nav.infrastructure',
+      href: '/infrastructure',
+      icon: 'M3 4h18v6H3V4zm0 10h18v6H3v-6zm3-8v2h2V6H6zm0 10v2h2v-2H6z',
+      serverOnly: true,
     },
     {
       id: 'monitoring',
@@ -68,6 +76,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let currentId = $derived.by<NavItem['id']>(() => {
     const p = $routePath;
     if (p.startsWith('/connections')) return 'connections';
+    if (p.startsWith('/infrastructure')) return 'infrastructure';
     if (p.startsWith('/monitoring')) return 'monitoring';
     if (p.startsWith('/ansible')) return 'ansible';
     return 'dashboard';
@@ -207,6 +216,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <Dashboard />
       {:else if currentId === 'connections'}
         <Connections />
+      {:else if currentId === 'infrastructure'}
+        <Infrastructure />
       {:else if currentId === 'monitoring'}
         <Monitoring />
       {:else if currentId === 'ansible'}
