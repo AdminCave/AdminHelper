@@ -5,9 +5,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { monitoringAlerts, toggleAlert } from '$lib/stores/monitoring';
+  import { monitoringAlerts, monitoringServers, toggleAlert } from '$lib/stores/monitoring';
+  import type { AlertRule } from '$lib/api/types';
+  import AlertRuleModal from './AlertRuleModal.svelte';
   import { t } from '$lib/i18n';
+
+  let modalOpen = $state(false);
+  let editing = $state<AlertRule | null>(null);
+
+  function openNew(): void {
+    editing = null;
+    modalOpen = true;
+  }
+  function openEdit(rule: AlertRule): void {
+    editing = rule;
+    modalOpen = true;
+  }
 </script>
+
+<div class="mon-alert-toolbar">
+  <button class="btn primary small" onclick={openNew}>+ {$t('monitoring.alertEdit.add')}</button>
+</div>
 
 <div class="mon-alert-list" id="monAlertList">
   {#if $monitoringAlerts.length === 0}
@@ -31,8 +49,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
           >
             {rule.enabled ? $t('monitoring.alerts.disable') : $t('monitoring.alerts.enable')}
           </button>
+          <button class="btn small" onclick={() => openEdit(rule)}>{$t('action.edit')}</button>
         </div>
       </div>
     {/each}
   {/if}
 </div>
+
+<AlertRuleModal
+  open={modalOpen}
+  {editing}
+  servers={$monitoringServers}
+  onClose={() => (modalOpen = false)}
+/>
+
+<style>
+  .mon-alert-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--sp-3);
+  }
+</style>

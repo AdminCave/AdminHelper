@@ -7,13 +7,21 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { sessionStore } from './session';
-import { reportError } from './statusBar';
+import { reportError, showStatus } from './statusBar';
 import { monitoringApi } from '$lib/api/monitoring';
 import { filterChecks, type MonitoringFilters } from '$lib/models/monitoring';
 import { tNow } from '$lib/i18n';
-import type { AlertLogEntry, AlertRule, MonitorCheck, Server } from '$lib/api/types';
+import type {
+  AlertLogEntry,
+  AlertRule,
+  AlertRuleInput,
+  MonitorCheck,
+  MonitoringTemplateFull,
+  MonitoringTemplateInput,
+  Server,
+} from '$lib/api/types';
 
-export type MonitoringTab = 'overview' | 'alerts' | 'log';
+export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
 
 const STATUS_PRIO: Record<string, number> = {
   critical: 4,
@@ -48,6 +56,7 @@ interface MonitoringState {
   servers: Server[];
   checks: MonitorCheck[];
   alerts: AlertRule[];
+  templates: MonitoringTemplateFull[];
   log: AlertLogEntry[];
   filters: MonitoringFilters;
   loading: boolean;
@@ -61,6 +70,7 @@ const initial: MonitoringState = {
   servers: [],
   checks: [],
   alerts: [],
+  templates: [],
   log: [],
   filters: { server: '', type: '', status: '', search: '' },
   loading: false,
@@ -76,6 +86,7 @@ export const monitoringFilters = derived(_state, ($s) => $s.filters);
 export const monitoringChecks = derived(_state, ($s) => $s.checks);
 export const monitoringServers = derived(_state, ($s) => $s.servers);
 export const monitoringAlerts = derived(_state, ($s) => $s.alerts);
+export const monitoringTemplates = derived(_state, ($s) => $s.templates);
 export const monitoringLog = derived(_state, ($s) => $s.log);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
@@ -98,6 +109,7 @@ function requireSession() {
 export function setTab(tab: MonitoringTab): void {
   _state.update((s) => ({ ...s, tab, expandedCheckId: null }));
   if (tab === 'alerts') void loadAlerts();
+  else if (tab === 'templates') void loadTemplates();
   else if (tab === 'log') void loadAlertLog();
 }
 
@@ -209,6 +221,86 @@ export async function toggleAlert(ruleId: string): Promise<void> {
     await loadAlerts();
   } catch (err) {
     reportError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// ── Alert rule CRUD ──────────────────────────────────────────────────────────
+export async function saveAlert(input: AlertRuleInput, id: string | null): Promise<boolean> {
+  const session = requireSession();
+  if (!session) return false;
+  try {
+    if (id) await monitoringApi.updateAlert(session, id, input);
+    else await monitoringApi.createAlert(session, input);
+    showStatus(tNow(id ? 'monitoring.alertEdit.updated' : 'monitoring.alertEdit.created'));
+    await loadAlerts();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+export async function deleteAlert(id: string): Promise<boolean> {
+  const session = requireSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.removeAlert(session, id);
+    showStatus(tNow('monitoring.alertEdit.deleted'));
+    await loadAlerts();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+// ── Monitoring template CRUD ─────────────────────────────────────────────────
+export async function loadTemplates(): Promise<void> {
+  const session = requireSession();
+  if (!session) return;
+  try {
+    const templates = await monitoringApi.fetchTemplates(session);
+    _state.update((s) => ({ ...s, templates: Array.isArray(templates) ? templates : [] }));
+  } catch (err) {
+    _state.update((s) => ({ ...s, templates: [] }));
+    const msg = errMsg(err);
+    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+  }
+}
+
+export async function saveTemplate(
+  input: MonitoringTemplateInput,
+  id: string | null,
+): Promise<boolean> {
+  const session = requireSession();
+  if (!session) return false;
+  try {
+    if (id) await monitoringApi.updateTemplate(session, id, input);
+    else await monitoringApi.createTemplate(session, input);
+    showStatus(tNow(id ? 'monitoring.tplEdit.updated' : 'monitoring.tplEdit.created'));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+export async function deleteTemplate(id: string): Promise<boolean> {
+  const session = requireSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.removeTemplate(session, id);
+    showStatus(tNow('monitoring.tplEdit.deleted'));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
   }
 }
 
