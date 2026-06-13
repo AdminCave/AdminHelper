@@ -8,6 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { Server } from '$lib/api/types';
   import { openServerEditor } from '$lib/stores/infra';
   import { t } from '$lib/i18n';
+  import ConnectionsTab from './tabs/ConnectionsTab.svelte';
   import ProvisioningTab from './tabs/ProvisioningTab.svelte';
 
   interface Props {
@@ -67,6 +68,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <dt>{$t('infra.field.notes')}</dt>
         <dd class="notes">{server.notes || '—'}</dd>
       </dl>
+    {:else if active === 'connections'}
+      <ConnectionsTab {server} />
     {:else if active === 'provisioning'}
       <ProvisioningTab {server} />
     {:else}
