@@ -56,6 +56,21 @@ export const translations: Translations = {
     'infra.status.serverUpdated': 'Server gespeichert',
     'infra.status.serverDeleted': 'Server gelöscht',
     'infra.error.load': 'Server konnten nicht geladen werden: {message}',
+    'infra.prov.hint':
+      'Erzeuge ein Einmal-Token und führe den Befehl auf dem Zielserver aus, um dessen Agenten zu registrieren.',
+    'infra.prov.createToken': 'Token erzeugen',
+    'infra.prov.runOnTarget': 'Auf dem Zielserver ausführen:',
+    'infra.prov.existingTokens': 'Vorhandene Tokens',
+    'infra.prov.noTokens': 'Keine Tokens',
+    'infra.prov.created': 'Token erzeugt',
+    'infra.prov.commandCopied': 'Befehl kopiert',
+    'infra.prov.copyError': 'Kopieren fehlgeschlagen',
+    'infra.prov.colCreated': 'Erstellt',
+    'infra.prov.colExpiry': 'Läuft ab',
+    'infra.prov.colStatus': 'Status',
+    'infra.prov.used': 'Verwendet ({time})',
+    'infra.prov.active': 'Aktiv',
+    'infra.prov.expired': 'Abgelaufen',
 
     // ── Roles ──────────────────────────────────────────────────────────
     'role.admin': 'Admin',
@@ -906,6 +921,21 @@ export const translations: Translations = {
     'infra.status.serverUpdated': 'Server saved',
     'infra.status.serverDeleted': 'Server deleted',
     'infra.error.load': 'Could not load servers: {message}',
+    'infra.prov.hint':
+      'Create a one-time token and run the command on the target server to enroll its agent.',
+    'infra.prov.createToken': 'Create token',
+    'infra.prov.runOnTarget': 'Run on the target server:',
+    'infra.prov.existingTokens': 'Existing tokens',
+    'infra.prov.noTokens': 'No tokens',
+    'infra.prov.created': 'Token created',
+    'infra.prov.commandCopied': 'Command copied',
+    'infra.prov.copyError': 'Copy failed',
+    'infra.prov.colCreated': 'Created',
+    'infra.prov.colExpiry': 'Expires',
+    'infra.prov.colStatus': 'Status',
+    'infra.prov.used': 'Used ({time})',
+    'infra.prov.active': 'Active',
+    'infra.prov.expired': 'Expired',
 
     // ── Roles ──────────────────────────────────────────────────────────
     'role.admin': 'Admin',
