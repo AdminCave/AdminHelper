@@ -14,6 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/stores/monitoring';
   import MonitoringOverview from '../components/monitoring/MonitoringOverview.svelte';
   import MonitoringAlerts from '../components/monitoring/MonitoringAlerts.svelte';
+  import MonitoringTemplates from '../components/monitoring/MonitoringTemplates.svelte';
   import MonitoringLog from '../components/monitoring/MonitoringLog.svelte';
   import { t } from '$lib/i18n';
 
@@ -36,6 +37,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <button class="mon-tab" class:active={tab === 'alerts'} onclick={() => setTab('alerts')}>
       {$t('monitoring.tab.alerts')}
     </button>
+    <button class="mon-tab" class:active={tab === 'templates'} onclick={() => setTab('templates')}>
+      {$t('monitoring.tab.templates')}
+    </button>
     <button class="mon-tab" class:active={tab === 'log'} onclick={() => setTab('log')}>
       {$t('monitoring.tab.log')}
     </button>
@@ -47,6 +51,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </div>
 <div class="mon-tab-content" data-tab="alerts" class:hidden={tab !== 'alerts'}>
   {#if tab === 'alerts'}<MonitoringAlerts />{/if}
+</div>
+<div class="mon-tab-content" data-tab="templates" class:hidden={tab !== 'templates'}>
+  {#if tab === 'templates'}<MonitoringTemplates />{/if}
 </div>
 <div class="mon-tab-content" data-tab="log" class:hidden={tab !== 'log'}>
   {#if tab === 'log'}<MonitoringLog />{/if}
