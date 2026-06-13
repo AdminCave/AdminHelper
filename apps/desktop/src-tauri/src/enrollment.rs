@@ -232,7 +232,10 @@ pub fn is_enrolled() -> bool {
     keyring_get(KEYRING_KEY).is_some() && keyring_get(KEYRING_CERT).is_some()
 }
 
-/// Forget the enrolled identity (on logout). The next login re-enrolls.
+/// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
+/// user out under enforced mTLS — the cert is needed to reach the login). Kept
+/// for an explicit "reset device identity" action.
+#[allow(dead_code)]
 pub fn clear_identity() {
     keyring_del(KEYRING_KEY);
     keyring_del(KEYRING_CERT);

@@ -225,9 +225,11 @@ pub async fn logout(allow_self_signed: bool) -> Result<(), AppError> {
     if let Ok((server_url, token, refresh_token)) = load_session_from_keyring() {
         let _ = notify_server_logout(&server_url, &token, &refresh_token, allow_self_signed).await;
     }
-    // The enrolled cert carries the user's identity (CN = username), so it must
-    // not outlive the session — a different user on this device must re-enroll.
-    crate::enrollment::clear_identity();
+    // Keep the enrolled mTLS cert: it is a DEVICE credential, not a session
+    // artifact, and under enforced mTLS it is required to even reach the login
+    // endpoint — clearing it here would lock the user out of logging back in.
+    // Only the session tokens are dropped; resetting the device identity is a
+    // separate, explicit action (`enrollment::clear_identity`).
     clear_keyring()
 }
 
