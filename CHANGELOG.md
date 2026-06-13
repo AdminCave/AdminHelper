@@ -5,6 +5,16 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.32.1] - 2026-06-13
+
+### Fixed
+
+- **Logout sperrte unter enforced mTLS aus.** Der Desktop-Client löschte beim Logout die
+  enrollte mTLS-Identität (Key+Cert+CA). Da das Cert unter erzwungenem mTLS nötig ist, um den
+  Login-Endpoint auf `:443` überhaupt zu erreichen, konnte man sich danach nicht mehr anmelden
+  (Gateway: „no required SSL certificate was sent") — bis ein Admin ein neues Enrollment-Token
+  mintete. Logout verwirft jetzt nur die Session-Tokens; das Geräte-Cert bleibt erhalten.
+
 ## [0.32.0] - 2026-06-13
 
 ### Added
@@ -1285,6 +1295,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.32.1]: https://github.com/ks98/AdminHelper/releases/tag/v0.32.1
 [0.32.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.32.0
 [0.31.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.31.0
 [0.30.4]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.4

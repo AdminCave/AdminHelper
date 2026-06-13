@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.32.0</span>
+          <span>v0.32.1</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.32.0 · 2026-06-13</span>
+            <span class="eyebrow">Version 0.32.1 · 2026-06-13</span>
             <h1>AdminHelper – Documentation</h1>
             <p class="lead">
               A modular monolith for centrally managing remote access,
@@ -259,7 +259,18 @@
             </div>
           </div>
 
-          <h2>What's new in 0.32.0?</h2>
+          <h2>What's new in 0.32.1?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.32.1 &ndash; logout no longer locks you out (2026-06-13)</div>
+              <p>
+                The desktop client cleared the mTLS cert on logout — under enforced mTLS you
+                then couldn't log back in ("certificate not sent"). The device cert now
+                survives; only the session is dropped.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
