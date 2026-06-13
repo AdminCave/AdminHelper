@@ -9,6 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { openServerEditor } from '$lib/stores/infra';
   import { t } from '$lib/i18n';
   import ConnectionsTab from './tabs/ConnectionsTab.svelte';
+  import TunnelsTab from './tabs/TunnelsTab.svelte';
   import ProvisioningTab from './tabs/ProvisioningTab.svelte';
 
   interface Props {
@@ -70,6 +71,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       </dl>
     {:else if active === 'connections'}
       <ConnectionsTab {server} />
+    {:else if active === 'tunnels'}
+      <TunnelsTab {server} />
     {:else if active === 'provisioning'}
       <ProvisioningTab {server} />
     {:else}
