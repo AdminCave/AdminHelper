@@ -81,9 +81,19 @@ upsert_env() {
 [ -f .env ] || cp .env.example .env
 ./scripts/init-secrets.sh
 
-[ -n "$DOMAIN" ] || read -rp "Domain (z.B. srm.example.com) [localhost]: " DOMAIN
+# Interactive prompts must read from the controlling terminal, not stdin: under
+# `curl | bash` stdin is the script pipe, so a bare `read` gets script bytes (or
+# EOF) instead of the user — the install would silently abort at the first prompt.
+if [ -r /dev/tty ]; then TTY=/dev/tty; else TTY=""; fi
+
+if [ -z "$DOMAIN" ] && [ -n "$TTY" ]; then
+    read -rp "Domain (z.B. srm.example.com) [localhost]: " DOMAIN <"$TTY"
+fi
 DOMAIN="${DOMAIN:-localhost}"
-if [ -z "$ADMIN_PASSWORD" ]; then read -rsp "Admin-Passwort (min. 8 Zeichen): " ADMIN_PASSWORD; echo; fi
+if [ -z "$ADMIN_PASSWORD" ]; then
+    [ -n "$TTY" ] || { echo "FEHLER: Kein Terminal fuer die Passwort-Abfrage. Uebergib --admin-password … --yes (z.B. bei 'curl | bash' ohne Terminal)." >&2; exit 1; }
+    read -rsp "Admin-Passwort (min. 8 Zeichen): " ADMIN_PASSWORD <"$TTY"; echo
+fi
 [ "${#ADMIN_PASSWORD}" -ge 8 ] || { echo "FEHLER: Passwort < 8 Zeichen." >&2; exit 1; }
 
 # DOMAIN must be set before first boot (ca-issuer mints the gateway leaf SAN).
@@ -93,7 +103,8 @@ chmod 600 .env 2>/dev/null || true
 
 if [ "$ASSUME_YES" != 1 ]; then
     echo "[install] Domain=$DOMAIN  Admin=$ADMIN_USER  mTLS=$([ "$PERMISSIVE" = 1 ] && echo permissiv || echo enforced)"
-    printf "Fortfahren? [y/N] "; read -r a; case "$a" in y|Y|j|J) ;; *) echo Abgebrochen.; exit 0 ;; esac
+    [ -n "$TTY" ] || { echo "FEHLER: Kein Terminal fuer die Rueckfrage. Uebergib --yes fuer einen nicht-interaktiven Lauf." >&2; exit 1; }
+    printf "Fortfahren? [y/N] "; read -r a <"$TTY"; case "$a" in y|Y|j|J) ;; *) echo Abgebrochen.; exit 0 ;; esac
 fi
 
 # --- Stack hoch (enforced per Default) --------------------------------------
