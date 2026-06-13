@@ -2,69 +2,133 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Monitoring API: typed wrappers around apiProxy() for monitoring endpoints.
-// Takes the current AuthSession from the session store.
+// Monitoring API: typed wrappers around api_proxy for the monitoring endpoints
+// (proxied by the AdminHelper server to the monitoring service). Covers the full
+// surface — checks, alerts, templates and their assignments — so the desktop can
+// manage monitoring, not just view it. Mirrors apps/web/src/lib/api/monitoring.ts.
 
-import { get } from 'svelte/store';
-import * as bridge from '$lib/bridge';
+import { apiRequest } from '$lib/api/request';
 import type { AuthSession } from '$lib/bridge/types';
-import { sessionStore } from '$lib/stores/session';
 import type {
   AlertLogEntry,
   AlertRule,
+  AlertRuleInput,
   MonitorCheck,
+  MonitorCheckInput,
   MonitoringMetricsResponse,
+  MonitoringTemplateFull,
+  MonitoringTemplateInput,
   Server,
+  TemplateAssignment,
 } from '$lib/api/types';
 
-async function request<T>(
-  session: AuthSession,
-  method: 'GET' | 'POST',
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const allowSelfSigned = get(sessionStore).settings?.allowSelfSignedCerts ?? false;
-  return bridge.apiProxy<T>(
-    session.serverUrl,
-    session.token,
-    method,
-    path,
-    body ? JSON.stringify(body) : undefined,
-    allowSelfSigned,
-  );
-}
-
 export const monitoringApi = {
+  // ── Reads ────────────────────────────────────────────────────────────────
   fetchServers(session: AuthSession): Promise<Server[]> {
-    return request<Server[]>(session, 'GET', '/api/servers');
+    return apiRequest<Server[]>(session, 'GET', '/api/servers');
   },
   fetchStatus(session: AuthSession): Promise<MonitorCheck[]> {
-    return request<MonitorCheck[]>(session, 'GET', '/api/monitoring/status');
+    return apiRequest<MonitorCheck[]>(session, 'GET', '/api/monitoring/status');
   },
   fetchAlerts(session: AuthSession): Promise<AlertRule[]> {
-    return request<AlertRule[]>(session, 'GET', '/api/monitoring/alerts');
+    return apiRequest<AlertRule[]>(session, 'GET', '/api/monitoring/alerts');
   },
   fetchAlertLog(session: AuthSession, limit = 50): Promise<AlertLogEntry[]> {
-    return request<AlertLogEntry[]>(session, 'GET', `/api/monitoring/alerts/log?limit=${limit}`);
+    return apiRequest<AlertLogEntry[]>(session, 'GET', `/api/monitoring/alerts/log?limit=${limit}`);
   },
   fetchMetrics(
     session: AuthSession,
     checkId: string,
     period = '1h',
   ): Promise<MonitoringMetricsResponse> {
-    return request<MonitoringMetricsResponse>(
+    return apiRequest<MonitoringMetricsResponse>(
       session,
       'GET',
       `/api/monitoring/checks/${checkId}/metrics?period=${period}`,
     );
   },
-  toggleCheck(session: AuthSession, checkId: string): Promise<void> {
-    return request<void>(session, 'POST', `/api/monitoring/checks/${checkId}/toggle`);
+
+  // ── Checks ─────────────────────────────────────────────────────────────────
+  createCheck(session: AuthSession, data: MonitorCheckInput): Promise<MonitorCheck> {
+    return apiRequest<MonitorCheck>(session, 'POST', '/api/monitoring/checks', data);
   },
-  toggleAlert(session: AuthSession, ruleId: string): Promise<void> {
-    return request<void>(session, 'POST', `/api/monitoring/alerts/${ruleId}/toggle`);
+  updateCheck(session: AuthSession, id: string, data: MonitorCheckInput): Promise<MonitorCheck> {
+    return apiRequest<MonitorCheck>(session, 'PUT', `/api/monitoring/checks/${id}`, data);
+  },
+  removeCheck(session: AuthSession, id: string): Promise<void> {
+    return apiRequest<void>(session, 'DELETE', `/api/monitoring/checks/${id}`);
+  },
+  toggleCheck(session: AuthSession, checkId: string): Promise<void> {
+    return apiRequest<void>(session, 'POST', `/api/monitoring/checks/${checkId}/toggle`);
   },
   runCheck(session: AuthSession, checkId: string): Promise<void> {
-    return request<void>(session, 'POST', `/api/monitoring/checks/${checkId}/run`);
+    return apiRequest<void>(session, 'POST', `/api/monitoring/checks/${checkId}/run`);
+  },
+
+  // ── Alerts ───────────────────────────────────────────────────────────────
+  createAlert(session: AuthSession, data: AlertRuleInput): Promise<AlertRule> {
+    return apiRequest<AlertRule>(session, 'POST', '/api/monitoring/alerts', data);
+  },
+  updateAlert(session: AuthSession, id: string, data: AlertRuleInput): Promise<AlertRule> {
+    return apiRequest<AlertRule>(session, 'PUT', `/api/monitoring/alerts/${id}`, data);
+  },
+  removeAlert(session: AuthSession, id: string): Promise<void> {
+    return apiRequest<void>(session, 'DELETE', `/api/monitoring/alerts/${id}`);
+  },
+  toggleAlert(session: AuthSession, ruleId: string): Promise<void> {
+    return apiRequest<void>(session, 'POST', `/api/monitoring/alerts/${ruleId}/toggle`);
+  },
+
+  // ── Templates + assignments ────────────────────────────────────────────────
+  fetchTemplates(session: AuthSession): Promise<MonitoringTemplateFull[]> {
+    return apiRequest<MonitoringTemplateFull[]>(session, 'GET', '/api/monitoring/templates');
+  },
+  createTemplate(
+    session: AuthSession,
+    data: MonitoringTemplateInput,
+  ): Promise<MonitoringTemplateFull> {
+    return apiRequest<MonitoringTemplateFull>(session, 'POST', '/api/monitoring/templates', data);
+  },
+  updateTemplate(
+    session: AuthSession,
+    id: string,
+    data: MonitoringTemplateInput,
+  ): Promise<MonitoringTemplateFull> {
+    return apiRequest<MonitoringTemplateFull>(
+      session,
+      'PUT',
+      `/api/monitoring/templates/${id}`,
+      data,
+    );
+  },
+  removeTemplate(session: AuthSession, id: string): Promise<void> {
+    return apiRequest<void>(session, 'DELETE', `/api/monitoring/templates/${id}`);
+  },
+  fetchAssignments(session: AuthSession, serverId: string): Promise<TemplateAssignment[]> {
+    return apiRequest<TemplateAssignment[]>(
+      session,
+      'GET',
+      `/api/monitoring/templates/assignments/${serverId}`,
+    );
+  },
+  assignTemplate(
+    session: AuthSession,
+    templateId: string,
+    serverId: string,
+    hostname: string,
+    serverName: string,
+  ): Promise<unknown> {
+    return apiRequest<unknown>(session, 'POST', `/api/monitoring/templates/${templateId}/assign`, {
+      server_id: serverId,
+      hostname,
+      server_name: serverName,
+    });
+  },
+  unassignTemplate(session: AuthSession, templateId: string, serverId: string): Promise<void> {
+    return apiRequest<void>(
+      session,
+      'DELETE',
+      `/api/monitoring/templates/${templateId}/assign/${serverId}`,
+    );
   },
 };
