@@ -86,6 +86,19 @@ export async function loadAnsibleData(): Promise<void> {
   }
 }
 
+/** Refreshes only the playbook list (after authoring), leaving the wizard's
+ * selection and the server list untouched. */
+export async function reloadPlaybooks(): Promise<void> {
+  const session = requireSession();
+  if (!session) return;
+  try {
+    const playbooks = await ansibleApi.fetchPlaybooks(session);
+    _state.update((s) => ({ ...s, playbooks: Array.isArray(playbooks) ? playbooks : [] }));
+  } catch (err) {
+    reportError(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export function selectPlaybook(id: string | null): void {
   _state.update((s) => ({ ...s, selectedPlaybookId: id }));
 }

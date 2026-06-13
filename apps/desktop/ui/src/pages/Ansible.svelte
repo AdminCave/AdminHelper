@@ -19,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     ansibleSelectedPlaybook,
     ansibleCanRun,
     activateAnsible,
+    reloadPlaybooks,
     selectPlaybook,
     setTargetMode,
     toggleServer,
@@ -26,10 +27,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
     runPlaybook,
   } from '$lib/stores/ansible';
   import { t } from '$lib/i18n';
+  import PlaybookModal from '../components/ansible/PlaybookModal.svelte';
+  import type { Playbook } from '$lib/api/types';
 
   onMount(() => {
     activateAnsible();
   });
+
+  let modalOpen = $state(false);
+  let modalTarget = $state<Playbook | null>(null);
+
+  function openCreate(): void {
+    modalTarget = null;
+    modalOpen = true;
+  }
+
+  function openEdit(pb: Playbook): void {
+    modalTarget = pb;
+    modalOpen = true;
+  }
 
   function isServerSelected(id: string, ids: Set<string>): boolean {
     return ids.has(id);
@@ -49,29 +65,48 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {:else}
     <!-- Step 1: Playbook -->
     <div class="ansible-step active" data-step="playbook">
-      <div class="ansible-step-title">{$t('ansible.step.playbook')}</div>
+      <div class="ansible-step-head">
+        <div class="ansible-step-title">{$t('ansible.step.playbook')}</div>
+        <button type="button" class="btn small" onclick={openCreate}>
+          {$t('ansible.edit.add')}
+        </button>
+      </div>
       {#if $ansiblePlaybooks.length === 0}
         <div class="ansible-empty">{$t('ansible.empty.playbooks')}</div>
       {:else}
         <div class="ansible-playbook-list">
           {#each $ansiblePlaybooks as pb (pb.id)}
-            <button
-              type="button"
-              class="ansible-playbook-card"
-              class:selected={$ansibleSelectedPlaybookId === pb.id}
-              onclick={() => selectPlaybook(pb.id)}
-            >
-              <div class="ansible-playbook-name">{pb.name}</div>
-              {#if pb.description}
-                <div class="ansible-playbook-desc">{pb.description}</div>
-              {/if}
-              <div class="ansible-playbook-meta">
-                <span class="ansible-playbook-file">{pb.filename}</span>
-                {#each pb.tags ?? [] as tag (tag)}
-                  <span class="ansible-tag">{tag}</span>
-                {/each}
-              </div>
-            </button>
+            <div class="ansible-playbook-wrap">
+              <button
+                type="button"
+                class="ansible-playbook-card"
+                class:selected={$ansibleSelectedPlaybookId === pb.id}
+                onclick={() => selectPlaybook(pb.id)}
+              >
+                <div class="ansible-playbook-name">{pb.name}</div>
+                {#if pb.description}
+                  <div class="ansible-playbook-desc">{pb.description}</div>
+                {/if}
+                <div class="ansible-playbook-meta">
+                  <span class="ansible-playbook-file">{pb.filename}</span>
+                  {#each pb.tags ?? [] as tag (tag)}
+                    <span class="ansible-tag">{tag}</span>
+                  {/each}
+                </div>
+              </button>
+              <button
+                type="button"
+                class="ansible-playbook-edit"
+                title={$t('ansible.edit.edit')}
+                aria-label={$t('ansible.edit.edit')}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  openEdit(pb);
+                }}
+              >
+                {$t('action.edit')}
+              </button>
+            </div>
           {/each}
         </div>
       {/if}
@@ -160,6 +195,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   {/if}
 </section>
 
+<PlaybookModal
+  open={modalOpen}
+  target={modalTarget}
+  onClose={() => (modalOpen = false)}
+  onSaved={() => void reloadPlaybooks()}
+/>
+
 <style>
   .ansible-root {
     padding: var(--sp-5);
@@ -185,6 +227,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
+  .ansible-step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .ansible-step-head .ansible-step-title {
+    margin-bottom: 0;
+  }
   .ansible-empty {
     color: var(--text-muted);
     font-size: 13px;
@@ -200,7 +251,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: var(--sp-3);
   }
+  .ansible-playbook-wrap {
+    position: relative;
+    display: flex;
+  }
+  .ansible-playbook-edit {
+    position: absolute;
+    top: var(--sp-2);
+    right: var(--sp-2);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    opacity: 0;
+    transition:
+      opacity 0.12s,
+      border-color 0.12s,
+      color 0.12s;
+  }
+  .ansible-playbook-wrap:hover .ansible-playbook-edit,
+  .ansible-playbook-edit:focus-visible {
+    opacity: 1;
+  }
+  .ansible-playbook-edit:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
   .ansible-playbook-card {
+    flex: 1;
     text-align: left;
     background: var(--bg-elev);
     border: 1px solid var(--border);
