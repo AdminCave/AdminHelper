@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.31.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.32.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Entwickler-Handbuch</span>
           <h1>Web-Panel</h1>
-          <p class="lead">Das Web-Admin-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>apps/web/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert. Seit v0.31.0 deckt es nur noch die <strong>Instanz-Verwaltung</strong> ab (Benutzer, API-Keys, Hooks, FRP-Server-Konfiguration); die operative Server-/Verbindungs-/Tunnel-/Monitoring-/Ansible-Verwaltung ist in den Desktop-Client umgezogen (siehe <a href="./desktop.html">Desktop-Client</a>).</p>
+          <p class="lead">Das Web-Admin-Panel ist eine eigenständige Svelte-5-SPA mit Hash-Router. Es liegt unter <code>apps/web/</code>, wird via Vite gebaut und im Docker-Image per Multi-Stage in das Python-Runtime-Image kopiert. Seit v0.32.0 deckt es nur noch die <strong>Instanz-Verwaltung</strong> ab (Benutzer, API-Keys, Hooks, FRP-Server-Konfiguration); die operative Server-/Verbindungs-/Tunnel-/Monitoring-/Ansible-Verwaltung ist in den Desktop-Client umgezogen (siehe <a href="./desktop.html">Desktop-Client</a>).</p>
 
           <h2>Projekt-Struktur</h2>
           <div class="code-header"><span>tree</span></div>
@@ -55,10 +55,10 @@
 
           <h2>Routing</h2>
           <p>Hash-Router (kein SSR, kein Client-Router von SvelteKit): Die Pfade sind <code>#/users</code>, <code>#/apikeys</code> usw. Das funktioniert zuverl&auml;ssig hinter beliebigen Reverse-Proxies, ohne dass der Server SPA-Fallbacks verstehen muss. Implementierung in <code>src/lib/router.ts</code> &ndash; ein <code>writable</code> <code>_path</code> mit <code>hashchange</code>-Listener; exportiert <code>navigate()</code>, <code>replace()</code>, <code>currentPath()</code> und einen <code>segments</code>-Derived-Store.</p>
-          <p>Produktiv-Routen seit v0.31.0: <code>#/users</code> (Standard-Landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP-<em>Server</em>-Konfiguration). Die früheren operativen Routen (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, Tunnel) sind in den Desktop-Client umgezogen.</p>
+          <p>Produktiv-Routen seit v0.32.0: <code>#/users</code> (Standard-Landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP-<em>Server</em>-Konfiguration). Die früheren operativen Routen (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, Tunnel) sind in den Desktop-Client umgezogen.</p>
 
           <h2>Stores</h2>
-          <p>Stores in <code>src/lib/stores/</code>. Jeder Store ist eine TypeScript-Klasse mit <code>$state</code>-Feldern und Methoden, die direkt mit dem passenden API-Wrapper sprechen. Seit v0.31.0 nur noch die Instanz-Verwaltung &ndash; die operativen Stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, Tunnel) leben jetzt im Desktop-Client.</p>
+          <p>Stores in <code>src/lib/stores/</code>. Jeder Store ist eine TypeScript-Klasse mit <code>$state</code>-Feldern und Methoden, die direkt mit dem passenden API-Wrapper sprechen. Seit v0.32.0 nur noch die Instanz-Verwaltung &ndash; die operativen Stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, Tunnel) leben jetzt im Desktop-Client.</p>
           <table>
             <thead><tr><th>Store</th><th>Zweck</th></tr></thead>
             <tbody>

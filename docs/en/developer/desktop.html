@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.31.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.32.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Desktop Client</h1>
-          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>apps/desktop/src-tauri/</code>) exposes typed commands; the frontend (<code>apps/desktop/ui/</code>) consumes them through a 1:1 bridge. Since v0.31.0, in <strong>server mode</strong> the client is also the operational cockpit: the <em>Infrastructure</em> hub manages the server inventory and, per server, connections, FRP tunnels, monitoring checks, and provisioning; plus the fleet-wide <em>Monitoring</em> and <em>Ansible</em> pages. Operational writes go through the <code>api_proxy</code> to the AdminHelper server's REST API.</p>
+          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>apps/desktop/src-tauri/</code>) exposes typed commands; the frontend (<code>apps/desktop/ui/</code>) consumes them through a 1:1 bridge. Since v0.32.0, in <strong>server mode</strong> the client is also the operational cockpit: the <em>Infrastructure</em> hub manages the server inventory and, per server, connections, FRP tunnels, monitoring checks, and provisioning; plus the fleet-wide <em>Monitoring</em> and <em>Ansible</em> pages. Operational writes go through the <code>api_proxy</code> to the AdminHelper server's REST API.</p>
 
           <h2>Architecture</h2>
           <div class="code-header"><span>tree</span></div>

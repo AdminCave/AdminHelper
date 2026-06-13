@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.31.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.32.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Admin-Handbuch</span>
           <h1>Monitoring</h1>
-          <p class="lead">Das Monitoring-System besteht aus drei Komponenten: <strong>Checks</strong> (Konfigurationen, was wie oft geprüft wird), <strong>Collectors</strong> im Agent (führen Messungen durch) und <strong>VictoriaMetrics</strong> (speichert die Zeitreihen). Checks, Alert-Regeln und Templates werden seit v0.31.0 im <strong>Desktop-Client</strong> (Server-Modus) gepflegt – auf der fleet-weiten <em>Monitoring</em>-Seite und pro Server im <em>Monitoring</em>-Tab unter <em>Infrastruktur</em>. Die Charts lesen direkt von VictoriaMetrics via uPlot.</p>
+          <p class="lead">Das Monitoring-System besteht aus drei Komponenten: <strong>Checks</strong> (Konfigurationen, was wie oft geprüft wird), <strong>Collectors</strong> im Agent (führen Messungen durch) und <strong>VictoriaMetrics</strong> (speichert die Zeitreihen). Checks, Alert-Regeln und Templates werden seit v0.32.0 im <strong>Desktop-Client</strong> (Server-Modus) gepflegt – auf der fleet-weiten <em>Monitoring</em>-Seite und pro Server im <em>Monitoring</em>-Tab unter <em>Infrastruktur</em>. Die Charts lesen direkt von VictoriaMetrics via uPlot.</p>
 
           <h2>Check-Typen</h2>
           <p>Der Typ-Bezeichner (<code>check_type</code>) ist exakt der Wert, den der Desktop-Client im Dropdown anzeigt. Server-seitige Probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) laufen direkt im Monitoring-Container, alle <code>agent_*</code>- und Plugin-Checks werten Push-Daten des Agents aus.</p>

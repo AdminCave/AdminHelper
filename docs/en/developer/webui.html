@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.31.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.32.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Web Panel</h1>
-          <p class="lead">The Web Admin Panel is a standalone Svelte 5 SPA with a hash router. It lives under <code>apps/web/</code>, is built via Vite, and is multi-stage-copied into the Python runtime image at Docker build time. Since v0.31.0 it only covers <strong>instance management</strong> (users, API keys, hooks, FRP server configuration); the operational server/connection/tunnel/monitoring/Ansible management has moved into the desktop client (see <a href="./desktop.html">Desktop Client</a>).</p>
+          <p class="lead">The Web Admin Panel is a standalone Svelte 5 SPA with a hash router. It lives under <code>apps/web/</code>, is built via Vite, and is multi-stage-copied into the Python runtime image at Docker build time. Since v0.32.0 it only covers <strong>instance management</strong> (users, API keys, hooks, FRP server configuration); the operational server/connection/tunnel/monitoring/Ansible management has moved into the desktop client (see <a href="./desktop.html">Desktop Client</a>).</p>
 
           <h2>Project Structure</h2>
           <div class="code-header"><span>tree</span></div>
@@ -55,10 +55,10 @@
 
           <h2>Routing</h2>
           <p>Hash router (no SSR, no SvelteKit client router): paths are <code>#/users</code>, <code>#/apikeys</code>, etc. This works reliably behind any reverse proxy without SPA fallback support on the server side. Implementation in <code>src/lib/router.ts</code> &ndash; a <code>writable</code> <code>_path</code> with a <code>hashchange</code> listener; exports <code>navigate()</code>, <code>replace()</code>, <code>currentPath()</code> and a <code>segments</code> derived store.</p>
-          <p>Production routes since v0.31.0: <code>#/users</code> (default landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP <em>server</em> configuration). The former operational routes (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, tunnels) have moved to the desktop client.</p>
+          <p>Production routes since v0.32.0: <code>#/users</code> (default landing), <code>#/apikeys</code>, <code>#/hooks</code>, <code>#/frp</code> (FRP <em>server</em> configuration). The former operational routes (<code>#/connections</code>, <code>#/servers</code>, <code>#/ansible</code>, <code>#/monitoring</code>, tunnels) have moved to the desktop client.</p>
 
           <h2>Stores</h2>
-          <p>Stores in <code>src/lib/stores/</code>. Each is a TypeScript class with <code>$state</code> fields and methods that talk to the matching API wrapper. Since v0.31.0 only instance management remains &ndash; the operational stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, tunnels) now live in the desktop client.</p>
+          <p>Stores in <code>src/lib/stores/</code>. Each is a TypeScript class with <code>$state</code> fields and methods that talk to the matching API wrapper. Since v0.32.0 only instance management remains &ndash; the operational stores (<code>connections</code>, <code>servers</code>, <code>ansible</code>, <code>monitoring</code>, tunnels) now live in the desktop client.</p>
           <table>
             <thead><tr><th>Store</th><th>Purpose</th></tr></thead>
             <tbody>
