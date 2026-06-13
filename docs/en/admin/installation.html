@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.30.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.30.1</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -67,13 +67,12 @@
           <h2 id="quick-install">Quick install (one command)</h2>
           <p>The installer fetches <strong>only the runtime files</strong> (the self-contained <code>docker-compose.yml</code> + a few ops scripts, <em>not</em> the source tree), brings up the stack, creates the first admin with a one-time enrollment token, and leaves mTLS <strong>enforced by default</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.0/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.30.0
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.1/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.1
 # prompts for the admin password. Non-interactive: --admin-password … --yes.
 # --permissive leaves the stack permissive (no enforced mTLS).</code></pre>
           <p>The script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client under <em>"Enroll with token"</em> (server URL + token) — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button. Updates: <code>./scripts/update.sh</code> inside the created <code>adminhelper/</code> directory.</p>
           <p>Why the token? Under enforced mTLS the data plane <code>:443</code> (including login) rejects certless clients at the TLS handshake. The very first admin therefore cannot fetch a cert via login; the script mints the token out-of-band over the internal network. The admin onboards follow-up users afterwards (<a href="../developer/index.html">ADR 0003</a>).</p>
-          <p>Updates: <code>./scripts/update.sh</code> takes a backup first (incl. the CA crown jewel), pulls the pinned images and recreates the stack. Pin a version via the <code>*_IMAGE</code> tags in <code>.env</code>.</p>
 
           <h2 id="stack">Start the Stack (manual)</h2>
           <p>The official <code>docker-compose.yml</code> lives in the repository root. For a quick test this is enough:</p>
@@ -134,6 +133,28 @@ docker compose up -d</code></pre>
             <div>
               <div class="callout-title">Health check</div>
               <p>The server exposes a short JSON status at <code>/api/health</code>. Use this endpoint for monitoring systems or Docker health checks.</p>
+            </div>
+          </div>
+
+          <h2 id="update">Updates</h2>
+          <p><code>scripts/update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install. It backs up first (incl. the CA crown jewel), then pulls the images and recreates the stack. It has <strong>two modes</strong>:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># 1) Quick – refresh images only (patch release, no structural change):
+./scripts/update.sh
+
+# 2) Version upgrade – also re-download the runtime files (compose + scripts)
+#    for the target version, then pull the images:
+./scripts/update.sh --ref v0.30.1
+
+./scripts/update.sh --skip-backup   # without a backup (not recommended)</code></pre>
+          <p>Background: a "version" is <strong>two</strong> parts — the <strong>images</strong> (the code) and the <strong>compose file</strong> (the structure: services, ports, env vars). <code>update.sh</code> always pulls the images via <code>docker compose pull</code>, but it only refreshes the compose and ops scripts <strong>with <code>--ref</code></strong>. As long as a release only changes code, the bare run is enough. Once the <em>structure</em> changes (a new service, a new env var, a different port — as 0.30.0 did with the self-contained compose), you need <code>--ref</code> so the compose moves <em>before</em> the pull.</p>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title"><code>update.sh</code> does not update itself</div>
+              <p>The script is intentionally not in its own refresh list (no self-overwrite while running). <code>--ref</code> pulls the <em>other</em> scripts (install/backup/restore/init-secrets); if <code>update.sh</code> itself changes, re-fetch it once via the install one-liner.</p>
+              <p>Also: <code>--ref</code> refreshes the compose but not the pulled tag — the default stays <code>:latest</code>. For a reproducibly <strong>pinned</strong> deployment, also set the <code>*_IMAGE</code> tags in <code>.env</code> (<code>SERVER_IMAGE</code>, <code>GATEWAY_IMAGE</code>, <code>CA_ISSUER_IMAGE</code>, <code>MONITORING_IMAGE</code>) to the fixed version, e.g. <code>SERVER_IMAGE=ghcr.io/ks98/adminhelper/server:0.30.1</code>.</p>
             </div>
           </div>
 

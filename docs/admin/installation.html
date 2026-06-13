@@ -46,7 +46,7 @@
             <a href="../developer/cicd.html">CI/CD &amp; Release</a>
           </div>
         </nav>
-        <div class="sidebar-footer"><span>v0.30.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.30.1</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -89,8 +89,8 @@
           <h2 id="schnell-install">Schnell-Install (ein Befehl)</h2>
           <p>Der Installer lädt <strong>nur die Laufzeit-Dateien</strong> (die selbstgenügsame <code>docker-compose.yml</code> + ein paar Ops-Skripte, <em>nicht</em> den Quellbaum), fährt den Stack hoch, legt den Erst-Admin samt einmaligem Enrollment-Token an und lässt mTLS <strong>per Default erzwungen</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.0/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.30.0
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.1/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.1
 # fragt das Admin-Passwort ab. Non-interaktiv: --admin-password … --yes.
 # --permissive laesst den Stack permissiv (kein erzwungenes mTLS).</code></pre>
           <p>Am Ende gibt das Script die Zugangsdaten aus: URL, Admin-Login und einen <strong>Enrollment-Token</strong>. Den Token im Desktop-Client unter <em>„Mit Token enrollen"</em> (Server-URL + Token) einlösen — der Client erzeugt sein mTLS-Zertifikat <strong>on-device</strong> — danach normaler Login. Die Browser-<code>.p12</code> exportiert man anschliessend im Desktop über den Export-Knopf. Updates: <code>./scripts/update.sh</code> im erzeugten <code>adminhelper/</code>-Verzeichnis.</p>
@@ -186,16 +186,33 @@ docker compose up -d</code></pre>
           <p>Der Server läuft aus der GitHub Container Registry <code>ghcr.io/ks98/adminhelper/server</code>. Standard-Tags:</p>
           <ul>
             <li><code>:latest</code> – letzter veröffentlichter Release (Semver-Tag)</li>
-            <li><code>:0.26.0</code> – konkreter Release-Tag</li>
+            <li><code>:0.30.1</code> – konkreter Release-Tag</li>
             <li><code>:main</code> – letzter Build der Default-Branch</li>
             <li><code>:sha-&lt;commit&gt;</code> – deterministisches Image pro Commit</li>
           </ul>
 
-          <p>Am einfachsten per <code>scripts/update.sh</code> — es sichert zuerst (inkl. CA-Kronjuwel), zieht die gepinnten Images, startet neu und wartet, bis der Stack wieder antwortet:</p>
+          <p>Das <code>scripts/update.sh</code> liegt nach der Installation <strong>lokal</strong> im <code>adminhelper/</code>-Verzeichnis. Es sichert zuerst (inkl. CA-Kronjuwel), zieht dann die Images und startet neu. Es kennt <strong>zwei Modi</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>./scripts/update.sh                 # Backup-first, dann pull + up + Healthcheck
+<pre><code># 1) Schnell – nur Images frischen (Patch-Release ohne Struktur-Änderung):
+./scripts/update.sh
+
+# 2) Versions-Upgrade – zusätzlich die Laufzeit-Dateien (Compose + Skripte)
+#    für die Zielversion neu laden, dann Images ziehen:
+./scripts/update.sh --ref v0.30.1
+
 ./scripts/update.sh --skip-backup   # ohne Backup (nicht empfohlen)</code></pre>
-          <p>Version pinnen: die Image-Tags in <code>.env</code> setzen (<code>SERVER_IMAGE</code>, <code>GATEWAY_IMAGE</code>, <code>CA_ISSUER_IMAGE</code>, <code>MONITORING_IMAGE</code>) auf den Ziel-Release. Manuell geht es weiterhin:</p>
+          <p>Hintergrund: Eine „Version" besteht aus <strong>zwei</strong> Teilen — den <strong>Images</strong> (dem Code) und der <strong>Compose-Datei</strong> (der Struktur: Services, Ports, Env-Variablen). <code>update.sh</code> zieht über <code>docker compose pull</code> <em>immer</em> die Images; die Compose und die Ops-Skripte frischt es aber <strong>nur mit <code>--ref</code></strong>. Solange ein Release nur Code ändert, reicht der nackte Lauf. Sobald sich die <em>Struktur</em> ändert (neuer Service, neue Env-Variable, anderer Port — wie 0.30.0 mit der selbstgenügsamen Compose), brauchst du <code>--ref</code>, damit die Compose <em>vor</em> dem Pull mitwandert.</p>
+
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title"><code>update.sh</code> aktualisiert sich nicht selbst</div>
+              <p>Das Script steht bewusst nicht in seiner eigenen Refresh-Liste (kein Selbst-Überschreiben während des Laufs). Die <em>anderen</em> Skripte (install/backup/restore/init-secrets) zieht <code>--ref</code> mit; ändert sich <code>update.sh</code> selbst, hol es einmalig über den Install-Einzeiler neu.</p>
+              <p>Außerdem: <code>--ref</code> ändert die Compose, aber nicht den gezogenen Tag — Default bleibt <code>:latest</code>. Für ein reproduzierbar <strong>gepinntes</strong> Deployment zusätzlich die <code>*_IMAGE</code>-Tags in <code>.env</code> (<code>SERVER_IMAGE</code>, <code>GATEWAY_IMAGE</code>, <code>CA_ISSUER_IMAGE</code>, <code>MONITORING_IMAGE</code>) auf die feste Version setzen, z.&nbsp;B. <code>SERVER_IMAGE=ghcr.io/ks98/adminhelper/server:0.30.1</code>.</p>
+            </div>
+          </div>
+
+          <p>Manuell geht es weiterhin:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>docker compose pull server
 docker compose up -d server</code></pre>

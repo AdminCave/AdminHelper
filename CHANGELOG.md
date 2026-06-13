@@ -5,6 +5,16 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.30.1] - 2026-06-13
+
+### Changed
+
+- **Update-Ablauf dokumentiert.** Die Installations-Doku (DE+EN) beschreibt jetzt den
+  `scripts/update.sh`-Ablauf mit seinen zwei Modi — nur Images frischen
+  (`./scripts/update.sh`) gegenüber einem Versions-Upgrade mit `--ref` (das die Compose +
+  Ops-Skripte für die Zielversion mitzieht) — samt `.env`-Image-Pinning und der
+  Selbst-Update-Falle (`update.sh` überschreibt sich nicht selbst).
+
 ## [0.30.0] - 2026-06-12
 
 ### Added
@@ -1197,6 +1207,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.30.1]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.1
 [0.30.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.0
 [0.29.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.29.0
 [0.28.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.28.0
