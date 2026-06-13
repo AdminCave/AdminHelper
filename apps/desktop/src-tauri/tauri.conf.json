@@ -1,6 +1,6 @@
 {
   "productName": "adminhelper",
-  "version": "0.30.3",
+  "version": "0.30.4",
   "identifier": "com.adminhelper.app",
   "build": {
     "beforeDevCommand": "npm --prefix ui run dev",

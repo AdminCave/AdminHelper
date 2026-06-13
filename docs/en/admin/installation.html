@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.30.3</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.30.4</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -67,10 +67,11 @@
           <h2 id="quick-install">Quick install (one command)</h2>
           <p>The installer fetches <strong>only the runtime files</strong> (the self-contained <code>docker-compose.yml</code> + a few ops scripts, <em>not</em> the source tree), brings up the stack, creates the first admin with a one-time enrollment token, and leaves mTLS <strong>enforced by default</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.3/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.30.3
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.4/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.4
 # prompts for the admin password. Non-interactive: --admin-password … --yes.
-# --permissive leaves the stack permissive (no enforced mTLS).</code></pre>
+# --permissive leaves the stack permissive (no enforced mTLS).
+# --reset wipes volumes from a failed attempt (docker compose down -v).</code></pre>
           <p>The script prints the credentials: URL, admin login, and an <strong>enrollment token</strong>. Redeem the token in the desktop client under <em>"Enroll with token"</em> (server URL + token) — the client generates its mTLS cert <strong>on-device</strong> — then log in normally. Export the browser <code>.p12</code> afterwards from the desktop's export button. Updates: <code>./scripts/update.sh</code> inside the created <code>adminhelper/</code> directory.</p>
           <p>Why the token? Under enforced mTLS the data plane <code>:443</code> (including login) rejects certless clients at the TLS handshake. The very first admin therefore cannot fetch a cert via login; the script mints the token out-of-band over the internal network. The admin onboards follow-up users afterwards (<a href="../developer/index.html">ADR 0003</a>).</p>
 
@@ -137,14 +138,14 @@ docker compose up -d</code></pre>
           </div>
 
           <h2 id="update">Updates</h2>
-          <p>The installer pins the images in <code>.env</code> to the installed version (e.g. <code>:0.30.3</code>) — so an install is <strong>reproducible</strong> and never silently jumps versions. <code>scripts/update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install, backs up first (incl. the CA crown jewel) and has <strong>two modes</strong>:</p>
+          <p>The installer pins the images in <code>.env</code> to the installed version (e.g. <code>:0.30.4</code>) — so an install is <strong>reproducible</strong> and never silently jumps versions. <code>scripts/update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install, backs up first (incl. the CA crown jewel) and has <strong>two modes</strong>:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code># 1) Re-deploy – re-pull the PINNED version (no version jump):
 ./scripts/update.sh
 
 # 2) Upgrade – move to a new version: pins :X.Y.Z, refreshes compose + scripts,
 #    pulls the images:
-./scripts/update.sh --ref v0.30.3
+./scripts/update.sh --ref v0.30.4
 
 ./scripts/update.sh --skip-backup   # without a backup (not recommended)</code></pre>
           <p>Background: a "version" is <strong>two</strong> parts — the <strong>images</strong> (the code) and the <strong>compose file</strong> (the structure: services, ports, env vars). A bare <code>update.sh</code> re-pulls the image version pinned in <code>.env</code> (re-deploy/heal) — it does <em>not</em> jump to a new version. An upgrade is therefore always a deliberate <code>--ref vNEW</code>: it re-pins the <code>*_IMAGE</code> tags to the target version <em>and</em> refreshes the compose + ops scripts in case the structure changed (as 0.30.0 did with the self-contained compose).</p>

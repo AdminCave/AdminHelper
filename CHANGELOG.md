@@ -5,6 +5,18 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.30.4] - 2026-06-13
+
+### Fixed
+
+- **Re-Install über ein altes Postgres-Volume scheiterte unverständlich.** Ein
+  `postgres-data`-Volume aus einem abgebrochenen Versuch ist mit einem anderen
+  `POSTGRES_PASSWORD` initialisiert als eine frisch generierte `.env` (Postgres setzt das
+  Passwort nur beim ersten Init) — die DB-Auth scheiterte dauerhaft und die Readiness-Schleife
+  lief in einen kryptischen 240-s-Timeout. `install.sh` erkennt jetzt das
+  `password authentication failed` und bricht mit klarer Anleitung ab; neues `--reset`-Flag
+  räumt vorab `docker compose down -v` weg.
+
 ## [0.30.3] - 2026-06-13
 
 ### Changed
@@ -1228,6 +1240,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.30.4]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.4
 [0.30.3]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.3
 [0.30.2]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.2
 [0.30.1]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.1
