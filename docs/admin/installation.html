@@ -191,24 +191,24 @@ docker compose up -d</code></pre>
             <li><code>:sha-&lt;commit&gt;</code> – deterministisches Image pro Commit</li>
           </ul>
 
-          <p>Das <code>scripts/update.sh</code> liegt nach der Installation <strong>lokal</strong> im <code>adminhelper/</code>-Verzeichnis. Es sichert zuerst (inkl. CA-Kronjuwel), zieht dann die Images und startet neu. Es kennt <strong>zwei Modi</strong>:</p>
+          <p>Der Installer pinnt die Images in der <code>.env</code> auf die installierte Version (z.&nbsp;B. <code>:0.30.3</code>) — ein Install ist damit <strong>reproduzierbar</strong> und springt nie unbemerkt auf eine neue Version. Das <code>scripts/update.sh</code> liegt nach der Installation <strong>lokal</strong> im <code>adminhelper/</code>-Verzeichnis, sichert zuerst (inkl. CA-Kronjuwel) und kennt <strong>zwei Modi</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># 1) Schnell – nur Images frischen (Patch-Release ohne Struktur-Änderung):
+<pre><code># 1) Re-deploy – die GEPINNTE Version neu ziehen (kein Versionssprung):
 ./scripts/update.sh
 
-# 2) Versions-Upgrade – zusätzlich die Laufzeit-Dateien (Compose + Skripte)
-#    für die Zielversion neu laden, dann Images ziehen:
-./scripts/update.sh --ref v0.30.2
+# 2) Upgrade – auf eine neue Version: pinnt :X.Y.Z, frischt Compose + Skripte,
+#    zieht die Images:
+./scripts/update.sh --ref v0.30.3
 
 ./scripts/update.sh --skip-backup   # ohne Backup (nicht empfohlen)</code></pre>
-          <p>Hintergrund: Eine „Version" besteht aus <strong>zwei</strong> Teilen — den <strong>Images</strong> (dem Code) und der <strong>Compose-Datei</strong> (der Struktur: Services, Ports, Env-Variablen). <code>update.sh</code> zieht über <code>docker compose pull</code> <em>immer</em> die Images; die Compose und die Ops-Skripte frischt es aber <strong>nur mit <code>--ref</code></strong>. Solange ein Release nur Code ändert, reicht der nackte Lauf. Sobald sich die <em>Struktur</em> ändert (neuer Service, neue Env-Variable, anderer Port — wie 0.30.0 mit der selbstgenügsamen Compose), brauchst du <code>--ref</code>, damit die Compose <em>vor</em> dem Pull mitwandert.</p>
+          <p>Hintergrund: Eine „Version" besteht aus <strong>zwei</strong> Teilen — den <strong>Images</strong> (dem Code) und der <strong>Compose-Datei</strong> (der Struktur: Services, Ports, Env-Variablen). Ein nacktes <code>update.sh</code> zieht die in der <code>.env</code> gepinnte Image-Version neu (Re-Deploy/Heilung) — es <em>springt nicht</em> auf eine neue Version. Ein Upgrade ist darum immer ein bewusstes <code>--ref vNEU</code>: das re-pinnt die <code>*_IMAGE</code>-Tags auf die Zielversion <em>und</em> frischt zugleich die Compose + Ops-Skripte, falls sich die Struktur geändert hat (wie 0.30.0 mit der selbstgenügsamen Compose).</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
               <div class="callout-title"><code>update.sh</code> aktualisiert sich nicht selbst</div>
               <p>Das Script steht bewusst nicht in seiner eigenen Refresh-Liste (kein Selbst-Überschreiben während des Laufs). Die <em>anderen</em> Skripte (install/backup/restore/init-secrets) zieht <code>--ref</code> mit; ändert sich <code>update.sh</code> selbst, hol es einmalig über den Install-Einzeiler neu.</p>
-              <p>Außerdem: <code>--ref</code> ändert die Compose, aber nicht den gezogenen Tag — Default bleibt <code>:latest</code>. Für ein reproduzierbar <strong>gepinntes</strong> Deployment zusätzlich die <code>*_IMAGE</code>-Tags in <code>.env</code> (<code>SERVER_IMAGE</code>, <code>GATEWAY_IMAGE</code>, <code>CA_ISSUER_IMAGE</code>, <code>MONITORING_IMAGE</code>) auf die feste Version setzen, z.&nbsp;B. <code>SERVER_IMAGE=ghcr.io/ks98/adminhelper/server:0.30.2</code>.</p>
+              <p>Die Image-Version pinnt <code>--ref</code> automatisch (die <code>*_IMAGE</code>-Tags in <code>.env</code>, abgeleitet aus dem Ref: <code>vX.Y.Z</code> → <code>:X.Y.Z</code>, <code>main</code> → <code>:main</code>). <code>:latest</code> ist nur der Fallback der Compose für ein nacktes <code>docker compose up</code> ohne <code>.env</code> und taucht in einem echten Install nicht auf.</p>
             </div>
           </div>
 

@@ -137,24 +137,24 @@ docker compose up -d</code></pre>
           </div>
 
           <h2 id="update">Updates</h2>
-          <p><code>scripts/update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install. It backs up first (incl. the CA crown jewel), then pulls the images and recreates the stack. It has <strong>two modes</strong>:</p>
+          <p>The installer pins the images in <code>.env</code> to the installed version (e.g. <code>:0.30.3</code>) — so an install is <strong>reproducible</strong> and never silently jumps versions. <code>scripts/update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install, backs up first (incl. the CA crown jewel) and has <strong>two modes</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># 1) Quick – refresh images only (patch release, no structural change):
+<pre><code># 1) Re-deploy – re-pull the PINNED version (no version jump):
 ./scripts/update.sh
 
-# 2) Version upgrade – also re-download the runtime files (compose + scripts)
-#    for the target version, then pull the images:
-./scripts/update.sh --ref v0.30.2
+# 2) Upgrade – move to a new version: pins :X.Y.Z, refreshes compose + scripts,
+#    pulls the images:
+./scripts/update.sh --ref v0.30.3
 
 ./scripts/update.sh --skip-backup   # without a backup (not recommended)</code></pre>
-          <p>Background: a "version" is <strong>two</strong> parts — the <strong>images</strong> (the code) and the <strong>compose file</strong> (the structure: services, ports, env vars). <code>update.sh</code> always pulls the images via <code>docker compose pull</code>, but it only refreshes the compose and ops scripts <strong>with <code>--ref</code></strong>. As long as a release only changes code, the bare run is enough. Once the <em>structure</em> changes (a new service, a new env var, a different port — as 0.30.0 did with the self-contained compose), you need <code>--ref</code> so the compose moves <em>before</em> the pull.</p>
+          <p>Background: a "version" is <strong>two</strong> parts — the <strong>images</strong> (the code) and the <strong>compose file</strong> (the structure: services, ports, env vars). A bare <code>update.sh</code> re-pulls the image version pinned in <code>.env</code> (re-deploy/heal) — it does <em>not</em> jump to a new version. An upgrade is therefore always a deliberate <code>--ref vNEW</code>: it re-pins the <code>*_IMAGE</code> tags to the target version <em>and</em> refreshes the compose + ops scripts in case the structure changed (as 0.30.0 did with the self-contained compose).</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
               <div class="callout-title"><code>update.sh</code> does not update itself</div>
               <p>The script is intentionally not in its own refresh list (no self-overwrite while running). <code>--ref</code> pulls the <em>other</em> scripts (install/backup/restore/init-secrets); if <code>update.sh</code> itself changes, re-fetch it once via the install one-liner.</p>
-              <p>Also: <code>--ref</code> refreshes the compose but not the pulled tag — the default stays <code>:latest</code>. For a reproducibly <strong>pinned</strong> deployment, also set the <code>*_IMAGE</code> tags in <code>.env</code> (<code>SERVER_IMAGE</code>, <code>GATEWAY_IMAGE</code>, <code>CA_ISSUER_IMAGE</code>, <code>MONITORING_IMAGE</code>) to the fixed version, e.g. <code>SERVER_IMAGE=ghcr.io/ks98/adminhelper/server:0.30.2</code>.</p>
+              <p><code>--ref</code> pins the image version automatically (the <code>*_IMAGE</code> tags in <code>.env</code>, derived from the ref: <code>vX.Y.Z</code> → <code>:X.Y.Z</code>, <code>main</code> → <code>:main</code>). <code>:latest</code> is only the compose fallback for a bare <code>docker compose up</code> without an <code>.env</code> and does not appear in a real install.</p>
             </div>
           </div>
 

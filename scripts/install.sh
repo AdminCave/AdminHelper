@@ -16,7 +16,8 @@
 #
 # Options:
 #   --domain D --admin-user U --admin-password P --enroll-ttl-minutes N
-#   --ref REF   (GitHub ref to download the runtime files from; default main)
+#   --ref REF   (GitHub ref for the runtime files AND the pinned image tag:
+#                vX.Y.Z -> :X.Y.Z, main -> :main; default main)
 #   --dir DIR   (target dir in bootstrap mode; default ./adminhelper)
 #   --permissive (set MTLS_ENFORCE=false — opt out of enforced default)
 #   --yes
@@ -99,6 +100,18 @@ fi
 # DOMAIN must be set before first boot (ca-issuer mints the gateway leaf SAN).
 upsert_env DOMAIN "$DOMAIN"
 [ "$PERMISSIVE" = 1 ] && upsert_env MTLS_ENFORCE "false"
+
+# Pin the images to the ref we installed from, so an install is reproducible and
+# never silently jumps versions on a later `docker compose pull`: vX.Y.Z -> :X.Y.Z
+# (fixed), main -> :main (the dev floating tag). The compose default (:latest) is
+# only a fallback for a bare `docker compose up` without this .env. Upgrade later
+# via `./scripts/update.sh --ref vX.Y.Z`.
+IMAGE_TAG="${REF#v}"
+upsert_env SERVER_IMAGE     "ghcr.io/ks98/adminhelper/server:${IMAGE_TAG}"
+upsert_env GATEWAY_IMAGE    "ghcr.io/ks98/adminhelper/gateway:${IMAGE_TAG}"
+upsert_env CA_ISSUER_IMAGE  "ghcr.io/ks98/adminhelper/ca-issuer:${IMAGE_TAG}"
+upsert_env MONITORING_IMAGE "ghcr.io/ks98/adminhelper/monitoring:${IMAGE_TAG}"
+
 chmod 600 .env 2>/dev/null || true
 
 if [ "$ASSUME_YES" != 1 ]; then
@@ -147,6 +160,7 @@ cat <<EOF
                   (einmalig, ${ENROLL_TTL} Min gueltig; danach Login + optional
                    Browser-.p12 ueber den Export-Knopf im Desktop)
 
-  Updates:        ./scripts/update.sh
+  Version:        ${IMAGE_TAG}  (Images in .env gepinnt)
+  Updates:        ./scripts/update.sh        (Upgrade: --ref vX.Y.Z)
 ============================================================================
 EOF

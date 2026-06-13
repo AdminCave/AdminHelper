@@ -11,8 +11,9 @@
 #   ./scripts/update.sh [--ref vX.Y.Z] [--skip-backup] [--with-victoria]
 #
 # --ref re-downloads docker-compose.yml + the ops scripts for that ref (handles
-# compose changes between versions); without it, only the images are pulled.
-# Image version pinning: set the *_IMAGE tags in .env to the target release.
+# compose changes between versions) AND re-pins the *_IMAGE tags in .env to that
+# version (vX.Y.Z -> :X.Y.Z). Without --ref only the already-pinned images are
+# re-pulled — a bare update never jumps versions.
 
 set -euo pipefail
 
@@ -38,6 +39,16 @@ done
 [ -f docker-compose.yml ] || { echo "FEHLER: aus dem Install-Verzeichnis ausfuehren." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt." >&2; exit 1; }
 
+upsert_env() {
+    local key="$1" value="$2"
+    if grep -qE "^#?[[:space:]]*${key}=" .env; then
+        local tmp; tmp=$(mktemp)
+        sed -E "s|^#?[[:space:]]*${key}=.*|${key}=${value}|" .env > "$tmp"; mv "$tmp" .env
+    else
+        printf '%s=%s\n' "$key" "$value" >> .env
+    fi
+}
+
 if [ "$SKIP_BACKUP" != 1 ]; then
     echo "[update] Backup-first..."
     ./scripts/backup.sh "${BACKUP_ARGS[@]}"
@@ -54,6 +65,16 @@ if [ -n "$REF" ]; then
             || { echo "FEHLER: ${f} (ref ${REF}) nicht ladbar." >&2; exit 1; }
     done
     chmod +x scripts/*.sh
+    # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z, main -> :main)
+    # so the pull below moves to exactly that version instead of a floating :latest.
+    if [ -f .env ]; then
+        IMAGE_TAG="${REF#v}"
+        upsert_env SERVER_IMAGE     "ghcr.io/ks98/adminhelper/server:${IMAGE_TAG}"
+        upsert_env GATEWAY_IMAGE    "ghcr.io/ks98/adminhelper/gateway:${IMAGE_TAG}"
+        upsert_env CA_ISSUER_IMAGE  "ghcr.io/ks98/adminhelper/ca-issuer:${IMAGE_TAG}"
+        upsert_env MONITORING_IMAGE "ghcr.io/ks98/adminhelper/monitoring:${IMAGE_TAG}"
+        echo "[update] Images gepinnt auf :${IMAGE_TAG}"
+    fi
 fi
 
 echo "[update] Ziehe die Images..."
