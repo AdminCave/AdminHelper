@@ -131,8 +131,8 @@ brings up the stack, creates the first admin plus a one-time enrollment token,
 and leaves mTLS **enforced by default**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.0/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.30.0
+curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.1/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.1
 ```
 
 It prints the admin login and an **enrollment token**. Redeem the token in the
@@ -268,7 +268,7 @@ The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring 
 
 ```bash
 # Install the DEB:
-sudo apt install ./adminhelper-agent_0.30.0_amd64.deb
+sudo apt install ./adminhelper-agent_0.30.1_amd64.deb
 
 # Full provisioning in a single call (server API key + optional monitor + optional FRP):
 sudo adminhelper-agent provision \
