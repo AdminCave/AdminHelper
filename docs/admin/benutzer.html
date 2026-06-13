@@ -43,18 +43,20 @@
           <table>
             <thead><tr><th>Rolle</th><th>Darf</th></tr></thead>
             <tbody>
-              <tr><td><span class="badge badge-info">admin</span></td><td>Alles: Benutzer verwalten, API-Keys erstellen, Server registrieren, Hooks definieren, globale Einstellungen.</td></tr>
+              <tr><td><span class="badge badge-info">admin</span></td><td>Alles: im Web-Panel Benutzer verwalten, API-Keys erstellen, Hooks definieren, FRP-Server-Konfiguration und globale Einstellungen; im Desktop-Client (Server-Modus) Server registrieren, Verbindungen, Tunnel, Monitoring und Ansible pflegen.</td></tr>
               <tr><td><span class="badge">user</span></td><td>Eigene Verbindungen pflegen, Server und Monitoring lesen. Keine Admin-Aktionen.</td></tr>
             </tbody>
           </table>
 
           <h2>Benutzer anlegen</h2>
+          <p>Die Benutzerverwaltung ist Teil des <strong>Web-Admin-Panels</strong> – <em>Benutzer</em> ist dort zugleich die Standard-Seite nach dem Login.</p>
           <ol>
             <li>Im Web-Panel <em>Benutzer → Neu</em> öffnen</li>
             <li>Username und Passwort vergeben; Passwort wird mit bcrypt gehasht</li>
             <li>Rolle wählen – Admins sehen und bearbeiten alles</li>
           </ol>
           <p>Admins können jederzeit fremde Passwörter zurücksetzen. Normale Benutzer können ihr eigenes Passwort in den Einstellungen ändern.</p>
+          <p>Die <strong>Zuweisung von Servern zu einem Benutzer</strong> bleibt im Web-Panel: sie wird direkt im Benutzer-Dialog gepflegt (steuert, welche Server der Nutzer sieht). Die Server-Einträge selbst werden im Desktop-Client (Server-Modus, <em>Infrastruktur</em>) angelegt und bearbeitet.</p>
 
           <h2>Login-Flow</h2>
           <p>Der Login-Flow nutzt JWT mit Refresh-Token-Rotation:</p>

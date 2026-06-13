@@ -31,14 +31,14 @@
         <div class="content-inner">
           <span class="eyebrow">Admin-Handbuch</span>
           <h1>Ansible</h1>
-          <p class="lead">Die Ansible-Verwaltung trennt <strong>zentrale Pflege</strong> von <strong>lokaler Ausführung</strong>: Playbooks werden im Web-Panel gespeichert und versioniert, ausgeführt werden sie über den Desktop-Client mit lokal installiertem <code>ansible-playbook</code>. Der Server führt selbst <strong>keine</strong> Playbooks aus.</p>
+          <p class="lead">Die Ansible-Verwaltung trennt <strong>zentrale Pflege</strong> von <strong>lokaler Ausführung</strong>: Playbooks werden serverseitig gespeichert und versioniert; angelegt, bearbeitet, gelöscht <strong>und</strong> ausgeführt werden sie über den Desktop-Client (Server-Modus, <em>Ansible</em>-Seite) mit lokal installiertem <code>ansible-playbook</code>. Der Server führt selbst <strong>keine</strong> Playbooks aus.</p>
 
-          <h2>Playbook-CRUD im Web-Panel</h2>
+          <h2>Playbook-CRUD im Desktop-Client</h2>
           <p>Playbooks werden über <code>/api/ansible/playbooks</code> verwaltet – alle Schreib-Operationen sind <strong>Admin-only</strong>. Jedes Playbook hat Metadaten in der Datenbank (Tabelle <code>ansible_playbooks</code>) und eine YAML-Datei auf Disk unter <code>DATA_DIR/ansible/playbooks/&lt;id&gt;/&lt;filename&gt;</code>.</p>
           <table>
             <thead><tr><th>Feld</th><th>Bedeutung</th></tr></thead>
             <tbody>
-              <tr><td><code>name</code></td><td>Anzeigename im Panel und Desktop-Client</td></tr>
+              <tr><td><code>name</code></td><td>Anzeigename im Desktop-Client</td></tr>
               <tr><td><code>filename</code></td><td>Dateiname der YAML-Datei – muss auf <code>.yml</code> oder <code>.yaml</code> enden, keine Pfad-Separatoren</td></tr>
               <tr><td><code>description</code></td><td>Optionale Beschreibung</td></tr>
               <tr><td><code>tags</code></td><td>Liste von Tags zur Filterung/Suche</td></tr>
@@ -64,7 +64,7 @@ DELETE /api/ansible/playbooks/{id}         # Playbook löschen (Admin)</code></p
             <li><strong>Ziel-Server auswählen</strong> – zwei Modi: <em>Server</em> (Einzelauswahl per Checkbox) oder <em>Tags</em> (Chip pro Tag wählt alle Server mit diesem Tag).</li>
             <li><strong>Ausführen</strong> – Zusammenfassung (Playbook + Anzahl Server), dann Start via <code>ansible-playbook</code> in einem nativen Terminal.</li>
           </ol>
-          <p>Beim Ausführen lädt der Client den YAML-Inhalt frisch vom Server (<code>/{id}/content</code>), schreibt ihn in eine temporäre Datei, generiert das Inventory und startet den Lauf. Server und Playbooks bezieht der Client aus dem Server-Web-Interface – lokal wird nichts gepflegt.</p>
+          <p>Beim Ausführen lädt der Client den YAML-Inhalt frisch vom Server (<code>/{id}/content</code>), schreibt ihn in eine temporäre Datei, generiert das Inventory und startet den Lauf. Server-Inventar und Playbooks bezieht der Client direkt vom AdminHelper-Server – lokal wird nichts gepflegt.</p>
 
           <h2>Inventory-Generierung</h2>
           <p>Der Desktop-Client erzeugt aus den ausgewählten Servern automatisch eine Inventory-Datei im <strong>INI-Format</strong> in einem temporären Verzeichnis. Alle gewählten Hosts landen unter <code>[all]</code>; zusätzlich entsteht pro Server-Tag eine Gruppe (alphabetisch sortiert) mit den zugehörigen Hosts.</p>
@@ -78,12 +78,12 @@ db01.example.com
 
 [web]
 web01.example.com</code></pre>
-          <p>Die Gruppen entstehen direkt aus den <strong>Tags der Server</strong> – dieselben Tags, die im Web-Panel beim Server gesetzt sind und im Tag-Modus die Auswahl steuern. Hostnamen sind die <code>hostname</code>-Felder der Server.</p>
+          <p>Die Gruppen entstehen direkt aus den <strong>Tags der Server</strong> – dieselben Tags, die am Server-Eintrag (Desktop-Client, <em>Infrastruktur</em>) gesetzt sind und im Tag-Modus die Auswahl steuern. Hostnamen sind die <code>hostname</code>-Felder der Server.</p>
 
           <h2>Voraussetzungen</h2>
           <ul>
             <li><code>ansible-playbook</code> muss auf dem <strong>Desktop-Rechner</strong> installiert und im <code>PATH</code> sein. Fehlt es, bricht der Lauf mit einer Fehlermeldung ab.</li>
-            <li>Die Ziel-Server müssen im Server-Web-Interface unter <em>Server</em> angelegt sein – nur dort gepflegte Hosts erscheinen im Desktop-Assistenten.</li>
+            <li>Die Ziel-Server müssen im Desktop-Client unter <em>Infrastruktur</em> angelegt sein – nur dort gepflegte Hosts erscheinen im Ansible-Assistenten.</li>
             <li>Playbook-Pflege (Erstellen/Bearbeiten/Löschen) erfordert eine Admin-Session.</li>
           </ul>
 

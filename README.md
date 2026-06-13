@@ -113,8 +113,10 @@ The optional **AdminHelper Server** enables centralized management and shared ac
 
 ### Features
 
-- **Web interface** in the same design as the desktop client
-- **User roles**: Admin (full CRUD) and User (read-only)
+- **Web admin panel** for instance administration: users, API keys, hooks, FRP server config
+- **Desktop client** as the operational cockpit: server inventory, connections, FRP tunnels,
+  monitoring and Ansible are all managed there in server mode
+- **User roles**: Admin (full access) and User (scoped server access via the desktop client)
 - **API keys** for programmatic access and client sync
 - **JWT authentication** with refresh-token mechanism
 - **FRP tunnel management** with config generation, visitor profiles, and provisioning
@@ -316,14 +318,14 @@ The agent automatically detects available subsystems (Docker, ZFS, Proxmox) and 
 
 ## Ansible
 
-The integrated **Ansible management** enables centralized playbook management via the server and local execution via the desktop client.
+The integrated **Ansible management** enables playbook management and local execution in the desktop client.
 
 ### Features
 
-- **Playbook CRUD** in the server web interface (admin-only)
+- **Playbook CRUD** in the desktop client (server mode, admin)
 - **YAML validation** on creating and editing
 - **Tag-based filtering** and search
-- **Desktop integration** with a 3-step workflow:
+- **Run workflow** in the desktop client with a 3-step flow:
   1. Select a playbook
   2. Select target servers (individually or by tags)
   3. Run locally via `ansible-playbook`
@@ -331,7 +333,7 @@ The integrated **Ansible management** enables centralized playbook management vi
 ### Requirements
 
 - `ansible-playbook` must be installed on the desktop machine
-- Servers must be created in the server web interface under "Servers"
+- Servers must be created in the desktop client under "Infrastructure"
 
 ### API
 
@@ -427,7 +429,7 @@ cargo tauri build
 │        ├─ src/
 │        │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 22 typed invoke() wrappers, 12 stores, …
 │        │  ├─ components/       # ~30 components (AppShell, Login, …)
-│        │  ├─ pages/            # 4 pages (Dashboard, Connections, Ansible, Monitoring)
+│        │  ├─ pages/            # 5 pages (Dashboard, Connections, Infrastructure, Monitoring, Ansible)
 │        │  └─ main.ts
 │        └─ vitest.setup.ts      # ~41 Vitest unit tests
 ├─ docs/                     # documentation (DE + EN, static HTML)

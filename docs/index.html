@@ -205,13 +205,15 @@
           <h2>Was ist AdminHelper?</h2>
           <p>
             AdminHelper
-            verbindet drei Welten: ein <strong>zentrales Web-Panel</strong>
-            (FastAPI + Svelte 5) für die Verwaltung aller Verbindungen
-            und Monitoring-Daten, einen <strong>Desktop-Client</strong>
-            (Tauri 2 + Svelte 5) zum Verbindungsaufbau via RDP, SSH,
-            VNC und HTTP, sowie einen <strong>Go-Agenten</strong>, der
-            auf Linux- und Windows-Servern läuft, Messwerte liefert
-            und FRP-Tunnel verwaltet.
+            verbindet drei Welten: ein <strong>zentrales Web-Admin-Panel</strong>
+            (FastAPI + Svelte 5) für die Instanz-Verwaltung (Benutzer,
+            API-Keys, Hooks, FRP-Server-Konfiguration), einen
+            <strong>Desktop-Client</strong> (Tauri 2 + Svelte 5) zum
+            Verbindungsaufbau via RDP, SSH, VNC und HTTP, der im
+            Server-Modus zugleich das operative Cockpit für Server-Inventar,
+            Verbindungen, Tunnel, Monitoring und Ansible ist, sowie einen
+            <strong>Go-Agenten</strong>, der auf Linux- und Windows-Servern
+            läuft, Messwerte liefert und FRP-Tunnel verwaltet.
           </p>
 
           <div class="card-grid">
@@ -219,15 +221,15 @@
               <div class="card-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>
               </div>
-              <h3>Web-Panel</h3>
-              <p>Svelte 5 + TypeScript strict, Hash-Router, i18n DE/EN, 8 Produktiv-Seiten, uPlot-Charts, Playwright-E2E-Tests.</p>
+              <h3>Web-Admin-Panel</h3>
+              <p>Svelte 5 + TypeScript strict, Hash-Router, i18n DE/EN. Reine Instanz-Verwaltung: Benutzer, API-Keys, Hooks, FRP-Server-Konfiguration. Playwright-E2E-Tests.</p>
             </div>
             <div class="card" data-reveal>
               <div class="card-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
               </div>
               <h3>Desktop-Client</h3>
-              <p>Tauri 2 + Rust, 24 typisierte Commands, Keyring-Secrets, RDP-Race-Guard, FRP-Sidecar, Auto-Update via DEB/RPM.</p>
+              <p>Tauri 2 + Rust, typisierte Commands, Keyring-Secrets, RDP-Race-Guard, FRP-Sidecar, Auto-Update via DEB/RPM. Im Server-Modus das operative Cockpit: Infrastruktur, Verbindungen, Monitoring, Ansible.</p>
             </div>
             <div class="card" data-reveal>
               <div class="card-icon">
@@ -260,6 +262,22 @@
           </div>
 
           <h2>Was ist neu in 0.31.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.31.0 &ndash; Operatives Cockpit zieht in den Desktop (2026-06-13)</div>
+              <p>
+                Die operative Verwaltung ist vom Web in den <strong>Desktop-Client</strong>
+                umgezogen: Server-Inventar, Verbindungen, FRP-Tunnel, Monitoring-Checks und
+                Ansible-Playbooks werden jetzt im server-zentrischen
+                <em>„Infrastruktur"</em>-Hub (nur im Server-Modus) gepflegt. Das
+                <strong>Web-Admin-Panel</strong> bleibt für die reine Instanz-Verwaltung:
+                Benutzer (Standard-Seite nach Login), API-Keys, Hooks und die
+                FRP-<em>Server</em>-Konfiguration. Die User&harr;Server-Zuweisung bleibt
+                im Web (Benutzer-Dialog).
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

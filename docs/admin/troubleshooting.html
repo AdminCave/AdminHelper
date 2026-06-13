@@ -75,7 +75,7 @@ docker compose down -v
           <ol>
             <li><code>systemctl status adminhelper-agent.timer</code> – läuft der Timer?</li>
             <li><code>journalctl -u adminhelper-agent.service --since "1 hour ago"</code></li>
-            <li>API-Key widerrufen? Im Web-Panel → <em>Server → Provision erneuern</em> aufrufen, neuen Token am Host einlösen.</li>
+            <li>API-Key widerrufen? Im Desktop-Client (Server-Modus) → <em>Infrastruktur → Server → Tab Provisionierung</em> einen neuen Token erzeugen und am Host einlösen.</li>
             <li>Zertifikat abgelaufen? <code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code></li>
           </ol>
 

@@ -78,12 +78,12 @@
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg></div>
               <h3>Server</h3>
-              <p>Docker-Container mit FastAPI + PostgreSQL. Liefert Web-Panel, REST-API, Monitoring-Scheduler und FRP-Tunnel-CA. Läuft typischerweise hinter einem Reverse-Proxy mit TLS.</p>
+              <p>Docker-Container mit FastAPI + PostgreSQL. Liefert REST-API, das Web-Admin-Panel (Instanz-Verwaltung), den Monitoring-Scheduler und das FRP-Backend. Läuft typischerweise hinter einem Reverse-Proxy mit TLS.</p>
             </div>
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
               <h3>Desktop-Client</h3>
-              <p>Tauri-App für Linux, Windows und macOS. Holt Verbindungen vom Server und öffnet RDP-, SSH-, VNC- oder HTTP-Sessions inklusive FRP-Tunnel.</p>
+              <p>Tauri-App für Linux, Windows und macOS. Öffnet RDP-, SSH-, VNC- oder HTTP-Sessions inklusive FRP-Tunnel und ist im Server-Modus zugleich das operative Cockpit: Server-Inventar, Verbindungen, Tunnel, Monitoring und Ansible werden hier verwaltet.</p>
             </div>
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg></div>
@@ -95,12 +95,22 @@
           <h2>Typische Admin-Aufgaben</h2>
           <ul>
             <li><a href="./installation.html">Server per Docker-Compose installieren und erstmalig initialisieren</a></li>
-            <li><a href="./benutzer.html">Admin-Benutzer erstellen, API-Keys verteilen</a></li>
+            <li><a href="./benutzer.html">Admin-Benutzer erstellen, API-Keys verteilen, Server-Zuweisung pflegen</a> (Web-Admin-Panel)</li>
             <li><a href="./agent-deployment.html">Agent auf neuen Servern via apt/dnf oder MSI ausrollen</a></li>
-            <li><a href="./monitoring.html">Monitoring-Checks definieren und Alerts prüfen</a></li>
-            <li><a href="./frp-tunnel.html">FRP-Tunnel für einen Server einrichten</a></li>
+            <li><a href="./monitoring.html">Monitoring-Checks definieren und Alerts prüfen</a> (Desktop-Client, Server-Modus)</li>
+            <li><a href="./frp-tunnel.html">FRP-Tunnel für einen Server einrichten</a> (Desktop-Client; frps-Server-Config im Web-Panel)</li>
             <li><a href="./troubleshooting.html">Probleme diagnostizieren und Logs lesen</a></li>
           </ul>
+
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">Web-Admin-Panel vs. Desktop-Client (seit v0.31.0)</div>
+              <p>
+                Die operative Verwaltung ist in den <strong>Desktop-Client</strong> umgezogen: Server-Inventar, Verbindungen, FRP-Tunnel, Monitoring-Checks und Ansible-Playbooks werden im server-zentrischen <em>„Infrastruktur"</em>-Hub (nur im Server-Modus) gepflegt. Das <strong>Web-Admin-Panel</strong> ist jetzt reine Instanz-Verwaltung: Benutzer (Standard-Seite nach Login), API-Keys, Hooks, FRP-<em>Server</em>-Konfiguration und Login. Die User&harr;Server-Zuweisung bleibt im Web (im Benutzer-Dialog).
+              </p>
+            </div>
+          </div>
 
           <h2>Architektur in einem Absatz</h2>
           <div class="callout callout-note" data-reveal>

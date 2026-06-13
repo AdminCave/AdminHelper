@@ -15,6 +15,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `adminhelper-browser.p12`), statt sie in einem versteckten App-Daten-Verzeichnis suchen zu
   müssen. Abbruch des Dialogs bricht ohne Enrollment ab. (Das `.p12`-Format bleibt unverändert
   — Legacy, aber von allen aktuellen Browsern akzeptiert.)
+- **Desktop-Client wird zum Verwaltungs-Cockpit (Infrastruktur-Hub).** Der Desktop ist nicht mehr
+  nur Verbindungs-Launcher: Im neuen server-zentrischen „Infrastruktur"-Bereich (nur im
+  Server-Modus) verwaltet der Admin sein Server-Inventar und pro Server in Tabs dessen
+  Verbindungen, FRP-Tunnel, Monitoring und Provisionierung.
+  - **Server-Inventar:** Server anlegen/bearbeiten/löschen.
+  - **Provisionierung:** Einmal-Token erzeugen + Agent-`provision`-Befehl pro Server anzeigen.
+  - **Verbindungen:** server-seitiges CRUD pro Server (ssh/rdp/vnc/web/custom). Auch der
+    Verbindungs-Launcher schreibt im Server-Modus jetzt server-seitig statt nur lokal.
+  - **FRP-Tunnel:** Tunnel pro Server anlegen/bearbeiten/löschen (STCP/HTTPS); die
+    FRP-Server-Konfiguration wird als Auswahl referenziert (bleibt Web-Admin-Sache).
+  - **Monitoring vollständig bearbeitbar:** Checks pro Server (alle Check-Typen mit Konfiguration)
+    sowie Alert-Regeln und Templates fleet-weit auf der Monitoring-Seite.
+  - **Ansible:** Playbooks im Desktop anlegen/bearbeiten/löschen (zusätzlich zum bestehenden
+    Ausführen).
+
+### Changed
+
+- **Web-Admin-Panel ist jetzt reine Instanz-Verwaltung.** Es behält Benutzer-, API-Key-,
+  Hook-Verwaltung und die FRP-**Server-Konfiguration**; die operative Fleet-Arbeit ist in den
+  Desktop-Client umgezogen. Die Standard-Seite nach dem Login ist jetzt „Benutzer". Die
+  User↔Server-Zuweisung bleibt im Web (im Benutzer-Dialog, gespeist aus einer reinen
+  Lese-Server-Liste).
+
+### Removed
+
+- **Operative Funktionen aus dem Web-Frontend entfernt** (in den Desktop-Client umgezogen):
+  Server-Inventar, Verbindungs-Verwaltung, FRP-**Tunnel**-Verwaltung, Monitoring-Bearbeitung
+  (Checks/Alerts/Templates) und Ansible-Playbook-Verwaltung. **Breaking** für reine
+  Web-Nutzer: diese Aufgaben erfolgen nun im Desktop-Client.
 
 ## [0.30.4] - 2026-06-13
 

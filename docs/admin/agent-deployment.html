@@ -57,7 +57,7 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
           <h2>Erst-Provisionierung</h2>
           <p>Nach Installation läuft der Agent noch nicht produktiv – er hat weder einen Server-URL noch ein FRP-Client-Zertifikat. Provisionierung in zwei Schritten:</p>
           <ol>
-            <li>Im Web-Panel → <em>Server → Neuen Server registrieren</em> klicken. Das System legt einen Server-Eintrag an (mit einer <strong>Server-ID</strong>) und generiert einen einmaligen <strong>Provision-Token</strong> (24h gültig). Beide brauchst du im nächsten Schritt.</li>
+            <li>Im Desktop-Client (Server-Modus) → <em>Infrastruktur → Server hinzufügen</em>, dann beim Server-Eintrag den Tab <em>Provisionierung</em> öffnen. Das System legt einen Server-Eintrag an (mit einer <strong>Server-ID</strong>) und generiert einen einmaligen <strong>Provision-Token</strong> (24h gültig). Beide brauchst du im nächsten Schritt.</li>
             <li>Auf dem Ziel-Server:
               <div class="code-header"><span>bash</span></div>
 <pre><code>sudo adminhelper-agent provision \

@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Desktop Client</h1>
-          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>apps/desktop/src-tauri/</code>) exposes 23 typed commands; the frontend (<code>apps/desktop/ui/</code>) consumes them through a 1:1 bridge.</p>
+          <p class="lead">The Desktop Client is a Tauri 2 wrapper around a Svelte 5 SPA. The Rust backend (<code>apps/desktop/src-tauri/</code>) exposes typed commands; the frontend (<code>apps/desktop/ui/</code>) consumes them through a 1:1 bridge. Since v0.31.0, in <strong>server mode</strong> the client is also the operational cockpit: the <em>Infrastructure</em> hub manages the server inventory and, per server, connections, FRP tunnels, monitoring checks, and provisioning; plus the fleet-wide <em>Monitoring</em> and <em>Ansible</em> pages. Operational writes go through the <code>api_proxy</code> to the AdminHelper server's REST API.</p>
 
           <h2>Architecture</h2>
           <div class="code-header"><span>tree</span></div>
@@ -52,19 +52,33 @@
 apps/desktop/ui/
 &#9500;&#9472;&#9472; src/
 &#9474;   &#9500;&#9472;&#9472; lib/
-&#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/           index.ts + types.ts with 22 invoke() wrappers
-&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/           12 stores (session, connections, tunnel, &hellip;)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; models/           connection / settings / ansible / monitoring (typed)
-&#9474;   &#9474;   &#9500;&#9472;&#9472; api/              ansible.ts, monitoring.ts, types.ts (everything else via the bridge)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; bridge/           index.ts + types.ts with invoke() wrappers
+&#9474;   &#9474;   &#9500;&#9472;&#9472; stores/           stores (session, settings, connections, tunnel, infra, monitoring, ansible, &hellip;)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; models/           connection / serverConnection / infra / frpTunnel / monitorCheck / monitorTemplate / playbook / settings (typed)
+&#9474;   &#9474;   &#9500;&#9472;&#9472; api/              servers.ts, connections.ts, frp.ts, monitoring.ts, ansible.ts, provisioning.ts, types.ts (auth/connect via the bridge)
 &#9474;   &#9474;   &#9500;&#9472;&#9472; i18n/             DE/EN dictionaries
 &#9474;   &#9474;   &#9492;&#9472;&#9472; utils/
-&#9474;   &#9500;&#9472;&#9472; components/           AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip; (~30)
-&#9474;   &#9500;&#9472;&#9472; pages/                4 pages: Dashboard, Connections, Ansible, Monitoring
+&#9474;   &#9500;&#9472;&#9472; components/           AppShell, Login, PasswordPrompt, StatusBar, ConnectionEditor, &hellip;
+&#9474;   &#9500;&#9472;&#9472; pages/                5 pages: Dashboard, Infrastructure, Connections, Monitoring, Ansible
 &#9474;   &#9492;&#9472;&#9472; main.ts
 &#9492;&#9472;&#9472; vitest.setup.ts           ~41 Vitest unit tests in stores/ + models/</code></pre>
 
+          <h2>Pages &amp; Infrastructure hub (server mode)</h2>
+          <p>In server mode the client is the operational cockpit. Five pages:</p>
+          <table>
+            <thead><tr><th>Page</th><th>Content</th></tr></thead>
+            <tbody>
+              <tr><td><code>Dashboard</code></td><td>Overview/status after login.</td></tr>
+              <tr><td><code>Infrastructure</code></td><td>Server inventory (create/edit/delete) and, per server, tabs: <em>Overview</em>, <em>Connections</em> (ssh/rdp/vnc/web/custom, server-side CRUD), <em>Tunnel</em> (FRP tunnels per server; the FRP server config is picked but stays a web-admin concern), <em>Monitoring</em> (this server's checks), <em>Provisioning</em> (one-time token + agent command).</td></tr>
+              <tr><td><code>Connections</code></td><td>Quick launcher for starting sessions; in server mode also server-side editing.</td></tr>
+              <tr><td><code>Monitoring</code></td><td>Fleet-wide: checks overview, alert rules (CRUD), templates (CRUD), alert log.</td></tr>
+              <tr><td><code>Ansible</code></td><td>Create/edit/delete AND run playbooks (3-step wizard).</td></tr>
+            </tbody>
+          </table>
+          <p>These operational pages exist only in server mode; in standalone/local mode the client stays a pure connection launcher. Writes go through <code>api_proxy</code> against the server's REST API (admin session required).</p>
+
           <h2>Tauri Commands</h2>
-          <p>The 24 commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
+          <p>The commands are registered in <code>src/main.rs</code> via <code>invoke_handler</code> and cover auth, connection persistence, connect flow, FRP tunnel, keyring, API proxy and Ansible. Each command is typed &ndash; the bridge in <code>apps/desktop/ui/src/lib/bridge/</code> mirrors them 1:1.</p>
           <table>
             <thead><tr><th>Area</th><th>Commands</th></tr></thead>
             <tbody>

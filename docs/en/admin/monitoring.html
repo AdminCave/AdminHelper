@@ -31,10 +31,10 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Monitoring</h1>
-          <p class="lead">Define checks, set thresholds, wire alerts into hooks. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage with 90 days retention.</p>
+          <p class="lead">Define checks, set thresholds, wire alerts into hooks. Since v0.31.0 checks, alert rules, and templates are maintained in the <strong>desktop client</strong> (server mode) – on the fleet-wide <em>Monitoring</em> page and per server in the <em>Monitoring</em> tab under <em>Infrastructure</em>. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage with 90 days retention.</p>
 
           <h2>Check Types</h2>
-          <p>The type identifier (<code>check_type</code>) is exactly the value the web panel shows in its dropdown. Server-side probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run inside the monitoring container; all <code>agent_*</code> and plugin checks evaluate data pushed by the agent.</p>
+          <p>The type identifier (<code>check_type</code>) is exactly the value the desktop client shows in its dropdown. Server-side probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run inside the monitoring container; all <code>agent_*</code> and plugin checks evaluate data pushed by the agent.</p>
           <table>
             <thead><tr><th>Kind</th><th>Runs where</th><th>Typical use</th></tr></thead>
             <tbody>
@@ -88,13 +88,13 @@ interval_sec: 60</code></pre>
             <div><div class="callout-title">Agent-based checks need an agent</div><p>The <code>agent_*</code> and plugin checks (<code>agent_resources</code>, <code>service_process</code>, <code>smart_health</code>, <code>docker_health</code>, <code>zfs_health</code>, <code>proxmox_backup</code>) require the Go agent on the target. Server-based probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run from the monitoring container and don't need an agent.</p></div>
           </div>
 
-          <h2>Charts</h2>
-          <p>Charts on the Server details page query VictoriaMetrics via the AdminHelper proxy – the allowlist permits only <code>/api/v1/query</code> and <code>/api/v1/query_range</code>, so raw-host SSRF is impossible. The monitoring page of the web panel auto-refreshes every 30&nbsp;s; the refresh pauses while the browser tab is hidden (and reloads immediately on return). The time of the last update is shown in the page header.</p>
+          <h2>Charts &amp; overview (desktop client)</h2>
+          <p>The <em>Monitoring</em> page of the desktop client combines uPlot line charts with a checks overview, the alert rules, and the alert log. Charts query VictoriaMetrics via the AdminHelper proxy – the allowlist permits only <code>/api/v1/query</code> and <code>/api/v1/query_range</code>, so raw-host SSRF is impossible. The view refreshes automatically.</p>
 
           <h2>Templates</h2>
           <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
           <ol>
-            <li>Web panel → <em>Monitoring → Templates</em> → create a template, add check and alert definitions</li>
+            <li>Desktop client → <em>Monitoring → Templates</em> → create a template, add check and alert definitions</li>
             <li>Assign the template to a server – AdminHelper creates all contained checks and alert rules</li>
             <li>When the template is edited later, a <strong>live sync</strong> runs: every assigned server is updated automatically (checks created, updated or deleted). Each definition carries a stable <code>def_id</code> the sync uses to match.</li>
           </ol>

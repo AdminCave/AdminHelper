@@ -31,14 +31,14 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Ansible</h1>
-          <p class="lead">Ansible management separates <strong>central maintenance</strong> from <strong>local execution</strong>: playbooks are stored and versioned in the web panel, but they run via the desktop client using a locally installed <code>ansible-playbook</code>. The server itself runs <strong>no</strong> playbooks.</p>
+          <p class="lead">Ansible management separates <strong>central maintenance</strong> from <strong>local execution</strong>: playbooks are stored and versioned on the server; they are created, edited, deleted <strong>and</strong> run via the desktop client (server mode, <em>Ansible</em> page) using a locally installed <code>ansible-playbook</code>. The server itself runs <strong>no</strong> playbooks.</p>
 
-          <h2>Playbook CRUD in the Web Panel</h2>
+          <h2>Playbook CRUD in the desktop client</h2>
           <p>Playbooks are managed via <code>/api/ansible/playbooks</code> — all write operations are <strong>admin-only</strong>. Each playbook has metadata in the database (table <code>ansible_playbooks</code>) and a YAML file on disk at <code>DATA_DIR/ansible/playbooks/&lt;id&gt;/&lt;filename&gt;</code>.</p>
           <table>
             <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
             <tbody>
-              <tr><td><code>name</code></td><td>Display name in the panel and desktop client</td></tr>
+              <tr><td><code>name</code></td><td>Display name in the desktop client</td></tr>
               <tr><td><code>filename</code></td><td>Name of the YAML file — must end in <code>.yml</code> or <code>.yaml</code>, no path separators</td></tr>
               <tr><td><code>description</code></td><td>Optional description</td></tr>
               <tr><td><code>tags</code></td><td>List of tags for filtering/search</td></tr>
@@ -64,7 +64,7 @@ DELETE /api/ansible/playbooks/{id}         # Delete playbook (admin)</code></pre
             <li><strong>Select target servers</strong> — two modes: <em>Servers</em> (individual checkbox selection) or <em>Tags</em> (one chip per tag selects all servers carrying that tag).</li>
             <li><strong>Run</strong> — summary (playbook + server count), then launch via <code>ansible-playbook</code> in a native terminal.</li>
           </ol>
-          <p>On run, the client fetches the YAML content fresh from the server (<code>/{id}/content</code>), writes it to a temporary file, generates the inventory and starts the run. Servers and playbooks are sourced from the server web interface — nothing is maintained locally.</p>
+          <p>On run, the client fetches the YAML content fresh from the server (<code>/{id}/content</code>), writes it to a temporary file, generates the inventory and starts the run. The server inventory and playbooks are sourced directly from the AdminHelper server — nothing is maintained locally.</p>
 
           <h2>Inventory Generation</h2>
           <p>The desktop client automatically builds an <strong>INI-format</strong> inventory file from the selected servers in a temporary directory. All selected hosts go under <code>[all]</code>; in addition, one group per server tag is created (sorted alphabetically) listing the matching hosts.</p>
@@ -78,12 +78,12 @@ db01.example.com
 
 [web]
 web01.example.com</code></pre>
-          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server in the web panel that drive selection in tag mode. Hostnames are the servers' <code>hostname</code> fields.</p>
+          <p>Groups are derived directly from the <strong>servers' tags</strong> — the same tags set on the server entry (desktop client, <em>Infrastructure</em>) that drive selection in tag mode. Hostnames are the servers' <code>hostname</code> fields.</p>
 
           <h2>Requirements</h2>
           <ul>
             <li><code>ansible-playbook</code> must be installed on the <strong>desktop machine</strong> and on the <code>PATH</code>. If missing, the run aborts with an error message.</li>
-            <li>Target servers must be created in the server web interface under <em>Servers</em> — only hosts maintained there appear in the desktop wizard.</li>
+            <li>Target servers must be created in the desktop client under <em>Infrastructure</em> — only hosts maintained there appear in the Ansible wizard.</li>
             <li>Playbook maintenance (create/edit/delete) requires an admin session.</li>
           </ul>
 

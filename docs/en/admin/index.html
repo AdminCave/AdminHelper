@@ -37,7 +37,7 @@
           <div class="card-grid">
             <div class="card"><h3>Server</h3><p>FastAPI monolith with PostgreSQL 17 + Redis, 9 routers, Alembic migrations, APScheduler, hook system.</p></div>
             <div class="card"><h3>Web Panel</h3><p>Svelte 5 SPA served by the server, hash router, i18n DE/EN.</p></div>
-            <div class="card"><h3>Desktop Client</h3><p>Tauri 2 + Rust + Svelte 5, OS keyring, RDP/SSH/VNC launcher.</p></div>
+            <div class="card"><h3>Desktop Client</h3><p>Tauri 2 + Rust + Svelte 5, OS keyring, RDP/SSH/VNC launcher. In server mode it is also the operational cockpit: server inventory, connections, tunnels, monitoring, and Ansible are managed here.</p></div>
             <div class="card"><h3>Agents</h3><p>Go-Agent (<code>apps/agent/</code>) for Linux &amp; Windows – monitoring, FRP, provisioning.</p></div>
             <div class="card"><h3>Monitoring</h3><p>Dedicated FastAPI service, VictoriaMetrics storage, agent push + scheduler pull.</p></div>
             <div class="card"><h3>FRP</h3><p>Managed mTLS PKI (10 y CA / 1 y client certs), TCP/HTTP/STCP tunnels.</p></div>
@@ -49,11 +49,21 @@
             <li><a href="./operations.html">Operations &amp; Config</a> – Environment variables, data directories, backups, logging.</li>
             <li><a href="./users.html">Users &amp; Access</a> – Roles, API keys, rate limits, audit log.</li>
             <li><a href="./agent-deployment.html">Agent Deployment</a> – Install Linux/Windows agents, provision flow.</li>
-            <li><a href="./monitoring.html">Monitoring</a> – Check types, alerts, charts.</li>
-            <li><a href="./frp-tunnel.html">FRP Tunnel</a> – PKI, visitor ports, certificate rotation.</li>
+            <li><a href="./monitoring.html">Monitoring</a> – Check types, alerts, charts (managed in the desktop client, server mode).</li>
+            <li><a href="./frp-tunnel.html">FRP Tunnel</a> – PKI, visitor ports, certificate rotation (tunnels in the desktop client; frps server config in the web panel).</li>
             <li> – Deployment for Chromium.</li>
             <li><a href="./troubleshooting.html">Troubleshooting</a> – Structured error diagnosis.</li>
           </ol>
+
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">Web admin panel vs. desktop client (since v0.31.0)</div>
+              <p>
+                Operational management has moved into the <strong>desktop client</strong>: server inventory, connections, FRP tunnels, monitoring checks, and Ansible playbooks are maintained in the server-centric <em>"Infrastructure"</em> hub (server mode only). The <strong>web admin panel</strong> is now pure instance management: users (the default page after login), API keys, hooks, the FRP <em>server</em> configuration, and login. The user&harr;server assignment stays in the web panel (in the user dialog).
+              </p>
+            </div>
+          </div>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

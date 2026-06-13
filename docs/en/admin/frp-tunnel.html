@@ -33,6 +33,11 @@
           <h1>FRP Tunnel</h1>
           <p class="lead">AdminHelper runs a managed FRP server on the unified internal PKI. Agents authenticate with the tunnel cert they enrolled; RDP/SSH/VNC tunnels get dynamically assigned visitor ports.</p>
 
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div><div class="callout-title">Where things are managed (since v0.31.0)</div><p>The <strong>individual tunnels</strong> of a server are created and edited in the <strong>desktop client</strong> (server mode), in the <em>Tunnel</em> tab under <em>Infrastructure</em>; when creating a tunnel you pick the FRP server configuration to use. The <strong>FRP server configuration</strong> (frps settings) itself stays in the <strong>web admin panel</strong> (the <em>FRP</em> page) — the desktop only references it.</p></div>
+          </div>
+
           <h2>PKI</h2>
           <ul>
             <li>The <code>ca-issuer</code>'s <code>tunnel</code> intermediate signs the frps server cert and the agent tunnel certs (ECDSA P-256, a single trust root — as of A7, no longer a frps-run CA).</li>

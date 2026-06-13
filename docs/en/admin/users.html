@@ -37,18 +37,20 @@
           <table>
             <thead><tr><th>Role</th><th>Can</th></tr></thead>
             <tbody>
-              <tr><td><span class="badge badge-info">admin</span></td><td>Everything: manage users, create API keys, register servers, define hooks, global settings.</td></tr>
+              <tr><td><span class="badge badge-info">admin</span></td><td>Everything: in the web panel manage users, create API keys, define hooks, the FRP server configuration and global settings; in the desktop client (server mode) register servers and maintain connections, tunnels, monitoring, and Ansible.</td></tr>
               <tr><td><span class="badge">user</span></td><td>Manage own connections, read servers and monitoring. No admin actions.</td></tr>
             </tbody>
           </table>
 
           <h2>Creating a user</h2>
+          <p>User management is part of the <strong>web admin panel</strong> – <em>Users</em> is also the default page after login.</p>
           <ol>
             <li>Open <em>Users → New</em> in the web panel</li>
             <li>Assign username and password; the password is hashed with bcrypt</li>
             <li>Choose the role – admins see and edit everything</li>
           </ol>
           <p>Admins can reset other users' passwords at any time. Regular users can change their own password in the settings.</p>
+          <p>The <strong>assignment of servers to a user</strong> stays in the web panel: it is maintained directly in the user dialog (it controls which servers the user sees). The server entries themselves are created and edited in the desktop client (server mode, <em>Infrastructure</em>).</p>
 
           <h2>Login flow</h2>
           <p>The login flow uses JWT (HS256) with refresh-token rotation:</p>
