@@ -142,7 +142,11 @@ desktop client under *"enroll with token"* (server URL + token) — the client
 generates its mTLS cert **on-device** — then log in normally; export the browser
 `.p12` afterwards from the desktop. Flags: `--admin-password … --yes`
 (non-interactive), `--permissive` (opt out of enforced mTLS). Updates:
-`./scripts/update.sh` inside the created `adminhelper/` directory.
+`./scripts/update.sh` inside the created `adminhelper/` directory. To remove a
+server install completely (containers, **all** volumes incl. the root CA, the
+network, `./data`/`./certs` and the `.env` secrets), run
+`./scripts/uninstall.sh` there — it keeps `./backups/` and the images unless you
+pass `--purge-backups` / `--rmi`.
 
 <details>
 <summary><b>Manual / development setup</b></summary>

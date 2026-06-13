@@ -5,6 +5,21 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- **Deinstallations-Skript `scripts/uninstall.sh`.** Entfernt eine Server-Installation
+  restlos: alle Container des Compose-Projekts, das Netzwerk und **alle** Named Volumes
+  (inkl. `ca-pki` mit der Root-CA, `postgres-data`, `victoria-data`), dazu die
+  Host-Bind-Mounts `./data`/`./certs` und die Secrets-Datei `.env`. Da `./data`/`./certs`
+  dem Container-User (`uid 10001`) gehören, löscht das Skript sie als root in einem
+  Wegwerf-Container — ohne `sudo` vorauszusetzen. `./backups/` und die Docker-Images bleiben
+  per Default erhalten (`--purge-backups` / `--rmi` entfernen auch sie); vor der ersten
+  destruktiven Aktion wird zurückgefragt (`--yes` für nicht-interaktive Läufe). Das Skript
+  wird von `install.sh`/`update.sh` mit ausgeliefert, liegt also nach der Installation lokal
+  im Install-Verzeichnis.
+
 ## [0.32.1] - 2026-06-13
 
 ### Fixed

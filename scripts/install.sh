@@ -27,7 +27,7 @@ set -euo pipefail
 
 REF="main"
 RAW_BASE="https://raw.githubusercontent.com/ks98/AdminHelper"
-RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/update.sh scripts/backup.sh scripts/restore.sh"
+RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh"
 DOMAIN=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD=""

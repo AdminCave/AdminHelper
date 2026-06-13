@@ -21,7 +21,7 @@ REF=""
 RAW_BASE="https://raw.githubusercontent.com/ks98/AdminHelper"
 # Note: update.sh itself is intentionally NOT in this list (no self-overwrite
 # while running). Re-fetch it via the install one-liner if it ever changes.
-REFRESH_FILES="docker-compose.yml scripts/init-secrets.sh scripts/install.sh scripts/backup.sh scripts/restore.sh"
+REFRESH_FILES="docker-compose.yml scripts/init-secrets.sh scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh"
 SKIP_BACKUP=0
 BACKUP_ARGS=()
 

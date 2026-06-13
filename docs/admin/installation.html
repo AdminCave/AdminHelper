@@ -75,6 +75,7 @@
               <li><a href="#gateway">TLS-Gateway (eingebaut)</a></li>
               <li><a href="#erstanmeldung">Erstanmeldung</a></li>
               <li><a href="#update">Updates</a></li>
+              <li><a href="#deinstallation">Deinstallation</a></li>
             </ul>
           </div>
 
@@ -208,7 +209,7 @@ docker compose up -d</code></pre>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
               <div class="callout-title"><code>update.sh</code> aktualisiert sich nicht selbst</div>
-              <p>Das Script steht bewusst nicht in seiner eigenen Refresh-Liste (kein Selbst-Überschreiben während des Laufs). Die <em>anderen</em> Skripte (install/backup/restore/init-secrets) zieht <code>--ref</code> mit; ändert sich <code>update.sh</code> selbst, hol es einmalig über den Install-Einzeiler neu.</p>
+              <p>Das Script steht bewusst nicht in seiner eigenen Refresh-Liste (kein Selbst-Überschreiben während des Laufs). Die <em>anderen</em> Skripte (install/backup/restore/init-secrets/uninstall) zieht <code>--ref</code> mit; ändert sich <code>update.sh</code> selbst, hol es einmalig über den Install-Einzeiler neu.</p>
               <p>Die Image-Version pinnt <code>--ref</code> automatisch (die <code>*_IMAGE</code>-Tags in <code>.env</code>, abgeleitet aus dem Ref: <code>vX.Y.Z</code> → <code>:X.Y.Z</code>, <code>main</code> → <code>:main</code>). <code>:latest</code> ist nur der Fallback der Compose für ein nacktes <code>docker compose up</code> ohne <code>.env</code> und taucht in einem echten Install nicht auf.</p>
             </div>
           </div>
@@ -219,6 +220,27 @@ docker compose up -d</code></pre>
 docker compose up -d server</code></pre>
 
           <p>Datenbank-Migrationen laufen automatisch beim Container-Start via <strong>Alembic</strong> (siehe <code>server/alembic/versions/</code>). Der Entrypoint wartet erst auf <code>pg_isready</code>, führt dann <code>alembic upgrade head</code> aus, dann erst startet uvicorn. Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
+
+          <h2 id="deinstallation">Deinstallation</h2>
+          <p><code>scripts/uninstall.sh</code> entfernt eine Server-Installation <strong>restlos</strong>. Aus dem Install-Verzeichnis (dort, wo die <code>docker-compose.yml</code> liegt) ausführen:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Container + ALLE Volumes + Netzwerk + Host-Daten + .env entfernen (fragt nach):
+./scripts/uninstall.sh
+
+# Nicht-interaktiv (z. B. in einem Skript):
+./scripts/uninstall.sh --yes
+
+# Auch die Docker-Images und die Backups mit entfernen ("wirklich alles weg"):
+./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
+          <p>Entfernt werden: alle Container des Compose-Projekts, das Netzwerk und <strong>alle Named Volumes</strong> (inkl. <code>ca-pki</code> mit der Root-CA, <code>postgres-data</code> und <code>victoria-data</code>), dazu die Host-Bind-Mounts <code>./data</code> und <code>./certs</code> sowie die Secrets-Datei <code>.env</code>. Da <code>./data</code>/<code>./certs</code> dem Container-User (<code>uid 10001</code>) gehören, löscht das Script sie als root in einem Wegwerf-Container — <strong>ohne <code>sudo</code> vorauszusetzen</strong>.</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title">Unumkehrbar — und die Root-CA geht mit</div>
+              <p>Mit <code>ca-pki</code> verschwindet die interne Root-CA: bereits enrollte Agenten/Clients werden danach <strong>nicht mehr vertraut</strong>. Wer später am selben Host neu aufsetzen und die Vertrauensstellung behalten will, macht <strong>vorher</strong> ein <code>./scripts/backup.sh</code> und stellt mit <code>restore.sh</code> wieder her.</p>
+              <p>Standardmässig <strong>geschützt</strong>: <code>./backups/</code> (enthält CA + DB-Dumps) bleibt liegen und die Images bleiben erhalten — erst <code>--purge-backups</code> bzw. <code>--rmi</code> entfernen auch diese. Die Laufzeit-Dateien selbst (compose + <code>scripts/</code>) löscht das Script nicht; den exakten <code>rm -rf</code>-Befehl für den Rest gibt es zum Schluss aus.</p>
+            </div>
+          </div>
 
           <div class="page-nav">
             <a class="prev" href="./index.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Übersicht</span></a>

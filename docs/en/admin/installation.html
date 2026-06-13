@@ -154,8 +154,29 @@ docker compose up -d</code></pre>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
               <div class="callout-title"><code>update.sh</code> does not update itself</div>
-              <p>The script is intentionally not in its own refresh list (no self-overwrite while running). <code>--ref</code> pulls the <em>other</em> scripts (install/backup/restore/init-secrets); if <code>update.sh</code> itself changes, re-fetch it once via the install one-liner.</p>
+              <p>The script is intentionally not in its own refresh list (no self-overwrite while running). <code>--ref</code> pulls the <em>other</em> scripts (install/backup/restore/init-secrets/uninstall); if <code>update.sh</code> itself changes, re-fetch it once via the install one-liner.</p>
               <p><code>--ref</code> pins the image version automatically (the <code>*_IMAGE</code> tags in <code>.env</code>, derived from the ref: <code>vX.Y.Z</code> → <code>:X.Y.Z</code>, <code>main</code> → <code>:main</code>). <code>:latest</code> is only the compose fallback for a bare <code>docker compose up</code> without an <code>.env</code> and does not appear in a real install.</p>
+            </div>
+          </div>
+
+          <h2 id="uninstall">Uninstall</h2>
+          <p><code>scripts/uninstall.sh</code> removes a server install <strong>completely</strong>. Run it from the install directory (where <code>docker-compose.yml</code> lives):</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code># Remove containers + ALL volumes + network + host data + .env (prompts first):
+./scripts/uninstall.sh
+
+# Non-interactive (e.g. inside a script):
+./scripts/uninstall.sh --yes
+
+# Also remove the Docker images and the backups ("really wipe everything"):
+./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
+          <p>It removes: every container of the compose project, the network and <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres-data</code> and <code>victoria-data</code>), plus the host bind mounts <code>./data</code> and <code>./certs</code> and the secrets file <code>.env</code>. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div>
+              <div class="callout-title">Irreversible — and the root CA goes with it</div>
+              <p>Dropping <code>ca-pki</code> destroys the internal root CA: already-enrolled agents/clients are <strong>no longer trusted</strong> afterwards. If you intend to rebuild on the same host and keep that trust, run <code>./scripts/backup.sh</code> <strong>first</strong> and restore with <code>restore.sh</code>.</p>
+              <p>Protected by default: <code>./backups/</code> (it holds the CA + DB dumps) is kept and the images stay — only <code>--purge-backups</code> / <code>--rmi</code> remove those too. The runtime files themselves (compose + <code>scripts/</code>) are not deleted; the script prints the exact <code>rm -rf</code> command for the rest at the end.</p>
             </div>
           </div>
 
