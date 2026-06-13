@@ -5,6 +5,17 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.30.3] - 2026-06-13
+
+### Changed
+
+- **Installs pinnen die Image-Version fest.** `install.sh` schreibt die `*_IMAGE`-Tags in
+  `.env` auf die Version, von der installiert wurde (`--ref vX.Y.Z` → `:X.Y.Z`, `main` →
+  `:main`), statt am floatenden `:latest` zu bleiben — ein Install ist reproduzierbar und
+  springt nie unbemerkt auf eine neue Version bei `docker compose pull`. `update.sh --ref`
+  re-pinnt auf die Zielversion; ein nacktes `update.sh` zieht die gepinnte Version neu
+  (Upgrade = bewusstes `--ref vNEU`). `:latest` bleibt nur der Compose-Fallback ohne `.env`.
+
 ## [0.30.2] - 2026-06-13
 
 ### Fixed
@@ -1217,6 +1228,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.30.3]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.3
 [0.30.2]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.2
 [0.30.1]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.1
 [0.30.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.30.0

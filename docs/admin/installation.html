@@ -46,7 +46,7 @@
             <a href="../developer/cicd.html">CI/CD &amp; Release</a>
           </div>
         </nav>
-        <div class="sidebar-footer"><span>v0.30.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.30.3</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -89,8 +89,8 @@
           <h2 id="schnell-install">Schnell-Install (ein Befehl)</h2>
           <p>Der Installer lädt <strong>nur die Laufzeit-Dateien</strong> (die selbstgenügsame <code>docker-compose.yml</code> + ein paar Ops-Skripte, <em>nicht</em> den Quellbaum), fährt den Stack hoch, legt den Erst-Admin samt einmaligem Enrollment-Token an und lässt mTLS <strong>per Default erzwungen</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.2/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.30.2
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.30.3/scripts/install.sh \
+  | bash -s -- --domain srm.example.com --ref v0.30.3
 # fragt das Admin-Passwort ab. Non-interaktiv: --admin-password … --yes.
 # --permissive laesst den Stack permissiv (kein erzwungenes mTLS).</code></pre>
           <p>Am Ende gibt das Script die Zugangsdaten aus: URL, Admin-Login und einen <strong>Enrollment-Token</strong>. Den Token im Desktop-Client unter <em>„Mit Token enrollen"</em> (Server-URL + Token) einlösen — der Client erzeugt sein mTLS-Zertifikat <strong>on-device</strong> — danach normaler Login. Die Browser-<code>.p12</code> exportiert man anschliessend im Desktop über den Export-Knopf. Updates: <code>./scripts/update.sh</code> im erzeugten <code>adminhelper/</code>-Verzeichnis.</p>
@@ -186,7 +186,7 @@ docker compose up -d</code></pre>
           <p>Der Server läuft aus der GitHub Container Registry <code>ghcr.io/ks98/adminhelper/server</code>. Standard-Tags:</p>
           <ul>
             <li><code>:latest</code> – letzter veröffentlichter Release (Semver-Tag)</li>
-            <li><code>:0.30.2</code> – konkreter Release-Tag</li>
+            <li><code>:0.30.3</code> – konkreter Release-Tag</li>
             <li><code>:main</code> – letzter Build der Default-Branch</li>
             <li><code>:sha-&lt;commit&gt;</code> – deterministisches Image pro Commit</li>
           </ul>
