@@ -17,6 +17,8 @@ url = "2"
 open = "5"
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "async-io", "crypto-rust"] }
 tauri-plugin-shell = "2"
+# Native "save as" dialog so the user picks where the browser .p12 is written.
+tauri-plugin-dialog = "2"
 chrono = "0.4"
 # TLS TOFU pinning (desktop self-signed path): a custom rustls ServerCertVerifier
 # needs rustls + an explicit ring provider (must match the version reqwest's

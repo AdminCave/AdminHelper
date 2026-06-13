@@ -14,6 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/stores/settings';
   import { t } from '$lib/i18n';
   import { resetServerCertPin, exportBrowserP12 } from '$lib/bridge';
+  import { save } from '@tauri-apps/plugin-dialog';
   import {
     RDP_WINDOW_MODES,
     RDP_PERFORMANCE_PROFILES,
@@ -86,6 +87,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       browserCertMsg = $t('settings.browserCert.passwordTooShort');
       return;
     }
+    const destPath = await save({
+      defaultPath: 'adminhelper-browser.p12',
+      filters: [{ name: 'PKCS12', extensions: ['p12', 'pfx'] }],
+    });
+    if (!destPath) return;
     browserCertBusy = true;
     browserCertMsg = $t('settings.browserCert.working');
     try {
@@ -93,6 +99,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         sess.serverUrl,
         sess.token,
         browserCertPassword,
+        destPath,
         allowSelfSignedCerts,
       );
       browserCertMsg = `${$t('settings.browserCert.done')} ${path}`;

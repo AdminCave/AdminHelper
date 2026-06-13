@@ -82,14 +82,12 @@ pub fn save_settings(app: &tauri::AppHandle, settings: &Settings) -> Result<(), 
     write_json_pretty(&path, settings)
 }
 
-/// Writes the exported browser PKCS12 (.p12) into the app data dir and returns
-/// the absolute path. The frontend has no file-save dialog (no fs/dialog
-/// plugin), so — like the Ansible playbook flow — Rust writes the file and
-/// hands back the path for the user to import into their browser. The blob
-/// holds a private key, so it is hardened to 0600 even though it is also
+/// Writes the exported browser PKCS12 (.p12) to the user-chosen destination
+/// (from the frontend's save dialog) and returns the absolute path. The blob
+/// holds a private key, so it is hardened to 0600 (Unix) even though it is also
 /// password-encrypted.
-pub fn write_browser_p12(app: &tauri::AppHandle, der: &[u8]) -> Result<String, AppError> {
-    let path = app_data_file(app, "adminhelper-browser.p12")?;
+pub fn write_browser_p12(dest_path: &str, der: &[u8]) -> Result<String, AppError> {
+    let path = PathBuf::from(dest_path);
     ensure_parent(&path)?;
     fs::write(&path, der)?;
     harden_permissions(&path);
