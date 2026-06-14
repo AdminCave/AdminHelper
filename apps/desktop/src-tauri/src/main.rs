@@ -44,6 +44,10 @@ fn main() {
                     let _ = window.set_icon(icon.clone());
                 }
             }
+            // Migrate the pre-split local connection store (connections.json ->
+            // connections.local.json) once, before any server fetch can
+            // overwrite the legacy file. Best-effort: must not block startup.
+            let _ = storage::migrate_legacy_local_store(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

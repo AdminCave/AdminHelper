@@ -41,6 +41,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Lokale Verbindungen wurden vom Server-/Sync-Abruf überschrieben.** Alle drei Modi teilten
+  sich die Datei `connections.json`; ein Server-Login oder ein Sync überschrieb sie mit den
+  abgerufenen Daten, sodass lokale Verbindungen bei einem Wechsel Lokal → Server → Lokal verloren
+  gingen. Der lokale Modus hat jetzt einen eigenen Speicher (`connections.local.json`), getrennt
+  vom Server-/Sync-Cache (`connections.json`); ein Abruf überschreibt ihn nie. Bestehende lokale
+  Daten werden beim ersten Start nach dem Update einmalig migriert.
 - **Desktop-Logout überschrieb lokale Verbindungen.** Beim Abmelden leerte der Client den
   Verbindungs-Cache via `saveConnections([])` und überschrieb damit die `connections.json` —
   obwohl diese Datei der Speicher des lokalen Modus ist (Server-Verbindungen liegen nur im
