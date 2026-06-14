@@ -145,8 +145,9 @@ generates its mTLS cert **on-device** — then log in normally; export the brows
 `./scripts/update.sh` inside the created `adminhelper/` directory. To remove a
 server install completely (containers, **all** volumes incl. the root CA, the
 network, `./data`/`./certs` and the `.env` secrets), run
-`./scripts/uninstall.sh` there — it keeps `./backups/` and the images unless you
-pass `--purge-backups` / `--rmi`.
+`./scripts/uninstall.sh` there — it asks per category by default (`--yes` for
+non-interactive) and keeps `./backups/` and the images unless you pass
+`--purge-backups` / `--rmi`.
 
 <details>
 <summary><b>Manual / development setup</b></summary>

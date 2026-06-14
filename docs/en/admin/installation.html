@@ -160,17 +160,20 @@ docker compose up -d</code></pre>
           </div>
 
           <h2 id="uninstall">Uninstall</h2>
-          <p><code>scripts/uninstall.sh</code> removes a server install <strong>completely</strong>. Run it from the install directory (where <code>docker-compose.yml</code> lives):</p>
+          <p><code>scripts/uninstall.sh</code> removes a server install <strong>completely</strong>. By default it is <strong>interactive</strong>: it asks per category, and only deletes once every question has been answered. Run it from the install directory (where <code>docker-compose.yml</code> lives):</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Remove containers + ALL volumes + network + host data + .env (prompts first):
+<pre><code># Interactive — asks per category (stack, volumes, ./data+./certs, .env,
+# backups, images):
 ./scripts/uninstall.sh
 
-# Non-interactive (e.g. inside a script):
+# Non-interactive (e.g. inside a script): stack + volumes + ./data/./certs
+# + .env go, backups and images are kept:
 ./scripts/uninstall.sh --yes
 
-# Also remove the Docker images and the backups ("really wipe everything"):
+# "Really wipe everything" — images and backups too (--rmi/--purge-backups also
+# pre-set the matching question to YES):
 ./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
-          <p>It removes: every container of the compose project, the network and <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres-data</code> and <code>victoria-data</code>), plus the host bind mounts <code>./data</code> and <code>./certs</code> and the secrets file <code>.env</code>. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
+          <p>Asked/removed individually: every container of the compose project and the network, <strong>all named volumes</strong> (including <code>ca-pki</code> with the root CA, <code>postgres-data</code> and <code>victoria-data</code>), the host bind mounts <code>./data</code> and <code>./certs</code>, the secrets file <code>.env</code>, and optionally <code>./backups/</code> and the Docker images. Since <code>./data</code>/<code>./certs</code> are owned by the in-container user (<code>uid 10001</code>), the script deletes them as root in a throwaway container — <strong>without requiring <code>sudo</code></strong>.</p>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>

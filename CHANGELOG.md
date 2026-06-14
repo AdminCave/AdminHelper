@@ -14,11 +14,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (inkl. `ca-pki` mit der Root-CA, `postgres-data`, `victoria-data`), dazu die
   Host-Bind-Mounts `./data`/`./certs` und die Secrets-Datei `.env`. Da `./data`/`./certs`
   dem Container-User (`uid 10001`) gehören, löscht das Skript sie als root in einem
-  Wegwerf-Container — ohne `sudo` vorauszusetzen. `./backups/` und die Docker-Images bleiben
-  per Default erhalten (`--purge-backups` / `--rmi` entfernen auch sie); vor der ersten
-  destruktiven Aktion wird zurückgefragt (`--yes` für nicht-interaktive Läufe). Das Skript
-  wird von `install.sh`/`update.sh` mit ausgeliefert, liegt also nach der Installation lokal
-  im Install-Verzeichnis.
+  Wegwerf-Container — ohne `sudo` vorauszusetzen. Standardmässig **interaktiv**: das Skript
+  fragt für jede Kategorie (Stack, Volumes, `./data`/`./certs`, `.env`, Backups, Images)
+  einzeln nach und löscht erst, nachdem alle Fragen beantwortet sind. `./backups/` und die
+  Docker-Images bleiben per Default erhalten (`--purge-backups` / `--rmi` entfernen auch sie
+  bzw. belegen die jeweilige Frage mit JA vor); `--yes` fährt nicht-interaktiv mit den
+  Defaults. Das Skript wird von `install.sh`/`update.sh` mit ausgeliefert, liegt also nach
+  der Installation lokal im Install-Verzeichnis.
 
 ## [0.32.1] - 2026-06-13
 

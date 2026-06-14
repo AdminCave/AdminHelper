@@ -222,17 +222,20 @@ docker compose up -d server</code></pre>
           <p>Datenbank-Migrationen laufen automatisch beim Container-Start via <strong>Alembic</strong> (siehe <code>server/alembic/versions/</code>). Der Entrypoint wartet erst auf <code>pg_isready</code>, führt dann <code>alembic upgrade head</code> aus, dann erst startet uvicorn. Der Agent hat einen eigenen Release-Zyklus – siehe <a href="./agent-deployment.html">Agent-Deployment</a>.</p>
 
           <h2 id="deinstallation">Deinstallation</h2>
-          <p><code>scripts/uninstall.sh</code> entfernt eine Server-Installation <strong>restlos</strong>. Aus dem Install-Verzeichnis (dort, wo die <code>docker-compose.yml</code> liegt) ausführen:</p>
+          <p><code>scripts/uninstall.sh</code> entfernt eine Server-Installation <strong>restlos</strong>. Standardmässig <strong>interaktiv</strong>: das Script fragt für jede Kategorie einzeln nach — gelöscht wird erst, nachdem alle Fragen beantwortet sind. Aus dem Install-Verzeichnis (dort, wo die <code>docker-compose.yml</code> liegt) ausführen:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># Container + ALLE Volumes + Netzwerk + Host-Daten + .env entfernen (fragt nach):
+<pre><code># Interaktiv — fragt pro Kategorie (Stack, Volumes, ./data+./certs, .env,
+# Backups, Images):
 ./scripts/uninstall.sh
 
-# Nicht-interaktiv (z. B. in einem Skript):
+# Nicht-interaktiv (z. B. in einem Skript): Stack + Volumes + ./data/./certs
+# + .env weg, Backups und Images bleiben:
 ./scripts/uninstall.sh --yes
 
-# Auch die Docker-Images und die Backups mit entfernen ("wirklich alles weg"):
+# "Wirklich alles weg" — auch Images und Backups (--rmi/--purge-backups belegen
+# zugleich die jeweilige Frage mit JA vor):
 ./scripts/uninstall.sh --rmi --purge-backups --yes</code></pre>
-          <p>Entfernt werden: alle Container des Compose-Projekts, das Netzwerk und <strong>alle Named Volumes</strong> (inkl. <code>ca-pki</code> mit der Root-CA, <code>postgres-data</code> und <code>victoria-data</code>), dazu die Host-Bind-Mounts <code>./data</code> und <code>./certs</code> sowie die Secrets-Datei <code>.env</code>. Da <code>./data</code>/<code>./certs</code> dem Container-User (<code>uid 10001</code>) gehören, löscht das Script sie als root in einem Wegwerf-Container — <strong>ohne <code>sudo</code> vorauszusetzen</strong>.</p>
+          <p>Abgefragt/entfernt werden einzeln: alle Container des Compose-Projekts und das Netzwerk, <strong>alle Named Volumes</strong> (inkl. <code>ca-pki</code> mit der Root-CA, <code>postgres-data</code> und <code>victoria-data</code>), die Host-Bind-Mounts <code>./data</code> und <code>./certs</code>, die Secrets-Datei <code>.env</code> sowie optional <code>./backups/</code> und die Docker-Images. Da <code>./data</code>/<code>./certs</code> dem Container-User (<code>uid 10001</code>) gehören, löscht das Script sie als root in einem Wegwerf-Container — <strong>ohne <code>sudo</code> vorauszusetzen</strong>.</p>
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             <div>
