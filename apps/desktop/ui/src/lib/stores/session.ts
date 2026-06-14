@@ -10,8 +10,10 @@
 //   - 'server': AdminHelper server with login required
 //
 // Auth token + refresh token are stored exclusively in the Rust keyring
-// (no localStorage copy in the frontend). The frontend asks via
-// bridge.checkSession() whether a valid session currently exists.
+// (no localStorage copy in the frontend). For security the session is NOT
+// restored from the keyring on startup: server mode always requires a fresh
+// password login each time the app is opened (see hydrate). The keyring tokens
+// are only used for mid-session refresh and are overwritten by the next login.
 
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
