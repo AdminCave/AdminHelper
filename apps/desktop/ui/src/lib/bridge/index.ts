@@ -61,10 +61,6 @@ export function login(
   });
 }
 
-export function checkSession(): Promise<AuthSession | null> {
-  return invoke<AuthSession | null>('check_session');
-}
-
 export function logout(): Promise<void> {
   return invoke('logout');
 }

@@ -46,20 +46,18 @@ export const needsLogin = derived(_state, ($s) => {
   return $s.ready && $s.settings?.mode === 'server' && $s.session === null;
 });
 
-/** Loads settings + optionally the session at app start. */
+/** Loads settings at app start. */
 export async function hydrate(): Promise<void> {
   try {
     const s = await bridge.loadSettings();
     setLanguage(s.language);
-    let sess: AuthSession | null = null;
-    if (s.mode === 'server') {
-      try {
-        sess = await bridge.checkSession();
-      } catch {
-        sess = null;
-      }
-    }
-    _state.set({ settings: s, session: sess, ready: true });
+    // Security: never silently restore a server session from the keyring on
+    // startup. Server mode requires a fresh password login every time the app is
+    // opened (the login screen pre-fills server URL + username). The enrolled
+    // mTLS device cert stays in the keyring and the stale session tokens are
+    // overwritten by the next successful login; mid-session token refresh
+    // (authenticated_get) is unaffected.
+    _state.set({ settings: s, session: null, ready: true });
   } catch (err) {
     console.error('hydrate failed', err);
     _state.set({ settings: null, session: null, ready: true });
@@ -90,6 +88,20 @@ export async function logout(): Promise<void> {
     clearInMemory();
     _state.update((s) => ({ ...s, session: null }));
   }
+}
+
+/** Drops the current server session: clears the keyring tokens (keeping the
+ * enrolled mTLS device cert) and the in-memory session. Used when leaving
+ * server mode so a later switch back forces a fresh login instead of reusing a
+ * stale session still bound to the previous server URL. Connections are NOT
+ * cleared here — the caller reloads them for the new mode. */
+export async function dropSession(): Promise<void> {
+  try {
+    await bridge.logout();
+  } catch {
+    /* clearing local session state must not depend on the server being reachable */
+  }
+  _state.update((s) => ({ ...s, session: null }));
 }
 
 export async function setMode(mode: SyncMode): Promise<void> {

@@ -6,7 +6,7 @@
 
 import { writable, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import { sessionStore, refreshSettings } from './session';
+import { sessionStore, refreshSettings, dropSession } from './session';
 import * as tunnelStore from './tunnel';
 import { reloadForMode } from './connections';
 import { reportError, showStatus } from './statusBar';
@@ -106,6 +106,9 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
         } catch {
           /* ignore */
         }
+        // Leaving server mode: drop the session so a later switch back forces a
+        // fresh login instead of reusing a stale session bound to the old URL.
+        await dropSession();
       }
       await syncNow(true);
       startSyncTimer();
@@ -116,6 +119,7 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
         } catch {
           /* ignore */
         }
+        await dropSession();
       }
       stopSyncTimer();
       await reloadForMode(next, null);
@@ -135,11 +139,10 @@ export async function serverLogout(): Promise<void> {
   } catch {
     /* ignore */
   }
-  try {
-    await bridge.logout();
-  } catch {
-    /* ignore */
-  }
+  // dropSession clears the keyring tokens AND the in-memory session — the latter
+  // was previously missed here, leaving the UI in a half-logged-in state after
+  // an explicit logout from the settings dialog.
+  await dropSession();
   const current = get(sessionStore);
   if (current.settings) {
     await reloadForMode(current.settings, null);
