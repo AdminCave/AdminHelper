@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.34.0</span>
+          <span>v0.35.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.34.0 · 2026-06-15</span>
+            <span class="eyebrow">Version 0.35.0 · 2026-06-15</span>
             <h1>AdminHelper – Dokumentation</h1>
             <p class="lead">
               Ein modularer Monolith zur zentralen Verwaltung von
@@ -261,7 +261,22 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.34.0?</h2>
+          <h2>Was ist neu in 0.35.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.35.0 &ndash; Logging, Audit-Trail &amp; Diagnose-Bundle (2026-06-15)</div>
+              <p>
+                Einheitliches, zeitgestempeltes Logging über alle Komponenten (Server/Monitoring in
+                <code>docker compose logs</code>, der Agent in eine rotierende Datei). Ein neuer
+                <strong>append-only Audit-Trail</strong> hält fest, wer welche Verbindung angelegt
+                und wann genutzt hat — plus Server/Benutzer/API-Keys/FRP/Ansible und Logins —
+                einsehbar unter <em>Audit-Log</em> im Web-Panel. Und ein redaktiertes
+                <strong>Diagnose-Bundle</strong> für Bug-Reports (<code>scripts/diagnostics.sh</code>,
+                <code>adminhelper-agent diagnostics</code>, Desktop → Einstellungen → Diagnose).
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
