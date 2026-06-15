@@ -123,6 +123,12 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
           <p><strong>Log-Level:</strong> Server und Monitoring lesen die Ausführlichkeit aus der Env-Variable <code>LOG_LEVEL</code> (<code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code>, Default <code>INFO</code>). Für eine tiefere Diagnose <code>LOG_LEVEL=DEBUG</code> in der <code>.env</code> setzen und <code>docker compose up -d</code>.</p>
           <p><strong>Rotation:</strong> Die Container-Logs sind über den Docker-<code>json-file</code>-Treiber begrenzt (<code>max-size: 10m</code>, <code>max-file: 5</code> → max.&nbsp;50&nbsp;MB pro Service), damit sie nicht unbegrenzt wachsen. Konfiguriert über den <code>x-logging</code>-Anker in der <code>docker-compose.yml</code>.</p>
 
+          <h2>Audit-Log</h2>
+          <p>Sicherheits- und änderungsrelevante Aktionen werden in einem <strong>append-only Audit-Trail</strong> protokolliert — mit Actor (Benutzer oder API-Key), Quell-IP und Zeitstempel. Erfasst werden u.&nbsp;a. das Anlegen/Ändern/Löschen <strong>und die Nutzung</strong> von Verbindungen, Änderungen an Servern/Benutzern/API-Keys/FRP/Ansible sowie Logins (Erfolg/Fehlschlag), Logout und der Erst-Admin-Bootstrap.</p>
+          <p>Einsehbar im Web-UI unter <strong>Audit-Log</strong> (nur Admins; filterbar nach Actor, Objekt und Aktion) oder per API: <code>GET /api/audit</code> (paginiert; Query-Parameter <code>action</code>, <code>actor_type</code>, <code>object_type</code>, <code>object_id</code>, <code>status</code>, <code>q</code>).</p>
+          <div class="callout"><div class="callout-title">Aufbewahrung</div><p>Ein täglicher Job löscht Einträge, die älter als <code>AUDIT_RETENTION_DAYS</code> (Default 365) sind — der einzige Löschpfad der ansonsten append-only Tabelle. <code>0</code> behält alles dauerhaft.</p></div>
+          <div class="callout"><div class="callout-title">Local-Mode-Lücke</div><p>Verbindungen, die im Desktop-Client <em>ohne</em> Server (Local-Mode) genutzt werden, erreichen den Server nicht und erscheinen daher nicht im Audit-Trail.</p></div>
+
           <h2>Konfiguration ändern</h2>
           <p>Alle Config-Werte kommen aus Environment-Variablen. Änderungen erfordern ein <code>docker compose up -d</code>, damit die Container neu erzeugt werden:</p>
           <div class="code-header"><span>bash</span></div>

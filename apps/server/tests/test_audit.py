@@ -3,10 +3,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import types
+from datetime import datetime, timedelta, timezone
 
 from app.core.request_context import Actor, actor_from_request, bind_actor
 from app.modules.audit import service
 from app.modules.audit.models import AuditLog
+
+
+def _entry(days_ago: int) -> AuditLog:
+    return AuditLog(
+        actor_type="system",
+        action="connection.created",
+        status="success",
+        timestamp=datetime.now(timezone.utc) - timedelta(days=days_ago),
+    )
 
 
 def _fake_request():
@@ -71,3 +81,21 @@ def test_record_is_best_effort_on_error():
             pass
 
     service.record(BrokenSession(), "connection.created")  # must not raise
+
+
+def test_cleanup_removes_only_old_entries(db_session):
+    db_session.add_all([_entry(days_ago=400), _entry(days_ago=10)])
+    db_session.commit()
+
+    removed = service.cleanup_old_entries(db_session, retention_days=365)
+
+    assert removed == 1
+    assert db_session.query(AuditLog).count() == 1
+
+
+def test_cleanup_disabled_keeps_everything(db_session):
+    db_session.add(_entry(days_ago=9999))
+    db_session.commit()
+
+    assert service.cleanup_old_entries(db_session, retention_days=0) == 0
+    assert db_session.query(AuditLog).count() == 1

@@ -104,3 +104,8 @@ MTLS_ENFORCE = os.environ.get("MTLS_ENFORCE", "false").lower() in ("1", "true", 
 # in the provision response — the agent derives the host from the URL it already
 # provisioned against and builds <host>:ENROLL_PORT/enroll itself.
 ENROLL_PORT = int(os.environ.get("ENROLL_PORT", "8444"))
+
+# Audit-log retention. A daily system job prunes audit_log rows older than this
+# many days — the ONLY delete path for the otherwise append-only trail. Set to 0
+# to keep entries forever (no pruning).
+AUDIT_RETENTION_DAYS = int(os.environ.get("AUDIT_RETENTION_DAYS", "365"))

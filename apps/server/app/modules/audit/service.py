@@ -12,6 +12,7 @@ app.core.request_context.actor_from_request(); it defaults to a system actor.
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -53,3 +54,19 @@ def record(
     except Exception:
         db.rollback()
         logger.exception("Audit-Eintrag fehlgeschlagen (action=%s)", action)
+
+
+def cleanup_old_entries(db: Session, retention_days: int) -> int:
+    """Delete audit rows older than ``retention_days`` and return the count.
+
+    This is the ONLY delete path for the otherwise append-only audit_log (driven
+    by the daily retention job). ``retention_days <= 0`` keeps everything.
+    """
+    if retention_days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    removed = (
+        db.query(AuditLog).filter(AuditLog.timestamp < cutoff).delete(synchronize_session=False)
+    )
+    db.commit()
+    return removed

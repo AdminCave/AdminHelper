@@ -211,3 +211,36 @@ def schedule_enrollment_token_cleanup(hours: int = 6) -> None:
         replace_existing=True,
         next_run_time=datetime.now(timezone.utc),
     )
+
+
+_AUDIT_CLEANUP_JOB_ID = "system:audit-cleanup"
+
+
+def _run_audit_cleanup() -> None:
+    """Prune audit_log rows older than AUDIT_RETENTION_DAYS so the append-only
+    trail does not grow without bound (the only delete path for audit_log)."""
+    from app.core.config import AUDIT_RETENTION_DAYS
+    from app.core.database import SessionLocal
+    from app.modules.audit.service import cleanup_old_entries
+
+    db = SessionLocal()
+    try:
+        removed = cleanup_old_entries(db, AUDIT_RETENTION_DAYS)
+        if removed:
+            logger.info("Audit-Cleanup: %d alte Eintraege entfernt", removed)
+    except Exception:
+        logger.exception("Audit-Cleanup fehlgeschlagen")
+    finally:
+        db.close()
+
+
+def schedule_audit_cleanup(hours: int = 24) -> None:
+    """Register a periodic system job for the audit-log retention cleanup
+    (idempotent). Runs once immediately at start and then every `hours` hours."""
+    scheduler.add_job(
+        _run_audit_cleanup,
+        trigger=IntervalTrigger(hours=hours),
+        id=_AUDIT_CLEANUP_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )

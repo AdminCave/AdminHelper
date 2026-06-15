@@ -38,7 +38,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Erst-Admin-Bootstrap. Einsehbar über die neue admin-only Web-Ansicht **„Audit-Log"**
   (filterbar nach Actor/Objekt/Aktion) bzw. `GET /api/audit` (paginiert). Das Schreiben ist
   best-effort und kann die auditierte Aktion nie brechen; der Actor wird über `request.state`
-  gebunden (nicht contextvars, die in synchronen Endpoints verloren gehen).
+  gebunden (nicht contextvars, die in synchronen Endpoints verloren gehen). Ein täglicher
+  System-Job löscht Einträge älter als `AUDIT_RETENTION_DAYS` (Default 365, `0` = unbegrenzt) —
+  der einzige Löschpfad der append-only Tabelle.
 
 ## [0.34.0] - 2026-06-15
 

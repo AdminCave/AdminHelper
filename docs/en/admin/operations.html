@@ -83,6 +83,12 @@
           <p><strong>Log level:</strong> server and monitoring read the verbosity from the <code>LOG_LEVEL</code> env var (<code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code>, default <code>INFO</code>). For deeper diagnosis set <code>LOG_LEVEL=DEBUG</code> in <code>.env</code> and run <code>docker compose up -d</code>.</p>
           <p><strong>Rotation:</strong> container logs are bounded via Docker's <code>json-file</code> driver (<code>max-size: 10m</code>, <code>max-file: 5</code> → max.&nbsp;50&nbsp;MB per service) so they don't grow unbounded. Configured through the <code>x-logging</code> anchor in <code>docker-compose.yml</code>.</p>
 
+          <h2>Audit log</h2>
+          <p>Security- and change-relevant actions are recorded in an <strong>append-only audit trail</strong> — with actor (user or API key), source IP and timestamp. It captures, among others, creating/updating/deleting <strong>and using</strong> connections, changes to servers/users/API keys/FRP/Ansible, plus logins (success/failure), logout and the first-admin bootstrap.</p>
+          <p>Viewable in the web UI under <strong>Audit log</strong> (admins only; filterable by actor, object and action) or via the API: <code>GET /api/audit</code> (paginated; query params <code>action</code>, <code>actor_type</code>, <code>object_type</code>, <code>object_id</code>, <code>status</code>, <code>q</code>).</p>
+          <div class="callout"><div class="callout-title">Retention</div><p>A daily job deletes entries older than <code>AUDIT_RETENTION_DAYS</code> (default 365) — the only delete path for the otherwise append-only table. <code>0</code> keeps everything forever.</p></div>
+          <div class="callout"><div class="callout-title">Local-mode gap</div><p>Connections used in the desktop client <em>without</em> a server (local mode) never reach the server and therefore do not appear in the audit trail.</p></div>
+
           <h2>Multi-Worker Notes</h2>
           <p>The default compose stack runs a single Uvicorn worker – APScheduler assumes <strong>one</strong> scheduling instance, and the in-memory rate-limit fallback is per-process. For horizontal scaling:</p>
           <ul>

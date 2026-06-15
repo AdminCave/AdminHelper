@@ -79,6 +79,8 @@ services:
       - TRUSTED_PROXIES=
       # Redis fuer Rate-Limit ueber mehrere Worker hinweg
       - REDIS_URL=redis://redis:6379/0
+      # Audit-Log-Aufbewahrung in Tagen (0 = unbegrenzt); taeglicher Prune-Job.
+      - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
     logging: *default-logging
     restart: unless-stopped
     depends_on:
