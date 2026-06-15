@@ -5,6 +5,18 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Changed
+
+- **Einheitliches, lesbares Logging in Server und Monitoring.** Beide Dienste
+  konfigurieren das Logging jetzt zentral mit Zeitstempel, Level und Logger-Name
+  (`2026-06-15 11:25:53 INFO     adminhelper.auth …`) auf stdout — sichtbar via
+  `docker compose logs`. Der Server hatte zuvor **gar keine** Logging-Konfiguration:
+  alle `INFO`-Meldungen wurden verworfen, Warnungen/Fehler kamen ohne Zeitstempel.
+  uvicorn-Zugriffs-/Fehlerlogs laufen über dasselbe Format. Die Ausführlichkeit ist
+  über die Env-Variable `LOG_LEVEL` steuerbar (Default `INFO`).
+
 ## [0.34.0] - 2026-06-15
 
 ### Changed
