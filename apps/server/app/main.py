@@ -20,6 +20,7 @@ from app.modules.ansible.models import Playbook  # noqa: F401
 from app.modules.ansible.router import router as ansible_router
 from app.modules.api_keys.models import ApiKey  # noqa: F401
 from app.modules.api_keys.router import router as api_keys_router
+from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.connections.models import Connection  # noqa: F401
 from app.modules.connections.router import router as connections_router
 from app.modules.enrollment.router import router as enrollment_router

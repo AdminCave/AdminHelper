@@ -24,6 +24,8 @@ from app.core.config import (
     SECRET_KEY,
 )
 from app.core.database import get_db
+from app.core.middleware import resolve_client_ip
+from app.core.request_context import Actor, set_actor
 from app.modules.api_keys.models import ApiKey
 from app.modules.users.models import TokenBlacklist, User
 
@@ -203,6 +205,7 @@ def get_current_user(
             detail="Nicht authentifiziert",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    set_actor(Actor("user", str(user.id), user.username, resolve_client_ip(request)))
     return user
 
 
@@ -250,6 +253,7 @@ class ApiKeyOrUser:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="Schreibzugriff erforderlich"
                 )
+            set_actor(Actor("api_key", str(api_key.id), api_key.name, resolve_client_ip(request)))
             return None, api_key
 
         # Check JWT
@@ -260,6 +264,7 @@ class ApiKeyOrUser:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN, detail="Admin-Rechte erforderlich"
                     )
+                set_actor(Actor("user", str(user.id), user.username, resolve_client_ip(request)))
                 return user, None
 
         raise HTTPException(
