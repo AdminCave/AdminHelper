@@ -3,12 +3,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test, expect, type Page } from '@playwright/test';
-import { api, mockApi, seedAuth } from './mocks';
+import { api, mockApi } from './mocks';
 
 // Bewusst ohne Screenshot-Assertions (Flaky-Risiko) — nur DOM-Assertions.
+// Authentifizierung: mockApi() beantwortet POST /api/auth/refresh mit Tokens, die
+// hydrate() beim Laden in eine Session zurückführt (kein localStorage mehr).
 
 async function gotoAuthenticated(page: Page, hash: string): Promise<void> {
-  await seedAuth(page);
   await page.goto(`/${hash}`);
   await page.waitForSelector('.page-title', { state: 'visible' });
   await page.waitForLoadState('networkidle');

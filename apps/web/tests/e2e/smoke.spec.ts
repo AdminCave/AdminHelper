@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test, expect, type Page } from '@playwright/test';
-import { mockApi, seedAuth } from './mocks';
+import { mockApi } from './mocks';
 
 interface RouteCase {
   hash: string;
@@ -21,7 +21,6 @@ const ROUTES: RouteCase[] = [
 
 async function gotoAuthenticated(page: Page, hash: string): Promise<void> {
   await mockApi(page);
-  await seedAuth(page);
   await page.goto(`/${hash}`);
   await page.waitForSelector('.page-title', { state: 'visible' });
   // Warte auf vollstaendiges Hydration-Render (Router tauscht Komponente).

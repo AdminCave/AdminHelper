@@ -97,9 +97,7 @@ export async function mockApi(page: Page): Promise<void> {
   );
 }
 
-export async function seedAuth(page: Page): Promise<void> {
-  await page.addInitScript((tokens: typeof TOKENS) => {
-    window.localStorage.setItem('adminhelper_token', tokens.access_token);
-    window.localStorage.setItem('adminhelper_refresh_token', tokens.refresh_token);
-  }, TOKENS);
-}
+// Note: there is no seedAuth() helper anymore. The access token lives only in
+// memory now (no localStorage), so a session is established on load via the
+// mocked POST /api/auth/refresh (which mockApi answers with valid tokens by
+// default). Tests that need to be logged out override that route to 401.
