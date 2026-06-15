@@ -16,6 +16,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   alle `INFO`-Meldungen wurden verworfen, Warnungen/Fehler kamen ohne Zeitstempel.
   uvicorn-Zugriffs-/Fehlerlogs laufen über dasselbe Format. Die Ausführlichkeit ist
   über die Env-Variable `LOG_LEVEL` steuerbar (Default `INFO`).
+- **Begrenzte Container-Logs (Log-Rotation).** `docker-compose.yml` cappt jeden Service
+  über den Docker-`json-file`-Treiber (`max-size: 10m`, `max-file: 5` → max. 50 MB/Service)
+  via `x-logging`-Anker — verhindert, dass `docker compose logs` ungebremst die Platte
+  füllt. `LOG_LEVEL` ist als `.env`-Knopf in der Compose dokumentiert (Default `INFO`).
 
 ## [0.34.0] - 2026-06-15
 

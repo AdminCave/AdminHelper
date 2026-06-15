@@ -1,3 +1,13 @@
+# Bounded container logs: Docker's default json-file driver grows unbounded
+# until the disk fills. This anchor caps every service at 5×10 MB and is applied
+# below via `logging: *default-logging`. Kept inline (no external file) so this
+# compose stays self-contained and distributable on its own.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -17,6 +27,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging: *default-logging
     restart: unless-stopped
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
 
@@ -36,6 +47,8 @@ services:
       - frp-config:/app/frp-config
     environment:
       - TZ=${TZ:-Europe/Berlin}
+      # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DOMAIN=${DOMAIN:-localhost}
       - EXTRA_SANS=${EXTRA_SANS:-}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
@@ -66,6 +79,7 @@ services:
       - TRUSTED_PROXIES=
       # Redis fuer Rate-Limit ueber mehrere Worker hinweg
       - REDIS_URL=redis://redis:6379/0
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       redis:
@@ -92,6 +106,7 @@ services:
       # server's MTLS_ENFORCE. scripts/install.sh sets up the first admin's cert
       # before arming, so a fresh install is usable enforced (see docs/Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       # nginx resolves the upstream names at startup, so both must already exist.
@@ -139,6 +154,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       postgres:
@@ -149,6 +165,7 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     expose:
       - "6379"
+    logging: *default-logging
     restart: unless-stopped
 
   frps:
@@ -164,6 +181,7 @@ services:
       # TLS material under the tunnel intermediate, provisioned by the ca-issuer
       # (A7) — the CA private key never reaches this internet-facing container.
       - frps-certs:/etc/frp-pki:ro
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       server:
@@ -182,6 +200,8 @@ services:
       - monitoring-data:/app/data
     environment:
       - TZ=${TZ:-Europe/Berlin}
+      # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - VICTORIA_METRICS_URL=http://victoria:8428
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       # Postgres
@@ -190,6 +210,7 @@ services:
       - PGPORT=5432
       - PGUSER=adminhelper
       - PGPASSWORD=${POSTGRES_PASSWORD}
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       victoria:
@@ -208,6 +229,7 @@ services:
       - "-storageDataPath=/victoria-metrics-data"
     expose:
       - "8428"
+    logging: *default-logging
     restart: unless-stopped
 
   # Optionaler Postgres-Backup-Container.
