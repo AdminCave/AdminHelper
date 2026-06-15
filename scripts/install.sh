@@ -16,8 +16,10 @@
 #
 # Options:
 #   --domain D --admin-user U --admin-password P --enroll-ttl-minutes N
-#   --ref REF   (GitHub ref for the runtime files AND the pinned image tag:
-#                vX.Y.Z -> :X.Y.Z, main -> :main; default main)
+#   --ref REF   (release to install AND the pinned image tag: vX.Y.Z -> :X.Y.Z.
+#                Default: the latest published release. A release tag fetches the
+#                verified runtime bundle; a branch ref (e.g. main) falls back to a
+#                per-file raw fetch for dev installs.)
 #   --dir DIR   (target dir in bootstrap mode; default ./adminhelper)
 #   --permissive (set MTLS_ENFORCE=false — opt out of enforced default)
 #   --reset      (docker compose down -v first — wipe volumes from a failed try)
@@ -25,8 +27,11 @@
 
 set -euo pipefail
 
-REF="main"
-RAW_BASE="https://raw.githubusercontent.com/ks98/AdminHelper"
+REPO="ks98/AdminHelper"
+REF=""                       # empty -> resolve the latest published release
+RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/ks98/AdminHelper}"
+API_BASE="${AH_API_BASE:-https://api.github.com}"
+DL_BASE="${AH_DL_BASE:-https://github.com}"
 RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh"
 DOMAIN=""
 ADMIN_USER="admin"
@@ -54,15 +59,55 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# --- Bootstrap: download the runtime files when run without a local checkout --
-if [ ! -f docker-compose.yml ]; then
-    command -v curl >/dev/null 2>&1 || { echo "FEHLER: curl fehlt." >&2; exit 1; }
-    echo "[install] Lade Laufzeit-Dateien (ref ${REF}) nach ./${TARGET_DIR}/ ..."
-    mkdir -p "$TARGET_DIR/scripts"
+# Per-file raw fetch — dev/branch refs, or release tags older than the runtime
+# bundle (≤ 0.33.0). RUNTIME_FILES omits install.sh (it's the running script).
+raw_fetch() {
+    echo "[install] Lade Laufzeit-Dateien (ref ${REF}) nach ./${TARGET_DIR}/ ..." >&2
     for f in $RUNTIME_FILES; do
         curl -fsSL "${RAW_BASE}/${REF}/${f}" -o "${TARGET_DIR}/${f}" \
             || { echo "FEHLER: ${f} (ref ${REF}) nicht ladbar." >&2; exit 1; }
     done
+}
+
+# Fetch + verify the runtime bundle into TARGET_DIR. Returns 1 if the release has
+# no bundle asset (caller falls back to raw); hard-exits on a checksum/manifest fail.
+fetch_bundle_into() {
+    local asset="adminhelper-runtime-${REF}.tar.gz" dl="${DL_BASE}/${REPO}/releases/download/${REF}" tmp exp
+    tmp=$(mktemp -d)
+    curl -fsSL --retry 3 -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+    curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+    echo "[install] Verifiziere und entpacke Runtime-Bundle ${asset} ..." >&2
+    exp=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/SHA256SUMS")
+    { [ -n "$exp" ] && echo "${exp}  ${tmp}/${asset}" | sha256sum -c - >/dev/null 2>&1; } \
+        || { echo "FEHLER: Bundle-Checksumme stimmt nicht." >&2; rm -rf "$tmp"; exit 1; }
+    tar xzf "${tmp}/${asset}" -C "$TARGET_DIR"
+    ( cd "$TARGET_DIR" && sha256sum -c MANIFEST.sha256 >/dev/null 2>&1 ) \
+        || { echo "FEHLER: Manifest-Verifikation fehlgeschlagen." >&2; rm -rf "$tmp"; exit 1; }
+    rm -f "$TARGET_DIR/VERSION" "$TARGET_DIR/MANIFEST.sha256"
+    rm -rf "$tmp"
+}
+
+# --- Bootstrap: fetch the runtime files when run without a local checkout -----
+# Mirrors scripts/update.sh: a release tag pulls ONE verified runtime bundle
+# (atomic + checksum); a branch ref or a pre-bundle release falls back to raw.
+if [ ! -f docker-compose.yml ]; then
+    command -v curl >/dev/null 2>&1 || { echo "FEHLER: curl fehlt." >&2; exit 1; }
+
+    if [ -z "$REF" ]; then
+        echo "[install] Ermittle das neueste Release..." >&2
+        REF=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+                "${API_BASE}/repos/${REPO}/releases/latest" 2>/dev/null \
+              | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
+        [ -n "$REF" ] || { echo "FEHLER: konnte das neueste Release nicht ermitteln. Gib --ref vX.Y.Z an." >&2; exit 1; }
+    fi
+
+    mkdir -p "$TARGET_DIR/scripts"
+    case "$REF" in
+        v[0-9]*.[0-9]*.[0-9]*)
+            fetch_bundle_into \
+                || { echo "[install] Kein Runtime-Bundle fuer ${REF} — Einzeldatei-Fallback (raw)." >&2; raw_fetch; } ;;
+        *) raw_fetch ;;
+    esac
     chmod +x "$TARGET_DIR"/scripts/*.sh
     cd "$TARGET_DIR"
 fi
@@ -180,6 +225,6 @@ cat <<EOF
                    Browser-.p12 ueber den Export-Knopf im Desktop)
 
   Version:        ${IMAGE_TAG}  (Images in .env gepinnt)
-  Updates:        ./scripts/update.sh        (Upgrade: --ref vX.Y.Z)
+  Updates:        ./scripts/update.sh        (auf das neueste Release; gezielt: --ref vX.Y.Z)
 ============================================================================
 EOF

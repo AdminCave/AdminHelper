@@ -5,6 +5,42 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Changed
+
+- **Release-gebundener Update-Mechanismus (`scripts/update.sh`).** Jedes Release legt
+  jetzt ein **verifiziertes Runtime-Bundle** bei (`adminhelper-runtime-vX.Y.Z.tar.gz`:
+  `docker-compose.yml`, alle Ops-Skripte, `MANIFEST.sha256`, `VERSION`). `update.sh`
+  löst die Zielversion auf, lädt **genau dieses eine Asset**, prüft es gegen die
+  `SHA256SUMS` des Release und tauscht die Laufzeit-Dateien **atomar** — so landet jede
+  Datei-Änderung eines Release (neue/geänderte/entfernte Skripte, neue Compose)
+  zuverlässig auf dem Host; „welche Dateien zu Release X gehören" steht im Release, nicht
+  im Skript. Ein nacktes `./scripts/update.sh` geht auf das **neueste veröffentlichte
+  Release** (Prereleases ausgenommen) und verweigert einen stillen Downgrade; `--ref
+  vX.Y.Z` pinnt gezielt, `--redeploy` zieht nur die gepinnten Images neu, `--check` ist
+  ein Trockenlauf. Vor dem Tausch wird gesichert (Daten **und** ein Laufzeit-Snapshot);
+  schlägt der Healthcheck fehl, rollt das Skript Laufzeit-Dateien **und** Image-Pins
+  automatisch zurück (`--no-rollback` zum Debuggen). Der Updater **aktualisiert sich
+  selbst** (Re-exec in die neue `update.sh` aus dem Release). Behebt, dass neu
+  hinzukommende Ops-Dateien Alt-Installs früher nie erreichten.
+- **`scripts/install.sh` nutzt dasselbe Bundle** und installiert per Default das neueste
+  Release (vorher `--ref main`-Default). Release-Tags ohne Bundle (≤ 0.33.0) und
+  Branch-Refs fallen auf den Einzeldatei-Download (raw) zurück.
+
+### Added
+
+- **Runtime-Bundle als Release-Asset** samt `MANIFEST.sha256`/`VERSION`; `release.yml`
+  baut und hängt es an. Neuer CI-Job `ops-scripts` (shellcheck + hermetischer
+  `update.sh`-Sandbox-Test, `scripts/tests/update_test.sh`) und ein Release-Guard, der
+  die Desktop-Version in `tauri.conf.json` gegen den Tag prüft.
+
+### Migration
+
+- **Installs vor 0.34.0:** deren altes `update.sh` kennt das Bundle noch nicht. Einmalig
+  über den Install-Einzeiler neu holen **oder** ein `./scripts/update.sh --ref v0.34.0`
+  fahren — danach ist der Updater self-updating.
+
 ## [0.33.0] - 2026-06-14
 
 ### Added

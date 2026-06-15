@@ -67,8 +67,9 @@
           <h2 id="quick-install">Quick install (one command)</h2>
           <p>The installer fetches <strong>only the runtime files</strong> (the self-contained <code>docker-compose.yml</code> + a few ops scripts, <em>not</em> the source tree), brings up the stack, creates the first admin with a one-time enrollment token, and leaves mTLS <strong>enforced by default</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.33.0/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.33.0
+<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.34.0/scripts/install.sh \
+  | bash -s -- --domain srm.example.com
+# installs the latest release; pin a specific one with --ref vX.Y.Z.
 # prompts for the admin password. Non-interactive: --admin-password … --yes.
 # --permissive leaves the stack permissive (no enforced mTLS).
 # --reset wipes volumes from a failed attempt (docker compose down -v).</code></pre>
@@ -138,24 +139,30 @@ docker compose up -d</code></pre>
           </div>
 
           <h2 id="update">Updates</h2>
-          <p>The installer pins the images in <code>.env</code> to the installed version (e.g. <code>:0.33.0</code>) — so an install is <strong>reproducible</strong> and never silently jumps versions. <code>scripts/update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install, backs up first (incl. the CA crown jewel) and has <strong>two modes</strong>:</p>
+          <p>Updates are <strong>release-bound</strong>: every published release ships a <strong>verified runtime bundle</strong> (<code>adminhelper-runtime-vX.Y.Z.tar.gz</code> — the <code>docker-compose.yml</code>, all ops scripts, a <code>MANIFEST.sha256</code> and a <code>VERSION</code> marker). <code>scripts/update.sh</code> resolves a target version, downloads <strong>that one asset</strong>, verifies it against the release's <code>SHA256SUMS</code>, and swaps the runtime files into place <strong>atomically</strong>. So whatever a release changes (new/changed/removed scripts, a new compose) lands on the host — "which files belong to release X" lives in the release, not in the script.</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code># 1) Re-deploy – re-pull the PINNED version (no version jump):
+<pre><code># Default: move to the latest published release (prereleases excluded),
+# only if newer — no silent downgrade:
 ./scripts/update.sh
 
-# 2) Upgrade – move to a new version: pins :X.Y.Z, refreshes compose + scripts,
-#    pulls the images:
-./scripts/update.sh --ref v0.33.0
+# Pin to a specific version (re-apply / down- or upgrade explicitly):
+./scripts/update.sh --ref v0.34.0
 
-./scripts/update.sh --skip-backup   # without a backup (not recommended)</code></pre>
-          <p>Background: a "version" is <strong>two</strong> parts — the <strong>images</strong> (the code) and the <strong>compose file</strong> (the structure: services, ports, env vars). A bare <code>update.sh</code> re-pulls the image version pinned in <code>.env</code> (re-deploy/heal) — it does <em>not</em> jump to a new version. An upgrade is therefore always a deliberate <code>--ref vNEW</code>: it re-pins the <code>*_IMAGE</code> tags to the target version <em>and</em> refreshes the compose + ops scripts in case the structure changed (as 0.30.0 did with the self-contained compose).</p>
+# Dry run: print installed vs. available, change nothing:
+./scripts/update.sh --check
 
-          <div class="callout callout-warn" data-reveal>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+# Self-heal: no version jump, just re-pull the pinned images:
+./scripts/update.sh --redeploy
+
+# More flags: --skip-backup  --with-victoria  --no-rollback  --yes</code></pre>
+          <p>The installer pins the images in <code>.env</code> to the installed version (e.g. <code>:0.34.0</code>) — so an install stays <strong>reproducible</strong> and never silently jumps. <code>update.sh</code> lives <strong>locally</strong> in the <code>adminhelper/</code> directory after install.</p>
+
+          <div class="callout callout-tip" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
             <div>
-              <div class="callout-title"><code>update.sh</code> does not update itself</div>
-              <p>The script is intentionally not in its own refresh list (no self-overwrite while running). <code>--ref</code> pulls the <em>other</em> scripts (install/backup/restore/init-secrets/uninstall); if <code>update.sh</code> itself changes, re-fetch it once via the install one-liner.</p>
-              <p><code>--ref</code> pins the image version automatically (the <code>*_IMAGE</code> tags in <code>.env</code>, derived from the ref: <code>vX.Y.Z</code> → <code>:X.Y.Z</code>, <code>main</code> → <code>:main</code>). <code>:latest</code> is only the compose fallback for a bare <code>docker compose up</code> without an <code>.env</code> and does not appear in a real install.</p>
+              <div class="callout-title">Built to be safe — backup, verification, automatic rollback</div>
+              <p>Before the swap, <code>update.sh</code> backs up first (data incl. the CA crown jewel) <em>and</em> snapshots the current runtime files (<code>backups/runtime-prev-*.tar.gz</code>). The bundle is checked against <code>SHA256SUMS</code> — which also catches <strong>truncated downloads</strong> that a plain <code>curl --fail</code> misses. If the health check fails after deploy, the script auto-rolls-back both the runtime files <em>and</em> the image pins (<code>--no-rollback</code> keeps the broken state for debugging; a <em>data</em> restore stays deliberately manual via <code>restore.sh</code>).</p>
+              <p><strong>The updater updates itself:</strong> if a release ships a newer <code>update.sh</code>, it re-execs into the new version before performing the swap — so future updater improvements reach every host. <strong>One-time migration for installs before 0.34.0:</strong> their old <code>update.sh</code> doesn't know about the bundle yet; re-fetch it once via the install one-liner (or run a <code>--ref v0.34.0</code> update), after which it is self-updating.</p>
             </div>
           </div>
 

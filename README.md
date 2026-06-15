@@ -127,14 +127,15 @@ The optional **AdminHelper Server** enables centralized management and shared ac
 
 ### Quick start (one command)
 
-Download and run the installer — it fetches just the runtime files (the
-self-contained `docker-compose.yml` + a few ops scripts, **not** the source),
-brings up the stack, creates the first admin plus a one-time enrollment token,
-and leaves mTLS **enforced by default**:
+Download and run the installer — it fetches the **latest release's verified
+runtime bundle** (the self-contained `docker-compose.yml` + the ops scripts,
+**not** the source), brings up the stack, creates the first admin plus a one-time
+enrollment token, and leaves mTLS **enforced by default**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.33.0/scripts/install.sh \
-  | bash -s -- --domain srm.example.com --ref v0.33.0
+curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.34.0/scripts/install.sh \
+  | bash -s -- --domain srm.example.com
+# installs the latest published release; pin a specific one with --ref vX.Y.Z
 ```
 
 It prints the admin login and an **enrollment token**. Redeem the token in the
@@ -142,7 +143,10 @@ desktop client under *"enroll with token"* (server URL + token) — the client
 generates its mTLS cert **on-device** — then log in normally; export the browser
 `.p12` afterwards from the desktop. Flags: `--admin-password … --yes`
 (non-interactive), `--permissive` (opt out of enforced mTLS). Updates:
-`./scripts/update.sh` inside the created `adminhelper/` directory. To remove a
+`./scripts/update.sh` inside the created `adminhelper/` directory — release-bound
+(moves to the latest published release, backup-first, verified bundle, automatic
+rollback on a failed health check; `--ref vX.Y.Z` pins, `--check` is a dry run).
+To remove a
 server install completely (containers, **all** volumes incl. the root CA, the
 network, `./data`/`./certs` and the `.env` secrets), run
 `./scripts/uninstall.sh` there — it asks per category by default (`--yes` for

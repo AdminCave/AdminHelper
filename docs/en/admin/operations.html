@@ -89,7 +89,7 @@
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Update flow</div><p><code>docker compose pull &amp;&amp; docker compose up -d</code>. The server runs <code>alembic upgrade head</code> on startup; downtime is typically below 10 seconds.</p></div>
+            <div><div class="callout-title">Update flow</div><p>Use <code>./scripts/update.sh</code> — release-bound, backup-first, verified bundle, auto-rollback (see <a href="./installation.html#update">Installation → Updates</a>). The server runs <code>alembic upgrade head</code> on startup; downtime is typically below 10 seconds.</p></div>
           </div>
 
           <h2>Timezone</h2>

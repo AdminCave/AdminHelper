@@ -382,3 +382,16 @@ jobs:
             echo "::error::FRP_VERSION drift detected (ci=$ci, release=$rel, compose=$compose)"; exit 1; }
           test "$sha_ci" = "$sha_rel" || {
             echo "::error::FRP_SHA256_LINUX_AMD64 differs between ci.yml and release.yml"; exit 1; }
+
+  # Lint the host ops scripts and run the hermetic update.sh sandbox test (fake
+  # release over file://, stubbed docker — no real stack). --severity=warning so
+  # pre-existing info-level notes don't gate; the new scripts are clean at default.
+  ops-scripts:
+    name: Ops scripts (shellcheck + update test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck
+        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh
+      - name: update.sh sandbox test
+        run: bash scripts/tests/update_test.sh

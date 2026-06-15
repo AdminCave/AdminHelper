@@ -199,12 +199,38 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+      # The agent + Docker images derive their version from the tag, but the
+      # desktop version lives in tauri.conf.json and is bumped by hand — assert
+      # it matches the tag so a forgotten bump fails the release, not a user.
+      - name: Verify the desktop version matches the tag
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          tauri=$(grep -m1 '"version"' apps/desktop/src-tauri/tauri.conf.json | grep -o '[0-9][0-9.]*' | head -1)
+          test "$tauri" = "$VER" || { echo "::error::tauri.conf.json version ($tauri) != tag ($VER)"; exit 1; }
+          echo "version OK: $VER"
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
+      # The release-bound updater (scripts/update.sh) consumes ONE versioned asset:
+      # the runtime bundle. Its MANIFEST.sha256 + VERSION let the host verify and
+      # atomically swap exactly this release's runtime files (compose + ops scripts).
+      - name: Build runtime bundle
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          mkdir -p release stage/scripts
+          cp docker-compose.yml .env.example stage/
+          cp scripts/install.sh scripts/update.sh scripts/init-secrets.sh \
+             scripts/backup.sh scripts/restore.sh scripts/uninstall.sh stage/scripts/
+          printf '%s\n' "$TAG" > stage/VERSION
+          ( cd stage && find docker-compose.yml .env.example scripts -type f | sort \
+              | xargs sha256sum > MANIFEST.sha256 )
+          tar czf "release/adminhelper-runtime-${TAG}.tar.gz" -C stage .
+          echo "=== runtime bundle ==="; tar tzf "release/adminhelper-runtime-${TAG}.tar.gz"
       - name: Flatten and checksum
         run: |
-          mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
           cd release
           sha256sum * > SHA256SUMS
