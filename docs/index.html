@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.33.0</span>
+          <span>v0.34.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.33.0 · 2026-06-14</span>
+            <span class="eyebrow">Version 0.34.0 · 2026-06-15</span>
             <h1>AdminHelper – Dokumentation</h1>
             <p class="lead">
               Ein modularer Monolith zur zentralen Verwaltung von
@@ -261,7 +261,21 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.33.0?</h2>
+          <h2>Was ist neu in 0.34.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.34.0 &ndash; Release-gebundenes Server-Update (2026-06-15)</div>
+              <p>
+                <code>scripts/update.sh</code> ist jetzt release-gebunden: jedes Release liefert
+                ein verifiziertes Runtime-Bundle, das der Updater gegen die <code>SHA256SUMS</code>
+                prüft und atomar einspielt — neue/geänderte Ops-Dateien erreichen so zuverlässig
+                jeden Host. Ein nacktes <code>update.sh</code> geht auf das neueste Release (kein
+                stiller Downgrade), sichert vorher und rollt bei einem fehlgeschlagenen Healthcheck
+                automatisch zurück; der Updater aktualisiert sich selbst.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
