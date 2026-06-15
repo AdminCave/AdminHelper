@@ -115,6 +115,7 @@ journalctl -u adminhelper-agent.service --since "1 hour ago"</code></pre>
             <li>Windows: <code>%ProgramData%\AdminHelper\logs\agent.log</code></li>
           </ul>
           <p>Format wie auf stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (Komponente: <code>agent</code>, <code>frpc</code> oder <code>monitor</code>). Rotation bei 10&nbsp;MB, 5 komprimierte Archive. Die Ausführlichkeit steuert <code>LOG_LEVEL</code> (Env) bzw. <code>--log-level debug|info|warn|error</code>.</p>
+          <p>Für einen Bug-Report erzeugt <code>adminhelper-agent diagnostics</code> einen <strong>redaktierten</strong> Bericht (Version, OS, Config ohne Secrets, Log-Auszug) unter <code>/tmp/</code> — kurz durchsehen und an ein GitHub-Issue anhängen.</p>
 
           <h2>Upgrade</h2>
           <p>Bei gesetztem Apt-Repo reicht <code>apt upgrade adminhelper-agent</code> auf allen Servern. Die systemd-Units und die Konfig (<code>/etc/adminhelper/agent.toml</code>) bleiben erhalten.</p>

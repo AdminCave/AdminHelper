@@ -47,7 +47,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Secret-Werte (SECRET_KEY, Passwörter, API-Keys, JWT-/Bearer-Tokens) werden automatisch
   maskiert (Best-effort). Dazu ein GitHub-Issue-Template; das Skript ist im Runtime-Bundle
   enthalten; ein hermetischer Redaction-Test läuft im CI. Ersetzt das in der Doku erwähnte,
-  nie implementierte `app.cli support-bundle`.
+  nie implementierte `app.cli support-bundle`. Der Go-Agent bringt analog
+  `adminhelper-agent diagnostics` mit (Version, OS, Config ohne Secrets, Log-Auszug; redaktiert).
 
 ## [0.34.0] - 2026-06-15
 

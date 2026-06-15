@@ -102,6 +102,7 @@ adminhelper-agent run --once</code></pre>
             <li>Windows: <code>%ProgramData%\AdminHelper\logs\agent.log</code></li>
           </ul>
           <p>Same format as stdout/journal: <code>time=… level=INFO msg="…" component=frpc</code> (component: <code>agent</code>, <code>frpc</code> or <code>monitor</code>). Rotates at 10&nbsp;MB, 5 compressed archives. Verbosity is set via <code>LOG_LEVEL</code> (env) or <code>--log-level debug|info|warn|error</code>.</p>
+          <p>For a bug report, <code>adminhelper-agent diagnostics</code> writes a <strong>redacted</strong> report (version, OS, config without secrets, log excerpt) to <code>/tmp/</code> — review it and attach it to a GitHub issue.</p>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>

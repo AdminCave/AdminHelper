@@ -37,6 +37,7 @@ func main() {
 	root.AddCommand(frpcCmd())
 	root.AddCommand(monitorCmd())
 	root.AddCommand(serviceCmd())
+	root.AddCommand(diagnosticsCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -57,6 +58,16 @@ func versionCmd() *cobra.Command {
 		Short: "Zeigt die Version an",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("adminhelper-agent %s\n", version)
+		},
+	}
+}
+
+func diagnosticsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "diagnostics",
+		Short: "Redaktierten Diagnose-Bericht fuer einen Bug-Report erstellen",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return diagnosticsRun()
 		},
 	}
 }

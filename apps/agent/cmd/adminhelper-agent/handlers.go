@@ -5,6 +5,7 @@
 package main
 
 import (
+	"adminhelper-agent/internal/diagnostics"
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/monitor"
 	"adminhelper-agent/internal/provision"
@@ -33,4 +34,8 @@ func serviceInstallRun() error {
 
 func serviceUninstallRun() error {
 	return service.Uninstall()
+}
+
+func diagnosticsRun() error {
+	return diagnostics.Run(version)
 }
