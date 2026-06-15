@@ -10,6 +10,7 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_internal
@@ -192,7 +193,14 @@ def assign_template(template_id: str, data: TemplateAssign, db: Session = Depend
     if existing:
         raise HTTPException(409, "Template bereits diesem Server zugewiesen")
 
-    result = apply_template(db, template, data.server_id, data.hostname, data.server_name)
+    try:
+        result = apply_template(db, template, data.server_id, data.hostname, data.server_name)
+    except IntegrityError:
+        # Lost the race against a concurrent assign of the same (template,
+        # server): the unique constraint rejected the duplicate. Map it to the
+        # same 409 the read-then-insert check returns.
+        db.rollback()
+        raise HTTPException(409, "Template bereits diesem Server zugewiesen")
     return result
 
 

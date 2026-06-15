@@ -6,7 +6,16 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 
 from app.core.database import Base
 
@@ -166,6 +175,12 @@ class MonitorTemplate(Base):
 
 class MonitorTemplateAssignment(Base):
     __tablename__ = "monitor_template_assignments"
+    # A template can be assigned to a server at most once. The DB constraint is
+    # the only race-free guard — the read-then-insert check in the router has a
+    # TOCTOU window under concurrent assign requests.
+    __table_args__ = (
+        UniqueConstraint("template_id", "server_id", name="uq_assignment_template_server"),
+    )
 
     id = Column(String, primary_key=True)
     template_id = Column(

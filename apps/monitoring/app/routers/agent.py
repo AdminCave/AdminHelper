@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from datetime import datetime, timezone
 
@@ -33,17 +34,19 @@ def _num(v):
     Agent values flow into the InfluxDB line protocol; a non-numeric value must
     never reach format_line (it would be a line-protocol injection vector — see
     app/core/victoria.py — and would otherwise raise/500). Numeric strings are
-    accepted for leniency; anything else (incl. bool) is dropped.
+    accepted for leniency; anything else (incl. bool) is dropped. inf/nan are
+    dropped too: written verbatim they poison the whole VictoriaMetrics batch.
     """
     if isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
-        return v
+        return v if math.isfinite(v) else None
     if isinstance(v, str):
         try:
-            return float(v)
+            num = float(v)
         except ValueError:
             return None
+        return num if math.isfinite(num) else None
     return None
 
 
@@ -128,7 +131,9 @@ def agent_report(
             MonitorCheck.enabled == True,  # noqa: E712
             MonitorCheck.check_type.in_(
                 [
-                    "agent_ping",
+                    # agent_ping is intentionally NOT evaluated here: this endpoint
+                    # calls record_agent_report() first, so the staleness age would
+                    # always be ~0 ("ok"). The scheduler is the single source for it.
                     "agent_resources",
                     "service_process",
                     "proxmox_backup",
@@ -144,87 +149,99 @@ def agent_report(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     for check in agent_checks:
-        config = json.loads(check.config) if check.config else {}
+        # Isolate each check: a single broken check.config (or a checker raising)
+        # must not abort the evaluation of all other checks for this server
+        # (same isolation as the scheduler path in check_engine.execute_check).
+        try:
+            config = json.loads(check.config) if check.config else {}
 
-        if check.check_type == "agent_ping":
-            from app.checkers.agent import AgentPingChecker
+            if check.check_type == "agent_resources":
+                result_status, message, metrics = AgentResourcesChecker().evaluate(config, report)
+            elif check.check_type == "service_process":
+                result_status, message, metrics = ServiceProcessChecker().evaluate(config, report)
+            elif check.check_type == "proxmox_backup":
+                result_status, message, metrics = ProxmoxBackupChecker().evaluate(config, report)
+            elif check.check_type == "zfs_health":
+                result_status, message, metrics = ZfsHealthChecker().evaluate(config, report)
+            elif check.check_type == "docker_health":
+                result_status, message, metrics = DockerHealthChecker().evaluate(config, report)
+            elif check.check_type == "smart_health":
+                result_status, message, metrics = SmartHealthChecker().evaluate(config, report)
+            else:
+                continue
 
-            result_status, message, metrics = AgentPingChecker().run(config)
-        elif check.check_type == "agent_resources":
-            result_status, message, metrics = AgentResourcesChecker().evaluate(config, report)
-        elif check.check_type == "service_process":
-            result_status, message, metrics = ServiceProcessChecker().evaluate(config, report)
-        elif check.check_type == "proxmox_backup":
-            result_status, message, metrics = ProxmoxBackupChecker().evaluate(config, report)
-        elif check.check_type == "zfs_health":
-            result_status, message, metrics = ZfsHealthChecker().evaluate(config, report)
-        elif check.check_type == "docker_health":
-            result_status, message, metrics = DockerHealthChecker().evaluate(config, report)
-        elif check.check_type == "smart_health":
-            result_status, message, metrics = SmartHealthChecker().evaluate(config, report)
-        else:
+            # Extract structured details
+            details = metrics.pop("_details", None) if metrics else None
+
+            if metrics:
+                victoria.write_check_result(
+                    check_id=check.id,
+                    check_type=check.check_type,
+                    server_id=server_id,
+                    name=check.name,
+                    status=result_status,
+                    duration_ms=0,
+                    extra_metrics=metrics,
+                )
+
+            # Update state — same damping logic as the scheduler path; the
+            # check_engine pure functions are the single source (audit: the
+            # previous inline copy could drift from the tested implementation).
+            state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+            old_status = state.status if state else "pending"
+
+            prev_fail_count = state.fail_count if state else 0
+            new_fail_count = next_fail_count(result_status, prev_fail_count)
+            eff_status = effective_status(
+                result_status, new_fail_count, check.consecutive_fails, old_status
+            )
+            if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
+                message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
+
+            details_json = json.dumps(details) if details else None
+
+            if not state:
+                state = MonitorState(
+                    check_id=check.id,
+                    status=eff_status,
+                    since=now,
+                    last_check=now,
+                    fail_count=new_fail_count,
+                    message=message,
+                    details=details_json,
+                )
+                db.add(state)
+            else:
+                if eff_status != state.status:
+                    state.since = now
+                state.status = eff_status
+                state.fail_count = new_fail_count
+                state.last_check = now
+                state.message = message
+                state.details = details_json
+
+            # Alerting on status change — process_alert only flushes the alert
+            # log; the commit below makes both state + log durable atomically.
+            if old_status != eff_status:
+                try:
+                    process_alert(db, check, old_status, eff_status)
+                except Exception:
+                    logger.exception("Alerting fuer Check '%s' fehlgeschlagen", check.name)
+
+            checks_updated += 1
+        except Exception:
+            logger.exception("Auswertung von Check '%s' fehlgeschlagen", check.name)
             continue
 
-        # Extract structured details
-        details = metrics.pop("_details", None) if metrics else None
-
-        if metrics:
-            victoria.write_check_result(
-                check_id=check.id,
-                check_type=check.check_type,
-                server_id=server_id,
-                name=check.name,
-                status=result_status,
-                duration_ms=0,
-                extra_metrics=metrics,
-            )
-
-        # Update state — same damping logic as the scheduler path; the
-        # check_engine pure functions are the single source (audit: the
-        # previous inline copy could drift from the tested implementation).
-        state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
-        old_status = state.status if state else "pending"
-
-        prev_fail_count = state.fail_count if state else 0
-        new_fail_count = next_fail_count(result_status, prev_fail_count)
-        eff_status = effective_status(
-            result_status, new_fail_count, check.consecutive_fails, old_status
-        )
-        if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
-            message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
-
-        details_json = json.dumps(details) if details else None
-
-        if not state:
-            state = MonitorState(
-                check_id=check.id,
-                status=eff_status,
-                since=now,
-                last_check=now,
-                fail_count=new_fail_count,
-                message=message,
-                details=details_json,
-            )
-            db.add(state)
-        else:
-            if eff_status != state.status:
-                state.since = now
-            state.status = eff_status
-            state.fail_count = new_fail_count
-            state.last_check = now
-            state.message = message
-            state.details = details_json
-
-        # Alerting on status change
-        if old_status != eff_status:
-            try:
-                process_alert(db, check, old_status, eff_status)
-            except Exception:
-                logger.exception("Alerting fuer Check '%s' fehlgeschlagen", check.name)
-
-        checks_updated += 1
-
     if checks_updated:
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Commit der Agent-Report-Auswertung fehlgeschlagen")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Speichern der Check-Auswertung fehlgeschlagen",
+            )
 
     return {"status": "ok", "metricsWritten": len(lines), "checksUpdated": checks_updated}

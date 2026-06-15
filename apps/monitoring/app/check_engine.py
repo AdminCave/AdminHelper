@@ -23,7 +23,15 @@ logger = logging.getLogger("monitor.engine")
 
 
 def next_fail_count(result_status: str, prev_fail_count: int) -> int:
-    """Counts consecutive failures. 'ok' resets to 0."""
+    """Counts consecutive failures. 'ok' resets to 0.
+
+    POLICY NOTE: any non-'ok' status increments the counter, including
+    'unknown' (e.g. "waiting for agent data", or an SSRF-blocked target). A
+    check that stays 'unknown' therefore escalates to an alert after
+    ``consecutive_fails`` occurrences, exactly like a real failure. Whether
+    'unknown' should alert is a deliberate open policy question — change here
+    if 'unknown' should be treated as neutral instead.
+    """
     if result_status != "ok":
         return prev_fail_count + 1
     return 0
@@ -150,11 +158,15 @@ def execute_check(check_id: str) -> None:
 
         db.commit()
 
-        # Alerting on status change
+        # Alerting on status change. process_alert only flushes the alert log
+        # (it no longer commits the session); persist it with an own commit so
+        # a failing dispatch/log cannot roll back the already-committed state.
         if old_status != eff_status:
             try:
                 process_alert(db, check, old_status, eff_status)
+                db.commit()
             except Exception:
+                db.rollback()
                 logger.exception("Alerting fuer Check '%s' fehlgeschlagen", check.name)
 
     except Exception:

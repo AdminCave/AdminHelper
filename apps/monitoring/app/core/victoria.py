@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 
 import httpx
@@ -45,16 +46,19 @@ def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
 
     Format: measurement,tag1=val1,tag2=val2 value=X timestamp
 
-    ``value`` MUST be a real number (int or float, not bool). A non-numeric
-    value is rejected: it would otherwise be written verbatim into the field
-    position, allowing line-protocol injection. Every metric write in this
-    codebase passes a numeric value.
+    ``value`` MUST be a real, finite number (int or float, not bool). A
+    non-numeric value is rejected: it would otherwise be written verbatim into
+    the field position, allowing line-protocol injection. inf/nan are rejected
+    too — written verbatim they poison the whole batch. Every metric write in
+    this codebase passes a numeric value.
     """
     tag_str = ",".join(f"{_esc_tag(k)}={_esc_tag(v)}" for k, v in tags.items() if v)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(
             f"format_line value must be a real number, got {type(value).__name__}: {value!r}"
         )
+    if not math.isfinite(value):
+        raise ValueError(f"format_line value must be finite, got {value!r}")
     if isinstance(value, int):
         field = f"value={value}i"
     else:
@@ -112,7 +116,12 @@ class VictoriaClient:
         if extra_metrics:
             for key, value in extra_metrics.items():
                 # bool is an int subclass; exclude it (format_line rejects bools).
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                # Drop non-finite values too (format_line would raise on inf/nan).
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                ):
                     lines.append(format_line(f"monitor_{key}", tags, value, ts))
 
         self.write(lines)

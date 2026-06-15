@@ -22,6 +22,7 @@ from email.mime.text import MIMEText
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.ssrf import is_private_url
 from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
 
 logger = logging.getLogger("monitor.alerter")
@@ -40,7 +41,13 @@ def process_alert(
     old_status: str,
     new_status: str,
 ) -> None:
-    """Evaluates all alert rules and sends out matching notifications."""
+    """Evaluates all alert rules and sends out matching notifications.
+
+    The alert-log rows are only flushed, not committed: the caller (scheduler
+    path / agent push path) owns the transaction and commits state + alert log
+    together. Committing here would prematurely persist any state changes the
+    caller has accumulated on the same session.
+    """
     if old_status == new_status:
         return
 
@@ -69,7 +76,7 @@ def process_alert(
         )
         db.add(log_entry)
 
-    db.commit()
+    db.flush()
 
 
 def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
@@ -186,6 +193,13 @@ def _send_webhook(
     if not url:
         return False, "Keine Webhook-URL konfiguriert"
 
+    # SSRF guard: a webhook URL is user-supplied; reject private/reserved
+    # targets so it cannot probe the internal network from the monitor service
+    # (same protection the HTTP checker already applies to its targets).
+    if is_private_url(url):
+        logger.warning("Webhook-Ziel abgelehnt (privat/reserviert): %s", url)
+        return False, "Webhook-Ziel ist privat/reserviert (nicht erlaubt)"
+
     msg = _build_message(check, old_status, new_status)
     payload = {
         "alert_rule": rule.name,
@@ -193,7 +207,7 @@ def _send_webhook(
     }
 
     try:
-        resp = httpx.post(url, json=payload, timeout=10)
+        resp = httpx.post(url, json=payload, timeout=10, follow_redirects=False)
         if resp.status_code < 300:
             logger.info("Webhook gesendet: %s -> %s", check.name, url)
             return True, None
@@ -234,7 +248,14 @@ def _send_email(
     message.attach(MIMEText(msg_data["text"], "plain"))
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+        # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from
+        # the start (SMTP_SSL), otherwise login() would run in clear text. Port
+        # 587 (and others) use STARTTLS to upgrade an initially plain socket.
+        if smtp_port == 465:
+            smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
+        else:
+            smtp_ctx = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+        with smtp_ctx as server:
             if smtp_port == 587:
                 server.starttls()
             if smtp_user and smtp_pass:

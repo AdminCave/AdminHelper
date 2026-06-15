@@ -106,12 +106,13 @@ class TestIsInCooldown:
 
 class _CapturingDb:
     """Fake DB for process_alert: provides the rules list, collects add()
-    and commit() calls."""
+    and flush() calls. process_alert only flushes the alert log now; the
+    caller owns the commit (see the H7 fix)."""
 
     def __init__(self, rules):
         self._rules = rules
         self.added = []
-        self.committed = False
+        self.flushed = False
 
     def query(self, *args, **kwargs):
         return self
@@ -125,8 +126,8 @@ class _CapturingDb:
     def add(self, entry):
         self.added.append(entry)
 
-    def commit(self):
-        self.committed = True
+    def flush(self):
+        self.flushed = True
 
 
 class TestRecoveryBypassesCooldown:
@@ -157,7 +158,7 @@ class TestRecoveryBypassesCooldown:
         assert dispatched["n"] == 1, "Recovery muss dispatchen"
         assert cooldown_calls["n"] == 0, "Recovery darf Cooldown gar nicht pruefen"
         assert len(db.added) == 1
-        assert db.committed is True
+        assert db.flushed is True
 
     def test_non_recovery_blocked_by_cooldown(self, monkeypatch):
         rule = make_rule()
@@ -178,11 +179,58 @@ class TestRecoveryBypassesCooldown:
 
         assert dispatched["n"] == 0
         assert len(db.added) == 0
-        assert db.committed is True  # commit() runs anyway (at the end)
+        assert db.flushed is True  # flush() runs anyway (at the end)
 
     def test_no_change_returns_early(self, monkeypatch):
         db = _CapturingDb([make_rule()])
         # old == new -> immediate return, no query/no commit.
         process_alert(db, make_check(), old_status="ok", new_status="ok")
         assert db.added == []
-        assert db.committed is False
+        assert db.flushed is False
+
+
+class TestWebhookSsrf:
+    """M2: a webhook URL pointing at a private/reserved target must be rejected
+    before any outbound request is made."""
+
+    def test_private_target_rejected_without_request(self, monkeypatch):
+        posted = {"n": 0}
+        monkeypatch.setattr(alerter, "is_private_url", lambda url: True)
+        monkeypatch.setattr(
+            alerter.httpx, "post", lambda *a, **k: posted.__setitem__("n", posted["n"] + 1)
+        )
+
+        success, error = alerter._send_webhook(
+            {"url": "http://169.254.169.254/latest/meta-data"},
+            make_rule(),
+            make_check(),
+            old_status="ok",
+            new_status="critical",
+        )
+
+        assert success is False
+        assert posted["n"] == 0, "Bei privatem Ziel darf kein HTTP-Request rausgehen"
+
+    def test_public_target_is_dispatched(self, monkeypatch):
+        posted = {"n": 0}
+        monkeypatch.setattr(alerter, "is_private_url", lambda url: False)
+
+        class _Resp:
+            status_code = 200
+
+        monkeypatch.setattr(
+            alerter.httpx,
+            "post",
+            lambda *a, **k: posted.__setitem__("n", posted["n"] + 1) or _Resp(),
+        )
+
+        success, error = alerter._send_webhook(
+            {"url": "https://hooks.example.com/x"},
+            make_rule(),
+            make_check(),
+            old_status="ok",
+            new_status="critical",
+        )
+
+        assert success is True
+        assert posted["n"] == 1
