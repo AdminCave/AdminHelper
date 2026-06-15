@@ -8,7 +8,10 @@ Without this the server had no logging setup at all: the stdlib root logger
 defaults to WARNING with the bare "last resort" handler, so every ``logger.info``
 was silently dropped and warnings/errors printed without a timestamp. We route
 all loggers — the app's ``adminhelper.*`` ones and uvicorn's — through a single
-timestamped stdout handler, so ``docker compose logs`` shows the full picture.
+timestamped stderr handler, so ``docker compose logs`` shows the full picture.
+Logs go to stderr (not stdout) so a subprocess that uses stdout as an IPC channel
+— the hook script worker — is never corrupted by a stray log line; docker compose
+logs captures stderr all the same.
 
 Format is human-readable on purpose (not JSON): the service runs single-worker
 and operators read it directly via ``docker compose logs``. The level is taken
@@ -45,7 +48,7 @@ def configure_logging() -> None:
                 "console": {
                     "class": "logging.StreamHandler",
                     "formatter": "default",
-                    "stream": "ext://sys.stdout",
+                    "stream": "ext://sys.stderr",
                 },
             },
             "root": {"handlers": ["console"], "level": level},

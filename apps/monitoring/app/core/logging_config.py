@@ -6,8 +6,9 @@
 
 Replaces the previous one-line ``basicConfig`` so the monitoring service shares
 the server's format: all loggers — the app's ``monitor.*`` ones and uvicorn's —
-go through a single timestamped stdout handler, visible via ``docker compose
-logs``. Format is human-readable on purpose (not JSON); the level is taken from
+go through a single timestamped stderr handler, visible via ``docker compose
+logs`` (stderr, not stdout — same convention as the server, where stdout is left
+free for subprocess IPC). Format is human-readable on purpose (not JSON); the level is taken from
 ``LOG_LEVEL`` (default INFO), an unknown value falls back to INFO rather than
 crashing startup.
 
@@ -45,7 +46,7 @@ def configure_logging() -> None:
                 "console": {
                     "class": "logging.StreamHandler",
                     "formatter": "default",
-                    "stream": "ext://sys.stdout",
+                    "stream": "ext://sys.stderr",
                 },
             },
             "root": {"handlers": ["console"], "level": level},

@@ -68,7 +68,7 @@
           <p>Stops the stack, restores the volumes + DBs and brings it back up. The restored Root is <strong>identical</strong> — already-enrolled agents stay trusted, no re-enrollment. The backed-up <code>.env</code> is written to <code>.env.restored</code> (it never overwrites an existing <code>.env</code>); on a fresh host, add the separately kept <code>CA_ROOT_PASSPHRASE</code> and move it to <code>.env</code>.</p>
 
           <h2>Logging</h2>
-          <p>The containers write <strong>timestamped</strong> plain-text lines to stdout; <code>docker compose logs -f &lt;service&gt;</code> is the fastest way to read them. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (date, time, level, logger, message).</p>
+          <p>The containers write <strong>timestamped</strong> plain-text lines to stderr (stdout stays free for subprocess IPC); <code>docker compose logs -f &lt;service&gt;</code> is the fastest way to read them. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (date, time, level, logger, message).</p>
           <p>The server container uses named loggers prefixed <code>adminhelper.*</code>; some modules log under their module path <code>app.*</code>. Useful logger names:</p>
           <ul>
             <li><code>adminhelper.auth</code> / <code>adminhelper.auth_router</code> – logins, refresh rotations, reuse detection</li>
@@ -78,7 +78,7 @@
             <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI actions and the FRP container</li>
             <li><code>app.modules.hooks.scheduler</code> – hook executions incl. subprocess exit codes</li>
           </ul>
-          <p>The monitoring container logs under the <code>monitor.*</code> prefix (e.g. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Both containers write plain-text lines to stdout, not JSON.</p>
+          <p>The monitoring container logs under the <code>monitor.*</code> prefix (e.g. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Both containers write plain-text lines to stderr, not JSON.</p>
 
           <p><strong>Log level:</strong> server and monitoring read the verbosity from the <code>LOG_LEVEL</code> env var (<code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code>, default <code>INFO</code>). For deeper diagnosis set <code>LOG_LEVEL=DEBUG</code> in <code>.env</code> and run <code>docker compose up -d</code>.</p>
           <p><strong>Rotation:</strong> container logs are bounded via Docker's <code>json-file</code> driver (<code>max-size: 10m</code>, <code>max-file: 5</code> → max.&nbsp;50&nbsp;MB per service) so they don't grow unbounded. Configured through the <code>x-logging</code> anchor in <code>docker-compose.yml</code>.</p>

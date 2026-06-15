@@ -101,7 +101,7 @@
           <p>Stoppt den Stack, stellt Volumes + DBs wieder her und fährt hoch. Die restaurierte Root ist <strong>identisch</strong> — bereits enrollte Agenten bleiben vertraut, ohne Re-Enrollment. Die <code>.env</code> aus dem Backup wird als <code>.env.restored</code> abgelegt (überschreibt eine vorhandene <code>.env</code> nicht); auf einem frischen Host die getrennt aufbewahrte <code>CA_ROOT_PASSPHRASE</code> ergänzen und nach <code>.env</code> übernehmen.</p>
 
           <h2>Logs</h2>
-          <p>Die Container schreiben Plain-Text-Zeilen <strong>mit Zeitstempel</strong> auf stdout; <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (Datum, Uhrzeit, Level, Logger, Meldung).</p>
+          <p>Die Container schreiben Plain-Text-Zeilen <strong>mit Zeitstempel</strong> auf stderr (stdout bleibt für Subprozess-IPC frei); <code>docker compose logs -f &lt;service&gt;</code> ist der schnellste Weg. Format: <code>2026-06-15 11:25:53 INFO     adminhelper.auth …</code> (Datum, Uhrzeit, Level, Logger, Meldung).</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code>docker compose logs -f server            # FastAPI + Scheduler
@@ -118,7 +118,7 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
             <li><code>app.modules.frp.pki</code> / <code>app.modules.frp.docker_manager</code> – PKI-Aktionen und FRP-Container</li>
             <li><code>app.modules.hooks.scheduler</code> – Hook-Ausführungen inkl. Subprozess-Exitcodes</li>
           </ul>
-          <p>Der Monitoring-Container loggt unter dem Präfix <code>monitor.*</code> (z.&nbsp;B. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Beide Container schreiben Plain-Text-Zeilen nach stdout, kein JSON.</p>
+          <p>Der Monitoring-Container loggt unter dem Präfix <code>monitor.*</code> (z.&nbsp;B. <code>monitor.engine</code>, <code>monitor.scheduler</code>, <code>monitor.alerter</code>, <code>monitor.victoria</code>). Beide Container schreiben Plain-Text-Zeilen nach stderr, kein JSON.</p>
 
           <p><strong>Log-Level:</strong> Server und Monitoring lesen die Ausführlichkeit aus der Env-Variable <code>LOG_LEVEL</code> (<code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code>, Default <code>INFO</code>). Für eine tiefere Diagnose <code>LOG_LEVEL=DEBUG</code> in der <code>.env</code> setzen und <code>docker compose up -d</code>.</p>
           <p><strong>Rotation:</strong> Die Container-Logs sind über den Docker-<code>json-file</code>-Treiber begrenzt (<code>max-size: 10m</code>, <code>max-file: 5</code> → max.&nbsp;50&nbsp;MB pro Service), damit sie nicht unbegrenzt wachsen. Konfiguriert über den <code>x-logging</code>-Anker in der <code>docker-compose.yml</code>.</p>
