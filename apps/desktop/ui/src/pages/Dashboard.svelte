@@ -83,7 +83,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span class="mon-type-badge" style="font-size: 10px">
               {conn.kind.toUpperCase()}
             </span>
-            <div class="dash-list-item-meta">{timeAgo(conn.lastUsed)}</div>
+            <div class="dash-list-item-meta">{timeAgo(conn.lastUsed, $t)}</div>
           </div>
         {/each}
       </div>
