@@ -30,7 +30,7 @@ Dach — die frühere `desktop/` vs. `desktop-src/`-Geschwister-Kollision (die
 schon Bugs erzeugt hatte) wurde in v0.24.0 aufgelöst. Das alte Plain-JS-UI
 unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
 
-**Eine Stolperfalle, die schon Bugs erzeugt hat:**
+**Stolperfallen, die schon Bugs erzeugt haben:**
 
 - **Release = mehrere Versions-Stellen synchron bumpen:** Desktop-Version in
   `apps/desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
@@ -41,6 +41,15 @@ unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
   (Docker-Build-Arg). Detaillierte Stellen-Liste: lokale Agent-Memory
   `.claude/agent-memory/adminhelper-release-manager/version_locations.md`
   (gitignored — existiert nur auf dem Dev-Rechner, nicht im Clone).
+- **Release-Artefakte werden signiert:** Docker-Images schlüssellos via cosign
+  (GitHub-OIDC, kein Schlüssel nötig); die `SHA256SUMS` via minisign. Das
+  GitHub-Secret `MINISIGN_SECRET_KEY` muss die **base64-Form** des Key-Files sein
+  (`base64 -w0 minisign.key`) — ein roher, mehrzeiliger Key wird im Secret-Store
+  verstümmelt (`base64 conversion failed` beim Signieren). Der Public Key ist in
+  `scripts/install.sh` **und** `scripts/update.sh` als `MINISIGN_PUBKEY` gepinnt
+  (beide synchron halten); install/update verifizieren fail-closed. Volle
+  Anleitung inkl. `cosign verify`-Befehl: `docs/developer/cicd.html`
+  (Abschnitt „Release-Signatur").
 
 ## 1. Arbeitsweise & Mindset
 
