@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.35.0</span>
+          <span>v0.36.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.35.0 · 2026-06-15</span>
+            <span class="eyebrow">Version 0.36.0 · 2026-06-15</span>
             <h1>AdminHelper – Documentation</h1>
             <p class="lead">
               A modular monolith for centrally managing remote access,
@@ -259,7 +259,24 @@
             </div>
           </div>
 
-          <h2>What's new in 0.35.0?</h2>
+          <h2>What's new in 0.36.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.36.0 &ndash; Security audit: hardening &amp; bug fixes across every component (2026-06-15)</div>
+              <p>
+                The result of a project-wide security and correctness audit across all five
+                components. <strong>Security:</strong> FRP auth token and dashboard password are no
+                longer echoed back, monitoring webhooks are SSRF-checked, the web access token now
+                lives only in memory (XSS-resistant), and <strong>releases are now signed</strong>
+                (cosign for images, minisign for the <code>curl|bash</code> chain).
+                <strong>Correctness:</strong> fixed race conditions (duplicate ports/assignments),
+                migration safety (no accidental <code>DROP</code>), a more robust monitoring path,
+                and various frontend fixes. Details in the
+                <a href="https://github.com/ks98/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

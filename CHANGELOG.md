@@ -5,7 +5,7 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.36.0] - 2026-06-15
 
 Ergebnis eines projektweiten Audits (Bugs, Verbesserungen, Sicherheit) über alle
 fünf Code-Komponenten. Alle Punkte sind durch Tests bzw. die jeweilige
@@ -1518,6 +1518,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.36.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.36.0
 [0.35.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.35.0
 [0.34.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.34.0
 [0.33.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.33.0
