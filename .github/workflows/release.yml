@@ -237,6 +237,26 @@ jobs:
           sha256sum * > SHA256SUMS
           echo "=== Release assets ==="
           ls -lah
+      # Sign SHA256SUMS so install.sh/update.sh can verify authenticity, not just
+      # transport integrity (the bundle and SHA256SUMS come from the same origin).
+      # Skips with a warning until MINISIGN_SECRET_KEY is configured, so it never
+      # blocks a release. Generate a passwordless CI key once with `minisign -G -W`,
+      # store its secret-key file as the MINISIGN_SECRET_KEY secret, and pin the
+      # matching public key in scripts/install.sh + scripts/update.sh to arm it.
+      - name: Sign SHA256SUMS (minisign)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
+            echo "::warning::MINISIGN_SECRET_KEY not set — SHA256SUMS will be unsigned (see scripts/install.sh)."
+            exit 0
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          minisign -S -s minisign.key -m release/SHA256SUMS -x release/SHA256SUMS.minisig < /dev/null
+          rm -f minisign.key
+          echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig"
       - name: Create draft release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:

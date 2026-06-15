@@ -13,6 +13,8 @@ on:
 permissions:
   contents: read
   packages: write
+  # Keyless cosign signing via the GitHub OIDC token (no private key to manage).
+  id-token: write
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -63,7 +65,11 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
       - name: Build and push
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: ${{ matrix.context }}
@@ -75,3 +81,17 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          # In-toto SLSA provenance + SBOM attestations attached to the image.
+          provenance: mode=max
+          sbom: true
+
+      # Keyless signature over the pushed digest (covers every tag pointing at
+      # it). Verifiable with:
+      #   cosign verify ghcr.io/ks98/adminhelper/<image> \
+      #     --certificate-identity-regexp 'https://github.com/ks98/AdminHelper/.*' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Sign the image (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/adminhelper/${{ matrix.image }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"

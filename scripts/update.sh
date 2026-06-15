@@ -36,6 +36,11 @@ set -euo pipefail
 REPO="ks98/AdminHelper"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
+# minisign public key (the "RW..." line of minisign.pub) to verify the release
+# SHA256SUMS signature — authenticity, not just transport integrity. Keep in
+# sync with scripts/install.sh. Empty = not yet armed (warn + checksum-only);
+# once set, a missing/invalid signature aborts the update.
+MINISIGN_PUBKEY=""
 
 REF=""
 REDEPLOY=0
@@ -110,6 +115,27 @@ semver_gt() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
 }
 
+# Verify the SHA256SUMS minisign signature against the pinned public key. Unset
+# MINISIGN_PUBKEY = not yet armed -> warn + checksum-only (no regression). Once
+# armed, a missing minisign binary or a bad/absent signature aborts. Fail closed.
+# Writes only to stderr (fetch_bundle returns the extract dir on stdout).
+verify_sums_signature() {
+    local tmp="$1" dl="$2"
+    if [ -z "$MINISIGN_PUBKEY" ]; then
+        log "WARNUNG: Release-Signatur nicht konfiguriert — nur Transport-Integritaet (Checksumme)."
+        return 0
+    fi
+    if ! command -v minisign >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq minisign || true
+    fi
+    command -v minisign >/dev/null 2>&1 || die "minisign fehlt — Signatur nicht pruefbar (installiere 'minisign')."
+    curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS.minisig" "${dl}/SHA256SUMS.minisig" \
+        || die "Release-Signatur (SHA256SUMS.minisig) fehlt."
+    minisign -Vm "${tmp}/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "${tmp}/SHA256SUMS.minisig" >/dev/null 2>&1 \
+        || die "Release-Signatur ungueltig — Abbruch (moegliche Manipulation)."
+    log "Release-Signatur verifiziert (minisign)."
+}
+
 # Download the runtime bundle for TAG into $1, verify against SHA256SUMS + the
 # in-bundle MANIFEST.sha256, and assert the bundle's VERSION matches TAG. Echoes
 # the extract dir on success.
@@ -122,6 +148,7 @@ fetch_bundle() {
         || die "Bundle ${asset} nicht ladbar (Release veroeffentlicht? Tag korrekt?)."
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" \
         || die "SHA256SUMS fuer ${tag} nicht ladbar."
+    verify_sums_signature "$tmp" "$dl"
     # --fail catches HTTP errors but NOT a truncated 200 — the checksum does.
     expected=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/SHA256SUMS")
     [ -n "$expected" ] || die "Keine Checksumme fuer ${asset} in SHA256SUMS."

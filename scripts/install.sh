@@ -29,6 +29,12 @@ set -euo pipefail
 
 REPO="ks98/AdminHelper"
 REF=""                       # empty -> resolve the latest published release
+# minisign public key (the "RW..." line of minisign.pub) used to verify the
+# release SHA256SUMS signature — authenticity, not just transport integrity.
+# ARM by pasting the public key from `minisign -G -W` here (and in update.sh).
+# Empty = not yet armed: falls back to checksum-only with a warning (no
+# enforcement). Once set, a missing/invalid signature aborts the install.
+MINISIGN_PUBKEY=""
 RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/ks98/AdminHelper}"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
@@ -69,6 +75,28 @@ raw_fetch() {
     done
 }
 
+# Verify the SHA256SUMS minisign signature against the pinned public key (proves
+# authenticity, not just transport integrity). Unset MINISIGN_PUBKEY = not yet
+# armed -> warn + checksum-only (no regression). Once armed, a missing minisign
+# binary or a bad/absent signature aborts. Fail closed.
+verify_sums_signature() {
+    local tmp="$1" dl="$2"
+    if [ -z "$MINISIGN_PUBKEY" ]; then
+        echo "[install] WARNUNG: Release-Signatur nicht konfiguriert — nur Transport-Integritaet (Checksumme)." >&2
+        return 0
+    fi
+    if ! command -v minisign >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq minisign || true
+    fi
+    command -v minisign >/dev/null 2>&1 \
+        || { echo "FEHLER: minisign fehlt — Signatur nicht pruefbar (installiere 'minisign')." >&2; rm -rf "$tmp"; exit 1; }
+    curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS.minisig" "${dl}/SHA256SUMS.minisig" 2>/dev/null \
+        || { echo "FEHLER: Release-Signatur (SHA256SUMS.minisig) fehlt." >&2; rm -rf "$tmp"; exit 1; }
+    minisign -Vm "${tmp}/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "${tmp}/SHA256SUMS.minisig" >/dev/null 2>&1 \
+        || { echo "FEHLER: Release-Signatur ungueltig — Abbruch (moegliche Manipulation)." >&2; rm -rf "$tmp"; exit 1; }
+    echo "[install] Release-Signatur verifiziert (minisign)." >&2
+}
+
 # Fetch + verify the runtime bundle into TARGET_DIR. Returns 1 if the release has
 # no bundle asset (caller falls back to raw); hard-exits on a checksum/manifest fail.
 fetch_bundle_into() {
@@ -77,6 +105,7 @@ fetch_bundle_into() {
     curl -fsSL --retry 3 -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null || { rm -rf "$tmp"; return 1; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" 2>/dev/null || { rm -rf "$tmp"; return 1; }
     echo "[install] Verifiziere und entpacke Runtime-Bundle ${asset} ..." >&2
+    verify_sums_signature "$tmp" "$dl"
     exp=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/SHA256SUMS")
     { [ -n "$exp" ] && echo "${exp}  ${tmp}/${asset}" | sha256sum -c - >/dev/null 2>&1; } \
         || { echo "FEHLER: Bundle-Checksumme stimmt nicht." >&2; rm -rf "$tmp"; exit 1; }
