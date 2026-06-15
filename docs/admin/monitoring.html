@@ -120,8 +120,8 @@
           <table>
             <thead><tr><th>Kanal</th><th>Konfiguration</th></tr></thead>
             <tbody>
-              <tr><td><code>webhook</code></td><td><code>url</code> – AdminHelper sendet ein JSON-POST mit Check-Name, Typ, Server, Severity, altem/neuem Status und Klartext-Nachricht (Timeout 10 s, Erfolg bei HTTP &lt; 300)</td></tr>
-              <tr><td><code>email</code></td><td><code>recipients</code> (oder <code>to</code>, auch als CSV). SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar. Bei Port 587 wird STARTTLS genutzt.</td></tr>
+              <tr><td><code>webhook</code></td><td><code>url</code> – AdminHelper sendet ein JSON-POST mit Check-Name, Typ, Server, Severity, altem/neuem Status und Klartext-Nachricht (Timeout 10 s, ohne Redirects, Erfolg bei HTTP &lt; 300). Aus Sicherheitsgründen (SSRF) werden Ziele, die auf private/reservierte Adressen auflösen (z. B. <code>127.0.0.0/8</code>, <code>10/8</code>, <code>169.254.0.0/16</code>), abgelehnt — für ein internes Webhook-Ziel den Empfänger über einen öffentlich auflösbaren Namen ansprechen.</td></tr>
+              <tr><td><code>email</code></td><td><code>recipients</code> (oder <code>to</code>, auch als CSV). SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar. Bei Port 465 wird implizites TLS (SMTPS) genutzt, bei Port 587 STARTTLS.</td></tr>
             </tbody>
           </table>
           <p><strong>Cooldown:</strong> Nach einem erfolgreich versendeten Alert unterdrückt <code>cooldown_minutes</code> (Default 30) weitere Alerts derselben Regel für denselben Check.</p>

@@ -5,6 +5,74 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+Ergebnis eines projektweiten Audits (Bugs, Verbesserungen, Sicherheit) über alle
+fünf Code-Komponenten. Alle Punkte sind durch Tests bzw. die jeweilige
+Verifikations-Suite (pytest/ruff, go test/vet, cargo clippy/test, svelte-check/vitest)
+abgesichert.
+
+### Security
+
+- **FRP-Secrets nicht mehr lesbar zurückgegeben.** `GET /api/frp/server-config`
+  maskiert `auth.token` und Dashboard-Passwort; das Web-Modal füllt sie beim
+  Bearbeiten nicht mehr vor (leer lassen = unverändert) und zeigt den Auth-Token
+  als Passwortfeld.
+- **Monitoring-Webhooks SSRF-geprüft.** Alert-Webhook-Ziele werden — wie bereits
+  der HTTP-Checker — gegen private/reservierte Adressen geprüft und ohne Redirects
+  gesendet. SMTP-Port 465 nutzt jetzt implizites TLS (`SMTP_SSL`) statt eines
+  Klartext-Logins.
+- **Desktop: Token-Ziel-Pinning gehärtet.** `api_proxy`/`authenticated_get` pinnen
+  die *finale* Ziel-URL an den angemeldeten Server und weisen Pfade ab, die die
+  URL-Authority umschreiben (führendes `@`, `\`, `://`) — verhindert JWT-Leak an
+  fremde Hosts. TOFU-Pinning ist jetzt race-frei (atomares `load_or_store`); rohe
+  Server-Fehler-Bodies werden vor Anzeige/Log redigiert und gekürzt.
+- **Web: Access-Token nur noch im Speicher** (nicht mehr in `localStorage`) — eine
+  XSS-Lücke kann ihn nicht mehr aus persistentem Storage exfiltrieren; nach einem
+  Reload wird die Session aus dem HttpOnly-Refresh-Cookie wiederhergestellt.
+- **`restore.sh` weist manipulierte Backups ab** (absolute/`../`-Pfade, Sym-/
+  Hardlink-Member) und entpackt mit `--no-same-owner` — schließt eine
+  Path-Traversal-Lücke beim Wiederherstellen eines untergeschobenen Backups.
+
+### Fixed
+
+- **Migrations-Sicherheit (Server).** `alembic/env.py` importiert jetzt die
+  Module `audit`, `enrollment` und `provisioning`; ein künftiges
+  `--autogenerate` schlägt sonst `drop_table` für `audit_log`,
+  `enrollment_tokens` und `revoked_identities` vor (Datenverlust).
+- **Monitoring `agent_ping` korrekt.** Wird nicht mehr zusätzlich im Push-Endpoint
+  ausgewertet (dort war die Staleness immer ~0 → fälschlich „ok"); der Scheduler
+  ist die einzige Quelle.
+- **Monitoring-Robustheit.** Ein einzelner Check mit defekter `config` bricht nicht
+  mehr die Auswertung aller Checks eines Servers ab; `process_alert` committet die
+  geteilte Session nicht mehr vorzeitig (sauberes Rollback im Fehlerfall).
+- **Doppelte Port-/Namensvergabe verhindert (Server).** DB-Constraints für STCP-
+  `visitor_port` und Tunnel-/Benutzernamen schließen ein TOCTOU-Fenster; Konflikte
+  werden als 409 statt als 500 gemeldet.
+- **Connection-Import validiert.** Jeder Eintrag wird gegen `ConnectionCreate`
+  geprüft (422 mit Fehlerliste) statt ungültige Werte zu persistieren oder mitten
+  im Lauf 500 zu werfen; ein `replace`-Import mit fehlerhaftem Input löscht nichts.
+- **Agent.** Kritische NVMe-SMART-Nullwerte (z. B. „Spare aufgebraucht") fallen
+  nicht mehr aus dem Report; der Windows-Dienst reagiert beim Stop sofort
+  (Push-Retry-Backoff per Context abbrechbar); der Windows-FRP-Sync bricht nicht
+  mehr bei jeder Config-Änderung an einem nicht registrierten Dienst ab;
+  PKI-Dateien werden mit geprüftem Close + `fsync` geschrieben; Proxmox-Backup-
+  Index nutzt den echten Node-Namen statt `localhost`; OS-Info im Diagnose-Bericht
+  funktioniert auch unter Windows.
+- **Desktop-UI.** Beim schnellen Serverwechsel zeigen die Tabs keine Daten des
+  falschen Servers mehr (Out-of-order-Fetches); die Monitoring-Sparkline lädt bei
+  Zeitraum-/Check-Wechsel neu; ein RDP-Kindprozess wird bei fehlgeschlagenem
+  Passwort-Stdin sauber beendet.
+- **Web.** `ConfirmDialog` hängt nicht mehr bei überlappenden Aufrufen; Audit- und
+  FRP-Status-Listen zeigen bei schnellem Filtern keine veralteten Antworten mehr;
+  der Login zeigt bei falschen Zugangsdaten die Server-Meldung statt „Sitzung
+  abgelaufen".
+- **Diverse Robustheit.** inf/nan-Metrikwerte werden vor dem Line-Protocol verworfen;
+  die Pagination spart die `COUNT(*)`-Query, wenn ohne Limit/Offset gelistet wird;
+  Hook- und Tunnel-Updates re-validieren ihre Eingaben (kein 500 bei ungültigem
+  Cron/`tunnel_type`); ein N+1 im FRP-Bulk-ZIP ist behoben; der Redis-Increment im
+  Agent-Ingest-Proxy blockiert den Event-Loop nicht mehr.
+
 ## [0.35.0] - 2026-06-15
 
 ### Changed
