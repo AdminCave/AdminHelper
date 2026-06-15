@@ -2,21 +2,22 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Request-scoped actor context for the audit trail.
+"""Request-scoped actor for the audit trail.
 
-A tiny ``contextvars`` holder so audit records know *who* triggered an action
-(and from where) without threading the actor through every call signature. The
-auth dependencies (app.core.auth) bind it once per request when they resolve the
-principal; app.modules.audit.service.record() reads it.
+Knows *who* triggered an action (and from where). The auth dependencies bind it
+once per request when they resolve the principal; audited endpoints read it back
+and hand it to app.modules.audit.service.record().
 
-Lives in core because app.core.auth — itself core — populates it. Note: the
-event bus (app.core.events) runs in a background thread pool and therefore does
-NOT see this context; that is exactly why audit writes happen synchronously in
-the request, not from an event subscriber.
+Why request.state and not contextvars: FastAPI runs sync dependencies and sync
+path operations in *separate* threadpool workers, each with its own copy of the
+context — a contextvar set in the dependency is invisible to the endpoint. The
+``request.state`` object, by contrast, is shared (it is an attribute on the one
+Request instance both receive), so it survives the thread hop.
 """
 
-import contextvars
 from dataclasses import dataclass
+
+from starlette.requests import Request
 
 
 @dataclass(frozen=True)
@@ -31,14 +32,12 @@ class Actor:
 
 _SYSTEM = Actor()
 
-_current: contextvars.ContextVar[Actor] = contextvars.ContextVar("audit_actor", default=_SYSTEM)
+
+def bind_actor(request: Request, actor: Actor) -> None:
+    """Bind the acting principal for this request (called by the auth deps)."""
+    request.state.actor = actor
 
 
-def set_actor(actor: Actor) -> None:
-    """Bind the acting principal for the current request/context."""
-    _current.set(actor)
-
-
-def current_actor() -> Actor:
-    """Return the bound actor, or a system actor if nothing was bound."""
-    return _current.get()
+def actor_from_request(request: Request) -> Actor:
+    """Return the bound actor, or a system actor if none was bound."""
+    return getattr(request.state, "actor", _SYSTEM)

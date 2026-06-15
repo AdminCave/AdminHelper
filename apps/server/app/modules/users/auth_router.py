@@ -25,6 +25,8 @@ from app.core.config import BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
+from app.core.request_context import Actor
+from app.modules.audit import service as audit
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     BootstrapRequest,
@@ -117,6 +119,14 @@ def login(
     user = db.query(User).filter(User.username == data.username).first()
     if not user or not verify_password(data.password, user.hashed_password):
         _record_failed_attempt(ip)
+        audit.record(
+            db,
+            "auth.login_failed",
+            status="failure",
+            actor=Actor("anonymous", None, data.username, ip),
+            object_type="user",
+            object_label=data.username,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültige Zugangsdaten",
@@ -124,6 +134,14 @@ def login(
 
     # On successful login: reset the counter
     _reset_rate_limit(ip)
+    audit.record(
+        db,
+        "auth.login",
+        actor=Actor("user", str(user.id), user.username, ip),
+        object_type="user",
+        object_id=user.id,
+        object_label=user.username,
+    )
     access = create_access_token({"sub": user.username})
     refresh = create_refresh_token({"sub": user.username})
     _set_refresh_cookie(request, response, refresh)
@@ -196,12 +214,21 @@ def logout(
 ):
     """Add the access and (optionally) refresh token to the blacklist and clear
     the refresh cookie."""
+    uname = None
     if credentials:
         blacklist_token(credentials.credentials, db)
+        uname = username_from_token_unverified(credentials.credentials)
     refresh = _resolve_refresh_token(request, data.refresh_token if data else None)
     if refresh:
         blacklist_token(refresh, db)
     _clear_refresh_cookie(response)
+    audit.record(
+        db,
+        "auth.logout",
+        actor=Actor("user", None, uname, resolve_client_ip(request)),
+        object_type="user",
+        object_label=uname,
+    )
     return {"detail": "Abgemeldet"}
 
 

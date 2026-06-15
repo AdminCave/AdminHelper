@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,8 @@ from app.core.auth import ApiKeyOrUser, get_current_admin
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
+from app.core.request_context import actor_from_request
+from app.modules.audit import service as audit
 from app.modules.connections.models import Connection
 from app.modules.connections.schemas import ConnectionCreate, ConnectionUpdate, ImportRequest
 from app.modules.users.models import User
@@ -63,7 +65,10 @@ def get_connections(
 
 @router.post("", response_model=dict[str, Any], status_code=status.HTTP_201_CREATED)
 def create_connection(
-    connection: ConnectionCreate, db: Session = Depends(get_db), _auth=Depends(write_dep)
+    connection: ConnectionCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _auth=Depends(write_dep),
 ):
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
@@ -73,6 +78,14 @@ def create_connection(
     db.refresh(conn)
     result = conn.to_dict()
     fire_event("connection.created", result)
+    audit.record(
+        db,
+        "connection.created",
+        actor=actor_from_request(request),
+        object_type="connection",
+        object_id=result["id"],
+        object_label=result.get("name"),
+    )
     return result
 
 
@@ -80,6 +93,7 @@ def create_connection(
 def update_connection(
     conn_id: str,
     connection: ConnectionUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _auth=Depends(write_dep),
 ):
@@ -93,11 +107,21 @@ def update_connection(
     db.refresh(conn)
     result = conn.to_dict()
     fire_event("connection.updated", result)
+    audit.record(
+        db,
+        "connection.updated",
+        actor=actor_from_request(request),
+        object_type="connection",
+        object_id=conn_id,
+        object_label=result.get("name"),
+    )
     return result
 
 
 @router.post("/{conn_id}/touch", response_model=dict[str, Any])
-def touch_connection(conn_id: str, db: Session = Depends(get_db), auth=Depends(read_dep)):
+def touch_connection(
+    conn_id: str, request: Request, db: Session = Depends(get_db), auth=Depends(read_dep)
+):
     """Setzt last_used auf jetzt. Auth: jeder Lesezugriff genuegt (Nutzung == Lesen),
     aber per-User/Key-Scope wie bei der Liste (kein Touch fremder Connections)."""
     conn = _scope_connections(db.query(Connection), auth).filter(Connection.id == conn_id).first()
@@ -108,12 +132,23 @@ def touch_connection(conn_id: str, db: Session = Depends(get_db), auth=Depends(r
     conn.last_used = datetime.now(timezone.utc).isoformat()
     db.commit()
     db.refresh(conn)
+    audit.record(
+        db,
+        "connection.accessed",
+        actor=actor_from_request(request),
+        object_type="connection",
+        object_id=conn_id,
+        object_label=conn.name,
+    )
     return conn.to_dict()
 
 
 @router.delete("/{conn_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_connection(
-    conn_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)
+    conn_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
 ):
     conn = db.query(Connection).filter(Connection.id == conn_id).first()
     if not conn:
@@ -124,6 +159,14 @@ def delete_connection(
     db.delete(conn)
     db.commit()
     fire_event("connection.deleted", result)
+    audit.record(
+        db,
+        "connection.deleted",
+        actor=actor_from_request(request),
+        object_type="connection",
+        object_id=conn_id,
+        object_label=result.get("name"),
+    )
 
 
 @router.get("/export", response_class=Response)
@@ -142,6 +185,7 @@ def export_connections(
 @router.post("/import")
 def import_connections(
     req: ImportRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
@@ -157,4 +201,11 @@ def import_connections(
 
     db.commit()
     fire_event("connections.imported", {"count": len(imported), "mode": req.mode})
+    audit.record(
+        db,
+        "connections.imported",
+        actor=actor_from_request(request),
+        object_type="connection",
+        detail=f"{len(imported)} connections ({req.mode})",
+    )
     return {"imported": len(imported), "mode": req.mode}

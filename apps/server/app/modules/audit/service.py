@@ -4,17 +4,18 @@
 
 """Audit-trail writer.
 
-record() captures the current request actor (app.core.request_context) and
-appends one immutable row. Best-effort by design: failing to write an audit row
-must never break the action being audited, so write errors are rolled back and
-logged, not raised. Call it AFTER the audited operation has committed.
+record() appends one immutable row for the given actor. Best-effort by design:
+failing to write an audit row must never break the action being audited, so
+write errors are rolled back and logged, not raised. Call it AFTER the audited
+operation has committed. The actor is resolved by the caller via
+app.core.request_context.actor_from_request(); it defaults to a system actor.
 """
 
 import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.request_context import Actor, current_actor
+from app.core.request_context import Actor
 from app.modules.audit.models import AuditLog
 
 logger = logging.getLogger("adminhelper.audit")
@@ -31,8 +32,8 @@ def record(
     detail: str | None = None,
     actor: Actor | None = None,
 ) -> None:
-    """Append one audit row. ``actor`` defaults to the current request actor."""
-    who = actor or current_actor()
+    """Append one audit row. ``actor`` defaults to a system actor."""
+    who = actor or Actor()
     try:
         db.add(
             AuditLog(
