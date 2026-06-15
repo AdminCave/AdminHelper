@@ -4,7 +4,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import type { User } from '$lib/api/types';
-import { getAccessToken, registerAuthFailureHandler } from '$lib/api/client';
+import { restoreSession, registerAuthFailureHandler } from '$lib/api/client';
 import * as authApi from '$lib/api/auth';
 
 interface AuthState {
@@ -19,7 +19,9 @@ export const auth = {
   subscribe: _auth.subscribe,
 
   async hydrate(): Promise<void> {
-    if (!getAccessToken()) {
+    // The access token lives only in memory, so a page reload starts without
+    // one; restore it from the HttpOnly refresh cookie before fetching /me.
+    if (!(await restoreSession())) {
       _auth.set({ user: null, ready: true });
       return;
     }

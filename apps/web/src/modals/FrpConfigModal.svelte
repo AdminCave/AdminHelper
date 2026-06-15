@@ -38,12 +38,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
       serverAddr = editing?.serverAddr ?? '';
       bindPort = editing?.bindPort ?? 7000;
       vhostPort = editing?.vhostHttpsPort ?? '';
-      authToken = editing?.authToken ?? '';
+      // Secrets are never pre-filled — leaving them empty when editing keeps the
+      // stored value unchanged (the GET masks them anyway, so there is nothing
+      // to round-trip). Same pattern as the password field in UserModal.
+      authToken = '';
       subdomainHost = editing?.subdomainHost ?? '';
       maxPorts = editing?.maxPortsPerClient ?? '';
       dashboardPort = editing?.dashboardPort ?? '';
       dashboardUser = editing?.dashboardUser ?? '';
-      dashboardPassword = editing?.dashboardPassword ?? '';
+      dashboardPassword = '';
     }
   });
 
@@ -60,13 +63,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
         server_addr: serverAddr.trim(),
         bind_port: num(bindPort) ?? 7000,
         vhost_https_port: num(vhostPort),
-        auth_token: authToken.trim() || null,
         subdomain_host: subdomainHost.trim() || null,
         max_ports_per_client: num(maxPorts),
         dashboard_port: num(dashboardPort),
         dashboard_user: dashboardUser.trim() || null,
-        dashboard_password: dashboardPassword.trim() || null,
       };
+      // Secrets: send only when the operator typed something. Omitting them on
+      // edit leaves the stored value untouched (PUT applies only sent fields);
+      // on create an empty auth_token tells the server to auto-generate one.
+      const trimmedToken = authToken.trim();
+      const trimmedDashPass = dashboardPassword.trim();
+      if (trimmedToken) {
+        data.auth_token = trimmedToken;
+      } else if (!editing) {
+        data.auth_token = null;
+      }
+      if (trimmedDashPass) {
+        data.dashboard_password = trimmedDashPass;
+      } else if (!editing) {
+        data.dashboard_password = null;
+      }
       await frpConfig.save(data, editing);
       showToast(editing ? $t('toast.frpConfig.saved') : $t('toast.frpConfig.created'));
       onClose();
@@ -105,6 +121,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <label for="fcAuthToken">{$t('modal.frpConfig.authToken')}</label>
       <input
         id="fcAuthToken"
+        type="password"
         placeholder={$t('modal.frpConfig.authTokenPlaceholder')}
         bind:value={authToken}
       />

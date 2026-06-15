@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts" module>
-  import { writable } from 'svelte/store';
+  import { writable, get } from 'svelte/store';
 
   interface ConfirmRequest {
     message: string;
@@ -20,6 +20,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     message: string,
     opts: { confirmLabel?: string; cancelLabel?: string } = {},
   ): Promise<boolean> {
+    // Resolve any still-open dialog as cancelled before replacing it; otherwise
+    // its awaiter would hang forever (the dropped Promise never resolves).
+    const prev = get(_pending);
+    if (prev) prev.resolve(false);
     return new Promise((resolve) => {
       _pending.set({
         message,

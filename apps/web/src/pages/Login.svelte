@@ -7,7 +7,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { auth } from '$lib/stores/auth';
   import { t, toggleLanguage, language } from '$lib/i18n';
-  import { ApiError } from '$lib/api/types';
 
   let username = $state('');
   let password = $state('');
@@ -21,9 +20,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await auth.login(username, password);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        error = $t('session.expired');
-      } else if (err instanceof Error) {
+      if (err instanceof Error) {
+        // A login 401 carries the server's credential message (the /auth/ path
+        // skips the refresh-retry branch in client.ts), not a session expiry.
         error = err.message;
       } else {
         error = 'Login failed';

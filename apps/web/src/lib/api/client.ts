@@ -4,14 +4,16 @@
 
 import { ApiError, type HttpMethod, type RefreshResponse } from './types';
 
-const TOKEN_KEY = 'adminhelper_token';
-
-// The long-lived refresh token now lives in an HttpOnly cookie (set by the
-// server), out of reach of JavaScript/XSS. Purge any copy left in localStorage
-// by an older build.
+// The long-lived refresh token lives in an HttpOnly cookie (set by the server),
+// out of reach of JavaScript/XSS. The short-lived access token is kept ONLY in
+// this module's memory — never in localStorage/sessionStorage — so an XSS cannot
+// exfiltrate it from persistent storage. On a fresh page load the access token
+// is gone; the app rehydrates it via tryRefresh() (the refresh cookie survives).
+// Purge any access/refresh-token copies left in storage by an older build.
+localStorage.removeItem('adminhelper_token');
 localStorage.removeItem('adminhelper_refresh_token');
 
-let accessToken: string | null = localStorage.getItem(TOKEN_KEY);
+let accessToken: string | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
 let onAuthFailure: (() => void) | null = null;
 
@@ -21,14 +23,20 @@ export function getAccessToken(): string | null {
 
 export function setAccessToken(access: string): void {
   accessToken = access;
-  localStorage.setItem(TOKEN_KEY, access);
 }
 
 export function clearTokens(): void {
   accessToken = null;
-  localStorage.removeItem(TOKEN_KEY);
   // The refresh token lives in an HttpOnly cookie, cleared server-side by
   // POST /api/auth/logout.
+}
+
+// Rehydrate the in-memory access token from the HttpOnly refresh cookie at app
+// start (the access token itself does not survive a reload). Returns true if a
+// session was restored. Verified against the server: POST /api/auth/refresh
+// accepts the refresh cookie alone, with no prior access token.
+export function restoreSession(): Promise<boolean> {
+  return tryRefresh();
 }
 
 export function registerAuthFailureHandler(handler: () => void): void {

@@ -22,6 +22,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let status = $state<FrpStatus | null>(null);
   let loading = $state(false);
 
+  // Sequence guard: repeatedly opening/refreshing can leave several status
+  // requests in flight; a stale response must not overwrite a newer one.
+  let refreshGen = 0;
+
   $effect(() => {
     if (open) {
       void refresh();
@@ -31,13 +35,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   async function refresh() {
+    const gen = ++refreshGen;
     loading = true;
     try {
-      status = await api.status();
+      const result = await api.status();
+      if (gen !== refreshGen) return;
+      status = result;
     } catch (err) {
+      if (gen !== refreshGen) return;
       showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
     } finally {
-      loading = false;
+      if (gen === refreshGen) loading = false;
     }
   }
 

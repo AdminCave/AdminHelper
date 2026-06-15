@@ -88,7 +88,10 @@ describe('http client token refresh', () => {
       }),
     );
 
-    const { http, getAccessToken } = await importClient();
+    const { http, getAccessToken, setAccessToken } = await importClient();
+    // The access token lives only in memory now (never localStorage); seed it
+    // the way a real login/restoreSession would.
+    setAccessToken('old-token');
     const result = await http.get<{ ok: boolean }>('/api/servers');
 
     expect(result).toEqual({ ok: true });
@@ -96,7 +99,8 @@ describe('http client token refresh', () => {
     expect(calls[0].authorization).toBe('Bearer old-token');
     expect(calls[2].authorization).toBe('Bearer new-token');
     expect(getAccessToken()).toBe('new-token');
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('new-token');
+    // The token must NOT be persisted (XSS-exfiltration hardening).
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 
   it('calls the auth-failure handler and throws when the refresh fails', async () => {
@@ -181,7 +185,8 @@ describe('http client token refresh', () => {
       }),
     );
 
-    const { http } = await importClient();
+    const { http, setAccessToken } = await importClient();
+    setAccessToken('old-token');
     const result = await http.del<null>('/api/servers/123');
 
     expect(result).toBeNull();

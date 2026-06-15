@@ -22,23 +22,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let action = $state('');
   let actorType = $state('');
 
+  // Sequence guard: rapid applyFilters/resetFilters can leave several list
+  // requests in flight; a stale response must not overwrite a newer one.
+  let loadGen = 0;
+
   onMount(() => {
     load();
   });
 
   async function load() {
+    const gen = ++loadGen;
     loading = true;
     try {
-      entries = await auditApi.list({
+      const result = await auditApi.list({
         q: q.trim() || undefined,
         action: action.trim() || undefined,
         actorType: actorType || undefined,
         limit: PAGE_LIMIT,
       });
+      if (gen !== loadGen) return;
+      entries = result;
     } catch (err) {
+      if (gen !== loadGen) return;
       showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
     } finally {
-      loading = false;
+      if (gen === loadGen) loading = false;
     }
   }
 
