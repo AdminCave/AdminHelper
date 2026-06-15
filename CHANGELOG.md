@@ -46,6 +46,10 @@ abgesichert.
 - **Monitoring-Robustheit.** Ein einzelner Check mit defekter `config` bricht nicht
   mehr die Auswertung aller Checks eines Servers ab; `process_alert` committet die
   geteilte Session nicht mehr vorzeitig (sauberes Rollback im Fehlerfall).
+- **Alert-Versand blockiert den Agent-Push nicht mehr.** Webhook/SMTP-Benachrichtigungen
+  werden im Agent-Push-Pfad erst *nach* der Antwort als Hintergrund-Task versendet
+  (eigene DB-Session); ein langsamer/hängender Webhook- oder SMTP-Server kann den
+  Push-Request — und damit bei 250–500 Agents den Worker-Pool — nicht mehr blockieren.
 - **Doppelte Port-/Namensvergabe verhindert (Server).** DB-Constraints für STCP-
   `visitor_port` und Tunnel-/Benutzernamen schließen ein TOCTOU-Fenster; Konflikte
   werden als 409 statt als 500 gemeldet.
@@ -62,7 +66,8 @@ abgesichert.
 - **Desktop-UI.** Beim schnellen Serverwechsel zeigen die Tabs keine Daten des
   falschen Servers mehr (Out-of-order-Fetches); die Monitoring-Sparkline lädt bei
   Zeitraum-/Check-Wechsel neu; ein RDP-Kindprozess wird bei fehlgeschlagenem
-  Passwort-Stdin sauber beendet.
+  Passwort-Stdin sauber beendet; die „vor X min"-Anzeige auf dem Dashboard wechselt
+  jetzt sofort die Sprache (reaktiver Übersetzer statt Snapshot).
 - **Web.** `ConfirmDialog` hängt nicht mehr bei überlappenden Aufrufen; Audit- und
   FRP-Status-Listen zeigen bei schnellem Filtern keine veralteten Antworten mehr;
   der Login zeigt bei falschen Zugangsdaten die Server-Meldung statt „Sitzung
