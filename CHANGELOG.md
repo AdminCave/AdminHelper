@@ -33,6 +33,12 @@ abgesichert.
 - **`restore.sh` weist manipulierte Backups ab** (absolute/`../`-Pfade, Sym-/
   Hardlink-Member) und entpackt mit `--no-same-owner` — schließt eine
   Path-Traversal-Lücke beim Wiederherstellen eines untergeschobenen Backups.
+- **Docker-Base-Images per Digest gepinnt.** `postgres`, `redis`, `nginx`,
+  `python`, `node`, das internet-facing `snowdreamtech/frps` und
+  `victoria-metrics` sind in `docker-compose.yml` und den Dockerfiles zusätzlich
+  zum Tag per `@sha256:`-Index-Digest fixiert — ein neu gepushter Tag kann nicht
+  mehr still ein anderes Image unterschieben (reproduzierbare Builds). Der
+  CI-FRP-Pin-Check ist digest-robust gemacht.
 
 ### Fixed
 

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
 # ---- Stage 1: Frontend-Build (Vite/Svelte) ----
-FROM node:22-alpine AS frontend-build
+FROM node:22-alpine@sha256:9385cd9f3001dfc3431e8ead12c43e9e1f87cc1b9b5c6cfd0f73865d405b27c4 AS frontend-build
 WORKDIR /build
 
 COPY apps/web/package.json apps/web/package-lock.json ./
@@ -11,7 +11,7 @@ COPY apps/web/ ./
 RUN npm run build
 
 # ---- Stage 2: Runtime (Python + FastAPI) ----
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:d764629ce0ddd8c71fd371e9901efb324a95789d2315a47db7e4d27e78f1b0e9 AS runtime
 
 ARG VERSION=dev
 ENV APP_VERSION=$VERSION \

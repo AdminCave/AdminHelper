@@ -10,7 +10,7 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:979c4379dd698aba0b890599a6104e082035f98ef31d9b9291ec22f2b13059ca
     environment:
       - POSTGRES_USER=adminhelper
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -163,7 +163,7 @@ services:
         condition: service_healthy
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     expose:
       - "6379"
@@ -174,7 +174,7 @@ services:
     # Pinned to match the bundled frpc (FRP_VERSION in .github/workflows/*.yml).
     # Keep both in lockstep — a floating :latest can jump the server ahead of
     # the client and break the tunnel (e.g. wire-protocol changes).
-    image: snowdreamtech/frps:0.69.1
+    image: snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a
     ports:
       - "${FRP_BIND_PORT:-7000}:7000"
       - "${FRP_HTTPS_PORT:-7443}:443"
@@ -221,7 +221,7 @@ services:
         condition: service_healthy
 
   victoria:
-    image: victoriametrics/victoria-metrics:v1.144.0
+    image: victoriametrics/victoria-metrics:v1.144.0@sha256:dc030542eb0cd262287c9ec32e5867f8dcccc0efd5906c10f7fc8176c53d34d7
     environment:
       - TZ=${TZ:-Europe/Berlin}
     volumes:
@@ -240,7 +240,7 @@ services:
   # Retention 7 Tage rolling.
   #
   # pg-backup:
-  #   image: postgres:17-alpine
+  #   image: postgres:17-alpine@sha256:979c4379dd698aba0b890599a6104e082035f98ef31d9b9291ec22f2b13059ca
   #   volumes:
   #     - ./backups:/backups
   #     - ./scripts/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro

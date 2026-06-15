@@ -374,7 +374,9 @@ jobs:
         run: |
           ci=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
           rel=$(grep -m1 '^  FRP_VERSION:' .github/workflows/release.yml | grep -o '[0-9][0-9.]*')
-          compose=$(grep -m1 'snowdreamtech/frps:' docker-compose.yml | grep -o '[0-9][0-9.]*')
+          # Extract only the version tag; the image may carry a trailing
+          # @sha256:<digest> pin whose hex would otherwise leak into the match.
+          compose=$(grep -m1 'snowdreamtech/frps:' docker-compose.yml | sed -E 's#.*snowdreamtech/frps:([0-9][0-9.]*).*#\1#')
           sha_ci=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
           sha_rel=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
           echo "ci.yml=$ci release.yml=$rel docker-compose.yml=$compose"
