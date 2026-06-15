@@ -92,8 +92,9 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
             <div><div class="callout-title">Arming (maintainer, one-time)</div>
             <p>Until the key is pinned, <code>install.sh</code>/<code>update.sh</code> fall back to checksum-only verification (with a warning) &ndash; no breakage. To arm:</p>
 <pre><code>minisign -G -W                 # generate a passwordless keypair
-# 1) store the secret-key file (minisign.key) as the GitHub Actions secret
-#    MINISIGN_SECRET_KEY
+# 1) store the secret-key file base64-encoded as the GitHub Actions secret
+#    (single line, paste-safe — a raw multi-line key gets mangled otherwise):
+#    base64 -w0 minisign.key | gh secret set MINISIGN_SECRET_KEY
 # 2) pin the public key (the "RW…" line from minisign.pub) into
 #    MINISIGN_PUBKEY in scripts/install.sh AND scripts/update.sh</code></pre>
             </div>

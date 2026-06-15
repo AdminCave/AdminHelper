@@ -92,8 +92,9 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
             <div><div class="callout-title">Scharfschalten (Maintainer, einmalig)</div>
             <p>Bis der Key gepinnt ist, fallen <code>install.sh</code>/<code>update.sh</code> auf reine Checksummen-Prüfung zurück (mit Warnung) &ndash; kein Bruch. Zum Aktivieren:</p>
 <pre><code>minisign -G -W                 # passwortloses Keypair erzeugen
-# 1) Secret-Key-Datei (minisign.key) als GitHub-Actions-Secret
-#    MINISIGN_SECRET_KEY hinterlegen
+# 1) Secret-Key-Datei base64-kodiert als GitHub-Actions-Secret hinterlegen
+#    (eine Zeile, paste-sicher — ein roher mehrzeiliger Key wird sonst verstuemmelt):
+#    base64 -w0 minisign.key | gh secret set MINISIGN_SECRET_KEY
 # 2) Public Key (die "RW…"-Zeile aus minisign.pub) in
 #    MINISIGN_PUBKEY in scripts/install.sh UND scripts/update.sh pinnen</code></pre>
             </div>

@@ -253,7 +253,11 @@ jobs:
             exit 0
           fi
           sudo apt-get update -qq && sudo apt-get install -y -qq minisign
-          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          # The secret is the base64 of the minisign.key FILE (`base64 -w0 minisign.key`),
+          # which is paste-safe — a raw multi-line key easily gets its base64 line mangled
+          # in the secret store ("base64 conversion failed" at sign time).
+          printf '%s' "$MINISIGN_SECRET_KEY" | base64 -d > minisign.key 2>/dev/null \
+            || { echo "::error::MINISIGN_SECRET_KEY must be the base64 of the key file: base64 -w0 minisign.key"; exit 1; }
           minisign -S -s minisign.key -m release/SHA256SUMS -x release/SHA256SUMS.minisig < /dev/null
           rm -f minisign.key
           echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig"
