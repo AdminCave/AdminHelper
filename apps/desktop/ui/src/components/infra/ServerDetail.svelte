@@ -48,39 +48,44 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/each}
   </nav>
 
+  <!-- Re-key on server.id so the data-fetching tabs remount on a server switch;
+       this guards against an in-flight load() of the old server overwriting the
+       new server's state once it resolves out of order. -->
   <div class="srv-tab-body">
-    {#if active === 'overview'}
-      <dl class="meta-list">
-        <dt>{$t('infra.field.hostname')}</dt>
-        <dd>{server.hostname}</dd>
-        <dt>{$t('infra.field.osType')}</dt>
-        <dd>{server.osType || '—'}</dd>
-        <dt>{$t('infra.field.tags')}</dt>
-        <dd>
-          {#if (server.tags ?? []).length > 0}
-            <span class="tag-row">
-              {#each server.tags ?? [] as tag (tag)}
-                <span class="tag">{tag}</span>
-              {/each}
-            </span>
-          {:else}
-            —
-          {/if}
-        </dd>
-        <dt>{$t('infra.field.notes')}</dt>
-        <dd class="notes">{server.notes || '—'}</dd>
-      </dl>
-    {:else if active === 'connections'}
-      <ConnectionsTab {server} />
-    {:else if active === 'tunnels'}
-      <TunnelsTab {server} />
-    {:else if active === 'monitoring'}
-      <MonitoringTab {server} />
-    {:else if active === 'provisioning'}
-      <ProvisioningTab {server} />
-    {:else}
-      <div class="tab-placeholder">{$t('infra.tab.placeholder')}</div>
-    {/if}
+    {#key server.id}
+      {#if active === 'overview'}
+        <dl class="meta-list">
+          <dt>{$t('infra.field.hostname')}</dt>
+          <dd>{server.hostname}</dd>
+          <dt>{$t('infra.field.osType')}</dt>
+          <dd>{server.osType || '—'}</dd>
+          <dt>{$t('infra.field.tags')}</dt>
+          <dd>
+            {#if (server.tags ?? []).length > 0}
+              <span class="tag-row">
+                {#each server.tags ?? [] as tag (tag)}
+                  <span class="tag">{tag}</span>
+                {/each}
+              </span>
+            {:else}
+              —
+            {/if}
+          </dd>
+          <dt>{$t('infra.field.notes')}</dt>
+          <dd class="notes">{server.notes || '—'}</dd>
+        </dl>
+      {:else if active === 'connections'}
+        <ConnectionsTab {server} />
+      {:else if active === 'tunnels'}
+        <TunnelsTab {server} />
+      {:else if active === 'monitoring'}
+        <MonitoringTab {server} />
+      {:else if active === 'provisioning'}
+        <ProvisioningTab {server} />
+      {:else}
+        <div class="tab-placeholder">{$t('infra.tab.placeholder')}</div>
+      {/if}
+    {/key}
   </div>
 </div>
 

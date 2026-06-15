@@ -109,6 +109,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   $effect(() => {
+    // Track checkType too: render() reads it (fill/unit/scale) but only `metrics`
+    // would otherwise be a dependency, so a pure checkType change must re-render.
+    void checkType;
     if (!container) return;
     if (!metrics) {
       // eslint-disable-next-line svelte/no-dom-manipulating -- container is owned by uPlot (imperative canvas lib); Svelte renders no children into it

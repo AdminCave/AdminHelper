@@ -81,6 +81,13 @@ const initial: MonitoringState = {
 
 const _state = writable<MonitoringState>(initial);
 export const monitoring = { subscribe: _state.subscribe };
+
+// Generation token guarding against out-of-order status loads: the auto-refresh
+// interval, runCheck's delayed reload, toggleCheck and the initial load can all
+// be in flight at once. Each fresh load bumps the token and captures its value;
+// a load whose token is stale by the time it resolves must not overwrite the
+// state a newer load already wrote.
+let statusGen = 0;
 export const monitoringTab = derived(_state, ($s) => $s.tab);
 export const monitoringFilters = derived(_state, ($s) => $s.filters);
 export const monitoringChecks = derived(_state, ($s) => $s.checks);
@@ -137,17 +144,21 @@ export async function loadServers(): Promise<void> {
   try {
     const servers = await monitoringApi.fetchServers(session);
     _state.update((s) => ({ ...s, servers: Array.isArray(servers) ? servers : [] }));
-  } catch {
+  } catch (err) {
     _state.update((s) => ({ ...s, servers: [] }));
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
 export async function loadMonitoring(): Promise<void> {
   const session = requireSession();
   if (!session) return;
+  const gen = ++statusGen;
   try {
     _state.update((s) => ({ ...s, loading: true }));
     const checks = await monitoringApi.fetchStatus(session);
+    if (gen !== statusGen) return;
     _state.update((s) => {
       // Auto-select: if nothing is selected yet, take the server with the worst status.
       let selected = s.selectedServerId;
@@ -159,6 +170,7 @@ export async function loadMonitoring(): Promise<void> {
       return { ...s, checks, loading: false, selectedServerId: selected };
     });
   } catch (err) {
+    if (gen !== statusGen) return;
     _state.update((s) => ({ ...s, checks: [], loading: false }));
     const msg = err instanceof Error ? err.message : String(err);
     if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));

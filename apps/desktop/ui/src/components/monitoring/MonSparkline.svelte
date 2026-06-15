@@ -49,10 +49,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   $effect(() => {
+    // Track checkId/period so the curve reloads when either prop changes; load()
+    // early-returns on `loaded`, so reset that (and the points/observer) first.
+    void checkId;
+    void period;
+    loaded = false;
+    points = [];
+    observer?.disconnect();
+    observer = null;
+
     if (!host) return;
     if (!('IntersectionObserver' in window)) {
       void load();
-      return;
+      return () => {
+        observer?.disconnect();
+        observer = null;
+      };
     }
     observer = new IntersectionObserver(
       (entries) => {
@@ -68,6 +80,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       { rootMargin: '120px' },
     );
     observer.observe(host);
+
+    return () => {
+      observer?.disconnect();
+      observer = null;
+    };
   });
 
   onDestroy(() => {
