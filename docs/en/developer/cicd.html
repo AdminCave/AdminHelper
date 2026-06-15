@@ -38,8 +38,8 @@
             <thead><tr><th>Workflow</th><th>Purpose</th></tr></thead>
             <tbody>
               <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo check</code> on Windows, a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>). Coverage runs report-only in the test jobs (no gate)</td></tr>
-              <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/ks98/adminhelper/{server,monitoring}</code></td></tr>
-              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code>, draft release</td></tr>
+              <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/ks98/adminhelper/{server,monitoring}</code>; sign each digest keylessly with cosign (+ SLSA provenance/SBOM)</td></tr>
+              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code> (+ minisign signature), draft release</td></tr>
               <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
             </tbody>
           </table>
@@ -75,9 +75,29 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # per commit
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
-            <li><code>SHA256SUMS</code> over all assets</li>
+            <li><code>SHA256SUMS</code> over all assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign signature) once armed</li>
           </ul>
           <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>. The <code>tauri-cli</code> is pinned to an exact version in CI and release (<code>cargo install tauri-cli --locked --version &hellip;</code>) so a new CLI release cannot break a tag build.</p>
+
+          <h2>Release Signing (supply chain)</h2>
+          <p>The <code>curl|bash</code> install/update flow should prove <strong>authenticity</strong>, not just transport integrity (otherwise the bundle and <code>SHA256SUMS</code> come from the same origin). Two mechanisms:</p>
+          <ul>
+            <li><strong>Container images:</strong> <code>docker.yml</code> signs each pushed image digest <em>keylessly</em> with cosign (GitHub OIDC, no private key) and attaches SLSA provenance (<code>mode=max</code>) + an SBOM. Verify:
+<pre><code>cosign verify ghcr.io/ks98/adminhelper/server \
+  --certificate-identity-regexp 'https://github.com/ks98/AdminHelper/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre></li>
+            <li><strong>Release assets:</strong> <code>release.yml</code> signs <code>SHA256SUMS</code> with minisign into <code>SHA256SUMS.minisig</code>. <code>install.sh</code>/<code>update.sh</code> verify that signature against a public key pinned in the script <em>before</em> trusting the checksums (fail closed).</li>
+          </ul>
+          <div class="callout">
+            <div><div class="callout-title">Arming (maintainer, one-time)</div>
+            <p>Until the key is pinned, <code>install.sh</code>/<code>update.sh</code> fall back to checksum-only verification (with a warning) &ndash; no breakage. To arm:</p>
+<pre><code>minisign -G -W                 # generate a passwordless keypair
+# 1) store the secret-key file (minisign.key) as the GitHub Actions secret
+#    MINISIGN_SECRET_KEY
+# 2) pin the public key (the "RW…" line from minisign.pub) into
+#    MINISIGN_PUBKEY in scripts/install.sh AND scripts/update.sh</code></pre>
+            </div>
+          </div>
 
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>

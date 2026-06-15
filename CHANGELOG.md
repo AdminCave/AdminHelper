@@ -39,6 +39,15 @@ abgesichert.
   zum Tag per `@sha256:`-Index-Digest fixiert — ein neu gepushter Tag kann nicht
   mehr still ein anderes Image unterschieben (reproduzierbare Builds). Der
   CI-FRP-Pin-Check ist digest-robust gemacht.
+- **Signierte Releases (Supply-Chain).** Docker-Images werden schlüssellos mit
+  cosign (GitHub-OIDC) signiert und tragen SLSA-Provenance + SBOM. Die
+  Release-`SHA256SUMS` werden mit minisign signiert (`SHA256SUMS.minisig`);
+  `install.sh`/`update.sh` prüfen die Signatur gegen einen im Skript gepinnten
+  Public Key, bevor sie den Checksummen vertrauen — die `curl|bash`-Kette belegt
+  jetzt Authentizität, nicht nur Transport-Integrität. *Scharf geschaltet, sobald
+  der Maintainer den minisign-Key erzeugt (`minisign -G -W`), das Secret
+  `MINISIGN_SECRET_KEY` hinterlegt und den Public Key in beiden Skripten pinnt;
+  bis dahin Fallback auf Checksummen-Prüfung (mit Warnung).*
 
 ### Fixed
 
