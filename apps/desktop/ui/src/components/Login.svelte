@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { get } from 'svelte/store';
   import { login, setMode, settings } from '$lib/stores/session';
-  import { enrollWithToken } from '$lib/bridge';
+  import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
   import { t } from '$lib/i18n';
 
   let { onBack }: { onBack?: () => void } = $props();
@@ -30,6 +30,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
     mode = next;
     error = '';
     info = '';
+  }
+
+  // A pinned-certificate / enrolled-CA mismatch (server reinstall or MITM) is a
+  // dead end here otherwise: the only reset actions live in the settings modal,
+  // which is unreachable until logged in. Detect it from the backend message and
+  // offer the matching reset right on the login screen. The CA-pin (enrolled)
+  // message names the device enrollment; the TOFU leaf-pin message says "TOFU".
+  let caPinError = $derived(/gepinnten CA|Geräte-Registrierung/.test(error));
+  let pinError = $derived(/TOFU|MITM-Attacke/.test(error) || caPinError);
+
+  async function resetCertTrust(): Promise<void> {
+    const target = serverUrl.trim();
+    if (!target) {
+      error = $t('login.resetPin.missingUrl');
+      return;
+    }
+    busy = true;
+    try {
+      // The enrolled-CA case must also drop the stale device cert (which is what
+      // build_client presents); resetDeviceIdentity clears identity AND pin.
+      if (caPinError) {
+        await resetDeviceIdentity(target);
+      } else {
+        await resetServerCertPin(target);
+      }
+      error = '';
+      info = $t('login.resetPin.done');
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
   }
 
   // Escape hatch: use the client purely locally (connections only, no server,
@@ -120,6 +152,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         {#if error}
           <div class="login-error">{error}</div>
+          {#if pinError}
+            <button
+              type="button"
+              class="btn ghost login-secondary"
+              onclick={resetCertTrust}
+              disabled={busy}
+            >
+              {caPinError ? $t('login.resetDeviceId') : $t('login.resetPin')}
+            </button>
+          {/if}
         {/if}
 
         <button type="submit" class="btn accent login-btn" disabled={busy}>
@@ -162,6 +204,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         {#if error}
           <div class="login-error">{error}</div>
+          {#if pinError}
+            <button
+              type="button"
+              class="btn ghost login-secondary"
+              onclick={resetCertTrust}
+              disabled={busy}
+            >
+              {caPinError ? $t('login.resetDeviceId') : $t('login.resetPin')}
+            </button>
+          {/if}
         {/if}
 
         <button type="submit" class="btn accent login-btn" disabled={busy}>

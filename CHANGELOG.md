@@ -5,6 +5,18 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Desktop: Zertifikat-/Identitäts-Reset jetzt direkt am Login-Screen.** Ein TOFU- bzw.
+  CA-Pin-Mismatch (z. B. nach einer Server-Neuinstallation) trat genau dort auf, wo die
+  Reset-Aktionen *nicht* erreichbar waren: am Login-/Verbinden-Screen — die Einstellungen
+  (und damit beide Reset-Buttons) gibt es erst nach erfolgreichem Login. Der Login-Screen
+  zeigt jetzt bei einem Pin-/Identitäts-Fehler einen passenden Reset-Button direkt unter
+  der Fehlermeldung („Gepinntes Server-Zertifikat zurücksetzen" bzw. — bei registriertem
+  Gerät — „Geräte-Registrierung zurücksetzen"); danach neu verbinden.
+
 ## [0.37.0] - 2026-06-16
 
 ### Added
@@ -25,11 +37,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
-- **Release-Signatur scharf.** Das `MINISIGN_SECRET_KEY`-Secret wird jetzt als
-  base64-kodiertes Key-File interpretiert (`base64 -w0 minisign.key`) — der rohe,
-  mehrzeilige Key wurde im Secret-Store verstümmelt und ließ das Signieren der
-  `SHA256SUMS` scheitern. 0.37.0 ist damit das erste Release mit real verifizierbarer
-  minisign-Signatur (Public Key in `scripts/install.sh`/`update.sh` gepinnt).
+- **Release-Signatur: base64-Interpretation des Secrets.** Das `MINISIGN_SECRET_KEY`-Secret
+  wird jetzt als base64-kodiertes Key-File interpretiert (`base64 -w0 minisign.key`) — der
+  rohe, mehrzeilige Key wurde im Secret-Store verstümmelt. Hinweis: Das Signieren der
+  `SHA256SUMS` erfordert zusätzlich einen **passwortlosen** minisign-Key (`minisign -G -W`),
+  da der CI-Schritt das Passwort nicht interaktiv liefern kann.
 
 ## [0.36.0] - 2026-06-15
 

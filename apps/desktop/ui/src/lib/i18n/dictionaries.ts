@@ -817,6 +817,11 @@ export const translations: Translations = {
     'login.enroll.back': 'Zurück zur Anmeldung',
     'login.enroll.done': 'Gerät enrollt — jetzt anmelden.',
     'login.useLocal': 'Ohne Server fortfahren (nur lokale Verbindungen)',
+    'login.resetPin': 'Gepinntes Server-Zertifikat zurücksetzen',
+    'login.resetDeviceId': 'Geräte-Registrierung zurücksetzen',
+    'login.resetPin.done':
+      'Vertrauen zurückgesetzt. Erneut verbinden — beim nächsten Versuch wird das aktuelle Server-Zertifikat neu gepinnt.',
+    'login.resetPin.missingUrl': 'Bitte zuerst die Server-URL eintragen.',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Verbindungen gesamt',
@@ -1834,6 +1839,11 @@ export const translations: Translations = {
     'login.enroll.back': 'Back to sign in',
     'login.enroll.done': 'Device enrolled — sign in now.',
     'login.useLocal': 'Continue without a server (local connections only)',
+    'login.resetPin': 'Reset pinned server certificate',
+    'login.resetDeviceId': 'Reset device enrollment',
+    'login.resetPin.done':
+      'Trust reset. Reconnect — the current server certificate will be re-pinned on the next attempt.',
+    'login.resetPin.missingUrl': 'Please enter the server URL first.',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Connections total',
