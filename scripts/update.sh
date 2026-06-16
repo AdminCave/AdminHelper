@@ -40,7 +40,7 @@ DL_BASE="${AH_DL_BASE:-https://github.com}"
 # SHA256SUMS signature — authenticity, not just transport integrity. Keep in
 # sync with scripts/install.sh. Empty = not yet armed (warn + checksum-only);
 # once set, a missing/invalid signature aborts the update.
-MINISIGN_PUBKEY="RWSs3976CzLZ5HUYUeMnohc8WqF9+iMVxffKg2RLLwyEb4SlNoRe7yI4"
+MINISIGN_PUBKEY="RWQu3dhz3TGs1jHQF76VmMaQ8aEi/ZioWvSE1fZ/UUFUC1QxeVzCB1I7"
 
 REF=""
 REDEPLOY=0
