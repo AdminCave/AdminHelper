@@ -5,7 +5,7 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.37.0] - 2026-06-16
 
 ### Added
 
@@ -22,6 +22,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nach einem Reinstall), liefert der mTLS-Client jetzt eine explizite, gefahren-bewusste
   Meldung (mögliche MITM-Attacke + Verweis auf *Geräte-Identität zurücksetzen*) statt des
   rohen rustls-Fehlers — analog zur bestehenden TOFU-Leaf-Pin-Meldung.
+
+### Fixed
+
+- **Release-Signatur scharf.** Das `MINISIGN_SECRET_KEY`-Secret wird jetzt als
+  base64-kodiertes Key-File interpretiert (`base64 -w0 minisign.key`) — der rohe,
+  mehrzeilige Key wurde im Secret-Store verstümmelt und ließ das Signieren der
+  `SHA256SUMS` scheitern. 0.37.0 ist damit das erste Release mit real verifizierbarer
+  minisign-Signatur (Public Key in `scripts/install.sh`/`update.sh` gepinnt).
 
 ## [0.36.0] - 2026-06-15
 
@@ -1536,6 +1544,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.37.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.37.0
 [0.36.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.36.0
 [0.35.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.35.0
 [0.34.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.34.0

@@ -290,7 +290,7 @@ The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring 
 
 ```bash
 # Install the DEB:
-sudo apt install ./adminhelper-agent_0.36.0_amd64.deb
+sudo apt install ./adminhelper-agent_0.37.0_amd64.deb
 
 # Full provisioning in a single call (server API key + optional monitor + optional FRP):
 sudo adminhelper-agent provision \

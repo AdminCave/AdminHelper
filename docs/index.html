@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.36.0</span>
+          <span>v0.37.0</span>
           <span id="year"></span>
         </div>
       </aside>
@@ -151,7 +151,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.36.0 · 2026-06-15</span>
+            <span class="eyebrow">Version 0.37.0 · 2026-06-16</span>
             <h1>AdminHelper – Dokumentation</h1>
             <p class="lead">
               Ein modularer Monolith zur zentralen Verwaltung von
@@ -261,7 +261,22 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.36.0?</h2>
+          <h2>Was ist neu in 0.37.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.37.0 &ndash; Desktop: Recovery nach Server-Neuinstallation (2026-06-16)</div>
+              <p>
+                Der Desktop-Client kommt jetzt sauber aus einem Server-Reinstall heraus: Passt das
+                Server-Zertifikat nicht mehr zur bei der Geräte-Registrierung gepinnten CA, zeigt der
+                Client eine <strong>eindeutige Gefahren-Meldung</strong> (mögliche MITM-Attacke) statt eines
+                kryptischen TLS-Fehlers. Über den neuen Einstellungs-Button <em>„Geräte-Identität
+                zurücksetzen"</em> (Modus <em>Server</em>, mit Sicherheits-Rückfrage) lassen sich mTLS-Identität
+                und gepinntes Zertifikat in einem Schritt verwerfen — danach registriert sich das Gerät beim
+                nächsten Verbinden neu. Details im <a href="https://github.com/ks98/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
