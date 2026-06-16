@@ -722,6 +722,13 @@ export const translations: Translations = {
       'Nur nach einem legitimen Zertifikatswechsel des Servers nötig — beim nächsten Verbinden wird neu gepinnt.',
     'settings.resetCertPin.done': 'Zertifikat-Pin zurückgesetzt.',
     'settings.resetCertPin.missingUrl': 'Bitte zuerst eine Server-URL eintragen.',
+    'settings.resetDeviceId': 'Geräte-Identität zurücksetzen',
+    'settings.resetDeviceId.hint':
+      'Nur nach einer Server-Neuinstallation bzw. neu erzeugter PKI nötig: löscht das mTLS-Geräte-Zertifikat und den Zertifikat-Pin. Danach ist eine erneute Anmeldung/Registrierung erforderlich.',
+    'settings.resetDeviceId.confirm':
+      'Achtung: Dies löscht das mTLS-Geräte-Zertifikat dieses Geräts und den gepinnten Zertifikat-Fingerprint. Nur fortfahren, wenn der Zertifikatswechsel erwartet ist (z. B. nach einer Server-Neuinstallation) — ein unerwarteter Wechsel kann auf einen MITM-Angriff hindeuten. Danach musst du dich neu anmelden bzw. das Gerät neu registrieren. Fortfahren?',
+    'settings.resetDeviceId.done':
+      'Geräte-Identität zurückgesetzt. Bitte neu anmelden/registrieren.',
     'settings.serverUrl': 'Server-URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Angemeldet als',
@@ -1733,6 +1740,12 @@ export const translations: Translations = {
       'Only needed after a legitimate server certificate change — the next connection re-pins.',
     'settings.resetCertPin.done': 'Certificate pin reset.',
     'settings.resetCertPin.missingUrl': 'Please enter a server URL first.',
+    'settings.resetDeviceId': 'Reset device identity',
+    'settings.resetDeviceId.hint':
+      'Only needed after a server reinstall or a re-created PKI: removes the mTLS device certificate and the certificate pin. You must sign in / re-enroll afterwards.',
+    'settings.resetDeviceId.confirm':
+      'Warning: this removes this device’s mTLS certificate and the pinned certificate fingerprint. Only continue if the certificate change is expected (e.g. after a server reinstall) — an unexpected change may indicate a MITM attack. You will need to sign in / re-enroll the device afterwards. Continue?',
+    'settings.resetDeviceId.done': 'Device identity reset. Please sign in / re-enroll.',
     'settings.serverUrl': 'Server URL',
     'settings.serverUrl.placeholder': 'https://adminhelper.example',
     'settings.loggedInAs': 'Signed in as',

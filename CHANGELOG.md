@@ -5,6 +5,24 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- **Desktop: „Geräte-Identität zurücksetzen".** Neuer Einstellungs-Button (Modus
+  *Server*, nur sichtbar wenn das Gerät registriert ist) für den Recovery-Fall nach
+  einer Server-Neuinstallation / neu erzeugten PKI. Löscht das enrollte mTLS-Geräte-
+  Zertifikat **und** den TOFU-Zertifikat-Pin in einem Schritt — danach pinnt/registriert
+  sich das Gerät beim nächsten Verbinden neu. Mit Gefahren-Bestätigungsdialog.
+
+### Changed
+
+- **Desktop: eindeutige Fehlermeldung bei CA-Pin-Mismatch.** Präsentiert der Server
+  ein Zertifikat, das nicht mehr zur bei der Registrierung gepinnten CA passt (z. B.
+  nach einem Reinstall), liefert der mTLS-Client jetzt eine explizite, gefahren-bewusste
+  Meldung (mögliche MITM-Attacke + Verweis auf *Geräte-Identität zurücksetzen*) statt des
+  rohen rustls-Fehlers — analog zur bestehenden TOFU-Leaf-Pin-Meldung.
+
 ## [0.36.0] - 2026-06-15
 
 Ergebnis eines projektweiten Audits (Bugs, Verbesserungen, Sicherheit) über alle

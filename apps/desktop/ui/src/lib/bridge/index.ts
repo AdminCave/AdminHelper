@@ -82,6 +82,18 @@ export function resetServerCertPin(serverUrl: string): Promise<void> {
   return invoke('reset_server_cert_pin', { serverUrl });
 }
 
+// Whether this device holds an enrolled mTLS identity — gates the
+// "reset device identity" action in the settings UI.
+export function isDeviceEnrolled(): Promise<boolean> {
+  return invoke<boolean>('is_device_enrolled');
+}
+
+// Reset the enrolled mTLS identity AND the TOFU pin for a server — the recovery
+// path after a server reinstall / PKI re-creation. The user must re-enroll after.
+export function resetDeviceIdentity(serverUrl: string): Promise<void> {
+  return invoke('reset_device_identity', { serverUrl });
+}
+
 // Decoupled enrollment (ADR 0003): enroll this device with a one-time token an
 // admin minted out-of-band — without a prior login. Lets a brand-new client get
 // its mTLS cert under enforced mTLS, where it can't reach the login on :443.

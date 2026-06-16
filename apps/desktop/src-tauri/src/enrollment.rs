@@ -233,9 +233,9 @@ pub fn is_enrolled() -> bool {
 }
 
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
-/// user out under enforced mTLS — the cert is needed to reach the login). Kept
-/// for an explicit "reset device identity" action.
-#[allow(dead_code)]
+/// user out under enforced mTLS — the cert is needed to reach the login). Invoked
+/// by the explicit "reset device identity" settings action (`reset_device_identity`)
+/// — the recovery path after a server reinstall / PKI re-creation.
 pub fn clear_identity() {
     keyring_del(KEYRING_KEY);
     keyring_del(KEYRING_CERT);
@@ -473,6 +473,24 @@ impl ServerCertVerifier for CaPinVerifier {
             Err(TlsError::InvalidCertificate(
                 CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. },
             )) => Ok(ServerCertVerified::assertion()),
+            // The presented cert does NOT chain to the CA pinned at enrollment:
+            // no path to the pinned anchor (UnknownIssuer) or the leaf signature
+            // does not verify against it (BadSignature — what a single-leaf chain
+            // under a foreign CA actually yields). Either an on-path attacker, or
+            // the server's PKI was re-created (a reinstall) — we cannot tell the
+            // two apart, so fail closed with an explicit, danger-aware message
+            // that names the recovery action, mirroring the TOFU leaf-pin message.
+            // Temporal errors (Expired/NotYetValid) fall through unchanged — a
+            // different problem the identity reset would not fix.
+            Err(TlsError::InvalidCertificate(
+                CertificateError::UnknownIssuer | CertificateError::BadSignature,
+            )) => Err(TlsError::General(
+                "AdminHelper: Das Server-Zertifikat wird nicht mehr von der bei der \
+                     Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke). Wurde \
+                     der Server neu installiert oder die PKI neu erzeugt, in den Einstellungen \
+                     die Geräte-Identität zurücksetzen und neu registrieren."
+                    .to_string(),
+            )),
             Err(err) => Err(err),
         }
     }
@@ -901,6 +919,48 @@ mod tests {
 
             let client = build_mtls_client(&cli_key, &cli_cert, &ca.cert.pem()).unwrap();
             assert_eq!(get(&client, port).await, Err(()));
+        }
+
+        // A cert that does NOT chain to the pinned CA (server reinstall / MITM)
+        // must surface our explicit, danger-aware message — not the raw rustls
+        // error — so the user is told the risk and the recovery path.
+        #[test]
+        fn unpinned_ca_yields_danger_message() {
+            let ca = make_ca();
+            let foreign = make_ca();
+            let (leaf_pem, _) = make_leaf(
+                &foreign,
+                "server",
+                vec!["localhost".to_string()],
+                ExtendedKeyUsagePurpose::ServerAuth,
+            );
+
+            let mut roots = RootCertStore::empty();
+            roots.add(ca.cert.der().clone()).unwrap();
+            let inner = WebPkiServerVerifier::builder_with_provider(
+                Arc::new(roots),
+                crate::tofu::ring_provider(),
+            )
+            .build()
+            .unwrap();
+            let verifier = CaPinVerifier { inner };
+
+            let leaf_der = rustls_pemfile::certs(&mut leaf_pem.as_bytes())
+                .next()
+                .unwrap()
+                .unwrap();
+            let name = ServerName::try_from("localhost").unwrap();
+            let result = verifier.verify_server_cert(&leaf_der, &[], &name, &[], UnixTime::now());
+
+            match result {
+                Err(TlsError::General(msg)) => {
+                    assert!(
+                        msg.contains("Geräte-Registrierung") && msg.contains("MITM"),
+                        "Meldung muss Gefahr + Recovery benennen, war: {msg}"
+                    );
+                }
+                other => panic!("erwartet General-Gefahrenmeldung, war: {other:?}"),
+            }
         }
     }
 }

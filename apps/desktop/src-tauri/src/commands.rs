@@ -55,6 +55,27 @@ pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Whether this device currently holds an enrolled mTLS identity. Drives the
+/// visibility of the "reset device identity" action in the settings UI.
+#[tauri::command]
+pub fn is_device_enrolled() -> bool {
+    enrollment::is_enrolled()
+}
+
+/// Reset this device's enrolled mTLS identity AND forget the TOFU pin for the
+/// given server — the recovery path after a server reinstall / PKI re-creation.
+/// Both are stale at once: while enrolled, `build_client` always uses the mTLS
+/// `enrolled_client` (CA-pin), so dropping the identity makes the next connection
+/// fall back to the self-signed/TOFU (or public-CA) path; clearing the stale leaf
+/// pin in the same step lets that fallback re-pin instead of being rejected by
+/// the old pin. The user must log in / re-enroll afterwards.
+#[tauri::command]
+pub fn reset_device_identity(server_url: String) -> Result<(), AppError> {
+    enrollment::clear_identity();
+    tofu::forget_pin(&server_url);
+    Ok(())
+}
+
 /// Enroll this device for mTLS: mint an access-scoped token (using the session
 /// JWT), generate an on-device key + CSR, and fetch + store the client cert from
 /// the ca-issuer (A5). The cert is presented on later requests by build_client

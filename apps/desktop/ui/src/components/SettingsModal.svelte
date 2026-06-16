@@ -13,8 +13,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     serverLogout,
   } from '$lib/stores/settings';
   import { t } from '$lib/i18n';
-  import { resetServerCertPin, exportBrowserP12, generateDiagnostics } from '$lib/bridge';
-  import { save } from '@tauri-apps/plugin-dialog';
+  import {
+    resetServerCertPin,
+    resetDeviceIdentity,
+    isDeviceEnrolled,
+    exportBrowserP12,
+    generateDiagnostics,
+  } from '$lib/bridge';
+  import { save, confirm } from '@tauri-apps/plugin-dialog';
   import {
     RDP_WINDOW_MODES,
     RDP_PERFORMANCE_PROFILES,
@@ -42,6 +48,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>('auto');
   let serverUrl = $state('');
   let pinResetMsgKey = $state('');
+  let deviceEnrolled = $state(false);
+  let deviceResetMsgKey = $state('');
   let browserCertPassword = $state('');
   let browserCertMsg = $state('');
   let browserCertBusy = $state(false);
@@ -63,12 +71,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdpPerformanceProfile = s.rdpPerformanceProfile ?? 'auto';
     serverUrl = s.serverUrl ?? '';
     pinResetMsgKey = '';
+    deviceResetMsgKey = '';
     browserCertPassword = '';
     browserCertMsg = '';
     browserCertBusy = false;
     diagMsg = '';
     diagBusy = false;
+    void refreshDeviceEnrolled();
   });
+
+  async function refreshDeviceEnrolled(): Promise<void> {
+    try {
+      deviceEnrolled = await isDeviceEnrolled();
+    } catch {
+      deviceEnrolled = false;
+    }
+  }
 
   async function onResetPin(): Promise<void> {
     const target = (mode === 'sync' ? url : serverUrl).trim();
@@ -81,6 +99,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
       pinResetMsgKey = 'settings.resetCertPin.done';
     } catch {
       pinResetMsgKey = '';
+    }
+  }
+
+  async function onResetDeviceIdentity(): Promise<void> {
+    const target = (mode === 'sync' ? url : serverUrl).trim();
+    if (!target) {
+      deviceResetMsgKey = 'settings.resetCertPin.missingUrl';
+      return;
+    }
+    // Destructive: drops the mTLS device cert (re-enrollment required). Confirm
+    // with an explicit danger warning before doing it.
+    const ok = await confirm($t('settings.resetDeviceId.confirm'), {
+      title: $t('settings.resetDeviceId'),
+      kind: 'warning',
+    });
+    if (!ok) return;
+    try {
+      await resetDeviceIdentity(target);
+      deviceEnrolled = false;
+      deviceResetMsgKey = 'settings.resetDeviceId.done';
+    } catch {
+      deviceResetMsgKey = '';
     }
   }
 
@@ -290,6 +330,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </div>
       {/if}
 
+      {#if mode === 'server' && deviceEnrolled}
+        <div class="sm-reset-pin">
+          <button class="btn ghost small danger" onclick={onResetDeviceIdentity}
+            >{$t('settings.resetDeviceId')}</button
+          >
+          <span class="field-label">{$t('settings.resetDeviceId.hint')}</span>
+          {#if deviceResetMsgKey}<span class="sm-reset-msg">{$t(deviceResetMsgKey)}</span>{/if}
+        </div>
+      {/if}
+
       <div class="sm-section">
         <div class="sm-section-title">{$t('settings.section.language')}</div>
         <label class="field">
@@ -466,6 +516,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .sm-reset-msg {
     font-size: 12px;
     color: var(--accent);
+  }
+  .sm-reset-pin .btn.danger {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+  .sm-reset-pin .btn.danger:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: rgba(248, 113, 113, 0.12);
   }
   .sm-browser-cert {
     display: flex;
