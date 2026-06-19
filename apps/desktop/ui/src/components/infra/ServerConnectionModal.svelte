@@ -42,8 +42,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   $effect(() => {
     if (!open) return;
-    form = target ? connectionToForm(target) : emptyConnectionForm(serverId);
-    tagsInput = (form.tags ?? []).join(', ');
+    // Derive tagsInput from the local `next`, not from `form`: reading `form`
+    // after assigning it would make this effect depend on the state it writes,
+    // which self-triggers an infinite loop (effect_update_depth_exceeded) that
+    // breaks the modal's reactivity (dead inputs and buttons).
+    const next = target ? connectionToForm(target) : emptyConnectionForm(serverId);
+    form = next;
+    tagsInput = (next.tags ?? []).join(', ');
     confirmDelete = false;
   });
 

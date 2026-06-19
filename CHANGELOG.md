@@ -5,6 +5,22 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Desktop: Tunnel- und Verbindungs-Formular im Infrastruktur-Hub waren unbedienbar.**
+  Beim Öffnen von „Tunnel anlegen" bzw. „Verbindung anlegen" (Server-Detail) lief der
+  Initialisierungs-`$effect` in eine Endlosschleife (`effect_update_depth_exceeded`): Er
+  wies `form` ein frisches Objekt zu und las direkt danach `form.tags` — wodurch der Effect
+  von dem State abhing, den er selbst schreibt, und sich bei jedem Lauf neu triggerte.
+  Svelte brach nach 10 Durchläufen ab und zerstörte dabei die Reaktivität des Modals:
+  Eingabefelder *und* alle Buttons (inklusive „Abbrechen"/„×") waren tot. `tagsInput` wird
+  jetzt aus dem lokalen, frisch erzeugten Objekt abgeleitet statt aus dem `form`-State.
+  (Das Server-Anlegen war nicht betroffen — `ServerModal` leitete schon aus der lokalen
+  Quelle ab.) Abgesichert durch erste mountende Komponenten-Tests (`@testing-library/svelte`),
+  die den Crash reproduzieren — bislang wurde keine Svelte-Komponente in Tests gemountet.
+
 ## [0.37.1] - 2026-06-16
 
 ### Fixed

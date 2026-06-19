@@ -42,13 +42,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   $effect(() => {
     if (!open) return;
-    if (editing) {
-      form = tunnelToForm(editing);
-    } else {
-      // Preselect the only config so the common single-config setup is one click.
-      form = emptyTunnelForm(serverId, configs.length === 1 ? configs[0].id : '');
-    }
-    tagsInput = (form.tags ?? []).join(', ');
+    // Derive tagsInput from the local `next`, not from `form`: reading `form`
+    // after assigning it would make this effect depend on the state it writes,
+    // which self-triggers an infinite loop (effect_update_depth_exceeded) that
+    // breaks the modal's reactivity (dead inputs and buttons).
+    const next = editing
+      ? tunnelToForm(editing)
+      : // Preselect the only config so the common single-config setup is one click.
+        emptyTunnelForm(serverId, configs.length === 1 ? configs[0].id : '');
+    form = next;
+    tagsInput = (next.tags ?? []).join(', ');
     confirmDelete = false;
   });
 
