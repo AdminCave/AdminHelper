@@ -403,3 +403,22 @@ jobs:
         run: bash scripts/tests/update_test.sh
       - name: diagnostics.sh redaction test
         run: bash scripts/tests/diagnostics_test.sh
+
+  # The ONE from-outside integration path. Every other test mocks at the DB/IPC
+  # boundary; this boots the real multi-container stack (postgres, redis, server,
+  # ca-issuer, gateway) with MTLS_ENFORCE=true and talks to it only through the
+  # nginx gateway — exercising the full enrollment + mTLS + JWT round-trip end to
+  # end. The script builds the images it needs from this checkout.
+  #
+  # Deliberately NOT a per-PR gate yet: it builds the server image (incl. the web
+  # frontend) and boots a five-container stack — minutes, not seconds. Runs on
+  # main pushes + manual dispatch; promote to `pull_request` once we've lived a
+  # release round with it.
+  integration-stack:
+    name: From-outside stack (mTLS gateway)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: From-outside mTLS integration test
+        run: bash scripts/tests/integration_stack_test.sh

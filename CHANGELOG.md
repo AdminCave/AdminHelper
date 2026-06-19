@@ -9,6 +9,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **From-outside-Integrationstest gegen das echte Gateway.** Bisher fuhr kein
+  Test den echten Multi-Container-Stack hoch — CI baute nur Images und prüfte
+  Komponenten isoliert (gemockt bzw. mit DB-Override). Neu schließt
+  `scripts/tests/integration_stack_test.sh` genau diese Lücke mit **einem**
+  Pfad: Er startet den realen Stack (Postgres, Redis, Server, ca-issuer,
+  nginx-Gateway) mit erzwungenem mTLS (`MTLS_ENFORCE=true`) und redet
+  ausschließlich von außen durch das Gateway — mintet einen Enrollment-Token
+  in-container, enrollt von außen per CSR über die certless Enroll-Plane (:8444)
+  ein Client-Cert, und prüft den ganzen Pfad: certless → vom Gateway abgewiesen
+  (400), Cert ohne JWT → 401, Cert + Login → JWT, Cert + JWT → 200. Hermetisch
+  (Wegwerf-Secrets, lokal gebaute Images, isolierte Ports/Volumes, `down -v`).
+  Als eigener CI-Job auf `main`-Pushes + manuell (bewusst noch kein PR-Gate, da
+  Image-Build + 5-Container-Boot).
+
 - **Struktur-Gate gegen „neuer Router ohne Auth".** Ein neuer pytest-Test
   (`apps/server/tests/test_route_auth_gate.py`) introspiziert beim Lauf alle
   gemounteten `/api`-Routen und schlägt fehl, sobald eine Route weder eine

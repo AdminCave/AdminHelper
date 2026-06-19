@@ -1,0 +1,23 @@
+# Test-only overlay for scripts/tests/integration_stack_test.sh, layered on top
+# of the repo's docker-compose.yml to make a real-stack boot hermetic and
+# collision-free:
+#
+#   - Publish the gateway on high, per-run host ports (ITEST_*_PORT) instead of
+#     the fixed 443/8444, so the test never clashes with a real stack on the host
+#     or a second run in parallel. `!override` REPLACES the base ports list — a
+#     plain merge keeps 443:443 and still collides.
+#   - Swap the server's `./data` host bind-mount for a named volume, so `down -v`
+#     cleans it and no container-UID-owned files are left behind in the repo.
+#     (Plain merge by container path is enough here; the sibling frp-config mount
+#     is preserved.)
+services:
+  gateway:
+    ports: !override
+      - "${ITEST_HTTPS_PORT:-18443}:443"
+      - "${ITEST_ENROLL_PORT:-18444}:8444"
+  server:
+    volumes:
+      - itest-data:/app/data
+
+volumes:
+  itest-data:
