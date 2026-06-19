@@ -1,0 +1,17 @@
+{
+  "name": "adminhelper-desktop-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "description": "End-to-end tests for the AdminHelper Tauri desktop app (WebdriverIO + tauri-driver).",
+  "scripts": {
+    "test": "wdio run wdio.conf.js"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.19.0",
+    "@wdio/local-runner": "^9.19.0",
+    "@wdio/mocha-framework": "^9.19.0",
+    "@wdio/spec-reporter": "^9.19.0"
+  }
+}

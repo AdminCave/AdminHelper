@@ -9,6 +9,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: echtes End-to-End-Test-Harness (WebdriverIO + tauri-driver).** Neu
+  unter `apps/desktop/e2e/`: treibt die gebaute Tauri-App über eine echte
+  WebDriver-Session (auf Linux via `tauri-driver` → `WebKitWebDriver`). Erster
+  Test ist ein Smoke-Test (App startet, Fenster „AdminHelper", Svelte-UI mountet)
+  — die billigste sinnvolle E2E-Stufe, ohne Backend. Als eigener CI-Job
+  (`desktop-e2e`, unter `xvfb`) auf `main`-Pushes + manuell, kein PR-Gate. Der
+  Live-„Verbindung-mit-Tunnel-anlegen-und-testen"-Flow (braucht den echten Stack
+  aus dem From-outside-Test plus `frpc`) baut auf diesem Harness auf und ist der
+  nächste Schritt.
+
 - **Desktop: Komponententests für den „Verbindung-mit-Tunnel-anlegen"-Flow.**
   `TunnelModal` und `ServerConnectionModal` werden jetzt als echte Komponenten
   gemountet (`@testing-library/svelte`), das Formular ausgefüllt und abgesendet,

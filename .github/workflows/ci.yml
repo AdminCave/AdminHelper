@@ -422,3 +422,56 @@ jobs:
       - uses: actions/checkout@v6
       - name: From-outside mTLS integration test
         run: bash scripts/tests/integration_stack_test.sh
+
+  # End-to-end test of the real desktop app via WebdriverIO + tauri-driver: it
+  # builds the Tauri app and drives a real WebKit window (on Linux tauri-driver
+  # proxies to WebKitWebDriver) under xvfb. Like the stack test, NOT a per-PR
+  # gate — it builds the app and launches a window (minutes). Runs on main +
+  # manual; promote to pull_request once it's proven stable.
+  desktop-e2e:
+    name: Desktop E2E (tauri-driver smoke)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tauri system deps + WebKitWebDriver + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
+            libayatana-appindicator3-dev libssl-dev patchelf file \
+            webkit2gtk-driver xvfb
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/ui/package-lock.json
+      - name: frpc sidecar (externalBin must resolve for the tauri build)
+        run: |
+          curl -fsSL -o frpc.tar.gz \
+            "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
+          echo "${FRP_SHA256_LINUX_AMD64}  frpc.tar.gz" | sha256sum -c -
+          tar xzf frpc.tar.gz
+          mkdir -p apps/desktop/src-tauri/binaries
+          cp "frp_${FRP_VERSION}_linux_amd64/frpc" \
+            apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+          chmod +x apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+      - name: Install Tauri CLI
+        # The harness onPrepare runs `cargo tauri build --debug`; keep the pin in
+        # lockstep with the tauri-build-smoke job above.
+        run: cargo install tauri-cli --locked --version "2.11.2"
+      - name: npm ci (desktop UI — needed by the onPrepare frontend build)
+        working-directory: apps/desktop/ui
+        run: npm ci --no-audit --no-fund
+      - name: npm ci (e2e harness)
+        working-directory: apps/desktop/e2e
+        run: npm ci --no-audit --no-fund
+      - name: Run E2E under xvfb
+        working-directory: apps/desktop/e2e
+        run: xvfb-run -a npm test
