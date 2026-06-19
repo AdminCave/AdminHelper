@@ -7,6 +7,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Struktur-Gate gegen „neuer Router ohne Auth".** Ein neuer pytest-Test
+  (`apps/server/tests/test_route_auth_gate.py`) introspiziert beim Lauf alle
+  gemounteten `/api`-Routen und schlägt fehl, sobald eine Route weder eine
+  Auth-Dependency (`require_scope` / `get_current_user` / `get_current_admin` /
+  `ApiKeyOrUser`) im Dependency-Baum trägt noch in einer kurzen, begründeten
+  Allowlist bewusst öffentlicher Routen steht. Damit kann ein Modul-Router, der
+  in `app.main` ohne Scope-Guard eingebunden wird, nicht mehr unbemerkt
+  ungeschützt durchrutschen — der Fehler fällt im bestehenden Server-`pytest`-Job
+  auf (in-process, keine DB, ~0,2 s) statt erst im Betrieb auf. Strukturell, nicht
+  semantisch: geprüft wird, *ob* ein Guard verdrahtet ist, nicht *ob* er greift —
+  Letzteres deckt der Integrationstest gegen das Gateway ab.
+
 ### Fixed
 
 - **Desktop: Tunnel- und Verbindungs-Formular im Infrastruktur-Hub waren unbedienbar.**
