@@ -33,6 +33,11 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 - **`test/specs/provisioning.live.js`** — mint an agent-enrollment token through
   the GUI; the server issues it and the GUI lists it (round-trip). Runs in the
   same `desktop_e2e_crud.sh` boot.
+- **`test/specs/monitoring-check.live.js`** — create an `agent_resources`
+  monitoring check through the GUI on a server a real agent has pushed metrics
+  for; the check appears after a reload from the monitoring service. Orchestrated
+  by **`../../../scripts/tests/desktop_e2e_monitoring.sh`** (boots monitoring +
+  runs a real agent first).
 
 ## Prerequisites (Linux)
 

@@ -326,6 +326,9 @@ bash scripts/tests/desktop_e2e_crud.sh
 # Agent->Monitoring: echte Go-Agenten enrollen (mTLS) + pushen Metriken
 # (AH_AGENTS=N fuer mehrere Agenten/Server)
 bash scripts/tests/agent_monitoring_test.sh
+
+# Desktop-Live-E2E: Monitoring-Check ueber die GUI anlegen (echte Agent-Daten)
+bash scripts/tests/desktop_e2e_monitoring.sh
 ```
 
 Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`

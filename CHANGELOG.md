@@ -9,6 +9,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Live-E2E für die Monitoring-Check-Journey** (`monitoring-check.live.js`,
+  `desktop_e2e_monitoring.sh`) gegen **echte Agent-Daten**: ein echter Agent pusht
+  Metriken, dann legt die App über die GUI einen `agent_resources`-Check an, der
+  nach dem Reload aus dem Monitoring-Dienst (GUI → `api_proxy` → Gateway → Server →
+  Monitoring) erscheint.
 - **Integrations-E2E: echter Agent → Monitoring-Pipeline**
   (`scripts/tests/agent_monitoring_test.sh`). Mehrere echte Go-Agenten (in
   Wegwerf-Containern) provisionieren gegen den Test-Stack, **enrollen ein
