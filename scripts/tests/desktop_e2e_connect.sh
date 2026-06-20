@@ -33,6 +33,7 @@ wait_log() {  # container pattern timeout — readiness via the log, so we don't
     return 1
 }
 
+
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }
@@ -62,6 +63,13 @@ TARGETS+=("$WEB_C")
 wait_log "$WEB_C" "worker process" 30 && ok "Web target listening on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
 e2e_api "$TOKEN" web-connection web-direct "http://127.0.0.1:8080" >/dev/null && ok "seeded direct Web connection" || { bad "seed Web connection"; exit 1; }
 
+# ── RDP target (xrdp) + a direct RDP connection ──────────────────────────────
+RDP_C="ah-e2e-rdp-$$"
+docker run -d --name "$RDP_C" -p 3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
+TARGETS+=("$RDP_C")
+wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target (xrdp) up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
+e2e_api "$TOKEN" connection rdp-direct rdp 127.0.0.1 3389 e2e >/dev/null && ok "seeded direct RDP connection" || { bad "seed RDP connection"; exit 1; }
+
 # xdg-open shim: the desktop's open::that(url) resolves "xdg-open" via PATH. This
 # shim fetches the URL so the nginx access log proves the right URL was opened
 # (headless has no real browser to do it).
@@ -86,7 +94,8 @@ dbus-run-session -- bash -c '
     export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
         --spec test/specs/ssh-connect.live.js \
-        --spec test/specs/web-connect.live.js
+        --spec test/specs/web-connect.live.js \
+        --spec test/specs/rdp-connect.live.js
 ' && ok "connect GUI specs ran" || bad "connect GUI specs failed"
 
 # Verify from the target side: sshd logged an incoming connection from the
@@ -108,6 +117,18 @@ else
     bad "nginx saw no request from the desktop"
     echo "    xdg-open shim log:"; sed 's/^/    /' "$AH_XDG_LOG" 2>/dev/null
     docker logs --tail 15 "$WEB_C"
+fi
+
+# RDP: the xrdp server logged the desktop's incoming connection (xfreerdp3).
+if docker exec "$RDP_C" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
+        | grep -qiE "connect|incoming|login|session|TLS"; then
+    ok "xrdp logged the desktop's RDP connection (direct)"
+elif docker logs "$RDP_C" 2>&1 | grep -qiE "connect|incoming"; then
+    ok "xrdp logged the desktop's RDP connection (direct)"
+else
+    bad "xrdp saw no connection from the desktop"
+    docker exec "$RDP_C" sh -c 'tail -25 /var/log/xrdp.log 2>/dev/null' 2>/dev/null
+    docker logs --tail 15 "$RDP_C"
 fi
 
 echo ""

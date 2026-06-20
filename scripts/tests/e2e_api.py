@@ -89,7 +89,16 @@ def main(argv):
                 token,
                 "POST",
                 "/api/connections",
-                {"name": name, "kind": kind, "host": host, "port": int(port), "username": user},
+                # trustCert=True so an RDP open passes /cert:ignore to xfreerdp3
+                # (otherwise the headless TLS handshake stalls on a cert prompt).
+                {
+                    "name": name,
+                    "kind": kind,
+                    "host": host,
+                    "port": int(port),
+                    "username": user,
+                    "trustCert": True,
+                },
             )["id"]
         )
     elif op == "web-connection":
