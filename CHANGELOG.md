@@ -7,6 +7,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.37.2] - 2026-06-20
+
 ### Added
 
 - **Desktop: Live-E2E für den Settings-Moduswechsel** (`settings-mode.live.js`,
@@ -1736,6 +1738,7 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.37.2]: https://github.com/ks98/AdminHelper/releases/tag/v0.37.2
 [0.37.1]: https://github.com/ks98/AdminHelper/releases/tag/v0.37.1
 [0.37.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.37.0
 [0.36.0]: https://github.com/ks98/AdminHelper/releases/tag/v0.36.0

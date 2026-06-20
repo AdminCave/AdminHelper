@@ -172,7 +172,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <span class="sidebar-label">{$t('settings.label')}</span>
         <span class="sidebar-badge">{modeBadge}</span>
       </button>
-      <div class="sidebar-version">v0.37.1</div>
+      <div class="sidebar-version">v0.37.2</div>
     </div>
 
     <button
