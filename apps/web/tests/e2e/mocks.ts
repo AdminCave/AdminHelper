@@ -45,6 +45,7 @@ export async function mockApi(page: Page): Promise<void> {
   // liefert ihn aus — noetig fuer CRUD-Roundtrips (anlegen -> Liste -> loeschen).
   const db = {
     users: [{ ...ADMIN_USER }] as Record<string, unknown>[],
+    apikeys: [] as Record<string, unknown>[],
   };
   let seq = 1;
 
@@ -87,7 +88,34 @@ export async function mockApi(page: Page): Promise<void> {
     }
     return route.fallback();
   });
-  await page.route(api('apikeys'), async (route) => route.fulfill(json({ body: [] })));
+  await page.route(api('api-keys'), async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const id = 200 + seq++;
+      db.apikeys.push({
+        id,
+        name: body.name,
+        permission: body.permission,
+        created_at: '2026-01-01T00:00:00Z',
+      });
+      // The create response carries the secret exactly once (ApiKeyCreateResult.key).
+      return route.fulfill(
+        json({
+          status: 201,
+          body: { id, name: body.name, permission: body.permission, key: `ah_e2e_${id}` },
+        }),
+      );
+    }
+    return route.fulfill(json({ body: db.apikeys }));
+  });
+  await page.route(api('api-keys/*'), async (route) => {
+    if (route.request().method() === 'DELETE') {
+      const id = Number(new URL(route.request().url()).pathname.split('/').pop());
+      db.apikeys = db.apikeys.filter((k) => k.id !== id);
+      return route.fulfill({ status: 204, body: '' });
+    }
+    return route.fallback();
+  });
   await page.route(api('hooks'), async (route) => route.fulfill(json({ body: [] })));
 
   // FRP-Server-Config (Instanz-Verwaltung): leere Config -> "noConfig"-Zustand.

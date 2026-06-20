@@ -43,6 +43,38 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
     await expect(page.locator('tbody tr', { hasText: 'e2e-user' })).toHaveCount(0);
     await expect(page.locator('tbody tr', { hasText: 'admin' })).toBeVisible();
   });
+
+  test('API-Key anlegen -> Secret einmalig sichtbar -> in Liste -> loeschen', async ({ page }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/apikeys');
+
+    // Anlegen
+    await page.getByRole('button', { name: '+ API-Key' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.locator('#akName').fill('e2e-key');
+    await modal.locator('#akPermission').selectOption('read');
+    await modal.getByRole('button', { name: 'Erstellen' }).click();
+
+    // Der Secret wird genau EINMAL angezeigt (Reveal-Dialog), per .key-reveal
+    // adressiert, weil waehrend des Modal-Wechsels kurz zwei dialogs existieren.
+    await expect(page.locator('.key-reveal')).toContainText('ah_e2e_');
+    await expect(page.getByText('nur einmal angezeigt')).toBeVisible();
+    await page.getByRole('button', { name: 'Schließen' }).click();
+
+    // Erscheint in der Liste
+    await expect(page.locator('tbody tr', { hasText: 'e2e-key' })).toBeVisible();
+
+    // Loeschen (mit Bestaetigung)
+    await page
+      .locator('tbody tr', { hasText: 'e2e-key' })
+      .getByRole('button', { name: 'Löschen' })
+      .click();
+    const confirm = page.getByRole('dialog');
+    await expect(confirm).toContainText('API-Key wirklich löschen?');
+    await confirm.getByRole('button', { name: 'Löschen' }).click();
+
+    await expect(page.locator('tbody tr', { hasText: 'e2e-key' })).toHaveCount(0);
+  });
 });
 
 test.describe('Fehler-Flows', () => {

@@ -9,6 +9,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Web: Playwright-CRUD für API-Keys** (gegen die stateful Mocks) — anlegen →
+  der Secret-Key wird **genau einmal** im Reveal-Dialog gezeigt → erscheint in der
+  Liste → löschen. Der `mocks.ts`-In-Memory-Store ist dafür um `/api/api-keys`
+  (POST/GET/DELETE) erweitert.
 - **Web: Unit-Tests für die Stores `users`, `hooks`, `frpConfig`** (analog
   `apikeys`). Der fehleranfällige Kern: optimistische Listen-Updates **per ID**
   (nicht per Index), `hooks.toggle` als Partial-Merge nur auf den passenden Hook,
