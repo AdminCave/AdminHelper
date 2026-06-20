@@ -10,11 +10,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 ### Added
 
 - **Desktop: Live-E2E für „Verbindung öffnen" gegen echte Ziel-Container**
-  (`desktop_e2e_connect.sh`, `ssh-connect.live.js`). Die App öffnet über die GUI
-  eine **SSH-Verbindung** zu einem echten `openssh-server`-Container; da der
-  Desktop `ssh` als externen Prozess (Terminal) startet, wird zielseitig über das
-  **sshd-Log** verifiziert (eingehende Verbindung vom Desktop) — analog zur
-  frps-Log-Prüfung des Tunnel-Tests.
+  (`desktop_e2e_connect.sh`). Die App öffnet über die GUI eine **SSH**-Verbindung
+  (`openssh-server`-Container) und eine **Web**-Verbindung (`nginx`-Container). Da
+  der Desktop `ssh`/den Browser als externen Prozess startet, wird zielseitig
+  verifiziert: das **sshd-Log** (eingehende Verbindung vom Desktop) bzw. das
+  **nginx-Access-Log** (Web-Fetch via `xdg-open`-Shim) — analog zur frps-Log-
+  Prüfung des Tunnel-Tests.
 - **Desktop: Live-E2E für die Monitoring-Check-Journey** (`monitoring-check.live.js`,
   `desktop_e2e_monitoring.sh`) gegen **echte Agent-Daten**: ein echter Agent pusht
   Metriken, dann legt die App über die GUI einen `agent_resources`-Check an, der

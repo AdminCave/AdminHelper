@@ -331,7 +331,7 @@ bash scripts/tests/agent_monitoring_test.sh
 bash scripts/tests/desktop_e2e_monitoring.sh
 
 # Desktop-Live-E2E: Verbindung oeffnen gegen echte Ziel-Container
-# (SSH; verifiziert ueber das sshd-Log)
+# (SSH -> sshd-Log, Web -> nginx-Log)
 bash scripts/tests/desktop_e2e_connect.sh
 ```
 

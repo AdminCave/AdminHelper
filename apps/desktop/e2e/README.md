@@ -38,10 +38,11 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   for; the check appears after a reload from the monitoring service. Orchestrated
   by **`../../../scripts/tests/desktop_e2e_monitoring.sh`** (boots monitoring +
   runs a real agent first).
-- **`test/specs/ssh-connect.live.js`** — open an SSH connection through the GUI;
-  the desktop spawns `ssh` (an external terminal process), so the orchestrator
+- **`test/specs/ssh-connect.live.js`** / **`web-connect.live.js`** — open an SSH
+  resp. Web connection through the GUI. The desktop spawns `ssh` / the browser as
+  an external process, so the orchestrator
   **`../../../scripts/tests/desktop_e2e_connect.sh`** verifies from the target
-  side via the sshd container log.
+  side: the sshd log resp. the nginx access log (via an `xdg-open` shim on PATH).
 
 ## Prerequisites (Linux)
 

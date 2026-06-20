@@ -55,17 +55,39 @@ TARGETS+=("$SSH_C")
 wait_log "$SSH_C" "listening on port 2222" 40 && ok "SSH target listening on :2222" || { bad "SSH target never came up"; docker logs --tail 20 "$SSH_C"; exit 1; }
 e2e_api "$TOKEN" connection ssh-direct ssh 127.0.0.1 2222 e2e >/dev/null && ok "seeded direct SSH connection" || { bad "seed SSH connection"; exit 1; }
 
+# ── Web target (nginx) + a direct Web connection ─────────────────────────────
+WEB_C="ah-e2e-web-$$"
+docker run -d --name "$WEB_C" -p 8080:80 nginx:alpine >/dev/null 2>&1
+TARGETS+=("$WEB_C")
+wait_log "$WEB_C" "worker process" 30 && ok "Web target listening on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
+e2e_api "$TOKEN" web-connection web-direct "http://127.0.0.1:8080" >/dev/null && ok "seeded direct Web connection" || { bad "seed Web connection"; exit 1; }
+
+# xdg-open shim: the desktop's open::that(url) resolves "xdg-open" via PATH. This
+# shim fetches the URL so the nginx access log proves the right URL was opened
+# (headless has no real browser to do it).
+SHIM_DIR="$E2E_WORK/bin"; mkdir -p "$SHIM_DIR"
+AH_XDG_LOG="$E2E_WORK/xdg-open.log"; export AH_XDG_LOG
+cat > "$SHIM_DIR/xdg-open" <<'SHIM'
+#!/bin/sh
+echo "$1" >> "$AH_XDG_LOG"
+curl -s -m 5 "$1" >/dev/null 2>&1 || true
+SHIM
+chmod +x "$SHIM_DIR/xdg-open"
+
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.adminhelper.app"
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.adminhelper.app/settings.json"
 
-echo "[connect] driving the SSH-open spec under xvfb..."
+echo "[connect] driving the connect specs under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
+export PATH="$SHIM_DIR:$PATH"  # the app inherits this -> open::that finds the xdg-open shim
 dbus-run-session -- bash -c '
     eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
     export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
-    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/ssh-connect.live.js
-' && ok "SSH-open GUI spec ran" || bad "SSH-open GUI spec failed"
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/ssh-connect.live.js \
+        --spec test/specs/web-connect.live.js
+' && ok "connect GUI specs ran" || bad "connect GUI specs failed"
 
 # Verify from the target side: sshd logged an incoming connection from the
 # desktop. The desktop reaches the published port via the docker bridge, so it
@@ -77,6 +99,15 @@ if docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Acc
 else
     bad "sshd saw no connection from the desktop"
     docker logs --tail 25 "$SSH_C"
+fi
+
+# Web: nginx logged the fetch the desktop's open::that(url) triggered (via shim).
+if docker logs "$WEB_C" 2>&1 | grep -qE "\"GET / HTTP"; then
+    ok "nginx logged the desktop's web fetch (direct)"
+else
+    bad "nginx saw no request from the desktop"
+    echo "    xdg-open shim log:"; sed 's/^/    /' "$AH_XDG_LOG" 2>/dev/null
+    docker logs --tail 15 "$WEB_C"
 fi
 
 echo ""
