@@ -17,10 +17,13 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   by **`../../../scripts/tests/desktop_e2e_live.sh`**, which boots + seeds the
   stack, isolates the app config + keyring, runs the spec, and independently
   re-checks the created tunnel via the server API.
-
-The remaining step — **starting** the tunnel ("test it": `frpc` connects to
-`frps`) — needs enrollment (a client cert) and a running `frps`; it builds on the
-live harness and is the next increment (see the repo CHANGELOG).
+- **`test/specs/tunnel-start.live.js`** — the "test it" half: against a stack
+  that also runs `frps`, the app enrolls a device cert, logs in, and the hub
+  auto-starts a seeded STCP tunnel. Asserts the GUI tunnel indicator reaches
+  "connected"; the orchestrator
+  **`../../../scripts/tests/desktop_e2e_tunnel.sh`** then independently checks the
+  `frps` log for the desktop's `frpc` login — proving the full PKI + mTLS +
+  enrollment chain.
 
 ## Prerequisites (Linux)
 

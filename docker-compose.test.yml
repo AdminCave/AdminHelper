@@ -26,7 +26,8 @@ services:
       context: apps/gateway
     ports: !override
       - "${ITEST_HTTPS_PORT:-18443}:443"
-      - "${ITEST_ENROLL_PORT:-18444}:8444"
+      # Enroll plane stays on 8444: the desktop app derives it as <host>:8444.
+      - "${ITEST_ENROLL_PORT:-8444}:8444"
 
   ca-issuer:
     image: adminhelper-test/ca-issuer:latest

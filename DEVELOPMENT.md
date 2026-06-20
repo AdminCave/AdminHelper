@@ -316,6 +316,9 @@ bash scripts/tests/integration_stack_test.sh
 
 # Desktop-Live-E2E: die echte App (tauri-driver) legt ueber die GUI einen Tunnel an
 bash scripts/tests/desktop_e2e_live.sh
+
+# Desktop-Live-E2E: Tunnel STARTEN + verbinden (enrollt, +frps, prueft frps-Login)
+bash scripts/tests/desktop_e2e_tunnel.sh
 ```
 
 Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`

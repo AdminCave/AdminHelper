@@ -60,7 +60,9 @@ e2e_init() {
     # High, per-run host ports so the test never collides with a real stack on
     # 443/8444 or a second run in parallel.
     E2E_HTTPS_PORT=$(( 21000 + ($$ % 18000) ))
-    E2E_ENROLL_PORT=$(( E2E_HTTPS_PORT + 1 ))
+    # The desktop app derives the enrollment plane as <server-host>:8444, so this
+    # one must be the fixed 8444 — only the data plane gets a high per-run port.
+    E2E_ENROLL_PORT=8444
     E2E_SERVER_URL="https://localhost:$E2E_HTTPS_PORT"
     E2E_ADMIN_PW="e2e-$(e2e_rand)"
     cat > "$E2E_WORK/.env" <<EOF

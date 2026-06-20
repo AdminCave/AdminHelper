@@ -19,8 +19,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   verifiziert: der Tunnel erscheint in der GUI **und** wird unabhängig per
   Server-API gegengeprüft. Der App-Keyring wird über eine frische
   D-Bus-Session + leeres `gnome-keyring` isoliert (sonst bricht eine real
-  enrollte Identität den Login). Das tatsächliche **Starten** des Tunnels
-  (`frpc`→`frps`) ist der nächste Schritt.
+  enrollte Identität den Login).
+
+- **Desktop: Live-E2E „Tunnel testen" (starten + verbinden) gegen echtes frps.**
+  `scripts/tests/desktop_e2e_tunnel.sh` fährt zusätzlich `frps` hoch, seedet einen
+  STCP-Tunnel und mintet einen Enrollment-Token; die App enrollt ein Geräte-Cert,
+  loggt sich ein, und der Infrastruktur-Hub startet den Tunnel automatisch.
+  Verifiziert wird der **volle PKI-Tunnel-Pfad**: der GUI-Tunnel-Indicator
+  erreicht „connected" **und** das frps-Container-Log bestätigt unabhängig, dass
+  sich der Desktop-`frpc` per mTLS verbunden hat (ca-issuer-provisioniertes
+  frps-Cert, Access-Intermediate-Trust). Damit ist „Verbindung mit Tunnel anlegen
+  **und** testen" über die echte GUI vollständig abgedeckt.
 
 - **Desktop: echtes End-to-End-Test-Harness (WebdriverIO + tauri-driver).** Neu
   unter `apps/desktop/e2e/`: treibt die gebaute Tauri-App über eine echte
