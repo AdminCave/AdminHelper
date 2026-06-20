@@ -48,10 +48,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Die echte App fordert über die GUI einen Agent-Enrollment-Token an; der Server
   stellt ihn aus, die GUI listet ihn (Round-Trip). Läuft im selben
   `desktop_e2e_crud.sh`-Boot wie die GUI-CRUD-Journeys.
-- **Web: Playwright-CRUD für API-Keys** (gegen die stateful Mocks) — anlegen →
-  der Secret-Key wird **genau einmal** im Reveal-Dialog gezeigt → erscheint in der
-  Liste → löschen. Der `mocks.ts`-In-Memory-Store ist dafür um `/api/api-keys`
-  (POST/GET/DELETE) erweitert.
+- **Web: Playwright-CRUD für API-Keys, Hooks, FRP-Config und Audit** (gegen die
+  stateful Mocks). API-Keys: anlegen → Secret **genau einmal** im Reveal → Liste →
+  löschen. Hooks: Webhook anlegen → Einmal-Token → löschen. FRP-Config: anlegen →
+  bearbeiten mit **leerem Token** (der gespeicherte Secret bleibt, da das Modal
+  `auth_token` weglässt). Audit: Einträge anzeigen + nach Aktion filtern. Der
+  `mocks.ts`-In-Memory-Store deckt dafür `/api/api-keys`, `/api/hooks`,
+  `/api/frp/server-config` und `/api/audit` ab.
 - **Web: Unit-Tests für die Stores `users`, `hooks`, `frpConfig`** (analog
   `apikeys`). Der fehleranfällige Kern: optimistische Listen-Updates **per ID**
   (nicht per Index), `hooks.toggle` als Partial-Merge nur auf den passenden Hook,

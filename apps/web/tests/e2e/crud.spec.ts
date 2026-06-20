@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { api, mockApi } from './mocks';
 
 // Bewusst ohne Screenshot-Assertions (Flaky-Risiko) — nur DOM-Assertions.
@@ -13,6 +13,12 @@ async function gotoAuthenticated(page: Page, hash: string): Promise<void> {
   await page.goto(`/${hash}`);
   await page.waitForSelector('.page-title', { state: 'visible' });
   await page.waitForLoadState('networkidle');
+}
+
+// The FRP config modal is tall; its save button can sit below the fold. Submit
+// the form directly — exactly what the button's onclick does (requestSubmit).
+async function submitFrpForm(modal: Locator): Promise<void> {
+  await modal.locator('#frp-config-form').evaluate((f) => (f as HTMLFormElement).requestSubmit());
 }
 
 test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
@@ -74,6 +80,67 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
     await confirm.getByRole('button', { name: 'Löschen' }).click();
 
     await expect(page.locator('tbody tr', { hasText: 'e2e-key' })).toHaveCount(0);
+  });
+
+  test('Hook anlegen -> Token einmalig -> in Liste -> loeschen', async ({ page }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/hooks');
+
+    await page.getByRole('button', { name: '+ Hook' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.locator('#hkName').fill('e2e-hook');
+    await modal.locator('textarea').first().fill('print("hi")');
+    await modal.getByRole('button', { name: 'Speichern' }).click();
+
+    // A webhook hook's token is revealed once; dismiss it with Escape.
+    await expect(page.locator('.key-reveal')).toContainText('whk_');
+    await page.keyboard.press('Escape');
+
+    await expect(page.locator('tbody tr', { hasText: 'e2e-hook' })).toBeVisible();
+
+    await page
+      .locator('tbody tr', { hasText: 'e2e-hook' })
+      .getByRole('button', { name: 'Löschen' })
+      .click();
+    const confirm = page.getByRole('dialog');
+    await confirm.getByRole('button', { name: 'Löschen' }).click();
+    await expect(page.locator('tbody tr', { hasText: 'e2e-hook' })).toHaveCount(0);
+  });
+
+  test('FRP-Config anlegen -> bearbeiten (leeres Token behaelt den Secret)', async ({ page }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/frp');
+
+    await page.getByRole('button', { name: 'Konfigurieren' }).click();
+    const modal = page.getByRole('dialog');
+    await modal.locator('#fcName').fill('e2e-frps');
+    await modal.locator('#fcServerAddr').fill('frps.e2e.net');
+    await modal.locator('#fcAuthToken').fill('secret-123');
+    // The save button sits below the fold of this tall modal; submit the form
+    // directly (what the button does anyway via requestSubmit).
+    await submitFrpForm(modal);
+    await expect(modal).toBeHidden();
+    await expect(page.getByText('e2e-frps')).toBeVisible();
+
+    // Edit: rename, leave the token empty -> the modal omits auth_token so the
+    // stored secret is kept (the PUT succeeds, no secret clobbered).
+    await page.getByRole('button', { name: 'Konfiguration bearbeiten' }).click();
+    const editModal = page.getByRole('dialog');
+    await editModal.locator('#fcName').fill('e2e-frps-renamed');
+    await submitFrpForm(editModal);
+    await expect(editModal).toBeHidden();
+    await expect(page.getByText('e2e-frps-renamed')).toBeVisible();
+  });
+
+  test('Audit-Log: Eintraege anzeigen + nach Aktion filtern', async ({ page }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/audit');
+
+    await expect(page.locator('tbody tr')).toHaveCount(2);
+    await page.getByPlaceholder('Aktion (z. B. connection.created)').fill('server');
+    await page.getByRole('button', { name: 'Filtern' }).click();
+    await expect(page.locator('tbody tr')).toHaveCount(1);
+    await expect(page.getByText('server.created')).toBeVisible();
   });
 });
 

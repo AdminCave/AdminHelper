@@ -46,6 +46,30 @@ export async function mockApi(page: Page): Promise<void> {
   const db = {
     users: [{ ...ADMIN_USER }] as Record<string, unknown>[],
     apikeys: [] as Record<string, unknown>[],
+    hooks: [] as Record<string, unknown>[],
+    // FRP server-config is a singleton (0 or 1). `_token` is the stored secret,
+    // never returned by GET — used to prove an edit with an empty token keeps it.
+    frp: [] as Record<string, unknown>[],
+    audit: [
+      {
+        id: 2,
+        timestamp: '2026-01-02T00:00:00Z',
+        actorType: 'user',
+        actorLabel: 'admin',
+        action: 'server.created',
+        objectType: 'server',
+        objectLabel: 'srv-a',
+      },
+      {
+        id: 1,
+        timestamp: '2026-01-01T00:00:00Z',
+        actorType: 'user',
+        actorLabel: 'admin',
+        action: 'user.created',
+        objectType: 'user',
+        objectLabel: 'bob',
+      },
+    ] as Record<string, unknown>[],
   };
   let seq = 1;
 
@@ -116,10 +140,85 @@ export async function mockApi(page: Page): Promise<void> {
     }
     return route.fallback();
   });
-  await page.route(api('hooks'), async (route) => route.fulfill(json({ body: [] })));
+  await page.route(api('hooks'), async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const id = `hook-${seq++}`;
+      const created = {
+        id,
+        name: body.name,
+        hook_type: body.hook_type,
+        enabled: true,
+        script: body.script,
+      };
+      db.hooks.push(created);
+      // A webhook hook's create response carries a one-time token (revealed once).
+      const token = body.hook_type === 'webhook' ? `whk_${id}` : null;
+      return route.fulfill(json({ status: 201, body: { ...created, token } }));
+    }
+    return route.fulfill(json({ body: db.hooks }));
+  });
+  await page.route(api('hooks/*'), async (route) => {
+    const method = route.request().method();
+    const parts = new URL(route.request().url()).pathname.split('/');
+    if (method === 'DELETE') {
+      db.hooks = db.hooks.filter((h) => h.id !== parts.pop());
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (method === 'POST' && parts.pop() === 'toggle') {
+      const hook = db.hooks.find((h) => h.id === parts.pop());
+      if (hook) hook.enabled = !hook.enabled;
+      return route.fulfill(json({ body: hook ?? {} }));
+    }
+    return route.fallback();
+  });
 
-  // FRP-Server-Config (Instanz-Verwaltung): leere Config -> "noConfig"-Zustand.
-  await page.route(api('frp/server-config'), async (route) => route.fulfill(json({ body: [] })));
+  // FRP-Server-Config: a singleton (POST creates, PUT edits). GET never returns
+  // the secret; a PUT that omits auth_token must keep the stored one.
+  const frpPub = (c: Record<string, unknown>) => ({
+    id: c.id,
+    name: c.name,
+    serverAddr: c.serverAddr,
+    bindPort: c.bindPort,
+  });
+  await page.route(api('frp/server-config'), async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const id = `frp-${seq++}`;
+      db.frp = [
+        {
+          id,
+          name: body.name,
+          serverAddr: body.server_addr,
+          bindPort: body.bind_port,
+          _token: (body.auth_token as string) || `auto_${id}`,
+        },
+      ];
+      return route.fulfill(json({ status: 201, body: frpPub(db.frp[0]) }));
+    }
+    return route.fulfill(json({ body: db.frp.map(frpPub) }));
+  });
+  await page.route(api('frp/server-config/*'), async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const cfg = db.frp[0];
+      if (cfg) {
+        if (body.name !== undefined) cfg.name = body.name;
+        if (body.server_addr !== undefined) cfg.serverAddr = body.server_addr;
+        if (body.bind_port !== undefined) cfg.bindPort = body.bind_port;
+        if (body.auth_token !== undefined && body.auth_token !== null) cfg._token = body.auth_token;
+      }
+      return route.fulfill(json({ body: cfg ? frpPub(cfg) : {} }));
+    }
+    return route.fallback();
+  });
+
+  // Audit trail (read-only); supports the `action` substring filter.
+  await page.route(api('audit'), async (route) => {
+    const action = new URL(route.request().url()).searchParams.get('action');
+    const rows = action ? db.audit.filter((e) => String(e.action).includes(action)) : db.audit;
+    return route.fulfill(json({ body: rows }));
+  });
   await page.route(api('frp/status*'), async (route) =>
     route.fulfill(json({ body: { proxies: [], total: 0 } })),
   );
