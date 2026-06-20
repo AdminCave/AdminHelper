@@ -9,6 +9,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Desktop: Live-E2E für den Settings-Moduswechsel** (`settings-mode.live.js`,
+  läuft mit im `desktop_e2e_crud.sh`-Boot). Wechsel server→local in den
+  Einstellungen beendet die Server-Session und lädt in den Local-Mode; verifiziert
+  wird der beobachtbare Seiteneffekt: das Modus-Badge wechselt und die server-only
+  Navigation (Infrastruktur) verschwindet.
 - **Desktop: Live-E2E für „SSH/Web/RDP über FRP-Tunnel" (voller End-to-End-
   Durchstich)** (`desktop_e2e_connect_tunnel.sh`, `tunnel-connect.live.js`). Die App
   enrollt, die Tunnel connecten, und das Öffnen der per `connection_id` verknüpften

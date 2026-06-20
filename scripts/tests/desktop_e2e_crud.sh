@@ -51,8 +51,9 @@ dbus-run-session -- bash -c '
         --spec test/specs/connection-crud.live.js \
         --spec test/specs/tunnel-crud.live.js \
         --spec test/specs/provisioning.live.js \
-        --spec test/specs/server-crud.live.js
-' && ok "GUI specs (connection / tunnel / provisioning / server) passed" || bad "GUI specs failed"
+        --spec test/specs/server-crud.live.js \
+        --spec test/specs/settings-mode.live.js
+' && ok "GUI specs (connection / tunnel / provisioning / server / settings) passed" || bad "GUI specs failed"
 
 echo ""
 echo "desktop_e2e_crud: $PASS passed, $FAIL failed"
