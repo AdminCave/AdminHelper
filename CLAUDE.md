@@ -108,6 +108,13 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
   - "Bug fixen" → "Test schreiben, der ihn reproduziert, dann grün
     machen."
   - "X refactoren" → "Tests laufen vorher und nachher grün."
+- **Neue Funktion/neuer Flow ⇒ Test dazu (Pflicht, Teil von "fertig").**
+  Reine Logik → Unit-Test; UI-Logik → Komponententest; eine neue oder geänderte
+  **User-Journey** → Live-E2E auf der passenden Ebene (Web: Playwright; Desktop:
+  `apps/desktop/e2e/*.live.js` über `scripts/tests/desktop_e2e_*.sh`). Kein
+  "teste ich später". Ausgenommen bleibt nur bewusst Nicht-Testenswertes
+  (triviale Getter/Serialisierung, Framework-Wiring, reines Plattform-I/O, echte
+  SSH/RDP/Ansible-Ausführung) — siehe auch die Test-Hinweise unten.
 - **Bei Multi-Step-Tasks kurzen Plan im Format _Schritt → Verifikation_
   zeigen.** Vage Erfolgskriterien ("mach es zum Laufen") erzwingen
   ständiges Nachfragen.
@@ -125,6 +132,12 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
   - **Svelte/TS (`apps/web/`):** `npm run check`, `npm run lint`,
     `npm run test:unit` (vitest), `npm run test:e2e` (Playwright).
   - Doku & README auf den Änderungs-Stand gebracht (siehe "Doku-Pflege").
+- **Relevante Tests routinemäßig ausführen, nicht nur behaupten.** Nach jeder
+  Änderung die schnelle Suite der betroffenen Komponente laufen lassen. Die
+  schweren Integrations-/Live-Tests (`scripts/tests/integration_stack_test.sh`,
+  `desktop_e2e_live.sh`, `desktop_e2e_tunnel.sh`) laufen lokal/manuell (nicht im
+  PR-CI) — bei Änderungen am jeweiligen Pfad (Gateway/Server-API bzw.
+  Desktop-Connect/Tunnel/Enrollment) ausführen und das Ergebnis berichten.
 - **Plattform-spezifisches Verhalten wird manuell verifiziert.** Bei
   Änderungen an Plattform-Code (Linux / macOS / Windows) in der Antwort
   bzw. PR dokumentieren: was wurde getestet, auf welcher Plattform, mit
