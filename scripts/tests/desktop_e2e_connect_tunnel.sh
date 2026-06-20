@@ -64,9 +64,40 @@ wait_log "$SSH_C" "listening on port 2222" 40 && ok "SSH target up on :2222" || 
 
 # An SSH connection + an STCP tunnel LINKED to it (local_port 2222 -> the SSH
 # container; the desktop resolves the connection through this tunnel).
+# The connection's own host/port is a DEAD placeholder (≠ the target's published
+# port), so if the tunnel resolve didn't fire, a direct open would fail and the
+# target log would stay empty — proving the verified connection went via the tunnel.
 CONN_ID=$(e2e_api "$TOKEN" connection ssh-tunnel ssh 127.0.0.1 22 e2e) || { bad "seed connection"; exit 1; }
 e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-ssh-tun 2222 ssh "$CONN_ID" >/dev/null \
     && ok "seeded SSH connection + linked STCP tunnel" || { bad "seed tunnel"; exit 1; }
+
+# Dedicated Web target (nginx) + a Web connection + linked STCP tunnel.
+WEB_C="ah-e2e-tweb-$$"
+docker run -d --name "$WEB_C" -p 8080:80 nginx:alpine >/dev/null 2>&1
+TARGETS+=("$WEB_C")
+wait_log "$WEB_C" "worker process" 30 && ok "Web target up on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
+WCONN_ID=$(e2e_api "$TOKEN" web-connection web-tunnel "http://127.0.0.1:9") || { bad "seed web connection"; exit 1; }
+e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-web-tun 8080 web "$WCONN_ID" >/dev/null \
+    && ok "seeded Web connection + linked STCP tunnel" || { bad "seed web tunnel"; exit 1; }
+
+# Dedicated RDP target (xrdp) + an RDP connection + linked STCP tunnel.
+RDP_C="ah-e2e-trdp-$$"
+docker run -d --name "$RDP_C" -p 3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
+TARGETS+=("$RDP_C")
+wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
+RCONN_ID=$(e2e_api "$TOKEN" connection rdp-tunnel rdp 127.0.0.1 39999 e2e) || { bad "seed rdp connection"; exit 1; }
+e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-rdp-tun 3389 rdp "$RCONN_ID" >/dev/null \
+    && ok "seeded RDP connection + linked STCP tunnel" || { bad "seed rdp tunnel"; exit 1; }
+
+# xdg-open shim so the Web open's open::that(url) fetches the (tunnel-resolved) URL.
+SHIM_DIR="$E2E_WORK/bin"; mkdir -p "$SHIM_DIR"
+AH_XDG_LOG="$E2E_WORK/xdg-open.log"; export AH_XDG_LOG
+cat > "$SHIM_DIR/xdg-open" <<'SHIM'
+#!/bin/sh
+echo "$1" >> "$AH_XDG_LOG"
+curl -s -m 5 "$1" >/dev/null 2>&1 || true
+SHIM
+chmod +x "$SHIM_DIR/xdg-open"
 
 # frps reads the frps.toml the config wrote into the shared volume.
 e2e_dc up -d frps >/dev/null 2>&1 && ok "frps started" || { bad "frps failed"; e2e_dc logs --tail 30 frps; exit 1; }
@@ -109,22 +140,38 @@ XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
 mkdir -p "$XDG_DATA_HOME/com.adminhelper.app"
 echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.adminhelper.app/settings.json"
 
-echo "[tun] driving enroll → login → tunnel → ssh-through-tunnel under xvfb..."
+echo "[tun] driving enroll → login → tunnels → ssh/web/rdp-through-tunnel under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" \
        AH_ENROLL_TOKEN="$ENROLL_TOKEN" E2E_DIR
+export PATH="$SHIM_DIR:$PATH"  # the app inherits this -> open::that finds the xdg-open shim
 dbus-run-session -- bash -c '
     eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
     export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
-    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/ssh-tunnel-connect.live.js
-' && ok "GUI: enrolled, tunnel connected, opened ssh over the tunnel" || bad "GUI tunnel-connect spec failed"
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js --spec test/specs/tunnel-connect.live.js
+' && ok "GUI: enrolled, tunnels connected, opened ssh/web/rdp over the tunnels" || bad "GUI tunnel-connect spec failed"
 
-# Verify at the target: sshd saw the connection that traversed the tunnel.
+# Verify at each target that the connection traversed its tunnel.
 sleep 2
 if docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "127\.|172\.|10\.|192\.168\."; then
     ok "sshd logged the SSH connection over the tunnel"
 else
-    bad "sshd saw no tunneled connection"
-    docker logs --tail 25 "$SSH_C"
+    bad "sshd saw no tunneled connection"; docker logs --tail 25 "$SSH_C"
+fi
+
+if docker logs "$WEB_C" 2>&1 | grep -qE "\"GET / HTTP"; then
+    ok "nginx logged the Web fetch over the tunnel"
+else
+    bad "nginx saw no tunneled fetch"
+    echo "    xdg-open shim log:"; sed 's/^/    /' "$AH_XDG_LOG" 2>/dev/null
+    docker logs --tail 15 "$WEB_C"
+fi
+
+if docker exec "$RDP_C" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
+        | grep -qiE "connect|incoming|login|session|TLS"; then
+    ok "xrdp logged the RDP connection over the tunnel"
+else
+    bad "xrdp saw no tunneled connection"
+    docker exec "$RDP_C" sh -c 'tail -25 /var/log/xrdp.log 2>/dev/null' 2>/dev/null
 fi
 
 echo ""

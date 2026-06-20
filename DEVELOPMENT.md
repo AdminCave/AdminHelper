@@ -334,8 +334,8 @@ bash scripts/tests/desktop_e2e_monitoring.sh
 # (SSH -> sshd-Log, Web -> nginx-Log, RDP -> xrdp-Log)
 bash scripts/tests/desktop_e2e_connect.sh
 
-# Desktop-Live-E2E: SSH ueber FRP-Tunnel, voller Durchstich
-# (Desktop-Visitor -> frps -> agent-frpc -> sshd)
+# Desktop-Live-E2E: SSH/Web/RDP ueber FRP-Tunnel, voller Durchstich
+# (Desktop-Visitor -> frps -> agent-frpc -> sshd/nginx/xrdp)
 bash scripts/tests/desktop_e2e_connect_tunnel.sh
 ```
 
