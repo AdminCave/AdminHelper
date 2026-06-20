@@ -59,7 +59,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Monitoring: Alert-Korrektheit** — die Schwellwert-Logik der Checker
   (`AgentResourcesChecker`/`SmartHealthChecker` `evaluate`: ok→warning→critical-
   Eskalation, `>=`-Grenze, Pseudo-FS-Filter, Temp-Overrides bzw. Disk-Typ-Temp,
-  smartctl-Exit-Bitflags) und die bisher ungetesteten Alert-Dispatch-Pfade
+  smartctl-Exit-Bitflags, NVMe-Wear (**invertiertes** `available_spare` +
+  `percentage_used`/media_errors) und ATA-Wear (reallocated/pending/spin-retry))
+  und die bisher ungetesteten Alert-Dispatch-Pfade
   (`_dispatch` fail-closed bei kaputter `channel_config`/unbekanntem Kanal; der
   Email-Kanal mit Empfänger-Parsing und SMTP-Host-Pflicht).
 
