@@ -367,3 +367,73 @@ pub fn delete_password(connection: &Connection) -> Result<(), AppError> {
         return Ok(());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ConnectionKind;
+
+    fn rdp(
+        host: Option<&str>,
+        port: Option<u16>,
+        user: Option<&str>,
+        domain: Option<&str>,
+    ) -> Connection {
+        Connection {
+            id: "c1".into(),
+            name: "T".into(),
+            kind: ConnectionKind::Rdp,
+            host: host.map(String::from),
+            port,
+            username: user.map(String::from),
+            domain: domain.map(String::from),
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: Vec::new(),
+            trust_cert: false,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    #[test]
+    fn rdp_port_defaults_to_3389() {
+        assert_eq!(rdp_port(&rdp(Some("h"), None, Some("u"), None)), 3389);
+        assert_eq!(rdp_port(&rdp(Some("h"), Some(3390), Some("u"), None)), 3390);
+    }
+
+    // The storage key is the credential cache key: it must be host/user/domain
+    // case-insensitive (so "Host"/"host" don't double-store) and carry the port.
+    #[test]
+    fn storage_key_lowercases_and_joins_fields() {
+        let c = rdp(Some("Host.COM"), Some(3390), Some("Admin"), Some("CORP"));
+        assert_eq!(
+            rdp_storage_key(&c).as_deref(),
+            Some("rdp|host.com|3390|admin|corp")
+        );
+    }
+
+    #[test]
+    fn storage_key_uses_default_port_and_empty_domain() {
+        let c = rdp(Some("h"), None, Some("u"), None);
+        assert_eq!(rdp_storage_key(&c).as_deref(), Some("rdp|h|3389|u|"));
+    }
+
+    #[test]
+    fn storage_key_is_none_without_host_or_user() {
+        assert!(rdp_storage_key(&rdp(None, None, Some("u"), None)).is_none());
+        assert!(rdp_storage_key(&rdp(Some("h"), None, None, None)).is_none());
+        assert!(rdp_storage_key(&rdp(Some("   "), None, Some("u"), None)).is_none());
+    }
+
+    #[test]
+    fn storage_key_required_errors_when_host_or_user_missing() {
+        assert!(rdp_storage_key_required(&rdp(None, None, Some("u"), None)).is_err());
+        assert!(rdp_storage_key_required(&rdp(Some("h"), None, None, None)).is_err());
+        assert_eq!(
+            rdp_storage_key_required(&rdp(Some("H"), Some(3389), Some("U"), None)).unwrap(),
+            "rdp|h|3389|u|"
+        );
+    }
+}
