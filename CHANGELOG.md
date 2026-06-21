@@ -7,6 +7,23 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Server: Fundament für ein Benachrichtigungssystem (Phase A).** Der Server wird
+  zum Notification-Hub. Neue Tabellen: `notification_subscription` (pro-User-Regeln
+  — Scope *alle Server* / *Tag* / *einzelner Server*, Mindest-Severity, optionaler
+  Kategorie-Filter, externe Kanäle E-Mail/Telegram), `notification` (Glocken-Feed
+  mit gelesen/ungelesen) und `notification_outbox` (Versand-Queue für externe
+  Kanäle, mit Retry-Feldern), plus `email`/`telegram_chat_id` am User. Ein
+  Recipient-Resolver fächert Events least-privilege auf — ein Nutzer wird nur über
+  Server benachrichtigt, die er sehen darf (Admin oder via `user_servers`
+  zugeordnet). Neue Endpoints: `POST /api/internal/events` (Event-Ingress vom
+  Monitoring-Dienst, `X-Internal-Key`), `GET /api/notifications` (+ `/unread-count`,
+  `/read`) als eigener Feed, und `GET`/`PUT /api/users/me/notification-prefs`
+  (Self-Service-Einstellungen). Das Monitoring bleibt reine Event-Quelle; die
+  Empfänger-Auflösung liegt nur im Server, wo die User↔Server-Zuordnung existiert.
+  Noch ohne UI und ohne tatsächlichen Versand (folgt in späteren Phasen).
+
 ## [0.37.2] - 2026-06-20
 
 ### Added

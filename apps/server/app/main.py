@@ -30,6 +30,14 @@ from app.modules.frp.router import router as frp_router
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.hooks.router import router as hooks_router
 from app.modules.monitoring_proxy import router as monitoring_proxy_router
+from app.modules.notifications.models import (  # noqa: F401
+    Notification,
+    NotificationOutbox,
+    NotificationSubscription,
+)
+from app.modules.notifications.router import feed_router as notifications_feed_router
+from app.modules.notifications.router import internal_router as notifications_internal_router
+from app.modules.notifications.router import prefs_router as notifications_prefs_router
 from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.provisioning.router import router as provisioning_router
 from app.modules.servers.models import Server  # noqa: F401
@@ -220,6 +228,11 @@ app.include_router(provisioning_router)
 app.include_router(enrollment_router)
 app.include_router(frp_router)
 app.include_router(monitoring_proxy_router)
+# Notifications: the bell feed and per-user prefs are user-facing (access scope);
+# the event ingress is service-to-service (X-Internal-Key, no router-level scope).
+app.include_router(notifications_feed_router, dependencies=_access)
+app.include_router(notifications_prefs_router, dependencies=_access)
+app.include_router(notifications_internal_router)
 app.include_router(ansible_router, dependencies=_access)
 
 # Serve static files from frontend/ (Vite build output).

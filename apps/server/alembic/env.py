@@ -17,6 +17,7 @@ import app.modules.connections.models  # noqa: F401
 import app.modules.enrollment.models  # noqa: F401
 import app.modules.frp.models  # noqa: F401
 import app.modules.hooks.models  # noqa: F401
+import app.modules.notifications.models  # noqa: F401
 import app.modules.provisioning.models  # noqa: F401
 import app.modules.servers.models  # noqa: F401
 

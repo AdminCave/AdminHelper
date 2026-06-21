@@ -36,5 +36,11 @@ class User(Base):
     # Credential-invalidation watermark: JWTs whose `iat` predates this are
     # rejected (set on password reset). NULL = no revocation, all tokens valid.
     tokens_valid_after = Column(DateTime, nullable=True)
+    # Notification contact data. email feeds the e-mail channel; telegram_chat_id
+    # is reserved for the later Telegram channel (linked via a /start handshake).
+    # Both NULL until the user sets them — the resolver skips a channel with no
+    # address (app.modules.notifications.service).
+    email = Column(String, nullable=True)
+    telegram_chat_id = Column(String, nullable=True)
 
     servers = relationship("Server", secondary=user_server_assoc, lazy="selectin")

@@ -28,6 +28,8 @@ from fastapi.routing import APIRoute
 #   require_scope   -> app.core.identity, mTLS scope guard (router-level)
 #   get_current_user / get_current_admin -> app.core.auth, JWT bearer
 #   ApiKeyOrUser    -> app.core.auth, API key or JWT
+#   require_internal_key -> app.modules.notifications.router, shared-secret
+#                           service-to-service ingress (monitoring -> server)
 # Matched as substrings (not exact) so the inner closure name of
 # ``require_scope`` (``require_scope.<locals>.dependency``) stays robust against
 # trivial renames.
@@ -36,6 +38,7 @@ _AUTH_MARKER_TOKENS = (
     "get_current_user",
     "get_current_admin",
     "ApiKeyOrUser",
+    "require_internal_key",
 )
 
 # Deliberately public routes. Each entry is a conscious decision with a reason;
