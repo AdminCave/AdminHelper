@@ -31,8 +31,10 @@ logger = logging.getLogger("monitor.alerter")
 # Hub severity of a transition = the worse of the two states (info<warning<
 # critical). A recovery (warning->ok) therefore keeps the "warning" level so it
 # still reaches subscribers with a warning threshold; an escalation
-# (ok->critical) is "critical". unknown is treated as warning-level.
-_STATUS_LEVEL = {"ok": 0, "info": 0, "unknown": 1, "warning": 1, "critical": 2}
+# (ok->critical) is "critical". unknown is treated as warning-level. ok and
+# pending are level 0 ("nothing wrong"), so a check first coming up clean
+# (pending->ok) is NOT pushed (see _emit_to_hub).
+_STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "critical": 2}
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
 
 # SMTP configuration from environment variables
@@ -105,10 +107,17 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str) -> None:
     alert path, so errors are logged, not raised."""
     if not SERVER_HUB_URL or not INTERNAL_API_KEY:
         return
+    severity = _hub_severity(old_status, new_status)
+    # An info-level transition only involves ok/pending — not notification-worthy
+    # (e.g. a check first coming up clean, or flapping at the bottom). Skip it so
+    # it never spams the hub; real recoveries (warning/critical -> ok) keep their
+    # severity and are pushed.
+    if severity == "info":
+        return
     msg = _build_message(check, old_status, new_status)
     payload = {
         "event_type": "monitoring.check.transition",
-        "severity": _hub_severity(old_status, new_status),
+        "severity": severity,
         "category": "monitoring",
         "title": msg["subject"],
         "body": msg["text"],
@@ -116,13 +125,17 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str) -> None:
         "source_id": check.server_id,
     }
     try:
-        httpx.post(
+        resp = httpx.post(
             f"{SERVER_HUB_URL}/api/internal/events",
             json=payload,
             headers={"X-Internal-Key": INTERNAL_API_KEY},
             timeout=5,
             follow_redirects=False,
         )
+        # httpx does not raise on 4xx/5xx — a rejected push (e.g. 403 from a
+        # MONITOR_API_KEY mismatch) would otherwise be silently lost.
+        if resp.status_code >= 300:
+            logger.warning("Hub-Emit abgelehnt (%s): HTTP %s", check.name, resp.status_code)
     except Exception as exc:
         logger.warning("Hub-Emit fehlgeschlagen (%s): %s", check.name, exc)
 

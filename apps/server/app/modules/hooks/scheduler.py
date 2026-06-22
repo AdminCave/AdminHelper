@@ -278,3 +278,36 @@ def schedule_outbox_drain(minutes: int = 1) -> None:
         replace_existing=True,
         next_run_time=datetime.now(timezone.utc),
     )
+
+
+_NOTIFICATION_CLEANUP_JOB_ID = "system:notification-cleanup"
+
+
+def _run_notification_cleanup() -> None:
+    """Prune bell-feed rows older than NOTIFICATION_RETENTION_DAYS so the
+    notification table does not grow without bound."""
+    from app.core.config import NOTIFICATION_RETENTION_DAYS
+    from app.core.database import SessionLocal
+    from app.modules.notifications.service import cleanup_old_notifications
+
+    db = SessionLocal()
+    try:
+        removed = cleanup_old_notifications(db, NOTIFICATION_RETENTION_DAYS)
+        if removed:
+            logger.info("Notification-Cleanup: %d alte Eintraege entfernt", removed)
+    except Exception:
+        logger.exception("Notification-Cleanup fehlgeschlagen")
+    finally:
+        db.close()
+
+
+def schedule_notification_cleanup(hours: int = 24) -> None:
+    """Register the periodic bell-feed retention cleanup (idempotent). Runs once
+    at start and then every `hours` hours."""
+    scheduler.add_job(
+        _run_notification_cleanup,
+        trigger=IntervalTrigger(hours=hours),
+        id=_NOTIFICATION_CLEANUP_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )

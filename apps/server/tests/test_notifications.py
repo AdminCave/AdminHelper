@@ -9,6 +9,7 @@ The resolver is the security-critical part — least privilege (a user is only
 notified about servers they may see) is pinned here."""
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from app.core.auth import hash_password
 from app.modules.notifications.models import (
@@ -17,7 +18,11 @@ from app.modules.notifications.models import (
     NotificationSubscription,
 )
 from app.modules.notifications.schemas import IncomingEvent
-from app.modules.notifications.service import ingest_event, severity_at_least
+from app.modules.notifications.service import (
+    cleanup_old_notifications,
+    ingest_event,
+    severity_at_least,
+)
 from app.modules.servers.models import Server
 from app.modules.users.models import User
 
@@ -399,4 +404,70 @@ class TestIngress:
         )
         assert res.status_code == 202, res.text
         assert res.json() == {"notified": 1}
+        assert _count(db_session, admin) == 1
+
+
+# --- malformed-data tolerance (fail-open, never drop an alert) --------------
+
+
+class TestResolverTolerance:
+    def test_broken_categories_json_does_not_drop(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True)
+        db_session.add(
+            NotificationSubscription(
+                user_id=admin.id,
+                scope_type="all",
+                min_severity="warning",
+                categories="{not valid json",
+                channel_email=False,
+                channel_telegram=False,
+                enabled=True,
+            )
+        )
+        db_session.commit()
+        _server(db_session, "srv-1")
+        # Malformed filter must fail open, not silently swallow the event.
+        assert ingest_event(db_session, _event(category="monitoring")) == 1
+
+    def test_broken_server_tags_json_does_not_crash(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True)
+        _sub(db_session, admin, scope_type="all")
+        db_session.add(Server(id="srv-1", name="x", hostname="x.local", tags="{not json"))
+        db_session.commit()
+        assert ingest_event(db_session, _event()) == 1
+
+
+# --- bell-feed retention ----------------------------------------------------
+
+
+class TestRetention:
+    def test_cleanup_removes_only_old_rows(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True)
+        old = Notification(
+            user_id=admin.id,
+            severity="info",
+            category="monitoring",
+            event_type="x",
+            title="old",
+            created_at=datetime.now(timezone.utc) - timedelta(days=100),
+        )
+        recent = Notification(
+            user_id=admin.id,
+            severity="info",
+            category="monitoring",
+            event_type="x",
+            title="recent",
+        )
+        db_session.add_all([old, recent])
+        db_session.commit()
+
+        assert cleanup_old_notifications(db_session, 90) == 1
+        assert _count(db_session, admin) == 1
+
+    def test_cleanup_zero_keeps_everything(self, db_session):
+        admin = _user(db_session, "boss", is_admin=True)
+        _server(db_session, "srv-1")
+        _sub(db_session, admin, scope_type="all")
+        ingest_event(db_session, _event())
+        assert cleanup_old_notifications(db_session, 0) == 0
         assert _count(db_session, admin) == 1

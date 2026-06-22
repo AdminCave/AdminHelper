@@ -16,6 +16,7 @@ means "all servers the user may see", not the whole inventory.
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -115,8 +116,11 @@ def resolve_recipients(db: Session, event: IncomingEvent) -> list[tuple[User, _C
 
     per_user_channels: dict[int, _Channels] = {}
     per_user: dict[int, User] = {}
+    user_cache: dict[int, User | None] = {}  # a user with several subs loads once
     for sub in subs:
-        user = db.query(User).filter(User.id == sub.user_id).first()
+        if sub.user_id not in user_cache:
+            user_cache[sub.user_id] = db.query(User).filter(User.id == sub.user_id).first()
+        user = user_cache[sub.user_id]
         if user is None:
             continue
         if not _user_can_see(user, server):
@@ -176,3 +180,21 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
         notified += 1
     db.commit()
     return notified
+
+
+def cleanup_old_notifications(db: Session, retention_days: int) -> int:
+    """Delete bell-feed rows older than ``retention_days`` and return the count.
+
+    The retention path that keeps the notification table from growing without
+    bound (driven by a daily system job). Outbox rows of a pruned notification
+    go with it via the FK cascade. ``retention_days <= 0`` keeps everything."""
+    if retention_days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    removed = (
+        db.query(Notification)
+        .filter(Notification.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return removed

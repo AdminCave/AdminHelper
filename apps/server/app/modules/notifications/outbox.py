@@ -8,6 +8,12 @@ request path.
 Run periodically by an APScheduler system job (mirrors the audit-retention job).
 Each entry is retried with linear backoff up to NOTIFICATION_MAX_ATTEMPTS, then
 marked failed. Telegram entries are left untouched — that channel ships later.
+
+Delivery is at-least-once: each entry commits individually and the due query
+takes no row lock. That is safe under the single-worker + max_instances=1
+scheduler (no overlapping drains); a process crash between a successful SMTP send
+and the commit can re-send that one e-mail on the next drain. A move to multiple
+workers would need SELECT ... FOR UPDATE SKIP LOCKED here.
 """
 
 import logging

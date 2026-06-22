@@ -121,3 +121,6 @@ SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
 # Delivery attempts before an outbox entry is marked permanently failed.
 NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))
+# Bell-feed retention in days. A daily system job prunes notification rows older
+# than this so the feed does not grow without bound. 0 = keep forever.
+NOTIFICATION_RETENTION_DAYS = int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "90"))

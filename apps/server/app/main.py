@@ -160,6 +160,7 @@ async def lifespan(app: FastAPI):
         schedule_audit_cleanup,
         schedule_blacklist_cleanup,
         schedule_enrollment_token_cleanup,
+        schedule_notification_cleanup,
         schedule_outbox_drain,
         scheduler,
     )
@@ -171,6 +172,7 @@ async def lifespan(app: FastAPI):
     schedule_enrollment_token_cleanup()
     schedule_audit_cleanup()
     schedule_outbox_drain()
+    schedule_notification_cleanup()
     scheduler.start()
     fire_event("server.startup", {})
     yield

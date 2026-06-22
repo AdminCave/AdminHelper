@@ -9,6 +9,11 @@ outbox, plus the email/telegram_chat_id contact columns on users. The hub
 resolves recipients and writes feed + outbox rows; monitoring stays a pure event
 source. See app.modules.notifications.
 
+Non-nullable bool/int columns (status, attempts, enabled, channel_*, scope_type,
+min_severity) carry NO server_default — defaults are ORM-side only, matching the
+project convention (e.g. users.is_admin). All inserts go through the ORM, so this
+is safe; a raw-SQL insert would need to supply these explicitly.
+
 Revision ID: a7c3efba142a
 Revises: f1a2b3c4d5e6
 Create Date: 2026-06-21 10:10:35.112671

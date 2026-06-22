@@ -55,11 +55,16 @@ export async function loadFeed(): Promise<void> {
     }
     lastSeenId = maxId;
     primed = true;
-    _state.update((s) => ({
-      ...s,
-      items: list,
-      unreadCount: list.filter((n) => !n.read).length,
-    }));
+    // Accurate badge from the dedicated endpoint (the 50-row list would
+    // undercount past 50); fall back to the list count if it fails.
+    let unread = list.filter((n) => !n.read).length;
+    try {
+      const c = await notificationsApi.fetchUnreadCount(session);
+      if (typeof c?.count === 'number') unread = c.count;
+    } catch {
+      /* keep the list-derived count */
+    }
+    _state.update((s) => ({ ...s, items: list, unreadCount: unread }));
   } catch {
     // Session expiry / transient errors: keep the current feed, retry next poll.
   }

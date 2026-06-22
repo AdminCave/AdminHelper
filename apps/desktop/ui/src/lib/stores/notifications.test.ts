@@ -10,11 +10,16 @@ import type { NotificationItem } from '$lib/api/types';
 
 const h = vi.hoisted(() => ({
   fetchFeed: vi.fn(async (..._a: unknown[]) => [] as NotificationItem[]),
+  fetchUnreadCount: vi.fn(async (..._a: unknown[]) => ({ count: 0 })),
   markRead: vi.fn(async (..._a: unknown[]) => ({ updated: 0 })),
 }));
 
 vi.mock('$lib/api/notifications', () => ({
-  notificationsApi: { fetchFeed: h.fetchFeed, markRead: h.markRead },
+  notificationsApi: {
+    fetchFeed: h.fetchFeed,
+    fetchUnreadCount: h.fetchUnreadCount,
+    markRead: h.markRead,
+  },
 }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
@@ -60,17 +65,35 @@ const item = (over: Partial<NotificationItem>): NotificationItem => ({
 describe('notifications store', () => {
   beforeEach(() => {
     h.fetchFeed.mockReset();
+    h.fetchUnreadCount.mockReset();
+    h.fetchUnreadCount.mockResolvedValue({ count: 0 });
     h.markRead.mockReset();
     h.markRead.mockResolvedValue({ updated: 0 });
     setNewNotificationHandler(null);
     deactivateNotifications(); // resets items + priming state
   });
 
-  it('loadFeed populates items and derives the unread count', async () => {
+  it('loadFeed populates items and takes the unread count from the endpoint', async () => {
     h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false }), item({ id: 2, read: true })]);
+    h.fetchUnreadCount.mockResolvedValueOnce({ count: 1 });
     await loadFeed();
     expect(get(notificationItems)).toHaveLength(2);
     expect(get(unreadCount)).toBe(1);
+  });
+
+  it('takes the badge from the dedicated endpoint, not the 50-row list', async () => {
+    // list shows 1 unread, but the server reports 60 (beyond the 50-row window)
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);
+    h.fetchUnreadCount.mockResolvedValueOnce({ count: 60 });
+    await loadFeed();
+    expect(get(unreadCount)).toBe(60);
+  });
+
+  it('falls back to the list count if the unread-count endpoint fails', async () => {
+    h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false }), item({ id: 2, read: false })]);
+    h.fetchUnreadCount.mockRejectedValueOnce(new Error('boom'));
+    await loadFeed();
+    expect(get(unreadCount)).toBe(2);
   });
 
   it('does not fire the new-entry handler on the priming poll', async () => {
@@ -94,6 +117,7 @@ describe('notifications store', () => {
 
   it('markAllRead clears the unread count and calls the API with null', async () => {
     h.fetchFeed.mockResolvedValueOnce([item({ id: 1, read: false })]);
+    h.fetchUnreadCount.mockResolvedValueOnce({ count: 1 });
     await loadFeed();
     expect(get(unreadCount)).toBe(1);
     await markAllRead();

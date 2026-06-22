@@ -18,19 +18,34 @@ SPDX-License-Identifier: GPL-3.0-or-later
     Server,
   } from '$lib/api/types';
 
-  // Local editable shape (channelTelegram is preserved but not exposed yet —
-  // the Telegram channel ships in a later phase).
+  // Local editable shape. channelTelegram and categories are preserved but not
+  // exposed in the UI yet — they must survive a load/save round-trip (the PUT is
+  // replace-all), otherwise editing here would silently wipe a filter set via
+  // another client.
   interface EditRule {
     scopeType: NotificationScopeType;
     scopeRef: string;
     minSeverity: NotificationSeverity;
     channelEmail: boolean;
     channelTelegram: boolean;
+    categories: string[] | null;
     enabled: boolean;
   }
 
   const SCOPES: NotificationScopeType[] = ['all', 'tag', 'server'];
   const SEVERITIES: NotificationSeverity[] = ['info', 'warning', 'critical'];
+
+  // categories is stored server-side as a JSON-array string; parse it back to a
+  // string[] so it survives the round-trip (malformed → null, not a crash).
+  function parseCategories(raw: string | null | undefined): string[] | null {
+    if (!raw) return null;
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v.map(String) : null;
+    } catch {
+      return null;
+    }
+  }
 
   let email = $state('');
   let rules = $state<EditRule[]>([]);
@@ -68,6 +83,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         minSeverity: s.minSeverity,
         channelEmail: s.channelEmail,
         channelTelegram: s.channelTelegram,
+        categories: parseCategories(s.categories),
         enabled: s.enabled,
       }));
     } catch (err) {
@@ -86,6 +102,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         minSeverity: 'warning',
         channelEmail: false,
         channelTelegram: false,
+        categories: null,
         enabled: true,
       },
     ];
@@ -107,6 +124,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       min_severity: r.minSeverity,
       channel_email: r.channelEmail,
       channel_telegram: r.channelTelegram,
+      categories: r.categories,
       enabled: r.enabled,
     }));
     try {

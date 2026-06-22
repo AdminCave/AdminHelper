@@ -31,6 +31,13 @@ class TestHubSeverity:
         assert _hub_severity("ok", "unknown") == "warning"
         assert _hub_severity("unknown", "ok") == "warning"
 
+    def test_pending_is_level_zero(self):
+        # pending = "nothing measured yet"; a check first coming up clean is
+        # info-level, a first real problem keeps its severity.
+        assert _hub_severity("pending", "ok") == "info"
+        assert _hub_severity("pending", "warning") == "warning"
+        assert _hub_severity("pending", "critical") == "critical"
+
 
 class TestEmitToHub:
     def _patch(self, monkeypatch, url="http://hub:8080", key="secret"):
@@ -79,6 +86,21 @@ class TestEmitToHub:
 
         monkeypatch.setattr(alerter.httpx, "post", boom)
         # Must not raise — a failed push cannot break the alert path.
+        _emit_to_hub(make_check(), "ok", "critical")
+
+    def test_info_transition_is_not_pushed(self, monkeypatch):
+        calls = {"n": 0}
+        self._patch(monkeypatch)
+        monkeypatch.setattr(
+            alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+        )
+        _emit_to_hub(make_check(), "pending", "ok")  # info-level → skip, no spam
+        assert calls["n"] == 0
+
+    def test_non_2xx_response_does_not_raise(self, monkeypatch):
+        self._patch(monkeypatch)
+        monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
+        # A rejected push (e.g. key mismatch) is logged, not raised.
         _emit_to_hub(make_check(), "ok", "critical")
 
 
