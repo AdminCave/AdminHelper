@@ -18,6 +18,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Hooks werden vom Scheduler-Prozess periodisch aus der DB rekonziliert statt direkt
   von den Routern registriert. Das Rate-Limit warnt bei Multi-Worker ohne Redis; der
   DB-Pool ist pro Worker konfigurierbar (`DB_POOL_SIZE`/`DB_MAX_OVERFLOW`).
+- **Server: SSE-Push für die Benachrichtigungs-Glocke (Push statt Polling).** Neuer
+  Stream-Endpoint `GET /api/notifications/stream` (Server-Sent Events): sobald ein
+  Nutzer eine neue Benachrichtigung bekommt, pusht der Server ein leichtes
+  „Refresh"-Signal, woraufhin die Glocke sofort lädt — statt bis zu 30&nbsp;s zu
+  warten. Worker-übergreifend via Redis Pub/Sub (`stream_hub`, eine Subscription pro
+  Web-Worker); der Handler ist async und DB-frei und hält keine DB-Connection über
+  die Stream-Dauer. Das Gateway (nginx) proxyt den Stream ungepuffert mit langem
+  Read-Timeout. Polling bleibt als Fallback.
 - **Server: Fundament für ein Benachrichtigungssystem (Phase A).** Der Server wird
   zum Notification-Hub. Neue Tabellen: `notification_subscription` (pro-User-Regeln
   — Scope *alle Server* / *Tag* / *einzelner Server*, Mindest-Severity, optionaler

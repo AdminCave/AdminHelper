@@ -39,6 +39,9 @@ _AUTH_MARKER_TOKENS = (
     "get_current_admin",
     "ApiKeyOrUser",
     "require_internal_key",
+    # SSE stream: a short-lived-session bearer-JWT check (not get_current_user,
+    # to avoid holding a DB connection for the stream's whole lifetime).
+    "authenticate_stream_user",
 )
 
 # Deliberately public routes. Each entry is a conscious decision with a reason;

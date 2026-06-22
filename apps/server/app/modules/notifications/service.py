@@ -144,6 +144,8 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
     of users notified. Commits once at the end."""
     recipients = resolve_recipients(db, event)
     notified = 0
+    notified_user_ids: list[int] = []
+    max_id = 0
     for user, channels in recipients:
         notif = Notification(
             user_id=user.id,
@@ -157,6 +159,8 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
         )
         db.add(notif)
         db.flush()  # assign notif.id for the outbox FK
+        max_id = max(max_id, notif.id)
+        notified_user_ids.append(user.id)
         # External channels are queued only when the user actually has an
         # address for them — the outbox drain (Phase D) never sees a dead row.
         if channels.email and user.email:
@@ -179,6 +183,12 @@ def ingest_event(db: Session, event: IncomingEvent) -> int:
             )
         notified += 1
     db.commit()
+    # After commit (rows are now readable), push a refresh nudge to the affected
+    # users' live SSE streams across all workers. Best-effort; polling reconciles.
+    if notified_user_ids:
+        from app.modules.notifications import stream_hub
+
+        stream_hub.publish(notified_user_ids, max_id)
     return notified
 
 
