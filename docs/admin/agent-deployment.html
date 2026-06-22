@@ -56,7 +56,7 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 
           <h2>Aus dem AdminHelper-Paket-Repo (<code>apt upgrade</code> / <code>dnf upgrade</code>)</h2>
           <p>Der AdminHelper-Server stellt selbst ein <strong>GPG-signiertes</strong> apt-/rpm-Repo auf der Repo-Plane des Gateways bereit (Port <code>REPO_PORT</code>, Default <code>8445</code>, certless). Damit bekommen Agent-Hosts neue Versionen &uuml;ber den normalen Paketmanager statt per manuellem Download &mdash; gedacht vor allem f&uuml;r <strong>laufende Updates</strong> auf vielen Servern. <em>Voraussetzung:</em> der Server l&auml;uft mit konfiguriertem Repo-Signaturschl&uuml;ssel (siehe <a href="../developer/cicd.html">CI/CD &amp; Release</a>); sonst liefert <code>/repo</code> nur <code>404</code>.</p>
-          <p><strong>Vertrauenswurzel ist der GPG-Fingerprint</strong>, nicht der Transport: die Paket-Authentizit&auml;t h&auml;ngt an der Signatur (wie bei jedem Distro-Mirror). Pr&uuml;fe den Fingerprint des geladenen Schl&uuml;ssels gegen den ver&ouml;ffentlichten Wert (<code>&lt;REPO-GPG-FINGERPRINT&gt;</code>), bevor du fortf&auml;hrst.</p>
+          <p><strong>Vertrauenswurzel ist der GPG-Fingerprint</strong>, nicht der Transport: die Paket-Authentizit&auml;t h&auml;ngt an der Signatur (wie bei jedem Distro-Mirror). Pr&uuml;fe den Fingerprint des geladenen Schl&uuml;ssels gegen den ver&ouml;ffentlichten Wert (<code>EDFF1AFBDB471C51B42F765D82E8962D031F8BDC</code>), bevor du fortf&auml;hrst.</p>
 
           <h3>Debian/Ubuntu (apt)</h3>
           <div class="code-header"><span>bash</span></div>
