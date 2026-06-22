@@ -155,28 +155,15 @@ def _run_startup_tasks():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.events import fire_event
-    from app.modules.hooks.scheduler import (
-        load_all_scheduled_hooks,
-        schedule_audit_cleanup,
-        schedule_blacklist_cleanup,
-        schedule_enrollment_token_cleanup,
-        schedule_notification_cleanup,
-        schedule_outbox_drain,
-        scheduler,
-    )
 
     _run_startup_tasks()
-
-    load_all_scheduled_hooks()
-    schedule_blacklist_cleanup()
-    schedule_enrollment_token_cleanup()
-    schedule_audit_cleanup()
-    schedule_outbox_drain()
-    schedule_notification_cleanup()
-    scheduler.start()
+    # The APScheduler runs in a DEDICATED process (app.scheduler_main), NOT in the
+    # web workers: with uvicorn --workers N each worker would start its own
+    # scheduler and every job would run N times (duplicate e-mails from the outbox
+    # drain, duplicate scheduled-hook runs). docker-entrypoint.sh starts exactly
+    # one scheduler process (RUN_MODE=scheduler); the web workers run uvicorn only.
     fire_event("server.startup", {})
     yield
-    scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)

@@ -150,11 +150,16 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
 docker compose up -d server</code></pre>
 
           <h2>Multi-Worker-Betrieb</h2>
-          <p>Standardmäßig läuft ein einzelner Uvicorn-Worker. Für höhere Last:</p>
+          <p>Standardmäßig läuft ein einzelner Uvicorn-Worker (<code>WEB_CONCURRENCY=1</code>). Für höhere Last skaliert man auf mehrere Worker:</p>
           <ol>
-            <li><code>REDIS_URL</code> setzen (sonst wird das In-Memory-Rate-Limit inkonsistent)</li>
-            <li>Im <code>docker-compose.override.yml</code> <code>command</code> überschreiben: <code>uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4</code> (plain-HTTP intern; TLS terminiert das Gateway)</li>
+            <li><code>WEB_CONCURRENCY</code> in der <code>.env</code> auf die gewünschte Worker-Zahl setzen (Faustregel <code>(2×CPU-Kerne)+1</code>, üblich 4–12 — <strong>nicht</strong> an die Zahl gleichzeitiger Clients koppeln). Der Entrypoint startet dann <code>uvicorn --workers ${WEB_CONCURRENCY}</code>.</li>
+            <li><code>REDIS_URL</code> muss gesetzt sein (im Standard-Compose bereits der Fall) — sonst zählt das Rate-Limit pro Worker statt global; der Server warnt beim Start.</li>
+            <li>Den DB-Pool im Auge behalten: pro Worker gilt <code>DB_POOL_SIZE</code>+<code>DB_MAX_OVERFLOW</code> (Default 10+20). Bei vielen Workern diese Werte senken und Postgres <code>max_connections</code> prüfen.</li>
           </ol>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">Der Scheduler läuft als eigener Dienst</div><p>Die periodischen Jobs (E-Mail-Outbox-Versand, Aufbewahrungs-Cleanups, Scheduled Hooks) laufen im separaten <code>scheduler</code>-Service (genau <strong>eine</strong> Instanz, <code>RUN_MODE=scheduler</code>) — <strong>nicht</strong> in den Web-Workern. Würde jeder Web-Worker den Scheduler starten, liefe jeder Job pro Worker (z.&nbsp;B. E-Mails mehrfach versendet). Der <code>scheduler</code>-Dienst ist im Standard-Compose enthalten; ihn <strong>nicht</strong> auf mehrere Replicas skalieren.</p></div>
+          </div>
 
           <h2>Zeitzone</h2>
           <p><code>TZ</code> wird an alle Container weitergegeben. Voreinstellung <code>Europe/Berlin</code>. Das beeinflusst Audit-Log-Zeitstempel und Cron-ähnliche Hook-Jobs.</p>

@@ -115,34 +115,76 @@ def get_next_run(hook_id: str) -> datetime | None:
     return None
 
 
-def load_all_scheduled_hooks() -> None:
-    """On server start, load and schedule all active scheduled hooks."""
-    from app.core.database import SessionLocal
+def reconcile_scheduled_hooks(db=None) -> None:
+    """Sync the scheduler's jobs with the hooks table (the source of truth).
+
+    Runs in the dedicated scheduler process: the web workers no longer register
+    jobs directly (they have no running scheduler), so this reconcile is how a
+    newly created / changed / deleted scheduled hook reaches the scheduler. It
+    is idempotent — add_hook uses replace_existing, and stale jobs are removed.
+    Also persists next_run back to the DB so the API can show it. ``db`` is an
+    optional session (the periodic job opens its own; tests inject one).
+    """
     from app.modules.hooks.models import Hook
 
-    db = SessionLocal()
+    own_session = db is None
+    if own_session:
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
     try:
         hooks = (
             db.query(Hook)
             .filter(Hook.hook_type == "schedule", Hook.enabled == True)  # noqa: E712
             .all()
         )
+        active_ids: set[str] = set()
         for hook in hooks:
             if not hook.schedule_interval:
                 continue
             try:
-                add_hook(hook.id, hook.schedule_interval)
+                add_hook(hook.id, hook.schedule_interval)  # replace_existing -> idempotent
+                active_ids.add(hook.id)
             except ValueError:
-                pass
+                continue
 
-        # Update next_run in the DB
+        # Drop jobs whose hook is gone or disabled (leave the system:* jobs alone).
+        for job in scheduler.get_jobs():
+            if job.id.startswith("system:"):
+                continue
+            if job.id not in active_ids:
+                scheduler.remove_job(job.id)
+
+        # Persist next_run for the API/UI.
         for hook in hooks:
+            if hook.id not in active_ids:
+                continue
             next_run = get_next_run(hook.id)
-            if next_run:
+            if next_run and hook.next_run != next_run:
                 hook.next_run = next_run
         db.commit()
     finally:
-        db.close()
+        if own_session:
+            db.close()
+
+
+# Backwards-compatible alias: the initial load is just a reconcile.
+load_all_scheduled_hooks = reconcile_scheduled_hooks
+
+
+_HOOK_RECONCILE_JOB_ID = "system:hook-reconcile"
+
+
+def schedule_hook_reconcile(seconds: int = 30) -> None:
+    """Register the periodic hook-reconcile (idempotent). Runs in the scheduler
+    process so DB changes by the web workers propagate within `seconds`."""
+    scheduler.add_job(
+        reconcile_scheduled_hooks,
+        trigger=IntervalTrigger(seconds=seconds),
+        id=_HOOK_RECONCILE_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )
 
 
 # ---------------------------------------------------------------------------

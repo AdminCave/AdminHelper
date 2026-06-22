@@ -51,6 +51,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DOMAIN=${DOMAIN:-localhost}
       - EXTRA_SANS=${EXTRA_SANS:-}
+      # Uvicorn worker count. Default 1 (single-worker). Set >1 to scale across
+      # CPU cores; requires the `scheduler` service (below) so APScheduler jobs
+      # still run exactly once, and Redis for shared rate-limiting (already set).
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # mTLS enforcement (per-route cert-scope check). Default true = enforced
@@ -97,6 +101,44 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # Dedicated scheduler process: the SINGLE APScheduler instance. The web
+  # workers (server) run uvicorn only and never start the scheduler, so its jobs
+  # (outbox drain, cleanups, scheduled-hook reconcile) run exactly once even with
+  # WEB_CONCURRENCY > 1. Do NOT scale this service beyond one replica.
+  scheduler:
+    image: ${SERVER_IMAGE:-ghcr.io/ks98/adminhelper/server:latest}
+    environment:
+      - RUN_MODE=scheduler
+      - TZ=${TZ:-Europe/Berlin}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=adminhelper
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - MONITOR_API_KEY=${MONITOR_API_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
+      - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
+      - NOTIFICATION_RETENTION_DAYS=${NOTIFICATION_RETENTION_DAYS:-90}
+      - NOTIFICATION_MAX_ATTEMPTS=${NOTIFICATION_MAX_ATTEMPTS:-5}
+      # SMTP: the outbox drain runs here, so the scheduler needs the relay too.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
+    volumes:
+      # Shared DATA_DIR so the auto-generated SECRET_KEY matches the web service.
+      - ./data:/app/data
+    logging: *default-logging
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/ks98/adminhelper/gateway:latest}

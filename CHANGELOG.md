@@ -9,6 +9,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Server: Multi-Worker-Tauglichkeit (Skalierungs-Fundament).** Der Server kann nun
+  mit mehreren Uvicorn-Workern laufen (`WEB_CONCURRENCY`, Default 1 = unverändert).
+  Damit die periodischen Jobs (E-Mail-Outbox, Aufbewahrungs-Cleanups, Scheduled
+  Hooks) genau einmal laufen, ist der **APScheduler in einen dedizierten
+  `scheduler`-Dienst** ausgelagert (im Compose enthalten, genau eine Instanz,
+  `RUN_MODE=scheduler`); die Web-Worker führen nur noch `uvicorn` aus. Scheduled
+  Hooks werden vom Scheduler-Prozess periodisch aus der DB rekonziliert statt direkt
+  von den Routern registriert. Das Rate-Limit warnt bei Multi-Worker ohne Redis; der
+  DB-Pool ist pro Worker konfigurierbar (`DB_POOL_SIZE`/`DB_MAX_OVERFLOW`).
 - **Server: Fundament für ein Benachrichtigungssystem (Phase A).** Der Server wird
   zum Notification-Hub. Neue Tabellen: `notification_subscription` (pro-User-Regeln
   — Scope *alle Server* / *Tag* / *einzelner Server*, Mindest-Severity, optionaler

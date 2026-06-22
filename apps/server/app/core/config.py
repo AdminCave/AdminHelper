@@ -92,6 +92,24 @@ MONITOR_API_KEY = os.environ.get("MONITOR_API_KEY", "")
 # (safe only for single-worker / dev setups).
 REDIS_URL = os.environ.get("REDIS_URL", "").strip()
 
+# Number of uvicorn workers (informational; set by the entrypoint). With more
+# than one worker the in-memory rate-limit fallback counts per process, so Redis
+# is required for a correct global limit — warn loudly if it is missing.
+WEB_CONCURRENCY = int(os.environ.get("WEB_CONCURRENCY", "1"))
+if WEB_CONCURRENCY > 1 and not REDIS_URL:
+    logger.warning(
+        "WEB_CONCURRENCY=%d (multi-worker) ohne REDIS_URL: Rate-Limiting zaehlt "
+        "pro Worker statt global, das effektive Limit ist %dx zu hoch. REDIS_URL setzen.",
+        WEB_CONCURRENCY,
+        WEB_CONCURRENCY,
+    )
+
+# SQLAlchemy connection pool, per process. With WEB_CONCURRENCY=N the total is
+# N*(pool_size+max_overflow); keep it under Postgres max_connections (default
+# 100). Lower these for many workers.
+DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
+DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+
 # mTLS scope enforcement (ADR 0001 D3/D8, Phase A). The gateway forwards the
 # verified client identity as headers; per-route scope guards (app.core.identity)
 # read it. During the permissive rollout (A3–A7) this stays False: mismatches are

@@ -14,7 +14,11 @@ from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.modules.hooks.models import Hook
-from app.modules.hooks.scheduler import _INTERVAL_MAP, add_hook, get_next_run, remove_hook
+
+# Scheduled-hook jobs are owned by the dedicated scheduler process; the web
+# workers only persist hook rows to the DB and let the periodic reconcile pick
+# them up. _INTERVAL_MAP is still needed here for interval validation.
+from app.modules.hooks.scheduler import _INTERVAL_MAP
 from app.modules.hooks.schemas import (
     VALID_EVENTS,
     VALID_INTERVALS,
@@ -145,13 +149,8 @@ def create_hook(
     db.commit()
     db.refresh(hook)
 
-    if data.hook_type == "schedule" and data.schedule_interval:
-        add_hook(hook.id, data.schedule_interval)
-        next_run = get_next_run(hook.id)
-        if next_run:
-            hook.next_run = next_run
-            db.commit()
-
+    # next_run is filled in by the scheduler process's reconcile (within seconds);
+    # no direct add_job here — the web worker has no running scheduler.
     result = _to_dict(hook)
     result["token"] = raw_token
     return result
@@ -233,26 +232,13 @@ def update_hook(
     if data.schedule_interval is not None:
         _validate_schedule_interval(data.schedule_interval)
         hook.schedule_interval = data.schedule_interval
-        if hook.hook_type == "schedule" and hook.enabled:
-            add_hook(hook.id, data.schedule_interval)
     if data.enabled is not None:
-        was_enabled = hook.enabled
         hook.enabled = data.enabled
-        if hook.hook_type == "schedule" and hook.schedule_interval:
-            if data.enabled and not was_enabled:
-                add_hook(hook.id, hook.schedule_interval)
-            elif not data.enabled and was_enabled:
-                remove_hook(hook.id)
 
+    # The scheduler process reconciles enable/disable/interval changes from the
+    # DB; no direct add/remove_job here (and next_run is refreshed there too).
     db.commit()
     db.refresh(hook)
-
-    if hook.hook_type == "schedule":
-        next_run = get_next_run(hook.id)
-        if next_run:
-            hook.next_run = next_run
-            db.commit()
-
     return _to_dict(hook)
 
 
@@ -261,8 +247,8 @@ def delete_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_
     hook = db.query(Hook).filter(Hook.id == hook_id).first()
     if not hook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
-    if hook.hook_type == "schedule":
-        remove_hook(hook_id)
+    # The scheduler process drops the job on its next reconcile (the hook row is
+    # gone); no direct remove_job here.
     db.delete(hook)
     db.commit()
 
@@ -274,15 +260,10 @@ def toggle_hook(hook_id: str, db: Session = Depends(get_db), _admin=Depends(get_
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hook nicht gefunden")
 
     hook.enabled = not hook.enabled
-    if hook.hook_type == "schedule" and hook.schedule_interval:
-        if hook.enabled:
-            add_hook(hook.id, hook.schedule_interval)
-            next_run = get_next_run(hook.id)
-            if next_run:
-                hook.next_run = next_run
-        else:
-            remove_hook(hook.id)
-            hook.next_run = None
+    # Clear next_run eagerly on disable so the UI doesn't show a stale time until
+    # the scheduler process's next reconcile; on enable the reconcile sets it.
+    if hook.hook_type == "schedule" and not hook.enabled:
+        hook.next_run = None
 
     db.commit()
     db.refresh(hook)

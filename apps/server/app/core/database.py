@@ -5,15 +5,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from app.core.config import DATABASE_URL
+from app.core.config import DATABASE_URL, DB_MAX_OVERFLOW, DB_POOL_SIZE
 
-# Postgres pool: ThreadPoolExecutor (hooks, 4 workers) + APScheduler +
-# uvicorn + web requests = realistically 15-20 connections at peak.
-# pool_pre_ping=True catches dead connections after container restarts.
+# Postgres pool, per process. Single-worker default (10+20) is realistically
+# 15-20 connections at peak. With WEB_CONCURRENCY=N the total is N*(size+overflow)
+# — tune DB_POOL_SIZE/DB_MAX_OVERFLOW down for many workers, watch Postgres
+# max_connections. pool_pre_ping catches dead connections after restarts.
 engine = create_engine(
     DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
     pool_pre_ping=True,
     pool_recycle=3600,
 )

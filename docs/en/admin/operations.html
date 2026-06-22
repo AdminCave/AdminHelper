@@ -104,12 +104,16 @@
           <p>Who receives which e-mails is controlled by each user via their notification rules (see <a href="./monitoring.html">Monitoring → Personal notifications</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
 
           <h2>Multi-Worker Notes</h2>
-          <p>The default compose stack runs a single Uvicorn worker – APScheduler assumes <strong>one</strong> scheduling instance, and the in-memory rate-limit fallback is per-process. For horizontal scaling:</p>
-          <ul>
-            <li>Scale only the <em>HTTP layer</em> (add replicas behind a load balancer with sticky sessions for refresh cookies).</li>
-            <li>Keep <strong>exactly one</strong> worker with <code>ENABLE_SCHEDULER=true</code>; others run with scheduler disabled.</li>
-            <li>Redis is required – the in-memory rate-limit fallback breaks across workers.</li>
-          </ul>
+          <p>The default compose stack runs a single Uvicorn worker (<code>WEB_CONCURRENCY=1</code>). To scale across CPU cores:</p>
+          <ol>
+            <li>Set <code>WEB_CONCURRENCY</code> in <code>.env</code> to the desired worker count (rule of thumb <code>(2×cores)+1</code>, typically 4–12 — do <strong>not</strong> couple it to the number of concurrent clients). The entrypoint then runs <code>uvicorn --workers ${WEB_CONCURRENCY}</code>.</li>
+            <li><code>REDIS_URL</code> must be set (already the case in the default compose) — otherwise the rate limit counts per worker instead of globally; the server warns at startup.</li>
+            <li>Mind the DB pool: <code>DB_POOL_SIZE</code>+<code>DB_MAX_OVERFLOW</code> (default 10+20) apply per worker. Lower them for many workers and check Postgres <code>max_connections</code>.</li>
+          </ol>
+          <div class="callout callout-warn" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            <div><div class="callout-title">The scheduler runs as its own service</div><p>The periodic jobs (e-mail outbox delivery, retention cleanups, scheduled hooks) run in the separate <code>scheduler</code> service (exactly <strong>one</strong> instance, <code>RUN_MODE=scheduler</code>) — <strong>not</strong> in the web workers. If every web worker started the scheduler, every job would run once per worker (e.g. e-mails sent multiple times). The <code>scheduler</code> service ships in the default compose; do <strong>not</strong> scale it to multiple replicas.</p></div>
+          </div>
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
