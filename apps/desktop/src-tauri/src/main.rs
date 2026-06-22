@@ -61,6 +61,7 @@ fn main() {
         )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(frpc_state)
         .setup(|app| {
             // Ensure a concrete runtime window icon in dev and production.

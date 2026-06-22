@@ -52,6 +52,8 @@ export interface Settings {
   // Last username used for a successful server login; pre-filled on the login
   // screen so only the password has to be entered on each start.
   lastUsername?: string | null;
+  // Show native OS notifications for new bell-feed entries (opt-in).
+  osNotifications: boolean;
 }
 
 export interface AuthSession {

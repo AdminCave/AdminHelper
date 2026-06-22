@@ -23,7 +23,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import SettingsModal from './SettingsModal.svelte';
   import StatusBar from './StatusBar.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
+  import NotificationBell from './NotificationBell.svelte';
   import { openSettings, startSyncTimer, stopSyncTimer } from '$lib/stores/settings';
+  import {
+    activateNotifications,
+    deactivateNotifications,
+    setNewNotificationHandler,
+  } from '$lib/stores/notifications';
+  import { notifyOs } from '$lib/osNotify';
 
   interface NavItem {
     id: 'dashboard' | 'connections' | 'infrastructure' | 'monitoring' | 'ansible';
@@ -84,6 +91,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let title = $derived($t(navItems.find((n) => n.id === currentId)?.labelKey ?? 'nav.dashboard'));
   let modeBadge = $derived($t(`settings.mode.${$settings?.mode ?? 'local'}`));
+
+  // Poll the notification feed app-wide while a server session is active. The
+  // effect re-runs on login/logout; cleanup stops the timer and resets state.
+  $effect(() => {
+    if ($session) {
+      activateNotifications();
+    }
+    return () => deactivateNotifications();
+  });
+
+  // Route new feed entries to OS notifications only while the user opted in.
+  $effect(() => {
+    setNewNotificationHandler($settings?.osNotifications ? notifyOs : null);
+  });
 
   function go(item: NavItem): void {
     navigate(item.href);
@@ -202,6 +223,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
       {/if}
       {#if $session}
+        <NotificationBell />
         <span style="color: var(--text-muted); margin: 0 var(--sp-3);">
           {$session.username}
         </span>

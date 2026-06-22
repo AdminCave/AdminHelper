@@ -559,6 +559,63 @@ export interface AlertLogEntry {
   error?: string | null;
 }
 
+// ── Notifications (server-side notification hub) ─────────────────────────────
+
+export type NotificationSeverity = 'info' | 'warning' | 'critical';
+export type NotificationScopeType = 'all' | 'tag' | 'server';
+
+// One bell-feed entry (mirrors the server's Notification.to_dict()).
+export interface NotificationItem {
+  id: number;
+  createdAt: string;
+  severity: NotificationSeverity;
+  category: string;
+  eventType: string;
+  title: string;
+  body?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  read: boolean;
+  readAt?: string | null;
+}
+
+// One per-user subscription rule (mirrors NotificationSubscription.to_dict()).
+export interface NotificationSubscription {
+  id: number;
+  userId: number;
+  scopeType: NotificationScopeType;
+  scopeRef?: string | null;
+  minSeverity: NotificationSeverity;
+  categories?: string | null; // JSON array string, or null = every category
+  channelEmail: boolean;
+  channelTelegram: boolean;
+  enabled: boolean;
+}
+
+export interface NotificationPrefs {
+  email: string | null;
+  telegramChatId: string | null;
+  subscriptions: NotificationSubscription[];
+}
+
+// PUT payload (snake_case — the server schema). categories is a string array
+// here; the server stores it as a JSON string.
+export interface NotificationSubscriptionInput {
+  scope_type: NotificationScopeType;
+  scope_ref?: string | null;
+  min_severity: NotificationSeverity;
+  categories?: string[] | null;
+  channel_email: boolean;
+  channel_telegram: boolean;
+  enabled: boolean;
+}
+
+export interface NotificationPrefsUpdate {
+  email?: string | null;
+  telegram_chat_id?: string | null;
+  subscriptions: NotificationSubscriptionInput[];
+}
+
 export interface TemplateCheckDef {
   def_id?: string;
   name: string;

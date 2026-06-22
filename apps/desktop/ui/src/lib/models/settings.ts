@@ -31,6 +31,7 @@ export function getSettingsDefaults(): Settings {
     allowSelfSignedCerts: false,
     serverUrl: '',
     lastUsername: '',
+    osNotifications: false,
   };
 }
 

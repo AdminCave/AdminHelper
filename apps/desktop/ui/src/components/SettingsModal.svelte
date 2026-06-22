@@ -35,6 +35,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     RdpPerformanceProfile,
     RdpScalingMode,
   } from '$lib/bridge/types';
+  import { ensureNotificationPermission } from '$lib/osNotify';
+  import NotificationPrefs from './NotificationPrefs.svelte';
 
   let mode = $state<SyncMode>('local');
   let url = $state('');
@@ -47,6 +49,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let rdpCustomSize = $state('1920x1080');
   let rdpPerformanceProfile = $state<RdpPerformanceProfile>('auto');
   let serverUrl = $state('');
+  let osNotifications = $state(false);
   let pinResetMsgKey = $state('');
   let deviceEnrolled = $state(false);
   let deviceResetMsgKey = $state('');
@@ -70,6 +73,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     rdpCustomSize = s.rdpCustomSize ?? '1920x1080';
     rdpPerformanceProfile = s.rdpPerformanceProfile ?? 'auto';
     serverUrl = s.serverUrl ?? '';
+    osNotifications = Boolean(s.osNotifications);
     pinResetMsgKey = '';
     deviceResetMsgKey = '';
     browserCertPassword = '';
@@ -181,12 +185,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
       rdpCustomSize: rdpCustomSize.trim(),
       rdpPerformanceProfile,
       serverUrl: serverUrl.trim(),
+      osNotifications,
     };
     await saveSettings(next);
   }
 
   async function onLogout(): Promise<void> {
     await serverLogout();
+  }
+
+  async function onToggleOsNotifications(checked: boolean): Promise<void> {
+    osNotifications = checked;
+    // Request OS permission on enable (a user gesture); revert if denied.
+    if (checked && !(await ensureNotificationPermission())) {
+      osNotifications = false;
+    }
   }
 
   let rdpScalingLabels = $derived({
@@ -394,6 +407,23 @@ SPDX-License-Identifier: GPL-3.0-or-later
             {/each}
           </select>
         </label>
+      </div>
+
+      <div class="sm-section">
+        <div class="sm-section-title">{$t('settings.section.notifications')}</div>
+        <label class="field checkbox">
+          <input
+            type="checkbox"
+            checked={osNotifications}
+            onchange={(e) => onToggleOsNotifications(e.currentTarget.checked)}
+          />
+          <span>{$t('settings.osNotifications')}</span>
+        </label>
+        {#if $session}
+          <NotificationPrefs />
+        {:else}
+          <span class="field-label">{$t('settings.notifications.serverOnly')}</span>
+        {/if}
       </div>
 
       <div class="sm-section">

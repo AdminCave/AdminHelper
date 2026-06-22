@@ -19,6 +19,8 @@ keyring = { version = "3", default-features = false, features = ["apple-native",
 tauri-plugin-shell = "2"
 # Native "save as" dialog so the user picks where the browser .p12 is written.
 tauri-plugin-dialog = "2"
+# Native OS notifications: the bell feed also surfaces as desktop notifications.
+tauri-plugin-notification = "2"
 # Desktop logging: stdout + a size-rotated file in the app log dir; the file is
 # the source for the diagnostics report.
 tauri-plugin-log = "2"

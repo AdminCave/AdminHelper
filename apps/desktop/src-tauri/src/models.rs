@@ -111,6 +111,10 @@ pub struct Settings {
     // screen so only the password has to be entered on each start. Not a secret.
     #[serde(default)]
     pub last_username: Option<String>,
+    // Show native OS notifications for new bell-feed entries (opt-in; needs the
+    // OS notification permission, requested when the user enables it).
+    #[serde(default)]
+    pub os_notifications: bool,
 }
 
 impl Default for Settings {
@@ -128,6 +132,7 @@ impl Default for Settings {
             allow_self_signed_certs: false,
             server_url: None,
             last_username: None,
+            os_notifications: false,
         }
     }
 }

@@ -34,6 +34,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (`security`), Server entfernt und FRP-Tunnel angelegt (`lifecycle`). Reine
   CRUD-Events, die der Auslöser selbst verursacht, werden bewusst nicht gespiegelt
   (kein Noise).
+- **Desktop: Benachrichtigungs-Glocke, Desktop-Notifications und Self-Service-
+  Einstellungen (Phase C).** Eine Glocke mit Ungelesen-Badge im Header öffnet ein
+  Panel mit dem Benachrichtigungs-Feed (app-weites Polling, solange eine
+  Server-Session aktiv ist). Neue Feed-Einträge erscheinen optional als native
+  **OS-Benachrichtigungen** (`tauri-plugin-notification`, opt-in mit
+  Permission-Abfrage; ein „Priming"-Schritt verhindert eine Flut beim Start). In
+  den Einstellungen kann jeder Nutzer seine **Kontakt-E-Mail** und beliebig viele
+  **Regeln** verwalten — Geltungsbereich (alle Server / Tag / einzelner Server),
+  Mindest-Schweregrad und Kanal (Glocke immer, E-Mail optional). Telegram ist im
+  Datenmodell vorgesehen, aber noch nicht in der Oberfläche.
 
 ## [0.37.2] - 2026-06-20
 

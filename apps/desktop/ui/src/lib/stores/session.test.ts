@@ -38,6 +38,7 @@ const baseSettings = (over: Partial<Settings> = {}): Settings => ({
   intervalMinutes: 1,
   language: 'en',
   storePasswords: false,
+  osNotifications: false,
   rdpScalingMode: 'auto',
   rdpWindowMode: 'fit',
   rdpCustomSize: null,

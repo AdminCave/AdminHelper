@@ -5,6 +5,7 @@
   "permissions": [
     "core:default",
     "dialog:allow-save",
+    "notification:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
