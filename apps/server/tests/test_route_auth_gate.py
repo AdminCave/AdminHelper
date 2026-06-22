@@ -76,22 +76,73 @@ def _is_guarded(route: APIRoute) -> bool:
     )
 
 
+def _collect_api_routes(app) -> list[APIRoute]:
+    """Every APIRoute under the app, collected recursively.
+
+    Robust to how the *installed* FastAPI exposes included routers — the gate
+    must not depend on a FastAPI internal that changes between versions:
+
+    * FastAPI <= 0.136 flattens ``include_router`` straight into ``app.routes``
+      as plain APIRoute objects.
+    * FastAPI >= 0.138 wraps each included router in an opaque ``_IncludedRouter``
+      that has *no* ``.routes``; its sub-routes live behind
+      ``include_context.included_router.routes`` (full paths, prefix baked in).
+
+    We descend through whichever shape a node exposes. Anything still unhandled
+    is surfaced by the emptiness guard in the tests below, never silently
+    dropped — a blind gate is worse than a red one.
+    """
+    collected: list[APIRoute] = []
+
+    def descend(node) -> None:
+        if isinstance(node, APIRoute):
+            collected.append(node)
+            return
+        # Container (Mount / APIRouter / FastAPI's _IncludedRouter): prefer the
+        # public ``.routes``, fall back to the >= 0.138 included-router shape.
+        sub = getattr(node, "routes", None)
+        if not sub:
+            ctx = getattr(node, "include_context", None)
+            included = getattr(ctx, "included_router", None)
+            sub = getattr(included, "routes", None)
+        for child in sub or ():
+            descend(child)
+
+    for route in app.routes:
+        descend(route)
+    return collected
+
+
+def _api_methods(routes: list[APIRoute]):
+    """Yield ``(method, path, route)`` for every ``/api`` route, sans HEAD/OPTIONS."""
+    for route in routes:
+        if not route.path.startswith("/api"):
+            continue
+        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
+            yield method, route.path, route
+
+
 def test_every_api_route_is_guarded_or_explicitly_public():
     """Fail if any /api route lacks an auth dependency and isn't allowlisted."""
     from app.main import app
 
+    api = list(_api_methods(_collect_api_routes(app)))
+    # Emptiness guard: if route introspection ever collects nothing (e.g. a
+    # future FastAPI reshuffle the walker doesn't understand), fail loudly here
+    # instead of passing vacuously with an inert auth gate.
+    assert api, (
+        "introspection collected ZERO /api routes — _collect_api_routes no longer "
+        "understands this FastAPI version's app.routes structure. The gate is "
+        "blind until it's fixed."
+    )
+
     offenders: list[str] = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
+    for method, path, route in api:
+        if (method, path) in _PUBLIC_ROUTES:
             continue
-        if not route.path.startswith("/api"):
+        if _is_guarded(route):
             continue
-        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
-            if (method, route.path) in _PUBLIC_ROUTES:
-                continue
-            if _is_guarded(route):
-                continue
-            offenders.append(f"{method} {route.path}")
+        offenders.append(f"{method} {path}")
 
     assert not offenders, (
         "These /api routes have no auth dependency and are not in the public "
@@ -112,12 +163,7 @@ def test_allowlist_has_no_stale_entries():
     """
     from app.main import app
 
-    live = {
-        (method, route.path): route
-        for route in app.routes
-        if isinstance(route, APIRoute) and route.path.startswith("/api")
-        for method in route.methods - {"HEAD", "OPTIONS"}
-    }
+    live = {(method, path): route for method, path, route in _api_methods(_collect_api_routes(app))}
 
     stale: list[str] = []
     for method, path in _PUBLIC_ROUTES:
