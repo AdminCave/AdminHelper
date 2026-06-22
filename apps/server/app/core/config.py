@@ -109,3 +109,15 @@ ENROLL_PORT = int(os.environ.get("ENROLL_PORT", "8444"))
 # many days — the ONLY delete path for the otherwise append-only trail. Set to 0
 # to keep entries forever (no pruning).
 AUDIT_RETENTION_DAYS = int(os.environ.get("AUDIT_RETENTION_DAYS", "365"))
+
+# SMTP relay for outbound e-mail notifications (the notification hub). An empty
+# SMTP_HOST disables the e-mail channel — outbox entries then fail and retry
+# until they exhaust their attempts. No local MTA: point this at an external
+# relay (587 STARTTLS or 465 SMTPS).
+SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+# Delivery attempts before an outbox entry is marked permanently failed.
+NOTIFICATION_MAX_ATTEMPTS = int(os.environ.get("NOTIFICATION_MAX_ATTEMPTS", "5"))

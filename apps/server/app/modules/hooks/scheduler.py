@@ -244,3 +244,37 @@ def schedule_audit_cleanup(hours: int = 24) -> None:
         replace_existing=True,
         next_run_time=datetime.now(timezone.utc),
     )
+
+
+_OUTBOX_DRAIN_JOB_ID = "system:notification-outbox-drain"
+
+
+def _run_outbox_drain() -> None:
+    """Deliver pending e-mail notifications (notification hub outbox), out of the
+    request path, with retry/backoff handled per entry."""
+    from app.core.database import SessionLocal
+    from app.modules.notifications.outbox import drain_outbox
+
+    db = SessionLocal()
+    try:
+        sent, failed = drain_outbox(db)
+        if sent or failed:
+            logger.info(
+                "Notification-Outbox: %d gesendet, %d endgueltig fehlgeschlagen", sent, failed
+            )
+    except Exception:
+        logger.exception("Notification-Outbox-Drain fehlgeschlagen")
+    finally:
+        db.close()
+
+
+def schedule_outbox_drain(minutes: int = 1) -> None:
+    """Register the periodic notification-outbox drain (idempotent). Runs once at
+    start and then every `minutes` minutes for timely e-mail delivery."""
+    scheduler.add_job(
+        _run_outbox_drain,
+        trigger=IntervalTrigger(minutes=minutes),
+        id=_OUTBOX_DRAIN_JOB_ID,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )

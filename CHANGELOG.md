@@ -44,6 +44,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   **Regeln** verwalten — Geltungsbereich (alle Server / Tag / einzelner Server),
   Mindest-Schweregrad und Kanal (Glocke immer, E-Mail optional). Telegram ist im
   Datenmodell vorgesehen, aber noch nicht in der Oberfläche.
+- **E-Mail-Versand der Benachrichtigungen (Phase D).** Ein APScheduler-System-Job
+  (Muster wie der Audit-Retention-Job) leert die `notification_outbox` minütlich
+  aus dem Request-Pfad heraus und stellt E-Mails über einen externen SMTP-Relay
+  zu (`SMTP_HOST`/`PORT`/`USER`/`PASSWORD`/`FROM`, 587 STARTTLS oder 465 SMTPS).
+  Fehlversuche werden mit linearem Backoff bis `NOTIFICATION_MAX_ATTEMPTS` (Default
+  5) wiederholt und danach als fehlgeschlagen markiert. Damit ist der MVP-Umfang
+  (Glocke + Desktop-Notification + E-Mail) vollständig.
 
 ## [0.37.2] - 2026-06-20
 
