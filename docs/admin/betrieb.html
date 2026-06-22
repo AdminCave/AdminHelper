@@ -129,6 +129,20 @@ docker compose logs -f --tail=200        # alle Services, letzte 200 Zeilen</cod
           <div class="callout"><div class="callout-title">Aufbewahrung</div><p>Ein täglicher Job löscht Einträge, die älter als <code>AUDIT_RETENTION_DAYS</code> (Default 365) sind — der einzige Löschpfad der ansonsten append-only Tabelle. <code>0</code> behält alles dauerhaft.</p></div>
           <div class="callout"><div class="callout-title">Local-Mode-Lücke</div><p>Verbindungen, die im Desktop-Client <em>ohne</em> Server (Local-Mode) genutzt werden, erreichen den Server nicht und erscheinen daher nicht im Audit-Trail.</p></div>
 
+          <h2>E-Mail-Benachrichtigungen (SMTP)</h2>
+          <p>Der <strong>Notification-Hub</strong> kann Benachrichtigungen zusätzlich zur In-App-Glocke per E-Mail zustellen. Dafür einen externen SMTP-Relay über Environment-Variablen konfigurieren (kein lokaler Mailserver nötig):</p>
+          <table>
+            <thead><tr><th>Variable</th><th>Bedeutung</th></tr></thead>
+            <tbody>
+              <tr><td><code>SMTP_HOST</code></td><td>Hostname des Relays. <strong>Leer = E-Mail-Kanal aus</strong> (Glocke + Desktop-Hinweise bleiben aktiv).</td></tr>
+              <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, Default) oder <code>465</code> (implizites TLS/SMTPS).</td></tr>
+              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Zugangsdaten des Relays (optional, wenn der Relay ohne Auth annimmt).</td></tr>
+              <tr><td><code>SMTP_FROM</code></td><td>Absenderadresse (Default <code>adminhelper@localhost</code>).</td></tr>
+              <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Zustellversuche pro E-Mail mit linearem Backoff, danach „fehlgeschlagen" (Default 5).</td></tr>
+            </tbody>
+          </table>
+          <p>Wer welche E-Mails bekommt, steuert jeder Nutzer selbst über seine Benachrichtigungs-Regeln (siehe <a href="./monitoring.html">Monitoring → Persönliche Benachrichtigungen</a>). Der Versand läuft asynchron über eine Outbox; ein minütlicher Hintergrund-Job stellt zu.</p>
+
           <h2>Konfiguration ändern</h2>
           <p>Alle Config-Werte kommen aus Environment-Variablen. Änderungen erfordern ein <code>docker compose up -d</code>, damit die Container neu erzeugt werden:</p>
           <div class="code-header"><span>bash</span></div>

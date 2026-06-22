@@ -164,7 +164,26 @@ allowUsers = ["ops-admin"]</code></pre>
             <li><code>frp.tunnel.created</code>, <code>frp.tunnel.updated</code>, <code>frp.tunnel.deleted</code></li>
             <li><code>playbook.created</code>, <code>playbook.updated</code>, <code>playbook.deleted</code></li>
           </ul>
-          <p>Details siehe <a href="./hooks.html">Hooks &amp; Events</a>.</p>
+          <p>Details siehe <a href="./hooks.html">Hooks &amp; Events</a>. Eine kuratierte Auswahl dieser Events wird zusätzlich über <code>modules/notifications/event_bridge.py</code> in den Notification-Hub gespiegelt (siehe unten).</p>
+
+          <h2>Notification-Hub</h2>
+          <p>Der Server ist der <strong>Hub</strong> für nutzer-zentrierte Benachrichtigungen (<code>modules/notifications/</code>). Begründung: Nur der Server kennt die User↔Server-Zuordnung (<code>user_servers</code>) — das Monitoring bleibt reine Event-Quelle und lernt nichts über Benutzer. Drei Tabellen (Alembic-Migration <code>a7c3efba142a</code>):</p>
+          <table>
+            <thead><tr><th>Tabelle</th><th>Zweck</th></tr></thead>
+            <tbody>
+              <tr><td><code>notification_subscription</code></td><td>Pro-User-Regeln: <code>scope_type</code> (<code>all</code>/<code>tag</code>/<code>server</code>) + <code>scope_ref</code>, <code>min_severity</code>, Kanal-Flags. Ein User kann mehrere haben.</td></tr>
+              <tr><td><code>notification</code></td><td>Der Glocken-Feed: eine Zeile pro Empfänger, <code>read_at</code> markiert gelesen.</td></tr>
+              <tr><td><code>notification_outbox</code></td><td>Versand-Queue für externe Kanäle (E-Mail), mit <code>attempts</code>/<code>next_attempt_at</code> für Retry/Backoff.</td></tr>
+            </tbody>
+          </table>
+          <p>Datenfluss:</p>
+          <ol>
+            <li><strong>Quellen</strong> rufen <code>service.ingest_event()</code> — der Monitoring-Dienst per <code>POST /api/internal/events</code> (Auth <code>X-Internal-Key</code> = <code>MONITOR_API_KEY</code>, Gegenrichtung des Monitoring-Proxys), und der In-Process-Bus über <code>event_bridge.py</code> (kuratierte <code>user.created</code>/<code>server.deleted</code>/<code>frp.tunnel.created</code>).</li>
+            <li>Der <strong>Resolver</strong> (<code>service.resolve_recipients()</code>) bildet <code>server_id → user_servers → users × subscriptions</code> ab — <em>least privilege</em>: ein Nicht-Admin wird nur über ihm zugeordnete Server benachrichtigt, Admins über alle; ein Event ohne Server-Bezug geht nur an Admins. Tag-Scope matcht gegen die JSON-Tags des Servers zur Laufzeit (bewusst keine Tag-Normalisierung).</li>
+            <li>Pro Empfänger entsteht eine <code>notification</code>-Zeile (Glocke) plus <code>notification_outbox</code>-Zeilen für aktivierte externe Kanäle, sofern eine Adresse hinterlegt ist. Mehrere passende Subscriptions eines Users werden zu einem Feed-Eintrag mit vereinigten Kanälen zusammengeführt.</li>
+            <li>Ein APScheduler-System-Job (<code>schedule_outbox_drain</code>, minütlich) leert die Outbox via <code>outbox.drain_outbox()</code> + <code>sender.send_email()</code> (smtplib) aus dem Request-Pfad heraus, mit linearem Backoff bis <code>NOTIFICATION_MAX_ATTEMPTS</code> (Default 5), danach Status <code>failed</code>.</li>
+          </ol>
+          <p>Clients pollen <code>GET /api/notifications</code> (eigener Feed, paginiert) plus <code>/unread-count</code> und <code>POST /api/notifications/read</code>; persönliche Einstellungen über <code>GET</code>/<code>PUT /api/users/me/notification-prefs</code> (Replace-all). Es gibt keinen Server→Client-Push (kein WebSocket/SSE) — die Desktop-Glocke pollt app-weit, solange eine Sitzung aktiv ist.</p>
 
           <h2>Persistenz</h2>
           <p>Stateful-Daten verteilen sich auf zwei Stellen:</p>

@@ -283,6 +283,7 @@ The **monitoring service** runs as a separate container alongside the server and
 - **Templates**: define monitoring configurations as templates and assign them to servers
 - **Alerting**: webhook and email notifications with a configurable cooldown
 - **Recovery alerts**: automatic notification when a check is OK again
+- **Personal notifications**: per-user notification hub — a bell with a feed in the desktop client, native OS notifications, and e-mail — with per-user rules (scope all/tag/single server, minimum severity). Also surfaces security (new admin) and lifecycle events.
 
 ### Installing the agent
 

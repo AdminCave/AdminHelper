@@ -89,6 +89,20 @@
           <div class="callout"><div class="callout-title">Retention</div><p>A daily job deletes entries older than <code>AUDIT_RETENTION_DAYS</code> (default 365) — the only delete path for the otherwise append-only table. <code>0</code> keeps everything forever.</p></div>
           <div class="callout"><div class="callout-title">Local-mode gap</div><p>Connections used in the desktop client <em>without</em> a server (local mode) never reach the server and therefore do not appear in the audit trail.</p></div>
 
+          <h2>E-mail notifications (SMTP)</h2>
+          <p>The <strong>notification hub</strong> can deliver notifications by e-mail in addition to the in-app bell. Configure an external SMTP relay via environment variables (no local mail server needed):</p>
+          <table>
+            <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>SMTP_HOST</code></td><td>Relay hostname. <strong>Empty = e-mail channel off</strong> (bell + desktop toasts stay active).</td></tr>
+              <tr><td><code>SMTP_PORT</code></td><td><code>587</code> (STARTTLS, default) or <code>465</code> (implicit TLS / SMTPS).</td></tr>
+              <tr><td><code>SMTP_USER</code> / <code>SMTP_PASSWORD</code></td><td>Relay credentials (optional, if the relay accepts without auth).</td></tr>
+              <tr><td><code>SMTP_FROM</code></td><td>Sender address (default <code>adminhelper@localhost</code>).</td></tr>
+              <tr><td><code>NOTIFICATION_MAX_ATTEMPTS</code></td><td>Delivery attempts per e-mail with linear backoff, then "failed" (default 5).</td></tr>
+            </tbody>
+          </table>
+          <p>Who receives which e-mails is controlled by each user via their notification rules (see <a href="./monitoring.html">Monitoring → Personal notifications</a>). Delivery runs asynchronously through an outbox; a per-minute background job sends them.</p>
+
           <h2>Multi-Worker Notes</h2>
           <p>The default compose stack runs a single Uvicorn worker – APScheduler assumes <strong>one</strong> scheduling instance, and the in-memory rate-limit fallback is per-process. For horizontal scaling:</p>
           <ul>

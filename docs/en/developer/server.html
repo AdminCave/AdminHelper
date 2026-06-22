@@ -164,7 +164,26 @@ allowUsers = ["ops-admin"]</code></pre>
             <li><code>frp.tunnel.created</code>, <code>frp.tunnel.updated</code>, <code>frp.tunnel.deleted</code></li>
             <li><code>playbook.created</code>, <code>playbook.updated</code>, <code>playbook.deleted</code></li>
           </ul>
-          <p>Details in <a href="./hooks.html">Hooks &amp; Events</a>.</p>
+          <p>Details in <a href="./hooks.html">Hooks &amp; Events</a>. A curated subset of these events is additionally mirrored into the notification hub via <code>modules/notifications/event_bridge.py</code> (see below).</p>
+
+          <h2>Notification hub</h2>
+          <p>The server is the <strong>hub</strong> for user-centric notifications (<code>modules/notifications/</code>). Rationale: only the server knows the user↔server mapping (<code>user_servers</code>) — monitoring stays a pure event source and learns nothing about users. Three tables (Alembic migration <code>a7c3efba142a</code>):</p>
+          <table>
+            <thead><tr><th>Table</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>notification_subscription</code></td><td>Per-user rules: <code>scope_type</code> (<code>all</code>/<code>tag</code>/<code>server</code>) + <code>scope_ref</code>, <code>min_severity</code>, channel flags. A user may have several.</td></tr>
+              <tr><td><code>notification</code></td><td>The bell feed: one row per recipient, <code>read_at</code> marks it read.</td></tr>
+              <tr><td><code>notification_outbox</code></td><td>Delivery queue for external channels (e-mail), with <code>attempts</code>/<code>next_attempt_at</code> for retry/backoff.</td></tr>
+            </tbody>
+          </table>
+          <p>Data flow:</p>
+          <ol>
+            <li><strong>Sources</strong> call <code>service.ingest_event()</code> — the monitoring service via <code>POST /api/internal/events</code> (auth <code>X-Internal-Key</code> = <code>MONITOR_API_KEY</code>, the reverse direction of the monitoring proxy), and the in-process bus via <code>event_bridge.py</code> (curated <code>user.created</code>/<code>server.deleted</code>/<code>frp.tunnel.created</code>).</li>
+            <li>The <strong>resolver</strong> (<code>service.resolve_recipients()</code>) maps <code>server_id → user_servers → users × subscriptions</code> — <em>least privilege</em>: a non-admin is only notified about servers assigned to them, admins about all; an event without a server reference goes to admins only. Tag scope matches against the server's JSON tags at runtime (deliberately no tag normalization).</li>
+            <li>Per recipient one <code>notification</code> row (bell) plus <code>notification_outbox</code> rows for enabled external channels, provided an address is set. A user's several matching subscriptions collapse into one feed entry with the union of channels.</li>
+            <li>An APScheduler system job (<code>schedule_outbox_drain</code>, every minute) drains the outbox via <code>outbox.drain_outbox()</code> + <code>sender.send_email()</code> (smtplib) out of the request path, with linear backoff up to <code>NOTIFICATION_MAX_ATTEMPTS</code> (default 5), then status <code>failed</code>.</li>
+          </ol>
+          <p>Clients poll <code>GET /api/notifications</code> (own feed, paginated) plus <code>/unread-count</code> and <code>POST /api/notifications/read</code>; personal settings via <code>GET</code>/<code>PUT /api/users/me/notification-prefs</code> (replace-all). There is no server→client push (no WebSocket/SSE) — the desktop bell polls app-wide while a session is active.</p>
 
           <h2>Persistence</h2>
           <p>State splits across two locations:</p>

@@ -127,6 +127,40 @@
           <p><strong>Cooldown:</strong> Nach einem erfolgreich versendeten Alert unterdrückt <code>cooldown_minutes</code> (Default 30) weitere Alerts derselben Regel für denselben Check.</p>
           <p><strong>Recovery:</strong> Geht ein Check zurück auf <code>ok</code>, wird eine Recovery-Benachrichtigung versendet – diese umgeht den Cooldown bewusst, damit die Entwarnung immer ankommt. Jeder Versand wird im Alert-Log mit Erfolg/Fehler protokolliert. Das Alert-Log wird täglich automatisch bereinigt (Retention 90 Tage).</p>
 
+          <h2>Persönliche Benachrichtigungen (Notification-Hub)</h2>
+          <p>Unabhängig von den regelbasierten Alert-Kanälen oben verteilt der <strong>Notification-Hub</strong> Ereignisse <em>pro Benutzer</em>: Jeder Nutzer entscheidet selbst, worüber und wie er benachrichtigt wird. Während die obigen <code>webhook</code>/<code>email</code>-Regeln an <em>feste</em> Ziele senden (z. B. einen Team-Webhook), richtet sich der Hub an die <strong>Personen</strong>, die einem Server zugeordnet sind.</p>
+
+          <h3>Was wird zugestellt</h3>
+          <ul>
+            <li><strong>Glocke</strong> im Desktop-Client (Kopfzeile): ein persönlicher Feed mit Ungelesen-Zähler, der sich automatisch aktualisiert, solange eine Server-Sitzung aktiv ist. Das Öffnen markiert die Einträge als gelesen.</li>
+            <li><strong>Desktop-Benachrichtigungen</strong> (native OS-Hinweise): optional, unter <em>Einstellungen → Benachrichtigungen</em> zu aktivieren (fragt einmalig die System-Berechtigung an).</li>
+            <li><strong>E-Mail</strong>: zusätzlich, wenn in einer Regel aktiviert und eine Kontakt-E-Mail hinterlegt ist.</li>
+          </ul>
+
+          <h3>Eigene Regeln einstellen</h3>
+          <p>Unter <em>Einstellungen → Benachrichtigungen</em> im Desktop-Client legt jeder Nutzer eine Kontakt-E-Mail und beliebig viele Regeln an. Jede Regel besteht aus:</p>
+          <table>
+            <thead><tr><th>Feld</th><th>Bedeutung</th></tr></thead>
+            <tbody>
+              <tr><td>Geltungsbereich</td><td><strong>Alle Server</strong> (alle, die man sehen darf), <strong>Tag</strong> (alle Server mit diesem Tag) oder <strong>Einzelner Server</strong>.</td></tr>
+              <tr><td>Mindest-Schweregrad</td><td>Ab welcher Stufe benachrichtigt wird: <span class="badge badge-success">info</span>, <span class="badge badge-warning">warning</span> oder <span class="badge badge-danger">critical</span>.</td></tr>
+              <tr><td>Kanal</td><td>Die Glocke erhält jeden Treffer; <strong>E-Mail</strong> ist optional zuschaltbar. (Telegram ist im Datenmodell vorbereitet, aber noch nicht in der Oberfläche freigeschaltet.)</td></tr>
+            </tbody>
+          </table>
+          <p>Mehrere Regeln eines Nutzers werden zusammengeführt – ein Ereignis erzeugt genau einen Feed-Eintrag, die Kanäle sind die Vereinigung aller passenden Regeln.</p>
+
+          <h3>Was löst eine Benachrichtigung aus</h3>
+          <ul>
+            <li><strong>Monitoring</strong>: jeder Status<em>wechsel</em> eines Checks (z. B. <code>ok → critical</code> und die Entwarnung zurück). Der Schweregrad eines Übergangs ist der schlimmere der beiden Zustände, damit auch die Entwarnung Abonnenten mit Schwelle „warning" erreicht.</li>
+            <li><strong>Sicherheit</strong>: ein neuer Admin-Benutzer wurde angelegt.</li>
+            <li><strong>Lifecycle</strong>: ein Server wurde aus dem Inventar entfernt, ein FRP-Tunnel wurde angelegt.</li>
+          </ul>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Nur was man sehen darf</div><p>Der Hub stellt einem Nutzer nur Ereignisse zu Servern zu, die er sehen darf – als Admin alle, sonst nur die ihm zugewiesenen (siehe <a href="./benutzer.html">Benutzer &amp; Zugriff</a>). „Alle Server" bedeutet entsprechend „alle für mich sichtbaren Server", nicht das gesamte Inventar.</p></div>
+          </div>
+          <p><strong>E-Mail-Versand:</strong> ausgehende E-Mails werden über einen externen SMTP-Relay zugestellt (<code>SMTP_HOST</code>/<code>SMTP_PORT</code>/<code>SMTP_USER</code>/<code>SMTP_PASSWORD</code>/<code>SMTP_FROM</code>, siehe <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>). Der Versand läuft asynchron über eine Outbox mit automatischem Wiederholversuch (linearer Backoff bis <code>NOTIFICATION_MAX_ATTEMPTS</code>, Default 5); ist kein SMTP-Relay konfiguriert, bleibt die Glocke trotzdem voll funktionsfähig.</p>
+
           <div class="page-nav">
             <a class="prev" href="./agent-deployment.html"><span class="label">← Vorheriges Kapitel</span><span class="title">Agent-Deployment</span></a>
             <a class="next" href="./frp-tunnel.html"><span class="label">Nächstes Kapitel</span><span class="title">FRP-Tunnel →</span></a>
