@@ -8,7 +8,9 @@
 // OS-notification layer can stay decoupled from this store.
 
 import { writable, derived, get } from 'svelte/store';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { sessionStore } from './session';
+import * as bridge from '$lib/bridge';
 import { notificationsApi } from '$lib/api/notifications';
 import type { NotificationItem } from '$lib/api/types';
 
@@ -96,11 +98,27 @@ export function closePanel(): void {
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let unlistenStream: UnlistenFn | null = null;
 
-export function activateNotifications(): void {
+export async function activateNotifications(): Promise<void> {
   void loadFeed();
   if (pollTimer) clearInterval(pollTimer);
+  // Polling stays as a fallback (SSE may be unavailable: no Redis, dead stream).
   pollTimer = setInterval(() => void loadFeed(), POLL_INTERVAL_MS);
+
+  // Live SSE push: a `notification` Tauri event (emitted by the Rust stream
+  // client) means "reload the feed now". We reuse loadFeed instead of merging a
+  // payload, keeping a single source of truth (priming, unread-count, OS-notify).
+  const session = requireSession();
+  if (session) {
+    try {
+      await bridge.startNotificationStream(session.serverUrl, session.token);
+      unlistenStream = await listen('notification', () => void loadFeed());
+    } catch (err) {
+      console.warn('Notification-Stream konnte nicht gestartet werden', err);
+      // The fallback poll keeps the bell working — graceful degradation.
+    }
+  }
 }
 
 export function deactivateNotifications(): void {
@@ -108,6 +126,15 @@ export function deactivateNotifications(): void {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  if (unlistenStream) {
+    try {
+      unlistenStream();
+    } catch {
+      /* ignore */
+    }
+    unlistenStream = null;
+  }
+  void bridge.stopNotificationStream();
   // Reset priming so a different user's backlog does not trigger OS spam.
   lastSeenId = 0;
   primed = false;

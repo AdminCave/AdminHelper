@@ -96,7 +96,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // effect re-runs on login/logout; cleanup stops the timer and resets state.
   $effect(() => {
     if ($session) {
-      activateNotifications();
+      void activateNotifications();
     }
     return () => deactivateNotifications();
   });

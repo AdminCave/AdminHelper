@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Server (Backend)</h1>
-          <p class="lead">A FastAPI monolith: HTTP routers, SQLAlchemy models, APScheduler jobs, and FRP PKI all run in the same process. Separation by module, not by deployment.</p>
+          <p class="lead">A FastAPI monolith: HTTP routers, SQLAlchemy models, APScheduler jobs, and FRP PKI are one code monolith — separation by module, not by deployment. For scaling, the web workers and the scheduler run as separate processes of the <em>same image</em> (see Event Bus &amp; Scheduler).</p>
 
           <h2>Entry Points</h2>
           <table>
@@ -153,7 +153,8 @@ allowUsers = ["ops-admin"]</code></pre>
           </ul>
 
           <h2>Event Bus &amp; Scheduler</h2>
-          <p>APScheduler runs in the same event loop as FastAPI. At startup <code>load_all_scheduled_hooks()</code> registers every active schedule hook; trigger types: predefined intervals (5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h) or cron (5 fields).</p>
+          <p>APScheduler runs in a <strong>dedicated scheduler process</strong> (<code>app.scheduler_main</code>, <code>RUN_MODE=scheduler</code>), <strong>not</strong> in the web workers — otherwise <code>uvicorn --workers N</code> would run every job N times (duplicate outbox e-mails, duplicate hook runs). A single instance owns all system jobs (cleanups, outbox drain) and the periodic hook reconcile. Trigger types: predefined intervals (5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h) or cron (5 fields).</p>
+          <p>Since the web workers have no running scheduler, the hook CRUD routers no longer register jobs directly; they only persist the hook row. The scheduler process reconciles schedule hooks from the DB every 30&nbsp;s (<code>reconcile_scheduled_hooks()</code> — added/changed/removed) and writes <code>next_run</code> back. Multi-worker is enabled via <code>WEB_CONCURRENCY</code> (default 1); Redis is then required for a correct global rate limit, and the DB pool applies per worker (<code>DB_POOL_SIZE</code>/<code>DB_MAX_OVERFLOW</code>).</p>
           <p>The event bus in <code>core/events.py</code> distributes events through a ThreadPoolExecutor (4 workers, fire-and-forget). Active event types:</p>
           <ul>
             <li><code>server.created</code>, <code>server.updated</code>, <code>server.deleted</code></li>
@@ -181,9 +182,10 @@ allowUsers = ["ops-admin"]</code></pre>
             <li><strong>Sources</strong> call <code>service.ingest_event()</code> — the monitoring service via <code>POST /api/internal/events</code> (auth <code>X-Internal-Key</code> = <code>MONITOR_API_KEY</code>, the reverse direction of the monitoring proxy), and the in-process bus via <code>event_bridge.py</code> (curated <code>user.created</code>/<code>server.deleted</code>/<code>frp.tunnel.created</code>).</li>
             <li>The <strong>resolver</strong> (<code>service.resolve_recipients()</code>) maps <code>server_id → user_servers → users × subscriptions</code> — <em>least privilege</em>: a non-admin is only notified about servers assigned to them, admins about all; an event without a server reference goes to admins only. Tag scope matches against the server's JSON tags at runtime (deliberately no tag normalization).</li>
             <li>Per recipient one <code>notification</code> row (bell) plus <code>notification_outbox</code> rows for enabled external channels, provided an address is set. A user's several matching subscriptions collapse into one feed entry with the union of channels.</li>
-            <li>An APScheduler system job (<code>schedule_outbox_drain</code>, every minute) drains the outbox via <code>outbox.drain_outbox()</code> + <code>sender.send_email()</code> (smtplib) out of the request path, with linear backoff up to <code>NOTIFICATION_MAX_ATTEMPTS</code> (default 5), then status <code>failed</code>.</li>
+            <li>An APScheduler system job (<code>schedule_outbox_drain</code>, every minute, in the dedicated scheduler process — see Event Bus &amp; Scheduler above) drains the outbox via <code>outbox.drain_outbox()</code> + <code>sender.send_email()</code> (smtplib) out of the request path, with linear backoff up to <code>NOTIFICATION_MAX_ATTEMPTS</code> (default 5), then status <code>failed</code>.</li>
           </ol>
-          <p>Clients poll <code>GET /api/notifications</code> (own feed, paginated) plus <code>/unread-count</code> and <code>POST /api/notifications/read</code>; personal settings via <code>GET</code>/<code>PUT /api/users/me/notification-prefs</code> (replace-all). There is no server→client push (no WebSocket/SSE) — the desktop bell polls app-wide while a session is active.</p>
+          <p>Clients fetch the feed via <code>GET /api/notifications</code> (own feed, paginated) plus <code>/unread-count</code> and <code>POST /api/notifications/read</code>; personal settings via <code>GET</code>/<code>PUT /api/users/me/notification-prefs</code> (replace-all).</p>
+          <p><strong>Push (SSE):</strong> <code>GET /api/notifications/stream</code> is a long-lived <code>text/event-stream</code>. After <code>ingest_event()</code> commits, the server publishes a lightweight "refresh" signal (<code>stream_hub.publish()</code>) on the Redis channel <code>notif:events</code>; each web worker holds a Redis subscription and delivers it to its locally connected streams of the affected users. The stream handler is <em>async and DB-free</em> (it only reads from an <code>asyncio.Queue</code>) and authenticates with a short-lived session, so an open stream never holds a DB connection for its whole lifetime. The signal carries no content — the client pulls the rows via REST (no second serialization/authorization path). Without <code>REDIS_URL</code> there is no push; the bell falls back to 30&nbsp;s polling. The desktop tunnels the stream through the Rust client (<code>src-tauri/src/notifications.rs</code>) because the WebView can't open an <code>EventSource</code> against the self-signed cert; it emits a <code>notification</code> Tauri event per frame.</p>
 
           <h2>Persistence</h2>
           <p>State splits across two locations:</p>

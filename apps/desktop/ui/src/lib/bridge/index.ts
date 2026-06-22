@@ -229,4 +229,17 @@ export function ansibleLaunch(inventoryPath: string, playbookPath: string): Prom
   return invoke('ansible_launch', { inventoryPath, playbookPath });
 }
 
+// ─────────────────────────── Notifications (SSE) ──────────────────
+
+// Open the long-lived SSE notification stream (tunnelled through Rust because the
+// WebView can't EventSource against the self-signed server). The Rust side emits
+// a `notification` Tauri event whenever a new notification arrives.
+export function startNotificationStream(serverUrl: string, token: string): Promise<void> {
+  return invoke('start_notification_stream', { serverUrl, token });
+}
+
+export function stopNotificationStream(): Promise<void> {
+  return invoke('stop_notification_stream');
+}
+
 export type { Connection, Settings, AuthSession, TunnelStatus, TunnelMapping };

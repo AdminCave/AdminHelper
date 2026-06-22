@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
   fetchFeed: vi.fn(async (..._a: unknown[]) => [] as NotificationItem[]),
   fetchUnreadCount: vi.fn(async (..._a: unknown[]) => ({ count: 0 })),
   markRead: vi.fn(async (..._a: unknown[]) => ({ updated: 0 })),
+  startStream: vi.fn(async (..._a: unknown[]) => {}),
+  stopStream: vi.fn(async () => {}),
+  listen: vi.fn(async (..._a: unknown[]) => () => {}),
 }));
 
 vi.mock('$lib/api/notifications', () => ({
@@ -21,6 +24,11 @@ vi.mock('$lib/api/notifications', () => ({
     markRead: h.markRead,
   },
 }));
+vi.mock('$lib/bridge', () => ({
+  startNotificationStream: h.startStream,
+  stopNotificationStream: h.stopStream,
+}));
+vi.mock('@tauri-apps/api/event', () => ({ listen: h.listen }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
   return {
@@ -43,6 +51,7 @@ import {
   markAllRead,
   unreadCount,
   notificationItems,
+  activateNotifications,
   deactivateNotifications,
   setNewNotificationHandler,
 } from './notifications';
@@ -71,6 +80,10 @@ describe('notifications store', () => {
     h.markRead.mockResolvedValue({ updated: 0 });
     setNewNotificationHandler(null);
     deactivateNotifications(); // resets items + priming state
+    h.startStream.mockClear();
+    h.stopStream.mockClear();
+    h.listen.mockReset();
+    h.listen.mockResolvedValue(() => {});
   });
 
   it('loadFeed populates items and takes the unread count from the endpoint', async () => {
@@ -123,5 +136,30 @@ describe('notifications store', () => {
     await markAllRead();
     expect(get(unreadCount)).toBe(0);
     expect(h.markRead).toHaveBeenCalledWith(expect.anything(), null);
+  });
+
+  it('activate opens the SSE stream and reloads the feed on a notification event', async () => {
+    let pushed: (() => void) | undefined;
+    h.listen.mockImplementation(async (_evt: unknown, cb: unknown) => {
+      pushed = cb as () => void;
+      return () => {};
+    });
+    h.fetchFeed.mockResolvedValue([]);
+
+    await activateNotifications();
+    expect(h.startStream).toHaveBeenCalledWith('https://srv', 'tok');
+    expect(h.listen).toHaveBeenCalledWith('notification', expect.any(Function));
+
+    // A pushed event must reload the feed (single source of truth).
+    h.fetchFeed.mockClear();
+    pushed?.();
+    expect(h.fetchFeed).toHaveBeenCalled();
+  });
+
+  it('deactivate stops the SSE stream', async () => {
+    await activateNotifications();
+    h.stopStream.mockClear();
+    deactivateNotifications();
+    expect(h.stopStream).toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ mod enrollment;
 mod error;
 mod frpc;
 mod models;
+mod notifications;
 mod password;
 mod storage;
 mod sync;
@@ -25,8 +26,8 @@ use commands::{
     fetch_connections_jwt, fetch_tunnels, generate_diagnostics, is_device_enrolled,
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
     password_state, reset_device_identity, reset_server_cert_pin, resolve_connection,
-    save_connections, save_password, save_settings, start_tunnel, stop_tunnel, sync_connections,
-    tunnel_status,
+    save_connections, save_password, save_settings, start_notification_stream, start_tunnel,
+    stop_notification_stream, stop_tunnel, sync_connections, tunnel_status,
 };
 use tauri::Manager;
 
@@ -41,6 +42,8 @@ fn main() {
 
     let frpc_state = frpc::new_frpc_state();
     let frpc_state_exit = frpc_state.clone();
+    let stream_state = notifications::new_stream_state();
+    let stream_state_exit = stream_state.clone();
 
     tauri::Builder::default()
         .plugin(
@@ -63,6 +66,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(frpc_state)
+        .manage(stream_state)
         .setup(|app| {
             // Ensure a concrete runtime window icon in dev and production.
             let icon_bytes = include_bytes!("../icons/icon.png");
@@ -107,13 +111,16 @@ fn main() {
             export_browser_p12,
             ansible_generate_inventory,
             ansible_write_playbook,
-            ansible_launch
+            ansible_launch,
+            start_notification_stream,
+            stop_notification_stream
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |_app, event| {
             if let tauri::RunEvent::Exit = event {
                 let _ = frpc::stop_frpc(&frpc_state_exit);
+                notifications::stop(&stream_state_exit);
             }
         });
 }

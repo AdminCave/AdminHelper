@@ -374,6 +374,25 @@ pub fn tunnel_status(state: State<'_, frpc::FrpcState>) -> TunnelStatus {
 }
 
 #[tauri::command]
+pub async fn start_notification_stream(
+    app: tauri::AppHandle,
+    state: State<'_, crate::notifications::StreamState>,
+    server_url: String,
+    token: String,
+) -> Result<(), AppError> {
+    let allow_self_signed = storage::load_settings(&app)
+        .map(|s| s.allow_self_signed_certs)
+        .unwrap_or(false);
+    let stream_state = state.inner().clone();
+    crate::notifications::start(app, stream_state, server_url, token, allow_self_signed).await
+}
+
+#[tauri::command]
+pub fn stop_notification_stream(state: State<'_, crate::notifications::StreamState>) {
+    crate::notifications::stop(state.inner());
+}
+
+#[tauri::command]
 pub async fn fetch_tunnels(
     app: tauri::AppHandle,
     server_url: String,
