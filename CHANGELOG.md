@@ -43,6 +43,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   überdeckte dabei einen realen Bug. Der Smoke-Test läuft jetzt wie die Desktop-
   `*.live.js`-Journeys **lokal/manuell** (`cd apps/desktop/e2e && xvfb-run -a npm test`).
 
+### Security
+
+- **starlette 1.2.1 → 1.3.1** in server + monitoring (gehashte Lock neu generiert):
+  behebt CVE-2026-54282 und CVE-2026-54283. Vom wöchentlichen Dependency-Audit
+  (`pip-audit`) erkannt; `fastapi` zieht dabei auf `0.138.0` mit (der Auth-Gate-Test
+  ist bereits dafür robust, siehe Changed). `pytest` server (291) + monitoring (138)
+  grün gegen die neuen Versionen, `pip-audit` ohne Befund.
+
 ## [0.37.2] - 2026-06-20
 
 ### Added
