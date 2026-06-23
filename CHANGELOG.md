@@ -55,6 +55,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Sammel-Lücke (TLS-Bypass, Cache-Disclosure, Header-Injection, DoS u.a.). Nicht-
   breaking via `npm audit fix`; `npm audit --audit-level=high` ohne Befund, vitest
   (200 Tests) grün.
+- **quinn-proto 0.11.14 → 0.11.15** im Desktop-Backend (transitiv über `quinn`):
+  behebt RUSTSEC-2026-0185 (Remote Memory Exhaustion durch unbegrenztes
+  Out-of-order-Stream-Reassembly). Patch-Bump via `cargo update -p quinn-proto`
+  (nur diese Crate); `cargo check` grün, vollständige fmt/clippy/test-Prüfung im
+  CI-Rust-Job.
 
 ## [0.37.2] - 2026-06-20
 
