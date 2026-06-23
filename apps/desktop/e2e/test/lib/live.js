@@ -8,6 +8,8 @@
 // (server / server-connection / tunnel) share the `.editor-overlay` container,
 // so modal interactions are scoped to it.
 
+import { execFileSync } from 'node:child_process';
+
 export const SERVER_URL = process.env.AH_SERVER_URL;
 export const USER = process.env.AH_ADMIN_USER;
 export const PASS = process.env.AH_ADMIN_PASS;
@@ -20,6 +22,30 @@ export async function login() {
   await inputs[2].setValue(PASS);
   await browser.keys('Enter');
   await $('.sidebar-nav').waitForExist({ timeout: 20000 });
+}
+
+// Inject one event into the hub from the test runner (Node context, not the
+// webview — the webview can't reach the self-signed gateway). Runs curl with -k;
+// MONITOR_API_KEY comes from the env the orchestration script exports. Returns
+// the parsed { notified: N } so a spec can assert the admin was a recipient.
+export function injectEvent(title, severity = 'critical') {
+  const out = execFileSync(
+    'curl',
+    [
+      '-sk',
+      '-X',
+      'POST',
+      `${SERVER_URL}/api/internal/events`,
+      '-H',
+      `X-Internal-Key: ${process.env.MONITOR_API_KEY}`,
+      '-H',
+      'Content-Type: application/json',
+      '-d',
+      JSON.stringify({ event_type: 'e2e.sse.push', severity, category: 'monitoring', title }),
+    ],
+    { encoding: 'utf8' },
+  );
+  return JSON.parse(out);
 }
 
 export async function gotoInfrastructure() {

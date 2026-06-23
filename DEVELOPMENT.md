@@ -343,6 +343,10 @@ bash scripts/tests/desktop_e2e_connect_tunnel.sh
 # A empfaengt den Push (beweist den Multi-Worker-Redis-Pfad). Braucht das
 # Server-venv (VENV=..., Default /tmp/ah-venv).
 bash scripts/tests/sse_push_e2e.sh
+
+# Desktop-Live-E2E: SSE-Push in der echten GUI. Event injizieren -> die Glocke
+# aktualisiert sich in Echtzeit (Badge erscheint << 30s-Poll = beweist Push).
+bash scripts/tests/desktop_e2e_sse_push.sh
 ```
 
 Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`
