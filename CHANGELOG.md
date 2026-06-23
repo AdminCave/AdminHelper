@@ -50,6 +50,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   (`pip-audit`) erkannt; `fastapi` zieht dabei auf `0.138.0` mit (der Auth-Gate-Test
   ist bereits dafür robust, siehe Changed). `pytest` server (291) + monitoring (138)
   grün gegen die neuen Versionen, `pip-audit` ohne Befund.
+- **undici 7.27.1 → 7.28.0** in `apps/desktop/ui` (transitiv über `jsdom`, eine
+  Dev/Test-Abhängigkeit — nicht im Production-Bundle): behebt eine high-severity
+  Sammel-Lücke (TLS-Bypass, Cache-Disclosure, Header-Injection, DoS u.a.). Nicht-
+  breaking via `npm audit fix`; `npm audit --audit-level=high` ohne Befund, vitest
+  (200 Tests) grün.
 
 ## [0.37.2] - 2026-06-20
 
