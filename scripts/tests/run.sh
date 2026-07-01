@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+#
+# run.sh — single-entry test aggregator for AdminHelper.
+#
+# One command that crabbox (or a dev) runs on a real Linux box. It mirrors the
+# per-component commands in .github/workflows/ci.yml and delegates the heavy
+# docker/display suites to the existing scripts/tests/*.sh (which self-SKIP when
+# their deps are missing). Every step is dependency-gated, so the SAME command
+# degrades gracefully on a bare box and runs fully on a hydrated crabbox box
+# (see scripts/tests/crabbox_bootstrap.sh).
+#
+# Usage:
+#   bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]
+#     lint         ruff + gofmt + shellcheck            (fast, no stack)
+#     unit         all language unit suites             (no docker/display needed;
+#                                                         server pytest needs docker/DATABASE_URL)
+#     quick        lint + unit                          (default)
+#     integration  docker-backed integration/e2e-stack  (needs docker; opt-in)
+#     e2e          desktop GUI + web Playwright          (needs docker + display; opt-in)
+#     all          everything                            (opt-in)
+#
+# The heavy layers (integration|e2e|all) refuse to run unless AH_ALLOW_REAL=1,
+# so they never fire by accident on a dev box. The crabbox /test skill sets it.
+#
+# Exit code: non-zero if any step FAILED (SKIPs never fail the run).
+
+set -uo pipefail
+
+LAYER="${1:-quick}"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT" || exit 1
+
+# Ubuntu 24.04 python is externally managed (PEP 668); ephemeral boxes are fine
+# to install into directly. Harmless elsewhere.
+export PIP_BREAK_SYSTEM_PACKAGES=1
+
+PASS=0 FAIL=0 SKIP=0
+FAILED_STEPS=()
+hdr()  { printf '\n\033[1m### %s\033[0m\n' "$*"; }
+pass() { echo   "  PASS  $*"; PASS=$((PASS+1)); }
+fail() { echo   "  FAIL  $*"; FAIL=$((FAIL+1)); FAILED_STEPS+=("$1"); }
+skip() { echo   "  SKIP  $* ($2)"; SKIP=$((SKIP+1)); }
+
+# run_step <name> -- <command...>   : run, classify by exit code
+run_step() { local name="$1"; shift; [ "$1" = "--" ] && shift
+  hdr "$name"; if ( "$@" ); then pass "$name"; else fail "$name"; fi; }
+
+have()        { command -v "$1" >/dev/null 2>&1; }
+have_docker() { have docker && docker info >/dev/null 2>&1; }
+have_compose(){ docker compose version >/dev/null 2>&1; }
+have_node()   { have node && have npm; }
+have_display(){ have xvfb-run && have WebKitWebDriver && have tauri-driver; }
+FRPC_SIDECAR="apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
+
+require_real() {
+  if [ "${AH_ALLOW_REAL:-0}" != "1" ]; then
+    echo "REFUSED: layer '$LAYER' runs real docker/GUI suites. Set AH_ALLOW_REAL=1 to proceed"
+    echo "         (the crabbox /test skill sets it automatically on the leased box)."
+    exit 2
+  fi
+}
+
+# ── lint ─────────────────────────────────────────────────────────────────────
+layer_lint() {
+  if have ruff; then
+    run_step "ruff check"        -- ruff check apps/server apps/monitoring
+    run_step "ruff format check" -- ruff format --check apps/server apps/monitoring
+  else skip "ruff" "ruff not installed"; fi
+
+  if have gofmt; then
+    run_step "gofmt (agent)" -- bash -c 'u=$(cd apps/agent && gofmt -l .); [ -z "$u" ] || { echo "unformatted:"; echo "$u"; exit 1; }'
+  else skip "gofmt" "go not installed"; fi
+
+  if have shellcheck; then
+    run_step "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh
+  else skip "shellcheck" "shellcheck not installed"; fi
+}
+
+# ── unit ─────────────────────────────────────────────────────────────────────
+layer_unit() {
+  # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
+  if have python3; then
+    run_step "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements.in pytest pytest-cov && python3 -m pytest -q'
+  else skip "monitoring pytest" "python3 not installed"; fi
+
+  # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
+  if have python3 && [ -d apps/ca-issuer/tests ]; then
+    run_step "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements.in pytest 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q'
+  else skip "ca-issuer pytest" "python3 missing or no tests"; fi
+
+  # Server pytest — needs a Postgres: testcontainers (docker) or an injected DATABASE_URL.
+  if have python3 && { [ -n "${DATABASE_URL:-}" ] || have_docker; }; then
+    run_step "server pytest" -- bash -c 'cd apps/server && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q'
+  else skip "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
+
+  # Go agent — fmt + vet + test + cross-compile (matches CI).
+  if have go; then
+    run_step "go agent (vet+test+cross)" -- bash -c '
+      cd apps/agent &&
+      go vet ./... &&
+      go test -cover ./... &&
+      GOOS=linux   GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent &&
+      GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent'
+  else skip "go agent" "go not installed"; fi
+
+  # Rust/Tauri backend — needs tauri system libs + the frpc sidecar (externalBin).
+  if have cargo && [ -f "$FRPC_SIDECAR" ]; then
+    run_step "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test'
+  else skip "cargo test (desktop)" "cargo or frpc sidecar ($FRPC_SIDECAR) missing"; fi
+
+  # Desktop UI (Svelte) — check + lint + vitest.
+  if have_node; then
+    run_step "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm ci --no-audit --no-fund && npm run check && npm run lint && npm run test'
+  else skip "desktop-ui vitest" "node/npm not installed"; fi
+
+  # Web frontend — check + lint + vitest unit.
+  if have_node; then
+    run_step "web vitest" -- bash -c 'cd apps/web && npm ci --no-audit --no-fund && npm run check && npm run lint && npm run test:unit'
+  else skip "web vitest" "node/npm not installed"; fi
+}
+
+# ── integration (docker) ──────────────────────────────────────────────────────
+layer_integration() {
+  require_real
+  if ! have_docker || ! have_compose; then
+    skip "integration suite" "docker + compose v2 required"; return
+  fi
+  run_step "integration_stack (mTLS gateway)" -- bash scripts/tests/integration_stack_test.sh
+  run_step "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
+  run_step "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
+  run_step "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
+  # Hermetic (no docker) but cheap and valuable to keep green here too.
+  run_step "update.sh sandbox"                -- bash scripts/tests/update_test.sh
+  run_step "diagnostics.sh redaction"         -- bash scripts/tests/diagnostics_test.sh
+}
+
+# ── e2e (docker + display) ─────────────────────────────────────────────────────
+layer_e2e() {
+  require_real
+  if have_node; then
+    run_step "web Playwright E2E" -- bash -c 'cd apps/web && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium && npx playwright test'
+  else skip "web Playwright" "node not installed"; fi
+
+  if ! have_docker || ! have_display; then
+    skip "desktop GUI E2E" "docker + xvfb + WebKitWebDriver + tauri-driver required"; return
+  fi
+  local s
+  for s in desktop_e2e_live desktop_e2e_crud desktop_e2e_connect desktop_e2e_connect_tunnel \
+           desktop_e2e_tunnel desktop_e2e_monitoring desktop_e2e_sse_push; do
+    run_step "$s" -- bash "scripts/tests/$s.sh"
+  done
+}
+
+echo "AdminHelper test aggregator — layer=$LAYER  root=$ROOT"
+echo "docker=$(have_docker && echo yes || echo no) node=$(have_node && echo yes || echo no) go=$(have go && echo yes || echo no) cargo=$(have cargo && echo yes || echo no) display=$(have_display && echo yes || echo no)"
+
+case "$LAYER" in
+  lint)        layer_lint ;;
+  unit)        layer_unit ;;
+  quick)       layer_lint; layer_unit ;;
+  integration) layer_integration ;;
+  e2e)         layer_e2e ;;
+  all)         require_real; layer_lint; layer_unit; layer_integration; layer_e2e ;;
+  *) echo "unknown layer: $LAYER (use lint|unit|quick|integration|e2e|all)"; exit 2 ;;
+esac
+
+echo ""
+echo "──────────────────────────────────────────────"
+echo "  run.sh[$LAYER]: $PASS passed, $FAIL failed, $SKIP skipped"
+[ "$FAIL" -gt 0 ] && { printf '  failed: %s\n' "${FAILED_STEPS[*]}"; exit 1; }
+exit 0

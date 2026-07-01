@@ -51,6 +51,15 @@ Desktop.ini
 # so the secret-bearing local file stays ignored even if .claude/ is relaxed.
 .claude/
 .claude/settings.local.json
+
+# crabbox local failure-capture bundles (0700, not fully redacted — never commit)
+.crabbox/
+
+# Agent build output produced at the repo root by apps/agent/build-deb.sh /
+# build-rpm.sh (and the frpc binary staged there by the crabbox agent role).
+/frpc
+/build-deb/
+/build-rpm/
 *.swp
 *.swo
 *~

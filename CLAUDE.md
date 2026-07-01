@@ -137,7 +137,9 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
   schweren Integrations-/Live-Tests (`scripts/tests/integration_stack_test.sh`,
   `desktop_e2e_live.sh`, `desktop_e2e_tunnel.sh`) laufen lokal/manuell (nicht im
   PR-CI) — bei Änderungen am jeweiligen Pfad (Gateway/Server-API bzw.
-  Desktop-Connect/Tunnel/Enrollment) ausführen und das Ergebnis berichten.
+  Desktop-Connect/Tunnel/Enrollment) ausführen und das Ergebnis berichten. Die
+  Dev-Box hat kein Docker/Display — dafür gibt es **crabbox** (siehe Abschnitt
+  „Testing auf crabbox").
 - **CI-Jobs nach dem Auslösen immer überwachen.** Sobald ein Push oder ein
   Release-Tag CI-Workflows triggert, die Läufe bis zum Abschluss verfolgen
   (`gh run watch`), das Ergebnis berichten und transiente Fehler (z. B.
@@ -225,3 +227,37 @@ Regeln:
 - **Wenn eine Doku-Aussage nicht mehr stimmt: korrigieren**, auch wenn
   sie nicht direkter Teil deiner Änderung ist. Ausnahme zur
   Surgical-Changes-Regel — falsche Doku ist ein Bug.
+
+## Testing auf crabbox (schwere Suites)
+
+Die schnellen Unit-/Lint-Suites laufen überall (und im GitHub-CI). Der **schwere
+Tier** — die reale docker-compose-Stack-Integration, mTLS-Enrollment, Redis-SSE-
+Fan-out, Agent-Monitoring, apt/rpm-Repo-Bau und die Desktop-GUI-E2E — braucht
+echtes Linux mit **Docker + Display**, was die Sandbox-Dev-Box nicht hat.
+**crabbox** least dafür eine ephemere Proxmox-VM (Provider-Env in
+`.claude/settings.json`; das Token-Secret nur im gitignored
+`.claude/settings.local.json`; prüfen mit `crabbox doctor`).
+
+- **Ein Sammel-Runner** bündelt alles:
+  `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]`.
+  `quick` (Default) = lint + unit; `integration`/`e2e`/`all` fahren echte
+  Docker-/GUI-Suites und **verweigern ohne `AH_ALLOW_REAL=1`** (Schutz vor
+  versehentlichen Läufen). Jeder Schritt ist dep-gated und skippt sauber, wenn
+  ein Toolchain fehlt; am Ende `N passed, M failed, K skipped` (Exit ≠ 0 bei Fail).
+- **Box-Lifecycle** (warm once → Slug wiederverwenden → stoppen):
+  `crabbox warmup` → `crabbox run --id <slug> -- 'bash scripts/tests/crabbox_bootstrap.sh'`
+  (hydriert docker/go/rust/node/xvfb/tauri-driver/frpc) →
+  `crabbox run --id <slug> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh integration'`
+  → `crabbox stop --id <slug>`. Fehler-Bundles landen lokal in `.crabbox/captures/`
+  (gitignored). Details/Regeln: die `/test`-Skill (`.claude/skills/test/SKILL.md`).
+- **Multi-Box (verteilt):** `bash scripts/tests/crabbox_multibox.sh --agents N`
+  least eine Server-Box (voller Stack) + Agent-Box(en) auf derselben Bridge
+  (`vmbr1`) und provisioniert das echte `.deb` über einen echten Netz-Hop —
+  Cross-Host-mTLS, echte Paketinstallation, die `:8445`-Repo-Plane. Leases werden
+  beim Exit gestoppt (`--keep` zum Inspizieren).
+- **crabbox ist NICHT der PR-CI.** Unit/Lint/Build-Gates bleiben in
+  `.github/workflows/ci.yml`; crabbox ist der lokal/agent-getriebene Pfad für den
+  schweren Tier auf echtem Linux. Erlaubt (auto): `warmup/run/status/list/connect/
+  ssh/doctor/stop/cleanup`; `prewarm/job` provisionieren/kosten → vorher fragen.
+  **Nie „grün" melden, ohne dass die Suite real bestanden hat** — die
+  `run.sh`-Summary-Zeile zählt; SKIP heißt „nicht verifiziert", nicht „ok".
