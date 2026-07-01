@@ -45,7 +45,12 @@ ehthumbs.db
 Desktop.ini
 .idea/
 .vscode/
+
+# Claude Code — never commit local settings/secrets (this repo is PUBLIC!).
+# .claude/ already excludes everything; the explicit second line is a guardrail
+# so the secret-bearing local file stays ignored even if .claude/ is relaxed.
 .claude/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
