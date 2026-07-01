@@ -3,9 +3,9 @@ Version:        __VERSION__
 Release:        1%{?dist}
 Summary:        AdminHelper Agent — FRPC Sync + Monitoring
 License:        GPL-3.0-or-later
-URL:            https://adminhelper.de
-Vendor:         Kevin Stenzel <kevin@ks98.de>
-Packager:       Kevin Stenzel <kevin@ks98.de>
+URL:            https://admincave.com
+Vendor:         Admin Cave <packages@admincave.com>
+Packager:       Admin Cave <packages@admincave.com>
 
 Source0:        %{name}-%{version}.tar.gz
 

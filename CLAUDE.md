@@ -2,7 +2,7 @@
 
 ## Projekt-Überblick
 
-**AdminHelper** (GitHub-Repo `ks98/AdminHelper`) ist ein Multi-Komponenten-Remote-
+**AdminHelper** (GitHub-Repo `AdminCave/AdminHelper`, Teil von **[Admin Cave](https://admincave.com)**) ist ein Multi-Komponenten-Remote-
 Management-System: zentrale Verwaltung von SSH-/RDP-/Web-Verbindungen,
 Server-Inventar, Monitoring, FRP-Tunneln und Ansible-Playbooks. Fünf
 Code-Komponenten in vier Sprachen:

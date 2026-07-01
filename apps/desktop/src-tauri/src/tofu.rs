@@ -35,7 +35,7 @@ use url::Url;
 use crate::error::AppError;
 
 /// Keyring service shared with `auth.rs` / `password.rs`.
-const KEYRING_SERVICE: &str = "com.adminhelper.app";
+const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
 
 // ── Pure logic (unit-tested) ──────────────────────────────────────────
 

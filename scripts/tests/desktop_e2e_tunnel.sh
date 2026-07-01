@@ -56,8 +56,8 @@ ENROLL_TOKEN=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --usern
 
 # ── Isolated app config: server mode + trust the stack's self-signed cert ─────
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
-mkdir -p "$XDG_DATA_HOME/com.adminhelper.app"
-echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.adminhelper.app/settings.json"
+mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
+echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 
 # ── Drive the GUI: enroll (setup) → login → auto-start the tunnel ────────────
 echo "[e2e-tunnel] running the tunnel-start spec under xvfb..."

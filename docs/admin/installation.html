@@ -56,7 +56,7 @@
         </div>
         <div class="topbar-right">
           <div class="lang-switch" role="group" aria-label="Sprache"><a href="./installation.html" class="is-active">DE</a><a href="../en/admin/installation.html">EN</a></div>
-          <a class="btn btn-ghost btn-sm" href="https://github.com/ks98/AdminHelper" rel="noopener">GitHub</a>
+          <a class="btn btn-ghost btn-sm" href="https://github.com/AdminCave/AdminHelper" rel="noopener">GitHub</a>
         </div>
       </header>
 
@@ -90,7 +90,7 @@
           <h2 id="schnell-install">Schnell-Install (ein Befehl)</h2>
           <p>Der Installer lädt <strong>nur die Laufzeit-Dateien</strong> (die selbstgenügsame <code>docker-compose.yml</code> + ein paar Ops-Skripte, <em>nicht</em> den Quellbaum), fährt den Stack hoch, legt den Erst-Admin samt einmaligem Enrollment-Token an und lässt mTLS <strong>per Default erzwungen</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.34.0/scripts/install.sh \
+<pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.34.0/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installiert das neueste Release; gezielt pinnen mit --ref vX.Y.Z.
 # fragt das Admin-Passwort ab. Non-interaktiv: --admin-password … --yes.
@@ -103,7 +103,7 @@
           <p>Die offizielle <code>docker-compose.yml</code> liegt im Repository-Root. Für einen schnellen Test reicht:</p>
 
           <div class="code-header"><span>bash</span></div>
-<pre><code>git clone https://github.com/ks98/AdminHelper.git
+<pre><code>git clone https://github.com/AdminCave/AdminHelper.git
 cd AdminHelper
 
 cp .env.example .env

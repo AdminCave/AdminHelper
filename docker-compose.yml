@@ -32,7 +32,7 @@ services:
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
 
   server:
-    image: ${SERVER_IMAGE:-ghcr.io/ks98/adminhelper/server:latest}
+    image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
     # No host port: the server listens plain-HTTP on the compose network only.
     # The gateway is the single public TLS edge and proxies to server:8080. This
     # is what makes the gateway's X-Client-* identity header unforgeable — there
@@ -107,7 +107,7 @@ services:
   # (outbox drain, cleanups, scheduled-hook reconcile) run exactly once even with
   # WEB_CONCURRENCY > 1. Do NOT scale this service beyond one replica.
   scheduler:
-    image: ${SERVER_IMAGE:-ghcr.io/ks98/adminhelper/server:latest}
+    image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
     environment:
       - RUN_MODE=scheduler
       - TZ=${TZ:-Europe/Berlin}
@@ -141,7 +141,7 @@ services:
         condition: service_started
 
   gateway:
-    image: ${GATEWAY_IMAGE:-ghcr.io/ks98/adminhelper/gateway:latest}
+    image: ${GATEWAY_IMAGE:-ghcr.io/admincave/adminhelper/gateway:latest}
     # The single public TLS/mTLS edge for the HTTP planes (ADR 0001 D11).
     #   :443   data plane  -> server  (permissive mTLS this phase; CERT_REQUIRED in A8)
     #   :8444  enroll plane -> ca-issuer (certless, token-gated)
@@ -173,7 +173,7 @@ services:
         condition: service_started
 
   ca-issuer:
-    image: ${CA_ISSUER_IMAGE:-ghcr.io/ks98/adminhelper/ca-issuer:latest}
+    image: ${CA_ISSUER_IMAGE:-ghcr.io/admincave/adminhelper/ca-issuer:latest}
     # Internal-only PKI plane: the single signing capability (D6). Reachable only
     # via the gateway's enroll listener; never from the host (no port mapping).
     expose:
@@ -247,7 +247,7 @@ services:
         condition: service_healthy
 
   monitoring:
-    image: ${MONITORING_IMAGE:-ghcr.io/ks98/adminhelper/monitoring:latest}
+    image: ${MONITORING_IMAGE:-ghcr.io/admincave/adminhelper/monitoring:latest}
     # Internal-only (like postgres/redis/victoria): agents push metrics via the
     # server's public 443 proxy at /api/monitoring/agent/{id}/report, so the
     # monitoring admin API + /docs are never reachable directly from the host.

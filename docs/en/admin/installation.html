@@ -24,7 +24,7 @@
 
       <header class="topbar">
         <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Installation</span></nav></div>
-        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/installation.html">DE</a><a href="./installation.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/ks98/AdminHelper" rel="noopener">GitHub</a></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/installation.html">DE</a><a href="./installation.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/AdminCave/AdminHelper" rel="noopener">GitHub</a></div>
       </header>
 
       <main class="content">
@@ -67,7 +67,7 @@
           <h2 id="quick-install">Quick install (one command)</h2>
           <p>The installer fetches <strong>only the runtime files</strong> (the self-contained <code>docker-compose.yml</code> + a few ops scripts, <em>not</em> the source tree), brings up the stack, creates the first admin with a one-time enrollment token, and leaves mTLS <strong>enforced by default</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.34.0/scripts/install.sh \
+<pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.34.0/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installs the latest release; pin a specific one with --ref vX.Y.Z.
 # prompts for the admin password. Non-interactive: --admin-password … --yes.
@@ -80,7 +80,7 @@
           <p>The official <code>docker-compose.yml</code> lives in the repository root. For a quick test this is enough:</p>
 
           <div class="code-header"><span>bash</span></div>
-<pre><code>git clone https://github.com/ks98/AdminHelper.git
+<pre><code>git clone https://github.com/AdminCave/AdminHelper.git
 cd AdminHelper
 
 cp .env.example .env

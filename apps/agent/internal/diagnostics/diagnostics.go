@@ -74,7 +74,7 @@ func Run(version string) error {
 
 	fmt.Printf("Diagnose-Bericht erstellt: %s\n", out)
 	fmt.Println("Bitte vor dem Senden durchsehen (Redaction ist Best-effort) und an ein")
-	fmt.Println("GitHub-Issue anhaengen: https://github.com/ks98/AdminHelper/issues/new/choose")
+	fmt.Println("GitHub-Issue anhaengen: https://github.com/AdminCave/AdminHelper/issues/new/choose")
 	return nil
 }
 

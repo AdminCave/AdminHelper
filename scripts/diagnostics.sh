@@ -140,7 +140,7 @@ main() {
     echo "[diagnostics] Bundle erstellt: $archive"
     echo "[diagnostics] Inhalt: report.txt, compose.yml, env.sanitized, logs/"
     echo "[diagnostics] WICHTIG: vor dem Senden kurz durchsehen (Redaction ist Best-effort)."
-    echo "[diagnostics] Dann an ein GitHub-Issue anhaengen: https://github.com/ks98/AdminHelper/issues/new/choose"
+    echo "[diagnostics] Dann an ein GitHub-Issue anhaengen: https://github.com/AdminCave/AdminHelper/issues/new/choose"
 }
 
 # Only run main when executed directly — sourcing (e.g. the test) just loads the

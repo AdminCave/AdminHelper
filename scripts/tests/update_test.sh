@@ -18,7 +18,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
 REAL_UPDATE="$REPO_ROOT/scripts/update.sh"
-REPO="ks98/AdminHelper"
+REPO="AdminCave/AdminHelper"
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -78,7 +78,7 @@ make_src() {
   chmod +x "$dir"/scripts/*.sh
   printf '# fixture-compose marker: %s\nservices: {}\n' "$ver" > "$dir/docker-compose.yml"
   {
-    printf 'SERVER_IMAGE=ghcr.io/ks98/adminhelper/server:latest\n'
+    printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:latest\n'
     printf 'DOMAIN=localhost\n'
     [ "$ver" = "0.34.0" ] && printf 'NEW_FEATURE_FLAG=on\n'
   } > "$dir/.env.example"
@@ -112,10 +112,10 @@ make_install() {
   cp "$src"/scripts/*.sh "$dir/scripts/"
   chmod +x "$dir"/scripts/*.sh
   {
-    printf 'SERVER_IMAGE=ghcr.io/ks98/adminhelper/server:%s\n' "$ver"
-    printf 'GATEWAY_IMAGE=ghcr.io/ks98/adminhelper/gateway:%s\n' "$ver"
-    printf 'CA_ISSUER_IMAGE=ghcr.io/ks98/adminhelper/ca-issuer:%s\n' "$ver"
-    printf 'MONITORING_IMAGE=ghcr.io/ks98/adminhelper/monitoring:%s\n' "$ver"
+    printf 'SERVER_IMAGE=ghcr.io/admincave/adminhelper/server:%s\n' "$ver"
+    printf 'GATEWAY_IMAGE=ghcr.io/admincave/adminhelper/gateway:%s\n' "$ver"
+    printf 'CA_ISSUER_IMAGE=ghcr.io/admincave/adminhelper/ca-issuer:%s\n' "$ver"
+    printf 'MONITORING_IMAGE=ghcr.io/admincave/adminhelper/monitoring:%s\n' "$ver"
     printf 'DOMAIN=localhost\nSECRET_KEY=already-set\nMONITOR_API_KEY=already-set\n'
     printf 'POSTGRES_PASSWORD=already-set\nCA_ROOT_PASSPHRASE=already-set\n'
   } > "$dir/.env"

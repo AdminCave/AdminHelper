@@ -24,7 +24,7 @@
 
       <header class="topbar">
         <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Pfad"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Entwickler</a><span class="sep">/</span><span class="current">CI/CD &amp; Release</span></nav></div>
-        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./cicd.html" class="is-active">DE</a><a href="../en/developer/cicd.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/ks98/AdminHelper" rel="noopener">GitHub</a></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Sprache"><a href="./cicd.html" class="is-active">DE</a><a href="../en/developer/cicd.html">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/AdminCave/AdminHelper" rel="noopener">GitHub</a></div>
       </header>
 
       <main class="content">
@@ -38,7 +38,7 @@
             <thead><tr><th>Workflow</th><th>Aufgabe</th></tr></thead>
             <tbody>
               <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo check</code> auf Windows, <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>). Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate). Auf <code>main</code>-Pushes + manuell (bewusst noch kein PR-Gate, da Image-Build + 5-Container-Boot): ein From-outside-Integrationstest (<code>scripts/tests/integration_stack_test.sh</code>), der den echten Stack mit erzwungenem mTLS hochf&auml;hrt und nur &uuml;ber das nginx-Gateway den vollen Pfad pr&uuml;ft &ndash; Enrollment-Token, CSR&nbsp;&rarr;&nbsp;Enroll-Plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;Client-Cert, certless&nbsp;&rarr;&nbsp;abgewiesen, Cert+JWT&nbsp;&rarr;&nbsp;200. Der Desktop-E2E (WebdriverIO + <code>tauri-driver</code> unter <code>xvfb</code>, <code>apps/desktop/e2e/</code>) l&auml;uft <strong>bewusst nicht in CI</strong>, sondern lokal/manuell (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): die headless-WebKit-Kette (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) driftet mit Runner-Image + ungepinnten Upstream-Tools und f&auml;rbte <code>main</code> rot ohne echten Defekt</td></tr>
-              <tr><td><code>docker.yml</code></td><td>Server- + Monitoring-Image bauen &amp; nach <code>ghcr.io/ks98/adminhelper/{server,monitoring}</code> pushen; jeden Digest schlüssellos mit cosign signieren (+ SLSA-Provenance/SBOM)</td></tr>
+              <tr><td><code>docker.yml</code></td><td>Server- + Monitoring-Image bauen &amp; nach <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code> pushen; jeden Digest schlüssellos mit cosign signieren (+ SLSA-Provenance/SBOM)</td></tr>
               <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), <code>SHA256SUMS</code> (+ minisign-Signatur), Draft-Release</td></tr>
               <tr><td><code>audit.yml</code></td><td>W&ouml;chentlicher Dependency-Audit (Montag fr&uuml;h, auch manuell per <code>workflow_dispatch</code>): <code>pip-audit</code> (Server- + Monitoring-Locks), <code>cargo audit</code> (Desktop), <code>govulncheck</code> (Agent), <code>npm audit</code> (Web + Desktop-UI)</td></tr>
             </tbody>
@@ -58,11 +58,11 @@
           <h2>Container-Images (ghcr.io)</h2>
           <p>Getaggt wird über <code>docker/metadata-action</code>. <code>:latest</code> entsteht nur auf einem (Nicht-Prerelease-)Semver-Tag &ndash; nicht bei jedem <code>main</code>-Push:</p>
           <div class="code-header"><span>text</span></div>
-<pre><code>ghcr.io/ks98/adminhelper/server:0.24.0      # Release-Tag
-ghcr.io/ks98/adminhelper/server:latest      # letzter Semver-Release
-ghcr.io/ks98/adminhelper/server:main        # letzter main-Build
-ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
-# analog: ghcr.io/ks98/adminhelper/monitoring:&hellip;</code></pre>
+<pre><code>ghcr.io/admincave/adminhelper/server:0.24.0      # Release-Tag
+ghcr.io/admincave/adminhelper/server:latest      # letzter Semver-Release
+ghcr.io/admincave/adminhelper/server:main        # letzter main-Build
+ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
+# analog: ghcr.io/admincave/adminhelper/monitoring:&hellip;</code></pre>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
@@ -84,8 +84,8 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
           <p>Die <code>curl|bash</code>-Installation/-Updates sollen <strong>Authentizität</strong> belegen, nicht nur Transport-Integrität (Bundle und <code>SHA256SUMS</code> kommen sonst aus derselben Quelle). Zwei Mechanismen:</p>
           <ul>
             <li><strong>Container-Images:</strong> <code>docker.yml</code> signiert jeden gepushten Image-Digest <em>schlüssellos</em> mit cosign (GitHub-OIDC, kein privater Schlüssel) und hängt SLSA-Provenance (<code>mode=max</code>) + SBOM an. Prüfen:
-<pre><code>cosign verify ghcr.io/ks98/adminhelper/server \
-  --certificate-identity-regexp 'https://github.com/ks98/AdminHelper/.*' \
+<pre><code>cosign verify ghcr.io/admincave/adminhelper/server \
+  --certificate-identity-regexp 'https://github.com/AdminCave/AdminHelper/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre></li>
             <li><strong>Release-Assets:</strong> <code>release.yml</code> signiert <code>SHA256SUMS</code> mit minisign zu <code>SHA256SUMS.minisig</code>. <code>install.sh</code>/<code>update.sh</code> verifizieren diese Signatur gegen einen im Skript gepinnten Public Key, <em>bevor</em> sie den Checksummen vertrauen (fail-closed).</li>
           </ul>
@@ -108,7 +108,7 @@ ghcr.io/ks98/adminhelper/server:sha-abc1234 # pro Commit
             <p>Ohne konfigurierten Schl&uuml;ssel &uuml;berspringt <code>release.yml</code> das Repo-Asset (mit Warnung) und <code>/repo</code> liefert <code>404</code> &ndash; kein Bruch. Zum Aktivieren einen <strong>passwortlosen</strong> GPG-Schl&uuml;ssel erzeugen:</p>
 <pre><code># 1) Passwortlosen Signaturschluessel erzeugen
 gpg --batch --passphrase '' \
-    --quick-generate-key "AdminHelper Repo &lt;repo@adminhelper.de&gt;" rsa3072 sign 0
+    --quick-generate-key "AdminHelper Repo &lt;repo@admincave.com&gt;" rsa3072 sign 0
 
 # 2) Geheimen Schluessel base64-kodiert als GitHub-Actions-Secret hinterlegen
 #    (eine Zeile, paste-sicher):

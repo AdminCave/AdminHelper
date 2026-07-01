@@ -26,7 +26,7 @@ use url::Url;
 use crate::error::AppError;
 
 /// Keyring service shared with `auth.rs` / `tofu.rs`.
-const KEYRING_SERVICE: &str = "com.adminhelper.app";
+const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
 // `build_client` can load the identity without an AppHandle.

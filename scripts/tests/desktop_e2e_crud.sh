@@ -36,8 +36,8 @@ e2e_api "$TOKEN" config e2e-frps localhost 7000 >/dev/null || { bad "seed FRP co
 ok "seeded a server + FRP config"
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
-mkdir -p "$XDG_DATA_HOME/com.adminhelper.app"
-echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.adminhelper.app/settings.json"
+mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
+echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 
 echo "[e2e-crud] running the CRUD specs under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR

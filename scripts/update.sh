@@ -33,14 +33,14 @@
 
 set -euo pipefail
 
-REPO="ks98/AdminHelper"
+REPO="AdminCave/AdminHelper"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
 # minisign public key (the "RW..." line of minisign.pub) to verify the release
 # SHA256SUMS signature — authenticity, not just transport integrity. Keep in
 # sync with scripts/install.sh. Empty = not yet armed (warn + checksum-only);
 # once set, a missing/invalid signature aborts the update.
-MINISIGN_PUBKEY="RWQu3dhz3TGs1jHQF76VmMaQ8aEi/ZioWvSE1fZ/UUFUC1QxeVzCB1I7"
+MINISIGN_PUBKEY="RWR+rA5KO76WPImov98pKU82P3SEvPRSkue9x8AgV5Hml4PQXY5Totzp"
 
 REF=""
 REDEPLOY=0
@@ -322,10 +322,10 @@ fi
 ./scripts/init-secrets.sh >/dev/null
 
 # Re-pin the image tags to the target version (vX.Y.Z -> :X.Y.Z).
-upsert_env SERVER_IMAGE     "ghcr.io/ks98/adminhelper/server:${TARGET_VER}"
-upsert_env GATEWAY_IMAGE    "ghcr.io/ks98/adminhelper/gateway:${TARGET_VER}"
-upsert_env CA_ISSUER_IMAGE  "ghcr.io/ks98/adminhelper/ca-issuer:${TARGET_VER}"
-upsert_env MONITORING_IMAGE "ghcr.io/ks98/adminhelper/monitoring:${TARGET_VER}"
+upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${TARGET_VER}"
+upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${TARGET_VER}"
+upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${TARGET_VER}"
+upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${TARGET_VER}"
 chmod 600 .env 2>/dev/null || true
 log "Images gepinnt auf :${TARGET_VER}"
 
@@ -338,10 +338,10 @@ rollback() {
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED} zurueck (Snapshot ${SNAP})..." >&2
     tar xzf "$SNAP" 2>/dev/null || true
     if [ "$INSTALLED" != "unknown" ]; then
-        upsert_env SERVER_IMAGE     "ghcr.io/ks98/adminhelper/server:${INSTALLED}"
-        upsert_env GATEWAY_IMAGE    "ghcr.io/ks98/adminhelper/gateway:${INSTALLED}"
-        upsert_env CA_ISSUER_IMAGE  "ghcr.io/ks98/adminhelper/ca-issuer:${INSTALLED}"
-        upsert_env MONITORING_IMAGE "ghcr.io/ks98/adminhelper/monitoring:${INSTALLED}"
+        upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${INSTALLED}"
+        upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${INSTALLED}"
+        upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${INSTALLED}"
+        upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${INSTALLED}"
     fi
     docker compose up -d >/dev/null 2>&1 || true
 }

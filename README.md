@@ -1,5 +1,7 @@
 # AdminHelper
 
+Part of **[Admin Cave](https://admincave.com)** — tooling that makes admins' lives easier.
+
 A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** and a typed **Svelte 5 + TypeScript** UI. Manage SSH, RDP, and Web targets in one place with tags, search, and a clean workflow.
 
 ## Highlights
@@ -133,7 +135,7 @@ runtime bundle** (the self-contained `docker-compose.yml` + the ops scripts,
 enrollment token, and leaves mTLS **enforced by default**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/v0.34.0/scripts/install.sh \
+curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.34.0/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installs the latest published release; pin a specific one with --ref vX.Y.Z
 ```
@@ -160,7 +162,7 @@ The production `docker-compose.yml` is a single self-contained file (images from
 ghcr.io; no repo-file bind mounts). For development you can also clone the source:
 
 ```bash
-git clone https://github.com/ks98/AdminHelper.git
+git clone https://github.com/AdminCave/AdminHelper.git
 cd AdminHelper
 
 cp .env.example .env
@@ -261,7 +263,7 @@ API documentation: `https://localhost/api/docs` (Swagger UI) or `/openapi.json`
 
 ### Diagnostics & bug reports
 
-Hit a bug? On the server host, generate a **redacted** diagnostics bundle and attach it to a [GitHub issue](https://github.com/ks98/AdminHelper/issues/new/choose):
+Hit a bug? On the server host, generate a **redacted** diagnostics bundle and attach it to a [GitHub issue](https://github.com/AdminCave/AdminHelper/issues/new/choose):
 
 ```bash
 ./scripts/diagnostics.sh            # writes adminhelper-diagnostics-<ts>.tar.gz
@@ -441,7 +443,7 @@ cargo tauri build
 │     │  │  ├─ frpc.rs            # frpc sidecar process
 │     │  │  ├─ tunnel.rs          # tunnel mapping + connection resolution
 │     │  │  ├─ connection/        # SSH/RDP/Web connection logic
-│     │  │  ├─ password.rs        # OS keyring (com.adminhelper.app)
+│     │  │  ├─ password.rs        # OS keyring (com.admincave.adminhelper)
 │     │  │  ├─ ansible.rs         # inventory generation + playbook execution
 │     │  │  └─ ...
 │     │  ├─ binaries/            # frpc sidecar (gitignored, CI download)

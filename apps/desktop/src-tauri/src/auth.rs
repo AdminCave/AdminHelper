@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::models::AuthSession;
 
-const KEYRING_SERVICE: &str = "com.adminhelper.app";
+const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
 const KEYRING_JWT_KEY: &str = "auth|jwt";
 const KEYRING_REFRESH_KEY: &str = "auth|refresh";
 const KEYRING_SERVER_URL_KEY: &str = "auth|server_url";

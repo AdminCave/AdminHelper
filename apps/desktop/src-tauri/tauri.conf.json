@@ -1,7 +1,7 @@
 {
   "productName": "adminhelper",
   "version": "0.38.0",
-  "identifier": "com.adminhelper.app",
+  "identifier": "com.admincave.adminhelper",
   "build": {
     "beforeDevCommand": "npm --prefix ui run dev",
     "beforeBuildCommand": "npm --prefix ui run build",
@@ -30,8 +30,8 @@
     }
   },
   "bundle": {
-    "publisher": "Kevin Stenzel",
-    "homepage": "https://adminhelper.de",
+    "publisher": "Admin Cave",
+    "homepage": "https://admincave.com",
     "shortDescription": "AdminHelper — Remote-Verwaltung mit FRP-Tunneln",
     "longDescription": "Desktop-Client fuer AdminHelper. Verwaltet Remote-Verbindungen (RDP, SSH, VNC, HTTP) ueber sichere FRP-Tunnel mit zentralem Server, PKI-gestuetzter Verschluesselung und integriertem Monitoring.",
     "externalBin": ["binaries/frpc"],

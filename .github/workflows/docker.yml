@@ -54,7 +54,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          # repository_owner is lower-case (ghcr requires lower-case paths).
+          # metadata-action lower-cases the image ref (ghcr requires lower-case
+          # paths); the org owner "AdminCave" is itself mixed-case.
           images: ghcr.io/${{ github.repository_owner }}/adminhelper/${{ matrix.image }}
           tags: |
             type=ref,event=branch
@@ -87,11 +88,15 @@ jobs:
 
       # Keyless signature over the pushed digest (covers every tag pointing at
       # it). Verifiable with:
-      #   cosign verify ghcr.io/ks98/adminhelper/<image> \
-      #     --certificate-identity-regexp 'https://github.com/ks98/AdminHelper/.*' \
+      #   cosign verify ghcr.io/admincave/adminhelper/<image> \
+      #     --certificate-identity-regexp 'https://github.com/AdminCave/AdminHelper/.*' \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
       - name: Sign the image (keyless)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/adminhelper/${{ matrix.image }}
-        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+          OWNER: ${{ github.repository_owner }}
+        # ghcr requires lower-case paths and the org owner ("AdminCave") is
+        # mixed-case, so lower-case it to match the pushed (lower-cased) ref.
+        run: |
+          IMAGE="ghcr.io/${OWNER,,}/adminhelper/${{ matrix.image }}"
+          cosign sign --yes "${IMAGE}@${DIGEST}"

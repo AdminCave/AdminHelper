@@ -4,7 +4,7 @@
 #
 #   * piped (no local checkout) — downloads the runtime files (just the compose +
 #     .env.example + ops scripts) for a pinned ref, then sets up:
-#         curl -fsSL https://raw.githubusercontent.com/ks98/AdminHelper/main/scripts/install.sh \
+#         curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/install.sh \
 #           | bash -s -- --domain srm.example.com
 #   * from a checkout/bundle (docker-compose.yml present) — setup only.
 #
@@ -27,15 +27,15 @@
 
 set -euo pipefail
 
-REPO="ks98/AdminHelper"
+REPO="AdminCave/AdminHelper"
 REF=""                       # empty -> resolve the latest published release
 # minisign public key (the "RW..." line of minisign.pub) used to verify the
 # release SHA256SUMS signature — authenticity, not just transport integrity.
 # ARM by pasting the public key from `minisign -G -W` here (and in update.sh).
 # Empty = not yet armed: falls back to checksum-only with a warning (no
 # enforcement). Once set, a missing/invalid signature aborts the install.
-MINISIGN_PUBKEY="RWQu3dhz3TGs1jHQF76VmMaQ8aEi/ZioWvSE1fZ/UUFUC1QxeVzCB1I7"
-RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/ks98/AdminHelper}"
+MINISIGN_PUBKEY="RWR+rA5KO76WPImov98pKU82P3SEvPRSkue9x8AgV5Hml4PQXY5Totzp"
+RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/AdminCave/AdminHelper}"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
 RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh"
@@ -206,10 +206,10 @@ upsert_env DOMAIN "$DOMAIN"
 # only a fallback for a bare `docker compose up` without this .env. Upgrade later
 # via `./scripts/update.sh --ref vX.Y.Z`.
 IMAGE_TAG="${REF#v}"
-upsert_env SERVER_IMAGE     "ghcr.io/ks98/adminhelper/server:${IMAGE_TAG}"
-upsert_env GATEWAY_IMAGE    "ghcr.io/ks98/adminhelper/gateway:${IMAGE_TAG}"
-upsert_env CA_ISSUER_IMAGE  "ghcr.io/ks98/adminhelper/ca-issuer:${IMAGE_TAG}"
-upsert_env MONITORING_IMAGE "ghcr.io/ks98/adminhelper/monitoring:${IMAGE_TAG}"
+upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
+upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
+upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${IMAGE_TAG}"
+upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${IMAGE_TAG}"
 
 chmod 600 .env 2>/dev/null || true
 

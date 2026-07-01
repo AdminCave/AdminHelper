@@ -24,7 +24,7 @@
 
       <header class="topbar">
         <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Agent Deployment</span></nav></div>
-        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/agent-deployment.html">DE</a><a href="./agent-deployment.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/ks98/AdminHelper" rel="noopener">GitHub</a></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/agent-deployment.html">DE</a><a href="./agent-deployment.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/AdminCave/AdminHelper" rel="noopener">GitHub</a></div>
       </header>
 
       <main class="content">
@@ -34,22 +34,22 @@
           <p class="lead">One Go binary, two packages (DEB + RPM), shipped with matching service units. The provision flow redeems a one-time token and installs a persistent client certificate.</p>
 
           <h2>Debian / Ubuntu</h2>
-          <p>The DEB and RPM packages are attached as assets to every <a href="https://github.com/ks98/AdminHelper/releases" rel="noopener">GitHub release</a>. Download the file and install it locally:</p>
+          <p>The DEB and RPM packages are attached as assets to every <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub release</a>. Download the file and install it locally:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>VERSION=0.26.0
-curl -fsSLO "https://github.com/ks98/AdminHelper/releases/download/v${VERSION}/adminhelper-agent_${VERSION}_amd64.deb"
+curl -fsSLO "https://github.com/AdminCave/AdminHelper/releases/download/v${VERSION}/adminhelper-agent_${VERSION}_amd64.deb"
 
 # Installs deps and supersedes the old srm-* packages (Replaces/Conflicts):
 sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 
           <h2>RHEL / Rocky / Fedora</h2>
-          <p>Grab the matching <code>.rpm</code> asset from the <a href="https://github.com/ks98/AdminHelper/releases" rel="noopener">releases page</a>, then install it locally:</p>
+          <p>Grab the matching <code>.rpm</code> asset from the <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">releases page</a>, then install it locally:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>sudo dnf install ./adminhelper-agent-*.x86_64.rpm</code></pre>
 
           <h2>From the AdminHelper package repo (<code>apt upgrade</code> / <code>dnf upgrade</code>)</h2>
           <p>The AdminHelper server itself hosts a <strong>GPG-signed</strong> apt/rpm repo on the gateway's repo plane (port <code>REPO_PORT</code>, default <code>8445</code>, certless). Agent hosts then pull new versions through the normal package manager instead of a manual download &mdash; meant mainly for <strong>ongoing updates</strong> across many servers. <em>Prerequisite:</em> the server runs with a configured repo signing key (see <a href="../developer/cicd.html">CI/CD &amp; Release</a>); otherwise <code>/repo</code> just returns <code>404</code>.</p>
-          <p><strong>The trust root is the GPG fingerprint</strong>, not the transport: package authenticity rests on the signature (like any distro mirror). Check the fingerprint of the fetched key against the published value (<code>65490B6F130D967CD6C82411934E128434DB8E0B</code>) before you continue.</p>
+          <p><strong>The trust root is the GPG fingerprint</strong>, not the transport: package authenticity rests on the signature (like any distro mirror). Check the fingerprint of the fetched key against the published value (<code>58BA16FE522A43B529FB38B67F8A5D2EF6900173</code>) before you continue.</p>
 
           <h3>Debian/Ubuntu (apt)</h3>
           <div class="code-header"><span>bash</span></div>
@@ -107,7 +107,7 @@ sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
           </div>
 
           <h2>Windows</h2>
-          <p>Grab the latest MSI from the <a href="https://github.com/ks98/AdminHelper/releases" rel="noopener">GitHub releases page</a> (the Windows MSI is built best-effort and may lag behind the Linux packages). Install with elevated privileges – the installer registers the Windows service.</p>
+          <p>Grab the latest MSI from the <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub releases page</a> (the Windows MSI is built best-effort and may lag behind the Linux packages). Install with elevated privileges – the installer registers the Windows service.</p>
 
           <h2>Provisioning</h2>
           <p>In the desktop client (server mode): <em>Infrastructure → Add server</em>, then open the <em>Provisioning</em> tab of that server entry. The token is valid for 24 h and redeemable exactly once. You also need the <strong>server ID</strong> shown for that server entry.</p>

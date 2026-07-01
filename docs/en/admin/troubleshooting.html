@@ -24,7 +24,7 @@
 
       <header class="topbar">
         <div class="topbar-left"><button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button><nav class="crumbs" aria-label="Path"><a href="../index.html">Docs</a><span class="sep">/</span><a href="./index.html">Admin</a><span class="sep">/</span><span class="current">Troubleshooting</span></nav></div>
-        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/troubleshooting.html">DE</a><a href="./troubleshooting.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/ks98/AdminHelper" rel="noopener">GitHub</a></div>
+        <div class="topbar-right"><div class="lang-switch" role="group" aria-label="Language"><a href="../../admin/troubleshooting.html">DE</a><a href="./troubleshooting.html" class="is-active">EN</a></div><a class="btn btn-ghost btn-sm" href="https://github.com/AdminCave/AdminHelper" rel="noopener">GitHub</a></div>
       </header>
 
       <main class="content">
@@ -94,7 +94,7 @@ docker compose exec monitoring df -h /data/victoria</code></pre>
           <div class="code-header"><span>bash</span></div>
 <pre><code>./scripts/diagnostics.sh               # writes adminhelper-diagnostics-&lt;ts&gt;.tar.gz
 ./scripts/diagnostics.sh --tail 1000   # more log lines per service</code></pre>
-          <p>The bundle contains <code>report.txt</code> (versions, OS, docker, service status), <code>compose.yml</code>, an <code>env.sanitized</code> (secret values masked) and the last log lines per service. Then attach it to a <a href="https://github.com/ks98/AdminHelper/issues/new/choose">GitHub issue</a>.</p>
+          <p>The bundle contains <code>report.txt</code> (versions, OS, docker, service status), <code>compose.yml</code>, an <code>env.sanitized</code> (secret values masked) and the last log lines per service. Then attach it to a <a href="https://github.com/AdminCave/AdminHelper/issues/new/choose">GitHub issue</a>.</p>
           <p>For the <strong>desktop client</strong>: Settings → Diagnostics → "Create diagnostics report". For an <strong>agent</strong> on a managed server: <code>adminhelper-agent diagnostics</code>.</p>
 
           <div class="callout"><div class="callout-title">Skim before sending</div><p>Secrets (SECRET_KEY, passwords, API keys, JWT/Bearer tokens) are masked automatically, but redaction is best-effort — please glance over the bundle before uploading.</p></div>

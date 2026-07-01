@@ -449,7 +449,7 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
 │     │  │  ├─ tunnel.rs          # Tunnel-Mapping + Connection-Resolution
 │     │  │  ├─ connection/        # SSH/RDP/Web Verbindungslogik
-│     │  │  ├─ password.rs        # OS-Keyring (com.adminhelper.app)
+│     │  │  ├─ password.rs        # OS-Keyring (com.admincave.adminhelper)
 │     │  │  ├─ ansible.rs         # Inventory-Generierung + Playbook-Ausführung
 │     │  │  └─ ...
 │     │  ├─ binaries/            # frpc-Sidecar (gitignored, CI-Download)

@@ -52,8 +52,8 @@ grep -q "Report gesendet" "$E2E_WORK/agent.log" \
     || { bad "agent push failed"; sed 's/^/    /' "$E2E_WORK/agent.log"; }
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
-mkdir -p "$XDG_DATA_HOME/com.adminhelper.app"
-echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.adminhelper.app/settings.json"
+mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
+echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 
 echo "[mon] running the monitoring-check spec under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR

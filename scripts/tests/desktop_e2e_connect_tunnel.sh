@@ -137,8 +137,8 @@ ENROLL_TOKEN=$(e2e_dc exec -T server python -m app.cli mint-enroll-token --usern
 [ -n "$ENROLL_TOKEN" ] && ok "minted enrollment token" || { bad "could not mint enrollment token"; exit 1; }
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
-mkdir -p "$XDG_DATA_HOME/com.adminhelper.app"
-echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.adminhelper.app/settings.json"
+mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
+echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 
 echo "[tun] driving enroll → login → tunnels → ssh/web/rdp-through-tunnel under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" \
