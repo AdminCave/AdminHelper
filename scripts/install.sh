@@ -34,7 +34,7 @@ REF=""                       # empty -> resolve the latest published release
 # ARM by pasting the public key from `minisign -G -W` here (and in update.sh).
 # Empty = not yet armed: falls back to checksum-only with a warning (no
 # enforcement). Once set, a missing/invalid signature aborts the install.
-MINISIGN_PUBKEY="RWR+rA5KO76WPImov98pKU82P3SEvPRSkue9x8AgV5Hml4PQXY5Totzp"
+MINISIGN_PUBKEY="RWTU2kEztd3UWTF8HW26S8MWWiTUe6oz38I7rTBBSOvmQ3SHmszo6llJ"
 RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/AdminCave/AdminHelper}"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
