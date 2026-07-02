@@ -72,4 +72,7 @@ print(f"MB_SID={sid} MB_PTOK={ptok}")
 PY
 )" || { echo "[serverbox] seeding failed"; exit 1; }
 echo "$OUT"
+# Also hand the desktop-capstone box what it needs to log in + inject SSE events.
+echo "MB_ADMIN_PW=$ADMIN_PW"
+echo "MB_MONITOR_KEY=$(grep -E '^MONITOR_API_KEY=' .env | head -1 | cut -d= -f2-)"
 echo "[serverbox] READY at https://$SRV_IP"

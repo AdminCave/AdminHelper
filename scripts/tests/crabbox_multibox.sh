@@ -20,9 +20,9 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
-AGENTS=1; KEEP=0
+AGENTS=1; KEEP=0; DESKTOP=0
 while [ $# -gt 0 ]; do case "$1" in
-  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;;
+  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;;
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
 # Proxmox provider env (secret in the gitignored settings.local.json).
@@ -88,6 +88,8 @@ echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded ' | tail -40
 SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
+ADMIN_PW="$(printf '%s' "$SRVOUT" | grep -oE 'MB_ADMIN_PW=[^ ]+' | tail -1 | cut -d= -f2)"
+MONITOR_KEY="$(printf '%s' "$SRVOUT" | grep -oE 'MB_MONITOR_KEY=[^ ]+' | tail -1 | cut -d= -f2)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 
@@ -99,6 +101,23 @@ for a in "${AGENT_SLUGS[@]:-}"; do
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + vmbr1 firewall)"
 done
+
+if [ "$DESKTOP" = 1 ]; then
+  # AH_DESKTOP_ID reuses an already-warm desktop box (skip lease + re-bootstrap).
+  if [ -n "${AH_DESKTOP_ID:-}" ]; then
+    DT_SLUG="$AH_DESKTOP_ID"; ok "desktop-box $DT_SLUG (reused via AH_DESKTOP_ID)"
+  elif read -r DT_SLUG DT_IP < <(lease ah-desktop); then
+    ok "desktop-box $DT_SLUG @ $DT_IP"
+  else DT_SLUG=""; bad "desktop lease"; fi
+  if [ -n "$DT_SLUG" ]; then
+    echo "== drive the real Tauri GUI on $DT_SLUG against https://$SRV_IP =="
+    DTOUT="$(timeout 3000 crabbox run --id "$DT_SLUG" -- bash scripts/tests/crabbox_desktopbox.sh "$SRV_IP" "$ADMIN_PW" "$MONITOR_KEY" 2>&1)"
+    echo "$DTOUT" | grep -vE 'Compiling|Downloaded |npm warn|go: downloading' | tail -40
+    printf '%s' "$DTOUT" | grep -q DESKTOP_ALL_OK \
+      && ok "desktop GUI journeys green against the remote server (login/CRUD/monitoring)" \
+      || bad "desktop GUI journeys (see output above)"
+  fi
+fi
 
 echo "== assert monitoring ingested a report from the remote agent(s) =="
 REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"

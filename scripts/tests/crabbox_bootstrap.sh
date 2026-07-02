@@ -37,7 +37,11 @@ $SUDO apt-get install -y --no-install-recommends \
   libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
   libayatana-appindicator3-dev libssl-dev patchelf file \
   xvfb webkit2gtk-driver at-spi2-core dbus-x11 gnome-keyring \
-  minisign dpkg-dev apt-utils createrepo-c rpm
+  minisign dpkg-dev apt-utils createrepo-c rpm locales
+
+log "generate a valid UTF-8 locale (headless boxes default to C — breaks Intl.NumberFormat in the desktop webview -> blank app)"
+$SUDO locale-gen en_US.UTF-8 >/dev/null 2>&1 || true
+$SUDO update-locale LANG=en_US.UTF-8 >/dev/null 2>&1 || true
 
 log "ruff (Python lint, used by run.sh lint)"
 $SUDO pip3 install --break-system-packages -q ruff || pipx install ruff || true
