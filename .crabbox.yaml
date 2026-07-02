@@ -40,6 +40,8 @@ sync:
     - apps/server/data
     - backups
     - .crabbox
+    - .crabbox-out
+    - .dt-xdg
 env:
   allow:
     - CI

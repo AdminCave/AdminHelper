@@ -9,12 +9,16 @@
 // See README.md for the full prerequisite list.
 
 import os from 'os';
+import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const desktopDir = path.resolve(__dirname, '..');
+// Auto-debug artifacts (screenshot + page source on a failing spec). crabbox_iter.sh
+// pulls this dir back via -artifact-glob; run.sh exports AH_OUT_DIR (repo-root default).
+const ahOutDir = process.env.AH_OUT_DIR || path.resolve(desktopDir, '../../.crabbox-out');
 // The debug binary tauri-driver launches. Cargo's package name is `adminhelper`.
 const application = path.resolve(desktopDir, 'src-tauri/target/debug/adminhelper');
 
@@ -50,6 +54,7 @@ export const config = {
   // embeds frontendDist; --no-bundle skips deb/AppImage packaging. Needs the
   // frpc sidecar under src-tauri/binaries/ to exist (see README).
   onPrepare: () => {
+    try { fs.mkdirSync(path.join(ahOutDir, 'screenshots'), { recursive: true }); } catch { /* ignore */ }
     const r = spawnSync('cargo', ['tauri', 'build', '--debug', '--no-bundle'], {
       cwd: path.resolve(desktopDir, 'src-tauri'),
       stdio: 'inherit',
@@ -78,6 +83,15 @@ export const config = {
   afterSession: () => {
     exiting = true;
     tauriDriver?.kill();
+  },
+
+  // On a failing spec, capture what the GUI actually showed — headless debugging is
+  // otherwise blind (WebKitWebDriver exposes no console). Best-effort, never throws.
+  afterTest: async function (test, _ctx, { passed }) {
+    if (passed) return;
+    const safe = String(test.title || 'test').replace(/[^a-z0-9]+/gi, '_').slice(0, 60) || 'test';
+    try { await browser.saveScreenshot(path.join(ahOutDir, 'screenshots', safe + '.png')); } catch { /* best-effort */ }
+    try { fs.writeFileSync(path.join(ahOutDir, 'screenshots', safe + '.html'), await browser.getPageSource()); } catch { /* best-effort */ }
   },
 };
 

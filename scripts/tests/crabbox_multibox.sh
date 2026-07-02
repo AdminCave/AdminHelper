@@ -19,24 +19,17 @@
 # by an actual 2-box run; failures here are findings to iterate, not silent skips.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
+# shellcheck source=scripts/tests/crabbox_lib.sh
+. "$(dirname "$0")/crabbox_lib.sh"
 
 AGENTS=1; KEEP=0; DESKTOP=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;;
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
-# Proxmox provider env (secret in the gitignored settings.local.json).
-if [ -z "${CRABBOX_PROVIDER:-}" ]; then
-  eval "$(python3 -c '
-import json
-for f in [".claude/settings.json",".claude/settings.local.json"]:
-    try: d=json.load(open(f)).get("env",{})
-    except Exception: d={}
-    for k,v in d.items():
-        if k.startswith("CRABBOX_"): print("export %s=%r"%(k,v))')"
-fi
+# Proxmox provider env via the shared lib (secret in gitignored settings.local.json).
 command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
-[ -n "${CRABBOX_PROVIDER:-}" ] || { echo "CRABBOX_PROVIDER unset (proxmox env not loaded)"; exit 1; }
+cbx_load_env || exit 1
 
 POND="ah-mb-$$"
 LEASES=(); PASS=0; FAIL=0

@@ -38,6 +38,7 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
 # Headless boxes default to LANG=C; the webview then feeds "C" to Intl.NumberFormat
 # -> RangeError at module init -> Svelte never mounts (blank #app). Force a valid tag.
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US:en
+export AH_OUT_DIR="$ROOT/.crabbox-out"   # wdio afterTest drops screenshots here on failure
 
 fails=0
 for spec in "${SPECS[@]}"; do

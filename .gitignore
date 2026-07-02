@@ -54,6 +54,9 @@ Desktop.ini
 
 # crabbox local failure-capture bundles (0700, not fully redacted — never commit)
 .crabbox/
+# crabbox auto-debug artifacts pulled off the box (screenshots/logs) + desktop XDG
+.crabbox-out/
+.dt-xdg/
 
 # Agent build output produced at the repo root by apps/agent/build-deb.sh /
 # build-rpm.sh (and the frpc binary staged there by the crabbox agent role).

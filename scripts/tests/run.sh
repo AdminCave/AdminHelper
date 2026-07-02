@@ -34,6 +34,11 @@ cd "$ROOT" || exit 1
 # to install into directly. Harmless elsewhere.
 export PIP_BREAK_SYSTEM_PACKAGES=1
 
+# Auto-debug: e2e specs (wdio afterTest) drop screenshots here on failure, and the
+# finalizer below runs the on-box collector when AH_CAPTURE=1. crabbox_iter.sh pulls
+# this dir back via -artifact-glob. No effect on plain dev/CI runs (AH_CAPTURE unset).
+export AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.crabbox-out}"
+
 PASS=0 FAIL=0 SKIP=0
 FAILED_STEPS=()
 hdr()  { printf '\n\033[1m### %s\033[0m\n' "$*"; }
@@ -163,6 +168,13 @@ case "$LAYER" in
   all)         require_real; layer_lint; layer_unit; layer_integration; layer_e2e ;;
   *) echo "unknown layer: $LAYER (use lint|unit|quick|integration|e2e|all)"; exit 2 ;;
 esac
+
+# On failure, collect on-box debug artifacts (container/agent logs, framebuffer
+# screenshot) so a crabbox_iter run leaves them locally without a re-run. Opt-in.
+if [ "$FAIL" -gt 0 ] && [ "${AH_CAPTURE:-0}" = 1 ]; then
+  bash "$ROOT/scripts/tests/crabbox_debug.sh" 2>/dev/null || true
+  echo "  auto-debug captured -> $AH_OUT_DIR"
+fi
 
 echo ""
 echo "──────────────────────────────────────────────"
