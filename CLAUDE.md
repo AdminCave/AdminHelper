@@ -231,33 +231,41 @@ Regeln:
 ## Testing auf crabbox (schwere Suites)
 
 Die schnellen Unit-/Lint-Suites laufen überall (und im GitHub-CI). Der **schwere
-Tier** — die reale docker-compose-Stack-Integration, mTLS-Enrollment, Redis-SSE-
-Fan-out, Agent-Monitoring, apt/rpm-Repo-Bau und die Desktop-GUI-E2E — braucht
-echtes Linux mit **Docker + Display**, was die Sandbox-Dev-Box nicht hat.
-**crabbox** least dafür eine ephemere Proxmox-VM (Provider-Env in
-`.claude/settings.json`; das Token-Secret nur im gitignored
-`.claude/settings.local.json`; prüfen mit `crabbox doctor`).
+Tier** — reale docker-compose-Stack-Integration, mTLS-Enrollment, Redis-SSE-Fan-out,
+Agent-Monitoring, apt/rpm-Repo-Bau und die **Desktop-GUI-E2E** — braucht echtes Linux
+mit **Docker + Display**, was die Sandbox-Dev-Box nicht hat. **crabbox** least dafür
+ephemere Proxmox-VMs (Provider-Env in `.claude/settings.json`; das Token-Secret nur im
+gitignored `.claude/settings.local.json`; prüfen mit `crabbox doctor`).
 
-- **Ein Sammel-Runner** bündelt alles:
-  `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]`.
-  `quick` (Default) = lint + unit; `integration`/`e2e`/`all` fahren echte
-  Docker-/GUI-Suites und **verweigern ohne `AH_ALLOW_REAL=1`** (Schutz vor
-  versehentlichen Läufen). Jeder Schritt ist dep-gated und skippt sauber, wenn
-  ein Toolchain fehlt; am Ende `N passed, M failed, K skipped` (Exit ≠ 0 bei Fail).
-- **Box-Lifecycle** (warm once → Slug wiederverwenden → stoppen):
-  `crabbox warmup` → `crabbox run --id <slug> -- 'bash scripts/tests/crabbox_bootstrap.sh'`
-  (hydriert docker/go/rust/node/xvfb/tauri-driver/frpc) →
-  `crabbox run --id <slug> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh integration'`
-  → `crabbox stop --id <slug>`. Fehler-Bundles landen lokal in `.crabbox/captures/`
-  (gitignored). Details/Regeln: die `/test`-Skill (`.claude/skills/test/SKILL.md`).
-- **Multi-Box (verteilt):** `bash scripts/tests/crabbox_multibox.sh --agents N`
-  least eine Server-Box (voller Stack) + Agent-Box(en) auf derselben Bridge
-  (`vmbr1`) und provisioniert das echte `.deb` über einen echten Netz-Hop —
-  Cross-Host-mTLS, echte Paketinstallation, die `:8445`-Repo-Plane. Leases werden
-  beim Exit gestoppt (`--keep` zum Inspizieren).
+- **Sammel-Runner (Single-Box):**
+  `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]`. `quick` (Default)
+  = lint + unit; `integration`/`e2e`/`all` fahren echte Docker-/GUI-Suites und
+  **verweigern ohne `AH_ALLOW_REAL=1`**. Dep-gated, skippt sauber bei fehlender
+  Toolchain; am Ende `N passed, M failed, K skipped` (Exit ≠ 0 bei Fail). Bei Fehler
+  + `AH_CAPTURE=1` sammelt es Debug-Artefakte nach `.crabbox-out/` (gitignored).
+- **Schneller Loop — warm once → iterieren → reapen (NICHT nach jedem Lauf stoppen).**
+  Eine hydrierte Box ist teuer zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber
+  billig zu halten. `crabbox_warm.sh <desktop|server|pond>` hydriert **einmal** und merkt
+  den Slug (`.crabbox/warm.env`); danach ist jede Iteration inkrementell (`target/` +
+  `node_modules/` sind vom Sync ausgenommen und überleben) → Minuten statt ~40:
+  `crabbox_iter.sh <layer>` bzw. `crabbox_iter.sh --desktop`. Bei Fehler bleibt die Box
+  stehen (`crabbox ssh --id`) + Screenshots/Logs landen lokal in `.crabbox-out/`.
+  `crabbox_reap.sh` räumt die Warm-Boxen auf (self-reap via `-ttl/-idle-timeout`).
+  „warm → run → stop nach jedem Lauf" ist damit das Anti-Pattern für iteratives Arbeiten.
+  Details/Regeln: die `/test`-Skill (`.claude/skills/test/SKILL.md`).
+- **Multi-Box (verteilt):** `bash scripts/tests/crabbox_multibox.sh --agents N [--desktop]`
+  least eine Server-Box (voller Stack) + Agent-Box(en) auf `vmbr1` und provisioniert das
+  echte `.deb` über einen echten Netz-Hop (Cross-Host-mTLS, `:8445`-Repo-Plane); mit
+  `--desktop` zusätzlich eine Box, die die **echte Tauri-GUI** headless gegen den
+  entfernten Server fährt (Login/CRUD/Monitoring). `AH_DESKTOP_ID=<slug>` verwendet eine
+  warme Desktop-Box wieder. Leases stoppen beim Exit (`--keep` zum Inspizieren).
+- **Stolperfalle Desktop-GUI headless:** frische Boxen haben `LANG=C` → die Webview gibt
+  „C" an `Intl.NumberFormat` → `RangeError` beim Init → die Svelte-App mountet nie (leeres
+  `#app`). Daher: `crabbox_bootstrap.sh` generiert `en_US.UTF-8`, `crabbox_desktopbox.sh`
+  setzt `LANG=en_US.UTF-8`.
 - **crabbox ist NICHT der PR-CI.** Unit/Lint/Build-Gates bleiben in
-  `.github/workflows/ci.yml`; crabbox ist der lokal/agent-getriebene Pfad für den
-  schweren Tier auf echtem Linux. Erlaubt (auto): `warmup/run/status/list/connect/
-  ssh/doctor/stop/cleanup`; `prewarm/job` provisionieren/kosten → vorher fragen.
-  **Nie „grün" melden, ohne dass die Suite real bestanden hat** — die
-  `run.sh`-Summary-Zeile zählt; SKIP heißt „nicht verifiziert", nicht „ok".
+  `.github/workflows/ci.yml`. Erlaubt (auto): `warmup/run/status/list/connect/ssh/doctor/
+  stop/cleanup/artifacts pull`; `prewarm/job/checkpoint create/image/bake` provisionieren/
+  kosten → vorher fragen. **Nach jedem Workflow `crabbox list` prüfen** (Read-only-Agenten
+  haben trotz Verbot Boxen geleakt). **Nie „grün" melden, ohne dass die Suite real bestanden
+  hat** — die `run.sh`-Summary-Zeile zählt; SKIP heißt „nicht verifiziert", nicht „ok".
