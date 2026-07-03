@@ -84,7 +84,15 @@ if os.environ.get("TUNNEL") == "tunnel":
     tptok = call("POST", f"/api/servers/{tsid}/provision/token", tok, {})["token"]
     cfg = call("POST", "/api/frp/server-config", tok, {"name": "mb-frps", "server_addr": srv_ip, "bind_port": 7000})["id"]
     call("POST", "/api/frp/tunnels", tok, {"server_id": tsid, "frp_config_id": cfg, "name": "mb-ssh", "tunnel_type": "stcp", "protocol": "ssh", "local_port": 22})
-    print(f"MB_TUN_SID={tsid} MB_TUN_PTOK={tptok} MB_CFG={cfg}")
+    # A visitor server+token (its provisioned tunnel-scoped cert is CA-signed -> frps
+    # accepts it for the visitor's TLS) + the generated visitor.toml for the container.
+    vsid = call("POST", "/api/servers", tok, {"name": "mb-visitor", "hostname": "mb-visitor.local"})["id"]
+    vptok = call("POST", f"/api/servers/{vsid}/provision/token", tok, {})["token"]
+    import base64
+    vreq = urllib.request.Request(base + "/api/frp/generate/visitor-toml", headers={"Authorization": "Bearer " + tok})
+    vtoml = urllib.request.urlopen(vreq, context=ctx, timeout=20).read()
+    print(f"MB_TUN_SID={tsid} MB_TUN_PTOK={tptok} MB_CFG={cfg} MB_VIS_SID={vsid} MB_VIS_PTOK={vptok}")
+    print("MB_VISITOR_B64=" + base64.b64encode(vtoml).decode())
 PY
 )" || { echo "[serverbox] seeding failed"; exit 1; }
 echo "$OUT"

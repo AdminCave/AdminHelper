@@ -88,6 +88,9 @@ SID2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID2=[^ ]+' | tail -1 | cut -d= -f2
 PTOK2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK2=[^ ]+' | tail -1 | cut -d= -f2)"
 TUN_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 TUN_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
+VIS_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_SID=[^ ]+' | tail -1 | cut -d= -f2)"
+VIS_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
+VIS_B64="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VISITOR_B64=[^ ]+' | tail -1 | cut -d= -f2)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 
@@ -127,6 +130,16 @@ if [ "$TUNNEL" = 1 ]; then
     printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
       && ok "frps registered the agent's STCP tunnel (cross-host)" \
       || bad "frps shows no STCP registration from the agent"
+    # Phase 2: a visitor on a THIRD box completes the data path (visitor -> frps ->
+    # agent frpc -> the agent's sshd), proving the full cross-host tunnel.
+    if [ -n "$VIS_SID" ] && [ -n "$VIS_B64" ] && read -r V_SLUG V_IP < <(lease ah-visitor); then
+      ok "visitor-box $V_SLUG @ $V_IP"
+      VOUT="$(timeout 1800 crabbox run --id "$V_SLUG" -- bash scripts/tests/crabbox_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$VIS_B64" 2>&1)"
+      echo "$VOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
+      printf '%s' "$VOUT" | grep -q VIS_TUNNEL_SSH_OK \
+        && ok "visitor reached the agent's sshd THROUGH the tunnel (3-host data path)" \
+        || bad "visitor could not reach the agent's sshd through the tunnel"
+    else bad "visitor lease or missing visitor config"; fi
   else bad "tunnel-agent lease or missing tunnel seed"; fi
 fi
 
