@@ -22,9 +22,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 # shellcheck source=scripts/tests/crabbox_lib.sh
 . "$(dirname "$0")/crabbox_lib.sh"
 
-AGENTS=1; KEEP=0; DESKTOP=0; RPM=0
+AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0
 while [ $# -gt 0 ]; do case "$1" in
-  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
+  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;; --tunnel) TUNNEL=1 ;;
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
 # Proxmox provider env via the shared lib (secret in gitignored settings.local.json).
@@ -78,13 +78,16 @@ for i in $(seq 1 "$AGENTS"); do
 done
 
 echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
-SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded ' | tail -40
+SRVARG=""; [ "$TUNNEL" = 1 ] && SRVARG="tunnel"
+SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded ' | tail -40
 SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
 ADMIN_PW="$(printf '%s' "$SRVOUT" | grep -oE 'MB_ADMIN_PW=[^ ]+' | tail -1 | cut -d= -f2)"
 MONITOR_KEY="$(printf '%s' "$SRVOUT" | grep -oE 'MB_MONITOR_KEY=[^ ]+' | tail -1 | cut -d= -f2)"
 SID2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID2=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK2=[^ ]+' | tail -1 | cut -d= -f2)"
+TUN_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_SID=[^ ]+' | tail -1 | cut -d= -f2)"
+TUN_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 
@@ -107,6 +110,24 @@ if [ "$RPM" = 1 ]; then
       && { ok "rpm agent: built + installed + mTLS-enrolled in rockylinux over the hop"; RPM_AGENTS=1; } \
       || bad "rpm agent (see output above)"
   else bad "rpm-agent lease"; fi
+fi
+
+if [ "$TUNNEL" = 1 ]; then
+  echo "== tunnel (S4): agent frpc STCP server over the hop to frps on $SRV_IP =="
+  printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box" || bad "frps did not start on the server"
+  if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && read -r T_SLUG T_IP < <(lease ah-tunnel); then
+    ok "tunnel-agent-box $T_SLUG @ $T_IP"
+    TOUT="$(timeout 1800 crabbox run --id "$T_SLUG" -- bash scripts/tests/crabbox_tunnelbox.sh "$SRV_IP" "$TUN_SID" "$TUN_PTOK" 2>&1)"
+    echo "$TOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
+    printf '%s' "$TOUT" | grep -q TUNNEL_FRPC_CONNECTED \
+      && ok "tunnel agent: frpc STCP server connected to the remote frps" \
+      || bad "tunnel agent: frpc did not connect (see output above)"
+    # Independent check on the server: frps logged the STCP registration cross-host.
+    FRPSLOG="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
+    printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
+      && ok "frps registered the agent's STCP tunnel (cross-host)" \
+      || bad "frps shows no STCP registration from the agent"
+  else bad "tunnel-agent lease or missing tunnel seed"; fi
 fi
 
 if [ "$DESKTOP" = 1 ]; then

@@ -8,7 +8,8 @@
 #
 # Called by scripts/tests/crabbox_multibox.sh via `crabbox run`.
 set -uo pipefail
-SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip>}"
+SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel]}"
+TUNNEL="${2:-}"   # "tunnel" -> also seed an STCP tunnel + bring up frps (S4)
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
 echo "[serverbox] hydrate (server profile: docker stack, no Tauri)"
@@ -50,7 +51,7 @@ up=0; for _ in $(seq 1 60); do curl -sk "https://localhost/" >/dev/null 2>&1 && 
 [ "$up" = 1 ] || { echo "[serverbox] gateway never came up"; "${DC[@]}" logs --tail 30 gateway ca-issuer server; exit 1; }
 
 echo "[serverbox] seed admin JWT -> server record -> provision token"
-export ADMIN_PW
+export ADMIN_PW SRV_IP TUNNEL
 OUT="$(python3 - <<'PY'
 import json, ssl, os, time, urllib.request
 ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -73,10 +74,27 @@ ptok = call("POST", f"/api/servers/{sid}/provision/token", tok, {})["token"]
 sid2 = call("POST", "/api/servers", tok, {"name": "mb-agent-rpm", "hostname": "mb-agent-rpm.local"})["id"]
 ptok2 = call("POST", f"/api/servers/{sid2}/provision/token", tok, {})["token"]
 print(f"MB_SID={sid} MB_PTOK={ptok} MB_SID2={sid2} MB_PTOK2={ptok2}")
+# Tunnel mode (S4): an FRP config pointing at THIS server's IP + an STCP tunnel
+# exposing the tunnel-agent's own sshd (:22). Creating the config writes frps.toml
+# into the shared volume; the caller then brings frps up. The agent provisions
+# against MB_TUN_* and its frpc.toml (fetched for these tunnels) runs the STCP server.
+if os.environ.get("TUNNEL") == "tunnel":
+    srv_ip = os.environ["SRV_IP"]
+    tsid = call("POST", "/api/servers", tok, {"name": "mb-tunnel", "hostname": "mb-tunnel.local"})["id"]
+    tptok = call("POST", f"/api/servers/{tsid}/provision/token", tok, {})["token"]
+    cfg = call("POST", "/api/frp/server-config", tok, {"name": "mb-frps", "server_addr": srv_ip, "bind_port": 7000})["id"]
+    call("POST", "/api/frp/tunnels", tok, {"server_id": tsid, "frp_config_id": cfg, "name": "mb-ssh", "tunnel_type": "stcp", "protocol": "ssh", "local_port": 22})
+    print(f"MB_TUN_SID={tsid} MB_TUN_PTOK={tptok} MB_CFG={cfg}")
 PY
 )" || { echo "[serverbox] seeding failed"; exit 1; }
 echo "$OUT"
 # Also hand the desktop-capstone box what it needs to log in + inject SSE events.
 echo "MB_ADMIN_PW=$ADMIN_PW"
 echo "MB_MONITOR_KEY=$(grep -E '^MONITOR_API_KEY=' .env | head -1 | cut -d= -f2-)"
+# Tunnel mode: the FRP config seed above wrote frps.toml into the shared volume;
+# bring frps up now (its ca-issuer-provisioned leaf carries the DOMAIN=$SRV_IP SAN).
+if [ "$TUNNEL" = tunnel ]; then
+  echo "[serverbox] tunnel mode: bring up frps (STCP relay :7000/:7443)"
+  "${DC[@]}" up -d frps >/dev/null 2>&1 && echo "MB_FRPS_UP=1" || { echo "MB_FRPS_UP=0"; "${DC[@]}" logs --tail 20 frps; }
+fi
 echo "[serverbox] READY at https://$SRV_IP"
