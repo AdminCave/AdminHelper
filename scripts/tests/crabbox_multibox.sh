@@ -22,9 +22,10 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 # shellcheck source=scripts/tests/crabbox_lib.sh
 . "$(dirname "$0")/crabbox_lib.sh"
 
-AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0
+AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0
 while [ $# -gt 0 ]; do case "$1" in
-  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;; --tunnel) TUNNEL=1 ;;
+  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
+  --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;;
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
 # Proxmox provider env via the shared lib (secret in gitignored settings.local.json).
@@ -77,8 +78,20 @@ for i in $(seq 1 "$AGENTS"); do
   else bad "agent$i lease"; fi
 done
 
+MC_SLUG=""; MC_IP=""
+if [ "$MONCHECK" = 1 ]; then
+  echo "== moncheck (S5): lease the client/sink box + start mailhog (before the seed) =="
+  if read -r MC_SLUG MC_IP < <(lease ah-moncheck); then
+    ok "moncheck-box $MC_SLUG @ $MC_IP"
+    MCSTART="$(timeout 1500 crabbox run --id "$MC_SLUG" -- bash scripts/tests/crabbox_moncheckbox.sh start 2>&1)"
+    echo "$MCSTART" | grep -vE 'Compiling|Downloaded ' | tail -20
+    printf '%s' "$MCSTART" | grep -q MC_MAILHOG_UP && ok "mailhog sink up on $MC_IP (:1025/:8025)" || bad "mailhog did not start"
+  else bad "moncheck-box lease"; fi
+fi
+
 echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
 SRVARG=""; [ "$TUNNEL" = 1 ] && SRVARG="tunnel"
+[ "$MONCHECK" = 1 ] && SRVARG="moncheck $MC_IP"
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded ' | tail -40
 SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
@@ -91,6 +104,8 @@ TUN_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_PTOK=[^ ]+' | tail -1 | cut
 VIS_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 VIS_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
 VIS_B64="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VISITOR_B64=[^ ]+' | tail -1 | cut -d= -f2)"
+MC_OK_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_OK_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
+MC_CRIT_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_CRIT_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 
@@ -157,6 +172,19 @@ if [ "$DESKTOP" = 1 ]; then
     printf '%s' "$DTOUT" | grep -q DESKTOP_ALL_OK \
       && ok "desktop GUI journeys green against the remote server (login/CRUD/monitoring)" \
       || bad "desktop GUI journeys (see output above)"
+  fi
+fi
+
+if [ "$MONCHECK" = 1 ]; then
+  echo "== moncheck (S5): pull-check verdicts + closed-loop alert delivery =="
+  [ "$MC_CRIT_STATUS" = critical ] && ok "ping check to an unreachable target -> critical" || bad "unreachable ping check status=${MC_CRIT_STATUS:-?} (expected critical)"
+  [ "$MC_OK_STATUS" = ok ] && ok "ping check to the reachable client -> ok" || bad "reachable ping check status=${MC_OK_STATUS:-?} (expected ok)"
+  if [ -n "$MC_SLUG" ]; then
+    MCA="$(timeout 300 crabbox run --id "$MC_SLUG" -- bash scripts/tests/crabbox_moncheckbox.sh assert 2>&1)"
+    printf '%s' "$MCA" | grep -E 'MC_MAIL_COUNT|MC_ALERT' | sed 's/^/  /'
+    printf '%s' "$MCA" | grep -q MC_ALERT_RECEIVED \
+      && ok "critical alert email delivered to the mailhog sink over the network (closed loop)" \
+      || bad "no alert email reached the sink"
   fi
 fi
 

@@ -9,7 +9,8 @@
 # Called by scripts/tests/crabbox_multibox.sh via `crabbox run`.
 set -uo pipefail
 SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel]}"
-TUNNEL="${2:-}"   # "tunnel" -> also seed an STCP tunnel + bring up frps (S4)
+TUNNEL="${2:-}"   # mode: "tunnel" (S4: STCP tunnel + frps) | "moncheck" (S5)
+SMTP_IP="${3:-}"  # moncheck: where the alerter sends email (the mailhog sink box)
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
 echo "[serverbox] hydrate (server profile: docker stack, no Tauri)"
@@ -104,5 +105,31 @@ echo "MB_MONITOR_KEY=$(grep -E '^MONITOR_API_KEY=' .env | head -1 | cut -d= -f2-
 if [ "$TUNNEL" = tunnel ]; then
   echo "[serverbox] tunnel mode: bring up frps (STCP relay :7000/:7443)"
   "${DC[@]}" up -d frps >/dev/null 2>&1 && echo "MB_FRPS_UP=1" || { echo "MB_FRPS_UP=0"; "${DC[@]}" logs --tail 20 frps; }
+fi
+# Moncheck mode (S5): seed pull (ping) checks + an email alert rule via the
+# monitoring internal API (reachable only inside the compose net -> exec), then
+# trigger them. The critical transition dispatches email to the mailhog sink
+# (smtp_host in channel_config; SMTP is not SSRF-guarded, so a private IP is fine).
+if [ "$TUNNEL" = moncheck ]; then
+  echo "[serverbox] moncheck mode: seed ping checks + email alert (smtp -> $SMTP_IP:1025)"
+  "${DC[@]}" exec -T monitoring python - <<PY
+import os, json, urllib.request
+key = os.environ.get("MONITOR_API_KEY", "")
+base = "http://localhost:8080"
+def call(method, path, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(base + path, data=data, method=method,
+        headers={"Content-Type": "application/json", "X-Internal-Key": key})
+    return json.load(urllib.request.urlopen(req, timeout=25))
+def st(r):
+    return r.get("status") or (r.get("state") or {}).get("status") or "?"
+ok_id = call("POST", "/checks", {"name": "mc-ping-ok", "check_type": "ping", "config": {"target": "$SMTP_IP"}, "consecutive_fails": 1, "severity": "critical"})["id"]
+crit_id = call("POST", "/checks", {"name": "mc-ping-crit", "check_type": "ping", "config": {"target": "192.0.2.1"}, "consecutive_fails": 1, "severity": "critical"})["id"]
+call("POST", "/alerts", {"name": "mc-email", "channel": "email", "match_severity": "critical", "channel_config": {"recipients": ["ops@example.com"], "smtp_host": "$SMTP_IP", "smtp_port": 1025}})
+ok_r = call("POST", f"/checks/{ok_id}/run")
+crit_r = call("POST", f"/checks/{crit_id}/run")
+print("MC_OK_STATUS=" + st(ok_r))
+print("MC_CRIT_STATUS=" + st(crit_r))
+PY
 fi
 echo "[serverbox] READY at https://$SRV_IP"
