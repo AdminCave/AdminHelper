@@ -22,9 +22,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 # shellcheck source=scripts/tests/crabbox_lib.sh
 . "$(dirname "$0")/crabbox_lib.sh"
 
-AGENTS=1; KEEP=0; DESKTOP=0
+AGENTS=1; KEEP=0; DESKTOP=0; RPM=0
 while [ $# -gt 0 ]; do case "$1" in
-  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;;
+  --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
 # Proxmox provider env via the shared lib (secret in gitignored settings.local.json).
@@ -32,7 +32,7 @@ command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
 cbx_load_env || exit 1
 
 POND="ah-mb-$$"
-LEASES=(); PASS=0; FAIL=0
+LEASES=(); PASS=0; FAIL=0; RPM_AGENTS=0
 ok(){ echo "  ok   $*"; PASS=$((PASS+1)); }; bad(){ echo "  FAIL $*"; FAIL=$((FAIL+1)); }
 cleanup() {
   [ "$KEEP" = 1 ] && { echo "--keep: leaving pond $POND up (bounded by --ttl)"; return; }
@@ -83,6 +83,8 @@ SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
 ADMIN_PW="$(printf '%s' "$SRVOUT" | grep -oE 'MB_ADMIN_PW=[^ ]+' | tail -1 | cut -d= -f2)"
 MONITOR_KEY="$(printf '%s' "$SRVOUT" | grep -oE 'MB_MONITOR_KEY=[^ ]+' | tail -1 | cut -d= -f2)"
+SID2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID2=[^ ]+' | tail -1 | cut -d= -f2)"
+PTOK2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK2=[^ ]+' | tail -1 | cut -d= -f2)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 
@@ -94,6 +96,18 @@ for a in "${AGENT_SLUGS[@]:-}"; do
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + vmbr1 firewall)"
 done
+
+if [ "$RPM" = 1 ]; then
+  echo "== cross-distro (S2): build the .rpm + provision it in a rockylinux container =="
+  if read -r R_SLUG R_IP < <(lease ah-agent-rpm); then
+    ok "rpm-agent-box $R_SLUG @ $R_IP"
+    ROUT="$(timeout 1800 crabbox run --id "$R_SLUG" -- bash scripts/tests/crabbox_agentbox_rpm.sh "$SRV_IP" "$SID2" "$PTOK2" 2>&1)"
+    echo "$ROUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -45
+    printf '%s' "$ROUT" | grep -q RPM_ALL_OK \
+      && { ok "rpm agent: built + installed + mTLS-enrolled in rockylinux over the hop"; RPM_AGENTS=1; } \
+      || bad "rpm agent (see output above)"
+  else bad "rpm-agent lease"; fi
+fi
 
 if [ "$DESKTOP" = 1 ]; then
   # AH_DESKTOP_ID reuses an already-warm desktop box (skip lease + re-bootstrap).
@@ -114,9 +128,10 @@ fi
 
 echo "== assert monitoring ingested a report from the remote agent(s) =="
 REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"
-[ -n "${REPORTS:-}" ] && [ "$REPORTS" -ge "${#AGENT_SLUGS[@]}" ] 2>/dev/null \
+EXPECT=$(( ${#AGENT_SLUGS[@]} + RPM_AGENTS ))
+[ -n "${REPORTS:-}" ] && [ "$REPORTS" -ge "$EXPECT" ] 2>/dev/null \
   && ok "monitoring ingested $REPORTS report(s) from remote agent(s)" \
-  || bad "monitoring saw ${REPORTS:-0} reports (expected >= ${#AGENT_SLUGS[@]})"
+  || bad "monitoring saw ${REPORTS:-0} reports (expected >= $EXPECT)"
 
 echo ""
 echo "──────────────────────────────────────────────"

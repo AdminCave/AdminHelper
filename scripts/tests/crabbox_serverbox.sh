@@ -68,7 +68,11 @@ for _ in range(45):  # admin is created by the startup lifespan after Alembic
 if not tok: raise SystemExit("login failed")
 sid = call("POST", "/api/servers", tok, {"name": "mb-agent", "hostname": "mb-agent.local"})["id"]
 ptok = call("POST", f"/api/servers/{sid}/provision/token", tok, {})["token"]
-print(f"MB_SID={sid} MB_PTOK={ptok}")
+# A second server + token for the cross-distro (rpm) agent so it enrolls as its own
+# identity — no shared/one-shot provision-token conflict with the deb agent (S2).
+sid2 = call("POST", "/api/servers", tok, {"name": "mb-agent-rpm", "hostname": "mb-agent-rpm.local"})["id"]
+ptok2 = call("POST", f"/api/servers/{sid2}/provision/token", tok, {})["token"]
+print(f"MB_SID={sid} MB_PTOK={ptok} MB_SID2={sid2} MB_PTOK2={ptok2}")
 PY
 )" || { echo "[serverbox] seeding failed"; exit 1; }
 echo "$OUT"
