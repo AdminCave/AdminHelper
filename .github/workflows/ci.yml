@@ -363,27 +363,31 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # Audit C7: FRP_VERSION (+ artifact SHAs) is pinned in three places that
-  # must move in lockstep — drift breaks the tunnel at runtime, not in CI.
+  # Audit C7: FRP_VERSION (+ artifact SHAs) is pinned in four places that must move
+  # in lockstep — drift breaks the tunnel at runtime, not in CI. The crabbox heavy-
+  # test bootstrap (scripts/tests/crabbox_bootstrap.sh) stages the same frpc sidecar
+  # and is the 4th pin.
   frp-consistency:
     name: FRP pins in lockstep
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Compare the three FRP_VERSION pins
+      - name: Compare the four FRP_VERSION pins
         run: |
           ci=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
           rel=$(grep -m1 '^  FRP_VERSION:' .github/workflows/release.yml | grep -o '[0-9][0-9.]*')
           # Extract only the version tag; the image may carry a trailing
           # @sha256:<digest> pin whose hex would otherwise leak into the match.
           compose=$(grep -m1 'snowdreamtech/frps:' docker-compose.yml | sed -E 's#.*snowdreamtech/frps:([0-9][0-9.]*).*#\1#')
+          boot=$(grep -m1 'FRP_VERSION=' scripts/tests/crabbox_bootstrap.sh | grep -o '[0-9][0-9.]*' | head -1)
           sha_ci=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
           sha_rel=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
-          echo "ci.yml=$ci release.yml=$rel docker-compose.yml=$compose"
-          test -n "$ci" && test "$ci" = "$rel" && test "$ci" = "$compose" || {
-            echo "::error::FRP_VERSION drift detected (ci=$ci, release=$rel, compose=$compose)"; exit 1; }
-          test "$sha_ci" = "$sha_rel" || {
-            echo "::error::FRP_SHA256_LINUX_AMD64 differs between ci.yml and release.yml"; exit 1; }
+          sha_boot=$(grep -m1 'FRP_SHA256_LINUX_AMD64=' scripts/tests/crabbox_bootstrap.sh | grep -o '[0-9a-f]\{64\}')
+          echo "ci.yml=$ci release.yml=$rel docker-compose.yml=$compose crabbox_bootstrap=$boot"
+          test -n "$ci" && test "$ci" = "$rel" && test "$ci" = "$compose" && test "$ci" = "$boot" || {
+            echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, compose=$compose, bootstrap=$boot)"; exit 1; }
+          test "$sha_ci" = "$sha_rel" && test "$sha_ci" = "$sha_boot" || {
+            echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/crabbox_bootstrap.sh"; exit 1; }
 
   # Lint the host ops scripts and run the hermetic update.sh sandbox test (fake
   # release over file://, stubbed docker — no real stack). --severity=warning so

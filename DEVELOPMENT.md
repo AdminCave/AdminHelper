@@ -360,6 +360,28 @@ From-outside-Test (`integration-stack`) und der Desktop-Smoke-E2E
 + `desktop_e2e_tunnel.sh`) laufen bewusst **nur lokal/manuell** — vor Releases
 von Hand ausfuehren.
 
+### Schwere Suites auf crabbox (Multi-Host + schneller Loop)
+
+Wer kein lokales Docker/Display hat (z. B. die Agent-Sandbox), faehrt die schweren
+Suites auf **crabbox** (least ephemere Proxmox-VMs; Provider-Env in
+`.claude/settings.json`, Token nur im gitignored `.claude/settings.local.json`).
+Ein Sammel-Runner buendelt die Single-Box-Layer:
+`bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]` (schwere Layer
+verlangen `AH_ALLOW_REAL=1`).
+
+- **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
+  zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
+  `crabbox_warm.sh <desktop|server|pond>` hydriert **einmal** und merkt den Slug
+  (`.crabbox/warm.env`); danach ist jede Iteration inkrementell (`target/` +
+  `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
+  `crabbox_iter.sh <layer>` bzw. `crabbox_iter.sh --desktop`. `crabbox_reap.sh`
+  raeumt die Warm-Boxen auf. Bei Fehler bleibt die Box stehen (`crabbox ssh`) und
+  Screenshots/Logs landen automatisch lokal unter `.crabbox-out/`.
+- **Verteilt (Multi-Host).** `crabbox_multibox.sh --agents N [--desktop]` least
+  Server- + Agent-Box(en) auf `vmbr1`; mit `--desktop` zusaetzlich eine Box, die die
+  echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/
+  Monitoring) — Cross-Host-mTLS, echtes `.deb`, Monitoring ueber den Netz-Hop.
+
 ---
 
 ## Typische Workflows
