@@ -8,9 +8,15 @@
 #
 # Called by scripts/tests/crabbox_multibox.sh via `crabbox run`.
 set -uo pipefail
-SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel]}"
-TUNNEL="${2:-}"   # mode: "tunnel" (S4: STCP tunnel + frps) | "moncheck" (S5)
-SMTP_IP="${3:-}"  # moncheck: where the alerter sends email (the mailhog sink box)
+SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP>]}"; shift || true
+# Independent, composable modes (so the S6 capstone can do BOTH at once):
+#   tunnel            S4: seed an STCP tunnel + bring up frps
+#   moncheck <IP>     S5: seed ping checks + an email alert to the mailhog sink <IP>
+DO_TUNNEL=0; DO_MONCHECK=0; SMTP_IP=""
+while [ $# -gt 0 ]; do case "$1" in
+  tunnel)   DO_TUNNEL=1 ;;
+  moncheck) DO_MONCHECK=1; SMTP_IP="${2:-}"; shift ;;
+  *) ;; esac; shift; done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
 echo "[serverbox] hydrate (server profile: docker stack, no Tauri)"
@@ -52,7 +58,7 @@ up=0; for _ in $(seq 1 60); do curl -sk "https://localhost/" >/dev/null 2>&1 && 
 [ "$up" = 1 ] || { echo "[serverbox] gateway never came up"; "${DC[@]}" logs --tail 30 gateway ca-issuer server; exit 1; }
 
 echo "[serverbox] seed admin JWT -> server record -> provision token"
-export ADMIN_PW SRV_IP TUNNEL
+export ADMIN_PW SRV_IP DO_TUNNEL
 OUT="$(python3 - <<'PY'
 import json, ssl, os, time, urllib.request
 ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -79,7 +85,7 @@ print(f"MB_SID={sid} MB_PTOK={ptok} MB_SID2={sid2} MB_PTOK2={ptok2}")
 # exposing the tunnel-agent's own sshd (:22). Creating the config writes frps.toml
 # into the shared volume; the caller then brings frps up. The agent provisions
 # against MB_TUN_* and its frpc.toml (fetched for these tunnels) runs the STCP server.
-if os.environ.get("TUNNEL") == "tunnel":
+if os.environ.get("DO_TUNNEL") == "1":
     srv_ip = os.environ["SRV_IP"]
     tsid = call("POST", "/api/servers", tok, {"name": "mb-tunnel", "hostname": "mb-tunnel.local"})["id"]
     tptok = call("POST", f"/api/servers/{tsid}/provision/token", tok, {})["token"]
@@ -102,7 +108,7 @@ echo "MB_ADMIN_PW=$ADMIN_PW"
 echo "MB_MONITOR_KEY=$(grep -E '^MONITOR_API_KEY=' .env | head -1 | cut -d= -f2-)"
 # Tunnel mode: the FRP config seed above wrote frps.toml into the shared volume;
 # bring frps up now (its ca-issuer-provisioned leaf carries the DOMAIN=$SRV_IP SAN).
-if [ "$TUNNEL" = tunnel ]; then
+if [ "$DO_TUNNEL" = 1 ]; then
   echo "[serverbox] tunnel mode: bring up frps (STCP relay :7000/:7443)"
   "${DC[@]}" up -d frps >/dev/null 2>&1 && echo "MB_FRPS_UP=1" || { echo "MB_FRPS_UP=0"; "${DC[@]}" logs --tail 20 frps; }
 fi
@@ -110,7 +116,7 @@ fi
 # monitoring internal API (reachable only inside the compose net -> exec), then
 # trigger them. The critical transition dispatches email to the mailhog sink
 # (smtp_host in channel_config; SMTP is not SSRF-guarded, so a private IP is fine).
-if [ "$TUNNEL" = moncheck ]; then
+if [ "$DO_MONCHECK" = 1 ]; then
   echo "[serverbox] moncheck mode: seed ping checks + email alert (smtp -> $SMTP_IP:1025)"
   "${DC[@]}" exec -T monitoring python - <<PY
 import os, json, urllib.request

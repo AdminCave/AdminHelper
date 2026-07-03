@@ -8,7 +8,13 @@
 #   agent-box(s)= real .deb install + `adminhelper-agent provision` over a network hop
 # Then asserts each agent enrolled an mTLS identity and pushed a monitoring report.
 #
-#   bash scripts/tests/crabbox_multibox.sh [--agents N] [--keep]
+#   bash scripts/tests/crabbox_multibox.sh [--agents N] [--rpm] [--tunnel]
+#       [--desktop] [--moncheck] [--capstone] [--keep]
+#   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
+#   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel)
+#   --desktop  + the real Tauri GUI vs the remote server     (S3)
+#   --moncheck + pull ping-checks + a closed-loop email alert (S5)
+#   --capstone = --agents 1 --rpm --tunnel --desktop --moncheck (S6: all in one run)
 #
 # Validates over the single-host suites: cross-host mTLS with SAN=<server IP> (not
 # localhost), real package install + systemd, and the monitoring pipeline over a real
@@ -26,6 +32,7 @@ AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
   --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;;
+  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1 ;;  # S6: everything, one run
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
 # Proxmox provider env via the shared lib (secret in gitignored settings.local.json).
@@ -90,8 +97,9 @@ if [ "$MONCHECK" = 1 ]; then
 fi
 
 echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
-SRVARG=""; [ "$TUNNEL" = 1 ] && SRVARG="tunnel"
-[ "$MONCHECK" = 1 ] && SRVARG="moncheck $MC_IP"
+SRVARG=""
+[ "$TUNNEL" = 1 ]   && SRVARG="$SRVARG tunnel"
+[ "$MONCHECK" = 1 ] && SRVARG="$SRVARG moncheck $MC_IP"
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded ' | tail -40
 SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
