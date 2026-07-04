@@ -17,8 +17,8 @@ from app.modules.hooks.models import Hook
 
 # Scheduled-hook jobs are owned by the dedicated scheduler process; the web
 # workers only persist hook rows to the DB and let the periodic reconcile pick
-# them up. _INTERVAL_MAP is still needed here for interval validation.
-from app.modules.hooks.scheduler import _INTERVAL_MAP
+# them up. INTERVAL_MAP is still needed here for interval validation.
+from app.modules.hooks.scheduler import INTERVAL_MAP
 from app.modules.hooks.schemas import (
     VALID_EVENTS,
     VALID_INTERVALS,
@@ -79,7 +79,7 @@ def _validate_schedule_interval(interval: str) -> None:
     expression. Shared by create and update so a bad cron on PUT raises 422
     instead of reaching add_hook -> _parse_trigger as an unhandled 500."""
     parts = interval.split()
-    if interval not in _INTERVAL_MAP and len(parts) != 5:
+    if interval not in INTERVAL_MAP and len(parts) != 5:
         raise HTTPException(
             status_code=422,
             detail=f"Ungültiges Intervall. Erlaubt: {', '.join(VALID_INTERVALS)} oder Cron (5 Felder)",

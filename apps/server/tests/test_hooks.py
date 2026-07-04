@@ -107,3 +107,14 @@ class TestEventDispatch:
         _run_event("server.created", {"id": "s1"})
 
         assert ran == ["-- match-enabled"]
+
+
+def test_valid_intervals_matches_scheduler_map():
+    """2.50: the 422 interval error lists VALID_INTERVALS while the validator
+    accepts anything in INTERVAL_MAP — they must be the same set, else the message
+    hides a valid interval ("1m" had drifted out of VALID_INTERVALS)."""
+    from app.modules.hooks.scheduler import INTERVAL_MAP
+    from app.modules.hooks.schemas import VALID_INTERVALS
+
+    assert "1m" in VALID_INTERVALS
+    assert set(VALID_INTERVALS) == set(INTERVAL_MAP)

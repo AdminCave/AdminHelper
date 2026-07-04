@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.modules.hooks.scheduler import INTERVAL_MAP
+
 VALID_EVENTS = [
     "connection.created",
     "connection.updated",
@@ -29,7 +31,7 @@ VALID_EVENTS = [
     "playbook.deleted",
 ]
 
-VALID_INTERVALS = ["5m", "15m", "30m", "1h", "6h", "12h", "24h"]
+VALID_INTERVALS = list(INTERVAL_MAP)
 
 
 class HookCreate(BaseModel):

@@ -29,7 +29,7 @@ scheduler = BackgroundScheduler(
     },
 )
 
-_INTERVAL_MAP = {
+INTERVAL_MAP = {
     "1m": {"minutes": 1},
     "5m": {"minutes": 5},
     "15m": {"minutes": 15},
@@ -43,13 +43,13 @@ _INTERVAL_MAP = {
 
 def _parse_trigger(interval: str):
     """Convert an interval string or cron expression into an APScheduler trigger."""
-    if interval in _INTERVAL_MAP:
-        return IntervalTrigger(**_INTERVAL_MAP[interval])
+    if interval in INTERVAL_MAP:
+        return IntervalTrigger(**INTERVAL_MAP[interval])
     parts = interval.split()
     if len(parts) == 5:
         return CronTrigger.from_crontab(interval)
     raise ValueError(
-        f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)} oder Cron (5 Felder)"
+        f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(INTERVAL_MAP)} oder Cron (5 Felder)"
     )
 
 
