@@ -383,6 +383,32 @@ fn monitor_rdp_exit(
     });
 }
 
+/// Feed a password to a spawned child's stdin, then scrub the local copy. The
+/// security-critical secret-handling shared by the RDP launch and the auth probe,
+/// so a later hardening (e.g. zeroize, or a forgotten kill on BrokenPipe) can't
+/// land in only one of the two copies.
+#[cfg(unix)]
+fn feed_password_stdin(child: &mut std::process::Child, password: &str) -> Result<(), AppError> {
+    if let Some(mut stdin) = child.stdin.take() {
+        let mut payload = format!("{password}\n");
+        let write_result = stdin.write_all(payload.as_bytes());
+        // Scrub the password copy regardless of the write outcome (parity with the
+        // Windows credential path in password.rs).
+        unsafe {
+            for byte in payload.as_bytes_mut() {
+                *byte = 0;
+            }
+        }
+        if let Err(e) = write_result {
+            // A BrokenPipe (child already exited / refused stdin) would otherwise
+            // leave the spawned process around — reap it before propagating.
+            let _ = child.kill();
+            return Err(e.into());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn spawn_rdp_with_password(
     binary: &str,
@@ -401,23 +427,7 @@ fn spawn_rdp_with_password(
         .env("WLOG_APPENDER", "console");
     let mut child = command.spawn()?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let mut payload = format!("{password}\n");
-        let write_result = stdin.write_all(payload.as_bytes());
-        // Scrub the password copy regardless of the write outcome (parity with the
-        // Windows credential path in password.rs).
-        unsafe {
-            for byte in payload.as_bytes_mut() {
-                *byte = 0;
-            }
-        }
-        if let Err(e) = write_result {
-            // A BrokenPipe (child already exited / refused stdin) would otherwise
-            // leave the spawned process around — reap it before propagating.
-            let _ = child.kill();
-            return Err(e.into());
-        }
-    }
+    feed_password_stdin(&mut child, password)?;
 
     let emitted = Arc::new(AtomicBool::new(false));
     // Separate "connected" flag instead of `connected_at_ms == 0`: a
@@ -551,23 +561,7 @@ pub fn check_rdp_auth(
         .env("WLOG_APPENDER", "console");
     let mut child = command.spawn()?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let mut payload = format!("{password}\n");
-        let write_result = stdin.write_all(payload.as_bytes());
-        // Scrub the password copy regardless of the write outcome (parity with the
-        // Windows credential path in password.rs).
-        unsafe {
-            for byte in payload.as_bytes_mut() {
-                *byte = 0;
-            }
-        }
-        if let Err(e) = write_result {
-            // A BrokenPipe (child already exited / refused stdin) would otherwise
-            // leave the spawned process around — reap it before propagating.
-            let _ = child.kill();
-            return Err(e.into());
-        }
-    }
+    feed_password_stdin(&mut child, password)?;
 
     let output = child.wait_with_output()?;
     let mut combined = output.stderr;
@@ -699,4 +693,22 @@ pub fn write_rdp_file(
     });
 
     Ok(path)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feed_password_stdin_writes_and_returns_ok() {
+        // `cat` accepts the piped stdin; the helper must write, scrub, and succeed.
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("cat available");
+        assert!(feed_password_stdin(&mut child, "s3cret").is_ok());
+        // stdin was consumed by the helper, so cat sees EOF and exits.
+        let _ = child.wait();
+    }
 }
