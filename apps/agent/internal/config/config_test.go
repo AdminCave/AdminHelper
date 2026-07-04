@@ -145,9 +145,9 @@ func TestSplitServices(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := splitServices(tc.input)
+			got := SplitServices(tc.input)
 			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("splitServices(%q) = %v, erwartet %v", tc.input, got, tc.want)
+				t.Errorf("SplitServices(%q) = %v, erwartet %v", tc.input, got, tc.want)
 			}
 		})
 	}
@@ -174,13 +174,25 @@ func TestFrpcConfigFromKVFields(t *testing.T) {
 }
 
 func TestFrpcConfigFallbackCACert(t *testing.T) {
-	// Empty CACERT + CURL_SSL containing "cacert" -> fallback to FrpCACert().
+	// Empty CACERT + CURL_SSL carrying the legacy --cacert flag -> fallback.
 	kv := map[string]string{
 		"CURL_SSL": "--cacert /etc/frp/ca.crt",
 	}
 	cfg := frpcConfigFromKV(kv)
 	if cfg.CACert != FrpCACert() {
 		t.Errorf("Fallback-CACert = %q, erwartet %q", cfg.CACert, FrpCACert())
+	}
+}
+
+func TestFrpcConfigNoFallbackWithoutCacertFlag(t *testing.T) {
+	// 2.57: the match is the exact --cacert flag, not a loose "cacert" substring.
+	// --capath (which contains "cacert" in "cacerts") must NOT trigger the fallback.
+	kv := map[string]string{
+		"CURL_SSL": "--capath /etc/ssl/cacerts",
+	}
+	cfg := frpcConfigFromKV(kv)
+	if cfg.CACert != "" {
+		t.Errorf("kein Fallback ohne --cacert-Flag erwartet, war %q", cfg.CACert)
 	}
 }
 

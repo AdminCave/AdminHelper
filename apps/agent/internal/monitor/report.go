@@ -113,20 +113,20 @@ func PushReport(ctx context.Context, p PushReportParams) error {
 		return err
 	}
 
-	if err := pushOnce(client, endpoint, apiKey, data); err != nil {
+	if err := pushOnce(ctx, client, endpoint, apiKey, data); err != nil {
 		logger.Warnf("Push fehlgeschlagen (%v), Retry in %s...", err, pushRetryDelay)
 		select {
 		case <-time.After(pushRetryDelay):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		return pushOnce(client, endpoint, apiKey, data)
+		return pushOnce(ctx, client, endpoint, apiKey, data)
 	}
 	return nil
 }
 
-func pushOnce(client *http.Client, endpoint, apiKey string, data []byte) error {
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(data))
+func pushOnce(ctx context.Context, client *http.Client, endpoint, apiKey string, data []byte) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}

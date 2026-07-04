@@ -88,15 +88,7 @@ func Init(p InitParams) error {
 	logger.Infof("Config geschrieben: %s", config.MonitorConfFile())
 
 	// Test push
-	var serviceList []string
-	if services != "" {
-		for _, s := range strings.Split(services, ",") {
-			if n := strings.TrimSpace(s); n != "" {
-				serviceList = append(serviceList, n)
-			}
-		}
-	}
-	report := BuildReport(serviceList)
+	report := BuildReport(config.SplitServices(services))
 	if err := PushReport(context.Background(), PushReportParams{
 		URL:      url,
 		APIKey:   apiKey,

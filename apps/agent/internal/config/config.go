@@ -105,8 +105,10 @@ func frpcConfigFromKV(kv map[string]string) *FrpcConfig {
 		CACert:         kv["CACERT"],
 		Insecure:       kv["INSECURE"] == "1",
 	}
-	// Fallback: CACert from the FRP directory
-	if cfg.CACert == "" && cfg.CurlSSL != "" && strings.Contains(cfg.CurlSSL, "cacert") {
+	// Legacy migration: the bash agent (< v0.19) wrote CURL_SSL="--cacert /etc/frp/ca.crt"
+	// instead of a CACERT field. Match only that exact flag (not a stray "cacert"
+	// substring); drops away once every agent has been re-provisioned. (2.57)
+	if cfg.CACert == "" && strings.Contains(cfg.CurlSSL, "--cacert") {
 		cfg.CACert = FrpCACert()
 	}
 	return cfg
@@ -122,7 +124,7 @@ func LoadMonitorConfig() (*MonitorConfig, error) {
 		MonitorURL: kv["MONITOR_URL"],
 		APIKey:     kv["API_KEY"],
 		ServerID:   kv["SERVER_ID"],
-		Services:   splitServices(kv["SERVICES"]),
+		Services:   SplitServices(kv["SERVICES"]),
 		CACert:     kv["CACERT"],
 		Insecure:   kv["INSECURE"] == "1",
 	}, nil
@@ -152,9 +154,9 @@ func baseURL(raw string) (string, error) {
 	return u.Scheme + "://" + u.Host, nil
 }
 
-// splitServices splits a comma-separated SERVICES list, ignoring whitespace
+// SplitServices splits a comma-separated SERVICES list, ignoring whitespace
 // and empty entries.
-func splitServices(s string) []string {
+func SplitServices(s string) []string {
 	if s == "" {
 		return nil
 	}

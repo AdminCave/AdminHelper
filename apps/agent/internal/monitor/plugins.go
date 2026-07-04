@@ -7,6 +7,7 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -17,7 +18,7 @@ import (
 // the whole 5-minute report cycle.
 const dockerTimeout = 10 * time.Second
 
-// pluginTimeout caps every non-docker plugin exec (pvesh, zpool, hostname). These
+// pluginTimeout caps every non-docker plugin exec (pvesh, zpool). These
 // tools really do hang: `zpool list` blocks indefinitely on a suspended pool and
 // `pvesh` on quorum loss — exactly when monitoring matters most. Without a cap the
 // whole report cycle stalls and systemd kills the oneshot at TimeoutStartSec=60
@@ -117,11 +118,11 @@ func collectProxmox() map[string]any {
 	result := map[string]any{"node": nil, "vms": []any{}}
 
 	// Node status
-	hostname, err := runWithTimeout("hostname", "-s")
+	host, err := os.Hostname()
 	if err != nil {
 		return nil
 	}
-	nodeName := strings.TrimSpace(string(hostname))
+	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
 	nodeOut, err := runWithTimeout("pvesh", "get", "/nodes/"+nodeName+"/status",
 		"--output-format", "json")
 	if err == nil {
