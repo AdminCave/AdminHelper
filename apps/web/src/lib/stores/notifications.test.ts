@@ -4,7 +4,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { toasts, showToast, dismissToast } from './notifications';
+import { tNow } from '$lib/i18n';
+import { toasts, showToast, showError, dismissToast } from './notifications';
 
 describe('notifications store', () => {
   beforeEach(() => {
@@ -62,5 +63,17 @@ describe('notifications store', () => {
     const list = get(toasts);
     expect(list).toHaveLength(1);
     expect(list[0].message).toBe('b');
+  });
+
+  it("showError shows an Error's message as an error toast (2.55)", () => {
+    showError(new Error('boom'));
+    expect(get(toasts).at(-1)).toMatchObject({ message: 'boom', kind: 'error' });
+  });
+
+  it('showError falls back to the generic i18n string for a non-Error', () => {
+    showError('a plain string, not an Error');
+    const last = get(toasts).at(-1);
+    expect(last?.kind).toBe('error');
+    expect(last?.message).toBe(tNow('error.generic'));
   });
 });

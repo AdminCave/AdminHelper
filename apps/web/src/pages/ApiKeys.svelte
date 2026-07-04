@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { formatDate } from '$lib/utils/datetime';
   import { apikeys } from '$lib/stores/apikeys';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import Button from '$lib/components/ui/Button.svelte';
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import { confirmDialog } from '$lib/components/ui/ConfirmDialog.svelte';
@@ -29,7 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await apikeys.refresh();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -55,7 +55,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       await apikeys.remove(k.id);
       showToast($t('toast.apikey.deleted'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 </script>

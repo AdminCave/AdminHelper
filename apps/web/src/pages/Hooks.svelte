@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { formatDateTime } from '$lib/utils/datetime';
   import { hooks } from '$lib/stores/hooks';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import { HOOK_TYPE_LABEL } from '$lib/utils/hooks';
   import * as hookApi from '$lib/api/hooks';
   import Button from '$lib/components/ui/Button.svelte';
@@ -37,7 +37,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await hooks.refresh();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -52,7 +52,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       editing = full;
       modalOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -74,7 +74,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       await hooks.remove(h.id);
       showToast($t('toast.hook.deleted'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -86,7 +86,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       runName = h.name;
       runOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -99,7 +99,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       tokenTitle = $t('toast.hook.tokenGenerated');
       tokenOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -107,7 +107,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await hooks.toggle(h.id);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 </script>

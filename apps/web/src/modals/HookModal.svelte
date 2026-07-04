@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import { hooks } from '$lib/stores/hooks';
   import { HOOK_EVENTS, HOOK_INTERVAL_PRESETS } from '$lib/utils/hooks';
   import type { HookCreate, HookDetail, HookType, HookUpdate } from '$lib/api/types';
@@ -111,7 +111,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         }
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       submitting = false;
     }

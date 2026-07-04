@@ -10,7 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { users } from '$lib/stores/users';
   import * as serversApi from '$lib/api/servers';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import type { Server, User } from '$lib/api/types';
 
   interface Props {
@@ -85,7 +85,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       }
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       submitting = false;
     }

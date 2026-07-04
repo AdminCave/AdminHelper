@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { formatDateTime } from '$lib/utils/datetime';
   import * as auditApi from '$lib/api/audit';
-  import { showToast } from '$lib/stores/notifications';
+  import { showError } from '$lib/stores/notifications';
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import type { AuditEntry } from '$lib/api/types';
 
@@ -45,7 +45,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       entries = result;
     } catch (err) {
       if (gen !== loadGen) return;
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       if (gen === loadGen) loading = false;
     }
