@@ -17,7 +17,7 @@ func collectServiceHealth() map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
 		"enabled_inactive": []string{},
-		"all_services":     []map[string]string{},
+		"all_services":     []ServiceEntry{},
 	}
 
 	// Run sc query state= all
@@ -27,7 +27,7 @@ func collectServiceHealth() map[string]any {
 	}
 
 	var (
-		allServices  []map[string]string
+		allServices  []ServiceEntry
 		currentName  string
 		currentState string
 	)
@@ -72,7 +72,7 @@ func collectServiceHealth() map[string]any {
 }
 
 // mapWindowsService maps a Windows service to the systemd-compatible format.
-func mapWindowsService(name, state string) map[string]string {
+func mapWindowsService(name, state string) ServiceEntry {
 	activeState := "unknown"
 	switch state {
 	case "RUNNING":
@@ -84,7 +84,7 @@ func mapWindowsService(name, state string) map[string]string {
 	case "START_PENDING", "STOP_PENDING":
 		activeState = "activating"
 	}
-	return map[string]string{
+	return ServiceEntry{
 		"unit":          name,
 		"active_state":  activeState,
 		"enabled_state": "unknown",

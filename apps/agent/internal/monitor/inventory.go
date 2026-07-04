@@ -30,7 +30,7 @@ type inventoryState struct {
 // sorted representation of all_services. The entry order from
 // collectServiceHealth is map-iteration order (random), so the hash must be
 // order-independent.
-func inventoryHash(services []map[string]string) string {
+func inventoryHash(services []ServiceEntry) string {
 	lines := make([]string, 0, len(services))
 	for _, svc := range services {
 		lines = append(lines, svc["unit"]+"\t"+svc["active_state"]+"\t"+svc["enabled_state"])
@@ -86,7 +86,7 @@ func throttleInventory(report map[string]any, statePath string, now time.Time) (
 	if !ok {
 		return inventoryState{}, false
 	}
-	allServices, ok := systemd["all_services"].([]map[string]string)
+	allServices, ok := systemd["all_services"].([]ServiceEntry)
 	if !ok {
 		// Unexpected shape: leave the report untouched (full send), no state.
 		return inventoryState{}, false

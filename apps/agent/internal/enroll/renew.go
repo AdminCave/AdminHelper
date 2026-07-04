@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -25,17 +24,6 @@ const RenewalFraction = 0.5
 // client cert, which the gateway verifies and forwards).
 type RenewRequest struct {
 	CSR string `json:"csr"`
-}
-
-// ServerClient returns the HTTP client the agent uses for server pushes: mTLS
-// with the enrolled identity when present (client cert + custom-root-only),
-// otherwise the legacy fallback (pinned cacert / insecure) so pre-enrollment
-// and not-yet-migrated agents keep working during the permissive rollout.
-func ServerClient(dir, fallbackCacert string, fallbackInsecure bool, timeout time.Duration) (*http.Client, error) {
-	if Provisioned(dir) {
-		return httpclient.NewMTLS(CertPath(dir), KeyPath(dir), CAPath(dir), timeout)
-	}
-	return httpclient.New(fallbackCacert, fallbackInsecure, timeout)
 }
 
 // NeedsRenewal reports whether the leaf in certPEM is past `fraction` of its

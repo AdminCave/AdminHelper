@@ -16,7 +16,7 @@ func collectServiceHealth() map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
 		"enabled_inactive": []string{},
-		"all_services":     []map[string]string{},
+		"all_services":     []ServiceEntry{},
 	}
 
 	// 1) All service units with active_state
@@ -66,7 +66,7 @@ func collectServiceHealth() map[string]any {
 	for u := range enabledStates {
 		allUnits[u] = true
 	}
-	allServices := []map[string]string{}
+	allServices := []ServiceEntry{}
 	for unit := range allUnits {
 		active := unitStates[unit]
 		if active == "" {
@@ -76,7 +76,7 @@ func collectServiceHealth() map[string]any {
 		if enabled == "" {
 			enabled = "unknown"
 		}
-		allServices = append(allServices, map[string]string{
+		allServices = append(allServices, ServiceEntry{
 			"unit":          unit,
 			"active_state":  active,
 			"enabled_state": enabled,
