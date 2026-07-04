@@ -33,10 +33,6 @@ export const language = {
   set: _language.set,
 };
 
-export function setLanguage(lang: Language): void {
-  _language.set(lang);
-}
-
 export function toggleLanguage(): void {
   _language.update((l) => (l === 'de' ? 'en' : 'de'));
 }

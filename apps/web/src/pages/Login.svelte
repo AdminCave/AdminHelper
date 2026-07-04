@@ -25,7 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         // skips the refresh-retry branch in client.ts), not a session expiry.
         error = err.message;
       } else {
-        error = 'Login failed';
+        error = $t('login.failed');
       }
     } finally {
       submitting = false;

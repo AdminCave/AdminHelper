@@ -42,10 +42,6 @@ export function getVisitorToml(): Promise<string> {
   return fetchOk('/api/frp/generate/visitor-toml').then((r) => r.text());
 }
 
-export function getFrpcToml(serverId: string): Promise<string> {
-  return fetchOk(`/api/frp/generate/frpc-toml/${serverId}`).then((r) => r.text());
-}
-
 export function getBulkZip(): Promise<Blob> {
   return fetchOk('/api/frp/generate/bulk-zip').then((r) => r.blob());
 }

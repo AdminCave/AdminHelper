@@ -16,6 +16,7 @@ export const translations: Translations = {
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
+    'login.failed': 'Anmeldung fehlgeschlagen',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Benutzer',
@@ -239,6 +240,7 @@ export const translations: Translations = {
     'login.username': 'Username',
     'login.password': 'Password',
     'login.submit': 'Sign in',
+    'login.failed': 'Login failed',
 
     // ── Nav ────────────────────────────────────────────────────────────
     'nav.users': 'Users',

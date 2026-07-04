@@ -5,17 +5,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  interface Props {
-    params?: { page?: string };
-  }
-  let { params }: Props = $props();
-  const page = $derived(params?.page ?? 'page');
+  // Static page for the '*' catch-all route; the router passes no props.
 </script>
 
 <div class="page active">
   <div class="page-header">
     <div>
-      <div class="page-title">{page}</div>
+      <div class="page-title">Nicht verfuegbar</div>
       <div class="page-subtitle">Wird in einer spaeteren Phase migriert.</div>
     </div>
   </div>

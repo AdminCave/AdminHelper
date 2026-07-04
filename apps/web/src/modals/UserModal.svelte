@@ -11,7 +11,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { users } from '$lib/stores/users';
   import * as serversApi from '$lib/api/servers';
   import { showToast, showError } from '$lib/stores/notifications';
-  import type { Server, User } from '$lib/api/types';
+  import type { Server, User, UserUpdate } from '$lib/api/types';
 
   interface Props {
     open: boolean;
@@ -62,7 +62,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       const server_ids = [...selectedServerIds];
       if (editing) {
-        const payload: { is_admin: boolean; server_ids: string[]; password?: string } = {
+        const payload: UserUpdate = {
           is_admin: isAdmin,
           server_ids,
         };
