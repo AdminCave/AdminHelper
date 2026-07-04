@@ -9,7 +9,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { sessionStore } from './session';
+import { currentSession } from './session';
 import * as bridge from '$lib/bridge';
 import { notificationsApi } from '$lib/api/notifications';
 import type { NotificationItem } from '$lib/api/types';
@@ -28,10 +28,6 @@ export const notificationItems = derived(_state, ($s) => $s.items);
 export const unreadCount = derived(_state, ($s) => $s.unreadCount);
 export const panelOpen = derived(_state, ($s) => $s.panelOpen);
 
-function requireSession() {
-  return get(sessionStore).session;
-}
-
 // Highest feed id we have already seen. Guards OS notifications from firing for
 // the whole backlog on the first poll: priming sets it without firing; only
 // later polls treat id > lastSeenId as genuinely new.
@@ -45,7 +41,7 @@ export function setNewNotificationHandler(fn: ((items: NotificationItem[]) => vo
 }
 
 export async function loadFeed(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const res = await notificationsApi.fetchFeed(session, 50);
@@ -73,7 +69,7 @@ export async function loadFeed(): Promise<void> {
 }
 
 export async function markAllRead(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await notificationsApi.markRead(session, null);
@@ -109,7 +105,7 @@ export async function activateNotifications(): Promise<void> {
   // Live SSE push: a `notification` Tauri event (emitted by the Rust stream
   // client) means "reload the feed now". We reuse loadFeed instead of merging a
   // payload, keeping a single source of truth (priming, unread-count, OS-notify).
-  const session = requireSession();
+  const session = currentSession();
   if (session) {
     try {
       await bridge.startNotificationStream(session.serverUrl, session.token);

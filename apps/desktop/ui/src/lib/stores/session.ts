@@ -47,6 +47,12 @@ export const sessionStore = { subscribe: _state.subscribe };
 
 export const settings = derived(_state, ($s) => $s.settings);
 export const session = derived(_state, ($s) => $s.session);
+
+/** The current auth session, or null. Not a `require` — callers still guard with
+ * `if (!session) return`; the name says what it does (2.98). */
+export function currentSession(): AuthSession | null {
+  return get(_state).session;
+}
 export const ready = derived(_state, ($s) => $s.ready);
 
 /** Returns true if the current mode requires auth AND a session exists. */

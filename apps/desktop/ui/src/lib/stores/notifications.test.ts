@@ -31,17 +31,19 @@ vi.mock('$lib/bridge', () => ({
 vi.mock('@tauri-apps/api/event', () => ({ listen: h.listen }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
+  const session = {
+    serverUrl: 'https://srv',
+    token: 'tok',
+    refreshToken: 'r',
+    username: 'admin',
+    isAdmin: true,
+  };
   return {
     sessionStore: writable({
       settings: { mode: 'server', allowSelfSignedCerts: false },
-      session: {
-        serverUrl: 'https://srv',
-        token: 'tok',
-        refreshToken: 'r',
-        username: 'admin',
-        isAdmin: true,
-      },
+      session,
     }),
+    currentSession: () => session,
   };
 });
 

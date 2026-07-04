@@ -8,7 +8,7 @@
 import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
-import { sessionStore } from './session';
+import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
 import { ansibleApi } from '$lib/api/ansible';
 import { buildAnsibleTargets, groupServersByTag } from '$lib/models/ansible';
@@ -61,13 +61,8 @@ export const ansibleCanRun = derived(
   ($s) => $s.selectedPlaybookId !== null && $s.selectedServerIds.size > 0 && !$s.running,
 );
 
-function requireSession() {
-  const { session } = get(sessionStore);
-  return session;
-}
-
 export async function loadAnsibleData(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   _state.update((s) => ({ ...s, loading: true, loadError: null }));
   try {
@@ -90,7 +85,7 @@ export async function loadAnsibleData(): Promise<void> {
 /** Refreshes only the playbook list (after authoring), leaving the wizard's
  * selection and the server list untouched. */
 export async function reloadPlaybooks(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const playbooks = await ansibleApi.fetchPlaybooks(session);
@@ -134,7 +129,7 @@ export function clearSelection(): void {
 }
 
 export async function runPlaybook(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   const state = get(_state);
   const playbook = state.playbooks.find((p) => p.id === state.selectedPlaybookId);

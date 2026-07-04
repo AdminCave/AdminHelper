@@ -6,8 +6,8 @@
 // Auto-refresh via activate()/deactivate() from the monitoring page.
 
 import { errMsg, SESSION_EXPIRED } from '$lib/utils/errors';
-import { writable, derived, get } from 'svelte/store';
-import { sessionStore } from './session';
+import { writable, derived } from 'svelte/store';
+import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
 import { monitoringApi } from '$lib/api/monitoring';
 import {
@@ -108,11 +108,6 @@ export function setServerSearch(v: string): void {
 
 export const filteredChecks = derived(_state, ($s) => filterChecks($s.checks, $s.filters));
 
-function requireSession() {
-  const { session } = get(sessionStore);
-  return session;
-}
-
 export function setTab(tab: MonitoringTab): void {
   _state.update((s) => ({ ...s, tab, expandedCheckId: null }));
   if (tab === 'alerts') void loadAlerts();
@@ -139,7 +134,7 @@ export function toggleExpanded(id: string): void {
 }
 
 export async function loadServers(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const servers = await monitoringApi.fetchServers(session);
@@ -152,7 +147,7 @@ export async function loadServers(): Promise<void> {
 }
 
 export async function loadMonitoring(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   const gen = ++statusGen;
   try {
@@ -178,7 +173,7 @@ export async function loadMonitoring(): Promise<void> {
 }
 
 export async function loadAlerts(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const alerts = await monitoringApi.fetchAlerts(session);
@@ -191,7 +186,7 @@ export async function loadAlerts(): Promise<void> {
 }
 
 export async function loadAlertLog(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const log = await monitoringApi.fetchAlertLog(session, 50);
@@ -204,7 +199,7 @@ export async function loadAlertLog(): Promise<void> {
 }
 
 export async function toggleCheck(checkId: string): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await monitoringApi.toggleCheck(session, checkId);
@@ -215,7 +210,7 @@ export async function toggleCheck(checkId: string): Promise<void> {
 }
 
 export async function runCheck(checkId: string): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await monitoringApi.runCheck(session, checkId);
@@ -226,7 +221,7 @@ export async function runCheck(checkId: string): Promise<void> {
 }
 
 export async function toggleAlert(ruleId: string): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await monitoringApi.toggleAlert(session, ruleId);
@@ -238,7 +233,7 @@ export async function toggleAlert(ruleId: string): Promise<void> {
 
 // ── Alert rule CRUD ──────────────────────────────────────────────────────────
 export async function saveAlert(input: AlertRuleInput, id: string | null): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     if (id) await monitoringApi.updateAlert(session, id, input);
@@ -253,7 +248,7 @@ export async function saveAlert(input: AlertRuleInput, id: string | null): Promi
 }
 
 export async function deleteAlert(id: string): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     await monitoringApi.removeAlert(session, id);
@@ -268,7 +263,7 @@ export async function deleteAlert(id: string): Promise<boolean> {
 
 // ── Monitoring template CRUD ─────────────────────────────────────────────────
 export async function loadTemplates(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const templates = await monitoringApi.fetchTemplates(session);
@@ -284,7 +279,7 @@ export async function saveTemplate(
   input: MonitoringTemplateInput,
   id: string | null,
 ): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     if (id) await monitoringApi.updateTemplate(session, id, input);
@@ -299,7 +294,7 @@ export async function saveTemplate(
 }
 
 export async function deleteTemplate(id: string): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     await monitoringApi.removeTemplate(session, id);
