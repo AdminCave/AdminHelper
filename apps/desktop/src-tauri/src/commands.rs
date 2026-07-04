@@ -20,6 +20,28 @@ use crate::sync;
 use crate::tofu;
 use crate::tunnel;
 
+/// Resolve the "allow self-signed certs" flag: an explicit per-call override, else
+/// the persisted setting (default false on a missing/corrupt settings.json). The
+/// single source so the default semantics can't drift across the many commands.
+fn self_signed_setting(app: &tauri::AppHandle, explicit: Option<bool>) -> bool {
+    explicit.unwrap_or_else(|| {
+        storage::load_settings(app)
+            .map(|s| s.allow_self_signed_certs)
+            .unwrap_or(false)
+    })
+}
+
+/// Build the RDP launch options from the persisted settings — the borrow of
+/// custom_size ties the returned RdpOptions to `settings`.
+fn rdp_options(settings: &Settings) -> RdpOptions<'_> {
+    RdpOptions {
+        scaling_mode: settings.rdp_scaling_mode,
+        window_mode: settings.rdp_window_mode,
+        custom_size: settings.rdp_custom_size.as_deref(),
+        performance_profile: settings.rdp_performance_profile,
+    }
+}
+
 /// Checks whether the server certificate is valid. Returns true if valid,
 /// false if self-signed/invalid.
 #[tauri::command]
@@ -75,11 +97,7 @@ pub async fn enroll_device(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     enrollment::enroll(&server_url, &token, self_signed).await
 }
 
@@ -93,11 +111,7 @@ pub async fn enroll_with_token(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     enrollment::enroll_with_token(&server_url, &token, self_signed).await
 }
 
@@ -114,11 +128,7 @@ pub async fn export_browser_p12(
     dest_path: String,
     allow_self_signed: Option<bool>,
 ) -> Result<String, AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     let der = enrollment::export_browser_p12(&server_url, &token, &password, self_signed).await?;
     storage::write_browser_p12(&dest_path, &der)
 }
@@ -135,11 +145,7 @@ pub async fn api_proxy(
     body: Option<String>,
     allow_self_signed: Option<bool>,
 ) -> Result<serde_json::Value, AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     proxy::forward(&server_url, &token, &method, &path, body, self_signed).await
 }
 
@@ -163,9 +169,7 @@ pub async fn sync_connections(
     app: tauri::AppHandle,
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     sync::sync_connections(app, url, allow_self_signed).await
 }
 
@@ -187,12 +191,7 @@ pub fn open_connection(
 ) -> Result<(), AppError> {
     let settings = storage::load_settings(&app)?;
     let cid = correlation_id.unwrap_or_default();
-    let rdp = RdpOptions {
-        scaling_mode: settings.rdp_scaling_mode,
-        window_mode: settings.rdp_window_mode,
-        custom_size: settings.rdp_custom_size.as_deref(),
-        performance_profile: settings.rdp_performance_profile,
-    };
+    let rdp = rdp_options(&settings);
     connection::open_connection(
         &connection,
         password.as_deref(),
@@ -213,12 +212,7 @@ pub fn open_connection_stored(
 ) -> Result<(), AppError> {
     let settings = storage::load_settings(&app)?;
     let cid = correlation_id.unwrap_or_default();
-    let rdp = RdpOptions {
-        scaling_mode: settings.rdp_scaling_mode,
-        window_mode: settings.rdp_window_mode,
-        custom_size: settings.rdp_custom_size.as_deref(),
-        performance_profile: settings.rdp_performance_profile,
-    };
+    let rdp = rdp_options(&settings);
     connection::open_connection_stored(
         &app,
         &connection,
@@ -252,19 +246,13 @@ pub async fn login(
     password: String,
     allow_self_signed: Option<bool>,
 ) -> Result<AuthSession, AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     auth::login(&server_url, &username, &password, self_signed).await
 }
 
 #[tauri::command]
 pub async fn logout(app: tauri::AppHandle) -> Result<(), AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     auth::logout(allow_self_signed).await
 }
 
@@ -274,9 +262,7 @@ pub async fn fetch_connections_jwt(
     server_url: String,
     token: String,
 ) -> Result<Vec<Connection>, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     sync::fetch_connections_jwt(app, &server_url, &token, allow_self_signed).await
 }
 
@@ -288,9 +274,7 @@ pub async fn start_tunnel(
     token: String,
     username: String,
 ) -> Result<TunnelStatus, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     let frpc_state = state.inner().clone();
     frpc::start_tunnel(
         app,
@@ -320,9 +304,7 @@ pub async fn start_notification_stream(
     server_url: String,
     token: String,
 ) -> Result<(), AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     let stream_state = state.inner().clone();
     crate::notifications::start(app, stream_state, server_url, token, allow_self_signed).await
 }
@@ -338,9 +320,7 @@ pub async fn fetch_tunnels(
     server_url: String,
     token: String,
 ) -> Result<Vec<tunnel::TunnelMapping>, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     tunnel::fetch_tunnels(&server_url, &token, allow_self_signed).await
 }
 
