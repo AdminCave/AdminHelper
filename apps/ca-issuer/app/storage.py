@@ -17,6 +17,7 @@ decrypted solely to create/rotate intermediates.
 from __future__ import annotations
 
 import datetime
+import ipaddress
 import logging
 import os
 from dataclasses import dataclass
@@ -105,7 +106,6 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
             (pki_dir / f"{scope}-chain.pem").write_bytes(pki.chain_pem(inter_cert, root_cert))
         logger.info("PKI erzeugt: Root + %s", ", ".join(pki.SCOPES))
 
-    root_cert = pki.cert_from_pem(root_crt.read_bytes())
     out: dict[str, Intermediate] = {}
     for scope in pki.SCOPES:
         cert = pki.cert_from_pem((pki_dir / f"{scope}.crt").read_bytes())
@@ -119,8 +119,6 @@ def _classify_sans(primary: str, extra_sans: str) -> tuple[tuple[str, ...], tupl
     """Split a primary name + EXTRA_SANS into (dns_names, ip_addresses). localhost
     + 127.0.0.1 are always added so local/compose access validates against the
     pinned Root."""
-    import ipaddress
-
     dns: list[str] = []
     ips: list[str] = []
 

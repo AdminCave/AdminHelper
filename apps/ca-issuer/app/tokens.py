@@ -5,8 +5,9 @@
 """Enrollment-token store abstraction.
 
 Tokens are minted by the server's control plane (like today's provisioning
-tokens) and consumed here. The DB-backed implementation lands in A1 increment 4;
-this module defines the Protocol + an in-memory store for tests/dev.
+tokens) and consumed here. This module defines the Protocol + an in-memory store
+for tests/dev; the production store is the DB-backed DbTokenStore in app/db.py,
+selected via DATABASE_URL in main.build_issuer.
 """
 
 from __future__ import annotations

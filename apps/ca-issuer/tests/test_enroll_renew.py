@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app import config, pki
 from app.main import app
-from app.tokens import EnrollmentGrant
+from app.tokens import EnrollmentGrant, InMemoryTokenStore
 
 
 def _csr_pem(common_name: str) -> str:
@@ -41,9 +41,11 @@ def _cn(cert: x509.Certificate) -> str:
 @pytest.fixture()
 def client():
     with TestClient(app) as c:
-        # reset the in-memory store between tests
-        c.app.state.token_store._tokens.clear()
-        c.app.state.token_store._deprovisioned.clear()
+        # Swap in a fresh store per test instead of clearing the previous one's
+        # internals — no coupling to the store's private attributes (2.75).
+        store = InMemoryTokenStore()
+        c.app.state.issuer.tokens = store
+        c.app.state.token_store = store
         yield c
 
 
