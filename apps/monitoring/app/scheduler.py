@@ -18,6 +18,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.check_engine import execute_check
+from app.check_types import PUSH_ONLY_TYPES
+
 logger = logging.getLogger("monitor.scheduler")
 
 # Explicit instead of APScheduler defaults (audit, target 250-500 servers):
@@ -37,17 +40,6 @@ scheduler = BackgroundScheduler(
         "misfire_grace_time": 30,
     },
 )
-
-# Agent push checks are evaluated only by the agent report endpoint,
-# not by the scheduler. agent_ping is the exception: checks whether the agent is stale.
-PUSH_ONLY_TYPES = {
-    "agent_resources",
-    "service_process",
-    "docker_health",
-    "proxmox_backup",
-    "zfs_health",
-    "smart_health",
-}
 
 _INTERVAL_MAP = {
     "1m": {"minutes": 1},
@@ -81,8 +73,6 @@ def add_check(check_id: str, interval: str, check_type: str | None = None) -> No
     """
     if check_type and check_type in PUSH_ONLY_TYPES:
         return
-
-    from app.check_engine import execute_check
 
     trigger = _parse_trigger(interval)
     scheduler.add_job(

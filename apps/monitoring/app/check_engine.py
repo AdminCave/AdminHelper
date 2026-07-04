@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 
 from app.alerter import process_alert
+from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.core.database import SessionLocal
 from app.core.victoria import victoria
@@ -75,8 +76,6 @@ def execute_check(check_id: str) -> None:
         config = json.loads(check.config) if check.config else {}
 
         # Do not run push-only checks from the scheduler
-        from app.scheduler import PUSH_ONLY_TYPES
-
         if check.check_type in PUSH_ONLY_TYPES:
             return
 

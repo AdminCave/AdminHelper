@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.alerter import process_alert
 from app.check_engine import effective_status, is_suppressed, next_fail_count
+from app.check_types import PUSH_ONLY_TYPES
+from app.checkers import get_checker
 from app.checkers.agent import EXCLUDED_FSTYPES
 from app.core import database
 from app.core.auth import require_agent
@@ -91,9 +93,7 @@ def agent_report(
 
     import time as _time
 
-    from app.checkers.agent import AgentResourcesChecker, ServiceProcessChecker, record_agent_report
-    from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
-    from app.checkers.smart import SmartHealthChecker
+    from app.checkers.agent import record_agent_report
 
     record_agent_report(server_id)
 
@@ -158,19 +158,11 @@ def agent_report(
         .filter(
             MonitorCheck.server_id == server_id,
             MonitorCheck.enabled == True,  # noqa: E712
-            MonitorCheck.check_type.in_(
-                [
-                    # agent_ping is intentionally NOT evaluated here: this endpoint
-                    # calls record_agent_report() first, so the staleness age would
-                    # always be ~0 ("ok"). The scheduler is the single source for it.
-                    "agent_resources",
-                    "service_process",
-                    "proxmox_backup",
-                    "zfs_health",
-                    "docker_health",
-                    "smart_health",
-                ]
-            ),
+            # PUSH_ONLY_TYPES is exactly the push-evaluated set. agent_ping is
+            # deliberately NOT in it: this endpoint calls record_agent_report()
+            # first, so the staleness age would always be ~0 ("ok") — the scheduler
+            # is the single source for agent_ping.
+            MonitorCheck.check_type.in_(sorted(PUSH_ONLY_TYPES)),
         )
         .all()
     )
@@ -184,20 +176,12 @@ def agent_report(
         try:
             config = json.loads(check.config) if check.config else {}
 
-            if check.check_type == "agent_resources":
-                result_status, message, metrics = AgentResourcesChecker().evaluate(config, report)
-            elif check.check_type == "service_process":
-                result_status, message, metrics = ServiceProcessChecker().evaluate(config, report)
-            elif check.check_type == "proxmox_backup":
-                result_status, message, metrics = ProxmoxBackupChecker().evaluate(config, report)
-            elif check.check_type == "zfs_health":
-                result_status, message, metrics = ZfsHealthChecker().evaluate(config, report)
-            elif check.check_type == "docker_health":
-                result_status, message, metrics = DockerHealthChecker().evaluate(config, report)
-            elif check.check_type == "smart_health":
-                result_status, message, metrics = SmartHealthChecker().evaluate(config, report)
-            else:
-                continue
+            # Reuse the checker registry instead of a hand-written if/elif that
+            # duplicated the push-checker list across imports, the in_-filter and
+            # the dispatch. The filter above guarantees check_type is a push type,
+            # so get_checker always resolves; each push checker implements evaluate().
+            checker = get_checker(check.check_type)
+            result_status, message, metrics = checker.evaluate(config, report)
 
             # Extract structured details
             details = metrics.pop("_details", None) if metrics else None
