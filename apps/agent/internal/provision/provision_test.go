@@ -67,3 +67,27 @@ func TestWritePinnedCert(t *testing.T) {
 		t.Fatalf("pinned cert content mismatch")
 	}
 }
+
+func TestMonitorBaseURL(t *testing.T) {
+	// 2.70: derive the push base from the provisioned server URL + the
+	// server-declared relative path; nil/absolute values fall back to the
+	// well-known path.
+	relPath := "/api/mon2"
+	absURL := "https://old.example/monitoring"
+	wellKnown := "/api/monitoring"
+	cases := []struct {
+		name       string
+		monitorURL *string
+		want       string
+	}{
+		{"nil -> well-known", nil, "https://srv/api/monitoring"},
+		{"relative path used", &relPath, "https://srv/api/mon2"},
+		{"absolute value -> fallback", &absURL, "https://srv/api/monitoring"},
+		{"explicit well-known", &wellKnown, "https://srv/api/monitoring"},
+	}
+	for _, c := range cases {
+		if got := monitorBaseURL("https://srv", c.monitorURL); got != c.want {
+			t.Errorf("%s: monitorBaseURL = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

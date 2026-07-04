@@ -77,23 +77,11 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Printf("Provisioning fuer Server %q gestartet.\n", resp.ServerName)
 
-	// TOFU: a blind --insecure (no --cacert) would otherwise persist INSECURE=1
-	// into the recurring loop, permanently disabling TLS verification and leaking
-	// the long-lived API key every cycle. Instead, pin the certificate the server
-	// actually presented during this activate call; the loop verifies against it.
-	// --insecure thus applies only to this one-off provisioning call.
-	effectiveCacert := cacert
-	effectiveInsecure := insecure
-	if insecure && cacert == "" && len(serverCertPEM) > 0 {
-		pinnedPath, err := writePinnedCert(serverCertPEM)
-		if err != nil {
-			return fmt.Errorf("Server-Zertifikat pinnen: %w", err)
-		}
-		defer os.Remove(pinnedPath)
-		effectiveCacert = pinnedPath
-		effectiveInsecure = false
-		fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+	effectiveCacert, effectiveInsecure, cleanupPin, err := pinIfBlindInsecure(cacert, insecure, serverCertPEM)
+	if err != nil {
+		return err
 	}
+	defer cleanupPin()
 
 	// 0. mTLS enrollment: fetch the agent's client cert from the ca-issuer with
 	// the one-time token. Best-effort — during the permissive rollout (A4) the
@@ -117,11 +105,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	// path (e.g. "/api/monitoring"); older/absolute values fall back to the
 	// well-known path.
 	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" {
-		monitorPath := "/api/monitoring"
-		if resp.MonitorURL != nil && strings.HasPrefix(*resp.MonitorURL, "/") {
-			monitorPath = *resp.MonitorURL
-		}
-		monitorURL := adminHelperURL + monitorPath
+		monitorURL := monitorBaseURL(adminHelperURL, resp.MonitorURL)
 		fmt.Println("→ Monitor-Agent wird eingerichtet...")
 		if err := monitor.Init(monitor.InitParams{
 			URL:      monitorURL,
@@ -156,6 +140,36 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	return nil
 }
 
+// pinIfBlindInsecure turns a blind --insecure (no --cacert) into TOFU-pinned trust:
+// it writes the cert the server presented on the activate call and returns that as
+// the effective cacert with insecure=false, so the recurring loop verifies against
+// it instead of persisting INSECURE=1 and leaking the API key every cycle. The
+// returned cleanup removes the pinned file (a no-op when nothing was pinned);
+// --insecure thus applies only to this one-off provisioning call.
+func pinIfBlindInsecure(cacert string, insecure bool, serverCertPEM []byte) (string, bool, func(), error) {
+	if !(insecure && cacert == "" && len(serverCertPEM) > 0) {
+		return cacert, insecure, func() {}, nil
+	}
+	pinnedPath, err := writePinnedCert(serverCertPEM)
+	if err != nil {
+		return "", false, func() {}, fmt.Errorf("Server-Zertifikat pinnen: %w", err)
+	}
+	fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+	return pinnedPath, false, func() { os.Remove(pinnedPath) }, nil
+}
+
+// monitorBaseURL derives the metrics-push base from the just-provisioned server URL
+// plus the server-declared relative path (e.g. "/api/monitoring"); an absent or
+// absolute MonitorURL falls back to the well-known path, so the push hits the same
+// TLS-trusted host without the server knowing its own public address.
+func monitorBaseURL(adminHelperURL string, monitorURL *string) string {
+	path := "/api/monitoring"
+	if monitorURL != nil && strings.HasPrefix(*monitorURL, "/") {
+		path = *monitorURL
+	}
+	return adminHelperURL + path
+}
+
 // runEnrollment generates an on-device key + CSR and redeems the enrollment
 // token at the gateway's enroll plane, persisting the issued identity.
 func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, insecure bool) error {
@@ -179,7 +193,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	if err != nil {
 		return err
 	}
-	issued, err := enroll.Submit(client, endpoint, enroll.EnrollRequest{Token: info.Token, CSR: string(csr)})
+	issued, err := enroll.Submit(client, endpoint, enroll.Request{Token: info.Token, CSR: string(csr)})
 	if err != nil {
 		return err
 	}

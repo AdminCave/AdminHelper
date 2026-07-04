@@ -19,35 +19,17 @@ func collectServiceHealth() map[string]any {
 		"all_services":     []ServiceEntry{},
 	}
 
-	// 1) All service units with active_state
-	unitStates := map[string]string{}
-	out, err := exec.Command("systemctl", "list-units", "--type=service", "--all",
-		"--no-legend", "--plain", "--no-pager").Output()
-	if err == nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
-				unitStates[parts[0]] = parts[2] // UNIT LOAD ACTIVE SUB
-			}
-		}
-	}
+	// 1) All service units with active_state (col 2 = UNIT LOAD ACTIVE SUB)
+	unitStates := parseSystemctlColumns(2, "list-units", "--type=service", "--all",
+		"--no-legend", "--plain", "--no-pager")
 
-	// 2) Enabled state for all unit files
-	enabledStates := map[string]string{}
-	out, err = exec.Command("systemctl", "list-unit-files", "--type=service",
-		"--no-legend", "--no-pager").Output()
-	if err == nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				enabledStates[parts[0]] = parts[1]
-			}
-		}
-	}
+	// 2) Enabled state for all unit files (col 1 = UNIT STATE)
+	enabledStates := parseSystemctlColumns(1, "list-unit-files", "--type=service",
+		"--no-legend", "--no-pager")
 
 	// 3) Failed units
 	failed := []string{}
-	out, err = exec.Command("systemctl", "list-units", "--state=failed",
+	out, err := exec.Command("systemctl", "list-units", "--state=failed",
 		"--no-legend", "--plain").Output()
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -94,6 +76,22 @@ func collectServiceHealth() map[string]any {
 	result["enabled_inactive"] = enabledInactive
 
 	return result
+}
+
+// parseSystemctlColumns runs `systemctl <args>` and maps each unit (field 0) to
+// its column `col`, skipping lines too short to hold it. Empty map on any error.
+func parseSystemctlColumns(col int, args ...string) map[string]string {
+	m := map[string]string{}
+	out, err := exec.Command("systemctl", args...).Output()
+	if err != nil {
+		return m
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if parts := strings.Fields(line); len(parts) > col {
+			m[parts[0]] = parts[col]
+		}
+	}
+	return m
 }
 
 // collectWatchedServices checks the status of specific systemd services.

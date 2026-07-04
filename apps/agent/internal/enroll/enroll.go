@@ -41,8 +41,8 @@ func KeyPath(dir string) string  { return filepath.Join(dir, KeyFileName) }
 func CertPath(dir string) string { return filepath.Join(dir, CertFileName) }
 func CAPath(dir string) string   { return filepath.Join(dir, CAFileName) }
 
-// EnrollRequest is the body the ca-issuer /enroll expects (token + PEM CSR).
-type EnrollRequest struct {
+// Request is the body the ca-issuer /enroll expects (token + PEM CSR).
+type Request struct {
 	Token string `json:"token"`
 	CSR   string `json:"csr"`
 }
@@ -86,7 +86,7 @@ func encodeKeyPEM(key *ecdsa.PrivateKey) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }
 
-// Submit POSTs a JSON body (an EnrollRequest, or a {csr} renewal) to the issuer
+// Submit POSTs a JSON body (a Request, or a {csr} renewal) to the issuer
 // endpoint via the given client and decodes the issued materials. The client
 // carries the TLS trust: a TOFU-pinned gateway cert on enroll, the persisted
 // pinned CA on renew.
