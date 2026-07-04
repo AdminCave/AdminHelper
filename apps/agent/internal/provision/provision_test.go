@@ -10,7 +10,9 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -28,7 +30,11 @@ func TestCallActivateCapturesServerCert(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, certPEM, err := callActivate(srv.URL, "tok", "srv-1", "", true)
+	// callActivate rewrites the host's port to the enroll plane; the httptest
+	// server is on a random port, so pass that port through unchanged.
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	resp, certPEM, err := callActivate(srv.URL, "tok", "srv-1", "", true, port)
 	if err != nil {
 		t.Fatalf("callActivate: %v", err)
 	}

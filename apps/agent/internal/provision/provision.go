@@ -67,7 +67,7 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 		return fmt.Errorf("--url, --token und --server-id sind erforderlich")
 	}
 
-	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure)
+	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, 8444)
 	if err != nil {
 		return err
 	}
@@ -191,13 +191,38 @@ func enrollEndpoint(adminHelperURL string, port int) (string, error) {
 	return u.String(), nil
 }
 
-func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool) (*activateResponse, []byte, error) {
+// activateEndpoint targets the provision-activate bootstrap door on the gateway's
+// certless enroll plane (:8444), not the mTLS data plane — a fresh agent has no
+// client cert yet, and :443 CERT_REQUIREs one under MTLS_ENFORCE=true (A8). Mirrors
+// enrollEndpoint: reuse the already-trusted host, swap in the enroll port.
+func activateEndpoint(adminHelperURL string, port int, serverID string) (string, error) {
+	u, err := url.Parse(adminHelperURL)
+	if err != nil {
+		return "", err
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("kein Host in %q", adminHelperURL)
+	}
+	u.Host = net.JoinHostPort(host, strconv.Itoa(port))
+	u.Path = fmt.Sprintf("/api/servers/%s/provision/activate", serverID)
+	u.RawQuery = ""
+	return u.String(), nil
+}
+
+func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool, enrollPort int) (*activateResponse, []byte, error) {
 	client, err := httpclient.New(cacert, insecure, 30*time.Second)
 	if err != nil {
 		return nil, nil, fmt.Errorf("HTTP-Client: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s/api/servers/%s/provision/activate", adminHelperURL, serverID)
+	// Activate is a token-gated bootstrap door on the gateway's certless enroll
+	// plane (:8444), NOT the mTLS data plane (:443): the agent has no client cert
+	// yet, and :443 rejects certless connections under MTLS_ENFORCE=true (A8).
+	endpoint, err := activateEndpoint(adminHelperURL, enrollPort, serverID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Activate-URL bilden: %w", err)
+	}
 	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
 		return nil, nil, err
