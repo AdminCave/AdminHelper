@@ -46,11 +46,21 @@ Desktop.ini
 .idea/
 .vscode/
 
-# Claude Code — never commit local settings/secrets (this repo is PUBLIC!).
-# .claude/ already excludes everything; the explicit second line is a guardrail
-# so the secret-bearing local file stays ignored even if .claude/ is relaxed.
-.claude/
+# Claude Code — this repo is PUBLIC. Share the reusable automation (settings.json =
+# permissions + hooks, and the skills); keep the secret/infra-bearing local file out.
+# Whitelist style: everything under .claude/ is ignored UNLESS explicitly un-ignored,
+# so any new local file (caches, secrets) stays out by default until you opt it in.
+.claude/*
+!.claude/settings.json
+!.claude/skills/
 .claude/settings.local.json
+
+# Local-only Arbeitsartefakte — dieses Repo ist PUBLIC. Der Audit-Report und sein Ledger
+# enumerieren noch UNGEFIXTE Funde (inkl. ausnutzbarer Sicherheitslücken mit Datei:Zeile);
+# das Release-Ledger enthält interne Homelab-Infra. Bleiben lokal, nicht ins öffentliche Repo.
+/fabelreport.md
+/tasks/audit-fixes.md
+/tasks/test-infra-capstone-release.md
 
 # crabbox local failure-capture bundles (0700, not fully redacted — never commit)
 .crabbox/

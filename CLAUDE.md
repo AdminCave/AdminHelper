@@ -5,7 +5,8 @@
 **AdminHelper** (GitHub-Repo `AdminCave/AdminHelper`, Teil von **[Admin Cave](https://admincave.com)**) ist ein Multi-Komponenten-Remote-
 Management-System: zentrale Verwaltung von SSH-/RDP-/Web-Verbindungen,
 Server-Inventar, Monitoring, FRP-Tunneln und Ansible-Playbooks. Fünf
-Code-Komponenten in vier Sprachen:
+Kern-Komponenten in vier Sprachen, dazu zwei Infrastruktur-Dienste
+(CA-Issuer, Gateway):
 
 | Komponente | Pfad | Stack | Tests |
 |---|---|---|---|
@@ -15,6 +16,8 @@ Code-Komponenten in vier Sprachen:
 | Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo test` (`#[cfg(test)]` in den Modulen) |
 | Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
 | Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Vitest (Unit) + Playwright (E2E) |
+| CA-Issuer (eigene PKI fürs mTLS-Enrollment) | `apps/ca-issuer/` | Python · FastAPI · cryptography | `pytest` (`apps/ca-issuer/tests/`) |
+| Gateway (Reverse-Proxy: Header-/mTLS-Terminierung, Ratelimit) | `apps/gateway/` | nginx | kein Unit-Test; `nginx -t` + `integration_stack_test.sh` |
 
 Externe Integrationen mit eigenem Wire-Format/Protokoll: **FRP** (`frps.toml`,
 STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
@@ -23,7 +26,7 @@ STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
 
 **Repo-Struktur:** Alle lauffähigen Einheiten liegen unter `apps/`
 (`apps/server/`, `apps/monitoring/`, `apps/agent/`, `apps/web/`,
-`apps/desktop/`); Doku in `docs/`, Ops-Skripte in
+`apps/desktop/`, `apps/ca-issuer/`, `apps/gateway/`); Doku in `docs/`, Ops-Skripte in
 `scripts/`. Der Desktop-Client vereint Rust/Tauri-Backend
 (`apps/desktop/src-tauri/`) und Svelte-UI (`apps/desktop/ui/`) unter einem
 Dach — die frühere `desktop/` vs. `desktop-src/`-Geschwister-Kollision (die
@@ -120,7 +123,7 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
   ständiges Nachfragen.
 - **Vor "fertig" melden, alle Checks tatsächlich ausführen** — nicht nur
   behaupten, und nur das ausführen, was es real gibt:
-  - **Python (`apps/server/`, `apps/monitoring/`):** in beiden Verzeichnissen
+  - **Python (`apps/server/`, `apps/monitoring/`, `apps/ca-issuer/`):** in allen dreien
     `pytest -q`; dazu `ruff check` + `ruff format --check` (Config in
     `ruff.toml` im Root, CI-Gate vorhanden). Kein Typechecker konfiguriert.
   - **Go (`apps/agent/`):** `gofmt -l .`, `go vet ./...`, `go test ./...`.
