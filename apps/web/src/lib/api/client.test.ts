@@ -194,4 +194,37 @@ describe('http client token refresh', () => {
       { path: '/api/servers/123', method: 'DELETE', authorization: 'Bearer old-token' },
     ]);
   });
+
+  it('requestRaw retries a text endpoint with the new token after refresh (1.32)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        const path = String(input);
+        if (path === '/api/auth/refresh') {
+          return Promise.resolve(jsonResponse({ access_token: 'new-token' }));
+        }
+        // First: 401; retry after refresh returns a TEXT body (frps.toml preview).
+        const isRetry = calls.filter((c) => c.path === path).length > 1;
+        return Promise.resolve(
+          isRetry
+            ? new Response('bindPort = 7000', { status: 200 })
+            : jsonResponse({ detail: 'expired' }, 401),
+        );
+      }),
+    );
+
+    const { requestRaw, setAccessToken } = await importClient();
+    setAccessToken('old-token');
+    const res = await requestRaw('/api/frp/generate/frps-toml');
+
+    expect(res.ok).toBe(true);
+    expect(await res.text()).toBe('bindPort = 7000');
+    expect(calls.map((c) => c.path)).toEqual([
+      '/api/frp/generate/frps-toml',
+      '/api/auth/refresh',
+      '/api/frp/generate/frps-toml',
+    ]);
+    expect(calls[2].authorization).toBe('Bearer new-token');
+  });
 });

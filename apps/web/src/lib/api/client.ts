@@ -107,6 +107,27 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   return data as T;
 }
 
+// Raw GET that shares the same 401 -> tryRefresh -> retry path as request(), but
+// returns the Response so callers can read text()/blob() (frps.toml preview, bulk
+// ZIP). Without this those endpoints bypassed the transparent refresh and surfaced
+// a bare HTTP 401 once the short-lived access token expired.
+export async function requestRaw(path: string): Promise<Response> {
+  const doFetch = () =>
+    fetch(path, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} });
+
+  let res = await doFetch();
+  if (res.status === 401 && !path.includes('/auth/')) {
+    const refreshed = await tryRefresh();
+    if (refreshed && accessToken) {
+      res = await doFetch();
+    } else {
+      onAuthFailure?.();
+      throw new ApiError(401, 'Session expired');
+    }
+  }
+  return res;
+}
+
 export const http = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),

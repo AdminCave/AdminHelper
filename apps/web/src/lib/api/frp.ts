@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { http, getAccessToken } from './client';
+import { http, requestRaw } from './client';
 import type { FrpConfig, FrpConfigInput, FrpStatus } from './types';
 
 export function listConfigs(): Promise<FrpConfig[]> {
@@ -17,11 +17,10 @@ export function updateConfig(id: string, data: FrpConfigInput): Promise<FrpConfi
   return http.put<FrpConfig>(`/api/frp/server-config/${id}`, data);
 }
 
-async function _fetchText(path: string): Promise<string> {
-  const token = getAccessToken();
-  const res = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+// Text/blob endpoints (the JSON http client can't carry them) still go through
+// the shared requestRaw so they get the same transparent 401 -> refresh -> retry.
+async function fetchOk(path: string): Promise<Response> {
+  const res = await requestRaw(path);
   if (!res.ok) {
     let detail: string | null = null;
     try {
@@ -32,41 +31,23 @@ async function _fetchText(path: string): Promise<string> {
     }
     throw new Error(detail ?? `HTTP ${res.status}`);
   }
-  return res.text();
-}
-
-async function _fetchBlob(path: string): Promise<Blob> {
-  const token = getAccessToken();
-  const res = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) {
-    let detail: string | null = null;
-    try {
-      const data = await res.json();
-      if (data && typeof data.detail === 'string') detail = data.detail;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail ?? `HTTP ${res.status}`);
-  }
-  return res.blob();
+  return res;
 }
 
 export function getFrpsToml(): Promise<string> {
-  return _fetchText('/api/frp/generate/frps-toml');
+  return fetchOk('/api/frp/generate/frps-toml').then((r) => r.text());
 }
 
 export function getVisitorToml(): Promise<string> {
-  return _fetchText('/api/frp/generate/visitor-toml');
+  return fetchOk('/api/frp/generate/visitor-toml').then((r) => r.text());
 }
 
 export function getFrpcToml(serverId: string): Promise<string> {
-  return _fetchText(`/api/frp/generate/frpc-toml/${serverId}`);
+  return fetchOk(`/api/frp/generate/frpc-toml/${serverId}`).then((r) => r.text());
 }
 
 export function getBulkZip(): Promise<Blob> {
-  return _fetchBlob('/api/frp/generate/bulk-zip');
+  return fetchOk('/api/frp/generate/bulk-zip').then((r) => r.blob());
 }
 
 export function status(): Promise<FrpStatus> {
