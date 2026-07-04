@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
 from app.core.database import get_db
-from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp._helpers import get_frp_config
+from app.modules.frp.models import FrpTunnel
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
@@ -21,7 +22,7 @@ def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)
     calls. As a sync endpoint FastAPI runs it in a threadpool, so neither the DB
     query nor the dashboard request blocks the event loop.
     """
-    config = db.query(FrpServerConfig).first()
+    config = get_frp_config(db)
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
     if not config.dashboard_port:

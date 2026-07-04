@@ -9,8 +9,23 @@ from sqlalchemy.orm import Session
 
 from app.core.config import VISITOR_PORT_END, VISITOR_PORT_START
 from app.modules.connections.models import Connection
-from app.modules.frp.models import FrpTunnel
+from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.users.models import User, user_server_assoc
+
+
+def get_frp_config(db: Session, config_id: str | None = None) -> FrpServerConfig | None:
+    """Resolve the FRP server config.
+
+    FrpServerConfig is a multi-row table treated as a singleton by most callers.
+    Resolve it deterministically — oldest first, id as tiebreaker — instead of a
+    bare `.first()`: on Postgres an unordered `.first()` may return a different
+    row each call, so with two configs the agent sync / startup frps.toml could
+    otherwise pick a random one (serverAddr/auth_token mismatch, dead tunnel).
+    """
+    q = db.query(FrpServerConfig)
+    if config_id:
+        return q.filter(FrpServerConfig.id == config_id).first()
+    return q.order_by(FrpServerConfig.created_at, FrpServerConfig.id).first()
 
 
 def create_auto_connection(

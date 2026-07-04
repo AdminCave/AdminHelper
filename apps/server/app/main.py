@@ -125,10 +125,11 @@ def _ensure_frps_config(db):
     longer runs its own FRP CA (D6/F3): no CA generation, no cert minting, no
     publish. Only the non-secret frps.toml (ports, auth token, TLS file paths
     pointing at /etc/frp-pki) is regenerated here."""
+    from app.modules.frp._helpers import get_frp_config
     from app.modules.frp.docker_manager import write_frps_config
 
     try:
-        config = db.query(FrpServerConfig).first()
+        config = get_frp_config(db)
         if not config:
             return
         write_frps_config(config)

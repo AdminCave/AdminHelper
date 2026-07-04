@@ -34,6 +34,14 @@ def create_server_config(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    # frps runs one instance in token mode; the callers (agent sync, startup
+    # frps.toml, status) resolve "the" config as a singleton. Enforce that here so
+    # a second row can't make those callers non-deterministic (see get_frp_config).
+    if db.query(FrpServerConfig).count() > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Es existiert bereits eine FRP-Server-Config",
+        )
     config = FrpServerConfig(
         id=str(uuid.uuid4()),
         name=data.name,

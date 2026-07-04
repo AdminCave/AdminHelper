@@ -4,6 +4,7 @@
 
 """Tests for the FRP config generator: frps.toml, frpc.toml, visitor.toml."""
 
+import json
 from types import SimpleNamespace
 
 from app.modules.frp.config_generator import (
@@ -25,6 +26,7 @@ def _make_config(**overrides):
         dashboard_port=None,
         dashboard_user=None,
         dashboard_password=None,
+        extra_config=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -79,6 +81,22 @@ class TestGenerateFrpsToml:
         config = _make_config(subdomain_host="ops.example.net")
         toml = generate_frps_toml(config)
         assert 'subDomainHost = "ops.example.net"' in toml
+
+    def test_extra_config_emitted(self):
+        # 1.28: extra_config is validated + stored but was never emitted.
+        config = _make_config(
+            extra_config=json.dumps(
+                {"maxPoolCount": 5, "transport.tcpMux": True, "custom.note": "hi"}
+            )
+        )
+        toml = generate_frps_toml(config)
+        assert "maxPoolCount = 5" in toml
+        assert "transport.tcpMux = true" in toml  # bool -> lowercase TOML literal
+        assert 'custom.note = "hi"' in toml  # str -> quoted
+
+    def test_no_extra_config_lines_when_none(self):
+        toml = generate_frps_toml(_make_config(extra_config=None))
+        assert "maxPoolCount" not in toml
 
 
 class TestGenerateFrpcToml:

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -104,6 +105,20 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     # Auth
     lines.append('auth.method = "token"')
     lines.append(f'auth.token = "{config.auth_token}"')
+
+    # Operator-supplied extra frps.toml fields (e.g. maxPoolCount, transport.*).
+    # _check_extra_config already validated the keys as TOML bare keys and the
+    # values as str/bool/int/float, so they can be emitted verbatim.
+    extra = json.loads(config.extra_config) if config.extra_config else None
+    if extra:
+        lines.append("")
+        for key, value in extra.items():
+            if isinstance(value, bool):
+                lines.append(f"{key} = {'true' if value else 'false'}")
+            elif isinstance(value, str):
+                lines.append(f'{key} = "{value}"')
+            else:
+                lines.append(f"{key} = {value}")
 
     lines.extend(_tls_server_block())
 

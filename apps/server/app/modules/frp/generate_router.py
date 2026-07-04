@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
-from app.modules.frp._helpers import get_allow_users
+from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
@@ -33,7 +33,7 @@ def gen_frps_toml(
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
-        config = db.query(FrpServerConfig).first()
+        config = get_frp_config(db)
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
     toml = generate_frps_toml(config)
@@ -79,7 +79,7 @@ def gen_visitor_toml(
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
-        config = db.query(FrpServerConfig).first()
+        config = get_frp_config(db)
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
 
@@ -123,7 +123,7 @@ def gen_visitor_bundle(
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
-        config = db.query(FrpServerConfig).first()
+        config = get_frp_config(db)
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
 
@@ -156,7 +156,7 @@ def gen_bulk_zip(
     if config_id:
         config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     else:
-        config = db.query(FrpServerConfig).first()
+        config = get_frp_config(db)
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
 
