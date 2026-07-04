@@ -66,6 +66,15 @@
             <div><div class="callout-title">Backup the CA</div><p>The security asset is now the <code>ca-issuer</code>'s <code>ca-pki</code> volume (Root + intermediates). Losing it means every client must re-enroll. Back it up encrypted, off-site.</p></div>
           </div>
 
+          <h2>Rotating the FRP <code>auth.token</code></h2>
+          <p><strong>Caution — breaking change:</strong> the global <code>auth.token</code> (in the FRP server config) flows identically into <code>frps.toml</code>, every agent <code>frpc.toml</code> and every desktop <code>visitor.toml</code>. In token mode frps knows exactly <em>one</em> token; there is no overlap/dual-token mechanism. A rotation therefore <strong>breaks all</strong> agents and visitors at once, until each has re-synced / re-downloaded its bundle. The actual tunnel security is enforced mTLS (<code>transport.tls.force</code>) plus the STCP <code>secretKey</code> anyway — the token is only the weaker second factor.</p>
+          <p>So rotate only deliberately, in a maintenance window, in this mandatory sequence:</p>
+          <ol>
+            <li>Set the new <code>auth.token</code> in the FRP server config (<code>PUT /api/frp/server-config/{id}</code>).</li>
+            <li><strong>Restart frps manually</strong> (e.g. <code>docker compose restart frps</code>): the server writes the new <code>frps.toml</code> but does not reload frps itself — until the restart frps keeps running with the <em>old</em> token.</li>
+            <li>Let all agents re-sync (the next sync pulls the new <code>frpc.toml</code>) and all desktop visitors reload the tunnel bundle.</li>
+          </ol>
+
           <h2>Firewall</h2>
           <table>
             <thead><tr><th>Port</th><th>Direction</th><th>Purpose</th></tr></thead>
