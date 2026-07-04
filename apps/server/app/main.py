@@ -29,6 +29,7 @@ from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
 from app.modules.frp.router import router as frp_router
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.hooks.router import router as hooks_router
+from app.modules.hooks.router import trigger_router as hooks_trigger_router
 from app.modules.monitoring_proxy import router as monitoring_proxy_router
 from app.modules.notifications.models import (  # noqa: F401
     Notification,
@@ -210,15 +211,18 @@ async def security_headers(request, call_next):
 # routers that are purely human/admin get a router-level `access`-scope guard.
 # Mixed routers (frp = admin + agent sync, monitoring/provisioning = admin +
 # agent/bootstrap) wire scope per route inside the router. Deliberately left
-# open here: auth (login/bootstrap), hooks (public webhook trigger) — their
-# enforcement nuance (certless bootstrap, public ingest) is handled in A8.
+# open here: auth (login/bootstrap) and the public hooks webhook ingest — their
+# enforcement nuance (certless bootstrap, public ingest) is handled in A8. The
+# hooks ADMIN CRUD is a human data plane and gets the access-scope guard like the
+# other admin routers; only the token-authenticated /trigger route stays open.
 _access = [Depends(require_scope(SCOPE_ACCESS))]
 app.include_router(auth_router)
 app.include_router(connections_router, dependencies=_access)
 app.include_router(users_router, dependencies=_access)
 app.include_router(api_keys_router, dependencies=_access)
 app.include_router(audit_router, dependencies=_access)
-app.include_router(hooks_router)
+app.include_router(hooks_trigger_router)  # public webhook ingest — no access scope
+app.include_router(hooks_router, dependencies=_access)  # admin CRUD — access scope
 app.include_router(servers_router, dependencies=_access)
 app.include_router(provisioning_router)
 # Enrollment-token mint is JWT-gated (the client has no cert yet) — a bootstrap

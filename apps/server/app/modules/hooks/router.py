@@ -31,6 +31,10 @@ from app.modules.hooks.schemas import (
 from app.modules.hooks.script_runner import run_hook_script
 
 router = APIRouter(prefix="/api/hooks", tags=["hooks"])
+# Public webhook ingest (token-authenticated, no access scope). Split from the
+# admin router so main.py can scope-guard the human admin CRUD (get_current_admin
+# alone is not scope separation) while leaving only this ingest route open.
+trigger_router = APIRouter(prefix="/api/hooks", tags=["hooks"])
 
 # Rate limiting for webhook triggers: max 20 calls per IP in 60 seconds.
 # Uses the central rate_limit backend (in-memory eviction / Redis TTL) — the
@@ -156,8 +160,9 @@ def create_hook(
     return result
 
 
-# IMPORTANT: /trigger/{token} must be defined before /{hook_id}
-@router.post("/trigger/{token}")
+# Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
+# admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
+@trigger_router.post("/trigger/{token}")
 async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
     # This handler must stay async (request.json(), run_in_threadpool), so the
     # sync pieces — Redis rate-limit increment and the DB lookup — must not run
