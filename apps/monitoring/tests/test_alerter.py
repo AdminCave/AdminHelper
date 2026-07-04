@@ -44,6 +44,25 @@ def make_check(**kw):
     return SimpleNamespace(**defaults)
 
 
+def make_msg(**kw):
+    """Fake _build_message() result — built once per transition in process_alert
+    now (2.30) and passed to _dispatch / _send_* / _emit_to_hub."""
+    defaults = dict(
+        check_name="c",
+        check_type="ping",
+        server_id="srv-1",
+        severity="critical",
+        old_status="ok",
+        new_status="critical",
+        is_recovery=False,
+        icon="",
+        subject="S",
+        text="T",
+    )
+    defaults.update(kw)
+    return defaults
+
+
 class TestRuleMatches:
     def test_no_filters_matches_any(self):
         assert _rule_matches(make_rule(), make_check()) is True
@@ -123,6 +142,10 @@ class _CapturingDb:
     def all(self):
         return self._rules
 
+    def first(self):
+        # _build_message queries MonitorState here; no state row in these tests.
+        return None
+
     def add(self, entry):
         self.added.append(entry)
 
@@ -189,6 +212,32 @@ class TestRecoveryBypassesCooldown:
         assert db.flushed is False
 
 
+class TestBuildsMessageOnce:
+    """2.30: _build_message runs once per transition on the caller's session, not
+    once per matching rule plus once for the hub (which opened N+1 sessions and
+    could yield text that diverged if the state row changed between builds)."""
+
+    def test_message_built_once_for_many_rules(self, monkeypatch):
+        db = _CapturingDb([make_rule(id="r1"), make_rule(id="r2"), make_rule(id="r3")])
+        calls = {"n": 0}
+
+        def counting_build(session, check, old, new):
+            calls["n"] += 1
+            return make_msg()
+
+        monkeypatch.setattr(alerter, "_build_message", counting_build)
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+        monkeypatch.setattr(alerter, "_dispatch", lambda *a, **k: (True, None))
+        monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **k: None)
+
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+        # process_alert builds it once and reuses it for all rules + the hub. The
+        # old code built it N+1 times inside the (here mocked) dispatch + hub paths,
+        # so this would count 0 there; the new single build makes it exactly 1.
+        assert calls["n"] == 1
+
+
 class TestWebhookSsrf:
     """M2: a webhook URL pointing at a private/reserved target must be rejected
     before any outbound request is made."""
@@ -204,8 +253,7 @@ class TestWebhookSsrf:
             {"url": "http://169.254.169.254/latest/meta-data"},
             make_rule(),
             make_check(),
-            old_status="ok",
-            new_status="critical",
+            make_msg(),
         )
 
         assert success is False
@@ -228,8 +276,7 @@ class TestWebhookSsrf:
             {"url": "https://hooks.example.com/x"},
             make_rule(),
             make_check(),
-            old_status="ok",
-            new_status="critical",
+            make_msg(),
         )
 
         assert success is True

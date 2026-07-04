@@ -65,6 +65,10 @@ def process_alert(
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
 
     is_recovery = new_status == "ok"
+    # Build the alert message once per transition on the caller's session, then
+    # reuse it for every rule dispatch and the hub emit — avoids N+1 sessions and
+    # a text that could diverge if the state row changed between builds (2.30).
+    msg = _build_message(db, check, old_status, new_status)
 
     for rule in rules:
         if not _rule_matches(rule, check):
@@ -74,7 +78,7 @@ def process_alert(
             logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
             continue
 
-        success, error = _dispatch(rule, check, old_status, new_status)
+        success, error = _dispatch(rule, check, msg)
 
         log_entry = MonitorAlertLog(
             alert_rule_id=rule.id,
@@ -91,7 +95,7 @@ def process_alert(
 
     # Independently of the rule-based webhook/email dispatch above, push every
     # status transition to the server's notification hub for per-user routing.
-    _emit_to_hub(check, old_status, new_status)
+    _emit_to_hub(check, old_status, new_status, msg)
 
 
 def _hub_severity(old_status: str, new_status: str) -> str:
@@ -100,7 +104,7 @@ def _hub_severity(old_status: str, new_status: str) -> str:
     return _LEVEL_SEVERITY[level]
 
 
-def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str) -> None:
+def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dict) -> None:
     """Push the status transition to the server's notification hub (best-effort).
 
     The server owns the user<->server mapping and decides who gets notified;
@@ -115,7 +119,6 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str) -> None:
     # severity and are pushed.
     if severity == "info":
         return
-    msg = _build_message(check, old_status, new_status)
     payload = {
         "event_type": "monitoring.check.transition",
         "severity": severity,
@@ -169,8 +172,7 @@ def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) ->
 def _dispatch(
     rule: MonitorAlertRule,
     check: MonitorCheck,
-    old_status: str,
-    new_status: str,
+    msg: dict,
 ) -> tuple[bool, str | None]:
     """Sends the notification over the configured channel."""
     try:
@@ -179,15 +181,16 @@ def _dispatch(
         return False, "Ungueltige channel_config"
 
     if rule.channel == "webhook":
-        return _send_webhook(config, rule, check, old_status, new_status)
+        return _send_webhook(config, rule, check, msg)
     elif rule.channel == "email":
-        return _send_email(config, rule, check, old_status, new_status)
+        return _send_email(config, rule, check, msg)
     else:
         return False, f"Unbekannter Kanal: {rule.channel}"
 
 
-def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dict:
-    """Builds the alert message as a dict."""
+def _build_message(db: Session, check: MonitorCheck, old_status: str, new_status: str) -> dict:
+    """Builds the alert message as a dict. Uses the caller's session (built once
+    per transition in process_alert), so it must not open its own (2.30)."""
     status_icons = {
         "ok": "\u2705",
         "warning": "\u26a0\ufe0f",
@@ -216,14 +219,9 @@ def _build_message(check: MonitorCheck, old_status: str, new_status: str) -> dic
 
     # Append check-state message (e.g. "Port 22: Connection refused")
     try:
-        from app.core.database import SessionLocal
-
-        # Context manager: without it, an exception between open and close
-        # leaked the connection (pool exhaustion under repeated failures).
-        with SessionLocal() as db:
-            state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
-            if state and state.message:
-                text += f"\nDetails: {state.message}"
+        state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+        if state and state.message:
+            text += f"\nDetails: {state.message}"
     except Exception:
         logger.warning(
             "State-Message fuer Check '%s' konnte nicht geladen werden", check.name, exc_info=True
@@ -247,8 +245,7 @@ def _send_webhook(
     config: dict,
     rule: MonitorAlertRule,
     check: MonitorCheck,
-    old_status: str,
-    new_status: str,
+    msg: dict,
 ) -> tuple[bool, str | None]:
     """Sends the alert to a webhook URL."""
     url = config.get("url")
@@ -262,7 +259,6 @@ def _send_webhook(
         logger.warning("Webhook-Ziel abgelehnt (privat/reserviert): %s", url)
         return False, "Webhook-Ziel ist privat/reserviert (nicht erlaubt)"
 
-    msg = _build_message(check, old_status, new_status)
     payload = {
         "alert_rule": rule.name,
         **msg,
@@ -283,8 +279,7 @@ def _send_email(
     config: dict,
     rule: MonitorAlertRule,
     check: MonitorCheck,
-    old_status: str,
-    new_status: str,
+    msg: dict,
 ) -> tuple[bool, str | None]:
     """Sends the alert via email."""
     recipients = config.get("recipients") or config.get("to") or []
@@ -301,13 +296,11 @@ def _send_email(
     if not smtp_host:
         return False, "SMTP nicht konfiguriert (SMTP_HOST fehlt)"
 
-    msg_data = _build_message(check, old_status, new_status)
-
     message = MIMEMultipart("alternative")
-    message["Subject"] = msg_data["subject"]
+    message["Subject"] = msg["subject"]
     message["From"] = config.get("from", SMTP_FROM)
     message["To"] = ", ".join(recipients)
-    message.attach(MIMEText(msg_data["text"], "plain"))
+    message.attach(MIMEText(msg["text"], "plain"))
 
     try:
         # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from

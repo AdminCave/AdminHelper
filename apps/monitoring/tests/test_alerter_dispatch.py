@@ -15,6 +15,7 @@ import app.alerter as alerter
 from app.alerter import _dispatch, _send_email
 
 CHECK = SimpleNamespace(id="c1", name="c", check_type="ping", severity="critical", server_id="s1")
+MSG = {"subject": "S", "text": "T"}
 
 
 def _rule(channel="webhook", config=None, raw=None):
@@ -24,22 +25,22 @@ def _rule(channel="webhook", config=None, raw=None):
 
 class TestDispatchRouting:
     def test_invalid_channel_config_json_fails_closed(self):
-        ok, err = _dispatch(_rule(raw="{not json"), CHECK, "ok", "critical")
+        ok, err = _dispatch(_rule(raw="{not json"), CHECK, MSG)
         assert not ok and err
 
     def test_unknown_channel_fails_closed(self):
-        ok, err = _dispatch(_rule(channel="carrier-pigeon", config={}), CHECK, "ok", "critical")
+        ok, err = _dispatch(_rule(channel="carrier-pigeon", config={}), CHECK, MSG)
         assert not ok and "Unbekannter Kanal" in err
 
 
 class TestEmailChannel:
     def test_no_recipients_is_an_error(self):
-        ok, err = _send_email({}, _rule("email"), CHECK, "ok", "critical")
+        ok, err = _send_email({}, _rule("email"), CHECK, MSG)
         assert not ok and err
 
     def test_csv_recipients_parsed_then_smtp_host_required(self, monkeypatch):
         # A comma-separated recipients string is split; with no SMTP host the
         # send is refused (not silently dropped).
         monkeypatch.setattr(alerter, "SMTP_HOST", "")
-        ok, err = _send_email({"to": "a@x.de, b@y.de"}, _rule("email"), CHECK, "ok", "critical")
+        ok, err = _send_email({"to": "a@x.de, b@y.de"}, _rule("email"), CHECK, MSG)
         assert not ok and "SMTP" in err

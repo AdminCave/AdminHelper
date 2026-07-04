@@ -136,7 +136,9 @@ def test_status_change_dispatches_alert_in_background(client_db, monkeypatch):
     monkeypatch.setattr(
         alerter,
         "_dispatch",
-        lambda rule, check, old, new: dispatched.append((check.id, old, new)) or (True, None),
+        lambda rule, check, msg: (
+            dispatched.append((check.id, msg["old_status"], msg["new_status"])) or (True, None)
+        ),
     )
 
     r = client.post("/agent/srv-1/report", json=_report(cpu=99))

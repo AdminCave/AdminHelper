@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from app import alerter
 from app.alerter import _emit_to_hub, _hub_severity, process_alert
 
-from .test_alerter import _CapturingDb, make_check, make_rule
+from .test_alerter import _CapturingDb, make_check, make_msg, make_rule
 
 
 class TestHubSeverity:
@@ -54,7 +54,7 @@ class TestEmitToHub:
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
-        _emit_to_hub(make_check(), "ok", "critical")
+        _emit_to_hub(make_check(), "ok", "critical", make_msg())
         assert calls["n"] == 0
 
     def test_posts_event_with_internal_key(self, monkeypatch):
@@ -68,7 +68,7 @@ class TestEmitToHub:
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", fake_post)
 
-        _emit_to_hub(make_check(server_id="srv-1"), "ok", "critical")
+        _emit_to_hub(make_check(server_id="srv-1"), "ok", "critical", make_msg())
 
         assert captured["url"] == "http://hub:8080/api/internal/events"
         assert captured["headers"]["X-Internal-Key"] == "secret"
@@ -86,7 +86,7 @@ class TestEmitToHub:
 
         monkeypatch.setattr(alerter.httpx, "post", boom)
         # Must not raise — a failed push cannot break the alert path.
-        _emit_to_hub(make_check(), "ok", "critical")
+        _emit_to_hub(make_check(), "ok", "critical", make_msg())
 
     def test_info_transition_is_not_pushed(self, monkeypatch):
         calls = {"n": 0}
@@ -94,14 +94,14 @@ class TestEmitToHub:
         monkeypatch.setattr(
             alerter.httpx, "post", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
         )
-        _emit_to_hub(make_check(), "pending", "ok")  # info-level → skip, no spam
+        _emit_to_hub(make_check(), "pending", "ok", make_msg())  # info-level → skip, no spam
         assert calls["n"] == 0
 
     def test_non_2xx_response_does_not_raise(self, monkeypatch):
         self._patch(monkeypatch)
         monkeypatch.setattr(alerter.httpx, "post", lambda *a, **k: SimpleNamespace(status_code=403))
         # A rejected push (e.g. key mismatch) is logged, not raised.
-        _emit_to_hub(make_check(), "ok", "critical")
+        _emit_to_hub(make_check(), "ok", "critical", make_msg())
 
 
 class TestProcessAlertEmits:
@@ -112,7 +112,7 @@ class TestProcessAlertEmits:
         monkeypatch.setattr(
             alerter,
             "_emit_to_hub",
-            lambda check, old, new: seen.update(old=old, new=new),
+            lambda check, old, new, msg: seen.update(old=old, new=new),
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "critical")
         assert seen == {"old": "ok", "new": "critical"}
