@@ -8,12 +8,13 @@
 
 import type { FrpProtocol, FrpTunnel, FrpTunnelInput, FrpTunnelType } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
+import { DEFAULT_PORTS } from './connection';
 import { parseTags, type ValidationResult } from './shared';
 export { parseTags };
 
 export const TUNNEL_TYPES: FrpTunnelType[] = ['stcp', 'https'];
 export const TUNNEL_PROTOCOLS: FrpProtocol[] = ['ssh', 'rdp', 'web'];
-export const PROTOCOL_DEFAULT_PORT: Record<FrpProtocol, number> = { ssh: 22, rdp: 3389, web: 8006 };
+export const PROTOCOL_DEFAULT_PORT: Record<FrpProtocol, number> = { ...DEFAULT_PORTS, web: 8006 };
 
 export interface TunnelForm {
   id: string | null;

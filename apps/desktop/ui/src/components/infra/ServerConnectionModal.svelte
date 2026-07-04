@@ -16,6 +16,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     validateConnectionForm,
     type ConnectionForm,
   } from '$lib/models/serverConnection';
+  import { DEFAULT_PORTS } from '$lib/models/connection';
   import { connectionsApi } from '$lib/api/connections';
   import { session } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
@@ -38,8 +39,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let saving = $state(false);
 
   let isNew = $derived(target === null);
-
-  const PORT_HINT: Record<string, string> = { ssh: '22', rdp: '3389' };
 
   $effect(() => {
     if (!open) return;
@@ -167,7 +166,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 const v = (e.currentTarget as HTMLInputElement).value;
                 form = { ...form, port: v === '' ? null : Number(v) };
               }}
-              placeholder={PORT_HINT[form.kind] ?? ''}
+              placeholder={String(DEFAULT_PORTS[form.kind])}
             />
           </label>
 

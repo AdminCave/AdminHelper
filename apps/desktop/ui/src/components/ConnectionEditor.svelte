@@ -8,6 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { errMsg } from '$lib/utils/errors';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
   import {
+    DEFAULT_PORTS,
     emptyConnection,
     normalizeConnection,
     parseTags,
@@ -161,7 +162,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 const v = (e.currentTarget as HTMLInputElement).value;
                 form = { ...form, port: v === '' ? null : Number(v) };
               }}
-              placeholder={form.kind === 'ssh' ? '22' : '3389'}
+              placeholder={form.kind === 'ssh'
+                ? String(DEFAULT_PORTS.ssh)
+                : String(DEFAULT_PORTS.rdp)}
             />
           </label>
 
