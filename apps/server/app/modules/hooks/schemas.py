@@ -24,6 +24,9 @@ VALID_EVENTS = [
     "frp.tunnel.created",
     "frp.tunnel.updated",
     "frp.tunnel.deleted",
+    "playbook.created",
+    "playbook.updated",
+    "playbook.deleted",
 ]
 
 VALID_INTERVALS = ["5m", "15m", "30m", "1h", "6h", "12h", "24h"]
