@@ -9,16 +9,20 @@ export type { Language } from './dictionaries';
 export type TVars = Record<string, string | number | null | undefined>;
 
 function detect(): Language {
-  const stored = localStorage.getItem('adminhelper_language');
-  if (stored === 'de' || stored === 'en') return stored;
-  const nav = (navigator.language || '').substring(0, 2);
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('adminhelper_language');
+    if (stored === 'de' || stored === 'en') return stored;
+  }
+  const nav = typeof navigator !== 'undefined' ? (navigator.language || '').substring(0, 2) : '';
   return nav === 'en' ? 'en' : 'de';
 }
 
 const _language = writable<Language>(detect());
 
 _language.subscribe((lang) => {
-  localStorage.setItem('adminhelper_language', lang);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('adminhelper_language', lang);
+  }
   if (typeof document !== 'undefined') {
     document.documentElement.lang = lang;
   }

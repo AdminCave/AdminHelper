@@ -6,7 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t, language } from '$lib/i18n';
+  import { t } from '$lib/i18n';
+  import { formatDateTime } from '$lib/utils/datetime';
   import { hooks } from '$lib/stores/hooks';
   import { showToast } from '$lib/stores/notifications';
   import { HOOK_TYPE_LABEL } from '$lib/utils/hooks';
@@ -37,16 +38,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
       await hooks.refresh();
     } catch (err) {
       showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
-    }
-  }
-
-  function formatDateTime(iso: string | null | undefined): string {
-    if (!iso) return '–';
-    const loc = $language === 'de' ? 'de-DE' : 'en-GB';
-    try {
-      return new Date(iso).toLocaleString(loc);
-    } catch {
-      return '–';
     }
   }
 
