@@ -12,6 +12,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.check_types import VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.pagination import paginate
@@ -19,7 +20,6 @@ from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
 from app.scheduler import add_check, remove_check
 from app.schemas import (
-    VALID_CHECK_TYPES,
     VALID_INTERVALS,
     VALID_SEVERITIES,
     CheckCreate,

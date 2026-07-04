@@ -16,7 +16,10 @@ import time
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
-# In-memory map: server_id -> last report timestamp (Unix)
+# In-memory map: server_id -> last report time (time.monotonic, not wall clock).
+# Process-local, so it is valid only under a single worker process (see the
+# invariant in main.py lifespan) and is lost on restart — agent_ping then falls
+# back to 'unknown' until the next push.
 _last_report: dict[str, float] = {}
 
 

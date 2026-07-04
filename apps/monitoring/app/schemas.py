@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, field_validator
 
+from app.check_types import VALID_CHECK_TYPES
+
 
 class CheckCreate(BaseModel):
     server_id: str | None = None
@@ -120,19 +122,6 @@ class TemplateAssign(BaseModel):
 
 
 VALID_CHANNELS = {"webhook", "email"}
-
-VALID_CHECK_TYPES = {
-    "ping",
-    "tcp",
-    "http",
-    "agent_ping",
-    "agent_resources",
-    "service_process",
-    "proxmox_backup",
-    "zfs_health",
-    "docker_health",
-    "smart_health",
-}
 
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"}
 
