@@ -61,7 +61,6 @@ pub fn open_connection_stored(
     }
 }
 
-#[cfg(target_os = "windows")]
 fn open_rdp_with_stored_password(
     app: &tauri::AppHandle,
     connection: &Connection,
@@ -70,50 +69,16 @@ fn open_rdp_with_stored_password(
     ui_language: Option<&str>,
     correlation_id: &str,
 ) -> Result<(), AppError> {
-    rdp::open_rdp(
-        connection,
-        None,
-        client,
-        rdp,
-        ui_language,
-        correlation_id,
-        app,
-    )
-}
-
-#[cfg(unix)]
-fn open_rdp_with_stored_password(
-    app: &tauri::AppHandle,
-    connection: &Connection,
-    client: Option<&ClientInfo>,
-    rdp: RdpOptions,
-    ui_language: Option<&str>,
-    correlation_id: &str,
-) -> Result<(), AppError> {
+    // Only the unix launcher passes a password through to xfreerdp's stdin; the
+    // Windows (.rdp file) and unsupported-OS paths pass none. The connection is
+    // already validated by the sole caller, open_connection_stored.
+    #[cfg(unix)]
     let password = crate::password::load_password_keyring(connection)?;
+    #[cfg(not(unix))]
+    let password: Option<String> = None;
     rdp::open_rdp(
         connection,
         password.as_deref(),
-        client,
-        rdp,
-        ui_language,
-        correlation_id,
-        app,
-    )
-}
-
-#[cfg(not(any(target_os = "windows", unix)))]
-fn open_rdp_with_stored_password(
-    app: &tauri::AppHandle,
-    connection: &Connection,
-    client: Option<&ClientInfo>,
-    rdp: RdpOptions,
-    ui_language: Option<&str>,
-    correlation_id: &str,
-) -> Result<(), AppError> {
-    open_connection(
-        connection,
-        None,
         client,
         rdp,
         ui_language,

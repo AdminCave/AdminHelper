@@ -124,7 +124,7 @@ pub fn open_rdp(
             if username.is_empty() {
                 return Err(AppError::Validation("Benutzer fehlt".to_string()));
             }
-            match check_rdp_auth(
+            check_rdp_auth(
                 rdp_binary,
                 host,
                 port,
@@ -132,11 +132,7 @@ pub fn open_rdp(
                 domain,
                 connection.trust_cert,
                 secret,
-            ) {
-                Ok(true) => {}
-                Ok(false) => {}
-                Err(message) => return Err(message),
-            }
+            )?;
             args.push("/from-stdin:force".to_string());
             args.push("/log-level:INFO".to_string());
             spawn_rdp_with_password(rdp_binary, args, secret, correlation_id, app)?;
@@ -550,7 +546,7 @@ pub fn check_rdp_auth(
     domain: &str,
     trust_cert: bool,
     password: &str,
-) -> Result<bool, AppError> {
+) -> Result<(), AppError> {
     let mut args = vec![
         format!("/v:{host}:{port}"),
         "+auth-only".to_string(),
@@ -584,18 +580,18 @@ pub fn check_rdp_auth(
     let output_text = String::from_utf8_lossy(&combined);
     let output_lower = output_text.to_lowercase();
 
-    if output_lower.contains("unknown option") && output_lower.contains("auth-only") {
-        return Ok(false);
-    }
-    if output_lower.contains("unrecognized option") && output_lower.contains("auth-only") {
-        return Ok(false);
-    }
-    if output_lower.contains("invalid option") && output_lower.contains("auth-only") {
-        return Ok(false);
+    // An xfreerdp too old for +auth-only rejects the probe flag; skip the check and
+    // let the real launch surface any auth failure.
+    let auth_only_unsupported = ["unknown option", "unrecognized option", "invalid option"]
+        .iter()
+        .any(|m| output_lower.contains(m))
+        && output_lower.contains("auth-only");
+    if auth_only_unsupported {
+        return Ok(());
     }
 
     if output.status.success() {
-        return Ok(true);
+        return Ok(());
     }
 
     if let Some(message) = parse_freerdp_error(combined.as_slice()) {
