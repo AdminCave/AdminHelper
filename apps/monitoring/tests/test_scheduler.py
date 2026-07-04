@@ -65,6 +65,19 @@ def test_add_check_registers_scheduled_type():
         assert sched.scheduler.get_job("mon_t-ping") is None
 
 
+def test_add_check_drops_stale_job_on_switch_to_push_only():
+    # Regression (2.114): switching a scheduled check to a push-only type via a
+    # second add_check (the PUT path) must drop the old interval job, else it
+    # keeps firing execute_check until restart.
+    try:
+        sched.add_check("t-switch", "5m", "ping")
+        assert sched.scheduler.get_job("mon_t-switch") is not None
+        sched.add_check("t-switch", "5m", "agent_resources")
+        assert sched.scheduler.get_job("mon_t-switch") is None
+    finally:
+        sched.remove_check("t-switch")
+
+
 # --- alert-log cleanup ----------------------------------------------------------
 
 

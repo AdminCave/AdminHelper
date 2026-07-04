@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import smtplib
 from datetime import timedelta
 from email.mime.multipart import MIMEMultipart
@@ -22,7 +21,15 @@ from email.mime.text import MIMEText
 import httpx
 from sqlalchemy.orm import Session
 
-from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
+from app.core.config import (
+    INTERNAL_API_KEY,
+    SERVER_HUB_URL,
+    SMTP_FROM,
+    SMTP_HOST,
+    SMTP_PASSWORD,
+    SMTP_PORT,
+    SMTP_USER,
+)
 from app.core.ssrf import is_private_url
 from app.core.time import utcnow_naive
 from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
@@ -37,13 +44,6 @@ logger = logging.getLogger("monitor.alerter")
 # (pending->ok) is NOT pushed (see _emit_to_hub).
 _STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "critical": 2}
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
-
-# SMTP configuration from environment variables
-SMTP_HOST = os.environ.get("SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("SMTP_USER", "")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
 
 
 def process_alert(

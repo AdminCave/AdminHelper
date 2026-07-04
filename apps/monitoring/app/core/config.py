@@ -43,3 +43,11 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor",
 )
+
+# SMTP (email alert channel). Empty SMTP_HOST disables email alerts. A non-integer
+# SMTP_PORT fails here at the config boundary, not deep inside the alerter at import.
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")

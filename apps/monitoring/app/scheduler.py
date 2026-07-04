@@ -75,6 +75,11 @@ def add_check(check_id: str, interval: str, check_type: str | None) -> None:
     by forgetting it — the bug template_sync had (2.34).
     """
     if check_type in PUSH_ONLY_TYPES:
+        # A check switched to a push-only type (via PUT) must lose any interval job
+        # it had as a scheduled type, otherwise the stale job keeps firing
+        # execute_check until the next restart (2.114). remove_check is idempotent,
+        # so a genuinely new push-only check is unaffected.
+        remove_check(check_id)
         return
 
     trigger = _parse_trigger(interval)
