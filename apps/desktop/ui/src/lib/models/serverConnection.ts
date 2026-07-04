@@ -2,15 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Form model for server-owned connections (the full API connection type:
-// ssh/rdp/vnc/web/custom, with a serverId). This is distinct from the launcher's
-// bridge connection (ssh/rdp/web only) — the hub manages the richer server-side
-// shape. Pure logic so it stays unit-testable.
+// Form model for server-owned connections (ssh/rdp/web, plus a serverId). The
+// kinds match what the server accepts (ConnectionCreate) and the launcher opens;
+// the only extra vs. the bridge connection is the serverId the infra hub manages.
+// Pure logic so it stays unit-testable.
 
 import type { Connection, ConnectionKind } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
 
-export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'rdp', 'vnc', 'web', 'custom'];
+export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'rdp', 'web'];
 
 export interface ConnectionForm {
   id: string | null;

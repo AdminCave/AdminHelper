@@ -29,8 +29,11 @@ pub async fn sync_connections(
     // above; build_client adds the pinning on the self-signed path).
     let client = crate::auth::build_client(&url, allow_self_signed)?;
     let response = client.get(&url).send().await?.error_for_status()?;
-    let connections: Vec<Connection> = response.json().await?;
-    let connections = sanitize_synced_connections(connections);
+    // Parse leniently like fetch_connections_jwt: the server list may hold kinds
+    // the launcher can't open (or malformed rows) — skip those instead of failing
+    // the whole sync by strict-decoding the batch into Vec<Connection>.
+    let raw: Vec<serde_json::Value> = response.json().await?;
+    let connections = sanitize_synced_connections(parse_launchable_connections(raw));
     write_connections(&app, &connections)?;
     Ok(connections)
 }

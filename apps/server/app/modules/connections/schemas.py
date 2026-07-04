@@ -56,7 +56,10 @@ class ConnectionCreate(BaseModel):
 
 class ConnectionUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    kind: Optional[str] = Field(None, min_length=1, max_length=50)
+    # Same gate as ConnectionCreate: no client renders anything but ssh/rdp/web,
+    # so reject others here too — otherwise PUT could persist a kind that Create
+    # rejects and no consumer (launcher, hub) can handle.
+    kind: Optional[Literal["ssh", "rdp", "web"]] = None
     host: Optional[str] = None
     port: Optional[int] = Field(None, ge=1, le=65535)
     username: Optional[str] = None

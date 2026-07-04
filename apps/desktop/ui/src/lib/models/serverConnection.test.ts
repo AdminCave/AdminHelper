@@ -27,7 +27,7 @@ describe('connectionToForm', () => {
     const c: Connection = {
       id: 'c1',
       name: 'box',
-      kind: 'vnc',
+      kind: 'rdp',
       host: 'box.lan',
       port: 5900,
       username: null,
@@ -38,7 +38,7 @@ describe('connectionToForm', () => {
     expect(connectionToForm(c)).toEqual({
       id: 'c1',
       name: 'box',
-      kind: 'vnc',
+      kind: 'rdp',
       host: 'box.lan',
       port: 5900,
       username: '',

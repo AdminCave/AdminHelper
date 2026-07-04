@@ -38,7 +38,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let isNew = $derived(target === null);
 
-  const PORT_HINT: Record<string, string> = { ssh: '22', rdp: '3389', vnc: '5900' };
+  const PORT_HINT: Record<string, string> = { ssh: '22', rdp: '3389' };
 
   $effect(() => {
     if (!open) return;
