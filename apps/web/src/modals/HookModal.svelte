@@ -191,7 +191,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
         style="min-height:220px;font-family:monospace;font-size:13px"
         bind:value={script}
       ></textarea>
-      <small style="color:var(--text-muted)">{@html scriptHelp}</small>
+      <small style="color:var(--text-muted)"
+        >{#each scriptHelp.split('`') as part, i (i)}{#if i % 2 === 1}<code>{part}</code
+            >{:else}{part}{/if}{/each}</small
+      >
     </div>
   </form>
   {#snippet footer()}

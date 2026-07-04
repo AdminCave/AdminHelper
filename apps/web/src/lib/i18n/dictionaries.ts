@@ -145,12 +145,11 @@ export const translations: Translations = {
     'hook.event.frp.tunnel.deleted': 'FRP-Tunnel gelöscht',
 
     // ── Hook Script Help ──────────────────────────────────────────────
-    'hook.scriptHelp.webhook':
-      'Kontext: <code>payload</code>, <code>headers</code>, <code>params</code>',
-    'hook.scriptHelp.event': 'Kontext: <code>event_type</code>, <code>event_data</code>',
-    'hook.scriptHelp.schedule': 'Kontext: <code>triggered_at</code>, <code>last_run</code>',
+    'hook.scriptHelp.webhook': 'Kontext: `payload`, `headers`, `params`',
+    'hook.scriptHelp.event': 'Kontext: `event_type`, `event_data`',
+    'hook.scriptHelp.schedule': 'Kontext: `triggered_at`, `last_run`',
     'hook.scriptHelp.base':
-      'Verfügbar: <code>load_connections()</code>, <code>save_connections(list)</code>, <code>uuid4()</code>, <code>result</code>, <code>logs</code>, <code>log(msg)</code> – <code>import</code> erlaubt',
+      'Verfügbar: `load_connections()`, `save_connections(list)`, `uuid4()`, `result`, `logs`, `log(msg)` – `import` erlaubt',
 
     // ── Hook Modal ────────────────────────────────────────────────────
     'modal.hook.title': 'Hook bearbeiten',
@@ -368,12 +367,11 @@ export const translations: Translations = {
     'hook.event.frp.tunnel.deleted': 'FRP tunnel deleted',
 
     // ── Hook Script Help ──────────────────────────────────────────────
-    'hook.scriptHelp.webhook':
-      'Context: <code>payload</code>, <code>headers</code>, <code>params</code>',
-    'hook.scriptHelp.event': 'Context: <code>event_type</code>, <code>event_data</code>',
-    'hook.scriptHelp.schedule': 'Context: <code>triggered_at</code>, <code>last_run</code>',
+    'hook.scriptHelp.webhook': 'Context: `payload`, `headers`, `params`',
+    'hook.scriptHelp.event': 'Context: `event_type`, `event_data`',
+    'hook.scriptHelp.schedule': 'Context: `triggered_at`, `last_run`',
     'hook.scriptHelp.base':
-      'Available: <code>load_connections()</code>, <code>save_connections(list)</code>, <code>uuid4()</code>, <code>result</code>, <code>logs</code>, <code>log(msg)</code> – <code>import</code> allowed',
+      'Available: `load_connections()`, `save_connections(list)`, `uuid4()`, `result`, `logs`, `log(msg)` – `import` allowed',
 
     // ── Hook Modal ────────────────────────────────────────────────────
     'modal.hook.title': 'Edit hook',
