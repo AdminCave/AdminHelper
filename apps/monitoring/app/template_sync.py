@@ -33,8 +33,8 @@ from app.scheduler import add_check, remove_check
 logger = logging.getLogger("monitor.template_sync")
 
 # A pending scheduler mutation collected during a DB transaction:
-# ("add", check_id, interval) or ("remove", check_id, None).
-SchedulerAction = tuple[str, str, str | None]
+# ("add", check_id, interval, check_type) or ("remove", check_id, None, None).
+SchedulerAction = tuple[str, str, str | None, str | None]
 
 
 def _apply_scheduler_actions(actions: list[SchedulerAction]) -> None:
@@ -46,9 +46,9 @@ def _apply_scheduler_actions(actions: list[SchedulerAction]) -> None:
     Intervals are already validated at the schema boundary (TemplateCheckDef), so
     add_check should not raise here for template-sourced checks.
     """
-    for op, check_id, interval in actions:
+    for op, check_id, interval, check_type in actions:
         if op == "add":
-            add_check(check_id, interval)
+            add_check(check_id, interval, check_type)
         else:
             remove_check(check_id)
 
@@ -178,9 +178,9 @@ def _sync_checks_for_server(
             check.description = resolved.get("description")
 
             if check.enabled:
-                actions.append(("add", check.id, check.interval))
+                actions.append(("add", check.id, check.interval, check.check_type))
             else:
-                actions.append(("remove", check.id, None))
+                actions.append(("remove", check.id, None, None))
             updated += 1
         else:
             # Create
@@ -203,14 +203,14 @@ def _sync_checks_for_server(
             db.add(MonitorState(check_id=check_id, status="pending"))
 
             if check.enabled:
-                actions.append(("add", check_id, check.interval))
+                actions.append(("add", check_id, check.interval, check.check_type))
             created += 1
 
     # Delete: checks that are no longer in the template
     deleted = 0
     for def_id, check in existing_by_def_id.items():
         if def_id not in target_def_ids:
-            actions.append(("remove", check.id, None))
+            actions.append(("remove", check.id, None, None))
             db.delete(check)
             deleted += 1
 
@@ -335,7 +335,7 @@ def apply_template(
         db.add(MonitorState(check_id=check_id, status="pending"))
 
         if check.enabled:
-            actions.append(("add", check_id, check.interval))
+            actions.append(("add", check_id, check.interval, check.check_type))
         check_ids.append(check_id)
 
     for alert_def in alert_defs:
@@ -385,7 +385,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
         .all()
     )
     for check in checks:
-        actions.append(("remove", check.id, None))
+        actions.append(("remove", check.id, None, None))
         db.delete(check)
 
     # Delete alerts
@@ -429,7 +429,7 @@ def cleanup_server(db: Session, server_id: str) -> dict:
     # Delete checks (incl. states via CASCADE)
     checks = db.query(MonitorCheck).filter(MonitorCheck.server_id == server_id).all()
     for check in checks:
-        actions.append(("remove", check.id, None))
+        actions.append(("remove", check.id, None, None))
         db.delete(check)
 
     # Delete alerts with match_server_id

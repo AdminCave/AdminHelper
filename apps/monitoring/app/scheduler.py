@@ -65,13 +65,15 @@ def _parse_trigger(interval: str):
     )
 
 
-def add_check(check_id: str, interval: str, check_type: str | None = None) -> None:
+def add_check(check_id: str, interval: str, check_type: str | None) -> None:
     """Registers or updates a check in the scheduler.
 
-    Push-only checks (agent_resources, service_process, ...) are
-    skipped, since they are only evaluated on the agent report.
+    Push-only checks (agent_resources, service_process, ...) are skipped, since
+    they are only evaluated on the agent report. check_type is mandatory (no
+    default) so a caller can't silently schedule ghost jobs for push-only checks
+    by forgetting it — the bug template_sync had (2.34).
     """
-    if check_type and check_type in PUSH_ONLY_TYPES:
+    if check_type in PUSH_ONLY_TYPES:
         return
 
     trigger = _parse_trigger(interval)

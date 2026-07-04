@@ -69,13 +69,22 @@ def db(monkeypatch):
     factory = sessionmaker(bind=engine)
 
     # Record scheduler interactions instead of touching the real scheduler.
-    scheduled, removed = [], []
-    monkeypatch.setattr(template_sync, "add_check", lambda cid, interval, *a: scheduled.append(cid))
+    # scheduled = check_ids; scheduled_calls = (check_id, check_type) so a test can
+    # assert the type reaches add_check (2.34 — without it push-only checks get
+    # ghost jobs that fire every interval and abort).
+    scheduled, removed, scheduled_calls = [], [], []
+
+    def _record_add(cid, interval, check_type):
+        scheduled.append(cid)
+        scheduled_calls.append((cid, check_type))
+
+    monkeypatch.setattr(template_sync, "add_check", _record_add)
     monkeypatch.setattr(template_sync, "remove_check", lambda cid: removed.append(cid))
 
     session = factory()
     session.scheduled = scheduled
     session.removed = removed
+    session.scheduled_calls = scheduled_calls
     yield session
     session.close()
 
@@ -99,6 +108,17 @@ PING_DEF = {
     "config": {"host": "{{hostname}}"},
     "interval": "5m",
     "severity": "critical",
+}
+
+
+# A push-only check type (evaluated only from agent reports, never polled).
+AGENT_RES_DEF = {
+    "def_id": "agentres",
+    "name": "Resources {{server_name}}",
+    "check_type": "agent_resources",
+    "config": {},
+    "interval": "5m",
+    "severity": "warning",
 }
 
 
@@ -134,6 +154,19 @@ def test_apply_creates_checks_states_and_alerts(db):
     rule = db.query(MonitorAlertRule).one()
     assert rule.name == "Mail Web 01"
     assert rule.match_server_id == "srv-1"
+
+
+def test_apply_passes_check_type_so_push_only_is_skippable(db):
+    """2.34: template_sync must pass check_type to add_check; without it, add_check
+    can't skip push-only checks (agent_resources, ...) and each one leaves a ghost
+    scheduler job that fires execute_check every interval and aborts immediately."""
+    tpl = _template(db, [PING_DEF, AGENT_RES_DEF])
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+
+    types = {ctype for _cid, ctype in db.scheduled_calls}
+    assert types == {"ping", "agent_resources"}
+    assert None not in types  # None was the ghost-job bug: add_check couldn't skip
 
 
 def test_apply_does_not_schedule_when_commit_fails(db, monkeypatch):
