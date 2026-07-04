@@ -34,11 +34,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // A pinned-certificate / enrolled-CA mismatch (server reinstall or MITM) is a
   // dead end here otherwise: the only reset actions live in the settings modal,
-  // which is unreachable until logged in. Detect it from the backend message and
-  // offer the matching reset right on the login screen. The CA-pin (enrolled)
-  // message names the device enrollment; the TOFU leaf-pin message says "TOFU".
-  let caPinError = $derived(/gepinnten CA|Geräte-Registrierung/.test(error));
-  let pinError = $derived(/TOFU|MITM-Attacke/.test(error) || caPinError);
+  // which is unreachable until logged in. Detect it and offer the matching reset
+  // right on the login screen. Match the backend's stable, language-independent
+  // error codes (not its German prose, which is free to change / be localized):
+  // ERR_CA_PIN_MISMATCH is the enrolled-CA case (reset device identity),
+  // ERR_TOFU_PIN_MISMATCH the self-signed leaf case (reset pin). The codes arrive
+  // buried in the reqwest source chain, so match them anywhere in the string.
+  let caPinError = $derived(error.includes('ERR_CA_PIN_MISMATCH'));
+  let pinError = $derived(error.includes('ERR_TOFU_PIN_MISMATCH') || caPinError);
+  // Never show the machine-readable code to the user; keep only the human text.
+  let displayError = $derived(error.replace(/ERR_(?:CA|TOFU)_PIN_MISMATCH:\s*/g, ''));
 
   async function resetCertTrust(): Promise<void> {
     const target = serverUrl.trim();
@@ -151,7 +156,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
 
         {#if error}
-          <div class="login-error">{error}</div>
+          <div class="login-error">{displayError}</div>
           {#if pinError}
             <button
               type="button"
@@ -203,7 +208,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
 
         {#if error}
-          <div class="login-error">{error}</div>
+          <div class="login-error">{displayError}</div>
           {#if pinError}
             <button
               type="button"

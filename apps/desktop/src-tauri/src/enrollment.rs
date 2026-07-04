@@ -432,10 +432,13 @@ impl ServerCertVerifier for CaPinVerifier {
             Err(TlsError::InvalidCertificate(
                 CertificateError::UnknownIssuer | CertificateError::BadSignature,
             )) => Err(TlsError::General(
-                "AdminHelper: Das Server-Zertifikat wird nicht mehr von der bei der \
-                     Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke). Wurde \
-                     der Server neu installiert oder die PKI neu erzeugt, in den Einstellungen \
-                     die Geräte-Identität zurücksetzen und neu registrieren."
+                // ERR_CA_PIN_MISMATCH is the stable contract the login screen keys
+                // the "reset device identity" recovery off (Login.svelte), so that
+                // action never depends on the German prose below staying verbatim.
+                "ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der \
+                     bei der Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke). \
+                     Wurde der Server neu installiert oder die PKI neu erzeugt, in den \
+                     Einstellungen die Geräte-Identität zurücksetzen und neu registrieren."
                     .to_string(),
             )),
             Err(err) => Err(err),
@@ -870,7 +873,8 @@ mod tests {
 
         // A cert that does NOT chain to the pinned CA (server reinstall / MITM)
         // must surface our explicit, danger-aware message — not the raw rustls
-        // error — so the user is told the risk and the recovery path.
+        // error — carrying the stable ERR_CA_PIN_MISMATCH code the login screen
+        // keys its recovery action off.
         #[test]
         fn unpinned_ca_yields_danger_message() {
             let ca = make_ca();
@@ -902,8 +906,8 @@ mod tests {
             match result {
                 Err(TlsError::General(msg)) => {
                     assert!(
-                        msg.contains("Geräte-Registrierung") && msg.contains("MITM"),
-                        "Meldung muss Gefahr + Recovery benennen, war: {msg}"
+                        msg.contains("ERR_CA_PIN_MISMATCH"),
+                        "Meldung muss den stabilen Fehlercode fuer das Login-Recovery tragen, war: {msg}"
                     );
                 }
                 other => panic!("erwartet General-Gefahrenmeldung, war: {other:?}"),

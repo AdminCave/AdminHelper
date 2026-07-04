@@ -235,9 +235,14 @@ impl ServerCertVerifier for TofuVerifier {
         let presented = fingerprint(end_entity.as_ref());
         match self.store.load_or_store(&self.identity, &presented) {
             PinDecision::Trust | PinDecision::Capture => Ok(ServerCertVerified::assertion()),
+            // The ERR_TOFU_PIN_MISMATCH prefix is a stable, language-independent
+            // contract: the login screen keys the "reset pin" recovery action off
+            // it (Login.svelte) instead of the human prose, which is free to change
+            // or be localized. It reaches the UI buried in the reqwest source chain,
+            // so the frontend matches it as a substring, not a prefix.
             PinDecision::Reject => Err(TlsError::General(format!(
-                "AdminHelper TOFU: Das Server-Zertifikat für {} hat sich seit dem \
-                 ersten Verbinden geändert (mögliche MITM-Attacke). War der Wechsel \
+                "ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für {} hat sich \
+                 seit dem ersten Verbinden geändert (mögliche MITM-Attacke). War der Wechsel \
                  erwartet, den gepinnten Eintrag in den Einstellungen zurücksetzen.",
                 self.identity
             ))),
@@ -406,10 +411,16 @@ mod tests {
             .verify_server_cert(&cert_a, &[], &name, &[], now)
             .is_ok());
 
-        // The server presents a *different* cert under the same identity: reject.
-        assert!(verifier
-            .verify_server_cert(&cert_b, &[], &name, &[], now)
-            .is_err());
+        // The server presents a *different* cert under the same identity: reject
+        // with the stable ERR_TOFU_PIN_MISMATCH code the login screen keys its
+        // "reset pin" recovery off (symmetric to the CA-pin test in enrollment.rs).
+        match verifier.verify_server_cert(&cert_b, &[], &name, &[], now) {
+            Err(TlsError::General(msg)) => assert!(
+                msg.contains("ERR_TOFU_PIN_MISMATCH"),
+                "Reject muss den stabilen Fehlercode fuer das Login-Recovery tragen, war: {msg}"
+            ),
+            other => panic!("erwartet General-Reject mit Fehlercode, war: {other:?}"),
+        }
     }
 
     // Real-handshake proof: an in-process TLS server presenting a controlled
