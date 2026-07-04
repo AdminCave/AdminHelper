@@ -98,7 +98,10 @@ def update_connection(
     db: Session = Depends(get_db),
     _auth=Depends(write_dep),
 ):
-    conn = db.query(Connection).filter(Connection.id == conn_id).first()
+    # Scope the write path like GET/touch: a server-bound key must not update
+    # connections of other servers it cannot even see (invariant holds symmetric
+    # to the read path, not just for the JWT).
+    conn = _scope_connections(db.query(Connection), _auth).filter(Connection.id == conn_id).first()
     if not conn:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden"

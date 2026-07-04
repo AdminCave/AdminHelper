@@ -30,7 +30,7 @@ from app.modules.frp.router import router as frp_router
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.hooks.router import router as hooks_router
 from app.modules.hooks.router import trigger_router as hooks_trigger_router
-from app.modules.monitoring_proxy import router as monitoring_proxy_router
+from app.modules.monitoring_proxy.router import router as monitoring_proxy_router
 from app.modules.notifications.models import (  # noqa: F401
     Notification,
     NotificationOutbox,
