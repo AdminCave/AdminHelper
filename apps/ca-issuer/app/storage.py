@@ -144,6 +144,43 @@ def _classify_sans(primary: str, extra_sans: str) -> tuple[tuple[str, ...], tupl
     return tuple(dns), tuple(ips)
 
 
+def _provision_server_material(
+    out_dir: Path,
+    inter: Intermediate,
+    primary: str,
+    extra_sans: str,
+    *,
+    bundle_name: str,
+    cert_name: str,
+    key_name: str,
+    label: str,
+    extra_trust: tuple[Intermediate, ...] = (),
+) -> None:
+    """Shared core for the gateway + frps server-cert provisioning (audit 2.9):
+    they differ only in file names, the signing intermediate, and any extra trust.
+    Idempotent — the trust bundle is always refreshed (cheap, tracks rotations);
+    the leaf is kept across restarts but re-minted once past half its life (F4) so
+    it never expires under a long-running stack."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Trust bundle = the signing intermediate's chain (root already in it) plus any
+    # extra trust intermediates (e.g. frps also trusting the access chain for the
+    # STCP visitor). Always (re)written so it follows the current hierarchy.
+    bundle = inter.chain + b"".join(pki.cert_to_pem(i.cert) for i in extra_trust)
+    (out_dir / bundle_name).write_bytes(bundle)
+
+    cert_path = out_dir / cert_name
+    key_path = out_dir / key_name
+    if cert_path.exists() and key_path.exists() and not _leaf_needs_remint(cert_path):
+        return
+
+    dns_names, ip_addresses = _classify_sans(primary, extra_sans)
+    leaf, leaf_key = pki.build_server_leaf(inter.cert, inter.key, primary, dns_names, ip_addresses)
+    # fullchain = leaf + signing intermediate (what the server presents on the wire).
+    cert_path.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(inter.cert))
+    _write_private(key_path, pki.key_to_pem(leaf_key))
+    logger.info("%s provisioniert (CN=%s, DNS=%s, IP=%s)", label, primary, dns_names, ip_addresses)
+
+
 def ensure_gateway_cert(
     out_dir: Path, access: Intermediate, domain: str, extra_sans: str = ""
 ) -> None:
@@ -159,23 +196,15 @@ def ensure_gateway_cert(
     the trust bundle is always refreshed (cheap, tracks rotations); the leaf is
     kept across restarts but re-minted once past half its life (F4) so it never
     expires under a long-running stack and takes the gateway down."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    # Trust bundle for client-cert verification — always (re)written so it
-    # follows the current hierarchy even if intermediates were rotated.
-    (out_dir / "client-ca.pem").write_bytes(access.chain)
-
-    fullchain = out_dir / "gateway-fullchain.pem"
-    key_path = out_dir / "gateway.key"
-    if fullchain.exists() and key_path.exists() and not _leaf_needs_remint(fullchain):
-        return
-
-    dns_names, ip_addresses = _classify_sans(domain, extra_sans)
-    leaf, leaf_key = pki.build_server_leaf(access.cert, access.key, domain, dns_names, ip_addresses)
-    # fullchain = leaf + access intermediate (what nginx presents on :443).
-    fullchain.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(access.cert))
-    _write_private(key_path, pki.key_to_pem(leaf_key))
-    logger.info(
-        "Gateway-Cert provisioniert (CN=%s, DNS=%s, IP=%s)", domain, dns_names, ip_addresses
+    _provision_server_material(
+        out_dir,
+        access,
+        domain,
+        extra_sans,
+        bundle_name="client-ca.pem",
+        cert_name="gateway-fullchain.pem",
+        key_name="gateway.key",
+        label="Gateway-Cert",
     )
 
 
@@ -201,24 +230,14 @@ def ensure_frps_cert(
     The CA private key never reaches the internet-facing frps — only the public
     chain (the GHSA-rv39 master/published split, now under the unified PKI).
     Idempotent like the gateway cert; re-minted once past half its life (F4)."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    # Trust bundle frps verifies agent (tunnel) + visitor (access) client certs
-    # against: the tunnel chain plus each extra intermediate (root already in it).
-    ca_bundle = tunnel.chain + b"".join(pki.cert_to_pem(i.cert) for i in extra_trust)
-    (out_dir / "ca.crt").write_bytes(ca_bundle)
-
-    cert_path = out_dir / "frps.crt"
-    key_path = out_dir / "frps.key"
-    if cert_path.exists() and key_path.exists() and not _leaf_needs_remint(cert_path):
-        return
-
-    dns_names, ip_addresses = _classify_sans(server_addr, extra_sans)
-    leaf, leaf_key = pki.build_server_leaf(
-        tunnel.cert, tunnel.key, server_addr, dns_names, ip_addresses
-    )
-    # fullchain = leaf + tunnel intermediate (what frps presents to frpc).
-    cert_path.write_bytes(pki.cert_to_pem(leaf) + pki.cert_to_pem(tunnel.cert))
-    _write_private(key_path, pki.key_to_pem(leaf_key))
-    logger.info(
-        "frps-Cert provisioniert (CN=%s, DNS=%s, IP=%s)", server_addr, dns_names, ip_addresses
+    _provision_server_material(
+        out_dir,
+        tunnel,
+        server_addr,
+        extra_sans,
+        bundle_name="ca.crt",
+        cert_name="frps.crt",
+        key_name="frps.key",
+        label="frps-Cert",
+        extra_trust=extra_trust,
     )

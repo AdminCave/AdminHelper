@@ -199,6 +199,8 @@ services:
       # to DOMAIN.
       - CA_FRPS_CERT_DIR=/app/frps-certs
       - CA_FRPS_SERVER_ADDR=${FRP_SERVER_ADDR:-${DOMAIN:-localhost}}
+      # Extra SANs for the frps leaf; empty falls back to EXTRA_SANS (the gateway's).
+      - CA_FRPS_EXTRA_SANS=${CA_FRPS_EXTRA_SANS:-}
       # Reads enrollment tokens + identity revocations from the shared DB (the
       # server's tables); the issuer only ever READS them.
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper

@@ -68,7 +68,10 @@ def frps_server_addr() -> str:
 
 
 def frps_extra_sans() -> str:
-    return os.environ.get("EXTRA_SANS", "").strip()
+    """Extra SANs for the frps leaf. Own knob (CA_FRPS_EXTRA_SANS) so frps SANs can
+    differ from the gateway's; falls back to the gateway SANs when unset — mirroring
+    frps_server_addr()'s CA_FRPS_SERVER_ADDR -> gateway_domain() fallback."""
+    return os.environ.get("CA_FRPS_EXTRA_SANS", "").strip() or gateway_extra_sans()
 
 
 # Headers the gateway sets from the verified client cert (ADR 0001 §3.2). The
