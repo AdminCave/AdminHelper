@@ -28,13 +28,16 @@ echo "[visitorbox] provision -> CA-signed mTLS identity for the visitor's TLS to
 sudo adminhelper-agent provision --url "https://$SRV_IP" --token "$VPTOK" --server-id "$VSID" --insecure \
   && echo "VIS_PROVISION_OK" || { echo "VIS_PROVISION_FAIL"; exit 1; }
 
-echo "[visitorbox] write + rewire the visitor.toml (relative identity/ -> the provisioned cert)"
+echo "[visitorbox] write + rewire the visitor.toml ({{IDENTITY_DIR}} placeholder -> the provisioned cert)"
 sudo mkdir -p /etc/frp
 printf '%s' "$VB64" | base64 -d | sudo tee /etc/frp/visitor.toml >/dev/null
+# The server emits {{IDENTITY_DIR}} placeholders (config_generator.py); the desktop
+# replaces them with its keyring-exported identity dir. This box has no desktop, so
+# it maps the placeholder straight to the agent's provisioned mTLS material.
 sudo sed -i \
-  -e 's#identity/ca.crt#/etc/adminhelper/identity/ca.crt#' \
-  -e 's#identity/cert.pem#/etc/adminhelper/identity/agent.crt#' \
-  -e 's#identity/key.pem#/etc/adminhelper/identity/agent.key#' \
+  -e 's#{{IDENTITY_DIR}}/ca.crt#/etc/adminhelper/identity/ca.crt#' \
+  -e 's#{{IDENTITY_DIR}}/cert.pem#/etc/adminhelper/identity/agent.crt#' \
+  -e 's#{{IDENTITY_DIR}}/key.pem#/etc/adminhelper/identity/agent.key#' \
   /etc/frp/visitor.toml
 VPORT="$(grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0-9]+')"
 [ -n "$VPORT" ] && echo "VIS_BIND_PORT=$VPORT" || { echo "VIS_NO_BIND_PORT"; sudo cat /etc/frp/visitor.toml; exit 1; }

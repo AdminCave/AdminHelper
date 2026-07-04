@@ -83,9 +83,16 @@ async fn fetch_visitor_bundle(
     Ok(bundle)
 }
 
-/// Rewrite the relative `identity/` TLS paths in a visitor TOML to absolute paths.
+/// The placeholder the server's visitor generator emits in place of the identity
+/// dir; `write_visitor_bundle` swaps it for the absolute on-disk path. Must stay
+/// in lockstep with `_VISITOR_IDENTITY_DIR` in the server's config_generator.py —
+/// an explicit token instead of a fragile `"identity/` substring rewrite.
+const IDENTITY_DIR_PLACEHOLDER: &str = "{{IDENTITY_DIR}}";
+
+/// Replace the server's `{{IDENTITY_DIR}}` placeholder in a visitor TOML with the
+/// absolute identity dir the desktop exported its mTLS material into.
 fn rewrite_identity_paths(toml: &str, abs_identity_dir: &str) -> String {
-    toml.replace("\"identity/", &format!("\"{abs_identity_dir}/"))
+    toml.replace(IDENTITY_DIR_PLACEHOLDER, abs_identity_dir)
 }
 
 /// Export the enrolled identity (key 0600 + cert + CA) into `identity_dir` so the
@@ -247,15 +254,18 @@ mod tests {
     use super::rewrite_identity_paths;
 
     #[test]
-    fn rewrites_relative_identity_paths_to_absolute() {
+    fn rewrites_identity_placeholder_to_absolute() {
         let toml = "[transport.tls]\n\
-             certFile = \"identity/cert.pem\"\n\
-             keyFile = \"identity/key.pem\"\n\
-             trustedCaFile = \"identity/ca.crt\"\n";
+             certFile = \"{{IDENTITY_DIR}}/cert.pem\"\n\
+             keyFile = \"{{IDENTITY_DIR}}/key.pem\"\n\
+             trustedCaFile = \"{{IDENTITY_DIR}}/ca.crt\"\n";
         let out = rewrite_identity_paths(toml, "/data/app/identity");
         assert!(out.contains("certFile = \"/data/app/identity/cert.pem\""));
         assert!(out.contains("keyFile = \"/data/app/identity/key.pem\""));
         assert!(out.contains("trustedCaFile = \"/data/app/identity/ca.crt\""));
-        assert!(!out.contains("\"identity/"), "no relative path may remain");
+        assert!(
+            !out.contains("{{IDENTITY_DIR}}"),
+            "no placeholder may remain"
+        );
     }
 }

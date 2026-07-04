@@ -19,10 +19,13 @@ _FRPS_CERT_DIR = "/etc/frp-pki"
 # than a separate server-minted client cert.
 _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
 # Where the desktop STCP visitor finds its mTLS identity: the desktop exports its
-# enrolled ACCESS identity (key + cert + CA) from the keyring into this dir and
-# rewrites the relative paths to absolute (F2). frps trusts the access
-# intermediate (ca-issuer extra_trust) so this access cert is accepted.
-_VISITOR_IDENTITY_DIR = "identity"
+# enrolled ACCESS identity (key + cert + CA) from the keyring into a local dir and
+# substitutes this placeholder with that absolute path (F2). An explicit token —
+# not a bare "identity/" prefix — keeps the server<->desktop contract greppable on
+# both sides (see IDENTITY_DIR_PLACEHOLDER in the desktop's frpc.rs) instead of
+# hinging on a substring match. frps trusts the access intermediate (ca-issuer
+# extra_trust) so this access cert is accepted.
+_VISITOR_IDENTITY_DIR = "{{IDENTITY_DIR}}"
 
 
 def _tls_server_block(
@@ -57,9 +60,9 @@ def _tls_agent_block() -> list[str]:
 def _tls_client_block() -> list[str]:
     """Generates the [transport.tls] block for a STCP visitor (frpc). The desktop
     presents its enrolled ACCESS identity (F2): it exports key/cert/CA from its
-    keyring into the visitor identity dir and rewrites these relative paths to
-    absolute. frps trusts the access intermediate (ca-issuer extra_trust), so the
-    access cert is accepted on the frp plane (ADR 0001 D8)."""
+    keyring into a local dir and replaces the {{IDENTITY_DIR}} placeholder with
+    that absolute path. frps trusts the access intermediate (ca-issuer
+    extra_trust), so the access cert is accepted on the frp plane (ADR 0001 D8)."""
     return [
         "",
         "[transport.tls]",
