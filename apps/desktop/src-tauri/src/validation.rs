@@ -93,7 +93,7 @@ fn is_loopback_host(host: Option<Host<&str>>) -> bool {
 /// while no secret ever crosses a network in cleartext.
 ///
 /// The public read-only sync URL has its own stricter `validate_https_url`
-/// (no loopback exception) in sync.rs; this guards the authenticated JWT path
+/// (no loopback exception) below; this guards the authenticated JWT path
 /// funnelled through `auth::build_client`.
 pub fn validate_server_url_secure(raw: &str) -> Result<(), AppError> {
     let url = Url::parse(raw)?;
@@ -104,6 +104,19 @@ pub fn validate_server_url_secure(raw: &str) -> Result<(), AppError> {
             "Server-URL muss https:// verwenden (http:// nur fuer localhost)".to_string(),
         )),
     }
+}
+
+/// Stricter than `validate_server_url_secure`: NO loopback exception. The public
+/// read-only sync URL is always a network target, so cleartext `http://` is never
+/// acceptable there — not even for localhost.
+pub fn validate_https_url(raw: &str) -> Result<(), AppError> {
+    let url = Url::parse(raw)?;
+    if url.scheme() != "https" {
+        return Err(AppError::Validation(
+            "Nur https:// URLs sind erlaubt".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// True if two URLs point at the same server origin (scheme + host + port),
@@ -203,6 +216,15 @@ mod tests {
     fn validate_host_accepts_plain_hostname() {
         assert!(validate_host("host.example.com").is_ok());
         assert!(validate_host("192.168.0.1").is_ok());
+    }
+
+    #[test]
+    fn validate_https_url_requires_https_without_loopback_exception() {
+        assert!(validate_https_url("https://sync.example.com/connections").is_ok());
+        // Stricter than validate_server_url_secure: even loopback http is rejected.
+        assert!(validate_https_url("http://localhost/connections").is_err());
+        assert!(validate_https_url("http://sync.example.com").is_err());
+        assert!(validate_https_url("ftp://sync.example.com").is_err());
     }
 
     #[test]

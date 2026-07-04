@@ -2,22 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use url::Url;
-
 use crate::error::AppError;
 use crate::models::Connection;
 use crate::storage::write_connections;
-use crate::validation::sanitize_synced_connections;
-
-fn validate_https_url(raw: &str) -> Result<(), AppError> {
-    let url = Url::parse(raw)?;
-    if url.scheme() != "https" {
-        return Err(AppError::Validation(
-            "Nur https:// URLs sind erlaubt".to_string(),
-        ));
-    }
-    Ok(())
-}
+use crate::validation::{sanitize_synced_connections, validate_https_url};
 
 pub async fn sync_connections(
     app: tauri::AppHandle,
