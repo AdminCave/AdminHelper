@@ -9,12 +9,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/enroll"
+	"adminhelper-agent/internal/httpclient"
 )
 
 // BuildReport collects all metrics and builds the report.
@@ -117,16 +117,8 @@ func pushOnce(client *http.Client, endpoint, apiKey string, data []byte) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", apiKey)
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("Verbindungsfehler: %w", err)
-	}
-	defer resp.Body.Close()
-	// Body leeren, damit die Verbindung wiederverwendet werden kann.
-	_, _ = io.ReadAll(resp.Body)
-
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP-Fehler: %d", resp.StatusCode)
+	if _, err := httpclient.Do(client, req); err != nil {
+		return fmt.Errorf("Push: %w", err)
 	}
 	return nil
 }

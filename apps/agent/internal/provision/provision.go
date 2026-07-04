@@ -230,6 +230,8 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 	req.Header.Set("X-Provision-Token", token)
 	req.Header.Set("Content-Type", "application/json")
 
+	// Hand-rolled (not httpclient.Do): TOFU pinning below needs the raw
+	// *http.Response's TLS.PeerCertificates, which the []byte helper doesn't expose.
 	httpResp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Activate-Aufruf fehlgeschlagen: %w", err)

@@ -41,8 +41,10 @@ func Sync() error {
 	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
 	hashBody, err := httpGet(client, hashURL, cfg.APIKey)
 	if err != nil {
-		logger.Warnf("Config-Hash konnte nicht abgefragt werden: %v", err)
-		return nil
+		// Propagate like the config fetch below (same error class): a persistently
+		// broken sync (rotated API key, expired mTLS cert, wrong URL) must surface
+		// as an error, not hide as a warning while the run reports success.
+		return fmt.Errorf("Config-Hash abfragen: %w", err)
 	}
 	remoteHash, err := parseConfigHash(hashBody)
 	if err != nil {

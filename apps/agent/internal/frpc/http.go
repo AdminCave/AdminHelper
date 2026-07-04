@@ -5,9 +5,9 @@
 package frpc
 
 import (
-	"fmt"
-	"io"
 	"net/http"
+
+	"adminhelper-agent/internal/httpclient"
 )
 
 // httpGet performs a GET request with an API-Key header.
@@ -19,17 +19,5 @@ func httpGet(client *http.Client, url, apiKey string) ([]byte, error) {
 	if apiKey != "" {
 		req.Header.Set("X-API-Key", apiKey)
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return body, nil
+	return httpclient.Do(client, req)
 }

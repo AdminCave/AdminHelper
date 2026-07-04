@@ -22,10 +22,11 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"adminhelper-agent/internal/httpclient"
 )
 
 // File layout inside the agent identity directory.
@@ -100,18 +101,9 @@ func Submit(client *http.Client, endpoint string, body any) (*IssueResponse, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	data, err := httpclient.Do(client, req)
 	if err != nil {
-		return nil, fmt.Errorf("Verbindung zum Issuer: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Issuer-Aufruf fehlgeschlagen (HTTP %d): %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("Issuer-Aufruf: %w", err)
 	}
 
 	var out IssueResponse
