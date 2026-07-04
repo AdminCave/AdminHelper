@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { onMount } from 'svelte';
   import type { Connection, Server } from '$lib/api/types';
   import { connectionsApi } from '$lib/api/connections';
@@ -23,10 +24,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let loading = $state(false);
   let modalOpen = $state(false);
   let editing = $state<Connection | null>(null);
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
 
   async function load(): Promise<void> {
     const s = $session;

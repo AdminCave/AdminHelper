@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { sessionStore } from '$lib/stores/session';
   import { monitoringApi } from '$lib/api/monitoring';
   import type { MonitorCheck, MonitoringMetricsResponse } from '$lib/api/types';
@@ -32,7 +33,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       metrics = await monitoringApi.fetchMetrics(session, check.id, activePeriod);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
       metrics = null;
     } finally {
       loading = false;

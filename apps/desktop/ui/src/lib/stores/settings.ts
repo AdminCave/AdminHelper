@@ -4,6 +4,7 @@
 
 // Settings store: modal state, persistence and sync timer.
 
+import { errMsg } from '$lib/utils/errors';
 import { writable, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { sessionStore, refreshSettings, dropSession } from './session';
@@ -50,7 +51,7 @@ export async function syncNow(notify: boolean): Promise<void> {
     if (notify) showStatus(tNow('status.syncSuccess'));
   } catch (err) {
     if (notify) {
-      reportError(err instanceof Error ? err.message : String(err));
+      reportError(errMsg(err));
     }
   }
 }
@@ -128,7 +129,7 @@ export async function saveSettings(next: Settings): Promise<SaveResult> {
     closeSettings();
     return { ok: true };
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
     return { ok: false };
   }
 }

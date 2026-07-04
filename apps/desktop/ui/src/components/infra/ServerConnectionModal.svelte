@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type { Connection, ConnectionKind } from '$lib/api/types';
   import {
     CONNECTION_KINDS,
@@ -51,10 +52,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     tagsInput = (next.tags ?? []).join(', ');
     confirmDelete = false;
   });
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
 
   async function onSave(): Promise<void> {
     const s = $session;

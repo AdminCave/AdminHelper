@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
   import {
     emptyConnection,
@@ -56,7 +57,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       // old client id would create a duplicate on a second save.
       closeEditor();
     } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
+      reportError(errMsg(err));
     }
   }
 
@@ -75,7 +76,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       showStatus($t('editor.status.deleted'));
       closeEditor();
     } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
+      reportError(errMsg(err));
     }
   }
 

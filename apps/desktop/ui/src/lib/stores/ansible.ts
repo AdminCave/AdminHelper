@@ -5,6 +5,7 @@
 // Ansible store: 3-step wizard (playbook -> targets -> run).
 // Loads playbooks + servers from the server API and starts the local terminal runner.
 
+import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { sessionStore } from './session';
@@ -81,7 +82,7 @@ export async function loadAnsibleData(): Promise<void> {
       loading: false,
     }));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     _state.update((s) => ({ ...s, loading: false, loadError: msg }));
   }
 }
@@ -95,7 +96,7 @@ export async function reloadPlaybooks(): Promise<void> {
     const playbooks = await ansibleApi.fetchPlaybooks(session);
     _state.update((s) => ({ ...s, playbooks: Array.isArray(playbooks) ? playbooks : [] }));
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }
 
@@ -151,7 +152,7 @@ export async function runPlaybook(): Promise<void> {
     await bridge.ansibleLaunch(inventoryPath, playbookPath);
     showStatus(tNow('status.ansibleStarted', { name: playbook.name }));
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   } finally {
     _state.update((s) => ({ ...s, running: false }));
   }

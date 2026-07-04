@@ -5,6 +5,7 @@
 // Monitoring store: holds checks, servers, filters, alert rules, alert log.
 // Auto-refresh via activate()/deactivate() from the monitoring page.
 
+import { errMsg, SESSION_EXPIRED } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import { sessionStore } from './session';
 import { reportError, showStatus } from './statusBar';
@@ -146,8 +147,8 @@ export async function loadServers(): Promise<void> {
     _state.update((s) => ({ ...s, servers: Array.isArray(servers) ? servers : [] }));
   } catch (err) {
     _state.update((s) => ({ ...s, servers: [] }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -172,8 +173,8 @@ export async function loadMonitoring(): Promise<void> {
   } catch (err) {
     if (gen !== statusGen) return;
     _state.update((s) => ({ ...s, checks: [], loading: false }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -185,8 +186,8 @@ export async function loadAlerts(): Promise<void> {
     _state.update((s) => ({ ...s, alerts }));
   } catch (err) {
     _state.update((s) => ({ ...s, alerts: [] }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -198,8 +199,8 @@ export async function loadAlertLog(): Promise<void> {
     _state.update((s) => ({ ...s, log }));
   } catch (err) {
     _state.update((s) => ({ ...s, log: [] }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -210,7 +211,7 @@ export async function toggleCheck(checkId: string): Promise<void> {
     await monitoringApi.toggleCheck(session, checkId);
     await loadMonitoring();
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }
 
@@ -221,7 +222,7 @@ export async function runCheck(checkId: string): Promise<void> {
     await monitoringApi.runCheck(session, checkId);
     setTimeout(() => void loadMonitoring(), 2000);
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }
 
@@ -232,12 +233,8 @@ export async function toggleAlert(ruleId: string): Promise<void> {
     await monitoringApi.toggleAlert(session, ruleId);
     await loadAlerts();
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // ── Alert rule CRUD ──────────────────────────────────────────────────────────
@@ -280,7 +277,7 @@ export async function loadTemplates(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, templates: [] }));
     const msg = errMsg(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 

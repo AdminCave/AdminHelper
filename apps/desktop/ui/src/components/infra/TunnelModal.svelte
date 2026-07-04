@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type { FrpConfig, FrpProtocol, FrpTunnel, FrpTunnelType } from '$lib/api/types';
   import {
     TUNNEL_TYPES,
@@ -59,10 +60,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (form.localPort === null) {
       form = { ...form, localPort: PROTOCOL_DEFAULT_PORT[form.protocol] };
     }
-  }
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
   }
 
   async function onDelete(): Promise<void> {

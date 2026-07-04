@@ -5,6 +5,7 @@
 // Connections store. Loads, caches and saves connections via the
 // Tauri bridge. Filter + search are derived stores - the UI reads them directly.
 
+import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { AuthSession, Connection, ConnectionKind, Settings } from '$lib/bridge/types';
@@ -72,7 +73,7 @@ export async function load(): Promise<void> {
     _state.set({
       items: [],
       loading: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errMsg(err),
     });
   }
 }
@@ -98,7 +99,7 @@ export async function reloadForMode(
     _state.set({
       items: [],
       loading: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errMsg(err),
     });
   }
 }

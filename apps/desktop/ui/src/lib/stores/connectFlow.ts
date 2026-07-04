@@ -10,6 +10,7 @@
 // markRdpError filters by the UUID so that late errors of an aborted
 // connection do not mark a concurrently running new connection as failed.
 
+import { errMsg } from '$lib/utils/errors';
 import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { Connection } from '$lib/bridge/types';
@@ -148,7 +149,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
         } catch (err) {
           reportError(
             tNow('error.passwordStore', {
-              message: err instanceof Error ? err.message : String(err),
+              message: errMsg(err),
             }),
           );
         }
@@ -156,7 +157,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
       await performConnect(updated, keepEditorOpen, { password: outcome.password });
       return true;
     } catch (err) {
-      reportError(`Password-Store: ${err instanceof Error ? err.message : String(err)}`);
+      reportError(`Password-Store: ${errMsg(err)}`);
     }
   }
 
@@ -221,7 +222,7 @@ export async function performConnect(
         : bridge.openConnection(resolved, password, undefined, cid);
       promise.catch((err: unknown) => {
         clearRdpAttempt(cid);
-        reportError(err instanceof Error ? err.message : String(err));
+        reportError(errMsg(err));
       });
     } else if (useStoredPassword) {
       await bridge.openConnectionStored(resolved);
@@ -239,6 +240,6 @@ export async function performConnect(
 
     if (!keepEditorOpen) closeEditor();
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }

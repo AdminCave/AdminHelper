@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setMode, settings } from '$lib/stores/session';
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
@@ -63,7 +64,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = '';
       info = $t('login.resetPin.done');
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -79,7 +80,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await setMode('local');
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -96,7 +97,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       username = '';
       password = '';
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -115,7 +116,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       info = $t('login.enroll.done');
       mode = 'login';
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }

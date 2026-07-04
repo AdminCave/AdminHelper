@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { onMount } from 'svelte';
   import type { FrpProvisionToken, Server } from '$lib/api/types';
   import { provisioningApi } from '$lib/api/provisioning';
@@ -22,10 +23,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let command = $state('');
 
   const locale = $derived($language === 'de' ? 'de-DE' : 'en-GB');
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
 
   async function loadTokens(): Promise<void> {
     const s = $session;

@@ -7,6 +7,7 @@
 // and drives the create/edit/delete server modal. Server mode only — the page
 // that uses it is gated like monitoring/ansible.
 
+import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import { sessionStore } from './session';
 import { reportError, showStatus } from './statusBar';
@@ -67,10 +68,6 @@ export function setSelectedServer(id: string | null): void {
 
 function requireSession() {
   return get(sessionStore).session;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // ── Data + mutations ─────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type {
     MonitorCheck,
     MonitorCheckType,
@@ -49,10 +50,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     form = target ? checkToForm(target) : emptyCheckForm(serverId);
     confirmDelete = false;
   });
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
 
   async function onSave(): Promise<void> {
     const s = $session;
