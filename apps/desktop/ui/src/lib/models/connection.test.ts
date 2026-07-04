@@ -50,6 +50,10 @@ describe('parseTags', () => {
     expect(parseTags('a, b ,,c')).toEqual(['a', 'b', 'c']);
     expect(parseTags('')).toEqual([]);
   });
+
+  it('de-duplicates (audit 2.22: connection previously skipped the Set)', () => {
+    expect(parseTags('a, a, b ,a')).toEqual(['a', 'b']);
+  });
 });
 
 describe('validateConnection', () => {

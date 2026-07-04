@@ -6,6 +6,8 @@
 
 import type { Connection, ConnectionKind } from '$lib/bridge/types';
 import { tNow } from '$lib/i18n';
+import { parseTags, type ValidationResult } from './shared';
+export { parseTags };
 
 export const DEFAULT_PORTS: Record<Extract<ConnectionKind, 'ssh' | 'rdp'>, number> = {
   ssh: 22,
@@ -55,18 +57,6 @@ export function normalizeConnection(
     lastUsed: (raw.lastUsed as string | null | undefined) ?? null,
     serverId: (raw.serverId as string | null | undefined) ?? null,
   };
-}
-
-export function parseTags(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => tag.length > 0);
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
 }
 
 export function validateConnection(c: Connection): ValidationResult {

@@ -9,11 +9,8 @@
 
 import type { Server, ServerInput } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
-}
+import { parseTags, type ValidationResult } from './shared';
+export { parseTags };
 
 export function emptyServerInput(): ServerInput {
   return { name: '', hostname: '', os_type: null, tags: [], notes: '' };
@@ -27,17 +24,6 @@ export function serverToInput(s: Server): ServerInput {
     tags: [...(s.tags ?? [])],
     notes: s.notes ?? '',
   };
-}
-
-export function parseTags(raw: string): string[] {
-  return [
-    ...new Set(
-      raw
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter((tag) => tag.length > 0),
-    ),
-  ];
 }
 
 export function normalizeServerInput(input: ServerInput): ServerInput {

@@ -17,6 +17,7 @@ import type {
   MonitorSeverity,
 } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
+import type { ValidationResult } from './shared';
 
 export const CHECK_TYPES: MonitorCheckType[] = [
   'ping',
@@ -45,11 +46,6 @@ export interface CheckForm {
   consecutiveFails: number;
   description: string;
   config: MonitorCheckConfig;
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
 }
 
 export function emptyCheckForm(serverId: string): CheckForm {

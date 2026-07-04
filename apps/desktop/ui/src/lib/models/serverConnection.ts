@@ -9,6 +9,8 @@
 
 import type { Connection, ConnectionKind } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
+import { parseTags, type ValidationResult } from './shared';
+export { parseTags };
 
 export const CONNECTION_KINDS: ConnectionKind[] = ['ssh', 'rdp', 'web'];
 
@@ -26,11 +28,6 @@ export interface ConnectionForm {
   tags: string[];
   trustCert: boolean;
   serverId: string | null;
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
 }
 
 export function emptyConnectionForm(serverId: string | null = null): ConnectionForm {
@@ -67,17 +64,6 @@ export function connectionToForm(c: Connection): ConnectionForm {
     trustCert: c.trustCert ?? false,
     serverId: c.serverId ?? null,
   };
-}
-
-export function parseTags(raw: string): string[] {
-  return [
-    ...new Set(
-      raw
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0),
-    ),
-  ];
 }
 
 /** Builds the camelCase payload the server API expects (web parity). Trims

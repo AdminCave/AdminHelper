@@ -16,17 +16,13 @@ import type {
   TemplateCheckDef,
 } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
+import type { ValidationResult } from './shared';
 
 export interface TemplateForm {
   name: string;
   description: string;
   checkDefs: TemplateCheckDef[];
   alertDefs: TemplateAlertDef[];
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
 }
 
 export function emptyCheckDef(): TemplateCheckDef {

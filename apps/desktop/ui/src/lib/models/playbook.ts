@@ -8,6 +8,8 @@
 
 import type { Playbook, PlaybookInput } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
+import { parseTags, type ValidationResult } from './shared';
+export { parseTags };
 
 export interface PlaybookForm {
   id: string | null;
@@ -16,11 +18,6 @@ export interface PlaybookForm {
   description: string;
   tags: string[];
   content: string;
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
 }
 
 export function emptyPlaybookForm(): PlaybookForm {
@@ -43,17 +40,6 @@ export function playbookToForm(p: Playbook, content: string): PlaybookForm {
     tags: [...(p.tags ?? [])],
     content,
   };
-}
-
-export function parseTags(raw: string): string[] {
-  return [
-    ...new Set(
-      raw
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0),
-    ),
-  ];
 }
 
 /** Builds the PlaybookInput the server API expects. Trims text fields and
