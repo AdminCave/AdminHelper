@@ -39,7 +39,10 @@ export function toggleLanguage(): void {
 
 function translate(lang: Language, key: string, vars?: TVars): string {
   const dict = translations[lang] ?? translations.en;
-  const fallback = translations.de;
+  // English is the single reference language: an unknown language and a missing
+  // key both fall back to en, so a key only maintained in de never surfaces raw
+  // German to an English user (2.137).
+  const fallback = translations.en;
   let text = dict[key] ?? fallback[key] ?? key;
   if (vars) {
     text = text.replace(/\{(\w+)\}/g, (_, token) => {

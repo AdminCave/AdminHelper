@@ -24,7 +24,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
-      e.stopPropagation();
+      // stopImmediatePropagation, not stopPropagation: each mounted modal adds its
+      // own document keydown listener, so one Escape must not fire every listener
+      // on document (which would close two stacked modals at once) (2.136).
+      e.stopImmediatePropagation();
       close();
     }
   }
