@@ -6,12 +6,16 @@
   "type": "module",
   "description": "End-to-end tests for the AdminHelper Tauri desktop app (WebdriverIO + tauri-driver).",
   "scripts": {
-    "test": "wdio run wdio.conf.js"
+    "test": "wdio run wdio.conf.js",
+    "lint": "eslint ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@wdio/cli": "^9.19.0",
     "@wdio/local-runner": "^9.19.0",
     "@wdio/mocha-framework": "^9.19.0",
-    "@wdio/spec-reporter": "^9.19.0"
+    "@wdio/spec-reporter": "^9.19.0",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0"
   }
 }

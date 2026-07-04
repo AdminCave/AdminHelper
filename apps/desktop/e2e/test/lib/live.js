@@ -15,6 +15,19 @@ export const USER = process.env.AH_ADMIN_USER;
 export const PASS = process.env.AH_ADMIN_PASS;
 
 export async function login() {
+  // Fail fast with a clear pointer to the wrapper: reading these unset from the env
+  // otherwise surfaces as a cryptic setValue(undefined) after the ~20-min build.
+  for (const [name, value] of Object.entries({
+    AH_SERVER_URL: SERVER_URL,
+    AH_ADMIN_USER: USER,
+    AH_ADMIN_PASS: PASS,
+  })) {
+    if (!value) {
+      throw new Error(
+        `${name} ist nicht gesetzt — Live-Specs über scripts/tests/desktop_e2e_*.sh starten, nicht direkt.`,
+      );
+    }
+  }
   await $('.login-card').waitForExist({ timeout: 20000 });
   const inputs = await $$('.login-card input'); // serverUrl, username, password
   await inputs[0].setValue(SERVER_URL);
@@ -54,7 +67,8 @@ export async function gotoInfrastructure() {
   await $('.srv-item').waitForExist({ timeout: 15000 }); // the seeded server auto-selects
 }
 
-// Server-detail tabs: overview(0), connections(1), tunnels(2).
+// Server-detail tabs: overview(0), connections(1), tunnels(2), monitoring(3),
+// provisioning(4) — order from ServerDetail.svelte.
 export async function openServerTab(index) {
   await $('.srv-tab').waitForExist({ timeout: 15000 });
   const tabs = await $$('.srv-tab');

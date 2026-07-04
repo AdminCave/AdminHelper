@@ -153,7 +153,7 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent
 
   desktop-ui:
-    name: Desktop-UI (svelte-check + lint + vitest)
+    name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -161,7 +161,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/desktop/ui/package-lock.json
+          cache-dependency-path: |
+            apps/desktop/ui/package-lock.json
+            apps/desktop/e2e/package-lock.json
       - name: npm ci
         working-directory: apps/desktop/ui
         run: npm ci --no-audit --no-fund
@@ -175,6 +177,12 @@ jobs:
         working-directory: apps/desktop/ui
         # Coverage is report-only (no threshold) — visibility, not a gate.
         run: npm run test -- --coverage
+      - name: E2E specs npm ci
+        working-directory: apps/desktop/e2e
+        run: npm ci --no-audit --no-fund
+      - name: E2E eslint
+        working-directory: apps/desktop/e2e
+        run: npm run lint
 
   frontend:
     name: Web-Frontend (check + lint + unit)

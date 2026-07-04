@@ -118,6 +118,13 @@ layer_unit() {
     run_step "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm ci --no-audit --no-fund && npm run check && npm run lint && npm run test'
   else skip "desktop-ui vitest" "node/npm not installed"; fi
 
+  # Desktop E2E specs — lint only. The suite itself needs a display + Docker (heavy
+  # tier), but linting the ~600 lines of wdio JS is cheap and catches spec bugs
+  # before a costly build (2.89).
+  if have_node; then
+    run_step "desktop-e2e lint" -- bash -c 'cd apps/desktop/e2e && npm ci --no-audit --no-fund && npm run lint'
+  else skip "desktop-e2e lint" "node/npm not installed"; fi
+
   # Web frontend — check + lint + vitest unit.
   if have_node; then
     run_step "web vitest" -- bash -c 'cd apps/web && npm ci --no-audit --no-fund && npm run check && npm run lint && npm run test:unit'
