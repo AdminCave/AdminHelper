@@ -123,7 +123,12 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 		}
 		monitorURL := adminHelperURL + monitorPath
 		fmt.Println("→ Monitor-Agent wird eingerichtet...")
-		if err := monitor.Init(monitorURL, *resp.MonitorAPIKey, serverID, "", effectiveCacert, effectiveInsecure); err != nil {
+		if err := monitor.Init(monitor.InitParams{
+			URL:      monitorURL,
+			APIKey:   *resp.MonitorAPIKey,
+			ServerID: serverID,
+			TLS:      config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
+		}); err != nil {
 			return fmt.Errorf("Monitor-Init fehlgeschlagen: %w", err)
 		}
 	} else {
@@ -133,7 +138,14 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	// 2. FRP apply only if the server has an FRP tunnel.
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
-		if err := frpc.Apply(adminHelperURL, serverID, resp.APIKey, resp.FRP.Config, resp.FRP.PkiBundle, effectiveCacert, effectiveInsecure); err != nil {
+		if err := frpc.Apply(frpc.ApplyParams{
+			AdminHelperURL: adminHelperURL,
+			ServerID:       serverID,
+			APIKey:         resp.APIKey,
+			FrpConfigB64:   resp.FRP.Config,
+			PkiBundleB64:   resp.FRP.PkiBundle,
+			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
+		}); err != nil {
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
 		}
 	} else {

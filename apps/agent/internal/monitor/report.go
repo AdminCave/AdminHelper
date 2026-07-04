@@ -78,11 +78,27 @@ func BuildReport(serviceNames []string) map[string]any {
 // pushRetryDelay is a variable so tests can shorten the backoff.
 var pushRetryDelay = 10 * time.Second
 
+// PushReportParams groups monitor.PushReport's arguments (7 positionals before).
+type PushReportParams struct {
+	URL      string
+	APIKey   string
+	ServerID string
+	Report   map[string]any
+	TLS      config.TLSOpts
+}
+
 // PushReport sends the report to the monitoring service. A lost push wastes a
 // full 5-minute slot, so a transient failure (server restart, network blip)
 // gets one retry after a short backoff. The backoff honors ctx so a shutdown
 // (e.g. the Windows SCM stop) aborts the wait instead of blocking up to 10s.
-func PushReport(ctx context.Context, url, apiKey, serverID string, report map[string]any, cacert string, insecure bool) error {
+func PushReport(ctx context.Context, p PushReportParams) error {
+	url := p.URL
+	apiKey := p.APIKey
+	serverID := p.ServerID
+	report := p.Report
+	cacert := p.TLS.CACert
+	insecure := p.TLS.Insecure
+
 	endpoint := fmt.Sprintf("%s/agent/%s/report", url, serverID)
 
 	data, err := json.Marshal(report)

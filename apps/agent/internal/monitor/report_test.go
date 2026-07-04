@@ -68,7 +68,7 @@ func TestPushReportSuccessNoRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := PushReport(context.Background(), srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err != nil {
 		t.Fatalf("PushReport: %v", err)
 	}
 	if got := attempts.Load(); got != 1 {
@@ -88,7 +88,7 @@ func TestPushReportRetriesOnceOnTransientError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := PushReport(context.Background(), srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err != nil {
 		t.Fatalf("PushReport nach Retry: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
@@ -105,7 +105,7 @@ func TestPushReportFailsAfterSingleRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := PushReport(context.Background(), srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false)
+	err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}})
 	if err == nil {
 		t.Fatal("PushReport erwartete Fehler, bekam keinen")
 	}
@@ -132,7 +132,7 @@ func TestPushReportAbortsRetryOnContextCancel(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	if err := PushReport(ctx, srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false); err == nil {
+	if err := PushReport(ctx, PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err == nil {
 		t.Fatal("PushReport erwartete ctx-Fehler nach Cancel")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {

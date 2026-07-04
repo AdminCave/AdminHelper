@@ -14,8 +14,24 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
+// InitParams groups monitor.Init's arguments (6 same-typed positionals before).
+type InitParams struct {
+	URL      string
+	APIKey   string
+	ServerID string
+	Services string
+	TLS      config.TLSOpts
+}
+
 // Init performs the initial setup of the monitor agent.
-func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
+func Init(p InitParams) error {
+	url := p.URL
+	apiKey := p.APIKey
+	serverID := p.ServerID
+	services := p.Services
+	cacert := p.TLS.CACert
+	insecure := p.TLS.Insecure
+
 	url = strings.TrimRight(url, "/")
 
 	monitorDir := config.MonitorDir()
@@ -81,7 +97,13 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		}
 	}
 	report := BuildReport(serviceList)
-	if err := PushReport(context.Background(), url, apiKey, serverID, report, storedCACert, insecure); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{
+		URL:      url,
+		APIKey:   apiKey,
+		ServerID: serverID,
+		Report:   report,
+		TLS:      config.TLSOpts{CACert: storedCACert, Insecure: insecure},
+	}); err != nil {
 		logger.Warnf("Test-Push fehlgeschlagen: %v", err)
 		logger.Warnf("Pruefe URL und API-Key")
 	} else {
@@ -114,7 +136,13 @@ func Push(ctx context.Context) error {
 	report := BuildReport(cfg.Services)
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
-	if err := PushReport(ctx, cfg.MonitorURL, cfg.APIKey, cfg.ServerID, report, cfg.CACert, cfg.Insecure); err != nil {
+	if err := PushReport(ctx, PushReportParams{
+		URL:      cfg.MonitorURL,
+		APIKey:   cfg.APIKey,
+		ServerID: cfg.ServerID,
+		Report:   report,
+		TLS:      config.TLSOpts{CACert: cfg.CACert, Insecure: cfg.Insecure},
+	}); err != nil {
 		logger.Errorf("Report senden fehlgeschlagen: %v", err)
 		return err
 	}

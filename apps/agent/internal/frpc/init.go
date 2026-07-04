@@ -18,12 +18,31 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
+// ApplyParams groups frpc.Apply's arguments — 7 same-typed positionals before,
+// where a swapped serverID/apiKey only surfaced at runtime as an HTTP 401.
+type ApplyParams struct {
+	AdminHelperURL string
+	ServerID       string
+	APIKey         string
+	FrpConfigB64   string
+	PkiBundleB64   string
+	TLS            config.TLSOpts
+}
+
 // Apply writes the FRP config + PKI bundle from a provisioning response
 // to disk and activates the service. NO HTTP call happens here anymore —
 // the token-activate call has been centralized since v0.23.0 in the
 // `provision` subcommand, which invokes `Apply` with the already-decoded
 // values.
-func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert string, insecure bool) error {
+func Apply(p ApplyParams) error {
+	adminHelperURL := p.AdminHelperURL
+	serverID := p.ServerID
+	apiKey := p.APIKey
+	frpConfigB64 := p.FrpConfigB64
+	pkiBundleB64 := p.PkiBundleB64
+	cacert := p.TLS.CACert
+	insecure := p.TLS.Insecure
+
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
 	frpDir := config.FrpDir()

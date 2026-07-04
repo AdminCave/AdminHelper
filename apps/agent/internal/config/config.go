@@ -32,6 +32,15 @@ type MonitorConfig struct {
 	Insecure   bool
 }
 
+// TLSOpts bundles the CA-cert-path / insecure pair that travels together through
+// every provisioning call (Apply, Init, PushReport). Grouping them keeps a new
+// TLS option (e.g. a client-cert path) from having to be threaded through 4+
+// same-typed positional args — and stops a swapped cacert/insecure at a call site.
+type TLSOpts struct {
+	CACert   string
+	Insecure bool
+}
+
 // LoadKeyValue reads a Key=Value config file (compatible with the existing format).
 func LoadKeyValue(path string) (map[string]string, error) {
 	f, err := os.Open(path)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/diagnostics"
 	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/logging"
@@ -143,7 +144,13 @@ func monitorInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Ersteinrichtung des Monitor-Agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return monitor.Init(url, apiKey, serverID, services, cacert, insecure)
+			return monitor.Init(monitor.InitParams{
+				URL:      url,
+				APIKey:   apiKey,
+				ServerID: serverID,
+				Services: services,
+				TLS:      config.TLSOpts{CACert: cacert, Insecure: insecure},
+			})
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Basis-URL: AdminHelper-Server + /api/monitoring (z.B. https://srm.example.com/api/monitoring) (erforderlich)")
