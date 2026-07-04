@@ -38,6 +38,21 @@ def _escape_label(value) -> str:
     return str(value).replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict]:
+    """Serialize checks with their current state, batch-loading the states with a
+    single in_ query. Shared by the three check-listing endpoints."""
+    check_ids = [c.id for c in checks]
+    states = (
+        {
+            s.check_id: s
+            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
+        }
+        if check_ids
+        else {}
+    )
+    return [c.to_dict(state=states.get(c.id)) for c in checks]
+
+
 router = APIRouter()
 
 # Type-specific metrics written to VictoriaMetrics.
@@ -104,17 +119,7 @@ def list_checks(
         q = q.filter(MonitorCheck.server_id == server_id)
     checks = paginate(q.order_by(MonitorCheck.name, MonitorCheck.id), response, limit, offset).all()
 
-    check_ids = [c.id for c in checks]
-    states = (
-        {
-            s.check_id: s
-            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
-        }
-        if check_ids
-        else {}
-    )
-
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    return _serialize_with_states(db, checks)
 
 
 @router.post(
@@ -279,16 +284,7 @@ def get_all_status(
     """Returns all check states for the dashboard."""
     query = db.query(MonitorCheck).order_by(MonitorCheck.name, MonitorCheck.id)
     checks = paginate(query, response, limit, offset).all()
-    check_ids = [c.id for c in checks]
-    states = (
-        {
-            s.check_id: s
-            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
-        }
-        if check_ids
-        else {}
-    )
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    return _serialize_with_states(db, checks)
 
 
 @router.get("/status/server/{server_id}", dependencies=[Depends(require_internal)])
@@ -300,16 +296,7 @@ def get_server_status(server_id: str, db: Session = Depends(get_db)):
         .order_by(MonitorCheck.name)
         .all()
     )
-    check_ids = [c.id for c in checks]
-    states = (
-        {
-            s.check_id: s
-            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
-        }
-        if check_ids
-        else {}
-    )
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    return _serialize_with_states(db, checks)
 
 
 @router.get("/status/summary", dependencies=[Depends(require_internal)])

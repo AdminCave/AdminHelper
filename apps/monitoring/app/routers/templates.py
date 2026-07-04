@@ -32,15 +32,16 @@ router = APIRouter()
 def list_templates(db: Session = Depends(get_db)):
     """Lists all templates with assignment counts."""
     templates = db.query(MonitorTemplate).order_by(MonitorTemplate.name).all()
-    result = []
-    for t in templates:
-        assignments = (
+    template_ids = [t.id for t in templates]
+    by_template: dict[str, list] = {}
+    if template_ids:
+        for a in (
             db.query(MonitorTemplateAssignment)
-            .filter(MonitorTemplateAssignment.template_id == t.id)
+            .filter(MonitorTemplateAssignment.template_id.in_(template_ids))
             .all()
-        )
-        result.append(t.to_dict(assignments=assignments))
-    return result
+        ):
+            by_template.setdefault(a.template_id, []).append(a)
+    return [t.to_dict(assignments=by_template.get(t.id, [])) for t in templates]
 
 
 @router.get("/templates/assignments/{server_id}", dependencies=[Depends(require_internal)])
@@ -51,16 +52,22 @@ def get_server_assignments(server_id: str, db: Session = Depends(get_db)):
         .filter(MonitorTemplateAssignment.server_id == server_id)
         .all()
     )
-    result = []
-    for a in assignments:
-        template = db.query(MonitorTemplate).filter(MonitorTemplate.id == a.template_id).first()
-        result.append(
-            {
-                **a.to_dict(),
-                "templateName": template.name if template else None,
-            }
-        )
-    return result
+    template_ids = [a.template_id for a in assignments]
+    templates = (
+        {
+            t.id: t
+            for t in db.query(MonitorTemplate).filter(MonitorTemplate.id.in_(template_ids)).all()
+        }
+        if template_ids
+        else {}
+    )
+    return [
+        {
+            **a.to_dict(),
+            "templateName": templates[a.template_id].name if a.template_id in templates else None,
+        }
+        for a in assignments
+    ]
 
 
 @router.post(
