@@ -28,10 +28,10 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 # shellcheck source=scripts/tests/crabbox_lib.sh
 . "$(dirname "$0")/crabbox_lib.sh"
 
-AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0
+AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0; ENFORCE=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
-  --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;;
+  --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;; --enforce) ENFORCE=1 ;;  # D2: MTLS_ENFORCE=true
   --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1 ;;  # S6: everything, one run
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
@@ -100,7 +100,8 @@ echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
 SRVARG=""
 [ "$TUNNEL" = 1 ]   && SRVARG="$SRVARG tunnel"
 [ "$MONCHECK" = 1 ] && SRVARG="$SRVARG moncheck $MC_IP"
-SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded ' | tail -40
+[ "$ENFORCE" = 1 ]  && SRVARG="$SRVARG enforce"
+SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded |Container |Network |Volume |Pulling|Waiting|Pull complete' | tail -40
 SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
 PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
 ADMIN_PW="$(printf '%s' "$SRVOUT" | grep -oE 'MB_ADMIN_PW=[^ ]+' | tail -1 | cut -d= -f2)"
@@ -116,6 +117,9 @@ MC_OK_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_OK_STATUS=[^ ]+' | tail -1 
 MC_CRIT_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_CRIT_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
+[ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
+  && ok "MTLS_ENFORCE=true: certless :443 rejected (400) — cert-gated data plane over the hop" \
+  || bad "enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)"; }
 
 echo "== provision each agent against https://$SRV_IP =="
 for a in "${AGENT_SLUGS[@]:-}"; do

@@ -12,10 +12,11 @@ SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP
 # Independent, composable modes (so the S6 capstone can do BOTH at once):
 #   tunnel            S4: seed an STCP tunnel + bring up frps
 #   moncheck <IP>     S5: seed ping checks + an email alert to the mailhog sink <IP>
-DO_TUNNEL=0; DO_MONCHECK=0; SMTP_IP=""
+DO_TUNNEL=0; DO_MONCHECK=0; DO_ENFORCE=0; SMTP_IP=""
 while [ $# -gt 0 ]; do case "$1" in
   tunnel)   DO_TUNNEL=1 ;;
   moncheck) DO_MONCHECK=1; SMTP_IP="${2:-}"; shift ;;
+  enforce)  DO_ENFORCE=1 ;;   # S5-hardening (D2): MTLS_ENFORCE=true + cert-based seed
   *) ;; esac; shift; done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
@@ -31,7 +32,7 @@ upsert() { if grep -qE "^#?[[:space:]]*$1=" .env; then sed -i -E "s|^#?[[:space:
 upsert DOMAIN "$SRV_IP"
 upsert EXTRA_SANS "$SRV_IP"
 upsert FRP_SERVER_ADDR "$SRV_IP"
-upsert MTLS_ENFORCE false
+upsert MTLS_ENFORCE "$([ "$DO_ENFORCE" = 1 ] && echo true || echo false)"
 upsert ADMIN_PASSWORD "$ADMIN_PW"
 
 # The test overlay supplies build: contexts but drops the :8445 plane and moves
@@ -57,11 +58,42 @@ echo "[serverbox] wait for the gateway data plane on :443"
 up=0; for _ in $(seq 1 60); do curl -sk "https://localhost/" >/dev/null 2>&1 && { up=1; break; }; sleep 3; done
 [ "$up" = 1 ] || { echo "[serverbox] gateway never came up"; "${DC[@]}" logs --tail 30 gateway ca-issuer server; exit 1; }
 
+# Enforce mode (D2): the data plane (:443) now requires a client cert, so the seed
+# below must present one. Enroll an admin cert on the certless enroll plane (:8444,
+# mirrors integration_stack_test), and prove a certless :443 request is rejected.
+if [ "$DO_ENFORCE" = 1 ]; then
+  echo "[serverbox] enforce: enroll an admin client cert (:8444) + assert certless :443 is rejected"
+  # The admin user is created by the startup lifespan only AFTER Alembic migration,
+  # so minting can be too early right after gateway-up — retry (like integration_stack_test).
+  ETOK=""
+  for _ in $(seq 1 45); do
+    ETOK="$("${DC[@]}" exec -T server python -m app.cli mint-enroll-token --username admin 2>/dev/null | tr -d '\r\n')"
+    [ -n "$ETOK" ] && break; sleep 2
+  done
+  [ -n "$ETOK" ] || { echo "[serverbox] mint-enroll-token failed (admin not ready)"; exit 1; }
+  openssl ecparam -name prime256v1 -genkey -noout -out /tmp/mb-admin.key 2>/dev/null
+  openssl req -new -key /tmp/mb-admin.key -subj "/CN=mb-admin" -out /tmp/mb-admin.csr 2>/dev/null
+  python3 - "$ETOK" <<'PY'
+import json, ssl, sys, urllib.request
+tok = sys.argv[1]; csr = open("/tmp/mb-admin.csr").read()
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+req = urllib.request.Request("https://localhost:8444/enroll",
+    data=json.dumps({"token": tok, "csr": csr}).encode(), headers={"Content-Type": "application/json"})
+open("/tmp/mb-admin-fullchain.pem", "w").write(json.load(urllib.request.urlopen(req, context=ctx, timeout=20))["fullchain"])
+PY
+  [ -s /tmp/mb-admin-fullchain.pem ] || { echo "[serverbox] admin enroll failed"; exit 1; }
+  code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "https://localhost/api/auth/me" 2>/dev/null || echo 000)"
+  [ "$code" = 400 ] && echo "MB_ENFORCE_CERTLESS_REJECTED=1" || echo "MB_ENFORCE_CERTLESS_REJECTED=0 (got $code)"
+  export AH_CERT=/tmp/mb-admin-fullchain.pem AH_KEY=/tmp/mb-admin.key
+fi
+
 echo "[serverbox] seed admin JWT -> server record -> provision token"
 export ADMIN_PW SRV_IP DO_TUNNEL
 OUT="$(python3 - <<'PY'
 import json, ssl, os, time, urllib.request
 ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+if os.environ.get("AH_CERT"):  # enforce mode: present the enrolled admin client cert
+    ctx.load_cert_chain(os.environ["AH_CERT"], os.environ.get("AH_KEY"))
 base = "https://localhost"
 def call(method, path, tok=None, body=None):
     data = json.dumps(body).encode() if body is not None else None
