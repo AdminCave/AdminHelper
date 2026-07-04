@@ -63,6 +63,23 @@ def test_temperature_threshold_depends_on_kind():
     assert CHECKER.evaluate({}, _report(_disk(kind="SATA-SSD", temp_c=62)))[0] == "warning"
 
 
+def test_running_critical_is_not_downgraded_by_a_protocol_warning():
+    # 2.32: evaluate merges the per-disk category across the universal/temp checks
+    # and the protocol-specific one. A prefail-critical disk (smartctl 0x10) that
+    # also trips only an ATA warning (reallocated >= warn 1, < crit 10) must STAY
+    # critical — the protocol check now returns a local "warning" that the merge
+    # must not let downgrade the running critical.
+    disk = _disk(smartctl_status=0x10, reallocated_sectors=1)
+    assert CHECKER.evaluate({}, _report(disk))[0] == "critical"
+
+
+def test_protocol_critical_escalates_a_running_warning():
+    # The reverse: a temperature warning (SSD at 62, warn 60) plus an ATA critical
+    # (spin_retry) must escalate the disk to critical.
+    disk = _disk(kind="SATA-SSD", temp_c=62, spin_retry_count=1)
+    assert CHECKER.evaluate({}, _report(disk))[0] == "critical"
+
+
 def test_ignored_device_is_skipped():
     cfg = {"ignore_devices": ["/dev/sda"]}
     assert CHECKER.evaluate(cfg, _report(_disk(smart_passed=False)))[0] == "ok"

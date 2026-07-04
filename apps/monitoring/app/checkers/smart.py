@@ -30,6 +30,14 @@ def _decode_nvme_critical_warning(bits: int) -> list[str]:
     return [name for mask, name in NVME_CRITICAL_BITS.items() if bits & mask]
 
 
+_SEVERITY_RANK = {"ok": 0, "warning": 1, "critical": 2}
+
+
+def _worse(a: str, b: str) -> str:
+    """The more severe of two SMART categories (critical > warning > ok)."""
+    return a if _SEVERITY_RANK[a] >= _SEVERITY_RANK[b] else b
+
+
 class SmartHealthChecker:
     """Checks the SMART health of all disks.
 
@@ -63,14 +71,16 @@ class SmartHealthChecker:
             return "ok", "Keine SMART-Daten (VM oder smartctl nicht verfuegbar)", None
 
         ignore = set(config.get("ignore_devices", []))
-        reallocated_warn = config.get("reallocated_warn", 1)
-        reallocated_crit = config.get("reallocated_crit", 10)
-        pending_warn = config.get("pending_warn", 1)
-        pending_crit = config.get("pending_crit", 5)
-        nvme_spare_warn = config.get("nvme_spare_warn", 20)
-        nvme_spare_crit = config.get("nvme_spare_crit", 10)
-        nvme_used_warn = config.get("nvme_used_warn", 90)
-        nvme_used_crit = config.get("nvme_used_crit", 100)
+        thresholds = {
+            "reallocated_warn": config.get("reallocated_warn", 1),
+            "reallocated_crit": config.get("reallocated_crit", 10),
+            "pending_warn": config.get("pending_warn", 1),
+            "pending_crit": config.get("pending_crit", 5),
+            "nvme_spare_warn": config.get("nvme_spare_warn", 20),
+            "nvme_spare_crit": config.get("nvme_spare_crit", 10),
+            "nvme_used_warn": config.get("nvme_used_warn", 90),
+            "nvme_used_crit": config.get("nvme_used_crit", 100),
+        }
         temp_thresholds = {
             "HDD": (config.get("temp_hdd_warn", 55), config.get("temp_hdd_crit", 60)),
             "SATA-SSD": (config.get("temp_ssd_warn", 60), config.get("temp_ssd_crit", 70)),
@@ -143,32 +153,16 @@ class SmartHealthChecker:
                 if category != "critical":
                     category = "warning"
 
-            # ATA-specific (HDD + SSD)
+            # Protocol-specific attributes (ATA: HDD + SSD; NVMe)
             if protocol == "ATA":
-                category = self._check_ata(
-                    disk,
-                    label,
-                    category,
-                    critical_problems,
-                    warning_problems,
-                    reallocated_warn,
-                    reallocated_crit,
-                    pending_warn,
-                    pending_crit,
-                )
-            # NVMe-specific
+                cat, crit, warn = self._check_ata(disk, label, thresholds)
             elif protocol == "NVMe":
-                category = self._check_nvme(
-                    disk,
-                    label,
-                    category,
-                    critical_problems,
-                    warning_problems,
-                    nvme_spare_warn,
-                    nvme_spare_crit,
-                    nvme_used_warn,
-                    nvme_used_crit,
-                )
+                cat, crit, warn = self._check_nvme(disk, label, thresholds)
+            else:
+                cat, crit, warn = "ok", [], []
+            critical_problems.extend(crit)
+            warning_problems.extend(warn)
+            category = _worse(category, cat)
 
             if category == "ok":
                 ok_count += 1
@@ -229,101 +223,70 @@ class SmartHealthChecker:
         return "ok", f"Alle {ok_count} Disks SMART OK", metrics
 
     @staticmethod
-    def _check_ata(
-        disk,
-        label,
-        category,
-        critical_problems,
-        warning_problems,
-        reallocated_warn,
-        reallocated_crit,
-        pending_warn,
-        pending_crit,
-    ):
-        """Checks ATA-specific SMART attributes (HDD + SSD)."""
+    def _check_ata(disk, label, th: dict) -> tuple[str, list[str], list[str]]:
+        """Checks ATA-specific SMART attributes (HDD + SSD). Returns
+        (category, critical, warning); evaluate collects the lists and merges the
+        category instead of this method mutating shared state (2.32)."""
+        crit, warn = [], []
+
         # Spin Retry Count — always critical (mechanical failure on HDDs)
         if disk.get("spin_retry_count", 0) > 0:
-            critical_problems.append(f"{label}: spin_retry_count={disk['spin_retry_count']}")
-            category = "critical"
+            crit.append(f"{label}: spin_retry_count={disk['spin_retry_count']}")
 
         # Reallocated Sectors
         reallocated = disk.get("reallocated_sectors", 0)
-        if reallocated >= reallocated_crit:
-            critical_problems.append(f"{label}: {reallocated} reallocated sectors")
-            category = "critical"
-        elif reallocated >= reallocated_warn:
-            warning_problems.append(f"{label}: {reallocated} reallocated sectors")
-            if category != "critical":
-                category = "warning"
+        if reallocated >= th["reallocated_crit"]:
+            crit.append(f"{label}: {reallocated} reallocated sectors")
+        elif reallocated >= th["reallocated_warn"]:
+            warn.append(f"{label}: {reallocated} reallocated sectors")
 
         # Reallocation Events
         realloc_events = disk.get("reallocation_events", 0)
-        if realloc_events >= reallocated_crit:
-            critical_problems.append(f"{label}: {realloc_events} reallocation events")
-            category = "critical"
-        elif realloc_events >= reallocated_warn:
-            warning_problems.append(f"{label}: {realloc_events} reallocation events")
-            if category != "critical":
-                category = "warning"
+        if realloc_events >= th["reallocated_crit"]:
+            crit.append(f"{label}: {realloc_events} reallocation events")
+        elif realloc_events >= th["reallocated_warn"]:
+            warn.append(f"{label}: {realloc_events} reallocation events")
 
         # Pending Sectors
         pending = disk.get("pending_sectors", 0)
-        if pending >= pending_crit:
-            critical_problems.append(f"{label}: {pending} pending sectors")
-            category = "critical"
-        elif pending >= pending_warn:
-            warning_problems.append(f"{label}: {pending} pending sectors")
-            if category != "critical":
-                category = "warning"
+        if pending >= th["pending_crit"]:
+            crit.append(f"{label}: {pending} pending sectors")
+        elif pending >= th["pending_warn"]:
+            warn.append(f"{label}: {pending} pending sectors")
 
         # UDMA CRC Errors
         if disk.get("udma_crc_errors", 0) > 0:
-            warning_problems.append(f"{label}: {disk['udma_crc_errors']} UDMA CRC errors")
-            if category != "critical":
-                category = "warning"
+            warn.append(f"{label}: {disk['udma_crc_errors']} UDMA CRC errors")
 
-        return category
+        category = "critical" if crit else ("warning" if warn else "ok")
+        return category, crit, warn
 
     @staticmethod
-    def _check_nvme(
-        disk,
-        label,
-        category,
-        critical_problems,
-        warning_problems,
-        nvme_spare_warn,
-        nvme_spare_crit,
-        nvme_used_warn,
-        nvme_used_crit,
-    ):
-        """Checks NVMe-specific SMART attributes."""
+    def _check_nvme(disk, label, th: dict) -> tuple[str, list[str], list[str]]:
+        """Checks NVMe-specific SMART attributes. Returns (category, critical,
+        warning); evaluate collects the lists and merges the category (2.32)."""
+        crit, warn = [], []
+
         cw = int(disk.get("critical_warning", 0) or 0)
         if cw != 0:
             reasons = _decode_nvme_critical_warning(cw)
             detail = ", ".join(reasons) if reasons else f"0x{cw:02x}"
-            critical_problems.append(f"{label}: NVMe critical_warning ({detail})")
-            category = "critical"
+            crit.append(f"{label}: NVMe critical_warning ({detail})")
 
         if disk.get("media_errors", 0) > 0:
-            critical_problems.append(f"{label}: {disk['media_errors']} media errors")
-            category = "critical"
+            crit.append(f"{label}: {disk['media_errors']} media errors")
 
         spare = disk.get("available_spare_pct", 100)
-        if spare < nvme_spare_crit:
-            critical_problems.append(f"{label}: available_spare {spare}% (<{nvme_spare_crit}%)")
-            category = "critical"
-        elif spare < nvme_spare_warn:
-            warning_problems.append(f"{label}: available_spare {spare}% (<{nvme_spare_warn}%)")
-            if category != "critical":
-                category = "warning"
+        if spare < th["nvme_spare_crit"]:
+            crit.append(f"{label}: available_spare {spare}% (<{th['nvme_spare_crit']}%)")
+        elif spare < th["nvme_spare_warn"]:
+            warn.append(f"{label}: available_spare {spare}% (<{th['nvme_spare_warn']}%)")
 
         used = disk.get("percentage_used", 0)
-        if used >= nvme_used_crit:
-            critical_problems.append(f"{label}: {used}% used (>={nvme_used_crit}%)")
-            category = "critical"
-        elif used >= nvme_used_warn:
-            warning_problems.append(f"{label}: {used}% used (>={nvme_used_warn}%)")
-            if category != "critical":
-                category = "warning"
+        if used >= th["nvme_used_crit"]:
+            crit.append(f"{label}: {used}% used (>={th['nvme_used_crit']}%)")
+        elif used >= th["nvme_used_warn"]:
+            warn.append(f"{label}: {used}% used (>={th['nvme_used_warn']}%)")
 
-        return category
+        category = "critical" if crit else ("warning" if warn else "ok")
+        return category, crit, warn
