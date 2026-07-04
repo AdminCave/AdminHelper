@@ -54,10 +54,9 @@ box_ip() {  # box_ip <slug> -> prints the box IPv4
 
 # --- lease a box (warmup + wait-for-ready), echo "<slug> <ip>", id on CBX_LAST_LEASE_ID
 cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
-  local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out id ip rslug
+  local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug
   out="$(CBX_TIMEOUT=420 cbx warmup -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
         -ttl "$ttl" -idle-timeout "$idle" 2>&1)" || { echo "warmup failed/timed out: $out" >&2; return 1; }
-  id="$(printf '%s' "$out" | grep -oE 'cbx_[a-z0-9]+' | head -1)"; CBX_LAST_LEASE_ID="$id"
   rslug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"; [ -n "$rslug" ] && slug="$rslug"
   CBX_TIMEOUT=300 cbx status --id "$slug" --wait >/dev/null 2>&1 || true
   ip="$(box_ip "$slug")"; [ -n "$ip" ] || ip="$(printf '%s' "$out" | grep -oE 'ip=[0-9.]+' | head -1 | cut -d= -f2)"

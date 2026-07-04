@@ -40,7 +40,7 @@ VPORT="$(grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0-9]+'
 [ -n "$VPORT" ] && echo "VIS_BIND_PORT=$VPORT" || { echo "VIS_NO_BIND_PORT"; sudo cat /etc/frp/visitor.toml; exit 1; }
 
 echo "[visitorbox] run frpc visitor -> bind 127.0.0.1:$VPORT (through frps to the agent's sshd)"
-sudo /usr/bin/frpc -c /etc/frp/visitor.toml >/tmp/frpc-vis.log 2>&1 &
+sudo sh -c '/usr/bin/frpc -c /etc/frp/visitor.toml >/tmp/frpc-vis.log 2>&1' &
 sleep 8
 if grep -qiE 'start.*visitor.*success|login to server success|start proxy success' /tmp/frpc-vis.log; then
   echo "VIS_FRPC_UP"
