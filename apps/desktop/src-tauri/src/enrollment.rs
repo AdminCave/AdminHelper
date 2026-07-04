@@ -721,7 +721,6 @@ mod tests {
     // reject a server cert under a foreign CA.
     mod mtls {
         use super::*;
-        use std::time::Duration;
 
         use rcgen::{
             BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
@@ -729,9 +728,9 @@ mod tests {
         };
         use rustls::server::WebPkiClientVerifier;
         use rustls::ServerConfig;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
-        use tokio_rustls::TlsAcceptor;
+
+        use crate::test_tls::{get, serve_once};
 
         struct Ca {
             cert: rcgen::Certificate,
@@ -787,33 +786,6 @@ mod tests {
                 .with_single_cert(certs, key)
                 .unwrap();
             Arc::new(config)
-        }
-
-        async fn serve_once(listener: TcpListener, config: Arc<ServerConfig>) {
-            let acceptor = TlsAcceptor::from(config);
-            if let Ok((tcp, _)) = listener.accept().await {
-                if let Ok(mut tls) = acceptor.accept(tcp).await {
-                    let mut buf = [0u8; 1024];
-                    let _ = tls.read(&mut buf).await;
-                    let _ = tls
-                        .write_all(
-                            b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                        )
-                        .await;
-                    let _ = tls.flush().await;
-                    let _ = tls.shutdown().await;
-                }
-            }
-        }
-
-        async fn get(client: &reqwest::Client, port: u16) -> Result<reqwest::StatusCode, ()> {
-            // Connect by IP, not the server cert's "localhost" SAN — proves the
-            // CA-pin path does not enforce the hostname.
-            let url = format!("https://127.0.0.1:{port}/");
-            match tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await {
-                Ok(Ok(resp)) => Ok(resp.status()),
-                _ => Err(()),
-            }
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

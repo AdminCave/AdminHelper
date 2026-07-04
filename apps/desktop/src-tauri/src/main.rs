@@ -19,6 +19,8 @@ mod proxy;
 mod storage;
 mod sync;
 mod terminal;
+#[cfg(test)]
+mod test_tls;
 mod tofu;
 mod tunnel;
 mod validation;

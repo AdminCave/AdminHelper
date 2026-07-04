@@ -429,10 +429,9 @@ mod tests {
     // exactly the property that could not be checked without a live server.
     mod tls_handshake {
         use super::*;
-        use std::time::Duration;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
-        use tokio_rustls::TlsAcceptor;
+
+        use crate::test_tls::{get, serve_once};
 
         const KEY_A: &[u8] = include_bytes!("../test-fixtures/keyA.der");
         const KEY_B: &[u8] = include_bytes!("../test-fixtures/keyB.der");
@@ -450,25 +449,6 @@ mod tests {
             Arc::new(config)
         }
 
-        /// Accept exactly one TLS connection, answer a minimal HTTP/1.1 200, and
-        /// stay tolerant of a client that aborts mid-handshake (the reject case).
-        async fn serve_once(listener: TcpListener, config: Arc<rustls::ServerConfig>) {
-            let acceptor = TlsAcceptor::from(config);
-            if let Ok((tcp, _)) = listener.accept().await {
-                if let Ok(mut tls) = acceptor.accept(tcp).await {
-                    let mut buf = [0u8; 1024];
-                    let _ = tls.read(&mut buf).await;
-                    let _ = tls
-                        .write_all(
-                            b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                        )
-                        .await;
-                    let _ = tls.flush().await;
-                    let _ = tls.shutdown().await;
-                }
-            }
-        }
-
         fn pinning_client_for(identity: &str, store: Arc<dyn PinStore>) -> reqwest::Client {
             let verifier = Arc::new(TofuVerifier {
                 identity: identity.to_string(),
@@ -476,14 +456,6 @@ mod tests {
                 provider: ring_provider(),
             });
             client_with_verifier(verifier).unwrap()
-        }
-
-        async fn get(client: &reqwest::Client, port: u16) -> Result<reqwest::StatusCode, ()> {
-            let url = format!("https://127.0.0.1:{port}/");
-            match tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await {
-                Ok(Ok(resp)) => Ok(resp.status()),
-                _ => Err(()),
-            }
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
