@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -17,7 +18,7 @@ from app.alerter import process_alert
 from app.check_engine import effective_status, is_suppressed, next_fail_count
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
-from app.checkers.agent import EXCLUDED_FSTYPES
+from app.checkers.agent import EXCLUDED_FSTYPES, record_agent_report
 from app.core import database
 from app.core.auth import require_agent
 from app.core.database import get_db
@@ -90,13 +91,9 @@ def agent_report(
             status_code=status.HTTP_403_FORBIDDEN, detail="API-Key gehoert nicht zu diesem Server"
         )
 
-    import time as _time
-
-    from app.checkers.agent import record_agent_report
-
     record_agent_report(server_id)
 
-    ts = int(_time.time())
+    ts = int(time.time())
     base_tags = {"server_id": server_id}
     lines = []
 

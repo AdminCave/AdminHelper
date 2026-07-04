@@ -154,19 +154,6 @@ class VictoriaClient:
             logger.warning("VictoriaMetrics query_range fehlgeschlagen: %s (query=%s)", exc, query)
             return {"status": "error", "data": {"result": []}}
 
-    def query_instant(self, query: str) -> dict:
-        """PromQL instant query for current values."""
-        try:
-            resp = self._client.get(
-                f"{self.base_url}/api/v1/query",
-                params={"query": query},
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except httpx.HTTPError as exc:
-            logger.warning("VictoriaMetrics query fehlgeschlagen: %s", exc)
-            return {"status": "error", "data": {"result": []}}
-
 
 # Singleton instance
 victoria = VictoriaClient()

@@ -94,14 +94,6 @@ def remove_check(check_id: str) -> None:
         scheduler.remove_job(job_id)
 
 
-def get_next_run(check_id: str):
-    """Returns the next scheduled run."""
-    job = scheduler.get_job(f"mon_{check_id}")
-    if job and job.next_run_time:
-        return job.next_run_time.replace(tzinfo=None)
-    return None
-
-
 def load_all_checks() -> None:
     """Loads and schedules all active checks at startup."""
     from app.core.database import SessionLocal
