@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck } from '$lib/api/types';
+  import type { MonitorCheck, MonitorResourceDetails } from '$lib/api/types';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -50,7 +50,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   function rings(check: MonitorCheck): Ring[] {
-    const d = (check.state?.details ?? null) as Record<string, unknown> | null;
+    const d = check.state?.details as MonitorResourceDetails | undefined;
     const cfg = (check.config ?? {}) as Record<string, unknown>;
     if (!d) return [];
     const out: Ring[] = [];
@@ -79,10 +79,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return out;
   }
   function disks(check: MonitorCheck): DiskBar[] {
-    const d = (check.state?.details ?? null) as Record<string, unknown> | null;
+    const d = check.state?.details as MonitorResourceDetails | undefined;
     const cfg = (check.config ?? {}) as Record<string, unknown>;
     if (!d) return [];
-    const list = (d.disks ?? []) as Array<Record<string, unknown>>;
+    const list = d.disks ?? [];
     return list.map((x) => {
       const pct = num(x.percent);
       return {
