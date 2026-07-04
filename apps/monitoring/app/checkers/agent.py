@@ -68,6 +68,28 @@ class AgentPingChecker:
         )
 
 
+def _grade(
+    value: float,
+    warn: float,
+    crit: float,
+    label: str,
+    unit: str,
+    problems: list[str],
+    status: str,
+) -> str:
+    """Escalate `status` for one threshold measurement: >= crit -> critical, >= warn
+    -> warning (never downgrading an already-critical status). Appends the breached
+    `label` plus the crossed threshold to `problems`. Shared by the CPU/RAM/disk/
+    temperature checks so the escalation rule lives in one place (2.31)."""
+    if value >= crit:
+        problems.append(f"{label} (>={crit}{unit})")
+        return "critical"
+    if value >= warn:
+        problems.append(f"{label} (>={warn}{unit})")
+        return "critical" if status == "critical" else "warning"
+    return status
+
+
 class AgentResourcesChecker:
     """Evaluates agent resource metrics against thresholds.
 
@@ -103,13 +125,7 @@ class AgentResourcesChecker:
             metrics["agent_cpu_percent"] = cpu
             cpu_crit = config.get("cpu_crit", 95)
             cpu_warn = config.get("cpu_warn", 80)
-            if cpu >= cpu_crit:
-                problems.append(f"CPU {cpu}% (>={cpu_crit}%)")
-                status = "critical"
-            elif cpu >= cpu_warn:
-                problems.append(f"CPU {cpu}% (>={cpu_warn}%)")
-                if status != "critical":
-                    status = "warning"
+            status = _grade(cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%", problems, status)
 
         # Memory
         mem = resources.get("memory_percent")
@@ -117,13 +133,7 @@ class AgentResourcesChecker:
             metrics["agent_memory_percent"] = mem
             mem_crit = config.get("memory_crit", 95)
             mem_warn = config.get("memory_warn", 80)
-            if mem >= mem_crit:
-                problems.append(f"RAM {mem}% (>={mem_crit}%)")
-                status = "critical"
-            elif mem >= mem_warn:
-                problems.append(f"RAM {mem}% (>={mem_warn}%)")
-                if status != "critical":
-                    status = "warning"
+            status = _grade(mem, mem_warn, mem_crit, f"RAM {mem}%", "%", problems, status)
 
         # Disks — filter pseudo filesystems server-side
         # Old agents send no fstype → default "_real_" passes the filter
@@ -136,13 +146,9 @@ class AgentResourcesChecker:
             pct = disk.get("percent", 0)
             mount = disk.get("mount", "?")
             metrics[f"agent_disk_percent_{mount}"] = pct
-            if pct >= disk_crit:
-                problems.append(f"Disk {mount} {pct}% (>={disk_crit}%)")
-                status = "critical"
-            elif pct >= disk_warn:
-                problems.append(f"Disk {mount} {pct}% (>={disk_warn}%)")
-                if status != "critical":
-                    status = "warning"
+            status = _grade(
+                pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%", problems, status
+            )
 
         # Temperatures (optional — VMs provide no sensor data)
         temperatures = resources.get("temperatures", [])
@@ -157,13 +163,15 @@ class AgentResourcesChecker:
                 ov = temp_overrides.get(sensor_name, {})
                 s_crit = ov.get("crit", temp_crit)
                 s_warn = ov.get("warn", temp_warn)
-                if temp_c >= s_crit:
-                    problems.append(f"Temp {sensor_name} {temp_c}\u00b0C (>={s_crit}\u00b0C)")
-                    status = "critical"
-                elif temp_c >= s_warn:
-                    problems.append(f"Temp {sensor_name} {temp_c}\u00b0C (>={s_warn}\u00b0C)")
-                    if status != "critical":
-                        status = "warning"
+                status = _grade(
+                    temp_c,
+                    s_warn,
+                    s_crit,
+                    f"Temp {sensor_name} {temp_c}\u00b0C",
+                    "\u00b0C",
+                    problems,
+                    status,
+                )
 
         if problems:
             message = "; ".join(problems)
