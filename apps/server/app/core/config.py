@@ -67,6 +67,11 @@ FRP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 VISITOR_PORT_START = int(os.environ.get("VISITOR_PORT_START", "6000"))
 VISITOR_PORT_END = int(os.environ.get("VISITOR_PORT_END", "6999"))
 
+# frps dashboard base URL for the status endpoint. Empty = the compose default
+# (the "frps" service name, then loopback); set it for any other topology
+# (frps on another host) instead of editing the code.
+FRPS_DASHBOARD_URL = os.environ.get("FRPS_DASHBOARD_URL", "").strip()
+
 # IP access restriction
 # Comma-separated list of IPs and/or CIDR networks, e.g.:
 #   ALLOWED_IPS=192.168.1.0/24,10.0.0.5,172.16.0.0/12

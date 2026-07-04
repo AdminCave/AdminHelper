@@ -92,6 +92,9 @@
           <h2>Visitor-Ports</h2>
           <p>STCP-Tunnel brauchen lokal einen freien Port für den Visitor. Der Desktop-Client wählt zufällig aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
 
+          <h2>Status-Dashboard</h2>
+          <p>Die Tunnel-Statusansicht fragt das frps-Dashboard ab. Standardmäßig erreicht der Server es über den Compose-Servicenamen (<code>http://frps:PORT</code>, mit <code>127.0.0.1</code>-Fallback). Läuft frps in einer anderen Topologie (eigener Host), die Basis-URL über <code>FRPS_DASHBOARD_URL</code> in der <code>.env</code> setzen, statt den Code zu ändern.</p>
+
           <h2>Troubleshooting</h2>
           <ul>
             <li><strong>Agent verbindet sich nicht</strong>: Zertifikats-Ablauf prüfen (<code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code>), Server-Erreichbarkeit via <code>nc -vz srm.example.com 7000</code>.</li>

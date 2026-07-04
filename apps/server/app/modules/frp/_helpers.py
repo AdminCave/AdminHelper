@@ -28,40 +28,32 @@ def get_frp_config(db: Session, config_id: str | None = None) -> FrpServerConfig
     return q.order_by(FrpServerConfig.created_at, FrpServerConfig.id).first()
 
 
-def create_auto_connection(
-    name: str,
-    tunnel_type: str,
-    protocol: str | None,
-    custom_domains: str | None,
-    visitor_port: int | None,
-    server_id: str,
-    db: Session,
-    tags: str | None = None,
-    username: str | None = None,
-) -> Connection | None:
+def create_auto_connection(tunnel: FrpTunnel, username: str | None = None) -> Connection | None:
     """Create an auto-connection for a tunnel (STCP or HTTPS)."""
-    if tunnel_type == "stcp" and visitor_port:
-        conn_kind = "ssh" if protocol == "ssh" else "rdp" if protocol == "rdp" else "web"
+    if tunnel.tunnel_type == "stcp" and tunnel.visitor_port:
+        conn_kind = (
+            "ssh" if tunnel.protocol == "ssh" else "rdp" if tunnel.protocol == "rdp" else "web"
+        )
         return Connection(
             id=str(uuid.uuid4()),
-            name=f"{name} (via FRP)",
+            name=f"{tunnel.name} (via FRP)",
             kind=conn_kind,
             host="127.0.0.1",
-            port=visitor_port,
-            server_id=server_id,
-            tags=tags,
+            port=tunnel.visitor_port,
+            server_id=tunnel.server_id,
+            tags=tunnel.tags,
             username=username or "",
         )
-    if tunnel_type == "https" and custom_domains:
-        domain = custom_domains.split(",")[0].strip()
+    if tunnel.tunnel_type == "https" and tunnel.custom_domains:
+        domain = tunnel.custom_domains.split(",")[0].strip()
         if domain:
             return Connection(
                 id=str(uuid.uuid4()),
-                name=f"{name} (via FRP)",
+                name=f"{tunnel.name} (via FRP)",
                 kind="web",
                 url=f"https://{domain}",
-                server_id=server_id,
-                tags=tags,
+                server_id=tunnel.server_id,
+                tags=tunnel.tags,
                 username=username or "",
             )
     return None

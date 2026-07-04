@@ -58,6 +58,9 @@
           <h2>Visitor Ports</h2>
           <p>The desktop client uses <code>stcp</code> whenever possible. When the tunnel is opened, the server assigns a free port from the <code>VISITOR_PORT_START..END</code> pool (default 6000–6999). The port is released as soon as the client disconnects.</p>
 
+          <h2>Status Dashboard</h2>
+          <p>The tunnel status view queries the frps dashboard. By default the server reaches it via the Compose service name (<code>http://frps:PORT</code>, with a <code>127.0.0.1</code> fallback). If frps runs in a different topology (its own host), set the base URL via <code>FRPS_DASHBOARD_URL</code> in <code>.env</code> instead of editing the code.</p>
+
           <h2>Certificate Rotation</h2>
           <p>The agent renews its tunnel cert automatically once it reaches ~50&nbsp;% of its lifetime, calling <code>/ca/renew</code> with the current cert as proof — no manual rotation trigger. An expired cert falls back to re-enrollment. Since the PKI migration the desktop visitor presents its enrolled <code>access</code> identity (the same one it uses for web/API access) and renews it automatically — no more server-minted visitor cert.</p>
 

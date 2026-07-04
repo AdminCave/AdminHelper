@@ -42,17 +42,7 @@ def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
     the JSON-encoded tags — and the linking stay identical (2.47)."""
-    auto_conn = create_auto_connection(
-        tunnel.name,
-        tunnel.tunnel_type,
-        tunnel.protocol,
-        tunnel.custom_domains,
-        tunnel.visitor_port,
-        tunnel.server_id,
-        db,
-        tags=tunnel.tags,
-        username=username,
-    )
+    auto_conn = create_auto_connection(tunnel, username=username)
     if auto_conn:
         db.add(auto_conn)
         db.flush()
