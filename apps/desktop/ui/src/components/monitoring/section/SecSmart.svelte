@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
-  import { t } from '$lib/i18n';
+  import { t, currentLocale } from '$lib/i18n';
 
   type SmartDisk = NonNullable<MonitorSmartDetails['disks']>[number];
 
@@ -47,7 +47,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   function smartSecondary(d: SmartDisk): string {
     const hours = num(d.power_on_hours);
-    const hoursStr = hours > 0 ? `${hours.toLocaleString('de-DE')} h` : null;
+    const hoursStr = hours > 0 ? `${hours.toLocaleString(currentLocale())} h` : null;
     if (d.kind === 'NVMe') {
       const parts: string[] = [];
       if (d.available_spare_pct != null) parts.push(`Spare ${d.available_spare_pct}%`);

@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { monitoringChecks, monitoringServers, selectedServerId } from '$lib/stores/monitoring';
-  import { computeSummary, statusClass } from '$lib/models/monitoring';
+  import { computeSummary, statusClass, worstStatus } from '$lib/models/monitoring';
   import type { MonitorCheck, MonitorCheckType } from '$lib/api/types';
   import SecLive from './section/SecLive.svelte';
   import SecNetwork from './section/SecNetwork.svelte';
@@ -40,13 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   let summary = $derived(computeSummary(serverChecks));
-  let worst = $derived.by(() => {
-    if (summary.critical > 0) return 'critical';
-    if (summary.warning > 0) return 'warning';
-    if (summary.unknown > 0) return 'unknown';
-    if (summary.pending > 0) return 'pending';
-    return 'ok';
-  });
+  let worst = $derived(worstStatus(serverChecks));
 
   function pick(type: MonitorCheckType | MonitorCheckType[]): MonitorCheck[] {
     const types = Array.isArray(type) ? type : [type];

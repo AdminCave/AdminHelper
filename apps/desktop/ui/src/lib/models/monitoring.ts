@@ -2,18 +2,19 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Monitoring model: pure functions for sorting, filtering, grouping, formatting.
+// Monitoring model: sorting, filtering, grouping, formatting helpers (a few read
+// the i18n language store for the "no server" label and the date/number locale).
 
 import type {
   MonCheckSummary,
   MonStatus,
   MonitorCheck,
-  MonitorCheckConfig,
   MonitorCheckType,
   Server,
 } from '$lib/api/types';
+import { tNow, currentLocale } from '$lib/i18n';
 
-const STATUS_PRIORITY: Record<MonStatus, number> = {
+export const STATUS_PRIORITY: Record<MonStatus, number> = {
   critical: 4,
   warning: 3,
   unknown: 2,
@@ -79,7 +80,7 @@ export function groupChecksByServer(checks: MonitorCheck[], servers: Server[] = 
       const srv = c.serverId ? serverMap[c.serverId] : null;
       const serverName = srv
         ? srv.name || srv.hostname || c.serverId || ''
-        : c.serverId || 'Ohne Server';
+        : c.serverId || tNow('monitoring.server.noServer');
       map.set(key, { serverId: c.serverId ?? null, serverName, checks: [] });
     }
     map.get(key)!.checks.push(c);
@@ -122,106 +123,13 @@ export function formatCheckTime(isoStr: string | null | undefined): string {
   if (!isoStr) return '-';
   const d = new Date(isoStr);
   if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('de-DE', {
+  return d.toLocaleString(currentLocale(), {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   });
-}
-
-type KV = [string, string | number];
-
-export function formatCheckConfig(check: MonitorCheck): KV[] {
-  const c = (check.config ?? {}) as MonitorCheckConfig & Record<string, unknown>;
-  const type = check.checkType;
-  const kv: KV[] = [];
-
-  if (type === 'ping') {
-    kv.push(['Ziel', String(c.target ?? '')], ['Timeout', `${(c.timeout as number) || 5}s`]);
-  } else if (type === 'tcp') {
-    kv.push(
-      ['Ziel', `${c.target ?? ''}:${c.port ?? ''}`],
-      ['Timeout', `${(c.timeout as number) || 5}s`],
-    );
-  } else if (type === 'http') {
-    kv.push(
-      ['URL', String(c.url ?? '')],
-      ['Methode', String(c.method ?? 'GET')],
-      ['Expected', (c.expected_status as number) ?? 200],
-    );
-    if ((c as Record<string, unknown>).verify_ssl === false) kv.push(['SSL', 'deaktiviert']);
-    if (c.search_string) kv.push(['Suchtext', String(c.search_string)]);
-  } else if (type === 'agent_ping') {
-    kv.push(['Stale-Schwelle', `${(c.stale_minutes as number) || 5} min`]);
-  } else if (type === 'agent_resources') {
-    kv.push(
-      ['CPU', `Warn ${(c.cpu_warn as number) || 80}% / Crit ${(c.cpu_crit as number) || 95}%`],
-      [
-        'RAM',
-        `Warn ${(c.memory_warn as number) || 80}% / Crit ${(c.memory_crit as number) || 95}%`,
-      ],
-      ['Disk', `Warn ${(c.disk_warn as number) || 85}% / Crit ${(c.disk_crit as number) || 95}%`],
-    );
-  } else if (type === 'service_process') {
-    kv.push(['Modus', String(c.mode ?? 'auto')]);
-    const services = c.services as string[] | undefined;
-    const ignore = c.ignore as string[] | undefined;
-    if (services?.length) kv.push(['Services', services.join(', ')]);
-    if (ignore?.length) kv.push(['Ignoriert', ignore.join(', ')]);
-  } else if (type === 'proxmox_backup') {
-    kv.push(['Max. Alter', `${(c.max_backup_age_hours as number) || 26}h`]);
-    const excl = c.exclude_vmids as Array<string | number> | undefined;
-    if (excl?.length) kv.push(['Exclude VMIDs', excl.join(', ')]);
-  } else if (type === 'zfs_health') {
-    kv.push([
-      'Kapazität',
-      `Warn ${(c.capacity_warn as number) || 80}% / Crit ${(c.capacity_crit as number) || 90}%`,
-    ]);
-  } else if (type === 'docker_health') {
-    const ign = c.ignore_containers as string[] | undefined;
-    if (ign?.length) kv.push(['Ignoriert', ign.join(', ')]);
-    kv.push([
-      'Restart-Check',
-      (c as Record<string, unknown>).check_restarts !== false ? 'aktiv' : 'aus',
-    ]);
-  } else if (type === 'smart_health') {
-    kv.push(
-      [
-        'Realloc',
-        `Warn ${(c.reallocated_warn as number) ?? 1} / Crit ${(c.reallocated_crit as number) ?? 10}`,
-      ],
-      [
-        'Pending',
-        `Warn ${(c.pending_warn as number) ?? 1} / Crit ${(c.pending_crit as number) ?? 5}`,
-      ],
-      [
-        'NVMe Spare',
-        `Warn <${(c.nvme_spare_warn as number) ?? 20}% / Crit <${(c.nvme_spare_crit as number) ?? 10}%`,
-      ],
-      [
-        'NVMe Wear',
-        `Warn ${(c.nvme_used_warn as number) ?? 90}% / Crit ${(c.nvme_used_crit as number) ?? 100}%`,
-      ],
-      [
-        'Temp HDD',
-        `Warn ${(c.temp_hdd_warn as number) ?? 55}\u00b0C / Crit ${(c.temp_hdd_crit as number) ?? 60}\u00b0C`,
-      ],
-      [
-        'Temp SSD',
-        `Warn ${(c.temp_ssd_warn as number) ?? 60}\u00b0C / Crit ${(c.temp_ssd_crit as number) ?? 70}\u00b0C`,
-      ],
-      [
-        'Temp NVMe',
-        `Warn ${(c.temp_nvme_warn as number) ?? 65}\u00b0C / Crit ${(c.temp_nvme_crit as number) ?? 75}\u00b0C`,
-      ],
-    );
-    const ignd = c.ignore_devices as string[] | undefined;
-    if (ignd?.length) kv.push(['Ignoriert', ignd.join(', ')]);
-  }
-
-  return kv;
 }
 
 export function metricLabel(name: string): string {

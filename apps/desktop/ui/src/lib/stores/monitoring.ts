@@ -10,7 +10,12 @@ import { writable, derived, get } from 'svelte/store';
 import { sessionStore } from './session';
 import { reportError, showStatus } from './statusBar';
 import { monitoringApi } from '$lib/api/monitoring';
-import { filterChecks, type MonitoringFilters } from '$lib/models/monitoring';
+import {
+  filterChecks,
+  worstStatus,
+  STATUS_PRIORITY,
+  type MonitoringFilters,
+} from '$lib/models/monitoring';
 import { tNow } from '$lib/i18n';
 import type {
   AlertLogEntry,
@@ -24,32 +29,20 @@ import type {
 
 export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
 
-const STATUS_PRIO: Record<string, number> = {
-  critical: 4,
-  warning: 3,
-  unknown: 2,
-  pending: 1,
-  ok: 0,
-};
-
 function pickWorstServerId(checks: MonitorCheck[]): string | null {
-  const bySrv = new Map<string, number>();
+  const bySrv = new Map<string, MonitorCheck[]>();
   for (const c of checks) {
     const key = c.serverId || '__none';
-    const st = (c.state?.status ?? 'pending') as string;
-    const p = STATUS_PRIO[st] ?? 0;
-    const cur = bySrv.get(key) ?? -1;
-    if (p > cur) bySrv.set(key, p);
+    const list = bySrv.get(key);
+    if (list) list.push(c);
+    else bySrv.set(key, [c]);
   }
-  let bestKey: string | null = null;
-  let bestP = -1;
-  for (const [k, p] of bySrv) {
-    if (p > bestP) {
-      bestP = p;
-      bestKey = k;
-    }
+  let best: [string, number] | null = null;
+  for (const [k, list] of bySrv) {
+    const p = STATUS_PRIORITY[worstStatus(list)];
+    if (!best || p > best[1]) best = [k, p];
   }
-  return bestKey;
+  return best?.[0] ?? null;
 }
 
 interface MonitoringState {
