@@ -5,26 +5,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { Component } from 'svelte';
   import { path } from '$lib/router';
+  import { isAdmin } from '$lib/stores/auth';
+  import { resolveRoute, type RouteDef } from '$lib/routeGuard';
 
   interface Props {
-    routes: Record<string, Component>;
-    fallback?: Component;
+    routes: Record<string, RouteDef>;
   }
 
-  let { routes, fallback }: Props = $props();
+  let { routes }: Props = $props();
 
-  const matched = $derived.by(() => {
-    const current = $path;
-    if (routes[current]) return routes[current];
-    const base = '/' + current.split('/').filter(Boolean)[0];
-    if (routes[base]) return routes[base];
-    return fallback ?? routes['*'];
-  });
+  // Enforce the route's authorization: a non-admin hitting an admin-only route
+  // gets the catch-all page, not the mounted admin page.
+  const matched = $derived(resolveRoute(routes, $path, $isAdmin));
 </script>
 
 {#if matched}
-  {@const C = matched}
+  {@const C = matched.component}
   <C />
 {/if}
