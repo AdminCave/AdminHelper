@@ -12,6 +12,8 @@ On VMs without smartctl the agent provides no smart key — that's OK, not an er
 
 from __future__ import annotations
 
+from app.core.victoria import safe_metric_part
+
 # NVMe critical_warning Bit-Feld laut NVMe Base Spec 1.4, Figure 94.
 NVME_CRITICAL_BITS = {
     0x01: "spare_capacity_below_threshold",
@@ -203,7 +205,7 @@ class SmartHealthChecker:
             device = disk.get("device", "?")
             if device in ignore:
                 continue
-            safe_dev = device.replace("/", "_").lstrip("_")
+            safe_dev = safe_metric_part(device)
             if disk.get("temp_c", 0) > 0:
                 metrics[f"smart_temp_{safe_dev}"] = disk["temp_c"]
             metrics[f"smart_reallocated_{safe_dev}"] = disk.get("reallocated_sectors", 0)

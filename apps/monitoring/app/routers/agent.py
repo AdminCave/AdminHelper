@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -23,7 +22,7 @@ from app.core import database
 from app.core.auth import require_agent
 from app.core.database import get_db
 from app.core.time import utcnow_naive
-from app.core.victoria import format_line, victoria
+from app.core.victoria import format_line, safe_metric_part, victoria
 from app.models import MonitorCheck, MonitorState
 
 logger = logging.getLogger(__name__)
@@ -131,7 +130,7 @@ def agent_report(
     for disk in report.get("smart", []):
         device = disk.get("device", "unknown")
         # Allowlist the device id used in the (otherwise-unescaped) measurement name.
-        safe_dev = re.sub(r"[^A-Za-z0-9_]", "_", str(device)).strip("_") or "unknown"
+        safe_dev = safe_metric_part(device)
         smart_tags = {**base_tags, "device": device}
         dtemp = _num(disk.get("temp_c"))
         if dtemp is not None and dtemp > 0:

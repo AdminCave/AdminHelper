@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 
 import httpx
@@ -16,6 +17,17 @@ logger = logging.getLogger("monitor.victoria")
 
 
 _CONTROL_TO_SPACE = str.maketrans({"\n": " ", "\r": " ", "\t": " "})
+
+# Non-allowlisted chars collapse to "_" for the dynamic (device) part of a metric
+# name, so the SMART push path (agent router) and the checker path produce the SAME
+# series name for a given disk (2.33).
+_SAFE_METRIC_PART = re.compile(r"[^A-Za-z0-9_]")
+
+
+def safe_metric_part(raw: str) -> str:
+    """Sanitise a device/name fragment used in a metric name (allowlist). Returns
+    "unknown" if nothing survives, so a series name never ends up empty."""
+    return _SAFE_METRIC_PART.sub("_", str(raw)).strip("_") or "unknown"
 
 
 def _esc_tag(v: str) -> str:

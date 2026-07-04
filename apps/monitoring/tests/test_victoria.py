@@ -7,7 +7,7 @@ app/core/victoria.py: _esc_tag (escaping) and format_line (int/float/str)."""
 
 import pytest
 
-from app.core.victoria import _esc_tag, format_line
+from app.core.victoria import _esc_tag, format_line, safe_metric_part
 
 
 class TestEscTag:
@@ -33,6 +33,28 @@ class TestEscTag:
 
     def test_empty_string(self):
         assert _esc_tag("") == ""
+
+
+class TestSafeMetricPart:
+    """2.33: one allowlist sanitiser shared by the SMART push path (agent router)
+    and the checker path, so a disk yields ONE series name, not two divergent ones."""
+
+    def test_non_allowlisted_chars_collapse_to_underscore(self):
+        # A dash is not allowlisted — the old checker's replace("/","_") left it in,
+        # diverging from the agent push path. Both now yield "sda_1".
+        assert safe_metric_part("sda-1") == "sda_1"
+
+    def test_leading_trailing_separators_stripped(self):
+        assert safe_metric_part("/dev/sda") == "dev_sda"
+        assert safe_metric_part("/dev/sda/") == "dev_sda"
+
+    def test_empty_or_all_special_falls_back_to_unknown(self):
+        # A series name must never end up empty.
+        assert safe_metric_part("") == "unknown"
+        assert safe_metric_part("///") == "unknown"
+
+    def test_alnum_and_underscore_preserved(self):
+        assert safe_metric_part("nvme0n1") == "nvme0n1"
 
 
 class TestFormatLine:
