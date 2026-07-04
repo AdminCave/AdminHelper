@@ -17,6 +17,21 @@ import (
 // the whole 5-minute report cycle.
 const dockerTimeout = 10 * time.Second
 
+// pluginTimeout caps every non-docker plugin exec (pvesh, zpool, hostname). These
+// tools really do hang: `zpool list` blocks indefinitely on a suspended pool and
+// `pvesh` on quorum loss — exactly when monitoring matters most. Without a cap the
+// whole report cycle stalls and systemd kills the oneshot at TimeoutStartSec=60
+// (no push, no FRPC sync for that run).
+const pluginTimeout = 15 * time.Second
+
+// runWithTimeout runs a plugin command under pluginTimeout, mirroring the docker
+// path, so a hung external tool can never block the report cycle.
+func runWithTimeout(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
 // collectDocker collects Docker container status (cross-platform).
 func collectDocker() map[string]any {
 	if _, err := exec.LookPath("docker"); err != nil {
@@ -102,13 +117,13 @@ func collectProxmox() map[string]any {
 	result := map[string]any{"node": nil, "vms": []any{}}
 
 	// Node status
-	hostname, err := exec.Command("hostname", "-s").Output()
+	hostname, err := runWithTimeout("hostname", "-s")
 	if err != nil {
 		return nil
 	}
 	nodeName := strings.TrimSpace(string(hostname))
-	nodeOut, err := exec.Command("pvesh", "get", "/nodes/"+nodeName+"/status",
-		"--output-format", "json").Output()
+	nodeOut, err := runWithTimeout("pvesh", "get", "/nodes/"+nodeName+"/status",
+		"--output-format", "json")
 	if err == nil {
 		var nd map[string]any
 		if json.Unmarshal(nodeOut, &nd) == nil {
@@ -130,8 +145,8 @@ func collectProxmox() map[string]any {
 
 	// VMs + LXC containers
 	var vmList []map[string]any
-	vmsOut, err := exec.Command("pvesh", "get", "/cluster/resources", "--type", "vm",
-		"--output-format", "json").Output()
+	vmsOut, err := runWithTimeout("pvesh", "get", "/cluster/resources", "--type", "vm",
+		"--output-format", "json")
 	if err == nil {
 		var vms []map[string]any
 		if json.Unmarshal(vmsOut, &vms) == nil {
@@ -169,8 +184,8 @@ func collectProxmox() map[string]any {
 func buildBackupIndex(nodeName string) map[int]int64 {
 	index := make(map[int]int64)
 
-	storagesOut, err := exec.Command("pvesh", "get", "/storage",
-		"--output-format", "json").Output()
+	storagesOut, err := runWithTimeout("pvesh", "get", "/storage",
+		"--output-format", "json")
 	if err != nil {
 		return index
 	}
@@ -187,9 +202,9 @@ func buildBackupIndex(nodeName string) map[int]int64 {
 		sid, _ := storage["storage"].(string)
 
 		// Fetch all backups of this storage at once (without the --vmid filter)
-		backupsOut, err := exec.Command("pvesh", "get",
+		backupsOut, err := runWithTimeout("pvesh", "get",
 			"/nodes/"+nodeName+"/storage/"+sid+"/content",
-			"--content", "backup", "--output-format", "json").Output()
+			"--content", "backup", "--output-format", "json")
 		if err != nil {
 			continue
 		}
@@ -217,8 +232,8 @@ func collectZFS() map[string]any {
 		return nil
 	}
 
-	out, err := exec.Command("zpool", "list", "-H", "-o",
-		"name,size,alloc,free,cap,health").Output()
+	out, err := runWithTimeout("zpool", "list", "-H", "-o",
+		"name,size,alloc,free,cap,health")
 	if err != nil {
 		return nil
 	}
@@ -249,7 +264,7 @@ func collectZFS() map[string]any {
 	// Error details for non-ONLINE pools
 	for _, p := range pools {
 		if p["health"] != "ONLINE" {
-			statusOut, err := exec.Command("zpool", "status", "-x").Output()
+			statusOut, err := runWithTimeout("zpool", "status", "-x")
 			if err == nil {
 				result["errors"] = strings.TrimSpace(string(statusOut))
 			}
