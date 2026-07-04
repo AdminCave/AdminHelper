@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,6 +11,7 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import actor_from_request
+from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import clear_revocation, revoke_identity
 from app.modules.servers.models import Server
@@ -101,7 +100,7 @@ def update_user(
         user.hashed_password = hash_password(data.password)
         # Revoke all existing JWTs for this user (password reset invalidates
         # sessions); stored naive UTC to match the other DateTime columns.
-        user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
+        user.tokens_valid_after = utcnow_naive()
     if data.is_admin is not None:
         # Never let the last admin be demoted — that would brick all management
         # (admin-only endpoints) with no recovery path short of a DB edit.

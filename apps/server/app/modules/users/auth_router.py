@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import logging
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -26,6 +25,7 @@ from app.core.database import get_db
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
+from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.users.models import User
 from app.modules.users.schemas import (
@@ -179,7 +179,7 @@ def refresh_token(
         if reused_username:
             reused_user = db.query(User).filter(User.username == reused_username).first()
             if reused_user is not None:
-                reused_user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
+                reused_user.tokens_valid_after = utcnow_naive()
                 db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utcnow_naive
 
 
 class EnrollmentToken(Base):
@@ -70,7 +71,7 @@ def cleanup_finished_enrollment_tokens(db: Session) -> int:
     so once either is true it is dead weight. Run periodically by a system job,
     mirroring the JWT blacklist cleanup. Compares against a tz-naive UTC ``now`` to
     match the naive ``expires_at`` column (the server↔issuer storage convention)."""
-    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    now = utcnow_naive()
     count = (
         db.query(EnrollmentToken)
         .filter(or_(EnrollmentToken.used_at.isnot(None), EnrollmentToken.expires_at < now))
