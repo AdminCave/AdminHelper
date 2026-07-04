@@ -2,9 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Test setup for the ca-issuer. The PKI material is created in a tmp dir on
-first import (lifespan calls ensure_hierarchy), so CA_DATA_DIR + the root
-passphrase must be set BEFORE app.main is imported."""
+"""Test setup for the ca-issuer. Config is read lazily at boot (lifespan calls
+ensure_hierarchy with config.pki_dir()/root_passphrase()), so CA_DATA_DIR + the
+root passphrase only need to be set before the app boots — done here once, up
+front, so the PKI lands in a tmp dir rather than /app/data."""
 
 import os
 import tempfile

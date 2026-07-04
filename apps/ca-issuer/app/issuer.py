@@ -91,11 +91,17 @@ class Issuer:
         except ValueError as exc:
             raise IssuanceError(f"Ungültige CSR: {exc}") from exc
 
-        # Preserve the original lifetime span (browser 365d renews to 365d,
-        # native 90d to 90d) — no need to store the audience separately.
-        span = current.not_valid_after_utc - current.not_valid_before_utc
+        # Preserve the audience (browser vs native — inferred from the original
+        # span, since it isn't stored in the cert) but never exceed the CURRENT
+        # policy for it: capping against LEAF_DAYS_* means lowering a lifetime
+        # propagates to renewals instead of every legacy identity renewing at its
+        # original span forever.
+        span_days = max(1, (current.not_valid_after_utc - current.not_valid_before_utc).days)
+        audience_max = (
+            pki.LEAF_DAYS_BROWSER if span_days > pki.LEAF_DAYS_NATIVE else pki.LEAF_DAYS_NATIVE
+        )
         spec = pki.LeafSpec(
-            lifetime_days=max(1, span.days),
+            lifetime_days=min(span_days, audience_max),
             client_auth=True,
             server_auth=False,
             subject_cn=cn,

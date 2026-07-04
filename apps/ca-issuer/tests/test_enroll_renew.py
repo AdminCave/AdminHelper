@@ -122,6 +122,23 @@ def test_renew_reissues_same_identity_and_lifetime(client):
     assert abs(span.days - pki.LEAF_DAYS_NATIVE) <= 1
 
 
+def test_renew_caps_lifetime_to_current_policy(client, monkeypatch):
+    # A browser identity minted at the old 365d policy...
+    leaf_pem = _enroll(client, "admin-x", "access", browser=True)
+    old = _leaf(leaf_pem)
+    assert (
+        abs((old.not_valid_after_utc - old.not_valid_before_utc).days - pki.LEAF_DAYS_BROWSER) <= 1
+    )
+    # ...renews to the LOWERED policy, not its original span (policy propagates
+    # instead of legacy identities renewing at 365d forever).
+    monkeypatch.setattr(pki, "LEAF_DAYS_BROWSER", 90)
+    r = client.post("/renew", json={"csr": _csr_pem("ignored")}, headers=_renew_headers(leaf_pem))
+    assert r.status_code == 200
+    new_leaf = _leaf(r.json()["cert"])
+    span = new_leaf.not_valid_after_utc - new_leaf.not_valid_before_utc
+    assert abs(span.days - 90) <= 1
+
+
 def test_renew_requires_verified_header(client):
     leaf_pem = _enroll(client, "agent-08", "tunnel")
     # missing X-Client-Verify
