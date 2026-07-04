@@ -49,12 +49,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="mon-tab-content" data-tab="overview">
   {#if tab === 'overview'}<MonitoringOverview />{/if}
 </div>
-<div class="mon-tab-content" data-tab="alerts" class:hidden={tab !== 'alerts'}>
+<div class="mon-tab-content" data-tab="alerts">
   {#if tab === 'alerts'}<MonitoringAlerts />{/if}
 </div>
-<div class="mon-tab-content" data-tab="templates" class:hidden={tab !== 'templates'}>
+<div class="mon-tab-content" data-tab="templates">
   {#if tab === 'templates'}<MonitoringTemplates />{/if}
 </div>
-<div class="mon-tab-content" data-tab="log" class:hidden={tab !== 'log'}>
+<div class="mon-tab-content" data-tab="log">
   {#if tab === 'log'}<MonitoringLog />{/if}
 </div>

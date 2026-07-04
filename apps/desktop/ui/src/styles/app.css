@@ -1315,10 +1315,6 @@ body {
 .mon-tab:hover:not(.active) {
   color: var(--text);
 }
-.mon-tab-content.hidden {
-  display: none;
-}
-
 .mon-tab-content {
   display: flex;
   flex-direction: column;

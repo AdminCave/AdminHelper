@@ -28,6 +28,10 @@ const isLinux =
   typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('linux');
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+// Delay before showing the "RDP starting" status: a fast connection error cancels
+// this timer, so waiting lets its real message surface instead of a stale "starting".
+const RDP_STARTING_DELAY_MS = 800;
+
 interface RdpAttempt {
   id: string;
   timer: ReturnType<typeof setTimeout> | null;
@@ -58,7 +62,7 @@ function scheduleRdpStatus(id: string): void {
     if (!a || a.errored) return;
     showStatus(tNow('status.rdpStarting'));
     rdpAttempts.delete(id);
-  }, 800);
+  }, RDP_STARTING_DELAY_MS);
 }
 
 function clearRdpAttempt(id: string): void {

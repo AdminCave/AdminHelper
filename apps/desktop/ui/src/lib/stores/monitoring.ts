@@ -29,6 +29,12 @@ import type {
 
 export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
 
+// Auto-refresh cadence for the monitoring page (same period as the notification poll).
+const REFRESH_INTERVAL_MS = 30_000;
+// Grace period after triggering a check so the server-side runner can persist the
+// new state before the reload reads it back.
+const RECHECK_DELAY_MS = 2000;
+
 function pickWorstServerId(checks: MonitorCheck[]): string | null {
   const bySrv = new Map<string, MonitorCheck[]>();
   for (const c of checks) {
@@ -213,7 +219,7 @@ export async function runCheck(checkId: string): Promise<void> {
   if (!session) return;
   try {
     await monitoringApi.runCheck(session, checkId);
-    setTimeout(() => void loadMonitoring(), 2000);
+    setTimeout(() => void loadMonitoring(), RECHECK_DELAY_MS);
   } catch (err) {
     reportError(errMsg(err));
   }
@@ -311,7 +317,7 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 export function activateMonitoring(): void {
   void loadServers().then(() => loadMonitoring());
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => void loadMonitoring(), 30_000);
+  refreshTimer = setInterval(() => void loadMonitoring(), REFRESH_INTERVAL_MS);
 }
 
 export function deactivateMonitoring(): void {
