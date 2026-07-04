@@ -42,8 +42,9 @@ fn rdp_options(settings: &Settings) -> RdpOptions<'_> {
     }
 }
 
-/// Checks whether the server certificate is valid. Returns true if valid,
-/// false if self-signed/invalid.
+/// Checks whether the server certificate is valid. Returns true only if the
+/// server is reachable with a publicly-trusted cert; any error (self-signed/
+/// invalid cert, but also DNS/timeout/connection failures) returns false.
 #[tauri::command]
 pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
     proxy::check_server_cert(&server_url).await

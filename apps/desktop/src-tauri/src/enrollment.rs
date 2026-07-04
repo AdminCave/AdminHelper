@@ -158,15 +158,10 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
     Ok(())
 }
 
-/// The enrolled identity as `(key_pem, fullchain_pem, ca_pem)`, if present —
-/// exported by the frpc visitor (F2) to present the desktop's access cert on the
-/// frp plane (frps trusts the access intermediate).
-pub fn identity_pems() -> Option<(String, String, String)> {
-    load_identity()
-}
-
-/// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled.
-fn load_identity() -> Option<(String, String, String)> {
+/// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled. Used
+/// internally and by the frpc visitor (F2) to present the desktop's access cert
+/// on the frp plane (frps trusts the access intermediate).
+pub(crate) fn load_identity() -> Option<(String, String, String)> {
     Some((
         keyring_store::get(KEYRING_KEY)?,
         keyring_store::get(KEYRING_CERT)?,

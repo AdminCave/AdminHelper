@@ -41,6 +41,25 @@ use tauri::Emitter;
 #[cfg(unix)]
 use crate::terminal::which;
 
+// --- RDP connection-monitoring tuning ---
+// The login-failure heuristic hangs on these: a connect that exits sooner than
+// LOGIN_FAIL_THRESHOLD_MS *after* connecting is read as a server-side login abort.
+// CONNECT_TIMEOUT must stay above a slow VPN's connect time, or a valid login is
+// misreported as "Anmeldung fehlgeschlagen".
+#[cfg(unix)]
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
+#[cfg(unix)]
+const LOGIN_FAIL_THRESHOLD_MS: u64 = 8000;
+#[cfg(unix)]
+const OUTPUT_BUFFER_CAP: usize = 8192; // cap the retained xfreerdp stderr tail
+#[cfg(unix)]
+const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(3); // TCP reachability probe
+
+/// The .rdp launch file lingers this long after spawn so mstsc can read it, then
+/// is deleted — long enough for a slow mstsc start, short enough not to leak.
+#[cfg(target_os = "windows")]
+const RDP_FILE_CLEANUP_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub fn open_rdp(
     connection: &Connection,
     password: Option<&str>,
@@ -328,8 +347,8 @@ fn spawn_output_monitor(mut reader: impl Read + Send + 'static, watch: RdpWatch)
                 Err(_) => break,
             };
             buffer.extend_from_slice(&chunk[..read]);
-            if buffer.len() > 8192 {
-                buffer.drain(0..buffer.len().saturating_sub(8192));
+            if buffer.len() > OUTPUT_BUFFER_CAP {
+                buffer.drain(0..buffer.len().saturating_sub(OUTPUT_BUFFER_CAP));
             }
             if !connected.load(Ordering::SeqCst) && buffer_has_connected(&buffer) {
                 let elapsed_ms = started_at.elapsed().as_millis() as u64;
@@ -365,7 +384,7 @@ fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
         let app = app.clone();
         let correlation_id = correlation_id.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(12));
+            std::thread::sleep(CONNECT_TIMEOUT);
             if !connected.load(Ordering::SeqCst) && !emitted.swap(true, Ordering::SeqCst) {
                 emit_rdp_error(
                     &app,
@@ -386,7 +405,9 @@ fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
                     &correlation_id,
                     "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
                 );
-            } else if elapsed_ms.saturating_sub(connected_at_ms.load(Ordering::SeqCst)) < 8000 {
+            } else if elapsed_ms.saturating_sub(connected_at_ms.load(Ordering::SeqCst))
+                < LOGIN_FAIL_THRESHOLD_MS
+            {
                 emit_rdp_error(
                     &app,
                     &correlation_id,
@@ -509,7 +530,7 @@ pub fn preflight_rdp(host: &str, port: u16) -> Result<(), AppError> {
     let addrs = addr.to_socket_addrs().map_err(|_| {
         AppError::Connection(format!("Host konnte nicht aufgeloest werden: {host}"))
     })?;
-    let timeout = Duration::from_secs(3);
+    let timeout = PREFLIGHT_TIMEOUT;
     for socket in addrs {
         if TcpStream::connect_timeout(&socket, timeout).is_ok() {
             return Ok(());
@@ -682,7 +703,7 @@ pub fn write_rdp_file(
 
     let cleanup_path = path.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(30));
+        std::thread::sleep(RDP_FILE_CLEANUP_DELAY);
         let _ = std::fs::remove_file(&cleanup_path);
     });
 

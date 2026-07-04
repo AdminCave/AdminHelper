@@ -99,7 +99,7 @@ fn rewrite_identity_paths(toml: &str, abs_identity_dir: &str) -> String {
 /// frpc sidecar can read it as files. The visitor presents the desktop's own
 /// access cert (F2); the server no longer mints one.
 fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
-    let (key_pem, cert_pem, ca_pem) = crate::enrollment::identity_pems().ok_or_else(|| {
+    let (key_pem, cert_pem, ca_pem) = crate::enrollment::load_identity().ok_or_else(|| {
         AppError::Validation(
             "Kein mTLS-Zertifikat vorhanden — bitte zuerst am Server anmelden (Enrollment), \
              dann den Tunnel starten."

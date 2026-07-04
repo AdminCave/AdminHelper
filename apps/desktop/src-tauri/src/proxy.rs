@@ -89,7 +89,8 @@ pub async fn forward(
 }
 
 /// Probe whether the server certificate validates against the public trust
-/// store. Returns true if valid, false if self-signed/invalid.
+/// store. Returns true only on a successful request; any error returns false —
+/// a self-signed/invalid cert, but also DNS/timeout/connection failures.
 pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
     // Never probe a cleartext network URL (https, or http only for loopback).
     crate::validation::validate_server_url_secure(server_url)?;
@@ -101,7 +102,7 @@ pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
     let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
     match client.get(&url).send().await {
         Ok(_) => Ok(true),
-        Err(e) if e.is_connect() => Ok(false), // TLS/connection error
+        // Any error (TLS, DNS, timeout) counts as "not regularly reachable".
         Err(_) => Ok(false),
     }
 }
