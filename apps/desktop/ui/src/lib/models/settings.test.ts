@@ -7,7 +7,6 @@ import {
   getIntervalMinutes,
   getSettingsDefaults,
   validateSettings,
-  settingsModeLabel,
   RDP_CUSTOM_SIZE_PATTERN,
 } from './settings';
 
@@ -59,14 +58,6 @@ describe('validateSettings', () => {
     expect(
       validateSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: '1920x1080' }).ok,
     ).toBe(true);
-  });
-});
-
-describe('settingsModeLabel', () => {
-  it('maps all modes to German labels', () => {
-    expect(settingsModeLabel('local')).toBe('Lokal');
-    expect(settingsModeLabel('sync')).toBe('Sync');
-    expect(settingsModeLabel('server')).toBe('Server');
   });
 });
 

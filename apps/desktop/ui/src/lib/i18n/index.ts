@@ -44,10 +44,6 @@ export function setLanguage(next: string | null | undefined): Language {
   return normalized;
 }
 
-export function currentLanguage(): Language {
-  return get(language);
-}
-
 /** BCP-47 locale for Intl formatting (dates, numbers), derived from the UI language. */
 export function currentLocale(): string {
   return get(language) === 'de' ? 'de-DE' : 'en-GB';

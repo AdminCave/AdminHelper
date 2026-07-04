@@ -11,8 +11,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
   import { t } from '$lib/i18n';
 
-  let { onBack }: { onBack?: () => void } = $props();
-
   // Pre-fill the server URL + username from the last successful login so only
   // the password has to be entered on each start (a password is required every
   // time the app is opened).
@@ -233,12 +231,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
         disabled={busy}
       >
         {$t('login.enroll.back')}
-      </button>
-    {/if}
-
-    {#if onBack}
-      <button type="button" class="btn ghost login-back" onclick={onBack}>
-        {$t('login.back')}
       </button>
     {/if}
   </div>

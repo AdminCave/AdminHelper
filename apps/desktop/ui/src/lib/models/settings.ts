@@ -67,14 +67,3 @@ export function validateSettings(next: Settings): SettingsValidation {
   }
   return { ok: true };
 }
-
-export function settingsModeLabel(mode: Settings['mode']): string {
-  switch (mode) {
-    case 'local':
-      return 'Lokal';
-    case 'sync':
-      return 'Sync';
-    case 'server':
-      return 'Server';
-  }
-}

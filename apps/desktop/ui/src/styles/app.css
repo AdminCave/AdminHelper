@@ -1144,11 +1144,6 @@ body {
   display: none;
 }
 
-.login-back {
-  margin-top: var(--sp-4);
-  font-size: var(--text-xs);
-}
-
 .login-info {
   color: var(--accent);
   font-size: var(--text-xs);

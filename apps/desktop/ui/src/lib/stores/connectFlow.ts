@@ -199,7 +199,7 @@ interface PerformOptions {
   useStoredPassword?: boolean;
 }
 
-export async function performConnect(
+async function performConnect(
   connection: Connection,
   keepEditorOpen: boolean,
   options: PerformOptions = {},
