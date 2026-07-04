@@ -66,7 +66,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   const modeVal = $derived(config.mode === 'auto' ? 'auto' : 'list');
+
+  // Numeric threshold fields rendered data-driven via the numField snippet, so a
+  // new threshold is one array entry instead of an 8-line copy-paste block.
+  type NumField = { key: Extract<keyof MonitorCheckConfig, string>; labelKey: string };
+
+  const RESOURCE_NUM_FIELDS: NumField[] = [
+    { key: 'cpu_warn', labelKey: 'monitoring.checkCfg.cpuWarn' },
+    { key: 'cpu_crit', labelKey: 'monitoring.checkCfg.cpuCrit' },
+    { key: 'memory_warn', labelKey: 'monitoring.checkCfg.memoryWarn' },
+    { key: 'memory_crit', labelKey: 'monitoring.checkCfg.memoryCrit' },
+    { key: 'disk_warn', labelKey: 'monitoring.checkCfg.diskWarn' },
+    { key: 'disk_crit', labelKey: 'monitoring.checkCfg.diskCrit' },
+    { key: 'temp_warn', labelKey: 'monitoring.checkCfg.tempWarn' },
+    { key: 'temp_crit', labelKey: 'monitoring.checkCfg.tempCrit' },
+  ];
+
+  const SMART_NUM_FIELDS: NumField[] = [
+    { key: 'reallocated_warn', labelKey: 'monitoring.checkCfg.reallocatedWarn' },
+    { key: 'reallocated_crit', labelKey: 'monitoring.checkCfg.reallocatedCrit' },
+    { key: 'pending_warn', labelKey: 'monitoring.checkCfg.pendingWarn' },
+    { key: 'pending_crit', labelKey: 'monitoring.checkCfg.pendingCrit' },
+    { key: 'nvme_spare_warn', labelKey: 'monitoring.checkCfg.nvmeSpareWarn' },
+    { key: 'nvme_spare_crit', labelKey: 'monitoring.checkCfg.nvmeSpareCrit' },
+    { key: 'nvme_used_warn', labelKey: 'monitoring.checkCfg.nvmeUsedWarn' },
+    { key: 'nvme_used_crit', labelKey: 'monitoring.checkCfg.nvmeUsedCrit' },
+    { key: 'temp_hdd_warn', labelKey: 'monitoring.checkCfg.tempHddWarn' },
+    { key: 'temp_hdd_crit', labelKey: 'monitoring.checkCfg.tempHddCrit' },
+    { key: 'temp_ssd_warn', labelKey: 'monitoring.checkCfg.tempSsdWarn' },
+    { key: 'temp_ssd_crit', labelKey: 'monitoring.checkCfg.tempSsdCrit' },
+    { key: 'temp_nvme_warn', labelKey: 'monitoring.checkCfg.tempNvmeWarn' },
+    { key: 'temp_nvme_crit', labelKey: 'monitoring.checkCfg.tempNvmeCrit' },
+  ];
 </script>
+
+{#snippet numField(key: Extract<keyof MonitorCheckConfig, string>, labelKey: string)}
+  <label class="field">
+    <span class="field-label">{$t(labelKey)}</span>
+    <input type="number" value={numVal(key)} oninput={(e) => setNum(key, e.currentTarget.value)} />
+  </label>
+{/snippet}
 
 {#if checkType === 'ping'}
   <label class="field">
@@ -174,70 +213,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     />
   </label>
 {:else if checkType === 'agent_resources'}
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.cpuWarn')}</span>
-    <input
-      type="number"
-      value={numVal('cpu_warn')}
-      oninput={(e) => setNum('cpu_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.cpuCrit')}</span>
-    <input
-      type="number"
-      value={numVal('cpu_crit')}
-      oninput={(e) => setNum('cpu_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.memoryWarn')}</span>
-    <input
-      type="number"
-      value={numVal('memory_warn')}
-      oninput={(e) => setNum('memory_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.memoryCrit')}</span>
-    <input
-      type="number"
-      value={numVal('memory_crit')}
-      oninput={(e) => setNum('memory_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.diskWarn')}</span>
-    <input
-      type="number"
-      value={numVal('disk_warn')}
-      oninput={(e) => setNum('disk_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.diskCrit')}</span>
-    <input
-      type="number"
-      value={numVal('disk_crit')}
-      oninput={(e) => setNum('disk_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempWarn')}</span>
-    <input
-      type="number"
-      value={numVal('temp_warn')}
-      oninput={(e) => setNum('temp_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempCrit')}</span>
-    <input
-      type="number"
-      value={numVal('temp_crit')}
-      oninput={(e) => setNum('temp_crit', e.currentTarget.value)}
-    />
-  </label>
+  {#each RESOURCE_NUM_FIELDS as f (f.key)}{@render numField(f.key, f.labelKey)}{/each}
 {:else if checkType === 'service_process'}
   <label class="field">
     <span class="field-label">{$t('monitoring.checkCfg.mode')}</span>
@@ -328,118 +304,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span>{$t('monitoring.checkCfg.checkRestarts')}</span>
   </label>
 {:else if checkType === 'smart_health'}
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.reallocatedWarn')}</span>
-    <input
-      type="number"
-      value={numVal('reallocated_warn')}
-      oninput={(e) => setNum('reallocated_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.reallocatedCrit')}</span>
-    <input
-      type="number"
-      value={numVal('reallocated_crit')}
-      oninput={(e) => setNum('reallocated_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.pendingWarn')}</span>
-    <input
-      type="number"
-      value={numVal('pending_warn')}
-      oninput={(e) => setNum('pending_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.pendingCrit')}</span>
-    <input
-      type="number"
-      value={numVal('pending_crit')}
-      oninput={(e) => setNum('pending_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.nvmeSpareWarn')}</span>
-    <input
-      type="number"
-      value={numVal('nvme_spare_warn')}
-      oninput={(e) => setNum('nvme_spare_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.nvmeSpareCrit')}</span>
-    <input
-      type="number"
-      value={numVal('nvme_spare_crit')}
-      oninput={(e) => setNum('nvme_spare_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.nvmeUsedWarn')}</span>
-    <input
-      type="number"
-      value={numVal('nvme_used_warn')}
-      oninput={(e) => setNum('nvme_used_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.nvmeUsedCrit')}</span>
-    <input
-      type="number"
-      value={numVal('nvme_used_crit')}
-      oninput={(e) => setNum('nvme_used_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempHddWarn')}</span>
-    <input
-      type="number"
-      value={numVal('temp_hdd_warn')}
-      oninput={(e) => setNum('temp_hdd_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempHddCrit')}</span>
-    <input
-      type="number"
-      value={numVal('temp_hdd_crit')}
-      oninput={(e) => setNum('temp_hdd_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempSsdWarn')}</span>
-    <input
-      type="number"
-      value={numVal('temp_ssd_warn')}
-      oninput={(e) => setNum('temp_ssd_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempSsdCrit')}</span>
-    <input
-      type="number"
-      value={numVal('temp_ssd_crit')}
-      oninput={(e) => setNum('temp_ssd_crit', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempNvmeWarn')}</span>
-    <input
-      type="number"
-      value={numVal('temp_nvme_warn')}
-      oninput={(e) => setNum('temp_nvme_warn', e.currentTarget.value)}
-    />
-  </label>
-  <label class="field">
-    <span class="field-label">{$t('monitoring.checkCfg.tempNvmeCrit')}</span>
-    <input
-      type="number"
-      value={numVal('temp_nvme_crit')}
-      oninput={(e) => setNum('temp_nvme_crit', e.currentTarget.value)}
-    />
-  </label>
+  {#each SMART_NUM_FIELDS as f (f.key)}{@render numField(f.key, f.labelKey)}{/each}
   <label class="field" style="grid-column: span 2;">
     <span class="field-label">{$t('monitoring.checkCfg.ignoreDevices')}</span>
     <input
