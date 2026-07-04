@@ -13,8 +13,6 @@ cert-gated: the client has no cert yet — this is its bootstrap door.
 
 from __future__ import annotations
 
-import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -28,10 +26,6 @@ from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/enrollment", tags=["enrollment"])
 
-# Long enough for the client to enroll right after login, short enough to limit
-# exposure of the single-use grant (matches the provision-token window).
-_ENROLL_TOKEN_TTL = datetime.timedelta(minutes=10)
-
 
 def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
     """Persist a one-time access-scoped enrollment token for ``subject_id`` and
@@ -40,9 +34,7 @@ def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
     same SHA-256 the ca-issuer consumes by. ``browser=true`` flags a long-lived
     leaf (D5): the browser cannot auto-renew, so it gets a long cert + manual
     re-import; the desktop exports it as a PKCS12 for the browser cert store (A5c)."""
-    raw_token = mint_enrollment_token(
-        db, subject_id, SCOPE_ACCESS, browser=browser, ttl=_ENROLL_TOKEN_TTL
-    )
+    raw_token = mint_enrollment_token(db, subject_id, SCOPE_ACCESS, browser=browser)
     return {
         "token": raw_token,
         "subjectId": subject_id,

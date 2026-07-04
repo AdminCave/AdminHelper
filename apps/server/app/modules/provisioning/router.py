@@ -42,14 +42,10 @@ from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
 from app.modules.api_keys.models import ApiKey
-from app.modules.enrollment.models import EnrollmentToken
+from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
 from app.modules.servers.models import Server
-
-# Enrollment token lifetime: long enough for the agent to enroll right after
-# provisioning, short enough to limit exposure of the single-use grant.
-_ENROLL_TOKEN_TTL = datetime.timedelta(minutes=10)
 
 router = APIRouter(prefix="/api/servers", tags=["provisioning"])
 
@@ -166,20 +162,10 @@ def activate_provision(
 
     # 4. One-time enrollment token (tunnel scope = agent, ADR 0001 §3.1 / A3).
     # The agent enrolls its mTLS client cert at the ca-issuer right after this.
-    # Single-use, hashed at rest with the same SHA-256 the ca-issuer consumes by;
+    # Minted via the shared service so the hashing (the SHA-256 the ca-issuer
+    # consumes by) and TTL stay in lockstep with the HTTP enrollment path (2.51);
     # identity (CN) is the stable server_id, not the client's CSR.
-    raw_enroll_token = generate_api_key()
-    db.add(
-        EnrollmentToken(
-            id=str(uuid.uuid4()),
-            hashed_token=hash_api_key(raw_enroll_token),
-            subject_id=server_id,
-            scope=SCOPE_AGENT,
-            browser=False,
-            expires_at=datetime.datetime.now(datetime.timezone.utc) + _ENROLL_TOKEN_TTL,
-        )
-    )
-    db.commit()
+    raw_enroll_token = mint_enrollment_token(db, server_id, SCOPE_AGENT)
 
     return {
         "serverName": server.name,
