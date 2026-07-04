@@ -2,12 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { AuthSession, Settings } from '$lib/bridge/types';
 
 // Mock the bridge + collaborators: the session lifecycle (hydrate/login/
-// dropSession) is what we test; persistence and i18n are side channels.
+// dropSession) is what we test; persistence and i18n are side channels. The
+// connections store is no longer imported here — it is wired in via
+// registerConnectionsSync (see the "connections sync hooks" block below).
 vi.mock('$lib/bridge', () => ({
   loadSettings: vi.fn(),
   saveSettings: vi.fn(async () => {}),
@@ -16,20 +18,18 @@ vi.mock('$lib/bridge', () => ({
   fetchConnectionsJwt: vi.fn(async () => []),
 }));
 vi.mock('$lib/i18n', () => ({ setLanguage: vi.fn() }));
-vi.mock('./connections', () => ({
-  reloadForMode: vi.fn(async () => {}),
-  clearInMemory: vi.fn(),
-}));
 
 import * as bridge from '$lib/bridge';
 import {
   hydrate,
   login,
+  logout,
   dropSession,
   needsLogin,
   isAuthenticated,
   ready,
   session,
+  registerConnectionsSync,
 } from './session';
 
 const baseSettings = (over: Partial<Settings> = {}): Settings => ({
@@ -129,6 +129,33 @@ describe('session store', () => {
       );
       const saved = vi.mocked(bridge.saveSettings).mock.calls[0][0];
       expect(JSON.stringify(saved)).not.toContain('secret');
+    });
+  });
+
+  // The session store drives the connections store only through the hooks wired
+  // in at app start (registerConnectionsSync in main.ts) — not a direct import.
+  describe('connections sync hooks', () => {
+    afterEach(() => {
+      // Reset to no-ops so the singleton hook doesn't leak into other tests.
+      registerConnectionsSync({ reload: async () => {}, clear: () => {} });
+    });
+
+    it('login reloads and logout clears via the registered hooks', async () => {
+      const reload = vi.fn(async () => {});
+      const clear = vi.fn();
+      registerConnectionsSync({ reload, clear });
+
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', serverUrl: 'https://srv.example.com' }),
+      );
+      vi.mocked(bridge.login).mockResolvedValue(aSession);
+      await hydrate();
+      await login('https://srv.example.com', 'alice', 'pw');
+      expect(reload).toHaveBeenCalledWith(expect.objectContaining({ mode: 'server' }), aSession);
+
+      await logout();
+      expect(clear).toHaveBeenCalledOnce();
+      expect(get(session)).toBeNull();
     });
   });
 });

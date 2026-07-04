@@ -13,6 +13,7 @@
 import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { Connection } from '$lib/bridge/types';
+import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
 import { sessionStore } from './session';
 import { connections as connectionsStore, upsert, patchInMemory } from './connections';
@@ -105,14 +106,7 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
 
   if (mode === 'server' && session) {
     try {
-      const updated = await bridge.apiProxy<Connection>(
-        session.serverUrl,
-        session.token,
-        'POST',
-        `/api/connections/${encodeURIComponent(connection.id)}/touch`,
-        undefined,
-        settings?.allowSelfSignedCerts,
-      );
+      const updated = await connectionsApi.touch(session, connection.id);
       patchInMemory(updated);
     } catch {
       patchInMemory({ ...connection, lastUsed: new Date().toISOString() });

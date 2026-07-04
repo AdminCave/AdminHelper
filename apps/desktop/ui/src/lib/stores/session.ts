@@ -18,13 +18,26 @@
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { setLanguage } from '$lib/i18n';
-import { reloadForMode, clearInMemory } from './connections';
 import type { AuthSession, Settings, SyncMode } from '$lib/bridge/types';
 
 interface SessionState {
   settings: Settings | null;
   session: AuthSession | null;
   ready: boolean;
+}
+
+// The session store must not import ./connections: that module imports
+// sessionStore back, and the cycle only held together because both sides
+// deferred the import into function bodies (a derived store referencing
+// reloadForMode at module-eval time would break with `undefined`). Instead the
+// connections store's reload/clear are wired in at app start (see main.ts).
+interface ConnectionsSync {
+  reload: (settings: Settings | null, session: AuthSession | null) => Promise<void>;
+  clear: () => void;
+}
+let connectionsSync: ConnectionsSync = { reload: async () => {}, clear: () => {} };
+export function registerConnectionsSync(hooks: ConnectionsSync): void {
+  connectionsSync = hooks;
 }
 
 const initial: SessionState = { settings: null, session: null, ready: false };
@@ -88,7 +101,7 @@ export async function login(serverUrl: string, username: string, password: strin
   // connections.json file cache from staying visible after a server switch.
   _state.update((s) => ({ ...s, settings: next ?? s.settings, session: sess }));
   if (next) {
-    await reloadForMode(next, sess);
+    await connectionsSync.reload(next, sess);
   }
 }
 
@@ -101,7 +114,7 @@ export async function logout(): Promise<void> {
     // old data in the already-logged-out state. Crucially this does NOT touch
     // connections.json: that file is the local-mode store and overwriting it
     // here would erase the user's locally saved connections.
-    clearInMemory();
+    connectionsSync.clear();
     _state.update((s) => ({ ...s, session: null }));
   }
 }
