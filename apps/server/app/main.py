@@ -260,4 +260,9 @@ def spa_fallback(full_path: str):
         and candidate.resolve().is_relative_to(static_dir.resolve())
     ):
         return FileResponse(candidate)
-    return FileResponse(static_dir / "index.html")
+    index = static_dir / "index.html"
+    if not index.is_file():
+        # No frontend build present (API-only deployment, or the build hasn't run):
+        # a clean 404 instead of a 500 from FileResponse stat-ing a missing file.
+        raise HTTPException(status_code=404, detail="Frontend build not found")
+    return FileResponse(index)

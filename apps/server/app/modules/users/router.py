@@ -46,7 +46,7 @@ def create_user(
 ):
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername bereits vergeben"
+            status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
         )
     user = User(
         username=data.username,
@@ -65,10 +65,10 @@ def create_user(
     except IntegrityError:
         # Lost the race against a concurrent create of the same username (the
         # check above has a TOCTOU window; users.username is unique). Map to the
-        # same 400 the pre-check returns.
+        # same 409 the pre-check returns.
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername bereits vergeben"
+            status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
         )
     db.refresh(user)
     fire_event(

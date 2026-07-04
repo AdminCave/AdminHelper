@@ -42,6 +42,18 @@ _TRUSTED_PROXIES = (
 )
 
 
+def _ip_from_proxy_headers(request: Request) -> str | None:
+    """The client IP a proxy forwarded: X-Real-IP, else the first hop of
+    X-Forwarded-For, else None. The trust decision is the caller's."""
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        return real_ip
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return None
+
+
 def resolve_client_ip(request: Request) -> str:
     """Determines the real client IP.
 
@@ -57,22 +69,16 @@ def resolve_client_ip(request: Request) -> str:
     if _TRUSTED_PROXIES:
         # Secure path: accept headers only from known proxies
         if _in_networks(direct_ip, _TRUSTED_PROXIES):
-            real_ip = request.headers.get("X-Real-IP", "").strip()
-            if real_ip:
-                return real_ip
-            forwarded_for = request.headers.get("X-Forwarded-For", "")
-            if forwarded_for:
-                return forwarded_for.split(",")[0].strip()
+            header_ip = _ip_from_proxy_headers(request)
+            if header_ip:
+                return header_ip
         return direct_ip
 
     if TRUST_PROXY_HEADERS:
         # Legacy: evaluate headers from any IP (backward compatible)
-        real_ip = request.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
+        header_ip = _ip_from_proxy_headers(request)
+        if header_ip:
+            return header_ip
 
     return direct_ip
 
