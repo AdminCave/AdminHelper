@@ -4,17 +4,10 @@
 
 use crate::error::AppError;
 use crate::models::{Connection, ConnectionKind, PasswordState};
+use crate::validation::required;
 
 fn normalized(value: &Option<String>) -> String {
     value.as_deref().unwrap_or("").trim().to_string()
-}
-
-fn required(value: &Option<String>, label: &str) -> Result<String, AppError> {
-    let trimmed = normalized(value);
-    if trimmed.is_empty() {
-        return Err(AppError::Validation(format!("{label} fehlt")));
-    }
-    Ok(trimmed)
 }
 
 pub fn rdp_port(connection: &Connection) -> u16 {

@@ -5,16 +5,12 @@
 use std::io::Write;
 
 use crate::error::AppError;
-use crate::terminal::{open_linux_terminal, open_windows_terminal, which};
+use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct AnsibleTarget {
     pub hostname: String,
     pub groups: Vec<String>,
-}
-
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Generates an Ansible inventory file in INI format and returns the path.

@@ -4,12 +4,8 @@
 
 use crate::error::AppError;
 use crate::models::Connection;
-use crate::terminal::{open_linux_terminal, open_windows_terminal};
-use crate::validation::{validate_host, validate_no_control_chars};
-
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
+use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape};
+use crate::validation::{required, validate_host, validate_no_control_chars};
 
 fn build_ssh_command(args: &[String]) -> String {
     let mut parts = vec!["ssh".to_string()];
@@ -17,14 +13,6 @@ fn build_ssh_command(args: &[String]) -> String {
         parts.push(shell_escape(arg));
     }
     parts.join(" ")
-}
-
-fn required(value: &Option<String>, label: &str) -> Result<String, AppError> {
-    let trimmed = value.as_deref().unwrap_or("").trim().to_string();
-    if trimmed.is_empty() {
-        return Err(AppError::Validation(format!("{label} fehlt")));
-    }
-    Ok(trimmed)
 }
 
 pub fn open_ssh(connection: &Connection) -> Result<(), AppError> {

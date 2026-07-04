@@ -188,6 +188,16 @@ pub fn sanitize_synced_connections(connections: Vec<Connection>) -> Vec<Connecti
         .collect()
 }
 
+/// Trim a value and error if it is empty — the shared "field X is required" check
+/// used across connection/SSH/RDP input validation.
+pub fn required(value: &Option<String>, label: &str) -> Result<String, AppError> {
+    let trimmed = value.as_deref().unwrap_or("").trim().to_string();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(format!("{label} fehlt")));
+    }
+    Ok(trimmed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

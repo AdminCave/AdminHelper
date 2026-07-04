@@ -113,6 +113,13 @@ pub fn build_windows_cmdline(command: &str, args: &[String]) -> String {
     parts.join(" ")
 }
 
+/// POSIX-shell single-quote escaping for a value interpolated into a `bash -c`
+/// command line: wrap in single quotes and escape any embedded single quote.
+/// Security-relevant — the single shared copy so a hardening can't miss a caller.
+pub fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 pub fn windows_quote(value: &str) -> String {
     if value
         .chars()
@@ -153,6 +160,18 @@ mod tests {
         assert_eq!(windows_quote("(test)"), "\"^(test^)\"");
         assert_eq!(windows_quote("bang!"), "\"bang^!\"");
         assert_eq!(windows_quote("car^et"), "\"car^^et\"");
+    }
+
+    #[test]
+    fn shell_escape_wraps_and_escapes_single_quotes() {
+        // Plain values are single-quoted (safe against every POSIX metacharacter).
+        assert_eq!(shell_escape("host"), "'host'");
+        assert_eq!(shell_escape("a b; rm -rf /"), "'a b; rm -rf /'");
+        assert_eq!(shell_escape("$(evil)"), "'$(evil)'");
+        // An embedded single quote is broken out and re-escaped so it can't end
+        // the quoting early (the injection this guards against).
+        assert_eq!(shell_escape("O'Brien"), "'O'\\''Brien'");
+        assert_eq!(shell_escape("'; id; '"), "''\\''; id; '\\'''");
     }
 
     #[test]
