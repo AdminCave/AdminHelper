@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings, logout } from '$lib/stores/session';
   import { searchTerm } from '$lib/stores/connections';
@@ -116,7 +117,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   const unlisteners: UnlistenFn[] = [];
 
+  // Read the real app version from tauri.conf.json at runtime (the CI-checked pin)
+  // instead of a hand-maintained string that silently drifts (audit 2.17).
+  let appVersion = $state('');
+
   onMount(async () => {
+    getVersion()
+      .then((v) => (appVersion = v))
+      .catch(() => {});
     if (isServerMode) {
       void startIfServerMode();
     }
@@ -193,7 +201,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <span class="sidebar-label">{$t('settings.label')}</span>
         <span class="sidebar-badge">{modeBadge}</span>
       </button>
-      <div class="sidebar-version">v0.37.2</div>
+      <div class="sidebar-version">v{appVersion}</div>
     </div>
 
     <button

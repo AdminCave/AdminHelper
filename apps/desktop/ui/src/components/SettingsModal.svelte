@@ -6,6 +6,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { settings, session } from '$lib/stores/session';
+  import { reportError } from '$lib/stores/statusBar';
+  import { errMsg } from '$lib/utils/errors';
   import {
     settingsModalOpen,
     closeSettings,
@@ -101,8 +103,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await resetServerCertPin(target);
       pinResetMsgKey = 'settings.resetCertPin.done';
-    } catch {
+    } catch (err) {
+      // Surface the failure (e.g. a locked keyring) instead of silently clearing
+      // the status — else the user thinks the pin reset and hits the same error.
       pinResetMsgKey = '';
+      reportError(errMsg(err));
     }
   }
 
@@ -123,8 +128,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       await resetDeviceIdentity(target);
       deviceEnrolled = false;
       deviceResetMsgKey = 'settings.resetDeviceId.done';
-    } catch {
+    } catch (err) {
       deviceResetMsgKey = '';
+      reportError(errMsg(err));
     }
   }
 
