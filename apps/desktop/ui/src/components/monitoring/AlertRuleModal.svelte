@@ -132,8 +132,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
             onchange={(e) =>
               (channel = (e.currentTarget as HTMLSelectElement).value as AlertChannel)}
           >
-            <option value="webhook">Webhook</option>
-            <option value="email">E-Mail</option>
+            <option value="webhook">{$t('monitoring.alerts.channelWebhook')}</option>
+            <option value="email">{$t('monitoring.alerts.channelEmail')}</option>
           </select>
         </label>
 
@@ -153,7 +153,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
 
         <label class="field">
-          <span class="field-label">Server</span>
+          <span class="field-label">{$t('monitoring.alerts.matchServer')}</span>
           <select
             value={matchServerId}
             onchange={(e) => (matchServerId = (e.currentTarget as HTMLSelectElement).value)}
@@ -172,7 +172,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         {#if channel === 'webhook'}
           <label class="field span2">
-            <span class="field-label">Webhook URL</span>
+            <span class="field-label">{$t('monitoring.alerts.webhookUrl')}</span>
             <input
               type="url"
               bind:value={webhookUrl}
