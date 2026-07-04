@@ -80,6 +80,53 @@ def _build_variables(assignment: MonitorTemplateAssignment) -> dict:
     }
 
 
+def _create_check(
+    db: Session, template_id: str, server_id: str, def_id: str, resolved: dict
+) -> MonitorCheck:
+    """Create a MonitorCheck (+ its pending state) from a resolved template def.
+    Shared by apply_template and _sync_checks_for_server so their column defaults
+    ("ping", "5m", "critical", 3, ...) cannot drift apart (2.35)."""
+    check = MonitorCheck(
+        id=str(uuid.uuid4()),
+        server_id=server_id,
+        name=resolved.get("name", ""),
+        description=resolved.get("description"),
+        check_type=resolved.get("check_type", "ping"),
+        config=json.dumps(resolved.get("config", {})),
+        enabled=resolved.get("enabled", True),
+        interval=resolved.get("interval", "5m"),
+        severity=resolved.get("severity", "critical"),
+        consecutive_fails=resolved.get("consecutive_fails", 3),
+        template_id=template_id,
+        template_def_id=def_id,
+    )
+    db.add(check)
+    db.add(MonitorState(check_id=check.id, status="pending"))
+    return check
+
+
+def _create_alert(
+    db: Session, template_id: str, server_id: str, def_id: str, resolved: dict
+) -> MonitorAlertRule:
+    """Create a MonitorAlertRule from a resolved template def. Shared by
+    apply_template and _sync_alerts_for_server so their defaults ("webhook", 30,
+    ...) cannot drift apart (2.35)."""
+    rule = MonitorAlertRule(
+        id=str(uuid.uuid4()),
+        name=resolved.get("name", ""),
+        match_severity=resolved.get("match_severity"),
+        match_server_id=server_id,
+        channel=resolved.get("channel", "webhook"),
+        channel_config=json.dumps(resolved.get("channel_config", {})),
+        cooldown_minutes=resolved.get("cooldown_minutes", 30),
+        enabled=resolved.get("enabled", True),
+        template_id=template_id,
+        template_def_id=def_id,
+    )
+    db.add(rule)
+    return rule
+
+
 # ---------------------------------------------------------------------------
 # Sync: template changed → update all assignments
 # ---------------------------------------------------------------------------
@@ -184,26 +231,9 @@ def _sync_checks_for_server(
             updated += 1
         else:
             # Create
-            check_id = str(uuid.uuid4())
-            check = MonitorCheck(
-                id=check_id,
-                server_id=server_id,
-                name=resolved.get("name", ""),
-                description=resolved.get("description"),
-                check_type=resolved.get("check_type", "ping"),
-                config=json.dumps(resolved.get("config", {})),
-                enabled=resolved.get("enabled", True),
-                interval=resolved.get("interval", "5m"),
-                severity=resolved.get("severity", "critical"),
-                consecutive_fails=resolved.get("consecutive_fails", 3),
-                template_id=template_id,
-                template_def_id=def_id,
-            )
-            db.add(check)
-            db.add(MonitorState(check_id=check_id, status="pending"))
-
+            check = _create_check(db, template_id, server_id, def_id, resolved)
             if check.enabled:
-                actions.append(("add", check_id, check.interval, check.check_type))
+                actions.append(("add", check.id, check.interval, check.check_type))
             created += 1
 
     # Delete: checks that are no longer in the template
@@ -257,19 +287,7 @@ def _sync_alerts_for_server(
             rule.enabled = resolved.get("enabled", True)
             updated += 1
         else:
-            rule = MonitorAlertRule(
-                id=str(uuid.uuid4()),
-                name=resolved.get("name", ""),
-                match_severity=resolved.get("match_severity"),
-                match_server_id=server_id,
-                channel=resolved.get("channel", "webhook"),
-                channel_config=json.dumps(resolved.get("channel_config", {})),
-                cooldown_minutes=resolved.get("cooldown_minutes", 30),
-                enabled=resolved.get("enabled", True),
-                template_id=template_id,
-                template_def_id=def_id,
-            )
-            db.add(rule)
+            _create_alert(db, template_id, server_id, def_id, resolved)
             created += 1
 
     deleted = 0
@@ -316,47 +334,17 @@ def apply_template(
         def_id = check_def.get("def_id", "")
         resolved = substitute_variables(check_def, variables)
 
-        check_id = str(uuid.uuid4())
-        check = MonitorCheck(
-            id=check_id,
-            server_id=server_id,
-            name=resolved.get("name", ""),
-            description=resolved.get("description"),
-            check_type=resolved.get("check_type", "ping"),
-            config=json.dumps(resolved.get("config", {})),
-            enabled=resolved.get("enabled", True),
-            interval=resolved.get("interval", "5m"),
-            severity=resolved.get("severity", "critical"),
-            consecutive_fails=resolved.get("consecutive_fails", 3),
-            template_id=template.id,
-            template_def_id=def_id,
-        )
-        db.add(check)
-        db.add(MonitorState(check_id=check_id, status="pending"))
-
+        check = _create_check(db, template.id, server_id, def_id, resolved)
         if check.enabled:
-            actions.append(("add", check_id, check.interval, check.check_type))
-        check_ids.append(check_id)
+            actions.append(("add", check.id, check.interval, check.check_type))
+        check_ids.append(check.id)
 
     for alert_def in alert_defs:
         def_id = alert_def.get("def_id", "")
         resolved = substitute_variables(alert_def, variables)
 
-        alert_id = str(uuid.uuid4())
-        rule = MonitorAlertRule(
-            id=alert_id,
-            name=resolved.get("name", ""),
-            match_severity=resolved.get("match_severity"),
-            match_server_id=server_id,
-            channel=resolved.get("channel", "webhook"),
-            channel_config=json.dumps(resolved.get("channel_config", {})),
-            cooldown_minutes=resolved.get("cooldown_minutes", 30),
-            enabled=resolved.get("enabled", True),
-            template_id=template.id,
-            template_def_id=def_id,
-        )
-        db.add(rule)
-        alert_ids.append(alert_id)
+        rule = _create_alert(db, template.id, server_id, def_id, resolved)
+        alert_ids.append(rule.id)
 
     db.commit()
     _apply_scheduler_actions(actions)

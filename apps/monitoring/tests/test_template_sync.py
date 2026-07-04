@@ -169,6 +169,30 @@ def test_apply_passes_check_type_so_push_only_is_skippable(db):
     assert None not in types  # None was the ghost-job bug: add_check couldn't skip
 
 
+def test_minimal_defs_get_the_shared_create_defaults(db):
+    """2.35: apply and sync both build checks/alerts through _create_check /
+    _create_alert, so a def carrying only a def_id + name gets the same column
+    defaults on either path — they can't drift out of sync."""
+    tpl = _template(
+        db,
+        [{"def_id": "c", "name": "Minimal Check"}],
+        [{"def_id": "a", "name": "Minimal Alert"}],
+    )
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+
+    check = db.query(MonitorCheck).one()
+    assert (check.check_type, check.interval, check.severity, check.consecutive_fails) == (
+        "ping",
+        "5m",
+        "critical",
+        3,
+    )
+    assert check.enabled is True
+    rule = db.query(MonitorAlertRule).one()
+    assert (rule.channel, rule.cooldown_minutes, rule.enabled) == ("webhook", 30, True)
+
+
 def test_apply_does_not_schedule_when_commit_fails(db, monkeypatch):
     """1.21: scheduler mutations run only AFTER a successful commit — a failed /
     rolled-back commit must not leave ghost jobs behind."""
