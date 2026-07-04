@@ -94,7 +94,7 @@ fn is_loopback_host(host: Option<Host<&str>>) -> bool {
 ///
 /// The public read-only sync URL has its own stricter `validate_https_url`
 /// (no loopback exception) below; this guards the authenticated JWT path
-/// funnelled through `auth::build_client`.
+/// funnelled through `http_client::build_client`.
 pub fn validate_server_url_secure(raw: &str) -> Result<(), AppError> {
     let url = Url::parse(raw)?;
     match url.scheme() {

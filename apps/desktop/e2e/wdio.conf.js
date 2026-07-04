@@ -53,13 +53,21 @@ export const config = {
   // app loads nothing. `tauri build` runs beforeBuildCommand (the UI build) and
   // embeds frontendDist; --no-bundle skips deb/AppImage packaging. Needs the
   // frpc sidecar under src-tauri/binaries/ to exist (see README).
+  //
+  // --config merges tauri.e2e.conf.json onto the base config, re-enabling
+  // withGlobalTauri: the specs drive the app through window.__TAURI__ (only the
+  // E2E build exposes it; production ships withGlobalTauri: false).
   onPrepare: () => {
     try { fs.mkdirSync(path.join(ahOutDir, 'screenshots'), { recursive: true }); } catch { /* ignore */ }
-    const r = spawnSync('cargo', ['tauri', 'build', '--debug', '--no-bundle'], {
-      cwd: path.resolve(desktopDir, 'src-tauri'),
-      stdio: 'inherit',
-      shell: true,
-    });
+    const r = spawnSync(
+      'cargo',
+      ['tauri', 'build', '--debug', '--no-bundle', '--config', 'tauri.e2e.conf.json'],
+      {
+        cwd: path.resolve(desktopDir, 'src-tauri'),
+        stdio: 'inherit',
+        shell: true,
+      },
+    );
     if (r.status !== 0) throw new Error(`tauri build failed (${r.status})`);
   },
 

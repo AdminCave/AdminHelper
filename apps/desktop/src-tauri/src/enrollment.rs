@@ -24,9 +24,8 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::AppError;
+use crate::keyring_store;
 
-/// Keyring service shared with `auth.rs` / `tofu.rs`.
-const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
 // `build_client` can load the identity without an AppHandle.
@@ -147,69 +146,17 @@ pub fn enroll_endpoint(server_url: &str, port: u16) -> Result<String, AppError> 
 
 // ── Identity storage (keyring) ────────────────────────────────────────────
 
-#[cfg(unix)]
-fn keyring_set(key: &str, value: &str) -> Result<(), AppError> {
-    use keyring::Entry;
-    Entry::new(KEYRING_SERVICE, key)
-        .and_then(|entry| entry.set_password(value))
-        .map_err(|e| AppError::Keyring(e.to_string()))
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_set(key: &str, value: &str) -> Result<(), AppError> {
-    crate::password::windows_store_credential(key, "adminhelper", value)
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_set(_key: &str, _value: &str) -> Result<(), AppError> {
-    Err(AppError::Keyring("Plattform nicht unterstützt".to_string()))
-}
-
 /// Persist the enrolled identity: key + fullchain + pinned CA chain. On first
 /// enroll the key is written first, so a partial failure cannot leave a cert
 /// without a key. On renew the key is unchanged (the cert is re-issued for the
 /// same key, see `renew`), so a partial write can never produce a key/cert
 /// mismatch — the keyring's lack of an atomic multi-entry swap is thereby moot.
 fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError> {
-    keyring_set(KEYRING_KEY, key_pem)?;
-    keyring_set(KEYRING_CERT, &issued.fullchain)?;
-    keyring_set(KEYRING_CA, &issued.chain)?;
+    keyring_store::set(KEYRING_KEY, key_pem)?;
+    keyring_store::set(KEYRING_CERT, &issued.fullchain)?;
+    keyring_store::set(KEYRING_CA, &issued.chain)?;
     Ok(())
 }
-
-#[cfg(unix)]
-fn keyring_get(key: &str) -> Option<String> {
-    use keyring::Entry;
-    Entry::new(KEYRING_SERVICE, key).ok()?.get_password().ok()
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_get(key: &str) -> Option<String> {
-    crate::password::windows_read_credential(key)
-        .ok()
-        .filter(|v| !v.is_empty())
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_get(_key: &str) -> Option<String> {
-    None
-}
-
-#[cfg(unix)]
-fn keyring_del(key: &str) {
-    use keyring::Entry;
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE, key) {
-        let _ = entry.delete_credential();
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_del(key: &str) {
-    let _ = crate::password::windows_delete_credential(key);
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_del(_key: &str) {}
 
 /// The enrolled identity as `(key_pem, fullchain_pem, ca_pem)`, if present —
 /// exported by the frpc visitor (F2) to present the desktop's access cert on the
@@ -221,15 +168,15 @@ pub fn identity_pems() -> Option<(String, String, String)> {
 /// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled.
 fn load_identity() -> Option<(String, String, String)> {
     Some((
-        keyring_get(KEYRING_KEY)?,
-        keyring_get(KEYRING_CERT)?,
-        keyring_get(KEYRING_CA)?,
+        keyring_store::get(KEYRING_KEY)?,
+        keyring_store::get(KEYRING_CERT)?,
+        keyring_store::get(KEYRING_CA)?,
     ))
 }
 
 /// Whether this device has an enrolled mTLS identity (key + cert present).
 pub fn is_enrolled() -> bool {
-    keyring_get(KEYRING_KEY).is_some() && keyring_get(KEYRING_CERT).is_some()
+    keyring_store::get(KEYRING_KEY).is_some() && keyring_store::get(KEYRING_CERT).is_some()
 }
 
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
@@ -237,9 +184,9 @@ pub fn is_enrolled() -> bool {
 /// by the explicit "reset device identity" settings action (`reset_device_identity`)
 /// — the recovery path after a server reinstall / PKI re-creation.
 pub fn clear_identity() {
-    keyring_del(KEYRING_KEY);
-    keyring_del(KEYRING_CERT);
-    keyring_del(KEYRING_CA);
+    let _ = keyring_store::delete(KEYRING_KEY);
+    let _ = keyring_store::delete(KEYRING_CERT);
+    let _ = keyring_store::delete(KEYRING_CA);
 }
 
 // ── Enrollment orchestration ──────────────────────────────────────────────
@@ -303,7 +250,7 @@ async fn mint_token(
     allow_self_signed: bool,
     browser: bool,
 ) -> Result<EnrollGrant, AppError> {
-    let client = crate::auth::build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let base = server_url.trim_end_matches('/');
     let url = if browser {
         format!("{base}/api/enrollment/token?browser=true")
@@ -334,7 +281,7 @@ async fn redeem(
 ) -> Result<IssuedIdentity, AppError> {
     // build_client pins by the login host; the gateway presents the same leaf on
     // the enroll plane, so that pin applies to this call too.
-    let client = crate::auth::build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let resp = client
         .post(endpoint)
         .json(&EnrollRequest {

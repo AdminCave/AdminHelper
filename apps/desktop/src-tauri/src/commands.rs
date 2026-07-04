@@ -14,29 +14,17 @@ use crate::models::{
     AuthSession, ClientInfo, Connection, PasswordState, RdpOptions, Settings, TunnelStatus,
 };
 use crate::password;
+use crate::proxy;
 use crate::storage;
 use crate::sync;
 use crate::tofu;
 use crate::tunnel;
-use crate::validation;
 
 /// Checks whether the server certificate is valid. Returns true if valid,
 /// false if self-signed/invalid.
 #[tauri::command]
 pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
-    // Never probe a cleartext network URL (https, or http only for loopback).
-    validation::validate_server_url_secure(&server_url)?;
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(false)
-        .build()
-        .map_err(AppError::from)?;
-
-    let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
-    match client.get(&url).send().await {
-        Ok(_) => Ok(true),
-        Err(e) if e.is_connect() => Ok(false), // TLS/connection error
-        Err(_) => Ok(false),
-    }
+    proxy::check_server_cert(&server_url).await
 }
 
 /// Build a redacted diagnostics report (version, OS, recent log tail) for a bug
@@ -152,55 +140,7 @@ pub async fn api_proxy(
             .map(|s| s.allow_self_signed_certs)
             .unwrap_or(false)
     });
-    // Token-destination pin: the session JWT must only be sent to the server the
-    // user logged into. A (compromised) frontend that passes a foreign server_url
-    // — or a `path` that rewrites the URL authority (leading `@`, `\`, `://`) —
-    // alongside the real token would otherwise leak it; TOFU would happily pin the
-    // attacker's cert on first use for that new host. Pin the FINAL composed URL's
-    // origin, not just server_url.
-    if let Some(stored) = auth::stored_server_url() {
-        validation::validate_proxy_path(&server_url, &path, &stored)?;
-    }
-    let client = auth::build_client(&server_url, self_signed)?;
-    let url = format!("{}{}", server_url.trim_end_matches('/'), path);
-
-    let mut req = match method.as_str() {
-        "POST" => client.post(&url),
-        "PUT" => client.put(&url),
-        "DELETE" => client.delete(&url),
-        _ => client.get(&url),
-    };
-
-    req = req.header("Authorization", format!("Bearer {token}"));
-
-    if let Some(b) = body {
-        req = req.header("Content-Type", "application/json").body(b);
-    }
-
-    let response = req.send().await?;
-    let status = response.status();
-
-    if status == reqwest::StatusCode::NO_CONTENT {
-        return Ok(serde_json::Value::Null);
-    }
-
-    if !status.is_success() {
-        let text = crate::diagnostics::redact_body(&response.text().await.unwrap_or_default());
-        return Err(AppError::Validation(format!(
-            "HTTP {}: {}",
-            status.as_u16(),
-            text
-        )));
-    }
-
-    // An empty 2xx body (no JSON payload) stays Null; an actually malformed
-    // body is a real error and must not be silently mapped to Null.
-    let text = response.text().await?;
-    if text.is_empty() {
-        return Ok(serde_json::Value::Null);
-    }
-    let value: serde_json::Value = serde_json::from_str(&text)?;
-    Ok(value)
+    proxy::forward(&server_url, &token, &method, &path, body, self_signed).await
 }
 
 #[tauri::command]

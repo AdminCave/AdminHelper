@@ -5,7 +5,7 @@
 //! Long-lived SSE client for the notification bell.
 //!
 //! The WebView cannot open an `EventSource` against the self-signed server, so
-//! the stream is tunnelled through `reqwest` here — reusing `auth::build_client`,
+//! the stream is tunnelled through `reqwest` here — reusing `http_client::build_client`,
 //! so it inherits the same mTLS / TOFU-pin / public-CA path and JWT bearer that
 //! `api_proxy` uses. Each `notification` SSE frame is forwarded to the UI as a
 //! `notification` Tauri event (the UI then reloads the feed), exactly like the
@@ -107,7 +107,7 @@ async fn connect_and_read(
     token: &str,
     self_signed: bool,
 ) -> Result<StreamEnd, AppError> {
-    let client = auth::build_client(server_url, self_signed)?;
+    let client = crate::http_client::build_client(server_url, self_signed)?;
     let url = format!(
         "{}/api/notifications/stream",
         server_url.trim_end_matches('/')

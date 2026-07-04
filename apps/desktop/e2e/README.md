@@ -82,12 +82,14 @@ npm ci
 npm test          # onPrepare builds the UI + the debug binary, then drives it
 ```
 
-`wdio.conf.js` (`onPrepare`) runs `cargo tauri build --debug --no-bundle` in
+`wdio.conf.js` (`onPrepare`) runs
+`cargo tauri build --debug --no-bundle --config tauri.e2e.conf.json` in
 `../src-tauri` (which builds `../ui` via `beforeBuildCommand` and embeds it), so the
 binary tauri-driver launches (`../src-tauri/target/debug/adminhelper`) is always
 current. It must be `tauri build`, **not** a plain `cargo build` — the latter
 points the webview at the dev URL (`localhost:1420`, not served) instead of the
-embedded frontend. Headless rendering env
+embedded frontend. The `--config` overlay re-enables `withGlobalTauri` (the specs
+reach the app via `window.__TAURI__`); production builds ship it off. Headless rendering env
 (`WEBKIT_DISABLE_DMABUF_RENDERER`/`WEBKIT_DISABLE_COMPOSITING_MODE`, needed under
 Xvfb) is set by the config automatically.
 

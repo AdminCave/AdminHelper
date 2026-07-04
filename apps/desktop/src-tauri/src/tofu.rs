@@ -34,9 +34,6 @@ use url::Url;
 
 use crate::error::AppError;
 
-/// Keyring service shared with `auth.rs` / `password.rs`.
-const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
-
 // ── Pure logic (unit-tested) ──────────────────────────────────────────
 
 /// SHA-256 of a leaf certificate's DER, lower-case hex. This is what we pin.
@@ -184,62 +181,17 @@ fn keyring_key(identity: &str) -> String {
 // A keyring read error (locked, transient) degrades to "no pin", i.e. first-use
 // capture — never fail-closed, matching the lenient keyring handling elsewhere.
 // The handshake signature check still proves the server holds the key.
-#[cfg(unix)]
 fn keyring_read(identity: &str) -> Option<String> {
-    use keyring::Entry;
-    Entry::new(KEYRING_SERVICE, &keyring_key(identity))
-        .ok()?
-        .get_password()
-        .ok()
+    crate::keyring_store::get(&keyring_key(identity))
 }
 
-#[cfg(unix)]
 fn keyring_write(identity: &str, fingerprint: &str) {
-    use keyring::Entry;
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE, &keyring_key(identity)) {
-        let _ = entry.set_password(fingerprint);
-    }
+    let _ = crate::keyring_store::set(&keyring_key(identity), fingerprint);
 }
 
-#[cfg(unix)]
 fn keyring_delete(identity: &str) {
-    use keyring::Entry;
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE, &keyring_key(identity)) {
-        let _ = entry.delete_credential();
-    }
+    let _ = crate::keyring_store::delete(&keyring_key(identity));
 }
-
-#[cfg(target_os = "windows")]
-fn keyring_read(identity: &str) -> Option<String> {
-    crate::password::windows_read_credential(&keyring_key(identity))
-        .ok()
-        .filter(|value| !value.is_empty())
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_write(identity: &str, fingerprint: &str) {
-    let _ = crate::password::windows_store_credential(
-        &keyring_key(identity),
-        "adminhelper",
-        fingerprint,
-    );
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_delete(identity: &str) {
-    let _ = crate::password::windows_delete_credential(&keyring_key(identity));
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_read(_identity: &str) -> Option<String> {
-    None
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_write(_identity: &str, _fingerprint: &str) {}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_delete(_identity: &str) {}
 
 // ── rustls verifier ───────────────────────────────────────────────────
 

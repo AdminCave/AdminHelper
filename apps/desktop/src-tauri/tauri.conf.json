@@ -9,7 +9,7 @@
     "frontendDist": "../ui/dist"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "enableGTKAppId": true,
     "windows": [
       {

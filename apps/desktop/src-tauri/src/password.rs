@@ -55,15 +55,14 @@ pub fn rdp_storage_key_required(connection: &Connection) -> Result<String, AppEr
 #[cfg(unix)]
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
     use keyring::{Entry, Error as KeyringError};
-    const PASSWORD_SERVICE: &str = "com.admincave.adminhelper";
 
     let key = match rdp_storage_key(connection) {
         Some(value) => value,
         None => return Ok(None),
     };
 
-    let entry =
-        Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
+    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
+        .map_err(|err| AppError::Keyring(err.to_string()))?;
     match entry.get_password() {
         Ok(password) => Ok(Some(password)),
         Err(KeyringError::NoEntry) => Ok(None),
@@ -74,11 +73,10 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
 #[cfg(unix)]
 pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<(), AppError> {
     use keyring::Entry;
-    const PASSWORD_SERVICE: &str = "com.admincave.adminhelper";
 
     let key = rdp_storage_key_required(connection)?;
-    let entry =
-        Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
+    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
+        .map_err(|err| AppError::Keyring(err.to_string()))?;
     entry
         .set_password(password)
         .map_err(|err| AppError::Keyring(err.to_string()))?;
@@ -88,14 +86,13 @@ pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<
 #[cfg(unix)]
 pub fn delete_password_keyring(connection: &Connection) -> Result<(), AppError> {
     use keyring::{Entry, Error as KeyringError};
-    const PASSWORD_SERVICE: &str = "com.admincave.adminhelper";
 
     let key = match rdp_storage_key(connection) {
         Some(value) => value,
         None => return Ok(()),
     };
-    let entry =
-        Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
+    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
+        .map_err(|err| AppError::Keyring(err.to_string()))?;
     match entry.delete_credential() {
         Ok(_) => Ok(()),
         Err(KeyringError::NoEntry) => Ok(()),

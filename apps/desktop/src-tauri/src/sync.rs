@@ -15,7 +15,7 @@ pub async fn sync_connections(
     validate_https_url(&url)?;
     // Same TOFU-pinning client as the authenticated paths (https-only is enforced
     // above; build_client adds the pinning on the self-signed path).
-    let client = crate::auth::build_client(&url, allow_self_signed)?;
+    let client = crate::http_client::build_client(&url, allow_self_signed)?;
     let response = client.get(&url).send().await?.error_for_status()?;
     // Parse leniently like fetch_connections_jwt: the server list may hold kinds
     // the launcher can't open (or malformed rows) — skip those instead of failing
