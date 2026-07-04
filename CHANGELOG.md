@@ -5,6 +5,35 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.39.0] - 2026-07-04
+
+### Changed
+
+- **Projekt in die Admin-Cave-Organisation umgezogen.** Repo, Container-Registry
+  (`ghcr.io/admincave/*`), Projekt-URLs und die Homepage (`admincave.com`) verweisen jetzt
+  auf die Organisation; die Release-Signaturschlüssel (minisign + GPG) wurden neu erzeugt.
+
+### Fixed
+
+- **Agent: statisch gelinktes Linux-Binary (`CGO_ENABLED=0`).** Das `.deb`/`.rpm` lief
+  bisher nur auf Systemen mit mindestens der glibc des Build-Hosts; auf älteren Distros
+  (RHEL/Rocky/Alma 8, glibc 2.28) brach der Agent mit `GLIBC_2.34 not found` ab. Der Agent
+  ist reines Go (gopsutil liest `/proc`), daher erzeugt `CGO_ENABLED=0` ein voll statisches
+  Binary, das auf jeder glibc läuft.
+- **Agenten-Provisionierung unter erzwungenem mTLS (`MTLS_ENFORCE=true`).** Ein frisch
+  installierter Agent konnte sich nicht gegen einen bereits mTLS-erzwungenen Server
+  provisionieren — sein `provision/activate`-Aufruf traf die zertifikatspflichtige
+  Data-Plane (:443), bevor er ein Client-Zertifikat besaß. Die token-gesicherte
+  Bootstrap-Route wird jetzt (wie `/enroll`) zertifikatslos auf der Enrollment-Plane (:8444)
+  bedient; die Data-Plane (:443) bleibt unverändert zertifikatspflichtig.
+
+### Added
+
+- **Verteilte Multi-Host-Integrationstests via crabbox** (Entwickler-Tooling): der schwere
+  Test-Tier (echter Stack, Cross-Host-mTLS, `.deb`/`.rpm`-Installation, 3-Host-FRP-Tunnel,
+  Monitoring-Closed-Loop, Desktop-GUI-E2E) läuft auf ephemeren Proxmox-VMs, mit einem
+  schnellen Warm-Reuse-Loop + Auto-Debug bei Fehlern. Siehe `DEVELOPMENT.md`.
+
 ## [0.38.0] - 2026-06-23
 
 ### Added
@@ -1851,6 +1880,8 @@ ueber einen Multi-Stage-Build ausgeliefert.
 
 Aeltere Releases siehe Git-Tags `v0.7.0` bis `v0.16.0`.
 
+[0.39.0]: https://github.com/AdminCave/AdminHelper/releases/tag/v0.39.0
+[0.38.0]: https://github.com/AdminCave/AdminHelper/releases/tag/v0.38.0
 [0.37.2]: https://github.com/AdminCave/AdminHelper/releases/tag/v0.37.2
 [0.37.1]: https://github.com/AdminCave/AdminHelper/releases/tag/v0.37.1
 [0.37.0]: https://github.com/AdminCave/AdminHelper/releases/tag/v0.37.0
