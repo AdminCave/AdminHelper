@@ -65,7 +65,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  async function handleModalClose(created?: { token?: string | null }) {
+  function handleModalClose(created?: { token?: string | null }) {
     modalOpen = false;
     editing = null;
     if (created?.token) {
@@ -73,7 +73,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       tokenTitle = $t('toast.hook.created');
       tokenOpen = true;
     }
-    await load();
+    // No refetch: HookModal writes through the hooks store, so the list is current.
   }
 
   async function removeHook(h: Hook) {

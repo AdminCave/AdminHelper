@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
   import { showToast } from '$lib/stores/notifications';
-  import * as api from '$lib/api/hooks';
+  import { hooks } from '$lib/stores/hooks';
   import { HOOK_EVENTS, HOOK_INTERVAL_PRESETS } from '$lib/utils/hooks';
   import type { HookCreate, HookDetail, HookType, HookUpdate } from '$lib/api/types';
 
@@ -90,7 +90,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         };
         if (isEvent) payload.event_triggers = [...events];
         if (isSchedule) payload.schedule_interval = intervalValue;
-        await api.update(editing.id, payload);
+        await hooks.update(editing.id, payload);
         showToast($t('toast.hook.saved'));
         onClose();
       } else {
@@ -102,7 +102,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         };
         if (isEvent) payload.event_triggers = [...events];
         if (isSchedule) payload.schedule_interval = intervalValue;
-        const created = await api.create(payload);
+        const created = await hooks.create(payload);
         if (hookType === 'webhook' && created.token) {
           onClose({ token: created.token });
         } else {

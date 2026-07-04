@@ -51,9 +51,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     modalOpen = true;
   }
 
-  async function handleClose() {
+  function handleClose() {
     modalOpen = false;
-    await load();
+    // No refetch: UserModal writes through the users store, so the list is current.
   }
 
   async function removeUser(u: User) {

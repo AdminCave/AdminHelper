@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import type { Hook } from '$lib/api/types';
+import type { Hook, HookCreate, HookCreateResult, HookDetail, HookUpdate } from '$lib/api/types';
 import * as api from '$lib/api/hooks';
 
 const _hooks = writable<Hook[]>([]);
@@ -13,6 +13,18 @@ export const hooks = {
 
   async refresh(): Promise<void> {
     _hooks.set(await api.list());
+  },
+
+  async create(data: HookCreate): Promise<HookCreateResult> {
+    const created = await api.create(data);
+    _hooks.update((list) => [...list, created]);
+    return created;
+  },
+
+  async update(id: string, data: HookUpdate): Promise<HookDetail> {
+    const updated = await api.update(id, data);
+    _hooks.update((list) => list.map((h) => (h.id === id ? { ...h, ...updated } : h)));
+    return updated;
   },
 
   async remove(id: string): Promise<void> {

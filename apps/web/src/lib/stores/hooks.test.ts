@@ -11,6 +11,8 @@ import type { Hook } from '$lib/api/types';
 
 vi.mock('$lib/api/hooks', () => ({
   list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
   remove: vi.fn(),
   toggle: vi.fn(),
 }));
@@ -39,6 +41,22 @@ describe('hooks store', () => {
     await hooks.toggle('a');
     expect(get(hooks).find((x) => x.id === 'a')?.enabled).toBe(false);
     expect(get(hooks).find((x) => x.id === 'b')?.enabled).toBe(true);
+  });
+
+  it('create appends the returned hook and returns it (with token)', async () => {
+    await seed([h('a')]);
+    vi.mocked(api.create).mockResolvedValue({ ...h('b'), script: '', token: 'tok' });
+    const created = await hooks.create({ name: 'b', hook_type: 'webhook', script: '' });
+    expect(get(hooks).map((x) => x.id)).toEqual(['a', 'b']);
+    expect(created.token).toBe('tok');
+  });
+
+  it('update merges the returned fields onto the matching hook only', async () => {
+    await seed([h('a'), h('b')]);
+    vi.mocked(api.update).mockResolvedValue({ ...h('a'), script: '', name: 'renamed' });
+    await hooks.update('a', { name: 'renamed' });
+    expect(get(hooks).find((x) => x.id === 'a')?.name).toBe('renamed');
+    expect(get(hooks).find((x) => x.id === 'b')?.name).toBe('b');
   });
 
   it('remove drops the entry by id', async () => {
