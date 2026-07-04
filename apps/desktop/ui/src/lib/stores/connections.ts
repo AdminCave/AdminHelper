@@ -187,23 +187,25 @@ export async function refreshFromServer(): Promise<void> {
   }
 }
 
-export function countByKind(): Record<ConnectionKind | 'total', number> {
-  const items = get(_state).items;
-  return {
-    total: items.length,
-    ssh: items.filter((c) => c.kind === 'ssh').length,
-    rdp: items.filter((c) => c.kind === 'rdp').length,
-    web: items.filter((c) => c.kind === 'web').length,
-  };
-}
+export const kindCounts = derived(
+  _state,
+  ($s): Record<ConnectionKind | 'total', number> => ({
+    total: $s.items.length,
+    ssh: $s.items.filter((c) => c.kind === 'ssh').length,
+    rdp: $s.items.filter((c) => c.kind === 'rdp').length,
+    web: $s.items.filter((c) => c.kind === 'web').length,
+  }),
+);
 
-export function recentConnections(limit = 5): Connection[] {
-  return get(_state)
-    .items.filter((c) => c.lastUsed)
+// The dashboard's "recently used" list: most-recent first, capped.
+const RECENT_LIMIT = 5;
+export const recentConnections = derived(_state, ($s): Connection[] =>
+  $s.items
+    .filter((c) => c.lastUsed)
     .sort((a, b) => {
       const ta = a.lastUsed ? Date.parse(a.lastUsed) : 0;
       const tb = b.lastUsed ? Date.parse(b.lastUsed) : 0;
       return tb - ta;
     })
-    .slice(0, limit);
-}
+    .slice(0, RECENT_LIMIT),
+);

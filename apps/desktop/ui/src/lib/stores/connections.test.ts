@@ -25,7 +25,7 @@ import {
   remove,
   patchInMemory,
   clearInMemory,
-  countByKind,
+  kindCounts,
   recentConnections,
 } from './connections';
 
@@ -224,7 +224,7 @@ describe('connections store', () => {
     });
   });
 
-  describe('countByKind', () => {
+  describe('kindCounts', () => {
     it('counts per kind and total', async () => {
       await seed([
         conn({ id: '1', kind: 'ssh' }),
@@ -232,11 +232,11 @@ describe('connections store', () => {
         conn({ id: '3', kind: 'rdp' }),
         conn({ id: '4', kind: 'web' }),
       ]);
-      expect(countByKind()).toEqual({ total: 4, ssh: 2, rdp: 1, web: 1 });
+      expect(get(kindCounts)).toEqual({ total: 4, ssh: 2, rdp: 1, web: 1 });
     });
 
     it('is all-zero for an empty store', () => {
-      expect(countByKind()).toEqual({ total: 0, ssh: 0, rdp: 0, web: 0 });
+      expect(get(kindCounts)).toEqual({ total: 0, ssh: 0, rdp: 0, web: 0 });
     });
   });
 
@@ -248,16 +248,16 @@ describe('connections store', () => {
         conn({ id: 'new', lastUsed: '2024-06-01T00:00:00Z' }),
         conn({ id: 'mid', lastUsed: '2024-03-01T00:00:00Z' }),
       ]);
-      expect(recentConnections().map((c) => c.id)).toEqual(['new', 'mid', 'old']);
+      expect(get(recentConnections).map((c) => c.id)).toEqual(['new', 'mid', 'old']);
     });
 
-    it('honors the limit', async () => {
-      await seed([
-        conn({ id: 'a', lastUsed: '2024-01-01T00:00:00Z' }),
-        conn({ id: 'b', lastUsed: '2024-02-01T00:00:00Z' }),
-        conn({ id: 'c', lastUsed: '2024-03-01T00:00:00Z' }),
-      ]);
-      expect(recentConnections(2).map((c) => c.id)).toEqual(['c', 'b']);
+    it('caps at 5, newest first', async () => {
+      await seed(
+        ['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) =>
+          conn({ id, lastUsed: `2024-0${i + 1}-01T00:00:00Z` }),
+        ),
+      );
+      expect(get(recentConnections).map((c) => c.id)).toEqual(['f', 'e', 'd', 'c', 'b']);
     });
   });
 });

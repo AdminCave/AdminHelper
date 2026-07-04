@@ -5,35 +5,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { navigate } from '$lib/router';
-  import {
-    connections,
-    load as loadConnections,
-    countByKind,
-    recentConnections,
-  } from '$lib/stores/connections';
+  import { load as loadConnections, kindCounts, recentConnections } from '$lib/stores/connections';
   import { timeAgo } from '$lib/utils/timeAgo';
   import type { Connection } from '$lib/bridge/types';
   import { initiateConnect } from '$lib/stores/connectFlow';
   import { openEditor } from '$lib/stores/editor';
   import { t } from '$lib/i18n';
 
-  let stats = $state({ total: 0, ssh: 0, rdp: 0, web: 0 });
-  let recent = $state<Connection[]>([]);
-
-  function refresh(): void {
-    stats = countByKind();
-    recent = recentConnections(5);
-  }
-
-  onMount(async () => {
-    await loadConnections();
-    refresh();
-  });
-
-  const unsubscribe = connections.subscribe(refresh);
-  onDestroy(unsubscribe);
+  onMount(loadConnections);
 
   function kindColor(kind: Connection['kind']): string {
     if (kind === 'ssh') return 'var(--accent)';
@@ -48,19 +29,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <div class="dash-stats">
   <div class="stat-card --accent">
-    <div class="stat-value">{stats.total}</div>
+    <div class="stat-value">{$kindCounts.total}</div>
     <div class="stat-label">{$t('dashboard.total')}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">{stats.ssh}</div>
+    <div class="stat-value">{$kindCounts.ssh}</div>
     <div class="stat-label">{$t('dashboard.ssh')}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">{stats.rdp}</div>
+    <div class="stat-value">{$kindCounts.rdp}</div>
     <div class="stat-label">{$t('dashboard.rdp')}</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value">{stats.web}</div>
+    <div class="stat-value">{$kindCounts.web}</div>
     <div class="stat-label">{$t('dashboard.web')}</div>
   </div>
 </div>
@@ -68,9 +49,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="dash-grid">
   <div class="dash-panel">
     <div class="dash-panel-title">{$t('dashboard.recent')}</div>
-    {#if recent.length > 0}
+    {#if $recentConnections.length > 0}
       <div class="dash-list">
-        {#each recent as conn (conn.id)}
+        {#each $recentConnections as conn (conn.id)}
           <div
             class="dash-list-item"
             role="button"
