@@ -9,8 +9,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   interface ConfirmRequest {
     message: string;
-    confirmLabel: string;
-    cancelLabel: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
     resolve: (ok: boolean) => void;
   }
 
@@ -27,8 +27,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return new Promise((resolve) => {
       _pending.set({
         message,
-        confirmLabel: opts.confirmLabel ?? 'OK',
-        cancelLabel: opts.cancelLabel ?? 'Abbrechen',
+        confirmLabel: opts.confirmLabel,
+        cancelLabel: opts.cancelLabel,
         resolve,
       });
     });
@@ -40,9 +40,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from './Button.svelte';
   import { t } from '$lib/i18n';
 
-  let request = $state<ConfirmRequest | null>(null);
-
-  _pending.subscribe((v) => (request = v));
+  // Auto-subscribed derived value (no manual subscribe + no leak): $_pending
+  // reads the module store, unsubscribed automatically on destroy.
+  const request = $derived($_pending);
 
   function settle(ok: boolean) {
     request?.resolve(ok);
@@ -52,13 +52,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <Modal
   open={request !== null}
-  title={$t('label.status')}
+  title={$t('confirm.title')}
   width="420px"
   onClose={() => settle(false)}
 >
   <p style="margin:0">{request?.message ?? ''}</p>
   {#snippet footer()}
-    <Button variant="ghost" onclick={() => settle(false)}>{request?.cancelLabel}</Button>
-    <Button variant="danger" onclick={() => settle(true)}>{request?.confirmLabel}</Button>
+    <Button variant="ghost" onclick={() => settle(false)}>
+      {request?.cancelLabel ?? $t('action.cancel')}
+    </Button>
+    <Button variant="danger" onclick={() => settle(true)}>
+      {request?.confirmLabel ?? $t('action.confirm')}
+    </Button>
   {/snippet}
 </Modal>

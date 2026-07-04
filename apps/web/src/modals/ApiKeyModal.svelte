@@ -61,12 +61,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
-    <Button
-      variant="primary"
-      type="submit"
-      disabled={submitting}
-      onclick={() => (document.getElementById('apikey-form') as HTMLFormElement)?.requestSubmit()}
-    >
+    <Button variant="primary" type="submit" disabled={submitting} form="apikey-form">
       {$t('action.create')}
     </Button>
   {/snippet}

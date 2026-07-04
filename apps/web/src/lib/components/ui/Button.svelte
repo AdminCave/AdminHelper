@@ -15,6 +15,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
     variant?: Variant;
     size?: Size;
     type?: ButtonType;
+    // Associates a type="submit" button with a form by id, so a footer button
+    // outside the <form> submits it natively — no document.getElementById (2.139).
+    form?: string;
     disabled?: boolean;
     title?: string;
     onclick?: (e: MouseEvent) => void;
@@ -26,6 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     variant = 'primary',
     size = 'normal',
     type = 'button',
+    form,
     disabled = false,
     title = '',
     onclick,
@@ -38,6 +42,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   );
 </script>
 
-<button {type} class={cls} {disabled} {title} {onclick}>
+<button {type} {form} class={cls} {disabled} {title} {onclick}>
   {@render children()}
 </button>

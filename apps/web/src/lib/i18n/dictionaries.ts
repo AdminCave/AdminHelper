@@ -33,6 +33,8 @@ export const translations: Translations = {
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Speichern',
     'action.cancel': 'Abbrechen',
+    'action.confirm': 'Bestätigen',
+    'confirm.title': 'Bestätigung',
     'action.delete': 'Löschen',
     'action.edit': 'Bearbeiten',
     'action.close': 'Schließen',
@@ -46,7 +48,6 @@ export const translations: Translations = {
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
     'label.type': 'Typ',
-    'label.status': 'Status',
     'label.created': 'Erstellt',
 
     // ── Server Table Headers ──────────────────────────────────────────
@@ -256,6 +257,8 @@ export const translations: Translations = {
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Save',
     'action.cancel': 'Cancel',
+    'action.confirm': 'Confirm',
+    'confirm.title': 'Confirm',
     'action.delete': 'Delete',
     'action.edit': 'Edit',
     'action.close': 'Close',
@@ -269,7 +272,6 @@ export const translations: Translations = {
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
     'label.type': 'Type',
-    'label.status': 'Status',
     'label.created': 'Created',
 
     // ── Server Table Headers ──────────────────────────────────────────
