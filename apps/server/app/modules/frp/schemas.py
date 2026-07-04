@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import re
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -125,7 +125,7 @@ class FrpTunnelCreate(BaseModel):
     server_id: str
     frp_config_id: str
     name: str  # proxy name, e.g. "k01-lnx1-ssh"
-    tunnel_type: str  # "stcp" or "https"
+    tunnel_type: Literal["stcp", "https"]
     protocol: str  # "ssh", "rdp", "web"
     local_ip: str = "127.0.0.1"
     local_port: int
@@ -149,7 +149,7 @@ class FrpTunnelCreate(BaseModel):
 
 class FrpTunnelUpdate(BaseModel):
     name: Optional[str] = None
-    tunnel_type: Optional[str] = None
+    tunnel_type: Optional[Literal["stcp", "https"]] = None
     protocol: Optional[str] = None
     local_ip: Optional[str] = None
     local_port: Optional[int] = None

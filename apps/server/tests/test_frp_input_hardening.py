@@ -27,6 +27,15 @@ def _tunnel(**over):
     return FrpTunnelCreate(**base)
 
 
+def test_tunnel_type_rejects_unknown_value():
+    # 2.46: tunnel_type is a Literal, so an unknown value is rejected at the schema
+    # boundary (Pydantic -> 422), not by an ad-hoc router check (-> 400).
+    with pytest.raises(ValidationError):
+        _tunnel(tunnel_type="ftp")
+    assert _tunnel(tunnel_type="stcp").tunnel_type == "stcp"
+    assert _tunnel(tunnel_type="https").tunnel_type == "https"
+
+
 def test_tunnel_name_rejects_toml_breakers():
     with pytest.raises(ValidationError):
         _tunnel(name='evil"\nauth.token = "attacker')

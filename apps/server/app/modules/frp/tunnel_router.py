@@ -57,9 +57,6 @@ def create_tunnel(
     if existing:
         raise HTTPException(status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits")
 
-    if data.tunnel_type not in ("stcp", "https"):
-        raise HTTPException(status_code=400, detail="tunnel_type muss 'stcp' oder 'https' sein")
-
     secret = data.secret_key
     if data.tunnel_type == "stcp" and not secret:
         secret = FrpTunnel.generate_secret()
@@ -160,9 +157,6 @@ def update_tunnel(
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
     sent = data.model_fields_set
-
-    if "tunnel_type" in sent and data.tunnel_type not in ("stcp", "https"):
-        raise HTTPException(status_code=400, detail="tunnel_type muss 'stcp' oder 'https' sein")
 
     if "name" in sent and data.name != tunnel.name:
         existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()

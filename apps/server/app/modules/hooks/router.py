@@ -105,8 +105,6 @@ def _validate_create(data: HookCreate) -> None:
                 status_code=422, detail="schedule_interval erforderlich für Scheduled Hooks"
             )
         _validate_schedule_interval(data.schedule_interval)
-    else:
-        raise HTTPException(status_code=422, detail=f"Unbekannter Hook-Typ: {data.hook_type!r}")
 
 
 @router.get("", response_model=list[HookResponse])
