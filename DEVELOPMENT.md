@@ -80,6 +80,34 @@ ruff check apps/server apps/monitoring          # Lint (mit --fix zum Beheben)
 ruff format apps/server apps/monitoring         # Formatieren
 ```
 
+### Python-Tests lokal (ohne Docker)
+
+`monitoring` und `ca-issuer` sind reine Logik-Suiten und brauchen **kein** Postgres.
+`ca-issuer` benötigt allerdings `httpx` (nur der starlette-`TestClient` der Tests, nicht
+die App selbst — steht daher nicht in `requirements.in`):
+
+```bash
+apps/monitoring/.venv/bin/python -m pytest -q
+apps/ca-issuer/.venv/bin/pip install httpx      # einmalig
+apps/ca-issuer/.venv/bin/python -m pytest -q
+```
+
+`server`-pytest braucht ein Postgres — entweder testcontainers (Docker) **oder** ein
+injiziertes `DATABASE_URL` (conftest wählt automatisch). Docker-frei einmalig eine
+Test-Rolle + -DB anlegen. Wichtig: `CREATEDB` ist Pflicht, weil die Alembic-Smoke
+(`test_migrations_smoke.py`) pro Lauf eine Wegwerf-DB anlegt:
+
+```bash
+sudo -u postgres psql \
+  -c "CREATE ROLE adminhelper LOGIN CREATEDB PASSWORD 'adminhelper';" \
+  -c "CREATE DATABASE adminhelper_test OWNER adminhelper;"
+
+# DATABASE_URL NUR für die server-Suite setzen — global gesetzt würde es
+# monitorings Alembic-Smoke fälschlich gegen das falsche Schema aktivieren:
+DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_test" \
+  apps/server/.venv/bin/python -m pytest -q
+```
+
 ### Go Toolchain (Agent)
 
 ```bash

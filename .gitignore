@@ -118,3 +118,9 @@ build-deb/
 /apps/web/test-results/
 /apps/web/playwright-report/
 /apps/web/playwright/.cache/
+
+# pytest cache (lokal)
+.pytest_cache/
+
+# Lokale Dev-Env-Helferdatei (Toolchain-PATH + Test-DB-URL)
+/.devenv.sh
