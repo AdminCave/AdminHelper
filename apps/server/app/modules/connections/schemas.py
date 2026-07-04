@@ -7,25 +7,6 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class Connection(BaseModel):
-    id: str
-    name: str
-    kind: str
-    host: Optional[str] = ""
-    port: Optional[int] = None
-    username: Optional[str] = ""
-    domain: Optional[str] = ""
-    keyPath: Optional[str] = ""
-    url: Optional[str] = ""
-    notes: Optional[str] = ""
-    tags: Optional[list[str]] = []
-    trustCert: Optional[bool] = False
-    lastUsed: Optional[str] = None
-    scalingMode: Optional[str] = None
-
-    model_config = {"extra": "allow"}
-
-
 class ConnectionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     # The desktop/web clients only render ssh/rdp/web; reject anything else at

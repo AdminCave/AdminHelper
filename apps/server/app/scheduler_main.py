@@ -19,7 +19,6 @@ app.scheduler_main
 """
 
 import logging
-import os
 import signal
 import threading
 
@@ -27,10 +26,9 @@ logger = logging.getLogger("adminhelper.scheduler")
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)-8s %(name)s %(message)s",
-    )
+    from app.core.logging_config import configure_logging
+
+    configure_logging()
     # Import after logging is configured. Importing the scheduler module pulls in
     # app.core.config (DATA_DIR, DATABASE_URL) the same way the web process does.
     from app.modules.hooks.scheduler import (

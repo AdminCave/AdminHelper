@@ -138,8 +138,6 @@ def generate_frpc_toml(
         tunnels: All tunnels belonging to this host.
         frpc_user: The frpc user identifier (e.g. "k01-lnx1").
     """
-    import json as _json
-
     lines = [
         f'serverAddr = "{config.server_addr}"',
         f"serverPort = {config.bind_port}",
@@ -174,7 +172,7 @@ def generate_frpc_toml(
 
         if tunnel.extra_config:
             extra = (
-                _json.loads(tunnel.extra_config)
+                json.loads(tunnel.extra_config)
                 if isinstance(tunnel.extra_config, str)
                 else tunnel.extra_config
             )

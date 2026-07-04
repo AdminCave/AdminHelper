@@ -127,8 +127,3 @@ class FrpTunnel(Base):
             "tags": json.loads(self.tags) if self.tags else [],
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
-
-
-# ProvisionToken moved to app.modules.provisioning.models since v0.23.0.
-# Re-export for backwards compatibility (e.g. test-fixture imports).
-from app.modules.provisioning.models import ProvisionToken  # noqa: E402,F401
