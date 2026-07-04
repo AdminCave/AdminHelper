@@ -79,7 +79,7 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		if err != nil {
 			return fmt.Errorf("Config base64 decodieren: %w", err)
 		}
-		if err := os.WriteFile(config.FrpConfigFile(), decoded, 0600); err != nil {
+		if err := os.WriteFile(config.FrpConfigFile(), rewriteIdentityPaths(decoded), 0600); err != nil {
 			return fmt.Errorf("frpc.toml schreiben: %w", err)
 		}
 		logger.Infof("frpc.toml geschrieben")
