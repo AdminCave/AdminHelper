@@ -11,6 +11,26 @@
 
 use crate::error::AppError;
 
+/// Map an HTTP method to a request builder, rejecting unknown verbs instead of
+/// silently falling back to GET: a frontend typo ("post") or an unsupported verb
+/// ("PATCH") would otherwise turn a mutation into a read that "vanishes" with no
+/// error to diagnose.
+fn build_request(
+    client: &reqwest::Client,
+    method: &str,
+    url: &str,
+) -> Result<reqwest::RequestBuilder, AppError> {
+    match method {
+        "GET" => Ok(client.get(url)),
+        "POST" => Ok(client.post(url)),
+        "PUT" => Ok(client.put(url)),
+        "DELETE" => Ok(client.delete(url)),
+        other => Err(AppError::Validation(format!(
+            "Nicht unterstuetzte HTTP-Methode: {other}"
+        ))),
+    }
+}
+
 /// Forward a JSON API call to `server_url` presenting the session `token`.
 /// Works around WebView TLS restrictions for self-signed certs by going through
 /// the shared reqwest client factory.
@@ -34,12 +54,7 @@ pub async fn forward(
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
-    let mut req = match method {
-        "POST" => client.post(&url),
-        "PUT" => client.put(&url),
-        "DELETE" => client.delete(&url),
-        _ => client.get(&url),
-    };
+    let mut req = build_request(&client, method, &url)?;
 
     req = req.header("Authorization", format!("Bearer {token}"));
 
@@ -88,5 +103,31 @@ pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
         Ok(_) => Ok(true),
         Err(e) if e.is_connect() => Ok(false), // TLS/connection error
         Err(_) => Ok(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_request_rejects_unknown_methods() {
+        let client = reqwest::Client::new();
+        for m in ["GET", "POST", "PUT", "DELETE"] {
+            assert!(
+                build_request(&client, m, "https://x/y").is_ok(),
+                "{m} should be ok"
+            );
+        }
+        // A typo or unsupported verb is rejected, not silently sent as GET.
+        for m in ["PATCH", "post", "HEAD", ""] {
+            assert!(
+                matches!(
+                    build_request(&client, m, "https://x/y"),
+                    Err(AppError::Validation(_))
+                ),
+                "{m:?} should be rejected"
+            );
+        }
     }
 }
