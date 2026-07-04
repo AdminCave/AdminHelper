@@ -123,13 +123,15 @@ def delete_server(
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server nicht gefunden")
-    fire_event("server.deleted", {"id": server.id, "name": server.name})
     server_name = server.name
     # Deprovision the agent's mTLS identity (CN = stable server_id, tunnel scope):
     # the ca-issuer stops renewing its cert and the data plane rejects it (F1).
     revoke_identity(db, server.id, SCOPE_AGENT)
     db.delete(server)
     db.commit()
+    # Fire only after the commit succeeds — a rolled-back delete must not tell all
+    # admins "server removed" for a server that still exists (2.48).
+    fire_event("server.deleted", {"id": server_id, "name": server_name})
     audit.record(
         db,
         "server.deleted",

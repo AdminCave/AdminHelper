@@ -257,10 +257,12 @@ def delete_tunnel(
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
-    fire_event("frp.tunnel.deleted", {"id": tunnel.id, "name": tunnel.name})
     tunnel_name = tunnel.name
     db.delete(tunnel)
     db.commit()
+    # Fire only after the commit succeeds — a rolled-back delete must not leave
+    # hooks/notifications having observed a deletion that never happened (2.48).
+    fire_event("frp.tunnel.deleted", {"id": tunnel_id, "name": tunnel_name})
     audit.record(
         db,
         "frp.tunnel.deleted",

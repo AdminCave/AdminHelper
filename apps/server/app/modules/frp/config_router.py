@@ -138,10 +138,12 @@ def delete_server_config(
     config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     if not config:
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
-    fire_event("frp.config.deleted", {"id": config.id, "name": config.name})
     config_name = config.name
     db.delete(config)
     db.commit()
+    # Fire only after the commit succeeds — a rolled-back delete must not leave
+    # hooks/notifications having observed a deletion that never happened (2.48).
+    fire_event("frp.config.deleted", {"id": config_id, "name": config_name})
     remove_frps_config()
     audit.record(
         db,
