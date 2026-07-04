@@ -5,7 +5,9 @@
 package monitor
 
 import (
+	"math"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -112,7 +114,7 @@ func collectUptime() int {
 
 func hasPrefix(s string, prefixes []string) bool {
 	for _, p := range prefixes {
-		if len(s) >= len(p) && s[:len(p)] == p {
+		if strings.HasPrefix(s, p) {
 			return true
 		}
 	}
@@ -120,9 +122,9 @@ func hasPrefix(s string, prefixes []string) bool {
 }
 
 func round1(f float64) float64 {
-	return float64(int(f*10+0.5)) / 10
+	return math.Round(f*10) / 10
 }
 
 func round2(f float64) float64 {
-	return float64(int(f*100+0.5)) / 100
+	return math.Round(f*100) / 100
 }

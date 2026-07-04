@@ -19,7 +19,7 @@ import (
 // New creates an HTTP client with optional TLS settings: a pinned CA
 // certificate (cacert, PEM file path) or disabled verification (insecure).
 func New(cacert string, insecure bool, timeout time.Duration) (*http.Client, error) {
-	tlsCfg := &tls.Config{}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if insecure {
 		tlsCfg.InsecureSkipVerify = true
 	} else if cacert != "" {

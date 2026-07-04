@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const serviceName = "adminhelper-agent"
@@ -75,16 +76,30 @@ WantedBy=timers.target
 
 // Uninstall deregisters the AdminHelper agent service.
 func Uninstall() error {
-	exec.Command("systemctl", "stop", serviceName+".timer").Run()
-	exec.Command("systemctl", "disable", serviceName+".timer").Run()
-	exec.Command("systemctl", "stop", serviceName+".service").Run()
-	exec.Command("systemctl", "disable", serviceName+".service").Run()
+	// Best-effort teardown: a missing/already-stopped unit is fine, but a real
+	// failure (e.g. no root -> disable fails, timer keeps firing) must be visible
+	// rather than masked by the success line below.
+	for _, args := range [][]string{
+		{"stop", serviceName + ".timer"},
+		{"disable", serviceName + ".timer"},
+		{"stop", serviceName + ".service"},
+		{"disable", serviceName + ".service"},
+	} {
+		if err := exec.Command("systemctl", args...).Run(); err != nil {
+			fmt.Printf("WARNUNG: systemctl %s: %v\n", strings.Join(args, " "), err)
+		}
+	}
 
 	unitDir := "/etc/systemd/system"
-	os.Remove(filepath.Join(unitDir, serviceName+".service"))
-	os.Remove(filepath.Join(unitDir, serviceName+".timer"))
+	for _, unit := range []string{serviceName + ".service", serviceName + ".timer"} {
+		if err := os.Remove(filepath.Join(unitDir, unit)); err != nil && !os.IsNotExist(err) {
+			fmt.Printf("WARNUNG: %s entfernen: %v\n", unit, err)
+		}
+	}
 
-	exec.Command("systemctl", "daemon-reload").Run()
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+		fmt.Printf("WARNUNG: systemctl daemon-reload: %v\n", err)
+	}
 	fmt.Println("Service deinstalliert.")
 	return nil
 }

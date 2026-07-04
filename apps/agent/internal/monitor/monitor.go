@@ -47,7 +47,7 @@ func Init(p InitParams) error {
 		if _, err := os.Stat(cacert); err != nil {
 			return fmt.Errorf("CA-Zertifikat nicht gefunden: %s", cacert)
 		}
-		dest := config.MonitorDir() + "/ca.crt"
+		dest := config.MonitorCACert()
 		data, err := os.ReadFile(cacert)
 		if err != nil {
 			return err

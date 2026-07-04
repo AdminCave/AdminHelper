@@ -96,18 +96,13 @@ func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
 	exitCode := 0
 	if err != nil {
 		// Bits 0-2 (1,2,4) = real errors (CLI/device/command)
-		// Bits 3-7 (8+)    = warnings, JSON is still usable
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-			if exitCode&0x07 != 0 && len(out) == 0 {
-				return nil
-			}
-		} else {
-			return nil
+		// Bits 3-7 (8+)    = warnings, JSON is still usable -> keep the full
+		// exit code so the server can weigh bit 0x10 (prefail).
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok || len(out) == 0 {
+			return nil // no usable JSON
 		}
-		if len(out) == 0 {
-			return nil
-		}
+		exitCode = exitErr.ExitCode()
 	}
 
 	var raw smartctlJSON

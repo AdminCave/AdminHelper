@@ -21,6 +21,7 @@ func FrpHashFile() string        { return filepath.Join(FrpDir(), ".config-hash"
 func FrpPkiDir() string          { return filepath.Join(FrpDir(), "pki") }
 func FrpCACert() string          { return filepath.Join(FrpDir(), "ca.crt") }
 func MonitorConfFile() string    { return filepath.Join(MonitorDir(), "monitor.conf") }
+func MonitorCACert() string      { return filepath.Join(MonitorDir(), "ca.crt") }
 
 // AgentPkiDir is the base directory for the agent's enrolled mTLS identity
 // (ADR 0001: the client cert the agent presents on server pushes). Shared by the
