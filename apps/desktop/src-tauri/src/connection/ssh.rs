@@ -5,7 +5,7 @@
 use crate::error::AppError;
 use crate::models::Connection;
 use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape};
-use crate::validation::{required, validate_host, validate_no_control_chars};
+use crate::validation::required;
 
 fn build_ssh_command(args: &[String]) -> String {
     let mut parts = vec!["ssh".to_string()];
@@ -16,8 +16,10 @@ fn build_ssh_command(args: &[String]) -> String {
 }
 
 pub fn open_ssh(connection: &Connection) -> Result<(), AppError> {
+    // Host, user and key_path are validated at the boundary — open_connection runs
+    // validate_connection_input before this, and it's the sole caller. Only the
+    // empty-host guard stays: the boundary allows an empty host, we don't (2.80).
     let host = required(&connection.host, "Host")?;
-    validate_host(&host)?;
     let port = connection.port.unwrap_or(22);
     let mut args: Vec<String> = Vec::new();
     if port != 22 {
@@ -27,9 +29,6 @@ pub fn open_ssh(connection: &Connection) -> Result<(), AppError> {
     if let Some(key_path) = connection.key_path.as_ref() {
         let trimmed = key_path.trim();
         if !trimmed.is_empty() {
-            if trimmed.contains("..") {
-                return Err(AppError::Validation("Ungueltiger SSH Key Pfad".to_string()));
-            }
             args.push("-i".to_string());
             args.push(trimmed.to_string());
         }
@@ -37,7 +36,6 @@ pub fn open_ssh(connection: &Connection) -> Result<(), AppError> {
     let target = if let Some(username) = connection.username.as_ref() {
         let u = username.trim();
         if !u.is_empty() {
-            validate_no_control_chars(u, "Benutzer")?;
             format!("{u}@{host}")
         } else {
             host.to_string()
