@@ -32,6 +32,26 @@ from app.scheduler import add_check, remove_check
 
 logger = logging.getLogger("monitor.template_sync")
 
+# A pending scheduler mutation collected during a DB transaction:
+# ("add", check_id, interval) or ("remove", check_id, None).
+SchedulerAction = tuple[str, str, str | None]
+
+
+def _apply_scheduler_actions(actions: list[SchedulerAction]) -> None:
+    """Apply collected scheduler mutations AFTER the DB commit succeeded.
+
+    Mutating the running APScheduler before the rows are persisted (the old
+    behaviour) meant a failed/rolled-back commit left ghost jobs firing
+    execute_check for checks that never existed, or silently unscheduled checks.
+    Intervals are already validated at the schema boundary (TemplateCheckDef), so
+    add_check should not raise here for template-sourced checks.
+    """
+    for op, check_id, interval in actions:
+        if op == "add":
+            add_check(check_id, interval)
+        else:
+            remove_check(check_id)
+
 
 # ---------------------------------------------------------------------------
 # Variable Substitution
@@ -79,11 +99,12 @@ def sync_template(db: Session, template: MonitorTemplate) -> dict:
     total_created = 0
     total_updated = 0
     total_deleted = 0
+    actions: list[SchedulerAction] = []
 
     for assignment in assignments:
         variables = _build_variables(assignment)
         c, u, d = _sync_checks_for_server(
-            db, template.id, assignment.server_id, check_defs, variables
+            db, template.id, assignment.server_id, check_defs, variables, actions
         )
         total_created += c
         total_updated += u
@@ -97,6 +118,7 @@ def sync_template(db: Session, template: MonitorTemplate) -> dict:
         total_deleted += da
 
     db.commit()
+    _apply_scheduler_actions(actions)
 
     logger.info(
         "Template '%s' sync: %d erstellt, %d aktualisiert, %d geloescht (ueber %d Server)",
@@ -120,8 +142,10 @@ def _sync_checks_for_server(
     server_id: str,
     check_defs: list[dict],
     variables: dict,
+    actions: list[SchedulerAction],
 ) -> tuple[int, int, int]:
-    """Syncs check definitions for a single server."""
+    """Syncs check definitions for a single server. Scheduler mutations are
+    appended to `actions` (applied by the caller after commit), not run here."""
     existing = (
         db.query(MonitorCheck)
         .filter(MonitorCheck.template_id == template_id, MonitorCheck.server_id == server_id)
@@ -154,9 +178,9 @@ def _sync_checks_for_server(
             check.description = resolved.get("description")
 
             if check.enabled:
-                add_check(check.id, check.interval)
+                actions.append(("add", check.id, check.interval))
             else:
-                remove_check(check.id)
+                actions.append(("remove", check.id, None))
             updated += 1
         else:
             # Create
@@ -179,14 +203,14 @@ def _sync_checks_for_server(
             db.add(MonitorState(check_id=check_id, status="pending"))
 
             if check.enabled:
-                add_check(check_id, check.interval)
+                actions.append(("add", check_id, check.interval))
             created += 1
 
     # Delete: checks that are no longer in the template
     deleted = 0
     for def_id, check in existing_by_def_id.items():
         if def_id not in target_def_ids:
-            remove_check(check.id)
+            actions.append(("remove", check.id, None))
             db.delete(check)
             deleted += 1
 
@@ -286,6 +310,7 @@ def apply_template(
 
     check_ids = []
     alert_ids = []
+    actions: list[SchedulerAction] = []
 
     for check_def in check_defs:
         def_id = check_def.get("def_id", "")
@@ -310,7 +335,7 @@ def apply_template(
         db.add(MonitorState(check_id=check_id, status="pending"))
 
         if check.enabled:
-            add_check(check_id, check.interval)
+            actions.append(("add", check_id, check.interval))
         check_ids.append(check_id)
 
     for alert_def in alert_defs:
@@ -334,6 +359,7 @@ def apply_template(
         alert_ids.append(alert_id)
 
     db.commit()
+    _apply_scheduler_actions(actions)
     logger.info(
         "Template '%s' applied to server %s: %d checks, %d alerts",
         template.name,
@@ -351,6 +377,7 @@ def apply_template(
 
 def remove_template(db: Session, template_id: str, server_id: str) -> dict:
     """Removes the template assignment and deletes all associated checks/alerts."""
+    actions: list[SchedulerAction] = []
     # Delete checks
     checks = (
         db.query(MonitorCheck)
@@ -358,7 +385,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
         .all()
     )
     for check in checks:
-        remove_check(check.id)
+        actions.append(("remove", check.id, None))
         db.delete(check)
 
     # Delete alerts
@@ -380,6 +407,7 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
     ).delete()
 
     db.commit()
+    _apply_scheduler_actions(actions)
     logger.info(
         "Template %s removed from server %s: %d checks, %d alerts deleted",
         template_id,
@@ -397,10 +425,11 @@ def remove_template(db: Session, template_id: str, server_id: str) -> dict:
 
 def cleanup_server(db: Session, server_id: str) -> dict:
     """Deletes all monitoring data of a server (on server deletion)."""
+    actions: list[SchedulerAction] = []
     # Delete checks (incl. states via CASCADE)
     checks = db.query(MonitorCheck).filter(MonitorCheck.server_id == server_id).all()
     for check in checks:
-        remove_check(check.id)
+        actions.append(("remove", check.id, None))
         db.delete(check)
 
     # Delete alerts with match_server_id
@@ -417,6 +446,7 @@ def cleanup_server(db: Session, server_id: str) -> dict:
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
 
     db.commit()
+    _apply_scheduler_actions(actions)
     logger.info(
         "Server %s cleanup: %d checks, %d alerts deleted", server_id, len(checks), len(alerts)
     )

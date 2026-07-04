@@ -136,6 +136,20 @@ def test_apply_creates_checks_states_and_alerts(db):
     assert rule.match_server_id == "srv-1"
 
 
+def test_apply_does_not_schedule_when_commit_fails(db, monkeypatch):
+    """1.21: scheduler mutations run only AFTER a successful commit — a failed /
+    rolled-back commit must not leave ghost jobs behind."""
+    tpl = _template(db, [PING_DEF])
+
+    def _boom():
+        raise RuntimeError("commit fail")
+
+    monkeypatch.setattr(db, "commit", _boom)
+    with pytest.raises(RuntimeError):
+        apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    assert db.scheduled == []  # no job registered when the DB write did not commit
+
+
 # --- sync_template diffing ------------------------------------------------------
 
 
