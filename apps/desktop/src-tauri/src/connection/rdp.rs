@@ -294,16 +294,30 @@ fn linux_keyboard_layout_arg_from_ui_language(ui_language: Option<&str>) -> Stri
     format!("/kbd:layout:0x{lang_id:08X},lang:0x{lang_id:04X}")
 }
 
+/// The context every RDP output/exit monitor shares (audit 2.13): bundling the
+/// five hand-threaded fields keeps a new one from having to be added to three
+/// 7-arg signatures at once. Cheap to clone — Arcs, a String and an AppHandle.
 #[cfg(unix)]
-fn spawn_output_monitor(
-    mut reader: impl Read + Send + 'static,
+#[derive(Clone)]
+struct RdpWatch {
     emitted: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
     correlation_id: String,
     app: tauri::AppHandle,
-) {
+}
+
+#[cfg(unix)]
+fn spawn_output_monitor(mut reader: impl Read + Send + 'static, watch: RdpWatch) {
+    let RdpWatch {
+        emitted,
+        connected,
+        connected_at_ms,
+        started_at,
+        correlation_id,
+        app,
+    } = watch;
     std::thread::spawn(move || {
         let mut buffer: Vec<u8> = Vec::new();
         let mut chunk = [0u8; 1024];
@@ -335,15 +349,15 @@ fn spawn_output_monitor(
 }
 
 #[cfg(unix)]
-fn monitor_rdp_exit(
-    mut child: std::process::Child,
-    emitted: Arc<AtomicBool>,
-    connected: Arc<AtomicBool>,
-    connected_at_ms: Arc<AtomicU64>,
-    started_at: Instant,
-    correlation_id: String,
-    app: tauri::AppHandle,
-) {
+fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
+    let RdpWatch {
+        emitted,
+        connected,
+        connected_at_ms,
+        started_at,
+        correlation_id,
+        app,
+    } = watch;
     // Timeout thread
     {
         let emitted = emitted.clone();
@@ -429,47 +443,27 @@ fn spawn_rdp_with_password(
 
     feed_password_stdin(&mut child, password)?;
 
-    let emitted = Arc::new(AtomicBool::new(false));
     // Separate "connected" flag instead of `connected_at_ms == 0`: a
     // sub-millisecond connect would also store 0 and look like "never
     // connected", producing a false connection-failed toast.
-    let connected = Arc::new(AtomicBool::new(false));
-    let connected_at_ms = Arc::new(AtomicU64::new(0));
-    let cid = correlation_id.to_string();
+    let watch = RdpWatch {
+        emitted: Arc::new(AtomicBool::new(false)),
+        connected: Arc::new(AtomicBool::new(false)),
+        connected_at_ms: Arc::new(AtomicU64::new(0)),
+        started_at,
+        correlation_id: correlation_id.to_string(),
+        app: app.clone(),
+    };
 
     if let Some(stdout) = child.stdout.take() {
-        spawn_output_monitor(
-            stdout,
-            emitted.clone(),
-            connected.clone(),
-            connected_at_ms.clone(),
-            started_at,
-            cid.clone(),
-            app.clone(),
-        );
+        spawn_output_monitor(stdout, watch.clone());
     }
 
     if let Some(stderr) = child.stderr.take() {
-        spawn_output_monitor(
-            stderr,
-            emitted.clone(),
-            connected.clone(),
-            connected_at_ms.clone(),
-            started_at,
-            cid.clone(),
-            app.clone(),
-        );
+        spawn_output_monitor(stderr, watch.clone());
     }
 
-    monitor_rdp_exit(
-        child,
-        emitted,
-        connected,
-        connected_at_ms,
-        started_at,
-        cid,
-        app.clone(),
-    );
+    monitor_rdp_exit(child, watch);
     Ok(())
 }
 
