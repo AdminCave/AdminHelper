@@ -125,3 +125,37 @@ class TestVisitorTomlPermissions:
         body = response.body.decode("utf-8")
         assert "a-ssh" in body
         assert "b-ssh" in body
+
+
+def test_attach_auto_connection_links_stcp_and_passes_tags(db_session):
+    """2.47: the shared _attach_auto_connection helper (create_tunnel + update_tunnel)
+    creates the paired connection for an stcp tunnel, links it back, and passes the
+    tunnel's JSON-encoded tags through unchanged (the subtle create/update tag
+    difference the refactor unified)."""
+    from app.modules.connections.models import Connection
+    from app.modules.frp.tunnel_router import _attach_auto_connection
+
+    cfg = _make_config(db_session)
+    srv = _make_server(db_session, sid="srv-auto", name="autohost")
+
+    tunnel = FrpTunnel(
+        id="t-auto",
+        server_id=srv.id,
+        frp_config_id=cfg.id,
+        name="db",
+        tunnel_type="stcp",
+        protocol="ssh",
+        local_port=22,
+        visitor_port=6100,
+        tags='["prod"]',
+    )
+    db_session.add(tunnel)
+    db_session.flush()
+
+    _attach_auto_connection(db_session, tunnel, "opsuser")
+
+    conn = db_session.query(Connection).filter(Connection.id == tunnel.connection_id).one()
+    assert conn.kind == "ssh"
+    assert conn.port == 6100
+    assert conn.tags == '["prod"]'  # tunnel.tags passed through, not re-encoded
+    assert conn.username == "opsuser"
