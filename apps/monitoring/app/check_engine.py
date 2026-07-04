@@ -11,12 +11,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone
 
 from app.alerter import process_alert
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.core.database import SessionLocal
+from app.core.time import utcnow_naive
 from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
 
@@ -99,7 +99,7 @@ def execute_check(check_id: str) -> None:
         # Extract structured details (not sent to VictoriaMetrics)
         details = metrics.pop("_details", None) if metrics else None
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utcnow_naive()
 
         # Send metrics to VictoriaMetrics
         victoria.write_check_result(

@@ -20,6 +20,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.check_engine import execute_check
 from app.check_types import PUSH_ONLY_TYPES
+from app.core.time import utcnow_naive
 
 logger = logging.getLogger("monitor.scheduler")
 
@@ -144,9 +145,7 @@ def _run_alert_log_cleanup() -> None:
     from app.core.database import SessionLocal
     from app.models import MonitorAlertLog
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
-        days=ALERT_LOG_RETENTION_DAYS
-    )
+    cutoff = utcnow_naive() - timedelta(days=ALERT_LOG_RETENTION_DAYS)
     db = SessionLocal()
     try:
         removed = (

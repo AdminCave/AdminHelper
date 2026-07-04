@@ -10,7 +10,6 @@ import json
 import logging
 import math
 import re
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -23,6 +22,7 @@ from app.checkers.agent import EXCLUDED_FSTYPES
 from app.core import database
 from app.core.auth import require_agent
 from app.core.database import get_db
+from app.core.time import utcnow_naive
 from app.core.victoria import format_line, victoria
 from app.models import MonitorCheck, MonitorState
 
@@ -167,7 +167,7 @@ def agent_report(
         .all()
     )
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = utcnow_naive()
 
     for check in agent_checks:
         # Isolate each check: a single broken check.config (or a checker raising)

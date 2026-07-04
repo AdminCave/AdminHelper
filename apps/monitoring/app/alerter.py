@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import smtplib
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import INTERNAL_API_KEY, SERVER_HUB_URL
 from app.core.ssrf import is_private_url
+from app.core.time import utcnow_naive
 from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
 
 logger = logging.getLogger("monitor.alerter")
@@ -80,7 +81,7 @@ def process_alert(
             check_id=check.id,
             old_status=old_status,
             new_status=new_status,
-            sent_at=datetime.now(timezone.utc),
+            sent_at=utcnow_naive(),
             success=success,
             error=error,
         )
@@ -151,7 +152,7 @@ def _rule_matches(rule: MonitorAlertRule, check: MonitorCheck) -> bool:
 
 def _is_in_cooldown(db: Session, rule: MonitorAlertRule, check: MonitorCheck) -> bool:
     """Checks whether cooldown is still active for this rule+check combination."""
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=rule.cooldown_minutes)
+    cutoff = utcnow_naive() - timedelta(minutes=rule.cooldown_minutes)
     recent = (
         db.query(MonitorAlertLog)
         .filter(
