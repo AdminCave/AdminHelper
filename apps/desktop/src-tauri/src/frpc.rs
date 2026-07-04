@@ -64,7 +64,8 @@ struct VisitorBundle {
     // identity instead; any `pki` field the server still sends is ignored.
 }
 
-/// Fetch the visitor bundle (TOML + PKI) from the server.
+/// Fetch the visitor bundle from the server. TOML only — the server no longer
+/// ships PKI (D6); the identity comes from enrollment.
 async fn fetch_visitor_bundle(
     server_url: &str,
     token: &str,
@@ -148,9 +149,10 @@ pub fn start_frpc(
     state: &FrpcState,
     visitor_name: String,
 ) -> Result<(), AppError> {
-    let mut guard = state
-        .lock()
-        .map_err(|e| AppError::Connection(e.to_string()))?;
+    // Recover a poisoned lock: the guarded state is a small Option triple a panic
+    // leaves consistent, and mapping poison to an error would wedge the tunnel
+    // (start/stop fail forever) while tunnel_status already recovers (2.84).
+    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
 
     if guard.child.is_some() {
         return Err(AppError::Validation("frpc laeuft bereits".to_string()));
@@ -213,9 +215,7 @@ pub fn start_frpc(
 
 /// Stop the running frpc process.
 pub fn stop_frpc(state: &FrpcState) -> Result<(), AppError> {
-    let mut guard = state
-        .lock()
-        .map_err(|e| AppError::Connection(e.to_string()))?;
+    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner()); // recover poison (2.84)
     if let Some(child) = guard.child.take() {
         let _ = child.kill();
     }

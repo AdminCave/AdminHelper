@@ -65,9 +65,15 @@ fn ensure_parent(path: &Path) -> Result<(), AppError> {
 
 fn write_json_pretty<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), AppError> {
     ensure_parent(path)?;
+    let existed = path.exists();
     let serialized = serde_json::to_string_pretty(value)?;
     fs::write(path, serialized)?;
-    harden_permissions(path);
+    // Permissions/ACLs survive an overwrite (fs::write only truncates content), so
+    // harden only a freshly-created file — otherwise write_connections spawns an
+    // icacls process on Windows every sync (default 1 min) for no change (2.87).
+    if !existed {
+        harden_permissions(path);
+    }
     Ok(())
 }
 

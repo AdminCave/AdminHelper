@@ -54,6 +54,7 @@ pub fn open_linux_terminal(command: &str, args: &[String]) -> Result<(), AppErro
         TerminalProfile::new("wezterm", TerminalMode::Wezterm),
     ];
 
+    let mut last_err: Option<std::io::Error> = None;
     for profile in profiles.iter() {
         if which(profile.bin).is_none() {
             continue;
@@ -77,10 +78,17 @@ pub fn open_linux_terminal(command: &str, args: &[String]) -> Result<(), AppErro
             }
         };
 
-        return result.map(|_| ()).map_err(AppError::from);
+        match result {
+            Ok(_) => return Ok(()),
+            // Spawn failed (e.g. a broken x-terminal-emulator alternative) — the
+            // list is a real fallback chain, so try the next terminal (2.88).
+            Err(e) => last_err = Some(e),
+        }
     }
 
-    Err(AppError::Connection("Kein Terminal gefunden".to_string()))
+    Err(last_err
+        .map(AppError::from)
+        .unwrap_or_else(|| AppError::Connection("Kein Terminal gefunden".to_string())))
 }
 
 pub fn open_windows_terminal(command: &str, args: &[String]) -> Result<(), AppError> {
