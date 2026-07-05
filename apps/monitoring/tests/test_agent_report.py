@@ -157,3 +157,21 @@ def test_capped_limits_length_and_rejects_non_list():
     assert _capped(None) == []
     assert _capped("string") == []
     assert _capped({"a": 1}) == []
+
+
+def test_malformed_report_metrics_do_not_500(client_db):
+    # 4.47: a malformed metrics part (resources not a dict, a non-string tag value, a disks dict
+    # instead of a list) must only cost the metrics, not 500 the whole request.
+    client, _factory = client_db
+    assert client.post("/agent/srv-1/report", json={"resources": []}).status_code == 200
+    assert (
+        client.post(
+            "/agent/srv-1/report",
+            json={"resources": {"temperatures": [{"sensor": 123, "temp_c": 50}]}},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post("/agent/srv-1/report", json={"resources": {"disks": {"x": 1}}}).status_code
+        == 200
+    )

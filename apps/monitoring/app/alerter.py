@@ -79,7 +79,15 @@ def process_alert(
             logger.debug("Alert-Rule %s fuer Check %s im Cooldown", rule.id, check.id)
             continue
 
-        success, error = _dispatch(rule, check, msg)
+        try:
+            success, error = _dispatch(rule, check, msg)
+        except Exception as exc:
+            # Isolate each rule's dispatch: a misconfigured rule (e.g. smtp_port "abc" or
+            # non-string recipients, which parse in _send_email BEFORE its own try) would
+            # otherwise abort the whole loop — no db.flush(), and execute_check rolls back every
+            # other rule's already-created alert log, silently suppressing all their alerts (4.45).
+            logger.exception("Alert-Dispatch fuer Rule %s fehlgeschlagen", rule.id)
+            success, error = False, str(exc)
 
         log_entry = MonitorAlertLog(
             alert_rule_id=rule.id,

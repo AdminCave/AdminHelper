@@ -109,50 +109,59 @@ def agent_report(
     base_tags = {"server_id": server_id}
     lines = []
 
-    resources = report.get("resources", {})
-    if resources:
-        for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
-            val = _num(resources.get(key))
-            if val is not None:
-                lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
+    try:
+        resources = report.get("resources", {})
+        if isinstance(resources, dict):
+            for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
+                val = _num(resources.get(key))
+                if val is not None:
+                    lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
-        for disk in _capped(resources.get("disks")):
-            if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
-                continue
-            mount = disk.get("mount", "/")
-            disk_tags = {**base_tags, "mount": mount}
-            pct = _num(disk.get("percent"))
-            if pct is not None:
-                lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
+            for disk in _capped(resources.get("disks")):
+                if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
+                    continue
+                mount = str(disk.get("mount", "/"))
+                disk_tags = {**base_tags, "mount": mount}
+                pct = _num(disk.get("percent"))
+                if pct is not None:
+                    lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
 
-        for sensor in _capped(resources.get("temperatures")):
-            temp_c = _num(sensor.get("temp_c"))
-            if temp_c is not None and temp_c > 0:
-                sensor_tags = {**base_tags, "sensor": sensor.get("sensor", "unknown")}
-                lines.append(format_line("monitor_agent_temp", sensor_tags, temp_c, ts))
+            for sensor in _capped(resources.get("temperatures")):
+                temp_c = _num(sensor.get("temp_c"))
+                if temp_c is not None and temp_c > 0:
+                    sensor_tags = {**base_tags, "sensor": str(sensor.get("sensor", "unknown"))}
+                    lines.append(format_line("monitor_agent_temp", sensor_tags, temp_c, ts))
 
-    uptime = _num(report.get("uptime_seconds"))
-    if uptime is not None:
-        lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
+        uptime = _num(report.get("uptime_seconds"))
+        if uptime is not None:
+            lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
-    # SMART disk metrics
-    for disk in _capped(report.get("smart")):
-        device = disk.get("device", "unknown")
-        # Allowlist the device id used in the (otherwise-unescaped) measurement name.
-        safe_dev = safe_metric_part(device)
-        smart_tags = {**base_tags, "device": device}
-        dtemp = _num(disk.get("temp_c"))
-        if dtemp is not None and dtemp > 0:
-            lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, dtemp, ts))
-        realloc = _num(disk.get("reallocated_sectors", 0))
-        if realloc is not None:
-            lines.append(
-                format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, realloc, ts)
-            )
-        pending = _num(disk.get("pending_sectors", 0))
-        if pending is not None:
-            lines.append(format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, pending, ts))
+        # SMART disk metrics
+        for disk in _capped(report.get("smart")):
+            device = str(disk.get("device", "unknown"))
+            # Allowlist the device id used in the (otherwise-unescaped) measurement name.
+            safe_dev = safe_metric_part(device)
+            smart_tags = {**base_tags, "device": device}
+            dtemp = _num(disk.get("temp_c"))
+            if dtemp is not None and dtemp > 0:
+                lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, dtemp, ts))
+            realloc = _num(disk.get("reallocated_sectors", 0))
+            if realloc is not None:
+                lines.append(
+                    format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, realloc, ts)
+                )
+            pending = _num(disk.get("pending_sectors", 0))
+            if pending is not None:
+                lines.append(
+                    format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, pending, ts)
+                )
 
+    except Exception:
+        # A malformed report part (resources not a dict, a non-string tag value, a disks
+        # dict instead of a list) must only cost the metrics, not the whole request — the
+        # check evaluation below is already per-check isolated (4.47).
+        logger.exception("Metrik-Extraktion aus Agent-Report fehlgeschlagen (%s)", server_id)
+        lines = []
     if lines:
         victoria.write(lines)
 
