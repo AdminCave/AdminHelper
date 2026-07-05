@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import logging
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -46,6 +47,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # Rate limiting: max 5 failed login attempts per IP within 60 seconds
 _MAX_ATTEMPTS = 5
 _WINDOW_SECONDS = 60
+
+# A fixed valid bcrypt hash: on a login for a non-existent user we still run one
+# verify_password against it, so a missing username costs the same ~bcrypt time as a
+# wrong password — otherwise the short-circuit is a timing oracle for enumeration (3.94).
+_DUMMY_HASH = hash_password("login-timing-equalizer")
 
 
 def _rate_limit_key(ip: str) -> str:
@@ -117,7 +123,14 @@ def login(
     _check_rate_limit(ip)
 
     user = db.query(User).filter(User.username == data.username).first()
-    if not user or not verify_password(data.password, user.hashed_password):
+    # Always run one bcrypt verify — against a dummy hash when the user is missing — so
+    # the response time doesn't reveal whether the username exists (3.94).
+    if user:
+        password_ok = verify_password(data.password, user.hashed_password)
+    else:
+        verify_password(data.password, _DUMMY_HASH)
+        password_ok = False
+    if not password_ok:
         _record_failed_attempt(ip)
         audit.record(
             db,
@@ -271,7 +284,8 @@ def bootstrap(
         )
 
     expected = BOOTSTRAP_TOKEN_FILE.read_text().strip()
-    if hash_api_key(data.token) != expected:
+    # Constant-time compare like the /events internal key (3.95).
+    if not secrets.compare_digest(hash_api_key(data.token), expected):
         _record_failed_attempt(ip)
         logger.warning("Bootstrap-Versuch mit ungueltigem Token von IP=%s", ip)
         raise HTTPException(

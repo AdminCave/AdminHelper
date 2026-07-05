@@ -47,3 +47,44 @@ class TestUserUpdateValidation:
             json={"password": "short"},
         )
         assert res.status_code == 422
+
+
+def test_login_nonexistent_user_runs_constant_time(test_client, admin_user, monkeypatch):
+    """3.94: a login for a missing user still runs one verify_password against the dummy
+    hash, so the response time doesn't reveal whether the username exists."""
+    import app.modules.users.auth_router as ar
+
+    ar._reset_rate_limit("testclient")
+    seen = []
+    real = ar.verify_password
+
+    def spy(plain, hashed):
+        seen.append(hashed)
+        return real(plain, hashed)
+
+    monkeypatch.setattr(ar, "verify_password", spy)
+    r = test_client.post(
+        "/api/auth/login", json={"username": "ghost-user-xyz", "password": "whatever"}
+    )
+    assert r.status_code == 401
+    assert seen and seen[0] == ar._DUMMY_HASH
+
+
+def test_login_rejects_oversized_fields(test_client):
+    """3.96: an unbounded username/password is rejected at the schema boundary (422)."""
+    assert (
+        test_client.post(
+            "/api/auth/login", json={"username": "a" * 65, "password": "x"}
+        ).status_code
+        == 422
+    )
+    assert (
+        test_client.post(
+            "/api/auth/login", json={"username": "admin", "password": "p" * 129}
+        ).status_code
+        == 422
+    )
+    assert (
+        test_client.post("/api/auth/login", json={"username": "", "password": "x"}).status_code
+        == 422
+    )
