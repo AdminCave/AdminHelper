@@ -112,9 +112,9 @@ docker compose up -d</code></pre>
 
           <h2>First Login &ndash; Bootstrap Token (manual)</h2>
           <p><strong>Note:</strong> this manual path goes to <code>:443</code> — under the enforced default (since 0.29.0) it is rejected certless at the handshake. Use <code>scripts/install.sh</code> (Quick install above) <em>or</em> set <code>MTLS_ENFORCE=false</code> for the manual bootstrap, create the admin + enroll, then arm again.</p>
-          <p>There is <strong>no</strong> default login anymore. With an empty <code>ADMIN_PASSWORD</code>, the server generates a one-time setup token at <code>data/.bootstrap_token</code> and prints it to the WARNING log:</p>
+          <p>There is <strong>no</strong> default login anymore. With an empty <code>ADMIN_PASSWORD</code>, the server generates a one-time setup token. The raw token is <strong>not written to the log</strong> (where it would persist), but to <code>data/.bootstrap_setup</code> (0600) — read it with:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose logs server | grep -A2 'Setup-Token'</code></pre>
+<pre><code>docker compose exec server cat /app/data/.bootstrap_setup</code></pre>
           <p>Use the token to create the first admin:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>curl -k -X POST https://srm.example.com/api/auth/bootstrap \

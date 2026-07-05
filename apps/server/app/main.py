@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.auth import hash_api_key, hash_password
-from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE
+from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware
@@ -70,16 +70,23 @@ def _ensure_admin(db):
       (for CI/test/power users with an explicitly set password).
     """
     if db.query(User).count() > 0:
-        # Already initialized – clean up the bootstrap token from old setups
+        # Already initialized – clean up any bootstrap token (hash + raw setup file)
         # in case an admin signed in by other means than bootstrap.
-        if BOOTSTRAP_TOKEN_FILE.exists():
-            try:
-                BOOTSTRAP_TOKEN_FILE.unlink()
-            except OSError:
-                pass
+        _purge_bootstrap_files()
         return
 
     if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
+        _emit_bootstrap_token()
+        return
+
+    if len(ADMIN_PASSWORD) < 8:
+        # Enforce the same 8-char minimum as the CLI (_MIN_PASSWORD_LEN) and the
+        # schema (Field(min_length=8)) at the env boundary — otherwise ADMIN_PASSWORD=abc
+        # would create a prod admin with a 3-char password unnoticed. Fall back to the
+        # bootstrap-token path instead (3.90).
+        logger.warning(
+            "ADMIN_PASSWORD hat < 8 Zeichen — ignoriert; weiche auf den Bootstrap-Token aus."
+        )
         _emit_bootstrap_token()
         return
 
@@ -90,33 +97,55 @@ def _ensure_admin(db):
     )
     db.add(admin)
     db.commit()
+    # A direct admin obsoletes any pending bootstrap token, so don't leave the raw
+    # setup file lingering for a run (3.91).
+    _purge_bootstrap_files()
     logger.info("Default-Admin 'admin' aus ADMIN_PASSWORD-Env angelegt.")
 
 
+def _purge_bootstrap_files():
+    for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
+        if f.exists():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
 def _emit_bootstrap_token():
-    """Generates and persists a one-time bootstrap token, logging it prominently."""
+    """Generates a one-time bootstrap token: hash to disk for verification, raw token to
+    a 0600 file for the operator to read — never logged in cleartext (3.91)."""
     token = secrets.token_urlsafe(32)
     BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(token))
     try:
         BOOTSTRAP_TOKEN_FILE.chmod(0o600)
     except OSError:
         pass
+    # Raw token to a 0600 file, NOT the log: docker keeps logs (json-file, 5x10MB) and
+    # central shipping would carry the token off-box, where it survives even after the
+    # token is used. The operator reads it from the file instead (3.91).
+    BOOTSTRAP_SETUP_FILE.write_text(token)
+    try:
+        BOOTSTRAP_SETUP_FILE.chmod(0o600)
+    except OSError:
+        pass
 
     bar = "=" * 78
     logger.warning(bar)
     logger.warning("KEIN ADMIN-USER vorhanden und ADMIN_PASSWORD ist leer/'admin'.")
-    logger.warning("Setup-Token (gilt einmal, wird nach Verbrauch geloescht):")
-    logger.warning("    %s", token)
+    logger.warning(
+        "Setup-Token (gilt einmal) liegt in %s (0600) — auslesen mit:", BOOTSTRAP_SETUP_FILE
+    )
+    logger.warning("    docker compose exec server cat %s", BOOTSTRAP_SETUP_FILE)
     logger.warning("")
-    logger.warning("Ersten Admin anlegen mit:")
+    logger.warning("Ersten Admin anlegen (Token aus der Datei einsetzen):")
     logger.warning("    curl -k -X POST https://<host>/api/auth/bootstrap \\")
     logger.warning("         -H 'Content-Type: application/json' \\")
     logger.warning(
-        '         -d \'{"token":"%s","username":"<dein-name>","password":"<dein-pw>"}\'',
-        token,
+        '         -d \'{"token":"<TOKEN>","username":"<dein-name>","password":"<dein-pw>"}\''
     )
     logger.warning("")
-    logger.warning("Token-Hash liegt in %s (gegen unauthorized read 0600).", BOOTSTRAP_TOKEN_FILE)
+    logger.warning("Nach Verbrauch werden Token-Hash und Setup-Datei geloescht.")
     logger.warning(bar)
 
 

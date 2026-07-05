@@ -21,7 +21,7 @@ from app.core.auth import (
     username_from_token_unverified,
     verify_password,
 )
-from app.core.config import BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
+from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
@@ -312,12 +312,11 @@ def bootstrap(
 
     # Consume the token — even if deleting the file fails, the 'count() > 0'
     # check above remains the effective protection.
-    try:
-        BOOTSTRAP_TOKEN_FILE.unlink()
-    except OSError:
-        logger.warning(
-            "Bootstrap-Token-Datei konnte nicht geloescht werden: %s", BOOTSTRAP_TOKEN_FILE
-        )
+    for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Bootstrap-Datei konnte nicht geloescht werden: %s", f)
 
     _reset_rate_limit(ip)
     logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)

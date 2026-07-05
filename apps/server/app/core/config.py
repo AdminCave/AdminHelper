@@ -63,6 +63,9 @@ if not DATABASE_URL:
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 
 BOOTSTRAP_TOKEN_FILE = DATA_DIR / ".bootstrap_token"
+# The raw setup token (not just its hash) lands here 0600 so the operator reads it from
+# disk instead of the logs, where it would persist even after the token is used (3.91).
+BOOTSTRAP_SETUP_FILE = DATA_DIR / ".bootstrap_setup"
 
 # FRP config directory (shared volume with the internet-facing frps container).
 # frps reads frps.toml + the published cert subset (ca.crt/frps.crt/frps.key) here.
