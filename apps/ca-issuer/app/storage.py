@@ -72,7 +72,10 @@ def _write_private(path: Path, pem: bytes) -> None:
     try:
         path.chmod(0o600)  # O_CREAT leaves an existing file's mode unchanged
     except OSError as exc:
-        logger.warning("Konnte Key-Permissions nicht auf 0600 setzen (%s): %s", path, exc)
+        # Fail closed: a private signing key we cannot lock down to 0600 must not be
+        # used — abort boot rather than keep signing with a group/world-readable key
+        # (the old fail-open path only logged a warning and continued) (3.49).
+        raise RuntimeError(f"Key-Permissions 0600 nicht durchsetzbar ({path}): {exc}") from exc
 
 
 def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, Intermediate]:
