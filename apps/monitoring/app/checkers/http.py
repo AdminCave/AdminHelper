@@ -10,6 +10,10 @@ import httpx
 
 from app.core.ssrf import is_private_url
 
+# Redirects are followed manually (see run) so every hop is re-checked against the
+# SSRF guard; cap the chain length like a browser would.
+_MAX_REDIRECTS = 5
+
 
 class HttpChecker:
     """HTTP/HTTPS Endpoint Check via httpx."""
@@ -35,8 +39,35 @@ class HttpChecker:
                 url,
                 timeout=timeout,
                 verify=verify_ssl,
-                follow_redirects=True,
+                follow_redirects=False,
             )
+            # Follow redirects manually and re-check the SSRF guard on every hop.
+            # follow_redirects=True would let a public URL 302 into the internal
+            # network (VictoriaMetrics, other services, cloud metadata) unchecked.
+            # The method is kept across hops (uptime checks are GET and send no
+            # body), so no browser-style 303 POST->GET rewrite is needed.
+            redirects = 0
+            while resp.is_redirect and redirects < _MAX_REDIRECTS:
+                location = resp.headers.get("location", "")
+                if not location:
+                    break
+                next_url = str(resp.url.join(location))
+                if is_private_url(next_url):
+                    return (
+                        "critical",
+                        "Redirect auf private/reservierte Adresse abgelehnt (SSRF-Schutz)",
+                        None,
+                    )
+                resp = httpx.request(
+                    method,
+                    next_url,
+                    timeout=timeout,
+                    verify=verify_ssl,
+                    follow_redirects=False,
+                )
+                redirects += 1
+            if resp.is_redirect:
+                return "critical", f"Zu viele Redirects (>{_MAX_REDIRECTS})", None
             duration_ms = round((time.monotonic() - start) * 1000, 2)
 
             metrics = {
