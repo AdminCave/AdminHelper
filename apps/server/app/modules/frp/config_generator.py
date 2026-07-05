@@ -97,7 +97,12 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
 
     # Dashboard
     if config.dashboard_port:
-        lines.append('webServer.addr = "127.0.0.1"')
+        # Bind all interfaces, not loopback: the server container polls the dashboard over
+        # the compose bridge (http://frps:<port>), so 127.0.0.1 would listen only inside the
+        # frps container and every /api/frp/status probe would fail. The dashboard port is
+        # never published in compose, so it stays reachable only from the compose network,
+        # not the host or the public internet (4.6).
+        lines.append('webServer.addr = "0.0.0.0"')
         lines.append(f"webServer.port = {config.dashboard_port}")
         if config.dashboard_user:
             lines.append(f'webServer.user = "{config.dashboard_user}"')
