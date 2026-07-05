@@ -144,3 +144,16 @@ def test_status_change_dispatches_alert_in_background(client_db, monkeypatch):
     r = client.post("/agent/srv-1/report", json=_report(cpu=99))
     assert r.status_code == 200
     assert dispatched == [("chk-1", "pending", "critical")]
+
+
+def test_capped_limits_length_and_rejects_non_list():
+    from app.routers.agent import _MAX_REPORT_ITEMS, _capped
+
+    # 3.76: cap array length so a huge report can't flood the service, and treat a
+    # non-list (a malicious agent sending disks="x" or null) as empty rather than
+    # iterating it as chars.
+    assert _capped(list(range(1000))) == list(range(_MAX_REPORT_ITEMS))
+    assert _capped([1, 2, 3]) == [1, 2, 3]
+    assert _capped(None) == []
+    assert _capped("string") == []
+    assert _capped({"a": 1}) == []

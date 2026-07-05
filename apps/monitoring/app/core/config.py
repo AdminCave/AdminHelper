@@ -30,8 +30,13 @@ if not INTERNAL_API_KEY:
         INTERNAL_API_KEY = key_file.read_text().strip()
     else:
         INTERNAL_API_KEY = secrets.token_urlsafe(48)
-        key_file.write_text(INTERNAL_API_KEY)
-        key_file.chmod(0o600)
+        # Create the key file 0600 atomically: write_text() would create it with the
+        # process umask (typically 0644) and only chmod afterwards, leaving a brief
+        # window where the fresh secret is world-readable. O_EXCL also refuses to follow
+        # a pre-planted symlink at the path (fail closed) (3.75).
+        fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(INTERNAL_API_KEY)
         logger.info("MONITOR_API_KEY auto-generiert und in %s gespeichert", key_file)
 
     # Agent API keys are now stored per server in the DB (monitor_agent_keys)

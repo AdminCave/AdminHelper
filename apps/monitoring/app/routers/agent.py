@@ -77,6 +77,18 @@ def _num(v):
     return None
 
 
+# Cap per-report array lengths so a compromised/misconfigured agent can't flood the
+# service (a CPU/memory/VictoriaMetrics DoS) with a huge disks/temperatures/smart list.
+# The body-size cap itself belongs at the gateway (client_max_body_size) (3.76).
+_MAX_REPORT_ITEMS = 500
+
+
+def _capped(value: object) -> list:
+    """The first _MAX_REPORT_ITEMS entries of a list value, or [] for anything else
+    (a non-list would otherwise iterate as chars / raise downstream)."""
+    return value[:_MAX_REPORT_ITEMS] if isinstance(value, list) else []
+
+
 @router.post("/agent/{server_id}/report")
 def agent_report(
     server_id: str,
@@ -104,7 +116,7 @@ def agent_report(
             if val is not None:
                 lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
-        for disk in resources.get("disks", []):
+        for disk in _capped(resources.get("disks")):
             if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
                 continue
             mount = disk.get("mount", "/")
@@ -113,7 +125,7 @@ def agent_report(
             if pct is not None:
                 lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
 
-        for sensor in resources.get("temperatures", []):
+        for sensor in _capped(resources.get("temperatures")):
             temp_c = _num(sensor.get("temp_c"))
             if temp_c is not None and temp_c > 0:
                 sensor_tags = {**base_tags, "sensor": sensor.get("sensor", "unknown")}
@@ -124,7 +136,7 @@ def agent_report(
         lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
     # SMART disk metrics
-    for disk in report.get("smart", []):
+    for disk in _capped(report.get("smart")):
         device = disk.get("device", "unknown")
         # Allowlist the device id used in the (otherwise-unescaped) measurement name.
         safe_dev = safe_metric_part(device)

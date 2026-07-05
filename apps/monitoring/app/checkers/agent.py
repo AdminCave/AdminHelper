@@ -288,8 +288,11 @@ class ServiceProcessChecker:
         ignore = self._parse_ignore(config.get("ignore", []))
 
         if "all_services" in systemd:
-            # New format: raw data from agent, server filters
-            all_svcs = systemd["all_services"]
+            # New format: raw data from agent, server filters. Cap the inventory length
+            # so a huge/hostile all_services array can't drive a DoS (3.76); a non-list
+            # value is treated as empty.
+            raw_all = systemd["all_services"]
+            all_svcs = raw_all[:500] if isinstance(raw_all, list) else []
             failed_raw = [s["unit"] for s in all_svcs if s.get("active_state") == "failed"]
             enabled_inactive_raw = [
                 s["unit"]
