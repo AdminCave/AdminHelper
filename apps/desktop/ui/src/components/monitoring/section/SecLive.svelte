@@ -108,27 +108,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   <div class="mon-section-body">
     {#each checks as check (check.id)}
+      {@const rs = rings(check)}
+      {@const ds = disks(check)}
       <MonCheckLine {check}>
         {#snippet label()}
           <span class="mon-line-name">{check.name}</span>
         {/snippet}
         {#snippet value()}
           <span class="mon-live-summary">
-            {#each rings(check) as r (r.label)}
+            {#each rs as r (r.label)}
               <span class="mon-live-pill level-{r.level}">{r.label} {r.pct.toFixed(0)}%</span>
             {/each}
-            {#if disks(check).length > 0}
-              <span class="mon-live-pill"
-                >{disks(check).length} Disk{disks(check).length === 1 ? '' : 's'}</span
-              >
+            {#if ds.length > 0}
+              <span class="mon-live-pill">{ds.length} Disk{ds.length === 1 ? '' : 's'}</span>
             {/if}
           </span>
         {/snippet}
         {#snippet extraBody()}
           <div class="mon-live-detail">
-            {#if rings(check).length > 0}
+            {#if rs.length > 0}
               <div class="mon-ring-row">
-                {#each rings(check) as r (r.label)}
+                {#each rs as r (r.label)}
                   <div class="mon-ring level-{r.level}">
                     <svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
                       <circle
@@ -158,9 +158,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 {/each}
               </div>
             {/if}
-            {#if disks(check).length > 0}
+            {#if ds.length > 0}
               <div class="mon-hero-bars">
-                {#each disks(check) as d (d.mount)}
+                {#each ds as d (d.mount)}
                   <div class="mon-hero-bar-row">
                     <span class="mon-hero-bar-label">{d.mount}</span>
                     <div class="mon-hero-bar">
