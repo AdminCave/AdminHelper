@@ -65,14 +65,31 @@ fn ensure_parent(path: &Path) -> Result<(), AppError> {
 
 fn write_json_pretty<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), AppError> {
     ensure_parent(path)?;
-    let existed = path.exists();
     let serialized = serde_json::to_string_pretty(value)?;
-    fs::write(path, serialized)?;
-    // Permissions/ACLs survive an overwrite (fs::write only truncates content), so
-    // harden only a freshly-created file — otherwise write_connections spawns an
-    // icacls process on Windows every sync (default 1 min) for no change (2.87).
-    if !existed {
-        harden_permissions(path);
+    #[cfg(unix)]
+    {
+        // Atomic write: fill a temp file, harden it, then rename over the target. A crash mid-
+        // write can never leave truncated JSON that then bricks load_settings — which nearly
+        // every command calls — nor lose every local connection in connections.local.json (4.30);
+        // and the target is never briefly world-readable. rename is atomic within the same
+        // directory, and harden is a cheap chmod on Unix, so it runs on every write.
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, &serialized)?;
+        harden_permissions(&tmp);
+        fs::rename(&tmp, path)?;
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows keeps the in-place write: a temp+rename would drop the file's hardened ACLs
+        // (std can't clone them across the rename) and re-hardening the temp would spawn an
+        // icacls process on every sync (2.87). fs::write preserves the existing ACLs (it only
+        // truncates content); harden only a freshly-created file. (Atomic write on Windows would
+        // need the winapi to copy the ACLs onto the temp — a follow-up.)
+        let existed = path.exists();
+        fs::write(path, &serialized)?;
+        if !existed {
+            harden_permissions(path);
+        }
     }
     Ok(())
 }
@@ -206,8 +223,41 @@ pub fn harden_permissions(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
-    use super::connections_file_name;
+    use super::{connections_file_name, read_json_or_default, write_json_pretty};
     use crate::models::SyncMode;
+
+    #[test]
+    fn write_json_pretty_round_trips_without_orphan_temp() {
+        // 4.30: the write must round-trip, leave no .tmp orphan behind, and (Unix) land a 0600
+        // target — the atomic temp+rename path.
+        // Per-process dir so two concurrent `cargo test` runs don't share it and the teardown
+        // can't delete the other run's data.
+        let dir =
+            std::env::temp_dir().join(format!("ah-write-json-pretty-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        write_json_pretty(&path, &serde_json::json!({"a": 1})).unwrap();
+
+        assert!(path.exists());
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "no orphan temp file"
+        );
+        let v: serde_json::Value = read_json_or_default(&path).unwrap();
+        assert_eq!(v["a"], 1);
+        // Overwrite an existing file — still round-trips, still no orphan.
+        write_json_pretty(&path, &serde_json::json!({"a": 2})).unwrap();
+        let v: serde_json::Value = read_json_or_default(&path).unwrap();
+        assert_eq!(v["a"], 2);
+        assert!(!path.with_extension("json.tmp").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "target hardened to 0600");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn local_mode_has_its_own_connections_file() {
