@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -71,13 +72,26 @@ func collectSmart() []SmartDisk {
 		return nil
 	}
 
-	var disks []SmartDisk
+	// Query devices in parallel: querySmartDevice has a 30s per-device timeout, so a serial loop
+	// over an 8-disk NAS with a couple of sluggish drives can blow the oneshot run's 60s budget and
+	// get killed by systemd. The smartctl calls are independent (5.8).
+	var (
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+		disks []SmartDisk
+	)
 	for _, dev := range scanResult.Devices {
-		disk := querySmartDevice(smartctl, dev.Name, dev.Protocol)
-		if disk != nil {
-			disks = append(disks, *disk)
-		}
+		wg.Add(1)
+		go func(name, proto string) {
+			defer wg.Done()
+			if d := querySmartDevice(smartctl, name, proto); d != nil {
+				mu.Lock()
+				disks = append(disks, *d)
+				mu.Unlock()
+			}
+		}(dev.Name, dev.Protocol)
 	}
+	wg.Wait()
 
 	if len(disks) == 0 {
 		return nil
