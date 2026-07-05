@@ -245,6 +245,14 @@ async fn mint_token(
     allow_self_signed: bool,
     browser: bool,
 ) -> Result<EnrollGrant, AppError> {
+    // Same token-destination pin as api_proxy: refuse to send the session JWT if
+    // server_url (frontend-controlled) drifts off the logged-in server, so an XSS'd
+    // frontend cannot exfiltrate the bearer token to a foreign host (3.18). Before
+    // the first enrollment build_client uses the TOFU/public-CA path, which would
+    // otherwise pin an attacker cert on first use.
+    if let Some(stored) = crate::auth::stored_server_url() {
+        crate::validation::validate_proxy_path(server_url, "/api/enrollment/token", &stored)?;
+    }
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let base = server_url.trim_end_matches('/');
     let url = if browser {
