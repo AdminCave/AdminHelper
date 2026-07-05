@@ -15,6 +15,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import InvalidTokenError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import (
@@ -123,11 +124,17 @@ def blacklist_token(token: str, db: Session) -> bool:
     exp = payload.get("exp")
     if not jti or not exp:
         return False
-    if db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
-        return False
     expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
     db.add(TokenBlacklist(jti=jti, expires_at=expires_at))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # A parallel request with the same token (multi-tab /auth/refresh sharing the refresh
+        # cookie, or a double-click logout) can pass a pre-check and then both insert the same jti
+        # PK. Catch the conflict instead of pre-checking (which was TOCTOU): the token is
+        # blacklisted either way, so this is a benign False, not a 500 (4.65).
+        db.rollback()
+        return False
     return True
 
 

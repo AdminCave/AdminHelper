@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from app.core.auth import (
     _get_user_from_token,
+    blacklist_token,
     create_access_token,
     create_refresh_token,
     generate_api_key,
@@ -328,3 +329,14 @@ class TestRefreshCookie:
         rot = test_client.post("/api/auth/refresh", json={"refresh_token": refresh})
         assert rot.status_code == 200
         assert rot.json()["access_token"]
+
+
+class TestTokenBlacklist:
+    def test_duplicate_jti_returns_false_not_error(self, db_session, admin_user):
+        # 4.65: blacklisting the same token twice must return False on the second attempt, not
+        # raise an IntegrityError on the duplicate jti PK (which surfaced as a 500 in the parallel
+        # multi-tab-refresh / double-click-logout race). With the TOCTOU pre-check removed, the
+        # second sequential call drives the same except-IntegrityError branch the race hits.
+        token = create_access_token({"sub": admin_user.username})
+        assert blacklist_token(token, db_session) is True  # newly added
+        assert blacklist_token(token, db_session) is False  # PK conflict -> benign False
