@@ -74,7 +74,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           <ul>
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
-            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo, once <code>REPO_GPG_PRIVATE_KEY</code> is set)</li>
+            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo, once <code>REPO_GPG_PRIVATE_KEY</code> is set) &mdash; plus the archive keyring <code>adminhelper-archive-keyring.gpg</code> as a standalone asset (a second channel to fingerprint-verify it against <code>SHA256SUMS</code> + minisign)</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
             <li><code>SHA256SUMS</code> over all assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign signature) once armed</li>
           </ul>

@@ -56,11 +56,16 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>SERVER=srm.example.com                 # your AdminHelper server
 REPO="https://${SERVER}:8445/repo"
 
-# 1) Fetch the signing key + verify the fingerprint (trust root!)
+# 1) Fetch the signing key and COMPARE the fingerprint mechanically (trust root!)
+#    Stage to /tmp, check against the published value, then install — a bare
+#    "--show-keys" only prints the fingerprint, it compares nothing.
+FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
 sudo install -d -m 0755 /usr/share/keyrings
-curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" \
-  | sudo tee /usr/share/keyrings/adminhelper-archive-keyring.gpg &gt;/dev/null
-gpg --show-keys --with-fingerprint /usr/share/keyrings/adminhelper-archive-keyring.gpg
+curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o /tmp/ah-keyring.gpg
+gpg --show-keys --with-colons /tmp/ah-keyring.gpg \
+  | awk -F: '/^fpr:/{print $10; exit}' | grep -qx "$FPR" \
+  || { echo "ERROR: keyring fingerprint mismatch — aborting!"; exit 1; }
+sudo install -D -m 0644 /tmp/ah-keyring.gpg /usr/share/keyrings/adminhelper-archive-keyring.gpg
 
 # 2) Repo source (deb822); Signed-By binds the repo to exactly this key
 sudo tee /etc/apt/sources.list.d/adminhelper.sources &gt;/dev/null &lt;&lt;EOF
@@ -95,9 +100,11 @@ enabled=1
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=${REPO}/rpm/RPM-GPG-KEY-adminhelper
-# Option A (hardened): sslcacert=/etc/adminhelper/identity/ca.crt
-# Option B (simple, no CA file):
-sslverify=0
+# Option A (hardened, host already enrolled -> internal CA present):
+sslcacert=/etc/adminhelper/identity/ca.crt
+# Option B — only for the very first bootstrap of a not-yet-enrolled host;
+# remove after enrollment and use option A:
+# sslverify=0
 EOF
 sudo dnf install adminhelper-agent     # later updates: dnf upgrade</code></pre>
 

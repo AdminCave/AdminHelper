@@ -74,7 +74,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
           <ul>
             <li>Desktop-Client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF-Binary</li>
             <li>Go-Agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>-Binaries</li>
-            <li>Agent-Paket-Repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signiertes apt+rpm-Repo, sobald <code>REPO_GPG_PRIVATE_KEY</code> gesetzt)</li>
+            <li>Agent-Paket-Repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signiertes apt+rpm-Repo, sobald <code>REPO_GPG_PRIVATE_KEY</code> gesetzt) &mdash; zus&auml;tzlich der Archive-Keyring <code>adminhelper-archive-keyring.gpg</code> als eigenst&auml;ndiges Asset (zweiter Kanal, um seinen Fingerprint gegen <code>SHA256SUMS</code> + minisign zu pr&uuml;fen)</li>
             <li>Desktop-Client Windows-<code>.msi</code> (best-effort &ndash; blockiert das Release nicht, wenn der Windows-Build fehlschlägt)</li>
             <li><code>SHA256SUMS</code> über alle Assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign-Signatur), sobald scharf geschaltet</li>
           </ul>
