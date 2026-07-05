@@ -164,4 +164,26 @@ describe('notifications store', () => {
     deactivateNotifications();
     expect(h.stopStream).toHaveBeenCalled();
   });
+
+  it('undoes a stale activation when a logout races the SSE startup (4.41)', async () => {
+    const staleUn = vi.fn();
+    let resolveListen!: (un: () => void) => void;
+    h.listen.mockReset();
+    h.listen.mockImplementationOnce(
+      () =>
+        new Promise<() => void>((r) => {
+          resolveListen = r;
+        }),
+    );
+
+    const p = activateNotifications(); // this activation's generation
+    await new Promise((r) => setTimeout(r, 0)); // let it park at `await listen`
+    deactivateNotifications(); // bumps activationGen -> the in-flight activation is now stale
+    h.stopStream.mockClear(); // isolate the guard's stop from deactivate's own
+    resolveListen(staleUn); // listen resolves late
+    await p;
+
+    expect(staleUn).toHaveBeenCalled(); // the stale listener was unregistered
+    expect(h.stopStream).toHaveBeenCalled(); // the restarted SSE stream was stopped
+  });
 });

@@ -95,8 +95,12 @@ export function closePanel(): void {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let unlistenStream: UnlistenFn | null = null;
+// Bumped by every activate/deactivate so an in-flight activation whose async awaits are
+// overtaken by a logout can detect it's stale and undo itself instead of leaking (4.41).
+let activationGen = 0;
 
 export async function activateNotifications(): Promise<void> {
+  const gen = ++activationGen;
   void loadFeed();
   if (pollTimer) clearInterval(pollTimer);
   // Polling stays as a fallback (SSE may be unavailable: no Redis, dead stream).
@@ -109,7 +113,17 @@ export async function activateNotifications(): Promise<void> {
   if (session) {
     try {
       await bridge.startNotificationStream(session.serverUrl, session.token);
-      unlistenStream = await listen('notification', () => void loadFeed());
+      const un = await listen('notification', () => void loadFeed());
+      // A logout (deactivateNotifications) may have run during the awaits above and bumped
+      // activationGen. Registering the listener now would leak it (never removed) and leave the
+      // Rust SSE stream running after stopNotificationStream — on fast logout/login cycles
+      // duplicate handlers accumulate. Undo this stale activation instead (4.41).
+      if (gen !== activationGen) {
+        un();
+        void bridge.stopNotificationStream();
+        return;
+      }
+      unlistenStream = un;
     } catch (err) {
       console.warn('Notification-Stream konnte nicht gestartet werden', err);
       // The fallback poll keeps the bell working — graceful degradation.
@@ -118,6 +132,7 @@ export async function activateNotifications(): Promise<void> {
 }
 
 export function deactivateNotifications(): void {
+  activationGen++; // invalidate any in-flight activateNotifications so it undoes itself (4.41)
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
