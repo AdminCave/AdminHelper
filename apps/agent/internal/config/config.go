@@ -154,6 +154,23 @@ func baseURL(raw string) (string, error) {
 	return u.Scheme + "://" + u.Host, nil
 }
 
+// RequireHTTPS rejects a non-https server URL at the boundary. The agent carries
+// the provision token and API key in request headers, so plaintext http would leak
+// them on the wire — there is no legitimate http mode (even --insecure still uses
+// TLS, it only skips certificate verification) (3.11).
+func RequireHTTPS(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("URL parsen: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf(
+			"--url muss https sein (Token/API-Key gehen sonst im Klartext ueber das Netz): %q", raw,
+		)
+	}
+	return nil
+}
+
 // SplitServices splits a comma-separated SERVICES list, ignoring whitespace
 // and empty entries.
 func SplitServices(s string) []string {

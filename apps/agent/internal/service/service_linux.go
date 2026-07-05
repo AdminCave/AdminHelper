@@ -23,6 +23,24 @@ func Install() error {
 		return fmt.Errorf("eigenen Pfad ermitteln: %w", err)
 	}
 
+	// Copy the binary to a root-owned location first, so the root systemd unit
+	// never pins ExecStart to a path a non-root user can write. Running
+	// `sudo adminhelper-agent service install` from /home or /tmp would otherwise
+	// leave a root unit pointing at a user-writable file — the user swaps the
+	// binary and gets root code execution every 5 min. The Windows installer does
+	// the same into Program Files (3.12). The fixed path also has no spaces, so the
+	// unquoted ExecStart interpolation is safe.
+	const dest = "/usr/local/bin/adminhelper-agent"
+	if exePath != dest {
+		data, err := os.ReadFile(exePath)
+		if err != nil {
+			return fmt.Errorf("Binary lesen: %w", err)
+		}
+		if err := os.WriteFile(dest, data, 0755); err != nil {
+			return fmt.Errorf("Binary nach %s kopieren: %w", dest, err)
+		}
+	}
+
 	// Write the service unit.
 	// Twin of the packaged units in apps/agent/systemd/ (adminhelper-agent.service
 	// + .timer, shipped via deb/rpm): both install paths must share the
@@ -37,7 +55,7 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=%s run --once
 TimeoutStartSec=60
-`, exePath)
+`, dest)
 
 	// Write the timer unit
 	timerUnit := `[Unit]

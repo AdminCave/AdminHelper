@@ -137,7 +137,7 @@
               </tr>
               <tr>
                 <td><code>service.Install()</code><br /><code>service_*.go</code></td>
-                <td>Writes <code>.service</code> (<code>Type=oneshot</code>, <code>ExecStart=&lt;exe&gt; run</code>) + <code>.timer</code> (<code>OnBootSec=60</code>, <code>OnUnitActiveSec=300</code>, <code>Persistent=true</code>) to <code>/etc/systemd/system</code>, then <code>daemon-reload</code> + <code>enable --now</code> on the timer. Unit name <code>adminhelper-agent</code>.</td>
+                <td>Copies the binary to <code>/usr/local/bin/adminhelper-agent</code> (root-owned, so the root unit does not point at a user-writable path), writes <code>.service</code> (<code>Type=oneshot</code>, <code>ExecStart=/usr/local/bin/adminhelper-agent run --once</code>) + <code>.timer</code> (<code>OnBootSec=60</code>, <code>OnUnitActiveSec=300</code>, <code>Persistent=true</code>) to <code>/etc/systemd/system</code>, then <code>daemon-reload</code> + <code>enable --now</code> on the timer. Unit name <code>adminhelper-agent</code>.</td>
                 <td>Copies the binary to <code>%ProgramFiles%\AdminHelper\</code>, registers via <code>sc create</code> (<code>binPath=&lt;exe&gt; run</code>, <code>start= auto</code>, <code>obj= LocalSystem</code>), sets recovery via <code>sc failure</code> (restart after 60&nbsp;s) and starts with <code>sc start</code>. Service name <code>AdminHelper-Agent</code> &mdash; a long-running service, not a timer.</td>
               </tr>
               <tr>

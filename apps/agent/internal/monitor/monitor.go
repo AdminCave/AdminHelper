@@ -37,6 +37,9 @@ func Init(p InitParams) error {
 	insecure := p.TLS.Insecure
 
 	url = strings.TrimRight(url, "/")
+	if err := config.RequireHTTPS(url); err != nil {
+		return err
+	}
 
 	monitorDir := config.MonitorDir()
 	// Holds the agent API key + pinned CA cert -> 0700.

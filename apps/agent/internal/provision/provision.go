@@ -66,6 +66,9 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	if adminHelperURL == "" || token == "" || serverID == "" {
 		return fmt.Errorf("--url, --token und --server-id sind erforderlich")
 	}
+	if err := config.RequireHTTPS(adminHelperURL); err != nil {
+		return err
+	}
 
 	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, 8444)
 	if err != nil {
