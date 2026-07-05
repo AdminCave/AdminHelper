@@ -227,4 +227,21 @@ describe('http client token refresh', () => {
     ]);
     expect(calls[2].authorization).toBe('Bearer new-token');
   });
+
+  it('translates a request timeout into an ApiError with status 0 (4.74)', async () => {
+    // A hung server (dead upstream, no response) makes AbortSignal.timeout fire a TimeoutError;
+    // it must surface as an ApiError so the UI can unstick, not propagate as a raw DOMException.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new DOMException('timed out', 'TimeoutError'))),
+    );
+
+    const { http } = await importClient();
+    const err = await http.get('/api/servers').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    const apiErr = err as ApiError;
+    expect(apiErr.name).toBe('ApiError');
+    expect(apiErr.status).toBe(0);
+  });
 });
