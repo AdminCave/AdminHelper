@@ -37,9 +37,9 @@
           <div class="code-header"><span>tree</span></div>
 <pre><code>apps/server/app/modules/hooks/
 ├── router.py          /api/hooks CRUD
-├── models.py          Hook, HookExecution
+├── models.py          Hook
 ├── schemas.py         Pydantic schemas
-├── scheduler.py       Event dispatch + retry queue
+├── scheduler.py       Schedule-hook cron + notification outbox
 ├── script_runner.py   Async subprocess spawn
 └── script_worker.py   Child process: stdin=JSON, stdout/stderr capture</code></pre>
 
@@ -47,13 +47,14 @@
           <table>
             <thead><tr><th>Event</th><th>Payload (excerpt)</th></tr></thead>
             <tbody>
-              <tr><td><code>server.provisioned</code></td><td><code>server_id</code>, <code>hostname</code>, <code>ip</code></td></tr>
-              <tr><td><code>server.online</code> / <code>server.offline</code></td><td><code>server_id</code>, <code>last_seen</code></td></tr>
               <tr><td><code>connection.created</code> / <code>updated</code> / <code>deleted</code></td><td>Connection object</td></tr>
-              <tr><td><code>connection.launched</code></td><td><code>connection_id</code>, <code>user</code>, <code>client</code> (desktop / web)</td></tr>
-              <tr><td><code>alert.triggered</code> / <code>resolved</code> / <code>acknowledged</code></td><td><code>check_id</code>, <code>severity</code>, <code>value</code></td></tr>
-              <tr><td><code>user.login</code> / <code>login_failed</code></td><td><code>user_id</code>, <code>ip</code>, <code>reason?</code></td></tr>
-              <tr><td><code>hook.failed</code></td><td>Meta-event on hook failure (CANNOT trigger more hooks – loop guard)</td></tr>
+              <tr><td><code>connections.imported</code></td><td><code>count</code>, <code>mode</code></td></tr>
+              <tr><td><code>server.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>hostname</code>)</td></tr>
+              <tr><td><code>server.startup</code></td><td>(no <code>event_data</code>)</td></tr>
+              <tr><td><code>user.created</code> / <code>deleted</code></td><td><code>id</code>, <code>username</code> (<code>created</code> also <code>is_admin</code>)</td></tr>
+              <tr><td><code>frp.config.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
+              <tr><td><code>frp.tunnel.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>serverId</code>)</td></tr>
+              <tr><td><code>playbook.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
             </tbody>
           </table>
 
@@ -62,7 +63,7 @@
 <pre><code>{
   "name": "Slack alert",
   "hook_type": "event",
-  "event_triggers": ["server.created"],
+  "event_triggers": ["server.updated"],
   "script": "http_post('https://hooks.slack.com/services/T000/B000/XXX', json_data={'text': f'AdminHelper: {event_type}'})\nresult['notified'] = True"
 }</code></pre>
 
@@ -82,8 +83,8 @@
             <div><div class="callout-title">Not a full sandbox</div><p>The hook isolation is defense-in-depth, <strong>not</strong> a seccomp/namespace jail. Admins with hook-CRUD privileges can run arbitrary code on the server host. Grant hook access only to trusted roles.</p></div>
           </div>
 
-          <h2>Retry Strategy</h2>
-          <p>If a hook fails (<code>exit_code != 0</code> or timeout), it is retried with exponential backoff: 30 s, 2 min, 10 min, 1 h. After the fourth failure <code>HookExecution.state = failed</code> is set and the meta-event <code>hook.failed</code> is emitted (loop guard prevents cascades).</p>
+          <h2>Failure behaviour</h2>
+          <p>If a hook fails (<code>exit_code != 0</code> or timeout), the error is logged: event and schedule hooks via <code>logger.exception</code> in the server log, the webhook trigger additionally in the response body (<code>success: false</code>, <code>error</code>). There is currently no automatic retry and no <code>hook.failed</code> meta-event; a failed hook blocks neither other hooks nor the triggering request.</p>
 
           <h2>Script Runner Implementation</h2>
           <div class="code-header"><span>python</span></div>
@@ -115,15 +116,11 @@ def run_hook_script(script, hook_type, context, timeout=SCRIPT_TIMEOUT_SECONDS):
           <h2>Firing Custom Events</h2>
           <p>Internal code can emit events at any time:</p>
           <div class="code-header"><span>python</span></div>
-<pre><code>from app.modules.hooks import dispatch_event
+<pre><code>from app.core.events import fire_event
 
-await dispatch_event("connection.launched", {
-    "connection_id": conn.id,
-    "user": current_user.username,
-    "client": "desktop",
-})</code></pre>
+fire_event("server.updated", {"id": server.id, "name": server.name})</code></pre>
 
-          <p><code>dispatch_event</code> is non-blocking: the hook scheduler queues the run and returns immediately. The HTTP response of the emitter does <strong>not</strong> wait on the hook.</p>
+          <p><code>fire_event</code> is non-blocking: the dispatch runs in a thread pool, the call returns immediately. The HTTP response of the emitter does <strong>not</strong> wait on the hook.</p>
 
           <h2>Test Execution</h2>
           <p>Every hook can be tested from the web panel with a sample event: <code>POST /api/hooks/{id}/test</code>. The execution log shows stdout/stderr/exit_code in real time – handy for script debugging.</p>
