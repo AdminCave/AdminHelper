@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
 from app.storage import Intermediate
@@ -40,6 +42,31 @@ class Issuer:
         if inter is None:
             raise IssuanceError(f"Unbekannter Scope '{scope}'")
         return inter
+
+    def _verify_ca_signed(self, cert: x509.Certificate) -> None:
+        """Defense-in-depth: verify the presented cert was signed by one of our
+        intermediates and is time-valid, instead of trusting the gateway's
+        x-client-verify: SUCCESS header alone. Any container that can reach the
+        issuer directly (the compose default bridge puts frps/server on the same
+        network) could otherwise POST a self-made cert and renew any identity (3.3)."""
+        now = pki._now()
+        if not (cert.not_valid_before_utc <= now <= cert.not_valid_after_utc):
+            raise IssuanceError("Vorgelegtes Cert ist abgelaufen oder noch nicht gültig")
+        for inter in self._inter.values():
+            try:
+                inter.cert.public_key().verify(
+                    cert.signature,
+                    cert.tbs_certificate_bytes,
+                    ec.ECDSA(cert.signature_hash_algorithm),
+                )
+                return
+            except (InvalidSignature, TypeError, ValueError):
+                # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf
+                # whose signature_hash_algorithm is None, or an RSA key) fails to
+                # verify against our ECDSA intermediates — it is a forgery and must
+                # be rejected cleanly here, never bubble up as a 500 at the issuer.
+                continue
+        raise IssuanceError("Vorgelegtes Cert ist nicht von dieser CA signiert")
 
     def _sign(self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec) -> dict[str, str]:
         inter = self._intermediate(spec.scope)
@@ -79,6 +106,10 @@ class Issuer:
             current = x509.load_pem_x509_certificate(verified_cert_pem)
         except ValueError as exc:
             raise IssuanceError(f"Vorgelegtes Cert nicht lesbar: {exc}") from exc
+
+        # Never trust the gateway header alone: the issuer holds the intermediates,
+        # so it verifies the presented cert against them itself (3.3).
+        self._verify_ca_signed(current)
 
         cn, scope = pki.read_identity(current)
         if not cn or not scope:

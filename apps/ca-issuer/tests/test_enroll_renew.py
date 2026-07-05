@@ -7,11 +7,13 @@
 from the grant not the CSR, tokens are one-time, deprovisioned identities
 cannot renew."""
 
+import datetime
 import urllib.parse
 
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from fastapi.testclient import TestClient
 
@@ -164,3 +166,57 @@ def test_renew_refused_for_deprovisioned_identity(client):
     client.app.state.token_store.deprovision("agent-09", "tunnel")
     r = client.post("/renew", json={"csr": _csr_pem("x")}, headers=_renew_headers(leaf_pem))
     assert r.status_code == 403
+
+
+def _self_signed_leaf(cn: str, ou: str) -> str:
+    """A cert NOT signed by the issuer's CA — the forgery 3.3 must reject."""
+    key = pki.generate_key()
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, cn),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, ou),
+        ]
+    )
+    now = pki._now()
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(days=30))
+        .sign(key, hashes.SHA256())
+    )
+    return cert.public_bytes(serialization.Encoding.PEM).decode()
+
+
+def test_renew_rejects_forged_cert_not_signed_by_ca(client):
+    # 3.3: a self-made cert (CN=admin, OU=access) presented with a SUCCESS header
+    # must NOT renew — the issuer verifies the signature against its own
+    # intermediates, so a container bypassing the gateway cannot forge an identity.
+    forged = _self_signed_leaf("admin", "access")
+    r = client.post("/renew", json={"csr": _csr_pem("admin")}, headers=_renew_headers(forged))
+    assert 400 <= r.status_code < 500
+
+
+def test_renew_rejects_non_ecdsa_cert_cleanly(client):
+    # 3.3 hardening: a non-ECDSA presented cert (Ed25519 -> signature_hash_algorithm
+    # is None) must yield a clean rejection, not a 500 from an unhandled TypeError
+    # at the sole signing authority (untrusted containers can reach /renew directly).
+    key = ed25519.Ed25519PrivateKey.generate()
+    now = pki._now()
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "admin")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=1))
+        .not_valid_after(now + datetime.timedelta(days=30))
+        .sign(key, None)
+    )
+    pem = cert.public_bytes(serialization.Encoding.PEM).decode()
+    r = client.post("/renew", json={"csr": _csr_pem("admin")}, headers=_renew_headers(pem))
+    assert 400 <= r.status_code < 500
