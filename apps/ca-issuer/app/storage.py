@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
@@ -93,7 +94,23 @@ def ensure_hierarchy(pki_dir: Path, root_passphrase: bytes | None) -> dict[str, 
     root_crt = pki_dir / "root.crt"
     root_key_enc = pki_dir / "root.key.enc"
 
-    if not (root_crt.exists() and root_key_enc.exists()):
+    expected = [root_crt, root_key_enc] + [
+        pki_dir / name
+        for scope in pki.SCOPES
+        for name in (f"{scope}.crt", f"{scope}.key", f"{scope}-chain.pem")
+    ]
+    if not all(p.exists() for p in expected):
+        # A partial dir (root present but an intermediate missing/half-written) means a crash
+        # mid-first-boot (OOM, full volume, container stop). Skipping creation here would then
+        # FileNotFoundError/ValueError in the load loop below — uncaught in lifespan, so uvicorn
+        # never starts and the container restart-loops, fixable only by manual volume surgery.
+        # Abort with a clear message instead (4.18).
+        if root_crt.exists() and root_key_enc.exists():
+            missing = [str(p) for p in expected if not p.exists()]
+            raise RuntimeError(
+                f"PKI-Verzeichnis unvollständig (abgebrochener First Boot?) — fehlend: {missing}. "
+                "Volume prüfen; leeren, damit die PKI komplett neu erzeugt wird."
+            )
         if not root_passphrase:
             raise RuntimeError(
                 "CA_ROOT_PASSPHRASE muss gesetzt sein, um die PKI erstmalig zu erzeugen."
@@ -145,6 +162,20 @@ def _classify_sans(primary: str, extra_sans: str) -> tuple[tuple[str, ...], tupl
     return tuple(dns), tuple(ips)
 
 
+def _pair_matches(cert_path: Path, key_path: Path) -> bool:
+    """Whether the leaf in cert_path and the private key in key_path share a public key. Guards
+    against a half-written pair (a new leaf beside an old key) left by a crash between the two
+    writes — nginx rejects that with 'key values mismatch' and it never self-repairs (4.19)."""
+    try:
+        leaf = pki.cert_from_pem(cert_path.read_bytes())
+        key = pki.key_from_pem(key_path.read_bytes())
+    except (OSError, ValueError):
+        return False
+    spki = serialization.PublicFormat.SubjectPublicKeyInfo
+    pem = serialization.Encoding.PEM
+    return leaf.public_key().public_bytes(pem, spki) == key.public_key().public_bytes(pem, spki)
+
+
 def _provision_server_material(
     out_dir: Path,
     inter: Intermediate,
@@ -171,7 +202,16 @@ def _provision_server_material(
 
     cert_path = out_dir / cert_name
     key_path = out_dir / key_name
-    if cert_path.exists() and key_path.exists() and not _leaf_needs_remint(cert_path):
+    # Also require the leaf and key to be a matching pair: a crash between writing the leaf and
+    # the key leaves a NEW leaf beside the OLD key, which _leaf_needs_remint (0% aged) would pass
+    # — nginx then fails with 'key values mismatch' and crash-loops for up to half the leaf life
+    # with no self-repair. On a mismatch, fall through and re-mint the pair (4.19).
+    if (
+        cert_path.exists()
+        and key_path.exists()
+        and not _leaf_needs_remint(cert_path)
+        and _pair_matches(cert_path, key_path)
+    ):
         return
 
     dns_names, ip_addresses = _classify_sans(primary, extra_sans)

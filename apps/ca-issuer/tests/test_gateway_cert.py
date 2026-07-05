@@ -8,6 +8,7 @@ gateway holds no signing key (D6) and there is no on-device CSR for it."""
 
 import ipaddress
 
+import pytest
 from cryptography import x509
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
@@ -141,3 +142,32 @@ def test_remints_leaf_once_past_half_life(tmp_path, monkeypatch):
     assert fresh != aged
     leaf = x509.load_pem_x509_certificates(fresh)[0]
     assert leaf.not_valid_before_utc > past + datetime.timedelta(days=200)
+
+
+def test_gateway_cert_remints_on_key_leaf_mismatch(tmp_path):
+    # 4.19: a crash between writing the leaf and the key leaves a NEW leaf beside an OLD key.
+    # The guard must detect the mismatch and re-mint, not skip because the leaf is 0% aged.
+    from app.storage import _pair_matches
+
+    access, _ = _access_intermediate()
+    ensure_gateway_cert(tmp_path, access, "localhost")
+    fullchain = tmp_path / "gateway-fullchain.pem"
+    key_path = tmp_path / "gateway.key"
+    # Simulate the half-written pair: replace the key with a different freshly-minted one.
+    stale = pki.key_to_pem(pki.generate_key())
+    key_path.write_bytes(stale)
+    assert not _pair_matches(fullchain, key_path)  # mismatch detected
+    ensure_gateway_cert(tmp_path, access, "localhost")  # re-run
+    assert _pair_matches(fullchain, key_path)  # re-minted to a matching pair
+    assert key_path.read_bytes() != stale
+
+
+def test_ensure_hierarchy_aborts_on_partial_pki(tmp_path):
+    # 4.18: a crash mid-first-boot leaves the root but a missing intermediate; the next boot
+    # must abort with a clear error, not skip creation and FileNotFoundError in the load loop.
+    from app.storage import ensure_hierarchy
+
+    ensure_hierarchy(tmp_path, root_passphrase=b"pw")  # full first boot
+    (tmp_path / f"{pki.SCOPES[0]}.key").unlink()  # simulate a partial dir
+    with pytest.raises(RuntimeError, match="unvollständig"):
+        ensure_hierarchy(tmp_path, root_passphrase=b"pw")
