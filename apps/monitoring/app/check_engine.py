@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from app.alerter import process_alert
 from app.check_types import PUSH_ONLY_TYPES
@@ -21,6 +22,33 @@ from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
 
 logger = logging.getLogger("monitor.engine")
+
+# Alerts are dispatched OFF the APScheduler check-worker thread via this small pool: a slow/hung
+# webhook or SMTP server (up to 10s each, serial) would otherwise tie up the check workers and
+# misfire the next checks — exactly during an incident when many checks transition at once. Same
+# isolation as the agent push path's _dispatch_alert_bg (5.3).
+_alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
+
+
+def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
+    """Dispatch one alert (webhook/SMTP) in the alert pool with its own session.
+
+    The check-worker's session is already closed by the time this runs, so it
+    reloads the check. Errors are contained — a failed dispatch must never bubble
+    out of the pool thread.
+    """
+    db = SessionLocal()
+    try:
+        check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+        if check is None:
+            return
+        process_alert(db, check, old_status, new_status)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Alert-Dispatch fuer Check %s fehlgeschlagen", check_id)
+    finally:
+        db.close()
 
 
 def next_fail_count(result_status: str, prev_fail_count: int) -> int:
@@ -178,16 +206,12 @@ def execute_check(check_id: str) -> None:
 
         db.commit()
 
-        # Alerting on status change. process_alert only flushes the alert log
-        # (it no longer commits the session); persist it with an own commit so
-        # a failing dispatch/log cannot roll back the already-committed state.
+        # Alerting on status change: dispatch OFF the check-worker thread (see _alert_pool /
+        # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the scheduler pool and
+        # misfire following checks. Pass the id, not the session-bound check — the pool thread
+        # reloads it in its own session (5.3).
         if old_status != eff_status:
-            try:
-                process_alert(db, check, old_status, eff_status)
-                db.commit()
-            except Exception:
-                db.rollback()
-                logger.exception("Alerting fuer Check '%s' fehlgeschlagen", check.name)
+            _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
 
     except Exception:
         logger.exception("execute_check(%s) fehlgeschlagen", check_id)

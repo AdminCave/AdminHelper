@@ -144,3 +144,55 @@ def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
         state = db.query(MonitorState).filter_by(check_id="chk-c").one()
         assert state.status == "unknown"  # flipped, not frozen on "ok"
         assert state.last_check is not None  # the check is no longer "dead"
+
+
+def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
+    # 5.3: on a status change, execute_check submits the alert dispatch to the dedicated alert pool
+    # (off the APScheduler check-worker thread) instead of calling process_alert inline — so a slow
+    # webhook/SMTP server can't tie up the scheduler workers and misfire the following checks.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(ce, "SessionLocal", factory)
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+
+    class _FakeChecker:
+        def run(self, config):
+            return ("critical", "down", None)
+
+    monkeypatch.setattr(ce, "get_checker", lambda _ct: _FakeChecker())
+
+    # Spy on the pool submit instead of actually running the dispatch.
+    submitted = []
+    monkeypatch.setattr(ce._alert_pool, "submit", lambda fn, *a: submitted.append((fn, a)))
+
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                name="c1",
+                check_type="ping",
+                config="{}",
+                enabled=True,
+                consecutive_fails=1,
+            )
+        )
+        db.add(MonitorState(check_id="c1", status="ok"))  # ok -> critical is a status change
+        db.commit()
+
+    ce.execute_check("c1")
+
+    assert len(submitted) == 1, submitted
+    fn, args = submitted[0]
+    assert fn is ce._dispatch_alert_bg
+    assert args == ("c1", "ok", "critical")
