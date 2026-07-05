@@ -3,7 +3,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Alembic env.py — reads DATABASE_URL from app.core.config and imports all
-models so autogenerate sees the full Base.metadata."""
+models so autogenerate sees the full Base.metadata.
+
+Convention (4.130): a migration that ADDS AN INDEX to a growing table
+(audit_log, notification) must create it CONCURRENTLY inside an autocommit
+block — a plain CREATE INDEX takes a SHARE lock that blocks writers for the
+whole build, which freezes an old container still writing during a rolling
+update:
+
+    def upgrade() -> None:
+        with op.get_context().autocommit_block():
+            op.create_index(..., postgresql_concurrently=True)
+
+Small/empty inventory tables (connections, frp_tunnels, provision_tokens, or an
+index created in the same migration as its table) don't need it — there is
+nothing to block, and the single-replica app is down during the migration."""
 
 from logging.config import fileConfig
 
