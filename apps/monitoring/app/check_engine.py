@@ -73,27 +73,38 @@ def execute_check(check_id: str) -> None:
         if not check:
             return
 
-        config = json.loads(check.config) if check.config else {}
+        try:
+            config = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            config = None
 
         # Do not run push-only checks from the scheduler
         if check.check_type in PUSH_ONLY_TYPES:
             return
 
-        try:
-            checker = get_checker(check.check_type)
-        except ValueError as exc:
-            logger.warning("Check %s: %s", check.name, exc)
-            return
+        checker = None
+        if config is not None:
+            try:
+                checker = get_checker(check.check_type)
+            except ValueError as exc:
+                logger.warning("Check %s: %s", check.name, exc)
 
-        # Run the check
+        # A corrupt config or an unknown check type must surface as unknown so the normal alert
+        # chain fires — not silently freeze the state on its last value (a "dead" check that still
+        # looks healthy, with no alert and no dashboard hint) (4.109).
         start = time.monotonic()
-        try:
-            result_status, message, metrics = checker.run(config)
-        except Exception as exc:
-            result_status = "unknown"
-            message = f"Unerwarteter Fehler: {exc}"
-            metrics = None
-            logger.exception("Check %s fehlgeschlagen", check.name)
+        if config is None:
+            result_status, message, metrics = "unknown", "Ungueltige Check-Konfiguration", None
+        elif checker is None:
+            result_status, message, metrics = "unknown", "Unbekannter Check-Typ", None
+        else:
+            try:
+                result_status, message, metrics = checker.run(config)
+            except Exception as exc:
+                result_status = "unknown"
+                message = f"Unerwarteter Fehler: {exc}"
+                metrics = None
+                logger.exception("Check %s fehlgeschlagen", check.name)
         duration_ms = int((time.monotonic() - start) * 1000)
 
         # Extract structured details (not sent to VictoriaMetrics)

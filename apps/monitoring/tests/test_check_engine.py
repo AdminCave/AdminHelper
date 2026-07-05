@@ -101,3 +101,46 @@ class TestTransitionSequence:
         prev_fails = next_fail_count("ok", prev_fails)
         eff = effective_status("ok", prev_fails, consecutive, old)
         assert (prev_fails, eff) == (0, "ok")
+
+
+def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
+    # 4.109: a check with a corrupt config must flip to unknown (so the alert chain fires) instead
+    # of silently freezing on its last status. Previously json.loads raised into the outer except,
+    # leaving the state untouched — a "dead" check that still looked healthy.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(ce, "SessionLocal", factory)
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(ce, "process_alert", lambda *a, **k: None)
+
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-c",
+                name="Corrupt",
+                check_type="ping",
+                config="{not valid json",
+                enabled=True,
+                consecutive_fails=1,  # threshold 1 -> a single failure surfaces immediately
+            )
+        )
+        db.add(MonitorState(check_id="chk-c", status="ok"))  # previously healthy
+        db.commit()
+
+    ce.execute_check("chk-c")
+
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-c").one()
+        assert state.status == "unknown"  # flipped, not frozen on "ok"
+        assert state.last_check is not None  # the check is no longer "dead"
