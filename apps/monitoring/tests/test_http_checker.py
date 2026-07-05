@@ -49,3 +49,23 @@ def test_http_checker_follows_public_redirect(monkeypatch):
     )
     assert status == "ok"
     assert len(calls) == 2  # original request + one followed redirect hop
+
+
+def test_http_checker_flags_disabled_tls_verify(monkeypatch):
+    """verify_ssl=False must be visible in the result so an 'ok' isn't mistaken for a
+    validated TLS connection (3.72)."""
+
+    def fake_request(method, url, **kwargs):
+        return httpx.Response(200, text="ok", request=httpx.Request(method, url))
+
+    monkeypatch.setattr(http_mod.httpx, "request", fake_request)
+
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://93.184.216.34/", "verify_ssl": False}
+    )
+    assert status == "ok"
+    assert "[TLS-Verify deaktiviert]" in msg
+
+    status2, msg2, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
+    assert status2 == "ok"
+    assert "[TLS-Verify deaktiviert]" not in msg2

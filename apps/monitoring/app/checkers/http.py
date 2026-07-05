@@ -23,7 +23,7 @@ class HttpChecker:
         method = config.get("method", "GET").upper()
         expected_status = config.get("expected_status", 200)
         timeout = config.get("timeout", 10)
-        verify_ssl = config.get("verify_ssl", True)
+        verify_ssl = bool(config.get("verify_ssl", True))
         search_string = config.get("search_string", "")
 
         if not url:
@@ -69,6 +69,10 @@ class HttpChecker:
             if resp.is_redirect:
                 return "critical", f"Zu viele Redirects (>{_MAX_REDIRECTS})", None
             duration_ms = round((time.monotonic() - start) * 1000, 2)
+            # A check that reached the endpoint with cert verification off must say so
+            # in its result: an "ok" here validated the status code, NOT the TLS cert,
+            # so a MITM / expired cert would otherwise pass unnoticed (3.72).
+            tls_note = "" if verify_ssl else " [TLS-Verify deaktiviert]"
 
             metrics = {
                 "http_response_ms": duration_ms,
@@ -78,18 +82,18 @@ class HttpChecker:
             if resp.status_code != expected_status:
                 return (
                     "critical",
-                    f"Status {resp.status_code} (erwartet {expected_status})",
+                    f"Status {resp.status_code} (erwartet {expected_status}){tls_note}",
                     metrics,
                 )
 
             if search_string and search_string not in resp.text:
                 return (
                     "critical",
-                    f"Text '{search_string}' nicht in Antwort gefunden",
+                    f"Text '{search_string}' nicht in Antwort gefunden{tls_note}",
                     metrics,
                 )
 
-            return "ok", f"HTTP {resp.status_code} ({duration_ms:.0f} ms)", metrics
+            return "ok", f"HTTP {resp.status_code} ({duration_ms:.0f} ms){tls_note}", metrics
 
         except httpx.TimeoutException:
             return "critical", f"Timeout nach {timeout}s", None
