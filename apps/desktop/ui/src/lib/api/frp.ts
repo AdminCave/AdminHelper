@@ -26,10 +26,15 @@ export const frpApi = {
     return apiRequest<FrpTunnel>(session, 'POST', '/api/frp/tunnels', data);
   },
   updateTunnel(session: AuthSession, id: string, data: FrpTunnelInput): Promise<FrpTunnel> {
-    return apiRequest<FrpTunnel>(session, 'PUT', `/api/frp/tunnels/${id}`, data);
+    return apiRequest<FrpTunnel>(
+      session,
+      'PUT',
+      `/api/frp/tunnels/${encodeURIComponent(id)}`,
+      data,
+    );
   },
   removeTunnel(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/frp/tunnels/${id}`);
+    return apiRequest<void>(session, 'DELETE', `/api/frp/tunnels/${encodeURIComponent(id)}`);
   },
   status(session: AuthSession): Promise<FrpStatus> {
     return apiRequest<FrpStatus>(session, 'GET', '/api/frp/status');

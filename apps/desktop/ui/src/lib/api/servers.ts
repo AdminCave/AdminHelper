@@ -18,9 +18,9 @@ export const serversApi = {
     return apiRequest<Server>(session, 'POST', '/api/servers', data);
   },
   update(session: AuthSession, id: string, data: ServerInput): Promise<Server> {
-    return apiRequest<Server>(session, 'PUT', `/api/servers/${id}`, data);
+    return apiRequest<Server>(session, 'PUT', `/api/servers/${encodeURIComponent(id)}`, data);
   },
   remove(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/servers/${id}`);
+    return apiRequest<void>(session, 'DELETE', `/api/servers/${encodeURIComponent(id)}`);
   },
 };

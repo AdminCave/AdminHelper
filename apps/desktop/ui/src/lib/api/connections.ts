@@ -24,7 +24,12 @@ export const connectionsApi = {
     return apiRequest<Connection>(session, 'POST', '/api/connections', data);
   },
   update(session: AuthSession, id: string, data: Partial<Connection>): Promise<Connection> {
-    return apiRequest<Connection>(session, 'PUT', `/api/connections/${id}`, data);
+    return apiRequest<Connection>(
+      session,
+      'PUT',
+      `/api/connections/${encodeURIComponent(id)}`,
+      data,
+    );
   },
   // Bumps lastUsed server-side and echoes the connection back. Returns the
   // launcher-shaped Connection because the caller (connectFlow) patches it
@@ -37,6 +42,6 @@ export const connectionsApi = {
     );
   },
   remove(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/connections/${id}`);
+    return apiRequest<void>(session, 'DELETE', `/api/connections/${encodeURIComponent(id)}`);
   },
 };

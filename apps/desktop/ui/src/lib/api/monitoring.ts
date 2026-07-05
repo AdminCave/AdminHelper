@@ -44,7 +44,7 @@ export const monitoringApi = {
     return apiRequest<MonitoringMetricsResponse>(
       session,
       'GET',
-      `/api/monitoring/checks/${checkId}/metrics?period=${period}`,
+      `/api/monitoring/checks/${encodeURIComponent(checkId)}/metrics?period=${period}`,
     );
   },
 
@@ -53,16 +53,29 @@ export const monitoringApi = {
     return apiRequest<MonitorCheck>(session, 'POST', '/api/monitoring/checks', data);
   },
   updateCheck(session: AuthSession, id: string, data: MonitorCheckInput): Promise<MonitorCheck> {
-    return apiRequest<MonitorCheck>(session, 'PUT', `/api/monitoring/checks/${id}`, data);
+    return apiRequest<MonitorCheck>(
+      session,
+      'PUT',
+      `/api/monitoring/checks/${encodeURIComponent(id)}`,
+      data,
+    );
   },
   removeCheck(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/monitoring/checks/${id}`);
+    return apiRequest<void>(session, 'DELETE', `/api/monitoring/checks/${encodeURIComponent(id)}`);
   },
   toggleCheck(session: AuthSession, checkId: string): Promise<void> {
-    return apiRequest<void>(session, 'POST', `/api/monitoring/checks/${checkId}/toggle`);
+    return apiRequest<void>(
+      session,
+      'POST',
+      `/api/monitoring/checks/${encodeURIComponent(checkId)}/toggle`,
+    );
   },
   runCheck(session: AuthSession, checkId: string): Promise<void> {
-    return apiRequest<void>(session, 'POST', `/api/monitoring/checks/${checkId}/run`);
+    return apiRequest<void>(
+      session,
+      'POST',
+      `/api/monitoring/checks/${encodeURIComponent(checkId)}/run`,
+    );
   },
 
   // ── Alerts ───────────────────────────────────────────────────────────────
@@ -70,13 +83,22 @@ export const monitoringApi = {
     return apiRequest<AlertRule>(session, 'POST', '/api/monitoring/alerts', data);
   },
   updateAlert(session: AuthSession, id: string, data: AlertRuleInput): Promise<AlertRule> {
-    return apiRequest<AlertRule>(session, 'PUT', `/api/monitoring/alerts/${id}`, data);
+    return apiRequest<AlertRule>(
+      session,
+      'PUT',
+      `/api/monitoring/alerts/${encodeURIComponent(id)}`,
+      data,
+    );
   },
   removeAlert(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/monitoring/alerts/${id}`);
+    return apiRequest<void>(session, 'DELETE', `/api/monitoring/alerts/${encodeURIComponent(id)}`);
   },
   toggleAlert(session: AuthSession, ruleId: string): Promise<void> {
-    return apiRequest<void>(session, 'POST', `/api/monitoring/alerts/${ruleId}/toggle`);
+    return apiRequest<void>(
+      session,
+      'POST',
+      `/api/monitoring/alerts/${encodeURIComponent(ruleId)}/toggle`,
+    );
   },
 
   // ── Templates + assignments ────────────────────────────────────────────────
@@ -97,18 +119,22 @@ export const monitoringApi = {
     return apiRequest<MonitoringTemplateFull>(
       session,
       'PUT',
-      `/api/monitoring/templates/${id}`,
+      `/api/monitoring/templates/${encodeURIComponent(id)}`,
       data,
     );
   },
   removeTemplate(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/monitoring/templates/${id}`);
+    return apiRequest<void>(
+      session,
+      'DELETE',
+      `/api/monitoring/templates/${encodeURIComponent(id)}`,
+    );
   },
   fetchAssignments(session: AuthSession, serverId: string): Promise<TemplateAssignment[]> {
     return apiRequest<TemplateAssignment[]>(
       session,
       'GET',
-      `/api/monitoring/templates/assignments/${serverId}`,
+      `/api/monitoring/templates/assignments/${encodeURIComponent(serverId)}`,
     );
   },
   assignTemplate(
@@ -118,17 +144,22 @@ export const monitoringApi = {
     hostname: string,
     serverName: string,
   ): Promise<unknown> {
-    return apiRequest<unknown>(session, 'POST', `/api/monitoring/templates/${templateId}/assign`, {
-      server_id: serverId,
-      hostname,
-      server_name: serverName,
-    });
+    return apiRequest<unknown>(
+      session,
+      'POST',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign`,
+      {
+        server_id: serverId,
+        hostname,
+        server_name: serverName,
+      },
+    );
   },
   unassignTemplate(session: AuthSession, templateId: string, serverId: string): Promise<void> {
     return apiRequest<void>(
       session,
       'DELETE',
-      `/api/monitoring/templates/${templateId}/assign/${serverId}`,
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}`,
     );
   },
 };

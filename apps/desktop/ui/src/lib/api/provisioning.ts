@@ -16,14 +16,14 @@ export const provisioningApi = {
     return apiRequest<FrpProvisionToken[]>(
       session,
       'GET',
-      `/api/servers/${serverId}/provision/tokens`,
+      `/api/servers/${encodeURIComponent(serverId)}/provision/tokens`,
     );
   },
   createToken(session: AuthSession, serverId: string): Promise<FrpProvisionTokenCreateResult> {
     return apiRequest<FrpProvisionTokenCreateResult>(
       session,
       'POST',
-      `/api/servers/${serverId}/provision/token`,
+      `/api/servers/${encodeURIComponent(serverId)}/provision/token`,
     );
   },
 };

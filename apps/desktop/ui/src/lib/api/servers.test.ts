@@ -81,4 +81,16 @@ describe('serversApi', () => {
       false,
     );
   });
+
+  it('encodes the id so a slash-bearing value cannot rewrite the path (3.66)', async () => {
+    await serversApi.remove(session, '../users/1');
+    expect(proxy).toHaveBeenCalledWith(
+      'https://srv',
+      'tok',
+      'DELETE',
+      '/api/servers/..%2Fusers%2F1',
+      undefined,
+      false,
+    );
+  });
 });

@@ -15,7 +15,11 @@ export const ansibleApi = {
     return apiRequest<Playbook[]>(session, 'GET', '/api/ansible/playbooks');
   },
   fetchContent(session: AuthSession, id: string): Promise<PlaybookContent> {
-    return apiRequest<PlaybookContent>(session, 'GET', `/api/ansible/playbooks/${id}/content`);
+    return apiRequest<PlaybookContent>(
+      session,
+      'GET',
+      `/api/ansible/playbooks/${encodeURIComponent(id)}/content`,
+    );
   },
   fetchServers(session: AuthSession): Promise<Server[]> {
     return apiRequest<Server[]>(session, 'GET', '/api/servers');
@@ -24,9 +28,14 @@ export const ansibleApi = {
     return apiRequest<Playbook>(session, 'POST', '/api/ansible/playbooks', data);
   },
   updatePlaybook(session: AuthSession, id: string, data: PlaybookInput): Promise<Playbook> {
-    return apiRequest<Playbook>(session, 'PUT', `/api/ansible/playbooks/${id}`, data);
+    return apiRequest<Playbook>(
+      session,
+      'PUT',
+      `/api/ansible/playbooks/${encodeURIComponent(id)}`,
+      data,
+    );
   },
   removePlaybook(session: AuthSession, id: string): Promise<void> {
-    return apiRequest<void>(session, 'DELETE', `/api/ansible/playbooks/${id}`);
+    return apiRequest<void>(session, 'DELETE', `/api/ansible/playbooks/${encodeURIComponent(id)}`);
   },
 };
