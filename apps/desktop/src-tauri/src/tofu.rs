@@ -334,6 +334,8 @@ pub fn forget_pin(server_url: &str) {
         .unwrap_or_else(|e| e.into_inner())
         .remove(&identity);
     keyring_delete(&identity);
+    // Drop the cached http client — it may hold a pool pinned to the old cert (5.1).
+    crate::http_client::invalidate_client_cache();
 }
 
 #[cfg(test)]

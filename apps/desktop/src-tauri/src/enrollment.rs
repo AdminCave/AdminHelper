@@ -155,6 +155,9 @@ fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError
     keyring_store::set(KEYRING_KEY, key_pem)?;
     keyring_store::set(KEYRING_CERT, &issued.fullchain)?;
     keyring_store::set(KEYRING_CA, &issued.chain)?;
+    // The cached http client bakes in the previous trust anchor — drop it so the next build_client
+    // picks up the newly enrolled identity (5.1).
+    crate::http_client::invalidate_client_cache();
     Ok(())
 }
 
@@ -182,6 +185,8 @@ pub fn clear_identity() {
     let _ = keyring_store::delete(KEYRING_KEY);
     let _ = keyring_store::delete(KEYRING_CERT);
     let _ = keyring_store::delete(KEYRING_CA);
+    // Drop the cached mTLS client so the next build_client falls back to the non-enrolled path (5.1).
+    crate::http_client::invalidate_client_cache();
 }
 
 // ── Enrollment orchestration ──────────────────────────────────────────────
