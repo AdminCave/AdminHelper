@@ -75,6 +75,7 @@
             <li>Linux: <code>/etc/frp/adminhelper.conf</code> and <code>/etc/adminhelper/monitor.conf</code></li>
             <li>Windows: under <code>%ProgramData%\AdminHelper\</code></li>
           </ul>
+          <p>The secret-bearing directories are hardened on creation: <code>0700</code> on Linux, and on Windows an ACL reset to SYSTEM + Administrators only (SID-based via <code>icacls</code>, since mode bits are ignored there) &mdash; so the API key and mTLS private key are not readable by other local users.</p>
           <p><code>FrpcConfig</code> fields: <code>ADMINHELPER_URL</code>, <code>API_KEY</code>, <code>SERVER_ID</code>, <code>CACERT</code>, <code>INSECURE</code>. <code>MonitorConfig</code> additionally carries <code>MONITOR_URL</code> and <code>SERVICES</code> (comma-separated).</p>
 
           <h2>Monitor Collector</h2>

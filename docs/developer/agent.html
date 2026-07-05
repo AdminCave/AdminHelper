@@ -75,6 +75,7 @@
             <li>Linux: <code>/etc/frp/adminhelper.conf</code> und <code>/etc/adminhelper/monitor.conf</code></li>
             <li>Windows: unter <code>%ProgramData%\AdminHelper\</code></li>
           </ul>
+          <p>Die geheimnistragenden Verzeichnisse werden beim Anlegen geh&auml;rtet: <code>0700</code> unter Linux, unter Windows eine auf SYSTEM + Administratoren reduzierte ACL (SID-basiert via <code>icacls</code>, da Mode-Bits dort ignoriert werden) &mdash; so sind API-Key und mTLS-Private-Key nicht von anderen lokalen Benutzern lesbar.</p>
           <p><code>FrpcConfig</code>-Felder: <code>ADMINHELPER_URL</code>, <code>API_KEY</code>, <code>SERVER_ID</code>, <code>CACERT</code>, <code>INSECURE</code>. <code>MonitorConfig</code> erg&auml;nzt zus&auml;tzlich <code>MONITOR_URL</code> und <code>SERVICES</code> (kommagetrennt).</p>
 
           <h2>Monitor-Collector</h2>

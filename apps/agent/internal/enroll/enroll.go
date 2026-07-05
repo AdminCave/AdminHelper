@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/httpclient"
 )
 
@@ -131,6 +132,8 @@ func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("Identity-Verzeichnis anlegen: %w", err)
 	}
+	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
+	_ = config.SecureDir(dir)
 	commit, err := stageIdentity(dir, key, resp)
 	if err != nil {
 		return err

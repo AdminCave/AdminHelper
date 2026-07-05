@@ -43,7 +43,8 @@ func Init(p InitParams) error {
 	if err := os.MkdirAll(monitorDir, 0700); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
-	_ = os.Chmod(monitorDir, 0700)
+	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
+	_ = config.SecureDir(monitorDir)
 
 	// Copy the CA cert if provided
 	storedCACert := ""

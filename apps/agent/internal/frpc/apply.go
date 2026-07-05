@@ -52,8 +52,9 @@ func Apply(p ApplyParams) error {
 	if err := os.MkdirAll(pkiDir, 0700); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
-	_ = os.Chmod(frpDir, 0700)
-	_ = os.Chmod(pkiDir, 0700)
+	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
+	_ = config.SecureDir(frpDir)
+	_ = config.SecureDir(pkiDir)
 
 	// Copy the CA cert if provided
 	if cacert != "" {
