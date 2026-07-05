@@ -267,7 +267,10 @@ services:
       # resolves which users to notify (best-effort; auth via MONITOR_API_KEY as
       # X-Internal-Key). No depends_on — the push tolerates the server being down
       # and a hard dependency would be circular (server proxies to monitoring).
+      # Plaintext http is deliberate on the internal compose network; ALLOW_INSECURE_HUB
+      # acknowledges it so config.py doesn't warn on every start (3.74).
       - SERVER_HUB_URL=http://server:8080
+      - ALLOW_INSECURE_HUB=1
       # Postgres
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper_monitor
       - PGHOST=postgres

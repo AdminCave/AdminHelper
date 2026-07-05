@@ -20,7 +20,17 @@ VICTORIA_METRICS_URL = os.environ.get("VICTORIA_METRICS_URL", "http://victoria:8
 # data). Authenticated with the shared INTERNAL_API_KEY via X-Internal-Key, the
 # reverse direction of the server's monitoring proxy. Empty disables the push
 # (tests set it empty); compose points it at the internal server URL.
-SERVER_HUB_URL = os.environ.get("SERVER_HUB_URL", "http://server:8080").rstrip("/")
+SERVER_HUB_URL = os.environ.get("SERVER_HUB_URL", "https://server:8443").rstrip("/")
+# The shared INTERNAL_API_KEY is sent to the hub in the X-Internal-Key header. Over
+# plaintext HTTP it can be sniffed, so default to https and warn on http unless the
+# operator has explicitly accepted it (trusted network / same compose net) (3.74).
+if SERVER_HUB_URL.startswith("http://") and os.environ.get("ALLOW_INSECURE_HUB") != "1":
+    logger.warning(
+        "SERVER_HUB_URL nutzt Klartext-HTTP (%s) — der interne API-Key geht ungeschuetzt "
+        "ueber diese Strecke. Nur im vertrauenswuerdigen Netz akzeptabel; "
+        "ALLOW_INSECURE_HUB=1 unterdrueckt diese Warnung.",
+        SERVER_HUB_URL,
+    )
 
 # Internal API key for service-to-service communication (AdminHelper -> Monitoring)
 INTERNAL_API_KEY = os.environ.get("MONITOR_API_KEY", "").strip()
