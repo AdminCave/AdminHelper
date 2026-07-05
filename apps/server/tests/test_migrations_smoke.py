@@ -109,3 +109,52 @@ def test_rename_frp_provision_tokens_preserves_rows(pg_engine, monkeypatch):
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+def test_uniq_visitor_port_frees_younger_duplicate_instead_of_deleting(pg_engine, monkeypatch):
+    # 4.64: pre-existing STCP visitor_port duplicates (a real race artifact) must be defused
+    # before CREATE UNIQUE INDEX — per port the OLDEST tunnel keeps it, younger ones lose it to
+    # NULL. Unlike the content-identical template-assignment dedupe the ROW is preserved (a
+    # distinct tunnel), only its port is freed. Migrate to just before the index, plant two stcp
+    # tunnels sharing a port, apply the migration.
+    admin_url = pg_engine.url
+    dbname = f"alembic_vport_{uuid.uuid4().hex[:8]}"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    try:
+        command.upgrade(cfg, "e7b3c1a9d2f4")  # the down_revision, just before the unique index
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO servers (id, name, hostname) VALUES ('s1', 'S', 'h')"))
+            conn.execute(
+                text(
+                    "INSERT INTO frp_server_config (id, name, server_addr, auth_token)"
+                    " VALUES ('c1', 'C', 'frps', 'tok')"
+                )
+            )
+            for tid, created in (("t_old", "2026-01-01"), ("t_new", "2026-02-01")):
+                conn.execute(
+                    text(
+                        "INSERT INTO frp_tunnels (id, server_id, frp_config_id, name, tunnel_type,"
+                        " protocol, local_port, visitor_port, created_at)"
+                        f" VALUES ('{tid}', 's1', 'c1', '{tid}', 'stcp', 'ssh', 22, 7000,"
+                        f" '{created} 00:00:00')"
+                    )
+                )
+        command.upgrade(cfg, "f1a2b3c4d5e6")  # dedupe (NULL the younger) + index — must not crash
+        with engine.connect() as conn:
+            rows = dict(
+                conn.execute(text("SELECT id, visitor_port FROM frp_tunnels ORDER BY id")).all()
+            )
+        assert rows["t_old"] == 7000, "der aeltere Tunnel behaelt seinen visitor_port"
+        assert rows["t_new"] is None, "der juengere verliert den Port (NULL), bleibt aber erhalten"
+    finally:
+        engine.dispose()
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        admin_engine.dispose()

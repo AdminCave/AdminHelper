@@ -9,8 +9,10 @@ assign of an STCP visitor_port could let two concurrent requests bind the same
 port, generating a conflicting visitor.toml. The partial unique index is the
 only race-free guard. HTTPS tunnels (visitor_port NULL) are excluded.
 
-NOTE: this migration fails if duplicate STCP visitor_port rows already exist —
-deduplicate them first.
+Pre-existing duplicate STCP visitor_port rows — which the old race could create — are defused
+first: per port the oldest tunnel keeps it, the younger ones have visitor_port set to NULL (the
+app reassigns on the next edit), so CREATE UNIQUE INDEX runs cleanly instead of crash-looping
+the container on boot.
 
 Revision ID: f1a2b3c4d5e6
 Revises: e7b3c1a9d2f4
@@ -32,6 +34,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # Defuse duplicates first — else CREATE UNIQUE INDEX fails in the entrypoint and the server
+    # container crash-loops (restart: unless-stopped) after an image update, recoverable only by
+    # manual psql surgery. Per port the OLDEST tunnel keeps its visitor_port; the younger ones
+    # lose it (NULL drops out of the partial index — the app reassigns on the next edit). Unlike
+    # the content-identical template-assignment dedupe (4.44), these are REAL conflicts (distinct
+    # tunnels), so free the port instead of deleting the row (4.64).
+    op.execute(
+        """
+        UPDATE frp_tunnels SET visitor_port = NULL
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY visitor_port ORDER BY created_at NULLS LAST, id
+                ) AS rn
+                FROM frp_tunnels
+                WHERE tunnel_type = 'stcp' AND visitor_port IS NOT NULL
+            ) d WHERE d.rn > 1
+        )
+        """
+    )
     op.create_index(
         "uq_frp_tunnel_visitor_port",
         "frp_tunnels",
