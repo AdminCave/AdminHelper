@@ -7,7 +7,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { onMount } from 'svelte';
   import { navigate } from '$lib/router';
-  import { load as loadConnections, kindCounts, recentConnections } from '$lib/stores/connections';
+  import {
+    loadForCurrentMode as loadConnections,
+    kindCounts,
+    recentConnections,
+  } from '$lib/stores/connections';
   import { timeAgo } from '$lib/utils/timeAgo';
   import type { Connection } from '$lib/bridge/types';
   import { initiateConnect } from '$lib/stores/connectFlow';

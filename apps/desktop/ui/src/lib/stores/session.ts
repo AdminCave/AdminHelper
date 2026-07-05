@@ -115,11 +115,12 @@ export async function logout(): Promise<void> {
   try {
     await bridge.logout();
   } finally {
-    // Drop the in-memory list first (server-mode connections live only in
-    // memory), then null the session — otherwise subscribers briefly see the
-    // old data in the already-logged-out state. Crucially this does NOT touch
-    // connections.json: that file is the local-mode store and overwriting it
-    // here would erase the user's locally saved connections.
+    // Drop the in-memory list first (server/sync connections are held only as a
+    // transient cache in connections.json), then null the session — otherwise
+    // subscribers briefly see the old data in the already-logged-out state.
+    // Crucially this does NOT touch connections.json: in local mode that file is
+    // the persistent store and overwriting it here would erase the user's saved
+    // connections.
     connectionsSync.clear();
     _state.update((s) => ({ ...s, session: null }));
   }

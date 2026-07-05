@@ -64,18 +64,31 @@ export const groupedConnections = derived([_state, searchTerm], ([$s, $term]): C
   groupConnectionsByHost($s.items, $term),
 );
 
+// Shared request generation: load() (cache read) and reloadForMode() (network fetch) both write
+// _state, and the pages mount a load while login() runs a reloadForMode in parallel. Without a
+// shared generation a stale read (e.g. the OLD server's still-cached connections.json) could
+// overwrite the new server's fetch, leaving the wrong server's connections shown and clickable —
+// there was no out-of-order guard here, unlike the monitoring store's statusGen (4.39).
+let loadGen = 0;
+
 export async function load(): Promise<void> {
+  const gen = ++loadGen;
   _state.update((s) => ({ ...s, loading: true, error: null }));
   try {
     const items = await bridge.loadConnections();
+    if (gen !== loadGen) return;
     _state.set({ items, loading: false, error: null });
   } catch (err) {
-    _state.set({
-      items: [],
-      loading: false,
-      error: errMsg(err),
-    });
+    if (gen !== loadGen) return;
+    _state.set({ items: [], loading: false, error: errMsg(err) });
   }
+}
+
+/** Mode-aware entry point for page mounts: reload connections for the current session's mode
+ * instead of blindly reading the cache while a login's network fetch is in flight (4.39). */
+export async function loadForCurrentMode(): Promise<void> {
+  const { settings, session } = get(sessionStore);
+  await reloadForMode(settings, session);
 }
 
 export async function reloadForMode(
@@ -83,24 +96,22 @@ export async function reloadForMode(
   session: AuthSession | null,
 ): Promise<void> {
   if (!settings) return load();
+  const gen = ++loadGen;
   _state.update((s) => ({ ...s, loading: true, error: null }));
   try {
+    let items: Connection[];
     if (settings.mode === 'server' && session) {
-      const items = await bridge.fetchConnectionsJwt(session.serverUrl, session.token);
-      _state.set({ items, loading: false, error: null });
+      items = await bridge.fetchConnectionsJwt(session.serverUrl, session.token);
     } else if (settings.mode === 'sync' && settings.url) {
-      const items = await bridge.syncConnections(settings.url);
-      _state.set({ items, loading: false, error: null });
+      items = await bridge.syncConnections(settings.url);
     } else {
-      const items = await bridge.loadConnections();
-      _state.set({ items, loading: false, error: null });
+      items = await bridge.loadConnections();
     }
+    if (gen !== loadGen) return;
+    _state.set({ items, loading: false, error: null });
   } catch (err) {
-    _state.set({
-      items: [],
-      loading: false,
-      error: errMsg(err),
-    });
+    if (gen !== loadGen) return;
+    _state.set({ items: [], loading: false, error: errMsg(err) });
   }
 }
 
@@ -110,10 +121,10 @@ export async function saveAll(items: Connection[]): Promise<void> {
 }
 
 /** Clears the in-memory connection list WITHOUT touching connections.json.
- * Server-mode connections live only in memory (reloadForMode never writes the
- * file), while connections.json is the local-mode store. Logout must drop the
- * in-memory view but must NOT overwrite that file — doing so would erase the
- * user's locally saved connections. */
+ * A server/sync fetch DOES write connections.json on the Rust side (it's the transient
+ * server/sync cache), but in LOCAL mode connections.json is the user's persistent store.
+ * Logout must drop the in-memory view but must NOT overwrite that file — in local mode that
+ * would erase the user's locally saved connections. */
 export function clearInMemory(): void {
   _state.set({ items: [], loading: false, error: null });
 }

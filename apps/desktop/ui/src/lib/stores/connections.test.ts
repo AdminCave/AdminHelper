@@ -27,6 +27,7 @@ import {
   clearInMemory,
   kindCounts,
   recentConnections,
+  load,
 } from './connections';
 
 const conn = (over: Partial<Connection>): Connection => ({
@@ -259,5 +260,36 @@ describe('connections store', () => {
       );
       expect(get(recentConnections).map((c) => c.id)).toEqual(['f', 'e', 'd', 'c', 'b']);
     });
+  });
+});
+
+describe('load generation guard (4.39)', () => {
+  beforeEach(async () => {
+    vi.mocked(bridge.loadConnections).mockReset();
+    vi.mocked(bridge.loadConnections).mockResolvedValue([]);
+    await saveAll([]);
+  });
+
+  it('drops a superseded load so the newer call wins', async () => {
+    const older = conn({ id: 'old-server' });
+    const newer = conn({ id: 'new-server' });
+    // The FIRST load's fetch resolves LAST (slow); the second resolves first (fast).
+    let resolveFirst!: (v: Connection[]) => void;
+    vi.mocked(bridge.loadConnections)
+      .mockImplementationOnce(
+        () =>
+          new Promise<Connection[]>((r) => {
+            resolveFirst = r;
+          }),
+      )
+      .mockImplementationOnce(async () => [newer]);
+
+    const p1 = load(); // gen 1 (slow)
+    const p2 = load(); // gen 2 (fast) -> wins
+    await p2;
+    expect(get(connections)).toEqual([newer]);
+    resolveFirst([older]); // gen 1 resolves late...
+    await p1;
+    expect(get(connections)).toEqual([newer]); // ...but is dropped; newer stays
   });
 });

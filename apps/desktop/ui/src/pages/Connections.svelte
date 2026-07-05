@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     kindFilter,
     groupFilter,
     viewMode,
-    load as loadConnections,
+    loadForCurrentMode as loadConnections,
     connections,
   } from '$lib/stores/connections';
   import { tunnelMappings } from '$lib/stores/tunnel';
