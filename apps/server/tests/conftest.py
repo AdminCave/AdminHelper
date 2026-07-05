@@ -11,6 +11,10 @@ import os
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
+# Prod now defaults to enforced (3.89); the test env has no gateway / client certs, so
+# default to permissive here. Tests that assert the enforced path set config.MTLS_ENFORCE
+# =True explicitly (see test_mtls_scope).
+os.environ.setdefault("MTLS_ENFORCE", "false")
 
 import pytest
 from sqlalchemy import create_engine, event

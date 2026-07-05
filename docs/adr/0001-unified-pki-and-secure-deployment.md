@@ -32,7 +32,7 @@ ist eine Operator-Entscheidung.
 |---|---|
 | D1 Root → tunnel/access/internal | ✅ `ca-issuer` erzeugt die Hierarchie beim First-Boot |
 | D2 CA-Pinning + Leaf-Rotation | ✅ Desktop pinnt die CA-Kette (hostname-agnostisch); Agent pinnt die Root |
-| D3 mTLS-Pflicht `:443` | ⏳ **permissiv** per Default; Scharfschalten per `MTLS_ENFORCE=true` (Schalter umgesetzt + **end-to-end verifiziert**: permissiv↔enforced↔rollback, A8) |
+| D3 mTLS-Pflicht `:443` | ✅ **enforced** per Default (ab 0.29.0, Code + Compose); Permissiv-Rollout per `MTLS_ENFORCE=false` (Schalter umgesetzt + **end-to-end verifiziert**: permissiv↔enforced↔rollback, A8) |
 | D4 kurzlebige Certs, Revocation = Ablauf | ✅ native 90 d / Auto-Renew; `revoked_identities` als Schnell-Widerruf |
 | D5 Cert-Laufzeit pro Zielgruppe | ✅ native kurz+auto; Browser lang (`browser=true`) + P12-Re-Import |
 | D6 eigener `ca-issuer`, Server nie im Signier-Pfad | ✅ einzige Signier-Capability; Gateway hält nur ein Leaf; die alte server-eigene FRP-CA ist entfernt (F3, 0.28.0) |

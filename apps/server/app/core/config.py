@@ -124,12 +124,21 @@ if WEB_CONCURRENCY > 1 and not REDIS_URL:
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "10"))
 DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
 
-# mTLS scope enforcement (ADR 0001 D3/D8, Phase A). The gateway forwards the
-# verified client identity as headers; per-route scope guards (app.core.identity)
-# read it. During the permissive rollout (A3–A7) this stays False: mismatches are
-# logged but allowed, so the system is usable before all clients have certs. A8
-# flips it to True (CERT_REQUIRED at the gateway + enforced app-side scope).
-MTLS_ENFORCE = os.environ.get("MTLS_ENFORCE", "false").lower() in ("1", "true", "yes")
+# mTLS scope enforcement (ADR 0001 D3/D8). The gateway forwards the verified client
+# identity as headers; per-route scope guards (app.core.identity) read it. Enforced by
+# default (true), matching compose (MTLS_ENFORCE:-true) and the docs' "enforced by default
+# since 0.29.0" — the A8 rollout is complete. A false code default meant a server started
+# outside compose / with the env dropped silently fell back to permissive, flipping the
+# central trust boundary with no warning. MTLS_ENFORCE=false is the permissive rollout
+# (scope mismatches logged but allowed), needed only for a manual first bootstrap. The
+# startup log makes the effective stance observable (no split-brain guessing) (3.89).
+MTLS_ENFORCE = os.environ.get("MTLS_ENFORCE", "true").lower() in ("1", "true", "yes")
+if MTLS_ENFORCE:
+    logger.info("MTLS_ENFORCE=true — Datenebene erzwingt Per-Route-Scope.")
+else:
+    logger.warning(
+        "MTLS_ENFORCE=false — Datenebene laeuft PERMISSIV (Scope-Mismatch wird nur geloggt)."
+    )
 
 # Public port of the gateway's enrollment plane (ADR 0001 §3.2). The server has
 # no reliable view of its own public address, so it only returns this port hint
