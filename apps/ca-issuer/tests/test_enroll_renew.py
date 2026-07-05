@@ -263,3 +263,38 @@ def test_enroll_invalid_csr_signature_is_4xx_not_500(client):
     assert r.status_code == 403
     good = client.post("/enroll", json={"token": "tok-s", "csr": _csr_pem("agent-s")})
     assert good.status_code == 200
+
+
+def test_inmemory_consume_is_one_time_and_frees_the_entry():
+    # 4.87: consume must be one-time (a second consume returns None) and must not leak — the entry
+    # is popped, not just flagged, so _tokens does not grow unbounded.
+    store = InMemoryTokenStore()
+    grant = EnrollmentGrant(subject_id="a", scope="access")
+    store.mint("tok", grant)
+    assert store.consume("tok") is grant  # first call gets the grant
+    assert store.consume("tok") is None  # second call: gone (popped)
+    assert store._tokens == {}  # entry removed, no unbounded growth
+
+
+def test_inmemory_consume_is_thread_safe_single_winner():
+    # 4.87: N threads consuming the same token — exactly one gets the grant (atomic pop under the
+    # lock), the rest get None. The old check-then-set could let two both win the race.
+    import threading
+
+    store = InMemoryTokenStore()
+    grant = EnrollmentGrant(subject_id="a", scope="access")
+    store.mint("tok", grant)
+    winners: list[EnrollmentGrant] = []
+
+    def worker():
+        g = store.consume("tok")
+        if g is not None:
+            winners.append(g)
+
+    threads = [threading.Thread(target=worker) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(winners) == 1  # exactly one consumed the one-time token

@@ -66,10 +66,13 @@ class Intermediate:
 
 def _write_private(path: Path, pem: bytes) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, pem)
-    finally:
-        os.close(fd)
+    with os.fdopen(fd, "wb") as f:  # buffered writer writes it all (no short write), closes the fd
+        f.write(pem)
+        f.flush()
+        # fsync the CA key material: a crash/power-loss right after the write could otherwise leave
+        # the key empty/truncated on disk while the .crt stays intact, breaking the next boot at
+        # key_from_pem / an nginx cert-key mismatch — the system's most valuable material (4.86).
+        os.fsync(f.fileno())
     try:
         path.chmod(0o600)  # O_CREAT leaves an existing file's mode unchanged
     except OSError as exc:

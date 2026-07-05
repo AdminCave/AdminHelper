@@ -13,6 +13,7 @@ selected via DATABASE_URL in main.build_issuer.
 from __future__ import annotations
 
 import datetime
+import threading
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -29,8 +30,8 @@ class EnrollmentGrant:
 
 class TokenStore(Protocol):
     def consume(self, token: str) -> EnrollmentGrant | None:
-        """One-time consume: return the grant and mark the token used, or None
-        if the token is unknown/expired/already used."""
+        """One-time consume: return the grant and invalidate the token so it cannot
+        be reused, or None if the token is unknown/expired/already consumed."""
         ...
 
     def is_active(self, subject_id: str, scope: str) -> bool:
@@ -43,7 +44,6 @@ class TokenStore(Protocol):
 class _Entry:
     grant: EnrollmentGrant
     expires_at: datetime.datetime
-    used: bool = False
 
 
 class InMemoryTokenStore:
@@ -51,6 +51,11 @@ class InMemoryTokenStore:
     the DB-backed one (increment 4), which consumes via a conditional UPDATE."""
 
     def __init__(self) -> None:
+        # FastAPI runs sync-def endpoints in a threadpool, so two parallel /enroll requests with
+        # the same token could both pass the used-check before either marked it used. Guard consume
+        # with a lock and pop the entry atomically — that makes it truly one-time AND stops _tokens
+        # from growing unbounded (consumed/expired entries are removed, not just flagged) (4.87).
+        self._lock = threading.Lock()
         self._tokens: dict[str, _Entry] = {}
         self._deprovisioned: set[tuple[str, str]] = set()
 
@@ -68,12 +73,12 @@ class InMemoryTokenStore:
         self._deprovisioned.add((subject_id, scope))
 
     def consume(self, token: str) -> EnrollmentGrant | None:
-        entry = self._tokens.get(token)
-        if entry is None or entry.used:
+        with self._lock:
+            entry = self._tokens.pop(token, None)  # atomic one-time consume; also frees the entry
+        if entry is None:
             return None
         if datetime.datetime.now(datetime.timezone.utc) >= entry.expires_at:
             return None
-        entry.used = True
         return entry.grant
 
     def is_active(self, subject_id: str, scope: str) -> bool:
