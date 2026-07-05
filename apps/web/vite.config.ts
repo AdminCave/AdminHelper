@@ -6,8 +6,36 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'node:path';
 
+// Baseline Content-Security-Policy injected into the production index.html as a second
+// line of defence: even a future XSS can't run inline scripts or exfiltrate the API keys
+// / FRP tokens / webhook secrets the panel renders (3.97). Only in the build — the dev
+// server needs HMR (inline scripts + ws), which a strict CSP would break. frame-ancestors
+// is deliberately absent: it's ignored in a meta CSP and belongs in the gateway header.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'", // the Vite build emits no inline scripts (verified)
+  "style-src 'self' 'unsafe-inline'", // components use inline style= attributes
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ');
+
+const cspMetaPlugin = {
+  name: 'inject-csp-meta',
+  transformIndexHtml(html: string, ctx: { server?: unknown }) {
+    if (ctx.server) return html; // dev server → no CSP (HMR)
+    return html.replace(
+      '</head>',
+      `  <meta http-equiv="Content-Security-Policy" content="${CSP}" />\n  </head>`,
+    );
+  },
+};
+
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), cspMetaPlugin],
   resolve: {
     alias: {
       $lib: path.resolve(__dirname, './src/lib'),
