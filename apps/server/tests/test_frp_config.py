@@ -125,3 +125,26 @@ def test_update_response_masks_secrets(db_session, monkeypatch):
     assert result["dashboardPassword"] is None
     stored = db_session.query(FrpServerConfig).filter(FrpServerConfig.id == cfg.id).one()
     assert stored.auth_token and stored.dashboard_password  # secrets kept, just not echoed
+
+
+def test_create_survives_frps_write_failure(db_session, monkeypatch):
+    # 4.135: a failed frps.toml write (full/read-only volume) AFTER the commit must NOT turn a
+    # committed create into a 500 whose retry would duplicate — the DB is the source of truth and
+    # the write is best-effort (like the startup _ensure_frps_config path).
+    from types import SimpleNamespace
+
+    import app.modules.frp.config_router as cr
+    from app.modules.frp.schemas import FrpServerConfigCreate
+
+    def _boom(config, **kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(cr, "write_frps_config", _boom)
+    monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
+    data = FrpServerConfigCreate(name="n", server_addr="a.example")
+    # Must NOT raise despite the write failure...
+    cr.create_server_config(
+        data=data, request=SimpleNamespace(state=SimpleNamespace()), db=db_session
+    )
+    # ...and the config is persisted (DB is the source of truth).
+    assert db_session.query(FrpServerConfig).count() == 1

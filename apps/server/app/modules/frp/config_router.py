@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import logging
 import secrets
 import uuid
 
@@ -17,6 +18,8 @@ from app.modules.audit import service as audit
 from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.schemas import FrpServerConfigCreate, FrpServerConfigUpdate
+
+logger = logging.getLogger("adminhelper.frp")
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
@@ -64,7 +67,13 @@ def create_server_config(
     db.add(config)
     db.commit()
     db.refresh(config)
-    write_frps_config(config, warn_restart=True)
+    # Best-effort like the startup path (_ensure_frps_config): the DB is the source of truth, so a
+    # full/read-only FRP volume must not turn a committed change into a 500 whose retry would then
+    # create a duplicate. The next successful write / restart reconciles frps.toml (4.135).
+    try:
+        write_frps_config(config, warn_restart=True)
+    except Exception:
+        logger.exception("frps.toml schreiben nach Config-Create fehlgeschlagen (id=%s)", config.id)
     fire_event("frp.config.created", {"id": config.id, "name": config.name})
     audit.record(
         db,
@@ -126,7 +135,10 @@ def update_server_config(
 
     db.commit()
     db.refresh(config)
-    write_frps_config(config, warn_restart=True)
+    try:
+        write_frps_config(config, warn_restart=True)
+    except Exception:
+        logger.exception("frps.toml schreiben nach Config-Update fehlgeschlagen (id=%s)", config.id)
     fire_event("frp.config.updated", {"id": config.id, "name": config.name})
     audit.record(
         db,
