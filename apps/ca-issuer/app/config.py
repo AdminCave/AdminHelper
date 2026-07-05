@@ -34,7 +34,15 @@ def database_url() -> str:
 
 def root_passphrase() -> bytes | None:
     """Passphrase that encrypts the cold Root key at rest (D7). Required to create
-    the hierarchy on first boot; not needed for normal leaf signing."""
+    the hierarchy on first boot; not needed for normal leaf signing.
+
+    Prefer the ``_FILE`` variant (a Docker/compose file secret) over the plain env
+    var: an env var is readable via ``docker inspect`` / ``/proc/<pid>/environ`` by
+    anyone with host/Docker-socket access, and whoever holds the passphrase AND the
+    ``ca-pki`` volume can decrypt the Root key (3.47)."""
+    path = os.environ.get("CA_ROOT_PASSPHRASE_FILE", "").strip()
+    if path:
+        return Path(path).read_bytes().strip() or None
     return os.environ.get("CA_ROOT_PASSPHRASE", "").encode() or None
 
 

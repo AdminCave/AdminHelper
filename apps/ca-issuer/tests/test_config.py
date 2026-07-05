@@ -20,3 +20,34 @@ def test_frps_extra_sans_falls_back_to_gateway(monkeypatch):
     monkeypatch.setenv("EXTRA_SANS", "gw.example")
     assert config.frps_extra_sans() == "gw.example"
     assert config.frps_extra_sans() == config.gateway_extra_sans()
+
+
+def test_root_passphrase_from_env(monkeypatch):
+    monkeypatch.delenv("CA_ROOT_PASSPHRASE_FILE", raising=False)
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE", "env-secret")
+    assert config.root_passphrase() == b"env-secret"
+
+
+def test_root_passphrase_file_preferred(monkeypatch, tmp_path):
+    # 3.47: the _FILE variant (a Docker file secret) wins over the env var, which
+    # leaks via docker inspect / /proc/<pid>/environ.
+    secret = tmp_path / "pass"
+    secret.write_bytes(b"file-secret\n")
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(secret))
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE", "env-secret")
+    assert config.root_passphrase() == b"file-secret"  # trailing whitespace stripped
+
+
+def test_root_passphrase_none_when_unset(monkeypatch):
+    monkeypatch.delenv("CA_ROOT_PASSPHRASE_FILE", raising=False)
+    monkeypatch.delenv("CA_ROOT_PASSPHRASE", raising=False)
+    assert config.root_passphrase() is None
+
+
+def test_root_passphrase_empty_file_is_none(monkeypatch, tmp_path):
+    # A whitespace-only secret file strips to nothing -> None (not b"").
+    empty = tmp_path / "empty"
+    empty.write_bytes(b"\n")
+    monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(empty))
+    monkeypatch.delenv("CA_ROOT_PASSPHRASE", raising=False)
+    assert config.root_passphrase() is None
