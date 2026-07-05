@@ -9,7 +9,7 @@ import { writable, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import { sessionStore, refreshSettings, dropSession } from './session';
 import * as tunnelStore from './tunnel';
-import { reloadForMode } from './connections';
+import { reloadForMode, connectionsStore } from './connections';
 import { reportError, showStatus } from './statusBar';
 import { getIntervalMinutes, getSettingsDefaults, validateSettings } from '$lib/models/settings';
 import { setLanguage, tNow } from '$lib/i18n';
@@ -46,14 +46,14 @@ export function startSyncTimer(): void {
 export async function syncNow(notify: boolean): Promise<void> {
   const current = get(sessionStore).settings;
   if (!current || current.mode !== 'sync' || !current.url) return;
-  try {
-    await reloadForMode(current, null);
-    if (notify) showStatus(tNow('status.syncSuccess'));
-  } catch (err) {
-    if (notify) {
-      reportError(errMsg(err));
-    }
-  }
+  // reloadForMode never throws — it catches internally and records the failure in the store's
+  // error state (and empties the list). Check that instead of a dead try/catch, or a failed sync
+  // would clear the connection list AND still flash "sync successful" (4.42).
+  await reloadForMode(current, null);
+  if (!notify) return;
+  const { error } = get(connectionsStore);
+  if (error) reportError(error);
+  else showStatus(tNow('status.syncSuccess'));
 }
 
 export interface SaveResult {
