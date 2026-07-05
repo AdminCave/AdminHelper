@@ -16,6 +16,7 @@ block state by sustained fire.
 """
 
 import logging
+import threading
 import time
 from typing import Protocol
 
@@ -33,6 +34,12 @@ class InMemoryBackend:
         self._counters: dict[str, tuple[int, float]] = {}
         self._last_cleanup = 0.0
         self._cleanup_interval = 300.0
+        # Sync endpoints (login/bootstrap/hook-trigger) run in the FastAPI threadpool, so
+        # increment/get_count/reset are called concurrently. Guard every _counters access: else
+        # _cleanup's iteration races an insert (RuntimeError: dict changed size during iteration,
+        # a 500 in login) and the read-modify-write loses brute-force counts (4.66). _cleanup runs
+        # under the caller's lock — the Lock is non-reentrant, so it must not re-acquire.
+        self._lock = threading.Lock()
 
     def _cleanup(self, now: float) -> None:
         if now - self._last_cleanup <= self._cleanup_interval:
@@ -44,26 +51,29 @@ class InMemoryBackend:
 
     def get_count(self, key: str) -> int:
         now = time.monotonic()
-        self._cleanup(now)
-        entry = self._counters.get(key)
-        if entry is None or now >= entry[1]:
-            return 0
-        return entry[0]
+        with self._lock:
+            self._cleanup(now)
+            entry = self._counters.get(key)
+            if entry is None or now >= entry[1]:
+                return 0
+            return entry[0]
 
     def increment(self, key: str, window_seconds: int) -> int:
         now = time.monotonic()
-        self._cleanup(now)
-        entry = self._counters.get(key)
-        if entry is None or now >= entry[1]:
-            count = 1
-            self._counters[key] = (count, now + window_seconds)
-        else:
-            count = entry[0] + 1
-            self._counters[key] = (count, entry[1])
-        return count
+        with self._lock:
+            self._cleanup(now)
+            entry = self._counters.get(key)
+            if entry is None or now >= entry[1]:
+                count = 1
+                self._counters[key] = (count, now + window_seconds)
+            else:
+                count = entry[0] + 1
+                self._counters[key] = (count, entry[1])
+            return count
 
     def reset(self, key: str) -> None:
-        self._counters.pop(key, None)
+        with self._lock:
+            self._counters.pop(key, None)
 
 
 class RedisBackend:
