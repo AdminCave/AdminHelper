@@ -11,6 +11,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -122,6 +123,15 @@ class MonitorAlertRule(Base):
 
 class MonitorAlertLog(Base):
     __tablename__ = "monitor_alert_log"
+    # The cooldown check (alert_rule_id + check_id + sent_at >= cutoff, on the alerter hot path), the
+    # daily retention cleanup (sent_at < cutoff) and GET /alerts/log (ORDER BY sent_at DESC) all
+    # filter or sort on sent_at, which was unindexed — seq-scans/full-sorts once the table grows over
+    # 90 days of flapping checks. The composite covers the cooldown query; the sent_at index covers
+    # the cleanup and the log listing (5.19).
+    __table_args__ = (
+        Index("ix_alert_log_rule_check_sent", "alert_rule_id", "check_id", "sent_at"),
+        Index("ix_alert_log_sent_at", "sent_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     alert_rule_id = Column(
