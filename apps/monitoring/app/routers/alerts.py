@@ -104,7 +104,18 @@ def update_alert_rule(rule_id: str, data: AlertRuleUpdate, db: Session = Depends
         if field in sent:
             setattr(rule, field, getattr(data, field))
     if "channel_config" in sent:
-        rule.channel_config = json.dumps(data.channel_config)
+        new_cfg = dict(data.channel_config or {})
+        # A masked ("***") or empty smtp_password means "unchanged": keep the stored
+        # secret rather than overwriting it with the mask to_dict returned, so
+        # editing an unrelated field never wipes or leaks the password (3.27).
+        if new_cfg.get("smtp_password") in ("***", "", None):
+            old_cfg = json.loads(rule.channel_config) if rule.channel_config else {}
+            old_pw = old_cfg.get("smtp_password")
+            if old_pw:
+                new_cfg["smtp_password"] = old_pw
+            else:
+                new_cfg.pop("smtp_password", None)
+        rule.channel_config = json.dumps(new_cfg)
 
     db.commit()
     db.refresh(rule)

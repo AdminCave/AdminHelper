@@ -9,6 +9,7 @@ the email channel parses recipients (list or CSV) and refuses to send without an
 SMTP host instead of silently dropping the alert."""
 
 import json
+import ssl
 from types import SimpleNamespace
 
 import app.alerter as alerter
@@ -44,3 +45,42 @@ class TestEmailChannel:
         monkeypatch.setattr(alerter, "SMTP_HOST", "")
         ok, err = _send_email({"to": "a@x.de, b@y.de"}, _rule("email"), CHECK, MSG)
         assert not ok and "SMTP" in err
+
+    def test_starttls_uses_verifying_context_on_non_587_port(self, monkeypatch):
+        # 3.24: STARTTLS must run with a verifying TLS context on ANY non-465 port
+        # (25/2525 too, not just 587), so the login credentials never traverse a
+        # plaintext or unverified connection.
+        calls = {}
+
+        class FakeSMTP:
+            def __init__(self, host, port, timeout):
+                calls["ctor"] = (host, port)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def starttls(self, context=None):
+                calls["starttls_ctx"] = context
+
+            def login(self, user, pw):
+                calls["login"] = (user, pw)
+
+            def send_message(self, message):
+                calls["sent"] = True
+
+        monkeypatch.setattr(alerter.smtplib, "SMTP", FakeSMTP)
+        cfg = {
+            "to": "a@x.de",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 25,
+            "smtp_user": "u",
+            "smtp_password": "p",
+        }
+        ok, err = _send_email(cfg, _rule("email"), CHECK, MSG)
+        assert ok, err
+        assert isinstance(calls.get("starttls_ctx"), ssl.SSLContext)
+        assert calls.get("login") == ("u", "p")
+        assert calls.get("sent")

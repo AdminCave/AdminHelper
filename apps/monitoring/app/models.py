@@ -99,13 +99,19 @@ class MonitorAlertRule(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def to_dict(self) -> dict:
+        cfg = json.loads(self.channel_config) if self.channel_config else {}
+        # Never reflect the SMTP password in an API response — mask a set secret so
+        # it does not leak into GET /alerts and the admin frontend (3.27). The
+        # update handler treats the mask as "unchanged".
+        if cfg.get("smtp_password"):
+            cfg["smtp_password"] = "***"
         return {
             "id": self.id,
             "name": self.name,
             "matchSeverity": self.match_severity,
             "matchServerId": self.match_server_id,
             "channel": self.channel,
-            "channelConfig": json.loads(self.channel_config) if self.channel_config else {},
+            "channelConfig": cfg,
             "cooldownMinutes": self.cooldown_minutes,
             "enabled": self.enabled,
             "templateId": self.template_id,

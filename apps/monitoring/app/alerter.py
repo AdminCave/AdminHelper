@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
+import ssl
 from datetime import timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -303,16 +304,21 @@ def _send_email(
     message.attach(MIMEText(msg["text"], "plain"))
 
     try:
-        # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from
-        # the start (SMTP_SSL), otherwise login() would run in clear text. Port
-        # 587 (and others) use STARTTLS to upgrade an initially plain socket.
+        # Port 465 = implicit TLS (SMTPS): the connection must be wrapped from the
+        # start (SMTP_SSL). Every other port upgrades via STARTTLS. Both use a
+        # verifying context (create_default_context checks cert + hostname), so a
+        # MITM cannot strip TLS and harvest the login credentials (3.24).
+        ctx = ssl.create_default_context()
         if smtp_port == 465:
-            smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
+            smtp_ctx = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=ctx)
         else:
             smtp_ctx = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
         with smtp_ctx as server:
-            if smtp_port == 587:
-                server.starttls()
+            if smtp_port != 465:
+                # STARTTLS on EVERY non-implicit-TLS port (not just 587): fails
+                # closed if the server offers no TLS, so smtp_user/smtp_password
+                # never go over a plaintext/unverified connection (25/2525/...).
+                server.starttls(context=ctx)
             if smtp_user and smtp_pass:
                 server.login(smtp_user, smtp_pass)
             server.send_message(message)
