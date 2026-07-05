@@ -71,3 +71,41 @@ def test_migration_chain_is_reentrant(migrated_engine, monkeypatch):
     cfg = Config(str(SERVER_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
     command.upgrade(cfg, "head")
+
+
+def test_rename_frp_provision_tokens_preserves_rows(pg_engine, monkeypatch):
+    # 4.62: op.rename_table must carry the rows over — the old create_table + drop_table silently
+    # destroyed every pending provision token. Migrate to just before the rename, plant a token,
+    # apply the rename, and assert the token survived under the new table name.
+    admin_url = pg_engine.url
+    dbname = f"alembic_rename_{uuid.uuid4().hex[:8]}"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    try:
+        command.upgrade(cfg, "1d8276d3aa26")  # the down_revision, just before the rename
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO servers (id, name, hostname) VALUES ('s1', 'S', 'h')"))
+            conn.execute(
+                text(
+                    "INSERT INTO frp_provision_tokens (id, server_id, hashed_token, expires_at)"
+                    " VALUES ('t1', 's1', 'hash', '2099-01-01 00:00:00')"
+                )
+            )
+        command.upgrade(cfg, "0494a8f377ef")  # the rename — must preserve the row
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT server_id, hashed_token FROM provision_tokens WHERE id = 't1'")
+            ).first()
+        assert row is not None, "das Provision-Token muss das Rename ueberleben"
+        assert row[0] == "s1" and row[1] == "hash"
+    finally:
+        engine.dispose()
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        admin_engine.dispose()
