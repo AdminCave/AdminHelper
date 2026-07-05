@@ -73,7 +73,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p_admin = sub.add_parser("create-admin", help="Create the first admin user")
     p_admin.add_argument("--username", required=True)
-    p_admin.add_argument("--password", required=True)
+    p_admin.add_argument(
+        "--password",
+        help="Admin password. INSECURE: visible in the process argv "
+        "(/proc/<pid>/cmdline) for the duration of the call — prefer --password-stdin.",
+    )
+    p_admin.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read the password from the first line of stdin (no argv leak).",
+    )
 
     p_token = sub.add_parser(
         "mint-enroll-token", help="Mint a one-time access enrollment token for a user"
@@ -86,7 +95,13 @@ def main(argv: list[str] | None = None) -> int:
     db = SessionLocal()
     try:
         if args.command == "create-admin":
-            return create_admin(db, args.username, args.password)
+            if args.password_stdin:
+                password = sys.stdin.readline().rstrip("\n")
+            else:
+                password = args.password
+            if not password:
+                parser.error("--password or --password-stdin is required")
+            return create_admin(db, args.username, password)
         if args.command == "mint-enroll-token":
             token = mint_enroll_token(db, args.username, args.ttl_minutes)
             if token is None:
