@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use tauri::Emitter;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration, Instant};
 
 use crate::auth;
 use crate::error::AppError;
@@ -39,6 +39,12 @@ pub fn new_stream_state() -> StreamState {
 
 const BASE_BACKOFF: Duration = Duration::from_millis(500);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
+// The server heartbeats the SSE stream ~every 30 s, so no chunk for 90 s means the connection is
+// dead (silent TCP drop) — read past this treats it as a disconnect and reconnects (4.95).
+const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+// A connection must live at least this long before a clean close is treated as healthy; else a
+// proxy that closes SSE immediately traps the client in a fast reconnect loop (4.94).
+const MIN_HEALTHY_UPTIME: Duration = Duration::from_secs(30);
 
 pub async fn start(
     app: tauri::AppHandle,
@@ -81,9 +87,17 @@ async fn run_loop(
 ) {
     let mut backoff = BASE_BACKOFF;
     while state.epoch.load(Ordering::SeqCst) == my_epoch {
+        let connected_at = Instant::now();
         match connect_and_read(&app, &state, my_epoch, &server_url, &token, self_signed).await {
             Ok(StreamEnd::Superseded) => break,
-            Ok(StreamEnd::Closed) => backoff = BASE_BACKOFF, // clean close -> reconnect promptly
+            Ok(StreamEnd::Closed) => {
+                // Only a connection that lived a while is "healthy" enough to reset the backoff; a
+                // proxy that closes SSE instantly would otherwise never let the backoff grow and
+                // trap the client in a 2 Hz reconnect loop (4.94).
+                if connected_at.elapsed() > MIN_HEALTHY_UPTIME {
+                    backoff = BASE_BACKOFF;
+                }
+            }
             Ok(StreamEnd::AuthFailed) => {
                 // 401/403: token expired. Stop and let the UI fall back to
                 // polling; a fresh login restarts the stream.
@@ -131,7 +145,16 @@ async fn connect_and_read(
 
     let mut stream = resp.bytes_stream();
     let mut parser = SseParser::new();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        // Idle-timeout the read: on a silent TCP drop (suspend/resume, wifi switch, NAT timeout)
+        // no chunk ever arrives, so a plain stream.next().await would hang forever — the epoch
+        // check below never runs, run_loop's reconnect never fires, and stop()/re-login can't
+        // cancel the task. A read past IDLE_TIMEOUT is treated as a disconnect and reconnected (4.95).
+        let chunk = match timeout(IDLE_TIMEOUT, stream.next()).await {
+            Err(_) => return Err(AppError::Validation("SSE idle timeout".into())),
+            Ok(None) => break,
+            Ok(Some(c)) => c,
+        };
         // Cooperative cancellation: drop the connection the moment a newer
         // start/stop/logout bumped the epoch.
         if state.epoch.load(Ordering::SeqCst) != my_epoch {
