@@ -49,9 +49,11 @@ pub async fn start(
 ) -> Result<(), AppError> {
     // Token-destination pin (same guard as api_proxy): never stream the JWT to a
     // server other than the one stored on login.
-    if let Some(stored) = auth::stored_server_url() {
-        crate::validation::validate_proxy_path(&server_url, "/api/notifications/stream", &stored)?;
-    }
+    crate::validation::require_pinned_destination(
+        &server_url,
+        "/api/notifications/stream",
+        auth::stored_server_url().as_deref(),
+    )?;
     let my_epoch = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         run_loop(app, state, my_epoch, server_url, token, allow_self_signed).await;

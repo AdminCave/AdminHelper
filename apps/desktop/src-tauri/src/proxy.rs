@@ -48,9 +48,11 @@ pub async fn forward(
     // alongside the real token would otherwise leak it; TOFU would happily pin the
     // attacker's cert on first use for that new host. Pin the FINAL composed URL's
     // origin, not just server_url.
-    if let Some(stored) = crate::auth::stored_server_url() {
-        crate::validation::validate_proxy_path(server_url, path, &stored)?;
-    }
+    crate::validation::require_pinned_destination(
+        server_url,
+        path,
+        crate::auth::stored_server_url().as_deref(),
+    )?;
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 

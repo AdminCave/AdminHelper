@@ -136,9 +136,11 @@ pub async fn authenticated_get(
     // FINAL composed URL (a `path` with a leading `@`/`\`/`://` can rewrite the
     // authority) drifts off the logged-in server. server_url and token both
     // originate from frontend commands, so this is a real boundary.
-    if let Some(stored) = stored_server_url() {
-        crate::validation::validate_proxy_path(server_url, path, &stored)?;
-    }
+    crate::validation::require_pinned_destination(
+        server_url,
+        path,
+        stored_server_url().as_deref(),
+    )?;
     let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
