@@ -24,27 +24,39 @@ from typing import Any
 
 import httpx
 
+from app.core.ssrf import is_private_url
+
+# Cap the reflected body so a large internal response can't flood the worker's
+# memory (the hook may echo it back through the result dict).
+_MAX_BODY = 1_000_000
+
 
 def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> dict:
-    resp = httpx.get(url, headers=headers or {}, timeout=timeout, follow_redirects=True)
+    # The URL can come straight from an attacker-controlled webhook payload, so guard
+    # against SSRF and never follow a redirect into an internal target (3.37).
+    if is_private_url(url):
+        raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
+    resp = httpx.get(url, headers=headers or {}, timeout=timeout, follow_redirects=False)
     try:
         j = resp.json()
     except Exception:
         j = None
-    return {"status": resp.status_code, "body": resp.text, "json": j}
+    return {"status": resp.status_code, "body": resp.text[:_MAX_BODY], "json": j}
 
 
 def _safe_http_post(
     url: str, json_data: Any = None, headers: dict | None = None, timeout: int = 10
 ) -> dict:
+    if is_private_url(url):
+        raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
     resp = httpx.post(
-        url, json=json_data, headers=headers or {}, timeout=timeout, follow_redirects=True
+        url, json=json_data, headers=headers or {}, timeout=timeout, follow_redirects=False
     )
     try:
         j = resp.json()
     except Exception:
         j = None
-    return {"status": resp.status_code, "body": resp.text, "json": j}
+    return {"status": resp.status_code, "body": resp.text[:_MAX_BODY], "json": j}
 
 
 def main() -> None:
