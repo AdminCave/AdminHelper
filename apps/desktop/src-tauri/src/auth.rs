@@ -156,7 +156,14 @@ pub async fn authenticated_get(
             if let Ok(new_session) =
                 try_refresh(server_url, &refresh_token, allow_self_signed).await
             {
-                let _ = save_session_to_keyring(&new_session);
+                if let Err(e) = save_session_to_keyring(&new_session) {
+                    // The server has already rotated the refresh token, so the new one lives
+                    // only in this retry — the keyring still holds the old, now-invalidated
+                    // token, and the next 401 will refresh with a dead token and silently log the
+                    // user out. Can't recover here (the keyring is the only store), but log it so
+                    // the pattern is visible in the diagnostics report (4.26).
+                    log::warn!("Rotiertes Session-Token nicht im Keyring gespeichert: {e}");
+                }
                 let retry = client
                     .get(&url)
                     .header("Authorization", format!("Bearer {}", new_session.token))

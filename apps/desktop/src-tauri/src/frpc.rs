@@ -44,6 +44,9 @@ pub struct FrpcProcess {
     child: Option<tauri_plugin_shell::process::CommandChild>,
     visitor_name: Option<String>,
     connected_since: Option<String>,
+    // Bumped on every spawn so a log task's Terminated handler only reconciles state if it is
+    // still the current process (4.29).
+    generation: u64,
 }
 
 impl FrpcProcess {
@@ -52,6 +55,7 @@ impl FrpcProcess {
             child: None,
             visitor_name: None,
             connected_since: None,
+            generation: 0,
         }
     }
 }
@@ -244,6 +248,14 @@ pub fn start_frpc(
         .spawn()
         .map_err(|e| AppError::Connection(format!("frpc konnte nicht gestartet werden: {e}")))?;
 
+    // Tag this spawn with a generation. A stop→start restart kills the old process and spawns a
+    // new one, but the killed process's Terminated event arrives asynchronously — often AFTER
+    // the new spawn. Without this check its log task would wipe the NEW tunnel's child (the
+    // handle is dropped so the process keeps running un-killable, status shows "disconnected",
+    // and a re-start fails on the taken visitor port) (4.29).
+    guard.generation += 1;
+    let my_gen = guard.generation;
+
     // Log frpc output in background
     let app_handle = app.clone();
     let state_for_task = state.clone();
@@ -263,9 +275,14 @@ pub fn start_frpc(
                     // later restart with "frpc laeuft bereits". The lock waits for
                     // start_frpc to finish its own guard first (same mutex).
                     if let Ok(mut guard) = state_for_task.lock() {
-                        guard.child = None;
-                        guard.visitor_name = None;
-                        guard.connected_since = None;
+                        // Only reconcile if this is still the current process — a stale
+                        // Terminated event from a restarted-away process must not wipe the new
+                        // child (4.29).
+                        if guard.generation == my_gen {
+                            guard.child = None;
+                            guard.visitor_name = None;
+                            guard.connected_since = None;
+                        }
                     }
                     let _ = app_handle.emit("frpc-terminated", payload.code);
                 }
