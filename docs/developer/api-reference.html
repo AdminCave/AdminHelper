@@ -105,7 +105,7 @@
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/toggle</code><p>Enable/Disable; aktualisiert Scheduler-Registrierung.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/rotate</code><p>Webhook-Token erneuern.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/run</code><p>Manueller Test-Lauf mit leerem Context.</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/trigger/{token}</code><p><strong>&Ouml;ffentlich</strong> (kein JWT). Rate-Limit: 20 Anfragen / 60&nbsp;s / IP. Context: <code>{ payload, headers, params }</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/trigger</code> mit <code>X-Hook-Token</code>-Header <em>(bevorzugt &ndash; Token nicht in Access-Logs/History)</em>, oder <code>/api/hooks/trigger/{token}</code> (Token im Pfad)<p><strong>&Ouml;ffentlich</strong> (kein JWT). Rate-Limit: 20 Anfragen / 60&nbsp;s / IP. Context: <code>{ payload, headers, params }</code>.</p></div>
 
           <h2>Ansible-Playbooks</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/ansible/playbooks</code></div>

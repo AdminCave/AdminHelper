@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Hook example (type: webhook): import connections via HTTP API
-# Trigger: POST /api/hooks/trigger/<TOKEN>
+# Trigger: POST /api/hooks/trigger  with header  X-Hook-Token: <TOKEN>  (preferred)
+#          or POST /api/hooks/trigger/<TOKEN>  (token in path — leaks into logs)
 #
 # This script fetches an external API and automatically adds all hosts
 # that do not yet exist as a connection.

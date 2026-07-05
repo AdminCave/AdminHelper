@@ -155,3 +155,22 @@ def test_webhook_context_headers_are_safe_listed(test_client, db_session, admin_
     assert "x-forwarded-for" not in logged
     # the safe custom header still reaches the script
     assert "x-hook-source" in logged
+
+
+def test_webhook_trigger_via_header_token(test_client, db_session, admin_user):
+    # 3.101: the token can be passed via the X-Hook-Token header instead of the URL path
+    # (a path token leaks into access logs). Both variants work; a missing header 401s,
+    # a wrong token 404s like the path variant.
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.post("/api/hooks", json={**WEBHOOK, "name": "wh-hdr-tok"}, headers=h)
+    assert r.status_code == 201, r.text
+    token = r.json()["token"]
+
+    ok = test_client.post("/api/hooks/trigger", json={"x": 1}, headers={"X-Hook-Token": token})
+    assert ok.status_code == 200, ok.text
+
+    missing = test_client.post("/api/hooks/trigger", json={})
+    assert missing.status_code == 401
+
+    wrong = test_client.post("/api/hooks/trigger", json={}, headers={"X-Hook-Token": "nope"})
+    assert wrong.status_code == 404

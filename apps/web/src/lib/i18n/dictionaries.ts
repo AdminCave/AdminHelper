@@ -191,7 +191,7 @@ export const translations: Translations = {
     'hook.result.title': 'Ergebnis: {name}',
     'hook.webhookToken.title': 'Webhook-Token',
     'hook.webhookToken.hint': 'Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt.',
-    'hook.webhookToken.triggerUrl': 'Aufruf-URL:',
+    'hook.webhookToken.triggerCmd': 'Aufruf (Token im Header, nicht in der URL):',
 
     // ── FRP Page ──────────────────────────────────────────────────────
     'page.frp.title': 'FRP Tunnels',
@@ -414,7 +414,7 @@ export const translations: Translations = {
     'hook.result.title': 'Result: {name}',
     'hook.webhookToken.title': 'Webhook token',
     'hook.webhookToken.hint': 'This token will only be shown once. Copy it now.',
-    'hook.webhookToken.triggerUrl': 'Trigger URL:',
+    'hook.webhookToken.triggerCmd': 'Trigger command (token in header, not URL):',
 
     // ── FRP Page ──────────────────────────────────────────────────────
     'page.frp.title': 'FRP Tunnels',

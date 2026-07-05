@@ -165,11 +165,8 @@ def create_hook(
 _SAFE_WEBHOOK_HEADERS = {"content-type", "user-agent", "x-hook-source"}
 
 
-# Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
-# admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
-@trigger_router.post("/trigger/{token}")
-async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
-    # This handler must stay async (request.json(), run_in_threadpool), so the
+async def _do_trigger(token: str, request: Request, db: Session):
+    # This helper must stay async (request.json(), run_in_threadpool), so the
     # sync pieces — Redis rate-limit increment and the DB lookup — must not run
     # on the event loop directly (single-worker backend, see comment below).
     await run_in_threadpool(_check_trigger_rate_limit, request)
@@ -209,6 +206,26 @@ async def trigger_webhook(token: str, request: Request, db: Session = Depends(ge
         return {"success": False, "error": str(exc), "result": {}, "logs": []}
 
     return result
+
+
+@trigger_router.post("/trigger")
+async def trigger_webhook_header(request: Request, db: Session = Depends(get_db)):
+    # Token via X-Hook-Token header instead of the URL path: a token in the path leaks
+    # into nginx/proxy access logs, browser history and referrers. Both variants work;
+    # the UI now prefers this one (3.101).
+    token = request.headers.get("X-Hook-Token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="X-Hook-Token-Header fehlt"
+        )
+    return await _do_trigger(token, request, db)
+
+
+# Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
+# admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
+@trigger_router.post("/trigger/{token}")
+async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
+    return await _do_trigger(token, request, db)
 
 
 @router.get("/{hook_id}", response_model=HookDetailResponse)
