@@ -54,7 +54,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=%s run --once
-TimeoutStartSec=60
+# < OnUnitActiveSec=300 (Timer), but enough for the serial collector timeouts (Docker,
+# smartctl 30s/disk) plus the monitor-push retry — 60s let a single dying disk + a push
+# retry get SIGTERM'd, losing every report (4.13). Keep in sync with the packaged unit.
+TimeoutStartSec=270
 `, dest)
 
 	// Write the timer unit

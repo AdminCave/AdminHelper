@@ -21,7 +21,7 @@ const dockerTimeout = 10 * time.Second
 // pluginTimeout caps every non-docker plugin exec (pvesh, zpool). These
 // tools really do hang: `zpool list` blocks indefinitely on a suspended pool and
 // `pvesh` on quorum loss — exactly when monitoring matters most. Without a cap the
-// whole report cycle stalls and systemd kills the oneshot at TimeoutStartSec=60
+// whole report cycle stalls and systemd kills the oneshot at its TimeoutStartSec
 // (no push, no FRPC sync for that run).
 const pluginTimeout = 15 * time.Second
 
