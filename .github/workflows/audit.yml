@@ -19,11 +19,11 @@ permissions:
 
 jobs:
   python:
-    name: pip-audit (server + monitoring)
+    name: pip-audit (server + monitoring + ca-issuer)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
       - name: Install pip-audit
@@ -33,12 +33,15 @@ jobs:
       - name: Audit monitoring lock
         if: ${{ !cancelled() }}
         run: pip-audit -r apps/monitoring/requirements.txt --disable-pip
+      - name: Audit ca-issuer lock
+        if: ${{ !cancelled() }}
+        run: pip-audit -r apps/ca-issuer/requirements.txt --disable-pip
 
   rust:
     name: cargo audit (desktop)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -50,8 +53,8 @@ jobs:
     name: govulncheck (agent)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.25"
           cache-dependency-path: apps/agent/go.sum
@@ -65,8 +68,8 @@ jobs:
     name: npm audit (web + desktop-ui)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
       - name: Audit web lockfile

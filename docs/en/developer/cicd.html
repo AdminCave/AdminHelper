@@ -91,7 +91,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           </ul>
           <div class="callout">
             <div><div class="callout-title">Arming (maintainer, one-time)</div>
-            <p>Until the key is pinned, <code>install.sh</code>/<code>update.sh</code> fall back to checksum-only verification (with a warning) &ndash; no breakage. To arm:</p>
+            <p>This repo is armed: the key is pinned, so verification fails closed &ndash; a missing/invalid signature aborts <code>install.sh</code>/<code>update.sh</code>, and the release workflow fails if <code>MINISIGN_SECRET_KEY</code> is absent. A fork that has not set its own key falls back to checksum-only verification (with a warning) until armed. To arm a fork:</p>
 <pre><code>minisign -G -W                 # generate a passwordless keypair
 # 1) store the secret-key file base64-encoded as the GitHub Actions secret
 #    (single line, paste-safe — a raw multi-line key gets mangled otherwise):

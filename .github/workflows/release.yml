@@ -27,7 +27,7 @@ jobs:
     name: Desktop (deb/rpm/bin, Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Tauri system dependencies
         run: |
           sudo apt-get update
@@ -38,7 +38,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -70,7 +70,7 @@ jobs:
           cp apps/desktop/src-tauri/target/release/bundle/deb/*.deb dist/
           cp apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm dist/
           cp apps/desktop/src-tauri/target/release/adminhelper dist/adminhelper-desktop-linux-x86_64
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-linux
           path: dist/
@@ -83,8 +83,8 @@ jobs:
     name: Go Agent (deb/rpm/bins)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.25"
           cache-dependency-path: apps/agent/go.sum
@@ -93,12 +93,14 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Build binaries
         working-directory: apps/agent
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+            -ldflags "-s -w -X main.version=${VERSION}" \
             -o bin/adminhelper-agent ./cmd/adminhelper-agent
           GOOS=windows GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+            -ldflags "-s -w -X main.version=${VERSION}" \
             -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
       - name: Download frpc (bundled into deb/rpm)
         run: |
@@ -109,14 +111,18 @@ jobs:
           cp "frp_${FRP_VERSION}_linux_amd64/frpc" ./frpc
           chmod +x frpc
       - name: Build .deb
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev
-          VERSION=${{ steps.ver.outputs.version }} bash apps/agent/build-deb.sh
+          VERSION="$VERSION" bash apps/agent/build-deb.sh
       - name: Build .rpm
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           sudo apt-get install -y --no-install-recommends rpm
-          VERSION=${{ steps.ver.outputs.version }} bash apps/agent/build-rpm.sh
+          VERSION="$VERSION" bash apps/agent/build-rpm.sh
       - name: Collect artifacts
         run: |
           mkdir -p dist
@@ -124,7 +130,7 @@ jobs:
           cp adminhelper-agent-*.rpm dist/
           cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
           cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: agent
           path: dist/
@@ -140,12 +146,12 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -176,7 +182,7 @@ jobs:
         run: |
           mkdir -p dist
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist/
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: desktop-windows
@@ -199,7 +205,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       # The agent + Docker images derive their version from the tag, but the
       # desktop version lives in tauri.conf.json and is bumped by hand — assert
       # it matches the tag so a forgotten bump fails the release, not a user.
@@ -210,7 +216,7 @@ jobs:
           tauri=$(grep -m1 '"version"' apps/desktop/src-tauri/tauri.conf.json | grep -o '[0-9][0-9.]*' | head -1)
           test "$tauri" = "$VER" || { echo "::error::tauri.conf.json version ($tauri) != tag ($VER)"; exit 1; }
           echo "version OK: $VER"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
       # The release-bound updater (scripts/update.sh) consumes ONE versioned asset:
@@ -271,18 +277,20 @@ jobs:
           ls -lah
       # Sign SHA256SUMS so install.sh/update.sh can verify authenticity, not just
       # transport integrity (the bundle and SHA256SUMS come from the same origin).
-      # Skips with a warning until MINISIGN_SECRET_KEY is configured, so it never
-      # blocks a release. Generate a passwordless CI key once with `minisign -G -W`,
-      # store its secret-key file as the MINISIGN_SECRET_KEY secret, and pin the
-      # matching public key in scripts/install.sh + scripts/update.sh to arm it.
+      # Fails the release if MINISIGN_SECRET_KEY is missing: install.sh/update.sh are
+      # armed (public key pinned) and reject unsigned releases, so an unsigned draft
+      # would break every install/update in the field. Generate a passwordless CI key
+      # once with `minisign -G -W`, store its secret-key file as the
+      # MINISIGN_SECRET_KEY secret, and pin the matching public key in
+      # scripts/install.sh + scripts/update.sh to arm it.
       - name: Sign SHA256SUMS (minisign)
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
-            echo "::warning::MINISIGN_SECRET_KEY not set — SHA256SUMS will be unsigned (see scripts/install.sh)."
-            exit 0
+            echo "::error::MINISIGN_SECRET_KEY missing — install.sh/update.sh are armed and reject unsigned releases."
+            exit 1
           fi
           sudo apt-get update -qq && sudo apt-get install -y -qq minisign
           # The secret is the base64 of the minisign.key FILE (`base64 -w0 minisign.key`),

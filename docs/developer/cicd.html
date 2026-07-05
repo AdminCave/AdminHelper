@@ -91,7 +91,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
           </ul>
           <div class="callout">
             <div><div class="callout-title">Scharfschalten (Maintainer, einmalig)</div>
-            <p>Bis der Key gepinnt ist, fallen <code>install.sh</code>/<code>update.sh</code> auf reine Checksummen-Prüfung zurück (mit Warnung) &ndash; kein Bruch. Zum Aktivieren:</p>
+            <p>Dieses Repo ist scharfgeschaltet: der Key ist gepinnt, die Prüfung ist damit fail-closed &ndash; eine fehlende/ungültige Signatur bricht <code>install.sh</code>/<code>update.sh</code> ab, und der Release-Workflow schlägt ohne <code>MINISIGN_SECRET_KEY</code> fehl. Ein Fork ohne eigenen Key fällt bis zur Aktivierung auf reine Checksummen-Prüfung zurück (mit Warnung). Zum Aktivieren eines Forks:</p>
 <pre><code>minisign -G -W                 # passwortloses Keypair erzeugen
 # 1) Secret-Key-Datei base64-kodiert als GitHub-Actions-Secret hinterlegen
 #    (eine Zeile, paste-sicher — ein roher mehrzeiliger Key wird sonst verstuemmelt):
