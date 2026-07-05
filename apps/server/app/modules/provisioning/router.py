@@ -41,7 +41,9 @@ from app.core.auth import generate_api_key, get_current_admin, hash_api_key
 from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS, SCOPE_AGENT, require_scope
+from app.core.request_context import actor_from_request
 from app.modules.api_keys.models import ApiKey
+from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.provisioning.helpers import build_frp_bundle, fetch_or_skip_monitor_key
 from app.modules.provisioning.models import ProvisionToken
@@ -166,6 +168,14 @@ def activate_provision(
     # consumes by) and TTL stay in lockstep with the HTTP enrollment path (2.51);
     # identity (CN) is the stable server_id, not the client's CSR.
     raw_enroll_token = mint_enrollment_token(db, server_id, SCOPE_AGENT)
+    audit.record(
+        db,
+        "enrollment.token.minted",
+        object_type="server",
+        object_id=server_id,
+        detail="scope=agent (provisioning)",
+        actor=actor_from_request(request),
+    )
 
     return {
         "serverName": server.name,

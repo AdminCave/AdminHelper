@@ -124,3 +124,45 @@ def test_mint_for_requires_admin(test_client, normal_user):
 def test_mint_for_requires_authentication(test_client):
     res = test_client.post("/api/enrollment/token/for", json={"username": "admin"})
     assert res.status_code == 401
+
+
+def test_self_mint_writes_audit(test_client, admin_user, db_session):
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post("/api/enrollment/token", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200, res.text
+    # 3.9: minting a cert-granting token must leave an audit trail (self-mint).
+    row = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "enrollment.token.minted", AuditLog.object_id == "admin")
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.actor_id == str(admin_user.id)
+
+
+def test_admin_mint_for_writes_audit(test_client, admin_user, normal_user, db_session):
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        "/api/enrollment/token/for",
+        json={"username": "viewer"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    # 3.9: an admin minting FOR another identity is the sensitive path — the audit
+    # row records who (actor=admin) minted for whom (object_id=viewer).
+    row = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.action == "enrollment.token.minted_for",
+            AuditLog.object_id == "viewer",
+        )
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.actor_id == str(admin_user.id)

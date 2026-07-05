@@ -13,7 +13,7 @@ cert-gated: the client has no cert yet — this is its bootstrap door.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,8 @@ from app.core.auth import get_current_admin, get_current_user
 from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS
+from app.core.request_context import actor_from_request
+from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.users.models import User
 
@@ -48,6 +50,7 @@ def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
 
 @router.post("/token")
 def mint_self_enrollment_token(
+    request: Request,
     browser: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -56,7 +59,16 @@ def mint_self_enrollment_token(
 
     The self-service door: the caller authenticates with its JWT and mints a
     token for *its own* identity, then redeems it at the ca-issuer."""
-    return _mint_token(db, current_user.username, browser)
+    res = _mint_token(db, current_user.username, browser)
+    audit.record(
+        db,
+        "enrollment.token.minted",
+        object_type="user",
+        object_id=current_user.username,
+        detail=f"browser={browser} (self)",
+        actor=actor_from_request(request),
+    )
+    return res
 
 
 class EnrollmentTokenForRequest(BaseModel):
@@ -67,6 +79,7 @@ class EnrollmentTokenForRequest(BaseModel):
 @router.post("/token/for")
 def mint_enrollment_token_for(
     data: EnrollmentTokenForRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_admin),
 ):
@@ -81,4 +94,13 @@ def mint_enrollment_token_for(
     target = db.query(User).filter(User.username == data.username).first()
     if target is None:
         raise HTTPException(status_code=404, detail="Unbekannter Benutzer")
-    return _mint_token(db, target.username, data.browser)
+    res = _mint_token(db, target.username, data.browser)
+    audit.record(
+        db,
+        "enrollment.token.minted_for",
+        object_type="user",
+        object_id=target.username,
+        detail=f"browser={data.browser}",
+        actor=actor_from_request(request),
+    )
+    return res
