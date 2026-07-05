@@ -8,15 +8,22 @@ import * as api from '$lib/api/apikeys';
 
 const _apikeys = writable<ApiKey[]>([]);
 
+// Stale-response guard (see users.ts): a slow refresh() list() must not overwrite state a mutation
+// already changed — else e.g. a just-removed key reappears (4.145).
+let refreshGen = 0;
+
 export const apikeys = {
   subscribe: _apikeys.subscribe,
 
   async refresh(): Promise<void> {
-    _apikeys.set(await api.list());
+    const gen = ++refreshGen;
+    const list = await api.list();
+    if (gen === refreshGen) _apikeys.set(list);
   },
 
   async create(data: ApiKeyCreate): Promise<ApiKeyCreateResult> {
     const created = await api.create(data);
+    refreshGen++;
     _apikeys.update((list) => [
       ...list,
       { id: created.id, name: created.name, permission: created.permission },
@@ -26,6 +33,7 @@ export const apikeys = {
 
   async remove(id: number): Promise<void> {
     await api.remove(id);
+    refreshGen++;
     _apikeys.update((list) => list.filter((k) => k.id !== id));
   },
 };
