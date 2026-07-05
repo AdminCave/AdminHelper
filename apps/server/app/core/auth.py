@@ -179,14 +179,26 @@ def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
 
 
 def _get_api_key(request: Request, db: Session) -> Optional[ApiKey]:
-    # Header preferred; query-param fallback for sync URLs (curl/wget). Note:
-    # the query param may end up in server logs, so the docs recommend the
-    # header path.
-    key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    # Header is the safe path. The query-param fallback (documented for sync URLs)
+    # lands the key in nginx/uvicorn access logs, so audit any key that arrives that
+    # way — naming it so the operator can rotate the exposed one (3.87). Dropping the
+    # fallback entirely would be safer but is a breaking change to a documented feature.
+    key = request.headers.get("X-API-Key")
+    from_query = False
+    if not key:
+        key = request.query_params.get("api_key")
+        from_query = bool(key)
     if not key:
         return None
     hashed = hash_api_key(key)
-    return db.query(ApiKey).filter(ApiKey.hashed_key == hashed).first()
+    api_key = db.query(ApiKey).filter(ApiKey.hashed_key == hashed).first()
+    if api_key and from_query:
+        logger.warning(
+            "API-Key '%s' kam als Query-Parameter (?api_key=) — er steht damit im Klartext "
+            "in den Access-Logs. Bitte rotieren und den X-API-Key-Header nutzen.",
+            api_key.name,
+        )
+    return api_key
 
 
 def get_current_user(

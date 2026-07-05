@@ -112,7 +112,7 @@
             <li>Web-Panel → <em>API-Keys → Neu</em></li>
             <li>Name vergeben und Berechtigung (<code>read</code> oder <code>read_write</code>) wählen</li>
             <li>Klartext-Key <strong>sofort</strong> kopieren – wird nie wieder angezeigt</li>
-            <li>Als HTTP-Header <code>X-API-Key: &lt;key&gt;</code> senden (Fallback: Query-Parameter <code>?api_key=…</code> für Sync-URLs)</li>
+            <li>Als HTTP-Header <code>X-API-Key: &lt;key&gt;</code> senden. Der Fallback <code>?api_key=…</code> (für Sync-URLs) landet im Klartext in den Access-Logs und wird serverseitig als Warnung protokolliert — bevorzuge den Header und rotiere einen so exponierten Key.</li>
           </ol>
 
           <h2>IP-Restriktion</h2>

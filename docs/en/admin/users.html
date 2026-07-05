@@ -106,7 +106,7 @@
             <li>Web panel → <em>API Keys → New</em></li>
             <li>Assign a name and choose the permission (<code>read</code> or <code>read_write</code>)</li>
             <li>Copy the clear-text key <strong>immediately</strong> – it is never shown again</li>
-            <li>Send it as the HTTP header <code>X-API-Key: &lt;key&gt;</code> (fallback: query parameter <code>?api_key=…</code> for sync URLs)</li>
+            <li>Send it as the HTTP header <code>X-API-Key: &lt;key&gt;</code>. The <code>?api_key=…</code> fallback (for sync URLs) ends up in the access logs in cleartext and is logged server-side as a warning — prefer the header, and rotate a key exposed this way.</li>
           </ol>
 
           <h2>IP restriction</h2>

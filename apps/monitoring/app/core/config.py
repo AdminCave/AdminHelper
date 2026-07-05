@@ -54,10 +54,16 @@ if not INTERNAL_API_KEY:
 # DATABASE_URL: reads from env, falls back to the Postgres default for local dev.
 # Schema creation is handled by Alembic (see monitoring/alembic/), no longer by
 # Base.metadata.create_all().
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor",
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    # Keep the dev fallback but make it loud: a bare-metal deployment started without
+    # DATABASE_URL would otherwise silently use the well-known adminhelper:adminhelper
+    # credentials. Compose always sets DATABASE_URL, so this only fires off-compose (3.88).
+    logger.warning(
+        "DATABASE_URL nicht gesetzt — nutze den lokalen Dev-Default "
+        "(adminhelper:adminhelper@localhost). NICHT fuer Produktion."
+    )
+    DATABASE_URL = "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor"
 
 # SMTP (email alert channel). Empty SMTP_HOST disables email alerts. A non-integer
 # SMTP_PORT fails here at the config boundary, not deep inside the alerter at import.
