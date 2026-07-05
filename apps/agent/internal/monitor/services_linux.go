@@ -95,21 +95,53 @@ func parseSystemctlColumns(col int, args ...string) map[string]string {
 
 // collectWatchedServices checks the status of specific systemd services.
 func collectWatchedServices(names []string) []map[string]any {
-	var services []map[string]any
+	if len(names) == 0 {
+		return nil
+	}
+	// One `systemctl show` for all watched units instead of is-active + show per unit — the 2N
+	// process spawns + D-Bus roundtrips per cycle become one (5.7). `--` terminates option parsing
+	// so a server-supplied name beginning with '-' is treated as an operand, not a systemctl flag
+	// (argument/flag-confusion hardening; runWithTimeout runs exec directly, no shell).
+	args := append([]string{"show", "-p", "Id,ActiveState,MainPID", "--"}, names...)
+	out, err := runWithTimeout("systemctl", args...)
+	if err != nil {
+		services := make([]map[string]any, 0, len(names))
+		for _, name := range names {
+			services = append(services, map[string]any{"name": name, "running": false, "pid": nil})
+		}
+		return services
+	}
+	return parseWatchedServices(out, names)
+}
+
+// parseWatchedServices maps each requested name to its status from the blank-line-separated
+// `systemctl show -p Id,ActiveState,MainPID` blocks. Keyed by the canonical Id so it doesn't rely on
+// block order, and matches a bare "nginx" against "nginx.service" too. A name with no block stays
+// not-running.
+func parseWatchedServices(out []byte, names []string) []map[string]any {
+	byID := map[string]map[string]string{}
+	for _, block := range strings.Split(strings.TrimSpace(string(out)), "\n\n") {
+		props := map[string]string{}
+		for _, line := range strings.Split(block, "\n") {
+			if kv := strings.SplitN(strings.TrimSpace(line), "=", 2); len(kv) == 2 {
+				props[kv[0]] = kv[1]
+			}
+		}
+		if id := props["Id"]; id != "" {
+			byID[id] = props
+		}
+	}
+	services := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
-		// `--` terminates option parsing so a server-supplied service name
-		// beginning with '-' is treated as an operand, not a systemctl flag
-		// (argument/flag-confusion hardening; runWithTimeout runs exec directly, no shell).
-		out, err := runWithTimeout("systemctl", "is-active", "--", name)
-		if err == nil && strings.TrimSpace(string(out)) == "active" {
+		props, ok := byID[name]
+		if !ok {
+			props, ok = byID[name+".service"]
+		}
+		if ok && props["ActiveState"] == "active" {
 			svc["running"] = true
-			pidOut, err := runWithTimeout("systemctl", "show", "-p", "MainPID", "--", name)
-			if err == nil {
-				parts := strings.SplitN(strings.TrimSpace(string(pidOut)), "=", 2)
-				if len(parts) == 2 && parts[1] != "0" && parts[1] != "" {
-					svc["pid"] = parts[1]
-				}
+			if pid := props["MainPID"]; pid != "0" && pid != "" {
+				svc["pid"] = pid
 			}
 		}
 		services = append(services, svc)
