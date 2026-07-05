@@ -16,6 +16,15 @@ import (
 	"time"
 )
 
+// noRedirect makes a client return a 3xx as its final response instead of
+// following it. Go only strips Authorization/Cookie on a cross-host redirect, so the
+// agent's custom auth headers (X-API-Key, X-Provision-Token) would otherwise leak to
+// a redirect target chosen by a compromised server. No legitimate agent endpoint
+// (activate, config, config-hash, report, enroll, renew) redirects (3.43).
+func noRedirect(req *http.Request, via []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 // New creates an HTTP client with optional TLS settings: a pinned CA
 // certificate (cacert, PEM file path) or disabled verification (insecure).
 func New(cacert string, insecure bool, timeout time.Duration) (*http.Client, error) {
@@ -34,8 +43,9 @@ func New(cacert string, insecure bool, timeout time.Duration) (*http.Client, err
 		tlsCfg.RootCAs = pool
 	}
 	return &http.Client{
-		Timeout:   timeout,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+		Timeout:       timeout,
+		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
+		CheckRedirect: noRedirect,
 	}, nil
 }
 
@@ -63,8 +73,9 @@ func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Cli
 		MinVersion:   tls.VersionTLS12,
 	}
 	return &http.Client{
-		Timeout:   timeout,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+		Timeout:       timeout,
+		Transport:     &http.Transport{TLSClientConfig: tlsCfg},
+		CheckRedirect: noRedirect,
 	}, nil
 }
 

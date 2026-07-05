@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDoReturnsBodyOn2xx(t *testing.T) {
@@ -77,5 +78,34 @@ func TestDoAcceptsBodyAtCap(t *testing.T) {
 	}
 	if int64(len(body)) != MaxResponseBytes {
 		t.Fatalf("len(body) = %d, erwartet %d", len(body), MaxResponseBytes)
+	}
+}
+
+func TestClientDoesNotFollowRedirects(t *testing.T) {
+	// 3.43: Go keeps custom headers (X-API-Key, X-Provision-Token) on a cross-host
+	// redirect, so the agent client must not follow one — a 3xx is a final response.
+	hitTarget := false
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitTarget = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound) // 302 to another host
+	}))
+	defer src.Close()
+
+	client, err := New("", false, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("GET", src.URL, nil)
+	req.Header.Set("X-API-Key", "secret")
+	if _, err := Do(client, req); err == nil {
+		t.Fatal("erwartet Fehler: 3xx darf nicht verfolgt werden")
+	}
+	if hitTarget {
+		t.Fatal("Client folgte dem Redirect — Custom-Auth-Header koennte leaken")
 	}
 }
