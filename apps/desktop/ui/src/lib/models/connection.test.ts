@@ -69,6 +69,19 @@ describe('validateConnection', () => {
     expect(validateConnection(c).ok).toBe(true);
   });
 
+  it('web rejects non-http(s) schemes (3.67)', () => {
+    const c = { ...emptyConnection('web'), name: 'Docs', url: 'javascript:alert(1)' };
+    expect(validateConnection(c).ok).toBe(false);
+    c.url = 'file:///etc/passwd';
+    expect(validateConnection(c).ok).toBe(false);
+    c.url = 'not a url';
+    expect(validateConnection(c).ok).toBe(false);
+    c.url = 'http://ok.example';
+    expect(validateConnection(c).ok).toBe(true);
+    c.url = 'example.com'; // bare domain: backend prepends https://, so accept it too
+    expect(validateConnection(c).ok).toBe(true);
+  });
+
   it('ssh/rdp need host', () => {
     const c = { ...emptyConnection('ssh'), name: 'srv' };
     expect(validateConnection(c).ok).toBe(false);

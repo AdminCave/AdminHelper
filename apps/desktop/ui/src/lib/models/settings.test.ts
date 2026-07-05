@@ -51,6 +51,18 @@ describe('validateSettings', () => {
     expect(validateSettings({ ...base, mode: 'server', serverUrl: 'https://x' }).ok).toBe(true);
   });
 
+  it('server requires https except loopback (3.68)', () => {
+    expect(validateSettings({ ...base, mode: 'server', serverUrl: 'http://evil.example' }).ok).toBe(
+      false,
+    );
+    expect(
+      validateSettings({ ...base, mode: 'server', serverUrl: 'http://localhost:8443' }).ok,
+    ).toBe(true);
+    expect(validateSettings({ ...base, mode: 'server', serverUrl: 'http://127.0.0.1' }).ok).toBe(
+      true,
+    );
+  });
+
   it('custom rdp size must match pattern', () => {
     expect(validateSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: 'foo' }).ok).toBe(
       false,

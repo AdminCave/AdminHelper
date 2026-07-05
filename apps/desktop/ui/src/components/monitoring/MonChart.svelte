@@ -34,13 +34,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  // DOM API, not innerHTML: tNow supports {placeholder} interpolation, so an HTML
+  // string here would become an XSS sink the moment a key carries server data (3.65).
+  function showPlaceholder(el: HTMLElement, key: string): void {
+    const div = document.createElement('div');
+    div.className = 'mon-chart-loading';
+    div.textContent = tNow(key);
+    el.replaceChildren(div);
+  }
+
   function render(el: HTMLDivElement, data: MonitoringMetricsResponse): void {
     destroy();
-    el.innerHTML = '';
+    el.replaceChildren();
 
     const results: MonitoringMetricSeries[] = data?.data || [];
     if (results.length === 0) {
-      el.innerHTML = `<div class="mon-chart-loading">${tNow('monitoring.chart.noData')}</div>`;
+      showPlaceholder(el, 'monitoring.chart.noData');
       return;
     }
 
@@ -114,8 +123,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     void checkType;
     if (!container) return;
     if (!metrics) {
-      // eslint-disable-next-line svelte/no-dom-manipulating -- container is owned by uPlot (imperative canvas lib); Svelte renders no children into it
-      container.innerHTML = `<div class="mon-chart-loading">${tNow('monitoring.chart.loading')}</div>`;
+      showPlaceholder(container, 'monitoring.chart.loading');
       return;
     }
     render(container, metrics);

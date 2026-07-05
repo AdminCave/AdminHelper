@@ -65,6 +65,23 @@ export function validateConnection(c: Connection): ValidationResult {
   }
   if (c.kind === 'web') {
     if (!c.url) return { ok: false, message: tNow('validation.url.empty') };
+    // Only http/https reach open_connection (the browser); reject javascript:/file:/…
+    // at the form boundary instead of relying solely on the Rust validate_web_url (3.67).
+    // A scheme-less value (a bare domain) is accepted the same way the backend does it:
+    // it prepends https:// before validating, so mirror that here.
+    let proto: string;
+    try {
+      proto = new URL(c.url).protocol;
+    } catch {
+      try {
+        proto = new URL(`https://${c.url}`).protocol;
+      } catch {
+        return { ok: false, message: tNow('validation.url.scheme') };
+      }
+    }
+    if (proto !== 'http:' && proto !== 'https:') {
+      return { ok: false, message: tNow('validation.url.scheme') };
+    }
     return { ok: true };
   }
   if (!c.host) return { ok: false, message: tNow('validation.host.empty') };

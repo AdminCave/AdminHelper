@@ -58,6 +58,14 @@ export function validateSettings(next: Settings): SettingsValidation {
   if (next.mode === 'server') {
     const url = (next.serverUrl ?? '').trim();
     if (!url) return { ok: false, error: tNow('validation.serverUrl.required') };
+    // Login credentials + JWTs cross this URL, so approximate the backend rule
+    // (validation.rs): https:// required, http:// only for loopback. The backend's
+    // loopback set is a superset (127.0.0.0/8, ::1, case-insensitive) and stays the
+    // authority — this covers the common cases as immediate form feedback (3.68).
+    const loopback = /^http:\/\/(localhost|127(\.\d{1,3}){3}|\[::1\])(:|\/|$)/i;
+    if (!/^https:\/\//i.test(url) && !loopback.test(url)) {
+      return { ok: false, error: tNow('validation.serverUrl.https') };
+    }
   }
   if (next.rdpWindowMode === 'custom') {
     const size = (next.rdpCustomSize ?? '').trim();
