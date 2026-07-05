@@ -40,9 +40,14 @@ def upgrade() -> None:
     # re-provisioned (safe fail-closed behavior).
     conn = op.get_bind()
     servers = conn.execute(sa.text("SELECT id, name FROM servers")).fetchall()
-    by_name: dict[str, str] = {}
-    for sid, name in servers:
-        by_name.setdefault(name, sid)
+    # servers.name has no unique constraint. Bind only unambiguous names — a name owned by two
+    # servers stays NULL (so the agent is re-provisioned) instead of binding agent-<name> to a
+    # random one via setdefault and handing it another server's frp/provision endpoints, exactly
+    # the IDOR this migration closes. Fail-closed, as the docstring promises (4.63).
+    counts: dict[str, int] = {}
+    for _sid, name in servers:
+        counts[name] = counts.get(name, 0) + 1
+    by_name = {name: sid for sid, name in servers if counts[name] == 1}
     rows = conn.execute(
         sa.text("SELECT id, name FROM api_keys WHERE name LIKE 'agent-%' AND server_id IS NULL")
     ).fetchall()

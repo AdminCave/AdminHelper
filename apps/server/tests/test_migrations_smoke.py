@@ -158,3 +158,47 @@ def test_uniq_visitor_port_frees_younger_duplicate_instead_of_deleting(pg_engine
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+def test_add_server_id_backfill_skips_ambiguous_names(pg_engine, monkeypatch):
+    # 4.63: the agent-key backfill must bind only unambiguous server names. Two servers named
+    # "dup" → agent-dup stays NULL (fail-closed, agent re-provisions) rather than binding to a
+    # random one; a unique "uniq" → agent-uniq is bound. Migrate to just before server_id is
+    # added, plant the rows, apply the migration.
+    admin_url = pg_engine.url
+    dbname = f"alembic_apikey_{uuid.uuid4().hex[:8]}"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    try:
+        command.upgrade(cfg, "0494a8f377ef")  # the down_revision, before api_keys.server_id
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO servers (id, name, hostname) VALUES"
+                    " ('s1', 'dup', 'h1'), ('s2', 'dup', 'h2'), ('s3', 'uniq', 'h3')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO api_keys (name, hashed_key, permission) VALUES"
+                    " ('agent-dup', 'h_dup', 'read'), ('agent-uniq', 'h_uniq', 'read')"
+                )
+            )
+        command.upgrade(cfg, "c3a7e1f50b2d")  # adds server_id + backfills
+        with engine.connect() as conn:
+            rows = dict(
+                conn.execute(text("SELECT name, server_id FROM api_keys ORDER BY name")).all()
+            )
+        assert rows["agent-uniq"] == "s3", "eindeutiger Name wird gebunden"
+        assert rows["agent-dup"] is None, "mehrdeutiger Name bleibt NULL (fail-closed)"
+    finally:
+        engine.dispose()
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        admin_engine.dispose()
