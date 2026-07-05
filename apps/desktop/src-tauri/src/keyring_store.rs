@@ -58,6 +58,36 @@ pub fn get(_key: &str) -> Option<String> {
     None
 }
 
+/// Like [`get`], but distinguishes a genuine "no entry" (`Ok(None)`, first use)
+/// from a real read failure (`Err`) — a locked/unavailable store (locked login
+/// keyring, D-Bus hang) must NOT masquerade as "no value" to a security check that
+/// fails open on `None` (the TOFU pin capture, 3.60).
+#[cfg(unix)]
+pub fn try_get(key: &str) -> Result<Option<String>, AppError> {
+    use keyring::{Entry, Error as KeyringError};
+    let entry = Entry::new(SERVICE, key).map_err(|e| AppError::Keyring(e.to_string()))?;
+    match entry.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(KeyringError::NoEntry) => Ok(None),
+        Err(e) => Err(AppError::Keyring(e.to_string())),
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn try_get(key: &str) -> Result<Option<String>, AppError> {
+    // The Windows Credential Manager has no "locked/transient" failure mode like the
+    // Linux keyring/D-Bus, and CredReadW cannot cleanly separate "not found" from a
+    // read error, so keep get()'s behaviour: a missing/unreadable entry is first-use.
+    Ok(crate::password::windows_read_credential(key)
+        .ok()
+        .filter(|v| !v.is_empty()))
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+pub fn try_get(_key: &str) -> Result<Option<String>, AppError> {
+    Ok(None)
+}
+
 /// Delete a stored secret. A missing entry is success; a real store error
 /// propagates so callers that care (session logout) can surface it.
 #[cfg(unix)]
