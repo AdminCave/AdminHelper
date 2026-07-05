@@ -6,7 +6,11 @@ package monitor
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/pem"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -59,6 +63,25 @@ func Init(p InitParams) error {
 		logger.Infof("CA-Zertifikat kopiert: %s", dest)
 	}
 
+	// A blind --insecure (the deb/rpm postinst's alternative setup path) would
+	// otherwise persist INSECURE=1 and run every 5-minute push with TLS
+	// verification off, leaking the long-lived API key each cycle. Pin the
+	// presented server cert (TOFU) instead, so --insecure applies only to this
+	// init call — the same defense provision.Run uses via pinIfBlindInsecure.
+	if insecure && cacert == "" {
+		if pemBytes, err := fetchServerCertPEM(url); err != nil {
+			logger.Warnf("Server-Zertifikat fuer TOFU-Pinning nicht abrufbar: %v", err)
+		} else if len(pemBytes) > 0 {
+			dest := config.MonitorCACert()
+			if werr := os.WriteFile(dest, pemBytes, 0644); werr != nil {
+				logger.Warnf("Server-Zertifikat pinnen fehlgeschlagen: %v", werr)
+			} else {
+				storedCACert, insecure = dest, false
+				logger.Infof("Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+			}
+		}
+	}
+
 	// Preserve an existing SERVICES line on re-provisioning: a token rotation
 	// passes empty services and must not wipe the configured watch list.
 	if services == "" {
@@ -109,6 +132,32 @@ func Init(p InitParams) error {
 	}
 
 	return nil
+}
+
+// fetchServerCertPEM opens a bare TLS connection to url's host (verification off)
+// solely to capture the presented certificate chain as PEM, so a blind --insecure
+// init can pin it (TOFU) instead of persisting INSECURE=1. The captured cert is
+// verified against nothing here — it is pinned immediately, matching provision.Run.
+func fetchServerCertPEM(rawURL string) ([]byte, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	host := u.Host
+	if u.Port() == "" {
+		host = net.JoinHostPort(u.Hostname(), "443")
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := tls.DialWithDialer(dialer, "tcp", host, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // TOFU capture, cert is pinned immediately
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	var pemBytes []byte
+	for _, c := range conn.ConnectionState().PeerCertificates {
+		pemBytes = append(pemBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
+	}
+	return pemBytes, nil
 }
 
 // Push reads the config and sends a one-off report. The ctx aborts the push
