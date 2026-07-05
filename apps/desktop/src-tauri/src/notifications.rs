@@ -180,6 +180,13 @@ struct SseFrame {
     data: String,
 }
 
+// Hard caps on the SSE parse buffers. A broken or hostile server sending an endless stream without
+// a newline (or endless data: lines without a frame boundary) would otherwise grow buf/data
+// unbounded (OOM) and rescan the whole buffer per chunk (quadratic). Frames here are only refresh
+// nudges, so discarding a pathological one is lossless (5.10).
+const MAX_SSE_BUF: usize = 64 * 1024;
+const MAX_SSE_DATA_LINES: usize = 1024;
+
 /// Parses SSE frames out of a rolling byte buffer. A frame is delimited by a
 /// blank line; fields are `field: value` lines. A frame may arrive split across
 /// several `bytes_stream` chunks, hence the buffer.
@@ -200,6 +207,12 @@ impl SseParser {
 
     fn push(&mut self, bytes: &[u8]) -> Vec<SseFrame> {
         self.buf.extend_from_slice(bytes);
+        if self.buf.len() > MAX_SSE_BUF {
+            // An endless stream without a newline — discard rather than grow/rescan unbounded.
+            self.buf.clear();
+            self.event = None;
+            self.data.clear();
+        }
         let mut frames = Vec::new();
         while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
             let raw: Vec<u8> = self.buf.drain(..=pos).collect();
@@ -223,6 +236,11 @@ impl SseParser {
             } else if let Some(v) = line.strip_prefix("data:") {
                 // Per spec, one leading space after the colon is stripped.
                 self.data.push(v.strip_prefix(' ').unwrap_or(v).to_string());
+                if self.data.len() > MAX_SSE_DATA_LINES {
+                    // Endless data: lines without a frame boundary — discard the pathological frame.
+                    self.event = None;
+                    self.data.clear();
+                }
             }
             // `id:` / `retry:` are not needed for the coarse refresh model.
         }
@@ -276,5 +294,31 @@ mod tests {
         let frames = p.push(b"data: line1\ndata: line2\n\n");
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].data, "line1\nline2");
+    }
+
+    #[test]
+    fn caps_a_newline_less_flood() {
+        // 5.10: an endless stream without a newline is discarded, not grown/rescanned unbounded.
+        let mut p = SseParser::new();
+        let frames = p.push(&vec![b'x'; MAX_SSE_BUF + 100]);
+        assert!(frames.is_empty());
+        assert_eq!(p.buf.len(), 0, "over-cap buffer should be cleared");
+    }
+
+    #[test]
+    fn caps_endless_data_lines_without_a_frame_boundary() {
+        // 5.10: endless data: lines that never hit a blank-line boundary are discarded.
+        let mut input = String::new();
+        for _ in 0..(MAX_SSE_DATA_LINES + 10) {
+            input.push_str("data: x\n");
+        }
+        let mut p = SseParser::new();
+        let frames = p.push(input.as_bytes());
+        assert!(frames.is_empty(), "no frame boundary -> no frame");
+        assert!(
+            p.data.len() <= MAX_SSE_DATA_LINES,
+            "data lines should be capped, got {}",
+            p.data.len()
+        );
     }
 }
