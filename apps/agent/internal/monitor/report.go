@@ -112,6 +112,10 @@ func PushReport(ctx context.Context, p PushReportParams) error {
 	if err != nil {
 		return err
 	}
+	// Close the pool's idle keep-alive connections on return: a fresh client is built per cycle, so
+	// otherwise the discarded transport's idle conns linger up to ~90s (IdleConnTimeout) before GC.
+	// Harmless in oneshot mode, tidier in the long-running loop / Windows service (5.6).
+	defer client.CloseIdleConnections()
 
 	if err := pushOnce(ctx, client, endpoint, apiKey, data); err != nil {
 		logger.Warnf("Push fehlgeschlagen (%v), Retry in %s...", err, pushRetryDelay)

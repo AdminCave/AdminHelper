@@ -36,6 +36,9 @@ func Sync() error {
 	if err != nil {
 		return fmt.Errorf("HTTP-Client: %w", err)
 	}
+	// Close idle keep-alive connections on return: a fresh client is built per sync, so otherwise
+	// the discarded transport's idle conns linger up to ~90s (IdleConnTimeout) before GC (5.6).
+	defer client.CloseIdleConnections()
 
 	// Fetch the remote hash
 	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
