@@ -10,6 +10,7 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.check_types import VALID_CHECK_TYPES
@@ -303,18 +304,22 @@ def get_server_status(server_id: str, db: Session = Depends(get_db)):
 def get_status_summary(db: Session = Depends(get_db)):
     """Summary: count per status. Dict response (aggregate, not a list) —
     deliberately unpaginated."""
-    states = db.query(MonitorState).all()
+    # Aggregate in SQL: a GROUP BY count avoids materializing every MonitorState row (incl. the
+    # message/details JSON blobs) just to tally per status — thousands of rows with large text
+    # columns per dashboard poll at scale (5.21).
+    rows = db.query(MonitorState.status, func.count()).group_by(MonitorState.status).all()
     summary = {
-        "total": len(states),
+        "total": 0,
         "ok": 0,
         "warning": 0,
         "critical": 0,
         "unknown": 0,
         "pending": 0,
     }
-    for s in states:
-        if s.status in summary:
-            summary[s.status] += 1
+    for status_, count in rows:
+        if status_ in summary:
+            summary[status_] = count
+        summary["total"] += count
     return summary
 
 

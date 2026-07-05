@@ -174,3 +174,23 @@ class TestAlertRulesPagination:
         for q in INVALID_QUERIES:
             r = client.get(f"/alerts?{q}")
             assert r.status_code == 422, f"{q}: {r.status_code} {r.text}"
+
+
+def test_status_summary_counts_per_status(client_db):
+    # 5.21: the GROUP BY aggregation returns the same per-status tally as the old full row scan,
+    # including statuses not present (0) and the total across all rows.
+    client, factory = client_db
+    with factory() as db:
+        for i, st in enumerate(["ok", "ok", "warning", "critical", "critical", "critical"]):
+            db.add(MonitorState(check_id=f"c{i}", status=st))
+        db.commit()
+    r = client.get("/status/summary")
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "total": 6,
+        "ok": 2,
+        "warning": 1,
+        "critical": 3,
+        "unknown": 0,
+        "pending": 0,
+    }
