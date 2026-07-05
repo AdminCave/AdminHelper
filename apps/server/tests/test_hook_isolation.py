@@ -111,3 +111,22 @@ def test_hook_backgrounded_grandchild_does_not_hang_parent():
     )
     elapsed = time.monotonic() - start
     assert elapsed < 10, f"parent hung on the grandchild's inherited pipe, took {elapsed:.1f}s"
+
+
+def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
+    # 4.138: HOME/LANG are set so HOME- and locale-sensitive code behaves predictably; a configured
+    # egress proxy is forwarded so a hook's HTTP calls honour it (egress/SSRF control).
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
+    res = run_hook_script(
+        "import os\n"
+        "log('HOME=' + os.environ.get('HOME', '__NONE__'))\n"
+        "log('LANG=' + os.environ.get('LANG', '__NONE__'))\n"
+        "log('PROXY=' + os.environ.get('HTTPS_PROXY', '__NONE__'))",
+        "webhook",
+        {},
+    )
+    assert res["success"] is True, res
+    joined = " ".join(res["logs"])
+    assert "HOME=__NONE__" not in joined, res
+    assert "LANG=__NONE__" not in joined, res
+    assert "PROXY=http://proxy.example:3128" in joined, res

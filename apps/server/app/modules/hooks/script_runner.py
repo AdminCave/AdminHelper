@@ -39,6 +39,10 @@ Event context:
 Schedule context:
     triggered_at        str             ISO timestamp of the execution
     last_run            str|None        last run (ISO) or None
+
+Note: the whole context is JSON-serialised into the worker (json.dumps with default=str), so
+only JSON-native types survive. Non-native values in event_data (datetime, Decimal, bytes, ORM
+objects) reach the hook as their str() form, not as the original type (4.137).
 """
 
 import json
@@ -95,13 +99,28 @@ def run_hook_script(
     # from the hook process. NOT complete isolation — DATABASE_URL (DB creds) is
     # deliberately inherited (hooks need DB access), and SECRET_KEY stays reachable
     # via DATA_DIR/.secret_key or the loaded config. Hooks = trusted code.
+    # HOME/LANG are set so HOME- and locale-sensitive code behaves predictably rather than
+    # defaulting oddly; a configured egress proxy is forwarded below so a hook's HTTP calls
+    # (http_get/http_post) honour it — that's egress/SSRF control, not a secret (4.138).
     server_dir = str(Path(__file__).parents[3])  # server/
     worker_env = {
         "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
         "PYTHONPATH": server_dir,
         "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
         "DATA_DIR": os.environ.get("DATA_DIR", ""),
     }
+    for _proxy_var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    ):
+        if _proxy_var in os.environ:
+            worker_env[_proxy_var] = os.environ[_proxy_var]
 
     if not _hook_semaphore.acquire(timeout=_HOOK_ACQUIRE_TIMEOUT):
         return {
