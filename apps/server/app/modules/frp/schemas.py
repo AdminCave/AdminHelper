@@ -91,10 +91,13 @@ class FrpServerConfigCreate(BaseModel):
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
 
-    _v_str = field_validator(
-        "name", "server_addr", "subdomain_host", "dashboard_user", "dashboard_password"
-    )(_reject_toml_breakers)
-    _v_token = field_validator("auth_token")(_check_secret)
+    _v_str = field_validator("name", "server_addr", "subdomain_host", "dashboard_user")(
+        _reject_toml_breakers
+    )
+    # dashboard_password guards a web UI exposing all proxy metadata + traffic, so
+    # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
+    # by the router when a dashboard port is set) (3.35).
+    _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_extra_config)
 
 
@@ -111,10 +114,13 @@ class FrpServerConfigUpdate(BaseModel):
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
 
-    _v_str = field_validator(
-        "name", "server_addr", "subdomain_host", "dashboard_user", "dashboard_password"
-    )(_reject_toml_breakers)
-    _v_token = field_validator("auth_token")(_check_secret)
+    _v_str = field_validator("name", "server_addr", "subdomain_host", "dashboard_user")(
+        _reject_toml_breakers
+    )
+    # dashboard_password guards a web UI exposing all proxy metadata + traffic, so
+    # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
+    # by the router when a dashboard port is set) (3.35).
+    _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_extra_config)
 
 

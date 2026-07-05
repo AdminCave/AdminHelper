@@ -55,6 +55,18 @@ def test_secret_key_entropy_floor():
     assert _tunnel(secret_key="").secret_key == ""
 
 
+def test_dashboard_password_requires_entropy_floor():
+    # 3.35: dashboard_password guards the frps web UI (all proxy metadata + traffic),
+    # so it gets the same >=16-char floor as auth_token, not just the injection guard.
+    with pytest.raises(ValidationError):
+        FrpServerConfigCreate(name="n", server_addr="a.example", dashboard_password="short")
+    ok = FrpServerConfigCreate(name="n", server_addr="a.example", dashboard_password="x" * 20)
+    assert ok.dashboard_password == "x" * 20
+    # empty stays valid — the router auto-generates when a dashboard port is set
+    empty = FrpServerConfigCreate(name="n", server_addr="a.example", dashboard_password="")
+    assert empty.dashboard_password == ""
+
+
 def test_server_extra_config_rejects_breakers():
     with pytest.raises(ValidationError):
         FrpServerConfigCreate(

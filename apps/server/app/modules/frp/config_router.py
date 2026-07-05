@@ -53,7 +53,12 @@ def create_server_config(
         max_ports_per_client=data.max_ports_per_client,
         dashboard_port=data.dashboard_port,
         dashboard_user=data.dashboard_user,
-        dashboard_password=data.dashboard_password,
+        # Auto-generate a strong dashboard password when the dashboard is enabled but
+        # none was supplied, mirroring auth_token — never leave the frps web UI open
+        # or weakly protected (3.35).
+        dashboard_password=(
+            data.dashboard_password or (secrets.token_urlsafe(24) if data.dashboard_port else None)
+        ),
         extra_config=json.dumps(data.extra_config) if data.extra_config else None,
     )
     db.add(config)
@@ -112,6 +117,12 @@ def update_server_config(
 
     if "extra_config" in sent:
         config.extra_config = json.dumps(data.extra_config) if data.extra_config else None
+
+    # Mirror the create path: enabling the dashboard (or blanking its password) must
+    # never leave the frps web UI unauthenticated — an empty password emits no
+    # webServer.password line at all (3.35).
+    if config.dashboard_port and not config.dashboard_password:
+        config.dashboard_password = secrets.token_urlsafe(24)
 
     db.commit()
     db.refresh(config)
