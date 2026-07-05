@@ -194,3 +194,65 @@ def test_status_summary_counts_per_status(client_db):
         "unknown": 0,
         "pending": 0,
     }
+
+
+def test_metrics_batches_type_specific_into_one_query(client_db, monkeypatch):
+    # 5.22: the type-specific metrics are fetched in ONE __name__ regex query, not one per metric.
+    from app.core import victoria as victoria_mod
+
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1", server_id="s", name="n", check_type="http", config="{}", enabled=True
+            )
+        )
+        db.commit()
+
+    calls: list[str] = []
+
+    def fake_query_range(query, start, end, step):
+        calls.append(query)
+        return {"data": {"result": []}}
+
+    monkeypatch.setattr(victoria_mod.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/c1/metrics")
+    assert r.status_code == 200, r.text
+    # http has 3 type-specific metrics (now one regex query) + no dynamic pattern + 1 status = 2.
+    assert len(calls) == 2, calls
+    type_query = next(q for q in calls if "__name__=~" in q)
+    for name in (
+        "monitor_check_duration_ms_value",
+        "monitor_http_response_ms_value",
+        "monitor_http_status_code_value",
+    ):
+        assert name in type_query, f"{name} missing from {type_query}"
+
+
+def test_metrics_skips_type_specific_query_when_empty(client_db, monkeypatch):
+    # 5.22: zfs_health has no type-specific metrics (only a dynamic pattern), so it must NOT fire a
+    # degenerate {__name__=~""} query — just the dynamic pattern + status timeline.
+    from app.core import victoria as victoria_mod
+
+    client, factory = client_db
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="z1", server_id="s", name="n", check_type="zfs_health", config="{}", enabled=True
+            )
+        )
+        db.commit()
+
+    calls: list[str] = []
+
+    def fake_query_range(query, start, end, step):
+        calls.append(query)
+        return {"data": {"result": []}}
+
+    monkeypatch.setattr(victoria_mod.victoria, "query_range", fake_query_range)
+
+    r = client.get("/checks/z1/metrics")
+    assert r.status_code == 200, r.text
+    assert not any('__name__=~""' in q for q in calls), calls
+    assert len(calls) == 2, calls  # dynamic pattern + status timeline only

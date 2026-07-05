@@ -361,10 +361,17 @@ def get_check_metrics(
         else f'check_id="{_escape_label(check_id)}"'
     )
 
-    # Query type-specific metrics
+    # Query all type-specific metrics in one __name__ regex range query instead of one serial
+    # query_range per metric (up to 4 for e.g. service_process/http): the calls are independent, so
+    # serializing them — each with a 10s httpx timeout — is pure latency on the dashboard path (5.22).
+    # PromQL/VictoriaMetrics anchors the __name__ regex fully (^(...)$), and the metric names are
+    # literal [a-z_] identifiers, so the |-join matches exactly those names.
     metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
-    for metric in metric_names:
-        query = f"{metric}{{{filter_label}}}"
+    if metric_names:
+        # zfs_health maps to an empty list (only dynamic patterns) — skip rather than fire a
+        # degenerate {__name__=~""} query, matching the old loop which ran zero times.
+        names = "|".join(metric_names)
+        query = f'{{__name__=~"{names}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
         all_results.extend(result.get("data", {}).get("result", []))
 
