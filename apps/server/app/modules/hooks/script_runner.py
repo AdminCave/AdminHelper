@@ -63,6 +63,11 @@ _MAX_CONCURRENT_HOOKS = 8
 _HOOK_ACQUIRE_TIMEOUT = 10
 _hook_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_HOOKS)
 
+# Hard cap on the bytes read from a hook's stdout/stderr. communicate() buffers the worker's output
+# unbounded, so a hook writing directly to fd 1/2 (os.write(1, b"x"*10**10), a flooding subprocess)
+# past the worker's own log cap could OOM the parent server — a public-webhook-triggered DoS (4.139).
+_MAX_HOOK_OUTPUT_BYTES = 8 * 1024 * 1024
+
 _WORKER_SCRIPT = str(Path(__file__).parent / "script_worker.py")
 
 
@@ -119,13 +124,40 @@ def run_hook_script(
         env=worker_env,
         start_new_session=True,
     )
+    # Read stdout/stderr in threads with a hard byte budget instead of communicate(): the latter
+    # buffers unbounded, so a hook flooding fd 1/2 past the worker's log cap could OOM the parent
+    # (4.139). Once a reader hits the budget it stops; the full pipe then blocks the worker, which
+    # the timeout (or the over-budget check below) kills.
+    out_holder: list[str] = []
+    err_holder: list[str] = []
+
+    def _drain(stream, holder):
+        data = stream.read(_MAX_HOOK_OUTPUT_BYTES + 1)
+        holder.append(data)
+        if len(data) > _MAX_HOOK_OUTPUT_BYTES:
+            # Over budget: the reader stops here, so the worker will block on a full pipe. Kill it
+            # now so proc.wait() returns at once instead of burning the whole timeout.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_holder), daemon=True)
+    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_holder), daemon=True)
+    t_out.start()
+    t_err.start()
     try:
-        out, err = proc.communicate(payload, timeout=timeout)
+        try:
+            proc.stdin.write(payload)
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass  # worker died before reading stdin; its stderr explains why
+        proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         # Kill the entire process group (the worker plus any grandchildren it spawned); with
         # start_new_session the pgid equals proc.pid. Then reap so no zombie is left behind.
         os.killpg(proc.pid, signal.SIGKILL)
-        proc.communicate()
+        proc.wait()
         return {
             "success": False,
             "result": {},
@@ -134,6 +166,42 @@ def run_hook_script(
         }
     finally:
         _hook_semaphore.release()
+
+    # Bound the join: proc.wait() only reaps the direct child, so a hook that backgrounds a
+    # grandchild inheriting fd 1/2 keeps the pipe open past the worker's exit — an unbounded join
+    # would hang this request thread indefinitely (bypassing the timeout). If a reader is still
+    # alive after the timeout, kill the whole group (start_new_session ⇒ pgid == proc.pid) to close
+    # the inherited write-ends, then re-join — this preserves the runtime bound 4.69 guarantees.
+    t_out.join(timeout=timeout)
+    t_err.join(timeout=timeout)
+    if t_out.is_alive() or t_err.is_alive():
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        # Bounded again: a grandchild that escaped the killpg (a hook that double-forked into its own
+        # session while holding fd 1) would otherwise hang the final join forever. Abandon such a
+        # reader — a leaked daemon thread + one fd — rather than hang the request thread; the holder
+        # guard below tolerates the unread stream. Only reachable by a pathological trusted-admin
+        # hook, never by the webhook caller, but this keeps the runtime bound absolute.
+        t_out.join(timeout=timeout)
+        t_err.join(timeout=timeout)
+    out = out_holder[0] if out_holder else ""
+    err = err_holder[0] if err_holder else ""
+
+    if len(out) > _MAX_HOOK_OUTPUT_BYTES or len(err) > _MAX_HOOK_OUTPUT_BYTES:
+        # A stream blew the budget (the drain thread already SIGKILLed the worker; kill again as a
+        # belt-and-braces fallback in case that raced).
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        return {
+            "success": False,
+            "result": {},
+            "logs": [],
+            "error": "Hook-Ausgabe zu gross (Limit ueberschritten)",
+        }
 
     if proc.returncode != 0:
         stderr = err.strip()
