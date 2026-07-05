@@ -110,9 +110,19 @@ class TestResolveClientIpTrustedProxies:
         req = self._Req("203.0.113.9", {"X-Forwarded-For": "10.0.0.1"})
         assert resolve_client_ip(req) == "203.0.113.9"
 
-    def test_x_real_ip_preferred_over_forwarded_for(self, monkeypatch):
+    def test_forwarded_for_preferred_over_x_real_ip(self, monkeypatch):
+        # 3.8: the bundled gateway pins X-Forwarded-For to $remote_addr but does
+        # NOT set X-Real-IP, so a client-supplied X-Real-IP must never win over the
+        # gateway-fixed XFF — else a client spoofs its source IP (allowlist / rate-
+        # limit bypass, forged audit source_ip).
         self._trust(monkeypatch, "10.0.0.0/24")
         req = self._Req("10.0.0.7", {"X-Real-IP": "9.9.9.9", "X-Forwarded-For": "1.1.1.1"})
+        assert resolve_client_ip(req) == "1.1.1.1"
+
+    def test_x_real_ip_used_as_fallback_without_forwarded_for(self, monkeypatch):
+        # X-Real-IP is still honored for proxies that set only it (no XFF).
+        self._trust(monkeypatch, "10.0.0.0/24")
+        req = self._Req("10.0.0.7", {"X-Real-IP": "9.9.9.9"})
         assert resolve_client_ip(req) == "9.9.9.9"
 
     def test_first_of_multiple_forwarded_for_used(self, monkeypatch):
