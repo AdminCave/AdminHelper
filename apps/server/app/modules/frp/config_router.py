@@ -136,7 +136,10 @@ def update_server_config(
         object_id=config.id,
         object_label=config.name,
     )
-    return config.to_dict()
+    # Mask like the GET paths (models.py invariant): a PUT (even an unrelated rename)
+    # must not echo auth.token / dashboard_password back into DevTools / debug logs.
+    # The create path reveals the freshly generated token once; a plain update must not (3.93).
+    return config.to_dict(mask_secrets=True)
 
 
 @router.delete("/server-config/{config_id}", status_code=status.HTTP_204_NO_CONTENT)

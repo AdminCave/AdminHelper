@@ -101,3 +101,27 @@ def test_update_blanking_dashboard_password_regenerates(db_session, monkeypatch)
     cfg = _create_config(db_session, monkeypatch, dashboard_port=7500)
     updated = _update_config(db_session, monkeypatch, cfg.id, dashboard_password="")
     assert updated.dashboard_password and len(updated.dashboard_password) >= 16
+
+
+def test_update_response_masks_secrets(db_session, monkeypatch):
+    # 3.93: the PUT response must not echo auth.token / dashboard_password (the GET
+    # invariant), even for an unrelated change like a rename. The config still holds the
+    # secrets — they're just not returned in the body.
+    from types import SimpleNamespace
+
+    import app.modules.frp.config_router as cr
+    from app.modules.frp.schemas import FrpServerConfigUpdate
+
+    monkeypatch.setattr(cr, "write_frps_config", lambda config: None)
+    monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
+    cfg = _create_config(db_session, monkeypatch, dashboard_port=7500, dashboard_user="admin")
+    result = cr.update_server_config(
+        config_id=cfg.id,
+        data=FrpServerConfigUpdate(name="renamed"),
+        request=SimpleNamespace(state=SimpleNamespace()),
+        db=db_session,
+    )
+    assert result["authToken"] is None
+    assert result["dashboardPassword"] is None
+    stored = db_session.query(FrpServerConfig).filter(FrpServerConfig.id == cfg.id).one()
+    assert stored.auth_token and stored.dashboard_password  # secrets kept, just not echoed
