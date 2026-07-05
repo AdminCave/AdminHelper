@@ -13,6 +13,23 @@ pub struct AnsibleTarget {
     pub groups: Vec<String>,
 }
 
+/// Creates a fresh temp file for our ansible scratch data. On Unix it is created
+/// 0600 (the shared /tmp is world-readable), and everywhere `create_new` (O_EXCL)
+/// refuses to follow a pre-planted symlink at the predictable path. A stale file from
+/// our own prior run is cleared first; a racing local attacker can then only cause the
+/// O_EXCL open to fail, not overwrite a victim path or read the contents (3.55).
+fn create_temp_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let _ = std::fs::remove_file(path);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)
+}
+
 /// Generates an Ansible inventory file in INI format and returns the path.
 pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError> {
     let mut content = String::from("[all]\n");
@@ -47,7 +64,7 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         "adminhelper_ansible_inventory_{}.ini",
         std::process::id()
     ));
-    let mut file = std::fs::File::create(&path)?;
+    let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
 
     Ok(path.to_string_lossy().to_string())
@@ -61,7 +78,7 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
         .trim()
         .to_string();
     let path = std::env::temp_dir().join(format!("adminhelper_ansible_{}", safe_name));
-    let mut file = std::fs::File::create(&path)?;
+    let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
 
     Ok(path.to_string_lossy().to_string())
@@ -132,7 +149,7 @@ pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), A
 
 #[cfg(test)]
 mod tests {
-    use super::is_confined_ansible_path;
+    use super::{create_temp_file, is_confined_ansible_path};
     use std::fs;
 
     #[test]
@@ -163,5 +180,59 @@ mod tests {
 
         let _ = fs::remove_file(&ours);
         let _ = fs::remove_file(&foreign);
+    }
+
+    #[test]
+    fn create_temp_file_is_exclusive_and_hardened() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "adminhelper_ansible_create_test_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&path);
+
+        let f = create_temp_file(&path).unwrap();
+        drop(f);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "ansible temp file must be 0600");
+        }
+        // A second call over our own stale file still succeeds (remove-first).
+        assert!(create_temp_file(&path).is_ok());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_temp_file_does_not_write_through_a_pre_planted_symlink() {
+        let dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let victim = dir.join(format!("adminhelper_ansible_victim_{pid}"));
+        let link = dir.join(format!("adminhelper_ansible_symlink_{pid}"));
+        let _ = fs::remove_file(&victim);
+        let _ = fs::remove_file(&link);
+        fs::write(&victim, b"important").unwrap();
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+
+        let f = create_temp_file(&link).unwrap();
+        drop(f);
+        // The symlink was unlinked (remove-first) and a fresh regular file created —
+        // the victim it pointed at is untouched, not truncated through the link.
+        assert_eq!(
+            fs::read(&victim).unwrap(),
+            b"important",
+            "victim must be untouched"
+        );
+        assert!(
+            !fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "link must now be a fresh regular file, not a symlink"
+        );
+        let _ = fs::remove_file(&victim);
+        let _ = fs::remove_file(&link);
     }
 }
