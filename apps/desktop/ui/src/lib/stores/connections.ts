@@ -62,8 +62,17 @@ export const filteredConnections = derived(
   },
 );
 
-export const groupedConnections = derived([_state, searchTerm], ([$s, $term]): ConnectionGroup[] =>
-  groupConnectionsByHost($s.items, $term),
+// Group once per items change — the expensive part (URL parsing, sorting, haystack building) — then
+// let the search filter cheaply on the prebuilt haystack, instead of re-grouping on every keystroke
+// (5.13).
+const allGroups = derived(_state, ($s): ConnectionGroup[] => groupConnectionsByHost($s.items, ''));
+
+export const groupedConnections = derived(
+  [allGroups, searchTerm],
+  ([$groups, $term]): ConnectionGroup[] => {
+    const q = $term.trim().toLowerCase();
+    return q ? $groups.filter((g) => g.haystack.includes(q)) : $groups;
+  },
 );
 
 // Shared request generation: load() (cache read) and reloadForMode() (network fetch) both write
