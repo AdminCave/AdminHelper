@@ -31,17 +31,34 @@ from app.core.ssrf import is_private_url
 _MAX_BODY = 1_000_000
 
 
+def _read_capped_body(resp: httpx.Response) -> tuple[str, Any]:
+    # Stream the body and abort once it exceeds _MAX_BODY, instead of resp.text loading the WHOLE
+    # response into the worker's RAM first (a gigabyte target -> OOM, made worse when the hook
+    # echoes it back through the result dict) and only THEN slicing it — the slice was too late
+    # (4.70).
+    body = b""
+    for chunk in resp.iter_bytes():
+        body += chunk
+        if len(body) > _MAX_BODY:
+            raise ValueError(f"Antwort zu gross (> {_MAX_BODY} Bytes)")
+    text = body.decode(resp.encoding or "utf-8", "replace")
+    try:
+        parsed = json.loads(text) if text else None
+    except ValueError:
+        parsed = None
+    return text, parsed
+
+
 def _safe_http_get(url: str, headers: dict | None = None, timeout: int = 10) -> dict:
     # The URL can come straight from an attacker-controlled webhook payload, so guard
     # against SSRF and never follow a redirect into an internal target (3.37).
     if is_private_url(url):
         raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
-    resp = httpx.get(url, headers=headers or {}, timeout=timeout, follow_redirects=False)
-    try:
-        j = resp.json()
-    except Exception:
-        j = None
-    return {"status": resp.status_code, "body": resp.text[:_MAX_BODY], "json": j}
+    with httpx.stream(
+        "GET", url, headers=headers or {}, timeout=timeout, follow_redirects=False
+    ) as resp:
+        text, j = _read_capped_body(resp)
+        return {"status": resp.status_code, "body": text, "json": j}
 
 
 def _safe_http_post(
@@ -49,14 +66,16 @@ def _safe_http_post(
 ) -> dict:
     if is_private_url(url):
         raise ValueError(f"Zieladresse nicht erlaubt (SSRF-Schutz): {url}")
-    resp = httpx.post(
-        url, json=json_data, headers=headers or {}, timeout=timeout, follow_redirects=False
-    )
-    try:
-        j = resp.json()
-    except Exception:
-        j = None
-    return {"status": resp.status_code, "body": resp.text[:_MAX_BODY], "json": j}
+    with httpx.stream(
+        "POST",
+        url,
+        json=json_data,
+        headers=headers or {},
+        timeout=timeout,
+        follow_redirects=False,
+    ) as resp:
+        text, j = _read_capped_body(resp)
+        return {"status": resp.status_code, "body": text, "json": j}
 
 
 def main() -> None:
@@ -102,16 +121,43 @@ def main() -> None:
         "log": _log,
         "result": result,
         "logs": logs,
-        **context,
     }
-
+    # Merge the event context WITHOUT letting it shadow an injected helper or the return
+    # bindings: **context merged last would let a context key named result/logs/http_get/print
+    # override the helper (or the result reference), breaking the hook silently. Reject a
+    # collision instead — the current fixed context keys can't hit one, but a future event key
+    # that matches a helper name would otherwise fail silently (4.71).
+    _RESERVED = {
+        "print",
+        "load_connections",
+        "save_connections",
+        "http_get",
+        "http_post",
+        "uuid4",
+        "log",
+        "result",
+        "logs",
+    }
     try:
+        for _k, _v in context.items():
+            if _k in _RESERVED:
+                raise ValueError(f"Kontext-Schluessel {_k!r} kollidiert mit einem Hook-Helfer")
+            namespace[_k] = _v
         compiled = compile(script, "<hook_script>", "exec")
         exec(compiled, namespace)  # noqa: S102
-        output = {"success": True, "result": result, "logs": logs}
+        # Read result/logs back from the NAMESPACE, not the local names: a hook that rebinds
+        # `result = {...}` (instead of result[...] = ...) only rebinds the namespace entry, so the
+        # local `result` would stay the empty dict and the output would be silently lost
+        # (success=True, result={}). Same for logs (4.71).
+        output = {"success": True, "result": namespace["result"], "logs": namespace["logs"]}
     except Exception as exc:
-        logs.append(f"Fehler: {exc}")
-        output = {"success": False, "result": result, "logs": logs, "error": str(exc)}
+        namespace["logs"].append(f"Fehler: {exc}")
+        output = {
+            "success": False,
+            "result": namespace["result"],
+            "logs": namespace["logs"],
+            "error": str(exc),
+        }
 
     # Result as JSON to stdout
     sys.stdout.write(json.dumps(output, default=str))

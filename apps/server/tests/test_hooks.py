@@ -174,3 +174,61 @@ def test_webhook_trigger_via_header_token(test_client, db_session, admin_user):
 
     wrong = test_client.post("/api/hooks/trigger", json={}, headers={"X-Hook-Token": "nope"})
     assert wrong.status_code == 404
+
+
+class TestHookWorkerRobustness:
+    """4.69/4.70/4.71: the hook worker's timeout, response-size and result-return handling."""
+
+    def test_result_rebinding_is_returned(self):
+        # 4.71: a hook that rebinds `result = {...}` (instead of result[...] = ...) must have its
+        # value returned, not silently lost — the worker reads namespace["result"], not the local.
+        from app.modules.hooks.script_runner import run_hook_script
+
+        out = run_hook_script("result = {'foo': 42}", "webhook", {})
+        assert out["success"] is True
+        assert out["result"] == {"foo": 42}
+
+    def test_context_key_colliding_with_helper_is_rejected(self):
+        # 4.71: an event context key that hits a helper/return name must be rejected, not silently
+        # shadow the helper (or the result binding).
+        from app.modules.hooks.script_runner import run_hook_script
+
+        out = run_hook_script("pass", "webhook", {"result": "collision"})
+        assert out["success"] is False
+        assert "kollidiert" in (out.get("error", "") + " ".join(out.get("logs", [])))
+
+    def test_oversized_http_body_aborts(self):
+        # 4.70: _read_capped_body must raise once the streamed body exceeds _MAX_BODY, instead of
+        # resp.text loading the whole (gigabyte) response into RAM first.
+        from app.modules.hooks import script_worker
+
+        class _FakeResp:
+            encoding = "utf-8"
+
+            def iter_bytes(self):
+                for _ in range((script_worker._MAX_BODY // 1000) + 2):
+                    yield b"x" * 1000
+
+        with pytest.raises(ValueError, match="zu gross"):
+            script_worker._read_capped_body(_FakeResp())
+
+    def test_timeout_kills_grandchildren(self, tmp_path):
+        # 4.69: a hook that spawns a grandchild must have the WHOLE process group killed on
+        # timeout, not just the direct child — else the grandchild is orphaned and keeps running.
+        import time
+
+        from app.modules.hooks.script_runner import run_hook_script
+
+        marker = tmp_path / "grandchild-marker"
+        # Grandchild writes the marker after 4s, then the hook itself hangs. A 2s timeout must
+        # kill the group before the grandchild's 4s write ever lands.
+        script = (
+            "import subprocess, sys, time\n"
+            f"subprocess.Popen([sys.executable, '-c', "
+            f"\"import time; time.sleep(4); open({str(marker)!r}, 'w').write('x')\"])\n"
+            "time.sleep(30)\n"
+        )
+        out = run_hook_script(script, "webhook", {}, timeout=2)
+        assert out["success"] is False
+        time.sleep(5)  # past the grandchild's 4s write
+        assert not marker.exists(), "grandchild survived the timeout kill (orphaned process)"

@@ -43,6 +43,7 @@ Schedule context:
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -57,7 +58,7 @@ SCRIPT_TIMEOUT_SECONDS = 30
 # Defense-in-depth: bound the number of concurrent hook subprocesses so a burst
 # of (slow) hooks can't spawn unbounded processes / exhaust the threadpool +
 # DB pool. A caller that can't acquire within the timeout gets a busy error
-# instead of piling up. Acquire/release wrap only the blocking subprocess.run.
+# instead of piling up. Acquire/release wrap only the blocking worker communicate().
 _MAX_CONCURRENT_HOOKS = 8
 _HOOK_ACQUIRE_TIMEOUT = 10
 _hook_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_HOOKS)
@@ -104,17 +105,27 @@ def run_hook_script(
             "logs": ["Server ausgelastet: zu viele gleichzeitige Hook-Ausführungen"],
             "error": "Server ausgelastet (Hook-Limit erreicht)",
         }
+    # Run the worker in its OWN process group (start_new_session) so a timeout can kill the
+    # WHOLE tree, not just the direct child: hook scripts get real builtins and can spawn
+    # grandchildren (os.system, subprocess, multiprocessing) that would otherwise be orphaned and
+    # keep running unbounded past the timeout (4.69).
+    proc = subprocess.Popen(
+        [sys.executable, _WORKER_SCRIPT],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=server_dir,
+        env=worker_env,
+        start_new_session=True,
+    )
     try:
-        proc = subprocess.run(
-            [sys.executable, _WORKER_SCRIPT],
-            input=payload,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=server_dir,
-            env=worker_env,
-        )
+        out, err = proc.communicate(payload, timeout=timeout)
     except subprocess.TimeoutExpired:
+        # Kill the entire process group (the worker plus any grandchildren it spawned); with
+        # start_new_session the pgid equals proc.pid. Then reap so no zombie is left behind.
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
         return {
             "success": False,
             "result": {},
@@ -125,7 +136,7 @@ def run_hook_script(
         _hook_semaphore.release()
 
     if proc.returncode != 0:
-        stderr = proc.stderr.strip()
+        stderr = err.strip()
         return {
             "success": False,
             "result": {},
@@ -134,12 +145,12 @@ def run_hook_script(
         }
 
     try:
-        result = json.loads(proc.stdout)
+        result = json.loads(out)
     except (json.JSONDecodeError, ValueError):
         return {
             "success": False,
             "result": {},
-            "logs": [proc.stdout[:4096]] if proc.stdout else [],
+            "logs": [out[:4096]] if out else [],
             "error": "Ungueltige Worker-Ausgabe",
         }
 
