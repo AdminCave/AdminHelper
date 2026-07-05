@@ -91,8 +91,9 @@ pub async fn forward(
 }
 
 /// Probe whether the server certificate validates against the public trust
-/// store. Returns true only on a successful request; any error returns false —
-/// a self-signed/invalid cert, but also DNS/timeout/connection failures.
+/// store. Returns true on success; a connect/TLS failure (untrusted/self-signed
+/// cert) returns false → the caller's self-signed path; a timeout or any other
+/// error propagates so a network problem isn't mistaken for a bad cert (4.27).
 pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
     // Never probe a cleartext network URL (https, or http only for loopback).
     crate::validation::validate_server_url_secure(server_url)?;
@@ -104,8 +105,13 @@ pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
     let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
     match client.get(&url).send().await {
         Ok(_) => Ok(true),
-        // Any error (TLS, DNS, timeout) counts as "not regularly reachable".
-        Err(_) => Ok(false),
+        // Only a genuine connect/TLS failure means the cert isn't publicly trusted → false,
+        // which routes the UI to the self-signed/TOFU path. A timeout (even a connect timeout)
+        // is a reachability problem, not a cert problem: reporting it as "invalid cert" would
+        // push the user to lower TLS strictness in response to a slow/unreachable server or a
+        // typo'd host (4.27).
+        Err(e) if e.is_connect() && !e.is_timeout() => Ok(false),
+        Err(e) => Err(AppError::Network(e)),
     }
 }
 
