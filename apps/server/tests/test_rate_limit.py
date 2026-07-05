@@ -75,3 +75,25 @@ def test_redis_fallback_retries_after_cooldown(monkeypatch):
     assert isinstance(rl.get_backend(), RedisBackend)
 
     rl.reset_backend_for_tests()
+
+
+def test_login_check_rate_limit_increments_atomically():
+    # 4.141: _check_rate_limit must INCREMENT (atomic) up front, not just read the count and let the
+    # increment happen only after a failed verify — else N parallel logins all see count=0, all pass
+    # and all run bcrypt, bypassing the limit. After _MAX_ATTEMPTS calls the next raises 429.
+    import pytest
+    from fastapi import HTTPException
+
+    import app.modules.users.auth_router as ar
+    from app.core.rate_limit import reset_backend_for_tests
+
+    reset_backend_for_tests()
+    try:
+        ip = "203.0.113.7"
+        for _ in range(ar._MAX_ATTEMPTS):
+            ar._check_rate_limit(ip)  # each call increments; all within the limit
+        with pytest.raises(HTTPException) as exc:
+            ar._check_rate_limit(ip)  # one over -> 429
+        assert exc.value.status_code == 429
+    finally:
+        reset_backend_for_tests()

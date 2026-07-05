@@ -59,16 +59,16 @@ def _rate_limit_key(ip: str) -> str:
 
 
 def _check_rate_limit(ip: str) -> None:
-    backend = get_rate_limit_backend()
-    if backend.get_count(_rate_limit_key(ip)) >= _MAX_ATTEMPTS:
+    # Increment atomically and check the result. Reading the count here and incrementing only after
+    # a failed verify let N parallel requests all see count=0, all pass, and all run bcrypt —
+    # bypassing the limit and forcing bulk bcrypt work. INCR is the backend's race-free op, so every
+    # attempt counts up front; a successful login resets the counter via _reset_rate_limit (4.141).
+    count = get_rate_limit_backend().increment(_rate_limit_key(ip), _WINDOW_SECONDS)
+    if count > _MAX_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Zu viele Login-Versuche. Bitte {_WINDOW_SECONDS} Sekunden warten.",
         )
-
-
-def _record_failed_attempt(ip: str) -> None:
-    get_rate_limit_backend().increment(_rate_limit_key(ip), _WINDOW_SECONDS)
 
 
 def _reset_rate_limit(ip: str) -> None:
@@ -131,7 +131,6 @@ def login(
         verify_password(data.password, _DUMMY_HASH)
         password_ok = False
     if not password_ok:
-        _record_failed_attempt(ip)
         audit.record(
             db,
             "auth.login_failed",
@@ -270,14 +269,12 @@ def bootstrap(
     if db.query(User).count() > 0:
         # Server is already initialized – bootstrap is no longer possible.
         # Same response as 'no token active' to avoid disclosing the DB state.
-        _record_failed_attempt(ip)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Server ist bereits initialisiert",
         )
 
     if not BOOTSTRAP_TOKEN_FILE.exists():
-        _record_failed_attempt(ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Kein Bootstrap-Token aktiv",
@@ -286,7 +283,6 @@ def bootstrap(
     expected = BOOTSTRAP_TOKEN_FILE.read_text().strip()
     # Constant-time compare like the /events internal key (3.95).
     if not secrets.compare_digest(hash_api_key(data.token), expected):
-        _record_failed_attempt(ip)
         logger.warning("Bootstrap-Versuch mit ungueltigem Token von IP=%s", ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
