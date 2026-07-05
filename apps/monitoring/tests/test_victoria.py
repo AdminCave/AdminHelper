@@ -94,3 +94,58 @@ class TestFormatLine:
     def test_tag_value_is_escaped(self):
         line = format_line("m", {"name": "my check"}, 7, 100)
         assert line == "m,name=my\\ check value=7i 100"
+
+
+class TestFormatLineEmptyTags:
+    def test_all_empty_tags_no_trailing_comma(self):
+        # 4.112: an all-empty tag set must not leave a comma before the space (invalid LP).
+        assert format_line("m", {}, 5, 100) == "m value=5i 100"
+        assert format_line("m", {"a": ""}, 5, 100) == "m value=5i 100"
+
+    def test_nonempty_tags_still_get_the_comma(self):
+        assert format_line("m", {"host": "srv"}, 5, 100) == "m,host=srv value=5i 100"
+
+
+class TestVictoriaClientRobustness:
+    def test_query_range_non_json_returns_empty_fallback(self):
+        # 4.114: a non-JSON 200 (proxy HTML error page, truncated body) makes resp.json() raise a
+        # ValueError; return the empty fallback instead of propagating a 500.
+        from app.core.victoria import VictoriaClient
+
+        client = VictoriaClient()
+
+        class _FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                raise ValueError("not json")
+
+        class _FakeClient:
+            def get(self, *_a, **_k):
+                return _FakeResp()
+
+        client._client = _FakeClient()
+        assert client.query_range("q", "s", "e", "1m") == {
+            "status": "error",
+            "data": {"result": []},
+        }
+
+    def test_write_retries_a_transient_failure(self, monkeypatch):
+        # 4.113: a transient write failure is retried (3 attempts) before giving up, and never
+        # raises out of write().
+        import app.core.victoria as victoria_mod
+        from app.core.victoria import VictoriaClient
+
+        monkeypatch.setattr(victoria_mod.time, "sleep", lambda _s: None)  # no real backoff
+        client = VictoriaClient()
+        attempts = {"n": 0}
+
+        class _FakeClient:
+            def post(self, *_a, **_k):
+                attempts["n"] += 1
+                raise victoria_mod.httpx.ConnectError("boom")
+
+        client._client = _FakeClient()
+        client.write(["m,host=srv value=5i 100"])  # must not raise
+        assert attempts["n"] == 3

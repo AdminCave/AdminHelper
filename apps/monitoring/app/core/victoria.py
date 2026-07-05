@@ -75,7 +75,13 @@ def format_line(measurement: str, tags: dict[str, str], value, ts: int) -> str:
         field = f"value={value}i"
     else:
         field = f"value={value}"
-    return f"{_esc_measurement(measurement)},{tag_str} {field} {ts}"
+    # Only prefix the comma when there is a tag set — an all-empty tag dict would otherwise yield
+    # "measurement, value=X ts" (comma before the space), invalid LP that VictoriaMetrics rejects
+    # (potentially the whole batch). Callers set check_id/server_id today, but this is the central
+    # injection barrier and must handle the case itself (4.112).
+    esc_m = _esc_measurement(measurement)
+    prefix = f"{esc_m},{tag_str}" if tag_str else esc_m
+    return f"{prefix} {field} {ts}"
 
 
 class VictoriaClient:
@@ -95,11 +101,23 @@ class VictoriaClient:
             len(metrics),
             metrics[0][:200] if metrics else "-",
         )
-        try:
-            resp = self._client.post(f"{self.base_url}/write", content=body)
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.warning("VictoriaMetrics write fehlgeschlagen: %s (URL: %s)", exc, self.base_url)
+        # Retry with a short backoff: a transient failure (VM restart, brief network blip, timeout)
+        # would otherwise permanently lose the data point — a gap in exactly the time series you
+        # look at during an incident. The LP body is idempotent, so re-sending is safe (4.113).
+        for attempt in range(3):
+            try:
+                resp = self._client.post(f"{self.base_url}/write", content=body)
+                resp.raise_for_status()
+                return
+            except httpx.HTTPError as exc:
+                if attempt == 2:
+                    logger.warning(
+                        "VictoriaMetrics write fehlgeschlagen (3 Versuche): %s (URL: %s)",
+                        exc,
+                        self.base_url,
+                    )
+                else:
+                    time.sleep(0.5 * (attempt + 1))
 
     def write_check_result(
         self,
@@ -150,7 +168,9 @@ class VictoriaClient:
             result_count = len(data.get("data", {}).get("result", []))
             logger.debug("VictoriaMetrics query_range: query=%s results=%d", query, result_count)
             return data
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ValueError) as exc:
+            # ValueError covers resp.json() raising JSONDecodeError on a non-JSON 200 (a proxy HTML
+            # error page, a truncated body) — return the empty fallback instead of a 500 (4.114).
             logger.warning("VictoriaMetrics query_range fehlgeschlagen: %s (query=%s)", exc, query)
             return {"status": "error", "data": {"result": []}}
 
