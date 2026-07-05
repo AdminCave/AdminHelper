@@ -32,6 +32,19 @@ fn create_temp_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
 
 /// Generates an Ansible inventory file in INI format and returns the path.
 pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError> {
+    // Host + group names arrive as attacker-controllable Tauri-command params and go straight into
+    // the INI. Validate them like the ssh/rdp spawn paths do: a newline or [/] would otherwise
+    // inject extra inventory lines or group headers — at best a broken, hard-to-diagnose
+    // inventory, at worst the playbook running against unintended targets (4.91).
+    for server in servers {
+        crate::validation::validate_host(&server.hostname)?;
+        for tag in &server.groups {
+            crate::validation::validate_no_control_chars(tag, "Gruppe")?;
+            if tag.contains(['[', ']']) {
+                return Err(AppError::Validation("Ungueltiger Gruppenname".to_string()));
+            }
+        }
+    }
     let mut content = String::from("[all]\n");
     for server in servers {
         content.push_str(&server.hostname);
@@ -149,8 +162,32 @@ pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), A
 
 #[cfg(test)]
 mod tests {
-    use super::{create_temp_file, is_confined_ansible_path};
+    use super::{create_temp_file, generate_inventory, is_confined_ansible_path, AnsibleTarget};
     use std::fs;
+
+    #[test]
+    fn generate_inventory_rejects_host_and_group_injection() {
+        // 4.91: a hostname with a newline or a group name with [/] must be rejected — otherwise it
+        // injects extra inventory lines or group headers into the INI.
+        let bad_host = vec![AnsibleTarget {
+            hostname: "host\nevil ansible_connection=local".to_string(),
+            groups: vec![],
+        }];
+        assert!(generate_inventory(&bad_host).is_err());
+
+        let bad_group = vec![AnsibleTarget {
+            hostname: "host".to_string(),
+            groups: vec!["[evil]".to_string()],
+        }];
+        assert!(generate_inventory(&bad_group).is_err());
+
+        // A clean target still passes.
+        let ok = vec![AnsibleTarget {
+            hostname: "web01.example.com".to_string(),
+            groups: vec!["web".to_string()],
+        }];
+        assert!(generate_inventory(&ok).is_ok());
+    }
 
     #[test]
     fn confines_ansible_paths_to_own_temp_files() {

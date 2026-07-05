@@ -42,6 +42,16 @@ pub fn which(binary: &str) -> Option<PathBuf> {
     None
 }
 
+/// Spawn a detached reaper for a launcher process. Rust does not reap children on Child drop, so
+/// a terminal launcher that delegates to a server process and exits immediately (gnome-terminal,
+/// wt, `cmd /C start`) would otherwise linger as a <defunct> zombie in the process table until the
+/// app exits — an admin opening dozens of sessions a day accumulates that many (4.96).
+fn reap_async(mut child: std::process::Child) {
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+}
+
 pub fn open_linux_terminal(command: &str, args: &[String]) -> Result<(), AppError> {
     let profiles = [
         TerminalProfile::new("x-terminal-emulator", TerminalMode::DashE),
@@ -79,7 +89,10 @@ pub fn open_linux_terminal(command: &str, args: &[String]) -> Result<(), AppErro
         };
 
         match result {
-            Ok(_) => return Ok(()),
+            Ok(child) => {
+                reap_async(child);
+                return Ok(());
+            }
             // Spawn failed (e.g. a broken x-terminal-emulator alternative) — the
             // list is a real fallback chain, so try the next terminal (2.88).
             Err(e) => last_err = Some(e),
@@ -101,14 +114,16 @@ pub fn open_windows_terminal(command: &str, args: &[String]) -> Result<(), AppEr
         ];
         wt_args.push(command.to_string());
         wt_args.extend(args.iter().cloned());
-        Command::new("wt").args(wt_args).spawn()?;
+        reap_async(Command::new("wt").args(wt_args).spawn()?);
         return Ok(());
     }
 
     let cmdline = build_windows_cmdline(command, args);
-    Command::new("cmd")
-        .args(["/C", "start", "", "cmd", "/K", &cmdline])
-        .spawn()?;
+    reap_async(
+        Command::new("cmd")
+            .args(["/C", "start", "", "cmd", "/K", &cmdline])
+            .spawn()?,
+    );
     Ok(())
 }
 
