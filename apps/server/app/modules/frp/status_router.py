@@ -62,7 +62,10 @@ def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)
     auth = (config.dashboard_user or "", config.dashboard_password or "")
 
     proxies: list[dict] = []
-    with httpx.Client(timeout=5.0) as client:
+    # Short connect timeout so an unreachable dashboard fails fast (~2s per candidate) rather than
+    # waiting the full 5s; the base-once resolution below already avoids the (type x candidate)
+    # blow-up (5.4).
+    with httpx.Client(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
         # Resolve the reachable base once (reusing that first response), then query
         # the remaining proxy types against only that base — instead of trying
         # every (type x candidate) pair (up to 8 requests / ~40s when unreachable).
