@@ -7,7 +7,6 @@
 package monitor
 
 import (
-	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -30,7 +29,7 @@ func collectServiceHealth() map[string]any {
 	}
 
 	// Run sc query state= all
-	out, err := exec.Command("sc", "query", "state=", "all").Output()
+	out, err := runWithTimeout("sc", "query", "state=", "all")
 	if err != nil {
 		return result
 	}
@@ -111,12 +110,12 @@ func collectWatchedServices(names []string) []map[string]any {
 			services = append(services, svc)
 			continue
 		}
-		out, err := exec.Command("sc", "query", name).Output()
+		out, err := runWithTimeout("sc", "query", name)
 		if err == nil {
 			output := string(out)
 			if strings.Contains(output, "RUNNING") {
 				svc["running"] = true
-				exOut, err := exec.Command("sc", "queryex", name).Output()
+				exOut, err := runWithTimeout("sc", "queryex", name)
 				if err == nil {
 					for _, line := range strings.Split(string(exOut), "\n") {
 						if strings.Contains(line, "PID") && !strings.Contains(line, "FLAGS") {

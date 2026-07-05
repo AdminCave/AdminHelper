@@ -7,7 +7,6 @@
 package monitor
 
 import (
-	"os/exec"
 	"strings"
 )
 
@@ -29,8 +28,8 @@ func collectServiceHealth() map[string]any {
 
 	// 3) Failed units
 	failed := []string{}
-	out, err := exec.Command("systemctl", "list-units", "--state=failed",
-		"--no-legend", "--plain").Output()
+	out, err := runWithTimeout("systemctl", "list-units", "--state=failed",
+		"--no-legend", "--plain")
 	if err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if parts := strings.Fields(line); len(parts) > 0 && parts[0] != "" {
@@ -82,7 +81,7 @@ func collectServiceHealth() map[string]any {
 // its column `col`, skipping lines too short to hold it. Empty map on any error.
 func parseSystemctlColumns(col int, args ...string) map[string]string {
 	m := map[string]string{}
-	out, err := exec.Command("systemctl", args...).Output()
+	out, err := runWithTimeout("systemctl", args...)
 	if err != nil {
 		return m
 	}
@@ -101,11 +100,11 @@ func collectWatchedServices(names []string) []map[string]any {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
 		// `--` terminates option parsing so a server-supplied service name
 		// beginning with '-' is treated as an operand, not a systemctl flag
-		// (argument/flag-confusion hardening; exec.Command uses no shell).
-		out, err := exec.Command("systemctl", "is-active", "--", name).Output()
+		// (argument/flag-confusion hardening; runWithTimeout runs exec directly, no shell).
+		out, err := runWithTimeout("systemctl", "is-active", "--", name)
 		if err == nil && strings.TrimSpace(string(out)) == "active" {
 			svc["running"] = true
-			pidOut, err := exec.Command("systemctl", "show", "-p", "MainPID", "--", name).Output()
+			pidOut, err := runWithTimeout("systemctl", "show", "-p", "MainPID", "--", name)
 			if err == nil {
 				parts := strings.SplitN(strings.TrimSpace(string(pidOut)), "=", 2)
 				if len(parts) == 2 && parts[1] != "0" && parts[1] != "" {
