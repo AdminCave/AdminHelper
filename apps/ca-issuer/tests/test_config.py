@@ -4,6 +4,8 @@
 
 """Env-knob resolution — notably the frps/gateway EXTRA_SANS split (audit 2.8)."""
 
+import pytest
+
 from app import config
 
 
@@ -51,3 +53,41 @@ def test_root_passphrase_empty_file_is_none(monkeypatch, tmp_path):
     monkeypatch.setenv("CA_ROOT_PASSPHRASE_FILE", str(empty))
     monkeypatch.delenv("CA_ROOT_PASSPHRASE", raising=False)
     assert config.root_passphrase() is None
+
+
+def test_make_engine_bounds_connect_and_statement(monkeypatch):
+    # 4.14: the engine must cap the pool wait, the connect, and any single statement so a
+    # wedged Postgres fails fast instead of blocking the sync threadpool into a restart loop.
+    import app.db as db
+
+    captured = {}
+
+    def fake_create_engine(url, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(db, "create_engine", fake_create_engine)
+    db.make_engine("postgresql://u:p@h/db")
+    assert captured["pool_timeout"] == 10
+    assert captured["connect_args"]["connect_timeout"] == 5
+    assert "statement_timeout=5000" in captured["connect_args"]["options"]
+
+
+def test_build_issuer_fails_fast_without_db_or_optin(monkeypatch):
+    # 4.17: a missing DATABASE_URL without the explicit opt-in is a hard error, not a silent
+    # in-memory fallback that 403s every enrollment in prod.
+    from app.main import build_issuer
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("CA_ALLOW_MEMORY_STORE", raising=False)
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        build_issuer({})
+
+
+def test_build_issuer_allows_memory_store_with_optin(monkeypatch):
+    from app.main import build_issuer
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("CA_ALLOW_MEMORY_STORE", "1")
+    issuer = build_issuer({})
+    assert issuer.tokens is not None

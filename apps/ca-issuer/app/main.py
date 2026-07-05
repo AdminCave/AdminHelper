@@ -71,9 +71,17 @@ def build_issuer(
 
             token_store = DbTokenStore(make_engine(config.database_url()))
             logger.info("Token-Store: DB")
-        else:
+        elif config.allow_memory_store():
             token_store = InMemoryTokenStore()
-            logger.info("Token-Store: in-memory (kein DATABASE_URL)")
+            logger.warning("Token-Store: in-memory — NUR für dev/tests (nicht thread-safe)")
+        else:
+            # Fail loud, don't silently fall back: an empty DATABASE_URL in prod (env typo,
+            # forgotten variable) would otherwise 403 every enrollment while tokens sit in the
+            # DB, sending the operator to debug token handling instead of the env (4.17).
+            raise RuntimeError(
+                "DATABASE_URL fehlt — der In-Memory-Store ist nur mit CA_ALLOW_MEMORY_STORE=1 "
+                "erlaubt (dev/tests)."
+            )
     return Issuer(intermediates, token_store)
 
 

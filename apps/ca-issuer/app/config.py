@@ -27,9 +27,17 @@ def pki_dir() -> Path:
 
 
 def database_url() -> str:
-    """Shared AdminHelper DB (read enrollment tokens + revocations). Empty -> the
-    in-memory token store is used (tests/dev)."""
+    """Shared AdminHelper DB (read enrollment tokens + revocations). Empty -> a hard error at
+    boot unless CA_ALLOW_MEMORY_STORE opts into the in-memory store (4.17)."""
     return os.environ.get("DATABASE_URL", "").strip()
+
+
+def allow_memory_store() -> bool:
+    """Explicit opt-in for the in-memory token store — dev/tests only (not thread-safe, loses
+    tokens on restart). Without it a missing DATABASE_URL is a hard error instead of a silent
+    fallback where the server mints tokens into the DB but the issuer looks them up in an empty
+    dict, 403-ing every enrollment (4.17)."""
+    return os.environ.get("CA_ALLOW_MEMORY_STORE", "").strip().lower() in ("1", "true", "yes")
 
 
 def root_passphrase() -> bytes | None:

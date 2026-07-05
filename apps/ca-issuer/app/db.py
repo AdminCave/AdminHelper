@@ -67,7 +67,19 @@ def make_engine(url: str) -> Engine:
         if url.startswith(old):
             url = "postgresql+psycopg://" + url[len(old) :]
             break
-    return create_engine(url, pool_pre_ping=True)
+    # Bound every DB interaction so a network blackhole to Postgres (firewall drop, hung
+    # node) fails fast instead of blocking consume()/is_active() for minutes: hung /enroll
+    # requests would otherwise fill the sync threadpool, stall /healthz in the same pool, and
+    # drive the container into a restart loop while only the DB is wedged (4.14).
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_timeout=10,  # SQLAlchemy: cap waiting for a pooled connection
+        connect_args={
+            "connect_timeout": 5,  # libpq: cap the TCP/TLS connect
+            "options": "-c statement_timeout=5000",  # Postgres: cap any single statement (ms)
+        },
+    )
 
 
 class DbTokenStore:

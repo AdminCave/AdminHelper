@@ -12,3 +12,5 @@ import tempfile
 
 os.environ.setdefault("CA_DATA_DIR", tempfile.mkdtemp(prefix="ca-issuer-test-"))
 os.environ.setdefault("CA_ROOT_PASSPHRASE", "test-passphrase-not-for-production")
+# Tests run without a DATABASE_URL — opt into the in-memory token store (4.17).
+os.environ.setdefault("CA_ALLOW_MEMORY_STORE", "1")
