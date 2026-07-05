@@ -66,9 +66,15 @@ if not DATABASE_URL:
     DATABASE_URL = "postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_monitor"
 
 # SMTP (email alert channel). Empty SMTP_HOST disables email alerts. A non-integer
-# SMTP_PORT fails here at the config boundary, not deep inside the alerter at import.
+# SMTP_PORT falls back to 587 with a warning instead of crashing the whole service at import —
+# SMTP is only an optional alert channel, so a typo in the compose file must not take monitoring
+# down in a crash loop (4.108).
 SMTP_HOST = os.environ.get("SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+try:
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+except ValueError:
+    logger.warning("Ungueltiger SMTP_PORT %r — nutze 587", os.environ.get("SMTP_PORT"))
+    SMTP_PORT = 587
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")

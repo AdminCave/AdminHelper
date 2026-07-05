@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -93,10 +94,14 @@ def add_check(check_id: str, interval: str, check_type: str | None) -> None:
 
 
 def remove_check(check_id: str) -> None:
-    """Removes a check from the scheduler."""
-    job_id = f"mon_{check_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
+    """Removes a check from the scheduler (idempotent)."""
+    # A parallel request (double DELETE, or a template-unassign racing a check-delete) may have
+    # already removed the job between a get_job/remove_job pair, so remove_job raises
+    # JobLookupError. Catch it — the job being gone IS the desired outcome (4.115).
+    try:
+        scheduler.remove_job(f"mon_{check_id}")
+    except JobLookupError:
+        pass
 
 
 def load_all_checks() -> None:

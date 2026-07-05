@@ -44,3 +44,19 @@ def test_blocks_private_reserved_and_unresolvable(url):
 )
 def test_allows_public_targets(url):
     assert is_private_url(url) is False
+
+
+def test_dns_resolution_times_out_and_fails_closed(monkeypatch):
+    # 4.111: a hung/slow DNS resolution must not block indefinitely — is_private_url caps it with a
+    # hard deadline and fails closed (treats the target as private) instead of stalling the worker.
+    import time
+
+    import app.core.ssrf as ssrf_mod
+
+    def _slow_getaddrinfo(*_a, **_k):
+        time.sleep(2)  # simulate a hung resolver
+        return []
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _slow_getaddrinfo)
+    monkeypatch.setattr(ssrf_mod, "_DNS_TIMEOUT_S", 0.1)  # short deadline for the test
+    assert ssrf_mod.is_private_url("http://slow-dns.example") is True

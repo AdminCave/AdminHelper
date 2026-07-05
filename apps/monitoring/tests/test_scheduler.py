@@ -131,3 +131,18 @@ def test_alert_log_cleanup_removes_only_old_entries(monkeypatch):
         remaining = db.query(MonitorAlertLog).all()
         assert len(remaining) == 1
         assert remaining[0].new_status == "warning"
+
+
+def test_remove_check_is_idempotent(monkeypatch):
+    # 4.115: remove_check must not raise if the job was already removed by a parallel request
+    # (double DELETE, or a template-unassign racing a check-delete).
+    from apscheduler.jobstores.base import JobLookupError
+
+    def _raise_lookup(*_a, **_k):
+        raise JobLookupError("already gone")
+
+    # get_job returns truthy so the OLD get-then-remove code would reach remove_job and raise;
+    # the fix drops the pre-check and swallows JobLookupError instead — this pins that behavior.
+    monkeypatch.setattr(sched.scheduler, "get_job", lambda *_a, **_k: object())
+    monkeypatch.setattr(sched.scheduler, "remove_job", _raise_lookup)
+    sched.remove_check("some-check-id")  # must not raise
