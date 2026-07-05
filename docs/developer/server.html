@@ -102,7 +102,7 @@
           <table>
             <thead><tr><th>Funktion</th><th>Ziel</th><th>Inhalt</th></tr></thead>
             <tbody>
-              <tr><td><code>generate_frps_toml(config)</code></td><td><code>frps.toml</code> (Server)</td><td><code>bindPort</code>, optional <code>vhostHTTPSPort</code>/<code>subDomainHost</code>/<code>maxPortsPerClient</code>, optionaler Dashboard-Block (<code>webServer.*</code> an <code>127.0.0.1</code>), <code>auth.method = "token"</code> + Token, plus <code>[transport.tls]</code>-Server-Block.</td></tr>
+              <tr><td><code>generate_frps_toml(config)</code></td><td><code>frps.toml</code> (Server)</td><td><code>bindPort</code>, optional <code>vhostHTTPSPort</code>/<code>subDomainHost</code>, <code>maxPortsPerClient</code> (immer gesetzt, Default 16 als Schranke gegen einen kompromittierten Agent), optionaler Dashboard-Block (<code>webServer.*</code> an <code>127.0.0.1</code>), <code>auth.method = "token"</code> + Token, plus <code>[transport.tls]</code>-Server-Block.</td></tr>
               <tr><td><code>generate_frpc_toml(config, tunnels, frpc_user)</code></td><td><code>frpc.toml</code> (Agent)</td><td><code>serverAddr</code>/<code>serverPort</code>/<code>user</code>, Token-Auth, Client-TLS-Block, dann je aktivem Tunnel ein <code>[[proxies]]</code>-Block.</td></tr>
               <tr><td><code>generate_visitor_toml(config, tunnels, visitor_user)</code></td><td>Visitor-<code>frpc.toml</code> (Admin-PC)</td><td>Aggregiert alle aktiven STCP-Tunnel zu je einem <code>[[visitors]]</code>-Block (<code>bindPort</code> = <code>visitor_port</code>).</td></tr>
             </tbody>

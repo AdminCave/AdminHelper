@@ -60,6 +60,15 @@ class TestGenerateFrpsToml:
         assert "[transport.tls]" in toml
         assert "force = true" in toml
 
+    def test_max_ports_per_client_defaults_when_unset(self):
+        # 3.34: never leave it unlimited — an unset value emits the bounded default.
+        config = _make_config(max_ports_per_client=None)
+        assert "maxPortsPerClient = 16" in generate_frps_toml(config)
+
+    def test_max_ports_per_client_honors_explicit_value(self):
+        config = _make_config(max_ports_per_client=64)
+        assert "maxPortsPerClient = 64" in generate_frps_toml(config)
+
     def test_dashboard_included(self):
         config = _make_config(dashboard_port=7500, dashboard_user="admin", dashboard_password="pw")
         toml = generate_frps_toml(config)

@@ -86,8 +86,11 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     if config.subdomain_host:
         lines.append(f'subDomainHost = "{config.subdomain_host}"')
 
-    if config.max_ports_per_client:
-        lines.append(f"maxPortsPerClient = {config.max_ports_per_client}")
+    # Always cap ports per client: without it frps defaults to unlimited, so a
+    # compromised/malicious enrolled agent could register arbitrarily many proxies.
+    # 16 is generous for a normal host (SSH/RDP/web + a few services) yet bounds the
+    # blast radius; an operator can raise it per config (3.34).
+    lines.append(f"maxPortsPerClient = {config.max_ports_per_client or 16}")
 
     lines.append("detailedErrorsToClient = false")
     lines.append("")

@@ -102,7 +102,7 @@
           <table>
             <thead><tr><th>Function</th><th>Target</th><th>Content</th></tr></thead>
             <tbody>
-              <tr><td><code>generate_frps_toml(config)</code></td><td><code>frps.toml</code> (server)</td><td><code>bindPort</code>, optional <code>vhostHTTPSPort</code>/<code>subDomainHost</code>/<code>maxPortsPerClient</code>, optional dashboard block (<code>webServer.*</code> on <code>127.0.0.1</code>), <code>auth.method = "token"</code> + token, plus a <code>[transport.tls]</code> server block.</td></tr>
+              <tr><td><code>generate_frps_toml(config)</code></td><td><code>frps.toml</code> (server)</td><td><code>bindPort</code>, optional <code>vhostHTTPSPort</code>/<code>subDomainHost</code>, <code>maxPortsPerClient</code> (always emitted, default 16 to bound a rogue agent), optional dashboard block (<code>webServer.*</code> on <code>127.0.0.1</code>), <code>auth.method = "token"</code> + token, plus a <code>[transport.tls]</code> server block.</td></tr>
               <tr><td><code>generate_frpc_toml(config, tunnels, frpc_user)</code></td><td><code>frpc.toml</code> (agent)</td><td><code>serverAddr</code>/<code>serverPort</code>/<code>user</code>, token auth, client TLS block, then one <code>[[proxies]]</code> block per active tunnel.</td></tr>
               <tr><td><code>generate_visitor_toml(config, tunnels, visitor_user)</code></td><td>Visitor <code>frpc.toml</code> (admin PC)</td><td>Aggregates all active STCP tunnels into one <code>[[visitors]]</code> block each (<code>bindPort</code> = <code>visitor_port</code>).</td></tr>
             </tbody>
