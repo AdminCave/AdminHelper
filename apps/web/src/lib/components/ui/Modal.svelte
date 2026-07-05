@@ -4,6 +4,13 @@ SPDX-FileCopyrightText: 2026 Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
+<script module lang="ts">
+  // Refcount of open modals sharing the global body-overflow lock (4.76): a per-instance teardown
+  // alone would let Modal A's close clear overflow while a stacked Modal B is still open. Only the
+  // last close restores scrolling.
+  let openModalCount = 0;
+</script>
+
 <script lang="ts">
   import { onMount, onDestroy, type Snippet } from 'svelte';
 
@@ -44,11 +51,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   });
 
   $effect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!open) return;
+    // Lock body scroll while open; the returned teardown runs on close AND on destroy-while-open
+    // — the leak that left the whole app unscrollable when a session expiry replaced an open modal
+    // with the login page. Refcounted so a stacked modal keeps the lock until the last close.
+    openModalCount += 1;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      openModalCount -= 1;
+      if (openModalCount === 0) {
+        document.body.style.overflow = '';
+      }
+    };
   });
 </script>
 
