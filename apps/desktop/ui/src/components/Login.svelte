@@ -10,6 +10,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { login, setMode, settings } from '$lib/stores/session';
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
   import { t } from '$lib/i18n';
+  import { confirm } from '@tauri-apps/plugin-dialog';
 
   // Pre-fill the server URL + username from the last successful login so only
   // the password has to be entered on each start (a password is required every
@@ -50,6 +51,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = $t('login.resetPin.missingUrl');
       return;
     }
+    // A pin mismatch is exactly the signature of an active MITM, and this is where
+    // it actually surfaces — require the same explicit warning the settings modal
+    // does before pinning whatever cert the server currently presents (3.20).
+    const ok = await confirm($t('login.resetPin.confirmMitm'), {
+      title: caPinError ? $t('login.resetDeviceId') : $t('login.resetPin'),
+      kind: 'warning',
+    });
+    if (!ok) return;
     busy = true;
     try {
       // The enrolled-CA case must also drop the stale device cert (which is what

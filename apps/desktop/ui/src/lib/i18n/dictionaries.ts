@@ -296,6 +296,8 @@ export const translations: Translations = {
     'login.resetPin.done':
       'Vertrauen zurückgesetzt. Erneut verbinden — beim nächsten Versuch wird das aktuelle Server-Zertifikat neu gepinnt.',
     'login.resetPin.missingUrl': 'Bitte zuerst die Server-URL eintragen.',
+    'login.resetPin.confirmMitm':
+      'Achtung: Ein unerwarteter Zertifikatswechsel kann auf einen MITM-Angriff hindeuten. Nur zurücksetzen, wenn der Server tatsächlich neu installiert bzw. sein Zertifikat neu ausgestellt wurde — sonst pinnst du das Zertifikat eines Angreifers und sendest ihm Zugangsdaten und Sitzung. Fortfahren?',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Verbindungen gesamt',
@@ -792,6 +794,8 @@ export const translations: Translations = {
     'login.resetPin.done':
       'Trust reset. Reconnect — the current server certificate will be re-pinned on the next attempt.',
     'login.resetPin.missingUrl': 'Please enter the server URL first.',
+    'login.resetPin.confirmMitm':
+      'Warning: an unexpected certificate change can indicate a MITM attack. Only reset if the server was genuinely reinstalled or its certificate re-issued — otherwise you pin an attacker’s certificate and hand them your credentials and session. Continue?',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Connections total',
