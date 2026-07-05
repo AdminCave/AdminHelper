@@ -78,9 +78,16 @@ func Sync() error {
 		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
 	}
 
-	// Write the config (0600: contains the frp auth token).
-	if err := os.WriteFile(config.FrpConfigFile(), rewriteIdentityPaths(newConfig), 0600); err != nil {
+	// Write the config atomically (0600: contains the frp auth token). A plain in-place WriteFile
+	// truncates first, so a crash/kill between truncate and write would leave a partial frpc.toml
+	// that frpc.service crash-loops on (Restart=on-failure) until the next sync ~5 min later. Stage
+	// to a temp file + rename, like enroll.stageIdentity (4.82).
+	tmp := config.FrpConfigFile() + ".tmp"
+	if err := os.WriteFile(tmp, rewriteIdentityPaths(newConfig), 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
+	}
+	if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
+		return fmt.Errorf("frpc.toml aktivieren: %w", err)
 	}
 
 	// Restart frpc

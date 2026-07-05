@@ -55,11 +55,14 @@ func Install() error {
 		return fmt.Errorf("Service registrieren: %s (%w)", string(out), err)
 	}
 
-	// Recovery: restart after failure (after 60 seconds)
-	exec.Command("sc", "failure", serviceName,
+	// Recovery: restart after failure (after 60 seconds). Log a failure like the sc start below —
+	// silently ignoring it left a missing auto-restart policy invisible (4.85).
+	if out, err := exec.Command("sc", "failure", serviceName,
 		"reset=", "86400",
 		"actions=", "restart/60000/restart/60000/restart/60000",
-	).Run()
+	).CombinedOutput(); err != nil {
+		fmt.Printf("WARNUNG: Recovery-Policy setzen: %s (%v)\n", string(out), err)
+	}
 
 	// Start the service
 	if out, err := exec.Command("sc", "start", serviceName).CombinedOutput(); err != nil {
