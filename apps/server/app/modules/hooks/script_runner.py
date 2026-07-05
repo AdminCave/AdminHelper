@@ -61,10 +61,12 @@ SCRIPT_TIMEOUT_SECONDS = 30
 
 # Defense-in-depth: bound the number of concurrent hook subprocesses so a burst
 # of (slow) hooks can't spawn unbounded processes / exhaust the threadpool +
-# DB pool. A caller that can't acquire within the timeout gets a busy error
-# instead of piling up. Acquire/release wrap only the blocking worker communicate().
+# DB pool. A caller that can't acquire IMMEDIATELY gets a busy error instead of
+# piling up — the acquire must never block: the webhook handler runs on the anyio
+# threadpool, which FastAPI also uses for sync routes (login, CRUD, health), so a
+# parked waiter would bind a thread and stall the server (5.5). Acquire/release
+# wrap only the blocking worker communicate().
 _MAX_CONCURRENT_HOOKS = 8
-_HOOK_ACQUIRE_TIMEOUT = 10
 _hook_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_HOOKS)
 
 # Hard cap on the bytes read from a hook's stdout/stderr. communicate() buffers the worker's output
@@ -122,7 +124,7 @@ def run_hook_script(
         if _proxy_var in os.environ:
             worker_env[_proxy_var] = os.environ[_proxy_var]
 
-    if not _hook_semaphore.acquire(timeout=_HOOK_ACQUIRE_TIMEOUT):
+    if not _hook_semaphore.acquire(blocking=False):
         return {
             "success": False,
             "result": {},

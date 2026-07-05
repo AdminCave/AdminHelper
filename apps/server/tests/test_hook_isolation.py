@@ -130,3 +130,24 @@ def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
     assert "HOME=__NONE__" not in joined, res
     assert "LANG=__NONE__" not in joined, res
     assert "PROXY=http://proxy.example:3128" in joined, res
+
+
+def test_hook_semaphore_non_blocking_returns_busy_immediately():
+    # 5.5: when all hook slots are taken, run_hook_script must return 'busy' IMMEDIATELY instead of
+    # parking the anyio threadpool thread (which FastAPI shares with sync routes) for ~10s.
+    import time
+
+    import app.modules.hooks.script_runner as sr
+
+    for _ in range(sr._MAX_CONCURRENT_HOOKS):
+        assert sr._hook_semaphore.acquire(blocking=False)
+    try:
+        start = time.monotonic()
+        res = sr.run_hook_script("result['ok'] = True", "webhook", {})
+        elapsed = time.monotonic() - start
+        assert res["success"] is False, res
+        assert "ausgelastet" in res["error"].lower(), res
+        assert elapsed < 1, f"busy must be immediate, took {elapsed:.1f}s"
+    finally:
+        for _ in range(sr._MAX_CONCURRENT_HOOKS):
+            sr._hook_semaphore.release()
