@@ -19,7 +19,10 @@ export default defineConfig({
     // Erst in Phase 11 auf '../server/frontend' umstellen (Dockerfile-Cutover).
     outDir: path.resolve(__dirname, './dist'),
     emptyOutDir: true,
-    sourcemap: true,
+    // No production sourcemaps: after the cutover to ../server/frontend they'd be served
+    // publicly, exposing internal comments / auth-flow hints and easing client-logic
+    // reconnaissance (3.102). Set true locally to debug a production build.
+    sourcemap: false,
     target: 'es2022',
   },
   server: {

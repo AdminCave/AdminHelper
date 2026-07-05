@@ -14,7 +14,7 @@ export function createConfig(data: FrpConfigInput): Promise<FrpConfig> {
 }
 
 export function updateConfig(id: string, data: FrpConfigInput): Promise<FrpConfig> {
-  return http.put<FrpConfig>(`/api/frp/server-config/${id}`, data);
+  return http.put<FrpConfig>(`/api/frp/server-config/${encodeURIComponent(id)}`, data);
 }
 
 // Text/blob endpoints (the JSON http client can't carry them) still go through
