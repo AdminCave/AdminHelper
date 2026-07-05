@@ -105,8 +105,11 @@ def update_user(
         # Never let the last admin be demoted — that would brick all management
         # (admin-only endpoints) with no recovery path short of a DB edit.
         if user.is_admin and not data.is_admin:
-            admin_count = db.query(User).filter(User.is_admin.is_(True)).count()
-            if admin_count <= 1:
+            # Lock the admin rows so a concurrent demotion sees this one: two parallel PUTs (A
+            # demotes B, B demotes A) could both read admin_count==2 and both commit, leaving zero
+            # admins and bricking every admin-only endpoint. with_for_update serializes them (4.142).
+            admins = db.query(User).filter(User.is_admin.is_(True)).with_for_update().all()
+            if len(admins) <= 1:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Der letzte Admin kann nicht herabgestuft werden",

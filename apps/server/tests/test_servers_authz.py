@@ -78,3 +78,25 @@ def test_server_deleted_event_fires_after_commit(test_client, db_session, admin_
     assert r.status_code == 204, r.text
     assert seen["event"] == "server.deleted"
     assert seen["row_gone"] is True  # fired after the commit, not before it
+
+
+def test_server_delete_logs_monitoring_cleanup_http_error(
+    test_client, db_session, admin_user, monkeypatch, caplog
+):
+    # 4.140: a monitoring cleanup returning an error status (403 wrong internal key, 5xx) must be
+    # logged, not silently treated as done — else the deleted server's checks/alerts/assignments
+    # linger as orphans in monitoring with no log trace.
+    from types import SimpleNamespace
+
+    from app.modules.servers import router as servers_router
+
+    headers = _auth(_login(test_client, "admin", "adminpass"))
+    server_id = test_client.post("/api/servers", json=SERVER, headers=headers).json()["id"]
+
+    monkeypatch.setattr(
+        servers_router.httpx, "delete", lambda *a, **k: SimpleNamespace(status_code=403)
+    )
+    with caplog.at_level("WARNING"):
+        r = test_client.delete(f"/api/servers/{server_id}", headers=headers)
+    assert r.status_code == 204, r.text
+    assert "HTTP 403" in caplog.text

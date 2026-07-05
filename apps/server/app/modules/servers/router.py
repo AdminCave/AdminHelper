@@ -143,10 +143,17 @@ def delete_server(
 
     # Monitoring cleanup: delete all checks/alerts/assignments of this server
     try:
-        httpx.delete(
+        resp = httpx.delete(
             f"{MONITOR_SERVICE_URL}/servers/{server_id}/cleanup",
             headers={"X-Internal-Key": MONITOR_API_KEY},
             timeout=5,
         )
+        # Evaluate the status: a 403 (wrong internal key) or 5xx must not silently count as done —
+        # the deleted server's checks/alerts/assignments would linger as orphans in monitoring with
+        # no log trace (4.140).
+        if resp.status_code >= 300:
+            logger.warning(
+                "Monitoring-Cleanup fuer Server %s: HTTP %d", server_id, resp.status_code
+            )
     except Exception as exc:
         logger.warning("Monitoring-Cleanup fuer Server %s fehlgeschlagen: %s", server_id, exc)
