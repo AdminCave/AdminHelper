@@ -10,6 +10,7 @@ secret_key (instead of none). A classic privilege-escalation trap.
 """
 
 import pytest
+from fastapi import HTTPException
 
 from app.modules.frp.generate_router import gen_visitor_bundle, gen_visitor_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -77,15 +78,14 @@ def two_servers_with_tunnels(db_session):
 class TestVisitorBundlePermissions:
     """Regression: a non-admin without assignments must see NO tunnels."""
 
-    def test_non_admin_without_assignments_sees_no_tunnels(
+    def test_non_admin_without_assignments_is_refused(
         self, db_session, normal_user, two_servers_with_tunnels
     ):
-        result = gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
-        assert "secret-key" not in result["toml"], (
-            "Visitor-TOML enthaelt geheimen Key obwohl User keine Server-Zuweisung hat"
-        )
-        assert "a-ssh" not in result["toml"]
-        assert "b-ssh" not in result["toml"]
+        # 3.33: no visible STCP tunnels -> refuse, so the shared frps auth token is
+        # never handed to an unassigned user (the bundle used to embed it regardless).
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
 
     def test_non_admin_with_one_assignment_sees_only_assigned_tunnel(
         self, db_session, normal_user, two_servers_with_tunnels
@@ -107,16 +107,13 @@ class TestVisitorBundlePermissions:
 class TestVisitorTomlPermissions:
     """Same auth filter in the /generate/visitor-toml endpoint."""
 
-    def test_non_admin_without_assignments_gets_empty_toml(
+    def test_non_admin_without_assignments_is_refused(
         self, db_session, normal_user, two_servers_with_tunnels
     ):
-        response = gen_visitor_toml(
-            config_id=None, user_id=None, db=db_session, current_user=normal_user
-        )
-        body = response.body.decode("utf-8")
-        assert "a-ssh" not in body
-        assert "b-ssh" not in body
-        assert "super-secret-do-not-leak" not in body
+        # 3.33: same refusal in the TOML endpoint — no visible tunnels, no token.
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_toml(config_id=None, user_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
 
     def test_admin_sees_all_in_visitor_toml(self, db_session, admin_user, two_servers_with_tunnels):
         response = gen_visitor_toml(

@@ -107,6 +107,11 @@ def gen_visitor_toml(
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     tunnels = _visible_stcp_tunnels(db, config, user)
+    # The visitor TOML embeds the shared frps auth token; without visible STCP
+    # tunnels the user has no legitimate reason for it, so refuse rather than hand
+    # the global secret to any authenticated (non-admin, server-less) user (3.33).
+    if not tunnels:
+        raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
     toml = generate_visitor_toml(config, tunnels, user.username)
     return PlainTextResponse(toml, media_type="application/toml")
@@ -127,6 +132,10 @@ def gen_visitor_bundle(
     config = _resolve_config(db, config_id)
 
     tunnels = _visible_stcp_tunnels(db, config, current_user)
+    # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
+    # visible STCP tunnels (3.33).
+    if not tunnels:
+        raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
     toml = generate_visitor_toml(config, tunnels, current_user.username)
 
     return {"toml": toml, "pki": {}}
