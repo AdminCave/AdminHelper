@@ -220,3 +220,46 @@ def test_renew_rejects_non_ecdsa_cert_cleanly(client):
     pem = cert.public_bytes(serialization.Encoding.PEM).decode()
     r = client.post("/renew", json={"csr": _csr_pem("admin")}, headers=_renew_headers(pem))
     assert 400 <= r.status_code < 500
+
+
+def _csr_pem_bad_signature(common_name: str) -> str:
+    """A CSR that parses fine but whose signature is invalid (tampered/corrupted)."""
+    key = pki.generate_key()
+    csr = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)]))
+        .sign(key, hashes.SHA256())
+    )
+    der = bytearray(csr.public_bytes(serialization.Encoding.DER))
+    der[-1] ^= 0xFF  # flip the last signature byte
+    return x509.load_der_x509_csr(bytes(der)).public_bytes(serialization.Encoding.PEM).decode()
+
+
+def test_enroll_broken_csr_does_not_burn_token(client):
+    # 4.16: a client-side CSR format error must not consume the one-time token — the retry
+    # with a corrected CSR must still succeed.
+    client.app.state.token_store.mint(
+        "tok-r", EnrollmentGrant(subject_id="agent-r", scope="tunnel")
+    )
+    bad = client.post(
+        "/enroll",
+        json={
+            "token": "tok-r",
+            "csr": "-----BEGIN CERTIFICATE REQUEST-----\nx\n-----END CERTIFICATE REQUEST-----",
+        },
+    )
+    assert bad.status_code == 403
+    good = client.post("/enroll", json={"token": "tok-r", "csr": _csr_pem("agent-r")})
+    assert good.status_code == 200  # token survived the broken-CSR attempt
+
+
+def test_enroll_invalid_csr_signature_is_4xx_not_500(client):
+    # 4.15: a bad CSR signature maps to a 4xx (not a 500 from sign_leaf's bare ValueError),
+    # and is validated before the token is consumed (4.16) so the token survives.
+    client.app.state.token_store.mint(
+        "tok-s", EnrollmentGrant(subject_id="agent-s", scope="tunnel")
+    )
+    r = client.post("/enroll", json={"token": "tok-s", "csr": _csr_pem_bad_signature("agent-s")})
+    assert r.status_code == 403
+    good = client.post("/enroll", json={"token": "tok-s", "csr": _csr_pem("agent-s")})
+    assert good.status_code == 200

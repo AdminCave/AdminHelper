@@ -80,14 +80,28 @@ class Issuer:
             "chain": inter.chain.decode(),
         }
 
-    def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
-        grant = self.tokens.consume(token)
-        if grant is None:
-            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
+    @staticmethod
+    def _load_csr(csr_pem: bytes) -> x509.CertificateSigningRequest:
+        """Parse and signature-check a CSR, mapping any client-input error to IssuanceError
+        (a 4xx) instead of letting a malformed CSR or a bad signature surface as a 500 — the
+        latter because sign_leaf raises a bare ValueError on an invalid signature (4.15)."""
         try:
             csr = x509.load_pem_x509_csr(csr_pem)
         except ValueError as exc:
             raise IssuanceError(f"Ungültige CSR: {exc}") from exc
+        if not csr.is_signature_valid:
+            raise IssuanceError("CSR-Signatur ist ungültig")
+        return csr
+
+    def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
+        # Validate the CSR fully (parse + signature) BEFORE consuming the one-time token: a
+        # client-side format or signature error (truncated PEM, corrupted CSR) must not burn the
+        # token, or the retry with a corrected CSR fails as "already used" and an operator has to
+        # mint a fresh token by hand (4.16).
+        csr = self._load_csr(csr_pem)
+        grant = self.tokens.consume(token)
+        if grant is None:
+            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
 
         spec = pki.LeafSpec(
             lifetime_days=_leaf_days(grant),
@@ -117,10 +131,7 @@ class Issuer:
         if not self.tokens.is_active(cn, scope):
             raise IssuanceError("Identität ist deprovisioniert")
 
-        try:
-            csr = x509.load_pem_x509_csr(csr_pem)
-        except ValueError as exc:
-            raise IssuanceError(f"Ungültige CSR: {exc}") from exc
+        csr = self._load_csr(csr_pem)
 
         # Preserve the audience (browser vs native — inferred from the original
         # span, since it isn't stored in the cert) but never exceed the CURRENT
