@@ -32,10 +32,13 @@ def _run_event(event_type: str, event_data: Any) -> None:
             .all()
         )
         for hook in hooks:
-            triggers = json.loads(hook.event_triggers or "[]")
-            if event_type not in triggers:
-                continue
             try:
+                # Parse inside the per-hook guard: a single hook row with invalid event_triggers
+                # JSON (legacy data, a manual DB edit) would otherwise raise into the outer except
+                # and silently skip every intact event hook after it (4.131).
+                triggers = json.loads(hook.event_triggers or "[]")
+                if event_type not in triggers:
+                    continue
                 run_hook_script(
                     script=hook.script,
                     hook_type="event",

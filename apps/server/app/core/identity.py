@@ -77,7 +77,9 @@ def get_client_identity(request: Request) -> ClientIdentity:
     if request.headers.get(_H_VERIFY, "").upper() != "SUCCESS":
         return _UNVERIFIED
     escaped = request.headers.get(_H_CERT, "")
-    if not escaped:
+    # Cap the header before unquote()+parse: a very large forwarded value would otherwise burn
+    # CPU/memory unbounded. A leaf PEM is well under 16 KiB (4.132).
+    if not escaped or len(escaped) > 16384:
         return _UNVERIFIED
     try:
         pem = urllib.parse.unquote(escaped).encode()
