@@ -68,20 +68,30 @@ func NewMTLS(certPath, keyPath, caPath string, timeout time.Duration) (*http.Cli
 	}, nil
 }
 
-// Do executes req, reads the full body, and maps a >=300 status to an error
-// (with the body for context). Consolidates the request/do/read/status pattern
-// that was hand-rolled across the GET/POST helpers so behaviour (size, error
-// text) lives in one place. Callers that need the raw *http.Response (e.g. the
-// TLS peer certs for TOFU pinning) keep doing client.Do directly.
+// MaxResponseBytes caps how much of a response body is read into memory, so a
+// compromised server (or a MITM under persisted INSECURE) cannot OOM the agent with a
+// multi-GB response. Legitimate bodies (frpc.toml, JSON, PEM chains) are a few KB to a
+// few MB. Exported so hand-rolled reads (provision.callActivate) share the same cap.
+const MaxResponseBytes int64 = 10 << 20 // 10 MiB
+
+// Do executes req, reads the full body (capped at MaxResponseBytes), and maps a
+// >=300 status to an error (with the body for context). Consolidates the
+// request/do/read/status pattern that was hand-rolled across the GET/POST helpers so
+// behaviour (size, error text) lives in one place. Callers that need the raw
+// *http.Response (e.g. the TLS peer certs for TOFU pinning) keep doing client.Do
+// directly.
 func Do(client *http.Client, req *http.Request) ([]byte, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(body)) > MaxResponseBytes {
+		return nil, fmt.Errorf("Antwort ueberschreitet %d Bytes", MaxResponseBytes)
 	}
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)

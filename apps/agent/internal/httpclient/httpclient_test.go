@@ -48,3 +48,34 @@ func TestDoMapsErrorStatusWithBody(t *testing.T) {
 		t.Errorf("Fehler %q enthaelt nicht Status+Body", err.Error())
 	}
 }
+
+func TestDoRejectsOversizedBody(t *testing.T) {
+	// 3.42: a compromised server must not be able to OOM the agent — a body over
+	// MaxResponseBytes is rejected instead of read whole.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, MaxResponseBytes+1))
+	}))
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL, nil)
+	if _, err := Do(srv.Client(), req); err == nil {
+		t.Fatal("erwartet Fehler bei uebergrossem Body")
+	}
+}
+
+func TestDoAcceptsBodyAtCap(t *testing.T) {
+	// A body exactly at the cap is still allowed (off-by-one boundary).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, MaxResponseBytes))
+	}))
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL, nil)
+	body, err := Do(srv.Client(), req)
+	if err != nil {
+		t.Fatalf("Body genau am Limit sollte erlaubt sein: %v", err)
+	}
+	if int64(len(body)) != MaxResponseBytes {
+		t.Fatalf("len(body) = %d, erwartet %d", len(body), MaxResponseBytes)
+	}
+}

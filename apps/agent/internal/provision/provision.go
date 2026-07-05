@@ -267,9 +267,12 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 	}
 	defer httpResp.Body.Close()
 
-	body, err := io.ReadAll(httpResp.Body)
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, httpclient.MaxResponseBytes+1))
 	if err != nil {
 		return nil, nil, err
+	}
+	if int64(len(body)) > httpclient.MaxResponseBytes {
+		return nil, nil, fmt.Errorf("Activate-Antwort ueberschreitet %d Bytes", httpclient.MaxResponseBytes)
 	}
 	if httpResp.StatusCode >= 300 {
 		return nil, nil, fmt.Errorf("Activate fehlgeschlagen (HTTP %d): %s", httpResp.StatusCode, string(body))
