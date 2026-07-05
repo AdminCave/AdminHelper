@@ -50,3 +50,10 @@ class TestPingTargetHardening:
     )
     def test_invalid_targets_refused_before_subprocess(self, evil):
         assert self._status(evil) == "unknown"
+
+    @pytest.mark.parametrize("target", ["127.0.0.1", "10.0.0.1", "169.254.169.254"])
+    def test_private_targets_refused_ssrf(self, target):
+        # 3.25: a valid-format but private/reserved target is blocked before ping.
+        status, msg, _ = PingChecker().run({"target": target})
+        assert status == "unknown"
+        assert "SSRF" in msg
