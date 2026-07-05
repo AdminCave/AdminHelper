@@ -181,6 +181,9 @@ def agent_report(
             # is the single source for agent_ping.
             MonitorCheck.check_type.in_(sorted(PUSH_ONLY_TYPES)),
         )
+        # Deterministic order so two concurrent pushes for this server lock the per-check state
+        # rows in the same sequence — no cross-push deadlock (4.46).
+        .order_by(MonitorCheck.id)
         .all()
     )
 
@@ -217,7 +220,15 @@ def agent_report(
             # Update state — same damping logic as the scheduler path; the
             # check_engine pure functions are the single source (audit: the
             # previous inline copy could drift from the tested implementation).
-            state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+            # Lock the state row for the read-modify-write so two near-simultaneous pushes for
+            # one server (agent restart/retry) can't both read the same fail_count and clobber it
+            # or double-alert — same race as the scheduler path (4.46). No-op on sqlite.
+            state = (
+                db.query(MonitorState)
+                .filter(MonitorState.check_id == check.id)
+                .with_for_update()
+                .first()
+            )
             old_status = state.status if state else "pending"
 
             prev_fail_count = state.fail_count if state else 0

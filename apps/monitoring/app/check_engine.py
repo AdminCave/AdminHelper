@@ -112,8 +112,18 @@ def execute_check(check_id: str) -> None:
             extra_metrics=metrics,
         )
 
-        # Update state
-        state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+        # Update state. Lock the row for the read-modify-write (fail_count, status): the
+        # scheduler's max_instances=1 isn't the only writer — POST /checks/{id}/run runs the same
+        # check synchronously on the request thread, and the agent push path can fire two
+        # near-simultaneous reports for one server. Without the lock both could read fail_count=2
+        # and write 3 instead of 4, or both see the same transition and double-alert (4.46).
+        # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
+        state = (
+            db.query(MonitorState)
+            .filter(MonitorState.check_id == check.id)
+            .with_for_update()
+            .first()
+        )
         old_status = state.status if state else "pending"
 
         prev_fail_count = state.fail_count if state else 0
