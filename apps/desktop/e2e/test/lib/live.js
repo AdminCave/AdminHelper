@@ -42,6 +42,8 @@ export async function login() {
 // MONITOR_API_KEY comes from the env the orchestration script exports. Returns
 // the parsed { notified: N } so a spec can assert the admin was a recipient.
 export function injectEvent(title, severity = 'critical') {
+  // Pass the secret header via stdin (curl `-H @-`), not argv, so it can't leak
+  // into the test log through a curl/execFileSync error message (3.19).
   const out = execFileSync(
     'curl',
     [
@@ -50,15 +52,19 @@ export function injectEvent(title, severity = 'critical') {
       'POST',
       `${SERVER_URL}/api/internal/events`,
       '-H',
-      `X-Internal-Key: ${process.env.MONITOR_API_KEY}`,
+      '@-',
       '-H',
       'Content-Type: application/json',
       '-d',
       JSON.stringify({ event_type: 'e2e.sse.push', severity, category: 'monitoring', title }),
     ],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', input: `X-Internal-Key: ${process.env.MONITOR_API_KEY}` },
   );
-  return JSON.parse(out);
+  try {
+    return JSON.parse(out);
+  } catch {
+    throw new Error(`injectEvent: unexpected response: ${out.slice(0, 200)}`);
+  }
 }
 
 export async function gotoInfrastructure() {
