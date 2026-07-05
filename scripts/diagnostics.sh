@@ -32,8 +32,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# The secret-bearing .env keys whose VALUES must never leave the host.
-SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD)
+# The secret-bearing .env keys whose VALUES must never leave the host. SMTP_PASSWORD is a
+# regular .env key since the notification hub — without it the SMTP relay password would
+# end up in cleartext in env.sanitized / the logs of a bundle advertised as issue-safe (3.7).
+SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD)
 
 # build_redaction_sedfile <envfile> <sedfile>
 # Writes a sed script that masks the .env secret values plus generic token forms.

@@ -17,6 +17,7 @@ cat > "$tmp/.env" <<'EOF'
 SECRET_KEY=topsecret123value
 POSTGRES_PASSWORD=pgpw456word
 MONITOR_API_KEY=mon789key
+SMTP_PASSWORD=smtprelay999pw
 ADMIN_PASSWORD=
 DOMAIN=example.com
 EOF
@@ -24,7 +25,7 @@ EOF
 sedfile="$tmp/redact.sed"
 build_redaction_sedfile "$tmp/.env" "$sedfile"
 
-input='SECRET_KEY=topsecret123value pw=pgpw456word mon=mon789key host=example.com'
+input='SECRET_KEY=topsecret123value pw=pgpw456word mon=mon789key smtp=smtprelay999pw host=example.com'
 input="$input Authorization: Bearer abcdefgh12345 key ah_aBcDeFgH1234"
 input="$input jwt eyJhbGciOi.eyJzdWIiOiJ.sigpart"
 out="$(printf '%s\n' "$input" | redact "$sedfile")"
@@ -32,7 +33,7 @@ out="$(printf '%s\n' "$input" | redact "$sedfile")"
 fail=0
 
 # Secret values must be gone.
-for leak in topsecret123value pgpw456word mon789key; do
+for leak in topsecret123value pgpw456word mon789key smtprelay999pw; do
     if printf '%s' "$out" | grep -q "$leak"; then
         echo "LEAK: secret '$leak' survived redaction" >&2
         fail=1
