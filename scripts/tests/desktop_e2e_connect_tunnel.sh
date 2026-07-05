@@ -56,7 +56,7 @@ CONFIG_ID=$(e2e_api "$TOKEN" config e2e-frps localhost 7000) || { bad "seed FRP 
 
 # Dedicated SSH target (a clean log: any connection here came through the tunnel).
 SSH_C="ah-e2e-tssh-$$"
-docker run -d --name "$SSH_C" -p 2222:2222 \
+docker run -d --name "$SSH_C" -p 127.0.0.1:2222:2222 \
     -e PASSWORD_ACCESS=true -e USER_NAME=e2e -e USER_PASSWORD=e2e -e LOG_STDOUT=true \
     "$SSH_IMAGE" >/dev/null 2>&1
 TARGETS+=("$SSH_C")
@@ -73,7 +73,7 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-ssh-tun 2222 ssh "$CO
 
 # Dedicated Web target (nginx) + a Web connection + linked STCP tunnel.
 WEB_C="ah-e2e-tweb-$$"
-docker run -d --name "$WEB_C" -p 8080:80 nginx:alpine >/dev/null 2>&1
+docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null 2>&1
 TARGETS+=("$WEB_C")
 wait_log "$WEB_C" "worker process" 30 && ok "Web target up on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
 WCONN_ID=$(e2e_api "$TOKEN" web-connection web-tunnel "http://127.0.0.1:9") || { bad "seed web connection"; exit 1; }
@@ -82,7 +82,7 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-web-tun 8080 web "$WC
 
 # Dedicated RDP target (xrdp) + an RDP connection + linked STCP tunnel.
 RDP_C="ah-e2e-trdp-$$"
-docker run -d --name "$RDP_C" -p 3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
+docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
 TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 RCONN_ID=$(e2e_api "$TOKEN" connection rdp-tunnel rdp 127.0.0.1 39999 e2e) || { bad "seed rdp connection"; exit 1; }
