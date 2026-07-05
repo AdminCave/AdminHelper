@@ -49,6 +49,9 @@ rustls-pemfile = "2"
 x509-parser = "0.16"
 # Package the browser's enrolled cert + key as a PKCS12 for import (A5c).
 p12 = "0.6"
+# Parse the server-supplied visitor TOML to allow-list its structure before frpc
+# executes it (3.59) — a compromised server must not inject arbitrary frpc config.
+toml = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }

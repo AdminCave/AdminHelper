@@ -117,6 +117,74 @@ fn export_identity(identity_dir: &Path) -> Result<(), AppError> {
 /// Write the visitor TOML to the app data dir and export the enrolled identity it
 /// references (F2). The server ships only the TOML; the desktop supplies its own
 /// mTLS identity for the visitor.
+/// Allow-list the server-supplied visitor TOML before frpc executes it. Only the keys
+/// our own server-side generate_visitor_toml emits are permitted, so a compromised or
+/// malicious server cannot inject arbitrary frpc config — notably a `[[proxies]]` block
+/// or a visitor plugin (static_file/http_proxy) that would expose local files/network
+/// through the frpc process (3.59).
+///
+/// Keep TOP_KEYS/VISITOR_KEYS in sync with the server's `generate_visitor_toml`
+/// (apps/server/app/modules/frp/config_generator.py): adding a server-side key without
+/// listing it here would reject real tunnels. auth/transport sub-keys are intentionally
+/// not deep-validated — they configure TLS/token, not a resource-exposing plugin.
+fn validate_visitor_toml(toml_str: &str) -> Result<(), AppError> {
+    const TOP_KEYS: &[&str] = &[
+        "serverAddr",
+        "serverPort",
+        "user",
+        "auth",
+        "transport",
+        "visitors",
+    ];
+    const VISITOR_KEYS: &[&str] = &[
+        "name",
+        "type",
+        "serverName",
+        "serverUser",
+        "secretKey",
+        "bindAddr",
+        "bindPort",
+    ];
+
+    let value: toml::Value = toml::from_str(toml_str)
+        .map_err(|e| AppError::Validation(format!("visitor.toml nicht parsebar: {e}")))?;
+    let table = value
+        .as_table()
+        .ok_or_else(|| AppError::Validation("visitor.toml: kein TOML-Table".to_string()))?;
+
+    for key in table.keys() {
+        if !TOP_KEYS.contains(&key.as_str()) {
+            return Err(AppError::Validation(format!(
+                "visitor.toml: unerlaubter Top-Level-Key '{key}'"
+            )));
+        }
+    }
+
+    if let Some(visitors) = table.get("visitors") {
+        let arr = visitors.as_array().ok_or_else(|| {
+            AppError::Validation("visitor.toml: [[visitors]] ist kein Array".to_string())
+        })?;
+        for v in arr {
+            let vt = v.as_table().ok_or_else(|| {
+                AppError::Validation("visitor.toml: ein [[visitors]]-Eintrag ist kein Table".into())
+            })?;
+            if vt.get("type").and_then(|t| t.as_str()) != Some("stcp") {
+                return Err(AppError::Validation(
+                    "visitor.toml: nur type=\"stcp\"-Visitors erlaubt".to_string(),
+                ));
+            }
+            for key in vt.keys() {
+                if !VISITOR_KEYS.contains(&key.as_str()) {
+                    return Err(AppError::Validation(format!(
+                        "visitor.toml: unerlaubter Visitor-Key '{key}'"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn write_visitor_bundle(
     app: &tauri::AppHandle,
     bundle: &VisitorBundle,
@@ -128,6 +196,10 @@ fn write_visitor_bundle(
         ))
     })?;
     std::fs::create_dir_all(&data_dir)?;
+
+    // Reject a server-supplied config that isn't a plain STCP visitor before writing
+    // and executing it (3.59).
+    validate_visitor_toml(&bundle.toml)?;
 
     let identity_dir = data_dir.join("identity");
     if bundle.toml.contains("[transport.tls]") {
@@ -251,7 +323,64 @@ pub async fn start_tunnel(
 
 #[cfg(test)]
 mod tests {
-    use super::rewrite_identity_paths;
+    use super::{rewrite_identity_paths, validate_visitor_toml};
+
+    const LEGIT_VISITOR: &str = r#"
+serverAddr = "frps.example.net"
+serverPort = 7000
+user = "ops-admin"
+auth.method = "token"
+auth.token = "sekret"
+
+[transport.tls]
+certFile = "/x/cert.pem"
+
+[[visitors]]
+name = "db-visitor"
+type = "stcp"
+serverName = "db"
+serverUser = "srv-a"
+secretKey = "s3cr3t"
+bindAddr = "127.0.0.1"
+bindPort = 6000
+"#;
+
+    #[test]
+    fn validate_visitor_toml_accepts_legit_stcp() {
+        assert!(validate_visitor_toml(LEGIT_VISITOR).is_ok());
+    }
+
+    #[test]
+    fn validate_visitor_toml_rejects_proxies_block() {
+        // A server-injected [[proxies]] block (e.g. a static_file plugin) is refused.
+        let evil = format!("{LEGIT_VISITOR}\n[[proxies]]\nname = \"x\"\ntype = \"tcp\"\n");
+        assert!(validate_visitor_toml(&evil).is_err());
+    }
+
+    #[test]
+    fn validate_visitor_toml_rejects_visitor_plugin() {
+        let evil = concat!(
+            "serverAddr = \"f\"\nserverPort = 7000\n\n",
+            "[[visitors]]\nname = \"x\"\ntype = \"stcp\"\nsecretKey = \"s\"\n",
+            "plugin.type = \"static_file\"\n",
+        );
+        assert!(validate_visitor_toml(evil).is_err());
+    }
+
+    #[test]
+    fn validate_visitor_toml_rejects_non_stcp_visitor() {
+        let evil = concat!(
+            "serverAddr = \"f\"\nserverPort = 7000\n\n",
+            "[[visitors]]\nname = \"x\"\ntype = \"xtcp\"\nsecretKey = \"s\"\n",
+        );
+        assert!(validate_visitor_toml(evil).is_err());
+    }
+
+    #[test]
+    fn validate_visitor_toml_rejects_unknown_top_key() {
+        let evil = format!("{LEGIT_VISITOR}\nevilKey = \"boom\"\n");
+        assert!(validate_visitor_toml(&evil).is_err());
+    }
 
     #[test]
     fn rewrites_identity_placeholder_to_absolute() {

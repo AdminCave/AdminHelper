@@ -34,6 +34,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tokio",
  "tokio-rustls",
+ "toml 0.8.2",
  "url",
  "windows",
  "x509-parser",
