@@ -100,7 +100,15 @@ def mint_enrollment_token_for(
         "enrollment.token.minted_for",
         object_type="user",
         object_id=target.username,
-        detail=f"browser={data.browser}",
+        # A browser leaf is long-lived (LEAF_DAYS_BROWSER, ~1 year) and never
+        # renews, so the issuer never re-checks is_active — it is only revocable via
+        # data-plane enforcement (MTLS_ENFORCE=true). Flag that in the audit trail so
+        # a for-another long-lived grant is greppable (3.32).
+        detail=(
+            "browser=True (long-lived leaf, revocable only under MTLS_ENFORCE=true)"
+            if data.browser
+            else "browser=False"
+        ),
         actor=actor_from_request(request),
     )
     return res

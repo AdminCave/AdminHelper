@@ -166,3 +166,30 @@ def test_admin_mint_for_writes_audit(test_client, admin_user, normal_user, db_se
     )
     assert row is not None
     assert row.actor_id == str(admin_user.id)
+
+
+def test_admin_mint_for_browser_flags_long_lived_leaf(
+    test_client, admin_user, normal_user, db_session
+):
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        "/api/enrollment/token/for",
+        json={"username": "viewer", "browser": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    # 3.32: a browser=true grant for another identity is a long-lived (~1y) leaf that
+    # is only revocable under enforcement — the audit detail must flag that.
+    row = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.action == "enrollment.token.minted_for",
+            AuditLog.object_id == "viewer",
+        )
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert "long-lived" in row.detail and "MTLS_ENFORCE" in row.detail
