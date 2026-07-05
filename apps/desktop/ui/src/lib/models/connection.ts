@@ -38,7 +38,10 @@ export function normalizeConnection(
   const rawPort = raw.port as unknown;
   if (rawPort !== null && rawPort !== undefined && rawPort !== '') {
     const parsed = Number(rawPort);
-    if (!Number.isNaN(parsed)) port = parsed;
+    // A port must be an integer in 1..65535. Drop anything else (negative, 0, >65535, fractional,
+    // non-numeric) to null so the connection falls back to its default port instead of failing
+    // later at the ssh/xfreerdp spawn with a cryptic process error (4.104).
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) port = parsed;
   }
 
   return {

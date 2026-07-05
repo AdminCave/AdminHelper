@@ -33,6 +33,16 @@ describe('normalizeConnection', () => {
     expect(normalizeConnection({ kind: 'ssh', port: '' as unknown as number }).port).toBeNull();
   });
 
+  it('drops out-of-range and non-integer ports to null (4.104)', () => {
+    expect(normalizeConnection({ kind: 'ssh', port: -1 }).port).toBeNull();
+    expect(normalizeConnection({ kind: 'ssh', port: 0 }).port).toBeNull();
+    expect(normalizeConnection({ kind: 'ssh', port: 99999 }).port).toBeNull();
+    expect(normalizeConnection({ kind: 'ssh', port: 22.5 }).port).toBeNull();
+    // Boundaries stay valid.
+    expect(normalizeConnection({ kind: 'ssh', port: 1 }).port).toBe(1);
+    expect(normalizeConnection({ kind: 'ssh', port: 65535 }).port).toBe(65535);
+  });
+
   it('drops empty tags and trims them', () => {
     const out = normalizeConnection({ kind: 'ssh', tags: [' a ', '', 'b'] });
     expect(out.tags).toEqual(['a', 'b']);

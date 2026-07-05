@@ -214,7 +214,8 @@ export async function runCheck(checkId: string): Promise<void> {
   if (!session) return;
   try {
     await monitoringApi.runCheck(session, checkId);
-    setTimeout(() => void loadMonitoring(), RECHECK_DELAY_MS);
+    if (runReloadTimer) clearTimeout(runReloadTimer);
+    runReloadTimer = setTimeout(() => void loadMonitoring(), RECHECK_DELAY_MS);
   } catch (err) {
     reportError(errMsg(err));
   }
@@ -308,6 +309,9 @@ export async function deleteTemplate(id: string): Promise<boolean> {
 }
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+// The post-run reload timer (runCheck) — tracked so deactivateMonitoring can cancel it, else a
+// full /status request fires ~2 s after the user already left the monitoring page (4.105).
+let runReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function activateMonitoring(): void {
   void loadServers().then(() => loadMonitoring());
@@ -319,6 +323,10 @@ export function deactivateMonitoring(): void {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
+  }
+  if (runReloadTimer) {
+    clearTimeout(runReloadTimer);
+    runReloadTimer = null;
   }
   _state.update((s) => ({ ...s, expandedCheckId: null }));
 }
