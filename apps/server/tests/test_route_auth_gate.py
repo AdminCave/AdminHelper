@@ -53,6 +53,7 @@ _PUBLIC_ROUTES = {
     ("POST", "/api/auth/logout"),  # clears the refresh cookie
     ("POST", "/api/auth/bootstrap"),  # first-admin, one-time token in body
     ("POST", "/api/hooks/trigger/{token}"),  # public webhook, token in path
+    ("POST", "/api/hooks/trigger"),  # public webhook, token in X-Hook-Token header (3.101)
     # agent activation, one-time provision token in body (no cert/JWT yet)
     ("POST", "/api/servers/{server_id}/provision/activate"),
 }
