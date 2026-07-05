@@ -307,7 +307,7 @@ fn client_with_verifier(
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
-    reqwest::Client::builder()
+    crate::http_client::with_timeouts(reqwest::Client::builder())
         .use_preconfigured_tls(tls)
         .build()
         .map_err(AppError::from)

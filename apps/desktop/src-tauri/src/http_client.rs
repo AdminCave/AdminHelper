@@ -9,6 +9,23 @@
 //! with only session concerns and lets every caller depend on this leaf instead.
 
 use crate::error::AppError;
+use std::time::Duration;
+
+/// Connect timeout: cap the TCP/TLS handshake so a DROP firewall / SYN blackhole can't
+/// make login/enroll/proxy await forever (4.2).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Read (not client-global) timeout: a request stalls out after this, but the SSE
+/// notification stream survives — the server's 15 s heartbeat comment keeps it well under
+/// this cap. A client-global `timeout()` would instead tear the stream down every cycle.
+const READ_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Apply the shared connect/read timeouts. Every client build path routes through this so
+/// no reqwest client is ever built without a timeout (4.2).
+pub fn with_timeouts(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    builder
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+}
 
 /// Build the reqwest client for talking to `server_url`, choosing the strongest
 /// available trust anchor.
@@ -34,6 +51,20 @@ pub fn build_client(
         crate::tofu::pinning_client(server_url)
     } else {
         // Public-CA path: reqwest's default full validation against webpki-roots.
-        reqwest::Client::builder().build().map_err(AppError::from)
+        with_timeouts(reqwest::Client::builder())
+            .build()
+            .map_err(AppError::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_timeouts;
+
+    #[test]
+    fn with_timeouts_builds_a_valid_client() {
+        // 4.2: the shared connect/read timeouts must produce a buildable client — a guard
+        // that the read_timeout/connect_timeout config stays valid across reqwest bumps.
+        assert!(with_timeouts(reqwest::Client::builder()).build().is_ok());
     }
 }

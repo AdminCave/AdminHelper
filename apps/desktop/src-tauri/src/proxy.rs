@@ -96,7 +96,7 @@ pub async fn forward(
 pub async fn check_server_cert(server_url: &str) -> Result<bool, AppError> {
     // Never probe a cleartext network URL (https, or http only for loopback).
     crate::validation::validate_server_url_secure(server_url)?;
-    let client = reqwest::Client::builder()
+    let client = crate::http_client::with_timeouts(reqwest::Client::builder())
         .danger_accept_invalid_certs(false)
         .build()
         .map_err(AppError::from)?;

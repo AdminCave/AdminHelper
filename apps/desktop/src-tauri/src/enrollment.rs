@@ -510,7 +510,7 @@ fn build_mtls_client(
         .with_client_auth_cert(client_certs, client_key)
         .map_err(|e| AppError::Validation(format!("Client-Auth: {e}")))?;
 
-    reqwest::Client::builder()
+    crate::http_client::with_timeouts(reqwest::Client::builder())
         .use_preconfigured_tls(tls)
         .build()
         .map_err(AppError::from)
