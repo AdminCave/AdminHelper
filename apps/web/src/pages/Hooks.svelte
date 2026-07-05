@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { t } from '$lib/i18n';
   import { formatDateTime } from '$lib/utils/datetime';
   import { hooks } from '$lib/stores/hooks';
@@ -28,6 +29,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let runOpen = $state(false);
   let runResult = $state<HookRunResult | null>(null);
   let runName = $state('');
+  // Hook ids currently executing — guards runHook against a double-click / parallel run (4.147).
+  const running = new SvelteSet<string>();
 
   onMount(() => {
     load();
@@ -79,6 +82,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   async function runHook(h: Hook) {
+    if (running.has(h.id)) return;
+    running.add(h.id);
     showToast($t('toast.hook.running'));
     try {
       const result = await hookApi.run(h.id);
@@ -87,6 +92,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       runOpen = true;
     } catch (err) {
       showError(err);
+    } finally {
+      running.delete(h.id);
     }
   }
 
@@ -181,7 +188,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   <button class="btn small" onclick={() => openEdit(h)}>
                     {$t('action.edit')}
                   </button>
-                  <button class="btn small ghost" onclick={() => runHook(h)}>
+                  <button
+                    class="btn small ghost"
+                    onclick={() => runHook(h)}
+                    disabled={running.has(h.id)}
+                  >
                     {$t('action.run')}
                   </button>
                   {#if h.hook_type === 'webhook'}

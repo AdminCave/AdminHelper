@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 </script>
 
 <script lang="ts">
-  import { onMount, onDestroy, type Snippet } from 'svelte';
+  import { type Snippet } from 'svelte';
 
   interface Props {
     open: boolean;
@@ -43,11 +43,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (e.target === e.currentTarget) close();
   }
 
-  onMount(() => {
+  // Register the Escape listener only while open (replaces onMount/onDestroy): a closed or
+  // background-mounted modal must not keep a document keydown listener around, and only a visible
+  // modal should react. Stacking is still handled by stopImmediatePropagation above (2.136) (4.144).
+  $effect(() => {
+    if (!open) return;
     document.addEventListener('keydown', onKeydown);
-  });
-  onDestroy(() => {
-    document.removeEventListener('keydown', onKeydown);
+    return () => document.removeEventListener('keydown', onKeydown);
   });
 
   $effect(() => {
