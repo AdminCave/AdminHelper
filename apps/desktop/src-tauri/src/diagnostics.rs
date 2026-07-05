@@ -75,14 +75,21 @@ pub fn redact_body(s: &str) -> String {
     redact(&truncated)
 }
 
-/// Mask generic secret token shapes (JWT, Bearer, ah_ API keys).
+/// Mask generic secret token shapes (JWT, Bearer, ah_ API keys) plus opaque
+/// token/secret/refresh key-values. The last one catches the frp auth token and
+/// refresh tokens that match none of the three fixed shapes but appear in the frpc
+/// stdout/stderr tail appended to a diagnostics report (3.57).
 fn redact(s: &str) -> String {
     let jwt = Regex::new(r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]*").unwrap();
     let bearer = Regex::new(r"(?i)bearer [A-Za-z0-9._-]{8,}").unwrap();
     let apikey = Regex::new(r"ah_[A-Za-z0-9_-]{8,}").unwrap();
+    // key = <high-entropy value>: token/secret/refresh (any quote/=/:/space
+    // separator) followed by a >=12-char opaque value.
+    let tokenkv = Regex::new(r#"(?i)(token|secret|refresh)["'=: ]+[A-Za-z0-9._-]{12,}"#).unwrap();
     let s = jwt.replace_all(s, "<redacted-jwt>");
     let s = bearer.replace_all(&s, "Bearer <redacted>");
     let s = apikey.replace_all(&s, "ah_<redacted>");
+    let s = tokenkv.replace_all(&s, "$1=<redacted>");
     s.into_owned()
 }
 
@@ -101,6 +108,20 @@ mod tests {
         assert!(out.contains("Bearer <redacted>"));
         assert!(out.contains("ah_<redacted>"));
         assert!(out.contains("<redacted-jwt>"));
+    }
+
+    #[test]
+    fn redacts_opaque_token_key_values() {
+        // 3.57: an frp auth token / refresh token matches none of the fixed shapes,
+        // but appears as token/secret/refresh=<value> in the frpc log tail.
+        let out = redact("auth.token = \"9f3ab12cd45ef678\"\nrefresh: abcdef1234567890");
+        assert!(!out.contains("9f3ab12cd45ef678"), "frp token leaked: {out}");
+        assert!(
+            !out.contains("abcdef1234567890"),
+            "refresh token leaked: {out}"
+        );
+        assert!(out.contains("token=<redacted>"));
+        assert!(out.contains("refresh=<redacted>"));
     }
 
     #[test]
