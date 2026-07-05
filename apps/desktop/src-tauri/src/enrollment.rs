@@ -530,12 +530,27 @@ pub fn enrolled_client() -> Result<reqwest::Client, AppError> {
 /// for import into a browser's certificate store. The key is opaque PKCS8 bytes
 /// to the builder, so the ECDSA leaf packages fine. Split out for a structural
 /// round-trip test.
+/// The p12 crate emits a classic PKCS12 container (PBE-SHA1/RC2, low iteration count),
+/// so the .p12's key-encryption KDF is weak. The file carries a long-lived browser
+/// client key and is written to disk, so a short/weak export password would be a
+/// realistic offline brute-force target if the file leaks — require a strong one to
+/// keep the wrapping robust despite the weak KDF (3.58).
+fn check_export_password(password: &str) -> Result<(), AppError> {
+    if password.chars().count() < 12 {
+        return Err(AppError::Validation(
+            "Export-Passwort zu kurz (mindestens 12 Zeichen)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn package_pkcs12(
     key_pem: &str,
     cert_pem: &str,
     password: &str,
     friendly_name: &str,
 ) -> Result<Vec<u8>, AppError> {
+    check_export_password(password)?; // defense in depth; export_browser_p12 checks early
     let cert = rustls_pemfile::certs(&mut cert_pem.as_bytes())
         .next()
         .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
@@ -563,6 +578,8 @@ pub async fn export_browser_p12(
     password: &str,
     allow_self_signed: bool,
 ) -> Result<Vec<u8>, AppError> {
+    // Fail fast before minting + enrolling a throwaway long-lived cert (3.58).
+    check_export_password(password)?;
     let grant = mint_token(server_url, jwt, allow_self_signed, true).await?;
     if grant.scope != "access" {
         return Err(AppError::Validation(format!(
@@ -711,16 +728,39 @@ mod tests {
         p.distinguished_name.push(DnType::CommonName, "user-01");
         let cert = p.self_signed(&key).unwrap();
 
-        let der =
-            package_pkcs12(&key.serialize_pem(), &cert.pem(), "s3cret", "AdminHelper").unwrap();
+        let der = package_pkcs12(
+            &key.serialize_pem(),
+            &cert.pem(),
+            "s3cret-p4ssw0rd",
+            "AdminHelper",
+        )
+        .unwrap();
 
         // The .p12 must round-trip: MAC valid under the password (and only it),
         // and both the cert and the (EC) key extractable.
         let pfx = p12::PFX::parse(&der).unwrap();
-        assert!(pfx.verify_mac("s3cret"));
+        assert!(pfx.verify_mac("s3cret-p4ssw0rd"));
         assert!(!pfx.verify_mac("wrong"));
-        assert_eq!(pfx.cert_x509_bags("s3cret").unwrap().len(), 1);
-        assert_eq!(pfx.key_bags("s3cret").unwrap().len(), 1);
+        assert_eq!(pfx.cert_x509_bags("s3cret-p4ssw0rd").unwrap().len(), 1);
+        assert_eq!(pfx.key_bags("s3cret-p4ssw0rd").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn package_pkcs12_rejects_short_password() {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+        // 3.58: the weak PKCS12 KDF makes a short export password an offline
+        // brute-force target, so it is refused before packaging. Use VALID PEM so only
+        // the length check can error — otherwise the test would pass vacuously (old
+        // code without the check would fail on the bogus PEM with the same error kind).
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec![])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let err =
+            package_pkcs12(&key.serialize_pem(), &cert.pem(), "short", "AdminHelper").unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
     }
 
     // Real-handshake proof of the enrolled mTLS client: an in-process TLS server
