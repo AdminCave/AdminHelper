@@ -8,6 +8,7 @@
 
 use chrono::Utc;
 use regex::Regex;
+use std::sync::LazyLock;
 use tauri::{AppHandle, Manager};
 
 use crate::error::AppError;
@@ -79,17 +80,26 @@ pub fn redact_body(s: &str) -> String {
 /// token/secret/refresh key-values. The last one catches the frp auth token and
 /// refresh tokens that match none of the three fixed shapes but appear in the frpc
 /// stdout/stderr tail appended to a diagnostics report (3.57).
+// Compile the redaction patterns once (LazyLock) instead of on every redact_body call — that runs
+// on every HTTP error path (api_proxy, login, enrollment, renew), and Regex::new (parser + NFA
+// build) is the regex crate's standard don't-do-this-in-a-loop cost (5.9).
+static JWT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]*").unwrap()
+});
+static BEARER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)bearer [A-Za-z0-9._-]{8,}").unwrap());
+static APIKEY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"ah_[A-Za-z0-9_-]{8,}").unwrap());
+// key = <high-entropy value>: token/secret/refresh (any quote/=/:/space separator) followed by a
+// >=12-char opaque value.
+static TOKENKV_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)(token|secret|refresh)["'=: ]+[A-Za-z0-9._-]{12,}"#).unwrap()
+});
+
 fn redact(s: &str) -> String {
-    let jwt = Regex::new(r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]*").unwrap();
-    let bearer = Regex::new(r"(?i)bearer [A-Za-z0-9._-]{8,}").unwrap();
-    let apikey = Regex::new(r"ah_[A-Za-z0-9_-]{8,}").unwrap();
-    // key = <high-entropy value>: token/secret/refresh (any quote/=/:/space
-    // separator) followed by a >=12-char opaque value.
-    let tokenkv = Regex::new(r#"(?i)(token|secret|refresh)["'=: ]+[A-Za-z0-9._-]{12,}"#).unwrap();
-    let s = jwt.replace_all(s, "<redacted-jwt>");
-    let s = bearer.replace_all(&s, "Bearer <redacted>");
-    let s = apikey.replace_all(&s, "ah_<redacted>");
-    let s = tokenkv.replace_all(&s, "$1=<redacted>");
+    let s = JWT_RE.replace_all(s, "<redacted-jwt>");
+    let s = BEARER_RE.replace_all(&s, "Bearer <redacted>");
+    let s = APIKEY_RE.replace_all(&s, "ah_<redacted>");
+    let s = TOKENKV_RE.replace_all(&s, "$1=<redacted>");
     s.into_owned()
 }
 
