@@ -66,7 +66,7 @@
   "script": "http_post('https://hooks.slack.com/services/T000/B000/XXX', json_data={'text': f'AdminHelper: {event_type}'})\nresult['notified'] = True"
 }</code></pre>
 
-          <p>The <code>script</code> field is <strong>Python</strong> (not shell), run by the worker via <code>exec()</code>. The event's context keys are available as variables (for <code>event</code> hooks <code>event_type</code> and <code>event_data</code>, for <code>schedule</code> <code>triggered_at</code>/<code>last_run</code>, for <code>webhook</code> <code>payload</code>/<code>headers</code>/<code>params</code>); output goes through the <code>result</code> dict and <code>log(...)</code>.</p>
+          <p>The <code>script</code> field is <strong>Python</strong> (not shell), run by the worker via <code>exec()</code>. The event's context keys are available as variables (for <code>event</code> hooks <code>event_type</code> and <code>event_data</code>, for <code>schedule</code> <code>triggered_at</code>/<code>last_run</code>, for <code>webhook</code> <code>payload</code>/<code>headers</code>/<code>params</code>); output goes through the <code>result</code> dict and <code>log(...)</code>. For security, <code>headers</code> is restricted to a safe allow-list (<code>content-type</code>, <code>user-agent</code>, <code>x-hook-source</code>) — client-controlled headers like <code>Authorization</code>, <code>Cookie</code> and <code>X-Forwarded-*</code> are never exposed to the script.</p>
 
           <h2>Environment Model</h2>
           <p>Hook scripts run in a dedicated Python subprocess with a reduced environment — this is crash/timeout isolation, <strong>not</strong> a security sandbox:</p>

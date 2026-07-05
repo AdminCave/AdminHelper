@@ -118,3 +118,40 @@ def test_valid_intervals_matches_scheduler_map():
 
     assert "1m" in VALID_INTERVALS
     assert set(VALID_INTERVALS) == set(INTERVAL_MAP)
+
+
+def test_webhook_context_headers_are_safe_listed(test_client, db_session, admin_user):
+    # 3.36: the privileged webhook script context must not receive client-controlled
+    # credentials/spoofable headers (Authorization/Cookie/X-Forwarded-*) — only a
+    # safe allow-list. Otherwise a naive hook could forward them to a payload-chosen URL.
+    h = _login(test_client, "admin", "adminpass")
+    hook = {
+        "name": "wh-hdr",
+        "hook_type": "webhook",
+        "script": "import json\nlog(json.dumps(headers))",
+    }
+    r = test_client.post("/api/hooks", json=hook, headers=h)
+    assert r.status_code == 201, r.text
+    token = r.json()["token"]
+
+    trig = test_client.post(
+        f"/api/hooks/trigger/{token}",
+        json={"x": 1},
+        headers={
+            "Authorization": "Bearer super-secret",
+            "Cookie": "session=leak-me",
+            "X-Forwarded-For": "10.9.9.9",
+            "Content-Type": "application/json",
+            "X-Hook-Source": "pytest",
+        },
+    )
+    assert trig.status_code == 200, trig.text
+    logged = " ".join(trig.json()["logs"]).lower()
+    # dangerous / spoofable headers are stripped
+    assert "super-secret" not in logged
+    assert "leak-me" not in logged
+    assert "authorization" not in logged
+    assert "cookie" not in logged
+    assert "x-forwarded-for" not in logged
+    # the safe custom header still reaches the script
+    assert "x-hook-source" in logged

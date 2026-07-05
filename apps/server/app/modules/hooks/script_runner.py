@@ -28,7 +28,8 @@ Available variables in the script (always):
 
 Webhook context:
     payload             dict            JSON body of the request
-    headers             dict            HTTP request headers
+    headers             dict            safe-listed request headers only (no
+                                        Authorization/Cookie/X-Forwarded-*)
     params              dict            query parameters
 
 Event context:

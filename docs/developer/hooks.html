@@ -66,7 +66,7 @@
   "script": "http_post('https://hooks.slack.com/services/T000/B000/XXX', json_data={'text': f'AdminHelper: {event_type}'})\nresult['notified'] = True"
 }</code></pre>
 
-          <p>Das <code>script</code>-Feld ist <strong>Python</strong> (kein Shell), das der Worker per <code>exec()</code> ausführt. Die Context-Keys des Events stehen als Variablen bereit (bei <code>event</code>-Hooks <code>event_type</code> und <code>event_data</code>, bei <code>schedule</code> <code>triggered_at</code>/<code>last_run</code>, bei <code>webhook</code> <code>payload</code>/<code>headers</code>/<code>params</code>); Ausgaben laufen über das <code>result</code>-Dict und <code>log(...)</code>.</p>
+          <p>Das <code>script</code>-Feld ist <strong>Python</strong> (kein Shell), das der Worker per <code>exec()</code> ausführt. Die Context-Keys des Events stehen als Variablen bereit (bei <code>event</code>-Hooks <code>event_type</code> und <code>event_data</code>, bei <code>schedule</code> <code>triggered_at</code>/<code>last_run</code>, bei <code>webhook</code> <code>payload</code>/<code>headers</code>/<code>params</code>); Ausgaben laufen über das <code>result</code>-Dict und <code>log(...)</code>. Aus Sicherheitsgründen ist <code>headers</code> auf eine Safe-Liste beschränkt (<code>content-type</code>, <code>user-agent</code>, <code>x-hook-source</code>) — client-gesetzte Header wie <code>Authorization</code>, <code>Cookie</code> und <code>X-Forwarded-*</code> gelangen nie ins Script.</p>
 
           <h2>Environment-Modell</h2>
           <p>Hook-Scripts laufen in einem eigenen Python-Subprozess mit reduziertem Environment — das ist Crash-/Timeout-Isolation, <strong>kein</strong> Security-Sandbox:</p>

@@ -158,6 +158,13 @@ def create_hook(
     return result
 
 
+# Only these request headers are exposed to the (privileged) webhook script context.
+# Never pass client-controlled headers like Authorization/Cookie/X-Forwarded-* into the
+# exec namespace: a naive hook doing http_post(url, headers=headers) to a payload-chosen
+# URL would forward AdminHelper credentials to an attacker-picked target (3.36).
+_SAFE_WEBHOOK_HEADERS = {"content-type", "user-agent", "x-hook-source"}
+
+
 # Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
 # admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
 @trigger_router.post("/trigger/{token}")
@@ -192,7 +199,9 @@ async def trigger_webhook(token: str, request: Request, db: Session = Depends(ge
             hook_type="webhook",
             context={
                 "payload": payload,
-                "headers": dict(request.headers),
+                "headers": {
+                    k: v for k, v in request.headers.items() if k.lower() in _SAFE_WEBHOOK_HEADERS
+                },
                 "params": dict(request.query_params),
             },
         )
