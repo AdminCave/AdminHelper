@@ -78,3 +78,49 @@ class TestStreamAuth:
     def test_stream_requires_auth(self, test_client):
         # No bearer token → 401 before the stream ever opens.
         assert test_client.get("/api/notifications/stream").status_code == 401
+
+
+class TestStreamReauth:
+    """3.38: a live stream re-validates the JWT + mTLS revocation each cycle, so a
+    logout (JWT blacklist) or a revoke reaches an already-open stream instead of
+    pushing nudges forever."""
+
+    @staticmethod
+    def _patch(monkeypatch, *, user, revoked):
+        import app.core.auth as auth_mod
+        import app.core.database as db_mod
+        import app.core.identity as id_mod
+
+        class _FakeDB:
+            def close(self):
+                pass
+
+        monkeypatch.setattr(db_mod, "SessionLocal", lambda: _FakeDB())
+        monkeypatch.setattr(auth_mod, "_get_user_from_token", lambda token, db: user)
+        monkeypatch.setattr(id_mod, "_is_revoked", lambda db, cn, scope: revoked)
+
+    def test_ok_when_valid_and_not_revoked(self, monkeypatch):
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=object(), revoked=False)
+        assert _stream_reauth_ok("tok", "cn", "access", True) is True
+
+    def test_ends_when_jwt_blacklisted(self, monkeypatch):
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=None, revoked=False)  # logout / blacklist
+        assert _stream_reauth_ok("tok", "cn", "access", True) is False
+
+    def test_ends_when_identity_revoked(self, monkeypatch):
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        self._patch(monkeypatch, user=object(), revoked=True)
+        assert _stream_reauth_ok("tok", "cn", "access", True) is False
+
+    def test_unverified_identity_skips_revocation_check(self, monkeypatch):
+        from app.modules.notifications.stream import _stream_reauth_ok
+
+        # Permissive rollout: no verified cert -> only the JWT gates, the (would-be)
+        # revoked flag must not end the stream.
+        self._patch(monkeypatch, user=object(), revoked=True)
+        assert _stream_reauth_ok("tok", None, None, False) is True
