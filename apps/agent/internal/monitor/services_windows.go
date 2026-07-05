@@ -8,8 +8,17 @@ package monitor
 
 import (
 	"os/exec"
+	"regexp"
 	"strings"
 )
+
+// reWinServiceName matches the characters a real Windows service name uses
+// (including `$` for named instances like MSSQL$SQLEXPRESS). `sc` has no `--` option
+// terminator (unlike the systemctl path in services_linux.go), so a server-supplied
+// name that looks like an sc query option (type=, state=, bufsize=) would otherwise
+// change the command's behaviour — the dangerous characters are `=` and whitespace,
+// which this class excludes (3.44).
+var reWinServiceName = regexp.MustCompile(`^[A-Za-z0-9._$-]+$`)
 
 // collectServiceHealth collects Windows service status.
 // The format is compatible with the systemd format for the monitoring server.
@@ -96,6 +105,12 @@ func collectWatchedServices(names []string) []map[string]any {
 	var services []map[string]any
 	for _, name := range names {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
+		// Reject names that aren't plain service names rather than passing an
+		// option-looking string to sc (which has no `--`) — report not-running (3.44).
+		if !reWinServiceName.MatchString(name) {
+			services = append(services, svc)
+			continue
+		}
 		out, err := exec.Command("sc", "query", name).Output()
 		if err == nil {
 			output := string(out)

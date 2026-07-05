@@ -153,7 +153,7 @@ sudo adminhelper-agent provision \
               <tr><td><code>service uninstall</code></td><td>Deregister the OS service</td><td>—</td></tr>
             </tbody>
           </table>
-          <p><strong><code>--insecure</code> applies only to the one-off <code>provision</code> or <code>monitor init</code> call:</strong> the agent captures the certificate the server presents and pins it (trust-on-first-use), so the recurring sync/push loop verifies again &mdash; instead of disabling TLS verification permanently. With <code>--cacert</code> nothing is skipped at all.</p>
+          <p><strong><code>--insecure</code> applies only to the one-off <code>provision</code> or <code>monitor init</code> call:</strong> the agent captures the certificate the server presents and pins it (trust-on-first-use), so the recurring sync/push loop verifies again &mdash; instead of disabling TLS verification permanently. With <code>--cacert</code> nothing is skipped at all. <strong>Trust-on-first-use trade-off:</strong> if an attacker is already on-path during that first call, <code>--insecure</code> pins <em>the attacker's</em> certificate as the permanent trust anchor. To detect this, <code>provision</code> prints the pinned certificate's SHA-256 fingerprint &mdash; verify it out-of-band against the fingerprint the AdminHelper server shows, or use <code>--cacert</code> to avoid the risk entirely.</p>
 
           <h2>Verification</h2>
           <div class="code-header"><span>bash</span></div>

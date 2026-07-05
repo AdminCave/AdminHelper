@@ -16,6 +16,7 @@
 package provision
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -158,6 +159,15 @@ func pinIfBlindInsecure(cacert string, insecure bool, serverCertPEM []byte) (str
 		return "", false, func() {}, fmt.Errorf("Server-Zertifikat pinnen: %w", err)
 	}
 	fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+	// Print the pinned cert's fingerprint so the operator can verify it out-of-band
+	// against the server's own cert hash: with --insecure at first contact, an on-path
+	// attacker could otherwise pin its own cert as the permanent trust anchor (3.45).
+	if block, _ := pem.Decode(serverCertPEM); block != nil {
+		fp := sha256.Sum256(block.Bytes)
+		fmt.Printf("  SHA-256-Fingerprint: %x\n", fp)
+		fmt.Println("  Bitte gegen den im AdminHelper-Server angezeigten Fingerprint pruefen —")
+		fmt.Println("  ohne Pruefung kann ein aktiver MITM im Erstkontakt den Trust-Anchor faelschen.")
+	}
 	return pinnedPath, false, func() { os.Remove(pinnedPath) }, nil
 }
 

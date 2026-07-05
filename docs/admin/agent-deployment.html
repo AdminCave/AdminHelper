@@ -157,7 +157,7 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
               <tr><td><code>service uninstall</code></td><td>OS-Service deregistrieren</td><td>—</td></tr>
             </tbody>
           </table>
-          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>- oder <code>monitor init</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen.</p>
+          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>- oder <code>monitor init</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen. <strong>Trust-on-first-use-Trade-off:</strong> sitzt ein Angreifer bereits waehrend dieses ersten Aufrufs on-path, pinnt <code>--insecure</code> <em>dessen</em> Zertifikat als permanenten Trust-Anchor. Um das zu erkennen, gibt <code>provision</code> den SHA-256-Fingerprint des gepinnten Zertifikats aus &mdash; pruefe ihn out-of-band gegen den vom AdminHelper-Server angezeigten Fingerprint, oder nutze <code>--cacert</code>, um das Risiko ganz zu vermeiden.</p>
 
           <h2>Windows (MSI)</h2>
           <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>
