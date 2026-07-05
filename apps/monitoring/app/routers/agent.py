@@ -189,6 +189,11 @@ def agent_report(
 
     now = utcnow_naive()
 
+    # Collect all per-check result metrics and flush them in one write after the loop, instead of one
+    # victoria POST per check — the usual ~6 checks per report would otherwise be up to 6 extra HTTP
+    # roundtrips (each with a 10s timeout) on the report path (5.20).
+    check_lines: list[str] = []
+
     for check in agent_checks:
         # Isolate each check: a single broken check.config (or a checker raising)
         # must not abort the evaluation of all other checks for this server
@@ -207,14 +212,16 @@ def agent_report(
             details = metrics.pop("_details", None) if metrics else None
 
             if metrics:
-                victoria.write_check_result(
-                    check_id=check.id,
-                    check_type=check.check_type,
-                    server_id=server_id,
-                    name=check.name,
-                    status=result_status,
-                    duration_ms=0,
-                    extra_metrics=metrics,
+                check_lines.extend(
+                    victoria.build_check_result_lines(
+                        check_id=check.id,
+                        check_type=check.check_type,
+                        server_id=server_id,
+                        name=check.name,
+                        status=result_status,
+                        duration_ms=0,
+                        extra_metrics=metrics,
+                    )
                 )
 
             # Update state — same damping logic as the scheduler path; the
@@ -282,6 +289,10 @@ def agent_report(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Speichern der Check-Auswertung fehlgeschlagen",
             )
+
+    # Flush all collected per-check metrics in a single write (5.20).
+    if check_lines:
+        victoria.write(check_lines)
 
     # Only after the state is durably committed: dispatch alerts off-request.
     for check_id, old_s, new_s in pending_alerts:

@@ -119,7 +119,7 @@ class VictoriaClient:
                 else:
                     time.sleep(0.5 * (attempt + 1))
 
-    def write_check_result(
+    def build_check_result_lines(
         self,
         check_id: str,
         check_type: str,
@@ -128,8 +128,10 @@ class VictoriaClient:
         status: str,
         duration_ms: int,
         extra_metrics: dict | None = None,
-    ) -> None:
-        """Writes the check result as metrics."""
+    ) -> list[str]:
+        """Builds the line-protocol lines for a check result without writing them, so a caller with
+        many checks (the agent report) can collect and flush them in one write instead of one POST
+        per check (5.20)."""
         status_map = {"ok": 0, "warning": 1, "critical": 2, "unknown": 3}
         status_val = status_map.get(status, 3)
         ts = int(time.time())
@@ -154,7 +156,24 @@ class VictoriaClient:
                 ):
                     lines.append(format_line(f"monitor_{key}", tags, value, ts))
 
-        self.write(lines)
+        return lines
+
+    def write_check_result(
+        self,
+        check_id: str,
+        check_type: str,
+        server_id: str | None,
+        name: str,
+        status: str,
+        duration_ms: int,
+        extra_metrics: dict | None = None,
+    ) -> None:
+        """Writes a single check result as metrics."""
+        self.write(
+            self.build_check_result_lines(
+                check_id, check_type, server_id, name, status, duration_ms, extra_metrics
+            )
+        )
 
     def query_range(self, query: str, start: str, end: str, step: str) -> dict:
         """PromQL range query for charts."""

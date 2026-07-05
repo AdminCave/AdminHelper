@@ -175,3 +175,44 @@ def test_malformed_report_metrics_do_not_500(client_db):
         client.post("/agent/srv-1/report", json={"resources": {"disks": {"x": 1}}}).status_code
         == 200
     )
+
+
+def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
+    # 5.20: per-check result metrics go through build_check_result_lines + a single victoria.write,
+    # not one write_check_result POST per check.
+    from app.core import victoria as victoria_mod
+
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=0)
+    # A second check so the test locks the N->1 property, not just "no write_check_result".
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="chk-2",
+                server_id="srv-1",
+                name="Resources2",
+                check_type="agent_resources",
+                config=json.dumps({"cpu_warn": 80, "cpu_crit": 95}),
+                enabled=True,
+                consecutive_fails=0,
+            )
+        )
+        db.commit()
+
+    writes: list[list[str]] = []
+    wcr_calls: list[dict] = []
+    monkeypatch.setattr(victoria_mod.victoria, "write", lambda lines: writes.append(lines))
+    monkeypatch.setattr(
+        victoria_mod.victoria, "write_check_result", lambda **kw: wcr_calls.append(kw)
+    )
+
+    r = client.post("/agent/srv-1/report", json=_report(cpu=50))
+    assert r.status_code == 200, r.text
+
+    # The agent path no longer emits a per-check write_check_result POST.
+    assert wcr_calls == []
+    # Both checks' metrics land in exactly ONE write() batch (N checks -> 1 write), not one per check.
+    check_batches = [b for b in writes if any("monitor_check_status" in line for line in b)]
+    assert len(check_batches) == 1, writes
+    status_lines = [line for line in check_batches[0] if "monitor_check_status" in line]
+    assert len(status_lines) == 2, check_batches[0]
