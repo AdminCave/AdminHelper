@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { Connection } from '$lib/bridge/types';
 
@@ -12,6 +12,23 @@ vi.mock('$lib/bridge', () => ({
   saveConnections: vi.fn(async () => {}),
   loadConnections: vi.fn(async () => []),
 }));
+
+// Mock the session (mode) + status bar so the sync-mode volatility path (4.40) is testable.
+// Default settings=null keeps every other test on the local/file-backed path.
+const h = vi.hoisted(() => ({
+  sess: { settings: null as unknown, session: null as unknown },
+  showStatus: vi.fn(),
+}));
+vi.mock('./session', () => ({
+  sessionStore: {
+    subscribe: (fn: (v: unknown) => void) => {
+      fn(h.sess);
+      return () => {};
+    },
+  },
+}));
+vi.mock('./statusBar', () => ({ showStatus: h.showStatus, reportError: vi.fn() }));
+vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k, setLanguage: vi.fn() }));
 
 import * as bridge from '$lib/bridge';
 import {
@@ -291,5 +308,32 @@ describe('load generation guard (4.39)', () => {
     resolveFirst([older]); // gen 1 resolves late...
     await p1;
     expect(get(connections)).toEqual([newer]); // ...but is dropped; newer stays
+  });
+});
+
+describe('sync-mode edits are volatile (4.40)', () => {
+  beforeEach(async () => {
+    h.sess.settings = null;
+    await saveAll([conn({ id: 'a', name: 'A' })]);
+    h.sess.settings = { mode: 'sync', url: 'https://srv' };
+    h.showStatus.mockClear();
+    vi.mocked(bridge.saveConnections).mockClear();
+  });
+  afterEach(() => {
+    h.sess.settings = null;
+  });
+
+  it('upsert keeps the edit in-memory but does NOT persist to the cache', async () => {
+    await upsert(conn({ id: 'a', name: 'edited' }));
+    expect(get(connections).find((c) => c.id === 'a')?.name).toBe('edited');
+    expect(bridge.saveConnections).not.toHaveBeenCalled();
+    expect(h.showStatus).toHaveBeenCalledWith('status.syncEditVolatile');
+  });
+
+  it('remove drops it in-memory but does NOT persist', async () => {
+    await remove('a');
+    expect(get(connections).find((c) => c.id === 'a')).toBeUndefined();
+    expect(bridge.saveConnections).not.toHaveBeenCalled();
+    expect(h.showStatus).toHaveBeenCalledWith('status.syncEditVolatile');
   });
 });

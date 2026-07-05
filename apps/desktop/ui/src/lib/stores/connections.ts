@@ -13,6 +13,8 @@ import type { Connection as ServerConnection } from '$lib/api/types';
 import { groupConnectionsByHost, type ConnectionGroup } from '$lib/models/connection';
 import { connectionsApi } from '$lib/api/connections';
 import { sessionStore } from './session';
+import { showStatus } from './statusBar';
+import { tNow } from '$lib/i18n';
 
 export type KindFilter = 'all' | 'ssh' | 'rdp' | 'web';
 export type GroupFilter = 'single' | 'grouped';
@@ -167,6 +169,14 @@ export async function upsert(conn: Connection): Promise<void> {
   const current = get(_state).items;
   const idx = current.findIndex((c) => c.id === conn.id);
   const next = idx >= 0 ? current.map((c, i) => (i === idx ? conn : c)) : [...current, conn];
+  if (settings?.mode === 'sync') {
+    // Sync mode is read-through: connections.json is the transient cache the next sync (~1 min)
+    // overwrites wholesale. Persisting an edit would silently vanish, so keep it in-memory only
+    // and tell the user it's volatile instead of falsely showing "saved" (4.40).
+    _state.update((s) => ({ ...s, items: next }));
+    showStatus(tNow('status.syncEditVolatile'));
+    return;
+  }
   await saveAll(next);
 }
 
@@ -186,6 +196,13 @@ export async function remove(id: string): Promise<void> {
     return;
   }
   const next = get(_state).items.filter((c) => c.id !== id);
+  if (settings?.mode === 'sync') {
+    // Same as upsert: a sync-mode delete only lives until the next sync overwrites the cache
+    // (4.40) — keep it in-memory and flag it as volatile rather than pretending it persisted.
+    _state.update((s) => ({ ...s, items: next }));
+    showStatus(tNow('status.syncEditVolatile'));
+    return;
+  }
   await saveAll(next);
 }
 
