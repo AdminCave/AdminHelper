@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import IntegrityError
 
 from app.core.auth import hash_api_key, hash_password
 from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
@@ -96,7 +97,15 @@ def _ensure_admin(db):
         is_admin=True,
     )
     db.add(admin)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # With uvicorn --workers N, every worker runs the lifespan on a fresh DB and all see
+        # count()==0, so all try to insert the admin. The unique users.username constraint lets
+        # exactly one win; the losers catch the conflict and return instead of crashing the
+        # worker at first boot (4.67).
+        db.rollback()
+        return
     # A direct admin obsoletes any pending bootstrap token, so don't leave the raw
     # setup file lingering for a run (3.91).
     _purge_bootstrap_files()
@@ -197,7 +206,14 @@ async def lifespan(app: FastAPI):
     # drain, duplicate scheduled-hook runs). docker-entrypoint.sh starts exactly
     # one scheduler process (RUN_MODE=scheduler); the web workers run uvicorn only.
     # The SSE fan-out subscription IS per web worker (each holds its own streams).
-    await stream_hub.start(REDIS_URL)
+    try:
+        await stream_hub.start(REDIS_URL)
+    except Exception:
+        # Redis carries only the optional SSE push fan-out — rate-limit already degrades to
+        # in-memory and SSE has a polling fallback. A brief Redis outage at boot (compose race,
+        # a Redis restart during a server redeploy) must not crash-loop the whole API; start
+        # best-effort and let push stay disabled until the next boot (4.68).
+        logger.exception("SSE-Fan-out-Start fehlgeschlagen — Push deaktiviert (Polling-Fallback)")
     fire_event("server.startup", {})
     yield
     await stream_hub.stop()
