@@ -60,6 +60,7 @@ export const translations: Translations = {
     'page.users.empty': 'Keine Benutzer vorhanden.',
     'page.users.me': '(ich)',
     'page.users.noServers': 'Keine Server vorhanden.',
+    'page.users.serverLoadFailed': 'Serverliste konnte nicht geladen werden.',
     'page.users.username': 'Benutzername',
     'page.users.role': 'Rolle',
 
@@ -284,6 +285,7 @@ export const translations: Translations = {
     'page.users.empty': 'No users available.',
     'page.users.me': '(me)',
     'page.users.noServers': 'No servers available.',
+    'page.users.serverLoadFailed': 'Could not load the server list.',
     'page.users.username': 'Username',
     'page.users.role': 'Role',
 

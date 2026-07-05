@@ -25,6 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let password = $state('');
   let isAdmin = $state(false);
   let serverList = $state<Server[]>([]);
+  let serverLoadFailed = $state(false);
   let selectedServerIds = $state<Set<string>>(new Set());
   let submitting = $state(false);
 
@@ -41,10 +42,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Read-only fetch of the server inventory (managed in the desktop) so an admin
   // can still assign servers to a user here in the web.
   async function loadServers() {
+    serverLoadFailed = false;
     try {
       serverList = await serversApi.list();
-    } catch {
+    } catch (err) {
+      // Surface the failure instead of showing the empty "no servers" state — otherwise an admin
+      // thinks there are no servers, saves the user with no assignments, and (when editing) can't
+      // see the existing ones. Distinguish load-failed from genuinely-empty (4.78).
       serverList = [];
+      serverLoadFailed = true;
+      showError(err);
     }
   }
 
@@ -131,7 +138,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div
         style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:6px"
       >
-        {#if serverList.length === 0}
+        {#if serverLoadFailed}
+          <span style="color:var(--danger);font-size:12px">
+            {$t('page.users.serverLoadFailed')}
+          </span>
+        {:else if serverList.length === 0}
           <span style="color:var(--text-muted);font-size:12px">
             {$t('page.users.noServers')}
           </span>
