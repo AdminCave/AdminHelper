@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::time::Duration;
+
 use tauri::State;
 
 use crate::ansible;
@@ -182,46 +184,74 @@ pub fn save_connections(
     storage::save_connections(&app, &connections)
 }
 
+/// Deadline around the blocking connect work. open_connection runs the RDP auth check
+/// (xfreerdp +auth-only) and preflight synchronously; a hung NLA handshake after TCP accept
+/// could otherwise block the whole webview forever. spawn_blocking moves it off the async
+/// thread so the UI stays responsive, and the timeout turns an eternal freeze into an error
+/// the user can act on (4.3). tauri::async_runtime::spawn_blocking — the crate's tokio only
+/// enables the "time" feature, not "rt", so tokio::task::spawn_blocking isn't available.
+const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+async fn run_with_deadline<F>(timeout: Duration, work: F) -> Result<(), AppError>
+where
+    F: FnOnce() -> Result<(), AppError> + Send + 'static,
+{
+    let handle = tauri::async_runtime::spawn_blocking(work);
+    match tokio::time::timeout(timeout, handle).await {
+        Ok(joined) => joined
+            .map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?,
+        Err(_) => Err(AppError::Connection(
+            "Verbindungsaufbau: Zeitueberschreitung (Server nicht erreichbar oder haengt)".into(),
+        )),
+    }
+}
+
 #[tauri::command]
-pub fn open_connection(
+pub async fn open_connection(
     app: tauri::AppHandle,
     connection: Connection,
     password: Option<String>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
-    let settings = storage::load_settings(&app)?;
-    let cid = correlation_id.unwrap_or_default();
-    let rdp = rdp_options(&settings);
-    connection::open_connection(
-        &connection,
-        password.as_deref(),
-        client.as_ref(),
-        rdp,
-        settings.language.as_deref(),
-        &cid,
-        &app,
-    )
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        let settings = storage::load_settings(&app)?;
+        let cid = correlation_id.unwrap_or_default();
+        let rdp = rdp_options(&settings);
+        connection::open_connection(
+            &connection,
+            password.as_deref(),
+            client.as_ref(),
+            rdp,
+            settings.language.as_deref(),
+            &cid,
+            &app,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn open_connection_stored(
+pub async fn open_connection_stored(
     app: tauri::AppHandle,
     connection: Connection,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
-    let settings = storage::load_settings(&app)?;
-    let cid = correlation_id.unwrap_or_default();
-    let rdp = rdp_options(&settings);
-    connection::open_connection_stored(
-        &app,
-        &connection,
-        client.as_ref(),
-        rdp,
-        settings.language.as_deref(),
-        &cid,
-    )
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        let settings = storage::load_settings(&app)?;
+        let cid = correlation_id.unwrap_or_default();
+        let rdp = rdp_options(&settings);
+        connection::open_connection_stored(
+            &app,
+            &connection,
+            client.as_ref(),
+            rdp,
+            settings.language.as_deref(),
+            &cid,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -348,4 +378,39 @@ pub fn ansible_write_playbook(filename: String, content: String) -> Result<Strin
 #[tauri::command]
 pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
     ansible::launch_ansible(&inventory_path, &playbook_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_with_deadline;
+    use crate::error::AppError;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn run_with_deadline_returns_ok_for_fast_work() {
+        assert!(run_with_deadline(Duration::from_secs(5), || Ok(()))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_maps_a_hung_task_to_a_timeout_error() {
+        // 4.3: a blocking task that overruns the deadline surfaces a Connection error (the
+        // user gets a message, not a frozen webview) instead of hanging.
+        let r = run_with_deadline(Duration::from_millis(50), || {
+            std::thread::sleep(Duration::from_millis(500));
+            Ok(())
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_passes_through_work_errors() {
+        let r = run_with_deadline(Duration::from_secs(5), || {
+            Err(AppError::Connection("boom".into()))
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+    }
 }
