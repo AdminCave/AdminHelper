@@ -64,7 +64,7 @@ def create_server_config(
     db.add(config)
     db.commit()
     db.refresh(config)
-    write_frps_config(config)
+    write_frps_config(config, warn_restart=True)
     fire_event("frp.config.created", {"id": config.id, "name": config.name})
     audit.record(
         db,
@@ -126,7 +126,7 @@ def update_server_config(
 
     db.commit()
     db.refresh(config)
-    write_frps_config(config)
+    write_frps_config(config, warn_restart=True)
     fire_event("frp.config.updated", {"id": config.id, "name": config.name})
     audit.record(
         db,

@@ -78,6 +78,8 @@
             <li>Let all agents re-sync (the next sync pulls the new <code>frpc.toml</code>) and all desktop visitors reload the tunnel bundle.</li>
           </ol>
 
+          <p><strong>Applies to every FRP server-config change:</strong> not only token rotation — changed dashboard credentials, ports or <code>vhost</code> settings also write the new <code>frps.toml</code> immediately but only take effect after <code>docker compose restart frps</code> (frps has no config hot-reload, and the server container has no docker socket to restart it). The server logs a warning on every runtime change.</p>
+
           <h2>Firewall</h2>
           <table>
             <thead><tr><th>Port</th><th>Direction</th><th>Purpose</th></tr></thead>

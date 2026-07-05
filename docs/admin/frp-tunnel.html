@@ -71,6 +71,8 @@
             <li>Alle Agents neu synchronisieren lassen (der nächste Sync zieht die neue <code>frpc.toml</code>) und alle Desktop-Visitor das Tunnel-Bundle neu laden.</li>
           </ol>
 
+          <p><strong>Gilt für jede FRP-Server-Config-Änderung:</strong> Nicht nur die Token-Rotation — auch geänderte Dashboard-Credentials, Ports oder <code>vhost</code>-Einstellungen schreiben zwar sofort die neue <code>frps.toml</code>, werden aber erst nach <code>docker compose restart frps</code> wirksam (frps kennt kein Config-Hot-Reload, und der Server-Container hat keinen Docker-Socket zum Neustart). Der Server protokolliert bei jeder Laufzeit-Änderung eine entsprechende Warnung ins Log.</p>
+
           <h2>Provision-Token</h2>
           <p>Jeder neue Agent bekommt beim Registrieren einen Einmal-Token. Token-Eigenschaften:</p>
           <ul>

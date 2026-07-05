@@ -50,7 +50,7 @@ def _create_config(db, monkeypatch, **fields):
     import app.modules.frp.config_router as cr
     from app.modules.frp.schemas import FrpServerConfigCreate
 
-    monkeypatch.setattr(cr, "write_frps_config", lambda config: None)
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
     monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
     data = FrpServerConfigCreate(name="n", server_addr="a.example", **fields)
     cr.create_server_config(data=data, request=SimpleNamespace(state=SimpleNamespace()), db=db)
@@ -77,7 +77,7 @@ def _update_config(db, monkeypatch, config_id, **fields):
     import app.modules.frp.config_router as cr
     from app.modules.frp.schemas import FrpServerConfigUpdate
 
-    monkeypatch.setattr(cr, "write_frps_config", lambda config: None)
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
     monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
     data = FrpServerConfigUpdate(**fields)
     cr.update_server_config(
@@ -112,7 +112,7 @@ def test_update_response_masks_secrets(db_session, monkeypatch):
     import app.modules.frp.config_router as cr
     from app.modules.frp.schemas import FrpServerConfigUpdate
 
-    monkeypatch.setattr(cr, "write_frps_config", lambda config: None)
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
     monkeypatch.setattr(cr, "fire_event", lambda *a, **k: None)
     cfg = _create_config(db_session, monkeypatch, dashboard_port=7500, dashboard_user="admin")
     result = cr.update_server_config(
