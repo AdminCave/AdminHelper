@@ -85,11 +85,11 @@ verify_sums_signature() {
         echo "[install] WARNUNG: Release-Signatur nicht konfiguriert — nur Transport-Integritaet (Checksumme)." >&2
         return 0
     fi
-    if ! command -v minisign >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq minisign || true
-    fi
+    # Don't silently sudo apt-get install: a script the user may have started
+    # unprivileged (or via curl | bash) must not escalate + touch the host's package
+    # set unasked. Abort with a clear instruction instead (3.78).
     command -v minisign >/dev/null 2>&1 \
-        || { echo "FEHLER: minisign fehlt — Signatur nicht pruefbar (installiere 'minisign')." >&2; rm -rf "$tmp"; exit 1; }
+        || { echo "FEHLER: minisign fehlt — Signatur nicht pruefbar. Bitte installieren (z.B. 'sudo apt-get install minisign' bzw. das Paket der Distribution) und erneut ausfuehren." >&2; rm -rf "$tmp"; exit 1; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS.minisig" "${dl}/SHA256SUMS.minisig" 2>/dev/null \
         || { echo "FEHLER: Release-Signatur (SHA256SUMS.minisig) fehlt." >&2; rm -rf "$tmp"; exit 1; }
     minisign -Vm "${tmp}/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "${tmp}/SHA256SUMS.minisig" >/dev/null 2>&1 \
@@ -169,12 +169,18 @@ docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt
 
 upsert_env() {
     local key="$1" value="$2"
-    if grep -qE "^#?[[:space:]]*${key}=" .env; then
-        local tmp; tmp=$(mktemp)
-        sed -E "s|^#?[[:space:]]*${key}=.*|${key}=${value}|" .env > "$tmp"; mv "$tmp" .env
-    else
-        printf '%s=%s\n' "$key" "$value" >> .env
-    fi
+    # Reject a value with newlines: it would inject extra .env lines. DOMAIN and
+    # friends come from CLI flags / prompts, so treat them as untrusted (3.79).
+    case $value in
+        *[$'\n\r']*) echo "FEHLER: ungueltiger Wert fuer ${key} (Zeilenumbruch)." >&2; exit 1 ;;
+    esac
+    # Delete any existing (possibly commented) line for the key, then append the
+    # literal value. No sed replacement, so |, & or \1 in the value aren't
+    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
+    local tmp; tmp=$(mktemp)
+    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
+    mv "$tmp" .env
+    printf '%s=%s\n' "$key" "$value" >> .env
 }
 
 # --- Secrets + .env ---------------------------------------------------------
@@ -271,7 +277,7 @@ cat <<EOF
 ============================================================================
   AdminHelper laeuft auf https://${DOMAIN}/   $([ "$PERMISSIVE" = 1 ] && echo '(mTLS permissiv)' || echo '(mTLS erzwungen)')
 
-  Admin-Login:    ${ADMIN_USER} / ${ADMIN_PASSWORD}
+  Admin-Login:    ${ADMIN_USER}   (Passwort wie bei der Installation gesetzt)
 
   Desktop-Cert:   Desktop oeffnen -> "Mit Token enrollen" -> Server-URL + Token:
                   ${ENROLL_TOKEN}

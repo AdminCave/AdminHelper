@@ -78,12 +78,17 @@ command -v curl >/dev/null 2>&1 || die "curl fehlt."
 # Set or replace KEY=value in .env (idempotent), un-commenting if needed.
 upsert_env() {
     local key="$1" value="$2" tmp
-    if grep -qE "^#?[[:space:]]*${key}=" .env; then
-        tmp=$(mktemp)
-        sed -E "s|^#?[[:space:]]*${key}=.*|${key}=${value}|" .env > "$tmp"; mv "$tmp" .env
-    else
-        printf '%s=%s\n' "$key" "$value" >> .env
-    fi
+    # Reject a value with newlines: it would inject extra .env lines (3.79).
+    case $value in
+        *[$'\n\r']*) die "ungueltiger Wert fuer ${key} (Zeilenumbruch)." ;;
+    esac
+    # Delete any existing (possibly commented) line for the key, then append the
+    # literal value. No sed replacement, so |, & or \1 in the value aren't
+    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
+    tmp=$(mktemp)
+    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
+    mv "$tmp" .env
+    printf '%s=%s\n' "$key" "$value" >> .env
 }
 
 # Currently installed version = the tag pinned on SERVER_IMAGE in .env (X.Y.Z),
@@ -125,10 +130,10 @@ verify_sums_signature() {
         log "WARNUNG: Release-Signatur nicht konfiguriert — nur Transport-Integritaet (Checksumme)."
         return 0
     fi
-    if ! command -v minisign >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq minisign || true
-    fi
-    command -v minisign >/dev/null 2>&1 || die "minisign fehlt — Signatur nicht pruefbar (installiere 'minisign')."
+    # Don't silently sudo apt-get install minisign — abort with a clear instruction
+    # rather than escalating + touching the host's package set unasked (3.78).
+    command -v minisign >/dev/null 2>&1 \
+        || die "minisign fehlt — Signatur nicht pruefbar. Bitte installieren (z.B. 'sudo apt-get install minisign' bzw. das Paket der Distribution) und erneut ausfuehren."
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS.minisig" "${dl}/SHA256SUMS.minisig" \
         || die "Release-Signatur (SHA256SUMS.minisig) fehlt."
     minisign -Vm "${tmp}/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "${tmp}/SHA256SUMS.minisig" >/dev/null 2>&1 \
