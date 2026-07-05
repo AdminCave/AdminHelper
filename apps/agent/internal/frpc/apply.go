@@ -105,13 +105,15 @@ func Apply(p ApplyParams) error {
 		logger.Infof("frpc.toml geschrieben")
 	}
 
-	// Extract the PKI bundle (base64-encoded tar.gz)
+	// Extract the PKI bundle (base64-encoded tar.gz). The PKI is essential for the FRP mTLS
+	// handshake — fail hard instead of warning (4.9): otherwise provisioning reports "OK" while
+	// the STCP tunnel silently never establishes (cryptic TLS errors in the frpc log), and since
+	// the provision token is one-time it takes manual diagnosis to recover.
 	if pkiBundleB64 != "" {
 		if err := extractPkiBundle(pkiBundleB64, frpDir); err != nil {
-			logger.Warnf("PKI-Bundle konnte nicht entpackt werden: %v", err)
-		} else {
-			logger.Infof("PKI-Zertifikate installiert")
+			return fmt.Errorf("PKI-Bundle entpacken: %w", err)
 		}
+		logger.Infof("PKI-Zertifikate installiert")
 	}
 
 	// Compute the initial hash

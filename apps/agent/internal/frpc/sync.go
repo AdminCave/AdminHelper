@@ -69,17 +69,30 @@ func Sync() error {
 		return fmt.Errorf("neue Config laden: %w", err)
 	}
 
+	// Verify the delivered bytes match the advertised hash before trusting them (4.10). The
+	// hash and config endpoints both return sha256(generate_frpc_toml(...)), so a truncated or
+	// garbled 200 (gateway error page, mid-flight config change) is caught here instead of being
+	// written and sealed with remoteHash — which would crash-loop frpc on broken TOML with no
+	// self-repair, since localHash would then equal remoteHash.
+	if got := hashConfig(newConfig); got != remoteHash {
+		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
+	}
+
 	// Write the config (0600: contains the frp auth token).
 	if err := os.WriteFile(config.FrpConfigFile(), rewriteIdentityPaths(newConfig), 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
-	}
-	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
-		return fmt.Errorf("Hash schreiben: %w", err)
 	}
 
 	// Restart frpc
 	if err := restartFrpc(); err != nil {
 		return fmt.Errorf("frpc neustarten: %w", err)
+	}
+
+	// Persist the hash only AFTER a successful restart (4.11): a failed restart then leaves the
+	// hash mismatch standing, so the next run retries the sync instead of freezing the old
+	// config on disk until the next server-side change.
+	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
+		return fmt.Errorf("Hash schreiben: %w", err)
 	}
 	logger.Infof("frpc.toml aktualisiert und frpc neugestartet.")
 	return nil
