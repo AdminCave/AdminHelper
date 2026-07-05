@@ -5,11 +5,13 @@
 // Monitoring model: sorting, filtering, grouping, formatting helpers (a few read
 // the i18n language store for the "no server" label and the date/number locale).
 
+import type { AlignedData } from 'uplot';
 import type {
   MonCheckSummary,
   MonStatus,
   MonitorCheck,
   MonitorCheckType,
+  MonitoringMetricSeries,
   Server,
 } from '$lib/api/types';
 import { tNow, currentLocale } from '$lib/i18n';
@@ -170,4 +172,27 @@ export function computeSummary(checks: MonCheckSummary[] | MonitorCheck[]): Moni
     if (st in s && st !== 'total') s[st] += 1;
   }
   return s;
+}
+
+/**
+ * Join metric series on the UNION of their timestamps so uPlot AlignedData stays correct even when
+ * series have different-length or shifted point sets (a metric added later, gaps after an agent
+ * restart). Returns [timestamps, ...perSeriesValues] with null where a series has no point for a
+ * given timestamp (4.102).
+ */
+export function buildAlignedData(series: MonitoringMetricSeries[]): AlignedData {
+  const timestamps = [...new Set(series.flatMap((s) => s.values.map((v) => Number(v[0]))))].sort(
+    (a, b) => a - b,
+  );
+  const aligned: AlignedData = [timestamps];
+  for (const s of series) {
+    const byTs = new Map(s.values.map((v) => [Number(v[0]), parseFloat(v[1])]));
+    aligned.push(
+      timestamps.map((ts) => {
+        const n = byTs.get(ts);
+        return n === undefined || Number.isNaN(n) ? null : n;
+      }),
+    );
+  }
+  return aligned;
 }

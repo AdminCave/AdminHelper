@@ -6,9 +6,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import uPlot, { type AlignedData, type Options } from 'uplot';
+  import uPlot, { type Options } from 'uplot';
   import type { MonitoringMetricsResponse, MonitoringMetricSeries } from '$lib/api/types';
-  import { checkTypeUnit, isPercentCheck, metricLabel } from '$lib/models/monitoring';
+  import {
+    buildAlignedData,
+    checkTypeUnit,
+    isPercentCheck,
+    metricLabel,
+  } from '$lib/models/monitoring';
   import { tNow } from '$lib/i18n';
 
   interface Props {
@@ -20,10 +25,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let container: HTMLDivElement | null = $state(null);
   let chart: uPlot | null = null;
   let resizer: ResizeObserver | null = null;
+  // Tracked so a pending "create once the container has width" rAF can be cancelled on destroy or
+  // the next render — else the stale rAF fires later, builds a uPlot into the detached/emptied
+  // container and overwrites `chart`, leaking the previous instance's DOM + listeners (4.103).
+  let raf = 0;
 
   const COLORS = ['#38bdf8', '#22c55e', '#f97316', '#a855f7', '#ec4899', '#14b8a6'];
 
   function destroy(): void {
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
     if (chart) {
       chart.destroy();
       chart = null;
@@ -56,16 +69,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const filtered = results.filter((r) => !(r.metric?.__name__ || '').includes('status'));
     const series = filtered.length > 0 ? filtered : results;
 
-    const timestamps = series[0].values.map((v) => Number(v[0]));
-    const aligned: AlignedData = [timestamps];
+    // Join series on the union of their timestamps so a series with fewer/shifted points isn't
+    // mapped to the wrong x-values or truncated (4.102, see buildAlignedData).
+    const aligned = buildAlignedData(series);
     const uplotSeries: Options['series'] = [{}];
 
     for (let i = 0; i < series.length; i++) {
-      const values = series[i].values.map((v) => {
-        const n = parseFloat(v[1]);
-        return Number.isNaN(n) ? null : n;
-      });
-      aligned.push(values);
       const metricName = series[i].metric?.__name__ || `Series ${i + 1}`;
       uplotSeries.push({
         label: metricLabel(metricName),
@@ -109,7 +118,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       chart = new uPlot(opts, aligned, el);
     };
     if (el.offsetWidth > 0) create();
-    else requestAnimationFrame(create);
+    else
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        create();
+      });
 
     resizer = new ResizeObserver(() => {
       if (chart && el.offsetWidth > 0) chart.setSize({ width: el.offsetWidth, height: 250 });

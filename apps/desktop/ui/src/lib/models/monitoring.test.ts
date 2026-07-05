@@ -11,6 +11,7 @@ import {
   computeSummary,
   checkTypeUnit,
   isPercentCheck,
+  buildAlignedData,
 } from './monitoring';
 import type { MonitorCheck, Server } from '$lib/api/types';
 
@@ -121,5 +122,38 @@ describe('computeSummary', () => {
     expect(s.warning).toBe(1);
     expect(s.critical).toBe(1);
     expect(s.pending).toBe(1);
+  });
+});
+
+describe('buildAlignedData (4.102)', () => {
+  it('joins series on the union of timestamps, null where a series has no point', () => {
+    const series = [
+      {
+        values: [
+          ['1', '10'],
+          ['2', '20'],
+          ['3', '30'],
+        ],
+      },
+      {
+        // fewer + shifted points (a metric added later / gaps after an agent restart)
+        values: [
+          ['2', '200'],
+          ['4', '400'],
+        ],
+      },
+    ] as unknown as Parameters<typeof buildAlignedData>[0];
+
+    const aligned = buildAlignedData(series);
+    expect(aligned[0]).toEqual([1, 2, 3, 4]); // union of all timestamps, sorted
+    expect(aligned[1]).toEqual([10, 20, 30, null]); // series 1: null at ts 4
+    expect(aligned[2]).toEqual([null, 200, null, 400]); // series 2: aligned, not truncated/shifted
+  });
+
+  it('maps NaN values to null', () => {
+    const series = [{ values: [['1', 'not-a-number']] }] as unknown as Parameters<
+      typeof buildAlignedData
+    >[0];
+    expect(buildAlignedData(series)[1]).toEqual([null]);
   });
 });

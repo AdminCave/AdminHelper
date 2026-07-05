@@ -118,7 +118,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     info = '';
     busy = true;
     try {
-      await enrollWithToken(serverUrl.trim(), enrollToken.trim());
+      // Pass allowSelfSignedCerts through like the login path does — otherwise enrollment from
+      // the login screen (the bootstrap path meant for fresh devices) can fail the TLS handshake
+      // against a self-signed server even though the user opted in (4.101).
+      await enrollWithToken(
+        serverUrl.trim(),
+        enrollToken.trim(),
+        get(settings)?.allowSelfSignedCerts ?? false,
+      );
       enrollToken = '';
       info = $t('login.enroll.done');
       mode = 'login';
