@@ -61,22 +61,20 @@
           <div class="code-header"><span>json</span></div>
 <pre><code>{
   "name": "Slack-Alert",
-  "event": "alert.triggered",
-  "script": "#!/usr/bin/env bash\nset -euo pipefail\nEVENT=$(cat)\ncurl -sS -X POST $SLACK_URL -d \"payload={\\\"text\\\": \\\"Alert: $(echo $EVENT | jq .check_name)\\\"}\"",
-  "timeout_sec": 10,
-  "enabled": true
+  "hook_type": "event",
+  "event_triggers": ["server.created"],
+  "script": "http_post('https://hooks.slack.com/services/T000/B000/XXX', json_data={'text': f'AdminHelper: {event_type}'})\nresult['notified'] = True"
 }</code></pre>
 
-          <p>Das Event-JSON wird per <strong>stdin</strong> übergeben – nicht per Argument oder Env-Var. Das vermeidet Shell-Escape-Probleme und <code>ARG_MAX</code>-Limits.</p>
+          <p>Das <code>script</code>-Feld ist <strong>Python</strong> (kein Shell), das der Worker per <code>exec()</code> ausführt. Die Context-Keys des Events stehen als Variablen bereit (bei <code>event</code>-Hooks <code>event_type</code> und <code>event_data</code>, bei <code>schedule</code> <code>triggered_at</code>/<code>last_run</code>, bei <code>webhook</code> <code>payload</code>/<code>headers</code>/<code>params</code>); Ausgaben laufen über das <code>result</code>-Dict und <code>log(...)</code>.</p>
 
-          <h2>Sandbox-Modell</h2>
-          <p>Hook-Scripts laufen in einem Fork mit geschärften Defaults:</p>
+          <h2>Environment-Modell</h2>
+          <p>Hook-Scripts laufen in einem eigenen Python-Subprozess mit reduziertem Environment — das ist Crash-/Timeout-Isolation, <strong>kein</strong> Security-Sandbox:</p>
           <ul>
-            <li><strong>Minimal-Env</strong>: Nur <code>PATH</code>, <code>HOME</code>, <code>LANG</code>, sowie explizit konfigurierte Secrets (<code>SLACK_URL</code>, etc.). Keine Weitergabe von <code>SECRET_KEY</code>, <code>ADMIN_PASSWORD</code> usw.</li>
-            <li><strong>CWD</strong> ist ein <code>tempfile.mkdtemp()</code>-Verzeichnis, das nach Ablauf gelöscht wird.</li>
-            <li><strong>Timeout</strong> über <code>asyncio.wait_for</code> + <code>process.kill()</code>, Default 10s, Max 300s.</li>
-            <li><strong>Output-Limit</strong>: je 64 KiB für stdout und stderr; Rest wird abgeschnitten und im Log markiert (<code>[truncated]</code>).</li>
-            <li><strong>User-Switch</strong>: Läuft als <code>nobody</code>, wenn Server mit Root-Caps deployed ist (Docker: <code>--user 65534</code>).</li>
+            <li><strong>Reduziertes Env</strong>: Nur <code>PATH</code>, <code>PYTHONPATH</code>, <code>DATABASE_URL</code> und <code>DATA_DIR</code> werden durchgereicht (<code>ADMIN_PASSWORD</code>, <code>MONITOR_API_KEY</code>, <code>REDIS_URL</code> fallen weg). <code>SECRET_KEY</code> und die DB-Zugangsdaten bleiben aber erreichbar (über <code>DATA_DIR/.secret_key</code> bzw. <code>DATABASE_URL</code>) — <strong>kein Secret-Jail</strong>.</li>
+            <li><strong>CWD</strong> ist das Server-Verzeichnis (<code>server_dir</code>), kein Temp-Verzeichnis.</li>
+            <li><strong>Timeout</strong> über <code>subprocess.run(timeout=…)</code>, Default 30 s; beim Ablauf wird der Worker-Prozess gekillt, nicht zwingend dessen Kindprozesse.</li>
+            <li><strong>Kein Output-Limit</strong> und <strong>kein User-Switch</strong>: stdout/stderr werden vollständig eingesammelt, der Worker läuft als derselbe Benutzer wie der Server.</li>
           </ul>
 
           <div class="callout callout-warn" data-reveal>
@@ -89,29 +87,30 @@
 
           <h2>Script-Runner-Implementierung</h2>
           <div class="code-header"><span>python</span></div>
-<pre><code>async def run_hook(hook: Hook, event: dict) -&gt; HookExecution:
-    payload = json.dumps(event).encode()
-    env = _sanitised_env(hook)  # nur PATH, HOME, LANG, + explizite Secrets
+<pre><code>SCRIPT_TIMEOUT_SECONDS = 30
 
-    with tempfile.TemporaryDirectory() as cwd:
-        proc = await asyncio.create_subprocess_exec(
-            "/bin/sh", "-c", hook.script,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd, env=env,
+def run_hook_script(script, hook_type, context, timeout=SCRIPT_TIMEOUT_SECONDS):
+    payload = json.dumps({"script": script, "context": context}, default=str)
+
+    # Reduziertes Env: entfernt ADMIN_PASSWORD, MONITOR_API_KEY, REDIS_URL. KEIN
+    # Jail — DATABASE_URL ist bewusst vererbt (Hooks brauchen DB), SECRET_KEY bleibt
+    # ueber DATA_DIR/.secret_key erreichbar. Hooks = vertrauenswuerdiger Code.
+    server_dir = str(Path(__file__).parents[3])
+    worker_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": server_dir,
+        "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
+        "DATA_DIR": os.environ.get("DATA_DIR", ""),
+    }
+    try:
+        proc = subprocess.run(
+            [sys.executable, _WORKER_SCRIPT],  # fuehrt das Script via Python-Worker aus
+            input=payload, capture_output=True, text=True,
+            timeout=timeout, cwd=server_dir, env=worker_env,
         )
-        try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(payload),
-                timeout=min(hook.timeout_sec, MAX_TIMEOUT),
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            return HookExecution(state="timeout", ...)
-        return HookExecution(state="ok" if proc.returncode == 0 else "failed",
-                             stdout=out[:65_536], stderr=err[:65_536],
-                             exit_code=proc.returncode)</code></pre>
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": f"Timeout nach {timeout}s"}
+    return _parse_worker_output(proc)  # success/result/logs aus stdout</code></pre>
 
           <h2>Eigene Events feuern</h2>
           <p>Interner Code kann jederzeit Events feuern:</p>
