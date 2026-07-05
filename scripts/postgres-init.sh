@@ -9,11 +9,15 @@
 
 set -e
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+# Pass POSTGRES_USER as a psql variable and use :"grantee" so psql quotes it as a
+# proper identifier — interpolating it raw would be a SQL injection over the identifier
+# once POSTGRES_USER becomes configurable / the script is reused (3.81).
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    --set=grantee="$POSTGRES_USER" <<-EOSQL
     SELECT 'CREATE DATABASE adminhelper_monitor'
     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'adminhelper_monitor')\gexec
 
-    GRANT ALL PRIVILEGES ON DATABASE adminhelper_monitor TO $POSTGRES_USER;
+    GRANT ALL PRIVILEGES ON DATABASE adminhelper_monitor TO :"grantee";
 EOSQL
 
 echo "[postgres-init] adminhelper_monitor-DB sichergestellt."

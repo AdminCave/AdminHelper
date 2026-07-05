@@ -104,10 +104,20 @@ installed_version() {
 
 # Resolve the latest published, non-prerelease, non-draft release tag via the API.
 # (releases/latest excludes prereleases and drafts by definition.) No jq on hosts.
+gh_curl() {
+    # Add an optional GITHUB_TOKEN as an Authorization header via a curl config on
+    # stdin (--config -), never argv: on a multi-user host argv is readable from ps /
+    # /proc/<pid>/cmdline while the request runs, and stdin keeps it off disk too (3.86).
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl --config - "$@"
+    else
+        curl "$@"
+    fi
+}
+
 resolve_latest_tag() {
-    local auth=() json tag
-    [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
-    json=$(curl -fsSL "${auth[@]}" -H "Accept: application/vnd.github+json" \
+    local json tag
+    json=$(gh_curl -fsSL -H "Accept: application/vnd.github+json" \
         "${API_BASE}/repos/${REPO}/releases/latest" 2>/dev/null) \
         || die "Konnte das neueste Release nicht abfragen (Netz/Rate-Limit?). Nutze --ref vX.Y.Z."
     tag=$(printf '%s' "$json" | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
