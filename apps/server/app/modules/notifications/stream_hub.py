@@ -26,6 +26,10 @@ from collections import defaultdict
 logger = logging.getLogger("adminhelper.notifications.stream")
 
 CHANNEL = "notif:events"
+
+# Backoff before the SSE reader re-subscribes after a lost Redis connection (module-level so
+# tests can shrink it).
+_RECONNECT_DELAY = 5.0
 # Bounded so a stuck consumer cannot grow memory without limit; on overflow we
 # drop the refresh nudge (the client's poll fallback reconciles).
 _QUEUE_MAXSIZE = 32
@@ -92,23 +96,38 @@ async def start(redis_url: str) -> None:
 
 
 async def _reader(pubsub) -> None:
-    try:
-        while True:
+    while True:
+        try:
             # timeout keeps the loop responsive to cancellation at shutdown.
             msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if msg is None:
-                continue
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A Redis restart / brief network hiccup / failover makes get_message raise. The
+            # except used to sit OUTSIDE the loop, so the reader ended for good and this worker's
+            # SSE push fan-out went silently dead until a process restart — open SSE streams kept
+            # their heartbeats but never saw a refresh nudge again. Reconnect and keep going: the
+            # next get_message re-raises if Redis is still down, so we back off and retry (4.72).
+            logger.warning(
+                "SSE Redis reader: Verbindung verloren — Reconnect in %ss",
+                _RECONNECT_DELAY,
+                exc_info=True,
+            )
+            await asyncio.sleep(_RECONNECT_DELAY)
             try:
-                data = json.loads(msg["data"])
-            except (ValueError, TypeError):
-                continue
-            payload = json.dumps({"type": "refresh", "maxId": data.get("maxId", 0)})
-            for uid in data.get("user_ids", ()):
-                deliver_local(int(uid), payload)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("SSE Redis reader crashed")
+                await pubsub.subscribe(CHANNEL)
+            except Exception:
+                pass
+            continue
+        if msg is None:
+            continue
+        try:
+            data = json.loads(msg["data"])
+        except (ValueError, TypeError):
+            continue
+        payload = json.dumps({"type": "refresh", "maxId": data.get("maxId", 0)})
+        for uid in data.get("user_ids", ()):
+            deliver_local(int(uid), payload)
 
 
 async def stop() -> None:
