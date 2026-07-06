@@ -55,13 +55,13 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>sudo dnf install ./adminhelper-agent-*.x86_64.rpm</code></pre>
 
           <h2>Aus dem AdminHelper-Paket-Repo (<code>apt upgrade</code> / <code>dnf upgrade</code>)</h2>
-          <p>Der AdminHelper-Server stellt selbst ein <strong>GPG-signiertes</strong> apt-/rpm-Repo auf der Repo-Plane des Gateways bereit (Port <code>REPO_PORT</code>, Default <code>8445</code>, certless). Damit bekommen Agent-Hosts neue Versionen &uuml;ber den normalen Paketmanager statt per manuellem Download &mdash; gedacht vor allem f&uuml;r <strong>laufende Updates</strong> auf vielen Servern. <em>Voraussetzung:</em> der Server l&auml;uft mit konfiguriertem Repo-Signaturschl&uuml;ssel (siehe <a href="../developer/cicd.html">CI/CD &amp; Release</a>); sonst liefert <code>/repo</code> nur <code>404</code>.</p>
+          <p>Der AdminHelper-Server stellt selbst ein <strong>GPG-signiertes</strong> apt-/rpm-Repo auf der Repo-Plane des Gateways bereit (Port <code>REPO_PORT</code>, Default <code>8445</code>, certless). Damit bekommen Agent-Hosts neue Versionen &uuml;ber den normalen Paketmanager statt per manuellem Download &mdash; gedacht vor allem f&uuml;r <strong>laufende Updates</strong> auf vielen Servern. <em>Voraussetzung:</em> der Server l&auml;uft mit konfiguriertem Repo-Signaturschl&uuml;ssel (siehe <a href="../developer/cicd.html">CI/CD &amp; Release</a>); sonst liefern die <code>/apt</code>- und <code>/rpm</code>-Pfade nur <code>404</code>.</p>
           <p><strong>Vertrauenswurzel ist der GPG-Fingerprint</strong>, nicht der Transport: die Paket-Authentizit&auml;t h&auml;ngt an der Signatur (wie bei jedem Distro-Mirror). Pr&uuml;fe den Fingerprint des geladenen Schl&uuml;ssels gegen den ver&ouml;ffentlichten Wert (<code>912E1EC637F49C978EAD47DF926B404297E9DC1C</code>), bevor du fortf&auml;hrst.</p>
 
           <h3>Debian/Ubuntu (apt)</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>SERVER=srm.example.com                 # dein AdminHelper-Server
-REPO="https://${SERVER}:8445/repo"
+REPO="https://${SERVER}:8445"
 
 # 1) Signaturschluessel holen und Fingerprint ERZWUNGEN vergleichen (Vertrauenswurzel!)
 #    Erst nach /tmp laden, gegen den veroeffentlichten Wert pruefen, dann installieren —
@@ -98,7 +98,7 @@ sudo apt install adminhelper-agent     # spaetere Updates: apt upgrade</code></p
           <h3>Rocky/Alma/RHEL (dnf)</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>SERVER=srm.example.com
-REPO="https://${SERVER}:8445/repo"
+REPO="https://${SERVER}:8445"
 sudo tee /etc/yum.repos.d/adminhelper.repo &gt;/dev/null &lt;&lt;EOF
 [adminhelper]
 name=AdminHelper Agent

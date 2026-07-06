@@ -48,13 +48,13 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>sudo dnf install ./adminhelper-agent-*.x86_64.rpm</code></pre>
 
           <h2>From the AdminHelper package repo (<code>apt upgrade</code> / <code>dnf upgrade</code>)</h2>
-          <p>The AdminHelper server itself hosts a <strong>GPG-signed</strong> apt/rpm repo on the gateway's repo plane (port <code>REPO_PORT</code>, default <code>8445</code>, certless). Agent hosts then pull new versions through the normal package manager instead of a manual download &mdash; meant mainly for <strong>ongoing updates</strong> across many servers. <em>Prerequisite:</em> the server runs with a configured repo signing key (see <a href="../developer/cicd.html">CI/CD &amp; Release</a>); otherwise <code>/repo</code> just returns <code>404</code>.</p>
+          <p>The AdminHelper server itself hosts a <strong>GPG-signed</strong> apt/rpm repo on the gateway's repo plane (port <code>REPO_PORT</code>, default <code>8445</code>, certless). Agent hosts then pull new versions through the normal package manager instead of a manual download &mdash; meant mainly for <strong>ongoing updates</strong> across many servers. <em>Prerequisite:</em> the server runs with a configured repo signing key (see <a href="../developer/cicd.html">CI/CD &amp; Release</a>); otherwise the <code>/apt</code> and <code>/rpm</code> paths just return <code>404</code>.</p>
           <p><strong>The trust root is the GPG fingerprint</strong>, not the transport: package authenticity rests on the signature (like any distro mirror). Check the fingerprint of the fetched key against the published value (<code>912E1EC637F49C978EAD47DF926B404297E9DC1C</code>) before you continue.</p>
 
           <h3>Debian/Ubuntu (apt)</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>SERVER=srm.example.com                 # your AdminHelper server
-REPO="https://${SERVER}:8445/repo"
+REPO="https://${SERVER}:8445"
 
 # 1) Fetch the signing key and COMPARE the fingerprint mechanically (trust root!)
 #    Stage to /tmp, check against the published value, then install — a bare
@@ -91,7 +91,7 @@ sudo apt install adminhelper-agent     # later updates: apt upgrade</code></pre>
           <h3>Rocky/Alma/RHEL (dnf)</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>SERVER=srm.example.com
-REPO="https://${SERVER}:8445/repo"
+REPO="https://${SERVER}:8445"
 sudo tee /etc/yum.repos.d/adminhelper.repo &gt;/dev/null &lt;&lt;EOF
 [adminhelper]
 name=AdminHelper Agent
