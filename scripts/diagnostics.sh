@@ -71,6 +71,15 @@ redact() {
     sed -f "$1"
 }
 
+# sanitize_env <envfile> : mask secret VALUES by key line, for env.sanitized -> stdout.
+# The second, independent redaction path — build_redaction_sedfile redacts by value,
+# this redacts by key, so a secret is masked even if its value never appeared in a log.
+sanitize_env() {
+    local envfile="$1" pat
+    pat="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
+    sed -E "s/^([[:space:]]*(${pat}))=.*/\1=<redacted>/" "$envfile"
+}
+
 main() {
     if [ ! -f docker-compose.yml ]; then
         echo "Fehler: docker-compose.yml nicht gefunden. Bitte im Repo-Root ausfuehren." >&2
@@ -115,9 +124,7 @@ main() {
 
     # --- env.sanitized (mask secret VALUES) -------------------------------
     if [ -f .env ]; then
-        local pat
-        pat="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
-        sed -E "s/^([[:space:]]*(${pat}))=.*/\1=<redacted>/" .env > "$stage/env.sanitized"
+        sanitize_env .env > "$stage/env.sanitized"
     fi
 
     # --- per-service logs (redacted) --------------------------------------
