@@ -307,3 +307,48 @@ class TestRuleLoopIsolation:
         by_rule = {e.alert_rule_id: e.success for e in db.added}
         assert by_rule["rule-bad"] is False
         assert by_rule["rule-good"] is True
+
+
+def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
+    # 6.59: _CapturingDb.filter() is a no-op, so process_alert's enabled==True filter (alerter.py) is
+    # never exercised by the fake-based tests. Against a real sqlite DB, of two otherwise-matching
+    # rules only the enabled one dispatches — a regression dropping the filter would let disabled
+    # rules fire webhooks/mails again, and every fake-based test would stay green.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models import Base, MonitorAlertRule
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+
+    def _rule(rid, enabled):
+        return MonitorAlertRule(
+            id=rid,
+            name="r",
+            match_severity=None,  # matches any check
+            match_server_id=None,
+            channel="webhook",
+            channel_config="{}",
+            cooldown_minutes=30,
+            enabled=enabled,
+        )
+
+    db.add_all([_rule("enabled-rule", True), _rule("disabled-rule", False)])
+    db.commit()
+
+    dispatched = []
+    monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+
+    def fake_dispatch(rule, *a, **k):
+        dispatched.append(rule.id)
+        return True, None
+
+    monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+    process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+    assert dispatched == ["enabled-rule"], f"only the enabled rule may dispatch, got {dispatched}"
