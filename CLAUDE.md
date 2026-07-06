@@ -10,7 +10,7 @@ Kern-Komponenten in vier Sprachen, dazu zwei Infrastruktur-Dienste
 
 | Komponente | Pfad | Stack | Tests |
 |---|---|---|---|
-| Server (modularer Monolith, 8 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`, inkl. Alembic-Smoke) |
+| Server (modularer Monolith, 12 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`, inkl. Alembic-Smoke) |
 | Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest` (`apps/monitoring/tests/`) |
 | Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `go test` (`internal/*/..._test.go`) |
 | Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo test` (`#[cfg(test)]` in den Modulen) |
@@ -38,9 +38,10 @@ unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
 - **Release = mehrere Versions-Stellen synchron bumpen:** Desktop-Version in
   `apps/desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
   aus dem Git-Tag ab (`apps/agent/build-deb.sh` / `build-rpm.sh` brechen ohne
-  gesetzte `VERSION` ab), die `FRP_VERSION` ist in den GitHub-Workflows
-  (`.github/workflows/`) gepinnt — ein CI-Job prüft die drei Pin-Stellen auf
-  Gleichstand; Server/Monitoring ziehen die Version aus dem Git-Tag
+  gesetzte `VERSION` ab), die `FRP_VERSION` ist an vier Stellen gepinnt
+  (`.github/workflows/ci.yml`, `.github/workflows/release.yml`, `docker-compose.yml`,
+  `scripts/tests/crabbox_bootstrap.sh`) — der CI-Job `frp-consistency` prüft die vier
+  Pin-Stellen auf Gleichstand; Server/Monitoring ziehen die Version aus dem Git-Tag
   (Docker-Build-Arg). Detaillierte Stellen-Liste: lokale Agent-Memory
   `.claude/agent-memory/adminhelper-release-manager/version_locations.md`
   (gitignored — existiert nur auf dem Dev-Rechner, nicht im Clone).
