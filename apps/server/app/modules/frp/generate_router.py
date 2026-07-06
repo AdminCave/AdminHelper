@@ -7,7 +7,7 @@ import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
@@ -38,10 +38,16 @@ def _visible_stcp_tunnels(db: Session, config: FrpServerConfig, user: User) -> l
     else only those on the user's own servers. Centralised because it is a security
     invariant — a non-admin must never see foreign tunnels, and duplicating it
     risks breaking that at one site (2.44)."""
-    q = db.query(FrpTunnel).filter(
-        FrpTunnel.frp_config_id == config.id,
-        FrpTunnel.tunnel_type == "stcp",
-        FrpTunnel.enabled.is_(True),
+    # Eager-load target_server: generate_visitor_toml reads tunnel.target_server.name per tunnel,
+    # which would otherwise fire one SELECT per tunnel (the backref is lazy) (5.29).
+    q = (
+        db.query(FrpTunnel)
+        .options(joinedload(FrpTunnel.target_server))
+        .filter(
+            FrpTunnel.frp_config_id == config.id,
+            FrpTunnel.tunnel_type == "stcp",
+            FrpTunnel.enabled.is_(True),
+        )
     )
     if user.is_admin:
         return q.all()
@@ -156,6 +162,9 @@ def gen_bulk_zip(
 
         all_tunnels = (
             db.query(FrpTunnel)
+            .options(
+                joinedload(FrpTunnel.target_server)
+            )  # 5.29: no per-tunnel target_server SELECT
             .filter(
                 FrpTunnel.frp_config_id == config.id,
                 FrpTunnel.enabled.is_(True),

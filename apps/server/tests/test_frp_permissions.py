@@ -103,6 +103,23 @@ class TestVisitorBundlePermissions:
         assert "a-ssh" in result["toml"]
         assert "b-ssh" in result["toml"]
 
+    def test_visitor_tunnels_eager_load_target_server(
+        self, db_session, admin_user, two_servers_with_tunnels
+    ):
+        # 5.29: _visible_stcp_tunnels eager-loads target_server (joinedload) so generate_visitor_toml,
+        # which reads tunnel.target_server.name per tunnel, doesn't fire a lazy SELECT per tunnel.
+        from sqlalchemy import inspect
+
+        from app.modules.frp.generate_router import _visible_stcp_tunnels
+
+        cfg = db_session.query(FrpServerConfig).first()
+        tunnels = _visible_stcp_tunnels(db_session, cfg, admin_user)
+        assert tunnels, "fixture should yield stcp tunnels"
+        for t in tunnels:
+            # target_server already loaded (not lazy) → the joinedload did it; without the fix it
+            # would be in the unloaded set and read as a per-tunnel SELECT later.
+            assert "target_server" not in inspect(t).unloaded, "target_server is lazy-loaded (N+1)"
+
 
 class TestVisitorTomlPermissions:
     """Same auth filter in the /generate/visitor-toml endpoint."""
