@@ -5,8 +5,18 @@
 package httpclient
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -107,5 +117,93 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 	}
 	if hitTarget {
 		t.Fatal("Client folgte dem Redirect — Custom-Auth-Header koennte leaken")
+	}
+}
+
+// writeTestCA writes a minimal self-signed CA cert to a temp file and returns its path (6.99).
+func writeTestCA(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func tlsConfigOf(t *testing.T, c *http.Client) *tls.Config {
+	t.Helper()
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is not *http.Transport: %T", c.Transport)
+	}
+	return tr.TLSClientConfig
+}
+
+func TestNewInsecureSkipsVerifyAndPinsTLS12(t *testing.T) {
+	client, err := New("", true, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := tlsConfigOf(t, client)
+	if !cfg.InsecureSkipVerify {
+		t.Error("insecure=true must set InsecureSkipVerify")
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %#x, want TLS1.2", cfg.MinVersion)
+	}
+}
+
+func TestNewPinsCARootsAndKeepsVerifyOn(t *testing.T) {
+	// ADR 0001 D2: a pinned CA goes into RootCAs (system roots are NOT added) and verification stays on.
+	client, err := New(writeTestCA(t), false, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := tlsConfigOf(t, client)
+	if cfg.RootCAs == nil {
+		t.Error("RootCAs must be the pinned pool, not nil (nil would fall back to system roots)")
+	}
+	if cfg.InsecureSkipVerify {
+		t.Error("a pinned CA must keep verification on")
+	}
+}
+
+func TestNewRejectsInvalidCAPEM(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.pem")
+	if err := os.WriteFile(path, []byte("not a pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(path, false, time.Second); err == nil || !strings.Contains(err.Error(), "ungueltig") {
+		t.Errorf("invalid CA PEM must error with 'ungueltig', got %v", err)
+	}
+}
+
+func TestNewRejectsMissingCAFile(t *testing.T) {
+	if _, err := New("/nonexistent/ca.pem", false, time.Second); err == nil {
+		t.Error("a missing CA file must error")
+	}
+}
+
+func TestNewMTLSFailsClosedOnMissingClientCert(t *testing.T) {
+	if _, err := NewMTLS("/nope/cert.pem", "/nope/key.pem", writeTestCA(t), time.Second); err == nil {
+		t.Error("a missing client cert must error (fail closed, no cert-less client)")
 	}
 }
