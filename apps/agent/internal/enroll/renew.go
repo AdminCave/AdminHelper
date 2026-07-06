@@ -83,8 +83,12 @@ func MaybeRenew(dir, baseURL string, timeout time.Duration) (bool, error) {
 	if err != nil || !due {
 		return false, err
 	}
-	if err := Renew(dir, baseURL, timeout); err != nil {
+	if err := renewFunc(dir, baseURL, timeout); err != nil {
 		return false, err
 	}
 	return true, nil
 }
+
+// renewFunc is the seam MaybeRenew uses for the network renewal, so tests can drive the
+// orchestration (provisioned? / due?) without a live enroll server.
+var renewFunc = Renew

@@ -212,3 +212,62 @@ func mustWrite(t *testing.T, path string, data []byte) {
 		t.Fatal(err)
 	}
 }
+
+func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
+	orig := renewFunc
+	called := false
+	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	done, err := MaybeRenew(t.TempDir(), "https://x", time.Second)
+	if err != nil || done {
+		t.Fatalf("not provisioned -> (false, nil), got (%v, %v)", done, err)
+	}
+	if called {
+		t.Error("renewFunc darf bei nicht-provisioniert nicht laufen")
+	}
+}
+
+func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
+	orig := renewFunc
+	called := false
+	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	dir := t.TempDir()
+	now := time.Now()
+	day := 24 * time.Hour
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-10*day), now.Add(80*day)) // 11% through -> not due
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	done, err := MaybeRenew(dir, "https://x", time.Second)
+	if err != nil || done {
+		t.Fatalf("not due -> (false, nil), got (%v, %v)", done, err)
+	}
+	if called {
+		t.Error("renewFunc darf bei nicht-faelligem Cert nicht laufen")
+	}
+}
+
+func TestMaybeRenewRenewsWhenDue(t *testing.T) {
+	orig := renewFunc
+	called := false
+	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	dir := t.TempDir()
+	now := time.Now()
+	day := 24 * time.Hour
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-80*day), now.Add(10*day)) // well past half -> due
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	done, err := MaybeRenew(dir, "https://x", time.Second)
+	if err != nil || !done {
+		t.Fatalf("due -> (true, nil), got (%v, %v)", done, err)
+	}
+	if !called {
+		t.Error("renewFunc muss bei faelligem Cert laufen")
+	}
+}
