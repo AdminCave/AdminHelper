@@ -95,9 +95,9 @@ docker compose down -v
           </ul>
 
           <h2>Monitoring-Scheduler stoppt nach Upgrade</h2>
-          <p>APScheduler verwendet einen Job-Store in der DB. Bei Schema-Changes werden veraltete Job-Einträge migriert; bei wirklich festgefahrenen Situationen einmalig:</p>
+          <p>Der Scheduler läuft seit v0.38.0 als eigener Dienst (<code>RUN_MODE=scheduler</code>, genau eine Instanz) und rekonziliert die periodischen Jobs (E-Mail-Outbox, Aufbewahrungs-Cleanups, Scheduled Hooks) aus der DB. Bleiben Jobs nach einem Upgrade aus, den Dienst neu starten:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose exec server python -m app.cli rebuild-scheduler</code></pre>
+<pre><code>docker compose restart scheduler</code></pre>
 
           <h2>Performance</h2>
           <ul>
