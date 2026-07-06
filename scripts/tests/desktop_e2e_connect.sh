@@ -17,7 +17,9 @@ set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib_e2e_stack.sh"
 
 E2E_DIR="$E2E_REPO_ROOT/apps/desktop/e2e"
-SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest"
+# Digest-pinned like docker-compose.yml — a latest/tagless upstream push must not
+# turn the suite red without an AdminHelper defect (6.136).
+SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4"
 
 PASS=0
 FAIL=0
@@ -65,7 +67,7 @@ e2e_api "$TOKEN" web-connection web-direct "http://127.0.0.1:8080" >/dev/null &&
 
 # ── RDP target (xrdp) + a direct RDP connection ──────────────────────────────
 RDP_C="ah-e2e-rdp-$$"
-docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
+docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null 2>&1
 TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target (xrdp) up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 e2e_api "$TOKEN" connection rdp-direct rdp 127.0.0.1 3389 e2e >/dev/null && ok "seeded direct RDP connection" || { bad "seed RDP connection"; exit 1; }

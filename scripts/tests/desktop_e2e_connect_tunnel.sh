@@ -19,7 +19,9 @@ set -uo pipefail
 
 E2E_DIR="$E2E_REPO_ROOT/apps/desktop/e2e"
 AGENT_BIN="$E2E_REPO_ROOT/apps/agent/bin/adminhelper-agent"
-SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest"
+# Digest-pinned like docker-compose.yml — a latest/tagless upstream push must not
+# turn the suite red without an AdminHelper defect (6.136).
+SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4"
 FRPC_IMAGE="snowdreamtech/frpc:0.69.1"
 
 PASS=0
@@ -82,7 +84,7 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-web-tun 8080 web "$WC
 
 # Dedicated RDP target (xrdp) + an RDP connection + linked STCP tunnel.
 RDP_C="ah-e2e-trdp-$$"
-docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
+docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null 2>&1
 TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 RCONN_ID=$(e2e_api "$TOKEN" connection rdp-tunnel rdp 127.0.0.1 39999 e2e) || { bad "seed rdp connection"; exit 1; }
