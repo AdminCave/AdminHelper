@@ -439,6 +439,18 @@ jobs:
             echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, compose=$compose, bootstrap=$boot)"; exit 1; }
           test "$sha_ci" = "$sha_rel" && test "$sha_ci" = "$sha_boot" || {
             echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/crabbox_bootstrap.sh"; exit 1; }
+          # Windows SHA (ci vs release): a FRP_VERSION bump that updates only the ci copy
+          # makes release.yml's desktop-windows `sha256sum -c` fail, and since that build
+          # is continue-on-error the MSI silently drops from the release (4.22).
+          sha_win_ci=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
+          sha_win_rel=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
+          test -n "$sha_win_ci" && test "$sha_win_ci" = "$sha_win_rel" || {
+            echo "::error::FRP_SHA256_WINDOWS_AMD64 differs between ci.yml and release.yml"; exit 1; }
+          # tauri-cli pin (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
+          tauri_ci=$(grep -m1 'cargo install tauri-cli' .github/workflows/ci.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
+            echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
       - name: MINISIGN_PUBKEY in lockstep (install.sh vs update.sh)
         run: |
           ins=$(grep -m1 '^MINISIGN_PUBKEY=' scripts/install.sh | cut -d'"' -f2)
