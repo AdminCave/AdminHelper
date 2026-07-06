@@ -68,6 +68,11 @@ dump_db() {
 # --- The crown jewel + service state ---------------------------------------
 dump_dir ca-issuer  /app/data                 ca-pki.tar.gz
 dump_dir monitoring /app/data                 monitoring-data.tar.gz
+# ./data holds the server's auto-generated .secret_key (persisted when SECRET_KEY is
+# the placeholder — the default for a bare `docker compose up` without init-secrets).
+# Without it a fresh-host restore signs with a new key: all sessions invalid and any
+# SECRET_KEY-encrypted data unreadable. It's tiny, so always include it (2.36).
+dump_dir server     /app/data                 server-data.tar.gz
 if [ "$WITH_VICTORIA" = 1 ]; then
     dump_dir victoria /victoria-metrics-data  victoria-data.tar.gz
 fi

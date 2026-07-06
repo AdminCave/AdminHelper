@@ -76,6 +76,17 @@ restore_volume ca-pki          ca-pki.tar.gz
 restore_volume monitoring-data monitoring-data.tar.gz
 restore_volume victoria-data   victoria-data.tar.gz
 
+# ./data is a host bind mount, not a named volume, so restore it directly (it carries
+# the server's .secret_key). Stack is down here, matching restore_volume (2.36).
+if [ -f "$STAGE/server-data.tar.gz" ]; then
+    echo "[restore] ./data <- server-data.tar.gz"
+    mkdir -p data
+    find data -mindepth 1 -delete 2>/dev/null || true
+    tar xzf "$STAGE/server-data.tar.gz" -C data
+else
+    echo "[restore] server-data.tar.gz nicht im Backup — überspringe ./data"
+fi
+
 echo "[restore] Starte postgres für den DB-Restore..."
 docker compose up -d postgres
 # Wait for postgres to accept connections.
