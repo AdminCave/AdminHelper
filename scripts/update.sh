@@ -188,18 +188,30 @@ update_agent_repo() {
     local tag="$1" tmp="$2" asset dl expected
     asset="adminhelper-agent-repo-${tag}.tar.gz"
     dl="${DL_BASE}/${REPO}/releases/download/${tag}"
-    if ! curl -fsSL --retry 3 --retry-connrefused -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null; then
-        log "Kein Agent-Repo-Asset in ${tag} — ueberspringe Repo-Update (Paket-Repo unveraendert)."
-        return 0
+    local code rc=0
+    code=$(curl -fsSL --retry 3 --retry-connrefused -o "${tmp}/${asset}" -w '%{http_code}' "${dl}/${asset}" 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        # 404 (asset genuinely absent) or 000 (file:// tests / no HTTP layer) → skip;
+        # a 5xx or other failure means the asset may exist but the fetch failed —
+        # that must NOT be mistaken for "no asset" (4.58).
+        case "$code" in
+            404|000) log "Kein Agent-Repo-Asset in ${tag} — ueberspringe Repo-Update (Paket-Repo unveraendert)."; return 0 ;;
+            *) die "Agent-Repo-Asset ${asset} nicht ladbar (HTTP ${code}) — Abbruch." ;;
+        esac
     fi
     expected=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/SHA256SUMS" 2>/dev/null || true)
     [ -n "$expected" ] || { log "Keine Checksumme fuer ${asset} — ueberspringe Repo-Update."; return 0; }
     echo "${expected}  ${tmp}/${asset}" | sha256sum -c - >/dev/null 2>&1 \
         || die "Checksumme des Agent-Repo-Assets stimmt nicht — Abbruch (moegliche Manipulation)."
     log "Aktualisiere Paket-Repo unter ./repo ..."
+    # Unpack into staging FIRST: a tar failure (set -e) exits before ./repo is
+    # touched, so a corrupt asset can't leave the gateway serving an empty repo. The
+    # dir inode is kept (content swapped in place) so the live bind mount stays valid (4.59).
+    local staging; staging=$(mktemp -d "${tmp}/repo.XXXXXX")
+    tar xzf "${tmp}/${asset}" -C "$staging"
     mkdir -p repo
     find repo -mindepth 1 -delete 2>/dev/null || true
-    tar xzf "${tmp}/${asset}" -C repo
+    cp -a "$staging"/. repo/
 }
 
 # Wait until the server accepts connections (migrations done, uvicorn up).
@@ -292,6 +304,9 @@ fi
 mkdir -p backups
 SNAP="backups/runtime-prev-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 SNAP_FILES=(docker-compose.yml .env.example scripts)
+# Include ./repo so a rollback restores the old agent package repo too — not just
+# compose + scripts (else a rolled-back update keeps the new version's repo) (4.129).
+[ -d repo ] && SNAP_FILES+=(repo)
 # The snapshot is the auto-rollback's ONLY basis, so a failure here (full disk,
 # backups/ perms) must abort — nothing is swapped yet, so aborting is clean. A
 # best-effort snapshot would let a later health-fail rollback restore nothing while
