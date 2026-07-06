@@ -440,6 +440,31 @@ jobs:
       - name: diagnostics.sh redaction test
         run: bash scripts/tests/diagnostics_test.sh
 
+  gateway-config:
+    name: Gateway (nginx -t)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # Syntax-check the single public TLS edge on every PR: the integration-stack
+      # job below skips PRs and docker.yml only builds on releases, so a broken
+      # nginx.conf (bad directive, missing snippet include) would otherwise merge and
+      # only surface on the next main push (6.47). Throwaway certs + a stub mtls
+      # snippet + the real identity snippet let `nginx -t` load the full config.
+      - name: nginx -t with throwaway certs
+        run: |
+          mkdir -p certs snippets
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+            -keyout certs/gateway.key -out certs/gateway-fullchain.pem -subj /CN=t -days 1
+          cp certs/gateway-fullchain.pem certs/client-ca.pem
+          echo 'ssl_verify_client optional;' > snippets/data-plane-mtls.conf
+          cp apps/gateway/identity-headers.conf snippets/identity-headers.conf
+          docker run --rm \
+            -v "$PWD/apps/gateway/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/certs:/etc/nginx/certs:ro" \
+            -v "$PWD/snippets:/etc/nginx/snippets:ro" \
+            nginx:1.29-alpine nginx -t
+
   # The ONE from-outside integration path. Every other test mocks at the DB/IPC
   # boundary; this boots the real multi-container stack (postgres, redis, server,
   # ca-issuer, gateway) with MTLS_ENFORCE=true and talks to it only through the
