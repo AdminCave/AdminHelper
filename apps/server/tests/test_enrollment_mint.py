@@ -193,3 +193,24 @@ def test_admin_mint_for_browser_flags_long_lived_leaf(
     )
     assert row is not None
     assert "long-lived" in row.detail and "MTLS_ENFORCE" in row.detail
+
+
+def test_mint_for_writes_audit(test_client, admin_user, normal_user, db_session):
+    # 6.81: the admin-mint /token/for path must leave an audit trail (3.32) — a long-lived for-another
+    # grant has to be greppable. The finding described the pre-3.32 state ("it doesn't"); this pins
+    # the current behaviour so the audit line can't silently regress out again.
+    from app.modules.audit.models import AuditLog
+
+    tok = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        "/api/enrollment/token/for",
+        json={"username": "viewer"},
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert res.status_code == 200, res.text
+    n = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "enrollment.token.minted_for")
+        .count()
+    )
+    assert n == 1, f"expected exactly one enrollment audit row, got {n}"
