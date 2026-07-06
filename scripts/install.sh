@@ -274,8 +274,10 @@ until docker compose exec -T server \
 done
 
 # --- Erst-Admin + Enroll-Token (in-container CLI, umgeht das enforced :443) --
-docker compose exec -T server python -m app.cli create-admin \
-    --username "$ADMIN_USER" --password "$ADMIN_PASSWORD" </dev/null
+# --password-stdin (not --password) so the admin password never lands in the
+# container's argv / /proc/<pid>/cmdline (3.30). -T keeps stdin a clean pipe.
+printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec -T server python -m app.cli create-admin \
+    --username "$ADMIN_USER" --password-stdin
 ENROLL_TOKEN=$(docker compose exec -T server python -m app.cli mint-enroll-token \
     --username "$ADMIN_USER" --ttl-minutes "$ENROLL_TTL" </dev/null | tr -d '\r')
 
