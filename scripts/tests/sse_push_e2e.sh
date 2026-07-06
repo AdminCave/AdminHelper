@@ -22,7 +22,7 @@ set -euo pipefail
 
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   echo "SKIP: docker not available"
-  exit 0
+  exit 75  # run.sh self-SKIP sentinel, not a green PASS (6.9)
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -31,7 +31,7 @@ VENV="${VENV:-/tmp/ah-venv}"
 PY="$VENV/bin"
 if [ ! -x "$PY/uvicorn" ]; then
   echo "SKIP: server venv not found at $VENV (set VENV=...)"
-  exit 0
+  exit 75  # run.sh self-SKIP sentinel, not a green PASS (6.9)
 fi
 
 export DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5433/adminhelper"

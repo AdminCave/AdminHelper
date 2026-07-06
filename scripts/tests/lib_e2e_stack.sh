@@ -35,11 +35,13 @@ e2e_rand() { openssl rand -hex 16; }
 
 e2e_require() {
     local bin
+    # Exit 75 (EX_TEMPFAIL) is run.sh's self-SKIP sentinel: a missing precondition
+    # must report SKIP, not a green PASS via a bare exit 0 (6.9).
     for bin in docker openssl curl python3 "$@"; do
-        command -v "$bin" >/dev/null 2>&1 || { echo "SKIP: '$bin' not available"; exit 0; }
+        command -v "$bin" >/dev/null 2>&1 || { echo "SKIP: '$bin' not available"; exit 75; }
     done
-    docker compose version >/dev/null 2>&1 || { echo "SKIP: docker compose v2 missing"; exit 0; }
-    docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not reachable"; exit 0; }
+    docker compose version >/dev/null 2>&1 || { echo "SKIP: docker compose v2 missing"; exit 75; }
+    docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not reachable"; exit 75; }
 }
 
 e2e_dc() {

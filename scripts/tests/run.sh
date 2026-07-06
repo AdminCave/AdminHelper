@@ -46,9 +46,19 @@ pass() { echo   "  PASS  $*"; PASS=$((PASS+1)); }
 fail() { echo   "  FAIL  $*"; FAIL=$((FAIL+1)); FAILED_STEPS+=("$1"); }
 skip() { echo   "  SKIP  $* ($2)"; SKIP=$((SKIP+1)); }
 
-# run_step <name> -- <command...>   : run, classify by exit code
+# run_step <name> -- <command...>   : run, classify by exit code. Exit 75
+# (EX_TEMPFAIL) is the self-SKIP sentinel: a suite that can't run (no venv, no go,
+# e2e_require unmet) exits 75 so it's reported SKIP, not PASS — a bare exit 0 would
+# silently become a green PASS though nothing ran, and the summary line is the
+# authoritative result ("SKIP heisst nicht verifiziert") (6.9).
 run_step() { local name="$1"; shift; [ "$1" = "--" ] && shift
-  hdr "$name"; if ( "$@" ); then pass "$name"; else fail "$name"; fi; }
+  hdr "$name"; local rc=0; ( "$@" ) || rc=$?
+  case "$rc" in
+    0)  pass "$name" ;;
+    75) skip "$name" "self-skipped" ;;
+    *)  fail "$name" ;;
+  esac
+}
 
 have()        { command -v "$1" >/dev/null 2>&1; }
 have_docker() { have docker && docker info >/dev/null 2>&1; }
