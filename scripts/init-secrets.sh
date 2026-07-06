@@ -49,15 +49,14 @@ is_set_safely() {
 upsert() {
     local key="$1"
     local value="$2"
-    if grep -qE "^#?\s*${key}=" "$ENV_FILE"; then
-        # macOS-sed-Kompatibilitaet ueber tmpfile
-        local tmp
-        tmp=$(mktemp)
-        sed -E "s|^#?\s*${key}=.*|${key}=${value}|" "$ENV_FILE" > "$tmp"
-        mv "$tmp" "$ENV_FILE"
-    else
-        printf "\n%s=%s\n" "$key" "$value" >> "$ENV_FILE"
-    fi
+    # Delete any existing (commented or not) line, then append the literal value.
+    # No sed replacement means |, & or \ in the value aren't interpreted, and
+    # [[:space:]] is POSIX where GNU-only \s breaks on macOS sed — matches install.sh (2.37).
+    local tmp
+    tmp=$(mktemp)
+    grep -vE "^#?[[:space:]]*${key}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true
+    mv "$tmp" "$ENV_FILE"
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
 }
 
 generated=()
