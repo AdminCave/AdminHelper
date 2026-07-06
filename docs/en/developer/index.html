@@ -38,7 +38,7 @@
             <div class="card"><h3>Server</h3><p>FastAPI 0.11, SQLAlchemy 2 + Alembic, APScheduler, Redis. 100+ pytest tests.</p></div>
             <div class="card"><h3>Frontend</h3><p>Svelte 5 Runes, TypeScript strict, Vite 5, Playwright E2E.</p></div>
             <div class="card"><h3>Desktop</h3><p>Tauri 2, Rust 1.83, Svelte 5, 41 Vitest unit tests.</p></div>
-            <div class="card"><h3>Agent</h3><p>Go 1.24, Cobra CLI, cross-compiled Linux + Windows DEB/RPM/MSI.</p></div>
+            <div class="card"><h3>Agent</h3><p>Go 1.25, Cobra CLI, gopsutil, cross-compiled Linux + Windows DEB/RPM.</p></div>
           </div>
 
           <h2>Repository Tree</h2>
@@ -47,6 +47,8 @@
 ├── apps/             All runnable units
 │   ├── server/       FastAPI backend (Python)
 │   ├── monitoring/   Check-execution service (own DB)
+│   ├── ca-issuer/    PKI enrollment plane (FastAPI, own mTLS)
+│   ├── gateway/      nginx reverse proxy (TLS/mTLS/headers, rate limit)
 │   ├── agent/        Unified Go agent (Linux + Windows)
 │   ├── web/          Svelte 5 web admin panel
 │   └── desktop/      Tauri client (Rust backend + Svelte UI)

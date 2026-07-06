@@ -53,7 +53,7 @@
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg></div>
               <h3>Agent</h3>
-              <p>Go 1.24, Cobra CLI, sqlx, native systemd + windowssvc-Integration.</p>
+              <p>Go 1.25, Cobra CLI, gopsutil, native systemd + windowssvc-Integration.</p>
             </div>
           </div>
 
@@ -61,10 +61,12 @@
           <div class="code-header"><span>tree</span></div>
 <pre><code>adminhelper/
 ├── apps/                 Alle lauffähigen Einheiten
-│   ├── server/           FastAPI + Scheduler (Python, 8 Module)
+│   ├── server/           FastAPI + Scheduler (Python, 12 Module)
 │   │   ├── app/{core,modules}/
 │   │   └── tests/
 │   ├── monitoring/       Monitoring-Service (FastAPI, eigene DB)
+│   ├── ca-issuer/        PKI-Enrollment-Plane (FastAPI, eigenes mTLS)
+│   ├── gateway/          nginx-Reverse-Proxy (TLS/mTLS/Header, Ratelimit)
 │   ├── agent/            Unified Go-Agent (Linux + Windows)
 │   │   ├── cmd/          Cobra-Commands
 │   │   ├── internal/     Collectors, FRP-Client, HTTP
@@ -73,7 +75,7 @@
 │   │   ├── src/lib/      Komponenten, Stores, API
 │   │   └── tests/e2e/    Playwright
 │   └── desktop/          Tauri-Client (Backend + UI zusammen)
-│       ├── src-tauri/    24 Tauri-Commands, Rust-Module
+│       ├── src-tauri/    32 Tauri-Commands, Rust-Module
 │       └── ui/           Desktop-Frontend (Svelte 5 + Vite)
 ├── docs/                 Diese Dokumentation
 ├── scripts/              Ops-/DB-Skripte
