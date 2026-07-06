@@ -64,3 +64,7 @@ cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
   [ -n "$slug" ] || { echo "no slug parsed from warmup" >&2; return 1; }
   echo "$slug ${ip:-}"
 }
+
+# Extract the LAST 'KEY=value' marker from a captured box output (last in case a
+# line repeats). Shared by multibox + warm so a warmup-parsing fix lands once (2.39).
+cbx_marker() { printf '%s' "$2" | grep -oE "$1=[^ ]+" | tail -1 | cut -d= -f2; }

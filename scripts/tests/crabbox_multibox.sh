@@ -106,19 +106,22 @@ SRVARG=""
 [ "$MONCHECK" = 1 ] && SRVARG="$SRVARG moncheck $MC_IP"
 [ "$ENFORCE" = 1 ]  && SRVARG="$SRVARG enforce"
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded |Container |Network |Volume |Pulling|Waiting|Pull complete' | tail -40
-SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
-PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
-ADMIN_PW="$(printf '%s' "$SRVOUT" | grep -oE 'MB_ADMIN_PW=[^ ]+' | tail -1 | cut -d= -f2)"
-MONITOR_KEY="$(printf '%s' "$SRVOUT" | grep -oE 'MB_MONITOR_KEY=[^ ]+' | tail -1 | cut -d= -f2)"
-SID2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID2=[^ ]+' | tail -1 | cut -d= -f2)"
-PTOK2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK2=[^ ]+' | tail -1 | cut -d= -f2)"
-TUN_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_SID=[^ ]+' | tail -1 | cut -d= -f2)"
-TUN_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
-VIS_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_SID=[^ ]+' | tail -1 | cut -d= -f2)"
-VIS_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
-VIS_B64="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VISITOR_B64=[^ ]+' | tail -1 | cut -d= -f2)"
-MC_OK_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_OK_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
-MC_CRIT_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_CRIT_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
+# mb <KEY> — server-box marker via the shared cbx_marker (crabbox_lib.sh), bound to
+# $SRVOUT. Dedups 13 near-identical greps; a warmup-parsing fix lands once now (2.39).
+mb() { cbx_marker "$1" "$SRVOUT"; }
+SID="$(mb MB_SID)"
+PTOK="$(mb MB_PTOK)"
+ADMIN_PW="$(mb MB_ADMIN_PW)"
+MONITOR_KEY="$(mb MB_MONITOR_KEY)"
+SID2="$(mb MB_SID2)"
+PTOK2="$(mb MB_PTOK2)"
+TUN_SID="$(mb MB_TUN_SID)"
+TUN_PTOK="$(mb MB_TUN_PTOK)"
+VIS_SID="$(mb MB_VIS_SID)"
+VIS_PTOK="$(mb MB_VIS_PTOK)"
+VIS_B64="$(mb MB_VISITOR_B64)"
+MC_OK_STATUS="$(mb MC_OK_STATUS)"
+MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 [ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \

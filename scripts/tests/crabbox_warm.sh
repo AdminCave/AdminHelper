@@ -55,10 +55,10 @@ warm_server() {
   read -r slug ip < <(cbx_lease "ah-server" "$POND") || { echo "  server lease failed" >&2; return 1; }
   echo "  server box $slug @ ${ip:-?} — crabbox_serverbox.sh (bootstrap + stack up)" >&2
   out="$(CBX_TIMEOUT=2700 cbx run --id "$slug" -no-hydrate -- bash scripts/tests/crabbox_serverbox.sh "$ip" 2>&1)"
-  sid="$(printf '%s' "$out"  | grep -oE 'MB_SID=[^ ]+'         | tail -1 | cut -d= -f2)"
-  ptok="$(printf '%s' "$out" | grep -oE 'MB_PTOK=[^ ]+'        | tail -1 | cut -d= -f2)"
-  pw="$(printf '%s' "$out"   | grep -oE 'MB_ADMIN_PW=[^ ]+'    | tail -1 | cut -d= -f2)"
-  key="$(printf '%s' "$out"  | grep -oE 'MB_MONITOR_KEY=[^ ]+' | tail -1 | cut -d= -f2)"
+  sid="$(cbx_marker MB_SID "$out")"
+  ptok="$(cbx_marker MB_PTOK "$out")"
+  pw="$(cbx_marker MB_ADMIN_PW "$out")"
+  key="$(cbx_marker MB_MONITOR_KEY "$out")"
   [ -n "$sid" ] && [ -n "$ptok" ] || { echo "  server stack bring-up failed:" >&2; printf '%s\n' "$out" | tail -20 >&2; return 1; }
   warm_set server "$slug"; warm_set server_ip "$ip"; warm_set server_admin_pw "$pw"; warm_set server_monitor_key "$key"
   warm_set server_sid "$sid"; warm_set server_ptok "$ptok"
