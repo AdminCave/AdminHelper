@@ -52,7 +52,12 @@ config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # Logging
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: the default (True) deactivates every already-created logger not
+    # named in alembic.ini — including the app's own loggers (e.g. adminhelper.servers) — so running a
+    # migration after the app is imported silently kills that logger for the rest of the process. In
+    # tests that surfaced as a lost caplog assertion; in a combined "migrate then serve" process it
+    # would drop real log lines.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
