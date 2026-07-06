@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::{
     CertificateError, DigitallySignedStruct, Error as TlsError, RootCertStore, SignatureScheme,
@@ -322,7 +323,7 @@ async fn redeem(
 /// `now_unix` (seconds since the epoch). `now` is a parameter so the decision is
 /// deterministically testable.
 fn needs_renewal(cert_pem: &str, fraction: f64, now_unix: i64) -> Result<bool, AppError> {
-    let leaf = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+    let leaf = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
         .next()
         .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
         .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
@@ -488,7 +489,7 @@ fn build_mtls_client(
     ca_pem: &str,
 ) -> Result<reqwest::Client, AppError> {
     let mut roots = RootCertStore::empty();
-    for cert in rustls_pemfile::certs(&mut ca_pem.as_bytes()) {
+    for cert in CertificateDer::pem_slice_iter(ca_pem.as_bytes()) {
         let cert = cert.map_err(|e| AppError::Validation(format!("CA-Kette nicht lesbar: {e}")))?;
         roots
             .add(cert)
@@ -500,12 +501,11 @@ fn build_mtls_client(
             .map_err(|e| AppError::Validation(format!("CA-Verifier: {e}")))?;
 
     let client_certs: Vec<CertificateDer<'static>> =
-        rustls_pemfile::certs(&mut cert_pem.as_bytes())
+        CertificateDer::pem_slice_iter(cert_pem.as_bytes())
             .collect::<Result<_, _>>()
             .map_err(|e| AppError::Validation(format!("Client-Zertifikat nicht lesbar: {e}")))?;
-    let client_key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut key_pem.as_bytes())
-        .map_err(|e| AppError::Validation(format!("Client-Schlüssel nicht lesbar: {e}")))?
-        .ok_or_else(|| AppError::Validation("Kein Client-Schlüssel im PEM".to_string()))?;
+    let client_key: PrivateKeyDer<'static> = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+        .map_err(|e| AppError::Validation(format!("Client-Schlüssel nicht lesbar: {e}")))?;
 
     let tls = rustls::ClientConfig::builder_with_provider(crate::tofu::ring_provider())
         .with_safe_default_protocol_versions()
@@ -556,13 +556,12 @@ fn package_pkcs12(
     friendly_name: &str,
 ) -> Result<Vec<u8>, AppError> {
     check_export_password(password)?; // defense in depth; export_browser_p12 checks early
-    let cert = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+    let cert = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
         .next()
         .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
         .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
-    let key = rustls_pemfile::private_key(&mut key_pem.as_bytes())
-        .map_err(|e| AppError::Validation(format!("Schlüssel nicht lesbar: {e}")))?
-        .ok_or_else(|| AppError::Validation("Kein Schlüssel im PEM".to_string()))?;
+    let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+        .map_err(|e| AppError::Validation(format!("Schlüssel nicht lesbar: {e}")))?;
     let pfx = p12::PFX::new(
         cert.as_ref(),
         key.secret_der(),
@@ -828,12 +827,10 @@ mod tests {
             .build()
             .unwrap();
             let certs: Vec<CertificateDer<'static>> =
-                rustls_pemfile::certs(&mut srv_cert_pem.as_bytes())
+                CertificateDer::pem_slice_iter(srv_cert_pem.as_bytes())
                     .collect::<Result<_, _>>()
                     .unwrap();
-            let key = rustls_pemfile::private_key(&mut srv_key_pem.as_bytes())
-                .unwrap()
-                .unwrap();
+            let key = PrivateKeyDer::from_pem_slice(srv_key_pem.as_bytes()).unwrap();
             let config = ServerConfig::builder_with_provider(crate::tofu::ring_provider())
                 .with_safe_default_protocol_versions()
                 .unwrap()
@@ -918,7 +915,7 @@ mod tests {
             .unwrap();
             let verifier = CaPinVerifier { inner };
 
-            let leaf_der = rustls_pemfile::certs(&mut leaf_pem.as_bytes())
+            let leaf_der = CertificateDer::pem_slice_iter(leaf_pem.as_bytes())
                 .next()
                 .unwrap()
                 .unwrap();

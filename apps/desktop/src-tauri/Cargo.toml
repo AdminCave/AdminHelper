@@ -44,7 +44,9 @@ sha2 = "0.10"
 # rustls above and keep aws-lc-rs out (feature unification only adds to ring).
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
 # Parse the enrolled cert/key/CA PEM into the rustls types for the mTLS client.
-rustls-pemfile = "2"
+# rustls-pemfile is archived (Aug 2025); its PEM parsing moved into rustls-pki-types' PemObject API,
+# already in the graph via rustls. Parses the enrolled mTLS material (7.5).
+rustls-pki-types = { version = "1", features = ["alloc"] }
 # Read the enrolled leaf's validity to decide when to auto-renew (A5b).
 x509-parser = "0.16"
 # Package the browser's enrolled cert + key as a PKCS12 for import (A5c).
