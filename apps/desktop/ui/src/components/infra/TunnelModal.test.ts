@@ -10,7 +10,7 @@
 // tunnel resolution; the from-outside integration test for the server path).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { setLanguage } from '$lib/i18n';
 
@@ -62,11 +62,12 @@ function openModal(props: Record<string, unknown> = {}) {
   return { ...utils, onClose, onSaved };
 }
 
-const nameInput = (c: HTMLElement) =>
-  c.querySelector('input[placeholder="k01-lnx1-ssh"]') as HTMLInputElement;
+// Label-based lookups (6.115): robust against field reorder / placeholder changes, unlike the old
+// placeholder match and `select[1]` index which quietly fill the wrong field when the form changes.
+const nameInput = (c: HTMLElement) => within(c).getByLabelText('Name') as HTMLInputElement;
 const numberInputs = (c: HTMLElement) =>
   Array.from(c.querySelectorAll('input[type="number"]')) as HTMLInputElement[];
-const typeSelect = (c: HTMLElement) => c.querySelectorAll('select')[1] as HTMLSelectElement;
+const typeSelect = (c: HTMLElement) => within(c).getByLabelText('Typ') as HTMLSelectElement;
 const saveBtn = (c: HTMLElement) => c.querySelector('.btn.primary') as HTMLButtonElement;
 
 describe('TunnelModal create flow', () => {
