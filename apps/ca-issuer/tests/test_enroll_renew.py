@@ -320,3 +320,31 @@ def test_inmemory_consume_is_thread_safe_single_winner():
         t.join()
 
     assert len(winners) == 1  # exactly one consumed the one-time token
+
+
+def test_enroll_rejects_unparseable_csr(client):
+    # A syntactically broken CSR (not merely a bad signature) must be a 403, not a 500 stacktrace —
+    # _load_csr maps the load_pem ValueError to IssuanceError (6.25).
+    client.app.state.token_store.mint("tk", EnrollmentGrant(subject_id="a", scope="access"))
+    r = client.post(
+        "/enroll",
+        json={
+            "token": "tk",
+            "csr": "-----BEGIN CERTIFICATE REQUEST-----\nnonsense\n-----END CERTIFICATE REQUEST-----",
+        },
+    )
+    assert r.status_code == 403, r.text
+
+
+def test_renew_rejects_unparseable_cert_header(client):
+    # An unparseable X-Client-Cert (verified header present, but the cert body is junk) must be a
+    # 4xx, not a 500 — renew maps the load_pem ValueError to IssuanceError (6.25).
+    r = client.post(
+        "/renew",
+        json={"csr": _csr_pem("x")},
+        headers={
+            config.HEADER_VERIFY: "SUCCESS",
+            config.HEADER_CERT: urllib.parse.quote("not-a-real-cert"),
+        },
+    )
+    assert 400 <= r.status_code < 500, r.text
