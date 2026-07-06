@@ -292,7 +292,11 @@ fi
 mkdir -p backups
 SNAP="backups/runtime-prev-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 SNAP_FILES=(docker-compose.yml .env.example scripts)
-tar czf "$SNAP" "${SNAP_FILES[@]}" 2>/dev/null || true
+# The snapshot is the auto-rollback's ONLY basis, so a failure here (full disk,
+# backups/ perms) must abort — nothing is swapped yet, so aborting is clean. A
+# best-effort snapshot would let a later health-fail rollback restore nothing while
+# claiming success, leaving old images + new compose (2.41).
+tar czf "$SNAP" "${SNAP_FILES[@]}" || die "Laufzeit-Snapshot fehlgeschlagen — Abbruch (noch nichts veraendert)."
 chmod 600 "$SNAP" 2>/dev/null || true
 log "Laufzeit-Snapshot: ${SNAP}"
 
@@ -351,7 +355,9 @@ update_agent_repo "$TARGET" "$TMP"
 rollback() {
     echo >&2
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED} zurueck (Snapshot ${SNAP})..." >&2
-    tar xzf "$SNAP" 2>/dev/null || true
+    # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
+    # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
+    tar xzf "$SNAP" || log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."
     if [ "$INSTALLED" != "unknown" ]; then
         upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${INSTALLED}"
         upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${INSTALLED}"
