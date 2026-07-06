@@ -23,7 +23,10 @@ test.describe('Login', () => {
   test('happy path: Formular ausfuellen und abschicken -> weiter zu /users', async ({ page }) => {
     await mockLoggedOut(page);
     await page.goto('/');
-    await expect(page.getByRole('heading')).toBeHidden();
+    // We are logged out -> the login card is shown. (The old getByRole('heading')
+    // .toBeHidden() was trivially green: the page has no role=heading, so the locator
+    // matched zero elements and toBeHidden() passed without asserting anything.) (6.156)
+    await expect(page.locator('.login-card')).toBeVisible();
     await page.fill('#loginUser', 'admin');
     await page.fill('#loginPass', 'secret123');
     await page.getByRole('button', { name: /Anmelden|Sign in/ }).click();
