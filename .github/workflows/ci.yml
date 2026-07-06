@@ -126,6 +126,26 @@ jobs:
         # Coverage is report-only (no threshold) — visibility, not a gate.
         run: python -m pytest -q --cov=app --cov-report=term
 
+  ca-issuer:
+    name: CA-Issuer (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/ca-issuer/requirements*
+      - name: Install dependencies
+        working-directory: apps/ca-issuer
+        # requirements.in is the loose source; the hashed requirements.txt is for the image.
+        run: pip install -r requirements.in pytest
+      - name: Run pytest
+        working-directory: apps/ca-issuer
+        # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
+        run: python -m pytest -q
+
   agent:
     name: Go Agent (gofmt + vet + test)
     runs-on: ubuntu-latest
