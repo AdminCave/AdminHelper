@@ -29,9 +29,19 @@ func TestParseLevel(t *testing.T) {
 	}
 }
 
+// swapDefaultLogger installs a slog default for the duration of the test and restores the previous
+// one afterwards, so a WARN-filtered handler can't leak into a later test in this package under a
+// different run order (6.100).
+func swapDefaultLogger(t *testing.T, h slog.Handler) {
+	t.Helper()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+}
+
 func TestLoggerTagsComponentAndLevel(t *testing.T) {
 	var buf bytes.Buffer
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	swapDefaultLogger(t, slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	For("frpc").Warnf("disk at %d%%", 90)
 
@@ -45,7 +55,7 @@ func TestLoggerTagsComponentAndLevel(t *testing.T) {
 
 func TestLoggerInfofRespectsLevelFilter(t *testing.T) {
 	var buf bytes.Buffer
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	swapDefaultLogger(t, slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	For("monitor").Infof("should be filtered out")
 
