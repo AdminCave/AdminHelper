@@ -38,7 +38,7 @@ MINISIGN_PUBKEY="RWTU2kEztd3UWTF8HW26S8MWWiTUe6oz38I7rTBBSOvmQ3SHmszo6llJ"
 RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/AdminCave/AdminHelper}"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
-RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh"
+RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/pg-backup.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh"
 DOMAIN=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD=""
@@ -194,7 +194,10 @@ upsert_env() {
 # Interactive prompts must read from the controlling terminal, not stdin: under
 # `curl | bash` stdin is the script pipe, so a bare `read` gets script bytes (or
 # EOF) instead of the user — the install would silently abort at the first prompt.
-if [ -r /dev/tty ]; then TTY=/dev/tty; else TTY=""; fi
+# [ -r /dev/tty ] only checks the file bit, not whether it can actually be OPENED:
+# with no controlling terminal (pipe, </dev/null, cron) the open() fails and a read
+# would hit EOF. Test real openability, matching uninstall.sh (4.52).
+if (exec </dev/tty) 2>/dev/null; then TTY=/dev/tty; else TTY=""; fi
 
 if [ -z "$DOMAIN" ] && [ -n "$TTY" ]; then
     read -rp "Domain (z.B. srm.example.com) [localhost]: " DOMAIN <"$TTY"
