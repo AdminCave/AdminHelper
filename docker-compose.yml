@@ -100,6 +100,15 @@ services:
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
     logging: *default-logging
     restart: unless-stopped
+    # TCP-readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
+    # 8080, so a successful connect means migrations are done — lets dependants wait on service_healthy
+    # instead of racing Alembic (the gateway otherwise serves 502s to fresh clients) (1.22).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 48
+      start_period: 60s
     depends_on:
       redis:
         condition: service_started
@@ -174,7 +183,7 @@ services:
       ca-issuer:
         condition: service_started
       server:
-        condition: service_started
+        condition: service_healthy
 
   ca-issuer:
     image: ${CA_ISSUER_IMAGE:-ghcr.io/admincave/adminhelper/ca-issuer:latest}
