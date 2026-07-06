@@ -422,6 +422,32 @@ mod tests {
     }
 
     #[test]
+    fn forget_pin_clears_the_cache_under_the_normalized_identity() {
+        // 6.111: forget_pin is the only recovery after a legitimate cert rotation. It must clear the
+        // process cache under the SAME pin_identity normalization used when pinning — so a URL with
+        // the implicit default port must forget a pin stored under the explicit ":443". A regression
+        // that forgets the cache (or normalizes differently) leaves the user stuck in a pin mismatch
+        // until restart. keyring_delete is fail-silent, so this needs no keyring backend.
+        let identity = pin_identity("https://forget-test.example:443/");
+        cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(identity.clone(), FP_A.to_string());
+
+        // A different spelling (no explicit port, trailing path) that normalizes to the same identity.
+        forget_pin("https://forget-test.example/api");
+
+        let present = cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&identity);
+        assert!(
+            !present,
+            "forget_pin must clear the cached pin under the normalized identity"
+        );
+    }
+
+    #[test]
     fn verifier_captures_then_trusts_same_cert_and_rejects_changed_cert() {
         let store = Arc::new(InMemoryPinStore::default());
         let verifier = TofuVerifier {
