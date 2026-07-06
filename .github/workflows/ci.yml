@@ -482,7 +482,7 @@ jobs:
       - name: install.sh sandbox test
         run: bash scripts/tests/install_test.sh
       - name: init-secrets + uninstall + restore-guard tests
-        run: bash scripts/tests/init-secrets_test.sh && bash scripts/tests/uninstall_test.sh && bash scripts/tests/restore_guard_test.sh
+        run: bash scripts/tests/init-secrets_test.sh && bash scripts/tests/uninstall_test.sh && bash scripts/tests/restore_guard_test.sh && bash scripts/tests/gateway_mtls_test.sh
       - name: diagnostics.sh redaction test
         run: bash scripts/tests/diagnostics_test.sh
 
