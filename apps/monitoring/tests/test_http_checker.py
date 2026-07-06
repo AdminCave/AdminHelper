@@ -69,3 +69,70 @@ def test_http_checker_flags_disabled_tls_verify(monkeypatch):
     status2, msg2, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
     assert status2 == "ok"
     assert "[TLS-Verify deaktiviert]" not in msg2
+
+
+def test_http_checker_blocks_private_initial_url(monkeypatch):
+    # The is_private_url guard runs BEFORE the request; the existing tests only cover the redirect-hop
+    # guard. A private initial URL must be refused with no request at all (6.52).
+    calls = []
+    monkeypatch.setattr(http_mod, "is_private_url", lambda u: True)
+    monkeypatch.setattr(http_mod.httpx, "request", lambda *a, **k: calls.append(1))
+    status, msg, metrics = http_mod.HttpChecker().run({"url": "http://169.254.169.254/"})
+    assert status == "unknown"
+    assert "SSRF" in msg
+    assert metrics is None
+    assert calls == []
+
+
+def test_http_checker_status_mismatch_is_critical(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        return httpx.Response(500, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(http_mod.httpx, "request", fake_request)
+    status, _msg, metrics = http_mod.HttpChecker().run(
+        {"url": "http://93.184.216.34/", "expected_status": 200}
+    )
+    assert status == "critical"
+    assert metrics["http_status_code"] == 500
+
+
+def test_http_checker_search_string_missing_is_critical(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        return httpx.Response(200, text="hello", request=httpx.Request(method, url))
+
+    monkeypatch.setattr(http_mod.httpx, "request", fake_request)
+    status, msg, _ = http_mod.HttpChecker().run(
+        {"url": "http://93.184.216.34/", "search_string": "goodbye"}
+    )
+    assert status == "critical"
+    assert "nicht" in msg.lower()
+
+
+def test_http_checker_timeout_maps_to_critical(monkeypatch):
+    def boom(*a, **k):
+        raise httpx.TimeoutException("t")
+
+    monkeypatch.setattr(http_mod.httpx, "request", boom)
+    status, msg, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
+    assert status == "critical"
+    assert "Timeout" in msg
+
+
+def test_http_checker_connect_error_maps_to_critical(monkeypatch):
+    def boom(*a, **k):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(http_mod.httpx, "request", boom)
+    status, _msg, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
+    assert status == "critical"
+
+
+def test_http_checker_other_exception_maps_to_unknown(monkeypatch):
+    # A non-network error must NOT masquerade as an outage (critical) — it maps to "unknown" so it
+    # doesn't silently page for a bug in our own code.
+    def boom(*a, **k):
+        raise ValueError("weird")
+
+    monkeypatch.setattr(http_mod.httpx, "request", boom)
+    status, _msg, _ = http_mod.HttpChecker().run({"url": "http://93.184.216.34/"})
+    assert status == "unknown"
