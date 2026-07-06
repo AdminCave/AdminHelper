@@ -352,3 +352,38 @@ def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
     process_alert(db, make_check(), old_status="ok", new_status="critical")
 
     assert dispatched == ["enabled-rule"], f"only the enabled rule may dispatch, got {dispatched}"
+
+
+def test_build_message_recovery_escalation_and_details():
+    # 6.60: _build_message's content — recovery vs escalation subject/text, and the "Details: ..."
+    # state-message append — was never pinned; the fake-based tests monkeypatch it away. It takes the
+    # caller's session (2.30, no longer opens its own SessionLocal), so a plain fake db supplies the
+    # MonitorState; no network, no SessionLocal patch.
+    from app.alerter import _build_message
+
+    check = make_check(name="web", check_type="http", severity="critical")
+
+    class _Db:
+        def __init__(self, state):
+            self._state = state
+
+        def query(self, *a):
+            return self
+
+        def filter(self, *a):
+            return self
+
+        def first(self):
+            return self._state
+
+    rec = _build_message(_Db(None), check, old_status="critical", new_status="ok")
+    assert rec["is_recovery"] is True
+    assert "RECOVERY" in rec["subject"] and "wieder OK" in rec["subject"]
+    assert rec["text"].startswith("RECOVERY")
+
+    state = SimpleNamespace(message="Port 22: refused")
+    esc = _build_message(_Db(state), check, old_status="warning", new_status="critical")
+    assert esc["is_recovery"] is False
+    assert "CRITICAL" in esc["subject"]
+    assert "Severity: critical" in esc["text"]
+    assert "Details: Port 22: refused" in esc["text"]
