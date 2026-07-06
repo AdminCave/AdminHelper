@@ -165,5 +165,37 @@ describe('session store', () => {
       expect(clear).toHaveBeenCalledOnce();
       expect(get(session)).toBeNull();
     });
+
+    it('logout clears the in-memory list BEFORE nulling the session (order invariant)', async () => {
+      // Documented order (session.ts): clear first, then session=null — otherwise subscribers briefly
+      // see the old connection data in the already-logged-out state (6.119).
+      let sessionWhenCleared: unknown = 'unset';
+      registerConnectionsSync({
+        reload: async () => {},
+        clear: () => {
+          sessionWhenCleared = get(session);
+        },
+      });
+      vi.mocked(bridge.login).mockResolvedValue(aSession);
+      await login('https://srv.example.com', 'alice', 'pw');
+      expect(get(session)).not.toBeNull();
+
+      await logout();
+      expect(sessionWhenCleared).not.toBeNull(); // session still present when clear ran -> clear first
+      expect(get(session)).toBeNull();
+    });
+
+    it('logout still clears + nulls the session when bridge.logout rejects (finally path)', async () => {
+      const clear = vi.fn();
+      registerConnectionsSync({ reload: async () => {}, clear });
+      vi.mocked(bridge.login).mockResolvedValue(aSession);
+      await login('https://srv.example.com', 'alice', 'pw');
+      vi.mocked(bridge.logout).mockRejectedValueOnce(new Error('server unreachable'));
+
+      // The error propagates (try/finally re-raises), but the finally must still have run.
+      await expect(logout()).rejects.toThrow('server unreachable');
+      expect(clear).toHaveBeenCalledOnce();
+      expect(get(session)).toBeNull();
+    });
   });
 });
