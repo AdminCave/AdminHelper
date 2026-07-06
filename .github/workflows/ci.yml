@@ -142,6 +142,11 @@ jobs:
       - name: go vet
         working-directory: apps/agent
         run: go vet ./...
+      - name: go vet (windows)
+        working-directory: apps/agent
+        # The ubuntu runner's default `go vet` never sees the //go:build windows files (the sc-query
+        # collector). Vet them explicitly so a Windows-only parser bug is caught in CI (6.20).
+        run: GOOS=windows go vet ./...
       - name: go test
         working-directory: apps/agent
         # Coverage is report-only (no threshold) — visibility, not a gate.

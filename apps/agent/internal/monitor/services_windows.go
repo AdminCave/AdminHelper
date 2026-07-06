@@ -34,69 +34,10 @@ func collectServiceHealth() map[string]any {
 		return result
 	}
 
-	var (
-		allServices  []ServiceEntry
-		currentName  string
-		currentState string
-	)
-
-	// Flush the in-progress service entry. Called both when a new SERVICE_NAME
-	// starts the next record AND once after the loop, so the LAST service
-	// isn't dropped (off-by-one).
-	//
-	// STOPPED services are deliberately NOT classified as enabled_inactive:
-	// `sc query` does not expose the start type, so "enabled but inactive" is
-	// unknowable here. The monitoring service derives the same empty result
-	// from all_services (enabled_state is always "unknown" on Windows); the
-	// legacy key must match, because it becomes the fallback when the
-	// throttled push omits all_services.
-	flush := func() {
-		if currentName == "" {
-			return
-		}
-		allServices = append(allServices, mapWindowsService(currentName, currentState))
-	}
-
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "SERVICE_NAME:") {
-			flush()
-			currentName = strings.TrimSpace(strings.TrimPrefix(line, "SERVICE_NAME:"))
-			currentState = ""
-		} else if strings.HasPrefix(line, "STATE") {
-			parts := strings.Fields(line)
-			for _, p := range parts {
-				if p == "RUNNING" || p == "STOPPED" || p == "PAUSED" || p == "START_PENDING" || p == "STOP_PENDING" {
-					currentState = p
-					break
-				}
-			}
-		}
-	}
-	flush()
-
-	result["all_services"] = allServices
+	// The sc-query parsing lives in parseScQuery (no build tag) so it is unit-tested on any
+	// platform — see scquery.go / scquery_test.go (6.20).
+	result["all_services"] = parseScQuery(string(out))
 	return result
-}
-
-// mapWindowsService maps a Windows service to the systemd-compatible format.
-func mapWindowsService(name, state string) ServiceEntry {
-	activeState := "unknown"
-	switch state {
-	case "RUNNING":
-		activeState = "active"
-	case "STOPPED":
-		activeState = "inactive"
-	case "PAUSED":
-		activeState = "inactive"
-	case "START_PENDING", "STOP_PENDING":
-		activeState = "activating"
-	}
-	return ServiceEntry{
-		"unit":          name,
-		"active_state":  activeState,
-		"enabled_state": "unknown",
-	}
 }
 
 // collectWatchedServices checks the status of specific Windows services.
