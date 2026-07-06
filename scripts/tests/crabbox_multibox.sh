@@ -103,7 +103,9 @@ fi
 echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
 SRVARG=""
 [ "$TUNNEL" = 1 ]   && SRVARG="$SRVARG tunnel"
-[ "$MONCHECK" = 1 ] && SRVARG="$SRVARG moncheck $MC_IP"
+# Only when the lease succeeded — an empty MC_IP would pass `moncheck` with no IP,
+# shifting serverbox's positional args (4.124).
+[ "$MONCHECK" = 1 ] && [ -n "$MC_IP" ] && SRVARG="$SRVARG moncheck $MC_IP"
 [ "$ENFORCE" = 1 ]  && SRVARG="$SRVARG enforce"
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded |Container |Network |Volume |Pulling|Waiting|Pull complete' | tail -40
 # mb <KEY> — server-box marker via the shared cbx_marker (crabbox_lib.sh), bound to
@@ -160,7 +162,7 @@ if [ "$TUNNEL" = 1 ]; then
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
       || bad "tunnel agent: frpc did not connect (see output above)"
     # Independent check on the server: frps logged the STCP registration cross-host.
-    FRPSLOG="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
+    FRPSLOG="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'mb-dc logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
     printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
       && ok "frps registered the agent's STCP tunnel (cross-host)" \
       || bad "frps shows no STCP registration from the agent"
@@ -208,7 +210,7 @@ if [ "$MONCHECK" = 1 ]; then
 fi
 
 echo "== assert monitoring ingested a report from the remote agent(s) =="
-REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"
+REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'mb-dc logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"
 EXPECT=$(( ${#AGENT_SLUGS[@]} + RPM_AGENTS ))
 [ -n "${REPORTS:-}" ] && [ "$REPORTS" -ge "$EXPECT" ] 2>/dev/null \
   && ok "monitoring ingested $REPORTS report(s) from remote agent(s)" \

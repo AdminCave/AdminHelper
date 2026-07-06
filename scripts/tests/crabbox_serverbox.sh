@@ -47,6 +47,11 @@ services:
 YML
 
 DC=(sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml)
+# Expose the exact compose invocation as `mb-dc` so the orchestrator's log-greps
+# don't have to hard-code this box's compose-file set (an implicit contract that
+# breaks silently if the overlay is renamed or a 4th file is added) (1.49).
+printf '#!/bin/sh\nexec sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml "$@"\n' \
+  | sudo tee /usr/local/bin/mb-dc >/dev/null && sudo chmod +x /usr/local/bin/mb-dc
 echo "[serverbox] build + up (images from checkout, production ports)"
 # Start ONLY the services S1 needs (+their deps auto-start). Excludes `scheduler`
 # and `frps`, whose image: is the ghcr.io/admincave/* tag the test overlay does NOT
