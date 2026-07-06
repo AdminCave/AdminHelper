@@ -77,3 +77,24 @@ describe('NotificationPrefs — categories round-trip', () => {
     expect(payload.subscriptions[0].categories).toEqual(['pki']);
   });
 });
+
+describe('NotificationPrefs — save error path', () => {
+  it('surfaces an error message when savePrefs rejects, without crashing', async () => {
+    // The replace-all PUT can fail (network, 4xx); the editor must show the error, not throw and leave
+    // the user with a half-saved silent failure (6.114).
+    h.fetchPrefs.mockResolvedValueOnce({
+      email: 'a@b.de',
+      telegramChatId: null,
+      subscriptions: [],
+    });
+    h.savePrefs.mockRejectedValueOnce(new Error('server down'));
+
+    const { findByText } = render(NotificationPrefs);
+    const saveBtn = await findByText('Benachrichtigungen speichern');
+    await fireEvent.click(saveBtn);
+
+    await waitFor(() => expect(h.savePrefs).toHaveBeenCalled());
+    // The rejection is caught and rendered as the error span, not thrown.
+    await findByText(/server down/);
+  });
+});
