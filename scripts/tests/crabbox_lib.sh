@@ -52,7 +52,8 @@ box_ip() {  # box_ip <slug> -> prints the box IPv4
   cbx ssh --id "$1" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1
 }
 
-# --- lease a box (warmup + wait-for-ready), echo "<slug> <ip>", id on CBX_LAST_LEASE_ID
+# --- lease a box (warmup + wait-for-ready), echo "<slug> <ip>". Callers (warm/bake)
+# self-reap via -ttl/-idle-timeout, so there's no lease-id tracking to leak here (4.55).
 cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
   local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug
   out="$(CBX_TIMEOUT=420 cbx warmup -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \

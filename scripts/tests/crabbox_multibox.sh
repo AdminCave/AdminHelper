@@ -40,15 +40,19 @@ command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
 cbx_load_env || exit 1
 
 POND="ah-mb-$$"
-LEASES=(); PASS=0; FAIL=0; RPM_AGENTS=0
+# Lease ids go to a FILE, not an array: lease() runs in a subshell via
+# `read < <(lease)`, so a LEASES+=(...) there never reaches the parent — the leak
+# guard silently tracked nothing. A shared file crosses the subshell boundary (4.55).
+LEASES_FILE="$(mktemp)"; PASS=0; FAIL=0; RPM_AGENTS=0
 ok(){ echo "  ok   $*"; PASS=$((PASS+1)); }; bad(){ echo "  FAIL $*"; FAIL=$((FAIL+1)); }
 cleanup() {
   [ "$KEEP" = 1 ] && { echo "--keep: leaving pond $POND up (bounded by --ttl)"; return; }
   echo "== teardown pond $POND =="
-  for l in "${LEASES[@]:-}"; do [ -n "$l" ] && crabbox stop --id "$l" >/dev/null 2>&1 || true; done
-  # sweep anything in the pond the array missed (partial-failure boxes)
+  [ -f "$LEASES_FILE" ] && while read -r l; do [ -n "$l" ] && crabbox stop --id "$l" >/dev/null 2>&1 || true; done < "$LEASES_FILE"
+  # sweep anything in the pond the file missed (partial-failure boxes)
   crabbox list --pond "$POND" 2>/dev/null | grep -oE 'cbx_[a-z0-9]+' | while read -r id; do
     crabbox stop --id "$id" >/dev/null 2>&1 || true; done
+  rm -f "$LEASES_FILE"
 }
 trap cleanup EXIT INT TERM
 
@@ -63,7 +67,7 @@ lease() {
   out="$(timeout 420 crabbox warmup -slug "$1" -pond "$POND" -proxmox-bridge vmbr1 -ttl 90m -idle-timeout 30m 2>&1)" \
     || { echo "warmup failed/timed out: $out" >&2; return 1; }
   id="$(printf '%s' "$out" | grep -oE 'cbx_[a-z0-9]+' | head -1)"
-  [ -n "$id" ] && LEASES+=("$id")                        # record BEFORE anything else (avoid leaks)
+  [ -n "$id" ] && echo "$id" >> "$LEASES_FILE"           # record in the shared file (crosses the subshell) FIRST
   slug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"
   [ -n "$slug" ] || { echo "no slug parsed from warmup" >&2; return 1; }
   timeout 300 crabbox status --id "$slug" --wait >/dev/null 2>&1 || true   # bounded wait-for-ready
