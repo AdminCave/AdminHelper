@@ -12,12 +12,6 @@ import (
 
 // collectServiceHealth collects systemd service status (port of collect_systemd_health).
 func collectServiceHealth() map[string]any {
-	result := map[string]any{
-		"failed":           []string{},
-		"enabled_inactive": []string{},
-		"all_services":     []ServiceEntry{},
-	}
-
 	// 1) All service units with active_state (col 2 = UNIT LOAD ACTIVE SUB)
 	unitStates := parseSystemctlColumns(2, "list-units", "--type=service", "--all",
 		"--no-legend", "--plain", "--no-pager")
@@ -37,9 +31,16 @@ func collectServiceHealth() map[string]any {
 			}
 		}
 	}
-	result["failed"] = failed
 
-	// Assemble all_services
+	// The failed/enabled_inactive/all_services derivation lives in assembleServiceHealth (pure) so
+	// it is unit-tested without running systemctl (6.19).
+	return assembleServiceHealth(unitStates, enabledStates, failed)
+}
+
+// assembleServiceHealth derives the service-health report from the parsed unit states: all_services
+// is the union of both maps (missing side -> "unknown"), and enabled_inactive is the legacy set of
+// units that are inactive yet enabled.
+func assembleServiceHealth(unitStates, enabledStates map[string]string, failed []string) map[string]any {
 	allUnits := map[string]bool{}
 	for u := range unitStates {
 		allUnits[u] = true
@@ -63,29 +64,39 @@ func collectServiceHealth() map[string]any {
 			"enabled_state": enabled,
 		})
 	}
-	result["all_services"] = allServices
 
-	// Legacy: enabled_inactive
 	enabledInactive := []string{}
 	for unit, active := range unitStates {
 		if active == "inactive" && enabledStates[unit] == "enabled" {
 			enabledInactive = append(enabledInactive, unit)
 		}
 	}
-	result["enabled_inactive"] = enabledInactive
 
-	return result
+	if failed == nil {
+		failed = []string{}
+	}
+	return map[string]any{
+		"failed":           failed,
+		"enabled_inactive": enabledInactive,
+		"all_services":     allServices,
+	}
 }
 
 // parseSystemctlColumns runs `systemctl <args>` and maps each unit (field 0) to
 // its column `col`, skipping lines too short to hold it. Empty map on any error.
 func parseSystemctlColumns(col int, args ...string) map[string]string {
-	m := map[string]string{}
 	out, err := runWithTimeout("systemctl", args...)
 	if err != nil {
-		return m
+		return map[string]string{}
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	return parseSystemctlColumnsOutput(string(out), col)
+}
+
+// parseSystemctlColumnsOutput maps each unit (field 0) to its column `col`, skipping lines too short
+// to hold it — the positional parsing, testable without running systemctl (6.19).
+func parseSystemctlColumnsOutput(out string, col int) map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if parts := strings.Fields(line); len(parts) > col {
 			m[parts[0]] = parts[col]
 		}

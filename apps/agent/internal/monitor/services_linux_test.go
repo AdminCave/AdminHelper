@@ -6,7 +6,10 @@
 
 package monitor
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestParseWatchedServices(t *testing.T) {
 	// 5.7: parse the batched `systemctl show` output. Keyed by Id so it's independent of block order
@@ -40,5 +43,64 @@ func TestParseWatchedServices(t *testing.T) {
 	// postgres.service: direct .service Id match, active -> running, pid 9999
 	if got[4]["running"] != true || got[4]["pid"] != "9999" {
 		t.Errorf("postgres: want running=true pid=9999, got %v", got[4])
+	}
+}
+
+func TestParseSystemctlColumnsOutput(t *testing.T) {
+	// list-units: UNIT LOAD ACTIVE SUB ... -> col 2 = ACTIVE.
+	units := parseSystemctlColumnsOutput(
+		"nginx.service loaded active running\nredis.service loaded inactive dead\n", 2)
+	if units["nginx.service"] != "active" || units["redis.service"] != "inactive" {
+		t.Errorf("list-units col 2: %v", units)
+	}
+	// list-unit-files: UNIT STATE -> col 1 = STATE.
+	files := parseSystemctlColumnsOutput("nginx.service enabled\nredis.service disabled\n", 1)
+	if files["nginx.service"] != "enabled" || files["redis.service"] != "disabled" {
+		t.Errorf("list-unit-files col 1: %v", files)
+	}
+	// A line too short to hold the column is skipped, not indexed out of range.
+	if short := parseSystemctlColumnsOutput("only-one-field\n", 2); len(short) != 0 {
+		t.Errorf("short line should be skipped: %v", short)
+	}
+}
+
+func TestAssembleServiceHealthEnabledInactive(t *testing.T) {
+	got := assembleServiceHealth(
+		map[string]string{"a.service": "inactive", "b.service": "active"},
+		map[string]string{"a.service": "enabled", "b.service": "enabled"},
+		[]string{"c.service"},
+	)
+	// enabled_inactive: only a (inactive AND enabled); b is active, so excluded.
+	if !reflect.DeepEqual(got["enabled_inactive"], []string{"a.service"}) {
+		t.Errorf("enabled_inactive = %v, want [a.service]", got["enabled_inactive"])
+	}
+	if !reflect.DeepEqual(got["failed"], []string{"c.service"}) {
+		t.Errorf("failed = %v, want [c.service]", got["failed"])
+	}
+	if all := got["all_services"].([]ServiceEntry); len(all) != 2 {
+		t.Errorf("all_services should be the union (2 entries): %v", all)
+	}
+}
+
+func TestAssembleServiceHealthUnknownFallback(t *testing.T) {
+	// A unit present in only one map gets "unknown" for the missing side.
+	got := assembleServiceHealth(
+		map[string]string{"only-active.service": "active"},
+		map[string]string{"only-enabled.service": "enabled"},
+		nil,
+	)
+	byUnit := map[string]ServiceEntry{}
+	for _, e := range got["all_services"].([]ServiceEntry) {
+		byUnit[e["unit"]] = e
+	}
+	if byUnit["only-active.service"]["enabled_state"] != "unknown" {
+		t.Errorf("only-active enabled_state = %q, want unknown", byUnit["only-active.service"]["enabled_state"])
+	}
+	if byUnit["only-enabled.service"]["active_state"] != "unknown" {
+		t.Errorf("only-enabled active_state = %q, want unknown", byUnit["only-enabled.service"]["active_state"])
+	}
+	// nil failed normalizes to an empty slice, not null.
+	if !reflect.DeepEqual(got["failed"], []string{}) {
+		t.Errorf("failed = %v, want []", got["failed"])
 	}
 }
