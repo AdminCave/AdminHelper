@@ -5,6 +5,8 @@
 package diagnostics
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -44,5 +46,41 @@ func TestRedactGeneric(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in %q", want, out)
 		}
+	}
+}
+
+func TestTailFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Missing file: a "(log not available…)" note, not a crash (6.97).
+	if got := tailFile(filepath.Join(dir, "nope.log"), 5); !strings.Contains(got, "log not available") {
+		t.Errorf("missing file: got %q", got)
+	}
+
+	path := filepath.Join(dir, "log")
+	write := func(s string) {
+		if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Fewer lines than n: all lines, exactly one trailing newline.
+	write("a\nb\nc\n")
+	if got := tailFile(path, 5); got != "a\nb\nc\n" {
+		t.Errorf("fewer than n: got %q", got)
+	}
+	// Exactly n lines: unchanged.
+	if got := tailFile(path, 3); got != "a\nb\nc\n" {
+		t.Errorf("exactly n: got %q", got)
+	}
+	// More lines than n: only the last n (off-by-one guard).
+	write("a\nb\nc\nd\ne\n")
+	if got := tailFile(path, 2); got != "d\ne\n" {
+		t.Errorf("more than n: got %q, want %q", got, "d\ne\n")
+	}
+	// No trailing newline in the source: still one trailing newline out.
+	write("x\ny")
+	if got := tailFile(path, 5); got != "x\ny\n" {
+		t.Errorf("no trailing newline: got %q, want %q", got, "x\ny\n")
 	}
 }
