@@ -127,6 +127,41 @@ def test_permissive_allows_wrong_scope():
     assert _check(dep, ClientIdentity(True, "a", SCOPE_AGENT)).verified is True
 
 
+def test_wrong_scope_skips_revocation_query(monkeypatch):
+    # 5.27: a wrong-scope cert is rejected on scope alone, so _is_revoked must not run — no
+    # revoked_identities SELECT on the hot data-plane path when the scope already settles it.
+    from app.core import identity as identity_mod
+
+    calls: list = []
+
+    def fake_is_revoked(db, cn, scope):
+        calls.append((cn, scope))
+        return False
+
+    monkeypatch.setattr(identity_mod, "_is_revoked", fake_is_revoked)
+    dep = require_scope(SCOPE_ACCESS)
+    # db is a non-None sentinel, so _is_revoked WOULD run without the short-circuit.
+    _check(dep, ClientIdentity(True, "a", SCOPE_AGENT), db=object())
+    assert calls == [], "revocation query ran despite wrong scope"
+
+
+def test_matching_scope_still_checks_revocation(monkeypatch):
+    # 5.27: a matching-scope cert must still get the revocation check (short-circuit only skips the
+    # already-doomed wrong-scope case).
+    from app.core import identity as identity_mod
+
+    calls: list = []
+
+    def fake_is_revoked(db, cn, scope):
+        calls.append((cn, scope))
+        return False
+
+    monkeypatch.setattr(identity_mod, "_is_revoked", fake_is_revoked)
+    dep = require_scope(SCOPE_ACCESS)
+    _check(dep, ClientIdentity(True, "u", SCOPE_ACCESS), db=object())
+    assert calls == [("u", SCOPE_ACCESS)]
+
+
 def test_permissive_allows_no_identity():
     dep = require_scope(SCOPE_ACCESS)
     assert _check(dep, ClientIdentity(False)).verified is False
