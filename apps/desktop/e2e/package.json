@@ -17,5 +17,8 @@
     "@wdio/spec-reporter": "^9.19.0",
     "eslint": "^10.4.1",
     "globals": "^17.6.0"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5"
   }
 }
