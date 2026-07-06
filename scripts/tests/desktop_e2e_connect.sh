@@ -53,21 +53,21 @@ e2e_api "$TOKEN" server e2e-server e2e.local >/dev/null || { bad "seed server"; 
 SSH_C="ah-e2e-ssh-$$"
 docker run -d --name "$SSH_C" -p 127.0.0.1:2222:2222 \
     -e PASSWORD_ACCESS=true -e USER_NAME=e2e -e USER_PASSWORD=e2e -e LOG_STDOUT=true \
-    "$SSH_IMAGE" >/dev/null 2>&1
+    "$SSH_IMAGE" >/dev/null || { echo "[e2e] SSH target ($SSH_C) failed to start — is 127.0.0.1:2222 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$SSH_C")
 wait_log "$SSH_C" "listening on port 2222" 40 && ok "SSH target listening on :2222" || { bad "SSH target never came up"; docker logs --tail 20 "$SSH_C"; exit 1; }
 e2e_api "$TOKEN" connection ssh-direct ssh 127.0.0.1 2222 e2e >/dev/null && ok "seeded direct SSH connection" || { bad "seed SSH connection"; exit 1; }
 
 # ── Web target (nginx) + a direct Web connection ─────────────────────────────
 WEB_C="ah-e2e-web-$$"
-docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null 2>&1
+docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null || { echo "[e2e] web target ($WEB_C) failed to start — is 127.0.0.1:8080 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$WEB_C")
 wait_log "$WEB_C" "worker process" 30 && ok "Web target listening on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
 e2e_api "$TOKEN" web-connection web-direct "http://127.0.0.1:8080" >/dev/null && ok "seeded direct Web connection" || { bad "seed Web connection"; exit 1; }
 
 # ── RDP target (xrdp) + a direct RDP connection ──────────────────────────────
 RDP_C="ah-e2e-rdp-$$"
-docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null 2>&1
+docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null || { echo "[e2e] RDP target ($RDP_C) failed to start — is 127.0.0.1:3389 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target (xrdp) up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 e2e_api "$TOKEN" connection rdp-direct rdp 127.0.0.1 3389 e2e >/dev/null && ok "seeded direct RDP connection" || { bad "seed RDP connection"; exit 1; }

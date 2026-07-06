@@ -60,7 +60,7 @@ CONFIG_ID=$(e2e_api "$TOKEN" config e2e-frps localhost 7000) || { bad "seed FRP 
 SSH_C="ah-e2e-tssh-$$"
 docker run -d --name "$SSH_C" -p 127.0.0.1:2222:2222 \
     -e PASSWORD_ACCESS=true -e USER_NAME=e2e -e USER_PASSWORD=e2e -e LOG_STDOUT=true \
-    "$SSH_IMAGE" >/dev/null 2>&1
+    "$SSH_IMAGE" >/dev/null || { echo "[e2e] SSH target ($SSH_C) failed to start — is 127.0.0.1:2222 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$SSH_C")
 wait_log "$SSH_C" "listening on port 2222" 40 && ok "SSH target up on :2222" || { bad "SSH target never came up"; docker logs --tail 20 "$SSH_C"; exit 1; }
 
@@ -75,7 +75,7 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-ssh-tun 2222 ssh "$CO
 
 # Dedicated Web target (nginx) + a Web connection + linked STCP tunnel.
 WEB_C="ah-e2e-tweb-$$"
-docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null 2>&1
+docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null || { echo "[e2e] web target ($WEB_C) failed to start — is 127.0.0.1:8080 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$WEB_C")
 wait_log "$WEB_C" "worker process" 30 && ok "Web target up on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
 WCONN_ID=$(e2e_api "$TOKEN" web-connection web-tunnel "http://127.0.0.1:9") || { bad "seed web connection"; exit 1; }
@@ -84,7 +84,7 @@ e2e_api "$TOKEN" tunnel-conn "$SERVER_ID" "$CONFIG_ID" e2e-web-tun 8080 web "$WC
 
 # Dedicated RDP target (xrdp) + an RDP connection + linked STCP tunnel.
 RDP_C="ah-e2e-trdp-$$"
-docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null 2>&1
+docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null || { echo "[e2e] RDP target ($RDP_C) failed to start — is 127.0.0.1:3389 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 RCONN_ID=$(e2e_api "$TOKEN" connection rdp-tunnel rdp 127.0.0.1 39999 e2e) || { bad "seed rdp connection"; exit 1; }
@@ -123,7 +123,7 @@ FRPC_C="ah-e2e-frpc-$$"
 # No `-c` arg: the snowdreamtech/frpc image already defaults to
 # `frpc -c /etc/frp/frpc.toml`, and its su-exec entrypoint mangles extra args.
 docker run -d --name "$FRPC_C" --network host -v "$FRP_VOL:/etc/frp" -v "$ID_VOL:/etc/adminhelper" \
-    "$FRPC_IMAGE" >/dev/null 2>&1
+    "$FRPC_IMAGE" >/dev/null || { echo "[e2e] frpc container ($FRPC_C) failed to start (4.126)" >&2; exit 1; }
 TARGETS+=("$FRPC_C")
 # Poll for the frps registration instead of a fixed sleep — it can lag on a loaded box (6.137).
 frps_ok=0

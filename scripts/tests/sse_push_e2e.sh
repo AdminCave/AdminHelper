@@ -29,9 +29,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVER="$ROOT/apps/server"
 VENV="${VENV:-/tmp/ah-venv}"
 PY="$VENV/bin"
+# Build the venv on-demand instead of skipping — neither run.sh nor crabbox_bootstrap
+# seeds it, so this cross-instance Redis fan-out path (the ONE thing unit tests can't
+# cover) was systematically skipped on hydrated boxes. One-time ~1 min, then cached (6.70).
 if [ ! -x "$PY/uvicorn" ]; then
-  echo "SKIP: server venv not found at $VENV (set VENV=...)"
-  exit 75  # run.sh self-SKIP sentinel, not a green PASS (6.9)
+  echo "[sse-e2e] bootstrapping server venv at $VENV (one-time)..."
+  python3 -m venv "$VENV" && "$PY/pip" install -q -r "$SERVER/requirements.txt" \
+    || { echo "SKIP: server venv bootstrap failed (no network?)"; exit 75; }
 fi
 
 export DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5433/adminhelper"
@@ -57,7 +61,10 @@ docker run -d --name ah-sse-e2e-pg -e POSTGRES_USER=adminhelper -e POSTGRES_PASS
   -e POSTGRES_DB=adminhelper -p 127.0.0.1:5433:5432 postgres:17-alpine >/dev/null
 docker run -d --name ah-sse-e2e-redis -p 127.0.0.1:6380:6379 redis:7-alpine >/dev/null
 echo "[stack] waiting for postgres..."
-for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -U adminhelper >/dev/null 2>&1 && break; sleep 1; done
+pg_ok=0
+for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -U adminhelper >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 1; done
+# Abort loudly instead of falling into alembic/uvicorn against a dead DB (4.128).
+[ "$pg_ok" = 1 ] || { echo "FAIL: postgres never became ready within 30s" >&2; exit 1; }
 
 cd "$SERVER"
 echo "[stack] alembic upgrade head"
