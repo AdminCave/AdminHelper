@@ -73,9 +73,17 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         content.push('\n');
     }
 
+    // process::id() alone is identical for every generate_inventory call in one process, so two
+    // concurrent inventories (parallel ansible runs, or the test suite) race on the same temp file —
+    // one caller's create_temp_file collides with another's write/remove. A per-call sequence makes
+    // each inventory's temp file unique; the "adminhelper_ansible" prefix is kept so the path still
+    // passes is_confined_ansible_path.
+    static INVENTORY_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = INVENTORY_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "adminhelper_ansible_inventory_{}.ini",
-        std::process::id()
+        "adminhelper_ansible_inventory_{}_{}.ini",
+        std::process::id(),
+        seq
     ));
     let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
