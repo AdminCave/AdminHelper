@@ -148,3 +148,46 @@ def test_create_survives_frps_write_failure(db_session, monkeypatch):
     )
     # ...and the config is persisted (DB is the source of truth).
     assert db_session.query(FrpServerConfig).count() == 1
+
+
+def _login(client, username="admin", password="adminpass"):
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_list_endpoint_masks_the_auth_token(test_client, db_session, admin_user, monkeypatch):
+    # 6.72: the GET /api/frp/server-config list returns to_dict(mask_secrets=True) — the global frps
+    # auth.token must never be echoed. The direct-call tests above cover create/update; this pins the
+    # HTTP list path, which no test exercised. Dropping the mask would leak the token into every GET.
+    import app.modules.frp.config_router as cr
+
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+    h = _login(test_client)
+    created = test_client.post(
+        "/api/frp/server-config",
+        json={"name": "test-frps", "server_addr": "frps.example.net"},
+        headers=h,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["authToken"], "create returns the token once, unmasked"
+
+    listed = test_client.get("/api/frp/server-config", headers=h).json()
+    assert listed and listed[0]["authToken"] is None, "list must mask the frps auth token"
+
+
+def test_create_autogenerates_a_strong_auth_token(test_client, db_session, admin_user, monkeypatch):
+    # 6.72: an empty auth_token field auto-generates one (secrets.token_urlsafe(32)); frps is never
+    # left unauthenticated. Existing tests only cover dashboard_password auto-generation.
+    import app.modules.frp.config_router as cr
+
+    monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+    h = _login(test_client)
+    created = test_client.post(
+        "/api/frp/server-config",
+        json={"name": "test-frps", "server_addr": "frps.example.net"},
+        headers=h,
+    )
+    assert created.status_code == 201, created.text
+    token = created.json()["authToken"]
+    assert token and len(token) >= 16, f"auto-generated token too weak: {token!r}"
