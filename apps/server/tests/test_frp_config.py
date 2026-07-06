@@ -191,3 +191,32 @@ def test_create_autogenerates_a_strong_auth_token(test_client, db_session, admin
     assert created.status_code == 201, created.text
     token = created.json()["authToken"]
     assert token and len(token) >= 16, f"auto-generated token too weak: {token!r}"
+
+
+def _frps_cfg() -> FrpServerConfig:
+    return FrpServerConfig(
+        id="c1", name="c1", server_addr="frps.example.net", bind_port=7000, auth_token="tok"
+    )
+
+
+def test_write_frps_config_enforces_0600(tmp_path, monkeypatch):
+    # 6.147: frps.toml carries the global auth.token + dashboard password and lives in the volume
+    # shared with the internet-facing frps container, so it must land 0600 (umask-robust).
+    from app.modules.frp import docker_manager
+
+    monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
+    path = docker_manager.write_frps_config(_frps_cfg())
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_write_frps_config_tightens_an_existing_world_readable_file(tmp_path, monkeypatch):
+    # O_CREAT leaves an existing file's mode unchanged, so the explicit chmod must tighten a
+    # pre-existing 0644 file — pinned so a "redundant chmod" refactor is caught (6.147).
+    from app.modules.frp import docker_manager
+
+    monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
+    stale = tmp_path / "frps.toml"
+    stale.write_text("old")
+    stale.chmod(0o644)
+    path = docker_manager.write_frps_config(_frps_cfg())
+    assert path.stat().st_mode & 0o777 == 0o600
