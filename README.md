@@ -205,7 +205,7 @@ The response directly contains `access_token` + `refresh_token` — no additiona
 
 ### Persistent data
 
-The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the first start by `scripts/postgres-init.sh`). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
+The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the monitoring service's first start, by its entrypoint). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
 
 File-based server data is stored in the `./data/` directory in the project root (bind mount). This directory is listed in `.gitignore` and is created automatically.
 
@@ -459,7 +459,7 @@ cargo tauri build
 │        │  └─ main.ts
 │        └─ vitest.setup.ts      # ~250 Vitest unit tests
 ├─ docs/                     # documentation (DE + EN, static HTML)
-├─ scripts/                  # ops/db helpers (postgres-init, init-secrets, pg-backup)
+├─ scripts/                  # ops/db helpers (init-secrets, pg-backup)
 ├─ data/                     # server data (gitignored, bind mount)
 ├─ Dockerfile                # multi-stage: Vite build (apps/web) → Python runtime (server image)
 ├─ docker-compose.yml
