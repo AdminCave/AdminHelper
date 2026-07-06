@@ -119,6 +119,15 @@ gpg --export-secret-keys --armor &lt;KEYID&gt; | base64 -w0 | gh secret set REPO
 gpg --fingerprint &lt;KEYID&gt;</code></pre>
             </div>
           </div>
+          <div class="callout">
+            <div><div class="callout-title">Schl&uuml;ssel-Rotation (&Uuml;berlappungsphase)</div>
+            <p>Bei Ablauf oder Kompromittierung des Signaturschl&uuml;ssels d&uuml;rfen die Clients nicht flottenweit brechen: sie pinnen per <code>Signed-By=</code> (apt) bzw. importiertem RPM-Key den <strong>alten</strong> Schl&uuml;ssel, und der einzige Nachladeweg f&uuml;r den neuen Keyring ist ausgerechnet das Repo, dem sie ohne &Uuml;berlappung gerade nicht mehr trauen. Daher in zwei Schritten rotieren:</p>
+            <ol>
+              <li><strong>&Uuml;berlappen:</strong> Neuen Schl&uuml;ssel erzeugen (wie beim Scharfschalten). Weiterhin mit dem <em>alten</em> signieren (<code>REPO_GPG_KEY_ID=&lt;OLD&gt;</code>), aber <strong>beide</strong> Public Keys ausliefern: <code>REPO_GPG_EXPORT_IDS="&lt;OLD&gt; &lt;NEW&gt;"</code>. Ein Release ausrollen &ndash; jeder Host bekommt den neuen Key in seinen Keyring und vertraut ab sofort beiden.</li>
+              <li><strong>Umschalten</strong> (nachdem die Flotte das &Uuml;berlappungs-Release gezogen hat): mit dem <em>neuen</em> Schl&uuml;ssel signieren (<code>REPO_GPG_KEY_ID=&lt;NEW&gt;</code>), nur noch den neuen ausliefern (<code>REPO_GPG_EXPORT_IDS=&lt;NEW&gt;</code>) und den Fingerprint in <code>agent-deployment.html</code> (DE+EN) aktualisieren. Der alte Schl&uuml;ssel kann danach widerrufen werden.</li>
+            </ol>
+            </div>
+          </div>
 
           <h2>Version-Stellen</h2>
           <p>Bei einem Release muss die neue Version an mehreren Stellen parallel gesetzt werden &ndash; der Tag allein reicht nicht:</p>

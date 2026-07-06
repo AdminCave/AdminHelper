@@ -119,6 +119,15 @@ gpg --export-secret-keys --armor &lt;KEYID&gt; | base64 -w0 | gh secret set REPO
 gpg --fingerprint &lt;KEYID&gt;</code></pre>
             </div>
           </div>
+          <div class="callout">
+            <div><div class="callout-title">Key rotation (overlap window)</div>
+            <p>When the signing key expires or is compromised the clients must not break fleet-wide: they pin the <strong>old</strong> key via <code>Signed-By=</code> (apt) or the imported RPM key, and the only way to fetch the new keyring is the very repo they no longer trust without an overlap. So rotate in two steps:</p>
+            <ol>
+              <li><strong>Overlap:</strong> generate the new key (as in arming). Keep signing with the <em>old</em> one (<code>REPO_GPG_KEY_ID=&lt;OLD&gt;</code>) but ship <strong>both</strong> public keys: <code>REPO_GPG_EXPORT_IDS="&lt;OLD&gt; &lt;NEW&gt;"</code>. Cut a release &ndash; every host gets the new key into its keyring and trusts both from then on.</li>
+              <li><strong>Switch</strong> (once the fleet has pulled the overlap release): sign with the <em>new</em> key (<code>REPO_GPG_KEY_ID=&lt;NEW&gt;</code>), ship only the new one (<code>REPO_GPG_EXPORT_IDS=&lt;NEW&gt;</code>) and update the fingerprint in <code>agent-deployment.html</code> (DE+EN). The old key can then be revoked.</li>
+            </ol>
+            </div>
+          </div>
 
           <h2>Version Locations</h2>
           <p>A release needs the new version set in multiple places at once &ndash; the tag alone isn't enough:</p>

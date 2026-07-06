@@ -113,8 +113,14 @@ cp "$DEB" "${APT_ROOT}/pool/${REPO_COMPONENT}/"
     gpg_sign -abs -o "dists/${REPO_SUITE}/Release.gpg" "dists/${REPO_SUITE}/Release"
 )
 
-# Public key, DEARMORED (binary) — apt's signed-by= must not be ASCII-armored.
-gpg --export "$REPO_GPG_KEY_ID" > "${APT_ROOT}/${KEYRING_NAME}"
+# Public keys to ship in the client keyring. Defaults to the signing key; during a key
+# rotation set REPO_GPG_EXPORT_IDS="OLD NEW" so hosts pinned to the old key keep trusting
+# the repo through the overlap window, before the signing key itself switches (audit 8.3).
+REPO_GPG_EXPORT_IDS="${REPO_GPG_EXPORT_IDS:-$REPO_GPG_KEY_ID}"
+
+# Public key(s), DEARMORED (binary) — apt's signed-by= must not be ASCII-armored.
+# shellcheck disable=SC2086  # intentional word-splitting: REPO_GPG_EXPORT_IDS is a key list
+gpg --export $REPO_GPG_EXPORT_IDS > "${APT_ROOT}/${KEYRING_NAME}"
 
 # ── RPM/YUM repository ──────────────────────────────────────────────────────
 echo "--- RPM repo ---"
@@ -122,9 +128,10 @@ mkdir -p "$RPM_ROOT"
 cp "$RPM" "${RPM_ROOT}/"
 RPM_FILE="${RPM_ROOT}/$(basename "$RPM")"
 
-# Public key, ARMORED (ASCII) — dnf's gpgkey= expects an armored key. Exported
-# first so the signature self-check below can import it.
-gpg --export --armor "$REPO_GPG_KEY_ID" > "${RPM_ROOT}/${RPM_KEY_NAME}"
+# Public key(s), ARMORED (ASCII) — dnf's gpgkey= expects an armored key. Exported
+# first so the signature self-check below can import it. Same rotation list as apt.
+# shellcheck disable=SC2086  # intentional word-splitting: REPO_GPG_EXPORT_IDS is a key list
+gpg --export --armor $REPO_GPG_EXPORT_IDS > "${RPM_ROOT}/${RPM_KEY_NAME}"
 
 # Sign the package itself (gpgcheck=1). __gpg pins the gpg binary; the loopback
 # args let a passphrase-less key sign non-interactively.
