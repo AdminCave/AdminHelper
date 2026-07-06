@@ -333,6 +333,7 @@ via `adminhelper-agent monitor init --api-key ...`.
 | `adminhelper-agent monitor push` | One-time metrics push |
 | `adminhelper-agent service install` | Register OS service (systemd/Windows) |
 | `adminhelper-agent service uninstall` | Deregister OS service |
+| `adminhelper-agent diagnostics` | Write a redacted diagnostics report for a bug report |
 | `adminhelper-agent version` | Show version |
 
 The agent automatically detects available subsystems (Docker, ZFS, Proxmox) and collects CPU, RAM, disk, and service metrics. Metrics are stored in **VictoriaMetrics** (90-day retention).
