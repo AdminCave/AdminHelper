@@ -27,6 +27,11 @@
 
 set -euo pipefail
 
+# Single temp root so an abort (signal, set -e) can't leak the per-fetch mktemp
+# dirs; the trap sweeps it on any exit (4.121).
+_TMPROOT="$(mktemp -d)"
+trap 'rm -rf "$_TMPROOT"' EXIT
+
 REPO="AdminCave/AdminHelper"
 REF=""                       # empty -> resolve the latest published release
 # minisign public key (the "RW..." line of minisign.pub) used to verify the
@@ -59,7 +64,7 @@ while [ $# -gt 0 ]; do
         --permissive) PERMISSIVE=1 ;;
         --reset) RESET=1 ;;
         --yes|-y) ASSUME_YES=1 ;;
-        -h|--help) sed -n '2,30p' "$0" 2>/dev/null || echo "siehe Kommentar-Header"; exit 0 ;;
+        -h|--help) awk 'NR==1{next} /^#/{sub(/^#+ ?/,""); print; next} {exit}' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -101,7 +106,7 @@ verify_sums_signature() {
 # no bundle asset (caller falls back to raw); hard-exits on a checksum/manifest fail.
 fetch_bundle_into() {
     local asset="adminhelper-runtime-${REF}.tar.gz" dl="${DL_BASE}/${REPO}/releases/download/${REF}" tmp exp
-    tmp=$(mktemp -d)
+    tmp=$(mktemp -d -p "$_TMPROOT")
     curl -fsSL --retry 3 -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null || { rm -rf "$tmp"; return 1; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" 2>/dev/null || { rm -rf "$tmp"; return 1; }
     echo "[install] Verifiziere und entpacke Runtime-Bundle ${asset} ..." >&2
@@ -124,7 +129,7 @@ fetch_bundle_into() {
 fetch_repo_into() {
     local asset="adminhelper-agent-repo-${REF}.tar.gz" dl="${DL_BASE}/${REPO}/releases/download/${REF}" tmp exp
     [ -n "$REF" ] || return 0
-    tmp=$(mktemp -d)
+    tmp=$(mktemp -d -p "$_TMPROOT")
     curl -fsSL --retry 3 -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null || { rm -rf "$tmp"; return 0; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" 2>/dev/null || { rm -rf "$tmp"; return 0; }
     verify_sums_signature "$tmp" "$dl"
@@ -263,7 +268,7 @@ until docker compose exec -T server \
     # with a different POSTGRES_PASSWORD than the current .env — Postgres only honors
     # the password on first init, so auth fails forever. Detect it and say so, instead
     # of burning 240s into an opaque timeout.
-    if docker compose logs server 2>/dev/null | grep -q "password authentication failed"; then
+    if docker compose logs --tail=20 server 2>/dev/null | grep -q "password authentication failed"; then
         echo "FEHLER: Postgres lehnt das Passwort ab (password authentication failed)." >&2
         echo "       Ursache: meist ein altes 'postgres-data'-Volume aus einem frueheren" >&2
         echo "       (fehlgeschlagenen) Versuch — dessen Init-Passwort passt nicht zur .env." >&2
