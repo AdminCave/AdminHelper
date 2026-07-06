@@ -15,12 +15,19 @@ RETENTION_DAYS="${RETENTION_DAYS:-7}"
 TS=$(date +%Y-%m-%d_%H-%M)
 
 mkdir -p "$BACKUP_DIR"
+# Clean up any leftover .tmp from a crashed earlier run before writing new dumps.
+find "$BACKUP_DIR" -name "*.dump.tmp" -delete 2>/dev/null || true
 
+# Write to .tmp then rename: a crash mid-dump (OOM, disk full, container stop) would
+# otherwise leave a truncated .dump that looks valid, survives the 7-day retention,
+# and only fails at restore. A rename within the dir is atomic (4.122).
 echo "[pg-backup] Sichere adminhelper -> $BACKUP_DIR/adminhelper-$TS.dump"
-pg_dump -d adminhelper --format=custom --file="$BACKUP_DIR/adminhelper-$TS.dump"
+pg_dump -d adminhelper --format=custom --file="$BACKUP_DIR/adminhelper-$TS.dump.tmp"
+mv "$BACKUP_DIR/adminhelper-$TS.dump.tmp" "$BACKUP_DIR/adminhelper-$TS.dump"
 
 echo "[pg-backup] Sichere adminhelper_monitor -> $BACKUP_DIR/adminhelper_monitor-$TS.dump"
-pg_dump -d adminhelper_monitor --format=custom --file="$BACKUP_DIR/adminhelper_monitor-$TS.dump"
+pg_dump -d adminhelper_monitor --format=custom --file="$BACKUP_DIR/adminhelper_monitor-$TS.dump.tmp"
+mv "$BACKUP_DIR/adminhelper_monitor-$TS.dump.tmp" "$BACKUP_DIR/adminhelper_monitor-$TS.dump"
 
 # Retention: nichts juenger als RETENTION_DAYS loeschen, alles aeltere weg.
 DELETED=$(find "$BACKUP_DIR" -name "*.dump" -mtime +"$RETENTION_DAYS" -delete -print | wc -l)

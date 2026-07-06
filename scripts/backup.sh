@@ -54,7 +54,15 @@ mkdir -p "$OUT_DIR"
 dump_dir() {
     svc="$1"; src="$2"; out="$3"
     echo "[backup] $svc:$src -> $out"
-    docker compose exec -T "$svc" tar czf - -C "$src" . > "$STAGE/$out"
+    # tar over a live-written dir can exit 1 ("file changed as we read it"), which
+    # would abort the whole backup under set -e though the archive is still usable.
+    # Tolerate exit 1 (warn); a real error (exit 2) still aborts (4.120).
+    rc=0
+    docker compose exec -T "$svc" tar czf - -C "$src" . > "$STAGE/$out" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        [ "$rc" -eq 1 ] || { echo "[backup] FEHLER: tar $svc:$src exit $rc." >&2; return "$rc"; }
+        echo "[backup] WARN: $svc:$src aenderte sich beim Lesen (tar exit 1) — Archiv ggf. inkonsistent." >&2
+    fi
 }
 
 dump_db() {
