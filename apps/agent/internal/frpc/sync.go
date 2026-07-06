@@ -16,6 +16,9 @@ import (
 	"adminhelper-agent/internal/enroll"
 )
 
+// restartService is a seam so tests can stub the frpc restart (which shells out to systemctl).
+var restartService = restartFrpc
+
 // Sync checks for config changes and updates frpc (port of do_sync).
 func Sync() error {
 	cfg, err := config.LoadFrpcConfig()
@@ -94,7 +97,7 @@ func Sync() error {
 	}
 
 	// Restart frpc
-	if err := restartFrpc(); err != nil {
+	if err := restartService(); err != nil {
 		return fmt.Errorf("frpc neustarten: %w", err)
 	}
 
