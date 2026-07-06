@@ -26,9 +26,12 @@ if [ "$MODE" = start ]; then
 
 elif [ "$MODE" = assert ]; then
   echo "[moncheckbox] query mailhog for the caught alert email"
-  COUNT="$(curl -s http://localhost:8025/api/v2/messages 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("total",0))' 2>/dev/null || echo 0)"
-  echo "MC_MAIL_COUNT=$COUNT"
-  if [ "${COUNT:-0}" -ge 1 ] 2>/dev/null; then echo "MC_ALERT_RECEIVED"; else echo "MC_NO_ALERT"; exit 1; fi
+  # Search for the SPECIFIC critical alert, not just "any mail": the alerter puts the
+  # check name in the subject ("[AdminHelper Monitor] CRITICAL: mc-ping-crit"), so a
+  # one-off flap of the unrelated mc-ping-ok check can't pass as this alert (6.134).
+  MATCH="$(curl -s 'http://localhost:8025/api/v2/search?kind=containing&query=mc-ping-crit' 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("total",0))' 2>/dev/null || echo 0)"
+  echo "MC_ALERT_MATCH=$MATCH"
+  if [ "${MATCH:-0}" -ge 1 ] 2>/dev/null; then echo "MC_ALERT_RECEIVED"; else echo "MC_NO_ALERT"; exit 1; fi
 
 else
   echo "unknown mode: $MODE (use start|assert)"; exit 2
