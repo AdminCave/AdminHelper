@@ -95,6 +95,15 @@ cp "$DEB" "${APT_ROOT}/pool/${REPO_COMPONENT}/"
 
 # Release file with the per-index checksums (SHA256 is the security-relevant one;
 # MD5Sum/SHA1 added for older clients). apt-ftparchive scans the dists subtree.
+#
+# Valid-Until bounds a freeze/replay attack: the repo plane is deliberately certless
+# (the docs allow Verify-Peer=false), so a MITM could otherwise serve an old but
+# correctly-signed Release indefinitely, pinning a host on a vulnerable agent version
+# with apt none the wiser. apt checks Valid-Until by default (it's part of the signed
+# Release). Trade-off: apt update fails once the window lapses with no newer release,
+# so keep it comfortably longer than the release cadence (180d). LC_ALL=C forces the
+# RFC 2822 English month/day names apt requires — a localized date ("Sa"/"Mo") won't
+# parse. (The rpm side has no equivalent: repomd.xml.asc carries no expiry.)
 (
     cd "$APT_ROOT"
     apt-ftparchive \
@@ -106,6 +115,11 @@ cp "$DEB" "${APT_ROOT}/pool/${REPO_COMPONENT}/"
         -o "APT::FTPArchive::Release::Architectures=amd64" \
         -o "APT::FTPArchive::Release::Version=${VERSION}" \
         release "dists/${REPO_SUITE}" > "dists/${REPO_SUITE}/Release"
+
+    # apt-ftparchive (apt 3.0.x) silently ignores -o ...::Release::Valid-Until, so inject
+    # it after Date — a top-level field, ahead of the checksum blocks — before signing.
+    sed -i "/^Date: /a Valid-Until: $(LC_ALL=C date -u -d '+180 days' '+%a, %d %b %Y %H:%M:%S UTC')" \
+        "dists/${REPO_SUITE}/Release"
 
     # Server SHALL provide InRelease (clearsigned); also emit the detached
     # Release.gpg for older clients (Debian repo format spec).
