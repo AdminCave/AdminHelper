@@ -52,8 +52,12 @@ def drain_outbox(db: Session, *, batch_size: int = 50) -> tuple[int, int]:
 
     sent = 0
     failed = 0
+    # Load all referenced notifications in one query instead of one SELECT per outbox entry — a full
+    # batch of 50 would otherwise be 50 round-trips per drain (every minute) (5.31).
+    notif_ids = {e.notification_id for e in due}
+    notifs = {n.id: n for n in db.query(Notification).filter(Notification.id.in_(notif_ids)).all()}
     for entry in due:
-        notif = db.query(Notification).filter(Notification.id == entry.notification_id).first()
+        notif = notifs.get(entry.notification_id)
         subject = notif.title if notif else "AdminHelper"
         body = (notif.body or notif.title) if notif else ""
 
