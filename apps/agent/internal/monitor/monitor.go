@@ -27,6 +27,18 @@ type InitParams struct {
 	TLS      config.TLSOpts
 }
 
+// preserveServices keeps the configured watch list when a re-provisioning (token rotation) passes an
+// empty services string, so the list isn't wiped. Extracted from Init for testability (6.15).
+func preserveServices(services string) string {
+	if services != "" {
+		return services
+	}
+	if existing, err := config.LoadMonitorConfig(); err == nil && len(existing.Services) > 0 {
+		return strings.Join(existing.Services, ",")
+	}
+	return services
+}
+
 // Init performs the initial setup of the monitor agent.
 func Init(p InitParams) error {
 	url := p.URL
@@ -86,13 +98,10 @@ func Init(p InitParams) error {
 		}
 	}
 
-	// Preserve an existing SERVICES line on re-provisioning: a token rotation
-	// passes empty services and must not wipe the configured watch list.
-	if services == "" {
-		if existing, err := config.LoadMonitorConfig(); err == nil && len(existing.Services) > 0 {
-			services = strings.Join(existing.Services, ",")
-		}
-	}
+	// Preserve an existing SERVICES line on re-provisioning: a token rotation passes empty services
+	// and must not wipe the configured watch list (the derivation is in preserveServices so it is
+	// unit-tested without the full HTTPS/TOFU/push path, 6.15).
+	services = preserveServices(services)
 
 	// Write the config
 	entries := []config.KeyValue{
