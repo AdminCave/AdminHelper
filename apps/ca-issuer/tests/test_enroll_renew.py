@@ -348,3 +348,15 @@ def test_renew_rejects_unparseable_cert_header(client):
         },
     )
     assert 400 <= r.status_code < 500, r.text
+
+
+def test_inmemory_expired_token_is_not_consumable():
+    # 6.102: the expiry branch (now >= expires_at) was only covered for the DB store. A negative TTL
+    # makes the entry already-expired without a sleep — consume must return None. Flipping the >=
+    # comparison (or dropping it) would keep expired tokens consumable and the suite would stay green.
+    import datetime
+
+    store = InMemoryTokenStore()
+    grant = EnrollmentGrant(subject_id="a", scope="access")
+    store.mint("tok", grant, ttl=datetime.timedelta(seconds=-1))
+    assert store.consume("tok") is None
