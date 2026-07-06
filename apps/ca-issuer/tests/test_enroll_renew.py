@@ -93,6 +93,28 @@ def test_enroll_rejects_unknown_token(client):
     assert r.status_code == 403
 
 
+def test_enroll_rejects_csr_with_invalid_signature(client):
+    # A parseable CSR with a broken signature must be a 403 (client error), not a 500 stacktrace:
+    # _load_csr signature-checks before sign_leaf, which would otherwise raise a bare ValueError
+    # (4.15). And because that check runs BEFORE the token is consumed, the one-time token survives
+    # so the client can retry with a corrected CSR (4.16). This endpoint contract was untested (6.26).
+    client.app.state.token_store.mint("t2", EnrollmentGrant(subject_id="a", scope="access"))
+
+    # Flip a signature byte so csr.is_signature_valid is False while the CSR still parses.
+    der = bytearray(
+        x509.load_pem_x509_csr(_csr_pem("a").encode()).public_bytes(serialization.Encoding.DER)
+    )
+    der[-1] ^= 0xFF
+    tampered = x509.load_der_x509_csr(bytes(der)).public_bytes(serialization.Encoding.PEM).decode()
+
+    r = client.post("/enroll", json={"token": "t2", "csr": tampered})
+    assert r.status_code == 403, r.text
+
+    # The token was not burned — a corrected CSR still enrolls with the same token.
+    ok = client.post("/enroll", json={"token": "t2", "csr": _csr_pem("a")})
+    assert ok.status_code == 200, ok.text
+
+
 def test_enroll_token_is_one_time(client):
     client.app.state.token_store.mint("once", EnrollmentGrant(subject_id="a", scope="access"))
     assert client.post("/enroll", json={"token": "once", "csr": _csr_pem("a")}).status_code == 200
