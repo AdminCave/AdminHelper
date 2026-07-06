@@ -31,21 +31,30 @@ def test_safe_http_post_rejects_private_target():
 
 
 def test_safe_http_get_disables_redirects_and_caps_body(monkeypatch):
-    class FakeResp:
-        status_code = 200
-        text = "x" * 2_000_000  # larger than the cap
-
-        def json(self):
-            raise ValueError
-
+    # _safe_http_get streams via httpx.stream and aborts once the body exceeds _MAX_BODY (4.70).
+    # The old test patched httpx.get and read .text — neither is on the code path any more, so its
+    # mock silently didn't apply and it made a real network call.
     captured = {}
 
-    def fake_get(url, **kwargs):
-        captured.update(kwargs)
-        return FakeResp()
+    class FakeStream:
+        status_code = 200
+        encoding = "utf-8"
 
-    monkeypatch.setattr(script_worker.httpx, "get", fake_get)
-    # a public IP literal passes the guard without a DNS lookup
-    result = _safe_http_get("http://93.184.216.34/")
+        def iter_bytes(self):
+            yield b"x" * 2_000_000  # larger than the cap -> must abort the stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_stream(method, url, **kwargs):
+        captured.update(kwargs)
+        return FakeStream()
+
+    monkeypatch.setattr(script_worker.httpx, "stream", fake_stream)
+    # a public IP literal passes the SSRF guard without a DNS lookup; the over-cap body aborts.
+    with pytest.raises(ValueError, match="zu gross"):
+        _safe_http_get("http://93.184.216.34/")
     assert captured["follow_redirects"] is False  # no redirect into an internal target
-    assert len(result["body"]) == 1_000_000  # reflected body is capped
