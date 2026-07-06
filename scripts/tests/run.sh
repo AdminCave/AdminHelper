@@ -30,9 +30,18 @@ LAYER="${1:-quick}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT" || exit 1
 
-# Ubuntu 24.04 python is externally managed (PEP 668); ephemeral boxes are fine
-# to install into directly. Harmless elsewhere.
-export PIP_BREAK_SYSTEM_PACKAGES=1
+# Python suites install into a venv (AH_VENV, default /tmp/ah-venv) so a dev's
+# default `run.sh quick` never mutates the host's system site-packages (PEP 668) —
+# no host-wide PIP_BREAK_SYSTEM_PACKAGES. ensure_venv (called at the top of
+# layer_unit) creates + activates it; the activation reaches the run_step `bash -c`
+# subshells via the exported PATH/VIRTUAL_ENV. Ephemeral boxes reuse it too (6.140).
+AH_VENV="${AH_VENV:-/tmp/ah-venv}"
+ensure_venv() {
+  [ -x "$AH_VENV/bin/python" ] || python3 -m venv "$AH_VENV" \
+    || { echo "  (venv creation failed; python suites may hit PEP 668)" >&2; return 1; }
+  # shellcheck disable=SC1091
+  . "$AH_VENV/bin/activate"
+}
 
 # Auto-debug: e2e specs (wdio afterTest) drop screenshots here on failure, and the
 # finalizer below runs the on-box collector when AH_CAPTURE=1. crabbox_iter.sh pulls
@@ -67,6 +76,14 @@ have_node()   { have node && have npm; }
 have_display(){ have xvfb-run && have WebKitWebDriver && have tauri-driver; }
 FRPC_SIDECAR="apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 
+# npm ci wipes node_modules every run, defeating warm-box node_modules survival
+# (crabbox_iter excludes it from the delete-sync). Install only when the lockfile is
+# newer or node_modules is missing — deterministic when it matters, fast otherwise (5.26).
+npm_ci_if_stale() {
+  if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then npm ci --no-audit --no-fund; fi
+}
+export -f npm_ci_if_stale  # the run_step `bash -c` subshells need it in their env
+
 require_real() {
   if [ "${AH_ALLOW_REAL:-0}" != "1" ]; then
     echo "REFUSED: layer '$LAYER' runs real docker/GUI suites. Set AH_ALLOW_REAL=1 to proceed"
@@ -93,6 +110,8 @@ layer_lint() {
 
 # ── unit ─────────────────────────────────────────────────────────────────────
 layer_unit() {
+  # All python suites share one venv so pip never mutates system site-packages (6.140).
+  ensure_venv || true
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if have python3; then
     run_step "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements.in pytest pytest-cov && python3 -m pytest -q'
@@ -125,19 +144,19 @@ layer_unit() {
 
   # Desktop UI (Svelte) — check + lint + vitest.
   if have_node; then
-    run_step "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm ci --no-audit --no-fund && npm run check && npm run lint && npm run test'
+    run_step "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm_ci_if_stale && npm run check && npm run lint && npm run test'
   else skip "desktop-ui vitest" "node/npm not installed"; fi
 
   # Desktop E2E specs — lint only. The suite itself needs a display + Docker (heavy
   # tier), but linting the ~600 lines of wdio JS is cheap and catches spec bugs
   # before a costly build (2.89).
   if have_node; then
-    run_step "desktop-e2e lint" -- bash -c 'cd apps/desktop/e2e && npm ci --no-audit --no-fund && npm run lint'
+    run_step "desktop-e2e lint" -- bash -c 'cd apps/desktop/e2e && npm_ci_if_stale && npm run lint'
   else skip "desktop-e2e lint" "node/npm not installed"; fi
 
   # Web frontend — check + lint + vitest unit.
   if have_node; then
-    run_step "web vitest" -- bash -c 'cd apps/web && npm ci --no-audit --no-fund && npm run check && npm run lint && npm run test:unit'
+    run_step "web vitest" -- bash -c 'cd apps/web && npm_ci_if_stale && npm run check && npm run lint && npm run test:unit'
   else skip "web vitest" "node/npm not installed"; fi
 }
 
@@ -160,8 +179,15 @@ layer_integration() {
 layer_e2e() {
   require_real
   if have_node; then
-    run_step "web Playwright E2E" -- bash -c 'cd apps/web && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium && npx playwright test'
+    run_step "web Playwright E2E" -- bash -c 'cd apps/web && npm_ci_if_stale && npx playwright install --with-deps chromium && npx playwright test'
   else skip "web Playwright" "node not installed"; fi
+
+  # Smoke first (cheapest, no backend): tauri-driver->WebKitWebDriver->window+mount.
+  # Needs only a display; `npm test` matches the *.e2e.js glob (smoke), not the
+  # *.live.js wrappers. Fastest fault localization when all live specs go red (6.141).
+  if have_node && have_display; then
+    run_step "desktop-e2e smoke" -- bash -c 'cd apps/desktop/e2e && npm_ci_if_stale && npm test'
+  else skip "desktop-e2e smoke" "node + display required"; fi
 
   if ! have_docker || ! have_display; then
     skip "desktop GUI E2E" "docker + xvfb + WebKitWebDriver + tauri-driver required"; return
