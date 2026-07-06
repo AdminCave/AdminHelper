@@ -46,6 +46,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # The SSE Redis fan-out test (test_stream_redis) skips itself when no Redis is
+      # reachable; without this service it never ran in PR CI, so a break in
+      # stream_hub.publish/start would pass green. 6380 matches the test's URL (6.84).
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       # conftest.py uses DATABASE_URL directly when set (CI mode) instead of
       # spinning up a testcontainers Postgres. postgresql:// is normalised to
