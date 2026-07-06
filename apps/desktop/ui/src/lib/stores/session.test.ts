@@ -70,8 +70,8 @@ describe('session store', () => {
       expect(get(ready)).toBe(true);
       expect(get(session)).toBeNull();
       expect(get(needsLogin)).toBe(true);
-      // The whole point: startup must not pull a session from the keyring.
-      expect('checkSession' in bridge).toBe(false);
+      // The whole point: startup must not pull a session from the keyring. The "no keyring restore"
+      // surface invariant is asserted against the REAL bridge module below (not this mock).
     });
 
     it('does not require login in local mode', async () => {
@@ -79,6 +79,14 @@ describe('session store', () => {
       await hydrate();
       expect(get(needsLogin)).toBe(false);
       expect(get(isAuthenticated)).toBe(true);
+    });
+
+    it('the real bridge module exports no keyring session-restore call', async () => {
+      // 6.44: `'checkSession' in bridge` against the mock above is tautological — it only checks the
+      // mock's shape. Assert against the ACTUAL module so adding a real keyring-restore export (a
+      // security-relevant regression to the "login required, no silent restore" invariant) fails.
+      const real = await vi.importActual<typeof import('$lib/bridge')>('$lib/bridge');
+      expect('checkSession' in real).toBe(false);
     });
   });
 
