@@ -36,7 +36,7 @@ if ! PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$A
         -tAc "SELECT 1 FROM pg_database WHERE datname='$MONITOR_DB'" 2>/dev/null | grep -q 1; then
     echo "[entrypoint] Lege Datenbank $MONITOR_DB an..."
     PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$ADMIN_DB" \
-        -c "CREATE DATABASE $MONITOR_DB"
+        -c "CREATE DATABASE \"$MONITOR_DB\""
 fi
 
 echo "[entrypoint] Postgres ready, fuehre Alembic-Migration aus..."
