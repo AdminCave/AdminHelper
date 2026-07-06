@@ -211,11 +211,15 @@ upsert_env DOMAIN "$DOMAIN"
 # (fixed), main -> :main (the dev floating tag). The compose default (:latest) is
 # only a fallback for a bare `docker compose up` without this .env. Upgrade later
 # via `./scripts/update.sh --ref vX.Y.Z`.
-IMAGE_TAG="${REF#v}"
-upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
-upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
-upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${IMAGE_TAG}"
-upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${IMAGE_TAG}"
+# In checkout/bundle mode without --ref, REF is empty; leave compose's :latest
+# fallback rather than writing an empty tag that breaks `docker compose pull` (2.3).
+if [ -n "$REF" ]; then
+    IMAGE_TAG="${REF#v}"
+    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
+    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
+    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${IMAGE_TAG}"
+    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${IMAGE_TAG}"
+fi
 
 chmod 600 .env 2>/dev/null || true
 
