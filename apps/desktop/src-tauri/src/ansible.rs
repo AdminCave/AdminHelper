@@ -162,7 +162,10 @@ pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), A
 
 #[cfg(test)]
 mod tests {
-    use super::{create_temp_file, generate_inventory, is_confined_ansible_path, AnsibleTarget};
+    use super::{
+        create_temp_file, generate_inventory, is_confined_ansible_path, write_playbook_temp,
+        AnsibleTarget,
+    };
     use std::fs;
 
     #[test]
@@ -187,6 +190,45 @@ mod tests {
             groups: vec!["web".to_string()],
         }];
         assert!(generate_inventory(&ok).is_ok());
+    }
+
+    #[test]
+    fn generate_inventory_builds_group_sections() {
+        let targets = vec![
+            AnsibleTarget {
+                hostname: "web01".to_string(),
+                groups: vec!["web".to_string()],
+            },
+            AnsibleTarget {
+                hostname: "db01".to_string(),
+                groups: vec!["db".to_string()],
+            },
+        ];
+        let path = generate_inventory(&targets).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert!(
+            content.contains("[all]\nweb01\ndb01\n"),
+            "all section: {content}"
+        );
+        assert!(
+            content.contains("[db]\ndb01\n"),
+            "db group (sorted first): {content}"
+        );
+        assert!(content.contains("[web]\nweb01\n"), "web group: {content}");
+    }
+
+    #[test]
+    fn write_playbook_temp_sanitizes_traversal() {
+        // Path separators and .. in the filename must be neutralized so the written playbook stays a
+        // confined adminhelper_ansible temp file (an unconfined path is RCE via ansible-playbook).
+        let path = write_playbook_temp("../../etc/passwd", "- hosts: all\n").unwrap();
+        assert!(
+            is_confined_ansible_path(&path),
+            "traversal filename escaped temp: {path}"
+        );
+        assert!(!path.contains(".."), "'..' not sanitized: {path}");
+        let _ = fs::remove_file(&path);
     }
 
     #[test]
