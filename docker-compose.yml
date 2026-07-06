@@ -78,13 +78,13 @@ services:
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       # IP-Zugangsbeschränkung (leer = kein Filter)
       # Beispiel: ALLOWED_IPS=192.168.1.0/24,10.0.0.5
-      - ALLOWED_IPS=
+      - ALLOWED_IPS=${ALLOWED_IPS:-}
       # Auf true setzen wenn hinter Reverse-Proxy (X-Forwarded-For auswerten)
       # Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
-      - TRUST_PROXY_HEADERS=false
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
       # Empfohlen statt TRUST_PROXY_HEADERS: IPs/CIDRs der Reverse-Proxies
       # Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
-      - TRUSTED_PROXIES=
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       # Redis fuer Rate-Limit ueber mehrere Worker hinweg
       - REDIS_URL=redis://redis:6379/0
       # Audit-Log-Aufbewahrung in Tagen (0 = unbegrenzt); taeglicher Prune-Job.
