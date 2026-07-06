@@ -173,3 +173,50 @@ def test_attach_auto_connection_links_stcp_and_passes_tags(db_session):
     assert conn.port == 6100
     assert conn.tags == '["prod"]'  # tunnel.tags passed through, not re-encoded
     assert conn.username == "opsuser"
+
+
+def _login(client, username="admin", password="adminpass"):
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_frpc_toml_endpoint_wires_allow_users(
+    test_client, db_session, admin_user, two_servers_with_tunnels
+):
+    # 6.73: gen_frpc_toml wires get_allow_users -> allowUsers in the TOML. The admin is auto-authorized,
+    # so the list is ["admin"], NOT the fail-closed ['ops-admin'] fallback — a broken hand-off there
+    # would silently strip legitimate users' tunnel access.
+    h = _login(test_client)
+    r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=h)
+    assert r.status_code == 200, r.text
+    assert "allowUsers" in r.text
+    assert '"admin"' in r.text, r.text
+    assert "ops-admin" not in r.text
+
+
+def test_bulk_zip_contains_per_server_configs(
+    test_client, db_session, admin_user, two_servers_with_tunnels
+):
+    # 6.73: the bulk-zip path writes frps.toml plus one clients/<server>/frpc.toml per server.
+    import io
+    import zipfile
+
+    h = _login(test_client)
+    r = test_client.get("/api/frp/generate/bulk-zip", headers=h)
+    assert r.status_code == 200, r.text
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "frps.toml" in names
+    assert "clients/serverA/frpc.toml" in names, names
+    assert "clients/serverB/frpc.toml" in names, names
+
+
+def test_visitor_toml_admin_for_unknown_user_returns_404(
+    test_client, db_session, admin_user, two_servers_with_tunnels
+):
+    # 6.73: an admin generating a visitor TOML for another user via ?user_id — an unknown user_id must
+    # 404 with the user error (not fall through to the tunnel check).
+    h = _login(test_client)
+    r = test_client.get("/api/frp/generate/visitor-toml?user_id=999999", headers=h)
+    assert r.status_code == 404, r.text
+    assert "Benutzer" in r.json()["detail"]
