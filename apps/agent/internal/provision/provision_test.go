@@ -26,6 +26,12 @@ func TestCallActivateCapturesServerCert(t *testing.T) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		// The X-Provision-Token header is the ONLY auth for the activate call; pin it here so a
+		// refactor that drops it fails this test instead of every production provisioning (6.23).
+		if r.Header.Get("X-Provision-Token") != "tok" {
+			http.Error(w, "missing provision token", http.StatusUnauthorized)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"serverName": "s", "apiKey": "k"})
 	}))
 	defer srv.Close()
@@ -115,5 +121,32 @@ func TestEnrollEndpoint(t *testing.T) {
 	}
 	if _, err := enrollEndpoint("/no-host", 1); err == nil {
 		t.Error("URL ohne Host haette Fehler ergeben muessen")
+	}
+}
+
+func TestCallActivateRejectsConsumedToken(t *testing.T) {
+	// A consumed/invalid provision token -> the server answers 403; callActivate must surface an
+	// error, not treat the empty body as a successful activation (6.23).
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "token bereits verwendet", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	if _, _, err := callActivate(srv.URL, "used", "srv-1", "", true, port); err == nil {
+		t.Fatal("403 (verbrauchter Token) haette einen Fehler ergeben muessen")
+	}
+}
+
+func TestCallActivateRejectsBadJSON(t *testing.T) {
+	// A 200 with an unparseable body must not be swallowed as a success (6.23).
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("{not json"))
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	if _, _, err := callActivate(srv.URL, "tok", "srv-1", "", true, port); err == nil {
+		t.Fatal("kaputtes JSON haette einen Fehler ergeben muessen")
 	}
 }
