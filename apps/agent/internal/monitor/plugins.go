@@ -52,25 +52,7 @@ func collectDocker() map[string]any {
 		return nil
 	}
 
-	var containers []map[string]string
-	var ids []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		var c map[string]string
-		if err := json.Unmarshal([]byte(line), &c); err != nil {
-			continue
-		}
-		containers = append(containers, map[string]string{
-			"id":     c["ID"],
-			"name":   c["Names"],
-			"image":  c["Image"],
-			"state":  c["State"],
-			"status": c["Status"],
-		})
-		ids = append(ids, c["ID"])
-	}
+	containers, ids := parseDockerPS(out)
 	if len(containers) == 0 {
 		return nil
 	}
@@ -97,8 +79,37 @@ func inspectRestartPolicies(ids []string) map[string]string {
 	// container vanished between ps and inspect) — parse what we got, the
 	// missing IDs simply keep no restart_policy.
 	out, _ := exec.CommandContext(ctx, "docker", args...).Output()
+	return parseRestartPolicies(out)
+}
 
-	policies := make(map[string]string, len(ids))
+// parseDockerPS parses `docker ps -a --format {{json .}}` (one JSON object per line) into container
+// maps and their IDs, skipping blank/unparseable lines — the parsing, testable without docker (6.16).
+func parseDockerPS(out []byte) (containers []map[string]string, ids []string) {
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		var c map[string]string
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue
+		}
+		containers = append(containers, map[string]string{
+			"id":     c["ID"],
+			"name":   c["Names"],
+			"image":  c["Image"],
+			"state":  c["State"],
+			"status": c["Status"],
+		})
+		ids = append(ids, c["ID"])
+	}
+	return containers, ids
+}
+
+// parseRestartPolicies parses the batched `docker inspect` output ("{{.Id}} {{.Name}}" per line),
+// keyed by the short (12-char) container ID as printed by `docker ps`; lines with a too-short ID are
+// skipped (6.16).
+func parseRestartPolicies(out []byte) map[string]string {
+	policies := map[string]string{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fullID, policy, _ := strings.Cut(line, " ")
 		if len(fullID) < 12 {
@@ -239,23 +250,7 @@ func collectZFS() map[string]any {
 		return nil
 	}
 
-	var pools []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		parts := strings.Split(line, "\t")
-		if len(parts) < 6 {
-			continue
-		}
-		capStr := strings.TrimRight(parts[4], "%")
-		capPct, _ := strconv.Atoi(capStr)
-		pools = append(pools, map[string]any{
-			"name":             parts[0],
-			"size":             parts[1],
-			"allocated":        parts[2],
-			"free":             parts[3],
-			"capacity_percent": capPct,
-			"health":           parts[5],
-		})
-	}
+	pools := parseZpoolList(out)
 	if len(pools) == 0 {
 		return nil
 	}
@@ -273,6 +268,30 @@ func collectZFS() map[string]any {
 		}
 	}
 	return result
+}
+
+// parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health` (tab-separated) into pool
+// maps, skipping lines with too few columns and stripping the % from the capacity column — the
+// positional parsing, testable without running zpool (6.16).
+func parseZpoolList(out []byte) []map[string]any {
+	var pools []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		parts := strings.Split(line, "\t")
+		if len(parts) < 6 {
+			continue
+		}
+		capStr := strings.TrimRight(parts[4], "%")
+		capPct, _ := strconv.Atoi(capStr)
+		pools = append(pools, map[string]any{
+			"name":             parts[0],
+			"size":             parts[1],
+			"allocated":        parts[2],
+			"free":             parts[3],
+			"capacity_percent": capPct,
+			"health":           parts[5],
+		})
+	}
+	return pools
 }
 
 // getFloat extracts a float64 value from a map.
