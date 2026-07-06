@@ -25,6 +25,38 @@ import threading
 logger = logging.getLogger("adminhelper.scheduler")
 
 
+def _wait_for_schema_head(*, retries: int = 60, interval: float = 5.0) -> None:
+    """Block until alembic_version is at head before scheduling any jobs.
+
+    The web service owns the migration. On an UPDATE the old schema already exists,
+    so this process (new code) starts fine — but if the migration failed or is still
+    running (a bad migration crash-loops the server container), APScheduler would
+    swallow the resulting job exceptions: outbox drain and cleanups run against a
+    stale schema, logging errors while the container looks healthy — no mails, no
+    cleanups, no restart, no alarm. Gate on head so a not-yet-migrated schema keeps
+    the scheduler waiting (then compose-restarting) instead of silently degraded (4.73).
+    """
+    import time
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    from app.core.database import engine
+
+    ini = Path(__file__).resolve().parent.parent / "alembic.ini"
+    head = ScriptDirectory.from_config(Config(str(ini))).get_current_head()
+    for _ in range(retries):
+        with engine.connect() as conn:
+            current = MigrationContext.configure(conn).get_current_revision()
+        if current == head:
+            return
+        logger.warning("Schema at %s, head is %s — waiting for the web service migration...", current, head)
+        time.sleep(interval)
+    raise SystemExit(f"Schema never reached head ({head}) — aborting scheduler start")
+
+
 def main() -> None:
     from app.core.logging_config import configure_logging
 
@@ -43,6 +75,7 @@ def main() -> None:
         scheduler,
     )
 
+    _wait_for_schema_head()  # don't schedule jobs against a stale/mid-migration schema (4.73)
     schedule_blacklist_cleanup()
     schedule_enrollment_token_cleanup()
     schedule_provision_token_cleanup()
