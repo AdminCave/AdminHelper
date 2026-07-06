@@ -47,3 +47,37 @@ def test_agent_report_forwards_via_shared_client(test_client, monkeypatch):
     )
     assert r.status_code == 200, r.text
     assert calls["n"] == 1  # forwarded through the shared client, not a per-request AsyncClient
+
+
+def _admin_headers(client) -> dict:
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_monitoring_proxy_rejects_traversal_and_unknown_prefix(test_client, db_session, admin_user):
+    # The catch-all proxy is the only SSRF boundary between the admin browser and the internal
+    # monitoring service (reached with X-Internal-Key). Its allowlist (".."-filter + prefix list)
+    # must reject path traversal and unknown prefixes with 400 (6.76).
+    h = _admin_headers(test_client)
+    # %2e%2e keeps the ".." literal — a plain ".." is collapsed by the client before it is sent.
+    assert test_client.get("/api/monitoring/%2e%2e/secret", headers=h).status_code == 400
+    assert test_client.get("/api/monitoring/admin/keys", headers=h).status_code == 400
+    assert test_client.get("/api/monitoring/etc/passwd", headers=h).status_code == 400
+
+
+def test_monitoring_proxy_allows_known_prefix(test_client, db_session, admin_user, monkeypatch):
+    # A known prefix (status) is forwarded, not over-blocked by the allowlist.
+    from app.modules.monitoring_proxy import router as mp
+
+    class _FakeResp:
+        content = b"[]"
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+    async def fake_request(**kw):
+        return _FakeResp()
+
+    monkeypatch.setattr(mp._client, "request", fake_request)
+    resp = test_client.get("/api/monitoring/status", headers=_admin_headers(test_client))
+    assert resp.status_code == 200  # allowed prefix -> forwarded, not 400
