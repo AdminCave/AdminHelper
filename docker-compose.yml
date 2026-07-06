@@ -111,7 +111,7 @@ services:
       start_period: 60s
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
@@ -151,7 +151,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/admincave/adminhelper/gateway:latest}
@@ -239,6 +239,13 @@ services:
       - "6379"
     logging: *default-logging
     restart: unless-stopped
+    healthcheck:
+      # A wedged-but-running process shows unhealthy (not just Up); dependants that
+      # wait on service_healthy then hold until redis actually answers (4.49).
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   frps:
     # Pinned to match the bundled frpc (FRP_VERSION in .github/workflows/*.yml).
@@ -296,6 +303,14 @@ services:
       - PGPASSWORD=${POSTGRES_PASSWORD}
     logging: *default-logging
     restart: unless-stopped
+    healthcheck:
+      # /health exists (app.main); a wedged-but-running monitoring shows unhealthy, not
+      # just Up (4.49). Same TCP-connect probe as the server (python is in the image).
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     depends_on:
       victoria:
         condition: service_started
