@@ -208,9 +208,5 @@ def test_mint_for_writes_audit(test_client, admin_user, normal_user, db_session)
         headers={"Authorization": f"Bearer {tok}"},
     )
     assert res.status_code == 200, res.text
-    n = (
-        db_session.query(AuditLog)
-        .filter(AuditLog.action == "enrollment.token.minted_for")
-        .count()
-    )
+    n = db_session.query(AuditLog).filter(AuditLog.action == "enrollment.token.minted_for").count()
     assert n == 1, f"expected exactly one enrollment audit row, got {n}"
