@@ -41,7 +41,7 @@
           </ul>
 
           <h2>Pagination (list endpoints)</h2>
-          <p>The list endpoints <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> plus the monitoring lists (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) accept optional <code>limit</code> (1&ndash;1000) and <code>offset</code> (&ge;&nbsp;0) query parameters and return the pre-pagination total in the <code>X-Total-Count</code> header (the monitoring proxy forwards that header). Without parameters the behaviour is unchanged: full list.</p>
+          <p>The list endpoints <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> plus the monitoring lists (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) accept optional <code>limit</code> (1&ndash;1000) and <code>offset</code> (&ge;&nbsp;0) query parameters and return the pre-pagination total in the <code>X-Total-Count</code> header (the monitoring proxy forwards that header). Without parameters the small lists (servers/connections/hooks) return the full list; <code>GET /api/audit</code>, however, caps at 200 entries without <code>limit</code> because the trail grows unbounded (more via <code>offset</code>).</p>
 
           <h2>Auth</h2>
           <div class="endpoint">

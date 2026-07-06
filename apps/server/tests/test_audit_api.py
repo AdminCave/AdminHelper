@@ -69,3 +69,21 @@ def test_nonadmin_cannot_list_audit(test_client, db_session, normal_user):
 def test_unauthenticated_cannot_list_audit(test_client, db_session):
     r = test_client.get("/api/audit")
     assert r.status_code == 401, r.text
+
+
+def test_audit_default_caps_at_200(test_client, db_session, admin_user):
+    # 5.28: without an explicit limit the audit list caps at 200. The trail grows for
+    # AUDIT_RETENTION_DAYS, so an unlimited fetch could otherwise materialize hundreds of thousands.
+    from app.modules.audit.models import AuditLog
+
+    for _ in range(205):
+        db_session.add(AuditLog(actor_type="system", action="test.event", status="success"))
+    db_session.commit()
+
+    token = _login(test_client, "admin", "adminpass")
+    headers = {"Authorization": f"Bearer {token}"}
+    r = test_client.get("/api/audit", headers=headers)
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 200
+    # X-Total-Count still reflects the full, pre-pagination count.
+    assert int(r.headers["X-Total-Count"]) >= 205

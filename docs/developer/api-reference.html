@@ -41,7 +41,7 @@
           </ul>
 
           <h2>Pagination (Listen-Endpunkte)</h2>
-          <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter bleibt das Verhalten unver&auml;ndert: volle Liste.</p>
+          <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter liefern die kleinen Listen (servers/connections/hooks) die volle Liste; <code>GET /api/audit</code> deckelt dagegen ohne <code>limit</code> auf 200 Eintr&auml;ge, da der Trail unbeschr&auml;nkt w&auml;chst (mehr via <code>offset</code>).</p>
 
           <h2>Auth</h2>
           <div class="endpoint">
