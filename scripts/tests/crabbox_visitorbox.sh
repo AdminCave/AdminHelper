@@ -14,15 +14,14 @@
 set -uo pipefail
 SRV_IP="${1:?}"; VSID="${2:?}"; VPTOK="${3:?}"; VB64="${4:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
+# shellcheck source=scripts/tests/crabbox_lib.sh
+. "$(dirname "$0")/crabbox_lib.sh"
 
 echo "[visitorbox] hydrate + build/install the agent (for the binary + frpc sidecar)"
 AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[visitorbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
-( cd apps/agent && make build-linux ) || { echo "[visitorbox] go build failed"; exit 1; }
-cp -f apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu ./frpc 2>/dev/null || true
-VERSION="0.0.0-test" bash apps/agent/build-deb.sh >/dev/null 2>&1 || true
-DEB="$(ls -1 ./adminhelper-agent_*_amd64.deb 2>/dev/null | head -1)"
-[ -n "$DEB" ] && { sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB"; } || { echo "[visitorbox] no .deb"; exit 1; }
+DEB="$(cbx_build_agent_deb visitorbox)" || exit 1
+sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[visitorbox] install failed"; exit 1; }
 
 echo "[visitorbox] provision -> CA-signed mTLS identity for the visitor's TLS to frps"
 sudo adminhelper-agent provision --url "https://$SRV_IP" --token "$VPTOK" --server-id "$VSID" --insecure \

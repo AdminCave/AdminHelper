@@ -11,17 +11,15 @@
 set -uo pipefail
 SRV_IP="${1:?}"; SID="${2:?}"; PTOK="${3:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
+# shellcheck source=scripts/tests/crabbox_lib.sh
+. "$(dirname "$0")/crabbox_lib.sh"
 
 echo "[tunnelbox] hydrate (agent profile: Go + packaging)"
 AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[tunnelbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
 
 echo "[tunnelbox] build + install the .deb"
-( cd apps/agent && make build-linux ) || { echo "[tunnelbox] go build failed"; exit 1; }
-cp -f apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu ./frpc 2>/dev/null || true
-VERSION="0.0.0-test" bash apps/agent/build-deb.sh || { echo "[tunnelbox] build-deb failed"; exit 1; }
-DEB="$(ls -1 ./adminhelper-agent_*_amd64.deb 2>/dev/null | head -1)"
-[ -n "$DEB" ] || { echo "[tunnelbox] no .deb produced"; exit 1; }
+DEB="$(cbx_build_agent_deb tunnelbox)" || exit 1
 sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[tunnelbox] install failed"; exit 1; }
 
 echo "[tunnelbox] ensure sshd is listening on :22 (the STCP target)"

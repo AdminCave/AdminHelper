@@ -68,3 +68,18 @@ cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
 # Extract the LAST 'KEY=value' marker from a captured box output (last in case a
 # line repeats). Shared by multibox + warm so a warmup-parsing fix lands once (2.39).
 cbx_marker() { printf '%s' "$2" | grep -oE "$1=[^ ]+" | tail -1 | cut -d= -f2; }
+
+# Build the Go agent + its .deb from the synced checkout (run from the repo root), echo
+# the .deb path. build-deb.sh needs a frpc at the repo root and MOVES the package to the
+# repo root (not dist/). Shared by agentbox/tunnelbox/visitorbox so a build-path change
+# lands once — and no box can swallow the build error (visitorbox did, surfacing only as
+# a cryptic 'no .deb') (2.118).
+cbx_build_agent_deb() {  # cbx_build_agent_deb <tag> -> echoes the .deb path, returns 1 on failure
+  local tag="${1:?}" deb
+  ( cd apps/agent && make build-linux ) || { echo "[$tag] go build failed" >&2; return 1; }
+  cp -f apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu ./frpc 2>/dev/null || true
+  VERSION="0.0.0-test" bash apps/agent/build-deb.sh || { echo "[$tag] build-deb failed" >&2; return 1; }
+  deb="$(ls -1 ./adminhelper-agent_*_amd64.deb 2>/dev/null | head -1)"
+  [ -n "$deb" ] || { echo "[$tag] no .deb produced (looked in repo root)" >&2; return 1; }
+  echo "$deb"
+}
