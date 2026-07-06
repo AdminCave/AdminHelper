@@ -217,6 +217,10 @@ async def lifespan(app: FastAPI):
     fire_event("server.startup", {})
     yield
     await stream_hub.stop()
+    # Close the process-wide proxy client's connection pool (5.30).
+    from app.modules.monitoring_proxy import router as monitoring_proxy_mod
+
+    await monitoring_proxy_mod._client.aclose()
 
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)

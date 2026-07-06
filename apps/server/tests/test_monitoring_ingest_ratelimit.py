@@ -20,3 +20,30 @@ def test_agent_ingest_is_rate_limited(test_client):
         headers={"X-API-Key": "irrelevant", "Content-Type": "application/json"},
     )
     assert r.status_code == 429, r.text
+
+
+def test_agent_report_forwards_via_shared_client(test_client, monkeypatch):
+    # 5.30: the proxy forwards through the process-wide _client, not a fresh AsyncClient per request.
+    from app.modules.monitoring_proxy import router as mp
+
+    reset_backend_for_tests()  # ensure this request isn't rate-limited
+
+    class _FakeResp:
+        content = b'{"ok": true}'
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+    calls = {"n": 0}
+
+    async def fake_post(url, **kw):
+        calls["n"] += 1
+        return _FakeResp()
+
+    monkeypatch.setattr(mp._client, "post", fake_post)
+    r = test_client.post(
+        "/api/monitoring/agent/srv-x/report",
+        content=b"{}",
+        headers={"X-API-Key": "k", "Content-Type": "application/json"},
+    )
+    assert r.status_code == 200, r.text
+    assert calls["n"] == 1  # forwarded through the shared client, not a per-request AsyncClient
