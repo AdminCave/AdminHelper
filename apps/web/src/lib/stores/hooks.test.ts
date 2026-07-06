@@ -66,3 +66,12 @@ describe('hooks store', () => {
     expect(get(hooks).map((x) => x.id)).toEqual(['b']);
   });
 });
+
+describe('hooks store rejection (6.90)', () => {
+  it('toggle leaves the list unchanged when the API rejects', async () => {
+    await seed([h('a', true)]);
+    vi.mocked(api.toggle).mockRejectedValue(new Error('500'));
+    await expect(hooks.toggle('a')).rejects.toThrow('500');
+    expect(get(hooks)).toEqual([h('a', true)]);
+  });
+});

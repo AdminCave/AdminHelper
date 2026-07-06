@@ -50,3 +50,13 @@ describe('frpConfig store', () => {
     expect(get(frpConfig)?.name).toBe('updated');
   });
 });
+
+describe('frpConfig store rejection (6.90)', () => {
+  it('save does not set a config when the API rejects', async () => {
+    vi.mocked(api.listConfigs).mockResolvedValue([]);
+    await frpConfig.refresh();
+    vi.mocked(api.createConfig).mockRejectedValue(new Error('422'));
+    await expect(frpConfig.save(INPUT, null)).rejects.toThrow('422');
+    expect(get(frpConfig)).toBeNull();
+  });
+});

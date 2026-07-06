@@ -61,3 +61,12 @@ describe('apikeys store', () => {
     expect(get(apikeys).map((k) => k.id)).toEqual([2]);
   });
 });
+
+describe('apikeys store rejection (6.90)', () => {
+  it('create leaves the list unchanged when the API rejects', async () => {
+    await seed([{ id: 1, name: 'a', permission: 'read' }]);
+    vi.mocked(api.create).mockRejectedValue(new Error('409'));
+    await expect(apikeys.create({ name: 'dup', permission: 'read_write' })).rejects.toThrow('409');
+    expect(get(apikeys)).toEqual([{ id: 1, name: 'a', permission: 'read' }]);
+  });
+});

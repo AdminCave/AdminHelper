@@ -56,6 +56,18 @@ describe('users store', () => {
     expect(get(users).map((x) => x.id)).toEqual([2]);
   });
 
+  it('create leaves the list unchanged and propagates the error when the API rejects', async () => {
+    // 6.90: on an API error the list must stay unchanged and the error must reach the caller — the
+    // modals depend on "modal stays open, error toast". If create() ever becomes optimistic, a failed
+    // create must not leave a ghost row behind.
+    await seed([u(1)]);
+    vi.mocked(api.create).mockRejectedValue(new Error('409 conflict'));
+    await expect(
+      users.create({ username: 'dup', password: 'x', is_admin: false, server_ids: [] }),
+    ).rejects.toThrow('409 conflict');
+    expect(get(users)).toEqual([u(1)]);
+  });
+
   it('a slow refresh does not resurrect a row removed after it started (4.145)', async () => {
     await seed([u(1), u(2)]);
 
