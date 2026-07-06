@@ -146,3 +146,15 @@ def test_remove_check_is_idempotent(monkeypatch):
     monkeypatch.setattr(sched.scheduler, "get_job", lambda *_a, **_k: object())
     monkeypatch.setattr(sched.scheduler, "remove_job", _raise_lookup)
     sched.remove_check("some-check-id")  # must not raise
+
+
+def test_job_defaults_pinned_as_audit_decision():
+    # coalesce/max_instances/misfire_grace_time are an explicit audit decision: a check never overlaps
+    # itself and a late run isn't silently dropped. APScheduler's misfire_grace_time default of 1s would
+    # reintroduce silent data gaps under load (6.130). A pending job only resolves these on
+    # scheduler.start() (which the container needs its /app volume for), so pin the job_defaults the
+    # scheduler was constructed with — dropping them is exactly the regression this guards against.
+    defaults = dict(sched.scheduler._job_defaults)
+    assert defaults["coalesce"] is True
+    assert defaults["max_instances"] == 1
+    assert defaults["misfire_grace_time"] == 30
