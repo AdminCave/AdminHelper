@@ -19,8 +19,8 @@ _E2E_COMPOSE=(-f "$E2E_REPO_ROOT/docker-compose.yml" -f "$E2E_REPO_ROOT/docker-c
 _E2E_API="$_E2E_LIB_DIR/e2e_api.py"
 
 # e2e_api <token> <op> [args...] — admin-API seed/query over the test gateway.
-# Ops: server <name> <hostname> | config <name> <addr> <port> |
-#      tunnel <server_id> <config_id> <name> <port> | count-tunnels <server_id>.
+# Ops: server | config | tunnel | count-tunnels | tunnel-conn | provision-token |
+#      connection | web-connection — see e2e_api.py for each op's args (2.122).
 e2e_api() { python3 "$_E2E_API" "$E2E_SERVER_URL" "$@"; }
 
 # Populated by e2e_init.
@@ -85,7 +85,11 @@ EOF
 # Returns non-zero (and dumps gateway logs) if the gateway never answers.
 e2e_up() {
     echo "[e2e] building + starting: $* (on :$E2E_HTTPS_PORT)..."
-    e2e_dc up --build -d "$@" >/dev/null 2>&1 || return 1
+    # Don't swallow the build output: on failure the caller needs to see WHY the
+    # build/up broke, not just a bare non-zero return (4.57).
+    local buildlog
+    buildlog="$(e2e_dc up --build -d "$@" 2>&1)" \
+        || { echo "[e2e] build/up failed:" >&2; printf '%s\n' "$buildlog" | tail -30 >&2; return 1; }
     local code
     for _ in $(seq 1 120); do
         code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "$E2E_SERVER_URL/" 2>/dev/null || echo 000)
