@@ -155,8 +155,12 @@ if [ ! -f docker-compose.yml ]; then
     mkdir -p "$TARGET_DIR/scripts"
     case "$REF" in
         v[0-9]*.[0-9]*.[0-9]*)
+            # A release tag REQUIRES the signed bundle. A compromised repo/account could
+            # delete the asset to force a fallback, so abort here rather than dropping to
+            # unsigned raw files — that keeps the signature gate un-bypassable (matches
+            # update.sh). raw_fetch stays only for explicit branch refs (dev) below (3.29/4.51).
             fetch_bundle_into \
-                || { echo "[install] Kein Runtime-Bundle fuer ${REF} — Einzeldatei-Fallback (raw)." >&2; raw_fetch; } ;;
+                || { echo "FEHLER: Kein verifiziertes Runtime-Bundle fuer ${REF} — Abbruch (fuer einen Dev-Install --ref <branch> nutzen)." >&2; exit 1; } ;;
         *) raw_fetch ;;
     esac
     chmod +x "$TARGET_DIR"/scripts/*.sh
