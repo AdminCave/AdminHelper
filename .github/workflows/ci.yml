@@ -398,7 +398,7 @@ jobs:
   # test bootstrap (scripts/tests/crabbox_bootstrap.sh) stages the same frpc sidecar
   # and is the 4th pin.
   frp-consistency:
-    name: FRP pins in lockstep
+    name: Pinned versions + signing key in lockstep
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -419,6 +419,13 @@ jobs:
             echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, compose=$compose, bootstrap=$boot)"; exit 1; }
           test "$sha_ci" = "$sha_rel" && test "$sha_ci" = "$sha_boot" || {
             echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/crabbox_bootstrap.sh"; exit 1; }
+      - name: MINISIGN_PUBKEY in lockstep (install.sh vs update.sh)
+        run: |
+          ins=$(grep -m1 '^MINISIGN_PUBKEY=' scripts/install.sh | cut -d'"' -f2)
+          upd=$(grep -m1 '^MINISIGN_PUBKEY=' scripts/update.sh | cut -d'"' -f2)
+          echo "install.sh=$ins update.sh=$upd"
+          test -n "$ins" && test "$ins" = "$upd" || {
+            echo "::error::MINISIGN_PUBKEY drift (install=$ins, update=$upd) — a key rotation must touch both, else updates verify against the old key and break on every existing install"; exit 1; }
 
   # Lint the host ops scripts and run the hermetic update.sh sandbox test (fake
   # release over file://, stubbed docker — no real stack). --severity=warning so
