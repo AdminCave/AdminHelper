@@ -71,7 +71,9 @@ def test_migration_chain_matches_models(migrated_engine):
     from app.models import Base
 
     with migrated_engine.connect() as conn:
-        ctx = MigrationContext.configure(conn)
+        # Match env.py's autogenerate context (compare_server_default=True) so a model that loses or
+        # changes a server_default no longer passes silently (6.151).
+        ctx = MigrationContext.configure(conn, opts={"compare_server_default": True})
         diff = compare_metadata(ctx, Base.metadata)
     assert diff == [], (
         "Die Alembic-Kette erzeugt ein anderes Schema als die Modelle:\n"
