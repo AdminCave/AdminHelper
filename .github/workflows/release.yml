@@ -96,10 +96,10 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          GOOS=linux GOARCH=amd64 go build \
+          GOOS=linux GOARCH=amd64 go build -trimpath \
             -ldflags "-s -w -X main.version=${VERSION}" \
             -o bin/adminhelper-agent ./cmd/adminhelper-agent
-          GOOS=windows GOARCH=amd64 go build \
+          GOOS=windows GOARCH=amd64 go build -trimpath \
             -ldflags "-s -w -X main.version=${VERSION}" \
             -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
       - name: Download frpc (bundled into deb/rpm)
