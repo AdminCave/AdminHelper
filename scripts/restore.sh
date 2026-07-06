@@ -79,14 +79,24 @@ restore_volume victoria-data   victoria-data.tar.gz
 echo "[restore] Starte postgres für den DB-Restore..."
 docker compose up -d postgres
 # Wait for postgres to accept connections.
+ready=0
 for _ in $(seq 1 60); do
-    if docker compose exec -T postgres pg_isready -U adminhelper >/dev/null 2>&1; then break; fi
+    if docker compose exec -T postgres pg_isready -U adminhelper >/dev/null 2>&1; then ready=1; break; fi
     sleep 1
 done
+# The loop just falling through on timeout would let restore_db run against a
+# not-ready postgres and fail confusingly mid-restore — abort clearly (4.54).
+[ "$ready" = 1 ] || { echo "[restore] FEHLER: postgres nach 60s nicht bereit — Abbruch." >&2; exit 1; }
 
 restore_db() {
     db="$1"
     [ -f "$STAGE/$db.dump" ] || { echo "[restore] $db.dump nicht im Backup — überspringe"; return; }
+    # On a fresh host postgres only inits the default DB (POSTGRES_DB=adminhelper);
+    # adminhelper_monitor is normally created by the monitoring entrypoint, which is
+    # not running during restore. Ensure the target DB exists first, else pg_restore
+    # connects to a missing DB and set -e aborts fresh-host DR mid-way (2.4).
+    docker compose exec -T postgres sh -c \
+        "export PGPASSWORD=\$POSTGRES_PASSWORD; psql -h 127.0.0.1 -U adminhelper -tc \"SELECT 1 FROM pg_database WHERE datname='$db'\" | grep -q 1 || createdb -h 127.0.0.1 -U adminhelper \"$db\""
     echo "[restore] pg_restore $db"
     docker compose exec -T postgres sh -c \
         "PGPASSWORD=\$POSTGRES_PASSWORD pg_restore -h 127.0.0.1 -U adminhelper --clean --if-exists --no-owner -d \"$db\"" \
