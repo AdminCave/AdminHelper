@@ -7,3 +7,6 @@ contact_links:
   - name: Dokumentation / Documentation
     url: https://github.com/AdminCave/AdminHelper/tree/main/docs
     about: Admin- und Entwickler-Doku (Betrieb, Troubleshooting, Architektur).
+  - name: Sicherheitslücke melden / Report a vulnerability
+    url: https://github.com/AdminCave/AdminHelper/security/advisories/new
+    about: Sicherheitsprobleme bitte PRIVAT melden, kein öffentliches Issue (siehe SECURITY.md).
