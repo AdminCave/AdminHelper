@@ -23,6 +23,13 @@ _E2E_API="$_E2E_LIB_DIR/e2e_api.py"
 #      connection | web-connection — see e2e_api.py for each op's args (2.122).
 e2e_api() { python3 "$_E2E_API" "$E2E_SERVER_URL" "$@"; }
 
+# Headless WebKit: disable GPU paths xvfb can't provide (else the webview may fail to
+# render). crabbox_desktopbox set these inline; exporting them here — every desktop_e2e_*
+# suite sources this lib, and export reaches the dbus-run-session subshells — gives them
+# all the same env instead of only some; the divergence was already real. The full
+# dbus/keyring/xvfb wrapper dedup is a separate, riskier refactor (2.40).
+export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
+
 # Populated by e2e_init.
 E2E_WORK=""
 E2E_PROJECT=""
