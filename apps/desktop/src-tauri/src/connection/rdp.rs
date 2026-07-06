@@ -10,7 +10,9 @@ use crate::models::{RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
 #[cfg(any(unix, target_os = "windows"))]
 use super::rdp_logic::parse_custom_size;
 #[cfg(unix)]
-use super::rdp_logic::{buffer_has_connected, fit_window_size, hdpi_scale, parse_freerdp_error};
+use super::rdp_logic::{
+    auth_only_unsupported, buffer_has_connected, fit_window_size, hdpi_scale, parse_freerdp_error,
+};
 
 #[cfg(unix)]
 fn emit_rdp_error(app: &tauri::AppHandle, correlation_id: &str, message: impl Into<String>) {
@@ -582,11 +584,7 @@ pub fn check_rdp_auth(
 
     // An xfreerdp too old for +auth-only rejects the probe flag; skip the check and
     // let the real launch surface any auth failure.
-    let auth_only_unsupported = ["unknown option", "unrecognized option", "invalid option"]
-        .iter()
-        .any(|m| output_lower.contains(m))
-        && output_lower.contains("auth-only");
-    if auth_only_unsupported {
+    if auth_only_unsupported(&output_lower) {
         return Ok(());
     }
 
