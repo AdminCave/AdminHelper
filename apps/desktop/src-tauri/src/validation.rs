@@ -471,4 +471,31 @@ mod tests {
         )
         .is_err());
     }
+
+    #[test]
+    fn sanitize_window_title_keeps_safe_chars_drops_the_rest_and_caps_at_64() {
+        // Defense-in-depth against X11/terminal escapes fed to xfreerdp /title: only the safe charset
+        // survives, and the title is capped at 64 chars (6.112).
+        assert_eq!(
+            sanitize_window_title("srv-01 (ssh).lab:22"),
+            "srv-01 (ssh).lab:22"
+        );
+        // Disallowed chars — ';', ESC, brackets — are stripped.
+        assert_eq!(sanitize_window_title("a;b\u{1b}[0m"), "ab0m");
+        // Capped at 64 chars.
+        assert_eq!(sanitize_window_title(&"x".repeat(100)).chars().count(), 64);
+        // Trimmed.
+        assert_eq!(sanitize_window_title("  hi  "), "hi");
+    }
+
+    #[test]
+    fn sanitize_synced_connections_drops_invalid_entries() {
+        // The only filter between server data and the local store: an entry that fails
+        // validate_connection_input (here a path-traversal key_path) is dropped, valid ones kept (6.112).
+        let valid = ssh_connection_with_key_path("/home/u/.ssh/id_rsa");
+        let invalid = ssh_connection_with_key_path("../../../etc/passwd");
+        let out = sanitize_synced_connections(vec![valid.clone(), invalid]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key_path, valid.key_path);
+    }
 }
