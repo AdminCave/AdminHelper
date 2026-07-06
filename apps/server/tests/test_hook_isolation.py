@@ -151,3 +151,30 @@ def test_hook_semaphore_non_blocking_returns_busy_immediately():
     finally:
         for _ in range(sr._MAX_CONCURRENT_HOOKS):
             sr._hook_semaphore.release()
+
+
+def test_semaphore_busy_returns_server_busy(monkeypatch):
+    # 6.82(c): when all concurrent-hook slots are taken, run_hook_script returns the "Server
+    # ausgelastet" response instead of spawning yet another worker. Patch the semaphore (rather than
+    # exhaust the real one) so no slot leaks into other tests.
+    from app.modules.hooks import script_runner
+
+    class _FullSemaphore:
+        def acquire(self, blocking=False):
+            return False
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(script_runner, "_hook_semaphore", _FullSemaphore())
+    res = run_hook_script("log('x')", "webhook", {})
+    assert res["success"] is False
+    assert "ausgelastet" in res["error"]
+
+
+def test_worker_nonzero_exit_maps_to_error(monkeypatch):
+    # 6.82(d): if the worker process dies with a non-zero code and no JSON on stdout, the runner
+    # reports an error instead of crashing on the missing/undecodable output.
+    res = run_hook_script("import os\nos._exit(3)", "webhook", {})
+    assert res["success"] is False
+    assert res["error"]
