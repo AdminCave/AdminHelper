@@ -56,6 +56,8 @@ import {
   activateNotifications,
   deactivateNotifications,
   setNewNotificationHandler,
+  togglePanel,
+  panelOpen,
 } from './notifications';
 
 const item = (over: Partial<NotificationItem>): NotificationItem => ({
@@ -185,5 +187,23 @@ describe('notifications store', () => {
 
     expect(staleUn).toHaveBeenCalled(); // the stale listener was unregistered
     expect(h.stopStream).toHaveBeenCalled(); // the restarted SSE stream was stopped
+  });
+
+  it('togglePanel marks the feed read on open, but not on close', async () => {
+    // Opening the bell panel marks everything read (the badge-clearing the user sees on each click);
+    // closing must NOT, else the badge would clear on close or never (6.118). panelOpen isn't reset in
+    // beforeEach, so normalize to closed first.
+    if (get(panelOpen)) togglePanel();
+    h.markRead.mockClear();
+    expect(get(panelOpen)).toBe(false);
+
+    togglePanel(); // open
+    expect(get(panelOpen)).toBe(true);
+    await vi.waitFor(() => expect(h.markRead).toHaveBeenCalledTimes(1));
+
+    h.markRead.mockClear();
+    togglePanel(); // close
+    expect(get(panelOpen)).toBe(false);
+    expect(h.markRead).not.toHaveBeenCalled();
   });
 });
