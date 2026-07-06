@@ -154,10 +154,17 @@ fi
 # trigger them. The critical transition dispatches email to the mailhog sink
 # (smtp_host in channel_config; SMTP is not SSRF-guarded, so a private IP is fine).
 if [ "$DO_MONCHECK" = 1 ]; then
+  # Guard: a failed moncheck-box lease leaves SMTP_IP empty; without this we'd seed a
+  # ping check with an empty target + an alert with an empty smtp_host and fail the S5
+  # assertions far downstream with a misleading verdict (2.120).
+  [ -n "$SMTP_IP" ] || { echo "[serverbox] moncheck: SMTP_IP leer (Moncheck-Box-Lease fehlgeschlagen?) — Abbruch." >&2; exit 1; }
   echo "[serverbox] moncheck mode: seed ping checks + email alert (smtp -> $SMTP_IP:1025)"
-  "${DC[@]}" exec -T monitoring python - <<PY
+  # Quoted heredoc + -e: pass SMTP_IP through the container env, no shell text in the
+  # Python literals (matches the seed block's <<'PY' + export pattern) (2.120).
+  "${DC[@]}" exec -T -e SMTP_IP="$SMTP_IP" monitoring python - <<'PY'
 import os, json, urllib.request
 key = os.environ.get("MONITOR_API_KEY", "")
+smtp_ip = os.environ["SMTP_IP"]
 base = "http://localhost:8080"
 def call(method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
@@ -166,9 +173,9 @@ def call(method, path, body=None):
     return json.load(urllib.request.urlopen(req, timeout=25))
 def st(r):
     return r.get("status") or (r.get("state") or {}).get("status") or "?"
-ok_id = call("POST", "/checks", {"name": "mc-ping-ok", "check_type": "ping", "config": {"target": "$SMTP_IP"}, "consecutive_fails": 1, "severity": "critical"})["id"]
+ok_id = call("POST", "/checks", {"name": "mc-ping-ok", "check_type": "ping", "config": {"target": smtp_ip}, "consecutive_fails": 1, "severity": "critical"})["id"]
 crit_id = call("POST", "/checks", {"name": "mc-ping-crit", "check_type": "ping", "config": {"target": "192.0.2.1"}, "consecutive_fails": 1, "severity": "critical"})["id"]
-call("POST", "/alerts", {"name": "mc-email", "channel": "email", "match_severity": "critical", "channel_config": {"recipients": ["ops@example.com"], "smtp_host": "$SMTP_IP", "smtp_port": 1025}})
+call("POST", "/alerts", {"name": "mc-email", "channel": "email", "match_severity": "critical", "channel_config": {"recipients": ["ops@example.com"], "smtp_host": smtp_ip, "smtp_port": 1025}})
 ok_r = call("POST", f"/checks/{ok_id}/run")
 crit_r = call("POST", f"/checks/{crit_id}/run")
 print("MC_OK_STATUS=" + st(ok_r))
