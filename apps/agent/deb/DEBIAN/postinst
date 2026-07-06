@@ -2,7 +2,9 @@
 set -e
 systemctl daemon-reload
 mkdir -p /etc/frp/pki
-chmod 700 /etc/frp/pki
+# 700 on /etc/frp too, not just pki — frpc.toml holds the FRP auth token, and the rpm
+# already ships %attr(700) on the dir. Without this the deb left /etc/frp world-readable (3.41).
+chmod 700 /etc/frp /etc/frp/pki
 mkdir -p /etc/adminhelper
 chmod 700 /etc/adminhelper
 
