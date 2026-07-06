@@ -723,3 +723,84 @@ mod tests {
         let _ = child.wait();
     }
 }
+
+// Security invariants of the xfreerdp arg builder: /cert:ignore only with trust_cert, the window
+// title is sanitized, and the password never reaches argv (fed via stdin instead) (6.31).
+#[cfg(all(test, unix))]
+mod args_tests {
+    use super::*;
+    use crate::models::{ConnectionKind, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
+
+    fn conn(name: &str, trust_cert: bool) -> Connection {
+        Connection {
+            id: "id".into(),
+            name: name.into(),
+            kind: ConnectionKind::Rdp,
+            host: Some("h".into()),
+            port: Some(3389),
+            username: Some("user".into()),
+            domain: Some("dom".into()),
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: vec![],
+            trust_cert,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    fn opts() -> RdpOptions<'static> {
+        RdpOptions {
+            scaling_mode: RdpScalingMode::Normal,
+            window_mode: RdpWindowMode::Fit,
+            custom_size: None,
+            performance_profile: RdpPerformanceProfile::Auto,
+        }
+    }
+
+    #[test]
+    fn cert_ignore_only_with_trust_cert() {
+        let without = build_rdp_args(&conn("n", false), "h", 3389, None, opts(), None).unwrap();
+        assert!(
+            !without.iter().any(|a| a == "/cert:ignore"),
+            "no trust_cert must not disable the TLS check: {without:?}"
+        );
+        let with = build_rdp_args(&conn("n", true), "h", 3389, None, opts(), None).unwrap();
+        assert!(
+            with.iter().any(|a| a == "/cert:ignore"),
+            "trust_cert -> /cert:ignore"
+        );
+    }
+
+    #[test]
+    fn window_title_is_sanitized() {
+        let args = build_rdp_args(
+            &conn("evil; rm -rf $HOME", false),
+            "h",
+            3389,
+            None,
+            opts(),
+            None,
+        )
+        .unwrap();
+        let title = args
+            .iter()
+            .find(|a| a.starts_with("/title:"))
+            .expect("has a /title: arg");
+        assert!(
+            !title.contains(';') && !title.contains('$'),
+            "title metacharacters not sanitized: {title}"
+        );
+    }
+
+    #[test]
+    fn password_never_in_argv() {
+        // build_rdp_args takes no password; the secret is fed via stdin (feed_password_stdin).
+        let args = build_rdp_args(&conn("n", false), "h", 3389, None, opts(), None).unwrap();
+        assert!(
+            !args.iter().any(|a| a.starts_with("/p:")),
+            "password must never land in argv: {args:?}"
+        );
+    }
+}
