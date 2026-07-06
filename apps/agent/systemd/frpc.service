@@ -10,5 +10,22 @@ Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
 
+# Sandbox: the frpc config is server-driven, so contain a hostile config. frpc only
+# reads /etc/frp, logs to journald, and speaks IP to the FRP server — it needs no new
+# privileges, no home, no writable system, no kernel/namespace access (3.13). Conservative
+# set; SystemCallFilter/MemoryDenyWriteExecute are left out (they need a real frpc run to vet).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
 [Install]
 WantedBy=multi-user.target
