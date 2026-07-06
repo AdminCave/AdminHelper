@@ -60,7 +60,7 @@ echo "[serverbox] build + up (images from checkout, production ports)"
   || { echo "[serverbox] compose up failed"; "${DC[@]}" ps; exit 1; }
 
 echo "[serverbox] wait for the gateway data plane on :443"
-up=0; for _ in $(seq 1 60); do curl -sk "https://localhost/" >/dev/null 2>&1 && { up=1; break; }; sleep 3; done
+up=0; for _ in $(seq 1 60); do curl -sk --max-time 5 "https://localhost/" >/dev/null 2>&1 && { up=1; break; }; sleep 3; done
 [ "$up" = 1 ] || { echo "[serverbox] gateway never came up"; "${DC[@]}" logs --tail 30 gateway ca-issuer server; exit 1; }
 
 # Enforce mode (D2): the data plane (:443) now requires a client cert, so the seed

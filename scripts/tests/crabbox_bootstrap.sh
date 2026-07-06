@@ -17,6 +17,9 @@ set -euo pipefail
 FRP_VERSION="${AH_FRP_VERSION:-0.69.1}"
 FRP_SHA256_LINUX_AMD64="7be257b72dbbc60bcb3e0e25a5afd1dfac7b63f897084864d3c956dd3d5674e1"
 GO_VERSION="${AH_GO_VERSION:-1.25.0}"
+# Pin the Go tarball checksum like the frpc one (consistency) — the official sha256
+# from go.dev's release JSON; override alongside a non-default GO_VERSION (4.123).
+GO_SHA256_LINUX_AMD64="${AH_GO_SHA256:-2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613}"
 NODE_MAJOR="${AH_NODE_MAJOR:-22}"
 TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -62,7 +65,8 @@ $SUDO usermod -aG docker "${SUDO_USER:-$USER}" || true   # effective on next log
 
 log "Go ${GO_VERSION}"
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -q "$GO_VERSION"; then
-  curl -fsSL -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  curl -fsSL --retry 3 --retry-connrefused -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  echo "${GO_SHA256_LINUX_AMD64}  /tmp/go.tgz" | sha256sum -c -
   $SUDO rm -rf /usr/local/go && $SUDO tar -C /usr/local -xzf /tmp/go.tgz
   echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' | $SUDO tee /etc/profile.d/go.sh >/dev/null
 fi
@@ -70,7 +74,7 @@ export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
 
 log "Node ${NODE_MAJOR}.x"
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | grep -oE '[0-9]+' | head -1)" != "$NODE_MAJOR" ]; then
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | $SUDO -E bash -
+  curl -fsSL --retry 3 --retry-connrefused "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | $SUDO -E bash -
   $SUDO apt-get install -y nodejs
 fi
 
@@ -91,7 +95,7 @@ else
 fi
 
 log "frpc sidecar v${FRP_VERSION} (externalBin must resolve for the Tauri build)"
-curl -fsSL -o /tmp/frpc.tgz \
+curl -fsSL --retry 3 --retry-connrefused -o /tmp/frpc.tgz \
   "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
 echo "${FRP_SHA256_LINUX_AMD64}  /tmp/frpc.tgz" | sha256sum -c -
 tar -C /tmp -xzf /tmp/frpc.tgz
