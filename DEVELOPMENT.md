@@ -463,7 +463,7 @@ curl -sk https://localhost/api/frp/tunnels \
 ```text
 .
 ├─ apps/                     # alle lauffähigen Einheiten
-│  ├─ server/                # FastAPI-Backend (modularer Monolith, 8 Module)
+│  ├─ server/                # FastAPI-Backend (modularer Monolith, 12 Module)
 │  │  ├─ app/
 │  │  │  ├─ main.py
 │  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
@@ -478,6 +478,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
 │  │  └─ Dockerfile
+│  ├─ ca-issuer/             # Python/FastAPI PKI-Enrollment-Plane (eigenes mTLS, eigene pytest-Suite)
+│  ├─ gateway/               # nginx Reverse-Proxy: TLS-/Header-/mTLS-Terminierung, Ratelimit
 │  ├─ agent/                 # Unified Go Agent (Linux + Windows)
 │  │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
 │  │  ├─ internal/               # config, frpc, monitor, service
@@ -486,16 +488,16 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
 │  │  ├─ src/
-│  │  │  ├─ lib/api/             # 11 Module (client + 9 Domain-Wrapper + types)
-│  │  │  ├─ lib/stores/          # 10 Stores
+│  │  │  ├─ lib/api/             # 9 Module (client + 7 Domain-Wrapper + types)
+│  │  │  ├─ lib/stores/          # 6 Stores
 │  │  │  ├─ lib/i18n/            # DE/EN-Dictionaries
-│  │  │  ├─ pages/               # 8 Produktiv-Pages + Login + Placeholder
-│  │  │  └─ modals/              # 19 Modal-Komponenten
-│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+│  │  │  ├─ pages/               # 5 Produktiv-Pages + Login + Placeholder
+│  │  │  └─ modals/              # 9 Modal-Komponenten
+│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts, crud.spec.ts)
 │  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
 │     ├─ src-tauri/          # Rust/Tauri-Backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
+│     │  │  ├─ main.rs            # invoke_handler mit 32 Tauri-Commands
 │     │  │  ├─ commands.rs        # IPC-Schnittstelle
 │     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
@@ -508,12 +510,12 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  └─ capabilities/        # Tauri v2 Security Permissions
 │     └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
 │        ├─ src/
-│        │  ├─ lib/bridge/       # 22 typisierte invoke()-Wrapper
+│        │  ├─ lib/bridge/       # 31 typisierte invoke()-Wrapper
 │        │  ├─ lib/stores/       # 12 Stores
 │        │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
-│        │  ├─ components/       # ~30 Components
-│        │  └─ pages/            # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
-│        └─ vitest.setup.ts      # ~41 Vitest-Unit-Tests
+│        │  ├─ components/       # ~46 Components
+│        │  └─ pages/            # 5 Pages (Dashboard, Connections, Infrastructure, Ansible, Monitoring)
+│        └─ vitest.setup.ts      # ~250 Vitest-Unit-Tests
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ scripts/                  # Ops-/DB-Skripte (+ tests/: integration_stack_test, desktop_e2e_live, lib_e2e_stack)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)
