@@ -73,6 +73,35 @@ class TestPublishHook:
         ingest_event(db_session, _event())
         assert calls["n"] == 0
 
+    def test_publish_reuses_the_redis_client(self, monkeypatch):
+        # 5.32: the fan-out publish reuses one process-wide client instead of a fresh from_url + TCP
+        # connect per notification.
+        import redis
+
+        import app.core.config as cfg
+
+        calls = {"from_url": 0}
+        published = []
+
+        class _FakeClient:
+            def publish(self, channel, payload):
+                published.append(payload)
+
+        def _fake_from_url(url, **kw):
+            calls["from_url"] += 1
+            return _FakeClient()
+
+        monkeypatch.setattr(cfg, "REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setattr(redis.Redis, "from_url", staticmethod(_fake_from_url))
+        monkeypatch.setattr(stream_hub, "_pub_client", None)
+
+        stream_hub.publish([1], 10)
+        stream_hub.publish([2], 11)
+        stream_hub.publish([3], 12)
+
+        assert calls["from_url"] == 1, "from_url should run once, not per publish"
+        assert len(published) == 3
+
 
 class TestStreamAuth:
     def test_stream_requires_auth(self, test_client):
