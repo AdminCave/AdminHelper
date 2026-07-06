@@ -5,7 +5,9 @@
 """DB-backed token store against sqlite: atomic one-time consume + revocation."""
 
 import datetime
+import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from sqlalchemy import create_engine
@@ -77,3 +79,42 @@ def test_is_active_until_revoked(engine):
     assert store.is_active("agent-09", "tunnel") is False
     # a different identity stays active
     assert store.is_active("agent-09", "access") is True
+
+
+def test_make_engine_forces_psycopg_driver():
+    # make_engine rewrites legacy driver URLs to psycopg3 (the bundled one), db.py:64-70 (6.24).
+    for url in ("postgresql://u:p@h/db", "postgresql+psycopg2://u:p@h/db"):
+        eng = db.make_engine(url)
+        assert eng.url.drivername == "postgresql+psycopg", url
+        eng.dispose()
+    # An already-psycopg URL is left as-is.
+    eng = db.make_engine("postgresql+psycopg://u:p@h/db")
+    assert eng.url.drivername == "postgresql+psycopg"
+    eng.dispose()
+
+
+@pytest.fixture()
+def pg_engine():
+    url = os.environ.get("AH_TEST_DB")
+    if not url or "postgres" not in url:
+        pytest.skip("kein Postgres (AH_TEST_DB) — der TOCTOU-Test braucht echte Nebenläufigkeit")
+    eng = db.make_engine(url)
+    db.metadata.create_all(
+        eng
+    )  # enrollment_tokens is ca-issuer-owned; absent in the shared test DB
+    yield eng
+    db.metadata.drop_all(eng)
+    eng.dispose()
+
+
+def test_concurrent_consume_only_one_wins(pg_engine):
+    # The TOCTOU claim (db.py:86-87): N concurrent consume() of the SAME token, exactly one wins —
+    # Postgres UPDATE..RETURNING with `used_at IS NULL` is atomic. sqlite (StaticPool, one
+    # connection) cannot demonstrate this, so it must run against real Postgres (6.24).
+    _mint(pg_engine, "race", "agent-01", "tunnel")
+    store = db.DbTokenStore(pg_engine)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        results = list(ex.map(lambda _: store.consume("race"), range(8)))
+    winners = [r for r in results if r is not None]
+    assert len(winners) == 1, f"erwartet genau 1 Gewinner, {len(winners)}"
+    assert winners[0].subject_id == "agent-01"
