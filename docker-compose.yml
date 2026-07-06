@@ -62,6 +62,10 @@ services:
       # window (e.g. a manual first-admin bootstrap). Flipped together with the
       # gateway. scripts/install.sh mints the first cert out-of-band; see docs (Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+      # The server stamps <host>:ENROLL_PORT/enroll into every enrollment grant, so it MUST match the
+      # gateway's published enroll-plane port below — otherwise agent/desktop enrollment dials a closed
+      # port (4.50).
+      - ENROLL_PORT=${ENROLL_PORT:-8444}
       - FRP_CONFIG_DIR=/app/frp-config
       # Postgres
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
