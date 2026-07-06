@@ -43,3 +43,15 @@ def test_logs_go_to_stderr_not_stdout():
     streams = [getattr(h, "stream", None) for h in logging.getLogger().handlers]
     assert sys.stderr in streams
     assert sys.stdout not in streams
+
+
+def test_format_includes_worker_pid():
+    # With WEB_CONCURRENCY>1 several uvicorn workers plus the scheduler interleave
+    # their lines; the [pid] field is what pins a log line (e.g. a 500) to a
+    # specific worker — without it multi-worker logs are unattributable (8.15).
+    configure_logging()
+    record = logging.LogRecord(
+        "adminhelper.test", logging.INFO, __file__, 1, "msg-marker", None, None
+    )
+    line = logging.getLogger().handlers[0].formatter.format(record)
+    assert f"[{record.process}]" in line

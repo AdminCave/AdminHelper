@@ -13,8 +13,10 @@ Logs go to stderr (not stdout) so a subprocess that uses stdout as an IPC channe
 — the hook script worker — is never corrupted by a stray log line; docker compose
 logs captures stderr all the same.
 
-Format is human-readable on purpose (not JSON): the service runs single-worker
-and operators read it directly via ``docker compose logs``. The level is taken
+Format is human-readable on purpose (not JSON): operators read it directly via
+``docker compose logs``. The ``[%(process)d]`` PID field disambiguates the
+interleaved lines when ``WEB_CONCURRENCY`` > 1 runs several web workers plus the
+scheduler (a per-request correlation ID is a follow-up). The level is taken
 from ``LOG_LEVEL`` (default INFO); an unknown value falls back to INFO rather
 than crashing startup.
 """
@@ -22,7 +24,7 @@ than crashing startup.
 import logging.config
 import os
 
-_LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s %(message)s"
+_LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(process)d] %(name)s %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
