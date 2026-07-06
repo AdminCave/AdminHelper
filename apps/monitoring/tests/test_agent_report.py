@@ -216,3 +216,29 @@ def test_report_batches_check_metrics_into_one_write(client_db, monkeypatch):
     assert len(check_batches) == 1, writes
     status_lines = [line for line in check_batches[0] if "monitor_check_status" in line]
     assert len(status_lines) == 2, check_batches[0]
+
+
+@pytest.mark.parametrize(
+    "raw,want",
+    [
+        (42, 42),  # int passes through
+        (1.5, 1.5),  # float passes through
+        ("3.14", 3.14),  # numeric string is coerced (leniency)
+        (True, None),  # bool is NOT a metric value — would inject into the line protocol
+        (False, None),
+        ("abc", None),  # non-numeric string dropped
+        (None, None),
+        ([1], None),  # non-scalar dropped
+        (float("inf"), None),  # inf/nan poison the whole VictoriaMetrics batch — dropped
+        (float("nan"), None),
+        ("inf", None),  # inf/nan as strings dropped too
+        ("nan", None),
+    ],
+)
+def test_num_coerces_and_drops_non_metric_values(raw, want):
+    # _num is the boundary filter for all agent-supplied metric values before format_line (6.56).
+    # A regression (bool check removed, isfinite forgotten) would only surface as a 500 in the report
+    # endpoint or a poisoned VictoriaMetrics batch, not in the suite.
+    from app.routers.agent import _num
+
+    assert _num(raw) == want
