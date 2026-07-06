@@ -78,6 +78,26 @@ else
     exit 1
 fi
 
+# ── 2b. One-time: redeeming the SAME token again MUST be rejected — the security
+# property install.sh advertises. Without asserting it, a regression that made tokens
+# replayable would pass every suite green (6.68).
+code=$(python3 - "$E2E_WORK" "$ENROLL" "$TOKEN" <<'PY'
+import json, ssl, sys, urllib.request, urllib.error
+work, enroll, token = sys.argv[1:4]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+body = json.dumps({"token": token, "csr": open(f"{work}/client.csr").read()}).encode()
+req = urllib.request.Request(f"{enroll}/enroll", data=body, headers={"Content-Type": "application/json"})
+try:
+    print(urllib.request.urlopen(req, context=ctx, timeout=15).status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+PY
+)
+case "$code" in
+  4*) ok "one-time token: second redeem rejected ($code)" ;;
+  *)  bad "one-time token: second redeem NOT rejected (got '$code')" ;;
+esac
+
 CERT=(--cert "$E2E_WORK/client-fullchain.pem" --key "$E2E_WORK/client.key")
 
 # ── 3. Certless request is rejected by the gateway's mTLS ─────────────────────

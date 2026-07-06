@@ -116,6 +116,11 @@ verify_for_keytype() {
     pkgsha=$(sha256sum "${APT}/dists/stable/main/binary-amd64/Packages" | cut -d' ' -f1)
     grep -q "$pkgsha" "${APT}/dists/stable/Release" || fail "[$label] Release deckt Packages-SHA256 nicht"
     grep -q "^SHA256:" "${APT}/dists/stable/Release" || fail "[$label] Release ohne SHA256-Sektion"
+    # Release identity: the deb822 source binds to Origin/Suite/Codename; a changed
+    # REPO_SUITE would silently break every installed apt source (6.69).
+    grep -q '^Origin: AdminHelper$' "${APT}/dists/stable/Release" || fail "[$label] Release Origin falsch"
+    grep -q '^Suite: stable$'       "${APT}/dists/stable/Release" || fail "[$label] Release Suite falsch"
+    grep -q '^Codename: stable$'    "${APT}/dists/stable/Release" || fail "[$label] Release Codename falsch"
     gpg --verify "${APT}/dists/stable/InRelease" >/dev/null 2>&1 \
         || fail "[$label] InRelease-Signatur ungültig"
     gpg --verify "${APT}/dists/stable/Release.gpg" "${APT}/dists/stable/Release" >/dev/null 2>&1 \
