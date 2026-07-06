@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.37.2</span>
+          <span>v0.39.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -152,7 +152,7 @@
       <main class="content">
         <div class="content-inner">
           <section class="hero" data-reveal>
-            <span class="eyebrow">Version 0.37.2 · 2026-06-20</span>
+            <span class="eyebrow">Version 0.39.0 · 2026-07-04</span>
             <h1>AdminHelper – Documentation</h1>
             <p class="lead">
               A modular monolith for centrally managing remote access,
@@ -260,7 +260,36 @@
             </div>
           </div>
 
-          <h2>What's new in 0.37.2?</h2>
+          <h2>What's new in 0.39.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.39.0 &ndash; Admin-Cave move &amp; statically-linked agent binary (2026-07-04)</div>
+              <p>
+                <strong>Changed:</strong> Moved the project into the <strong>Admin-Cave organization</strong> — repo, container registry
+                (<code>ghcr.io/admincave/*</code>) and homepage (<code>admincave.com</code>); the release signing keys were regenerated.
+                <strong>Fix:</strong> The Linux agent is now <strong>statically linked</strong> (<code>CGO_ENABLED=0</code>) and runs on any
+                glibc (including RHEL/Rocky/Alma&nbsp;8); agent provisioning works under enforced mTLS (bootstrap is certless on the
+                enrollment plane <code>:8444</code>).
+                <strong>Added:</strong> Distributed multi-host integration tests via crabbox (dev tooling). See the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.38.0 &ndash; Multi-worker, SSE push &amp; Notification Hub (2026-06-23)</div>
+              <p>
+                <strong>Added:</strong> The server is now <strong>multi-worker capable</strong> (<code>WEB_CONCURRENCY</code>) with a
+                dedicated <code>scheduler</code> service for the periodic jobs. The notification bell gains <strong>SSE push</strong>
+                (<code>GET /api/notifications/stream</code>, cross-worker via Redis) instead of polling. Plus the foundation for a
+                <strong>Notification Hub</strong> (phase A): per-user subscription rules, a bell feed and a send outbox for external
+                channels (email/Telegram). See the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
