@@ -242,3 +242,45 @@ def test_num_coerces_and_drops_non_metric_values(raw, want):
     from app.routers.agent import _num
 
     assert _num(raw) == want
+
+
+def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch):
+    # 6.58: victoria.write was stubbed to a no-op, so the endpoint's line generation was untested:
+    # the EXCLUDED_FSTYPES skip (a tmpfs mount would flood VictoriaMetrics), safe_metric_part's
+    # sanitisation of the SMART measurement name (line-protocol injection), and the metricsWritten
+    # counter. Capture the lines and assert on them instead of discarding them.
+    from app.core import victoria as vm
+
+    client, _factory = client_db
+    captured: list[str] = []
+    monkeypatch.setattr(vm.victoria, "write", lambda lines: captured.extend(lines))
+
+    r = client.post(
+        "/agent/srv-1/report",
+        json={
+            "resources": {
+                "cpu_percent": 42,
+                "disks": [
+                    {"mount": "/t", "fstype": "tmpfs", "percent": 99},
+                    {"mount": "/", "fstype": "ext4", "percent": 50},
+                ],
+            },
+            "smart": [{"device": "sda;evil", "temp_c": 30}],
+        },
+    )
+    assert r.status_code == 200, r.text
+    joined = "\n".join(captured)
+
+    # EXCLUDED_FSTYPES: the tmpfs mount is skipped; only the ext4 disk is written.
+    disk_lines = [ln for ln in captured if ln.startswith("monitor_agent_disk_percent")]
+    assert len(disk_lines) == 1, f"only the ext4 disk should be written: {disk_lines}"
+    assert "mount=/t" not in joined, "tmpfs mount must be filtered out"
+
+    # The SMART measurement name (before the first tag) is sanitized — no ';' injection.
+    smart_lines = [ln for ln in captured if ln.startswith("monitor_smart_temp_")]
+    assert len(smart_lines) == 1, f"expected one SMART temp line: {captured}"
+    measurement = smart_lines[0].split(",", 1)[0]
+    assert ";" not in measurement, f"measurement name not sanitized: {measurement}"
+
+    # metricsWritten reflects the actual lines written (no checks in this payload).
+    assert r.json()["metricsWritten"] == len(captured)
