@@ -58,6 +58,18 @@ impl FrpcProcess {
             generation: 0,
         }
     }
+
+    /// Reconcile after a Terminated event: clear child/visitor so a later restart isn't blocked by a
+    /// stale child ("frpc laeuft bereits") — but only if the event belongs to the CURRENT generation,
+    /// so a late Terminated from a restarted-away process doesn't wipe the new child (4.29). A pure
+    /// state transition, extracted so it is testable without a real sidecar (6.107).
+    fn reconcile_terminated(&mut self, event_generation: u64) {
+        if self.generation == event_generation {
+            self.child = None;
+            self.visitor_name = None;
+            self.connected_since = None;
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -278,11 +290,7 @@ pub fn start_frpc(
                         // Only reconcile if this is still the current process — a stale
                         // Terminated event from a restarted-away process must not wipe the new
                         // child (4.29).
-                        if guard.generation == my_gen {
-                            guard.child = None;
-                            guard.visitor_name = None;
-                            guard.connected_since = None;
-                        }
+                        guard.reconcile_terminated(my_gen);
                     }
                     let _ = app_handle.emit("frpc-terminated", payload.code);
                 }
@@ -340,7 +348,7 @@ pub async fn start_tunnel(
 
 #[cfg(test)]
 mod tests {
-    use super::{rewrite_identity_paths, validate_visitor_toml};
+    use super::{rewrite_identity_paths, validate_visitor_toml, FrpcProcess};
 
     const LEGIT_VISITOR: &str = r#"
 serverAddr = "frps.example.net"
@@ -413,5 +421,28 @@ bindPort = 6000
             !out.contains("{{IDENTITY_DIR}}"),
             "no placeholder may remain"
         );
+    }
+
+    #[test]
+    fn reconcile_terminated_clears_state_only_for_the_current_generation() {
+        let mut p = FrpcProcess::new();
+        p.generation = 5;
+        p.visitor_name = Some("v".to_string());
+        p.connected_since = Some("2026-01-01T00:00:00Z".to_string());
+
+        // A stale Terminated (older generation, from a restarted-away process) must NOT wipe the
+        // current state (4.29).
+        p.reconcile_terminated(3);
+        assert!(
+            p.visitor_name.is_some(),
+            "stale generation must not reconcile"
+        );
+        assert!(p.connected_since.is_some());
+
+        // The current generation's Terminated clears it, so a later restart isn't blocked with
+        // "frpc laeuft bereits".
+        p.reconcile_terminated(5);
+        assert!(p.visitor_name.is_none());
+        assert!(p.connected_since.is_none());
     }
 }
