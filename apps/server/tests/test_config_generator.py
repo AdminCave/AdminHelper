@@ -60,6 +60,16 @@ class TestGenerateFrpsToml:
         assert "[transport.tls]" in toml
         assert "force = true" in toml
 
+    def test_tls_paths_match_ca_issuer_filenames(self):
+        # 6.80: pin the frps mTLS cert paths against the filenames ca-issuer's ensure_frps_cert writes
+        # (ca.crt / frps.crt / frps.key under /etc/frp-pki, the compose ro-mount). frpc/visitor have
+        # explicit path contracts but frps had none — renaming _FRPS_CERT_DIR or the leaf files is
+        # exactly the drift class that hit the identity/ replace, and would go unnoticed frps-side.
+        toml = generate_frps_toml(_make_config())
+        assert 'certFile = "/etc/frp-pki/frps.crt"' in toml
+        assert 'keyFile = "/etc/frp-pki/frps.key"' in toml
+        assert 'trustedCaFile = "/etc/frp-pki/ca.crt"' in toml
+
     def test_max_ports_per_client_defaults_when_unset(self):
         # 3.34: never leave it unlimited — an unset value emits the bounded default.
         config = _make_config(max_ports_per_client=None)
