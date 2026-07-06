@@ -268,6 +268,29 @@ def schedule_enrollment_token_cleanup(hours: int = 6) -> None:
     )
 
 
+_PROVISION_TOKEN_CLEANUP_JOB_ID = "system:provision-token-cleanup"
+
+
+def _run_provision_token_cleanup() -> None:
+    """Remove spent/expired provision tokens so the provision_tokens table does not
+    grow without bound (24h single-use tokens)."""
+    from app.modules.provisioning.models import cleanup_finished_provision_tokens
+
+    def work(db):
+        removed = cleanup_finished_provision_tokens(db)
+        return (
+            f"Provision-Token-Cleanup: {removed} erledigte Eintraege entfernt" if removed else None
+        )
+
+    _run_in_session("Provision-Token-Cleanup", work)
+
+
+def schedule_provision_token_cleanup(hours: int = 6) -> None:
+    """Register a periodic system job for the provision-token cleanup (idempotent).
+    Runs once immediately at start and then every `hours` hours."""
+    _register_system_job(_run_provision_token_cleanup, _PROVISION_TOKEN_CLEANUP_JOB_ID, hours=hours)
+
+
 _AUDIT_CLEANUP_JOB_ID = "system:audit-cleanup"
 
 

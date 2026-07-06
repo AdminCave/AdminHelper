@@ -39,11 +39,13 @@ def main() -> None:
         schedule_hook_reconcile,
         schedule_notification_cleanup,
         schedule_outbox_drain,
+        schedule_provision_token_cleanup,
         scheduler,
     )
 
     schedule_blacklist_cleanup()
     schedule_enrollment_token_cleanup()
+    schedule_provision_token_cleanup()
     schedule_audit_cleanup()
     schedule_outbox_drain()
     schedule_notification_cleanup()
