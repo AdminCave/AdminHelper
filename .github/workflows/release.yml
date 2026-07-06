@@ -249,8 +249,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${REPO_GPG_PRIVATE_KEY:-}" ]; then
-            echo "::warning::REPO_GPG_PRIVATE_KEY not set — agent apt/rpm repo asset skipped (see docs/developer/cicd)."
-            exit 0
+            echo "::error::REPO_GPG_PRIVATE_KEY not set — the signed agent repo is mandatory (its fingerprint is pinned in the docs + client setup). A release without it silently leaves the fleet on the old repo — no new version, no error, no staleness signal (4.23)."
+            exit 1
           fi
           TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
           mkdir -p release
@@ -260,6 +260,12 @@ jobs:
           printf '%s' "$REPO_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import 2>/dev/null \
             || { echo "::error::REPO_GPG_PRIVATE_KEY must be base64 of an exported secret key: gpg --export-secret-keys --armor <KEYID> | base64 -w0"; exit 1; }
           KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')"
+          # Assert the imported key matches the fingerprint pinned in the docs + client
+          # setup (docs/admin/agent-deployment.html). A rotated/wrong/typo'd secret would
+          # otherwise sign with a key the fleet's pinned keyring rejects (apt update
+          # breaks), unnoticed until the field instead of failing here in CI (4.24).
+          EXPECTED_FPR="912E1EC637F49C978EAD47DF926B404297E9DC1C"
+          [ "$KEY_ID" = "$EXPECTED_FPR" ] || { echo "::error::imported signing key $KEY_ID != pinned $EXPECTED_FPR — wrong REPO_GPG_PRIVATE_KEY? (keep in sync with docs/admin/agent-deployment)"; exit 1; }
           DEB="$(ls artifacts/agent/adminhelper-agent_*_amd64.deb | head -1)"
           RPM="$(ls artifacts/agent/adminhelper-agent-*.x86_64.rpm | head -1)"
           VERSION="$VER" REPO_GPG_KEY_ID="$KEY_ID" OUT_DIR=repo DEB="$DEB" RPM="$RPM" \
