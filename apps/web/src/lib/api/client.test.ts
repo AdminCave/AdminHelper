@@ -244,4 +244,56 @@ describe('http client token refresh', () => {
     expect(apiErr.name).toBe('ApiError');
     expect(apiErr.status).toBe(0);
   });
+
+  it('does not refresh-retry a 401 from an /auth/ path, preserving the server message (6.85)', async () => {
+    // Login.svelte relies on the server's own message ('Invalid credentials') reaching the caller
+    // instead of 'Session expired'. The `!path.includes('/auth/')` guard is what makes that hold —
+    // a 401 on an /auth/ path must NOT trigger a refresh.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        return Promise.resolve(jsonResponse({ detail: 'Invalid credentials' }, 401));
+      }),
+    );
+
+    const { http, setAccessToken } = await importClient();
+    setAccessToken('old-token');
+    const err = await http
+      .post('/api/auth/login', { username: 'x', password: 'y' })
+      .catch((e: unknown) => e);
+
+    const apiErr = err as ApiError;
+    expect(apiErr.status).toBe(401);
+    expect(apiErr.message).toBe('Invalid credentials'); // NOT 'Session expired'
+    expect(calls.map((c) => c.path)).toEqual(['/api/auth/login']); // no /api/auth/refresh
+  });
+
+  it('treats a network error during refresh as a failed refresh (6.85)', async () => {
+    // The catch in tryRefresh (fetch throws, not just a non-ok response) must map to a failed
+    // refresh -> auth-failure handler + 'Session expired', not an unhandled rejection.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        recordCall(calls, input, init);
+        if (String(input) === '/api/auth/refresh') {
+          return Promise.reject(new TypeError('network down'));
+        }
+        return Promise.resolve(jsonResponse({ detail: 'expired' }, 401));
+      }),
+    );
+
+    const { http, registerAuthFailureHandler, setAccessToken } = await importClient();
+    setAccessToken('old-token');
+    const onAuthFailure = vi.fn();
+    registerAuthFailureHandler(onAuthFailure);
+
+    const err = await http.get('/api/servers').catch((e: unknown) => e);
+
+    const apiErr = err as ApiError;
+    expect(apiErr.status).toBe(401);
+    expect(apiErr.message).toBe('Session expired');
+    expect(onAuthFailure).toHaveBeenCalledTimes(1);
+    expect(calls.map((c) => c.path)).toEqual(['/api/servers', '/api/auth/refresh']); // no retry
+  });
 });
