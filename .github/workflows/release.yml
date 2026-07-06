@@ -12,6 +12,12 @@ on:
 permissions:
   contents: read
 
+# A deleted+re-pushed tag (the usual "re-run the release" move) would otherwise start a
+# second run parallel to the first, both writing the same draft with mixed assets (4.89).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FRP_VERSION: "0.69.1"
   # Pinned SHA-256 of the official frp release artifacts (verified before use).
@@ -25,6 +31,9 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   desktop-linux:
     name: Desktop (deb/rpm/bin, Linux)
+    # Only on a tag: a workflow_dispatch from a branch yields VERSION=main (non-semver),
+    # failing build-deb/rpm after a full build and burning runner minutes (4.90).
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -81,6 +90,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   agent:
     name: Go Agent (deb/rpm/bins)
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -143,6 +153,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   desktop-windows:
     name: Desktop (MSI, Windows, best-effort)
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -257,6 +268,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c rpm gnupg
           export GNUPGHOME="$(mktemp -d)"; chmod 700 "$GNUPGHOME"
+          # The decrypted repo signing key lives here — drop it when the step ends (even
+          # on failure) so it isn't on disk while later third-party steps run (3.53).
+          trap 'rm -rf "$GNUPGHOME"' EXIT
           printf '%s' "$REPO_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import 2>/dev/null \
             || { echo "::error::REPO_GPG_PRIVATE_KEY must be base64 of an exported secret key: gpg --export-secret-keys --armor <KEYID> | base64 -w0"; exit 1; }
           KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')"

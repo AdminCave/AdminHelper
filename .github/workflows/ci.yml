@@ -81,7 +81,10 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install ruff
-        run: pip install ruff
+        # Pin ruff: a new release changes format rules / adds lints and would red every
+        # open PR with no code change, and is unreproducible against a local ruff. Keep
+        # in sync with the ruff floor in apps/server/requirements-dev.txt (4.88).
+        run: pip install ruff==0.15.20
       - name: ruff check
         run: ruff check apps/server apps/monitoring
       - name: ruff format --check
