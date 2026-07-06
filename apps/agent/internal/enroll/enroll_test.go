@@ -187,3 +187,31 @@ func TestStoreStagesBeforeCommit(t *testing.T) {
 		}
 	}
 }
+
+// TestStageIdentityCleansUpStagedTempsOnWriteError pins the best-effort cleanup (enroll.go 174-177):
+// if a later staging write fails, the temps already written must be removed so no .tmp corpses linger
+// to confuse the next renewal (6.98).
+func TestStageIdentityCleansUpStagedTempsOnWriteError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "identity")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	key, _ := GenerateKey()
+	resp := &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "chain"}
+
+	// Block the SECOND staging write (agent.crt.tmp) by pre-creating its target as a directory, so
+	// OpenFile fails. The first write (agent.key.tmp) succeeds and must then be cleaned up.
+	if err := os.Mkdir(CertPath(dir)+tmpSuffix, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := stageIdentity(dir, key, resp); err == nil {
+		t.Fatal("erwartet Schreibfehler, wenn der cert-Temp-Pfad ein Verzeichnis ist")
+	}
+
+	// The already-written key temp must be gone — no .tmp leftovers after the aborted staging.
+	if _, statErr := os.Stat(KeyPath(dir) + tmpSuffix); !os.IsNotExist(statErr) {
+		t.Errorf("agent.key.tmp muss nach dem Schreibfehler aufgeraeumt sein, stat err = %v", statErr)
+	}
+}
