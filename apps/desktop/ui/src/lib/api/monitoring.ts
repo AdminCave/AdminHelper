@@ -5,7 +5,7 @@
 // Monitoring API: typed wrappers around api_proxy for the monitoring endpoints
 // (proxied by the AdminHelper server to the monitoring service). Covers the full
 // surface — checks, alerts, templates and their assignments — so the desktop can
-// manage monitoring, not just view it. Mirrors apps/web/src/lib/api/monitoring.ts.
+// manage monitoring, not just view it. Desktop-only — the web panel has no monitoring API.
 
 import { apiRequest } from '$lib/api/request';
 import type { AuthSession } from '$lib/bridge/types';

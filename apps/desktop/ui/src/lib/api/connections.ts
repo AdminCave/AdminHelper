@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Connections API: server-side CRUD via api_proxy, for server-mode. Mirrors
-// apps/web/src/lib/api/connections.ts (the server accepts the camelCase
+// Connections API: server-side CRUD via api_proxy, for server-mode. Desktop-only
+// — the web panel has no connections API (the server accepts the camelCase
 // Connection shape directly). In server mode connections are owned by the
 // server; the local-file path (connections.json) is used only in local/sync
 // mode — see the connections store for the mode split.
