@@ -312,6 +312,25 @@ jobs:
           minisign -S -s minisign.key -m release/SHA256SUMS -x release/SHA256SUMS.minisig < /dev/null
           rm -f minisign.key
           echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig"
+      - name: Assert the tag images exist on ghcr
+        # release.yml and docker.yml run independently on tag push, but install.sh/
+        # update.sh pin ghcr.io/...:X.Y.Z hard. Creating the draft before docker.yml has
+        # pushed the images means a human publishing it ships a release whose
+        # `install.sh --ref` and `update.sh` fail with 'manifest unknown'. Poll for all
+        # four (public images, no login); a red/still-running docker.yml fails THIS
+        # workflow instead, so no draft with missing images is ever offered (4.25).
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          for img in server gateway ca-issuer monitoring; do
+            ok=0
+            for _ in $(seq 1 20); do
+              if docker manifest inspect "ghcr.io/admincave/adminhelper/${img}:${VER}" >/dev/null 2>&1; then ok=1; break; fi
+              sleep 30
+            done
+            [ "$ok" = 1 ] || { echo "::error::Image ${img}:${VER} missing on ghcr — docker.yml red or still running?"; exit 1; }
+            echo "ok: ${img}:${VER}"
+          done
       - name: Create draft release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
