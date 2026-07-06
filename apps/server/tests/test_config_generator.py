@@ -156,6 +156,15 @@ class TestGenerateFrpcToml:
         toml = generate_frpc_toml(config, [tunnel], "srv1", allow_users=["user-a", "user-b"])
         assert 'allowUsers = ["user-a", "user-b"]' in toml
 
+    def test_allow_users_fallback_is_ops_admin_not_wildcard(self):
+        # 6.146: an empty allow_users falls back to the ops-admin visitor, NOT "*" — the fail-closed
+        # safety net get_allow_users relies on. A "*" here would let every visitor reach every tunnel.
+        config = _make_config()
+        tunnel = _make_tunnel()
+        toml = generate_frpc_toml(config, [tunnel], "srv1")  # no allow_users -> fallback
+        assert 'allowUsers = ["ops-admin"]' in toml
+        assert 'allowUsers = ["*"]' not in toml
+
     def test_extra_config_applied(self):
         config = _make_config()
         tunnel = _make_tunnel(extra_config='{"bandwidth": "10MB", "useCompression": true}')
