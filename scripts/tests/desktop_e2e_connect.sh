@@ -104,8 +104,10 @@ dbus-run-session -- bash -c '
 # desktop. The desktop reaches the published port via the docker bridge, so it
 # appears as a private (non-loopback) source — distinct from the image's own
 # loopback (::1) self-test.
-sleep 2
-if docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "172\.|10\.|192\.168\."; then
+# Poll for the sshd log line instead of a fixed sleep — it can lag on a loaded box (6.137).
+ssh_ok=0
+for _ in $(seq 1 10); do docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "172\.|10\.|192\.168\." && { ssh_ok=1; break; }; sleep 1; done
+if [ "$ssh_ok" = 1 ]; then
     ok "sshd logged the desktop's SSH connection (direct)"
 else
     bad "sshd saw no connection from the desktop"

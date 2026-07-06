@@ -125,8 +125,10 @@ FRPC_C="ah-e2e-frpc-$$"
 docker run -d --name "$FRPC_C" --network host -v "$FRP_VOL:/etc/frp" -v "$ID_VOL:/etc/adminhelper" \
     "$FRPC_IMAGE" >/dev/null 2>&1
 TARGETS+=("$FRPC_C")
-sleep 4
-if e2e_dc logs frps 2>/dev/null | grep -qiE "new proxy|start proxy success|stcp"; then
+# Poll for the frps registration instead of a fixed sleep — it can lag on a loaded box (6.137).
+frps_ok=0
+for _ in $(seq 1 15); do e2e_dc logs frps 2>/dev/null | grep -qiE "new proxy|start proxy success|stcp" && { frps_ok=1; break; }; sleep 1; done
+if [ "$frps_ok" = 1 ]; then
     ok "agent frpc registered the STCP server with frps"
 else
     bad "agent frpc did not register with frps"
@@ -153,8 +155,10 @@ dbus-run-session -- bash -c '
 ' && ok "GUI: enrolled, tunnels connected, opened ssh/web/rdp over the tunnels" || bad "GUI tunnel-connect spec failed"
 
 # Verify at each target that the connection traversed its tunnel.
-sleep 2
-if docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "127\.|172\.|10\.|192\.168\."; then
+# Poll for the sshd log line instead of a fixed sleep — it can lag on a loaded box (6.137).
+ssh_ok=0
+for _ in $(seq 1 10); do docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "127\.|172\.|10\.|192\.168\." && { ssh_ok=1; break; }; sleep 1; done
+if [ "$ssh_ok" = 1 ]; then
     ok "sshd logged the SSH connection over the tunnel"
 else
     bad "sshd saw no tunneled connection"; docker logs --tail 25 "$SSH_C"

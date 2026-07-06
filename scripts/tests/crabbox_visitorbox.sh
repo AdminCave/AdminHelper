@@ -44,8 +44,10 @@ VPORT="$(grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0-9]+'
 
 echo "[visitorbox] run frpc visitor -> bind 127.0.0.1:$VPORT (through frps to the agent's sshd)"
 sudo sh -c '/usr/bin/frpc -c /etc/frp/visitor.toml >/tmp/frpc-vis.log 2>&1' &
-sleep 8
-if grep -qiE 'start.*visitor.*success|login to server success|start proxy success' /tmp/frpc-vis.log; then
+# Poll for the visitor registration instead of a fixed sleep — it can lag on a loaded box (6.137).
+vis_ok=0
+for _ in $(seq 1 20); do grep -qiE 'start.*visitor.*success|login to server success|start proxy success' /tmp/frpc-vis.log 2>/dev/null && { vis_ok=1; break; }; sleep 1; done
+if [ "$vis_ok" = 1 ]; then
   echo "VIS_FRPC_UP"
 else
   echo "VIS_FRPC_DOWN"; sed 's/^/    /' /tmp/frpc-vis.log

@@ -35,8 +35,10 @@ if sudo test -f /etc/frp/frpc.toml; then echo "TUNNEL_FRPC_TOML_OK"; else echo "
 
 echo "[tunnelbox] start frpc (STCP server) -> registers with frps at $SRV_IP:7000"
 sudo systemctl restart frpc 2>/dev/null || sudo systemctl start frpc 2>/dev/null || true
-sleep 6
-if sudo journalctl -u frpc --no-pager -n 60 2>/dev/null | grep -qiE 'start proxy success|login to server success|new proxy|proxy added'; then
+# Poll for the frpc registration instead of a fixed sleep — it can lag on a loaded box (6.137).
+tun_ok=0
+for _ in $(seq 1 20); do sudo journalctl -u frpc --no-pager -n 60 2>/dev/null | grep -qiE 'start proxy success|login to server success|new proxy|proxy added' && { tun_ok=1; break; }; sleep 1; done
+if [ "$tun_ok" = 1 ]; then
   echo "TUNNEL_FRPC_CONNECTED"
 else
   echo "TUNNEL_FRPC_NOT_CONNECTED"; sudo journalctl -u frpc --no-pager -n 30 2>/dev/null | sed 's/^/    /'
