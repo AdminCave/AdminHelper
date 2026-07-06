@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from app import alerter
 from app.alerter import _emit_to_hub, _hub_severity, process_alert
 
-from .test_alerter import _CapturingDb, make_check, make_msg, make_rule
+from ._helpers import _CapturingDb, make_check, make_msg, make_rule
 
 
 class TestHubSeverity:

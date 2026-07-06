@@ -14,53 +14,7 @@ from types import SimpleNamespace
 from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 
-
-def make_rule(**kw):
-    """Minimal MonitorAlertRule stub with the fields read by the logic."""
-    defaults = dict(
-        id="rule-1",
-        name="r",
-        match_severity=None,
-        match_server_id=None,
-        channel="webhook",
-        channel_config="{}",
-        cooldown_minutes=30,
-        enabled=True,
-    )
-    defaults.update(kw)
-    return SimpleNamespace(**defaults)
-
-
-def make_check(**kw):
-    """Minimal MonitorCheck stub."""
-    defaults = dict(
-        id="check-1",
-        name="c",
-        check_type="ping",
-        server_id="srv-1",
-        severity="critical",
-    )
-    defaults.update(kw)
-    return SimpleNamespace(**defaults)
-
-
-def make_msg(**kw):
-    """Fake _build_message() result — built once per transition in process_alert
-    now (2.30) and passed to _dispatch / _send_* / _emit_to_hub."""
-    defaults = dict(
-        check_name="c",
-        check_type="ping",
-        server_id="srv-1",
-        severity="critical",
-        old_status="ok",
-        new_status="critical",
-        is_recovery=False,
-        icon="",
-        subject="S",
-        text="T",
-    )
-    defaults.update(kw)
-    return defaults
+from ._helpers import _CapturingDb, make_check, make_msg, make_rule
 
 
 class TestRuleMatches:
@@ -121,36 +75,6 @@ class TestIsInCooldown:
     def test_no_recent_log_means_no_cooldown(self):
         db = _FakeDb(first_result=None)
         assert _is_in_cooldown(db, make_rule(cooldown_minutes=30), make_check()) is False
-
-
-class _CapturingDb:
-    """Fake DB for process_alert: provides the rules list, collects add()
-    and flush() calls. process_alert only flushes the alert log now; the
-    caller owns the commit (see the H7 fix)."""
-
-    def __init__(self, rules):
-        self._rules = rules
-        self.added = []
-        self.flushed = False
-
-    def query(self, *args, **kwargs):
-        return self
-
-    def filter(self, *args, **kwargs):
-        return self
-
-    def all(self):
-        return self._rules
-
-    def first(self):
-        # _build_message queries MonitorState here; no state row in these tests.
-        return None
-
-    def add(self, entry):
-        self.added.append(entry)
-
-    def flush(self):
-        self.flushed = True
 
 
 class TestRecoveryBypassesCooldown:
