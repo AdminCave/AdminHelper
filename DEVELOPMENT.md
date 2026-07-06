@@ -197,6 +197,8 @@ Das startet:
 - **Monitoring** nur intern im Compose-Network (`expose 8080`, kein Host-Port); Agent-Metriken laufen tunnelfrei über den Server unter `/api/monitoring`
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
 - **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start von `scripts/postgres-init.sh` angelegt
+- **scheduler** (Server-Image mit `RUN_MODE=scheduler`, nur intern, seit 0.38.0) — die **einzige** APScheduler-Instanz für periodische Jobs (u. a. FRP-Zertifikats-Renewals); bewusst **nicht** skalieren, sonst laufen die Jobs doppelt
+- **redis** (`redis:7-alpine`, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern
 
 **Erstanmeldung:** Es gibt keinen Default-Login. Entweder den
 Bootstrap-Token-Flow nutzen (`docker compose logs server | grep -A2
@@ -321,7 +323,7 @@ Vollstaendige Integration mit dem AdminHelper-Server:
 
 1. **Server + frps starten** (siehe oben)
 2. Im Client: Einstellungen -> Modus: **Server** -> Server-URL: `https://localhost`
-3. Login mit `admin` / `admin`
+3. Login mit dem beim Setup angelegten Admin — lokal am schnellsten via `ADMIN_PASSWORD=dev` in der `.env` (→ `admin` / `dev`, siehe Erstanmeldung oben); es gibt **keinen** `admin`/`admin`-Default
 4. Connections werden per JWT-API geladen
 5. frpc-Visitor startet automatisch im Hintergrund (wenn frpc-Binary vorhanden)
 
@@ -440,10 +442,10 @@ curl http://127.0.0.1:8080/api/docs
 ### Server-Login per CLI testen
 
 ```bash
-# JWT holen
+# JWT holen (password = dein ADMIN_PASSWORD; hier das lokale `dev`, es gibt keinen admin/admin-Default)
 TOKEN=$(curl -sk https://localhost/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"username":"admin","password":"dev"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # Connections abrufen
 curl -sk https://localhost/api/connections \
