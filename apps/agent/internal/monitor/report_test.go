@@ -14,6 +14,24 @@ import (
 )
 
 func TestBuildReportBasics(t *testing.T) {
+	// Stub the collectors that do real, slow, host-dependent I/O so this exercises the report assembly,
+	// not the host (6.18): the 1s CPU sample and the docker/pvesh/zpool/smartctl subprocess calls.
+	// Without this the "unit" test sleeps >=1s and its result/duration depend on the host.
+	oldInterval := cpuSampleInterval
+	cpuSampleInterval = 0
+	oldPlugins := pluginCollectors
+	pluginCollectors.docker = func() map[string]any { return nil }
+	pluginCollectors.proxmox = func() map[string]any { return nil }
+	pluginCollectors.zfs = func() map[string]any { return nil }
+	pluginCollectors.smart = func() []SmartDisk { return nil }
+	oldSvc := serviceHealthCollector
+	serviceHealthCollector = func() map[string]any { return map[string]any{} }
+	t.Cleanup(func() {
+		cpuSampleInterval = oldInterval
+		pluginCollectors = oldPlugins
+		serviceHealthCollector = oldSvc
+	})
+
 	report := BuildReport(nil)
 
 	if got := report["report_version"]; got != 2 {

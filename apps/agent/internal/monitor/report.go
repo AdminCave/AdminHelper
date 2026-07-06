@@ -47,7 +47,7 @@ func BuildReport(serviceNames []string) map[string]any {
 	}
 
 	// Service health (platform-specific)
-	svcHealth := collectServiceHealth()
+	svcHealth := serviceHealthCollector()
 	if len(serviceNames) > 0 {
 		// Collect once and reuse for both the "watched" sub-key and the legacy
 		// top-level "services" key: avoids double systemctl/sc subprocess spawns
@@ -58,17 +58,17 @@ func BuildReport(serviceNames []string) map[string]any {
 	}
 	report["systemd"] = svcHealth
 
-	// Auto-detected plugins
-	if docker := collectDocker(); docker != nil {
+	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
+	if docker := pluginCollectors.docker(); docker != nil {
 		report["docker"] = docker
 	}
-	if proxmox := collectProxmox(); proxmox != nil {
+	if proxmox := pluginCollectors.proxmox(); proxmox != nil {
 		report["proxmox"] = proxmox
 	}
-	if zfs := collectZFS(); zfs != nil {
+	if zfs := pluginCollectors.zfs(); zfs != nil {
 		report["zfs"] = zfs
 	}
-	if smart := collectSmart(); smart != nil {
+	if smart := pluginCollectors.smart(); smart != nil {
 		report["smart"] = smart
 	}
 
@@ -77,6 +77,18 @@ func BuildReport(serviceNames []string) map[string]any {
 
 // pushRetryDelay is a variable so tests can shorten the backoff.
 var pushRetryDelay = 10 * time.Second
+
+// pluginCollectors indirects the auto-detected plugin collectors so tests can stub the real
+// docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
+var pluginCollectors = struct {
+	docker  func() map[string]any
+	proxmox func() map[string]any
+	zfs     func() map[string]any
+	smart   func() []SmartDisk
+}{collectDocker, collectProxmox, collectZFS, collectSmart}
+
+// serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).
+var serviceHealthCollector = collectServiceHealth
 
 // PushReportParams groups monitor.PushReport's arguments (7 positionals before).
 type PushReportParams struct {

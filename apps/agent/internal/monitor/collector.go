@@ -30,8 +30,11 @@ var skipFSTypes = map[string]bool{
 // Mount prefixes to skip (Linux-specific).
 var skipMountPrefixes = []string{"/sys", "/proc", "/dev/", "/run/snapd", "/snap"}
 
+// cpuSampleInterval is a variable so tests can skip the 1s blocking CPU sample.
+var cpuSampleInterval = 1 * time.Second
+
 func collectCPU() float64 {
-	percents, err := cpu.Percent(1*time.Second, false)
+	percents, err := cpu.Percent(cpuSampleInterval, false)
 	if err != nil || len(percents) == 0 {
 		return 0
 	}
