@@ -139,4 +139,26 @@ mod tests {
         assert_eq!(tail("a\nb\nc\nd\n", 2), "c\nd\n");
         assert_eq!(tail("x\n", 5), "x\n");
     }
+
+    #[test]
+    fn redact_body_truncates_over_the_char_cap() {
+        // 6.106: a body over MAX_BODY_CHARS is cut to the cap plus a marker; under it, unchanged.
+        // This is the anti-flooding defence against a malicious/broken server flooding the UI/log.
+        let long = "a".repeat(MAX_BODY_CHARS + 100);
+        let out = redact_body(&long);
+        assert!(
+            out.contains("… (gekürzt)"),
+            "over-cap body must be truncated: {out}"
+        );
+        assert!(out.starts_with(&"a".repeat(MAX_BODY_CHARS)));
+        assert_eq!(redact_body("short body"), "short body");
+    }
+
+    #[test]
+    fn redact_body_truncation_is_char_safe_on_multibyte() {
+        // 6.106: the cut counts chars(), not bytes — a multibyte char at the boundary must not panic.
+        let multibyte = "🔒".repeat(MAX_BODY_CHARS + 10);
+        let out = redact_body(&multibyte);
+        assert!(out.contains("… (gekürzt)"));
+    }
 }
