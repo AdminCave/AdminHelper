@@ -59,7 +59,7 @@
               <tr><td><code>MONITOR_SERVICE_URL</code></td><td><code>http://monitoring:8080</code></td><td>URL of the monitoring service (container-internal).</td></tr>
               <tr><td><code>MONITOR_API_KEY</code></td><td>empty</td><td>Shared secret between server and monitoring. Must be identical in both containers.</td></tr>
               <tr><td><code>VISITOR_PORT_START</code> / <code>_END</code></td><td><code>6000</code> / <code>6999</code></td><td>Port range for STCP visitor tunnels in the desktop client.</td></tr>
-              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP port for the FRP bind (control channel).</td></tr>
+              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP port for the FRP bind (control channel); must match the <code>bind_port</code> in the FRP-config UI (otherwise every tunnel breaks).</td></tr>
               <tr><td><code>FRP_HTTPS_PORT</code></td><td><code>7443</code></td><td>HTTPS port for the FRP tunnel.</td></tr>
             </tbody>
           </table>

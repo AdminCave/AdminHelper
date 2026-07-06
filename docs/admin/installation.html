@@ -148,7 +148,7 @@ docker compose up -d</code></pre>
               <tr><td><code>MONITOR_SERVICE_URL</code></td><td><code>http://monitoring:8080</code></td><td>URL des Monitoring-Services (Container-intern).</td></tr>
               <tr><td><code>MONITOR_API_KEY</code></td><td>leer</td><td>Shared Secret zwischen Server und Monitoring. Muss in beiden Containern identisch sein.</td></tr>
               <tr><td><code>VISITOR_PORT_START</code> / <code>_END</code></td><td><code>6000</code> / <code>6999</code></td><td>Port-Range für STCP-Visitor-Tunnel im Desktop-Client.</td></tr>
-              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP-Port für FRP-Bind (Kontrollkanal).</td></tr>
+              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP-Port für FRP-Bind (Kontrollkanal); muss mit dem <code>bind_port</code> im FRP-Config-UI übereinstimmen (sonst brechen alle Tunnel).</td></tr>
               <tr><td><code>FRP_HTTPS_PORT</code></td><td><code>7443</code></td><td>HTTPS-Port für FRP-Tunnel.</td></tr>
             </tbody>
           </table>
