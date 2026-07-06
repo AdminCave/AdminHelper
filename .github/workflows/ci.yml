@@ -444,6 +444,8 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
       - name: update.sh sandbox test
         run: bash scripts/tests/update_test.sh
+      - name: install.sh sandbox test
+        run: bash scripts/tests/install_test.sh
       - name: diagnostics.sh redaction test
         run: bash scripts/tests/diagnostics_test.sh
 
