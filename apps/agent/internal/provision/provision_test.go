@@ -91,3 +91,29 @@ func TestMonitorBaseURL(t *testing.T) {
 		}
 	}
 }
+
+func TestEnrollEndpoint(t *testing.T) {
+	// Pure host/port rewrite: swap in the enroll port, drop path+query, and keep IPv6 literals
+	// bracketed (Hostname() strips the brackets, JoinHostPort re-adds them) (6.22).
+	cases := []struct {
+		url  string
+		port int
+		want string
+	}{
+		{"https://example.com", 8444, "https://example.com:8444/enroll"},
+		{"https://example.com:8443/api?x=1", 8444, "https://example.com:8444/enroll"},
+		{"https://[::1]:8443/api", 8444, "https://[::1]:8444/enroll"},
+	}
+	for _, c := range cases {
+		got, err := enrollEndpoint(c.url, c.port)
+		if err != nil || got != c.want {
+			t.Errorf("enrollEndpoint(%q, %d) = %q/%v, erwartet %q", c.url, c.port, got, err, c.want)
+		}
+	}
+	if _, err := enrollEndpoint("://kaputt", 1); err == nil {
+		t.Error("ungueltige URL haette Fehler ergeben muessen")
+	}
+	if _, err := enrollEndpoint("/no-host", 1); err == nil {
+		t.Error("URL ohne Host haette Fehler ergeben muessen")
+	}
+}
