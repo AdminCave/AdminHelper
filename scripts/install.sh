@@ -302,7 +302,7 @@ cat <<EOF
                   (einmalig, ${ENROLL_TTL} Min gueltig; danach Login + optional
                    Browser-.p12 ueber den Export-Knopf im Desktop)
 
-  Version:        ${IMAGE_TAG}  (Images in .env gepinnt)
+  Version:        ${IMAGE_TAG:-latest}  (in .env gepinnt bei --ref; sonst compose :latest)
   Updates:        ./scripts/update.sh        (auf das neueste Release; gezielt: --ref vX.Y.Z)
 ============================================================================
 EOF

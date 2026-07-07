@@ -80,9 +80,19 @@ restore_volume victoria-data   victoria-data.tar.gz
 # the server's .secret_key). Stack is down here, matching restore_volume (2.36).
 if [ -f "$STAGE/server-data.tar.gz" ]; then
     echo "[restore] ./data <- server-data.tar.gz"
+    # Same escape guard as the outer archive above: this inner tarball is unpacked
+    # with the host tar directly into the repo (NOT container-jailed like the volume
+    # restores), so a crafted symlink/../ member could otherwise write out of ./data.
+    tar tzf  "$STAGE/server-data.tar.gz" > "$STAGE/.dnames"
+    tar tzvf "$STAGE/server-data.tar.gz" > "$STAGE/.dverbose"
+    if grep -Eq '^/|(^|/)\.\.(/|$)' "$STAGE/.dnames" || grep -Eq '^[lh]' "$STAGE/.dverbose"; then
+        echo "[restore] FEHLER: server-data.tar.gz enthaelt absolute/../-Pfade oder Sym-/Hardlinks — abgebrochen." >&2
+        exit 1
+    fi
+    rm -f "$STAGE/.dnames" "$STAGE/.dverbose"
     mkdir -p data
     find data -mindepth 1 -delete 2>/dev/null || true
-    tar xzf "$STAGE/server-data.tar.gz" -C data
+    tar xzf "$STAGE/server-data.tar.gz" -C data --no-same-owner --no-same-permissions
 else
     echo "[restore] server-data.tar.gz nicht im Backup — überspringe ./data"
 fi

@@ -63,6 +63,12 @@ dump_dir() {
         [ "$rc" -eq 1 ] || { echo "[backup] FEHLER: tar $svc:$src exit $rc." >&2; return "$rc"; }
         echo "[backup] WARN: $svc:$src aenderte sich beim Lesen (tar exit 1) — Archiv ggf. inkonsistent." >&2
     fi
+    # A docker-layer failure (service not running) also exits 1 but writes NOTHING to
+    # stdout — and the preflight only checks postgres, so a stopped ca-issuer/monitoring
+    # would otherwise slip through as a benign "file changed" tar warning and leave a
+    # 0-byte crown-jewel archive that only surfaces at restore time. Require a non-empty
+    # archive so a missing service fails the backup, not the disaster recovery.
+    [ -s "$STAGE/$out" ] || { echo "[backup] FEHLER: $svc:$src ergab ein leeres Archiv (Service nicht laufend?)." >&2; return 1; }
 }
 
 dump_db() {
