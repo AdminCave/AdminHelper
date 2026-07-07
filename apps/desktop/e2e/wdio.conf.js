@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import net from 'net';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const desktopDir = path.resolve(__dirname, '..');
@@ -32,6 +33,26 @@ process.env.WEBKIT_DISABLE_COMPOSITING_MODE = '1';
 let tauriDriver;
 let exiting = false;
 
+// Poll until tauri-driver's WebDriver port accepts a connection (or time out).
+// Spawning the driver and immediately opening a session races the port bind —
+// especially in multi-spec runs where the previous driver may still hold :4444 (4.99).
+const waitPort = (port, ms) =>
+  new Promise((res, rej) => {
+    const t0 = Date.now();
+    (function probe() {
+      const s = net.connect(port, '127.0.0.1', () => {
+        s.destroy();
+        res();
+      });
+      s.on('error', () => {
+        s.destroy();
+        Date.now() - t0 > ms
+          ? rej(new Error('tauri-driver never listened on :' + port))
+          : setTimeout(probe, 250);
+      });
+    })();
+  });
+
 export const config = {
   host: '127.0.0.1',
   port: 4444,
@@ -45,7 +66,12 @@ export const config = {
   ],
   reporters: ['spec'],
   framework: 'mocha',
-  mochaOpts: { ui: 'bdd', timeout: 60000 },
+  // A single it can legitimately wait longer than 60s (tunnel-connect sums per-step
+  // waitUntil budgets up to ~131s); the per-step waitUntils stay the real guards, so
+  // lift the Mocha ceiling above their sum (4.36). bail stops a spec after its first
+  // failure so dependent its don't pile on misleading follow-up errors/screenshots —
+  // per-file (each spec is its own runner), other spec files still run (6.113).
+  mochaOpts: { ui: 'bdd', timeout: 180000, bail: true },
 
   // Build the debug binary tauri-driver will launch. Must be `tauri build`, NOT
   // a plain `cargo build`: a plain debug build points the webview at devUrl
@@ -72,8 +98,12 @@ export const config = {
   },
 
   // Start tauri-driver before the session so it can proxy the WebDriver requests.
-  beforeSession: () => {
-    tauriDriver = spawn(path.resolve(os.homedir(), '.cargo', 'bin', 'tauri-driver'), [], {
+  beforeSession: async () => {
+    // Prefer an explicit TAURI_DRIVER_BIN over the hardcoded cargo prefix, so a
+    // package-installed tauri-driver on another prefix isn't ignored (4.99).
+    const bin =
+      process.env.TAURI_DRIVER_BIN || path.resolve(os.homedir(), '.cargo', 'bin', 'tauri-driver');
+    tauriDriver = spawn(bin, [], {
       stdio: [null, process.stdout, process.stderr],
     });
     tauriDriver.on('error', (error) => {
@@ -86,6 +116,9 @@ export const config = {
         process.exit(1);
       }
     });
+    // Wait for :4444 to accept before wdio opens the session (avoids the race with a
+    // not-yet-bound or still-releasing driver in multi-spec runs).
+    await waitPort(4444, 15000);
   },
 
   afterSession: () => {
