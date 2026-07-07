@@ -138,6 +138,37 @@ code=$(curl -k -s "${CERT[@]}" \
 [ "$code" = "401" ] && ok "smuggled X-Client-* neutralized on the SSE route (401)" \
     || bad "header smuggling not neutralized on SSE route: got '$code'"
 
+# ── 8. /ca/renew through the gateway — the real ssl_client_escaped_cert path (6.48)
+# The renew endpoint takes the gateway-verified current cert (not a fresh token), so
+# this exercises the header/cert data path the enroll test doesn't. A fresh CSR reusing
+# the enrolled key stands in for a renewal request.
+openssl req -new -key "$E2E_WORK/client.key" -subj "/CN=itest" -out "$E2E_WORK/renew.csr" 2>/dev/null
+code=$(python3 - "$E2E_WORK" "$E2E_SERVER_URL" <<'PY'
+import sys, json, ssl, urllib.request
+work, base = sys.argv[1], sys.argv[2]
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+ctx.load_cert_chain(f"{work}/client-fullchain.pem", f"{work}/client.key")
+req = urllib.request.Request(f"{base}/ca/renew",
+    data=json.dumps({"csr": open(f"{work}/renew.csr").read()}).encode(),
+    headers={"Content-Type": "application/json"})
+try:
+    body = urllib.request.urlopen(req, context=ctx, timeout=5).read().decode()
+    print("ok" if "BEGIN CERTIFICATE" in body else "no-cert")
+except Exception as e:
+    print(getattr(e, "code", "err"))
+PY
+)
+[ "$code" = "ok" ] && ok "/ca/renew through the gateway returned a cert (6.48)" || bad "/ca/renew failed: got '$code'"
+
+# ── 9. The enroll plane throttles a burst to 429 — token brute-force brake (6.124)
+codes=$(for _ in $(seq 1 40); do
+    curl -k -s -o /dev/null -w '%{http_code}\n' --max-time 5 \
+        -X POST "$ENROLL/enroll" -H 'Content-Type: application/json' \
+        -d '{"token":"bogus","csr":"x"}' 2>/dev/null
+done)
+echo "$codes" | grep -q '^429$' && ok "enroll plane returns 429 after a burst (limit_req)" \
+    || bad "no 429 after 40 enroll requests"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"
