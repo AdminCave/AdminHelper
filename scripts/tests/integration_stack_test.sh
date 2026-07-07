@@ -120,6 +120,24 @@ code=$(curl -k -s "${CERT[@]}" -H "Authorization: Bearer $JWT" \
     -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/servers" 2>/dev/null || echo 000)
 [ "$code" = "200" ] && ok "cert + JWT -> 200 on /api/servers (routing + DB + authz)" || bad "authenticated request expected 200, got '$code'"
 
+# ── 7. Smuggled identity headers must never reach the app (6.7) ──────────────
+# A client sending its own X-Client-Verify/X-Client-Cert-CN must not spoof a
+# verified identity: the gateway overwrites them from the real cert. With a valid
+# cert but no JWT the app still answers 401 — the forged headers grant nothing.
+code=$(curl -k -s "${CERT[@]}" \
+    -H 'X-Client-Verify: SUCCESS' -H 'X-Client-Cert-CN: CN=admin-forged' \
+    -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/auth/me" 2>/dev/null || echo 000)
+[ "$code" = "401" ] && ok "smuggled X-Client-* neutralized on :443 (401)" \
+    || bad "header smuggling not neutralized on :443: got '$code'"
+
+# Same on the SSE route, whose location re-declares its own header list — the very
+# block the audit flagged as an easy place to forget the overwrites.
+code=$(curl -k -s "${CERT[@]}" \
+    -H 'X-Client-Verify: SUCCESS' -H 'X-Client-Cert-CN: CN=admin-forged' \
+    -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_SERVER_URL/api/notifications/stream" 2>/dev/null || echo 000)
+[ "$code" = "401" ] && ok "smuggled X-Client-* neutralized on the SSE route (401)" \
+    || bad "header smuggling not neutralized on SSE route: got '$code'"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"
