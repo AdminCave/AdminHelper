@@ -95,11 +95,11 @@ Xvfb) is set by the config automatically.
 
 ## CI
 
-Only the **smoke** spec runs in CI: the `desktop-e2e` job (GitHub Actions) runs
-`npm test`, gated to `main` pushes + manual dispatch — it builds the app and
-drives a real window, so it is deliberately not a per-PR gate. See
-`.github/workflows/ci.yml`.
+Deliberately **no** CI job *runs* this layer — smoke included (headless WebKit
+drifts with the runner image; see the note above and `.github/workflows/ci.yml`,
+where CI only installs + lints this dir, never launches the app). Run the smoke
+locally before a release: `cd apps/desktop/e2e && xvfb-run -a npm test`.
 
-The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`)
-are NOT wired into CI — they boot a full stack + frps and need a secret-service;
-run them locally/manually (e.g. before a release).
+The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`
+/ `run.sh e2e` on crabbox) are likewise never in CI — they boot a full stack + frps
+and need a secret-service; run them locally/manually (e.g. before a release).
