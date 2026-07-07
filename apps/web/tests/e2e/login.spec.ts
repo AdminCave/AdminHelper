@@ -34,6 +34,26 @@ test.describe('Login', () => {
     await expect(page).toHaveURL(/#\/users/);
   });
 
+  test('falsche Credentials zeigen die Server-Fehlermeldung', async ({ page }) => {
+    await mockLoggedOut(page);
+    await page.route(api('auth/login'), (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Invalid credentials' }),
+      }),
+    );
+    await page.goto('/');
+    await page.fill('#loginUser', 'admin');
+    await page.fill('#loginPass', 'falsch');
+    await page.getByRole('button', { name: /Anmelden|Sign in/ }).click();
+    // The dedicated error banner (the most common real failure) must render, and we
+    // must stay on the login page — a refactor dropping err.message would leave the
+    // user with no feedback while the happy-path test still passed (6.92).
+    await expect(page.locator('.login-error')).toHaveText('Invalid credentials');
+    await expect(page).not.toHaveURL(/#\/users/);
+  });
+
   test('visuelles Login-Layout stabil', async ({ page }) => {
     await mockLoggedOut(page);
     await page.goto('/');

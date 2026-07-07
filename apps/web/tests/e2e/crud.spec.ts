@@ -11,8 +11,8 @@ import { api, mockApi } from './mocks';
 
 async function gotoAuthenticated(page: Page, hash: string): Promise<void> {
   await page.goto(`/${hash}`);
+  // Deterministic ready signal instead of the fragile networkidle (see smoke.spec.ts) (6.155).
   await page.waitForSelector('.page-title', { state: 'visible' });
-  await page.waitForLoadState('networkidle');
 }
 
 // The FRP config modal is tall; its save button can sit below the fold. Submit
