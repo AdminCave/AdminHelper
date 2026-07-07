@@ -34,6 +34,11 @@ e2e_require
 e2e_init true                                  # MTLS_ENFORCE=true (enforced edge)
 ENROLL="https://localhost:$E2E_ENROLL_PORT"
 
+# Seed the repo mount BEFORE the stack starts, so the gateway bind-mounts a
+# host-owned ./repo — docker would otherwise create it root-owned and unwritable,
+# and the :8445 path-filter test (step 10) needs /apt genuinely served (6.125).
+mkdir -p "$E2E_REPO_ROOT/repo/apt" && echo probe-ok > "$E2E_REPO_ROOT/repo/apt/probe"
+
 e2e_up gateway && ok "gateway TLS edge is live on :$E2E_HTTPS_PORT" \
     || { bad "gateway never came up"; exit 1; }
 
@@ -168,6 +173,19 @@ codes=$(for _ in $(seq 1 40); do
 done)
 echo "$codes" | grep -q '^429$' && ok "enroll plane returns 429 after a burst (limit_req)" \
     || bad "no 429 after 40 enroll requests"
+
+# ── 10. Repo plane :8445 path filtering (6.63 exposes it, 6.125 asserts it) ──
+# Seed the host repo mount so /apt is genuinely served — else every path 404s and
+# the filter can't be told from a missing file. Only /apt|/rpm may be reachable;
+# traversal and everything else must 404 (never escape to the container fs).
+REPO="https://localhost:$E2E_REPO_PORT"
+code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$REPO/apt/probe" 2>/dev/null || echo 000)
+[ "$code" = "200" ] && ok "repo plane serves /apt (200)" || bad "/apt/probe expected 200, got '$code'"
+for path in /etc/passwd /apt/../etc/passwd /secret /rpm; do
+    code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "$REPO$path" 2>/dev/null || echo 000)
+    [ "$code" = "404" ] && ok "repo plane blocks $path (404)" || bad "repo plane leaked $path -> $code"
+done
+rm -f "$E2E_REPO_ROOT/repo/apt/probe" 2>/dev/null || true
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

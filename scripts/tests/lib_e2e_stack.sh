@@ -35,6 +35,7 @@ E2E_WORK=""
 E2E_PROJECT=""
 E2E_HTTPS_PORT=""
 E2E_ENROLL_PORT=""
+E2E_REPO_PORT=""
 E2E_SERVER_URL=""
 E2E_ADMIN_PW=""
 
@@ -72,6 +73,7 @@ e2e_init() {
     # The desktop app derives the enrollment plane as <server-host>:8444, so this
     # one must be the fixed 8444 — only the data plane gets a high per-run port.
     E2E_ENROLL_PORT=8444
+    E2E_REPO_PORT=8445
     E2E_SERVER_URL="https://localhost:$E2E_HTTPS_PORT"
     E2E_ADMIN_PW="e2e-$(e2e_rand)"
     cat > "$E2E_WORK/.env" <<EOF
@@ -84,6 +86,7 @@ ADMIN_PASSWORD=$E2E_ADMIN_PW
 MTLS_ENFORCE=${1:?e2e_init needs MTLS_ENFORCE (true|false)}
 ITEST_HTTPS_PORT=$E2E_HTTPS_PORT
 ITEST_ENROLL_PORT=$E2E_ENROLL_PORT
+ITEST_REPO_PORT=$E2E_REPO_PORT
 EOF
     trap e2e_teardown EXIT
 }

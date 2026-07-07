@@ -28,6 +28,8 @@ services:
       - "${ITEST_HTTPS_PORT:-18443}:443"
       # Enroll plane stays on 8444: the desktop app derives it as <host>:8444.
       - "${ITEST_ENROLL_PORT:-8444}:8444"
+      # Repo plane, so integration_stack_test can assert its path filtering (6.63/6.125).
+      - "${ITEST_REPO_PORT:-8445}:8445"
 
   ca-issuer:
     image: adminhelper-test/ca-issuer:latest
