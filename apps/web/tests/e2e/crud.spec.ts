@@ -144,6 +144,15 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
   });
 });
 
+test.describe('Weitere User-Journeys', () => {
+  test('Logout fuehrt zurueck zum Login', async ({ page }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/users');
+    await page.getByRole('button', { name: /Abmelden|Sign out/ }).click();
+    await expect(page.locator('.login-card')).toBeVisible();
+  });
+});
+
 test.describe('Fehler-Flows', () => {
   test('500 beim Anlegen eines Benutzers zeigt Fehler-Toast, Modal bleibt offen', async ({
     page,
