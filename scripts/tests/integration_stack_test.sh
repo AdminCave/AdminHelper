@@ -187,6 +187,28 @@ for path in /etc/passwd /apt/../etc/passwd /secret /rpm; do
 done
 rm -f "$E2E_REPO_ROOT/repo/apt/probe" 2>/dev/null || true
 
+# ── 11. Network segmentation: the PKI plane is off the default net (1.1) ──────
+# ca-issuer sits on the internal `pki` net (gateway + postgres only). A default-net
+# service — here the server, standing in for the internet-facing frps — must NOT reach
+# ca-issuer:8090, else it could forge the gateway's mTLS headers and mint certs. The
+# positive side (the gateway CAN reach it) is already proven by steps 1-9's enrollment,
+# which renews through the gateway→issuer path.
+# Positive control (server CAN reach a default-net peer, redis) + negative (NOT the
+# pki-only ca-issuer), so a broken exec/DNS can't masquerade as "isolated".
+if e2e_dc exec -T server python -c "
+import socket, sys
+socket.create_connection(('redis', 6379), timeout=4).close()          # default net: must work
+try:
+    socket.create_connection(('ca-issuer', 8090), timeout=4).close()  # pki plane: must NOT
+    sys.exit(2)
+except OSError:
+    sys.exit(0)
+" >/dev/null 2>&1; then
+    ok "PKI plane isolated: server reaches redis (default) but NOT ca-issuer:8090 (1.1)"
+else
+    bad "segmentation check failed: server reached ca-issuer:8090, or the redis control failed"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"

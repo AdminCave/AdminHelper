@@ -46,9 +46,10 @@ class Issuer:
     def _verify_ca_signed(self, cert: x509.Certificate) -> None:
         """Defense-in-depth: verify the presented cert was signed by one of our
         intermediates and is time-valid, instead of trusting the gateway's
-        x-client-verify: SUCCESS header alone. Any container that can reach the
-        issuer directly (the compose default bridge puts frps/server on the same
-        network) could otherwise POST a self-made cert and renew any identity (3.3)."""
+        x-client-verify: SUCCESS header alone. The `pki` compose network now fences the
+        issuer to the gateway (1.1), but this stays a second line: should that boundary
+        ever regress, a reachable container still must not be able to POST a self-made
+        cert and renew any identity (3.3)."""
         now = pki._now()
         if not (cert.not_valid_before_utc <= now <= cert.not_valid_after_utc):
             raise IssuanceError("Vorgelegtes Cert ist abgelaufen oder noch nicht gültig")

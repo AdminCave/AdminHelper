@@ -92,8 +92,11 @@ def frps_extra_sans() -> str:
 
 # Headers the gateway sets from the verified client cert (ADR 0001 §3.2). The
 # issuer trusts these only because the internal listener is reachable solely from
-# the gateway (no host port). Contract with apps/gateway/nginx.conf and
-# apps/server/app/core/identity.py — change only together with both (the old env
+# the gateway — enforced by the `pki` compose network (the issuer is off the default
+# net, so no other container, e.g. the internet-facing frps, can reach :8090 to forge
+# these headers — 1.1), not merely by the absence of a host port. Contract with
+# apps/gateway/nginx.conf and apps/server/app/core/identity.py — change only together
+# with both (the old env
 # knobs let the issuer drift from the gateway's hardcoded names and 401 every
 # renewal weeks later).
 HEADER_VERIFY = "x-client-verify"

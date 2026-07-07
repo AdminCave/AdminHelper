@@ -30,6 +30,9 @@ services:
     logging: *default-logging
     restart: unless-stopped
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
+    # In pki (so the ca-issuer reaches it without sharing the default net with frps)
+    # + default (server/scheduler/monitoring). No host port either way (1.1).
+    networks: [default, pki]
 
   server:
     image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
@@ -184,11 +187,14 @@ services:
         condition: service_started
       server:
         condition: service_healthy
+    # default to reach server:8080; pki to reach ca-issuer:8090 (1.1).
+    networks: [default, pki]
 
   ca-issuer:
     image: ${CA_ISSUER_IMAGE:-ghcr.io/admincave/adminhelper/ca-issuer:latest}
     # Internal-only PKI plane: the single signing capability (D6). Reachable only
-    # via the gateway's enroll listener; never from the host (no port mapping).
+    # via the gateway's enroll listener — now ENFORCED by the `pki` network below,
+    # not merely asserted (1.1); never from the host (no port mapping).
     expose:
       - "8090"
     volumes:
@@ -231,6 +237,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # ONLY pki — deliberately NOT on the default net, so no other service (above all
+    # the internet-facing frps) can reach :8090 to forge the gateway's mTLS headers
+    # and mint certs. gateway + postgres are its only pki peers (1.1).
+    networks: [pki]
 
   redis:
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
@@ -352,6 +362,15 @@ services:
   #   depends_on:
   #     postgres:
   #       condition: service_healthy
+
+# Two planes. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
+# plane is NOT on the shared default net — a compromised internet-facing frps could
+# otherwise reach ca-issuer:8090 and forge the gateway's mTLS headers to /renew, minting
+# client certs (1.1). Everything else stays on `default`.
+networks:
+  default: {}
+  pki:
+    internal: true
 
 volumes:
   frp-config:
