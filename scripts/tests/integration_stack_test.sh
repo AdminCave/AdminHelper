@@ -209,6 +209,23 @@ else
     bad "segmentation check failed: server reached ca-issuer:8090, or the redis control failed"
 fi
 
+# ── 12. frps is fenced off the internal net (3.28) ────────────────────────────
+# frps sits on its own frpedge net; redis:6379 + victoria:8428 (both auth-less) are on
+# the default net. A compromised frps must not reach them. redis is already up (server
+# needs it); frps + victoria aren't in the gateway dependency chain, so start them here.
+e2e_dc up -d frps victoria >/dev/null 2>&1
+for _ in $(seq 1 15); do
+    [ -n "$(e2e_dc ps -q frps 2>/dev/null)" ] && e2e_dc exec -T frps sh -c 'command -v nc >/dev/null 2>&1' && break
+    sleep 1
+done
+if ! e2e_dc exec -T frps sh -c 'command -v nc >/dev/null 2>&1'; then
+    bad "frps container/nc not available — 3.28 negative test inconclusive"
+elif e2e_dc exec -T frps sh -c 'nc -z -w2 redis 6379 || nc -z -w2 victoria 8428' >/dev/null 2>&1; then
+    bad "frps reached redis or victoria from frpedge — isolation broken (3.28)"
+else
+    ok "frps (frpedge) cannot reach auth-less redis:6379 / victoria:8428 (3.28)"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "integration_stack_test: $PASS passed, $FAIL failed"

@@ -281,6 +281,12 @@ services:
         condition: service_started
       ca-issuer:
         condition: service_healthy
+    # ONLY frpedge — the internet-facing tunnel edge gets its own network, off the
+    # default net, so a compromised frps (foreign image, RCE) can't reach the auth-less
+    # redis:6379 or victoria:8428 to inject SSE, wipe rate-limit state, or forge metrics.
+    # frps needs no other service at runtime — just its ports, depends_on, and the cert
+    # volume, all network-independent (3.28, second line of defense after 1.1).
+    networks: [frpedge]
 
   monitoring:
     image: ${MONITORING_IMAGE:-ghcr.io/admincave/adminhelper/monitoring:latest}
@@ -371,6 +377,10 @@ networks:
   default: {}
   pki:
     internal: true
+  # The internet-facing frps tunnel edge, fenced off the internal default net so a
+  # compromised frps can't reach the auth-less redis/victoria (3.28). Not `internal`:
+  # frps IS the public edge and needs its published ports.
+  frpedge: {}
 
 volumes:
   frp-config:
