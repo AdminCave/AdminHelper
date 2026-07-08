@@ -20,6 +20,13 @@ services:
     volumes:
       - test-data:/app/data
 
+  # The scheduler runs the SAME image as the server (only a different command), but
+  # docker-compose.yml pins it to the ghcr.io tag. Point it at the locally-built tag
+  # too, else a full `docker compose up` (e.g. from restore.sh) tries to pull the
+  # unavailable image and the whole up fails (6.64).
+  scheduler:
+    image: adminhelper-test/server:latest
+
   gateway:
     image: adminhelper-test/gateway:latest
     build:

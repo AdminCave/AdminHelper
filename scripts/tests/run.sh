@@ -167,6 +167,7 @@ layer_integration() {
     skip "integration suite" "docker + compose v2 required"; return
   fi
   run_step "integration_stack (mTLS gateway)" -- bash scripts/tests/integration_stack_test.sh
+  run_step "backup_restore (crown-jewel DR)"  -- bash scripts/tests/backup_restore_test.sh
   run_step "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
   run_step "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
   run_step "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
