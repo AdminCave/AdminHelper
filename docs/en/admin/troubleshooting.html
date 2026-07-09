@@ -46,7 +46,7 @@ docker compose down -v
           <h2>Login fails</h2>
           <ol>
             <li>Rate-limited? Check <code>docker compose logs server | grep ratelimit</code> – 5 bad attempts / 15 min blocks the IP.</li>
-            <li>Password forgotten? Set <code>ADMIN_PASSWORD=…</code> in <code>.env</code>, restart, log in, clear it out again.</li>
+            <li>Password forgotten? Changing <code>ADMIN_PASSWORD</code> and restarting does NOT help — startup only creates an admin when none exists (idempotent). Reset it directly, no login needed: <code>docker compose exec server python -m app.cli reset-admin --username admin --password NEW-PASSWORD</code> (or <code>--password-stdin</code> to keep it out of the process argv).</li>
             <li>Refresh cookie rejected? Check the clock skew between the browser and server (TOTP also relies on this).</li>
           </ol>
 

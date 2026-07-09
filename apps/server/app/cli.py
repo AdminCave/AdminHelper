@@ -5,6 +5,7 @@
 """Internal management CLI — run inside the server container:
 
     docker compose exec server python -m app.cli create-admin --username U --password P
+    docker compose exec server python -m app.cli reset-admin --username U --password P
     docker compose exec server python -m app.cli mint-enroll-token --username U [--ttl-minutes N]
 
 ``scripts/install.sh`` uses these to bootstrap the first admin + its enrollment
@@ -57,6 +58,24 @@ def create_admin(db, username: str, password: str) -> int:
     return 0
 
 
+def reset_admin(db, username: str, password: str) -> int:
+    """Reset an existing user's password — the recovery path for a forgotten admin
+    password. Returns a process exit code (0 ok, 1 refused). create_admin refuses an
+    existing user, and the API login needs the very password that is lost, so a
+    locked-out admin otherwise has no way back in (8.5)."""
+    if len(password) < _MIN_PASSWORD_LEN:
+        print(f"Fehler: Passwort muss >= {_MIN_PASSWORD_LEN} Zeichen sein.", file=sys.stderr)
+        return 1
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        print(f"Fehler: Benutzer '{username}' existiert nicht.", file=sys.stderr)
+        return 1
+    user.hashed_password = hash_password(password)
+    db.commit()
+    print(f"Passwort fuer '{username}' zurueckgesetzt.", file=sys.stderr)
+    return 0
+
+
 def mint_enroll_token(db, username: str, ttl_minutes: int) -> str | None:
     """Mint a one-time access enrollment token for an existing user. Returns the
     raw token, or None if the user does not exist."""
@@ -84,6 +103,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Read the password from the first line of stdin (no argv leak).",
     )
 
+    p_reset = sub.add_parser("reset-admin", help="Reset an existing user's password (recovery)")
+    p_reset.add_argument("--username", required=True)
+    p_reset.add_argument(
+        "--password",
+        help="New password. INSECURE: visible in the process argv "
+        "(/proc/<pid>/cmdline) for the duration of the call — prefer --password-stdin.",
+    )
+    p_reset.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read the password from the first line of stdin (no argv leak).",
+    )
+
     p_token = sub.add_parser(
         "mint-enroll-token", help="Mint a one-time access enrollment token for a user"
     )
@@ -102,6 +134,14 @@ def main(argv: list[str] | None = None) -> int:
             if not password:
                 parser.error("--password or --password-stdin is required")
             return create_admin(db, args.username, password)
+        if args.command == "reset-admin":
+            if args.password_stdin:
+                password = sys.stdin.readline().rstrip("\n")
+            else:
+                password = args.password
+            if not password:
+                parser.error("--password or --password-stdin is required")
+            return reset_admin(db, args.username, password)
         if args.command == "mint-enroll-token":
             token = mint_enroll_token(db, args.username, args.ttl_minutes)
             if token is None:

@@ -12,7 +12,7 @@ import io
 import pytest
 
 import app.cli as cli
-from app.cli import create_admin, mint_enroll_token
+from app.cli import create_admin, mint_enroll_token, reset_admin
 from app.core.auth import hash_api_key, verify_password
 from app.core.identity import SCOPE_ACCESS
 from app.modules.enrollment.models import EnrollmentToken
@@ -83,3 +83,22 @@ def test_main_create_admin_requires_a_password(monkeypatch):
     monkeypatch.setattr(cli, "SessionLocal", lambda: _FakeDB())
     with pytest.raises(SystemExit):  # parser.error exits when neither is given
         cli.main(["create-admin", "--username", "kevin"])
+
+
+def test_reset_admin_updates_password(db_session):
+    assert create_admin(db_session, "kevin", "supersecret") == 0
+    old_hash = db_session.query(User).filter_by(username="kevin").one().hashed_password
+    assert reset_admin(db_session, "kevin", "brandneu99") == 0
+    user = db_session.query(User).filter_by(username="kevin").one()
+    assert user.hashed_password != old_hash
+    assert verify_password("brandneu99", user.hashed_password)
+    assert not verify_password("supersecret", user.hashed_password)
+
+
+def test_reset_admin_refuses_unknown_user(db_session):
+    assert reset_admin(db_session, "nobody", "brandneu99") == 1
+
+
+def test_reset_admin_refuses_short_password(db_session):
+    assert create_admin(db_session, "kevin", "supersecret") == 0
+    assert reset_admin(db_session, "kevin", "kurz") == 1

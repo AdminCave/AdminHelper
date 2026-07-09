@@ -55,8 +55,9 @@ docker compose down -v
             </div>
             <div class="card" data-reveal>
               <h3>Admin-Passwort vergessen</h3>
-              <p>Neues <code>ADMIN_PASSWORD</code> in die <code>.env</code> schreiben, DB-Entry aktualisieren:</p>
-              <pre><code>docker compose exec server python -m app.cli reset-admin</code></pre>
+              <p><code>ADMIN_PASSWORD</code> in der <code>.env</code> zu ändern hilft NICHT — der Startup legt einen Admin nur an, wenn noch keiner existiert (idempotent). Das Passwort direkt zurücksetzen (kein Login nötig):</p>
+              <pre><code>docker compose exec server python -m app.cli reset-admin --username admin --password NEUES-PASSWORT</code></pre>
+              <p>Sicherer (Passwort nicht im Prozess-<code>argv</code>): <code>--password-stdin</code> statt <code>--password</code> und das Passwort auf stdin.</p>
             </div>
             <div class="card" data-reveal>
               <h3>„Session abgelaufen" direkt nach Login</h3>
