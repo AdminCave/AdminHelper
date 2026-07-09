@@ -22,10 +22,11 @@ def test_accepts_valid_definition():
     assert d.check_type == "ping"
 
 
-def test_accepts_cron_interval():
-    # Templates additionally allow a 5-field cron expression.
-    d = TemplateCheckDef(**_def(interval="*/5 * * * *"))
-    assert d.interval == "*/5 * * * *"
+def test_rejects_cron_interval():
+    # Cron support was removed (2.113): templates accept only the fixed VALID_INTERVALS,
+    # matching the /checks CRUD boundary — a 5-field cron is no longer valid.
+    with pytest.raises(ValidationError):
+        TemplateCheckDef(**_def(interval="*/5 * * * *"))
 
 
 def test_rejects_unknown_check_type():

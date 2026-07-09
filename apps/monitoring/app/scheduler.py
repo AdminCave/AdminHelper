@@ -16,7 +16,6 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.check_engine import execute_check
@@ -56,15 +55,10 @@ _INTERVAL_MAP = {
 
 
 def _parse_trigger(interval: str):
-    """Converts an interval string or cron expression into an APScheduler trigger."""
+    """Converts a fixed-interval string into an APScheduler trigger."""
     if interval in _INTERVAL_MAP:
         return IntervalTrigger(**_INTERVAL_MAP[interval])
-    parts = interval.split()
-    if len(parts) == 5:
-        return CronTrigger.from_crontab(interval)
-    raise ValueError(
-        f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)} oder Cron (5 Felder)"
-    )
+    raise ValueError(f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)}")
 
 
 def add_check(check_id: str, interval: str, check_type: str | None) -> None:

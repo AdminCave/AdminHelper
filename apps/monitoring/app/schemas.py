@@ -67,8 +67,7 @@ class TemplateCheckDef(BaseModel):
     # Same boundary the /checks router enforces for CheckCreate — so a template
     # check goes through identical validation instead of failing only later at
     # assign/sync time (ValueError from _parse_trigger) or being silently skipped
-    # at startup. Templates additionally allow a 5-field cron expression, which
-    # the scheduler's _parse_trigger accepts (fixed intervals do not).
+    # at startup.
     @field_validator("check_type")
     @classmethod
     def _check_type_valid(cls, v: str) -> str:
@@ -79,7 +78,7 @@ class TemplateCheckDef(BaseModel):
     @field_validator("interval")
     @classmethod
     def _interval_valid(cls, v: str) -> str:
-        if v not in VALID_INTERVALS and len(v.split()) != 5:
+        if v not in VALID_INTERVALS:
             raise ValueError(f"Ungueltiges Intervall: {v}")
         return v
 

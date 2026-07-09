@@ -77,7 +77,7 @@
             <thead><tr><th>Modus</th><th>Check-Typen</th><th>Trigger</th></tr></thead>
             <tbody>
               <tr><td>Push (Agent)</td><td><code>agent_resources</code>, <code>service_process</code>, <code>docker_health</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>smart_health</code></td><td>Beim n&auml;chsten Agent-Push (5-Min-Timer); APScheduler ist <strong>nicht</strong> beteiligt.</td></tr>
-              <tr><td>Pull (Service)</td><td><code>http</code>, <code>ping</code>, <code>tcp</code>, <code>agent_ping</code></td><td>APScheduler im Monitoring-Service nach <code>interval</code> oder Cron.</td></tr>
+              <tr><td>Pull (Service)</td><td><code>http</code>, <code>ping</code>, <code>tcp</code>, <code>agent_ping</code></td><td>APScheduler im Monitoring-Service nach festem <code>interval</code>.</td></tr>
             </tbody>
           </table>
           <p>Beide Pfade landen am Ende in <code>execute_check()</code> &rarr; Status-Update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics-Write &rarr; ggf. <code>process_alert()</code>, sobald <code>fail_count &ge; consecutive_fails</code>.</p>

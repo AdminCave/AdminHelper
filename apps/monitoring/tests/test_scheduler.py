@@ -8,7 +8,6 @@ the alert-log retention cleanup."""
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -32,16 +31,17 @@ def test_parse_trigger_hours():
     assert trigger.interval == timedelta(hours=12)
 
 
-def test_parse_trigger_cron():
-    trigger = sched._parse_trigger("*/10 2 * * 1")
-    assert isinstance(trigger, CronTrigger)
+def test_parse_trigger_rejects_cron():
+    # Cron support was removed (2.113): only the fixed VALID_INTERVALS are schedulable.
+    with pytest.raises(ValueError):
+        sched._parse_trigger("*/10 2 * * 1")  # 5-field cron no longer accepted
 
 
 def test_parse_trigger_invalid_raises():
     with pytest.raises(ValueError):
         sched._parse_trigger("7x")
     with pytest.raises(ValueError):
-        sched._parse_trigger("* * *")  # 3 fields is not a cron expression
+        sched._parse_trigger("* * *")
 
 
 # --- add_check push-only skip -------------------------------------------------
