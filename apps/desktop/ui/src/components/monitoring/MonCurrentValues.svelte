@@ -6,7 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import type { MonitoringMetricsResponse } from '$lib/api/types';
-  import { checkTypeUnit, metricLabel } from '$lib/models/monitoring';
+  import { checkTypeUnit, metricSeriesLabel } from '$lib/models/monitoring';
 
   interface Props {
     metrics: MonitoringMetricsResponse | null;
@@ -32,7 +32,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       const last = parseFloat(values[values.length - 1][1]);
       if (Number.isNaN(last)) continue;
       const formatted = Number.isInteger(last) ? String(last) : last.toFixed(1);
-      out.push({ label: metricLabel(name), value: `${formatted}${unit}` });
+      out.push({ label: metricSeriesLabel(series.metric), value: `${formatted}${unit}` });
     }
     return out;
   });

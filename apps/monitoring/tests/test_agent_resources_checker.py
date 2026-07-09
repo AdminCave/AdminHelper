@@ -60,10 +60,10 @@ def test_pseudo_filesystems_are_filtered_out():
             {"mount": "/", "fstype": "ext4", "percent": 99},  # real, over crit
         ]
     )
-    status, msg, metrics = CHECKER.evaluate(T, report)
+    status, msg, _ = CHECKER.evaluate(T, report)
     assert status == "critical"
     assert "Disk /" in msg
-    assert "agent_disk_percent_/tmp" not in metrics  # never even measured
+    assert "Disk /tmp" not in msg  # excluded fstype is never graded
 
 
 def test_per_sensor_temperature_override_lowers_the_threshold():

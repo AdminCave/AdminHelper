@@ -145,7 +145,9 @@ class AgentResourcesChecker:
         for disk in disks:
             pct = disk.get("percent", 0)
             mount = disk.get("mount", "?")
-            metrics[f"agent_disk_percent_{mount}"] = pct
+            # No per-mount metric: the agent router already writes monitor_agent_disk_percent
+            # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
+            # duplicate series in a second schema (1.18); the value is still graded below.
             status = _grade(
                 pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%", problems, status
             )
@@ -159,7 +161,8 @@ class AgentResourcesChecker:
             for sensor in temperatures:
                 temp_c = sensor.get("temp_c", 0)
                 sensor_name = sensor.get("sensor", "?")
-                metrics[f"agent_temp_{sensor_name}"] = temp_c
+                # Same as disks: the router writes monitor_agent_temp dimensionally (sensor
+                # tag); the name-encoded copy here was the duplicate (1.18). Still graded below.
                 ov = temp_overrides.get(sensor_name, {})
                 s_crit = ov.get("crit", temp_crit)
                 s_warn = ov.get("warn", temp_warn)

@@ -143,6 +143,18 @@ export function metricLabel(name: string): string {
     .replace(/_/g, ' ');
 }
 
+/**
+ * Label a returned metric series. The agent-resources dimensional schema writes one series per
+ * disk/sensor that all share the same __name__ (monitor_agent_disk_percent), distinguished only by
+ * a `mount`/`sensor` tag — so appending that tag is what keeps the per-mount lines apart in the
+ * chart legend and the current-values list, whose {#each} keys must be unique (1.18).
+ */
+export function metricSeriesLabel(metric: MonitoringMetricSeries['metric']): string {
+  const base = metricLabel(metric?.__name__ || '');
+  const dimension = metric?.mount ?? metric?.sensor;
+  return dimension ? `${base} ${dimension}` : base;
+}
+
 export function checkTypeUnit(checkType: MonitorCheckType | string): string {
   if (['ping', 'tcp', 'http'].includes(checkType)) return 'ms';
   if (['agent_resources', 'zfs_health'].includes(checkType)) return '%';

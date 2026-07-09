@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     buildAlignedData,
     checkTypeUnit,
     isPercentCheck,
-    metricLabel,
+    metricSeriesLabel,
   } from '$lib/models/monitoring';
   import { tNow } from '$lib/i18n';
 
@@ -75,9 +75,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const uplotSeries: Options['series'] = [{}];
 
     for (let i = 0; i < series.length; i++) {
-      const metricName = series[i].metric?.__name__ || `Series ${i + 1}`;
       uplotSeries.push({
-        label: metricLabel(metricName),
+        label: metricSeriesLabel(series[i].metric) || `Series ${i + 1}`,
         stroke: COLORS[i % COLORS.length],
         width: 2,
         fill: ['service_process', 'proxmox_backup', 'docker_health'].includes(checkType)

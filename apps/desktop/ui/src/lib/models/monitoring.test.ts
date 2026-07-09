@@ -12,6 +12,7 @@ import {
   checkTypeUnit,
   isPercentCheck,
   buildAlignedData,
+  metricSeriesLabel,
 } from './monitoring';
 import type { MonitorCheck, Server } from '$lib/api/types';
 
@@ -106,6 +107,25 @@ describe('statusClass + units', () => {
     expect(isPercentCheck('agent_resources')).toBe(true);
     expect(isPercentCheck('zfs_health')).toBe(true);
     expect(isPercentCheck('ping')).toBe(false);
+  });
+});
+
+describe('metricSeriesLabel (1.18)', () => {
+  it('strips the metric prefix/suffix like metricLabel when there is no dimension tag', () => {
+    expect(metricSeriesLabel({ __name__: 'monitor_agent_cpu_percent_value' })).toBe('cpu percent');
+  });
+  it('appends the mount tag so per-disk series stay distinguishable', () => {
+    const base = { __name__: 'monitor_agent_disk_percent_value' };
+    expect(metricSeriesLabel({ ...base, mount: '/' })).toBe('disk percent /');
+    expect(metricSeriesLabel({ ...base, mount: '/home' })).toBe('disk percent /home');
+  });
+  it('appends the sensor tag for temperatures', () => {
+    expect(metricSeriesLabel({ __name__: 'monitor_agent_temp_value', sensor: 'coretemp' })).toBe(
+      'temp coretemp',
+    );
+  });
+  it('is empty for a missing metric so callers can fall back', () => {
+    expect(metricSeriesLabel(undefined)).toBe('');
   });
 });
 
