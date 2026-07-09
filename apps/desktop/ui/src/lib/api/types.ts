@@ -19,7 +19,6 @@ export interface Connection {
   notes?: string | null;
   trustCert?: boolean | null;
   lastUsed?: string | null;
-  scalingMode?: string | null;
 }
 
 export interface Server {

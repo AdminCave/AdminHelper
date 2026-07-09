@@ -22,7 +22,6 @@ class ConnectionCreate(BaseModel):
     tags: Optional[list[str]] = []
     trustCert: Optional[bool] = False
     lastUsed: Optional[str] = None
-    scalingMode: Optional[str] = None
     serverId: Optional[str] = None
 
     model_config = {"extra": "allow"}
@@ -51,7 +50,6 @@ class ConnectionUpdate(BaseModel):
     tags: Optional[list[str]] = None
     trustCert: Optional[bool] = None
     lastUsed: Optional[str] = None
-    scalingMode: Optional[str] = None
     serverId: Optional[str] = None
 
     model_config = {"extra": "allow"}
