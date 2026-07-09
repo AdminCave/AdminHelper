@@ -6,9 +6,9 @@ import json
 from typing import Any
 
 from sqlalchemy import Column, DateTime, String
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 
 class Playbook(Base):
@@ -19,8 +19,8 @@ class Playbook(Base):
     filename = Column(String, nullable=False)
     description = Column(String, nullable=True)
     tags = Column(String, nullable=True)  # JSON-Array als String
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
+    updated_at = Column(DateTime, onupdate=utc_now_sql())
 
     def to_dict(self) -> dict[str, Any]:
         return {

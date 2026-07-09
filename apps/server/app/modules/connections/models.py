@@ -6,9 +6,9 @@ import json
 from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 # Fields mapped between camelCase (API) and snake_case (DB)
 _CAMEL_TO_SNAKE = {
@@ -61,7 +61,7 @@ class Connection(Base):
     server_id = Column(
         String, ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the ORM object into an API-compatible dict (camelCase)."""

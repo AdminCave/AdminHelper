@@ -13,13 +13,27 @@ Two DateTime storage conventions coexist in the schema (audit F7):
     ``DateTime(timezone=True)`` and store aware datetimes.
 
 Comparing a naive with an aware datetime raises TypeError, so a call site must
-know which world a column belongs to. New tz-naive columns should use this helper.
+know which world a column belongs to. New tz-naive columns should use these helpers
+(``utcnow_naive()`` in Python, ``utc_now_sql()`` for a column server_default).
 """
 
 from datetime import datetime, timezone
+
+from sqlalchemy import func
 
 
 def utcnow_naive() -> datetime:
     """Current UTC time as a tz-naive datetime — the storage convention of the
     tz-naive DateTime columns (F7)."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def utc_now_sql():
+    """SQL default for tz-naive UTC columns — the DB-side twin of utcnow_naive().
+
+    ``timezone('UTC', now())`` yields the UTC wall-clock as a *naive* timestamp
+    regardless of the database session's timezone. A bare ``func.now()`` coerces in
+    the session TZ, and the stack runs the postgres container with
+    ``TZ=Europe/Berlin`` — so ``server_default=func.now()`` stored Berlin local time
+    while the application writes UTC via ``utcnow_naive()`` (8.14)."""
+    return func.timezone("UTC", func.now())

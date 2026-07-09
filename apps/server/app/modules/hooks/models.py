@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from sqlalchemy import Boolean, Column, DateTime, String
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 
 class Hook(Base):
@@ -17,7 +17,7 @@ class Hook(Base):
     hook_type = Column(String, nullable=False)  # "webhook", "event", "schedule"
     script = Column(String, nullable=False)
     enabled = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     # Webhook-specific
     hashed_token = Column(String, unique=True, nullable=True, index=True)

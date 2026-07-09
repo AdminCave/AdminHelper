@@ -4,9 +4,9 @@
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 user_server_assoc = Table(
     "user_servers",
@@ -32,7 +32,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
     # Credential-invalidation watermark: JWTs whose `iat` predates this are
     # rejected (set on password reset). NULL = no revocation, all tokens valid.
     tokens_valid_after = Column(DateTime, nullable=True)

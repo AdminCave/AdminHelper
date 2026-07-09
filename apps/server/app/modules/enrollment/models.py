@@ -18,10 +18,9 @@ from typing import Any
 from sqlalchemy import Boolean, Column, DateTime, String, UniqueConstraint, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
-from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.core.time import utcnow_naive
+from app.core.time import utc_now_sql, utcnow_naive
 
 
 class EnrollmentToken(Base):
@@ -43,7 +42,7 @@ class EnrollmentToken(Base):
     browser = Column(Boolean, nullable=False, default=False)  # long-lived browser leaf (D5)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     def is_valid(self) -> bool:
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -91,7 +90,7 @@ class RevokedIdentity(Base):
     id = Column(String, primary_key=True)
     subject_id = Column(String, nullable=False)
     scope = Column(String, nullable=False)
-    revoked_at = Column(DateTime, server_default=func.now())
+    revoked_at = Column(DateTime, server_default=utc_now_sql())
 
 
 def revoke_identity(db: Session, subject_id: str, scope: str) -> None:

@@ -15,10 +15,9 @@ from typing import Any
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, or_
 from sqlalchemy.orm import Session, backref, relationship
-from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.core.time import utcnow_naive
+from app.core.time import utc_now_sql, utcnow_naive
 
 
 class ProvisionToken(Base):
@@ -31,7 +30,7 @@ class ProvisionToken(Base):
     hashed_token = Column(String, unique=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     server = relationship(
         "Server",
