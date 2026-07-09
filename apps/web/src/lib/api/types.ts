@@ -70,26 +70,6 @@ export class ApiError extends Error {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-export type ConnectionKind = 'ssh' | 'rdp' | 'web';
-
-export interface Connection {
-  id: string;
-  name: string;
-  kind: ConnectionKind;
-  host?: string | null;
-  url?: string | null;
-  port?: number | null;
-  username?: string | null;
-  domain?: string | null;
-  keyPath?: string | null;
-  serverId?: string | null;
-  tags?: string[];
-  notes?: string | null;
-  trustCert?: boolean | null;
-  lastUsed?: string | null;
-  scalingMode?: string | null;
-}
-
 export interface Server {
   id: string;
   name: string;
@@ -97,7 +77,6 @@ export interface Server {
   osType?: string | null;
   tags?: string[];
   notes?: string | null;
-  connections?: Connection[];
 }
 
 export type HookType = 'webhook' | 'event' | 'schedule';
@@ -152,16 +131,6 @@ export interface HookRunResult {
 
 export interface HookTokenResult {
   token: string;
-}
-
-export interface Playbook {
-  id: string;
-  name: string;
-  filename: string;
-  description?: string | null;
-  tags?: string[];
-  createdAt?: string | null;
-  updatedAt?: string | null;
 }
 
 export interface FrpConfig {
