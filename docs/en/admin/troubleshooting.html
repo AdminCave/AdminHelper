@@ -65,6 +65,7 @@ systemctl status adminhelper-agent.timer
 journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
 
           <p>Common causes: clock skew &gt; 5 min, expired client cert, DNS failure, firewall blocking <code>7443/tcp</code>.</p>
+          <p><strong>Timer red vs. green:</strong> A <em>permanent</em> failure — a revoked/rotated API key (401/403) or a deleted server (404) — makes the <code>adminhelper-agent.service</code> oneshot exit non-zero (shows as <code>failed</code> in <code>systemctl status</code>, and a configured <code>OnFailure=</code> fires). <em>Transient</em> failures (server 5xx, network/DNS) stay green and are retried on the next run.</p>
 
           <p><strong>Desktop client, “Allow self-signed certificates”:</strong> the first connection <em>pins</em> the server certificate's SHA-256 fingerprint (trust-on-first-use, like SSH <code>known_hosts</code>) in the OS keyring; afterwards only that exact certificate is accepted and any change is rejected as a possible MITM. If a <em>legitimate</em> certificate rotation triggers <code>AdminHelper TOFU: … changed</code>, click <em>Reset pinned certificate</em> in the desktop settings and reconnect (re-pins on next connect).</p>
 

@@ -9,12 +9,29 @@ package httpclient
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"time"
 )
+
+// ErrPermanent marks an HTTP failure that a retry cannot fix — the agent's
+// credentials or identity are the problem (rotated/revoked API key, deleted
+// server), not a transient outage. A oneshot run (systemd timer) surfaces it as a
+// non-zero exit so OnFailure fires, instead of silently staying green while
+// misconfigured (4.80/4.81).
+var ErrPermanent = errors.New("permanenter Fehler")
+
+// isPermanentStatus classifies the 4xx codes an agent retry cannot resolve: 401
+// (rotated/revoked key), 403 (key lacks the server binding), 404 (server
+// deprovisioned). Everything else (5xx, 429, network/timeout) is transient.
+func isPermanentStatus(code int) bool {
+	return code == http.StatusUnauthorized ||
+		code == http.StatusForbidden ||
+		code == http.StatusNotFound
+}
 
 // noRedirect makes a client return a 3xx as its final response instead of
 // following it. Go only strips Authorization/Cookie on a cross-host redirect, so the
@@ -105,6 +122,9 @@ func Do(client *http.Client, req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("Antwort ueberschreitet %d Bytes", MaxResponseBytes)
 	}
 	if resp.StatusCode >= 300 {
+		if isPermanentStatus(resp.StatusCode) {
+			return nil, fmt.Errorf("%w: HTTP %d: %s", ErrPermanent, resp.StatusCode, body)
+		}
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
 	}
 	return body, nil

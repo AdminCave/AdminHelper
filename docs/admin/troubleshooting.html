@@ -80,6 +80,7 @@ docker compose down -v
             <li>API-Key widerrufen? Im Desktop-Client (Server-Modus) → <em>Infrastruktur → Server → Tab Provisionierung</em> einen neuen Token erzeugen und am Host einlösen.</li>
             <li>Zertifikat abgelaufen? <code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code></li>
           </ol>
+          <p><strong>Timer rot vs. grün:</strong> Bei einem <em>permanenten</em> Fehler — widerrufener/rotierter API-Key (401/403) oder gelöschter Server (404) — beendet sich der Oneshot-Lauf <code>adminhelper-agent.service</code> mit Exit&ne;0 (erscheint als <code>failed</code> in <code>systemctl status</code>, ein konfiguriertes <code>OnFailure=</code> feuert). <em>Transiente</em> Fehler (Server-5xx, Netz/DNS) bleiben grün und werden beim nächsten Lauf erneut versucht.</p>
 
           <h2>Monitoring zeigt keine Daten</h2>
           <ul>

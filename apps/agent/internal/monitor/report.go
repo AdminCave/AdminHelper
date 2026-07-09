@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -130,6 +131,11 @@ func PushReport(ctx context.Context, p PushReportParams) error {
 	defer client.CloseIdleConnections()
 
 	if err := pushOnce(ctx, client, endpoint, apiKey, data); err != nil {
+		// A permanent failure (rotated/revoked key, deleted server) won't heal on a
+		// retry — surface it at once so the oneshot exits non-zero (4.81).
+		if errors.Is(err, httpclient.ErrPermanent) {
+			return err
+		}
 		logger.Warnf("Push fehlgeschlagen (%v), Retry in %s...", err, pushRetryDelay)
 		select {
 		case <-time.After(pushRetryDelay):

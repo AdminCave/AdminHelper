@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,41 @@ func TestDoMapsErrorStatusWithBody(t *testing.T) {
 	// the old monitor push dropped the body).
 	if !strings.Contains(err.Error(), "500") || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("Fehler %q enthaelt nicht Status+Body", err.Error())
+	}
+}
+
+func TestDoMarks4xxAuthErrorsPermanent(t *testing.T) {
+	// 4.80/4.81: 401/403/404 mean the agent's credentials or identity are the problem
+	// (rotated/revoked key, deleted server) — a retry won't help, so a oneshot must
+	// surface it (errors.Is ErrPermanent) and exit non-zero.
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+		}))
+		req, _ := http.NewRequest("GET", srv.URL, nil)
+		_, err := Do(srv.Client(), req)
+		srv.Close()
+		if !errors.Is(err, ErrPermanent) {
+			t.Errorf("HTTP %d: errors.Is(err, ErrPermanent) = false, want true (err=%v)", code, err)
+		}
+	}
+}
+
+func TestDoTreats5xxAsTransient(t *testing.T) {
+	// A 500 is transient — the oneshot logs it and stays green so the next run retries;
+	// it must NOT be flagged permanent.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL, nil)
+	_, err := Do(srv.Client(), req)
+	if err == nil {
+		t.Fatal("erwartet Fehler bei HTTP 500")
+	}
+	if errors.Is(err, ErrPermanent) {
+		t.Error("HTTP 500 darf nicht als permanent klassifiziert werden (transient)")
 	}
 }
 
