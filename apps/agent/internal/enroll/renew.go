@@ -44,6 +44,22 @@ func NeedsRenewal(certPEM []byte, fraction float64) (bool, error) {
 	return time.Since(cert.NotBefore) >= time.Duration(float64(total)*fraction), nil
 }
 
+// leafExpired reports whether the leaf in certPEM is already past NotAfter, returning
+// the expiry time for a clear operator message. An expired leaf can never complete the
+// mTLS handshake, and under enforcement there is no fallback — so the agent must be
+// re-provisioned rather than hang on generic handshake errors (4.8).
+func leafExpired(certPEM []byte) (bool, time.Time, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, time.Time{}, fmt.Errorf("kein Zertifikat-PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, time.Time{}, fmt.Errorf("Zertifikat parsen: %w", err)
+	}
+	return time.Now().After(cert.NotAfter), cert.NotAfter, nil
+}
+
 // Renew submits a fresh CSR to <baseURL>/ca/renew using the CURRENT identity for
 // mTLS (the issuer derives CN + scope from that presented cert, not the CSR) and
 // atomically swaps the stored identity to the new key + cert on success.

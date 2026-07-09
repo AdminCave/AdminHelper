@@ -271,3 +271,25 @@ func TestMaybeRenewRenewsWhenDue(t *testing.T) {
 		t.Error("renewFunc muss bei faelligem Cert laufen")
 	}
 }
+
+func TestLeafExpired(t *testing.T) {
+	now := time.Now()
+
+	valid, _ := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
+	if exp, _, err := leafExpired(valid); err != nil || exp {
+		t.Errorf("gueltiges Leaf: expired=%v err=%v, want false/nil", exp, err)
+	}
+
+	stale, _ := selfSigned(t, "agent", now.Add(-2*time.Hour), now.Add(-time.Hour))
+	exp, notAfter, err := leafExpired(stale)
+	if err != nil || !exp {
+		t.Errorf("abgelaufenes Leaf: expired=%v err=%v, want true/nil", exp, err)
+	}
+	if notAfter.After(now) {
+		t.Errorf("abgelaufenes Leaf: notAfter %v sollte in der Vergangenheit liegen", notAfter)
+	}
+
+	if _, _, err := leafExpired([]byte("kein PEM")); err == nil {
+		t.Error("Muell-PEM: want error, got nil")
+	}
+}
