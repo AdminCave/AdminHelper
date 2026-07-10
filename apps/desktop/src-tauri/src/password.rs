@@ -426,4 +426,49 @@ mod tests {
             "rdp|h|3389|u|"
         );
     }
+
+    // Windows-only credential/target formatting. These execute now that the CI
+    // Windows job runs `cargo test` instead of only `cargo check` (6.33).
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_target_uses_termsrv_and_omits_default_port() {
+        assert_eq!(
+            rdp_windows_target(&rdp(Some("srv"), None, Some("u"), None)).unwrap(),
+            "TERMSRV/srv"
+        );
+        assert_eq!(
+            rdp_windows_target(&rdp(Some("srv"), Some(3390), Some("u"), None)).unwrap(),
+            "TERMSRV/srv:3390"
+        );
+        assert!(rdp_windows_target(&rdp(None, None, Some("u"), None)).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_username_prefixes_domain_with_backslash() {
+        assert_eq!(
+            rdp_windows_username(&rdp(Some("h"), None, Some("u"), None)).unwrap(),
+            "u"
+        );
+        assert_eq!(
+            rdp_windows_username(&rdp(Some("h"), None, Some("u"), Some("CORP"))).unwrap(),
+            "CORP\\u"
+        );
+        assert!(rdp_windows_username(&rdp(Some("h"), None, None, None)).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn utf16_null_appends_terminator() {
+        assert_eq!(to_utf16_null("AB"), vec![0x41u16, 0x42, 0x00]);
+        assert_eq!(to_utf16_null(""), vec![0x00u16]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn utf16_bytes_are_little_endian_without_terminator() {
+        // 'A' = U+0041 → LE bytes 0x41 0x00; no trailing NUL.
+        assert_eq!(utf16_bytes("A"), vec![0x41u8, 0x00]);
+        assert_eq!(utf16_bytes("AB"), vec![0x41u8, 0x00, 0x42, 0x00]);
+    }
 }

@@ -322,10 +322,11 @@ jobs:
         run: cargo test
 
   # Audit C1: the windows = "0.61" code paths were never compiled in CI —
-  # "green but broken" releases were possible. cargo check is the cheap gate;
-  # the full MSI build stays in release.yml.
+  # "green but broken" releases were possible. cargo test now compiles AND runs
+  # the windows-gated unit tests (6.33 — check alone never executed them); the
+  # full MSI build stays in release.yml.
   rust-windows:
-    name: Desktop-Backend (cargo check, Windows)
+    name: Desktop-Backend (cargo test, Windows)
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -344,9 +345,9 @@ jobs:
           mkdir -p apps/desktop/src-tauri/binaries
           cp "frp_${FRP_VERSION}_windows_amd64/frpc.exe" \
             apps/desktop/src-tauri/binaries/frpc-x86_64-pc-windows-msvc.exe
-      - name: cargo check
+      - name: cargo test
         working-directory: apps/desktop/src-tauri
-        run: cargo check --locked
+        run: cargo test --locked
 
   # Audit C2: cargo tauri build (beforeBuildCommand, UI embedding, deb
   # bundling) only ran on tags — exactly the failure class of
