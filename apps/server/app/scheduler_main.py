@@ -52,7 +52,9 @@ def _wait_for_schema_head(*, retries: int = 60, interval: float = 5.0) -> None:
             current = MigrationContext.configure(conn).get_current_revision()
         if current == head:
             return
-        logger.warning("Schema at %s, head is %s — waiting for the web service migration...", current, head)
+        logger.warning(
+            "Schema at %s, head is %s — waiting for the web service migration...", current, head
+        )
         time.sleep(interval)
     raise SystemExit(f"Schema never reached head ({head}) — aborting scheduler start")
 

@@ -55,7 +55,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     >
       {$t('monitoring.tab.templates')}
     </button>
-    <button class="mon-tab" class:active={tab === 'log'} data-tab="log" onclick={() => setTab('log')}>
+    <button
+      class="mon-tab"
+      class:active={tab === 'log'}
+      data-tab="log"
+      onclick={() => setTab('log')}
+    >
       {$t('monitoring.tab.log')}
     </button>
   </div>

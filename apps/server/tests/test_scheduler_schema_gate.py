@@ -26,11 +26,13 @@ def _patch_schema(monkeypatch, head, current):
     import app.core.database as db
 
     monkeypatch.setattr(
-        ascript.ScriptDirectory, "from_config",
+        ascript.ScriptDirectory,
+        "from_config",
         lambda cfg: type("SD", (), {"get_current_head": lambda self: head})(),
     )
     monkeypatch.setattr(
-        arm.MigrationContext, "configure",
+        arm.MigrationContext,
+        "configure",
         lambda conn, **kw: type("MC", (), {"get_current_revision": lambda self: current})(),
     )
 
