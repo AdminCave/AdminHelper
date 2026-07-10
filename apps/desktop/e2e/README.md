@@ -43,6 +43,10 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 - **`test/specs/settings-mode.live.js`** — switch the app mode (server → local) in
   Settings; the server session ends and the server-only UI (mode badge, the
   Infrastructure nav) changes. Runs last in the `desktop_e2e_crud.sh` boot.
+- **`test/specs/login-error.live.js`** — the negative auth path: a wrong password
+  surfaces the inline error and never reaches the app shell.
+- **`test/specs/logout.live.js`** — signing out ends the session and returns to the
+  login screen (the app shell + nav go away).
 - **`test/specs/monitoring-check.live.js`** — create an `agent_resources`
   monitoring check through the GUI on a server a real agent has pushed metrics
   for; the check appears after a reload from the monitoring service. Orchestrated
