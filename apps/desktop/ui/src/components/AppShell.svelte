@@ -189,6 +189,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button
           class="sidebar-item"
           class:active={currentId === item.id}
+          data-nav={item.id}
           onclick={() => go(item)}
           title={$t(item.labelKey)}
         >

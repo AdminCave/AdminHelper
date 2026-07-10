@@ -13,7 +13,7 @@ describe('Provisioning token via the GUI', () => {
   it('mints an enrollment token for the seeded server', async () => {
     await login();
     await gotoInfrastructure();
-    await openServerTab(4); // provisioning tab (overview/connections/tunnels/monitoring/provisioning)
+    await openServerTab('provisioning');
 
     await $('.prov .btn.primary').click();
 

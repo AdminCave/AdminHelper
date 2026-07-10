@@ -19,7 +19,7 @@ describe('Monitoring check via the GUI', () => {
   it('creates an agent_resources check on the seeded server', async () => {
     await login();
     await gotoInfrastructure();
-    await openServerTab(3); // overview / connections / tunnels / monitoring / provisioning
+    await openServerTab('monitoring');
 
     await $('.mon-toolbar .btn.primary').click();
     await $('.editor-overlay .editor-panel').waitForExist({ timeout: 10000 });

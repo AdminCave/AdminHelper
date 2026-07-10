@@ -121,17 +121,18 @@ export function ensureAllSubscription() {
 }
 
 export async function gotoInfrastructure() {
-  const nav = await $$('.sidebar-nav .sidebar-item'); // dashboard(0), connections(1), infrastructure(2)
-  await nav[2].click();
+  // By stable nav id, not a positional index — a reordered sidebar would silently
+  // click the wrong section (4.31).
+  await $('.sidebar-nav [data-nav="infrastructure"]').click();
   await $('.srv-item').waitForExist({ timeout: 15000 }); // the seeded server auto-selects
 }
 
-// Server-detail tabs: overview(0), connections(1), tunnels(2), monitoring(3),
-// provisioning(4) — order from ServerDetail.svelte.
-export async function openServerTab(index) {
+// Open a server-detail tab by its stable id (overview | connections | tunnels |
+// monitoring | provisioning), not a positional index a reordered tab list would
+// silently mismap (4.31).
+export async function openServerTab(tabId) {
   await $('.srv-tab').waitForExist({ timeout: 15000 });
-  const tabs = await $$('.srv-tab');
-  await tabs[index].click();
+  await $(`.srv-tab[data-tab="${tabId}"]`).click();
 }
 
 // JS .click() bypasses the WebDriver hit-test — the fixed status bar overlaps
