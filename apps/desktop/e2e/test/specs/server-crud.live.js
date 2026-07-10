@@ -15,9 +15,10 @@ describe('Server CRUD via the GUI', () => {
     // create via "+ Add Server" (ServerModal: name, hostname, ...)
     await $('.infra-toolbar .btn.primary').click();
     await $('.editor-overlay[role="dialog"]').waitForExist({ timeout: 10000 });
-    const inputs = await $$('.editor-overlay input'); // [0]=name, [1]=hostname
-    await inputs[0].setValue('crud-server');
-    await inputs[1].setValue('crud.example');
+    // Fill by field name, not input index — a reordered/added field would otherwise
+    // silently populate the wrong column (4.33). The inputs carry name="…" attrs.
+    await $('.editor-overlay input[name="name"]').setValue('crud-server');
+    await $('.editor-overlay input[name="hostname"]').setValue('crud.example');
     await clickInModal('.btn.primary');
     await waitForRow('.srv-item .srv-item-name', 'crud-server');
 

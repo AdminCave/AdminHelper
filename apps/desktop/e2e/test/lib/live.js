@@ -67,6 +67,59 @@ export function injectEvent(title, severity = 'critical') {
   }
 }
 
+// Give the logged-in admin a scope=all notification subscription so an injected
+// event resolves them as a recipient. A fresh user carries NO subscription and
+// there is no default, so `ingest_event` resolves 0 recipients and the SSE push
+// has no destination — the real reason the push spec was red (4.32). Runs from the
+// Node runner via the permissive gateway (-k), like injectEvent. Secrets go via
+// stdin, not argv, so they can't leak into the test log through a curl error
+// (3.19): the login body (password) as `--data @-`, the Bearer token as `-H @-`.
+export function ensureAllSubscription() {
+  const loginOut = execFileSync(
+    'curl',
+    [
+      '-sk',
+      '-X',
+      'POST',
+      `${SERVER_URL}/api/auth/login`,
+      '-H',
+      'Content-Type: application/json',
+      '--data',
+      '@-',
+    ],
+    { encoding: 'utf8', input: JSON.stringify({ username: USER, password: PASS }) },
+  );
+  let token;
+  try {
+    token = JSON.parse(loginOut).access_token;
+  } catch {
+    throw new Error(`ensureAllSubscription: login response not JSON: ${loginOut.slice(0, 120)}`);
+  }
+  if (!token) throw new Error('ensureAllSubscription: login returned no access_token');
+
+  const prefs = JSON.stringify({
+    email: null,
+    telegram_chat_id: null,
+    subscriptions: [{ scope_type: 'all', min_severity: 'info', enabled: true }],
+  });
+  execFileSync(
+    'curl',
+    [
+      '-sk',
+      '-X',
+      'PUT',
+      `${SERVER_URL}/api/users/me/notification-prefs`,
+      '-H',
+      'Content-Type: application/json',
+      '-H',
+      '@-',
+      '--data',
+      prefs,
+    ],
+    { encoding: 'utf8', input: `Authorization: Bearer ${token}` },
+  );
+}
+
 export async function gotoInfrastructure() {
   const nav = await $$('.sidebar-nav .sidebar-item'); // dashboard(0), connections(1), infrastructure(2)
   await nav[2].click();
@@ -109,24 +162,44 @@ export async function waitForRow(selector, name, present = true) {
 
 // Open the row whose name matches by clicking its edit button (`.btn.small`).
 export async function openRowByName(rowSel, nameSel, name) {
-  const rows = await $$(rowSel);
-  for (const row of rows) {
-    if ((await row.$(nameSel).getText()) === name) {
-      await row.$('.btn.small').click();
-      return;
-    }
-  }
-  throw new Error(`row "${name}" not found (${rowSel})`);
+  // Re-query the list on each pass: a re-render between waitForRow and the click can
+  // stale a row handle, so a single iteration throws "stale element reference" (4.97).
+  await browser.waitUntil(
+    async () => {
+      try {
+        for (const row of await $$(rowSel)) {
+          if ((await row.$(nameSel).getText()) === name) {
+            await row.$('.btn.small').click();
+            return true;
+          }
+        }
+      } catch {
+        return false; // a handle went stale mid-pass — retry the whole query
+      }
+      return false;
+    },
+    { timeout: 15000, timeoutMsg: `row "${name}" not found/clickable (${rowSel})` },
+  );
 }
 
 // Click the item (e.g. a server card) whose name matches.
 export async function clickItemByName(itemSel, nameSel, name) {
-  const items = await $$(itemSel);
-  for (const item of items) {
-    if ((await item.$(nameSel).getText()) === name) {
-      await item.click();
-      return;
-    }
-  }
-  throw new Error(`item "${name}" not found (${itemSel})`);
+  // Same staleness guard as openRowByName: re-query per pass so a re-render between
+  // the list load and the click doesn't throw on a stale handle (4.97).
+  await browser.waitUntil(
+    async () => {
+      try {
+        for (const item of await $$(itemSel)) {
+          if ((await item.$(nameSel).getText()) === name) {
+            await item.click();
+            return true;
+          }
+        }
+      } catch {
+        return false;
+      }
+      return false;
+    },
+    { timeout: 15000, timeoutMsg: `item "${name}" not found/clickable (${itemSel})` },
+  );
 }
