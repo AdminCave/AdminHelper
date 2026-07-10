@@ -124,3 +124,6 @@ build-deb/
 
 # Lokale Dev-Env-Helferdatei (Toolchain-PATH + Test-DB-URL)
 /.devenv.sh
+
+# Raw output of scripts/gen-third-party-licenses.sh
+third-party-inventory/
