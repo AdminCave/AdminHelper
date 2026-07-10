@@ -155,7 +155,9 @@ jobs:
       - name: Install dependencies
         working-directory: apps/ca-issuer
         # requirements.in is the loose source; the hashed requirements.txt is for the image.
-        run: pip install -r requirements.in pytest
+        # httpx is a test-only dep (starlette.testclient needs it; the app itself doesn't) —
+        # server/monitoring carry it in their runtime deps, ca-issuer only needs it for pytest.
+        run: pip install -r requirements.in pytest httpx
       - name: Run pytest
         working-directory: apps/ca-issuer
         # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
