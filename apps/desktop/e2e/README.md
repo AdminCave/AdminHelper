@@ -47,6 +47,11 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   surfaces the inline error and never reaches the app shell.
 - **`test/specs/logout.live.js`** — signing out ends the session and returns to the
   login screen (the app shell + nav go away).
+- **`test/specs/monitoring-alerts.live.js`** — create a webhook alert rule on the
+  Monitoring "alerts" tab; the rule appears in the list after the round-trip.
+- **`test/specs/connection-editor.live.js`** — create a connection through the
+  top-level Connections page editor (the standalone `ConnectionEditor`, distinct
+  from the server-detail connections tab that `connection-crud` drives).
 - **`test/specs/monitoring-check.live.js`** — create an `agent_resources`
   monitoring check through the GUI on a server a real agent has pushed metrics
   for; the check appears after a reload from the monitoring service. Orchestrated

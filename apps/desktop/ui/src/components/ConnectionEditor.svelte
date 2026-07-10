@@ -124,6 +124,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('editor.field.name')}</span>
           <input
             type="text"
+            name="name"
             bind:value={form.name}
             placeholder={$t('editor.field.name.placeholder')}
             required
@@ -148,6 +149,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span class="field-label">{$t('editor.field.host')}</span>
             <input
               type="text"
+              name="host"
               bind:value={form.host}
               placeholder={$t('editor.field.host.placeholder')}
             />
@@ -235,7 +237,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/if}
         <div style="flex: 1;"></div>
         <button class="btn" onclick={onClose}>{$t('action.cancel')}</button>
-        <button class="btn" onclick={onSave}>{$t('action.save')}</button>
+        <button class="btn save" onclick={onSave}>{$t('action.save')}</button>
         <button class="btn primary" onclick={onConnect}>{$t('action.connect')}</button>
       </div>
     </div>

@@ -31,16 +31,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <div class="section-toolbar">
   <div class="mon-tabs">
-    <button class="mon-tab" class:active={tab === 'overview'} onclick={() => setTab('overview')}>
+    <button
+      class="mon-tab"
+      class:active={tab === 'overview'}
+      data-tab="overview"
+      onclick={() => setTab('overview')}
+    >
       {$t('monitoring.tab.overview')}
     </button>
-    <button class="mon-tab" class:active={tab === 'alerts'} onclick={() => setTab('alerts')}>
+    <button
+      class="mon-tab"
+      class:active={tab === 'alerts'}
+      data-tab="alerts"
+      onclick={() => setTab('alerts')}
+    >
       {$t('monitoring.tab.alerts')}
     </button>
-    <button class="mon-tab" class:active={tab === 'templates'} onclick={() => setTab('templates')}>
+    <button
+      class="mon-tab"
+      class:active={tab === 'templates'}
+      data-tab="templates"
+      onclick={() => setTab('templates')}
+    >
       {$t('monitoring.tab.templates')}
     </button>
-    <button class="mon-tab" class:active={tab === 'log'} onclick={() => setTab('log')}>
+    <button class="mon-tab" class:active={tab === 'log'} data-tab="log" onclick={() => setTab('log')}>
       {$t('monitoring.tab.log')}
     </button>
   </div>
