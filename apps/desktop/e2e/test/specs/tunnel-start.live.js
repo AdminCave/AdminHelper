@@ -9,9 +9,9 @@
 // assert the GUI tunnel indicator reaches "connected". The orchestrator then
 // independently checks the frps log for the frpc login.
 
+import { login } from '../lib/live.js';
+
 const SERVER_URL = process.env.AH_SERVER_URL;
-const USER = process.env.AH_ADMIN_USER;
-const PASS = process.env.AH_ADMIN_PASS;
 const ENROLL_TOKEN = process.env.AH_ENROLL_TOKEN;
 
 describe('AdminHelper desktop — start a tunnel against live frps', () => {
@@ -35,14 +35,9 @@ describe('AdminHelper desktop — start a tunnel against live frps', () => {
   });
 
   it('logs in and the seeded tunnel auto-connects', async () => {
-    const inputs = await $$('.login-card input'); // serverUrl, username, password
-    await inputs[0].setValue(SERVER_URL);
-    await inputs[1].setValue(USER);
-    await inputs[2].setValue(PASS);
-    await browser.keys('Enter');
-
-    // Login succeeded → app shell. Its onMount auto-starts the seeded tunnel.
-    await $('.sidebar-nav').waitForExist({ timeout: 20000 });
+    // Shared helper — the inline login was duplicated across the tunnel specs (2.16).
+    // Login succeeds → app shell, whose onMount auto-starts the seeded tunnel.
+    await login();
 
     // The indicator goes connecting → connected once frpc has started.
     const indicator = await $('.tunnel-indicator');
