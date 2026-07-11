@@ -36,7 +36,9 @@ fi
 printf '%s\n' "$LIST" | grep -oE 'lease=cbx_[a-z0-9]+' | cut -d= -f2 | sort -u | while read -r id; do
   [ -n "$id" ] && { cbx stop --id "$id" >/dev/null 2>&1 || true; echo "  stopped $id"; }
 done
-: > "$(cbx_warm_file)" 2>/dev/null || true
+# 2>/dev/null FIRST: redirections apply left-to-right, so a failing `>` (fresh
+# worktree without .crabbox/) would otherwise print to the not-yet-redirected stderr.
+: 2>/dev/null > "$(cbx_warm_file)" || true
 
 echo "== remaining leases (should be empty) =="
 cbx list 2>/dev/null | sed 's/^/  /'; echo "  <<empty = clean>>"
