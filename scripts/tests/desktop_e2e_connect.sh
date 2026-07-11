@@ -17,7 +17,9 @@ set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib_e2e_stack.sh"
 
 E2E_DIR="$E2E_REPO_ROOT/apps/desktop/e2e"
-SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest"
+# Digest-pinned like docker-compose.yml — a latest/tagless upstream push must not
+# turn the suite red without an AdminHelper defect (6.136).
+SSH_IMAGE="lscr.io/linuxserver/openssh-server:latest@sha256:67d4c3a1402179a6579aa217a38b52ced557eb8a0c17a8e32fe986a4549fdee4"
 
 PASS=0
 FAIL=0
@@ -49,23 +51,23 @@ e2e_api "$TOKEN" server e2e-server e2e.local >/dev/null || { bad "seed server"; 
 
 # ── SSH target + a direct SSH connection ─────────────────────────────────────
 SSH_C="ah-e2e-ssh-$$"
-docker run -d --name "$SSH_C" -p 2222:2222 \
+docker run -d --name "$SSH_C" -p 127.0.0.1:2222:2222 \
     -e PASSWORD_ACCESS=true -e USER_NAME=e2e -e USER_PASSWORD=e2e -e LOG_STDOUT=true \
-    "$SSH_IMAGE" >/dev/null 2>&1
+    "$SSH_IMAGE" >/dev/null || { echo "[e2e] SSH target ($SSH_C) failed to start — is 127.0.0.1:2222 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$SSH_C")
 wait_log "$SSH_C" "listening on port 2222" 40 && ok "SSH target listening on :2222" || { bad "SSH target never came up"; docker logs --tail 20 "$SSH_C"; exit 1; }
 e2e_api "$TOKEN" connection ssh-direct ssh 127.0.0.1 2222 e2e >/dev/null && ok "seeded direct SSH connection" || { bad "seed SSH connection"; exit 1; }
 
 # ── Web target (nginx) + a direct Web connection ─────────────────────────────
 WEB_C="ah-e2e-web-$$"
-docker run -d --name "$WEB_C" -p 8080:80 nginx:alpine >/dev/null 2>&1
+docker run -d --name "$WEB_C" -p 127.0.0.1:8080:80 nginx:alpine >/dev/null || { echo "[e2e] web target ($WEB_C) failed to start — is 127.0.0.1:8080 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$WEB_C")
 wait_log "$WEB_C" "worker process" 30 && ok "Web target listening on :8080" || { bad "Web target never came up"; docker logs --tail 20 "$WEB_C"; exit 1; }
 e2e_api "$TOKEN" web-connection web-direct "http://127.0.0.1:8080" >/dev/null && ok "seeded direct Web connection" || { bad "seed Web connection"; exit 1; }
 
 # ── RDP target (xrdp) + a direct RDP connection ──────────────────────────────
 RDP_C="ah-e2e-rdp-$$"
-docker run -d --name "$RDP_C" -p 3389:3389 danielguerra/ubuntu-xrdp >/dev/null 2>&1
+docker run -d --name "$RDP_C" -p 127.0.0.1:3389:3389 danielguerra/ubuntu-xrdp@sha256:1a00da32f4e486f2f5fd8f656fc23bb235987c219153a587894469cad300b12d >/dev/null || { echo "[e2e] RDP target ($RDP_C) failed to start — is 127.0.0.1:3389 in use? (4.126)" >&2; exit 1; }
 TARGETS+=("$RDP_C")
 wait_log "$RDP_C" "xrdp entered RUNNING state" 60 && { sleep 3; ok "RDP target (xrdp) up on :3389"; } || { bad "RDP target never came up"; docker logs --tail 20 "$RDP_C"; exit 1; }
 e2e_api "$TOKEN" connection rdp-direct rdp 127.0.0.1 3389 e2e >/dev/null && ok "seeded direct RDP connection" || { bad "seed RDP connection"; exit 1; }
@@ -102,8 +104,10 @@ dbus-run-session -- bash -c '
 # desktop. The desktop reaches the published port via the docker bridge, so it
 # appears as a private (non-loopback) source — distinct from the image's own
 # loopback (::1) self-test.
-sleep 2
-if docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "172\.|10\.|192\.168\."; then
+# Poll for the sshd log line instead of a fixed sleep — it can lag on a loaded box (6.137).
+ssh_ok=0
+for _ in $(seq 1 10); do docker logs "$SSH_C" 2>&1 | grep -E "Connection (closed by|from|received)|Accepted" | grep -qE "172\.|10\.|192\.168\." && { ssh_ok=1; break; }; sleep 1; done
+if [ "$ssh_ok" = 1 ]; then
     ok "sshd logged the desktop's SSH connection (direct)"
 else
     bad "sshd saw no connection from the desktop"

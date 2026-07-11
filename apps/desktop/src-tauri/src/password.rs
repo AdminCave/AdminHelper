@@ -4,17 +4,10 @@
 
 use crate::error::AppError;
 use crate::models::{Connection, ConnectionKind, PasswordState};
+use crate::validation::required;
 
 fn normalized(value: &Option<String>) -> String {
     value.as_deref().unwrap_or("").trim().to_string()
-}
-
-fn required(value: &Option<String>, label: &str) -> Result<String, AppError> {
-    let trimmed = normalized(value);
-    if trimmed.is_empty() {
-        return Err(AppError::Validation(format!("{label} fehlt")));
-    }
-    Ok(trimmed)
 }
 
 pub fn rdp_port(connection: &Connection) -> u16 {
@@ -55,15 +48,14 @@ pub fn rdp_storage_key_required(connection: &Connection) -> Result<String, AppEr
 #[cfg(unix)]
 pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, AppError> {
     use keyring::{Entry, Error as KeyringError};
-    const PASSWORD_SERVICE: &str = "com.admincave.adminhelper";
 
     let key = match rdp_storage_key(connection) {
         Some(value) => value,
         None => return Ok(None),
     };
 
-    let entry =
-        Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
+    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
+        .map_err(|err| AppError::Keyring(err.to_string()))?;
     match entry.get_password() {
         Ok(password) => Ok(Some(password)),
         Err(KeyringError::NoEntry) => Ok(None),
@@ -74,11 +66,10 @@ pub fn load_password_keyring(connection: &Connection) -> Result<Option<String>, 
 #[cfg(unix)]
 pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<(), AppError> {
     use keyring::Entry;
-    const PASSWORD_SERVICE: &str = "com.admincave.adminhelper";
 
     let key = rdp_storage_key_required(connection)?;
-    let entry =
-        Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
+    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
+        .map_err(|err| AppError::Keyring(err.to_string()))?;
     entry
         .set_password(password)
         .map_err(|err| AppError::Keyring(err.to_string()))?;
@@ -88,14 +79,13 @@ pub fn save_password_keyring(connection: &Connection, password: &str) -> Result<
 #[cfg(unix)]
 pub fn delete_password_keyring(connection: &Connection) -> Result<(), AppError> {
     use keyring::{Entry, Error as KeyringError};
-    const PASSWORD_SERVICE: &str = "com.admincave.adminhelper";
 
     let key = match rdp_storage_key(connection) {
         Some(value) => value,
         None => return Ok(()),
     };
-    let entry =
-        Entry::new(PASSWORD_SERVICE, &key).map_err(|err| AppError::Keyring(err.to_string()))?;
+    let entry = Entry::new(crate::keyring_store::SERVICE, &key)
+        .map_err(|err| AppError::Keyring(err.to_string()))?;
     match entry.delete_credential() {
         Ok(_) => Ok(()),
         Err(KeyringError::NoEntry) => Ok(()),
@@ -435,5 +425,50 @@ mod tests {
             rdp_storage_key_required(&rdp(Some("H"), Some(3389), Some("U"), None)).unwrap(),
             "rdp|h|3389|u|"
         );
+    }
+
+    // Windows-only credential/target formatting. These execute now that the CI
+    // Windows job runs `cargo test` instead of only `cargo check` (6.33).
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_target_uses_termsrv_and_omits_default_port() {
+        assert_eq!(
+            rdp_windows_target(&rdp(Some("srv"), None, Some("u"), None)).unwrap(),
+            "TERMSRV/srv"
+        );
+        assert_eq!(
+            rdp_windows_target(&rdp(Some("srv"), Some(3390), Some("u"), None)).unwrap(),
+            "TERMSRV/srv:3390"
+        );
+        assert!(rdp_windows_target(&rdp(None, None, Some("u"), None)).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_username_prefixes_domain_with_backslash() {
+        assert_eq!(
+            rdp_windows_username(&rdp(Some("h"), None, Some("u"), None)).unwrap(),
+            "u"
+        );
+        assert_eq!(
+            rdp_windows_username(&rdp(Some("h"), None, Some("u"), Some("CORP"))).unwrap(),
+            "CORP\\u"
+        );
+        assert!(rdp_windows_username(&rdp(Some("h"), None, None, None)).is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn utf16_null_appends_terminator() {
+        assert_eq!(to_utf16_null("AB"), vec![0x41u16, 0x42, 0x00]);
+        assert_eq!(to_utf16_null(""), vec![0x00u16]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn utf16_bytes_are_little_endian_without_terminator() {
+        // 'A' = U+0041 → LE bytes 0x41 0x00; no trailing NUL.
+        assert_eq!(utf16_bytes("A"), vec![0x41u8, 0x00]);
+        assert_eq!(utf16_bytes("AB"), vec![0x41u8, 0x00, 0x42, 0x00]);
     }
 }

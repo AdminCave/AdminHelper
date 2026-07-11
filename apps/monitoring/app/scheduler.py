@@ -14,9 +14,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+
+from app.check_engine import execute_check
+from app.check_types import PUSH_ONLY_TYPES
+from app.core.time import utcnow_naive
 
 logger = logging.getLogger("monitor.scheduler")
 
@@ -38,17 +42,6 @@ scheduler = BackgroundScheduler(
     },
 )
 
-# Agent push checks are evaluated only by the agent report endpoint,
-# not by the scheduler. agent_ping is the exception: checks whether the agent is stale.
-PUSH_ONLY_TYPES = {
-    "agent_resources",
-    "service_process",
-    "docker_health",
-    "proxmox_backup",
-    "zfs_health",
-    "smart_health",
-}
-
 _INTERVAL_MAP = {
     "1m": {"minutes": 1},
     "5m": {"minutes": 5},
@@ -62,27 +55,27 @@ _INTERVAL_MAP = {
 
 
 def _parse_trigger(interval: str):
-    """Converts an interval string or cron expression into an APScheduler trigger."""
+    """Converts a fixed-interval string into an APScheduler trigger."""
     if interval in _INTERVAL_MAP:
         return IntervalTrigger(**_INTERVAL_MAP[interval])
-    parts = interval.split()
-    if len(parts) == 5:
-        return CronTrigger.from_crontab(interval)
-    raise ValueError(
-        f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)} oder Cron (5 Felder)"
-    )
+    raise ValueError(f"Ungueltiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)}")
 
 
-def add_check(check_id: str, interval: str, check_type: str | None = None) -> None:
+def add_check(check_id: str, interval: str, check_type: str | None) -> None:
     """Registers or updates a check in the scheduler.
 
-    Push-only checks (agent_resources, service_process, ...) are
-    skipped, since they are only evaluated on the agent report.
+    Push-only checks (agent_resources, service_process, ...) are skipped, since
+    they are only evaluated on the agent report. check_type is mandatory (no
+    default) so a caller can't silently schedule ghost jobs for push-only checks
+    by forgetting it — the bug template_sync had (2.34).
     """
-    if check_type and check_type in PUSH_ONLY_TYPES:
+    if check_type in PUSH_ONLY_TYPES:
+        # A check switched to a push-only type (via PUT) must lose any interval job
+        # it had as a scheduled type, otherwise the stale job keeps firing
+        # execute_check until the next restart (2.114). remove_check is idempotent,
+        # so a genuinely new push-only check is unaffected.
+        remove_check(check_id)
         return
-
-    from app.check_engine import execute_check
 
     trigger = _parse_trigger(interval)
     scheduler.add_job(
@@ -95,18 +88,14 @@ def add_check(check_id: str, interval: str, check_type: str | None = None) -> No
 
 
 def remove_check(check_id: str) -> None:
-    """Removes a check from the scheduler."""
-    job_id = f"mon_{check_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
-
-
-def get_next_run(check_id: str):
-    """Returns the next scheduled run."""
-    job = scheduler.get_job(f"mon_{check_id}")
-    if job and job.next_run_time:
-        return job.next_run_time.replace(tzinfo=None)
-    return None
+    """Removes a check from the scheduler (idempotent)."""
+    # A parallel request (double DELETE, or a template-unassign racing a check-delete) may have
+    # already removed the job between a get_job/remove_job pair, so remove_job raises
+    # JobLookupError. Catch it — the job being gone IS the desired outcome (4.115).
+    try:
+        scheduler.remove_job(f"mon_{check_id}")
+    except JobLookupError:
+        pass
 
 
 def load_all_checks() -> None:
@@ -152,9 +141,7 @@ def _run_alert_log_cleanup() -> None:
     from app.core.database import SessionLocal
     from app.models import MonitorAlertLog
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
-        days=ALERT_LOG_RETENTION_DAYS
-    )
+    cutoff = utcnow_naive() - timedelta(days=ALERT_LOG_RETENTION_DAYS)
     db = SessionLocal()
     try:
         removed = (

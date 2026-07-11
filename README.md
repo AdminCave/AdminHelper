@@ -135,7 +135,7 @@ runtime bundle** (the self-contained `docker-compose.yml` + the ops scripts,
 enrollment token, and leaves mTLS **enforced by default**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.34.0/scripts/install.sh \
+curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.39.0/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installs the latest published release; pin a specific one with --ref vX.Y.Z
 ```
@@ -205,7 +205,7 @@ The response directly contains `access_token` + `refresh_token` — no additiona
 
 ### Persistent data
 
-The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the first start by `scripts/postgres-init.sh`). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
+The structured data (connections, users, servers, tunnels, monitoring) lives in **PostgreSQL 17** (service `postgres`, image `postgres:17-alpine`). Server and monitoring share a Postgres cluster with two databases: `adminhelper` (created by the Postgres container as the default DB) and `adminhelper_monitor` (created idempotently on the monitoring service's first start, by its entrypoint). The Postgres container is reachable only internally within the Compose network (no port mapping); the data lives in the `postgres-data` volume.
 
 File-based server data is stored in the `./data/` directory in the project root (bind mount). This directory is listed in `.gitignore` and is created automatically.
 
@@ -333,6 +333,7 @@ via `adminhelper-agent monitor init --api-key ...`.
 | `adminhelper-agent monitor push` | One-time metrics push |
 | `adminhelper-agent service install` | Register OS service (systemd/Windows) |
 | `adminhelper-agent service uninstall` | Deregister OS service |
+| `adminhelper-agent diagnostics` | Write a redacted diagnostics report for a bug report |
 | `adminhelper-agent version` | Show version |
 
 The agent automatically detects available subsystems (Docker, ZFS, Proxmox) and collects CPU, RAM, disk, and service metrics. Metrics are stored in **VictoriaMetrics** (90-day retention).
@@ -404,12 +405,12 @@ cargo tauri build
 ```text
 .
 ├─ apps/                     # all runnable / deployable units live here
-│  ├─ server/                # FastAPI backend (modular monolith, 8 modules)
+│  ├─ server/                # FastAPI backend (modular monolith, 12 modules)
 │  │  ├─ app/
 │  │  │  ├─ main.py              # app, lifespan, auto migrations, SPA fallback
 │  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
-│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys,
-│  │  │                          #   ansible, monitoring_proxy
+│  │  │  └─ modules/             # users, connections, servers, frp, hooks, api_keys, ansible,
+│  │  │                          #   monitoring_proxy, audit, enrollment, notifications, provisioning
 │  │  ├─ alembic/               # DB migrations
 │  │  └─ requirements.txt
 │  ├─ monitoring/            # standalone FastAPI microservice (own DB)
@@ -421,6 +422,8 @@ cargo tauri build
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler for pull checks
 │  │  └─ Dockerfile             # built by docker.yml (own context)
+│  ├─ ca-issuer/             # Python/FastAPI PKI enrollment plane (own mTLS, own pytest suite)
+│  ├─ gateway/               # nginx reverse proxy: TLS/header/mTLS termination, rate limit
 │  ├─ agent/                 # unified Go agent (Linux + Windows)
 │  │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
 │  │  ├─ internal/               # config, frpc, monitor, service
@@ -429,15 +432,15 @@ cargo tauri build
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUCTION: Svelte 5 + TS web admin panel
 │  │  ├─ src/
-│  │  │  ├─ lib/                 # 11 API modules + 10 stores + i18n + hash router
-│  │  │  ├─ pages/               # 8 production pages + Login + placeholder
-│  │  │  ├─ modals/              # 19 modal components
+│  │  │  ├─ lib/                 # 9 API modules + 6 stores + i18n + hash router
+│  │  │  ├─ pages/               # 5 production pages + Login + placeholder
+│  │  │  ├─ modals/              # 9 modal components
 │  │  │  └─ App.svelte, main.ts
 │  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
 │  └─ desktop/               # Tauri desktop client (backend + UI together)
 │     ├─ src-tauri/          # Rust/Tauri backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler with 23 Tauri commands
+│     │  │  ├─ main.rs            # invoke_handler with 32 Tauri commands
 │     │  │  ├─ commands.rs        # IPC interface
 │     │  │  ├─ auth.rs            # JWT login, keyring persistence
 │     │  │  ├─ frpc.rs            # frpc sidecar process
@@ -450,13 +453,13 @@ cargo tauri build
 │     │  └─ capabilities/        # Tauri v2 security permissions (strictly scoped)
 │     └─ ui/                 # PRODUCTION: Svelte 5 + TS desktop frontend
 │        ├─ src/
-│        │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 22 typed invoke() wrappers, 12 stores, …
-│        │  ├─ components/       # ~30 components (AppShell, Login, …)
+│        │  ├─ lib/{bridge,stores,models,api,i18n,utils}/  # 31 typed invoke() wrappers, 12 stores, …
+│        │  ├─ components/       # ~46 components (AppShell, Login, …)
 │        │  ├─ pages/            # 5 pages (Dashboard, Connections, Infrastructure, Monitoring, Ansible)
 │        │  └─ main.ts
-│        └─ vitest.setup.ts      # ~41 Vitest unit tests
+│        └─ vitest.setup.ts      # ~250 Vitest unit tests
 ├─ docs/                     # documentation (DE + EN, static HTML)
-├─ scripts/                  # ops/db helpers (postgres-init, init-secrets, pg-backup)
+├─ scripts/                  # ops/db helpers (init-secrets, pg-backup)
 ├─ data/                     # server data (gitignored, bind mount)
 ├─ Dockerfile                # multi-stage: Vite build (apps/web) → Python runtime (server image)
 ├─ docker-compose.yml

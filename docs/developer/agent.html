@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -52,7 +52,7 @@
 &#9500;&#9472;&#9472; Makefile                build-linux, build-windows, deb, rpm
 &#9500;&#9472;&#9472; build-deb.sh
 &#9500;&#9472;&#9472; build-rpm.sh
-&#9492;&#9472;&#9472; go.mod                  Go 1.24</code></pre>
+&#9492;&#9472;&#9472; go.mod                  Go 1.25</code></pre>
 
           <h2>Cobra-Subcommands</h2>
           <p>Sechs Top-Level-Befehle, davon drei mit Sub-Subcommands:</p>
@@ -75,6 +75,7 @@
             <li>Linux: <code>/etc/frp/adminhelper.conf</code> und <code>/etc/adminhelper/monitor.conf</code></li>
             <li>Windows: unter <code>%ProgramData%\AdminHelper\</code></li>
           </ul>
+          <p>Die geheimnistragenden Verzeichnisse werden beim Anlegen geh&auml;rtet: <code>0700</code> unter Linux, unter Windows eine auf SYSTEM + Administratoren reduzierte ACL (SID-basiert via <code>icacls</code>, da Mode-Bits dort ignoriert werden) &mdash; so sind API-Key und mTLS-Private-Key nicht von anderen lokalen Benutzern lesbar.</p>
           <p><code>FrpcConfig</code>-Felder: <code>ADMINHELPER_URL</code>, <code>API_KEY</code>, <code>SERVER_ID</code>, <code>CACERT</code>, <code>INSECURE</code>. <code>MonitorConfig</code> erg&auml;nzt zus&auml;tzlich <code>MONITOR_URL</code> und <code>SERVICES</code> (kommagetrennt).</p>
 
           <h2>Monitor-Collector</h2>
@@ -136,7 +137,7 @@
               </tr>
               <tr>
                 <td><code>service.Install()</code><br /><code>service_*.go</code></td>
-                <td>Schreibt <code>.service</code> (<code>Type=oneshot</code>, <code>ExecStart=&lt;exe&gt; run</code>) + <code>.timer</code> (<code>OnBootSec=60</code>, <code>OnUnitActiveSec=300</code>, <code>Persistent=true</code>) nach <code>/etc/systemd/system</code>, dann <code>daemon-reload</code> + <code>enable --now</code> auf den Timer. Unit-Name <code>adminhelper-agent</code>.</td>
+                <td>Kopiert die Binary nach <code>/usr/local/bin/adminhelper-agent</code> (root-owned, damit die root-Unit nicht auf einen user-schreibbaren Pfad zeigt), schreibt <code>.service</code> (<code>Type=oneshot</code>, <code>ExecStart=/usr/local/bin/adminhelper-agent run --once</code>) + <code>.timer</code> (<code>OnBootSec=60</code>, <code>OnUnitActiveSec=300</code>, <code>Persistent=true</code>) nach <code>/etc/systemd/system</code>, dann <code>daemon-reload</code> + <code>enable --now</code> auf den Timer. Unit-Name <code>adminhelper-agent</code>.</td>
                 <td>Kopiert die Binary nach <code>%ProgramFiles%\AdminHelper\</code>, registriert via <code>sc create</code> (<code>binPath=&lt;exe&gt; run</code>, <code>start= auto</code>, <code>obj= LocalSystem</code>), setzt Recovery via <code>sc failure</code> (Neustart nach 60&nbsp;s) und startet mit <code>sc start</code>. Dienst-Name <code>AdminHelper-Agent</code> &mdash; ein dauerhaft laufender Dienst, kein Timer.</td>
               </tr>
               <tr>

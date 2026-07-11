@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { Connection } from '$lib/bridge/types';
 
@@ -12,6 +12,23 @@ vi.mock('$lib/bridge', () => ({
   saveConnections: vi.fn(async () => {}),
   loadConnections: vi.fn(async () => []),
 }));
+
+// Mock the session (mode) + status bar so the sync-mode volatility path (4.40) is testable.
+// Default settings=null keeps every other test on the local/file-backed path.
+const h = vi.hoisted(() => ({
+  sess: { settings: null as unknown, session: null as unknown },
+  showStatus: vi.fn(),
+}));
+vi.mock('./session', () => ({
+  sessionStore: {
+    subscribe: (fn: (v: unknown) => void) => {
+      fn(h.sess);
+      return () => {};
+    },
+  },
+}));
+vi.mock('./statusBar', () => ({ showStatus: h.showStatus, reportError: vi.fn() }));
+vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k, setLanguage: vi.fn() }));
 
 import * as bridge from '$lib/bridge';
 import {
@@ -25,8 +42,9 @@ import {
   remove,
   patchInMemory,
   clearInMemory,
-  countByKind,
+  kindCounts,
   recentConnections,
+  load,
 } from './connections';
 
 const conn = (over: Partial<Connection>): Connection => ({
@@ -224,7 +242,7 @@ describe('connections store', () => {
     });
   });
 
-  describe('countByKind', () => {
+  describe('kindCounts', () => {
     it('counts per kind and total', async () => {
       await seed([
         conn({ id: '1', kind: 'ssh' }),
@@ -232,11 +250,11 @@ describe('connections store', () => {
         conn({ id: '3', kind: 'rdp' }),
         conn({ id: '4', kind: 'web' }),
       ]);
-      expect(countByKind()).toEqual({ total: 4, ssh: 2, rdp: 1, web: 1 });
+      expect(get(kindCounts)).toEqual({ total: 4, ssh: 2, rdp: 1, web: 1 });
     });
 
     it('is all-zero for an empty store', () => {
-      expect(countByKind()).toEqual({ total: 0, ssh: 0, rdp: 0, web: 0 });
+      expect(get(kindCounts)).toEqual({ total: 0, ssh: 0, rdp: 0, web: 0 });
     });
   });
 
@@ -248,16 +266,74 @@ describe('connections store', () => {
         conn({ id: 'new', lastUsed: '2024-06-01T00:00:00Z' }),
         conn({ id: 'mid', lastUsed: '2024-03-01T00:00:00Z' }),
       ]);
-      expect(recentConnections().map((c) => c.id)).toEqual(['new', 'mid', 'old']);
+      expect(get(recentConnections).map((c) => c.id)).toEqual(['new', 'mid', 'old']);
     });
 
-    it('honors the limit', async () => {
-      await seed([
-        conn({ id: 'a', lastUsed: '2024-01-01T00:00:00Z' }),
-        conn({ id: 'b', lastUsed: '2024-02-01T00:00:00Z' }),
-        conn({ id: 'c', lastUsed: '2024-03-01T00:00:00Z' }),
-      ]);
-      expect(recentConnections(2).map((c) => c.id)).toEqual(['c', 'b']);
+    it('caps at 5, newest first', async () => {
+      await seed(
+        ['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) =>
+          conn({ id, lastUsed: `2024-0${i + 1}-01T00:00:00Z` }),
+        ),
+      );
+      expect(get(recentConnections).map((c) => c.id)).toEqual(['f', 'e', 'd', 'c', 'b']);
     });
+  });
+});
+
+describe('load generation guard (4.39)', () => {
+  beforeEach(async () => {
+    vi.mocked(bridge.loadConnections).mockReset();
+    vi.mocked(bridge.loadConnections).mockResolvedValue([]);
+    await saveAll([]);
+  });
+
+  it('drops a superseded load so the newer call wins', async () => {
+    const older = conn({ id: 'old-server' });
+    const newer = conn({ id: 'new-server' });
+    // The FIRST load's fetch resolves LAST (slow); the second resolves first (fast).
+    let resolveFirst!: (v: Connection[]) => void;
+    vi.mocked(bridge.loadConnections)
+      .mockImplementationOnce(
+        () =>
+          new Promise<Connection[]>((r) => {
+            resolveFirst = r;
+          }),
+      )
+      .mockImplementationOnce(async () => [newer]);
+
+    const p1 = load(); // gen 1 (slow)
+    const p2 = load(); // gen 2 (fast) -> wins
+    await p2;
+    expect(get(connections)).toEqual([newer]);
+    resolveFirst([older]); // gen 1 resolves late...
+    await p1;
+    expect(get(connections)).toEqual([newer]); // ...but is dropped; newer stays
+  });
+});
+
+describe('sync-mode edits are volatile (4.40)', () => {
+  beforeEach(async () => {
+    h.sess.settings = null;
+    await saveAll([conn({ id: 'a', name: 'A' })]);
+    h.sess.settings = { mode: 'sync', url: 'https://srv' };
+    h.showStatus.mockClear();
+    vi.mocked(bridge.saveConnections).mockClear();
+  });
+  afterEach(() => {
+    h.sess.settings = null;
+  });
+
+  it('upsert keeps the edit in-memory but does NOT persist to the cache', async () => {
+    await upsert(conn({ id: 'a', name: 'edited' }));
+    expect(get(connections).find((c) => c.id === 'a')?.name).toBe('edited');
+    expect(bridge.saveConnections).not.toHaveBeenCalled();
+    expect(h.showStatus).toHaveBeenCalledWith('status.syncEditVolatile');
+  });
+
+  it('remove drops it in-memory but does NOT persist', async () => {
+    await remove('a');
+    expect(get(connections).find((c) => c.id === 'a')).toBeUndefined();
+    expect(bridge.saveConnections).not.toHaveBeenCalled();
+    expect(h.showStatus).toHaveBeenCalledWith('status.syncEditVolatile');
   });
 });

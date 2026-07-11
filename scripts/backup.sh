@@ -54,7 +54,21 @@ mkdir -p "$OUT_DIR"
 dump_dir() {
     svc="$1"; src="$2"; out="$3"
     echo "[backup] $svc:$src -> $out"
-    docker compose exec -T "$svc" tar czf - -C "$src" . > "$STAGE/$out"
+    # tar over a live-written dir can exit 1 ("file changed as we read it"), which
+    # would abort the whole backup under set -e though the archive is still usable.
+    # Tolerate exit 1 (warn); a real error (exit 2) still aborts (4.120).
+    rc=0
+    docker compose exec -T "$svc" tar czf - -C "$src" . > "$STAGE/$out" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        [ "$rc" -eq 1 ] || { echo "[backup] FEHLER: tar $svc:$src exit $rc." >&2; return "$rc"; }
+        echo "[backup] WARN: $svc:$src aenderte sich beim Lesen (tar exit 1) — Archiv ggf. inkonsistent." >&2
+    fi
+    # A docker-layer failure (service not running) also exits 1 but writes NOTHING to
+    # stdout — and the preflight only checks postgres, so a stopped ca-issuer/monitoring
+    # would otherwise slip through as a benign "file changed" tar warning and leave a
+    # 0-byte crown-jewel archive that only surfaces at restore time. Require a non-empty
+    # archive so a missing service fails the backup, not the disaster recovery.
+    [ -s "$STAGE/$out" ] || { echo "[backup] FEHLER: $svc:$src ergab ein leeres Archiv (Service nicht laufend?)." >&2; return 1; }
 }
 
 dump_db() {
@@ -68,6 +82,11 @@ dump_db() {
 # --- The crown jewel + service state ---------------------------------------
 dump_dir ca-issuer  /app/data                 ca-pki.tar.gz
 dump_dir monitoring /app/data                 monitoring-data.tar.gz
+# ./data holds the server's auto-generated .secret_key (persisted when SECRET_KEY is
+# the placeholder — the default for a bare `docker compose up` without init-secrets).
+# Without it a fresh-host restore signs with a new key: all sessions invalid and any
+# SECRET_KEY-encrypted data unreadable. It's tiny, so always include it (2.36).
+dump_dir server     /app/data                 server-data.tar.gz
 if [ "$WITH_VICTORIA" = 1 ]; then
     dump_dir victoria /victoria-metrics-data  victoria-data.tar.gz
 fi

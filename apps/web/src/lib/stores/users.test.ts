@@ -55,4 +55,37 @@ describe('users store', () => {
     await users.remove(1);
     expect(get(users).map((x) => x.id)).toEqual([2]);
   });
+
+  it('create leaves the list unchanged and propagates the error when the API rejects', async () => {
+    // 6.90: on an API error the list must stay unchanged and the error must reach the caller — the
+    // modals depend on "modal stays open, error toast". If create() ever becomes optimistic, a failed
+    // create must not leave a ghost row behind.
+    await seed([u(1)]);
+    vi.mocked(api.create).mockRejectedValue(new Error('409 conflict'));
+    await expect(
+      users.create({ username: 'dup', password: 'x', is_admin: false, server_ids: [] }),
+    ).rejects.toThrow('409 conflict');
+    expect(get(users)).toEqual([u(1)]);
+  });
+
+  it('a slow refresh does not resurrect a row removed after it started (4.145)', async () => {
+    await seed([u(1), u(2)]);
+
+    // A slow refresh starts; its list() resolves later with the OLD list (still incl. user 1).
+    let resolveSlow!: (v: User[]) => void;
+    vi.mocked(api.list).mockReturnValueOnce(new Promise<User[]>((r) => (resolveSlow = r)));
+    const slowRefresh = users.refresh();
+
+    // Meanwhile remove(1) completes and drops user 1.
+    vi.mocked(api.remove).mockResolvedValue(undefined);
+    await users.remove(1);
+    expect(get(users).map((x) => x.id)).toEqual([2]);
+
+    // The slow refresh now resolves with the stale list (still incl. user 1).
+    resolveSlow([u(1), u(2)]);
+    await slowRefresh;
+
+    // User 1 must NOT be resurrected — the generation guard drops the stale response.
+    expect(get(users).map((x) => x.id)).toEqual([2]);
+  });
 });

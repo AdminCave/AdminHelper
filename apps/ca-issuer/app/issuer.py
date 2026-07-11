@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import pki
 from app.storage import Intermediate
@@ -41,6 +43,32 @@ class Issuer:
             raise IssuanceError(f"Unbekannter Scope '{scope}'")
         return inter
 
+    def _verify_ca_signed(self, cert: x509.Certificate) -> None:
+        """Defense-in-depth: verify the presented cert was signed by one of our
+        intermediates and is time-valid, instead of trusting the gateway's
+        x-client-verify: SUCCESS header alone. The `pki` compose network now fences the
+        issuer to the gateway (1.1), but this stays a second line: should that boundary
+        ever regress, a reachable container still must not be able to POST a self-made
+        cert and renew any identity (3.3)."""
+        now = pki._now()
+        if not (cert.not_valid_before_utc <= now <= cert.not_valid_after_utc):
+            raise IssuanceError("Vorgelegtes Cert ist abgelaufen oder noch nicht gültig")
+        for inter in self._inter.values():
+            try:
+                inter.cert.public_key().verify(
+                    cert.signature,
+                    cert.tbs_certificate_bytes,
+                    ec.ECDSA(cert.signature_hash_algorithm),
+                )
+                return
+            except (InvalidSignature, TypeError, ValueError):
+                # Any non-ECDSA or malformed presented cert (e.g. an Ed25519 leaf
+                # whose signature_hash_algorithm is None, or an RSA key) fails to
+                # verify against our ECDSA intermediates — it is a forgery and must
+                # be rejected cleanly here, never bubble up as a 500 at the issuer.
+                continue
+        raise IssuanceError("Vorgelegtes Cert ist nicht von dieser CA signiert")
+
     def _sign(self, csr: x509.CertificateSigningRequest, spec: pki.LeafSpec) -> dict[str, str]:
         inter = self._intermediate(spec.scope)
         leaf = pki.sign_leaf(csr, inter.cert, inter.key, spec)
@@ -53,14 +81,28 @@ class Issuer:
             "chain": inter.chain.decode(),
         }
 
-    def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
-        grant = self.tokens.consume(token)
-        if grant is None:
-            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
+    @staticmethod
+    def _load_csr(csr_pem: bytes) -> x509.CertificateSigningRequest:
+        """Parse and signature-check a CSR, mapping any client-input error to IssuanceError
+        (a 4xx) instead of letting a malformed CSR or a bad signature surface as a 500 — the
+        latter because sign_leaf raises a bare ValueError on an invalid signature (4.15)."""
         try:
             csr = x509.load_pem_x509_csr(csr_pem)
         except ValueError as exc:
             raise IssuanceError(f"Ungültige CSR: {exc}") from exc
+        if not csr.is_signature_valid:
+            raise IssuanceError("CSR-Signatur ist ungültig")
+        return csr
+
+    def enroll(self, token: str, csr_pem: bytes) -> dict[str, str]:
+        # Validate the CSR fully (parse + signature) BEFORE consuming the one-time token: a
+        # client-side format or signature error (truncated PEM, corrupted CSR) must not burn the
+        # token, or the retry with a corrected CSR fails as "already used" and an operator has to
+        # mint a fresh token by hand (4.16).
+        csr = self._load_csr(csr_pem)
+        grant = self.tokens.consume(token)
+        if grant is None:
+            raise IssuanceError("Ungültiger, abgelaufener oder bereits verwendeter Token")
 
         spec = pki.LeafSpec(
             lifetime_days=_leaf_days(grant),
@@ -80,22 +122,29 @@ class Issuer:
         except ValueError as exc:
             raise IssuanceError(f"Vorgelegtes Cert nicht lesbar: {exc}") from exc
 
+        # Never trust the gateway header alone: the issuer holds the intermediates,
+        # so it verifies the presented cert against them itself (3.3).
+        self._verify_ca_signed(current)
+
         cn, scope = pki.read_identity(current)
         if not cn or not scope:
             raise IssuanceError("Vorgelegtes Cert trägt keine Identität/Scope")
         if not self.tokens.is_active(cn, scope):
             raise IssuanceError("Identität ist deprovisioniert")
 
-        try:
-            csr = x509.load_pem_x509_csr(csr_pem)
-        except ValueError as exc:
-            raise IssuanceError(f"Ungültige CSR: {exc}") from exc
+        csr = self._load_csr(csr_pem)
 
-        # Preserve the original lifetime span (browser 365d renews to 365d,
-        # native 90d to 90d) — no need to store the audience separately.
-        span = current.not_valid_after_utc - current.not_valid_before_utc
+        # Preserve the audience (browser vs native — inferred from the original
+        # span, since it isn't stored in the cert) but never exceed the CURRENT
+        # policy for it: capping against LEAF_DAYS_* means lowering a lifetime
+        # propagates to renewals instead of every legacy identity renewing at its
+        # original span forever.
+        span_days = max(1, (current.not_valid_after_utc - current.not_valid_before_utc).days)
+        audience_max = (
+            pki.LEAF_DAYS_BROWSER if span_days > pki.LEAF_DAYS_NATIVE else pki.LEAF_DAYS_NATIVE
+        )
         spec = pki.LeafSpec(
-            lifetime_days=max(1, span.days),
+            lifetime_days=min(span_days, audience_max),
             client_auth=True,
             server_auth=False,
             subject_cn=cn,

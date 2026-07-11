@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -53,7 +53,7 @@
             <div class="card" data-reveal>
               <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg></div>
               <h3>Agent</h3>
-              <p>Go 1.24, Cobra CLI, sqlx, native systemd + windowssvc-Integration.</p>
+              <p>Go 1.25, Cobra CLI, gopsutil, native systemd + windowssvc-Integration.</p>
             </div>
           </div>
 
@@ -61,10 +61,12 @@
           <div class="code-header"><span>tree</span></div>
 <pre><code>adminhelper/
 ├── apps/                 Alle lauffähigen Einheiten
-│   ├── server/           FastAPI + Scheduler (Python, 8 Module)
+│   ├── server/           FastAPI + Scheduler (Python, 12 Module)
 │   │   ├── app/{core,modules}/
 │   │   └── tests/
 │   ├── monitoring/       Monitoring-Service (FastAPI, eigene DB)
+│   ├── ca-issuer/        PKI-Enrollment-Plane (FastAPI, eigenes mTLS)
+│   ├── gateway/          nginx-Reverse-Proxy (TLS/mTLS/Header, Ratelimit)
 │   ├── agent/            Unified Go-Agent (Linux + Windows)
 │   │   ├── cmd/          Cobra-Commands
 │   │   ├── internal/     Collectors, FRP-Client, HTTP
@@ -73,7 +75,7 @@
 │   │   ├── src/lib/      Komponenten, Stores, API
 │   │   └── tests/e2e/    Playwright
 │   └── desktop/          Tauri-Client (Backend + UI zusammen)
-│       ├── src-tauri/    24 Tauri-Commands, Rust-Module
+│       ├── src-tauri/    32 Tauri-Commands, Rust-Module
 │       └── ui/           Desktop-Frontend (Svelte 5 + Vite)
 ├── docs/                 Diese Dokumentation
 ├── scripts/              Ops-/DB-Skripte
@@ -101,9 +103,9 @@ cd apps/agent && go run ./cmd/adminhelper-agent version</code></pre>
           <ul>
             <li><strong>Vertrauenskette:</strong> eine Root → gescopte Intermediates <code>tunnel</code> (frps + Agenten), <code>access</code> (Mensch: Desktop/Browser), <code>internal</code> (Phase B). Clients pinnen die <em>Root/CA</em>, nicht ein Leaf — Server-Certs sind frei rotierbar (D2).</li>
             <li><strong><code>ca-issuer</code></strong> (eigener Container) ist die <em>einzige</em> Signier-Capability (D6): erzeugt die Hierarchie beim First-Boot, hält die Online-Intermediates, signiert per <code>/enroll</code> (Einmal-Token) und <code>/renew</code> (vorgelegtes Cert). Der Root-Key liegt kalt + passphrase-verschlüsselt (D7).</li>
-            <li><strong><code>gateway</code></strong> (nginx) ist die einzige öffentliche TLS-Kante (`:443` Daten, `:8444` Enroll). Es terminiert TLS/mTLS und reicht die verifizierte Identität als <code>X-Client-*</code>-Header an die internen Dienste — uvicorn sieht das Cert nicht selbst (V1). <code>server</code>/<code>ca-issuer</code> haben keinen Host-Port, der Header ist daher unfälschbar.</li>
+            <li><strong><code>gateway</code></strong> (nginx) ist die einzige öffentliche TLS-Kante (`:443` Daten, `:8444` Enroll). Es terminiert TLS/mTLS und reicht die verifizierte Identität als <code>X-Client-*</code>-Header an die internen Dienste — uvicorn sieht das Cert nicht selbst (V1). <code>server</code>/<code>ca-issuer</code> haben keinen Host-Port; der <code>ca-issuer</code> liegt zudem im internen <code>pki</code>-Compose-Netz (nur der Gateway erreicht ihn — nicht das internet-nahe <code>frps</code>), der Header ist daher unfälschbar. <code>frps</code> selbst sitzt in einem eigenen <code>frpedge</code>-Netz, abgeschottet vom internen Default-Netz, sodass ein kompromittiertes frps weder das auth-lose <code>redis</code> noch <code>victoria</code> erreicht (3.28).</li>
             <li><strong>Enrollment (ein Muster, drei Clients):</strong> Einmal-Token → On-Device-ECDSA-Key + CSR → Issuer signiert (Identität issuer-diktiert, CSR-Subject kosmetisch). Go-Agent (beim Provisioning), Desktop (nach Login), frps/Tunnel-Certs. Native Clients erneuern automatisch bei ~50 % Laufzeit; der Browser bekommt ein langlebiges Cert als <strong>PKCS12-Export</strong> aus dem Desktop (D5).</li>
-            <li><strong>Per-Route-Scope:</strong> <code>access</code> = Mensch, <code>tunnel</code> = Agent (D8). <strong>Permissiv per Default</strong> (`MTLS_ENFORCE=false`): ein Scope-Mismatch wird geloggt, der Request läuft durch. Das Scharfschalten auf <code>CERT_REQUIRED</code> ist <code>MTLS_ENFORCE=true</code> — umgesetzt + end-to-end verifiziert (A8), eine bewusste Operator-Entscheidung.</li>
+            <li><strong>Per-Route-Scope:</strong> <code>access</code> = Mensch, <code>tunnel</code> = Agent (D8). <strong>Enforced per Default</strong> (<code>MTLS_ENFORCE=true</code>, seit 0.29.0): ein Scope-Mismatch ist ein <code>403</code>. <code>MTLS_ENFORCE=false</code> für einen Permissiv-Rollout, bei dem ein Mismatch nur geloggt wird (nur für einen manuellen Erst-Bootstrap nötig) — eine bewusste Operator-Entscheidung (A8, end-to-end verifiziert).</li>
             <li><strong>Backup-Kronjuwel</strong> ist das <code>ca-pki</code>-Volume (Root + Intermediates) — <code>scripts/backup.sh</code>/<code>restore.sh</code> sichern es; die regenerierbaren Cert-Volumes bleiben bewusst draußen (ADR 0001 §5).</li>
           </ul>
 

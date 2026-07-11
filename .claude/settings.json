@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(crabbox run:*)",
+      "Bash(crabbox warmup:*)",
+      "Bash(crabbox status:*)",
+      "Bash(crabbox list:*)",
+      "Bash(crabbox connect:*)",
+      "Bash(crabbox ssh:*)",
+      "Bash(crabbox doctor:*)",
+      "Bash(crabbox stop:*)",
+      "Bash(crabbox cleanup:*)",
+      "Bash(crabbox artifacts pull:*)",
+      "Bash(bash scripts/tests/crabbox_warm.sh:*)",
+      "Bash(bash scripts/tests/crabbox_iter.sh:*)",
+      "Bash(bash scripts/tests/crabbox_reap.sh:*)",
+
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go build:*)",
+      "Bash(gofmt:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo check:*)",
+      "Bash(npm run:*)",
+      "Bash(bash scripts/tests/run.sh:*)",
+      "Bash(bash scripts/dev/format-file.sh:*)",
+      "Bash(reuse annotate:*)",
+
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git switch:*)",
+      "Bash(git restore:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git stash:*)",
+      "Bash(git revert:*)",
+      "Bash(git rev-parse:*)"
+    ],
+    "ask": [],
+    "deny": []
+  }
+}

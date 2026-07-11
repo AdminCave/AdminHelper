@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/* Translations — ported 1:1 from server/frontend/js/i18n.js */
+/* Web UI translations. Originally seeded from the old server frontend, then pruned
+ * to the keys the web client actually uses (audit 2.53) — add only keys with a real
+ * caller; the i18n.test.ts "no unused keys" guard fails on dead ones. */
 
 export type Language = 'de' | 'en';
 export type Translations = Record<Language, Record<string, string>>;
@@ -14,16 +16,13 @@ export const translations: Translations = {
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
+    'login.failed': 'Anmeldung fehlgeschlagen',
 
     // ── Nav ────────────────────────────────────────────────────────────
-    'nav.connections': 'Verbindungen',
-    'nav.servers': 'Server',
     'nav.users': 'Benutzer',
     'nav.apikeys': 'API-Keys',
     'nav.hooks': 'Hooks',
     'nav.frp': 'FRP Tunnels',
-    'nav.ansible': 'Ansible',
-    'nav.monitoring': 'Monitoring',
     'nav.audit': 'Audit-Log',
     'nav.logout': 'Abmelden',
 
@@ -34,126 +33,25 @@ export const translations: Translations = {
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Speichern',
     'action.cancel': 'Abbrechen',
+    'action.confirm': 'Bestätigen',
+    'confirm.title': 'Bestätigung',
     'action.delete': 'Löschen',
     'action.edit': 'Bearbeiten',
     'action.close': 'Schließen',
     'action.copy': 'Kopieren',
     'action.create': 'Erstellen',
-    'action.export': 'Exportieren',
-    'action.import': 'Importieren',
-    'action.search': 'Suchen…',
-    'action.searchDots': 'Suchen...',
-    'action.searchShort': 'Suche...',
     'action.refresh': 'Aktualisieren',
-    'action.configure': 'Konfigurieren',
     'action.run': 'Ausführen',
     'action.enable': 'Aktivieren',
     'action.disable': 'Deaktivieren',
-    'action.yes': 'Ja',
-    'action.no': 'Nein',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
     'label.type': 'Typ',
-    'label.status': 'Status',
-    'label.details': 'Details',
-    'label.tags': 'Tags',
-    'label.description': 'Beschreibung',
-    'label.notes': 'Notizen',
-    'label.actions': 'Aktionen',
     'label.created': 'Erstellt',
-    'label.allTags': 'Alle Tags',
-    'label.allServers': 'Alle Server',
-    'label.allTypes': 'Alle Typen',
-    'label.allStatus': 'Alle Status',
-    'label.all': 'Alle',
-
-    // ── Connections Page ───────────────────────────────────────────────
-    'page.connections.title': 'Verbindungen',
-    'page.connections.subtitle': 'Alle gespeicherten Verbindungen',
-    'page.connections.add': '+ Verbindung',
-    'page.connections.empty': 'Keine Verbindungen vorhanden.',
-    'page.connections.none': 'Keine Verbindungen gefunden',
-    'page.connections.count': '{count} Verbindung',
-    'page.connections.countPlural': '{count} Verbindungen',
-    'page.connections.hostUrl': 'Host / URL',
-
-    // ── Connection Modal ──────────────────────────────────────────────
-    'modal.connection.title': 'Verbindung bearbeiten',
-    'modal.connection.titleNew': 'Neue Verbindung',
-    'modal.connection.host': 'Host',
-    'modal.connection.port': 'Port',
-    'modal.connection.username': 'Benutzername',
-    'modal.connection.domain': 'Domäne',
-    'modal.connection.url': 'URL',
-    'modal.connection.keyPath': 'Key-Pfad',
-    'modal.connection.server': 'Server',
-    'modal.connection.noServer': '-- Kein Server --',
-    'modal.connection.tagsComma': 'Tags (kommagetrennt)',
-    'modal.connection.notes': 'Notizen',
-    'modal.connection.notesPlaceholder': 'Optionale Notizen…',
-
-    // ── Connection Toasts ─────────────────────────────────────────────
-    'toast.connection.saved': 'Verbindung gespeichert',
-    'toast.connection.created': 'Verbindung erstellt',
-    'toast.connection.deleted': 'Verbindung gelöscht',
-    'confirm.connection.delete': 'Verbindung wirklich löschen?',
-
-    // ── Import / Export ───────────────────────────────────────────────
-    'import.title': 'Verbindungen importieren',
-    'import.file': 'JSON-Datei *',
-    'import.mode': 'Import-Modus',
-    'import.modeMerge': 'Hinzufügen – bestehende Verbindungen behalten',
-    'import.modeReplace': 'Ersetzen – alle bestehenden Verbindungen löschen',
-    'import.submit': 'Importieren',
-    'import.selectFile': 'Bitte eine Datei auswählen',
-    'import.invalidJson': 'Ungültige JSON-Datei.',
-    'import.invalidJsonShort': 'Ungültige JSON-Datei',
-    'import.found': '{count} Verbindung gefunden.',
-    'import.foundPlural': '{count} Verbindungen gefunden.',
-    'import.confirmReplace':
-      'Alle bestehenden Verbindungen werden gelöscht und durch {count} importierte ersetzt. Fortfahren?',
-    'import.confirmMerge': '{count} Verbindung hinzufügen?',
-    'import.confirmMergePlural': '{count} Verbindungen hinzufügen?',
-    'import.result': '{count} Verbindung importiert',
-    'import.resultPlural': '{count} Verbindungen importiert',
-
-    // ── Servers Page ──────────────────────────────────────────────────
-    'page.servers.title': 'Server',
-    'page.servers.subtitle': 'Server und zugeordnete Verbindungen',
-    'page.servers.add': '+ Server',
-    'page.servers.empty': 'Keine Server vorhanden.',
-    'page.servers.noServer': 'Ohne Server',
-    'page.servers.noConnections': 'Keine Verbindungen zugeordnet.',
-    'page.servers.connCount': '{count} Verbindung',
-    'page.servers.connCountPlural': '{count} Verbindungen',
 
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Typ',
-    'table.name': 'Name',
-    'table.hostUrl': 'Host / URL',
-    'table.port': 'Port',
-    'table.user': 'Benutzer',
-
-    // ── Server Modal ──────────────────────────────────────────────────
-    'modal.server.title': 'Server bearbeiten',
-    'modal.server.titleNew': 'Neuer Server',
-    'modal.server.hostname': 'Hostname / IP *',
-    'modal.server.os': 'Betriebssystem',
-    'modal.server.osNone': '-- Nicht angegeben --',
-    'modal.server.tagsComma': 'Tags (kommagetrennt)',
-    'modal.server.notes': 'Notizen',
-    'modal.server.notesPlaceholder': 'Optionale Notizen...',
-    'modal.server.monitorTemplates': 'Monitoring-Templates',
-    'modal.server.multiSelect': 'Mehrfachauswahl: Strg+Klick',
-    'modal.server.templatesUnavailable': 'Templates nicht verfuegbar',
-
-    // ── Server Toasts ─────────────────────────────────────────────────
-    'toast.server.saved': 'Server gespeichert',
-    'toast.server.created': 'Server erstellt',
-    'toast.server.deleted': 'Server gelöscht',
-    'confirm.server.delete':
-      'Server wirklich löschen? Zugeordnete Verbindungen werden zu Standalone.',
 
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Benutzer',
@@ -162,6 +60,7 @@ export const translations: Translations = {
     'page.users.empty': 'Keine Benutzer vorhanden.',
     'page.users.me': '(ich)',
     'page.users.noServers': 'Keine Server vorhanden.',
+    'page.users.serverLoadFailed': 'Serverliste konnte nicht geladen werden.',
     'page.users.username': 'Benutzername',
     'page.users.role': 'Rolle',
 
@@ -206,8 +105,6 @@ export const translations: Translations = {
     'page.apikeys.subtitle': 'Programmatischer Zugriff (z. B. Client-Sync)',
     'page.apikeys.add': '+ API-Key',
     'page.apikeys.empty': 'Keine API-Keys vorhanden.',
-    'page.apikeys.syncTitle': 'Client-Sync konfigurieren:',
-    'page.apikeys.syncInfo': 'Verwende die Sync-URL im AdminHelper Client:',
     'page.apikeys.permission': 'Berechtigung',
     'page.apikeys.readWrite': 'Lesen & Schreiben',
     'page.apikeys.readOnly': 'Nur lesen',
@@ -250,12 +147,11 @@ export const translations: Translations = {
     'hook.event.frp.tunnel.deleted': 'FRP-Tunnel gelöscht',
 
     // ── Hook Script Help ──────────────────────────────────────────────
-    'hook.scriptHelp.webhook':
-      'Kontext: <code>payload</code>, <code>headers</code>, <code>params</code>',
-    'hook.scriptHelp.event': 'Kontext: <code>event_type</code>, <code>event_data</code>',
-    'hook.scriptHelp.schedule': 'Kontext: <code>triggered_at</code>, <code>last_run</code>',
+    'hook.scriptHelp.webhook': 'Kontext: `payload`, `headers`, `params`',
+    'hook.scriptHelp.event': 'Kontext: `event_type`, `event_data`',
+    'hook.scriptHelp.schedule': 'Kontext: `triggered_at`, `last_run`',
     'hook.scriptHelp.base':
-      'Verfügbar: <code>load_connections()</code>, <code>save_connections(list)</code>, <code>uuid4()</code>, <code>result</code>, <code>logs</code>, <code>log(msg)</code> – <code>import</code> erlaubt',
+      'Verfügbar: `load_connections()`, `save_connections(list)`, `uuid4()`, `result`, `logs`, `log(msg)` – `import` erlaubt',
 
     // ── Hook Modal ────────────────────────────────────────────────────
     'modal.hook.title': 'Hook bearbeiten',
@@ -296,26 +192,18 @@ export const translations: Translations = {
     'hook.result.title': 'Ergebnis: {name}',
     'hook.webhookToken.title': 'Webhook-Token',
     'hook.webhookToken.hint': 'Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt.',
-    'hook.webhookToken.triggerUrl': 'Aufruf-URL:',
+    'hook.webhookToken.triggerCmd': 'Aufruf (Token im Header, nicht in der URL):',
 
     // ── FRP Page ──────────────────────────────────────────────────────
     'page.frp.title': 'FRP Tunnels',
     'page.frp.subtitle': 'Tunnel-Konfigurationen verwalten und TOML-Configs generieren',
-    'page.frp.add': '+ Tunnel',
-    'page.frp.empty': 'Keine Tunnel vorhanden.',
-    'page.frp.configTitle': 'FRP-Server Konfiguration',
     'page.frp.noConfig':
       'Noch keine FRP-Server Konfiguration vorhanden. Klicke auf "Konfigurieren" um zu starten.',
     'page.frp.mtlsActive': 'Immer aktiv',
-    'page.frp.mtlsNote': 'mTLS ist immer aktiv. Zertifikate werden automatisch generiert.',
-    'page.frp.unknownServer': 'Unbekannter Server',
-    'page.frp.tunnelCount': '{count} Tunnel',
-    'page.frp.createConfigFirst': 'Bitte zuerst eine FRP-Server Konfiguration anlegen',
     'page.frp.editConfig': 'Konfiguration bearbeiten',
     'page.frp.createConfig': 'Konfigurieren',
     'page.frp.bulkZip': 'Alle als ZIP',
     'page.frp.status': 'Status',
-    'page.frp.addTunnel': '+ Tunnel',
 
     // ── FRP Config Modal ──────────────────────────────────────────────
     'modal.frpConfig.title': 'FRP-Server bearbeiten',
@@ -334,36 +222,8 @@ export const translations: Translations = {
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP-Config gespeichert',
     'toast.frpConfig.created': 'FRP-Config erstellt',
-    'toast.tunnel.saved': 'Tunnel gespeichert',
-    'toast.tunnel.created': 'Tunnel erstellt',
-    'toast.tunnel.deleted': 'Tunnel gelöscht',
     'toast.frp.copied': 'In Zwischenablage kopiert',
     'toast.frp.zipDownloaded': 'ZIP heruntergeladen',
-    'confirm.tunnel.delete': 'Tunnel wirklich löschen?',
-
-    // ── FRP Tunnel Modal ──────────────────────────────────────────────
-    'modal.tunnel.title': 'Tunnel bearbeiten',
-    'modal.tunnel.titleNew': 'Neuer Tunnel',
-    'modal.tunnel.server': 'Server *',
-    'modal.tunnel.selectServer': '-- Server wählen --',
-    'modal.tunnel.proxyName': 'Proxy-Name *',
-    'modal.tunnel.tunnelType': 'Tunnel-Typ *',
-    'modal.tunnel.typeStcp': 'STCP (SSH/RDP)',
-    'modal.tunnel.typeHttps': 'HTTPS (Web-UI)',
-    'modal.tunnel.protocol': 'Protokoll *',
-    'modal.tunnel.localIp': 'Local IP',
-    'modal.tunnel.localPort': 'Local Port *',
-    'modal.tunnel.secretKey': 'Secret Key',
-    'modal.tunnel.secretPlaceholder': 'wird auto-generiert',
-    'modal.tunnel.visitorPort': 'Visitor Port',
-    'modal.tunnel.visitorPlaceholder': 'automatisch (6000-6999)',
-    'modal.tunnel.customDomains': 'Custom Domains',
-    'modal.tunnel.tagsComma': 'Tags (kommagetrennt)',
-    'modal.tunnel.autoConnection': 'Automatisch Verbindung erstellen',
-    'modal.tunnel.autoConnUser': 'Benutzername für Auto-Verbindung',
-
-    // ── FRP Config Preview ────────────────────────────────────────────
-    'frp.preview.title': 'Config-Vorschau',
 
     // ── FRP Status ────────────────────────────────────────────────────
     'frp.status.title': 'frps Tunnel-Status',
@@ -371,248 +231,8 @@ export const translations: Translations = {
     'frp.status.noProxies': 'Keine aktiven Proxies auf dem frps-Server.',
     'frp.status.connections': 'Verbindungen',
 
-    // ── FRP PKI ───────────────────────────────────────────────────────
-    'frp.pki.expiry': 'Ablauf',
-
     // ── FRP Provisioning ──────────────────────────────────────────────
-    'frp.provision.title': 'Provisioning: {name}',
-    'frp.provision.hint':
-      'Erstelle einen einmaligen Provision-Token (24h gültig). Der Token wird nur einmal angezeigt und kann nur einmal verwendet werden.',
-    'frp.provision.createToken': 'Token erstellen',
-    'frp.provision.runOnTarget': 'Auf dem Zielserver ausführen:',
-    'frp.provision.existingTokens': 'Bestehende Tokens',
-    'frp.provision.noTokens': 'Keine Tokens vorhanden.',
-    'frp.provision.loading': 'Lade...',
-    'frp.provision.loadError': 'Fehler beim Laden.',
-    'frp.provision.used': 'Verwendet ({time})',
-    'frp.provision.active': 'Aktiv',
-    'frp.provision.expired': 'Abgelaufen',
-    'toast.provision.created': 'Provision-Token erstellt (24h gueltig)',
-    'toast.provision.commandCopied': 'Befehl kopiert',
-    'frp.provision.oneLiner': 'Einzeilen-Befehl',
     'state.loading': 'Wird geladen...',
-    'action.confirm': 'Bestätigen',
-
-    // ── Ansible Page ──────────────────────────────────────────────────
-    'page.ansible.title': 'Ansible Playbooks',
-    'page.ansible.subtitle': 'Playbooks verwalten und auf Servern ausfuehren',
-    'page.ansible.add': '+ Playbook',
-    'page.ansible.empty': 'Keine Playbooks vorhanden.',
-    'page.ansible.loadError': 'Fehler beim Laden des Inhalts.',
-    'page.ansible.contentLoading': 'Inhalt wird geladen...',
-
-    // ── Ansible Modal ─────────────────────────────────────────────────
-    'modal.playbook.title': 'Playbook bearbeiten',
-    'modal.playbook.titleNew': 'Neues Playbook',
-    'modal.playbook.filename': 'Dateiname *',
-    'modal.playbook.content': 'Playbook-Inhalt (YAML) *',
-
-    // ── Ansible Toasts ────────────────────────────────────────────────
-    'toast.playbook.saved': 'Playbook gespeichert',
-    'toast.playbook.created': 'Playbook erstellt',
-    'toast.playbook.deleted': 'Playbook gelöscht',
-    'confirm.playbook.delete': 'Playbook wirklich löschen?',
-
-    // ── Monitoring Page ───────────────────────────────────────────────
-    'page.monitoring.title': 'Monitoring',
-    'page.monitoring.subtitle': 'Server- und Service-Ueberwachung',
-    'page.monitoring.tabOverview': 'Uebersicht',
-    'page.monitoring.tabAlerts': 'Alert-Rules',
-    'page.monitoring.tabLog': 'Alert-Log',
-    'page.monitoring.tabTemplates': 'Templates',
-    'page.monitoring.addCheck': '+ Check',
-    'page.monitoring.empty': 'Keine Checks vorhanden.',
-
-    // ── Monitor Overview Cards ────────────────────────────────────────
-    'monitor.total': 'Gesamt',
-    'monitor.ok': 'OK',
-    'monitor.warning': 'Warnung',
-    'monitor.critical': 'Kritisch',
-    'monitor.unknown': 'Unbekannt',
-
-    // ── Monitor Check List ────────────────────────────────────────────
-    'monitor.noServer': 'Ohne Server',
-    'monitor.checkCount': '{count} Check',
-    'monitor.checkCountPlural': '{count} Checks',
-    'monitor.lastCheck': 'Letzter Check',
-    'monitor.lastUpdated': 'Zuletzt aktualisiert: {time}',
-    'monitor.neverChecked': 'Noch nie',
-    'monitor.runNow': 'Jetzt ausfuehren',
-    'monitor.config': 'Konfiguration',
-    'monitor.statusHistory': 'Status-Verlauf',
-    'monitor.loadingMetrics': 'Lade Metriken...',
-    'monitor.noMetrics': 'Keine Metrik-Daten verfuegbar',
-    'monitor.chartError': 'Chart konnte nicht geladen werden',
-    'monitor.value': 'Wert',
-    'monitor.allUnitsOk': 'Alle systemd-Units OK',
-    'monitor.allServicesActive': 'Alle {count} Services aktiv',
-    'monitor.allContainersRunning': 'Alle {count} Container laufen',
-    'monitor.allBackupsOk': 'Alle {count} VMs/CTs haben aktuelle Backups',
-    'monitor.noBackup': 'Kein Backup',
-    'monitor.outdated': 'Veraltet ({hours}h)',
-    'monitor.sinceLastReport': 'seit letztem Report',
-    'monitor.sectionInactive': 'Inaktiv (Autostart)',
-
-    // ── Monitor Check Config Labels ───────────────────────────────────
-    'monitor.cfg.target': 'Ziel',
-    'monitor.cfg.timeout': 'Timeout',
-    'monitor.cfg.url': 'URL',
-    'monitor.cfg.method': 'Methode',
-    'monitor.cfg.expected': 'Expected',
-    'monitor.cfg.ssl': 'SSL',
-    'monitor.cfg.sslDisabled': 'deaktiviert',
-    'monitor.cfg.searchText': 'Suchtext',
-    'monitor.cfg.staleThreshold': 'Stale-Schwelle',
-    'monitor.cfg.staleMinutes': '{min} min',
-    'monitor.cfg.cpu': 'CPU',
-    'monitor.cfg.ram': 'RAM',
-    'monitor.cfg.disk': 'Disk',
-    'monitor.cfg.temp': 'Temperatur',
-    'monitor.cfg.mode': 'Modus',
-    'monitor.cfg.services': 'Services',
-    'monitor.cfg.ignored': 'Ignoriert',
-    'monitor.cfg.maxAge': 'Max. Alter',
-    'monitor.cfg.maxAgeHours': '{hours}h',
-    'monitor.cfg.excludeVmids': 'Exclude VMIDs',
-    'monitor.cfg.capacity': 'Kapazitaet',
-    'monitor.cfg.restartCheck': 'Restart-Check',
-    'monitor.cfg.restartActive': 'aktiv',
-    'monitor.cfg.restartOff': 'aus',
-
-    // ── Monitor Check Modal ───────────────────────────────────────────
-    'modal.check.title': 'Check bearbeiten',
-    'modal.check.titleNew': 'Neuer Check',
-    'modal.check.server': 'Server',
-    'modal.check.noServer': '-- Kein Server --',
-    'modal.check.checkType': 'Check-Typ *',
-    'modal.check.interval': 'Intervall',
-    'modal.check.interval1m': '1 Minute',
-    'modal.check.interval5m': '5 Minuten',
-    'modal.check.interval15m': '15 Minuten',
-    'modal.check.interval30m': '30 Minuten',
-    'modal.check.interval1h': '1 Stunde',
-    'modal.check.severity': 'Schweregrad',
-    'modal.check.severityCritical': 'Kritisch',
-    'modal.check.severityWarning': 'Warnung',
-    'modal.check.severityInfo': 'Info',
-    'modal.check.consecutiveFails': 'Fehlversuche vor Alert',
-    'modal.check.descPlaceholder': 'Optionale Beschreibung',
-
-    // ── Monitor Check Type Config Labels ──────────────────────────────
-    'modal.check.pingTarget': 'Ziel (IP/Hostname) *',
-    'modal.check.timeout': 'Timeout (Sek.)',
-    'modal.check.tcpPort': 'Port *',
-    'modal.check.httpUrl': 'URL *',
-    'modal.check.httpMethod': 'Methode',
-    'modal.check.httpExpectedStatus': 'Erwarteter Status',
-    'modal.check.httpVerifySsl': 'SSL pruefen',
-    'modal.check.httpSearchText': 'Suchtext (optional)',
-    'modal.check.httpSearchPlaceholder': 'Text der in der Antwort vorkommen muss',
-    'modal.check.agentResourcesHint':
-      'Wertet Metriken vom adminhelper-agent aus. Der Agent muss auf dem Server installiert und konfiguriert sein.',
-    'modal.check.cpuWarn': 'CPU Warnung (%)',
-    'modal.check.cpuCrit': 'CPU Kritisch (%)',
-    'modal.check.ramWarn': 'RAM Warnung (%)',
-    'modal.check.ramCrit': 'RAM Kritisch (%)',
-    'modal.check.diskWarn': 'Disk Warnung (%)',
-    'modal.check.diskCrit': 'Disk Kritisch (%)',
-    'modal.check.tempWarn': 'Temp Warnung (\u00b0C)',
-    'modal.check.tempCrit': 'Temp Kritisch (\u00b0C)',
-    'modal.check.tempOverrides': 'Sensor-Schwellwerte (leer = global)',
-    'modal.check.serviceHint':
-      'Prueft systemd-Services. Im Auto-Modus werden failed und inaktive Autostart-Services automatisch erkannt.',
-    'modal.check.serviceMode': 'Modus',
-    'modal.check.serviceModeAuto': 'Auto (alle Units)',
-    'modal.check.serviceModeList': 'Liste (benannte Services)',
-    'modal.check.serviceNames': 'Services (kommagetrennt)',
-    'modal.check.serviceIgnore': 'Ignorieren (kommagetrennt)',
-    'modal.check.proxmoxHint':
-      'Prueft ob VMs/CTs aktuelle Backups haben. Plugin wird automatisch aktiviert wenn Proxmox erkannt wird.',
-    'modal.check.proxmoxMaxAge': 'Max. Backup-Alter (Stunden)',
-    'modal.check.proxmoxExclude': 'VMIDs ausschliessen (kommagetrennt)',
-    'modal.check.proxmoxExcludeStopped': 'Gestoppte VMs/CTs ignorieren',
-    'modal.check.zfsHint':
-      'Prueft ZFS Pool Health und Kapazitaet. Plugin wird automatisch aktiviert wenn ZFS erkannt wird.',
-    'modal.check.zfsCapWarn': 'Kapazitaet Warnung (%)',
-    'modal.check.zfsCapCrit': 'Kapazitaet Kritisch (%)',
-    'modal.check.dockerHint':
-      'Prueft Docker Container Status. Plugin wird automatisch aktiviert wenn Docker erkannt wird.',
-    'modal.check.dockerIgnore': 'Container ignorieren (kommagetrennt)',
-
-    // ── Monitor Toasts ────────────────────────────────────────────────
-    'toast.check.saved': 'Check gespeichert',
-    'toast.check.created': 'Check erstellt',
-    'toast.check.deleted': 'Check geloescht',
-    'toast.check.executed': 'Check ausgefuehrt',
-    'toast.check.updated': 'Check aktualisiert',
-    'confirm.check.delete': 'Check wirklich loeschen?',
-
-    // ── Alert Rules ───────────────────────────────────────────────────
-    'page.alerts.add': '+ Alert-Rule',
-    'page.alerts.empty': 'Keine Alert-Rules vorhanden.',
-    'alerts.channel.webhook': 'Webhook',
-    'alerts.channel.email': 'E-Mail',
-    'alerts.cooldown': '{min} Min.',
-    'alerts.sent': 'Gesendet',
-    'alerts.error': 'Fehler',
-    'alerts.noAlerts': 'Keine Alerts versendet',
-    'alerts.loadOnTab': 'Wird beim Tab-Wechsel geladen',
-
-    // ── Alert Rule Modal ──────────────────────────────────────────────
-    'modal.alert.title': 'Alert-Rule bearbeiten',
-    'modal.alert.titleNew': 'Neue Alert-Rule',
-    'modal.alert.channel': 'Kanal *',
-    'modal.alert.severityFilter': 'Severity-Filter',
-    'modal.alert.serverFilter': 'Server-Filter',
-    'modal.alert.allServers': '-- Alle Server --',
-    'modal.alert.cooldown': 'Cooldown (Minuten)',
-    'modal.alert.webhookUrl': 'Webhook-URL *',
-    'modal.alert.emailRecipients': 'Empfaenger (kommagetrennt) *',
-
-    // ── Alert Toasts ──────────────────────────────────────────────────
-    'toast.alert.saved': 'Alert-Rule gespeichert',
-    'toast.alert.created': 'Alert-Rule erstellt',
-    'toast.alert.deleted': 'Alert-Rule geloescht',
-    'toast.alert.updated': 'Alert-Rule aktualisiert',
-    'confirm.alert.delete': 'Alert-Rule wirklich loeschen?',
-
-    // ── Alert Log Table ───────────────────────────────────────────────
-    'alertLog.time': 'Zeit',
-    'alertLog.check': 'Check',
-    'alertLog.from': 'Von',
-    'alertLog.to': 'Nach',
-    'alertLog.status': 'Status',
-    'alertLog.error': 'Fehler',
-
-    // ── Templates ─────────────────────────────────────────────────────
-    'page.templates.add': '+ Template',
-    'page.templates.empty': 'Keine Templates vorhanden.',
-    'modal.template.title': 'Template bearbeiten',
-    'modal.template.titleNew': 'Neues Template',
-    'modal.template.checkDefs': 'Check-Definitionen',
-    'modal.template.addCheck': '+ Check',
-    'modal.template.noChecks': 'Keine Checks definiert',
-    'modal.template.alertDefs': 'Alert-Definitionen',
-    'modal.template.addAlert': '+ Alert',
-    'modal.template.noAlerts': 'Keine Alerts definiert',
-    'modal.template.placeholderHint':
-      'Verwende <code>{{hostname}}</code>, <code>{{server_name}}</code>, <code>{{server_id}}</code> als Platzhalter',
-    'modal.template.remove': 'Entfernen',
-    'template.checks': '{count} Checks, {alerts} Alerts',
-    'template.servers': '{count} Server',
-
-    // ── Template Toasts ───────────────────────────────────────────────
-    'toast.template.saved': 'Template gespeichert',
-    'toast.template.created': 'Template erstellt',
-    'toast.template.deleted': 'Template geloescht',
-    'confirm.template.delete': 'Template wirklich loeschen?',
-
-    // ── Session ───────────────────────────────────────────────────────
-    'session.expired': 'Sitzung abgelaufen',
-
-    // ── Language ──────────────────────────────────────────────────────
-    'language.de': 'DE',
-    'language.en': 'EN',
   },
 
   en: {
@@ -621,16 +241,13 @@ export const translations: Translations = {
     'login.username': 'Username',
     'login.password': 'Password',
     'login.submit': 'Sign in',
+    'login.failed': 'Login failed',
 
     // ── Nav ────────────────────────────────────────────────────────────
-    'nav.connections': 'Connections',
-    'nav.servers': 'Servers',
     'nav.users': 'Users',
     'nav.apikeys': 'API Keys',
     'nav.hooks': 'Hooks',
     'nav.frp': 'FRP Tunnels',
-    'nav.ansible': 'Ansible',
-    'nav.monitoring': 'Monitoring',
     'nav.audit': 'Audit log',
     'nav.logout': 'Sign out',
 
@@ -641,125 +258,25 @@ export const translations: Translations = {
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Save',
     'action.cancel': 'Cancel',
+    'action.confirm': 'Confirm',
+    'confirm.title': 'Confirm',
     'action.delete': 'Delete',
     'action.edit': 'Edit',
     'action.close': 'Close',
     'action.copy': 'Copy',
     'action.create': 'Create',
-    'action.export': 'Export',
-    'action.import': 'Import',
-    'action.search': 'Search…',
-    'action.searchDots': 'Search...',
-    'action.searchShort': 'Search...',
     'action.refresh': 'Refresh',
-    'action.configure': 'Configure',
     'action.run': 'Run',
     'action.enable': 'Enable',
     'action.disable': 'Disable',
-    'action.yes': 'Yes',
-    'action.no': 'No',
 
     // ── Common Labels ──────────────────────────────────────────────────
     'label.name': 'Name',
     'label.type': 'Type',
-    'label.status': 'Status',
-    'label.details': 'Details',
-    'label.tags': 'Tags',
-    'label.description': 'Description',
-    'label.notes': 'Notes',
-    'label.actions': 'Actions',
     'label.created': 'Created',
-    'label.allTags': 'All tags',
-    'label.allServers': 'All servers',
-    'label.allTypes': 'All types',
-    'label.allStatus': 'All status',
-    'label.all': 'All',
-
-    // ── Connections Page ───────────────────────────────────────────────
-    'page.connections.title': 'Connections',
-    'page.connections.subtitle': 'All saved connections',
-    'page.connections.add': '+ Connection',
-    'page.connections.empty': 'No connections available.',
-    'page.connections.none': 'No connections found',
-    'page.connections.count': '{count} connection',
-    'page.connections.countPlural': '{count} connections',
-    'page.connections.hostUrl': 'Host / URL',
-
-    // ── Connection Modal ──────────────────────────────────────────────
-    'modal.connection.title': 'Edit connection',
-    'modal.connection.titleNew': 'New connection',
-    'modal.connection.host': 'Host',
-    'modal.connection.port': 'Port',
-    'modal.connection.username': 'Username',
-    'modal.connection.domain': 'Domain',
-    'modal.connection.url': 'URL',
-    'modal.connection.keyPath': 'Key path',
-    'modal.connection.server': 'Server',
-    'modal.connection.noServer': '-- No server --',
-    'modal.connection.tagsComma': 'Tags (comma-separated)',
-    'modal.connection.notes': 'Notes',
-    'modal.connection.notesPlaceholder': 'Optional notes…',
-
-    // ── Connection Toasts ─────────────────────────────────────────────
-    'toast.connection.saved': 'Connection saved',
-    'toast.connection.created': 'Connection created',
-    'toast.connection.deleted': 'Connection deleted',
-    'confirm.connection.delete': 'Really delete this connection?',
-
-    // ── Import / Export ───────────────────────────────────────────────
-    'import.title': 'Import connections',
-    'import.file': 'JSON file *',
-    'import.mode': 'Import mode',
-    'import.modeMerge': 'Merge – keep existing connections',
-    'import.modeReplace': 'Replace – delete all existing connections',
-    'import.submit': 'Import',
-    'import.selectFile': 'Please select a file',
-    'import.invalidJson': 'Invalid JSON file.',
-    'import.invalidJsonShort': 'Invalid JSON file',
-    'import.found': '{count} connection found.',
-    'import.foundPlural': '{count} connections found.',
-    'import.confirmReplace':
-      'All existing connections will be deleted and replaced by {count} imported ones. Continue?',
-    'import.confirmMerge': 'Add {count} connection?',
-    'import.confirmMergePlural': 'Add {count} connections?',
-    'import.result': '{count} connection imported',
-    'import.resultPlural': '{count} connections imported',
-
-    // ── Servers Page ──────────────────────────────────────────────────
-    'page.servers.title': 'Servers',
-    'page.servers.subtitle': 'Servers and assigned connections',
-    'page.servers.add': '+ Server',
-    'page.servers.empty': 'No servers available.',
-    'page.servers.noServer': 'No server',
-    'page.servers.noConnections': 'No connections assigned.',
-    'page.servers.connCount': '{count} connection',
-    'page.servers.connCountPlural': '{count} connections',
 
     // ── Server Table Headers ──────────────────────────────────────────
     'table.type': 'Type',
-    'table.name': 'Name',
-    'table.hostUrl': 'Host / URL',
-    'table.port': 'Port',
-    'table.user': 'User',
-
-    // ── Server Modal ──────────────────────────────────────────────────
-    'modal.server.title': 'Edit server',
-    'modal.server.titleNew': 'New server',
-    'modal.server.hostname': 'Hostname / IP *',
-    'modal.server.os': 'Operating system',
-    'modal.server.osNone': '-- Not specified --',
-    'modal.server.tagsComma': 'Tags (comma-separated)',
-    'modal.server.notes': 'Notes',
-    'modal.server.notesPlaceholder': 'Optional notes...',
-    'modal.server.monitorTemplates': 'Monitoring templates',
-    'modal.server.multiSelect': 'Multi-select: Ctrl+Click',
-    'modal.server.templatesUnavailable': 'Templates not available',
-
-    // ── Server Toasts ─────────────────────────────────────────────────
-    'toast.server.saved': 'Server saved',
-    'toast.server.created': 'Server created',
-    'toast.server.deleted': 'Server deleted',
-    'confirm.server.delete': 'Really delete this server? Assigned connections become standalone.',
 
     // ── Users Page ────────────────────────────────────────────────────
     'page.users.title': 'Users',
@@ -768,6 +285,7 @@ export const translations: Translations = {
     'page.users.empty': 'No users available.',
     'page.users.me': '(me)',
     'page.users.noServers': 'No servers available.',
+    'page.users.serverLoadFailed': 'Could not load the server list.',
     'page.users.username': 'Username',
     'page.users.role': 'Role',
 
@@ -811,8 +329,6 @@ export const translations: Translations = {
     'page.apikeys.subtitle': 'Programmatic access (e.g. client sync)',
     'page.apikeys.add': '+ API Key',
     'page.apikeys.empty': 'No API keys available.',
-    'page.apikeys.syncTitle': 'Configure client sync:',
-    'page.apikeys.syncInfo': 'Use this sync URL in the AdminHelper client:',
     'page.apikeys.permission': 'Permission',
     'page.apikeys.readWrite': 'Read & Write',
     'page.apikeys.readOnly': 'Read only',
@@ -855,12 +371,11 @@ export const translations: Translations = {
     'hook.event.frp.tunnel.deleted': 'FRP tunnel deleted',
 
     // ── Hook Script Help ──────────────────────────────────────────────
-    'hook.scriptHelp.webhook':
-      'Context: <code>payload</code>, <code>headers</code>, <code>params</code>',
-    'hook.scriptHelp.event': 'Context: <code>event_type</code>, <code>event_data</code>',
-    'hook.scriptHelp.schedule': 'Context: <code>triggered_at</code>, <code>last_run</code>',
+    'hook.scriptHelp.webhook': 'Context: `payload`, `headers`, `params`',
+    'hook.scriptHelp.event': 'Context: `event_type`, `event_data`',
+    'hook.scriptHelp.schedule': 'Context: `triggered_at`, `last_run`',
     'hook.scriptHelp.base':
-      'Available: <code>load_connections()</code>, <code>save_connections(list)</code>, <code>uuid4()</code>, <code>result</code>, <code>logs</code>, <code>log(msg)</code> – <code>import</code> allowed',
+      'Available: `load_connections()`, `save_connections(list)`, `uuid4()`, `result`, `logs`, `log(msg)` – `import` allowed',
 
     // ── Hook Modal ────────────────────────────────────────────────────
     'modal.hook.title': 'Edit hook',
@@ -901,25 +416,17 @@ export const translations: Translations = {
     'hook.result.title': 'Result: {name}',
     'hook.webhookToken.title': 'Webhook token',
     'hook.webhookToken.hint': 'This token will only be shown once. Copy it now.',
-    'hook.webhookToken.triggerUrl': 'Trigger URL:',
+    'hook.webhookToken.triggerCmd': 'Trigger command (token in header, not URL):',
 
     // ── FRP Page ──────────────────────────────────────────────────────
     'page.frp.title': 'FRP Tunnels',
     'page.frp.subtitle': 'Manage tunnel configurations and generate TOML configs',
-    'page.frp.add': '+ Tunnel',
-    'page.frp.empty': 'No tunnels available.',
-    'page.frp.configTitle': 'FRP Server Configuration',
     'page.frp.noConfig': 'No FRP server configuration yet. Click "Configure" to start.',
     'page.frp.mtlsActive': 'Always active',
-    'page.frp.mtlsNote': 'mTLS is always active. Certificates are generated automatically.',
-    'page.frp.unknownServer': 'Unknown server',
-    'page.frp.tunnelCount': '{count} tunnels',
-    'page.frp.createConfigFirst': 'Please create an FRP server configuration first',
     'page.frp.editConfig': 'Edit configuration',
     'page.frp.createConfig': 'Configure',
     'page.frp.bulkZip': 'All as ZIP',
     'page.frp.status': 'Status',
-    'page.frp.addTunnel': '+ Tunnel',
 
     // ── FRP Config Modal ──────────────────────────────────────────────
     'modal.frpConfig.title': 'Edit FRP server',
@@ -938,36 +445,8 @@ export const translations: Translations = {
     // ── FRP Toasts ────────────────────────────────────────────────────
     'toast.frpConfig.saved': 'FRP config saved',
     'toast.frpConfig.created': 'FRP config created',
-    'toast.tunnel.saved': 'Tunnel saved',
-    'toast.tunnel.created': 'Tunnel created',
-    'toast.tunnel.deleted': 'Tunnel deleted',
     'toast.frp.copied': 'Copied to clipboard',
     'toast.frp.zipDownloaded': 'ZIP downloaded',
-    'confirm.tunnel.delete': 'Really delete this tunnel?',
-
-    // ── FRP Tunnel Modal ──────────────────────────────────────────────
-    'modal.tunnel.title': 'Edit tunnel',
-    'modal.tunnel.titleNew': 'New tunnel',
-    'modal.tunnel.server': 'Server *',
-    'modal.tunnel.selectServer': '-- Select server --',
-    'modal.tunnel.proxyName': 'Proxy name *',
-    'modal.tunnel.tunnelType': 'Tunnel type *',
-    'modal.tunnel.typeStcp': 'STCP (SSH/RDP)',
-    'modal.tunnel.typeHttps': 'HTTPS (Web UI)',
-    'modal.tunnel.protocol': 'Protocol *',
-    'modal.tunnel.localIp': 'Local IP',
-    'modal.tunnel.localPort': 'Local port *',
-    'modal.tunnel.secretKey': 'Secret key',
-    'modal.tunnel.secretPlaceholder': 'auto-generated',
-    'modal.tunnel.visitorPort': 'Visitor port',
-    'modal.tunnel.visitorPlaceholder': 'automatic (6000-6999)',
-    'modal.tunnel.customDomains': 'Custom domains',
-    'modal.tunnel.tagsComma': 'Tags (comma-separated)',
-    'modal.tunnel.autoConnection': 'Automatically create connection',
-    'modal.tunnel.autoConnUser': 'Username for auto connection',
-
-    // ── FRP Config Preview ────────────────────────────────────────────
-    'frp.preview.title': 'Config preview',
 
     // ── FRP Status ────────────────────────────────────────────────────
     'frp.status.title': 'frps Tunnel Status',
@@ -975,247 +454,7 @@ export const translations: Translations = {
     'frp.status.noProxies': 'No active proxies on the frps server.',
     'frp.status.connections': 'Connections',
 
-    // ── FRP PKI ───────────────────────────────────────────────────────
-    'frp.pki.expiry': 'Expiry',
-
     // ── FRP Provisioning ──────────────────────────────────────────────
-    'frp.provision.title': 'Provisioning: {name}',
-    'frp.provision.hint':
-      'Create a one-time provision token (valid for 24h). The token is shown only once and can only be used once.',
-    'frp.provision.createToken': 'Create token',
-    'frp.provision.runOnTarget': 'Run on the target server:',
-    'frp.provision.existingTokens': 'Existing tokens',
-    'frp.provision.noTokens': 'No tokens available.',
-    'frp.provision.loading': 'Loading...',
-    'frp.provision.loadError': 'Error loading.',
-    'frp.provision.used': 'Used ({time})',
-    'frp.provision.active': 'Active',
-    'frp.provision.expired': 'Expired',
-    'toast.provision.created': 'Provision token created (valid 24h)',
-    'toast.provision.commandCopied': 'Command copied',
-    'frp.provision.oneLiner': 'One-liner command',
     'state.loading': 'Loading...',
-    'action.confirm': 'Confirm',
-
-    // ── Ansible Page ──────────────────────────────────────────────────
-    'page.ansible.title': 'Ansible Playbooks',
-    'page.ansible.subtitle': 'Manage and execute playbooks on servers',
-    'page.ansible.add': '+ Playbook',
-    'page.ansible.empty': 'No playbooks available.',
-    'page.ansible.loadError': 'Error loading content.',
-    'page.ansible.contentLoading': 'Loading content...',
-
-    // ── Ansible Modal ─────────────────────────────────────────────────
-    'modal.playbook.title': 'Edit playbook',
-    'modal.playbook.titleNew': 'New playbook',
-    'modal.playbook.filename': 'Filename *',
-    'modal.playbook.content': 'Playbook content (YAML) *',
-
-    // ── Ansible Toasts ────────────────────────────────────────────────
-    'toast.playbook.saved': 'Playbook saved',
-    'toast.playbook.created': 'Playbook created',
-    'toast.playbook.deleted': 'Playbook deleted',
-    'confirm.playbook.delete': 'Really delete this playbook?',
-
-    // ── Monitoring Page ───────────────────────────────────────────────
-    'page.monitoring.title': 'Monitoring',
-    'page.monitoring.subtitle': 'Server and service monitoring',
-    'page.monitoring.tabOverview': 'Overview',
-    'page.monitoring.tabAlerts': 'Alert Rules',
-    'page.monitoring.tabLog': 'Alert Log',
-    'page.monitoring.tabTemplates': 'Templates',
-    'page.monitoring.addCheck': '+ Check',
-    'page.monitoring.empty': 'No checks available.',
-
-    // ── Monitor Overview Cards ────────────────────────────────────────
-    'monitor.total': 'Total',
-    'monitor.ok': 'OK',
-    'monitor.warning': 'Warning',
-    'monitor.critical': 'Critical',
-    'monitor.unknown': 'Unknown',
-
-    // ── Monitor Check List ────────────────────────────────────────────
-    'monitor.noServer': 'No server',
-    'monitor.checkCount': '{count} check',
-    'monitor.checkCountPlural': '{count} checks',
-    'monitor.lastCheck': 'Last check',
-    'monitor.lastUpdated': 'Last updated: {time}',
-    'monitor.neverChecked': 'Never',
-    'monitor.runNow': 'Run now',
-    'monitor.config': 'Configuration',
-    'monitor.statusHistory': 'Status history',
-    'monitor.loadingMetrics': 'Loading metrics...',
-    'monitor.noMetrics': 'No metric data available',
-    'monitor.chartError': 'Chart could not be loaded',
-    'monitor.value': 'Value',
-    'monitor.allUnitsOk': 'All systemd units OK',
-    'monitor.allServicesActive': 'All {count} services active',
-    'monitor.allContainersRunning': 'All {count} containers running',
-    'monitor.allBackupsOk': 'All {count} VMs/CTs have current backups',
-    'monitor.noBackup': 'No backup',
-    'monitor.outdated': 'Outdated ({hours}h)',
-    'monitor.sinceLastReport': 'since last report',
-    'monitor.sectionInactive': 'Inactive (autostart)',
-
-    // ── Monitor Check Config Labels ───────────────────────────────────
-    'monitor.cfg.target': 'Target',
-    'monitor.cfg.timeout': 'Timeout',
-    'monitor.cfg.url': 'URL',
-    'monitor.cfg.method': 'Method',
-    'monitor.cfg.expected': 'Expected',
-    'monitor.cfg.ssl': 'SSL',
-    'monitor.cfg.sslDisabled': 'disabled',
-    'monitor.cfg.searchText': 'Search text',
-    'monitor.cfg.staleThreshold': 'Stale threshold',
-    'monitor.cfg.staleMinutes': '{min} min',
-    'monitor.cfg.cpu': 'CPU',
-    'monitor.cfg.ram': 'RAM',
-    'monitor.cfg.disk': 'Disk',
-    'monitor.cfg.temp': 'Temperature',
-    'monitor.cfg.mode': 'Mode',
-    'monitor.cfg.services': 'Services',
-    'monitor.cfg.ignored': 'Ignored',
-    'monitor.cfg.maxAge': 'Max age',
-    'monitor.cfg.maxAgeHours': '{hours}h',
-    'monitor.cfg.excludeVmids': 'Exclude VMIDs',
-    'monitor.cfg.capacity': 'Capacity',
-    'monitor.cfg.restartCheck': 'Restart check',
-    'monitor.cfg.restartActive': 'active',
-    'monitor.cfg.restartOff': 'off',
-
-    // ── Monitor Check Modal ───────────────────────────────────────────
-    'modal.check.title': 'Edit check',
-    'modal.check.titleNew': 'New check',
-    'modal.check.server': 'Server',
-    'modal.check.noServer': '-- No server --',
-    'modal.check.checkType': 'Check type *',
-    'modal.check.interval': 'Interval',
-    'modal.check.interval1m': '1 minute',
-    'modal.check.interval5m': '5 minutes',
-    'modal.check.interval15m': '15 minutes',
-    'modal.check.interval30m': '30 minutes',
-    'modal.check.interval1h': '1 hour',
-    'modal.check.severity': 'Severity',
-    'modal.check.severityCritical': 'Critical',
-    'modal.check.severityWarning': 'Warning',
-    'modal.check.severityInfo': 'Info',
-    'modal.check.consecutiveFails': 'Failures before alert',
-    'modal.check.descPlaceholder': 'Optional description',
-
-    // ── Monitor Check Type Config Labels ──────────────────────────────
-    'modal.check.pingTarget': 'Target (IP/hostname) *',
-    'modal.check.timeout': 'Timeout (sec)',
-    'modal.check.tcpPort': 'Port *',
-    'modal.check.httpUrl': 'URL *',
-    'modal.check.httpMethod': 'Method',
-    'modal.check.httpExpectedStatus': 'Expected status',
-    'modal.check.httpVerifySsl': 'Verify SSL',
-    'modal.check.httpSearchText': 'Search text (optional)',
-    'modal.check.httpSearchPlaceholder': 'Text that must appear in the response',
-    'modal.check.agentResourcesHint':
-      'Evaluates metrics from adminhelper-agent. The agent must be installed and configured on the server.',
-    'modal.check.cpuWarn': 'CPU warning (%)',
-    'modal.check.cpuCrit': 'CPU critical (%)',
-    'modal.check.ramWarn': 'RAM warning (%)',
-    'modal.check.ramCrit': 'RAM critical (%)',
-    'modal.check.diskWarn': 'Disk warning (%)',
-    'modal.check.diskCrit': 'Disk critical (%)',
-    'modal.check.tempWarn': 'Temp warning (\u00b0C)',
-    'modal.check.tempCrit': 'Temp critical (\u00b0C)',
-    'modal.check.tempOverrides': 'Sensor thresholds (empty = global)',
-    'modal.check.serviceHint':
-      'Checks systemd services. In auto mode, failed and inactive autostart services are detected automatically.',
-    'modal.check.serviceMode': 'Mode',
-    'modal.check.serviceModeAuto': 'Auto (all units)',
-    'modal.check.serviceModeList': 'List (named services)',
-    'modal.check.serviceNames': 'Services (comma-separated)',
-    'modal.check.serviceIgnore': 'Ignore (comma-separated)',
-    'modal.check.proxmoxHint':
-      'Checks whether VMs/CTs have current backups. Plugin is automatically activated when Proxmox is detected.',
-    'modal.check.proxmoxMaxAge': 'Max backup age (hours)',
-    'modal.check.proxmoxExclude': 'Exclude VMIDs (comma-separated)',
-    'modal.check.proxmoxExcludeStopped': 'Ignore stopped VMs/CTs',
-    'modal.check.zfsHint':
-      'Checks ZFS pool health and capacity. Plugin is automatically activated when ZFS is detected.',
-    'modal.check.zfsCapWarn': 'Capacity warning (%)',
-    'modal.check.zfsCapCrit': 'Capacity critical (%)',
-    'modal.check.dockerHint':
-      'Checks Docker container status. Plugin is automatically activated when Docker is detected.',
-    'modal.check.dockerIgnore': 'Ignore containers (comma-separated)',
-
-    // ── Monitor Toasts ────────────────────────────────────────────────
-    'toast.check.saved': 'Check saved',
-    'toast.check.created': 'Check created',
-    'toast.check.deleted': 'Check deleted',
-    'toast.check.executed': 'Check executed',
-    'toast.check.updated': 'Check updated',
-    'confirm.check.delete': 'Really delete this check?',
-
-    // ── Alert Rules ───────────────────────────────────────────────────
-    'page.alerts.add': '+ Alert Rule',
-    'page.alerts.empty': 'No alert rules available.',
-    'alerts.channel.webhook': 'Webhook',
-    'alerts.channel.email': 'Email',
-    'alerts.cooldown': '{min} min',
-    'alerts.sent': 'Sent',
-    'alerts.error': 'Error',
-    'alerts.noAlerts': 'No alerts sent',
-    'alerts.loadOnTab': 'Loaded on tab switch',
-
-    // ── Alert Rule Modal ──────────────────────────────────────────────
-    'modal.alert.title': 'Edit alert rule',
-    'modal.alert.titleNew': 'New alert rule',
-    'modal.alert.channel': 'Channel *',
-    'modal.alert.severityFilter': 'Severity filter',
-    'modal.alert.serverFilter': 'Server filter',
-    'modal.alert.allServers': '-- All servers --',
-    'modal.alert.cooldown': 'Cooldown (minutes)',
-    'modal.alert.webhookUrl': 'Webhook URL *',
-    'modal.alert.emailRecipients': 'Recipients (comma-separated) *',
-
-    // ── Alert Toasts ──────────────────────────────────────────────────
-    'toast.alert.saved': 'Alert rule saved',
-    'toast.alert.created': 'Alert rule created',
-    'toast.alert.deleted': 'Alert rule deleted',
-    'toast.alert.updated': 'Alert rule updated',
-    'confirm.alert.delete': 'Really delete this alert rule?',
-
-    // ── Alert Log Table ───────────────────────────────────────────────
-    'alertLog.time': 'Time',
-    'alertLog.check': 'Check',
-    'alertLog.from': 'From',
-    'alertLog.to': 'To',
-    'alertLog.status': 'Status',
-    'alertLog.error': 'Error',
-
-    // ── Templates ─────────────────────────────────────────────────────
-    'page.templates.add': '+ Template',
-    'page.templates.empty': 'No templates available.',
-    'modal.template.title': 'Edit template',
-    'modal.template.titleNew': 'New template',
-    'modal.template.checkDefs': 'Check definitions',
-    'modal.template.addCheck': '+ Check',
-    'modal.template.noChecks': 'No checks defined',
-    'modal.template.alertDefs': 'Alert definitions',
-    'modal.template.addAlert': '+ Alert',
-    'modal.template.noAlerts': 'No alerts defined',
-    'modal.template.placeholderHint':
-      'Use <code>{{hostname}}</code>, <code>{{server_name}}</code>, <code>{{server_id}}</code> as placeholders',
-    'modal.template.remove': 'Remove',
-    'template.checks': '{count} checks, {alerts} alerts',
-    'template.servers': '{count} servers',
-
-    // ── Template Toasts ───────────────────────────────────────────────
-    'toast.template.saved': 'Template saved',
-    'toast.template.created': 'Template created',
-    'toast.template.deleted': 'Template deleted',
-    'confirm.template.delete': 'Really delete this template?',
-
-    // ── Session ───────────────────────────────────────────────────────
-    'session.expired': 'Session expired',
-
-    // ── Language ──────────────────────────────────────────────────────
-    'language.de': 'DE',
-    'language.en': 'EN',
   },
 };

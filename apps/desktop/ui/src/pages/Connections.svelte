@@ -12,7 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     kindFilter,
     groupFilter,
     viewMode,
-    load as loadConnections,
+    loadForCurrentMode as loadConnections,
     connections,
   } from '$lib/stores/connections';
   import { tunnelMappings } from '$lib/stores/tunnel';
@@ -47,11 +47,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     void initiateConnect(conn);
   }
 
+  // Preferred connection of a group for the click/edit target: SSH, then RDP, then
+  // web, else the first — the fallback that used to be copied at 3 call sites (2.27).
+  function preferredOf(group: ConnectionGroup): Connection | undefined {
+    return group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0];
+  }
+
   function onGroupClick(group: ConnectionGroup, ev: MouseEvent | KeyboardEvent): void {
     const target = ev.target as HTMLElement;
     if (target.closest('button')) return;
-    const preferred =
-      group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0];
+    const preferred = preferredOf(group);
     if (preferred) void initiateConnect(preferred);
   }
 
@@ -156,6 +161,88 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </div>
 </div>
 
+{#snippet connCard(conn: Connection, showTags: boolean)}
+  {@const tunnelName = tunnelFor(conn)}
+  <div
+    class="card"
+    role="button"
+    tabindex="0"
+    onclick={(e) => onCardClick(conn, e)}
+    onkeydown={(e) => e.key === 'Enter' && onCardClick(conn, e)}
+  >
+    <div class="card-main">
+      <div class="card-title">{conn.name || $t('list.noName')}</div>
+      <div class="card-meta">{toCardMeta(conn)}</div>
+      <div class="card-tag">{conn.kind.toUpperCase()}</div>
+      {#if tunnelName}
+        <div class="card-tag tunnel-badge" title={tunnelName}>{$t('tunnel.badge')}</div>
+      {/if}
+      {#if showTags && conn.tags && conn.tags.length > 0}
+        <div class="card-tags">
+          {#each conn.tags as tag (tag)}
+            <span class="tag">{tag}</span>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    <div class="card-actions">
+      <button
+        class="btn icon large"
+        title={$t('action.edit')}
+        aria-label={$t('action.edit')}
+        onclick={(e) => onEdit(conn, e)}
+      >
+        <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
+      </button>
+    </div>
+  </div>
+{/snippet}
+
+{#snippet groupCard(group: ConnectionGroup)}
+  {@const preferred = preferredOf(group)}
+  <div
+    class="card"
+    role="button"
+    tabindex="0"
+    onclick={(e) => onGroupClick(group, e)}
+    onkeydown={(e) => e.key === 'Enter' && onGroupClick(group, e)}
+  >
+    <div class="card-main">
+      <div class="card-title">{group.displayName || $t('list.noName')}</div>
+      <div class="card-meta">
+        {group.host} · {$t('grouped.connections', { count: group.connections.length })}
+      </div>
+      <div class="card-tag">
+        {['ssh', 'rdp', 'web']
+          .filter((k) => group.byKind[k as ConnectionKind])
+          .map((k) => k.toUpperCase())
+          .join(' · ')}
+      </div>
+    </div>
+    <div class="card-actions">
+      {#each ['ssh', 'rdp', 'web'] as kind (kind)}
+        {#if group.byKind[kind as ConnectionKind]}
+          <button
+            class="btn small accent"
+            onclick={(e) => onConnect(group.byKind[kind as ConnectionKind]!, e)}
+            >{kind.toUpperCase()}</button
+          >
+        {/if}
+      {/each}
+      {#if preferred}
+        <button
+          class="btn icon large"
+          title={$t('action.edit')}
+          aria-label={$t('action.edit')}
+          onclick={(e) => onEdit(preferred, e)}
+        >
+          <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
+        </button>
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
 {#if $connections.length === 0}
   <div class="list" use:accelerateScroll={LIST_FACTOR}>
     <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.empty')}</div>
@@ -166,40 +253,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
     {:else}
       {#each $filteredConnections as conn (conn.id)}
-        {@const tunnelName = tunnelFor(conn)}
-        <div
-          class="card"
-          role="button"
-          tabindex="0"
-          onclick={(e) => onCardClick(conn, e)}
-          onkeydown={(e) => e.key === 'Enter' && onCardClick(conn, e)}
-        >
-          <div class="card-main">
-            <div class="card-title">{conn.name || $t('list.noName')}</div>
-            <div class="card-meta">{toCardMeta(conn)}</div>
-            <div class="card-tag">{conn.kind.toUpperCase()}</div>
-            {#if tunnelName}
-              <div class="card-tag tunnel-badge" title={tunnelName}>{$t('tunnel.badge')}</div>
-            {/if}
-            {#if conn.tags && conn.tags.length > 0}
-              <div class="card-tags">
-                {#each conn.tags as tag (tag)}
-                  <span class="tag">{tag}</span>
-                {/each}
-              </div>
-            {/if}
-          </div>
-          <div class="card-actions">
-            <button
-              class="btn icon large"
-              title={$t('action.edit')}
-              aria-label={$t('action.edit')}
-              onclick={(e) => onEdit(conn, e)}
-            >
-              <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
-            </button>
-          </div>
-        </div>
+        {@render connCard(conn, true)}
       {/each}
     {/if}
   </div>
@@ -209,49 +263,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div class="dash-empty" style="padding: var(--sp-6);">{$t('connections.noResults')}</div>
     {:else}
       {#each $groupedConnections as group (group.key)}
-        {@const preferred =
-          group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0]}
-        <div
-          class="card"
-          role="button"
-          tabindex="0"
-          onclick={(e) => onGroupClick(group, e)}
-          onkeydown={(e) => e.key === 'Enter' && onGroupClick(group, e)}
-        >
-          <div class="card-main">
-            <div class="card-title">{group.displayName || $t('list.noName')}</div>
-            <div class="card-meta">
-              {group.host} · {$t('grouped.connections', { count: group.connections.length })}
-            </div>
-            <div class="card-tag">
-              {['ssh', 'rdp', 'web']
-                .filter((k) => group.byKind[k as ConnectionKind])
-                .map((k) => k.toUpperCase())
-                .join(' · ')}
-            </div>
-          </div>
-          <div class="card-actions">
-            {#each ['ssh', 'rdp', 'web'] as kind (kind)}
-              {#if group.byKind[kind as ConnectionKind]}
-                <button
-                  class="btn small accent"
-                  onclick={(e) => onConnect(group.byKind[kind as ConnectionKind]!, e)}
-                  >{kind.toUpperCase()}</button
-                >
-              {/if}
-            {/each}
-            {#if preferred}
-              <button
-                class="btn icon large"
-                title={$t('action.edit')}
-                aria-label={$t('action.edit')}
-                onclick={(e) => onEdit(preferred, e)}
-              >
-                <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
-              </button>
-            {/if}
-          </div>
-        </div>
+        {@render groupCard(group)}
       {/each}
     {/if}
   </div>
@@ -281,87 +293,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <div class="tree-list">
             {#if $groupFilter === 'grouped'}
               {#each node.groups as group (group.key)}
-                {@const preferred =
-                  group.byKind.ssh ?? group.byKind.rdp ?? group.byKind.web ?? group.connections[0]}
-                <div class="tree-node">
-                  <div
-                    class="card"
-                    role="button"
-                    tabindex="0"
-                    onclick={(e) => onGroupClick(group, e)}
-                    onkeydown={(e) => e.key === 'Enter' && onGroupClick(group, e)}
-                  >
-                    <div class="card-main">
-                      <div class="card-title">{group.displayName || $t('list.noName')}</div>
-                      <div class="card-meta">
-                        {group.host} · {$t('grouped.connections', {
-                          count: group.connections.length,
-                        })}
-                      </div>
-                      <div class="card-tag">
-                        {['ssh', 'rdp', 'web']
-                          .filter((k) => group.byKind[k as ConnectionKind])
-                          .map((k) => k.toUpperCase())
-                          .join(' · ')}
-                      </div>
-                    </div>
-                    <div class="card-actions">
-                      {#each ['ssh', 'rdp', 'web'] as kind (kind)}
-                        {#if group.byKind[kind as ConnectionKind]}
-                          <button
-                            class="btn small accent"
-                            onclick={(e) => onConnect(group.byKind[kind as ConnectionKind]!, e)}
-                            >{kind.toUpperCase()}</button
-                          >
-                        {/if}
-                      {/each}
-                      {#if preferred}
-                        <button
-                          class="btn icon large"
-                          title={$t('action.edit')}
-                          aria-label={$t('action.edit')}
-                          onclick={(e) => onEdit(preferred, e)}
-                        >
-                          <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
-                        </button>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
+                <div class="tree-node">{@render groupCard(group)}</div>
               {/each}
             {:else}
               {#each node.items as conn (conn.id)}
-                {@const tunnelName = tunnelFor(conn)}
-                <div class="tree-node">
-                  <div
-                    class="card"
-                    role="button"
-                    tabindex="0"
-                    onclick={(e) => onCardClick(conn, e)}
-                    onkeydown={(e) => e.key === 'Enter' && onCardClick(conn, e)}
-                  >
-                    <div class="card-main">
-                      <div class="card-title">{conn.name || $t('list.noName')}</div>
-                      <div class="card-meta">{toCardMeta(conn)}</div>
-                      <div class="card-tag">{conn.kind.toUpperCase()}</div>
-                      {#if tunnelName}
-                        <div class="card-tag tunnel-badge" title={tunnelName}>
-                          {$t('tunnel.badge')}
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="card-actions">
-                      <button
-                        class="btn icon large"
-                        title={$t('action.edit')}
-                        aria-label={$t('action.edit')}
-                        onclick={(e) => onEdit(conn, e)}
-                      >
-                        <svg viewBox="0 0 24 24"><path d={PENCIL_PATH} /></svg>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <div class="tree-node">{@render connCard(conn, false)}</div>
               {/each}
             {/if}
           </div>

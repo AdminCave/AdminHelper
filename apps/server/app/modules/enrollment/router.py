@@ -13,9 +13,7 @@ cert-gated: the client has no cert yet — this is its bootstrap door.
 
 from __future__ import annotations
 
-import datetime
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -23,14 +21,12 @@ from app.core.auth import get_current_admin, get_current_user
 from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS
+from app.core.request_context import actor_from_request
+from app.modules.audit import service as audit
 from app.modules.enrollment.service import mint_enrollment_token
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/enrollment", tags=["enrollment"])
-
-# Long enough for the client to enroll right after login, short enough to limit
-# exposure of the single-use grant (matches the provision-token window).
-_ENROLL_TOKEN_TTL = datetime.timedelta(minutes=10)
 
 
 def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
@@ -40,9 +36,7 @@ def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
     same SHA-256 the ca-issuer consumes by. ``browser=true`` flags a long-lived
     leaf (D5): the browser cannot auto-renew, so it gets a long cert + manual
     re-import; the desktop exports it as a PKCS12 for the browser cert store (A5c)."""
-    raw_token = mint_enrollment_token(
-        db, subject_id, SCOPE_ACCESS, browser=browser, ttl=_ENROLL_TOKEN_TTL
-    )
+    raw_token = mint_enrollment_token(db, subject_id, SCOPE_ACCESS, browser=browser)
     return {
         "token": raw_token,
         "subjectId": subject_id,
@@ -56,6 +50,7 @@ def _mint_token(db: Session, subject_id: str, browser: bool) -> dict:
 
 @router.post("/token")
 def mint_self_enrollment_token(
+    request: Request,
     browser: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -64,7 +59,16 @@ def mint_self_enrollment_token(
 
     The self-service door: the caller authenticates with its JWT and mints a
     token for *its own* identity, then redeems it at the ca-issuer."""
-    return _mint_token(db, current_user.username, browser)
+    res = _mint_token(db, current_user.username, browser)
+    audit.record(
+        db,
+        "enrollment.token.minted",
+        object_type="user",
+        object_id=current_user.username,
+        detail=f"browser={browser} (self)",
+        actor=actor_from_request(request),
+    )
+    return res
 
 
 class EnrollmentTokenForRequest(BaseModel):
@@ -75,6 +79,7 @@ class EnrollmentTokenForRequest(BaseModel):
 @router.post("/token/for")
 def mint_enrollment_token_for(
     data: EnrollmentTokenForRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_admin),
 ):
@@ -89,4 +94,21 @@ def mint_enrollment_token_for(
     target = db.query(User).filter(User.username == data.username).first()
     if target is None:
         raise HTTPException(status_code=404, detail="Unbekannter Benutzer")
-    return _mint_token(db, target.username, data.browser)
+    res = _mint_token(db, target.username, data.browser)
+    audit.record(
+        db,
+        "enrollment.token.minted_for",
+        object_type="user",
+        object_id=target.username,
+        # A browser leaf is long-lived (LEAF_DAYS_BROWSER, ~1 year) and never
+        # renews, so the issuer never re-checks is_active — it is only revocable via
+        # data-plane enforcement (MTLS_ENFORCE=true). Flag that in the audit trail so
+        # a for-another long-lived grant is greppable (3.32).
+        detail=(
+            "browser=True (long-lived leaf, revocable only under MTLS_ENFORCE=true)"
+            if data.browser
+            else "browser=False"
+        ),
+        actor=actor_from_request(request),
+    )
+    return res

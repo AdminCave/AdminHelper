@@ -16,6 +16,9 @@ import (
 	"adminhelper-agent/internal/enroll"
 )
 
+// restartService is a seam so tests can stub the frpc restart (which shells out to systemctl).
+var restartService = restartFrpc
+
 // Sync checks for config changes and updates frpc (port of do_sync).
 func Sync() error {
 	cfg, err := config.LoadFrpcConfig()
@@ -36,13 +39,18 @@ func Sync() error {
 	if err != nil {
 		return fmt.Errorf("HTTP-Client: %w", err)
 	}
+	// Close idle keep-alive connections on return: a fresh client is built per sync, so otherwise
+	// the discarded transport's idle conns linger up to ~90s (IdleConnTimeout) before GC (5.6).
+	defer client.CloseIdleConnections()
 
 	// Fetch the remote hash
 	hashURL := fmt.Sprintf("%s/api/frp/provision/%s/config-hash", cfg.AdminHelperURL, cfg.ServerID)
 	hashBody, err := httpGet(client, hashURL, cfg.APIKey)
 	if err != nil {
-		logger.Warnf("Config-Hash konnte nicht abgefragt werden: %v", err)
-		return nil
+		// Propagate like the config fetch below (same error class): a persistently
+		// broken sync (rotated API key, expired mTLS cert, wrong URL) must surface
+		// as an error, not hide as a warning while the run reports success.
+		return fmt.Errorf("Config-Hash abfragen: %w", err)
 	}
 	remoteHash, err := parseConfigHash(hashBody)
 	if err != nil {
@@ -67,17 +75,37 @@ func Sync() error {
 		return fmt.Errorf("neue Config laden: %w", err)
 	}
 
-	// Write the config (0600: contains the frp auth token).
-	if err := os.WriteFile(config.FrpConfigFile(), newConfig, 0600); err != nil {
+	// Verify the delivered bytes match the advertised hash before trusting them (4.10). The
+	// hash and config endpoints both return sha256(generate_frpc_toml(...)), so a truncated or
+	// garbled 200 (gateway error page, mid-flight config change) is caught here instead of being
+	// written and sealed with remoteHash — which would crash-loop frpc on broken TOML with no
+	// self-repair, since localHash would then equal remoteHash.
+	if got := hashConfig(newConfig); got != remoteHash {
+		return fmt.Errorf("gelieferte Config passt nicht zum Hash (erwartet %s, erhalten %s)", remoteHash, got)
+	}
+
+	// Write the config atomically (0600: contains the frp auth token). A plain in-place WriteFile
+	// truncates first, so a crash/kill between truncate and write would leave a partial frpc.toml
+	// that frpc.service crash-loops on (Restart=on-failure) until the next sync ~5 min later. Stage
+	// to a temp file + rename, like enroll.stageIdentity (4.82).
+	tmp := config.FrpConfigFile() + ".tmp"
+	if err := os.WriteFile(tmp, rewriteIdentityPaths(newConfig), 0600); err != nil {
 		return fmt.Errorf("frpc.toml schreiben: %w", err)
 	}
-	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
-		return fmt.Errorf("Hash schreiben: %w", err)
+	if err := os.Rename(tmp, config.FrpConfigFile()); err != nil {
+		return fmt.Errorf("frpc.toml aktivieren: %w", err)
 	}
 
 	// Restart frpc
-	if err := restartFrpc(); err != nil {
+	if err := restartService(); err != nil {
 		return fmt.Errorf("frpc neustarten: %w", err)
+	}
+
+	// Persist the hash only AFTER a successful restart (4.11): a failed restart then leaves the
+	// hash mismatch standing, so the next run retries the sync instead of freezing the old
+	// config on disk until the next server-side change.
+	if err := os.WriteFile(config.FrpHashFile(), []byte(remoteHash), 0644); err != nil {
+		return fmt.Errorf("Hash schreiben: %w", err)
 	}
 	logger.Infof("frpc.toml aktualisiert und frpc neugestartet.")
 	return nil

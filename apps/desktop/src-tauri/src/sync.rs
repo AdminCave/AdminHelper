@@ -2,22 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use url::Url;
-
 use crate::error::AppError;
 use crate::models::Connection;
 use crate::storage::write_connections;
-use crate::validation::sanitize_synced_connections;
-
-fn validate_https_url(raw: &str) -> Result<(), AppError> {
-    let url = Url::parse(raw)?;
-    if url.scheme() != "https" {
-        return Err(AppError::Validation(
-            "Nur https:// URLs sind erlaubt".to_string(),
-        ));
-    }
-    Ok(())
-}
+use crate::validation::{sanitize_synced_connections, validate_https_url};
 
 pub async fn sync_connections(
     app: tauri::AppHandle,
@@ -27,10 +15,13 @@ pub async fn sync_connections(
     validate_https_url(&url)?;
     // Same TOFU-pinning client as the authenticated paths (https-only is enforced
     // above; build_client adds the pinning on the self-signed path).
-    let client = crate::auth::build_client(&url, allow_self_signed)?;
+    let client = crate::http_client::build_client(&url, allow_self_signed)?;
     let response = client.get(&url).send().await?.error_for_status()?;
-    let connections: Vec<Connection> = response.json().await?;
-    let connections = sanitize_synced_connections(connections);
+    // Parse leniently like fetch_connections_jwt: the server list may hold kinds
+    // the launcher can't open (or malformed rows) — skip those instead of failing
+    // the whole sync by strict-decoding the batch into Vec<Connection>.
+    let raw: Vec<serde_json::Value> = response.json().await?;
+    let connections = sanitize_synced_connections(parse_launchable_connections(raw));
     write_connections(&app, &connections)?;
     Ok(connections)
 }

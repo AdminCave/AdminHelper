@@ -9,44 +9,51 @@ from sqlalchemy.orm import Session
 
 from app.core.config import VISITOR_PORT_END, VISITOR_PORT_START
 from app.modules.connections.models import Connection
-from app.modules.frp.models import FrpTunnel
+from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.users.models import User, user_server_assoc
 
 
-def create_auto_connection(
-    name: str,
-    tunnel_type: str,
-    protocol: str | None,
-    custom_domains: str | None,
-    visitor_port: int | None,
-    server_id: str,
-    db: Session,
-    tags: str | None = None,
-    username: str | None = None,
-) -> Connection | None:
+def get_frp_config(db: Session, config_id: str | None = None) -> FrpServerConfig | None:
+    """Resolve the FRP server config.
+
+    FrpServerConfig is a multi-row table treated as a singleton by most callers.
+    Resolve it deterministically — oldest first, id as tiebreaker — instead of a
+    bare `.first()`: on Postgres an unordered `.first()` may return a different
+    row each call, so with two configs the agent sync / startup frps.toml could
+    otherwise pick a random one (serverAddr/auth_token mismatch, dead tunnel).
+    """
+    q = db.query(FrpServerConfig)
+    if config_id:
+        return q.filter(FrpServerConfig.id == config_id).first()
+    return q.order_by(FrpServerConfig.created_at, FrpServerConfig.id).first()
+
+
+def create_auto_connection(tunnel: FrpTunnel, username: str | None = None) -> Connection | None:
     """Create an auto-connection for a tunnel (STCP or HTTPS)."""
-    if tunnel_type == "stcp" and visitor_port:
-        conn_kind = "ssh" if protocol == "ssh" else "rdp" if protocol == "rdp" else "web"
+    if tunnel.tunnel_type == "stcp" and tunnel.visitor_port:
+        conn_kind = (
+            "ssh" if tunnel.protocol == "ssh" else "rdp" if tunnel.protocol == "rdp" else "web"
+        )
         return Connection(
             id=str(uuid.uuid4()),
-            name=f"{name} (via FRP)",
+            name=f"{tunnel.name} (via FRP)",
             kind=conn_kind,
             host="127.0.0.1",
-            port=visitor_port,
-            server_id=server_id,
-            tags=tags,
+            port=tunnel.visitor_port,
+            server_id=tunnel.server_id,
+            tags=tunnel.tags,
             username=username or "",
         )
-    if tunnel_type == "https" and custom_domains:
-        domain = custom_domains.split(",")[0].strip()
+    if tunnel.tunnel_type == "https" and tunnel.custom_domains:
+        domain = tunnel.custom_domains.split(",")[0].strip()
         if domain:
             return Connection(
                 id=str(uuid.uuid4()),
-                name=f"{name} (via FRP)",
+                name=f"{tunnel.name} (via FRP)",
                 kind="web",
                 url=f"https://{domain}",
-                server_id=server_id,
-                tags=tags,
+                server_id=tunnel.server_id,
+                tags=tunnel.tags,
                 username=username or "",
             )
     return None

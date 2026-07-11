@@ -43,3 +43,16 @@ func TestBaseURL(t *testing.T) {
 		}
 	}
 }
+
+// RequireHTTPS must reject any non-https server URL so the provision token / API
+// key are never sent in plaintext (3.11).
+func TestRequireHTTPS(t *testing.T) {
+	if err := RequireHTTPS("https://example.com:8443/api"); err != nil {
+		t.Errorf("https URL should pass, got %v", err)
+	}
+	for _, bad := range []string{"http://example.com", "ftp://host", "ws://host", "example.com", ""} {
+		if err := RequireHTTPS(bad); err == nil {
+			t.Errorf("non-https URL %q should be rejected", bad)
+		}
+	}
+}

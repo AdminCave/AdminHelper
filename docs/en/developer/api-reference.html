@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -41,7 +41,7 @@
           </ul>
 
           <h2>Pagination (list endpoints)</h2>
-          <p>The list endpoints <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> plus the monitoring lists (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) accept optional <code>limit</code> (1&ndash;1000) and <code>offset</code> (&ge;&nbsp;0) query parameters and return the pre-pagination total in the <code>X-Total-Count</code> header (the monitoring proxy forwards that header). Without parameters the behaviour is unchanged: full list.</p>
+          <p>The list endpoints <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> plus the monitoring lists (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) accept optional <code>limit</code> (1&ndash;1000) and <code>offset</code> (&ge;&nbsp;0) query parameters and return the pre-pagination total in the <code>X-Total-Count</code> header (the monitoring proxy forwards that header). Without parameters the small lists (servers/connections/hooks) return the full list; <code>GET /api/audit</code>, however, caps at 200 entries without <code>limit</code> because the trail grows unbounded (more via <code>offset</code>).</p>
 
           <h2>Auth</h2>
           <div class="endpoint">
@@ -105,7 +105,7 @@
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/toggle</code><p>Enable/disable; updates scheduler registration.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/rotate</code><p>Rotate webhook token.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/run</code><p>Manual test run with empty context.</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/trigger/{token}</code><p><strong>Public</strong> (no JWT). Rate limit: 20 req / 60&nbsp;s / IP. Context: <code>{ payload, headers, params }</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/trigger</code> with an <code>X-Hook-Token</code> header <em>(preferred &ndash; keeps the token out of access logs/history)</em>, or <code>/api/hooks/trigger/{token}</code> (token in path)<p><strong>Public</strong> (no JWT). Rate limit: 20 req / 60&nbsp;s / IP. Context: <code>{ payload, headers, params }</code>.</p></div>
 
           <h2>Ansible Playbooks</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/ansible/playbooks</code></div>
@@ -163,6 +163,35 @@
             <div><div class="callout-title">No dedicated <code>alerts</code>, <code>audit</code> or <code>settings</code> endpoints on AdminHelper</div><p>Alerts and check status come through the monitoring proxy from the separate service. Audit trails run via hook events through the logging system; there is no dedicated <code>/api/audit</code> endpoint as of v0.23.2.</p></div>
           </div>
 
+          <h2>Notifications (since v0.38.0)</h2>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications</code>
+            <p>The caller's bell feed, newest first. Query: <code>unread_only</code> (bool, default <code>false</code>), <code>limit</code> (1&ndash;1000), <code>offset</code> (&ge;0). Returns a list of notification objects.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/unread-count</code>
+            <p>Cheap badge count for the bell. Returns <code>{ "count" }</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/read</code>
+            <p>Mark notifications read. Body: <code>{ "ids": [&hellip;] }</code> &ndash; omitting <code>ids</code> / <code>null</code> marks <strong>all</strong> read.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/stream</code>
+            <p>Server-Sent Events (<code>text/event-stream</code>): pushes a &ldquo;refresh&rdquo; nudge whenever the user gets a new notification (push, not polling). Cross-worker via Redis&nbsp;Pub/Sub. The gateway proxies the stream <strong>unbuffered with a long read timeout</strong>; a heartbeat comment keeps it open and the auth (JWT/mTLS) is re-validated periodically.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/users/me/notification-prefs</code>
+            <p>The caller's subscription rules + contact data.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/users/me/notification-prefs</code>
+            <p>Replace-all: sets <code>email</code>/<code>telegram_chat_id</code> (verbatim, <code>null</code> clears) and rewrites the subscription set. Each subscription: <code>scope_type</code> (<code>all</code>/<code>tag</code>/<code>server</code>), <code>scope_ref</code>, <code>min_severity</code> (default <code>warning</code>), optional <code>categories</code> filter.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/internal/events</code>
+            <p><strong>Internal only</strong> (header <code>X-Internal-Key</code>): event ingress for the monitoring&rarr;hub path. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. Fans the event out to matching recipients. Status <code>202</code>, returns <code>{ "notified" }</code>.</p>
+          </div>
           <h2>Error Format</h2>
           <div class="code-header"><span>json</span></div>
 <pre><code>HTTP/1.1 422 Unprocessable Entity

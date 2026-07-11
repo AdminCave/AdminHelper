@@ -34,6 +34,11 @@ _INGEST_WINDOW = 60
 # routes do NOT match -> 404. Mirrors the rstrip in provisioning/helpers.py.
 _MONITOR_BASE = MONITOR_SERVICE_URL.rstrip("/")
 
+# Reuse one async client across proxy forwards instead of a fresh AsyncClient (TCP handshake + pool
+# setup) per request — agent reports arrive every minute per server. httpx binds its pools lazily, so
+# building it at import is safe; it is closed in the app lifespan (5.30).
+_client = httpx.AsyncClient(timeout=30)
+
 # Allowed path prefixes for the monitoring proxy (SSRF protection)
 _ALLOWED_PATH_PREFIXES = (
     "checks",
@@ -59,20 +64,19 @@ async def proxy_agent_report(
     count = await run_in_threadpool(get_backend().increment, f"agent_ingest:{ip}", _INGEST_WINDOW)
     if count > _INGEST_MAX:
         raise HTTPException(status_code=429, detail="Zu viele Agent-Reports")
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{_MONITOR_BASE}/agent/{server_id}/report",
-            content=await request.body(),
-            headers={
-                "X-API-Key": request.headers.get("x-api-key", ""),
-                "Content-Type": request.headers.get("content-type", "application/json"),
-            },
-        )
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            media_type=resp.headers.get("content-type"),
-        )
+    resp = await _client.post(
+        f"{_MONITOR_BASE}/agent/{server_id}/report",
+        content=await request.body(),
+        headers={
+            "X-API-Key": request.headers.get("x-api-key", ""),
+            "Content-Type": request.headers.get("content-type", "application/json"),
+        },
+    )
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type"),
+    )
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
@@ -88,28 +92,27 @@ async def proxy_to_monitoring(
     if ".." in normalized or not any(normalized.startswith(p) for p in _ALLOWED_PATH_PREFIXES):
         raise HTTPException(status_code=400, detail="Unerlaubter Proxy-Pfad")
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        target_url = f"{_MONITOR_BASE}/{path}"
-        resp = await client.request(
-            method=request.method,
-            url=target_url,
-            content=await request.body(),
-            headers={
-                "X-Internal-Key": MONITOR_API_KEY,
-                "Content-Type": request.headers.get("content-type", "application/json"),
-            },
-            params=request.query_params,
-        )
-        # Forward the pagination total — the proxy otherwise strips response
-        # headers, which would make X-Total-Count unreachable for the UI.
-        extra_headers = (
-            {"X-Total-Count": resp.headers["x-total-count"]}
-            if "x-total-count" in resp.headers
-            else None
-        )
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            media_type=resp.headers.get("content-type"),
-            headers=extra_headers,
-        )
+    target_url = f"{_MONITOR_BASE}/{path}"
+    resp = await _client.request(
+        method=request.method,
+        url=target_url,
+        content=await request.body(),
+        headers={
+            "X-Internal-Key": MONITOR_API_KEY,
+            "Content-Type": request.headers.get("content-type", "application/json"),
+        },
+        params=request.query_params,
+    )
+    # Forward the pagination total — the proxy otherwise strips response
+    # headers, which would make X-Total-Count unreachable for the UI.
+    extra_headers = (
+        {"X-Total-Count": resp.headers["x-total-count"]}
+        if "x-total-count" in resp.headers
+        else None
+    )
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type"),
+        headers=extra_headers,
+    )

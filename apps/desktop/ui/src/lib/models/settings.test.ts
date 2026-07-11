@@ -7,7 +7,6 @@ import {
   getIntervalMinutes,
   getSettingsDefaults,
   validateSettings,
-  settingsModeLabel,
   RDP_CUSTOM_SIZE_PATTERN,
 } from './settings';
 
@@ -52,6 +51,18 @@ describe('validateSettings', () => {
     expect(validateSettings({ ...base, mode: 'server', serverUrl: 'https://x' }).ok).toBe(true);
   });
 
+  it('server requires https except loopback (3.68)', () => {
+    expect(validateSettings({ ...base, mode: 'server', serverUrl: 'http://evil.example' }).ok).toBe(
+      false,
+    );
+    expect(
+      validateSettings({ ...base, mode: 'server', serverUrl: 'http://localhost:8443' }).ok,
+    ).toBe(true);
+    expect(validateSettings({ ...base, mode: 'server', serverUrl: 'http://127.0.0.1' }).ok).toBe(
+      true,
+    );
+  });
+
   it('custom rdp size must match pattern', () => {
     expect(validateSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: 'foo' }).ok).toBe(
       false,
@@ -59,14 +70,6 @@ describe('validateSettings', () => {
     expect(
       validateSettings({ ...base, rdpWindowMode: 'custom', rdpCustomSize: '1920x1080' }).ok,
     ).toBe(true);
-  });
-});
-
-describe('settingsModeLabel', () => {
-  it('maps all modes to German labels', () => {
-    expect(settingsModeLabel('local')).toBe('Lokal');
-    expect(settingsModeLabel('sync')).toBe('Sync');
-    expect(settingsModeLabel('server')).toBe('Server');
   });
 });
 

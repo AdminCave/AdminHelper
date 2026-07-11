@@ -107,3 +107,128 @@ class TestEventDispatch:
         _run_event("server.created", {"id": "s1"})
 
         assert ran == ["-- match-enabled"]
+
+
+def test_valid_intervals_matches_scheduler_map():
+    """2.50: the 422 interval error lists VALID_INTERVALS while the validator
+    accepts anything in INTERVAL_MAP — they must be the same set, else the message
+    hides a valid interval ("1m" had drifted out of VALID_INTERVALS)."""
+    from app.modules.hooks.scheduler import INTERVAL_MAP
+    from app.modules.hooks.schemas import VALID_INTERVALS
+
+    assert "1m" in VALID_INTERVALS
+    assert set(VALID_INTERVALS) == set(INTERVAL_MAP)
+
+
+def test_webhook_context_headers_are_safe_listed(test_client, db_session, admin_user):
+    # 3.36: the privileged webhook script context must not receive client-controlled
+    # credentials/spoofable headers (Authorization/Cookie/X-Forwarded-*) — only a
+    # safe allow-list. Otherwise a naive hook could forward them to a payload-chosen URL.
+    h = _login(test_client, "admin", "adminpass")
+    hook = {
+        "name": "wh-hdr",
+        "hook_type": "webhook",
+        "script": "import json\nlog(json.dumps(headers))",
+    }
+    r = test_client.post("/api/hooks", json=hook, headers=h)
+    assert r.status_code == 201, r.text
+    token = r.json()["token"]
+
+    trig = test_client.post(
+        f"/api/hooks/trigger/{token}",
+        json={"x": 1},
+        headers={
+            "Authorization": "Bearer super-secret",
+            "Cookie": "session=leak-me",
+            "X-Forwarded-For": "10.9.9.9",
+            "Content-Type": "application/json",
+            "X-Hook-Source": "pytest",
+        },
+    )
+    assert trig.status_code == 200, trig.text
+    logged = " ".join(trig.json()["logs"]).lower()
+    # dangerous / spoofable headers are stripped
+    assert "super-secret" not in logged
+    assert "leak-me" not in logged
+    assert "authorization" not in logged
+    assert "cookie" not in logged
+    assert "x-forwarded-for" not in logged
+    # the safe custom header still reaches the script
+    assert "x-hook-source" in logged
+
+
+def test_webhook_trigger_via_header_token(test_client, db_session, admin_user):
+    # 3.101: the token can be passed via the X-Hook-Token header instead of the URL path
+    # (a path token leaks into access logs). Both variants work; a missing header 401s,
+    # a wrong token 404s like the path variant.
+    h = _login(test_client, "admin", "adminpass")
+    r = test_client.post("/api/hooks", json={**WEBHOOK, "name": "wh-hdr-tok"}, headers=h)
+    assert r.status_code == 201, r.text
+    token = r.json()["token"]
+
+    ok = test_client.post("/api/hooks/trigger", json={"x": 1}, headers={"X-Hook-Token": token})
+    assert ok.status_code == 200, ok.text
+
+    missing = test_client.post("/api/hooks/trigger", json={})
+    assert missing.status_code == 401
+
+    wrong = test_client.post("/api/hooks/trigger", json={}, headers={"X-Hook-Token": "nope"})
+    assert wrong.status_code == 404
+
+
+class TestHookWorkerRobustness:
+    """4.69/4.70/4.71: the hook worker's timeout, response-size and result-return handling."""
+
+    def test_result_rebinding_is_returned(self):
+        # 4.71: a hook that rebinds `result = {...}` (instead of result[...] = ...) must have its
+        # value returned, not silently lost — the worker reads namespace["result"], not the local.
+        from app.modules.hooks.script_runner import run_hook_script
+
+        out = run_hook_script("result = {'foo': 42}", "webhook", {})
+        assert out["success"] is True
+        assert out["result"] == {"foo": 42}
+
+    def test_context_key_colliding_with_helper_is_rejected(self):
+        # 4.71: an event context key that hits a helper/return name must be rejected, not silently
+        # shadow the helper (or the result binding).
+        from app.modules.hooks.script_runner import run_hook_script
+
+        out = run_hook_script("pass", "webhook", {"result": "collision"})
+        assert out["success"] is False
+        assert "kollidiert" in (out.get("error", "") + " ".join(out.get("logs", [])))
+
+    def test_oversized_http_body_aborts(self):
+        # 4.70: _read_capped_body must raise once the streamed body exceeds _MAX_BODY, instead of
+        # resp.text loading the whole (gigabyte) response into RAM first.
+        from app.modules.hooks import script_worker
+
+        class _FakeResp:
+            encoding = "utf-8"
+
+            def iter_bytes(self):
+                for _ in range((script_worker._MAX_BODY // 1000) + 2):
+                    yield b"x" * 1000
+
+        with pytest.raises(ValueError, match="zu gross"):
+            script_worker._read_capped_body(_FakeResp())
+
+    def test_timeout_kills_grandchildren(self, tmp_path):
+        # 4.69: a hook that spawns a grandchild must have the WHOLE process group killed on
+        # timeout, not just the direct child — else the grandchild is orphaned and keeps running.
+        import time
+
+        from app.modules.hooks.script_runner import run_hook_script
+
+        marker = tmp_path / "grandchild-marker"
+        # Grandchild writes the marker after 4s, then the hook itself hangs. A 2s timeout must
+        # kill the group before the grandchild's 4s write ever lands.
+        script = (
+            "import subprocess, sys, time\n"
+            f"subprocess.Popen([sys.executable, '-c', "
+            f"\"import time; time.sleep(4); open({str(marker)!r}, 'w').write('x')\"])\n"
+            "time.sleep(30)\n"
+        )
+        out = run_hook_script(script, "webhook", {}, timeout=2)
+        assert out["success"] is False
+        time.sleep(5)  # past the grandchild's 4s write
+        assert not marker.exists(), "grandchild survived the timeout kill (orphaned process)"

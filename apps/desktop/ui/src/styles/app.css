@@ -1144,11 +1144,6 @@ body {
   display: none;
 }
 
-.login-back {
-  margin-top: var(--sp-4);
-  font-size: var(--text-xs);
-}
-
 .login-info {
   color: var(--accent);
   font-size: var(--text-xs);
@@ -1315,10 +1310,6 @@ body {
 .mon-tab:hover:not(.active) {
   color: var(--text);
 }
-.mon-tab-content.hidden {
-  display: none;
-}
-
 .mon-tab-content {
   display: flex;
   flex-direction: column;

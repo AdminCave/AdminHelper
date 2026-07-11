@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -68,7 +68,7 @@
           <h2>Browser access (client certificate)</h2>
           <p>Once the data plane is switched to <code>CERT_REQUIRED</code>, <em>every</em> browser opening the web panel needs a valid client certificate from the internal CA. Unlike the agent and the desktop, a browser cannot fetch a certificate itself — you export one once from the desktop client and import it into the browser's certificate store.</p>
           <ol>
-            <li><strong>Export:</strong> Desktop client → <em>Settings</em> (in server mode, signed in) → <em>Export browser certificate</em>. Choose a password (at least 8 characters) and click <em>Export</em>. The client enrolls a long-lived <code>access</code> certificate, packages it as a password-protected <code>.p12</code> and asks via a save dialog where to write it (default name <code>adminhelper-browser.p12</code>).</li>
+            <li><strong>Export:</strong> Desktop client → <em>Settings</em> (in server mode, signed in) → <em>Export browser certificate</em>. Choose a password (at least 12 characters) and click <em>Export</em> — pick a strong one: the <code>.p12</code> container protects the private key with only a weak KDF, so a short password would be brute-forceable offline if the file leaks. The client enrolls a long-lived <code>access</code> certificate, packages it as a password-protected <code>.p12</code> and asks via a save dialog where to write it (default name <code>adminhelper-browser.p12</code>).</li>
             <li><strong>Import – Chrome/Edge:</strong> <em>Settings → Privacy and security → Manage certificates → Your certificates → Import</em>, pick the <code>.p12</code>, enter the password. (On Windows/macOS the certificate goes into the OS store; the exact menu wording varies by version.)</li>
             <li><strong>Import – Firefox:</strong> <em>Settings → Privacy &amp; Security → Certificates → View Certificates → Your Certificates → Import</em>, pick the <code>.p12</code>, enter the password.</li>
             <li><strong>Connect:</strong> reload the web panel. On the first request the browser asks which client certificate to present — choose the imported one.</li>
@@ -106,7 +106,7 @@
             <li>Web panel → <em>API Keys → New</em></li>
             <li>Assign a name and choose the permission (<code>read</code> or <code>read_write</code>)</li>
             <li>Copy the clear-text key <strong>immediately</strong> – it is never shown again</li>
-            <li>Send it as the HTTP header <code>X-API-Key: &lt;key&gt;</code> (fallback: query parameter <code>?api_key=…</code> for sync URLs)</li>
+            <li>Send it as the HTTP header <code>X-API-Key: &lt;key&gt;</code>. The <code>?api_key=…</code> fallback (for sync URLs) ends up in the access logs in cleartext and is logged server-side as a warning — prefer the header, and rotate a key exposed this way.</li>
           </ol>
 
           <h2>IP restriction</h2>

@@ -50,4 +50,17 @@ describe('apiRequest', () => {
     const r = await apiRequest<{ ok: boolean }>(session, 'GET', '/api/z');
     expect(r).toEqual({ ok: true });
   });
+
+  it('rejects after the backstop timeout if the proxy never resolves (4.4)', async () => {
+    vi.useFakeTimers();
+    try {
+      proxy.mockReturnValueOnce(new Promise(() => {})); // never resolves
+      const p = apiRequest(session, 'GET', '/api/hang');
+      p.catch(() => {}); // pre-attach so the rejection isn't reported as unhandled
+      await vi.advanceTimersByTimeAsync(90_000);
+      await expect(p).rejects.toThrow('Request timed out');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

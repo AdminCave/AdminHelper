@@ -69,13 +69,22 @@ def db(monkeypatch):
     factory = sessionmaker(bind=engine)
 
     # Record scheduler interactions instead of touching the real scheduler.
-    scheduled, removed = [], []
-    monkeypatch.setattr(template_sync, "add_check", lambda cid, interval, *a: scheduled.append(cid))
+    # scheduled = check_ids; scheduled_calls = (check_id, check_type) so a test can
+    # assert the type reaches add_check (2.34 — without it push-only checks get
+    # ghost jobs that fire every interval and abort).
+    scheduled, removed, scheduled_calls = [], [], []
+
+    def _record_add(cid, interval, check_type):
+        scheduled.append(cid)
+        scheduled_calls.append((cid, check_type))
+
+    monkeypatch.setattr(template_sync, "add_check", _record_add)
     monkeypatch.setattr(template_sync, "remove_check", lambda cid: removed.append(cid))
 
     session = factory()
     session.scheduled = scheduled
     session.removed = removed
+    session.scheduled_calls = scheduled_calls
     yield session
     session.close()
 
@@ -99,6 +108,17 @@ PING_DEF = {
     "config": {"host": "{{hostname}}"},
     "interval": "5m",
     "severity": "critical",
+}
+
+
+# A push-only check type (evaluated only from agent reports, never polled).
+AGENT_RES_DEF = {
+    "def_id": "agentres",
+    "name": "Resources {{server_name}}",
+    "check_type": "agent_resources",
+    "config": {},
+    "interval": "5m",
+    "severity": "warning",
 }
 
 
@@ -134,6 +154,57 @@ def test_apply_creates_checks_states_and_alerts(db):
     rule = db.query(MonitorAlertRule).one()
     assert rule.name == "Mail Web 01"
     assert rule.match_server_id == "srv-1"
+
+
+def test_apply_passes_check_type_so_push_only_is_skippable(db):
+    """2.34: template_sync must pass check_type to add_check; without it, add_check
+    can't skip push-only checks (agent_resources, ...) and each one leaves a ghost
+    scheduler job that fires execute_check every interval and aborts immediately."""
+    tpl = _template(db, [PING_DEF, AGENT_RES_DEF])
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+
+    types = {ctype for _cid, ctype in db.scheduled_calls}
+    assert types == {"ping", "agent_resources"}
+    assert None not in types  # None was the ghost-job bug: add_check couldn't skip
+
+
+def test_minimal_defs_get_the_shared_create_defaults(db):
+    """2.35: apply and sync both build checks/alerts through _create_check /
+    _create_alert, so a def carrying only a def_id + name gets the same column
+    defaults on either path — they can't drift out of sync."""
+    tpl = _template(
+        db,
+        [{"def_id": "c", "name": "Minimal Check"}],
+        [{"def_id": "a", "name": "Minimal Alert"}],
+    )
+
+    apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+
+    check = db.query(MonitorCheck).one()
+    assert (check.check_type, check.interval, check.severity, check.consecutive_fails) == (
+        "ping",
+        "5m",
+        "critical",
+        3,
+    )
+    assert check.enabled is True
+    rule = db.query(MonitorAlertRule).one()
+    assert (rule.channel, rule.cooldown_minutes, rule.enabled) == ("webhook", 30, True)
+
+
+def test_apply_does_not_schedule_when_commit_fails(db, monkeypatch):
+    """1.21: scheduler mutations run only AFTER a successful commit — a failed /
+    rolled-back commit must not leave ghost jobs behind."""
+    tpl = _template(db, [PING_DEF])
+
+    def _boom():
+        raise RuntimeError("commit fail")
+
+    monkeypatch.setattr(db, "commit", _boom)
+    with pytest.raises(RuntimeError):
+        apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
+    assert db.scheduled == []  # no job registered when the DB write did not commit
 
 
 # --- sync_template diffing ------------------------------------------------------

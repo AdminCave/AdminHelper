@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { session } from '$lib/stores/session';
@@ -87,7 +88,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         enabled: s.enabled,
       }));
     } catch (err) {
-      errorMsg = err instanceof Error ? err.message : String(err);
+      errorMsg = errMsg(err);
     } finally {
       loading = false;
     }
@@ -134,7 +135,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       });
       savedMsg = $t('notifPrefs.saved');
     } catch (err) {
-      errorMsg = err instanceof Error ? err.message : String(err);
+      errorMsg = errMsg(err);
     } finally {
       saving = false;
     }

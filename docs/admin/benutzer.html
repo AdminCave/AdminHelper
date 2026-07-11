@@ -25,7 +25,7 @@
             <a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a>
           </div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -74,7 +74,7 @@
           <h2>Browser-Zugriff (Client-Zertifikat)</h2>
           <p>Sobald die Datenebene auf <code>CERT_REQUIRED</code> scharfgeschaltet ist, braucht <em>jeder</em> Browser, der das Web-Panel öffnet, ein gültiges Client-Zertifikat aus der internen CA. Anders als Agent und Desktop kann sich der Browser kein Zertifikat selbst holen – du exportierst es einmalig aus dem Desktop-Client und importierst es in den Zertifikatsspeicher des Browsers.</p>
           <ol>
-            <li><strong>Exportieren:</strong> Desktop-Client → <em>Einstellungen</em> (im Server-Modus, angemeldet) → <em>Browser-Zertifikat exportieren</em>. Ein Passwort (mind. 8 Zeichen) vergeben und <em>Exportieren</em> klicken. Der Client enrollt ein langlebiges <code>access</code>-Zertifikat, verpackt es als passwortgeschützte <code>.p12</code> und fragt per Speichern-Dialog, wohin sie geschrieben werden soll (Default-Name <code>adminhelper-browser.p12</code>).</li>
+            <li><strong>Exportieren:</strong> Desktop-Client → <em>Einstellungen</em> (im Server-Modus, angemeldet) → <em>Browser-Zertifikat exportieren</em>. Ein Passwort (mind. 12 Zeichen) vergeben und <em>Exportieren</em> klicken — wähle es stark, denn der <code>.p12</code>-Container schützt den privaten Schlüssel nur mit einem schwachen KDF, sodass bei Verlust der Datei ein kurzes Passwort offline angreifbar wäre. Der Client enrollt ein langlebiges <code>access</code>-Zertifikat, verpackt es als passwortgeschützte <code>.p12</code> und fragt per Speichern-Dialog, wohin sie geschrieben werden soll (Default-Name <code>adminhelper-browser.p12</code>).</li>
             <li><strong>Importieren – Chrome/Edge:</strong> <em>Einstellungen → Datenschutz und Sicherheit → Zertifikate verwalten → Eigene Zertifikate → Importieren</em>, die <code>.p12</code> wählen, Passwort eingeben. (Unter Windows/macOS landet das Zertifikat im Betriebssystem-Speicher; die genaue Menüführung variiert je nach Version.)</li>
             <li><strong>Importieren – Firefox:</strong> <em>Einstellungen → Datenschutz &amp; Sicherheit → Zertifikate → Zertifikate anzeigen → Ihre Zertifikate → Importieren</em>, die <code>.p12</code> wählen, Passwort eingeben.</li>
             <li><strong>Verbinden:</strong> Web-Panel neu laden. Beim ersten Aufruf fragt der Browser, welches Client-Zertifikat er vorzeigen soll – das importierte auswählen.</li>
@@ -112,7 +112,7 @@
             <li>Web-Panel → <em>API-Keys → Neu</em></li>
             <li>Name vergeben und Berechtigung (<code>read</code> oder <code>read_write</code>) wählen</li>
             <li>Klartext-Key <strong>sofort</strong> kopieren – wird nie wieder angezeigt</li>
-            <li>Als HTTP-Header <code>X-API-Key: &lt;key&gt;</code> senden (Fallback: Query-Parameter <code>?api_key=…</code> für Sync-URLs)</li>
+            <li>Als HTTP-Header <code>X-API-Key: &lt;key&gt;</code> senden. Der Fallback <code>?api_key=…</code> (für Sync-URLs) landet im Klartext in den Access-Logs und wird serverseitig als Warnung protokolliert — bevorzuge den Header und rotiere einen so exponierten Key.</li>
           </ol>
 
           <h2>IP-Restriktion</h2>

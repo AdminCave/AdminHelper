@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import logging
 import secrets
 import uuid
 
@@ -17,6 +18,8 @@ from app.modules.audit import service as audit
 from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 from app.modules.frp.models import FrpServerConfig
 from app.modules.frp.schemas import FrpServerConfigCreate, FrpServerConfigUpdate
+
+logger = logging.getLogger("adminhelper.frp")
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
@@ -34,6 +37,14 @@ def create_server_config(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
+    # frps runs one instance in token mode; the callers (agent sync, startup
+    # frps.toml, status) resolve "the" config as a singleton. Enforce that here so
+    # a second row can't make those callers non-deterministic (see get_frp_config).
+    if db.query(FrpServerConfig).count() > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Es existiert bereits eine FRP-Server-Config",
+        )
     config = FrpServerConfig(
         id=str(uuid.uuid4()),
         name=data.name,
@@ -45,13 +56,24 @@ def create_server_config(
         max_ports_per_client=data.max_ports_per_client,
         dashboard_port=data.dashboard_port,
         dashboard_user=data.dashboard_user,
-        dashboard_password=data.dashboard_password,
+        # Auto-generate a strong dashboard password when the dashboard is enabled but
+        # none was supplied, mirroring auth_token — never leave the frps web UI open
+        # or weakly protected (3.35).
+        dashboard_password=(
+            data.dashboard_password or (secrets.token_urlsafe(24) if data.dashboard_port else None)
+        ),
         extra_config=json.dumps(data.extra_config) if data.extra_config else None,
     )
     db.add(config)
     db.commit()
     db.refresh(config)
-    write_frps_config(config)
+    # Best-effort like the startup path (_ensure_frps_config): the DB is the source of truth, so a
+    # full/read-only FRP volume must not turn a committed change into a 500 whose retry would then
+    # create a duplicate. The next successful write / restart reconciles frps.toml (4.135).
+    try:
+        write_frps_config(config, warn_restart=True)
+    except Exception:
+        logger.exception("frps.toml schreiben nach Config-Create fehlgeschlagen (id=%s)", config.id)
     fire_event("frp.config.created", {"id": config.id, "name": config.name})
     audit.record(
         db,
@@ -105,9 +127,18 @@ def update_server_config(
     if "extra_config" in sent:
         config.extra_config = json.dumps(data.extra_config) if data.extra_config else None
 
+    # Mirror the create path: enabling the dashboard (or blanking its password) must
+    # never leave the frps web UI unauthenticated — an empty password emits no
+    # webServer.password line at all (3.35).
+    if config.dashboard_port and not config.dashboard_password:
+        config.dashboard_password = secrets.token_urlsafe(24)
+
     db.commit()
     db.refresh(config)
-    write_frps_config(config)
+    try:
+        write_frps_config(config, warn_restart=True)
+    except Exception:
+        logger.exception("frps.toml schreiben nach Config-Update fehlgeschlagen (id=%s)", config.id)
     fire_event("frp.config.updated", {"id": config.id, "name": config.name})
     audit.record(
         db,
@@ -117,7 +148,10 @@ def update_server_config(
         object_id=config.id,
         object_label=config.name,
     )
-    return config.to_dict()
+    # Mask like the GET paths (models.py invariant): a PUT (even an unrelated rename)
+    # must not echo auth.token / dashboard_password back into DevTools / debug logs.
+    # The create path reveals the freshly generated token once; a plain update must not (3.93).
+    return config.to_dict(mask_secrets=True)
 
 
 @router.delete("/server-config/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -130,10 +164,12 @@ def delete_server_config(
     config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
     if not config:
         raise HTTPException(status_code=404, detail="FRP-Config nicht gefunden")
-    fire_event("frp.config.deleted", {"id": config.id, "name": config.name})
     config_name = config.name
     db.delete(config)
     db.commit()
+    # Fire only after the commit succeeds — a rolled-back delete must not leave
+    # hooks/notifications having observed a deletion that never happened (2.48).
+    fire_event("frp.config.deleted", {"id": config_id, "name": config_name})
     remove_frps_config()
     audit.record(
         db,

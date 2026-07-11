@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Hook example (type: webhook): import connections via HTTP API
-# Trigger: POST /api/hooks/trigger/<TOKEN>
+# Trigger: POST /api/hooks/trigger  with header  X-Hook-Token: <TOKEN>  (preferred)
+#          or POST /api/hooks/trigger/<TOKEN>  (token in path — leaks into logs)
 #
 # This script fetches an external API and automatically adds all hosts
 # that do not yet exist as a connection.
@@ -27,6 +28,8 @@
 # Available HTTP helpers: http_get(url, headers=None, timeout=10)
 #                         http_post(url, json=None, headers=None, timeout=10)
 # Return value: {"status": int, "body": str, "json": Any|None}
+# Both helpers reject private/internal/metadata targets (SSRF guard) and do NOT
+# follow redirects; the reflected body is capped at 1 MB.
 
 DEFAULT_API_URL = "https://cmdb.example.com/api/servers"
 DEFAULT_KIND = "ssh"

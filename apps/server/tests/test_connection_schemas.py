@@ -104,3 +104,12 @@ class TestConnectionUpdate:
         """name=None means 'dont update', not blank."""
         u = ConnectionUpdate(name=None)
         assert u.name is None
+
+    def test_known_kinds_accepted(self):
+        for kind in ("ssh", "rdp", "web"):
+            assert ConnectionUpdate(kind=kind).kind == kind
+
+    def test_unknown_kind_rejected(self):
+        # Gate PUT like POST — otherwise vnc/custom drift back in via update.
+        with pytest.raises(ValidationError):
+            ConnectionUpdate(kind="vnc")

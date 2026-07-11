@@ -188,7 +188,58 @@ out=$(run_update "$INST" 2>&1); rc=$?
 { grep -q 'server:0.34.0' "$INST/.env" && ! grep -q 'stale local marker' "$INST/scripts/update.sh"; } \
   && ok "re-exec completed + canonical update.sh placed" || bad "re-exec did not complete cleanly"
 
+# ── 9. tampered bundle → checksum mismatch → fail-closed abort, install intact ─
+# The supply-chain defence CLAUDE.md calls out as fail-closed must actually abort;
+# without this a stray `|| true` in the checksum/signature path stays green (6.10).
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst9"; make_install 0.33.0 "$SRC_OLD" "$INST"
+printf 'x' >> "$DL/$REPO/releases/download/v0.34.0/adminhelper-runtime-v0.34.0.tar.gz"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+  && ok "tampered bundle rejected (checksum; install untouched)" || bad "tampered bundle NOT rejected: rc=$rc"
+
+# The signature negatives need minisign (SIGN=1); the checksum negative above always runs.
+if [ "$SIGN" = 1 ]; then
+  # ── 10. SHA256SUMS signed by a FOREIGN key → signature verify fails → abort ──
+  make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+  INST="$WORK/inst10"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  minisign -G -W -p "$WORK/evil.pub" -s "$WORK/evil.key" >/dev/null 2>&1
+  minisign -S -s "$WORK/evil.key" -m "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS" \
+    -x "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+  out=$(run_update "$INST" 2>&1); rc=$?
+  { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+    && ok "foreign-key signature rejected (fail-closed)" || bad "foreign-key sig NOT rejected: rc=$rc"
+
+  # ── 11. missing .minisig with an armed pubkey → fail-closed abort ────────────
+  make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+  INST="$WORK/inst11"; make_install 0.33.0 "$SRC_OLD" "$INST"
+  rm -f "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS.minisig"
+  out=$(run_update "$INST" 2>&1); rc=$?
+  { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+    && ok "missing signature rejected (fail-closed)" || bad "missing sig NOT rejected: rc=$rc"
+else
+  echo "  note: minisign nicht verfuegbar — Signatur-Negativtests (10/11) uebersprungen (nur Checksummen-Pfad geprueft)"
+fi
+
+# ── 12. agent-repo asset present → unpacked into ./repo (exercises 4.58/4.59) ─
+# Nothing published an agent-repo asset before, so update_agent_repo's fetch +
+# checksum + ./repo swap was entirely untested (6.143).
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+ASSETDIR="$DL/$REPO/releases/download/v0.34.0"
+mkdir -p "$WORK/repostage/dists"; printf 'repo-marker-0.34.0\n' > "$WORK/repostage/dists/Release"
+tar czf "$ASSETDIR/adminhelper-agent-repo-v0.34.0.tar.gz" -C "$WORK/repostage" .
+( cd "$ASSETDIR" && sha256sum "adminhelper-agent-repo-v0.34.0.tar.gz" >> SHA256SUMS )
+[ "$SIGN" = 1 ] && minisign -S -s "$WORK/test.key" -m "$ASSETDIR/SHA256SUMS" \
+  -x "$ASSETDIR/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+INST="$WORK/inst12"; make_install 0.33.0 "$SRC_OLD" "$INST"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'repo-marker-0.34.0' "$INST/repo/dists/Release" 2>/dev/null; } \
+  && ok "agent-repo asset unpacked into ./repo" || bad "agent-repo not updated: rc=$rc"
+
 echo
 echo "──────────────────────────────────────────"
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
+# Make the degraded coverage visible in the summary, not just mid-run: a green run
+# without minisign proves only the checksum path, not the signature path (6.142).
+[ "$SIGN" = 1 ] || echo "  WARN: minisign absent — signature path NOT verified (checksum-only)"
 [ "$FAIL" -eq 0 ]

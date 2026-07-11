@@ -10,6 +10,8 @@ frp/generate_router.py. Before the fix, GET /api/connections returned EVERY
 connection (host/username/visitor-port) of every server to any non-admin.
 """
 
+from app.core.auth import hash_api_key
+from app.modules.api_keys.models import ApiKey
 from app.modules.connections.models import Connection
 from app.modules.servers.models import Server
 
@@ -74,5 +76,27 @@ def test_nonadmin_cannot_touch_foreign_connection(test_client, db_session, norma
         test_client.post(
             "/api/connections/c-b/touch", headers={"Authorization": f"Bearer {token}"}
         ).status_code
+        == 404
+    )
+
+
+def test_server_bound_write_key_cannot_update_foreign_connection(test_client, db_session):
+    # 1.50: the write path (PUT) must scope like GET/touch. A server-bound
+    # read_write key must not update a connection of another server it cannot see.
+    _seed_two_servers(db_session)
+    raw = "rw-srv-a-key"
+    db_session.add(
+        ApiKey(name="k", hashed_key=hash_api_key(raw), permission="read_write", server_id="srv-a")
+    )
+    db_session.commit()
+    hdr = {"X-API-Key": raw}
+    # own server: allowed
+    assert (
+        test_client.put("/api/connections/c-a", json={"name": "renamed"}, headers=hdr).status_code
+        == 200
+    )
+    # foreign server: 404 (must not leak existence or modify)
+    assert (
+        test_client.put("/api/connections/c-b", json={"name": "hijack"}, headers=hdr).status_code
         == 404
     )

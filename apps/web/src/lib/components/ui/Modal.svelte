@@ -4,8 +4,15 @@ SPDX-FileCopyrightText: 2026 Kevin Stenzel
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
+<script module lang="ts">
+  // Refcount of open modals sharing the global body-overflow lock (4.76): a per-instance teardown
+  // alone would let Modal A's close clear overflow while a stacked Modal B is still open. Only the
+  // last close restores scrolling.
+  let openModalCount = 0;
+</script>
+
 <script lang="ts">
-  import { onMount, onDestroy, type Snippet } from 'svelte';
+  import { type Snippet } from 'svelte';
 
   interface Props {
     open: boolean;
@@ -24,7 +31,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
-      e.stopPropagation();
+      // stopImmediatePropagation, not stopPropagation: each mounted modal adds its
+      // own document keydown listener, so one Escape must not fire every listener
+      // on document (which would close two stacked modals at once) (2.136).
+      e.stopImmediatePropagation();
       close();
     }
   }
@@ -33,19 +43,28 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (e.target === e.currentTarget) close();
   }
 
-  onMount(() => {
+  // Register the Escape listener only while open (replaces onMount/onDestroy): a closed or
+  // background-mounted modal must not keep a document keydown listener around, and only a visible
+  // modal should react. Stacking is still handled by stopImmediatePropagation above (2.136) (4.144).
+  $effect(() => {
+    if (!open) return;
     document.addEventListener('keydown', onKeydown);
-  });
-  onDestroy(() => {
-    document.removeEventListener('keydown', onKeydown);
+    return () => document.removeEventListener('keydown', onKeydown);
   });
 
   $effect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!open) return;
+    // Lock body scroll while open; the returned teardown runs on close AND on destroy-while-open
+    // — the leak that left the whole app unscrollable when a session expiry replaced an open modal
+    // with the login page. Refcounted so a stacked modal keeps the lock until the last close.
+    openModalCount += 1;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      openModalCount -= 1;
+      if (openModalCount === 0) {
+        document.body.style.overflow = '';
+      }
+    };
   });
 </script>
 

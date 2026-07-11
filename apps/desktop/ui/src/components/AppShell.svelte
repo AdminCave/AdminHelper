@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { getVersion } from '@tauri-apps/api/app';
   import { path as routePath, navigate } from '$lib/router';
   import { session, settings, logout } from '$lib/stores/session';
   import { searchTerm } from '$lib/stores/connections';
@@ -115,8 +116,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   const unlisteners: UnlistenFn[] = [];
+  // If AppShell is destroyed (logout → login screen) before the async listen() calls below
+  // resolve, onDestroy has already iterated the still-empty unlisteners array; the late-resolving
+  // handlers would then never be removed and accumulate across login/logout cycles (4.100).
+  let destroyed = false;
+
+  // Read the real app version from tauri.conf.json at runtime (the CI-checked pin)
+  // instead of a hand-maintained string that silently drifts (audit 2.17).
+  let appVersion = $state('');
 
   onMount(async () => {
+    getVersion()
+      .then((v) => (appVersion = v))
+      .catch(() => {});
     if (isServerMode) {
       void startIfServerMode();
     }
@@ -124,10 +136,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       startSyncTimer();
     }
     try {
-      unlisteners.push(
-        await listen('frpc-terminated', () => markTerminated()),
-        await listen<string>('frpc-error', (e) => markError(String(e.payload ?? 'frpc error'))),
-        await listen<string | { correlationId?: string; message?: string }>('rdp-error', (e) => {
+      const fns = await Promise.all([
+        listen('frpc-terminated', () => markTerminated()),
+        listen<string>('frpc-error', (e) => markError(String(e.payload ?? 'frpc error'))),
+        listen<string | { correlationId?: string; message?: string }>('rdp-error', (e) => {
           const payload = e.payload;
           if (typeof payload === 'string' || payload == null) {
             markRdpError(null, String(payload ?? tNow('error.rdpAuth')));
@@ -135,13 +147,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
             markRdpError(payload.correlationId ?? null, payload.message ?? tNow('error.rdpAuth'));
           }
         }),
-      );
+      ]);
+      // Destroyed while awaiting? Unregister immediately instead of leaking the handlers (4.100).
+      if (destroyed) {
+        fns.forEach((fn) => fn());
+        return;
+      }
+      unlisteners.push(...fns);
     } catch (err) {
       console.warn('Tauri-Event-Listener konnten nicht registriert werden', err);
     }
   });
 
   onDestroy(() => {
+    destroyed = true;
     stopSyncTimer();
     unlisteners.forEach((fn) => {
       try {
@@ -170,6 +189,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <button
           class="sidebar-item"
           class:active={currentId === item.id}
+          data-nav={item.id}
           onclick={() => go(item)}
           title={$t(item.labelKey)}
         >
@@ -193,7 +213,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <span class="sidebar-label">{$t('settings.label')}</span>
         <span class="sidebar-badge">{modeBadge}</span>
       </button>
-      <div class="sidebar-version">v0.37.2</div>
+      <div class="sidebar-version">v{appVersion}</div>
     </div>
 
     <button

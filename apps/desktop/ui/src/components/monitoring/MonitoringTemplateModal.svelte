@@ -239,13 +239,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
                     value={def.channel}
                     onchange={(e) => onChannelChange(def, e.currentTarget.value as AlertChannel)}
                   >
-                    <option value="webhook">Webhook</option>
-                    <option value="email">E-Mail</option>
+                    <option value="webhook">{$t('monitoring.alerts.channelWebhook')}</option>
+                    <option value="email">{$t('monitoring.alerts.channelEmail')}</option>
                   </select>
                 </label>
                 {#if def.channel === 'webhook'}
                   <label class="field span2">
-                    <span class="field-label">Webhook URL</span>
+                    <span class="field-label">{$t('monitoring.alerts.webhookUrl')}</span>
                     <input
                       type="url"
                       placeholder="https://hooks.example.com/alert"

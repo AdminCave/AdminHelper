@@ -11,6 +11,10 @@ import os
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
+# Prod now defaults to enforced (3.89); the test env has no gateway / client certs, so
+# default to permissive here. Tests that assert the enforced path set config.MTLS_ENFORCE
+# =True explicitly (see test_mtls_scope).
+os.environ.setdefault("MTLS_ENFORCE", "false")
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -41,6 +45,18 @@ def _normalize_postgres_url(raw_url: str) -> str:
         if raw_url.startswith(old):
             return "postgresql+psycopg://" + raw_url[len(old) :]
     return raw_url
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit_backend():
+    # The rate-limit backend is a process-global in-memory singleton; without a per-test reset,
+    # accumulated auth-fail / webhook-trigger hits leak across tests and make unrelated tests fail
+    # with 429 under a different order (pytest-randomly, -k selection, added negatives) (6.78).
+    from app.core.rate_limit import reset_backend_for_tests
+
+    reset_backend_for_tests()
+    yield
+    reset_backend_for_tests()
 
 
 @pytest.fixture(scope="session")

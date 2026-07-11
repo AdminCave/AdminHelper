@@ -12,6 +12,12 @@ on:
 permissions:
   contents: read
 
+# A deleted+re-pushed tag (the usual "re-run the release" move) would otherwise start a
+# second run parallel to the first, both writing the same draft with mixed assets (4.89).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FRP_VERSION: "0.69.1"
   # Pinned SHA-256 of the official frp release artifacts (verified before use).
@@ -25,9 +31,12 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   desktop-linux:
     name: Desktop (deb/rpm/bin, Linux)
+    # Only on a tag: a workflow_dispatch from a branch yields VERSION=main (non-semver),
+    # failing build-deb/rpm after a full build and burning runner minutes (4.90).
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Tauri system dependencies
         run: |
           sudo apt-get update
@@ -38,7 +47,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -70,7 +79,7 @@ jobs:
           cp apps/desktop/src-tauri/target/release/bundle/deb/*.deb dist/
           cp apps/desktop/src-tauri/target/release/bundle/rpm/*.rpm dist/
           cp apps/desktop/src-tauri/target/release/adminhelper dist/adminhelper-desktop-linux-x86_64
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-linux
           path: dist/
@@ -81,10 +90,11 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   agent:
     name: Go Agent (deb/rpm/bins)
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.25"
           cache-dependency-path: apps/agent/go.sum
@@ -93,12 +103,14 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Build binaries
         working-directory: apps/agent
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          GOOS=linux GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+          GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION}" \
             -o bin/adminhelper-agent ./cmd/adminhelper-agent
-          GOOS=windows GOARCH=amd64 go build \
-            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+          GOOS=windows GOARCH=amd64 go build -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION}" \
             -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
       - name: Download frpc (bundled into deb/rpm)
         run: |
@@ -109,14 +121,18 @@ jobs:
           cp "frp_${FRP_VERSION}_linux_amd64/frpc" ./frpc
           chmod +x frpc
       - name: Build .deb
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev
-          VERSION=${{ steps.ver.outputs.version }} bash apps/agent/build-deb.sh
+          VERSION="$VERSION" bash apps/agent/build-deb.sh
       - name: Build .rpm
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           sudo apt-get install -y --no-install-recommends rpm
-          VERSION=${{ steps.ver.outputs.version }} bash apps/agent/build-rpm.sh
+          VERSION="$VERSION" bash apps/agent/build-rpm.sh
       - name: Collect artifacts
         run: |
           mkdir -p dist
@@ -124,7 +140,7 @@ jobs:
           cp adminhelper-agent-*.rpm dist/
           cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
           cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: agent
           path: dist/
@@ -137,15 +153,16 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   desktop-windows:
     name: Desktop (MSI, Windows, best-effort)
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: windows-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -176,7 +193,7 @@ jobs:
         run: |
           mkdir -p dist
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist/
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: desktop-windows
@@ -199,7 +216,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       # The agent + Docker images derive their version from the tag, but the
       # desktop version lives in tauri.conf.json and is bumped by hand — assert
       # it matches the tag so a forgotten bump fails the release, not a user.
@@ -210,7 +227,7 @@ jobs:
           tauri=$(grep -m1 '"version"' apps/desktop/src-tauri/tauri.conf.json | grep -o '[0-9][0-9.]*' | head -1)
           test "$tauri" = "$VER" || { echo "::error::tauri.conf.json version ($tauri) != tag ($VER)"; exit 1; }
           echo "version OK: $VER"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
       # The release-bound updater (scripts/update.sh) consumes ONE versioned asset:
@@ -223,8 +240,8 @@ jobs:
           mkdir -p release stage/scripts
           cp docker-compose.yml .env.example stage/
           cp scripts/install.sh scripts/update.sh scripts/init-secrets.sh \
-             scripts/backup.sh scripts/restore.sh scripts/uninstall.sh \
-             scripts/diagnostics.sh stage/scripts/
+             scripts/pg-backup.sh scripts/backup.sh scripts/restore.sh \
+             scripts/uninstall.sh scripts/diagnostics.sh stage/scripts/
           printf '%s\n' "$TAG" > stage/VERSION
           ( cd stage && find docker-compose.yml .env.example scripts -type f | sort \
               | xargs sha256sum > MANIFEST.sha256 )
@@ -243,22 +260,36 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${REPO_GPG_PRIVATE_KEY:-}" ]; then
-            echo "::warning::REPO_GPG_PRIVATE_KEY not set — agent apt/rpm repo asset skipped (see docs/developer/cicd)."
-            exit 0
+            echo "::error::REPO_GPG_PRIVATE_KEY not set — the signed agent repo is mandatory (its fingerprint is pinned in the docs + client setup). A release without it silently leaves the fleet on the old repo — no new version, no error, no staleness signal (4.23)."
+            exit 1
           fi
           TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
           mkdir -p release
           sudo apt-get update -qq
           sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c rpm gnupg
           export GNUPGHOME="$(mktemp -d)"; chmod 700 "$GNUPGHOME"
+          # The decrypted repo signing key lives here — drop it when the step ends (even
+          # on failure) so it isn't on disk while later third-party steps run (3.53).
+          trap 'rm -rf "$GNUPGHOME"' EXIT
           printf '%s' "$REPO_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import 2>/dev/null \
             || { echo "::error::REPO_GPG_PRIVATE_KEY must be base64 of an exported secret key: gpg --export-secret-keys --armor <KEYID> | base64 -w0"; exit 1; }
           KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')"
+          # Assert the imported key matches the fingerprint pinned in the docs + client
+          # setup (docs/admin/agent-deployment.html). A rotated/wrong/typo'd secret would
+          # otherwise sign with a key the fleet's pinned keyring rejects (apt update
+          # breaks), unnoticed until the field instead of failing here in CI (4.24).
+          EXPECTED_FPR="912E1EC637F49C978EAD47DF926B404297E9DC1C"
+          [ "$KEY_ID" = "$EXPECTED_FPR" ] || { echo "::error::imported signing key $KEY_ID != pinned $EXPECTED_FPR — wrong REPO_GPG_PRIVATE_KEY? (keep in sync with docs/admin/agent-deployment)"; exit 1; }
           DEB="$(ls artifacts/agent/adminhelper-agent_*_amd64.deb | head -1)"
           RPM="$(ls artifacts/agent/adminhelper-agent-*.x86_64.rpm | head -1)"
           VERSION="$VER" REPO_GPG_KEY_ID="$KEY_ID" OUT_DIR=repo DEB="$DEB" RPM="$RPM" \
             bash apps/agent/build-repo.sh
           tar czf "release/adminhelper-agent-repo-${TAG}.tar.gz" -C repo .
+          # Also publish the archive keyring as its OWN asset — a second, independent
+          # channel so an admin can fetch it and fingerprint-verify it against
+          # SHA256SUMS + minisign, instead of only trusting the certless :8445 repo
+          # plane it is meant to authenticate (3.21).
+          cp repo/apt/adminhelper-archive-keyring.gpg release/
           # sed (not head) reads the whole stream, so tar never gets SIGPIPE — `tar | head`
           # under `set -o pipefail` fails the step with exit 2 once the listing exceeds 10 lines.
           echo "=== agent repo bundle ==="; tar tzf "release/adminhelper-agent-repo-${TAG}.tar.gz" | sed -n '1,10p'
@@ -271,18 +302,20 @@ jobs:
           ls -lah
       # Sign SHA256SUMS so install.sh/update.sh can verify authenticity, not just
       # transport integrity (the bundle and SHA256SUMS come from the same origin).
-      # Skips with a warning until MINISIGN_SECRET_KEY is configured, so it never
-      # blocks a release. Generate a passwordless CI key once with `minisign -G -W`,
-      # store its secret-key file as the MINISIGN_SECRET_KEY secret, and pin the
-      # matching public key in scripts/install.sh + scripts/update.sh to arm it.
+      # Fails the release if MINISIGN_SECRET_KEY is missing: install.sh/update.sh are
+      # armed (public key pinned) and reject unsigned releases, so an unsigned draft
+      # would break every install/update in the field. Generate a passwordless CI key
+      # once with `minisign -G -W`, store its secret-key file as the
+      # MINISIGN_SECRET_KEY secret, and pin the matching public key in
+      # scripts/install.sh + scripts/update.sh to arm it.
       - name: Sign SHA256SUMS (minisign)
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
-            echo "::warning::MINISIGN_SECRET_KEY not set — SHA256SUMS will be unsigned (see scripts/install.sh)."
-            exit 0
+            echo "::error::MINISIGN_SECRET_KEY missing — install.sh/update.sh are armed and reject unsigned releases."
+            exit 1
           fi
           sudo apt-get update -qq && sudo apt-get install -y -qq minisign
           # The secret is the base64 of the minisign.key FILE (`base64 -w0 minisign.key`),
@@ -293,6 +326,25 @@ jobs:
           minisign -S -s minisign.key -m release/SHA256SUMS -x release/SHA256SUMS.minisig < /dev/null
           rm -f minisign.key
           echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig"
+      - name: Assert the tag images exist on ghcr
+        # release.yml and docker.yml run independently on tag push, but install.sh/
+        # update.sh pin ghcr.io/...:X.Y.Z hard. Creating the draft before docker.yml has
+        # pushed the images means a human publishing it ships a release whose
+        # `install.sh --ref` and `update.sh` fail with 'manifest unknown'. Poll for all
+        # four (public images, no login); a red/still-running docker.yml fails THIS
+        # workflow instead, so no draft with missing images is ever offered (4.25).
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          for img in server gateway ca-issuer monitoring; do
+            ok=0
+            for _ in $(seq 1 20); do
+              if docker manifest inspect "ghcr.io/admincave/adminhelper/${img}:${VER}" >/dev/null 2>&1; then ok=1; break; fi
+              sleep 30
+            done
+            [ "$ok" = 1 ] || { echo "::error::Image ${img}:${VER} missing on ghcr — docker.yml red or still running?"; exit 1; }
+            echo "ok: ${img}:${VER}"
+          done
       - name: Create draft release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:

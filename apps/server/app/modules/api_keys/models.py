@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 
 class ApiKey(Base):
@@ -20,4 +20,4 @@ class ApiKey(Base):
     server_id = Column(
         String, ForeignKey("servers.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())

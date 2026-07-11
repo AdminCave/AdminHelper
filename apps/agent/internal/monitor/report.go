@@ -8,13 +8,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/enroll"
+	"adminhelper-agent/internal/httpclient"
 )
 
 // BuildReport collects all metrics and builds the report.
@@ -47,7 +48,7 @@ func BuildReport(serviceNames []string) map[string]any {
 	}
 
 	// Service health (platform-specific)
-	svcHealth := collectServiceHealth()
+	svcHealth := serviceHealthCollector()
 	if len(serviceNames) > 0 {
 		// Collect once and reuse for both the "watched" sub-key and the legacy
 		// top-level "services" key: avoids double systemctl/sc subprocess spawns
@@ -58,17 +59,17 @@ func BuildReport(serviceNames []string) map[string]any {
 	}
 	report["systemd"] = svcHealth
 
-	// Auto-detected plugins
-	if docker := collectDocker(); docker != nil {
+	// Auto-detected plugins (via pluginCollectors so tests can stub the subprocess calls).
+	if docker := pluginCollectors.docker(); docker != nil {
 		report["docker"] = docker
 	}
-	if proxmox := collectProxmox(); proxmox != nil {
+	if proxmox := pluginCollectors.proxmox(); proxmox != nil {
 		report["proxmox"] = proxmox
 	}
-	if zfs := collectZFS(); zfs != nil {
+	if zfs := pluginCollectors.zfs(); zfs != nil {
 		report["zfs"] = zfs
 	}
-	if smart := collectSmart(); smart != nil {
+	if smart := pluginCollectors.smart(); smart != nil {
 		report["smart"] = smart
 	}
 
@@ -78,11 +79,39 @@ func BuildReport(serviceNames []string) map[string]any {
 // pushRetryDelay is a variable so tests can shorten the backoff.
 var pushRetryDelay = 10 * time.Second
 
+// pluginCollectors indirects the auto-detected plugin collectors so tests can stub the real
+// docker/pvesh/zpool/smartctl subprocess calls, which are slow and host-dependent (6.18).
+var pluginCollectors = struct {
+	docker  func() map[string]any
+	proxmox func() map[string]any
+	zfs     func() map[string]any
+	smart   func() []SmartDisk
+}{collectDocker, collectProxmox, collectZFS, collectSmart}
+
+// serviceHealthCollector indirects the systemctl/sc service-health probe for the same reason (6.18).
+var serviceHealthCollector = collectServiceHealth
+
+// PushReportParams groups monitor.PushReport's arguments (7 positionals before).
+type PushReportParams struct {
+	URL      string
+	APIKey   string
+	ServerID string
+	Report   map[string]any
+	TLS      config.TLSOpts
+}
+
 // PushReport sends the report to the monitoring service. A lost push wastes a
 // full 5-minute slot, so a transient failure (server restart, network blip)
 // gets one retry after a short backoff. The backoff honors ctx so a shutdown
 // (e.g. the Windows SCM stop) aborts the wait instead of blocking up to 10s.
-func PushReport(ctx context.Context, url, apiKey, serverID string, report map[string]any, cacert string, insecure bool) error {
+func PushReport(ctx context.Context, p PushReportParams) error {
+	url := p.URL
+	apiKey := p.APIKey
+	serverID := p.ServerID
+	report := p.Report
+	cacert := p.TLS.CACert
+	insecure := p.TLS.Insecure
+
 	endpoint := fmt.Sprintf("%s/agent/%s/report", url, serverID)
 
 	data, err := json.Marshal(report)
@@ -96,37 +125,38 @@ func PushReport(ctx context.Context, url, apiKey, serverID string, report map[st
 	if err != nil {
 		return err
 	}
+	// Close the pool's idle keep-alive connections on return: a fresh client is built per cycle, so
+	// otherwise the discarded transport's idle conns linger up to ~90s (IdleConnTimeout) before GC.
+	// Harmless in oneshot mode, tidier in the long-running loop / Windows service (5.6).
+	defer client.CloseIdleConnections()
 
-	if err := pushOnce(client, endpoint, apiKey, data); err != nil {
+	if err := pushOnce(ctx, client, endpoint, apiKey, data); err != nil {
+		// A permanent failure (rotated/revoked key, deleted server) won't heal on a
+		// retry — surface it at once so the oneshot exits non-zero (4.81).
+		if errors.Is(err, httpclient.ErrPermanent) {
+			return err
+		}
 		logger.Warnf("Push fehlgeschlagen (%v), Retry in %s...", err, pushRetryDelay)
 		select {
 		case <-time.After(pushRetryDelay):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		return pushOnce(client, endpoint, apiKey, data)
+		return pushOnce(ctx, client, endpoint, apiKey, data)
 	}
 	return nil
 }
 
-func pushOnce(client *http.Client, endpoint, apiKey string, data []byte) error {
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(data))
+func pushOnce(ctx context.Context, client *http.Client, endpoint, apiKey string, data []byte) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", apiKey)
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("Verbindungsfehler: %w", err)
-	}
-	defer resp.Body.Close()
-	// Body leeren, damit die Verbindung wiederverwendet werden kann.
-	_, _ = io.ReadAll(resp.Body)
-
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP-Fehler: %d", resp.StatusCode)
+	if _, err := httpclient.Do(client, req); err != nil {
+		return fmt.Errorf("Push: %w", err)
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -71,13 +72,26 @@ func collectSmart() []SmartDisk {
 		return nil
 	}
 
-	var disks []SmartDisk
+	// Query devices in parallel: querySmartDevice has a 30s per-device timeout, so a serial loop
+	// over an 8-disk NAS with a couple of sluggish drives can blow the oneshot run's 60s budget and
+	// get killed by systemd. The smartctl calls are independent (5.8).
+	var (
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+		disks []SmartDisk
+	)
 	for _, dev := range scanResult.Devices {
-		disk := querySmartDevice(smartctl, dev.Name, dev.Protocol)
-		if disk != nil {
-			disks = append(disks, *disk)
-		}
+		wg.Add(1)
+		go func(name, proto string) {
+			defer wg.Done()
+			if d := querySmartDevice(smartctl, name, proto); d != nil {
+				mu.Lock()
+				disks = append(disks, *d)
+				mu.Unlock()
+			}
+		}(dev.Name, dev.Protocol)
 	}
+	wg.Wait()
 
 	if len(disks) == 0 {
 		return nil
@@ -96,18 +110,13 @@ func querySmartDevice(smartctl, device, protocol string) *SmartDisk {
 	exitCode := 0
 	if err != nil {
 		// Bits 0-2 (1,2,4) = real errors (CLI/device/command)
-		// Bits 3-7 (8+)    = warnings, JSON is still usable
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-			if exitCode&0x07 != 0 && len(out) == 0 {
-				return nil
-			}
-		} else {
-			return nil
+		// Bits 3-7 (8+)    = warnings, JSON is still usable -> keep the full
+		// exit code so the server can weigh bit 0x10 (prefail).
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok || len(out) == 0 {
+			return nil // no usable JSON
 		}
-		if len(out) == 0 {
-			return nil
-		}
+		exitCode = exitErr.ExitCode()
 	}
 
 	var raw smartctlJSON

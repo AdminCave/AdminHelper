@@ -27,6 +27,7 @@ jobs:
   server:
     name: Server (pytest, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +46,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # The SSE Redis fan-out test (test_stream_redis) skips itself when no Redis is
+      # reachable; without this service it never ran in PR CI, so a break in
+      # stream_hub.publish/start would pass green. 6380 matches the test's URL (6.84).
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       # conftest.py uses DATABASE_URL directly when set (CI mode) instead of
       # spinning up a testcontainers Postgres. postgresql:// is normalised to
@@ -54,8 +67,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key
       ADMIN_PASSWORD: ciadmin
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -73,13 +86,17 @@ jobs:
   python-lint:
     name: Python (ruff check + format)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
       - name: Install ruff
-        run: pip install ruff
+        # Pin ruff: a new release changes format rules / adds lints and would red every
+        # open PR with no code change, and is unreproducible against a local ruff. Keep
+        # in sync with the ruff floor in apps/server/requirements-dev.txt (4.88).
+        run: pip install ruff==0.15.20
       - name: ruff check
         run: ruff check apps/server apps/monitoring
       - name: ruff format --check
@@ -88,6 +105,7 @@ jobs:
   monitoring:
     name: Monitoring (pytest)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       # Only consumed by tests/test_migrations_smoke.py (alembic upgrade head
       # against a fresh DB); all other monitoring tests stay DB-free.
@@ -107,8 +125,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
           cache: pip
@@ -123,12 +141,35 @@ jobs:
         # Coverage is report-only (no threshold) — visibility, not a gate.
         run: python -m pytest -q --cov=app --cov-report=term
 
+  ca-issuer:
+    name: CA-Issuer (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/ca-issuer/requirements*
+      - name: Install dependencies
+        working-directory: apps/ca-issuer
+        # requirements.in is the loose source; the hashed requirements.txt is for the image.
+        # httpx is a test-only dep (starlette.testclient needs it; the app itself doesn't) —
+        # server/monitoring carry it in their runtime deps, ca-issuer only needs it for pytest.
+        run: pip install -r requirements.in pytest httpx
+      - name: Run pytest
+        working-directory: apps/ca-issuer
+        # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
+        run: python -m pytest -q
+
   agent:
     name: Go Agent (gofmt + vet + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.25"
           cache-dependency-path: apps/agent/go.sum
@@ -142,6 +183,11 @@ jobs:
       - name: go vet
         working-directory: apps/agent
         run: go vet ./...
+      - name: go vet (windows)
+        working-directory: apps/agent
+        # The ubuntu runner's default `go vet` never sees the //go:build windows files (the sc-query
+        # collector). Vet them explicitly so a Windows-only parser bug is caught in CI (6.20).
+        run: GOOS=windows go vet ./...
       - name: go test
         working-directory: apps/agent
         # Coverage is report-only (no threshold) — visibility, not a gate.
@@ -153,15 +199,18 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent
 
   desktop-ui:
-    name: Desktop-UI (svelte-check + lint + vitest)
+    name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/desktop/ui/package-lock.json
+          cache-dependency-path: |
+            apps/desktop/ui/package-lock.json
+            apps/desktop/e2e/package-lock.json
       - name: npm ci
         working-directory: apps/desktop/ui
         run: npm ci --no-audit --no-fund
@@ -175,13 +224,20 @@ jobs:
         working-directory: apps/desktop/ui
         # Coverage is report-only (no threshold) — visibility, not a gate.
         run: npm run test -- --coverage
+      - name: E2E specs npm ci
+        working-directory: apps/desktop/e2e
+        run: npm ci --no-audit --no-fund
+      - name: E2E eslint
+        working-directory: apps/desktop/e2e
+        run: npm run lint
 
   frontend:
     name: Web-Frontend (check + lint + unit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -203,9 +259,10 @@ jobs:
   frontend-e2e:
     name: Web-Frontend (Playwright E2E)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -219,7 +276,7 @@ jobs:
       - name: Playwright test
         working-directory: apps/web
         run: npx playwright test
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
@@ -231,8 +288,9 @@ jobs:
   rust:
     name: Desktop-Backend (fmt + clippy + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Tauri system dependencies
         run: |
           sudo apt-get update
@@ -266,13 +324,15 @@ jobs:
         run: cargo test
 
   # Audit C1: the windows = "0.61" code paths were never compiled in CI —
-  # "green but broken" releases were possible. cargo check is the cheap gate;
-  # the full MSI build stays in release.yml.
+  # "green but broken" releases were possible. cargo test now compiles AND runs
+  # the windows-gated unit tests (6.33 — check alone never executed them); the
+  # full MSI build stays in release.yml.
   rust-windows:
-    name: Desktop-Backend (cargo check, Windows)
+    name: Desktop-Backend (cargo test, Windows)
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -287,9 +347,9 @@ jobs:
           mkdir -p apps/desktop/src-tauri/binaries
           cp "frp_${FRP_VERSION}_windows_amd64/frpc.exe" \
             apps/desktop/src-tauri/binaries/frpc-x86_64-pc-windows-msvc.exe
-      - name: cargo check
+      - name: cargo test
         working-directory: apps/desktop/src-tauri
-        run: cargo check --locked
+        run: cargo test --locked
 
   # Audit C2: cargo tauri build (beforeBuildCommand, UI embedding, deb
   # bundling) only ran on tags — exactly the failure class of
@@ -298,8 +358,9 @@ jobs:
   tauri-build-smoke:
     name: Desktop (tauri build smoke, Linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Tauri system dependencies
         run: |
           sudo apt-get update
@@ -310,7 +371,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/desktop/src-tauri
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
           cache: npm
@@ -340,6 +401,7 @@ jobs:
   docker-build:
     name: ${{ matrix.image }} image (build only)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -350,8 +412,14 @@ jobs:
           - image: monitoring
             context: apps/monitoring
             dockerfile: apps/monitoring/Dockerfile
+          - image: ca-issuer
+            context: apps/ca-issuer
+            dockerfile: apps/ca-issuer/Dockerfile
+          - image: gateway
+            context: apps/gateway
+            dockerfile: apps/gateway/Dockerfile
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Build (no push)
@@ -368,10 +436,11 @@ jobs:
   # test bootstrap (scripts/tests/crabbox_bootstrap.sh) stages the same frpc sidecar
   # and is the 4th pin.
   frp-consistency:
-    name: FRP pins in lockstep
+    name: Pinned versions + signing key in lockstep
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Compare the four FRP_VERSION pins
         run: |
           ci=$(grep -m1 '^  FRP_VERSION:' .github/workflows/ci.yml | grep -o '[0-9][0-9.]*')
@@ -388,6 +457,25 @@ jobs:
             echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, compose=$compose, bootstrap=$boot)"; exit 1; }
           test "$sha_ci" = "$sha_rel" && test "$sha_ci" = "$sha_boot" || {
             echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/crabbox_bootstrap.sh"; exit 1; }
+          # Windows SHA (ci vs release): a FRP_VERSION bump that updates only the ci copy
+          # makes release.yml's desktop-windows `sha256sum -c` fail, and since that build
+          # is continue-on-error the MSI silently drops from the release (4.22).
+          sha_win_ci=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
+          sha_win_rel=$(grep -m1 'FRP_SHA256_WINDOWS_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
+          test -n "$sha_win_ci" && test "$sha_win_ci" = "$sha_win_rel" || {
+            echo "::error::FRP_SHA256_WINDOWS_AMD64 differs between ci.yml and release.yml"; exit 1; }
+          # tauri-cli pin (ci vs release): the 'Keep in lockstep' comment isn't enforced anywhere (4.22).
+          tauri_ci=$(grep -m1 'cargo install tauri-cli' .github/workflows/ci.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
+            echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
+      - name: MINISIGN_PUBKEY in lockstep (install.sh vs update.sh)
+        run: |
+          ins=$(grep -m1 '^MINISIGN_PUBKEY=' scripts/install.sh | cut -d'"' -f2)
+          upd=$(grep -m1 '^MINISIGN_PUBKEY=' scripts/update.sh | cut -d'"' -f2)
+          echo "install.sh=$ins update.sh=$upd"
+          test -n "$ins" && test "$ins" = "$upd" || {
+            echo "::error::MINISIGN_PUBKEY drift (install=$ins, update=$upd) — a key rotation must touch both, else updates verify against the old key and break on every existing install"; exit 1; }
 
   # Lint the host ops scripts and run the hermetic update.sh sandbox test (fake
   # release over file://, stubbed docker — no real stack). --severity=warning so
@@ -395,18 +483,48 @@ jobs:
   ops-scripts:
     name: Ops scripts (shellcheck + update test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: shellcheck
-        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh
+        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh apps/*/docker-entrypoint.sh
       # minisign lets the sandbox test exercise the (now armed) release-signature
       # verification path end-to-end with a throwaway key.
       - name: Install minisign
         run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
       - name: update.sh sandbox test
         run: bash scripts/tests/update_test.sh
+      - name: install.sh sandbox test
+        run: bash scripts/tests/install_test.sh
+      - name: init-secrets + uninstall + restore-guard tests
+        run: bash scripts/tests/init-secrets_test.sh && bash scripts/tests/uninstall_test.sh && bash scripts/tests/restore_guard_test.sh && bash scripts/tests/gateway_mtls_test.sh
       - name: diagnostics.sh redaction test
         run: bash scripts/tests/diagnostics_test.sh
+
+  gateway-config:
+    name: Gateway (nginx -t)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # Syntax-check the single public TLS edge on every PR: the integration-stack
+      # job below skips PRs and docker.yml only builds on releases, so a broken
+      # nginx.conf (bad directive, missing snippet include) would otherwise merge and
+      # only surface on the next main push (6.47). Throwaway certs + a stub mtls
+      # snippet + the real identity snippet let `nginx -t` load the full config.
+      - name: nginx -t with throwaway certs
+        run: |
+          mkdir -p certs snippets
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+            -keyout certs/gateway.key -out certs/gateway-fullchain.pem -subj /CN=t -days 1
+          cp certs/gateway-fullchain.pem certs/client-ca.pem
+          echo 'ssl_verify_client optional;' > snippets/data-plane-mtls.conf
+          cp apps/gateway/identity-headers.conf snippets/identity-headers.conf
+          docker run --rm \
+            -v "$PWD/apps/gateway/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/certs:/etc/nginx/certs:ro" \
+            -v "$PWD/snippets:/etc/nginx/snippets:ro" \
+            nginx:1.29-alpine nginx -t
 
   # The ONE from-outside integration path. Every other test mocks at the DB/IPC
   # boundary; this boots the real multi-container stack (postgres, redis, server,
@@ -422,8 +540,9 @@ jobs:
     name: From-outside stack (mTLS gateway)
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: From-outside mTLS integration test
         run: bash scripts/tests/integration_stack_test.sh
 

@@ -10,12 +10,17 @@ mod diagnostics;
 mod enrollment;
 mod error;
 mod frpc;
+mod http_client;
+mod keyring_store;
 mod models;
 mod notifications;
 mod password;
+mod proxy;
 mod storage;
 mod sync;
 mod terminal;
+#[cfg(test)]
+mod test_tls;
 mod tofu;
 mod tunnel;
 mod validation;

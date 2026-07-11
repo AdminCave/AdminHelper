@@ -7,9 +7,9 @@ from typing import Any
 
 from sqlalchemy import Column, DateTime, String
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 
 class Server(Base):
@@ -21,7 +21,7 @@ class Server(Base):
     os_type = Column(String, nullable=True)
     tags = Column(String, nullable=True)  # JSON-Array als String
     notes = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     connections = relationship(
         "Connection",

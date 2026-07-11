@@ -10,9 +10,11 @@
 // markRdpError filters by the UUID so that late errors of an aborted
 // connection do not mark a concurrently running new connection as failed.
 
+import { errMsg } from '$lib/utils/errors';
 import { get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { Connection } from '$lib/bridge/types';
+import { connectionsApi } from '$lib/api/connections';
 import { validateConnection } from '$lib/models/connection';
 import { sessionStore } from './session';
 import { connections as connectionsStore, upsert, patchInMemory } from './connections';
@@ -25,6 +27,10 @@ import { tNow } from '$lib/i18n';
 const isLinux =
   typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('linux');
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+// Delay before showing the "RDP starting" status: a fast connection error cancels
+// this timer, so waiting lets its real message surface instead of a stale "starting".
+const RDP_STARTING_DELAY_MS = 800;
 
 interface RdpAttempt {
   id: string;
@@ -56,7 +62,7 @@ function scheduleRdpStatus(id: string): void {
     if (!a || a.errored) return;
     showStatus(tNow('status.rdpStarting'));
     rdpAttempts.delete(id);
-  }, 800);
+  }, RDP_STARTING_DELAY_MS);
 }
 
 function clearRdpAttempt(id: string): void {
@@ -105,14 +111,7 @@ async function markConnectionUsed(connection: Connection): Promise<void> {
 
   if (mode === 'server' && session) {
     try {
-      const updated = await bridge.apiProxy<Connection>(
-        session.serverUrl,
-        session.token,
-        'POST',
-        `/api/connections/${encodeURIComponent(connection.id)}/touch`,
-        undefined,
-        settings?.allowSelfSignedCerts,
-      );
+      const updated = await connectionsApi.touch(session, connection.id);
       patchInMemory(updated);
     } catch {
       patchInMemory({ ...connection, lastUsed: new Date().toISOString() });
@@ -154,7 +153,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
         } catch (err) {
           reportError(
             tNow('error.passwordStore', {
-              message: err instanceof Error ? err.message : String(err),
+              message: errMsg(err),
             }),
           );
         }
@@ -162,7 +161,7 @@ async function handleRdpAuth(connection: Connection, keepEditorOpen: boolean): P
       await performConnect(updated, keepEditorOpen, { password: outcome.password });
       return true;
     } catch (err) {
-      reportError(`Password-Store: ${err instanceof Error ? err.message : String(err)}`);
+      reportError(`Password-Store: ${errMsg(err)}`);
     }
   }
 
@@ -200,7 +199,7 @@ interface PerformOptions {
   useStoredPassword?: boolean;
 }
 
-export async function performConnect(
+async function performConnect(
   connection: Connection,
   keepEditorOpen: boolean,
   options: PerformOptions = {},
@@ -227,7 +226,7 @@ export async function performConnect(
         : bridge.openConnection(resolved, password, undefined, cid);
       promise.catch((err: unknown) => {
         clearRdpAttempt(cid);
-        reportError(err instanceof Error ? err.message : String(err));
+        reportError(errMsg(err));
       });
     } else if (useStoredPassword) {
       await bridge.openConnectionStored(resolved);
@@ -245,6 +244,6 @@ export async function performConnect(
 
     if (!keepEditorOpen) closeEditor();
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }

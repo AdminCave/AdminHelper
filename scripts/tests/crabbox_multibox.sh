@@ -40,15 +40,19 @@ command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
 cbx_load_env || exit 1
 
 POND="ah-mb-$$"
-LEASES=(); PASS=0; FAIL=0; RPM_AGENTS=0
+# Lease ids go to a FILE, not an array: lease() runs in a subshell via
+# `read < <(lease)`, so a LEASES+=(...) there never reaches the parent — the leak
+# guard silently tracked nothing. A shared file crosses the subshell boundary (4.55).
+LEASES_FILE="$(mktemp)"; PASS=0; FAIL=0; RPM_AGENTS=0
 ok(){ echo "  ok   $*"; PASS=$((PASS+1)); }; bad(){ echo "  FAIL $*"; FAIL=$((FAIL+1)); }
 cleanup() {
   [ "$KEEP" = 1 ] && { echo "--keep: leaving pond $POND up (bounded by --ttl)"; return; }
   echo "== teardown pond $POND =="
-  for l in "${LEASES[@]:-}"; do [ -n "$l" ] && crabbox stop --id "$l" >/dev/null 2>&1 || true; done
-  # sweep anything in the pond the array missed (partial-failure boxes)
+  [ -f "$LEASES_FILE" ] && while read -r l; do [ -n "$l" ] && crabbox stop --id "$l" >/dev/null 2>&1 || true; done < "$LEASES_FILE"
+  # sweep anything in the pond the file missed (partial-failure boxes)
   crabbox list --pond "$POND" 2>/dev/null | grep -oE 'cbx_[a-z0-9]+' | while read -r id; do
     crabbox stop --id "$id" >/dev/null 2>&1 || true; done
+  rm -f "$LEASES_FILE"
 }
 trap cleanup EXIT INT TERM
 
@@ -63,7 +67,7 @@ lease() {
   out="$(timeout 420 crabbox warmup -slug "$1" -pond "$POND" -proxmox-bridge vmbr1 -ttl 90m -idle-timeout 30m 2>&1)" \
     || { echo "warmup failed/timed out: $out" >&2; return 1; }
   id="$(printf '%s' "$out" | grep -oE 'cbx_[a-z0-9]+' | head -1)"
-  [ -n "$id" ] && LEASES+=("$id")                        # record BEFORE anything else (avoid leaks)
+  [ -n "$id" ] && echo "$id" >> "$LEASES_FILE"           # record in the shared file (crosses the subshell) FIRST
   slug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"
   [ -n "$slug" ] || { echo "no slug parsed from warmup" >&2; return 1; }
   timeout 300 crabbox status --id "$slug" --wait >/dev/null 2>&1 || true   # bounded wait-for-ready
@@ -99,22 +103,27 @@ fi
 echo "== bring up the server stack on $SRV_SLUG ($SRV_IP) =="
 SRVARG=""
 [ "$TUNNEL" = 1 ]   && SRVARG="$SRVARG tunnel"
-[ "$MONCHECK" = 1 ] && SRVARG="$SRVARG moncheck $MC_IP"
+# Only when the lease succeeded — an empty MC_IP would pass `moncheck` with no IP,
+# shifting serverbox's positional args (4.124).
+[ "$MONCHECK" = 1 ] && [ -n "$MC_IP" ] && SRVARG="$SRVARG moncheck $MC_IP"
 [ "$ENFORCE" = 1 ]  && SRVARG="$SRVARG enforce"
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded |Container |Network |Volume |Pulling|Waiting|Pull complete' | tail -40
-SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID=[^ ]+' | tail -1 | cut -d= -f2)"
-PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
-ADMIN_PW="$(printf '%s' "$SRVOUT" | grep -oE 'MB_ADMIN_PW=[^ ]+' | tail -1 | cut -d= -f2)"
-MONITOR_KEY="$(printf '%s' "$SRVOUT" | grep -oE 'MB_MONITOR_KEY=[^ ]+' | tail -1 | cut -d= -f2)"
-SID2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_SID2=[^ ]+' | tail -1 | cut -d= -f2)"
-PTOK2="$(printf '%s' "$SRVOUT" | grep -oE 'MB_PTOK2=[^ ]+' | tail -1 | cut -d= -f2)"
-TUN_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_SID=[^ ]+' | tail -1 | cut -d= -f2)"
-TUN_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_TUN_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
-VIS_SID="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_SID=[^ ]+' | tail -1 | cut -d= -f2)"
-VIS_PTOK="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VIS_PTOK=[^ ]+' | tail -1 | cut -d= -f2)"
-VIS_B64="$(printf '%s' "$SRVOUT" | grep -oE 'MB_VISITOR_B64=[^ ]+' | tail -1 | cut -d= -f2)"
-MC_OK_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_OK_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
-MC_CRIT_STATUS="$(printf '%s' "$SRVOUT" | grep -oE 'MC_CRIT_STATUS=[^ ]+' | tail -1 | cut -d= -f2)"
+# mb <KEY> — server-box marker via the shared cbx_marker (crabbox_lib.sh), bound to
+# $SRVOUT. Dedups 13 near-identical greps; a warmup-parsing fix lands once now (2.39).
+mb() { cbx_marker "$1" "$SRVOUT"; }
+SID="$(mb MB_SID)"
+PTOK="$(mb MB_PTOK)"
+ADMIN_PW="$(mb MB_ADMIN_PW)"
+MONITOR_KEY="$(mb MB_MONITOR_KEY)"
+SID2="$(mb MB_SID2)"
+PTOK2="$(mb MB_PTOK2)"
+TUN_SID="$(mb MB_TUN_SID)"
+TUN_PTOK="$(mb MB_TUN_PTOK)"
+VIS_SID="$(mb MB_VIS_SID)"
+VIS_PTOK="$(mb MB_VIS_PTOK)"
+VIS_B64="$(mb MB_VISITOR_B64)"
+MC_OK_STATUS="$(mb MC_OK_STATUS)"
+MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 [ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
@@ -153,7 +162,7 @@ if [ "$TUNNEL" = 1 ]; then
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
       || bad "tunnel agent: frpc did not connect (see output above)"
     # Independent check on the server: frps logged the STCP registration cross-host.
-    FRPSLOG="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
+    FRPSLOG="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'mb-dc logs --no-color frps 2>/dev/null | grep -iE "new proxy|start proxy success|stcp" | tail -5' 2>/dev/null)"
     printf '%s' "$FRPSLOG" | grep -qiE 'new proxy|start proxy success|stcp' \
       && ok "frps registered the agent's STCP tunnel (cross-host)" \
       || bad "frps shows no STCP registration from the agent"
@@ -201,7 +210,7 @@ if [ "$MONCHECK" = 1 ]; then
 fi
 
 echo "== assert monitoring ingested a report from the remote agent(s) =="
-REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'sudo docker compose -f docker-compose.yml -f docker-compose.test.yml -f /tmp/mb-ports.yml logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"
+REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'mb-dc logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"
 EXPECT=$(( ${#AGENT_SLUGS[@]} + RPM_AGENTS ))
 [ -n "${REPORTS:-}" ] && [ "$REPORTS" -ge "$EXPECT" ] 2>/dev/null \
   && ok "monitoring ingested $REPORTS report(s) from remote agent(s)" \

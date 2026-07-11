@@ -18,9 +18,9 @@ from sqlalchemy.orm import Session
 from app.core.auth import ApiKeyOrUser
 from app.core.database import get_db
 from app.modules.frp import provisioner
-from app.modules.frp._helpers import get_allow_users
+from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import generate_frpc_toml
-from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.models import FrpTunnel
 from app.modules.servers.models import Server
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
@@ -40,19 +40,18 @@ def _require_server_scope(auth, server_id: str) -> None:
         raise HTTPException(status_code=403, detail="Kein Zugriff auf diesen Server")
 
 
-@router.get("/provision/{server_id}/config")
-def get_provision_config(
-    server_id: str,
-    db: Session = Depends(get_db),
-    auth=Depends(read_dep),
-):
-    """Returns the current frpc.toml for the sync agent."""
+def _load_sync_inputs(db: Session, server_id: str, auth):
+    """The inputs both provision-sync endpoints share (config download + config
+    hash): scope check, server + config lookup, the tunnels scoped to this server
+    AND this config, and the allow-users. Extracted so the sync semantics can't
+    drift between the two — a hash computed over a different tunnel set than the
+    download would trigger endless agent resyncs (2.45)."""
     _require_server_scope(auth, server_id)
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    config = db.query(FrpServerConfig).first()
+    config = get_frp_config(db)
     if not config:
         raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
 
@@ -64,9 +63,18 @@ def get_provision_config(
         )
         .all()
     )
+    return config, tunnels, server.name, get_allow_users(db, server_id)
 
-    allow_users = get_allow_users(db, server_id)
-    toml_content = generate_frpc_toml(config, tunnels, server.name, allow_users)
+
+@router.get("/provision/{server_id}/config")
+def get_provision_config(
+    server_id: str,
+    db: Session = Depends(get_db),
+    auth=Depends(read_dep),
+):
+    """Returns the current frpc.toml for the sync agent."""
+    config, tunnels, server_name, allow_users = _load_sync_inputs(db, server_id, auth)
+    toml_content = generate_frpc_toml(config, tunnels, server_name, allow_users)
     return PlainTextResponse(toml_content, media_type="application/toml")
 
 
@@ -77,24 +85,6 @@ def get_provision_config_hash(
     auth=Depends(read_dep),
 ):
     """Returns the SHA256 hash of the current frpc.toml."""
-    _require_server_scope(auth, server_id)
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
-
-    config = db.query(FrpServerConfig).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
-
-    tunnels = (
-        db.query(FrpTunnel)
-        .filter(
-            FrpTunnel.server_id == server_id,
-            FrpTunnel.frp_config_id == config.id,
-        )
-        .all()
-    )
-
-    allow_users = get_allow_users(db, server_id)
-    config_hash = provisioner.get_config_hash(config, tunnels, server.name, allow_users=allow_users)
+    config, tunnels, server_name, allow_users = _load_sync_inputs(db, server_id, auth)
+    config_hash = provisioner.get_config_hash(config, tunnels, server_name, allow_users=allow_users)
     return {"hash": config_hash}

@@ -159,6 +159,17 @@ pub fn hdpi_scale(client: Option<&ClientInfo>) -> Option<u32> {
     }
 }
 
+/// True when xfreerdp rejected the `+auth-only` probe flag as an unknown option — i.e. it is too old
+/// to support the auth-only precheck, so the check is skipped and the real launch surfaces any auth
+/// failure. Both halves are required: an unknown/unrecognized/invalid-option mention AND `auth-only`,
+/// so a genuine auth error ("auth-only failed") is not mistaken for an unsupported flag (6.105).
+pub fn auth_only_unsupported(output_lower: &str) -> bool {
+    ["unknown option", "unrecognized option", "invalid option"]
+        .iter()
+        .any(|m| output_lower.contains(m))
+        && output_lower.contains("auth-only")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,5 +338,17 @@ mod tests {
         );
         // Tiny screens get clamped to the minimum window size.
         assert_eq!(fit_window_size(Some(&client(640, 480, None))), (1024, 720));
+    }
+
+    #[test]
+    fn auth_only_unsupported_needs_both_an_unknown_option_and_auth_only() {
+        // Both signals required: an unknown/unrecognized/invalid-option mention AND "auth-only".
+        assert!(auth_only_unsupported("error: unknown option: +auth-only"));
+        assert!(auth_only_unsupported("unrecognized option '+auth-only'"));
+        assert!(auth_only_unsupported("invalid option auth-only here"));
+        // Missing either half -> not the "too old for the probe" case.
+        assert!(!auth_only_unsupported("unknown option: --foo")); // no auth-only
+        assert!(!auth_only_unsupported("auth-only failed: bad password")); // no unknown-option
+        assert!(!auth_only_unsupported(""));
     }
 }

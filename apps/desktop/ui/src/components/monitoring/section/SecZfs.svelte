@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck } from '$lib/api/types';
+  import type { MonitorCheck, MonitorZfsDetails } from '$lib/api/types';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -18,14 +18,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
-  interface Pool {
-    name: string;
-    health: string;
-    capacityPercent: number;
-  }
-
-  function poolsOf(check: MonitorCheck): Pool[] {
-    return ((check.state?.details as Record<string, unknown> | null)?.pools ?? []) as Pool[];
+  function poolsOf(check: MonitorCheck) {
+    return (check.state?.details as MonitorZfsDetails | undefined)?.pools ?? [];
   }
   function cfgOf(check: MonitorCheck): Record<string, unknown> {
     return (check.config ?? {}) as Record<string, unknown>;

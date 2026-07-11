@@ -27,6 +27,11 @@
 
 set -euo pipefail
 
+# Single temp root so an abort (signal, set -e) can't leak the per-fetch mktemp
+# dirs; the trap sweeps it on any exit (4.121).
+_TMPROOT="$(mktemp -d)"
+trap 'rm -rf "$_TMPROOT"' EXIT
+
 REPO="AdminCave/AdminHelper"
 REF=""                       # empty -> resolve the latest published release
 # minisign public key (the "RW..." line of minisign.pub) used to verify the
@@ -38,7 +43,7 @@ MINISIGN_PUBKEY="RWTU2kEztd3UWTF8HW26S8MWWiTUe6oz38I7rTBBSOvmQ3SHmszo6llJ"
 RAW_BASE="${AH_RAW_BASE:-https://raw.githubusercontent.com/AdminCave/AdminHelper}"
 API_BASE="${AH_API_BASE:-https://api.github.com}"
 DL_BASE="${AH_DL_BASE:-https://github.com}"
-RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh"
+RUNTIME_FILES="docker-compose.yml .env.example scripts/init-secrets.sh scripts/pg-backup.sh scripts/update.sh scripts/backup.sh scripts/restore.sh scripts/uninstall.sh scripts/diagnostics.sh"
 DOMAIN=""
 ADMIN_USER="admin"
 ADMIN_PASSWORD=""
@@ -59,7 +64,7 @@ while [ $# -gt 0 ]; do
         --permissive) PERMISSIVE=1 ;;
         --reset) RESET=1 ;;
         --yes|-y) ASSUME_YES=1 ;;
-        -h|--help) sed -n '2,30p' "$0" 2>/dev/null || echo "siehe Kommentar-Header"; exit 0 ;;
+        -h|--help) awk 'NR==1{next} /^#/{sub(/^#+ ?/,""); print; next} {exit}' "$0"; exit 0 ;;
         *) echo "Unbekannte Option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -85,11 +90,11 @@ verify_sums_signature() {
         echo "[install] WARNUNG: Release-Signatur nicht konfiguriert — nur Transport-Integritaet (Checksumme)." >&2
         return 0
     fi
-    if ! command -v minisign >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq minisign || true
-    fi
+    # Don't silently sudo apt-get install: a script the user may have started
+    # unprivileged (or via curl | bash) must not escalate + touch the host's package
+    # set unasked. Abort with a clear instruction instead (3.78).
     command -v minisign >/dev/null 2>&1 \
-        || { echo "FEHLER: minisign fehlt — Signatur nicht pruefbar (installiere 'minisign')." >&2; rm -rf "$tmp"; exit 1; }
+        || { echo "FEHLER: minisign fehlt — Signatur nicht pruefbar. Bitte installieren (z.B. 'sudo apt-get install minisign' bzw. das Paket der Distribution) und erneut ausfuehren." >&2; rm -rf "$tmp"; exit 1; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS.minisig" "${dl}/SHA256SUMS.minisig" 2>/dev/null \
         || { echo "FEHLER: Release-Signatur (SHA256SUMS.minisig) fehlt." >&2; rm -rf "$tmp"; exit 1; }
     minisign -Vm "${tmp}/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "${tmp}/SHA256SUMS.minisig" >/dev/null 2>&1 \
@@ -101,7 +106,7 @@ verify_sums_signature() {
 # no bundle asset (caller falls back to raw); hard-exits on a checksum/manifest fail.
 fetch_bundle_into() {
     local asset="adminhelper-runtime-${REF}.tar.gz" dl="${DL_BASE}/${REPO}/releases/download/${REF}" tmp exp
-    tmp=$(mktemp -d)
+    tmp=$(mktemp -d -p "$_TMPROOT")
     curl -fsSL --retry 3 -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null || { rm -rf "$tmp"; return 1; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" 2>/dev/null || { rm -rf "$tmp"; return 1; }
     echo "[install] Verifiziere und entpacke Runtime-Bundle ${asset} ..." >&2
@@ -124,7 +129,7 @@ fetch_bundle_into() {
 fetch_repo_into() {
     local asset="adminhelper-agent-repo-${REF}.tar.gz" dl="${DL_BASE}/${REPO}/releases/download/${REF}" tmp exp
     [ -n "$REF" ] || return 0
-    tmp=$(mktemp -d)
+    tmp=$(mktemp -d -p "$_TMPROOT")
     curl -fsSL --retry 3 -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null || { rm -rf "$tmp"; return 0; }
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS" "${dl}/SHA256SUMS" 2>/dev/null || { rm -rf "$tmp"; return 0; }
     verify_sums_signature "$tmp" "$dl"
@@ -155,8 +160,12 @@ if [ ! -f docker-compose.yml ]; then
     mkdir -p "$TARGET_DIR/scripts"
     case "$REF" in
         v[0-9]*.[0-9]*.[0-9]*)
+            # A release tag REQUIRES the signed bundle. A compromised repo/account could
+            # delete the asset to force a fallback, so abort here rather than dropping to
+            # unsigned raw files — that keeps the signature gate un-bypassable (matches
+            # update.sh). raw_fetch stays only for explicit branch refs (dev) below (3.29/4.51).
             fetch_bundle_into \
-                || { echo "[install] Kein Runtime-Bundle fuer ${REF} — Einzeldatei-Fallback (raw)." >&2; raw_fetch; } ;;
+                || { echo "FEHLER: Kein verifiziertes Runtime-Bundle fuer ${REF} — Abbruch (fuer einen Dev-Install --ref <branch> nutzen)." >&2; exit 1; } ;;
         *) raw_fetch ;;
     esac
     chmod +x "$TARGET_DIR"/scripts/*.sh
@@ -169,12 +178,18 @@ docker compose version >/dev/null 2>&1 || { echo "FEHLER: 'docker compose' fehlt
 
 upsert_env() {
     local key="$1" value="$2"
-    if grep -qE "^#?[[:space:]]*${key}=" .env; then
-        local tmp; tmp=$(mktemp)
-        sed -E "s|^#?[[:space:]]*${key}=.*|${key}=${value}|" .env > "$tmp"; mv "$tmp" .env
-    else
-        printf '%s=%s\n' "$key" "$value" >> .env
-    fi
+    # Reject a value with newlines: it would inject extra .env lines. DOMAIN and
+    # friends come from CLI flags / prompts, so treat them as untrusted (3.79).
+    case $value in
+        *[$'\n\r']*) echo "FEHLER: ungueltiger Wert fuer ${key} (Zeilenumbruch)." >&2; exit 1 ;;
+    esac
+    # Delete any existing (possibly commented) line for the key, then append the
+    # literal value. No sed replacement, so |, & or \1 in the value aren't
+    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
+    local tmp; tmp=$(mktemp)
+    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
+    mv "$tmp" .env
+    printf '%s=%s\n' "$key" "$value" >> .env
 }
 
 # --- Secrets + .env ---------------------------------------------------------
@@ -184,7 +199,10 @@ upsert_env() {
 # Interactive prompts must read from the controlling terminal, not stdin: under
 # `curl | bash` stdin is the script pipe, so a bare `read` gets script bytes (or
 # EOF) instead of the user — the install would silently abort at the first prompt.
-if [ -r /dev/tty ]; then TTY=/dev/tty; else TTY=""; fi
+# [ -r /dev/tty ] only checks the file bit, not whether it can actually be OPENED:
+# with no controlling terminal (pipe, </dev/null, cron) the open() fails and a read
+# would hit EOF. Test real openability, matching uninstall.sh (4.52).
+if (exec </dev/tty) 2>/dev/null; then TTY=/dev/tty; else TTY=""; fi
 
 if [ -z "$DOMAIN" ] && [ -n "$TTY" ]; then
     read -rp "Domain (z.B. srm.example.com) [localhost]: " DOMAIN <"$TTY"
@@ -205,11 +223,15 @@ upsert_env DOMAIN "$DOMAIN"
 # (fixed), main -> :main (the dev floating tag). The compose default (:latest) is
 # only a fallback for a bare `docker compose up` without this .env. Upgrade later
 # via `./scripts/update.sh --ref vX.Y.Z`.
-IMAGE_TAG="${REF#v}"
-upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
-upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
-upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${IMAGE_TAG}"
-upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${IMAGE_TAG}"
+# In checkout/bundle mode without --ref, REF is empty; leave compose's :latest
+# fallback rather than writing an empty tag that breaks `docker compose pull` (2.3).
+if [ -n "$REF" ]; then
+    IMAGE_TAG="${REF#v}"
+    upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${IMAGE_TAG}"
+    upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${IMAGE_TAG}"
+    upsert_env CA_ISSUER_IMAGE  "ghcr.io/admincave/adminhelper/ca-issuer:${IMAGE_TAG}"
+    upsert_env MONITORING_IMAGE "ghcr.io/admincave/adminhelper/monitoring:${IMAGE_TAG}"
+fi
 
 chmod 600 .env 2>/dev/null || true
 
@@ -246,7 +268,7 @@ until docker compose exec -T server \
     # with a different POSTGRES_PASSWORD than the current .env — Postgres only honors
     # the password on first init, so auth fails forever. Detect it and say so, instead
     # of burning 240s into an opaque timeout.
-    if docker compose logs server 2>/dev/null | grep -q "password authentication failed"; then
+    if docker compose logs --tail=20 server 2>/dev/null | grep -q "password authentication failed"; then
         echo "FEHLER: Postgres lehnt das Passwort ab (password authentication failed)." >&2
         echo "       Ursache: meist ein altes 'postgres-data'-Volume aus einem frueheren" >&2
         echo "       (fehlgeschlagenen) Versuch — dessen Init-Passwort passt nicht zur .env." >&2
@@ -260,8 +282,10 @@ until docker compose exec -T server \
 done
 
 # --- Erst-Admin + Enroll-Token (in-container CLI, umgeht das enforced :443) --
-docker compose exec -T server python -m app.cli create-admin \
-    --username "$ADMIN_USER" --password "$ADMIN_PASSWORD" </dev/null
+# --password-stdin (not --password) so the admin password never lands in the
+# container's argv / /proc/<pid>/cmdline (3.30). -T keeps stdin a clean pipe.
+printf '%s\n' "$ADMIN_PASSWORD" | docker compose exec -T server python -m app.cli create-admin \
+    --username "$ADMIN_USER" --password-stdin
 ENROLL_TOKEN=$(docker compose exec -T server python -m app.cli mint-enroll-token \
     --username "$ADMIN_USER" --ttl-minutes "$ENROLL_TTL" </dev/null | tr -d '\r')
 
@@ -271,14 +295,14 @@ cat <<EOF
 ============================================================================
   AdminHelper laeuft auf https://${DOMAIN}/   $([ "$PERMISSIVE" = 1 ] && echo '(mTLS permissiv)' || echo '(mTLS erzwungen)')
 
-  Admin-Login:    ${ADMIN_USER} / ${ADMIN_PASSWORD}
+  Admin-Login:    ${ADMIN_USER}   (Passwort wie bei der Installation gesetzt)
 
   Desktop-Cert:   Desktop oeffnen -> "Mit Token enrollen" -> Server-URL + Token:
                   ${ENROLL_TOKEN}
                   (einmalig, ${ENROLL_TTL} Min gueltig; danach Login + optional
                    Browser-.p12 ueber den Export-Knopf im Desktop)
 
-  Version:        ${IMAGE_TAG}  (Images in .env gepinnt)
+  Version:        ${IMAGE_TAG:-latest}  (in .env gepinnt bei --ref; sonst compose :latest)
   Updates:        ./scripts/update.sh        (auf das neueste Release; gezielt: --ref vX.Y.Z)
 ============================================================================
 EOF

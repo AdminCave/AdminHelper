@@ -47,7 +47,10 @@ class ProxmoxBackupChecker:
         no_backup = []
         outdated = []
         ok_count = 0
+        vm_details = []
 
+        # One pass classifies each VM and builds the UI detail row, so the
+        # exclude filters and age calculation live in a single place.
         for vm in vms:
             vmid = vm.get("vmid")
             if vmid in exclude_vmids:
@@ -57,37 +60,19 @@ class ProxmoxBackupChecker:
 
             label = f"{vm.get('type', 'vm').upper()} {vmid} ({vm.get('name', '?')})"
             last_ts = vm.get("last_backup_ts")
-
-            if last_ts is None:
-                no_backup.append(label)
-            elif (now - last_ts) > max_age_seconds:
-                age_h = round((now - last_ts) / 3600)
-                outdated.append(f"{label}: {age_h}h alt")
-            else:
-                ok_count += 1
-
-        metrics = {
-            "proxmox_backup_ok": ok_count,
-            "proxmox_backup_missing": len(no_backup),
-            "proxmox_backup_outdated": len(outdated),
-        }
-
-        # Structured details for the UI
-        vm_details = []
-        for vm in vms:
-            vmid = vm.get("vmid")
-            if vmid in exclude_vmids:
-                continue
-            if exclude_stopped and vm.get("status") != "running":
-                continue
-            last_ts = vm.get("last_backup_ts")
             vm_status = "ok"
             age_hours = None
+
             if last_ts is None:
                 vm_status = "missing"
+                no_backup.append(label)
             elif (now - last_ts) > max_age_seconds:
                 vm_status = "outdated"
                 age_hours = round((now - last_ts) / 3600)
+                outdated.append(f"{label}: {age_hours}h alt")
+            else:
+                ok_count += 1
+
             vm_details.append(
                 {
                     "vmid": vmid,
@@ -97,7 +82,13 @@ class ProxmoxBackupChecker:
                     "ageHours": age_hours,
                 }
             )
-        metrics["_details"] = {"vms": vm_details}
+
+        metrics = {
+            "proxmox_backup_ok": ok_count,
+            "proxmox_backup_missing": len(no_backup),
+            "proxmox_backup_outdated": len(outdated),
+            "_details": {"vms": vm_details},
+        }
 
         if no_backup:
             msg = "Kein Backup: " + ", ".join(no_backup)

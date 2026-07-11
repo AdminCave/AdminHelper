@@ -5,6 +5,7 @@
 // Connections store. Loads, caches and saves connections via the
 // Tauri bridge. Filter + search are derived stores - the UI reads them directly.
 
+import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { AuthSession, Connection, ConnectionKind, Settings } from '$lib/bridge/types';
@@ -12,6 +13,8 @@ import type { Connection as ServerConnection } from '$lib/api/types';
 import { groupConnectionsByHost, type ConnectionGroup } from '$lib/models/connection';
 import { connectionsApi } from '$lib/api/connections';
 import { sessionStore } from './session';
+import { showStatus } from './statusBar';
+import { tNow } from '$lib/i18n';
 
 export type KindFilter = 'all' | 'ssh' | 'rdp' | 'web';
 export type GroupFilter = 'single' | 'grouped';
@@ -59,22 +62,44 @@ export const filteredConnections = derived(
   },
 );
 
-export const groupedConnections = derived([_state, searchTerm], ([$s, $term]): ConnectionGroup[] =>
-  groupConnectionsByHost($s.items, $term),
+// Group once per items change — the expensive part (URL parsing, sorting, haystack building) — then
+// let the search filter cheaply on the prebuilt haystack, instead of re-grouping on every keystroke
+// (5.13).
+const allGroups = derived(_state, ($s): ConnectionGroup[] => groupConnectionsByHost($s.items, ''));
+
+export const groupedConnections = derived(
+  [allGroups, searchTerm],
+  ([$groups, $term]): ConnectionGroup[] => {
+    const q = $term.trim().toLowerCase();
+    return q ? $groups.filter((g) => g.haystack.includes(q)) : $groups;
+  },
 );
 
+// Shared request generation: load() (cache read) and reloadForMode() (network fetch) both write
+// _state, and the pages mount a load while login() runs a reloadForMode in parallel. Without a
+// shared generation a stale read (e.g. the OLD server's still-cached connections.json) could
+// overwrite the new server's fetch, leaving the wrong server's connections shown and clickable —
+// there was no out-of-order guard here, unlike the monitoring store's statusGen (4.39).
+let loadGen = 0;
+
 export async function load(): Promise<void> {
+  const gen = ++loadGen;
   _state.update((s) => ({ ...s, loading: true, error: null }));
   try {
     const items = await bridge.loadConnections();
+    if (gen !== loadGen) return;
     _state.set({ items, loading: false, error: null });
   } catch (err) {
-    _state.set({
-      items: [],
-      loading: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    if (gen !== loadGen) return;
+    _state.set({ items: [], loading: false, error: errMsg(err) });
   }
+}
+
+/** Mode-aware entry point for page mounts: reload connections for the current session's mode
+ * instead of blindly reading the cache while a login's network fetch is in flight (4.39). */
+export async function loadForCurrentMode(): Promise<void> {
+  const { settings, session } = get(sessionStore);
+  await reloadForMode(settings, session);
 }
 
 export async function reloadForMode(
@@ -82,24 +107,22 @@ export async function reloadForMode(
   session: AuthSession | null,
 ): Promise<void> {
   if (!settings) return load();
+  const gen = ++loadGen;
   _state.update((s) => ({ ...s, loading: true, error: null }));
   try {
+    let items: Connection[];
     if (settings.mode === 'server' && session) {
-      const items = await bridge.fetchConnectionsJwt(session.serverUrl, session.token);
-      _state.set({ items, loading: false, error: null });
+      items = await bridge.fetchConnectionsJwt(session.serverUrl, session.token);
     } else if (settings.mode === 'sync' && settings.url) {
-      const items = await bridge.syncConnections(settings.url);
-      _state.set({ items, loading: false, error: null });
+      items = await bridge.syncConnections(settings.url);
     } else {
-      const items = await bridge.loadConnections();
-      _state.set({ items, loading: false, error: null });
+      items = await bridge.loadConnections();
     }
+    if (gen !== loadGen) return;
+    _state.set({ items, loading: false, error: null });
   } catch (err) {
-    _state.set({
-      items: [],
-      loading: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    if (gen !== loadGen) return;
+    _state.set({ items: [], loading: false, error: errMsg(err) });
   }
 }
 
@@ -109,10 +132,10 @@ export async function saveAll(items: Connection[]): Promise<void> {
 }
 
 /** Clears the in-memory connection list WITHOUT touching connections.json.
- * Server-mode connections live only in memory (reloadForMode never writes the
- * file), while connections.json is the local-mode store. Logout must drop the
- * in-memory view but must NOT overwrite that file — doing so would erase the
- * user's locally saved connections. */
+ * A server/sync fetch DOES write connections.json on the Rust side (it's the transient
+ * server/sync cache), but in LOCAL mode connections.json is the user's persistent store.
+ * Logout must drop the in-memory view but must NOT overwrite that file — in local mode that
+ * would erase the user's locally saved connections. */
 export function clearInMemory(): void {
   _state.set({ items: [], loading: false, error: null });
 }
@@ -155,6 +178,14 @@ export async function upsert(conn: Connection): Promise<void> {
   const current = get(_state).items;
   const idx = current.findIndex((c) => c.id === conn.id);
   const next = idx >= 0 ? current.map((c, i) => (i === idx ? conn : c)) : [...current, conn];
+  if (settings?.mode === 'sync') {
+    // Sync mode is read-through: connections.json is the transient cache the next sync (~1 min)
+    // overwrites wholesale. Persisting an edit would silently vanish, so keep it in-memory only
+    // and tell the user it's volatile instead of falsely showing "saved" (4.40).
+    _state.update((s) => ({ ...s, items: next }));
+    showStatus(tNow('status.syncEditVolatile'));
+    return;
+  }
   await saveAll(next);
 }
 
@@ -174,6 +205,13 @@ export async function remove(id: string): Promise<void> {
     return;
   }
   const next = get(_state).items.filter((c) => c.id !== id);
+  if (settings?.mode === 'sync') {
+    // Same as upsert: a sync-mode delete only lives until the next sync overwrites the cache
+    // (4.40) — keep it in-memory and flag it as volatile rather than pretending it persisted.
+    _state.update((s) => ({ ...s, items: next }));
+    showStatus(tNow('status.syncEditVolatile'));
+    return;
+  }
   await saveAll(next);
 }
 
@@ -186,23 +224,25 @@ export async function refreshFromServer(): Promise<void> {
   }
 }
 
-export function countByKind(): Record<ConnectionKind | 'total', number> {
-  const items = get(_state).items;
-  return {
-    total: items.length,
-    ssh: items.filter((c) => c.kind === 'ssh').length,
-    rdp: items.filter((c) => c.kind === 'rdp').length,
-    web: items.filter((c) => c.kind === 'web').length,
-  };
-}
+export const kindCounts = derived(
+  _state,
+  ($s): Record<ConnectionKind | 'total', number> => ({
+    total: $s.items.length,
+    ssh: $s.items.filter((c) => c.kind === 'ssh').length,
+    rdp: $s.items.filter((c) => c.kind === 'rdp').length,
+    web: $s.items.filter((c) => c.kind === 'web').length,
+  }),
+);
 
-export function recentConnections(limit = 5): Connection[] {
-  return get(_state)
-    .items.filter((c) => c.lastUsed)
+// The dashboard's "recently used" list: most-recent first, capped.
+const RECENT_LIMIT = 5;
+export const recentConnections = derived(_state, ($s): Connection[] =>
+  $s.items
+    .filter((c) => c.lastUsed)
     .sort((a, b) => {
       const ta = a.lastUsed ? Date.parse(a.lastUsed) : 0;
       const tb = b.lastUsed ? Date.parse(b.lastUsed) : 0;
       return tb - ta;
     })
-    .slice(0, limit);
-}
+    .slice(0, RECENT_LIMIT),
+);

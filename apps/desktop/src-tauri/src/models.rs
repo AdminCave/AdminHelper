@@ -88,7 +88,10 @@ pub struct Connection {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub mode: SyncMode,
-    pub url: Option<String>,
+    // The read-only sync source (unauthenticated GET, strict https) — distinct from
+    // server_url, the JWT login target. Wire name pinned to "url" for compat (2.86).
+    #[serde(rename = "url")]
+    pub sync_url: Option<String>,
     #[serde(default = "default_sync_interval_minutes")]
     pub interval_minutes: u32,
     #[serde(default)]
@@ -121,7 +124,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             mode: SyncMode::Local,
-            url: None,
+            sync_url: None,
             interval_minutes: default_sync_interval_minutes(),
             language: None,
             store_passwords: false,

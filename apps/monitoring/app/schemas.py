@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.check_types import VALID_CHECK_TYPES
 
 
 class CheckCreate(BaseModel):
@@ -62,6 +64,31 @@ class TemplateCheckDef(BaseModel):
     consecutive_fails: int = 3
     description: str | None = None
 
+    # Same boundary the /checks router enforces for CheckCreate — so a template
+    # check goes through identical validation instead of failing only later at
+    # assign/sync time (ValueError from _parse_trigger) or being silently skipped
+    # at startup.
+    @field_validator("check_type")
+    @classmethod
+    def _check_type_valid(cls, v: str) -> str:
+        if v not in VALID_CHECK_TYPES:
+            raise ValueError(f"Ungueltiger check_type: {v}")
+        return v
+
+    @field_validator("interval")
+    @classmethod
+    def _interval_valid(cls, v: str) -> str:
+        if v not in VALID_INTERVALS:
+            raise ValueError(f"Ungueltiges Intervall: {v}")
+        return v
+
+    @field_validator("severity")
+    @classmethod
+    def _severity_valid(cls, v: str) -> str:
+        if v not in VALID_SEVERITIES:
+            raise ValueError(f"Ungueltige Severity: {v}")
+        return v
+
 
 class TemplateAlertDef(BaseModel):
     def_id: str | None = None
@@ -94,19 +121,6 @@ class TemplateAssign(BaseModel):
 
 
 VALID_CHANNELS = {"webhook", "email"}
-
-VALID_CHECK_TYPES = {
-    "ping",
-    "tcp",
-    "http",
-    "agent_ping",
-    "agent_resources",
-    "service_process",
-    "proxmox_backup",
-    "zfs_health",
-    "docker_health",
-    "smart_health",
-}
 
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"}
 

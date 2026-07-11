@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { sessionStore } from '$lib/stores/session';
   import { monitoringApi } from '$lib/api/monitoring';
   import type { MonitorCheck, MonitoringMetricsResponse } from '$lib/api/types';
@@ -24,18 +25,27 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let loading = $state(false);
   let error = $state<string | null>(null);
 
+  // Request generation: a fast period switch (1h -> 7d) can leave two fetches in flight, and the
+  // slower one resolving last would otherwise overwrite the newer period's data — the `loading`
+  // flag doesn't protect since the second request clears it before the first resolves (4.38).
+  let loadGen = 0;
+
   async function load(): Promise<void> {
     const { session } = $sessionStore;
     if (!session) return;
+    const gen = ++loadGen;
     loading = true;
     error = null;
     try {
-      metrics = await monitoringApi.fetchMetrics(session, check.id, activePeriod);
+      const res = await monitoringApi.fetchMetrics(session, check.id, activePeriod);
+      if (gen !== loadGen) return;
+      metrics = res;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (gen !== loadGen) return;
+      error = errMsg(err);
       metrics = null;
     } finally {
-      loading = false;
+      if (gen === loadGen) loading = false;
     }
   }
 

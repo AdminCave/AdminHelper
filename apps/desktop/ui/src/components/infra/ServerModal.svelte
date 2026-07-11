@@ -93,6 +93,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('infra.field.name')}</span>
           <input
             type="text"
+            name="name"
             bind:value={form.name}
             placeholder={$t('infra.field.name.placeholder')}
             required
@@ -103,6 +104,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('infra.field.hostname')}</span>
           <input
             type="text"
+            name="hostname"
             bind:value={form.hostname}
             placeholder={$t('infra.field.hostname.placeholder')}
             required
@@ -113,6 +115,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('infra.field.osType')}</span>
           <input
             type="text"
+            name="osType"
             value={form.os_type ?? ''}
             oninput={(e) => {
               const v = (e.currentTarget as HTMLInputElement).value;
@@ -126,6 +129,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('infra.field.tags')}</span>
           <input
             type="text"
+            name="tags"
             bind:value={tagsInput}
             placeholder={$t('infra.field.tags.placeholder')}
           />

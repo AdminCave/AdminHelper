@@ -6,22 +6,51 @@
 
 A long-lived text/event-stream that pushes a "refresh" nudge whenever the caller
 gets a new notification (the client then pulls the feed via REST). The handler is
-async and DB-free — it only reads from its asyncio.Queue — so it never blocks the
-worker event loop (the rest of the stack is sync SQLAlchemy). Cross-worker
-delivery is handled by stream_hub via Redis Pub/Sub.
+async and holds no DB connection for the stream's lifetime — it reads from its
+asyncio.Queue and does only a short periodic auth re-check off the event loop (a
+threadpool) — so it never blocks the worker event loop (the rest of the stack is
+sync SQLAlchemy). Cross-worker delivery is handled by stream_hub via Redis Pub/Sub.
 """
 
 import asyncio
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
+from app.core.identity import ClientIdentity, get_client_identity
 from app.modules.notifications import stream_hub
 
 stream_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 # Heartbeat comment cadence — keeps the stream under nginx's proxy_read_timeout.
 _HEARTBEAT_SECS = 15
+# Re-validate the stream's auth roughly this often: the bearer JWT can be blacklisted
+# (logout) or the mTLS identity revoked while the minutes-to-hours stream is open, and
+# neither reaches an established stream otherwise (3.38). Time-based (not a heartbeat
+# count) so a busy stream that never idles is still re-checked.
+_REAUTH_INTERVAL_SECS = 60
+
+
+def _stream_reauth_ok(token: str, cn: str | None, scope: str | None, verified: bool) -> bool:
+    """Re-check a live stream's authorization: the bearer JWT must still be valid
+    (not blacklisted / expired / pre-password-reset) and the mTLS identity must not
+    have been revoked. Sync SQLAlchemy, so callers run it via run_in_threadpool to
+    keep the async stream from blocking the event loop."""
+    from app.core.auth import _get_user_from_token
+    from app.core.database import SessionLocal
+    from app.core.identity import _is_revoked
+
+    db = SessionLocal()
+    try:
+        if not token or _get_user_from_token(token, db) is None:
+            return False
+        if verified and _is_revoked(db, cn, scope):
+            return False
+        return True
+    finally:
+        db.close()
 
 
 def authenticate_stream_user(request: Request) -> int:
@@ -54,15 +83,29 @@ def authenticate_stream_user(request: Request) -> int:
 async def notification_stream(
     request: Request,
     user_id: int = Depends(authenticate_stream_user),
+    identity: ClientIdentity = Depends(get_client_identity),
 ):
+    header = request.headers.get("authorization", "")
+    token = header[7:] if header.lower().startswith("bearer ") else ""
     queue = stream_hub.register(user_id)
 
     async def gen():
         try:
             yield ": connected\n\n"
+            last_reauth = time.monotonic()
             while True:
                 if await request.is_disconnected():
                     break
+                if time.monotonic() - last_reauth >= _REAUTH_INTERVAL_SECS:
+                    last_reauth = time.monotonic()
+                    # Sync DB check off the event loop; end the stream if the JWT was
+                    # blacklisted or the identity revoked mid-stream (3.38). Time-based,
+                    # so a busy stream (frequent payloads, never idles) is covered too.
+                    ok = await run_in_threadpool(
+                        _stream_reauth_ok, token, identity.cn, identity.scope, identity.verified
+                    )
+                    if not ok:
+                        break
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_SECS)
                 except asyncio.TimeoutError:

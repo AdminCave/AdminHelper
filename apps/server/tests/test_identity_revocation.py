@@ -109,3 +109,26 @@ def test_delete_server_revokes_its_tunnel_identity(
     assert deleted.status_code == 204, deleted.text
     # CN = stable server_id, tunnel scope (the agent's enrolled identity).
     assert is_identity_revoked(db_session, "srv-xyz", SCOPE_AGENT)
+
+
+def test_oversized_forwarded_cert_header_skips_parse(monkeypatch):
+    # 4.132: an oversized X-Client-Cert must be rejected by the size cap BEFORE unquote()+parse,
+    # bounding CPU/memory. Spy on the parse to prove it is skipped for a huge header.
+    import app.core.identity as identity_mod
+
+    called = {"parse": False}
+
+    def _spy(*_a, **_k):
+        called["parse"] = True
+        raise ValueError("parse must not be reached")
+
+    monkeypatch.setattr(identity_mod.x509, "load_pem_x509_certificate", _spy)
+
+    class _FakeRequest:
+        def __init__(self, headers):
+            self.headers = headers
+
+    req = _FakeRequest({"x-client-verify": "SUCCESS", "x-client-cert": "x" * 20000})
+    ident = identity_mod.get_client_identity(req)
+    assert ident.verified is False
+    assert called["parse"] is False, "parse must be skipped for an oversized header (4.132)"

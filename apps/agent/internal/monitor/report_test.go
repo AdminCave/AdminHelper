@@ -14,6 +14,24 @@ import (
 )
 
 func TestBuildReportBasics(t *testing.T) {
+	// Stub the collectors that do real, slow, host-dependent I/O so this exercises the report assembly,
+	// not the host (6.18): the 1s CPU sample and the docker/pvesh/zpool/smartctl subprocess calls.
+	// Without this the "unit" test sleeps >=1s and its result/duration depend on the host.
+	oldInterval := cpuSampleInterval
+	cpuSampleInterval = 0
+	oldPlugins := pluginCollectors
+	pluginCollectors.docker = func() map[string]any { return nil }
+	pluginCollectors.proxmox = func() map[string]any { return nil }
+	pluginCollectors.zfs = func() map[string]any { return nil }
+	pluginCollectors.smart = func() []SmartDisk { return nil }
+	oldSvc := serviceHealthCollector
+	serviceHealthCollector = func() map[string]any { return map[string]any{} }
+	t.Cleanup(func() {
+		cpuSampleInterval = oldInterval
+		pluginCollectors = oldPlugins
+		serviceHealthCollector = oldSvc
+	})
+
 	report := BuildReport(nil)
 
 	if got := report["report_version"]; got != 2 {
@@ -68,7 +86,7 @@ func TestPushReportSuccessNoRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := PushReport(context.Background(), srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err != nil {
 		t.Fatalf("PushReport: %v", err)
 	}
 	if got := attempts.Load(); got != 1 {
@@ -88,7 +106,7 @@ func TestPushReportRetriesOnceOnTransientError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := PushReport(context.Background(), srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false); err != nil {
+	if err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err != nil {
 		t.Fatalf("PushReport nach Retry: %v", err)
 	}
 	if got := attempts.Load(); got != 2 {
@@ -105,7 +123,7 @@ func TestPushReportFailsAfterSingleRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := PushReport(context.Background(), srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false)
+	err := PushReport(context.Background(), PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}})
 	if err == nil {
 		t.Fatal("PushReport erwartete Fehler, bekam keinen")
 	}
@@ -114,31 +132,42 @@ func TestPushReportFailsAfterSingleRetry(t *testing.T) {
 	}
 }
 
-func TestPushReportAbortsRetryOnContextCancel(t *testing.T) {
-	// Keep the backoff long: if the ctx were ignored the test would block for
-	// the full delay. A cancelled ctx must abort the wait and skip the retry.
+func TestPushReportAbortsInFlightRequestOnContextCancel(t *testing.T) {
+	// The handler hangs on its request's ctx. Without 2.67 (ctx reaching the
+	// request) the client would block until its own 15s timeout; cancelling
+	// mid-flight must abort the in-flight request itself, so PushReport returns
+	// promptly. The long backoff would also stall a stray retry, so returning
+	// fast proves the ctx short-circuits both the request and the retry.
 	orig := pushRetryDelay
 	pushRetryDelay = 30 * time.Second
 	t.Cleanup(func() { pushRetryDelay = orig })
 
+	ctx, cancel := context.WithCancel(context.Background())
 	var attempts atomic.Int32
+	reached := make(chan struct{})
+	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts.Add(1)
-		w.WriteHeader(http.StatusInternalServerError)
+		if attempts.Add(1) == 1 {
+			close(reached)
+		}
+		<-release // block until the test releases the handler
 	}))
 	defer srv.Close()
+	defer close(release) // let the blocked handler finish so srv.Close() returns
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	go func() {
+		<-reached
+		cancel()
+	}()
 
 	start := time.Now()
-	if err := PushReport(ctx, srv.URL, "key", "srv-1", map[string]any{"a": 1}, "", false); err == nil {
+	if err := PushReport(ctx, PushReportParams{URL: srv.URL, APIKey: "key", ServerID: "srv-1", Report: map[string]any{"a": 1}}); err == nil {
 		t.Fatal("PushReport erwartete ctx-Fehler nach Cancel")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
-		t.Errorf("PushReport blockierte %v trotz abgebrochenem ctx", elapsed)
+		t.Errorf("PushReport blockierte %v — der in-flight-Request wurde nicht abgebrochen", elapsed)
 	}
 	if got := attempts.Load(); got != 1 {
-		t.Errorf("attempts = %d, erwartet 1 (kein Retry nach ctx-Cancel)", got)
+		t.Errorf("attempts = %d, erwartet 1 (kein Retry)", got)
 	}
 }

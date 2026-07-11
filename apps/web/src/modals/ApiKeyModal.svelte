@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
   import { apikeys } from '$lib/stores/apikeys';
-  import { showToast } from '$lib/stores/notifications';
+  import { showError } from '$lib/stores/notifications';
   import type { ApiKeyPermission } from '$lib/api/types';
 
   interface Props {
@@ -38,7 +38,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       const created = await apikeys.create({ name: name.trim(), permission });
       onReveal(created.key);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       submitting = false;
     }
@@ -61,12 +61,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
-    <Button
-      variant="primary"
-      type="submit"
-      disabled={submitting}
-      onclick={() => (document.getElementById('apikey-form') as HTMLFormElement)?.requestSubmit()}
-    >
+    <Button variant="primary" type="submit" disabled={submitting} form="apikey-form">
       {$t('action.create')}
     </Button>
   {/snippet}

@@ -31,17 +31,19 @@ vi.mock('$lib/bridge', () => ({
 vi.mock('@tauri-apps/api/event', () => ({ listen: h.listen }));
 vi.mock('$lib/stores/session', async () => {
   const { writable } = await import('svelte/store');
+  const session = {
+    serverUrl: 'https://srv',
+    token: 'tok',
+    refreshToken: 'r',
+    username: 'admin',
+    isAdmin: true,
+  };
   return {
     sessionStore: writable({
       settings: { mode: 'server', allowSelfSignedCerts: false },
-      session: {
-        serverUrl: 'https://srv',
-        token: 'tok',
-        refreshToken: 'r',
-        username: 'admin',
-        isAdmin: true,
-      },
+      session,
     }),
+    currentSession: () => session,
   };
 });
 
@@ -54,6 +56,8 @@ import {
   activateNotifications,
   deactivateNotifications,
   setNewNotificationHandler,
+  togglePanel,
+  panelOpen,
 } from './notifications';
 
 const item = (over: Partial<NotificationItem>): NotificationItem => ({
@@ -161,5 +165,45 @@ describe('notifications store', () => {
     h.stopStream.mockClear();
     deactivateNotifications();
     expect(h.stopStream).toHaveBeenCalled();
+  });
+
+  it('undoes a stale activation when a logout races the SSE startup (4.41)', async () => {
+    const staleUn = vi.fn();
+    let resolveListen!: (un: () => void) => void;
+    h.listen.mockReset();
+    h.listen.mockImplementationOnce(
+      () =>
+        new Promise<() => void>((r) => {
+          resolveListen = r;
+        }),
+    );
+
+    const p = activateNotifications(); // this activation's generation
+    await new Promise((r) => setTimeout(r, 0)); // let it park at `await listen`
+    deactivateNotifications(); // bumps activationGen -> the in-flight activation is now stale
+    h.stopStream.mockClear(); // isolate the guard's stop from deactivate's own
+    resolveListen(staleUn); // listen resolves late
+    await p;
+
+    expect(staleUn).toHaveBeenCalled(); // the stale listener was unregistered
+    expect(h.stopStream).toHaveBeenCalled(); // the restarted SSE stream was stopped
+  });
+
+  it('togglePanel marks the feed read on open, but not on close', async () => {
+    // Opening the bell panel marks everything read (the badge-clearing the user sees on each click);
+    // closing must NOT, else the badge would clear on close or never (6.118). panelOpen isn't reset in
+    // beforeEach, so normalize to closed first.
+    if (get(panelOpen)) togglePanel();
+    h.markRead.mockClear();
+    expect(get(panelOpen)).toBe(false);
+
+    togglePanel(); // open
+    expect(get(panelOpen)).toBe(true);
+    await vi.waitFor(() => expect(h.markRead).toHaveBeenCalledTimes(1));
+
+    h.markRead.mockClear();
+    togglePanel(); // close
+    expect(get(panelOpen)).toBe(false);
+    expect(h.markRead).not.toHaveBeenCalled();
   });
 });

@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -74,7 +74,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
           <ul>
             <li>Desktop-Client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF-Binary</li>
             <li>Go-Agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code>-Binaries</li>
-            <li>Agent-Paket-Repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signiertes apt+rpm-Repo, sobald <code>REPO_GPG_PRIVATE_KEY</code> gesetzt)</li>
+            <li>Agent-Paket-Repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signiertes apt+rpm-Repo, sobald <code>REPO_GPG_PRIVATE_KEY</code> gesetzt) &mdash; zus&auml;tzlich der Archive-Keyring <code>adminhelper-archive-keyring.gpg</code> als eigenst&auml;ndiges Asset (zweiter Kanal, um seinen Fingerprint gegen <code>SHA256SUMS</code> + minisign zu pr&uuml;fen)</li>
             <li>Desktop-Client Windows-<code>.msi</code> (best-effort &ndash; blockiert das Release nicht, wenn der Windows-Build fehlschlägt)</li>
             <li><code>SHA256SUMS</code> über alle Assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign-Signatur), sobald scharf geschaltet</li>
           </ul>
@@ -91,7 +91,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
           </ul>
           <div class="callout">
             <div><div class="callout-title">Scharfschalten (Maintainer, einmalig)</div>
-            <p>Bis der Key gepinnt ist, fallen <code>install.sh</code>/<code>update.sh</code> auf reine Checksummen-Prüfung zurück (mit Warnung) &ndash; kein Bruch. Zum Aktivieren:</p>
+            <p>Dieses Repo ist scharfgeschaltet: der Key ist gepinnt, die Prüfung ist damit fail-closed &ndash; eine fehlende/ungültige Signatur bricht <code>install.sh</code>/<code>update.sh</code> ab, und der Release-Workflow schlägt ohne <code>MINISIGN_SECRET_KEY</code> fehl. Ein Fork ohne eigenen Key fällt bis zur Aktivierung auf reine Checksummen-Prüfung zurück (mit Warnung). Zum Aktivieren eines Forks:</p>
 <pre><code>minisign -G -W                 # passwortloses Keypair erzeugen
 # 1) Secret-Key-Datei base64-kodiert als GitHub-Actions-Secret hinterlegen
 #    (eine Zeile, paste-sicher — ein roher mehrzeiliger Key wird sonst verstuemmelt):
@@ -117,6 +117,15 @@ gpg --export-secret-keys --armor &lt;KEYID&gt; | base64 -w0 | gh secret set REPO
 # 3) Fingerprint pinnen: in agent-deployment.html (DE+EN) den Platzhalter
 #    &lt;REPO-GPG-FINGERPRINT&gt; durch diesen Wert ersetzen:
 gpg --fingerprint &lt;KEYID&gt;</code></pre>
+            </div>
+          </div>
+          <div class="callout">
+            <div><div class="callout-title">Schl&uuml;ssel-Rotation (&Uuml;berlappungsphase)</div>
+            <p>Bei Ablauf oder Kompromittierung des Signaturschl&uuml;ssels d&uuml;rfen die Clients nicht flottenweit brechen: sie pinnen per <code>Signed-By=</code> (apt) bzw. importiertem RPM-Key den <strong>alten</strong> Schl&uuml;ssel, und der einzige Nachladeweg f&uuml;r den neuen Keyring ist ausgerechnet das Repo, dem sie ohne &Uuml;berlappung gerade nicht mehr trauen. Daher in zwei Schritten rotieren:</p>
+            <ol>
+              <li><strong>&Uuml;berlappen:</strong> Neuen Schl&uuml;ssel erzeugen (wie beim Scharfschalten). Weiterhin mit dem <em>alten</em> signieren (<code>REPO_GPG_KEY_ID=&lt;OLD&gt;</code>), aber <strong>beide</strong> Public Keys ausliefern: <code>REPO_GPG_EXPORT_IDS="&lt;OLD&gt; &lt;NEW&gt;"</code>. Ein Release ausrollen &ndash; jeder Host bekommt den neuen Key in seinen Keyring und vertraut ab sofort beiden.</li>
+              <li><strong>Umschalten</strong> (nachdem die Flotte das &Uuml;berlappungs-Release gezogen hat): mit dem <em>neuen</em> Schl&uuml;ssel signieren (<code>REPO_GPG_KEY_ID=&lt;NEW&gt;</code>), nur noch den neuen ausliefern (<code>REPO_GPG_EXPORT_IDS=&lt;NEW&gt;</code>) und den Fingerprint in <code>agent-deployment.html</code> (DE+EN) aktualisieren. Der alte Schl&uuml;ssel kann danach widerrufen werden.</li>
+            </ol>
             </div>
           </div>
 

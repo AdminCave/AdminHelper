@@ -124,3 +124,89 @@ def test_mint_for_requires_admin(test_client, normal_user):
 def test_mint_for_requires_authentication(test_client):
     res = test_client.post("/api/enrollment/token/for", json={"username": "admin"})
     assert res.status_code == 401
+
+
+def test_self_mint_writes_audit(test_client, admin_user, db_session):
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post("/api/enrollment/token", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200, res.text
+    # 3.9: minting a cert-granting token must leave an audit trail (self-mint).
+    row = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "enrollment.token.minted", AuditLog.object_id == "admin")
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.actor_id == str(admin_user.id)
+
+
+def test_admin_mint_for_writes_audit(test_client, admin_user, normal_user, db_session):
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        "/api/enrollment/token/for",
+        json={"username": "viewer"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    # 3.9: an admin minting FOR another identity is the sensitive path — the audit
+    # row records who (actor=admin) minted for whom (object_id=viewer).
+    row = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.action == "enrollment.token.minted_for",
+            AuditLog.object_id == "viewer",
+        )
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.actor_id == str(admin_user.id)
+
+
+def test_admin_mint_for_browser_flags_long_lived_leaf(
+    test_client, admin_user, normal_user, db_session
+):
+    from app.modules.audit.models import AuditLog
+
+    token = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        "/api/enrollment/token/for",
+        json={"username": "viewer", "browser": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    # 3.32: a browser=true grant for another identity is a long-lived (~1y) leaf that
+    # is only revocable under enforcement — the audit detail must flag that.
+    row = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.action == "enrollment.token.minted_for",
+            AuditLog.object_id == "viewer",
+        )
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert "long-lived" in row.detail and "MTLS_ENFORCE" in row.detail
+
+
+def test_mint_for_writes_audit(test_client, admin_user, normal_user, db_session):
+    # 6.81: the admin-mint /token/for path must leave an audit trail (3.32) — a long-lived for-another
+    # grant has to be greppable. The finding described the pre-3.32 state ("it doesn't"); this pins
+    # the current behaviour so the audit line can't silently regress out again.
+    from app.modules.audit.models import AuditLog
+
+    tok = _login(test_client, "admin", "adminpass")
+    res = test_client.post(
+        "/api/enrollment/token/for",
+        json={"username": "viewer"},
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert res.status_code == 200, res.text
+    n = db_session.query(AuditLog).filter(AuditLog.action == "enrollment.token.minted_for").count()
+    assert n == 1, f"expected exactly one enrollment audit row, got {n}"

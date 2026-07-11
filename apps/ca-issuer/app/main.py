@@ -22,55 +22,74 @@ from pydantic import BaseModel
 
 from app import config
 from app.issuer import IssuanceError, Issuer
-from app.storage import ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
+from app.storage import Intermediate, ensure_frps_cert, ensure_gateway_cert, ensure_hierarchy
 from app.tokens import InMemoryTokenStore, TokenStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("ca-issuer")
 
 
-def build_issuer(token_store: TokenStore | None = None) -> Issuer:
-    """Construct the issuer: load/create the hierarchy, wire a token store.
-
-    With DATABASE_URL set, tokens come from the shared AdminHelper DB; otherwise
-    an in-memory store is used (tests/dev). Tests may inject their own store."""
-    intermediates = ensure_hierarchy(config.PKI_DIR, config.ROOT_PASSPHRASE)
-    # First-boot bootstrap: hand the gateway an access-signed TLS leaf + trust
-    # bundle (resolves the chicken-egg — the gateway can't sign its own leaf, D6).
-    if config.GATEWAY_CERT_DIR:
+def provision_boot_material(intermediates: dict[str, Intermediate]) -> None:
+    """First-boot bootstrap: hand the gateway + frps their TLS material. Kept
+    separate from build_issuer so constructing the issuer has NO side effects on
+    foreign volumes — calling build_issuer in a test/script must not provision
+    certs into whatever CA_*_CERT_DIR happens to be set."""
+    # The gateway can't sign its own leaf (chicken-egg, D6): give it an
+    # access-signed TLS leaf + trust bundle.
+    if config.gateway_cert_dir():
         ensure_gateway_cert(
-            Path(config.GATEWAY_CERT_DIR),
+            Path(config.gateway_cert_dir()),
             intermediates["access"],
-            config.GATEWAY_DOMAIN,
-            config.GATEWAY_EXTRA_SANS,
+            config.gateway_domain(),
+            config.gateway_extra_sans(),
         )
-    # First-boot bootstrap: hand frps a tunnel-signed server cert + the tunnel
-    # trust bundle (A7), replacing its former self-run FRP CA.
-    if config.FRPS_CERT_DIR:
+    # frps gets a tunnel-signed server cert + the tunnel trust bundle (A7),
+    # replacing its former self-run FRP CA.
+    if config.frps_cert_dir():
         ensure_frps_cert(
-            Path(config.FRPS_CERT_DIR),
+            Path(config.frps_cert_dir()),
             intermediates["tunnel"],
-            config.FRPS_SERVER_ADDR,
-            config.FRPS_EXTRA_SANS,
+            config.frps_server_addr(),
+            config.frps_extra_sans(),
             # The desktop STCP visitor presents its access cert (F2), so frps must
             # trust the access intermediate alongside tunnel.
             extra_trust=(intermediates["access"],),
         )
+
+
+def build_issuer(
+    intermediates: dict[str, Intermediate], token_store: TokenStore | None = None
+) -> Issuer:
+    """Wire an Issuer over an already-loaded hierarchy + a token store. Pure
+    construction — hierarchy load + boot provisioning happen in lifespan.
+
+    With DATABASE_URL set, tokens come from the shared AdminHelper DB; otherwise
+    an in-memory store is used (tests/dev). Tests may inject their own store."""
     if token_store is None:
-        if config.DATABASE_URL:
+        if config.database_url():
             from app.db import DbTokenStore, make_engine
 
-            token_store = DbTokenStore(make_engine(config.DATABASE_URL))
+            token_store = DbTokenStore(make_engine(config.database_url()))
             logger.info("Token-Store: DB")
-        else:
+        elif config.allow_memory_store():
             token_store = InMemoryTokenStore()
-            logger.info("Token-Store: in-memory (kein DATABASE_URL)")
+            logger.warning("Token-Store: in-memory — NUR für dev/tests (nicht thread-safe)")
+        else:
+            # Fail loud, don't silently fall back: an empty DATABASE_URL in prod (env typo,
+            # forgotten variable) would otherwise 403 every enrollment while tokens sit in the
+            # DB, sending the operator to debug token handling instead of the env (4.17).
+            raise RuntimeError(
+                "DATABASE_URL fehlt — der In-Memory-Store ist nur mit CA_ALLOW_MEMORY_STORE=1 "
+                "erlaubt (dev/tests)."
+            )
     return Issuer(intermediates, token_store)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    issuer = build_issuer()  # auto-selects DB store (DATABASE_URL) or in-memory
+    intermediates = ensure_hierarchy(config.pki_dir(), config.root_passphrase())
+    provision_boot_material(intermediates)
+    issuer = build_issuer(intermediates)  # auto-selects DB store or in-memory
     app.state.issuer = issuer
     app.state.token_store = issuer.tokens  # exposed for tests / the server mint flow
     logger.info("ca-issuer bereit (PKI geladen)")

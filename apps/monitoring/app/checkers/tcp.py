@@ -7,6 +7,8 @@ from __future__ import annotations
 import socket
 import time
 
+from app.core.ssrf import is_private_url
+
 
 class TcpChecker:
     """TCP Port Check via socket.create_connection."""
@@ -18,6 +20,12 @@ class TcpChecker:
 
         if not target or not port:
             return "unknown", "Ziel oder Port fehlt", None
+
+        # Same SSRF guard as the HTTP checker: a TCP check to a private/reserved
+        # target would let anyone who can create a check port-scan the internal
+        # network (open/refused/timeout are distinguishable) (3.25).
+        if is_private_url(f"//{target}:{port}"):
+            return "unknown", "Ziel ist privat/reserviert (SSRF-Schutz)", None
 
         try:
             start = time.monotonic()

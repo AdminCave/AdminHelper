@@ -75,3 +75,106 @@ def test_legit_hook_api_still_works():
     assert "done" in res["logs"]
     assert "captured" in res["logs"]
     assert "3" in res["logs"]
+
+
+def test_hook_output_flood_is_capped():
+    # 4.139: a hook flooding fd 1 past the byte budget is rejected with an error, instead of the
+    # parent buffering the worker's output unbounded and OOMing (a public-webhook DoS). The drain
+    # thread kills the worker on overflow, so this returns promptly (not after the full timeout).
+    import time
+
+    start = time.monotonic()
+    res = run_hook_script(
+        "import os\nos.write(1, b'x' * (16 * 1024 * 1024))",  # 16 MB > 8 MB budget
+        "webhook",
+        {},
+    )
+    elapsed = time.monotonic() - start
+    assert res["success"] is False, res
+    assert "gross" in res["error"].lower(), res
+    assert elapsed < 15, f"over-budget hook should be killed promptly, took {elapsed:.1f}s"
+
+
+def test_hook_backgrounded_grandchild_does_not_hang_parent():
+    # 4.139/4.69: a hook backgrounding a subprocess that inherits fd 1/2 and outlives the worker
+    # must not hang the parent. proc.wait() only reaps the direct child, so the reader-thread join
+    # is bounded and the process group is killed to close the inherited pipe. Short timeout so the
+    # bounded join fires quickly; the grandchild (sleep 30) far outlives it.
+    import time
+
+    start = time.monotonic()
+    run_hook_script(
+        "import subprocess\nsubprocess.Popen(['sleep', '30'])\nresult['ok'] = True",
+        "webhook",
+        {},
+        timeout=2,
+    )
+    elapsed = time.monotonic() - start
+    assert elapsed < 10, f"parent hung on the grandchild's inherited pipe, took {elapsed:.1f}s"
+
+
+def test_hook_worker_env_sets_home_lang_and_forwards_proxy(monkeypatch):
+    # 4.138: HOME/LANG are set so HOME- and locale-sensitive code behaves predictably; a configured
+    # egress proxy is forwarded so a hook's HTTP calls honour it (egress/SSRF control).
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
+    res = run_hook_script(
+        "import os\n"
+        "log('HOME=' + os.environ.get('HOME', '__NONE__'))\n"
+        "log('LANG=' + os.environ.get('LANG', '__NONE__'))\n"
+        "log('PROXY=' + os.environ.get('HTTPS_PROXY', '__NONE__'))",
+        "webhook",
+        {},
+    )
+    assert res["success"] is True, res
+    joined = " ".join(res["logs"])
+    assert "HOME=__NONE__" not in joined, res
+    assert "LANG=__NONE__" not in joined, res
+    assert "PROXY=http://proxy.example:3128" in joined, res
+
+
+def test_hook_semaphore_non_blocking_returns_busy_immediately():
+    # 5.5: when all hook slots are taken, run_hook_script must return 'busy' IMMEDIATELY instead of
+    # parking the anyio threadpool thread (which FastAPI shares with sync routes) for ~10s.
+    import time
+
+    import app.modules.hooks.script_runner as sr
+
+    for _ in range(sr._MAX_CONCURRENT_HOOKS):
+        assert sr._hook_semaphore.acquire(blocking=False)
+    try:
+        start = time.monotonic()
+        res = sr.run_hook_script("result['ok'] = True", "webhook", {})
+        elapsed = time.monotonic() - start
+        assert res["success"] is False, res
+        assert "ausgelastet" in res["error"].lower(), res
+        assert elapsed < 1, f"busy must be immediate, took {elapsed:.1f}s"
+    finally:
+        for _ in range(sr._MAX_CONCURRENT_HOOKS):
+            sr._hook_semaphore.release()
+
+
+def test_semaphore_busy_returns_server_busy(monkeypatch):
+    # 6.82(c): when all concurrent-hook slots are taken, run_hook_script returns the "Server
+    # ausgelastet" response instead of spawning yet another worker. Patch the semaphore (rather than
+    # exhaust the real one) so no slot leaks into other tests.
+    from app.modules.hooks import script_runner
+
+    class _FullSemaphore:
+        def acquire(self, blocking=False):
+            return False
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(script_runner, "_hook_semaphore", _FullSemaphore())
+    res = run_hook_script("log('x')", "webhook", {})
+    assert res["success"] is False
+    assert "ausgelastet" in res["error"]
+
+
+def test_worker_nonzero_exit_maps_to_error(monkeypatch):
+    # 6.82(d): if the worker process dies with a non-zero code and no JSON on stdout, the runner
+    # reports an error instead of crashing on the missing/undecodable output.
+    res = run_hook_script("import os\nos._exit(3)", "webhook", {})
+    assert res["success"] is False
+    assert res["error"]

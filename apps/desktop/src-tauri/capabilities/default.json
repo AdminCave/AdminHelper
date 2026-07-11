@@ -5,12 +5,6 @@
   "permissions": [
     "core:default",
     "dialog:allow-save",
-    "notification:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        { "name": "binaries/frpc", "sidecar": true, "args": true }
-      ]
-    }
+    "notification:default"
   ]
 }

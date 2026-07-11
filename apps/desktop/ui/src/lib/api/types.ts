@@ -2,75 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-export interface LoginResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-}
-
-export interface RefreshResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-}
-
-export interface User {
-  id: number;
-  username: string;
-  is_admin: boolean;
-  created_at?: string;
-  server_ids?: string[];
-}
-
-export interface UserCreate {
-  username: string;
-  password: string;
-  is_admin: boolean;
-  server_ids: string[];
-}
-
-export interface UserUpdate {
-  is_admin: boolean;
-  server_ids: string[];
-  password?: string;
-}
-
-export type ApiKeyPermission = 'read' | 'read_write';
-
-export interface ApiKey {
-  id: number;
-  name: string;
-  permission: ApiKeyPermission;
-  created_at?: string;
-}
-
-export interface ApiKeyCreate {
-  name: string;
-  permission: ApiKeyPermission;
-}
-
-export interface ApiKeyCreateResult {
-  key: string;
-  id: number;
-  name: string;
-  permission: ApiKeyPermission;
-}
-
-export class ApiError extends Error {
-  readonly status: number;
-  readonly detail: unknown;
-
-  constructor(status: number, message: string, detail?: unknown) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.detail = detail;
-  }
-}
-
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-export type ConnectionKind = 'ssh' | 'rdp' | 'vnc' | 'web' | 'custom';
+export type ConnectionKind = 'ssh' | 'rdp' | 'web';
 
 export interface Connection {
   id: string;
@@ -87,11 +19,6 @@ export interface Connection {
   notes?: string | null;
   trustCert?: boolean | null;
   lastUsed?: string | null;
-  scalingMode?: string | null;
-}
-
-export interface ConnectionImportResult {
-  imported: number;
 }
 
 export interface Server {
@@ -120,68 +47,9 @@ export interface MonCheckSummary {
   state?: { status?: MonStatus } | null;
 }
 
-export interface MonitoringTemplate {
-  id: string;
-  name: string;
-}
-
 export interface TemplateAssignment {
   templateId: string;
   serverId: string;
-}
-
-export type HookType = 'webhook' | 'event' | 'schedule';
-
-export interface Hook {
-  id: string;
-  name: string;
-  description?: string | null;
-  hook_type: HookType;
-  enabled: boolean;
-  created_at?: string | null;
-  event_triggers?: string[] | null;
-  schedule_interval?: string | null;
-  last_run?: string | null;
-  next_run?: string | null;
-}
-
-export interface HookDetail extends Hook {
-  script: string;
-}
-
-export interface HookCreateResult extends HookDetail {
-  token?: string | null;
-}
-
-export interface HookCreate {
-  name: string;
-  description?: string | null;
-  hook_type: HookType;
-  script: string;
-  event_triggers?: string[];
-  schedule_interval?: string;
-}
-
-export interface HookUpdate {
-  name?: string;
-  description?: string | null;
-  script?: string;
-  enabled?: boolean;
-  event_triggers?: string[];
-  schedule_interval?: string;
-}
-
-export interface HookRunResult {
-  success?: boolean;
-  output?: string;
-  error?: string;
-  exit_code?: number;
-  duration_ms?: number;
-  [key: string]: unknown;
-}
-
-export interface HookTokenResult {
-  token: string;
 }
 
 export interface Playbook {
@@ -220,19 +88,6 @@ export interface FrpConfig {
   dashboardPassword?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-}
-
-export interface FrpConfigInput {
-  name: string;
-  server_addr: string;
-  bind_port: number;
-  vhost_https_port?: number | null;
-  auth_token?: string | null;
-  subdomain_host?: string | null;
-  max_ports_per_client?: number | null;
-  dashboard_port?: number | null;
-  dashboard_user?: string | null;
-  dashboard_password?: string | null;
 }
 
 export type FrpTunnelType = 'stcp' | 'https';
@@ -304,11 +159,6 @@ export interface FrpProvisionTokenCreateResult {
   expiresAt: string;
   serverId: string;
   serverName: string;
-}
-
-export interface MonitoringAgentKeyResult {
-  apiKey: string;
-  serverId: string;
 }
 
 // ── Monitoring (full payloads from the monitoring service) ──────────────

@@ -9,16 +9,20 @@ export type { Language } from './dictionaries';
 export type TVars = Record<string, string | number | null | undefined>;
 
 function detect(): Language {
-  const stored = localStorage.getItem('adminhelper_language');
-  if (stored === 'de' || stored === 'en') return stored;
-  const nav = (navigator.language || '').substring(0, 2);
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('adminhelper_language');
+    if (stored === 'de' || stored === 'en') return stored;
+  }
+  const nav = typeof navigator !== 'undefined' ? (navigator.language || '').substring(0, 2) : '';
   return nav === 'en' ? 'en' : 'de';
 }
 
 const _language = writable<Language>(detect());
 
 _language.subscribe((lang) => {
-  localStorage.setItem('adminhelper_language', lang);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('adminhelper_language', lang);
+  }
   if (typeof document !== 'undefined') {
     document.documentElement.lang = lang;
   }
@@ -29,17 +33,16 @@ export const language = {
   set: _language.set,
 };
 
-export function setLanguage(lang: Language): void {
-  _language.set(lang);
-}
-
 export function toggleLanguage(): void {
   _language.update((l) => (l === 'de' ? 'en' : 'de'));
 }
 
 function translate(lang: Language, key: string, vars?: TVars): string {
   const dict = translations[lang] ?? translations.en;
-  const fallback = translations.de;
+  // English is the single reference language: an unknown language and a missing
+  // key both fall back to en, so a key only maintained in de never surfaces raw
+  // German to an English user (2.137).
+  const fallback = translations.en;
   let text = dict[key] ?? fallback[key] ?? key;
   if (vars) {
     text = text.replace(/\{(\w+)\}/g, (_, token) => {

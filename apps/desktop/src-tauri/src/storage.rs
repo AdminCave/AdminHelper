@@ -66,8 +66,31 @@ fn ensure_parent(path: &Path) -> Result<(), AppError> {
 fn write_json_pretty<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), AppError> {
     ensure_parent(path)?;
     let serialized = serde_json::to_string_pretty(value)?;
-    fs::write(path, serialized)?;
-    harden_permissions(path);
+    #[cfg(unix)]
+    {
+        // Atomic write: fill a temp file, harden it, then rename over the target. A crash mid-
+        // write can never leave truncated JSON that then bricks load_settings — which nearly
+        // every command calls — nor lose every local connection in connections.local.json (4.30);
+        // and the target is never briefly world-readable. rename is atomic within the same
+        // directory, and harden is a cheap chmod on Unix, so it runs on every write.
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, &serialized)?;
+        harden_permissions(&tmp);
+        fs::rename(&tmp, path)?;
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows keeps the in-place write: a temp+rename would drop the file's hardened ACLs
+        // (std can't clone them across the rename) and re-hardening the temp would spawn an
+        // icacls process on every sync (2.87). fs::write preserves the existing ACLs (it only
+        // truncates content); harden only a freshly-created file. (Atomic write on Windows would
+        // need the winapi to copy the ACLs onto the temp — a follow-up.)
+        let existed = path.exists();
+        fs::write(path, &serialized)?;
+        if !existed {
+            harden_permissions(path);
+        }
+    }
     Ok(())
 }
 
@@ -118,18 +141,28 @@ pub fn migrate_legacy_local_store(app: &tauri::AppHandle) -> Result<(), AppError
     if !matches!(current_mode(app), SyncMode::Local) {
         return Ok(());
     }
-    let local = local_data_path(app)?;
+    // The data-loss-critical copy lives in migrate_between (path-based) so its guards are
+    // unit-tested; the AppHandle here only resolves the two paths (6.34).
+    migrate_between(&data_path(app)?, &local_data_path(app)?, &SyncMode::Local)
+}
+
+// Copies the legacy store to the local store ONLY when: mode is Local, the local target does not yet
+// exist (never overwrite user data), and the legacy source exists. A sign flip in any of the three
+// guards would silently overwrite the single local connection store or skip the migration (6.34).
+fn migrate_between(legacy: &Path, local: &Path, mode: &SyncMode) -> Result<(), AppError> {
+    if !matches!(mode, SyncMode::Local) {
+        return Ok(());
+    }
     if local.exists() {
         return Ok(());
     }
-    let legacy = data_path(app)?;
     if !legacy.exists() {
         return Ok(());
     }
-    let data = fs::read_to_string(&legacy)?;
-    ensure_parent(&local)?;
-    fs::write(&local, data)?;
-    harden_permissions(&local);
+    let data = fs::read_to_string(legacy)?;
+    ensure_parent(local)?;
+    fs::write(local, data)?;
+    harden_permissions(local);
     Ok(())
 }
 
@@ -200,8 +233,41 @@ pub fn harden_permissions(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
-    use super::connections_file_name;
+    use super::{connections_file_name, read_json_or_default, write_json_pretty};
     use crate::models::SyncMode;
+
+    #[test]
+    fn write_json_pretty_round_trips_without_orphan_temp() {
+        // 4.30: the write must round-trip, leave no .tmp orphan behind, and (Unix) land a 0600
+        // target — the atomic temp+rename path.
+        // Per-process dir so two concurrent `cargo test` runs don't share it and the teardown
+        // can't delete the other run's data.
+        let dir =
+            std::env::temp_dir().join(format!("ah-write-json-pretty-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        write_json_pretty(&path, &serde_json::json!({"a": 1})).unwrap();
+
+        assert!(path.exists());
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "no orphan temp file"
+        );
+        let v: serde_json::Value = read_json_or_default(&path).unwrap();
+        assert_eq!(v["a"], 1);
+        // Overwrite an existing file — still round-trips, still no orphan.
+        write_json_pretty(&path, &serde_json::json!({"a": 2})).unwrap();
+        let v: serde_json::Value = read_json_or_default(&path).unwrap();
+        assert_eq!(v["a"], 2);
+        assert!(!path.with_extension("json.tmp").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "target hardened to 0600");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn local_mode_has_its_own_connections_file() {
@@ -213,5 +279,107 @@ mod tests {
         assert_eq!(connections_file_name(&SyncMode::Sync), "connections.json");
         assert_ne!(local, connections_file_name(&SyncMode::Server));
         assert_ne!(local, connections_file_name(&SyncMode::Sync));
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::{migrate_between, read_json_or_default};
+    use crate::models::SyncMode;
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ah-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn migration_never_overwrites_an_existing_local_store() {
+        let dir = scratch("mig-overwrite");
+        let (legacy, local) = (
+            dir.join("connections.json"),
+            dir.join("connections.local.json"),
+        );
+        std::fs::write(&legacy, "[]").unwrap();
+        std::fs::write(&local, r#"[{"id":"keep"}]"#).unwrap();
+
+        migrate_between(&legacy, &local, &SyncMode::Local).unwrap();
+
+        // The existing local store must be untouched — the guard exists to prevent data loss.
+        assert_eq!(
+            std::fs::read_to_string(&local).unwrap(),
+            r#"[{"id":"keep"}]"#
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migration_copies_legacy_when_local_absent() {
+        let dir = scratch("mig-copy");
+        let (legacy, local) = (
+            dir.join("connections.json"),
+            dir.join("connections.local.json"),
+        );
+        std::fs::write(&legacy, r#"[{"id":"old"}]"#).unwrap();
+
+        migrate_between(&legacy, &local, &SyncMode::Local).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&local).unwrap(),
+            r#"[{"id":"old"}]"#
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migration_skipped_when_not_local_mode() {
+        let dir = scratch("mig-mode");
+        let (legacy, local) = (
+            dir.join("connections.json"),
+            dir.join("connections.local.json"),
+        );
+        std::fs::write(&legacy, "[]").unwrap();
+
+        migrate_between(&legacy, &local, &SyncMode::Server).unwrap();
+
+        assert!(!local.exists(), "non-Local mode must not migrate");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migration_skipped_without_legacy_source() {
+        let dir = scratch("mig-nolegacy");
+        let (legacy, local) = (
+            dir.join("connections.json"),
+            dir.join("connections.local.json"),
+        );
+
+        migrate_between(&legacy, &local, &SyncMode::Local).unwrap();
+
+        assert!(!local.exists(), "no legacy source -> nothing to migrate");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_json_or_default_handles_missing_valid_and_corrupt() {
+        let dir = scratch("readjson");
+
+        // Missing -> default.
+        let missing: Vec<i32> = read_json_or_default(&dir.join("missing.json")).unwrap();
+        assert_eq!(missing, Vec::<i32>::new());
+
+        // Valid -> parsed.
+        let valid_path = dir.join("valid.json");
+        std::fs::write(&valid_path, "[1,2,3]").unwrap();
+        let valid: Vec<i32> = read_json_or_default(&valid_path).unwrap();
+        assert_eq!(valid, vec![1, 2, 3]);
+
+        // Corrupt -> Err, so the caller surfaces the error instead of a silent default.
+        let corrupt_path = dir.join("corrupt.json");
+        std::fs::write(&corrupt_path, "{not json").unwrap();
+        let corrupt: Result<Vec<i32>, _> = read_json_or_default(&corrupt_path);
+        assert!(corrupt.is_err(), "corrupt JSON must be an error");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

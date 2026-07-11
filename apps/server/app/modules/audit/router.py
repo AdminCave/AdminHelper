@@ -31,7 +31,10 @@ def list_audit(
     object_id: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     q: str | None = Query(None, description="Free-text match on actor/object label"),
-    limit: int | None = Query(None, ge=1, le=1000),
+    # Default cap (unlike the legacy None default on the small servers/hooks lists): the audit log
+    # grows for AUDIT_RETENTION_DAYS (365), so an unlimited fetch would materialize hundreds of
+    # thousands of rows. Callers paginate with offset for more (5.28).
+    limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
     """List audit entries, newest first, with optional filters."""

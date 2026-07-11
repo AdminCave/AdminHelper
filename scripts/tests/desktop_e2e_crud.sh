@@ -42,18 +42,20 @@ echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.ad
 echo "[e2e-crud] running the CRUD specs under xvfb..."
 export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 
-# Order: connection + tunnel run while only the seeded server exists; the server
-# spec (which adds/removes its own server) runs last.
+# Order: enroll-form is login-screen-only (never logs in, touches no server data),
+# so it leads; connection + tunnel run while only the seeded server exists; the
+# server spec (which adds/removes its own server) runs last.
 dbus-run-session -- bash -c '
     eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
     export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
     cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/enroll-form.live.js \
         --spec test/specs/connection-crud.live.js \
         --spec test/specs/tunnel-crud.live.js \
         --spec test/specs/provisioning.live.js \
         --spec test/specs/server-crud.live.js \
         --spec test/specs/settings-mode.live.js
-' && ok "GUI specs (connection / tunnel / provisioning / server / settings) passed" || bad "GUI specs failed"
+' && ok "GUI specs (enroll / connection / tunnel / provisioning / server / settings) passed" || bad "GUI specs failed"
 
 echo ""
 echo "desktop_e2e_crud: $PASS passed, $FAIL failed"

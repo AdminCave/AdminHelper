@@ -76,17 +76,48 @@ restore_volume ca-pki          ca-pki.tar.gz
 restore_volume monitoring-data monitoring-data.tar.gz
 restore_volume victoria-data   victoria-data.tar.gz
 
+# ./data is a host bind mount, not a named volume, so restore it directly (it carries
+# the server's .secret_key). Stack is down here, matching restore_volume (2.36).
+if [ -f "$STAGE/server-data.tar.gz" ]; then
+    echo "[restore] ./data <- server-data.tar.gz"
+    # Same escape guard as the outer archive above: this inner tarball is unpacked
+    # with the host tar directly into the repo (NOT container-jailed like the volume
+    # restores), so a crafted symlink/../ member could otherwise write out of ./data.
+    tar tzf  "$STAGE/server-data.tar.gz" > "$STAGE/.dnames"
+    tar tzvf "$STAGE/server-data.tar.gz" > "$STAGE/.dverbose"
+    if grep -Eq '^/|(^|/)\.\.(/|$)' "$STAGE/.dnames" || grep -Eq '^[lh]' "$STAGE/.dverbose"; then
+        echo "[restore] FEHLER: server-data.tar.gz enthaelt absolute/../-Pfade oder Sym-/Hardlinks — abgebrochen." >&2
+        exit 1
+    fi
+    rm -f "$STAGE/.dnames" "$STAGE/.dverbose"
+    mkdir -p data
+    find data -mindepth 1 -delete 2>/dev/null || true
+    tar xzf "$STAGE/server-data.tar.gz" -C data --no-same-owner --no-same-permissions
+else
+    echo "[restore] server-data.tar.gz nicht im Backup — überspringe ./data"
+fi
+
 echo "[restore] Starte postgres für den DB-Restore..."
 docker compose up -d postgres
 # Wait for postgres to accept connections.
+ready=0
 for _ in $(seq 1 60); do
-    if docker compose exec -T postgres pg_isready -U adminhelper >/dev/null 2>&1; then break; fi
+    if docker compose exec -T postgres pg_isready -U adminhelper >/dev/null 2>&1; then ready=1; break; fi
     sleep 1
 done
+# The loop just falling through on timeout would let restore_db run against a
+# not-ready postgres and fail confusingly mid-restore — abort clearly (4.54).
+[ "$ready" = 1 ] || { echo "[restore] FEHLER: postgres nach 60s nicht bereit — Abbruch." >&2; exit 1; }
 
 restore_db() {
     db="$1"
     [ -f "$STAGE/$db.dump" ] || { echo "[restore] $db.dump nicht im Backup — überspringe"; return; }
+    # On a fresh host postgres only inits the default DB (POSTGRES_DB=adminhelper);
+    # adminhelper_monitor is normally created by the monitoring entrypoint, which is
+    # not running during restore. Ensure the target DB exists first, else pg_restore
+    # connects to a missing DB and set -e aborts fresh-host DR mid-way (2.4).
+    docker compose exec -T postgres sh -c \
+        "export PGPASSWORD=\$POSTGRES_PASSWORD; psql -h 127.0.0.1 -U adminhelper -tc \"SELECT 1 FROM pg_database WHERE datname='$db'\" | grep -q 1 || createdb -h 127.0.0.1 -U adminhelper \"$db\""
     echo "[restore] pg_restore $db"
     docker compose exec -T postgres sh -c \
         "PGPASSWORD=\$POSTGRES_PASSWORD pg_restore -h 127.0.0.1 -U adminhelper --clean --if-exists --no-owner -d \"$db\"" \

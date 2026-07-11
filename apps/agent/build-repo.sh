@@ -95,6 +95,15 @@ cp "$DEB" "${APT_ROOT}/pool/${REPO_COMPONENT}/"
 
 # Release file with the per-index checksums (SHA256 is the security-relevant one;
 # MD5Sum/SHA1 added for older clients). apt-ftparchive scans the dists subtree.
+#
+# Valid-Until bounds a freeze/replay attack: the repo plane is deliberately certless
+# (the docs allow Verify-Peer=false), so a MITM could otherwise serve an old but
+# correctly-signed Release indefinitely, pinning a host on a vulnerable agent version
+# with apt none the wiser. apt checks Valid-Until by default (it's part of the signed
+# Release). Trade-off: apt update fails once the window lapses with no newer release,
+# so keep it comfortably longer than the release cadence (180d). LC_ALL=C forces the
+# RFC 2822 English month/day names apt requires — a localized date ("Sa"/"Mo") won't
+# parse. (The rpm side has no equivalent: repomd.xml.asc carries no expiry.)
 (
     cd "$APT_ROOT"
     apt-ftparchive \
@@ -107,14 +116,25 @@ cp "$DEB" "${APT_ROOT}/pool/${REPO_COMPONENT}/"
         -o "APT::FTPArchive::Release::Version=${VERSION}" \
         release "dists/${REPO_SUITE}" > "dists/${REPO_SUITE}/Release"
 
+    # apt-ftparchive (apt 3.0.x) silently ignores -o ...::Release::Valid-Until, so inject
+    # it after Date — a top-level field, ahead of the checksum blocks — before signing.
+    sed -i "/^Date: /a Valid-Until: $(LC_ALL=C date -u -d '+180 days' '+%a, %d %b %Y %H:%M:%S UTC')" \
+        "dists/${REPO_SUITE}/Release"
+
     # Server SHALL provide InRelease (clearsigned); also emit the detached
     # Release.gpg for older clients (Debian repo format spec).
     gpg_sign --clearsign -o "dists/${REPO_SUITE}/InRelease" "dists/${REPO_SUITE}/Release"
     gpg_sign -abs -o "dists/${REPO_SUITE}/Release.gpg" "dists/${REPO_SUITE}/Release"
 )
 
-# Public key, DEARMORED (binary) — apt's signed-by= must not be ASCII-armored.
-gpg --export "$REPO_GPG_KEY_ID" > "${APT_ROOT}/${KEYRING_NAME}"
+# Public keys to ship in the client keyring. Defaults to the signing key; during a key
+# rotation set REPO_GPG_EXPORT_IDS="OLD NEW" so hosts pinned to the old key keep trusting
+# the repo through the overlap window, before the signing key itself switches (audit 8.3).
+REPO_GPG_EXPORT_IDS="${REPO_GPG_EXPORT_IDS:-$REPO_GPG_KEY_ID}"
+
+# Public key(s), DEARMORED (binary) — apt's signed-by= must not be ASCII-armored.
+# shellcheck disable=SC2086  # intentional word-splitting: REPO_GPG_EXPORT_IDS is a key list
+gpg --export $REPO_GPG_EXPORT_IDS > "${APT_ROOT}/${KEYRING_NAME}"
 
 # ── RPM/YUM repository ──────────────────────────────────────────────────────
 echo "--- RPM repo ---"
@@ -122,9 +142,10 @@ mkdir -p "$RPM_ROOT"
 cp "$RPM" "${RPM_ROOT}/"
 RPM_FILE="${RPM_ROOT}/$(basename "$RPM")"
 
-# Public key, ARMORED (ASCII) — dnf's gpgkey= expects an armored key. Exported
-# first so the signature self-check below can import it.
-gpg --export --armor "$REPO_GPG_KEY_ID" > "${RPM_ROOT}/${RPM_KEY_NAME}"
+# Public key(s), ARMORED (ASCII) — dnf's gpgkey= expects an armored key. Exported
+# first so the signature self-check below can import it. Same rotation list as apt.
+# shellcheck disable=SC2086  # intentional word-splitting: REPO_GPG_EXPORT_IDS is a key list
+gpg --export --armor $REPO_GPG_EXPORT_IDS > "${RPM_ROOT}/${RPM_KEY_NAME}"
 
 # Sign the package itself (gpgcheck=1). __gpg pins the gpg binary; the loopback
 # args let a passphrase-less key sign non-interactively.

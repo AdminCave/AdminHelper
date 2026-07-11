@@ -5,7 +5,9 @@
 package monitor
 
 import (
+	"math"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -28,8 +30,11 @@ var skipFSTypes = map[string]bool{
 // Mount prefixes to skip (Linux-specific).
 var skipMountPrefixes = []string{"/sys", "/proc", "/dev/", "/run/snapd", "/snap"}
 
+// cpuSampleInterval is a variable so tests can skip the 1s blocking CPU sample.
+var cpuSampleInterval = 1 * time.Second
+
 func collectCPU() float64 {
-	percents, err := cpu.Percent(1*time.Second, false)
+	percents, err := cpu.Percent(cpuSampleInterval, false)
 	if err != nil || len(percents) == 0 {
 		return 0
 	}
@@ -112,7 +117,7 @@ func collectUptime() int {
 
 func hasPrefix(s string, prefixes []string) bool {
 	for _, p := range prefixes {
-		if len(s) >= len(p) && s[:len(p)] == p {
+		if strings.HasPrefix(s, p) {
 			return true
 		}
 	}
@@ -120,9 +125,9 @@ func hasPrefix(s string, prefixes []string) bool {
 }
 
 func round1(f float64) float64 {
-	return float64(int(f*10+0.5)) / 10
+	return math.Round(f*10) / 10
 }
 
 func round2(f float64) float64 {
-	return float64(int(f*100+0.5)) / 100
+	return math.Round(f*100) / 100
 }

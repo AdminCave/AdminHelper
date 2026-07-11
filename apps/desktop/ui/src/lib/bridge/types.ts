@@ -6,9 +6,9 @@
 // Correspond 1:1 to the structs/enums in apps/desktop/src-tauri/src/models.rs
 // and to the command signatures in apps/desktop/src-tauri/src/commands.rs.
 //
-// These types are DELIBERATELY separate from src/lib/api/types.ts (web API).
-// The Rust backend connection type is narrower (only ssh/rdp/web) than the
-// server API type (ssh/rdp/vnc/web/custom).
+// These types are DELIBERATELY separate from src/lib/api/types.ts (web API):
+// this file mirrors the Rust backend structs, api/types.ts mirrors the server
+// HTTP API. Both use the same connection kinds (ssh/rdp/web).
 //
 // When models.rs changes, update this file manually.
 

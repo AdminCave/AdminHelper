@@ -42,7 +42,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   <nav class="srv-tabs">
     {#each tabs as tab (tab.id)}
-      <button class="srv-tab" class:active={active === tab.id} onclick={() => (active = tab.id)}>
+      <button
+        class="srv-tab"
+        class:active={active === tab.id}
+        data-tab={tab.id}
+        onclick={() => (active = tab.id)}
+      >
         {$t(tab.labelKey)}
       </button>
     {/each}

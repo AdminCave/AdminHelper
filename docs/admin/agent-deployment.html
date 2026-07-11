@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -55,19 +55,24 @@ sudo apt install "./adminhelper-agent_${VERSION}_amd64.deb"</code></pre>
 <pre><code>sudo dnf install ./adminhelper-agent-*.x86_64.rpm</code></pre>
 
           <h2>Aus dem AdminHelper-Paket-Repo (<code>apt upgrade</code> / <code>dnf upgrade</code>)</h2>
-          <p>Der AdminHelper-Server stellt selbst ein <strong>GPG-signiertes</strong> apt-/rpm-Repo auf der Repo-Plane des Gateways bereit (Port <code>REPO_PORT</code>, Default <code>8445</code>, certless). Damit bekommen Agent-Hosts neue Versionen &uuml;ber den normalen Paketmanager statt per manuellem Download &mdash; gedacht vor allem f&uuml;r <strong>laufende Updates</strong> auf vielen Servern. <em>Voraussetzung:</em> der Server l&auml;uft mit konfiguriertem Repo-Signaturschl&uuml;ssel (siehe <a href="../developer/cicd.html">CI/CD &amp; Release</a>); sonst liefert <code>/repo</code> nur <code>404</code>.</p>
+          <p>Der AdminHelper-Server stellt selbst ein <strong>GPG-signiertes</strong> apt-/rpm-Repo auf der Repo-Plane des Gateways bereit (Port <code>REPO_PORT</code>, Default <code>8445</code>, certless). Damit bekommen Agent-Hosts neue Versionen &uuml;ber den normalen Paketmanager statt per manuellem Download &mdash; gedacht vor allem f&uuml;r <strong>laufende Updates</strong> auf vielen Servern. <em>Voraussetzung:</em> der Server l&auml;uft mit konfiguriertem Repo-Signaturschl&uuml;ssel (siehe <a href="../developer/cicd.html">CI/CD &amp; Release</a>); sonst liefern die <code>/apt</code>- und <code>/rpm</code>-Pfade nur <code>404</code>.</p>
           <p><strong>Vertrauenswurzel ist der GPG-Fingerprint</strong>, nicht der Transport: die Paket-Authentizit&auml;t h&auml;ngt an der Signatur (wie bei jedem Distro-Mirror). Pr&uuml;fe den Fingerprint des geladenen Schl&uuml;ssels gegen den ver&ouml;ffentlichten Wert (<code>912E1EC637F49C978EAD47DF926B404297E9DC1C</code>), bevor du fortf&auml;hrst.</p>
 
           <h3>Debian/Ubuntu (apt)</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>SERVER=srm.example.com                 # dein AdminHelper-Server
-REPO="https://${SERVER}:8445/repo"
+REPO="https://${SERVER}:8445"
 
-# 1) Signaturschluessel holen + Fingerprint pruefen (Vertrauenswurzel!)
+# 1) Signaturschluessel holen und Fingerprint ERZWUNGEN vergleichen (Vertrauenswurzel!)
+#    Erst nach /tmp laden, gegen den veroeffentlichten Wert pruefen, dann installieren —
+#    ein blosses "--show-keys" gibt den Fingerprint nur aus, vergleicht aber nichts.
+FPR=912E1EC637F49C978EAD47DF926B404297E9DC1C
 sudo install -d -m 0755 /usr/share/keyrings
-curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" \
-  | sudo tee /usr/share/keyrings/adminhelper-archive-keyring.gpg &gt;/dev/null
-gpg --show-keys --with-fingerprint /usr/share/keyrings/adminhelper-archive-keyring.gpg
+curl -fsSL "${REPO}/apt/adminhelper-archive-keyring.gpg" -o /tmp/ah-keyring.gpg
+gpg --show-keys --with-colons /tmp/ah-keyring.gpg \
+  | awk -F: '/^fpr:/{print $10; exit}' | grep -qx "$FPR" \
+  || { echo "FEHLER: Keyring-Fingerprint weicht ab — Abbruch!"; exit 1; }
+sudo install -D -m 0644 /tmp/ah-keyring.gpg /usr/share/keyrings/adminhelper-archive-keyring.gpg
 
 # 2) Repo-Quelle (deb822); Signed-By bindet das Repo an genau diesen Schluessel
 sudo tee /etc/apt/sources.list.d/adminhelper.sources &gt;/dev/null &lt;&lt;EOF
@@ -75,6 +80,7 @@ Types: deb
 URIs: ${REPO}/apt
 Suites: stable
 Components: main
+Architectures: amd64
 Signed-By: /usr/share/keyrings/adminhelper-archive-keyring.gpg
 EOF
 
@@ -93,7 +99,7 @@ sudo apt install adminhelper-agent     # spaetere Updates: apt upgrade</code></p
           <h3>Rocky/Alma/RHEL (dnf)</h3>
           <div class="code-header"><span>bash</span></div>
 <pre><code>SERVER=srm.example.com
-REPO="https://${SERVER}:8445/repo"
+REPO="https://${SERVER}:8445"
 sudo tee /etc/yum.repos.d/adminhelper.repo &gt;/dev/null &lt;&lt;EOF
 [adminhelper]
 name=AdminHelper Agent
@@ -102,9 +108,11 @@ enabled=1
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=${REPO}/rpm/RPM-GPG-KEY-adminhelper
-# Variante A (gehaertet): sslcacert=/etc/adminhelper/identity/ca.crt
-# Variante B (einfach, ohne CA-Datei):
-sslverify=0
+# Variante A (gehaertet, Host bereits enrollt -> interne CA vorhanden):
+sslcacert=/etc/adminhelper/identity/ca.crt
+# Variante B — nur fuer den allerersten Bootstrap eines noch nicht enrollten Hosts;
+# nach dem Enrollment entfernen und Variante A nutzen:
+# sslverify=0
 EOF
 sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></pre>
 
@@ -150,7 +158,7 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
               <tr><td><code>service uninstall</code></td><td>OS-Service deregistrieren</td><td>—</td></tr>
             </tbody>
           </table>
-          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen.</p>
+          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>- oder <code>monitor init</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen. <strong>Trust-on-first-use-Trade-off:</strong> sitzt ein Angreifer bereits waehrend dieses ersten Aufrufs on-path, pinnt <code>--insecure</code> <em>dessen</em> Zertifikat als permanenten Trust-Anchor. Um das zu erkennen, gibt <code>provision</code> den SHA-256-Fingerprint des gepinnten Zertifikats aus &mdash; pruefe ihn out-of-band gegen den vom AdminHelper-Server angezeigten Fingerprint, oder nutze <code>--cacert</code>, um das Risiko ganz zu vermeiden.</p>
 
           <h2>Windows (MSI)</h2>
           <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>

@@ -5,9 +5,9 @@
 use serde::Deserialize;
 
 use crate::error::AppError;
+use crate::keyring_store;
 use crate::models::AuthSession;
 
-const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
 const KEYRING_JWT_KEY: &str = "auth|jwt";
 const KEYRING_REFRESH_KEY: &str = "auth|refresh";
 const KEYRING_SERVER_URL_KEY: &str = "auth|server_url";
@@ -31,32 +31,6 @@ struct MeResponse {
     is_admin: bool,
 }
 
-pub fn build_client(
-    server_url: &str,
-    allow_self_signed: bool,
-) -> Result<reqwest::Client, AppError> {
-    // Choke point for every authenticated request (login, refresh, me, get,
-    // logout) plus api_proxy and the tunnel/connection JWT paths: refuse to send
-    // credentials to a non-TLS server. The scheme is never relaxed.
-    crate::validation::validate_server_url_secure(server_url)?;
-    // Once this device is enrolled (A5), present the mTLS client cert and verify
-    // the server against the pinned CA chain. This supersedes the self-signed /
-    // public-CA paths below — the pinned CA is a stronger trust anchor than a
-    // single leaf pin and survives gateway leaf rotation (D2).
-    if crate::enrollment::is_enrolled() {
-        return crate::enrollment::enrolled_client();
-    }
-    if allow_self_signed {
-        // NOT danger_accept_invalid_certs(true) — that would disable chain AND
-        // hostname checks with no pinning, leaving every credential open to an
-        // on-path MITM. Pin the server's certificate on first use instead.
-        crate::tofu::pinning_client(server_url)
-    } else {
-        // Public-CA path: reqwest's default full validation against webpki-roots.
-        reqwest::Client::builder().build().map_err(AppError::from)
-    }
-}
-
 pub async fn login(
     server_url: &str,
     username: &str,
@@ -64,7 +38,7 @@ pub async fn login(
     allow_self_signed: bool,
 ) -> Result<AuthSession, AppError> {
     let url = format!("{}/api/auth/login", server_url.trim_end_matches('/'));
-    let client = build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({
         "username": username,
         "password": password,
@@ -99,7 +73,13 @@ pub async fn login(
     // Best-effort: a transient failure must not break a successful login. This
     // is the only renew trigger now that startup re-authenticates with a fresh
     // login instead of silently restoring the session from the keyring.
-    let _ = crate::enrollment::maybe_renew(&session.server_url).await;
+    // Best-effort, but log a failure: login is the ONLY renew trigger, so a renew that fails for
+    // weeks (ca-issuer down, broken route) would otherwise be silent until the client cert expires
+    // and locks the user out under enforced mTLS. The warning lands in the diagnostics report
+    // (4.92).
+    if let Err(e) = crate::enrollment::maybe_renew(&session.server_url).await {
+        log::warn!("mTLS-Zertifikat-Renew fehlgeschlagen (best-effort, naechster Versuch beim naechsten Login): {e}");
+    }
 
     Ok(session)
 }
@@ -110,7 +90,7 @@ async fn fetch_me(
     allow_self_signed: bool,
 ) -> Result<MeResponse, AppError> {
     let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
-    let client = build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let response = client
         .get(&url)
         .header("Authorization", format!("Bearer {token}"))
@@ -131,7 +111,7 @@ async fn try_refresh(
     allow_self_signed: bool,
 ) -> Result<AuthSession, AppError> {
     let url = format!("{}/api/auth/refresh", server_url.trim_end_matches('/'));
-    let client = build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({ "refresh_token": refresh_token });
 
     let response = client.post(&url).json(&body).send().await?;
@@ -162,10 +142,12 @@ pub async fn authenticated_get(
     // FINAL composed URL (a `path` with a leading `@`/`\`/`://` can rewrite the
     // authority) drifts off the logged-in server. server_url and token both
     // originate from frontend commands, so this is a real boundary.
-    if let Some(stored) = stored_server_url() {
-        crate::validation::validate_proxy_path(server_url, path, &stored)?;
-    }
-    let client = build_client(server_url, allow_self_signed)?;
+    crate::validation::require_pinned_destination(
+        server_url,
+        path,
+        stored_server_url().as_deref(),
+    )?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let url = format!("{}{}", server_url.trim_end_matches('/'), path);
 
     let response = client
@@ -180,7 +162,14 @@ pub async fn authenticated_get(
             if let Ok(new_session) =
                 try_refresh(server_url, &refresh_token, allow_self_signed).await
             {
-                let _ = save_session_to_keyring(&new_session);
+                if let Err(e) = save_session_to_keyring(&new_session) {
+                    // The server has already rotated the refresh token, so the new one lives
+                    // only in this retry — the keyring still holds the old, now-invalidated
+                    // token, and the next 401 will refresh with a dead token and silently log the
+                    // user out. Can't recover here (the keyring is the only store), but log it so
+                    // the pattern is visible in the diagnostics report (4.26).
+                    log::warn!("Rotiertes Session-Token nicht im Keyring gespeichert: {e}");
+                }
                 let retry = client
                     .get(&url)
                     .header("Authorization", format!("Bearer {}", new_session.token))
@@ -216,7 +205,7 @@ async fn notify_server_logout(
     allow_self_signed: bool,
 ) -> Result<(), AppError> {
     let url = format!("{}/api/auth/logout", server_url.trim_end_matches('/'));
-    let client = build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let body = serde_json::json!({ "refresh_token": refresh_token });
     let _ = client
         .post(&url)
@@ -238,97 +227,26 @@ pub fn stored_server_url() -> Option<String> {
 }
 
 fn save_session_to_keyring(session: &AuthSession) -> Result<(), AppError> {
-    #[cfg(unix)]
-    {
-        use keyring::Entry;
-        let jwt_entry = Entry::new(KEYRING_SERVICE, KEYRING_JWT_KEY)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        jwt_entry
-            .set_password(&session.token)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let refresh_entry = Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_KEY)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        refresh_entry
-            .set_password(&session.refresh_token)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let url_entry = Entry::new(KEYRING_SERVICE, KEYRING_SERVER_URL_KEY)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        url_entry
-            .set_password(&session.server_url)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        Ok(())
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use crate::password::{to_utf16_null, windows_store_credential};
-        windows_store_credential(KEYRING_JWT_KEY, "adminhelper", &session.token)?;
-        windows_store_credential(KEYRING_REFRESH_KEY, "adminhelper", &session.refresh_token)?;
-        windows_store_credential(KEYRING_SERVER_URL_KEY, "adminhelper", &session.server_url)?;
-        Ok(())
-    }
-    #[cfg(not(any(target_os = "windows", unix)))]
-    {
-        Ok(())
-    }
+    keyring_store::set(KEYRING_JWT_KEY, &session.token)?;
+    keyring_store::set(KEYRING_REFRESH_KEY, &session.refresh_token)?;
+    keyring_store::set(KEYRING_SERVER_URL_KEY, &session.server_url)?;
+    Ok(())
 }
 
 fn load_session_from_keyring() -> Result<(String, String, String), AppError> {
-    #[cfg(unix)]
-    {
-        use keyring::Entry;
-        let jwt_entry = Entry::new(KEYRING_SERVICE, KEYRING_JWT_KEY)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let token = jwt_entry
-            .get_password()
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let refresh_entry = Entry::new(KEYRING_SERVICE, KEYRING_REFRESH_KEY)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let refresh_token = refresh_entry.get_password().unwrap_or_default();
-        let url_entry = Entry::new(KEYRING_SERVICE, KEYRING_SERVER_URL_KEY)
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        let server_url = url_entry
-            .get_password()
-            .map_err(|e| AppError::Keyring(e.to_string()))?;
-        Ok((server_url, token, refresh_token))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use crate::password::windows_read_credential;
-        let token = windows_read_credential(KEYRING_JWT_KEY)?;
-        let refresh_token = windows_read_credential(KEYRING_REFRESH_KEY).unwrap_or_default();
-        let server_url = windows_read_credential(KEYRING_SERVER_URL_KEY)?;
-        Ok((server_url, token, refresh_token))
-    }
-    #[cfg(not(any(target_os = "windows", unix)))]
-    {
-        Err(AppError::Keyring("Plattform nicht unterstützt".to_string()))
-    }
+    // JWT and server_url are required (a missing entry is "no session"); the
+    // refresh token is optional and degrades to empty.
+    let token = keyring_store::get(KEYRING_JWT_KEY)
+        .ok_or_else(|| AppError::Keyring("Keine Session".to_string()))?;
+    let refresh_token = keyring_store::get(KEYRING_REFRESH_KEY).unwrap_or_default();
+    let server_url = keyring_store::get(KEYRING_SERVER_URL_KEY)
+        .ok_or_else(|| AppError::Keyring("Keine Session".to_string()))?;
+    Ok((server_url, token, refresh_token))
 }
 
 fn clear_keyring() -> Result<(), AppError> {
-    #[cfg(unix)]
-    {
-        use keyring::{Entry, Error as KeyringError};
-        for key in [KEYRING_JWT_KEY, KEYRING_REFRESH_KEY, KEYRING_SERVER_URL_KEY] {
-            if let Ok(entry) = Entry::new(KEYRING_SERVICE, key) {
-                match entry.delete_credential() {
-                    Ok(_) | Err(KeyringError::NoEntry) => {}
-                    Err(e) => return Err(AppError::Keyring(e.to_string())),
-                }
-            }
-        }
-        Ok(())
+    for key in [KEYRING_JWT_KEY, KEYRING_REFRESH_KEY, KEYRING_SERVER_URL_KEY] {
+        keyring_store::delete(key)?;
     }
-    #[cfg(target_os = "windows")]
-    {
-        use crate::password::windows_delete_credential;
-        let _ = windows_delete_credential(KEYRING_JWT_KEY);
-        let _ = windows_delete_credential(KEYRING_REFRESH_KEY);
-        let _ = windows_delete_credential(KEYRING_SERVER_URL_KEY);
-        Ok(())
-    }
-    #[cfg(not(any(target_os = "windows", unix)))]
-    {
-        Ok(())
-    }
+    Ok(())
 }

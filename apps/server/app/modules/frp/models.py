@@ -8,9 +8,9 @@ from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 
 class FrpServerConfig(Base):
@@ -28,8 +28,8 @@ class FrpServerConfig(Base):
     dashboard_user = Column(String, nullable=True)
     dashboard_password = Column(String, nullable=True)
     extra_config = Column(String, nullable=True)  # JSON for additional frps.toml fields
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
+    updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     tunnels = relationship(
         "FrpTunnel",
@@ -102,7 +102,7 @@ class FrpTunnel(Base):
     enabled = Column(Boolean, default=True)
     extra_config = Column(String, nullable=True)  # JSON
     tags = Column(String, nullable=True)  # JSON array
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     @staticmethod
     def generate_secret() -> str:
@@ -127,8 +127,3 @@ class FrpTunnel(Base):
             "tags": json.loads(self.tags) if self.tags else [],
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
-
-
-# ProvisionToken moved to app.modules.provisioning.models since v0.23.0.
-# Re-export for backwards compatibility (e.g. test-fixture imports).
-from app.modules.provisioning.models import ProvisionToken  # noqa: E402,F401

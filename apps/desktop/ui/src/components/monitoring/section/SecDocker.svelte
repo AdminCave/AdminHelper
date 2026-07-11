@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck } from '$lib/api/types';
+  import type { MonitorCheck, MonitorContainerDetails } from '$lib/api/types';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -18,12 +18,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
-  interface Container {
-    name: string;
-    image?: string;
-    state: string;
-    category: 'ok' | 'warning' | 'critical';
-  }
+  type Container = NonNullable<MonitorContainerDetails['containers']>[number];
   interface Info {
     containers: Container[];
     total: number;
@@ -34,8 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   function info(check: MonitorCheck): Info {
-    const d = (check.state?.details ?? null) as Record<string, unknown> | null;
-    const list = (d?.containers ?? []) as Container[];
+    const list = (check.state?.details as MonitorContainerDetails | undefined)?.containers ?? [];
     let ok = 0,
       warn = 0,
       crit = 0;

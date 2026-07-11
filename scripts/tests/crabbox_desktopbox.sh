@@ -12,7 +12,7 @@
 # logs in as admin, and runs the requested *.live.js wdio specs. Prints markers.
 # Called by scripts/tests/crabbox_multibox.sh --desktop via `crabbox run`.
 set -uo pipefail
-SRV_IP="${1:?}"; ADMIN_PW="${2:?}"; MONITOR_KEY="${3:-}"; shift 3 || true
+SRV_IP="${1:?}"; ADMIN_PW="${2:?}"; MONITOR_KEY="${3:-}"; shift $(( $# < 3 ? $# : 3 ))
 SPECS=("$@"); [ "${#SPECS[@]}" -gt 0 ] || SPECS=(server-crud.live.js monitoring-check.live.js)
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 E2E_DIR="$ROOT/apps/desktop/e2e"

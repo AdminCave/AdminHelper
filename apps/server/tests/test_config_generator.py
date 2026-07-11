@@ -4,6 +4,7 @@
 
 """Tests for the FRP config generator: frps.toml, frpc.toml, visitor.toml."""
 
+import json
 from types import SimpleNamespace
 
 from app.modules.frp.config_generator import (
@@ -25,6 +26,7 @@ def _make_config(**overrides):
         dashboard_port=None,
         dashboard_user=None,
         dashboard_password=None,
+        extra_config=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -58,9 +60,31 @@ class TestGenerateFrpsToml:
         assert "[transport.tls]" in toml
         assert "force = true" in toml
 
+    def test_tls_paths_match_ca_issuer_filenames(self):
+        # 6.80: pin the frps mTLS cert paths against the filenames ca-issuer's ensure_frps_cert writes
+        # (ca.crt / frps.crt / frps.key under /etc/frp-pki, the compose ro-mount). frpc/visitor have
+        # explicit path contracts but frps had none — renaming _FRPS_CERT_DIR or the leaf files is
+        # exactly the drift class that hit the identity/ replace, and would go unnoticed frps-side.
+        toml = generate_frps_toml(_make_config())
+        assert 'certFile = "/etc/frp-pki/frps.crt"' in toml
+        assert 'keyFile = "/etc/frp-pki/frps.key"' in toml
+        assert 'trustedCaFile = "/etc/frp-pki/ca.crt"' in toml
+
+    def test_max_ports_per_client_defaults_when_unset(self):
+        # 3.34: never leave it unlimited — an unset value emits the bounded default.
+        config = _make_config(max_ports_per_client=None)
+        assert "maxPortsPerClient = 16" in generate_frps_toml(config)
+
+    def test_max_ports_per_client_honors_explicit_value(self):
+        config = _make_config(max_ports_per_client=64)
+        assert "maxPortsPerClient = 64" in generate_frps_toml(config)
+
     def test_dashboard_included(self):
         config = _make_config(dashboard_port=7500, dashboard_user="admin", dashboard_password="pw")
         toml = generate_frps_toml(config)
+        # Bind all interfaces so the server container can reach the dashboard over the
+        # compose bridge; 127.0.0.1 would make /api/frp/status unreachable (4.6).
+        assert 'webServer.addr = "0.0.0.0"' in toml
         assert "webServer.port = 7500" in toml
         assert 'webServer.user = "admin"' in toml
         assert 'webServer.password = "pw"' in toml
@@ -79,6 +103,22 @@ class TestGenerateFrpsToml:
         config = _make_config(subdomain_host="ops.example.net")
         toml = generate_frps_toml(config)
         assert 'subDomainHost = "ops.example.net"' in toml
+
+    def test_extra_config_emitted(self):
+        # 1.28: extra_config is validated + stored but was never emitted.
+        config = _make_config(
+            extra_config=json.dumps(
+                {"maxPoolCount": 5, "transport.tcpMux": True, "custom.note": "hi"}
+            )
+        )
+        toml = generate_frps_toml(config)
+        assert "maxPoolCount = 5" in toml
+        assert "transport.tcpMux = true" in toml  # bool -> lowercase TOML literal
+        assert 'custom.note = "hi"' in toml  # str -> quoted
+
+    def test_no_extra_config_lines_when_none(self):
+        toml = generate_frps_toml(_make_config(extra_config=None))
+        assert "maxPoolCount" not in toml
 
 
 class TestGenerateFrpcToml:
@@ -115,6 +155,15 @@ class TestGenerateFrpcToml:
         tunnel = _make_tunnel()
         toml = generate_frpc_toml(config, [tunnel], "srv1", allow_users=["user-a", "user-b"])
         assert 'allowUsers = ["user-a", "user-b"]' in toml
+
+    def test_allow_users_fallback_is_ops_admin_not_wildcard(self):
+        # 6.146: an empty allow_users falls back to the ops-admin visitor, NOT "*" — the fail-closed
+        # safety net get_allow_users relies on. A "*" here would let every visitor reach every tunnel.
+        config = _make_config()
+        tunnel = _make_tunnel()
+        toml = generate_frpc_toml(config, [tunnel], "srv1")  # no allow_users -> fallback
+        assert 'allowUsers = ["ops-admin"]' in toml
+        assert 'allowUsers = ["*"]' not in toml
 
     def test_extra_config_applied(self):
         config = _make_config()
@@ -175,14 +224,36 @@ class TestGenerateVisitorToml:
         assert 'user = "custom-admin"' in toml
 
     def test_tls_block_uses_enrolled_identity(self):
-        # F2: the visitor presents the desktop's enrolled access identity (exported
-        # to the relative identity/ dir the desktop rewrites), not a server-minted
-        # cert under the old /etc/frp/pki CA.
+        # F2: the visitor presents the desktop's enrolled access identity, exported
+        # under the {{IDENTITY_DIR}} placeholder the desktop replaces with an
+        # absolute path — not a server-minted cert under the old /etc/frp/pki CA.
+        # The literal placeholder is the server<->desktop contract (frpc.rs rewrites
+        # exactly this token); keep it in lockstep with IDENTITY_DIR_PLACEHOLDER.
         config = _make_config()
         toml = generate_visitor_toml(config, [])
         assert "[transport.tls]" in toml
         assert "enable = true" in toml
-        assert 'trustedCaFile = "identity/ca.crt"' in toml
-        assert 'certFile = "identity/cert.pem"' in toml
-        assert 'keyFile = "identity/key.pem"' in toml
+        assert 'trustedCaFile = "{{IDENTITY_DIR}}/ca.crt"' in toml
+        assert 'certFile = "{{IDENTITY_DIR}}/cert.pem"' in toml
+        assert 'keyFile = "{{IDENTITY_DIR}}/key.pem"' in toml
         assert "/etc/frp/pki" not in toml
+
+
+def test_write_frps_config_warns_only_on_runtime_change(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from app.modules.frp import docker_manager
+
+    monkeypatch.setattr(docker_manager, "FRP_CONFIG_DIR", tmp_path)
+    config = _make_config(auth_token="tok")
+
+    # 4.7: a runtime change (create/update) logs the restart requirement — frps has no
+    # config hot-reload — while a startup write stays quiet.
+    with caplog.at_level(logging.WARNING):
+        docker_manager.write_frps_config(config, warn_restart=True)
+    assert any("docker compose restart frps" in r.getMessage() for r in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        docker_manager.write_frps_config(config)
+    assert not any("restart frps" in r.getMessage() for r in caplog.records)

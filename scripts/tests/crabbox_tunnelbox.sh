@@ -11,17 +11,15 @@
 set -uo pipefail
 SRV_IP="${1:?}"; SID="${2:?}"; PTOK="${3:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
+# shellcheck source=scripts/tests/crabbox_lib.sh
+. "$(dirname "$0")/crabbox_lib.sh"
 
 echo "[tunnelbox] hydrate (agent profile: Go + packaging)"
 AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[tunnelbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
 
 echo "[tunnelbox] build + install the .deb"
-( cd apps/agent && make build-linux ) || { echo "[tunnelbox] go build failed"; exit 1; }
-cp -f apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu ./frpc 2>/dev/null || true
-VERSION="0.0.0-test" bash apps/agent/build-deb.sh || { echo "[tunnelbox] build-deb failed"; exit 1; }
-DEB="$(ls -1 ./adminhelper-agent_*_amd64.deb 2>/dev/null | head -1)"
-[ -n "$DEB" ] || { echo "[tunnelbox] no .deb produced"; exit 1; }
+DEB="$(cbx_build_agent_deb tunnelbox)" || exit 1
 sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[tunnelbox] install failed"; exit 1; }
 
 echo "[tunnelbox] ensure sshd is listening on :22 (the STCP target)"
@@ -35,8 +33,10 @@ if sudo test -f /etc/frp/frpc.toml; then echo "TUNNEL_FRPC_TOML_OK"; else echo "
 
 echo "[tunnelbox] start frpc (STCP server) -> registers with frps at $SRV_IP:7000"
 sudo systemctl restart frpc 2>/dev/null || sudo systemctl start frpc 2>/dev/null || true
-sleep 6
-if sudo journalctl -u frpc --no-pager -n 60 2>/dev/null | grep -qiE 'start proxy success|login to server success|new proxy|proxy added'; then
+# Poll for the frpc registration instead of a fixed sleep — it can lag on a loaded box (6.137).
+tun_ok=0
+for _ in $(seq 1 20); do sudo journalctl -u frpc --no-pager -n 60 2>/dev/null | grep -qiE 'start proxy success|login to server success|new proxy|proxy added' && { tun_ok=1; break; }; sleep 1; done
+if [ "$tun_ok" = 1 ]; then
   echo "TUNNEL_FRPC_CONNECTED"
 else
   echo "TUNNEL_FRPC_NOT_CONNECTED"; sudo journalctl -u frpc --no-pager -n 30 2>/dev/null | sed 's/^/    /'

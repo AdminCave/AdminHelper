@@ -3,9 +3,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
+
+from app.modules.hooks.scheduler import INTERVAL_MAP
 
 VALID_EVENTS = [
     "connection.created",
@@ -24,15 +26,18 @@ VALID_EVENTS = [
     "frp.tunnel.created",
     "frp.tunnel.updated",
     "frp.tunnel.deleted",
+    "playbook.created",
+    "playbook.updated",
+    "playbook.deleted",
 ]
 
-VALID_INTERVALS = ["5m", "15m", "30m", "1h", "6h", "12h", "24h"]
+VALID_INTERVALS = list(INTERVAL_MAP)
 
 
 class HookCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    hook_type: str  # "webhook", "event", "schedule"
+    hook_type: Literal["webhook", "event", "schedule"]
     script: str
     event_triggers: Optional[list[str]] = None
     schedule_interval: Optional[str] = None

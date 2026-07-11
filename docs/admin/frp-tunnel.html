@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -62,6 +62,17 @@
           <h2>Client-Zertifikate rotieren</h2>
           <p>Das Agent-Tunnel-Cert wird vom Agent <strong>automatisch erneuert</strong>, sobald es ~50&nbsp;% seiner Laufzeit erreicht (über <code>/ca/renew</code>, mit dem aktuellen Cert als Nachweis) — kein manueller Rotate-Trigger nötig. Der Desktop-Visitor präsentiert seit der PKI-Migration seine enrollte <code>access</code>-Identität (dieselbe wie für den Web-/API-Zugriff) und erneuert sie automatisch — kein server-gemüntztes Visitor-Cert mehr.</p>
 
+          <h2>FRP <code>auth.token</code> rotieren</h2>
+          <p><strong>Achtung — Breaking-Change:</strong> Das globale <code>auth.token</code> (in der FRP-Server-Config) fließt identisch in <code>frps.toml</code>, in jede Agent-<code>frpc.toml</code> und in jede Desktop-<code>visitor.toml</code>. frps kennt im Token-Modus nur genau <em>ein</em> Token; es gibt keinen Overlap-/Dual-Token-Mechanismus. Eine Rotation bricht daher <strong>schlagartig alle</strong> Agents und Visitor, bis jeder neu synchronisiert bzw. das Bundle neu geladen hat. Die eigentliche Tunnel-Sicherheit ist ohnehin das erzwungene mTLS (<code>transport.tls.force</code>) plus der STCP-<code>secretKey</code> — das Token ist nur der schwächere zweite Faktor.</p>
+          <p>Rotiere daher nur geplant, in einem Wartungsfenster, in dieser Pflichtsequenz:</p>
+          <ol>
+            <li>Neues <code>auth.token</code> in der FRP-Server-Config setzen (<code>PUT /api/frp/server-config/{id}</code>).</li>
+            <li>frps <strong>manuell neu starten</strong> (z.&nbsp;B. <code>docker compose restart frps</code>): Der Server schreibt zwar die neue <code>frps.toml</code>, lädt frps aber nicht selbst neu — bis zum Restart läuft frps mit dem <em>alten</em> Token weiter.</li>
+            <li>Alle Agents neu synchronisieren lassen (der nächste Sync zieht die neue <code>frpc.toml</code>) und alle Desktop-Visitor das Tunnel-Bundle neu laden.</li>
+          </ol>
+
+          <p><strong>Gilt für jede FRP-Server-Config-Änderung:</strong> Nicht nur die Token-Rotation — auch geänderte Dashboard-Credentials, Ports oder <code>vhost</code>-Einstellungen schreiben zwar sofort die neue <code>frps.toml</code>, werden aber erst nach <code>docker compose restart frps</code> wirksam (frps kennt kein Config-Hot-Reload, und der Server-Container hat keinen Docker-Socket zum Neustart). Der Server protokolliert bei jeder Laufzeit-Änderung eine entsprechende Warnung ins Log.</p>
+
           <h2>Provision-Token</h2>
           <p>Jeder neue Agent bekommt beim Registrieren einen Einmal-Token. Token-Eigenschaften:</p>
           <ul>
@@ -82,6 +93,9 @@
 
           <h2>Visitor-Ports</h2>
           <p>STCP-Tunnel brauchen lokal einen freien Port für den Visitor. Der Desktop-Client wählt zufällig aus dem Bereich <code>VISITOR_PORT_START</code>–<code>VISITOR_PORT_END</code> (Default 6000–6999). Bei Firewall-Restriktionen den Bereich über die <code>.env</code> verkleinern.</p>
+
+          <h2>Status-Dashboard</h2>
+          <p>Die Tunnel-Statusansicht fragt das frps-Dashboard ab. Standardmäßig erreicht der Server es über den Compose-Servicenamen (<code>http://frps:PORT</code>, mit <code>127.0.0.1</code>-Fallback). Läuft frps in einer anderen Topologie (eigener Host), die Basis-URL über <code>FRPS_DASHBOARD_URL</code> in der <code>.env</code> setzen, statt den Code zu ändern.</p>
 
           <h2>Troubleshooting</h2>
           <ul>

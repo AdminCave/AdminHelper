@@ -5,12 +5,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/diagnostics"
+	"adminhelper-agent/internal/frpc"
 	"adminhelper-agent/internal/logging"
+	"adminhelper-agent/internal/monitor"
+	"adminhelper-agent/internal/provision"
+	"adminhelper-agent/internal/service"
 )
 
 var version = "dev"
@@ -67,7 +74,7 @@ func diagnosticsCmd() *cobra.Command {
 		Use:   "diagnostics",
 		Short: "Redaktierten Diagnose-Bericht fuer einen Bug-Report erstellen",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return diagnosticsRun()
+			return diagnostics.Run(version)
 		},
 	}
 }
@@ -82,7 +89,7 @@ func provisionCmd() *cobra.Command {
 		Use:   "provision",
 		Short: "Server gegen AdminHelper provisionieren (Server-API-Key + optional Monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return provisionRun(url, token, serverID, cacert, insecure)
+			return provision.Run(url, token, serverID, cacert, insecure)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "AdminHelper Server URL (erforderlich)")
@@ -112,7 +119,7 @@ func frpcSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Einmaliger Config-Sync",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return frpcSyncRun()
+			return frpc.Sync()
 		},
 	}
 }
@@ -137,7 +144,13 @@ func monitorInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Ersteinrichtung des Monitor-Agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return monitorInitRun(url, apiKey, serverID, services, cacert, insecure)
+			return monitor.Init(monitor.InitParams{
+				URL:      url,
+				APIKey:   apiKey,
+				ServerID: serverID,
+				Services: services,
+				TLS:      config.TLSOpts{CACert: cacert, Insecure: insecure},
+			})
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "Monitoring-Basis-URL: AdminHelper-Server + /api/monitoring (z.B. https://srm.example.com/api/monitoring) (erforderlich)")
@@ -157,7 +170,7 @@ func monitorPushCmd() *cobra.Command {
 		Use:   "push",
 		Short: "Einmaliger Metriken-Push",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return monitorPushRun()
+			return monitor.Push(context.Background())
 		},
 	}
 }
@@ -179,7 +192,7 @@ func serviceInstallCmd() *cobra.Command {
 		Use:   "install",
 		Short: "Service registrieren und starten",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return serviceInstallRun()
+			return service.Install()
 		},
 	}
 }
@@ -189,7 +202,7 @@ func serviceUninstallCmd() *cobra.Command {
 		Use:   "uninstall",
 		Short: "Service deregistrieren",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return serviceUninstallRun()
+			return service.Uninstall()
 		},
 	}
 }

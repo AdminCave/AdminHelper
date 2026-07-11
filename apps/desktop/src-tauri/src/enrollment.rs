@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::{
     CertificateError, DigitallySignedStruct, Error as TlsError, RootCertStore, SignatureScheme,
@@ -24,9 +25,8 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::AppError;
+use crate::keyring_store;
 
-/// Keyring service shared with `auth.rs` / `tofu.rs`.
-const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
 // Three small entries (ECDSA fits the Windows 2560-byte limit, D10/V4) — the key
 // is the only secret; cert/ca are public but kept in the same secure store so
 // `build_client` can load the identity without an AppHandle.
@@ -147,89 +147,35 @@ pub fn enroll_endpoint(server_url: &str, port: u16) -> Result<String, AppError> 
 
 // ── Identity storage (keyring) ────────────────────────────────────────────
 
-#[cfg(unix)]
-fn keyring_set(key: &str, value: &str) -> Result<(), AppError> {
-    use keyring::Entry;
-    Entry::new(KEYRING_SERVICE, key)
-        .and_then(|entry| entry.set_password(value))
-        .map_err(|e| AppError::Keyring(e.to_string()))
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_set(key: &str, value: &str) -> Result<(), AppError> {
-    crate::password::windows_store_credential(key, "adminhelper", value)
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_set(_key: &str, _value: &str) -> Result<(), AppError> {
-    Err(AppError::Keyring("Plattform nicht unterstützt".to_string()))
-}
-
 /// Persist the enrolled identity: key + fullchain + pinned CA chain. On first
 /// enroll the key is written first, so a partial failure cannot leave a cert
 /// without a key. On renew the key is unchanged (the cert is re-issued for the
 /// same key, see `renew`), so a partial write can never produce a key/cert
 /// mismatch — the keyring's lack of an atomic multi-entry swap is thereby moot.
 fn store_identity(key_pem: &str, issued: &IssuedIdentity) -> Result<(), AppError> {
-    keyring_set(KEYRING_KEY, key_pem)?;
-    keyring_set(KEYRING_CERT, &issued.fullchain)?;
-    keyring_set(KEYRING_CA, &issued.chain)?;
+    keyring_store::set(KEYRING_KEY, key_pem)?;
+    keyring_store::set(KEYRING_CERT, &issued.fullchain)?;
+    keyring_store::set(KEYRING_CA, &issued.chain)?;
+    // The cached http client bakes in the previous trust anchor — drop it so the next build_client
+    // picks up the newly enrolled identity (5.1).
+    crate::http_client::invalidate_client_cache();
     Ok(())
 }
 
-#[cfg(unix)]
-fn keyring_get(key: &str) -> Option<String> {
-    use keyring::Entry;
-    Entry::new(KEYRING_SERVICE, key).ok()?.get_password().ok()
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_get(key: &str) -> Option<String> {
-    crate::password::windows_read_credential(key)
-        .ok()
-        .filter(|v| !v.is_empty())
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_get(_key: &str) -> Option<String> {
-    None
-}
-
-#[cfg(unix)]
-fn keyring_del(key: &str) {
-    use keyring::Entry;
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE, key) {
-        let _ = entry.delete_credential();
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_del(key: &str) {
-    let _ = crate::password::windows_delete_credential(key);
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_del(_key: &str) {}
-
-/// The enrolled identity as `(key_pem, fullchain_pem, ca_pem)`, if present —
-/// exported by the frpc visitor (F2) to present the desktop's access cert on the
-/// frp plane (frps trusts the access intermediate).
-pub fn identity_pems() -> Option<(String, String, String)> {
-    load_identity()
-}
-
-/// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled.
-fn load_identity() -> Option<(String, String, String)> {
+/// The stored identity as `(key_pem, fullchain_pem, ca_pem)`, if enrolled. Used
+/// internally and by the frpc visitor (F2) to present the desktop's access cert
+/// on the frp plane (frps trusts the access intermediate).
+pub(crate) fn load_identity() -> Option<(String, String, String)> {
     Some((
-        keyring_get(KEYRING_KEY)?,
-        keyring_get(KEYRING_CERT)?,
-        keyring_get(KEYRING_CA)?,
+        keyring_store::get(KEYRING_KEY)?,
+        keyring_store::get(KEYRING_CERT)?,
+        keyring_store::get(KEYRING_CA)?,
     ))
 }
 
 /// Whether this device has an enrolled mTLS identity (key + cert present).
 pub fn is_enrolled() -> bool {
-    keyring_get(KEYRING_KEY).is_some() && keyring_get(KEYRING_CERT).is_some()
+    keyring_store::get(KEYRING_KEY).is_some() && keyring_store::get(KEYRING_CERT).is_some()
 }
 
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
@@ -237,9 +183,11 @@ pub fn is_enrolled() -> bool {
 /// by the explicit "reset device identity" settings action (`reset_device_identity`)
 /// — the recovery path after a server reinstall / PKI re-creation.
 pub fn clear_identity() {
-    keyring_del(KEYRING_KEY);
-    keyring_del(KEYRING_CERT);
-    keyring_del(KEYRING_CA);
+    let _ = keyring_store::delete(KEYRING_KEY);
+    let _ = keyring_store::delete(KEYRING_CERT);
+    let _ = keyring_store::delete(KEYRING_CA);
+    // Drop the cached mTLS client so the next build_client falls back to the non-enrolled path (5.1).
+    crate::http_client::invalidate_client_cache();
 }
 
 // ── Enrollment orchestration ──────────────────────────────────────────────
@@ -303,7 +251,17 @@ async fn mint_token(
     allow_self_signed: bool,
     browser: bool,
 ) -> Result<EnrollGrant, AppError> {
-    let client = crate::auth::build_client(server_url, allow_self_signed)?;
+    // Same token-destination pin as api_proxy: refuse to send the session JWT if
+    // server_url (frontend-controlled) drifts off the logged-in server, so an XSS'd
+    // frontend cannot exfiltrate the bearer token to a foreign host (3.18). Before
+    // the first enrollment build_client uses the TOFU/public-CA path, which would
+    // otherwise pin an attacker cert on first use.
+    crate::validation::require_pinned_destination(
+        server_url,
+        "/api/enrollment/token",
+        crate::auth::stored_server_url().as_deref(),
+    )?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let base = server_url.trim_end_matches('/');
     let url = if browser {
         format!("{base}/api/enrollment/token?browser=true")
@@ -334,7 +292,7 @@ async fn redeem(
 ) -> Result<IssuedIdentity, AppError> {
     // build_client pins by the login host; the gateway presents the same leaf on
     // the enroll plane, so that pin applies to this call too.
-    let client = crate::auth::build_client(server_url, allow_self_signed)?;
+    let client = crate::http_client::build_client(server_url, allow_self_signed)?;
     let resp = client
         .post(endpoint)
         .json(&EnrollRequest {
@@ -365,7 +323,7 @@ async fn redeem(
 /// `now_unix` (seconds since the epoch). `now` is a parameter so the decision is
 /// deterministically testable.
 fn needs_renewal(cert_pem: &str, fraction: f64, now_unix: i64) -> Result<bool, AppError> {
-    let leaf = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+    let leaf = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
         .next()
         .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
         .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
@@ -485,10 +443,13 @@ impl ServerCertVerifier for CaPinVerifier {
             Err(TlsError::InvalidCertificate(
                 CertificateError::UnknownIssuer | CertificateError::BadSignature,
             )) => Err(TlsError::General(
-                "AdminHelper: Das Server-Zertifikat wird nicht mehr von der bei der \
-                     Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke). Wurde \
-                     der Server neu installiert oder die PKI neu erzeugt, in den Einstellungen \
-                     die Geräte-Identität zurücksetzen und neu registrieren."
+                // ERR_CA_PIN_MISMATCH is the stable contract the login screen keys
+                // the "reset device identity" recovery off (Login.svelte), so that
+                // action never depends on the German prose below staying verbatim.
+                "ERR_CA_PIN_MISMATCH: AdminHelper: Das Server-Zertifikat wird nicht mehr von der \
+                     bei der Geräte-Registrierung gepinnten CA gedeckt (mögliche MITM-Attacke). \
+                     Wurde der Server neu installiert oder die PKI neu erzeugt, in den \
+                     Einstellungen die Geräte-Identität zurücksetzen und neu registrieren."
                     .to_string(),
             )),
             Err(err) => Err(err),
@@ -528,7 +489,7 @@ fn build_mtls_client(
     ca_pem: &str,
 ) -> Result<reqwest::Client, AppError> {
     let mut roots = RootCertStore::empty();
-    for cert in rustls_pemfile::certs(&mut ca_pem.as_bytes()) {
+    for cert in CertificateDer::pem_slice_iter(ca_pem.as_bytes()) {
         let cert = cert.map_err(|e| AppError::Validation(format!("CA-Kette nicht lesbar: {e}")))?;
         roots
             .add(cert)
@@ -540,12 +501,11 @@ fn build_mtls_client(
             .map_err(|e| AppError::Validation(format!("CA-Verifier: {e}")))?;
 
     let client_certs: Vec<CertificateDer<'static>> =
-        rustls_pemfile::certs(&mut cert_pem.as_bytes())
+        CertificateDer::pem_slice_iter(cert_pem.as_bytes())
             .collect::<Result<_, _>>()
             .map_err(|e| AppError::Validation(format!("Client-Zertifikat nicht lesbar: {e}")))?;
-    let client_key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut key_pem.as_bytes())
-        .map_err(|e| AppError::Validation(format!("Client-Schlüssel nicht lesbar: {e}")))?
-        .ok_or_else(|| AppError::Validation("Kein Client-Schlüssel im PEM".to_string()))?;
+    let client_key: PrivateKeyDer<'static> = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+        .map_err(|e| AppError::Validation(format!("Client-Schlüssel nicht lesbar: {e}")))?;
 
     let tls = rustls::ClientConfig::builder_with_provider(crate::tofu::ring_provider())
         .with_safe_default_protocol_versions()
@@ -555,7 +515,7 @@ fn build_mtls_client(
         .with_client_auth_cert(client_certs, client_key)
         .map_err(|e| AppError::Validation(format!("Client-Auth: {e}")))?;
 
-    reqwest::Client::builder()
+    crate::http_client::with_timeouts(reqwest::Client::builder())
         .use_preconfigured_tls(tls)
         .build()
         .map_err(AppError::from)
@@ -575,19 +535,33 @@ pub fn enrolled_client() -> Result<reqwest::Client, AppError> {
 /// for import into a browser's certificate store. The key is opaque PKCS8 bytes
 /// to the builder, so the ECDSA leaf packages fine. Split out for a structural
 /// round-trip test.
+/// The p12 crate emits a classic PKCS12 container (PBE-SHA1/RC2, low iteration count),
+/// so the .p12's key-encryption KDF is weak. The file carries a long-lived browser
+/// client key and is written to disk, so a short/weak export password would be a
+/// realistic offline brute-force target if the file leaks — require a strong one to
+/// keep the wrapping robust despite the weak KDF (3.58).
+fn check_export_password(password: &str) -> Result<(), AppError> {
+    if password.chars().count() < 12 {
+        return Err(AppError::Validation(
+            "Export-Passwort zu kurz (mindestens 12 Zeichen)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn package_pkcs12(
     key_pem: &str,
     cert_pem: &str,
     password: &str,
     friendly_name: &str,
 ) -> Result<Vec<u8>, AppError> {
-    let cert = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+    check_export_password(password)?; // defense in depth; export_browser_p12 checks early
+    let cert = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
         .next()
         .ok_or_else(|| AppError::Validation("Kein Zertifikat im PEM".to_string()))?
         .map_err(|e| AppError::Validation(format!("Zertifikat nicht lesbar: {e}")))?;
-    let key = rustls_pemfile::private_key(&mut key_pem.as_bytes())
-        .map_err(|e| AppError::Validation(format!("Schlüssel nicht lesbar: {e}")))?
-        .ok_or_else(|| AppError::Validation("Kein Schlüssel im PEM".to_string()))?;
+    let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+        .map_err(|e| AppError::Validation(format!("Schlüssel nicht lesbar: {e}")))?;
     let pfx = p12::PFX::new(
         cert.as_ref(),
         key.secret_der(),
@@ -608,6 +582,8 @@ pub async fn export_browser_p12(
     password: &str,
     allow_self_signed: bool,
 ) -> Result<Vec<u8>, AppError> {
+    // Fail fast before minting + enrolling a throwaway long-lived cert (3.58).
+    check_export_password(password)?;
     let grant = mint_token(server_url, jwt, allow_self_signed, true).await?;
     if grant.scope != "access" {
         return Err(AppError::Validation(format!(
@@ -756,16 +732,39 @@ mod tests {
         p.distinguished_name.push(DnType::CommonName, "user-01");
         let cert = p.self_signed(&key).unwrap();
 
-        let der =
-            package_pkcs12(&key.serialize_pem(), &cert.pem(), "s3cret", "AdminHelper").unwrap();
+        let der = package_pkcs12(
+            &key.serialize_pem(),
+            &cert.pem(),
+            "s3cret-p4ssw0rd",
+            "AdminHelper",
+        )
+        .unwrap();
 
         // The .p12 must round-trip: MAC valid under the password (and only it),
         // and both the cert and the (EC) key extractable.
         let pfx = p12::PFX::parse(&der).unwrap();
-        assert!(pfx.verify_mac("s3cret"));
+        assert!(pfx.verify_mac("s3cret-p4ssw0rd"));
         assert!(!pfx.verify_mac("wrong"));
-        assert_eq!(pfx.cert_x509_bags("s3cret").unwrap().len(), 1);
-        assert_eq!(pfx.key_bags("s3cret").unwrap().len(), 1);
+        assert_eq!(pfx.cert_x509_bags("s3cret-p4ssw0rd").unwrap().len(), 1);
+        assert_eq!(pfx.key_bags("s3cret-p4ssw0rd").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn package_pkcs12_rejects_short_password() {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+        // 3.58: the weak PKCS12 KDF makes a short export password an offline
+        // brute-force target, so it is refused before packaging. Use VALID PEM so only
+        // the length check can error — otherwise the test would pass vacuously (old
+        // code without the check would fail on the bogus PEM with the same error kind).
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let cert = CertificateParams::new(vec![])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let err =
+            package_pkcs12(&key.serialize_pem(), &cert.pem(), "short", "AdminHelper").unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
     }
 
     // Real-handshake proof of the enrolled mTLS client: an in-process TLS server
@@ -776,7 +775,6 @@ mod tests {
     // reject a server cert under a foreign CA.
     mod mtls {
         use super::*;
-        use std::time::Duration;
 
         use rcgen::{
             BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
@@ -784,9 +782,9 @@ mod tests {
         };
         use rustls::server::WebPkiClientVerifier;
         use rustls::ServerConfig;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
-        use tokio_rustls::TlsAcceptor;
+
+        use crate::test_tls::{get, serve_once};
 
         struct Ca {
             cert: rcgen::Certificate,
@@ -829,12 +827,10 @@ mod tests {
             .build()
             .unwrap();
             let certs: Vec<CertificateDer<'static>> =
-                rustls_pemfile::certs(&mut srv_cert_pem.as_bytes())
+                CertificateDer::pem_slice_iter(srv_cert_pem.as_bytes())
                     .collect::<Result<_, _>>()
                     .unwrap();
-            let key = rustls_pemfile::private_key(&mut srv_key_pem.as_bytes())
-                .unwrap()
-                .unwrap();
+            let key = PrivateKeyDer::from_pem_slice(srv_key_pem.as_bytes()).unwrap();
             let config = ServerConfig::builder_with_provider(crate::tofu::ring_provider())
                 .with_safe_default_protocol_versions()
                 .unwrap()
@@ -842,33 +838,6 @@ mod tests {
                 .with_single_cert(certs, key)
                 .unwrap();
             Arc::new(config)
-        }
-
-        async fn serve_once(listener: TcpListener, config: Arc<ServerConfig>) {
-            let acceptor = TlsAcceptor::from(config);
-            if let Ok((tcp, _)) = listener.accept().await {
-                if let Ok(mut tls) = acceptor.accept(tcp).await {
-                    let mut buf = [0u8; 1024];
-                    let _ = tls.read(&mut buf).await;
-                    let _ = tls
-                        .write_all(
-                            b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                        )
-                        .await;
-                    let _ = tls.flush().await;
-                    let _ = tls.shutdown().await;
-                }
-            }
-        }
-
-        async fn get(client: &reqwest::Client, port: u16) -> Result<reqwest::StatusCode, ()> {
-            // Connect by IP, not the server cert's "localhost" SAN — proves the
-            // CA-pin path does not enforce the hostname.
-            let url = format!("https://127.0.0.1:{port}/");
-            match tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await {
-                Ok(Ok(resp)) => Ok(resp.status()),
-                _ => Err(()),
-            }
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -923,7 +892,8 @@ mod tests {
 
         // A cert that does NOT chain to the pinned CA (server reinstall / MITM)
         // must surface our explicit, danger-aware message — not the raw rustls
-        // error — so the user is told the risk and the recovery path.
+        // error — carrying the stable ERR_CA_PIN_MISMATCH code the login screen
+        // keys its recovery action off.
         #[test]
         fn unpinned_ca_yields_danger_message() {
             let ca = make_ca();
@@ -945,7 +915,7 @@ mod tests {
             .unwrap();
             let verifier = CaPinVerifier { inner };
 
-            let leaf_der = rustls_pemfile::certs(&mut leaf_pem.as_bytes())
+            let leaf_der = CertificateDer::pem_slice_iter(leaf_pem.as_bytes())
                 .next()
                 .unwrap()
                 .unwrap();
@@ -955,8 +925,8 @@ mod tests {
             match result {
                 Err(TlsError::General(msg)) => {
                     assert!(
-                        msg.contains("Geräte-Registrierung") && msg.contains("MITM"),
-                        "Meldung muss Gefahr + Recovery benennen, war: {msg}"
+                        msg.contains("ERR_CA_PIN_MISMATCH"),
+                        "Meldung muss den stabilen Fehlercode fuer das Login-Recovery tragen, war: {msg}"
                     );
                 }
                 other => panic!("erwartet General-Gefahrenmeldung, war: {other:?}"),

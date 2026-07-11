@@ -46,7 +46,7 @@
             <a href="../developer/cicd.html">CI/CD &amp; Release</a>
           </div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -138,7 +138,7 @@ docker compose up -d</code></pre>
               <tr><td><code>SECRET_KEY</code></td><td>auto</td><td>JWT-Signing-Key. Manuell setzen oder auto-generieren lassen (persistiert in <code>data/.secret_key</code>).</td></tr>
               <tr><td><code>ADMIN_PASSWORD</code></td><td>leer</td><td>Optional. Leer/'admin' triggert den Bootstrap-Token-Pfad (siehe oben). Nicht-Default-Wert legt direkt einen Admin an (CI/Dev).</td></tr>
               <tr><td><code>POSTGRES_PASSWORD</code></td><td><em>auto</em></td><td>Wird durch <code>./scripts/init-secrets.sh</code> generiert. Postgres weigert sich zu starten, wenn leer.</td></tr>
-              <tr><td><code>CA_ROOT_PASSPHRASE</code></td><td><em>auto</em></td><td>Verschlüsselt den kalten PKI-Root-Key des <code>ca-issuer</code> at-rest. Nur beim ersten Start nötig (Hierarchie-Erzeugung). Von <code>init-secrets.sh</code> generiert — <strong>getrennt sichern, nicht ins Backup legen</strong>.</td></tr>
+              <tr><td><code>CA_ROOT_PASSPHRASE</code></td><td><em>auto</em></td><td>Verschlüsselt den kalten PKI-Root-Key des <code>ca-issuer</code> at-rest. Nur beim ersten Start nötig (Hierarchie-Erzeugung). Von <code>init-secrets.sh</code> generiert — <strong>getrennt sichern, nicht ins Backup legen</strong>. Bevorzuge <code>CA_ROOT_PASSPHRASE_FILE</code> (Pfad zu einem File-/Docker-Secret), das der Issuer zuerst liest: anders als die reine Env-Var ist es nicht über <code>docker inspect</code> / <code>/proc/&lt;pid&gt;/environ</code> lesbar.</td></tr>
               <tr><td><code>DATABASE_URL</code></td><td>aus Compose</td><td><code>postgresql+psycopg://adminhelper:$POSTGRES_PASSWORD@postgres:5432/adminhelper</code> – wird im Compose-Service automatisch gesetzt.</td></tr>
               <tr><td><code>DATA_DIR</code></td><td><code>/app/data</code></td><td>Datenverzeichnis für Bootstrap-Token, .secret_key, FRP-Config (DB liegt in Postgres; das TLS-Zertifikat verwaltet das Gateway).</td></tr>
               <tr><td><code>REDIS_URL</code></td><td>leer</td><td>Redis-URL für Rate-Limit. Ohne Redis wird ein In-Memory-Fallback genutzt (nur Single-Worker sicher).</td></tr>
@@ -148,21 +148,21 @@ docker compose up -d</code></pre>
               <tr><td><code>MONITOR_SERVICE_URL</code></td><td><code>http://monitoring:8080</code></td><td>URL des Monitoring-Services (Container-intern).</td></tr>
               <tr><td><code>MONITOR_API_KEY</code></td><td>leer</td><td>Shared Secret zwischen Server und Monitoring. Muss in beiden Containern identisch sein.</td></tr>
               <tr><td><code>VISITOR_PORT_START</code> / <code>_END</code></td><td><code>6000</code> / <code>6999</code></td><td>Port-Range für STCP-Visitor-Tunnel im Desktop-Client.</td></tr>
-              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP-Port für FRP-Bind (Kontrollkanal).</td></tr>
+              <tr><td><code>FRP_BIND_PORT</code></td><td><code>7000</code></td><td>TCP-Port für FRP-Bind (Kontrollkanal); muss mit dem <code>bind_port</code> im FRP-Config-UI übereinstimmen (sonst brechen alle Tunnel).</td></tr>
               <tr><td><code>FRP_HTTPS_PORT</code></td><td><code>7443</code></td><td>HTTPS-Port für FRP-Tunnel.</td></tr>
             </tbody>
           </table>
 
           <h2 id="gateway">TLS-Gateway (eingebaut)</h2>
-          <p>Der Stack enthält ein eigenes <strong>Gateway</strong> (nginx), das als einzige öffentliche TLS-Kante auf <code>443</code> terminiert und intern auf den <code>server</code> (plain-HTTP, kein Host-Port) weiterleitet. <code>server</code> und <code>ca-issuer</code> sind nur im Compose-Netz erreichbar — dadurch ist die vom Gateway gesetzte Client-Identität (mTLS-Header) nicht von außen fälschbar.</p>
+          <p>Der Stack enthält ein eigenes <strong>Gateway</strong> (nginx), das als einzige öffentliche TLS-Kante auf <code>443</code> terminiert und intern auf den <code>server</code> (plain-HTTP, kein Host-Port) weiterleitet. <code>server</code> und <code>ca-issuer</code> sind nur im Compose-Netz erreichbar; der <code>ca-issuer</code> liegt im internen <code>pki</code>-Netz, das nur der Gateway erreicht — dadurch ist die vom Gateway gesetzte Client-Identität (mTLS-Header) nicht von außen fälschbar.</p>
           <p>Das TLS-Zertifikat des Gateways stellt der interne <code>ca-issuer</code> beim ersten Start aus (signiert von der <code>access</code>-Intermediate der internen CA, SAN = <code>DOMAIN</code>). Da diese CA nicht öffentlich vertraut ist, zeigt der Browser zunächst eine Zertifikatswarnung — erwartet; die Root-CA wird im Vertrauensmodell der Clients gepinnt (siehe <a href="./troubleshooting.html">Troubleshooting</a>). Ein <strong>externer</strong> Reverse-Proxy ist nicht erforderlich; wer trotzdem einen davorsetzen will, terminiert dessen eigenes TLS und leitet an das Gateway auf <code>443</code> weiter (und trägt dessen IP in <code>TRUSTED_PROXIES</code> ein).</p>
           <p><strong>Client-Zertifikate (mTLS).</strong> Agent und Desktop holen ihr Client-Zertifikat automatisch von der internen CA (Enrollment, siehe <a href="../developer/index.html">Entwickler-Übersicht „PKI &amp; mTLS"</a>). Für den <strong>Browser</strong> exportiert der Desktop-Client ein <strong>PKCS12</strong> (<code>.p12</code>, passwortgeschützt), das in den Zertifikatsspeicher des Browsers importiert wird (Schritt-für-Schritt unter <a href="./benutzer.html">Benutzer &amp; Zugriff → Browser-Zugriff</a>). <em>Aktuell läuft die Datenebene permissiv</em> — ein Client-Cert ist noch nicht erzwungen; die mTLS-Pflicht (<code>CERT_REQUIRED</code>) schaltet ein Operator separat über <code>MTLS_ENFORCE</code> (siehe <a href="./betrieb.html">Betrieb &amp; Konfiguration</a>).</p>
 
           <h2 id="erstanmeldung">Erstanmeldung &ndash; Bootstrap-Token (manuell)</h2>
           <p><strong>Hinweis:</strong> Dieser manuelle Pfad geht an <code>:443</code> — unter dem enforced-Default (seit 0.29.0) wird er certlos schon am Handshake abgewiesen. Nutze daher <code>scripts/install.sh</code> (Schnell-Install oben) <em>oder</em> setze für den manuellen Bootstrap einmalig <code>MTLS_ENFORCE=false</code>, lege den Admin an + enrolle, und schalte dann wieder scharf.</p>
-          <p>Es gibt <strong>keinen</strong> fest verdrahteten Default-Login mehr. Beim ersten Start mit leerem <code>ADMIN_PASSWORD</code> generiert der Server einen einmaligen Setup-Token nach <code>data/.bootstrap_token</code> und zeigt ihn im WARNING-Log:</p>
+          <p>Es gibt <strong>keinen</strong> fest verdrahteten Default-Login mehr. Beim ersten Start mit leerem <code>ADMIN_PASSWORD</code> generiert der Server einen einmaligen Setup-Token. Der rohe Token wird <strong>nicht ins Log</strong> geschrieben (dort würde er dauerhaft überleben), sondern nach <code>data/.bootstrap_setup</code> (0600) — auslesen mit:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose logs server | grep -A2 'Setup-Token'</code></pre>
+<pre><code>docker compose exec server cat /app/data/.bootstrap_setup</code></pre>
           <p>Mit dem Token den ersten Admin anlegen:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>curl -k -X POST https://srm.example.com/api/auth/bootstrap \

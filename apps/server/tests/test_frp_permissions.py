@@ -10,6 +10,7 @@ secret_key (instead of none). A classic privilege-escalation trap.
 """
 
 import pytest
+from fastapi import HTTPException
 
 from app.modules.frp.generate_router import gen_visitor_bundle, gen_visitor_toml
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
@@ -77,15 +78,14 @@ def two_servers_with_tunnels(db_session):
 class TestVisitorBundlePermissions:
     """Regression: a non-admin without assignments must see NO tunnels."""
 
-    def test_non_admin_without_assignments_sees_no_tunnels(
+    def test_non_admin_without_assignments_is_refused(
         self, db_session, normal_user, two_servers_with_tunnels
     ):
-        result = gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
-        assert "secret-key" not in result["toml"], (
-            "Visitor-TOML enthaelt geheimen Key obwohl User keine Server-Zuweisung hat"
-        )
-        assert "a-ssh" not in result["toml"]
-        assert "b-ssh" not in result["toml"]
+        # 3.33: no visible STCP tunnels -> refuse, so the shared frps auth token is
+        # never handed to an unassigned user (the bundle used to embed it regardless).
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
 
     def test_non_admin_with_one_assignment_sees_only_assigned_tunnel(
         self, db_session, normal_user, two_servers_with_tunnels
@@ -103,20 +103,34 @@ class TestVisitorBundlePermissions:
         assert "a-ssh" in result["toml"]
         assert "b-ssh" in result["toml"]
 
+    def test_visitor_tunnels_eager_load_target_server(
+        self, db_session, admin_user, two_servers_with_tunnels
+    ):
+        # 5.29: _visible_stcp_tunnels eager-loads target_server (joinedload) so generate_visitor_toml,
+        # which reads tunnel.target_server.name per tunnel, doesn't fire a lazy SELECT per tunnel.
+        from sqlalchemy import inspect
+
+        from app.modules.frp.generate_router import _visible_stcp_tunnels
+
+        cfg = db_session.query(FrpServerConfig).first()
+        tunnels = _visible_stcp_tunnels(db_session, cfg, admin_user)
+        assert tunnels, "fixture should yield stcp tunnels"
+        for t in tunnels:
+            # target_server already loaded (not lazy) → the joinedload did it; without the fix it
+            # would be in the unloaded set and read as a per-tunnel SELECT later.
+            assert "target_server" not in inspect(t).unloaded, "target_server is lazy-loaded (N+1)"
+
 
 class TestVisitorTomlPermissions:
     """Same auth filter in the /generate/visitor-toml endpoint."""
 
-    def test_non_admin_without_assignments_gets_empty_toml(
+    def test_non_admin_without_assignments_is_refused(
         self, db_session, normal_user, two_servers_with_tunnels
     ):
-        response = gen_visitor_toml(
-            config_id=None, user_id=None, db=db_session, current_user=normal_user
-        )
-        body = response.body.decode("utf-8")
-        assert "a-ssh" not in body
-        assert "b-ssh" not in body
-        assert "super-secret-do-not-leak" not in body
+        # 3.33: same refusal in the TOML endpoint — no visible tunnels, no token.
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_toml(config_id=None, user_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
 
     def test_admin_sees_all_in_visitor_toml(self, db_session, admin_user, two_servers_with_tunnels):
         response = gen_visitor_toml(
@@ -125,3 +139,84 @@ class TestVisitorTomlPermissions:
         body = response.body.decode("utf-8")
         assert "a-ssh" in body
         assert "b-ssh" in body
+
+
+def test_attach_auto_connection_links_stcp_and_passes_tags(db_session):
+    """2.47: the shared _attach_auto_connection helper (create_tunnel + update_tunnel)
+    creates the paired connection for an stcp tunnel, links it back, and passes the
+    tunnel's JSON-encoded tags through unchanged (the subtle create/update tag
+    difference the refactor unified)."""
+    from app.modules.connections.models import Connection
+    from app.modules.frp.tunnel_router import _attach_auto_connection
+
+    cfg = _make_config(db_session)
+    srv = _make_server(db_session, sid="srv-auto", name="autohost")
+
+    tunnel = FrpTunnel(
+        id="t-auto",
+        server_id=srv.id,
+        frp_config_id=cfg.id,
+        name="db",
+        tunnel_type="stcp",
+        protocol="ssh",
+        local_port=22,
+        visitor_port=6100,
+        tags='["prod"]',
+    )
+    db_session.add(tunnel)
+    db_session.flush()
+
+    _attach_auto_connection(db_session, tunnel, "opsuser")
+
+    conn = db_session.query(Connection).filter(Connection.id == tunnel.connection_id).one()
+    assert conn.kind == "ssh"
+    assert conn.port == 6100
+    assert conn.tags == '["prod"]'  # tunnel.tags passed through, not re-encoded
+    assert conn.username == "opsuser"
+
+
+def _login(client, username="admin", password="adminpass"):
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_frpc_toml_endpoint_wires_allow_users(
+    test_client, db_session, admin_user, two_servers_with_tunnels
+):
+    # 6.73: gen_frpc_toml wires get_allow_users -> allowUsers in the TOML. The admin is auto-authorized,
+    # so the list is ["admin"], NOT the fail-closed ['ops-admin'] fallback — a broken hand-off there
+    # would silently strip legitimate users' tunnel access.
+    h = _login(test_client)
+    r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=h)
+    assert r.status_code == 200, r.text
+    assert "allowUsers" in r.text
+    assert '"admin"' in r.text, r.text
+    assert "ops-admin" not in r.text
+
+
+def test_bulk_zip_contains_per_server_configs(
+    test_client, db_session, admin_user, two_servers_with_tunnels
+):
+    # 6.73: the bulk-zip path writes frps.toml plus one clients/<server>/frpc.toml per server.
+    import io
+    import zipfile
+
+    h = _login(test_client)
+    r = test_client.get("/api/frp/generate/bulk-zip", headers=h)
+    assert r.status_code == 200, r.text
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "frps.toml" in names
+    assert "clients/serverA/frpc.toml" in names, names
+    assert "clients/serverB/frpc.toml" in names, names
+
+
+def test_visitor_toml_admin_for_unknown_user_returns_404(
+    test_client, db_session, admin_user, two_servers_with_tunnels
+):
+    # 6.73: an admin generating a visitor TOML for another user via ?user_id — an unknown user_id must
+    # 404 with the user error (not fall through to the tunnel check).
+    h = _login(test_client)
+    r = test_client.get("/api/frp/generate/visitor-toml?user_id=999999", headers=h)
+    assert r.status_code == 404, r.text
+    assert "Benutzer" in r.json()["detail"]

@@ -14,5 +14,5 @@ export function create(data: ApiKeyCreate): Promise<ApiKeyCreateResult> {
 }
 
 export function remove(id: number): Promise<void> {
-  return http.del<void>(`/api/api-keys/${id}`);
+  return http.del<void>(`/api/api-keys/${encodeURIComponent(id)}`);
 }

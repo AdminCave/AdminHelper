@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type { Playbook } from '$lib/api/types';
   import {
     emptyPlaybookForm,
@@ -55,10 +56,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
       tagsInput = '';
     }
   });
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
 
   async function onSave(): Promise<void> {
     const s = $session;

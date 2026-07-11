@@ -43,6 +43,15 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
 - **`test/specs/settings-mode.live.js`** — switch the app mode (server → local) in
   Settings; the server session ends and the server-only UI (mode badge, the
   Infrastructure nav) changes. Runs last in the `desktop_e2e_crud.sh` boot.
+- **`test/specs/login-error.live.js`** — the negative auth path: a wrong password
+  surfaces the inline error and never reaches the app shell.
+- **`test/specs/logout.live.js`** — signing out ends the session and returns to the
+  login screen (the app shell + nav go away).
+- **`test/specs/monitoring-alerts.live.js`** — create a webhook alert rule on the
+  Monitoring "alerts" tab; the rule appears in the list after the round-trip.
+- **`test/specs/connection-editor.live.js`** — create a connection through the
+  top-level Connections page editor (the standalone `ConnectionEditor`, distinct
+  from the server-detail connections tab that `connection-crud` drives).
 - **`test/specs/monitoring-check.live.js`** — create an `agent_resources`
   monitoring check through the GUI on a server a real agent has pushed metrics
   for; the check appears after a reload from the monitoring service. Orchestrated
@@ -82,22 +91,24 @@ npm ci
 npm test          # onPrepare builds the UI + the debug binary, then drives it
 ```
 
-`wdio.conf.js` (`onPrepare`) runs `cargo tauri build --debug --no-bundle` in
+`wdio.conf.js` (`onPrepare`) runs
+`cargo tauri build --debug --no-bundle --config tauri.e2e.conf.json` in
 `../src-tauri` (which builds `../ui` via `beforeBuildCommand` and embeds it), so the
 binary tauri-driver launches (`../src-tauri/target/debug/adminhelper`) is always
 current. It must be `tauri build`, **not** a plain `cargo build` — the latter
 points the webview at the dev URL (`localhost:1420`, not served) instead of the
-embedded frontend. Headless rendering env
+embedded frontend. The `--config` overlay re-enables `withGlobalTauri` (the specs
+reach the app via `window.__TAURI__`); production builds ship it off. Headless rendering env
 (`WEBKIT_DISABLE_DMABUF_RENDERER`/`WEBKIT_DISABLE_COMPOSITING_MODE`, needed under
 Xvfb) is set by the config automatically.
 
 ## CI
 
-Only the **smoke** spec runs in CI: the `desktop-e2e` job (GitHub Actions) runs
-`npm test`, gated to `main` pushes + manual dispatch — it builds the app and
-drives a real window, so it is deliberately not a per-PR gate. See
-`.github/workflows/ci.yml`.
+Deliberately **no** CI job *runs* this layer — smoke included (headless WebKit
+drifts with the runner image; see the note above and `.github/workflows/ci.yml`,
+where CI only installs + lints this dir, never launches the app). Run the smoke
+locally before a release: `cd apps/desktop/e2e && xvfb-run -a npm test`.
 
-The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`)
-are NOT wired into CI — they boot a full stack + frps and need a secret-service;
-run them locally/manually (e.g. before a release).
+The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`
+/ `run.sh e2e` on crabbox) are likewise never in CI — they boot a full stack + frps
+and need a secret-service; run them locally/manually (e.g. before a release).

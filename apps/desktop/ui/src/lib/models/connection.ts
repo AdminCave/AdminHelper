@@ -6,6 +6,8 @@
 
 import type { Connection, ConnectionKind } from '$lib/bridge/types';
 import { tNow } from '$lib/i18n';
+import { parseTags, type ValidationResult } from './shared';
+export { parseTags };
 
 export const DEFAULT_PORTS: Record<Extract<ConnectionKind, 'ssh' | 'rdp'>, number> = {
   ssh: 22,
@@ -36,7 +38,10 @@ export function normalizeConnection(
   const rawPort = raw.port as unknown;
   if (rawPort !== null && rawPort !== undefined && rawPort !== '') {
     const parsed = Number(rawPort);
-    if (!Number.isNaN(parsed)) port = parsed;
+    // A port must be an integer in 1..65535. Drop anything else (negative, 0, >65535, fractional,
+    // non-numeric) to null so the connection falls back to its default port instead of failing
+    // later at the ssh/xfreerdp spawn with a cryptic process error (4.104).
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) port = parsed;
   }
 
   return {
@@ -57,24 +62,29 @@ export function normalizeConnection(
   };
 }
 
-export function parseTags(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => tag.length > 0);
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
-}
-
 export function validateConnection(c: Connection): ValidationResult {
   if (!c.name) {
     return { ok: false, message: tNow('validation.name.empty') };
   }
   if (c.kind === 'web') {
     if (!c.url) return { ok: false, message: tNow('validation.url.empty') };
+    // Only http/https reach open_connection (the browser); reject javascript:/file:/…
+    // at the form boundary instead of relying solely on the Rust validate_web_url (3.67).
+    // A scheme-less value (a bare domain) is accepted the same way the backend does it:
+    // it prepends https:// before validating, so mirror that here.
+    let proto: string;
+    try {
+      proto = new URL(c.url).protocol;
+    } catch {
+      try {
+        proto = new URL(`https://${c.url}`).protocol;
+      } catch {
+        return { ok: false, message: tNow('validation.url.scheme') };
+      }
+    }
+    if (proto !== 'http:' && proto !== 'https:') {
+      return { ok: false, message: tNow('validation.url.scheme') };
+    }
     return { ok: true };
   }
   if (!c.host) return { ok: false, message: tNow('validation.host.empty') };

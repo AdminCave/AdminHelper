@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import logging
-from datetime import datetime, timezone
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -21,11 +21,12 @@ from app.core.auth import (
     username_from_token_unverified,
     verify_password,
 )
-from app.core.config import BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
+from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE, REFRESH_TOKEN_EXPIRE_DAYS
 from app.core.database import get_db
 from app.core.middleware import resolve_client_ip
 from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
+from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.users.models import User
 from app.modules.users.schemas import (
@@ -47,22 +48,27 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _MAX_ATTEMPTS = 5
 _WINDOW_SECONDS = 60
 
+# A fixed valid bcrypt hash: on a login for a non-existent user we still run one
+# verify_password against it, so a missing username costs the same ~bcrypt time as a
+# wrong password — otherwise the short-circuit is a timing oracle for enumeration (3.94).
+_DUMMY_HASH = hash_password("login-timing-equalizer")
+
 
 def _rate_limit_key(ip: str) -> str:
     return f"auth:fail:{ip}"
 
 
 def _check_rate_limit(ip: str) -> None:
-    backend = get_rate_limit_backend()
-    if backend.get_count(_rate_limit_key(ip)) >= _MAX_ATTEMPTS:
+    # Increment atomically and check the result. Reading the count here and incrementing only after
+    # a failed verify let N parallel requests all see count=0, all pass, and all run bcrypt —
+    # bypassing the limit and forcing bulk bcrypt work. INCR is the backend's race-free op, so every
+    # attempt counts up front; a successful login resets the counter via _reset_rate_limit (4.141).
+    count = get_rate_limit_backend().increment(_rate_limit_key(ip), _WINDOW_SECONDS)
+    if count > _MAX_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Zu viele Login-Versuche. Bitte {_WINDOW_SECONDS} Sekunden warten.",
         )
-
-
-def _record_failed_attempt(ip: str) -> None:
-    get_rate_limit_backend().increment(_rate_limit_key(ip), _WINDOW_SECONDS)
 
 
 def _reset_rate_limit(ip: str) -> None:
@@ -117,8 +123,14 @@ def login(
     _check_rate_limit(ip)
 
     user = db.query(User).filter(User.username == data.username).first()
-    if not user or not verify_password(data.password, user.hashed_password):
-        _record_failed_attempt(ip)
+    # Always run one bcrypt verify — against a dummy hash when the user is missing — so
+    # the response time doesn't reveal whether the username exists (3.94).
+    if user:
+        password_ok = verify_password(data.password, user.hashed_password)
+    else:
+        verify_password(data.password, _DUMMY_HASH)
+        password_ok = False
+    if not password_ok:
         audit.record(
             db,
             "auth.login_failed",
@@ -179,7 +191,7 @@ def refresh_token(
         if reused_username:
             reused_user = db.query(User).filter(User.username == reused_username).first()
             if reused_user is not None:
-                reused_user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
+                reused_user.tokens_valid_after = utcnow_naive()
                 db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -257,22 +269,20 @@ def bootstrap(
     if db.query(User).count() > 0:
         # Server is already initialized – bootstrap is no longer possible.
         # Same response as 'no token active' to avoid disclosing the DB state.
-        _record_failed_attempt(ip)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Server ist bereits initialisiert",
         )
 
     if not BOOTSTRAP_TOKEN_FILE.exists():
-        _record_failed_attempt(ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Kein Bootstrap-Token aktiv",
         )
 
     expected = BOOTSTRAP_TOKEN_FILE.read_text().strip()
-    if hash_api_key(data.token) != expected:
-        _record_failed_attempt(ip)
+    # Constant-time compare like the /events internal key (3.95).
+    if not secrets.compare_digest(hash_api_key(data.token), expected):
         logger.warning("Bootstrap-Versuch mit ungueltigem Token von IP=%s", ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -298,12 +308,11 @@ def bootstrap(
 
     # Consume the token — even if deleting the file fails, the 'count() > 0'
     # check above remains the effective protection.
-    try:
-        BOOTSTRAP_TOKEN_FILE.unlink()
-    except OSError:
-        logger.warning(
-            "Bootstrap-Token-Datei konnte nicht geloescht werden: %s", BOOTSTRAP_TOKEN_FILE
-        )
+    for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Bootstrap-Datei konnte nicht geloescht werden: %s", f)
 
     _reset_rate_limit(ip)
     logger.info("Bootstrap erfolgreich: Admin '%s' angelegt von IP=%s", user.username, ip)

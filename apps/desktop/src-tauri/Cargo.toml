@@ -4,6 +4,7 @@ version = "0.39.0"
 description = "AdminHelper Desktop-Client — Remote-Verwaltung mit FRP-Tunneln"
 authors = ["Kevin Stenzel <kevin@ks98.de>"]
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -44,11 +45,16 @@ sha2 = "0.10"
 # rustls above and keep aws-lc-rs out (feature unification only adds to ring).
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
 # Parse the enrolled cert/key/CA PEM into the rustls types for the mTLS client.
-rustls-pemfile = "2"
+# rustls-pemfile is archived (Aug 2025); its PEM parsing moved into rustls-pki-types' PemObject API,
+# already in the graph via rustls. Parses the enrolled mTLS material (7.5).
+rustls-pki-types = { version = "1", features = ["alloc"] }
 # Read the enrolled leaf's validity to decide when to auto-renew (A5b).
-x509-parser = "0.16"
+x509-parser = "0.18"
 # Package the browser's enrolled cert + key as a PKCS12 for import (A5c).
 p12 = "0.6"
+# Parse the server-supplied visitor TOML to allow-list its structure before frpc
+# executes it (3.59) — a compromised server must not inject arbitrary frpc config.
+toml = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }

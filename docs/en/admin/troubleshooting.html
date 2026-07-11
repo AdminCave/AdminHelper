@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="./index.html">Overview</a><a href="./installation.html">Installation</a><a href="./operations.html">Operations &amp; Config</a><a href="./users.html">Users &amp; Access</a><a href="./agent-deployment.html">Agent Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="../developer/index.html">Overview</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web Panel</a><a href="../developer/desktop.html">Desktop Client</a><a href="../developer/agent.html">Go Agent</a><a href="../developer/monitoring.html">Monitoring Stack</a><a href="../developer/api-reference.html">API Reference</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -46,7 +46,7 @@ docker compose down -v
           <h2>Login fails</h2>
           <ol>
             <li>Rate-limited? Check <code>docker compose logs server | grep ratelimit</code> – 5 bad attempts / 15 min blocks the IP.</li>
-            <li>Password forgotten? Set <code>ADMIN_PASSWORD=…</code> in <code>.env</code>, restart, log in, clear it out again.</li>
+            <li>Password forgotten? Changing <code>ADMIN_PASSWORD</code> and restarting does NOT help — startup only creates an admin when none exists (idempotent). Reset it directly, no login needed: <code>docker compose exec server python -m app.cli reset-admin --username admin --password NEW-PASSWORD</code> (or <code>--password-stdin</code> to keep it out of the process argv).</li>
             <li>Refresh cookie rejected? Check the clock skew between the browser and server (TOTP also relies on this).</li>
           </ol>
 
@@ -65,6 +65,7 @@ systemctl status adminhelper-agent.timer
 journalctl -u adminhelper-agent.service -n 100 --no-pager</code></pre>
 
           <p>Common causes: clock skew &gt; 5 min, expired client cert, DNS failure, firewall blocking <code>7443/tcp</code>.</p>
+          <p><strong>Timer red vs. green:</strong> A <em>permanent</em> failure — a revoked/rotated API key (401/403) or a deleted server (404) — makes the <code>adminhelper-agent.service</code> oneshot exit non-zero (shows as <code>failed</code> in <code>systemctl status</code>, and a configured <code>OnFailure=</code> fires). <em>Transient</em> failures (server 5xx, network/DNS) stay green and are retried on the next run.</p>
 
           <p><strong>Desktop client, “Allow self-signed certificates”:</strong> the first connection <em>pins</em> the server certificate's SHA-256 fingerprint (trust-on-first-use, like SSH <code>known_hosts</code>) in the OS keyring; afterwards only that exact certificate is accepted and any change is rejected as a possible MITM. If a <em>legitimate</em> certificate rotation triggers <code>AdminHelper TOFU: … changed</code>, click <em>Reset pinned certificate</em> in the desktop settings and reconnect (re-pins on next connect).</p>
 

@@ -9,19 +9,21 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
-from datetime import datetime, timezone
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.alerter import process_alert
 from app.check_engine import effective_status, is_suppressed, next_fail_count
-from app.checkers.agent import EXCLUDED_FSTYPES
+from app.check_types import PUSH_ONLY_TYPES
+from app.checkers import get_checker
+from app.checkers.agent import EXCLUDED_FSTYPES, record_agent_report
 from app.core import database
 from app.core.auth import require_agent
 from app.core.database import get_db
-from app.core.victoria import format_line, victoria
+from app.core.time import utcnow_naive
+from app.core.victoria import format_line, safe_metric_part, victoria
 from app.models import MonitorCheck, MonitorState
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,18 @@ def _num(v):
     return None
 
 
+# Cap per-report array lengths so a compromised/misconfigured agent can't flood the
+# service (a CPU/memory/VictoriaMetrics DoS) with a huge disks/temperatures/smart list.
+# The body-size cap itself belongs at the gateway (client_max_body_size) (3.76).
+_MAX_REPORT_ITEMS = 500
+
+
+def _capped(value: object) -> list:
+    """The first _MAX_REPORT_ITEMS entries of a list value, or [] for anything else
+    (a non-list would otherwise iterate as chars / raise downstream)."""
+    return value[:_MAX_REPORT_ITEMS] if isinstance(value, list) else []
+
+
 @router.post("/agent/{server_id}/report")
 def agent_report(
     server_id: str,
@@ -89,62 +103,65 @@ def agent_report(
             status_code=status.HTTP_403_FORBIDDEN, detail="API-Key gehoert nicht zu diesem Server"
         )
 
-    import time as _time
-
-    from app.checkers.agent import AgentResourcesChecker, ServiceProcessChecker, record_agent_report
-    from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
-    from app.checkers.smart import SmartHealthChecker
-
     record_agent_report(server_id)
 
-    ts = int(_time.time())
+    ts = int(time.time())
     base_tags = {"server_id": server_id}
     lines = []
 
-    resources = report.get("resources", {})
-    if resources:
-        for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
-            val = _num(resources.get(key))
-            if val is not None:
-                lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
+    try:
+        resources = report.get("resources", {})
+        if isinstance(resources, dict):
+            for key in ("cpu_percent", "memory_percent", "load_1m", "load_5m", "load_15m"):
+                val = _num(resources.get(key))
+                if val is not None:
+                    lines.append(format_line(f"monitor_agent_{key}", base_tags, val, ts))
 
-        for disk in resources.get("disks", []):
-            if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
-                continue
-            mount = disk.get("mount", "/")
-            disk_tags = {**base_tags, "mount": mount}
-            pct = _num(disk.get("percent"))
-            if pct is not None:
-                lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
+            for disk in _capped(resources.get("disks")):
+                if disk.get("fstype", "_real_") in EXCLUDED_FSTYPES:
+                    continue
+                mount = str(disk.get("mount", "/"))
+                disk_tags = {**base_tags, "mount": mount}
+                pct = _num(disk.get("percent"))
+                if pct is not None:
+                    lines.append(format_line("monitor_agent_disk_percent", disk_tags, pct, ts))
 
-        for sensor in resources.get("temperatures", []):
-            temp_c = _num(sensor.get("temp_c"))
-            if temp_c is not None and temp_c > 0:
-                sensor_tags = {**base_tags, "sensor": sensor.get("sensor", "unknown")}
-                lines.append(format_line("monitor_agent_temp", sensor_tags, temp_c, ts))
+            for sensor in _capped(resources.get("temperatures")):
+                temp_c = _num(sensor.get("temp_c"))
+                if temp_c is not None and temp_c > 0:
+                    sensor_tags = {**base_tags, "sensor": str(sensor.get("sensor", "unknown"))}
+                    lines.append(format_line("monitor_agent_temp", sensor_tags, temp_c, ts))
 
-    uptime = _num(report.get("uptime_seconds"))
-    if uptime is not None:
-        lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
+        uptime = _num(report.get("uptime_seconds"))
+        if uptime is not None:
+            lines.append(format_line("monitor_agent_uptime_seconds", base_tags, uptime, ts))
 
-    # SMART disk metrics
-    for disk in report.get("smart", []):
-        device = disk.get("device", "unknown")
-        # Allowlist the device id used in the (otherwise-unescaped) measurement name.
-        safe_dev = re.sub(r"[^A-Za-z0-9_]", "_", str(device)).strip("_") or "unknown"
-        smart_tags = {**base_tags, "device": device}
-        dtemp = _num(disk.get("temp_c"))
-        if dtemp is not None and dtemp > 0:
-            lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, dtemp, ts))
-        realloc = _num(disk.get("reallocated_sectors", 0))
-        if realloc is not None:
-            lines.append(
-                format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, realloc, ts)
-            )
-        pending = _num(disk.get("pending_sectors", 0))
-        if pending is not None:
-            lines.append(format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, pending, ts))
+        # SMART disk metrics
+        for disk in _capped(report.get("smart")):
+            device = str(disk.get("device", "unknown"))
+            # Allowlist the device id used in the (otherwise-unescaped) measurement name.
+            safe_dev = safe_metric_part(device)
+            smart_tags = {**base_tags, "device": device}
+            dtemp = _num(disk.get("temp_c"))
+            if dtemp is not None and dtemp > 0:
+                lines.append(format_line(f"monitor_smart_temp_{safe_dev}", smart_tags, dtemp, ts))
+            realloc = _num(disk.get("reallocated_sectors", 0))
+            if realloc is not None:
+                lines.append(
+                    format_line(f"monitor_smart_reallocated_{safe_dev}", smart_tags, realloc, ts)
+                )
+            pending = _num(disk.get("pending_sectors", 0))
+            if pending is not None:
+                lines.append(
+                    format_line(f"monitor_smart_pending_{safe_dev}", smart_tags, pending, ts)
+                )
 
+    except Exception:
+        # A malformed report part (resources not a dict, a non-string tag value, a disks
+        # dict instead of a list) must only cost the metrics, not the whole request — the
+        # check evaluation below is already per-check isolated (4.47).
+        logger.exception("Metrik-Extraktion aus Agent-Report fehlgeschlagen (%s)", server_id)
+        lines = []
     if lines:
         victoria.write(lines)
 
@@ -158,24 +175,24 @@ def agent_report(
         .filter(
             MonitorCheck.server_id == server_id,
             MonitorCheck.enabled == True,  # noqa: E712
-            MonitorCheck.check_type.in_(
-                [
-                    # agent_ping is intentionally NOT evaluated here: this endpoint
-                    # calls record_agent_report() first, so the staleness age would
-                    # always be ~0 ("ok"). The scheduler is the single source for it.
-                    "agent_resources",
-                    "service_process",
-                    "proxmox_backup",
-                    "zfs_health",
-                    "docker_health",
-                    "smart_health",
-                ]
-            ),
+            # PUSH_ONLY_TYPES is exactly the push-evaluated set. agent_ping is
+            # deliberately NOT in it: this endpoint calls record_agent_report()
+            # first, so the staleness age would always be ~0 ("ok") — the scheduler
+            # is the single source for agent_ping.
+            MonitorCheck.check_type.in_(sorted(PUSH_ONLY_TYPES)),
         )
+        # Deterministic order so two concurrent pushes for this server lock the per-check state
+        # rows in the same sequence — no cross-push deadlock (4.46).
+        .order_by(MonitorCheck.id)
         .all()
     )
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = utcnow_naive()
+
+    # Collect all per-check result metrics and flush them in one write after the loop, instead of one
+    # victoria POST per check — the usual ~6 checks per report would otherwise be up to 6 extra HTTP
+    # roundtrips (each with a 10s timeout) on the report path (5.20).
+    check_lines: list[str] = []
 
     for check in agent_checks:
         # Isolate each check: a single broken check.config (or a checker raising)
@@ -184,39 +201,41 @@ def agent_report(
         try:
             config = json.loads(check.config) if check.config else {}
 
-            if check.check_type == "agent_resources":
-                result_status, message, metrics = AgentResourcesChecker().evaluate(config, report)
-            elif check.check_type == "service_process":
-                result_status, message, metrics = ServiceProcessChecker().evaluate(config, report)
-            elif check.check_type == "proxmox_backup":
-                result_status, message, metrics = ProxmoxBackupChecker().evaluate(config, report)
-            elif check.check_type == "zfs_health":
-                result_status, message, metrics = ZfsHealthChecker().evaluate(config, report)
-            elif check.check_type == "docker_health":
-                result_status, message, metrics = DockerHealthChecker().evaluate(config, report)
-            elif check.check_type == "smart_health":
-                result_status, message, metrics = SmartHealthChecker().evaluate(config, report)
-            else:
-                continue
+            # Reuse the checker registry instead of a hand-written if/elif that
+            # duplicated the push-checker list across imports, the in_-filter and
+            # the dispatch. The filter above guarantees check_type is a push type,
+            # so get_checker always resolves; each push checker implements evaluate().
+            checker = get_checker(check.check_type)
+            result_status, message, metrics = checker.evaluate(config, report)
 
             # Extract structured details
             details = metrics.pop("_details", None) if metrics else None
 
             if metrics:
-                victoria.write_check_result(
-                    check_id=check.id,
-                    check_type=check.check_type,
-                    server_id=server_id,
-                    name=check.name,
-                    status=result_status,
-                    duration_ms=0,
-                    extra_metrics=metrics,
+                check_lines.extend(
+                    victoria.build_check_result_lines(
+                        check_id=check.id,
+                        check_type=check.check_type,
+                        server_id=server_id,
+                        name=check.name,
+                        status=result_status,
+                        duration_ms=0,
+                        extra_metrics=metrics,
+                    )
                 )
 
             # Update state — same damping logic as the scheduler path; the
             # check_engine pure functions are the single source (audit: the
             # previous inline copy could drift from the tested implementation).
-            state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+            # Lock the state row for the read-modify-write so two near-simultaneous pushes for
+            # one server (agent restart/retry) can't both read the same fail_count and clobber it
+            # or double-alert — same race as the scheduler path (4.46). No-op on sqlite.
+            state = (
+                db.query(MonitorState)
+                .filter(MonitorState.check_id == check.id)
+                .with_for_update()
+                .first()
+            )
             old_status = state.status if state else "pending"
 
             prev_fail_count = state.fail_count if state else 0
@@ -270,6 +289,10 @@ def agent_report(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Speichern der Check-Auswertung fehlgeschlagen",
             )
+
+    # Flush all collected per-check metrics in a single write (5.20).
+    if check_lines:
+        victoria.write(check_lines)
 
     # Only after the state is durably committed: dispatch alerts off-request.
     for check_id, old_s, new_s in pending_alerts:

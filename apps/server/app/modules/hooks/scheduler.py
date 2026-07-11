@@ -29,7 +29,7 @@ scheduler = BackgroundScheduler(
     },
 )
 
-_INTERVAL_MAP = {
+INTERVAL_MAP = {
     "1m": {"minutes": 1},
     "5m": {"minutes": 5},
     "15m": {"minutes": 15},
@@ -43,13 +43,13 @@ _INTERVAL_MAP = {
 
 def _parse_trigger(interval: str):
     """Convert an interval string or cron expression into an APScheduler trigger."""
-    if interval in _INTERVAL_MAP:
-        return IntervalTrigger(**_INTERVAL_MAP[interval])
+    if interval in INTERVAL_MAP:
+        return IntervalTrigger(**INTERVAL_MAP[interval])
     parts = interval.split()
     if len(parts) == 5:
         return CronTrigger.from_crontab(interval)
     raise ValueError(
-        f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(_INTERVAL_MAP)} oder Cron (5 Felder)"
+        f"Ungültiges Intervall: {interval!r}. Erlaubt: {', '.join(INTERVAL_MAP)} oder Cron (5 Felder)"
     )
 
 
@@ -191,6 +191,37 @@ def schedule_hook_reconcile(seconds: int = 30) -> None:
 # System jobs (not user-configurable)
 # ---------------------------------------------------------------------------
 
+
+def _run_in_session(fail_label: str, work) -> None:
+    """Run a system-job body in a fresh DB session, guaranteeing the close and a
+    uniform failure log. ``work(db)`` does the cleanup and returns its own success
+    message (or None) — so each job keeps its specific text/format (2.49)."""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        msg = work(db)
+        if msg:
+            logger.info(msg)
+    except Exception:
+        logger.exception("%s fehlgeschlagen", fail_label)
+    finally:
+        db.close()
+
+
+def _register_system_job(runner, job_id: str, **trigger_kw) -> None:
+    """Register a system job: run once immediately at startup, then on the given
+    IntervalTrigger interval; idempotent (replace_existing). Shared by the
+    schedule_* helpers so the add_job boilerplate lives in one place (2.49)."""
+    scheduler.add_job(
+        runner,
+        trigger=IntervalTrigger(**trigger_kw),
+        id=job_id,
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )
+
+
 _BLACKLIST_CLEANUP_JOB_ID = "system:blacklist-cleanup"
 
 
@@ -198,29 +229,18 @@ def _run_blacklist_cleanup() -> None:
     """Remove expired JWT blacklist entries so the token_blacklist table does
     not grow without bound."""
     from app.core.auth import cleanup_expired_blacklist
-    from app.core.database import SessionLocal
 
-    db = SessionLocal()
-    try:
+    def work(db):
         removed = cleanup_expired_blacklist(db)
-        if removed:
-            logger.info("Blacklist-Cleanup: %d abgelaufene Eintraege entfernt", removed)
-    except Exception:
-        logger.exception("Blacklist-Cleanup fehlgeschlagen")
-    finally:
-        db.close()
+        return f"Blacklist-Cleanup: {removed} abgelaufene Eintraege entfernt" if removed else None
+
+    _run_in_session("Blacklist-Cleanup", work)
 
 
 def schedule_blacklist_cleanup(hours: int = 6) -> None:
     """Register a periodic system job for the blacklist cleanup (idempotent).
     Runs once immediately at start and then every `hours` hours."""
-    scheduler.add_job(
-        _run_blacklist_cleanup,
-        trigger=IntervalTrigger(hours=hours),
-        id=_BLACKLIST_CLEANUP_JOB_ID,
-        replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
-    )
+    _register_system_job(_run_blacklist_cleanup, _BLACKLIST_CLEANUP_JOB_ID, hours=hours)
 
 
 _ENROLLMENT_TOKEN_CLEANUP_JOB_ID = "system:enrollment-token-cleanup"
@@ -229,30 +249,46 @@ _ENROLLMENT_TOKEN_CLEANUP_JOB_ID = "system:enrollment-token-cleanup"
 def _run_enrollment_token_cleanup() -> None:
     """Remove spent/expired enrollment tokens so the enrollment_tokens table does
     not grow without bound (F6)."""
-    from app.core.database import SessionLocal
     from app.modules.enrollment.models import cleanup_finished_enrollment_tokens
 
-    db = SessionLocal()
-    try:
+    def work(db):
         removed = cleanup_finished_enrollment_tokens(db)
-        if removed:
-            logger.info("Enrollment-Token-Cleanup: %d erledigte Eintraege entfernt", removed)
-    except Exception:
-        logger.exception("Enrollment-Token-Cleanup fehlgeschlagen")
-    finally:
-        db.close()
+        return (
+            f"Enrollment-Token-Cleanup: {removed} erledigte Eintraege entfernt" if removed else None
+        )
+
+    _run_in_session("Enrollment-Token-Cleanup", work)
 
 
 def schedule_enrollment_token_cleanup(hours: int = 6) -> None:
     """Register a periodic system job for the enrollment-token cleanup (idempotent).
     Runs once immediately at start and then every `hours` hours."""
-    scheduler.add_job(
-        _run_enrollment_token_cleanup,
-        trigger=IntervalTrigger(hours=hours),
-        id=_ENROLLMENT_TOKEN_CLEANUP_JOB_ID,
-        replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
+    _register_system_job(
+        _run_enrollment_token_cleanup, _ENROLLMENT_TOKEN_CLEANUP_JOB_ID, hours=hours
     )
+
+
+_PROVISION_TOKEN_CLEANUP_JOB_ID = "system:provision-token-cleanup"
+
+
+def _run_provision_token_cleanup() -> None:
+    """Remove spent/expired provision tokens so the provision_tokens table does not
+    grow without bound (24h single-use tokens)."""
+    from app.modules.provisioning.models import cleanup_finished_provision_tokens
+
+    def work(db):
+        removed = cleanup_finished_provision_tokens(db)
+        return (
+            f"Provision-Token-Cleanup: {removed} erledigte Eintraege entfernt" if removed else None
+        )
+
+    _run_in_session("Provision-Token-Cleanup", work)
+
+
+def schedule_provision_token_cleanup(hours: int = 6) -> None:
+    """Register a periodic system job for the provision-token cleanup (idempotent).
+    Runs once immediately at start and then every `hours` hours."""
+    _register_system_job(_run_provision_token_cleanup, _PROVISION_TOKEN_CLEANUP_JOB_ID, hours=hours)
 
 
 _AUDIT_CLEANUP_JOB_ID = "system:audit-cleanup"
@@ -262,30 +298,19 @@ def _run_audit_cleanup() -> None:
     """Prune audit_log rows older than AUDIT_RETENTION_DAYS so the append-only
     trail does not grow without bound (the only delete path for audit_log)."""
     from app.core.config import AUDIT_RETENTION_DAYS
-    from app.core.database import SessionLocal
     from app.modules.audit.service import cleanup_old_entries
 
-    db = SessionLocal()
-    try:
+    def work(db):
         removed = cleanup_old_entries(db, AUDIT_RETENTION_DAYS)
-        if removed:
-            logger.info("Audit-Cleanup: %d alte Eintraege entfernt", removed)
-    except Exception:
-        logger.exception("Audit-Cleanup fehlgeschlagen")
-    finally:
-        db.close()
+        return f"Audit-Cleanup: {removed} alte Eintraege entfernt" if removed else None
+
+    _run_in_session("Audit-Cleanup", work)
 
 
 def schedule_audit_cleanup(hours: int = 24) -> None:
     """Register a periodic system job for the audit-log retention cleanup
     (idempotent). Runs once immediately at start and then every `hours` hours."""
-    scheduler.add_job(
-        _run_audit_cleanup,
-        trigger=IntervalTrigger(hours=hours),
-        id=_AUDIT_CLEANUP_JOB_ID,
-        replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
-    )
+    _register_system_job(_run_audit_cleanup, _AUDIT_CLEANUP_JOB_ID, hours=hours)
 
 
 _OUTBOX_DRAIN_JOB_ID = "system:notification-outbox-drain"
@@ -294,32 +319,21 @@ _OUTBOX_DRAIN_JOB_ID = "system:notification-outbox-drain"
 def _run_outbox_drain() -> None:
     """Deliver pending e-mail notifications (notification hub outbox), out of the
     request path, with retry/backoff handled per entry."""
-    from app.core.database import SessionLocal
     from app.modules.notifications.outbox import drain_outbox
 
-    db = SessionLocal()
-    try:
+    def work(db):
         sent, failed = drain_outbox(db)
         if sent or failed:
-            logger.info(
-                "Notification-Outbox: %d gesendet, %d endgueltig fehlgeschlagen", sent, failed
-            )
-    except Exception:
-        logger.exception("Notification-Outbox-Drain fehlgeschlagen")
-    finally:
-        db.close()
+            return f"Notification-Outbox: {sent} gesendet, {failed} endgueltig fehlgeschlagen"
+        return None
+
+    _run_in_session("Notification-Outbox-Drain", work)
 
 
 def schedule_outbox_drain(minutes: int = 1) -> None:
     """Register the periodic notification-outbox drain (idempotent). Runs once at
     start and then every `minutes` minutes for timely e-mail delivery."""
-    scheduler.add_job(
-        _run_outbox_drain,
-        trigger=IntervalTrigger(minutes=minutes),
-        id=_OUTBOX_DRAIN_JOB_ID,
-        replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
-    )
+    _register_system_job(_run_outbox_drain, _OUTBOX_DRAIN_JOB_ID, minutes=minutes)
 
 
 _NOTIFICATION_CLEANUP_JOB_ID = "system:notification-cleanup"
@@ -329,27 +343,16 @@ def _run_notification_cleanup() -> None:
     """Prune bell-feed rows older than NOTIFICATION_RETENTION_DAYS so the
     notification table does not grow without bound."""
     from app.core.config import NOTIFICATION_RETENTION_DAYS
-    from app.core.database import SessionLocal
     from app.modules.notifications.service import cleanup_old_notifications
 
-    db = SessionLocal()
-    try:
+    def work(db):
         removed = cleanup_old_notifications(db, NOTIFICATION_RETENTION_DAYS)
-        if removed:
-            logger.info("Notification-Cleanup: %d alte Eintraege entfernt", removed)
-    except Exception:
-        logger.exception("Notification-Cleanup fehlgeschlagen")
-    finally:
-        db.close()
+        return f"Notification-Cleanup: {removed} alte Eintraege entfernt" if removed else None
+
+    _run_in_session("Notification-Cleanup", work)
 
 
 def schedule_notification_cleanup(hours: int = 24) -> None:
     """Register the periodic bell-feed retention cleanup (idempotent). Runs once
     at start and then every `hours` hours."""
-    scheduler.add_job(
-        _run_notification_cleanup,
-        trigger=IntervalTrigger(hours=hours),
-        id=_NOTIFICATION_CLEANUP_JOB_ID,
-        replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
-    )
+    _register_system_job(_run_notification_cleanup, _NOTIFICATION_CLEANUP_JOB_ID, hours=hours)

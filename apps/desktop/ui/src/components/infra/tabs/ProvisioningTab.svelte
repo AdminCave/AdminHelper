@@ -5,7 +5,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { errMsg } from '$lib/utils/errors';
+  import { onMount, onDestroy } from 'svelte';
   import type { FrpProvisionToken, Server } from '$lib/api/types';
   import { provisioningApi } from '$lib/api/provisioning';
   import { session, settings } from '$lib/stores/session';
@@ -21,11 +22,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let loading = $state(false);
   let command = $state('');
 
-  const locale = $derived($language === 'de' ? 'de-DE' : 'en-GB');
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
+  // The provision command embeds a one-time token that's redeemable until it
+  // expires, so don't leave it on screen indefinitely — auto-hide it (3.64).
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleHide(ms: number): void {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      command = '';
+      hideTimer = null;
+    }, ms);
   }
+  onDestroy(() => {
+    if (hideTimer) clearTimeout(hideTimer);
+  });
+
+  const locale = $derived($language === 'de' ? 'de-DE' : 'en-GB');
 
   async function loadTokens(): Promise<void> {
     const s = $session;
@@ -54,6 +65,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         `  --token ${result.token} \\\n` +
         `  --server-id ${server.id}${insecure}`;
       showStatus($t('infra.prov.created'));
+      scheduleHide(60_000); // auto-hide the token after a minute if left untouched
       await loadTokens();
     } catch (err) {
       reportError(errMsg(err));
@@ -65,6 +77,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await navigator.clipboard.writeText(command);
       showStatus($t('infra.prov.commandCopied'));
+      scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
     } catch {
       reportError($t('infra.prov.copyError'));
     }

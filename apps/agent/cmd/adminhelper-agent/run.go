@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,7 @@ import (
 	"adminhelper-agent/internal/config"
 	"adminhelper-agent/internal/enroll"
 	"adminhelper-agent/internal/frpc"
+	"adminhelper-agent/internal/httpclient"
 	"adminhelper-agent/internal/logging"
 	"adminhelper-agent/internal/monitor"
 )
@@ -33,8 +35,7 @@ func runCmd() *cobra.Command {
 		Long:  "Ohne --once: Dauerbetrieb (alle 5 Minuten). Mit --once: einmaliger Durchlauf (fuer systemd-Timer).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if once {
-				runOnce(context.Background())
-				return nil
+				return runOnce(context.Background())
 			}
 			// On Windows, run under the SCM when started as a service (reports
 			// SERVICE_RUNNING; otherwise sc start times out with error 1053).
@@ -76,17 +77,31 @@ func runLoop() error {
 	}
 }
 
-func runOnce(ctx context.Context) {
+// runOnce performs one sync+push cycle. It always attempts both (a broken sync must
+// not skip the monitor push) and logs every error, but RETURNS an error only for a
+// permanent failure (rotated/revoked key, deleted server) so a oneshot run exits
+// non-zero and systemd's OnFailure fires. Transient failures (5xx, network) are
+// logged and swallowed — the next run retries (4.80/4.81). The long-running loop
+// discards the return and keeps ticking.
+func runOnce(ctx context.Context) error {
 	// The agent runs as a oneshot (systemd timer / scheduled task), so renewal
 	// is a check-at-each-run rather than a background timer: if the enrolled cert
 	// is past ~50 % of its lifetime, renew it before the pushes.
 	maybeRenewIdentity()
+	var permanent error
 	if err := frpc.Sync(); err != nil {
 		logger.Errorf("FRPC-Sync Fehler: %v", err)
+		if errors.Is(err, httpclient.ErrPermanent) {
+			permanent = err
+		}
 	}
 	if err := monitor.Push(ctx); err != nil {
 		logger.Errorf("Monitor-Push Fehler: %v", err)
+		if permanent == nil && errors.Is(err, httpclient.ErrPermanent) {
+			permanent = err
+		}
 	}
+	return permanent
 }
 
 // maybeRenewIdentity renews the enrolled mTLS cert when due. Best-effort: a

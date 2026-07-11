@@ -14,35 +14,39 @@
 set -uo pipefail
 SRV_IP="${1:?}"; VSID="${2:?}"; VPTOK="${3:?}"; VB64="${4:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
+# shellcheck source=scripts/tests/crabbox_lib.sh
+. "$(dirname "$0")/crabbox_lib.sh"
 
 echo "[visitorbox] hydrate + build/install the agent (for the binary + frpc sidecar)"
 AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[visitorbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
-( cd apps/agent && make build-linux ) || { echo "[visitorbox] go build failed"; exit 1; }
-cp -f apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu ./frpc 2>/dev/null || true
-VERSION="0.0.0-test" bash apps/agent/build-deb.sh >/dev/null 2>&1 || true
-DEB="$(ls -1 ./adminhelper-agent_*_amd64.deb 2>/dev/null | head -1)"
-[ -n "$DEB" ] && { sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB"; } || { echo "[visitorbox] no .deb"; exit 1; }
+DEB="$(cbx_build_agent_deb visitorbox)" || exit 1
+sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[visitorbox] install failed"; exit 1; }
 
 echo "[visitorbox] provision -> CA-signed mTLS identity for the visitor's TLS to frps"
 sudo adminhelper-agent provision --url "https://$SRV_IP" --token "$VPTOK" --server-id "$VSID" --insecure \
   && echo "VIS_PROVISION_OK" || { echo "VIS_PROVISION_FAIL"; exit 1; }
 
-echo "[visitorbox] write + rewire the visitor.toml (relative identity/ -> the provisioned cert)"
+echo "[visitorbox] write + rewire the visitor.toml ({{IDENTITY_DIR}} placeholder -> the provisioned cert)"
 sudo mkdir -p /etc/frp
 printf '%s' "$VB64" | base64 -d | sudo tee /etc/frp/visitor.toml >/dev/null
+# The server emits {{IDENTITY_DIR}} placeholders (config_generator.py); the desktop
+# replaces them with its keyring-exported identity dir. This box has no desktop, so
+# it maps the placeholder straight to the agent's provisioned mTLS material.
 sudo sed -i \
-  -e 's#identity/ca.crt#/etc/adminhelper/identity/ca.crt#' \
-  -e 's#identity/cert.pem#/etc/adminhelper/identity/agent.crt#' \
-  -e 's#identity/key.pem#/etc/adminhelper/identity/agent.key#' \
+  -e 's#{{IDENTITY_DIR}}/ca.crt#/etc/adminhelper/identity/ca.crt#' \
+  -e 's#{{IDENTITY_DIR}}/cert.pem#/etc/adminhelper/identity/agent.crt#' \
+  -e 's#{{IDENTITY_DIR}}/key.pem#/etc/adminhelper/identity/agent.key#' \
   /etc/frp/visitor.toml
 VPORT="$(grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0-9]+')"
 [ -n "$VPORT" ] && echo "VIS_BIND_PORT=$VPORT" || { echo "VIS_NO_BIND_PORT"; sudo cat /etc/frp/visitor.toml; exit 1; }
 
 echo "[visitorbox] run frpc visitor -> bind 127.0.0.1:$VPORT (through frps to the agent's sshd)"
 sudo sh -c '/usr/bin/frpc -c /etc/frp/visitor.toml >/tmp/frpc-vis.log 2>&1' &
-sleep 8
-if grep -qiE 'start.*visitor.*success|login to server success|start proxy success' /tmp/frpc-vis.log; then
+# Poll for the visitor registration instead of a fixed sleep — it can lag on a loaded box (6.137).
+vis_ok=0
+for _ in $(seq 1 20); do grep -qiE 'start.*visitor.*success|login to server success|start proxy success' /tmp/frpc-vis.log 2>/dev/null && { vis_ok=1; break; }; sleep 1; done
+if [ "$vis_ok" = 1 ]; then
   echo "VIS_FRPC_UP"
 else
   echo "VIS_FRPC_DOWN"; sed 's/^/    /' /tmp/frpc-vis.log

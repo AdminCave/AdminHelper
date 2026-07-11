@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -55,8 +55,9 @@ docker compose down -v
             </div>
             <div class="card" data-reveal>
               <h3>Admin-Passwort vergessen</h3>
-              <p>Neues <code>ADMIN_PASSWORD</code> in die <code>.env</code> schreiben, DB-Entry aktualisieren:</p>
-              <pre><code>docker compose exec server python -m app.cli reset-admin</code></pre>
+              <p><code>ADMIN_PASSWORD</code> in der <code>.env</code> zu ändern hilft NICHT — der Startup legt einen Admin nur an, wenn noch keiner existiert (idempotent). Das Passwort direkt zurücksetzen (kein Login nötig):</p>
+              <pre><code>docker compose exec server python -m app.cli reset-admin --username admin --password NEUES-PASSWORT</code></pre>
+              <p>Sicherer (Passwort nicht im Prozess-<code>argv</code>): <code>--password-stdin</code> statt <code>--password</code> und das Passwort auf stdin.</p>
             </div>
             <div class="card" data-reveal>
               <h3>„Session abgelaufen" direkt nach Login</h3>
@@ -79,6 +80,7 @@ docker compose down -v
             <li>API-Key widerrufen? Im Desktop-Client (Server-Modus) → <em>Infrastruktur → Server → Tab Provisionierung</em> einen neuen Token erzeugen und am Host einlösen.</li>
             <li>Zertifikat abgelaufen? <code>openssl x509 -in /etc/adminhelper/client.crt -noout -enddate</code></li>
           </ol>
+          <p><strong>Timer rot vs. grün:</strong> Bei einem <em>permanenten</em> Fehler — widerrufener/rotierter API-Key (401/403) oder gelöschter Server (404) — beendet sich der Oneshot-Lauf <code>adminhelper-agent.service</code> mit Exit&ne;0 (erscheint als <code>failed</code> in <code>systemctl status</code>, ein konfiguriertes <code>OnFailure=</code> feuert). <em>Transiente</em> Fehler (Server-5xx, Netz/DNS) bleiben grün und werden beim nächsten Lauf erneut versucht.</p>
 
           <h2>Monitoring zeigt keine Daten</h2>
           <ul>
@@ -95,9 +97,9 @@ docker compose down -v
           </ul>
 
           <h2>Monitoring-Scheduler stoppt nach Upgrade</h2>
-          <p>APScheduler verwendet einen Job-Store in der DB. Bei Schema-Changes werden veraltete Job-Einträge migriert; bei wirklich festgefahrenen Situationen einmalig:</p>
+          <p>Der Scheduler läuft seit v0.38.0 als eigener Dienst (<code>RUN_MODE=scheduler</code>, genau eine Instanz) und rekonziliert die periodischen Jobs (E-Mail-Outbox, Aufbewahrungs-Cleanups, Scheduled Hooks) aus der DB. Bleiben Jobs nach einem Upgrade aus, den Dienst neu starten:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>docker compose exec server python -m app.cli rebuild-scheduler</code></pre>
+<pre><code>docker compose restart scheduler</code></pre>
 
           <h2>Performance</h2>
           <ul>

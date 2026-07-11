@@ -19,9 +19,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { open, title, token, onClose }: Props = $props();
 
-  const triggerUrl = $derived.by(() => {
+  const curlExample = $derived.by(() => {
     if (!token) return '';
-    return `${window.location.origin}/api/hooks/trigger/${token}`;
+    // Prefer the header variant: a token in the URL path leaks into access logs, proxy
+    // logs and browser history. The server accepts both /trigger (header) and
+    // /trigger/{token} (path) (3.101).
+    return `curl -X POST -H "X-Hook-Token: ${token}" ${window.location.origin}/api/hooks/trigger`;
   });
 
   async function copy() {
@@ -41,12 +44,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <div class="key-reveal">{token}</div>
   <div style="margin-top:14px">
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
-      {$t('hook.webhookToken.triggerUrl')}
+      {$t('hook.webhookToken.triggerCmd')}
     </div>
     <code
       style="display:block;padding:8px 10px;background:var(--bg-elevated);border-radius:6px;font-size:12px;word-break:break-all"
     >
-      {triggerUrl}
+      {curlExample}
     </code>
   </div>
   {#snippet footer()}

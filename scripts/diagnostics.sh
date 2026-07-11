@@ -32,8 +32,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# The secret-bearing .env keys whose VALUES must never leave the host.
-SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD)
+# The secret-bearing .env keys whose VALUES must never leave the host. SMTP_PASSWORD is a
+# regular .env key since the notification hub — without it the SMTP relay password would
+# end up in cleartext in env.sanitized / the logs of a bundle advertised as issue-safe (3.7).
+SECRET_KEYS=(SECRET_KEY POSTGRES_PASSWORD MONITOR_API_KEY CA_ROOT_PASSPHRASE ADMIN_PASSWORD SMTP_PASSWORD)
 
 # build_redaction_sedfile <envfile> <sedfile>
 # Writes a sed script that masks the .env secret values plus generic token forms.
@@ -67,6 +69,15 @@ SED
 # redact <sedfile> : filter stdin -> stdout through the redaction sed script.
 redact() {
     sed -f "$1"
+}
+
+# sanitize_env <envfile> : mask secret VALUES by key line, for env.sanitized -> stdout.
+# The second, independent redaction path — build_redaction_sedfile redacts by value,
+# this redacts by key, so a secret is masked even if its value never appeared in a log.
+sanitize_env() {
+    local envfile="$1" pat
+    pat="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
+    sed -E "s/^([[:space:]]*(${pat}))=.*/\1=<redacted>/" "$envfile"
 }
 
 main() {
@@ -113,9 +124,7 @@ main() {
 
     # --- env.sanitized (mask secret VALUES) -------------------------------
     if [ -f .env ]; then
-        local pat
-        pat="$(IFS='|'; printf '%s' "${SECRET_KEYS[*]}")"
-        sed -E "s/^([[:space:]]*(${pat}))=.*/\1=<redacted>/" .env > "$stage/env.sanitized"
+        sanitize_env .env > "$stage/env.sanitized"
     fi
 
     # --- per-service logs (redacted) --------------------------------------

@@ -14,34 +14,7 @@ from types import SimpleNamespace
 from app import alerter
 from app.alerter import _is_in_cooldown, _rule_matches, process_alert
 
-
-def make_rule(**kw):
-    """Minimal MonitorAlertRule stub with the fields read by the logic."""
-    defaults = dict(
-        id="rule-1",
-        name="r",
-        match_severity=None,
-        match_server_id=None,
-        channel="webhook",
-        channel_config="{}",
-        cooldown_minutes=30,
-        enabled=True,
-    )
-    defaults.update(kw)
-    return SimpleNamespace(**defaults)
-
-
-def make_check(**kw):
-    """Minimal MonitorCheck stub."""
-    defaults = dict(
-        id="check-1",
-        name="c",
-        check_type="ping",
-        server_id="srv-1",
-        severity="critical",
-    )
-    defaults.update(kw)
-    return SimpleNamespace(**defaults)
+from ._helpers import _CapturingDb, make_check, make_msg, make_rule
 
 
 class TestRuleMatches:
@@ -104,32 +77,6 @@ class TestIsInCooldown:
         assert _is_in_cooldown(db, make_rule(cooldown_minutes=30), make_check()) is False
 
 
-class _CapturingDb:
-    """Fake DB for process_alert: provides the rules list, collects add()
-    and flush() calls. process_alert only flushes the alert log now; the
-    caller owns the commit (see the H7 fix)."""
-
-    def __init__(self, rules):
-        self._rules = rules
-        self.added = []
-        self.flushed = False
-
-    def query(self, *args, **kwargs):
-        return self
-
-    def filter(self, *args, **kwargs):
-        return self
-
-    def all(self):
-        return self._rules
-
-    def add(self, entry):
-        self.added.append(entry)
-
-    def flush(self):
-        self.flushed = True
-
-
 class TestRecoveryBypassesCooldown:
     def test_recovery_dispatches_even_when_cooldown_active(self, monkeypatch):
         rule = make_rule()
@@ -189,6 +136,32 @@ class TestRecoveryBypassesCooldown:
         assert db.flushed is False
 
 
+class TestBuildsMessageOnce:
+    """2.30: _build_message runs once per transition on the caller's session, not
+    once per matching rule plus once for the hub (which opened N+1 sessions and
+    could yield text that diverged if the state row changed between builds)."""
+
+    def test_message_built_once_for_many_rules(self, monkeypatch):
+        db = _CapturingDb([make_rule(id="r1"), make_rule(id="r2"), make_rule(id="r3")])
+        calls = {"n": 0}
+
+        def counting_build(session, check, old, new):
+            calls["n"] += 1
+            return make_msg()
+
+        monkeypatch.setattr(alerter, "_build_message", counting_build)
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+        monkeypatch.setattr(alerter, "_dispatch", lambda *a, **k: (True, None))
+        monkeypatch.setattr(alerter, "_emit_to_hub", lambda *a, **k: None)
+
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+        # process_alert builds it once and reuses it for all rules + the hub. The
+        # old code built it N+1 times inside the (here mocked) dispatch + hub paths,
+        # so this would count 0 there; the new single build makes it exactly 1.
+        assert calls["n"] == 1
+
+
 class TestWebhookSsrf:
     """M2: a webhook URL pointing at a private/reserved target must be rejected
     before any outbound request is made."""
@@ -204,8 +177,7 @@ class TestWebhookSsrf:
             {"url": "http://169.254.169.254/latest/meta-data"},
             make_rule(),
             make_check(),
-            old_status="ok",
-            new_status="critical",
+            make_msg(),
         )
 
         assert success is False
@@ -228,9 +200,114 @@ class TestWebhookSsrf:
             {"url": "https://hooks.example.com/x"},
             make_rule(),
             make_check(),
-            old_status="ok",
-            new_status="critical",
+            make_msg(),
         )
 
         assert success is True
         assert posted["n"] == 1
+
+
+class TestRuleLoopIsolation:
+    def test_a_throwing_dispatch_does_not_abort_the_loop(self, monkeypatch):
+        # 4.45: a misconfigured rule whose _dispatch raises (e.g. smtp_port "abc" parsed before
+        # _send_email's own try) must not abort the whole loop and roll back every other rule's
+        # alert log — each rule still gets a log entry, the bad one flagged as a failed attempt.
+        bad = make_rule(id="rule-bad", name="bad")
+        good = make_rule(id="rule-good", name="good")
+        db = _CapturingDb([bad, good])
+
+        def fake_dispatch(rule, check, msg):
+            if rule.id == "rule-bad":
+                raise ValueError("smtp_port abc")
+            return True, None
+
+        monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+        assert len(db.added) == 2, "beide Rules bekommen einen Log-Eintrag trotz Fehler in einer"
+        assert db.flushed is True
+        by_rule = {e.alert_rule_id: e.success for e in db.added}
+        assert by_rule["rule-bad"] is False
+        assert by_rule["rule-good"] is True
+
+
+def test_only_enabled_rules_dispatch_through_the_real_query(monkeypatch):
+    # 6.59: _CapturingDb.filter() is a no-op, so process_alert's enabled==True filter (alerter.py) is
+    # never exercised by the fake-based tests. Against a real sqlite DB, of two otherwise-matching
+    # rules only the enabled one dispatches — a regression dropping the filter would let disabled
+    # rules fire webhooks/mails again, and every fake-based test would stay green.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models import Base, MonitorAlertRule
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+
+    def _rule(rid, enabled):
+        return MonitorAlertRule(
+            id=rid,
+            name="r",
+            match_severity=None,  # matches any check
+            match_server_id=None,
+            channel="webhook",
+            channel_config="{}",
+            cooldown_minutes=30,
+            enabled=enabled,
+        )
+
+    db.add_all([_rule("enabled-rule", True), _rule("disabled-rule", False)])
+    db.commit()
+
+    dispatched = []
+    monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+
+    def fake_dispatch(rule, *a, **k):
+        dispatched.append(rule.id)
+        return True, None
+
+    monkeypatch.setattr(alerter, "_dispatch", fake_dispatch)
+    process_alert(db, make_check(), old_status="ok", new_status="critical")
+
+    assert dispatched == ["enabled-rule"], f"only the enabled rule may dispatch, got {dispatched}"
+
+
+def test_build_message_recovery_escalation_and_details():
+    # 6.60: _build_message's content — recovery vs escalation subject/text, and the "Details: ..."
+    # state-message append — was never pinned; the fake-based tests monkeypatch it away. It takes the
+    # caller's session (2.30, no longer opens its own SessionLocal), so a plain fake db supplies the
+    # MonitorState; no network, no SessionLocal patch.
+    from app.alerter import _build_message
+
+    check = make_check(name="web", check_type="http", severity="critical")
+
+    class _Db:
+        def __init__(self, state):
+            self._state = state
+
+        def query(self, *a):
+            return self
+
+        def filter(self, *a):
+            return self
+
+        def first(self):
+            return self._state
+
+    rec = _build_message(_Db(None), check, old_status="critical", new_status="ok")
+    assert rec["is_recovery"] is True
+    assert "RECOVERY" in rec["subject"] and "wieder OK" in rec["subject"]
+    assert rec["text"].startswith("RECOVERY")
+
+    state = SimpleNamespace(message="Port 22: refused")
+    esc = _build_message(_Db(state), check, old_status="warning", new_status="critical")
+    assert esc["is_recovery"] is False
+    assert "CRITICAL" in esc["subject"]
+    assert "Severity: critical" in esc["text"]
+    assert "Details: Port 22: refused" in esc["text"]

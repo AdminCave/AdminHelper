@@ -16,6 +16,7 @@
 package provision
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -66,6 +67,9 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	if adminHelperURL == "" || token == "" || serverID == "" {
 		return fmt.Errorf("--url, --token und --server-id sind erforderlich")
 	}
+	if err := config.RequireHTTPS(adminHelperURL); err != nil {
+		return err
+	}
 
 	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, 8444)
 	if err != nil {
@@ -77,23 +81,11 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Printf("Provisioning fuer Server %q gestartet.\n", resp.ServerName)
 
-	// TOFU: a blind --insecure (no --cacert) would otherwise persist INSECURE=1
-	// into the recurring loop, permanently disabling TLS verification and leaking
-	// the long-lived API key every cycle. Instead, pin the certificate the server
-	// actually presented during this activate call; the loop verifies against it.
-	// --insecure thus applies only to this one-off provisioning call.
-	effectiveCacert := cacert
-	effectiveInsecure := insecure
-	if insecure && cacert == "" && len(serverCertPEM) > 0 {
-		pinnedPath, err := writePinnedCert(serverCertPEM)
-		if err != nil {
-			return fmt.Errorf("Server-Zertifikat pinnen: %w", err)
-		}
-		defer os.Remove(pinnedPath)
-		effectiveCacert = pinnedPath
-		effectiveInsecure = false
-		fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+	effectiveCacert, effectiveInsecure, cleanupPin, err := pinIfBlindInsecure(cacert, insecure, serverCertPEM)
+	if err != nil {
+		return err
 	}
+	defer cleanupPin()
 
 	// 0. mTLS enrollment: fetch the agent's client cert from the ca-issuer with
 	// the one-time token. Best-effort — during the permissive rollout (A4) the
@@ -117,13 +109,14 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	// path (e.g. "/api/monitoring"); older/absolute values fall back to the
 	// well-known path.
 	if resp.MonitorAPIKey != nil && *resp.MonitorAPIKey != "" {
-		monitorPath := "/api/monitoring"
-		if resp.MonitorURL != nil && strings.HasPrefix(*resp.MonitorURL, "/") {
-			monitorPath = *resp.MonitorURL
-		}
-		monitorURL := adminHelperURL + monitorPath
+		monitorURL := monitorBaseURL(adminHelperURL, resp.MonitorURL)
 		fmt.Println("→ Monitor-Agent wird eingerichtet...")
-		if err := monitor.Init(monitorURL, *resp.MonitorAPIKey, serverID, "", effectiveCacert, effectiveInsecure); err != nil {
+		if err := monitor.Init(monitor.InitParams{
+			URL:      monitorURL,
+			APIKey:   *resp.MonitorAPIKey,
+			ServerID: serverID,
+			TLS:      config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
+		}); err != nil {
 			return fmt.Errorf("Monitor-Init fehlgeschlagen: %w", err)
 		}
 	} else {
@@ -133,7 +126,14 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	// 2. FRP apply only if the server has an FRP tunnel.
 	if resp.FRP != nil {
 		fmt.Println("→ FRP-Client wird eingerichtet...")
-		if err := frpc.Apply(adminHelperURL, serverID, resp.APIKey, resp.FRP.Config, resp.FRP.PkiBundle, effectiveCacert, effectiveInsecure); err != nil {
+		if err := frpc.Apply(frpc.ApplyParams{
+			AdminHelperURL: adminHelperURL,
+			ServerID:       serverID,
+			APIKey:         resp.APIKey,
+			FrpConfigB64:   resp.FRP.Config,
+			PkiBundleB64:   resp.FRP.PkiBundle,
+			TLS:            config.TLSOpts{CACert: effectiveCacert, Insecure: effectiveInsecure},
+		}); err != nil {
 			return fmt.Errorf("FRP-Apply fehlgeschlagen: %w", err)
 		}
 	} else {
@@ -142,6 +142,45 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Println("OK: Provisioning abgeschlossen.")
 	return nil
+}
+
+// pinIfBlindInsecure turns a blind --insecure (no --cacert) into TOFU-pinned trust:
+// it writes the cert the server presented on the activate call and returns that as
+// the effective cacert with insecure=false, so the recurring loop verifies against
+// it instead of persisting INSECURE=1 and leaking the API key every cycle. The
+// returned cleanup removes the pinned file (a no-op when nothing was pinned);
+// --insecure thus applies only to this one-off provisioning call.
+func pinIfBlindInsecure(cacert string, insecure bool, serverCertPEM []byte) (string, bool, func(), error) {
+	if !(insecure && cacert == "" && len(serverCertPEM) > 0) {
+		return cacert, insecure, func() {}, nil
+	}
+	pinnedPath, err := writePinnedCert(serverCertPEM)
+	if err != nil {
+		return "", false, func() {}, fmt.Errorf("Server-Zertifikat pinnen: %w", err)
+	}
+	fmt.Println("→ Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+	// Print the pinned cert's fingerprint so the operator can verify it out-of-band
+	// against the server's own cert hash: with --insecure at first contact, an on-path
+	// attacker could otherwise pin its own cert as the permanent trust anchor (3.45).
+	if block, _ := pem.Decode(serverCertPEM); block != nil {
+		fp := sha256.Sum256(block.Bytes)
+		fmt.Printf("  SHA-256-Fingerprint: %x\n", fp)
+		fmt.Println("  Bitte gegen den im AdminHelper-Server angezeigten Fingerprint pruefen —")
+		fmt.Println("  ohne Pruefung kann ein aktiver MITM im Erstkontakt den Trust-Anchor faelschen.")
+	}
+	return pinnedPath, false, func() { os.Remove(pinnedPath) }, nil
+}
+
+// monitorBaseURL derives the metrics-push base from the just-provisioned server URL
+// plus the server-declared relative path (e.g. "/api/monitoring"); an absent or
+// absolute MonitorURL falls back to the well-known path, so the push hits the same
+// TLS-trusted host without the server knowing its own public address.
+func monitorBaseURL(adminHelperURL string, monitorURL *string) string {
+	path := "/api/monitoring"
+	if monitorURL != nil && strings.HasPrefix(*monitorURL, "/") {
+		path = *monitorURL
+	}
+	return adminHelperURL + path
 }
 
 // runEnrollment generates an on-device key + CSR and redeems the enrollment
@@ -167,7 +206,7 @@ func runEnrollment(adminHelperURL string, info *enrollmentInfo, cacert string, i
 	if err != nil {
 		return err
 	}
-	issued, err := enroll.Submit(client, endpoint, enroll.EnrollRequest{Token: info.Token, CSR: string(csr)})
+	issued, err := enroll.Submit(client, endpoint, enroll.Request{Token: info.Token, CSR: string(csr)})
 	if err != nil {
 		return err
 	}
@@ -230,15 +269,20 @@ func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool,
 	req.Header.Set("X-Provision-Token", token)
 	req.Header.Set("Content-Type", "application/json")
 
+	// Hand-rolled (not httpclient.Do): TOFU pinning below needs the raw
+	// *http.Response's TLS.PeerCertificates, which the []byte helper doesn't expose.
 	httpResp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Activate-Aufruf fehlgeschlagen: %w", err)
 	}
 	defer httpResp.Body.Close()
 
-	body, err := io.ReadAll(httpResp.Body)
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, httpclient.MaxResponseBytes+1))
 	if err != nil {
 		return nil, nil, err
+	}
+	if int64(len(body)) > httpclient.MaxResponseBytes {
+		return nil, nil, fmt.Errorf("Activate-Antwort ueberschreitet %d Bytes", httpclient.MaxResponseBytes)
 	}
 	if httpResp.StatusCode >= 300 {
 		return nil, nil, fmt.Errorf("Activate fehlgeschlagen (HTTP %d): %s", httpResp.StatusCode, string(body))

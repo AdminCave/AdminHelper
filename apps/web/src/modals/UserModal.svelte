@@ -10,8 +10,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { t } from '$lib/i18n';
   import { users } from '$lib/stores/users';
   import * as serversApi from '$lib/api/servers';
-  import { showToast } from '$lib/stores/notifications';
-  import type { Server, User } from '$lib/api/types';
+  import { showToast, showError } from '$lib/stores/notifications';
+  import type { Server, User, UserUpdate } from '$lib/api/types';
 
   interface Props {
     open: boolean;
@@ -25,6 +25,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let password = $state('');
   let isAdmin = $state(false);
   let serverList = $state<Server[]>([]);
+  let serverLoadFailed = $state(false);
   let selectedServerIds = $state<Set<string>>(new Set());
   let submitting = $state(false);
 
@@ -41,10 +42,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // Read-only fetch of the server inventory (managed in the desktop) so an admin
   // can still assign servers to a user here in the web.
   async function loadServers() {
+    serverLoadFailed = false;
     try {
       serverList = await serversApi.list();
-    } catch {
+    } catch (err) {
+      // Surface the failure instead of showing the empty "no servers" state — otherwise an admin
+      // thinks there are no servers, saves the user with no assignments, and (when editing) can't
+      // see the existing ones. Distinguish load-failed from genuinely-empty (4.78).
       serverList = [];
+      serverLoadFailed = true;
+      showError(err);
     }
   }
 
@@ -62,7 +69,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       const server_ids = [...selectedServerIds];
       if (editing) {
-        const payload: { is_admin: boolean; server_ids: string[]; password?: string } = {
+        const payload: UserUpdate = {
           is_admin: isAdmin,
           server_ids,
         };
@@ -85,7 +92,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       }
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       submitting = false;
     }
@@ -131,7 +138,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <div
         style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:6px"
       >
-        {#if serverList.length === 0}
+        {#if serverLoadFailed}
+          <span style="color:var(--danger);font-size:12px">
+            {$t('page.users.serverLoadFailed')}
+          </span>
+        {:else if serverList.length === 0}
           <span style="color:var(--text-muted);font-size:12px">
             {$t('page.users.noServers')}
           </span>
@@ -153,12 +164,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
-    <Button
-      variant="primary"
-      type="submit"
-      disabled={submitting}
-      onclick={() => (document.getElementById('user-form') as HTMLFormElement)?.requestSubmit()}
-    >
+    <Button variant="primary" type="submit" disabled={submitting} form="user-form">
       {$t('action.save')}
     </Button>
   {/snippet}

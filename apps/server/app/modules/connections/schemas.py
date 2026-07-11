@@ -7,25 +7,6 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class Connection(BaseModel):
-    id: str
-    name: str
-    kind: str
-    host: Optional[str] = ""
-    port: Optional[int] = None
-    username: Optional[str] = ""
-    domain: Optional[str] = ""
-    keyPath: Optional[str] = ""
-    url: Optional[str] = ""
-    notes: Optional[str] = ""
-    tags: Optional[list[str]] = []
-    trustCert: Optional[bool] = False
-    lastUsed: Optional[str] = None
-    scalingMode: Optional[str] = None
-
-    model_config = {"extra": "allow"}
-
-
 class ConnectionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     # The desktop/web clients only render ssh/rdp/web; reject anything else at
@@ -41,7 +22,6 @@ class ConnectionCreate(BaseModel):
     tags: Optional[list[str]] = []
     trustCert: Optional[bool] = False
     lastUsed: Optional[str] = None
-    scalingMode: Optional[str] = None
     serverId: Optional[str] = None
 
     model_config = {"extra": "allow"}
@@ -56,7 +36,10 @@ class ConnectionCreate(BaseModel):
 
 class ConnectionUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    kind: Optional[str] = Field(None, min_length=1, max_length=50)
+    # Same gate as ConnectionCreate: no client renders anything but ssh/rdp/web,
+    # so reject others here too — otherwise PUT could persist a kind that Create
+    # rejects and no consumer (launcher, hub) can handle.
+    kind: Optional[Literal["ssh", "rdp", "web"]] = None
     host: Optional[str] = None
     port: Optional[int] = Field(None, ge=1, le=65535)
     username: Optional[str] = None
@@ -67,7 +50,6 @@ class ConnectionUpdate(BaseModel):
     tags: Optional[list[str]] = None
     trustCert: Optional[bool] = None
     lastUsed: Optional[str] = None
-    scalingMode: Optional[str] = None
     serverId: Optional[str] = None
 
     model_config = {"extra": "allow"}

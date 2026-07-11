@@ -23,12 +23,35 @@ test.describe('Login', () => {
   test('happy path: Formular ausfuellen und abschicken -> weiter zu /users', async ({ page }) => {
     await mockLoggedOut(page);
     await page.goto('/');
-    await expect(page.getByRole('heading')).toBeHidden();
+    // We are logged out -> the login card is shown. (The old getByRole('heading')
+    // .toBeHidden() was trivially green: the page has no role=heading, so the locator
+    // matched zero elements and toBeHidden() passed without asserting anything.) (6.156)
+    await expect(page.locator('.login-card')).toBeVisible();
     await page.fill('#loginUser', 'admin');
     await page.fill('#loginPass', 'secret123');
     await page.getByRole('button', { name: /Anmelden|Sign in/ }).click();
 
     await expect(page).toHaveURL(/#\/users/);
+  });
+
+  test('falsche Credentials zeigen die Server-Fehlermeldung', async ({ page }) => {
+    await mockLoggedOut(page);
+    await page.route(api('auth/login'), (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Invalid credentials' }),
+      }),
+    );
+    await page.goto('/');
+    await page.fill('#loginUser', 'admin');
+    await page.fill('#loginPass', 'falsch');
+    await page.getByRole('button', { name: /Anmelden|Sign in/ }).click();
+    // The dedicated error banner (the most common real failure) must render, and we
+    // must stay on the login page — a refactor dropping err.message would leave the
+    // user with no feedback while the happy-path test still passed (6.92).
+    await expect(page.locator('.login-error')).toHaveText('Invalid credentials');
+    await expect(page).not.toHaveURL(/#\/users/);
   });
 
   test('visuelles Login-Layout stabil', async ({ page }) => {

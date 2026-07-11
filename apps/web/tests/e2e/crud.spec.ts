@@ -11,8 +11,8 @@ import { api, mockApi } from './mocks';
 
 async function gotoAuthenticated(page: Page, hash: string): Promise<void> {
   await page.goto(`/${hash}`);
+  // Deterministic ready signal instead of the fragile networkidle (see smoke.spec.ts) (6.155).
   await page.waitForSelector('.page-title', { state: 'visible' });
-  await page.waitForLoadState('networkidle');
 }
 
 // The FRP config modal is tall; its save button can sit below the fold. Submit
@@ -141,6 +141,15 @@ test.describe('CRUD-Roundtrips gegen stateful Mocks', () => {
     await page.getByRole('button', { name: 'Filtern' }).click();
     await expect(page.locator('tbody tr')).toHaveCount(1);
     await expect(page.getByText('server.created')).toBeVisible();
+  });
+});
+
+test.describe('Weitere User-Journeys', () => {
+  test('Logout fuehrt zurueck zum Login', async ({ page }) => {
+    await mockApi(page);
+    await gotoAuthenticated(page, '#/users');
+    await page.getByRole('button', { name: /Abmelden|Sign out/ }).click();
+    await expect(page.locator('.login-card')).toBeVisible();
   });
 });
 

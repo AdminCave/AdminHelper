@@ -11,13 +11,14 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
-    func,
 )
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 
 class MonitorCheck(Base):
@@ -35,8 +36,8 @@ class MonitorCheck(Base):
     consecutive_fails = Column(Integer, default=3)
     template_id = Column(String, nullable=True, index=True)
     template_def_id = Column(String, nullable=True)  # stable def_id from the template
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
+    updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self, state: MonitorState | None = None) -> dict:
         d = {
@@ -64,7 +65,7 @@ class MonitorState(Base):
 
     check_id = Column(String, ForeignKey("monitor_checks.id", ondelete="CASCADE"), primary_key=True)
     status = Column(String, nullable=False, default="pending")
-    since = Column(DateTime, nullable=False, server_default=func.now())
+    since = Column(DateTime, nullable=False, server_default=utc_now_sql())
     last_check = Column(DateTime, nullable=True)
     fail_count = Column(Integer, default=0)
     message = Column(String, nullable=True)
@@ -95,17 +96,23 @@ class MonitorAlertRule(Base):
     enabled = Column(Boolean, default=True)
     template_id = Column(String, nullable=True, index=True)
     template_def_id = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
+    updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self) -> dict:
+        cfg = json.loads(self.channel_config) if self.channel_config else {}
+        # Never reflect the SMTP password in an API response — mask a set secret so
+        # it does not leak into GET /alerts and the admin frontend (3.27). The
+        # update handler treats the mask as "unchanged".
+        if cfg.get("smtp_password"):
+            cfg["smtp_password"] = "***"
         return {
             "id": self.id,
             "name": self.name,
             "matchSeverity": self.match_severity,
             "matchServerId": self.match_server_id,
             "channel": self.channel,
-            "channelConfig": json.loads(self.channel_config) if self.channel_config else {},
+            "channelConfig": cfg,
             "cooldownMinutes": self.cooldown_minutes,
             "enabled": self.enabled,
             "templateId": self.template_id,
@@ -116,6 +123,15 @@ class MonitorAlertRule(Base):
 
 class MonitorAlertLog(Base):
     __tablename__ = "monitor_alert_log"
+    # The cooldown check (alert_rule_id + check_id + sent_at >= cutoff, on the alerter hot path), the
+    # daily retention cleanup (sent_at < cutoff) and GET /alerts/log (ORDER BY sent_at DESC) all
+    # filter or sort on sent_at, which was unindexed — seq-scans/full-sorts once the table grows over
+    # 90 days of flapping checks. The composite covers the cooldown query; the sent_at index covers
+    # the cleanup and the log listing (5.19).
+    __table_args__ = (
+        Index("ix_alert_log_rule_check_sent", "alert_rule_id", "check_id", "sent_at"),
+        Index("ix_alert_log_sent_at", "sent_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     alert_rule_id = Column(
@@ -126,7 +142,7 @@ class MonitorAlertLog(Base):
     )
     old_status = Column(String, nullable=False)
     new_status = Column(String, nullable=False)
-    sent_at = Column(DateTime, nullable=False, server_default=func.now())
+    sent_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
     success = Column(Boolean, nullable=False)
     error = Column(String, nullable=True)
 
@@ -151,8 +167,8 @@ class MonitorTemplate(Base):
     description = Column(String, nullable=True)
     check_definitions = Column(String, nullable=False, default="[]")
     alert_definitions = Column(String, nullable=False, default="[]")
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
+    updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
     def to_dict(self, assignments: list | None = None) -> dict:
         d = {
@@ -206,7 +222,7 @@ class MonitorAgentKey(Base):
     id = Column(String, primary_key=True)
     server_id = Column(String, nullable=False, unique=True, index=True)
     hashed_key = Column(String, nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     @staticmethod
     def hash_key(raw_key: str) -> str:

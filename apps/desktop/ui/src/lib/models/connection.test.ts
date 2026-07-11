@@ -33,6 +33,16 @@ describe('normalizeConnection', () => {
     expect(normalizeConnection({ kind: 'ssh', port: '' as unknown as number }).port).toBeNull();
   });
 
+  it('drops out-of-range and non-integer ports to null (4.104)', () => {
+    expect(normalizeConnection({ kind: 'ssh', port: -1 }).port).toBeNull();
+    expect(normalizeConnection({ kind: 'ssh', port: 0 }).port).toBeNull();
+    expect(normalizeConnection({ kind: 'ssh', port: 99999 }).port).toBeNull();
+    expect(normalizeConnection({ kind: 'ssh', port: 22.5 }).port).toBeNull();
+    // Boundaries stay valid.
+    expect(normalizeConnection({ kind: 'ssh', port: 1 }).port).toBe(1);
+    expect(normalizeConnection({ kind: 'ssh', port: 65535 }).port).toBe(65535);
+  });
+
   it('drops empty tags and trims them', () => {
     const out = normalizeConnection({ kind: 'ssh', tags: [' a ', '', 'b'] });
     expect(out.tags).toEqual(['a', 'b']);
@@ -50,6 +60,10 @@ describe('parseTags', () => {
     expect(parseTags('a, b ,,c')).toEqual(['a', 'b', 'c']);
     expect(parseTags('')).toEqual([]);
   });
+
+  it('de-duplicates (audit 2.22: connection previously skipped the Set)', () => {
+    expect(parseTags('a, a, b ,a')).toEqual(['a', 'b']);
+  });
 });
 
 describe('validateConnection', () => {
@@ -62,6 +76,19 @@ describe('validateConnection', () => {
     const c = { ...emptyConnection('web'), name: 'Docs' };
     expect(validateConnection(c).ok).toBe(false);
     c.url = 'https://x';
+    expect(validateConnection(c).ok).toBe(true);
+  });
+
+  it('web rejects non-http(s) schemes (3.67)', () => {
+    const c = { ...emptyConnection('web'), name: 'Docs', url: 'javascript:alert(1)' };
+    expect(validateConnection(c).ok).toBe(false);
+    c.url = 'file:///etc/passwd';
+    expect(validateConnection(c).ok).toBe(false);
+    c.url = 'not a url';
+    expect(validateConnection(c).ok).toBe(false);
+    c.url = 'http://ok.example';
+    expect(validateConnection(c).ok).toBe(true);
+    c.url = 'example.com'; // bare domain: backend prepends https://, so accept it too
     expect(validateConnection(c).ok).toBe(true);
   });
 

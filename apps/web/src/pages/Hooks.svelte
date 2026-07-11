@@ -6,9 +6,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t, language } from '$lib/i18n';
+  import { SvelteSet } from 'svelte/reactivity';
+  import { t } from '$lib/i18n';
+  import { formatDateTime } from '$lib/utils/datetime';
   import { hooks } from '$lib/stores/hooks';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import { HOOK_TYPE_LABEL } from '$lib/utils/hooks';
   import * as hookApi from '$lib/api/hooks';
   import Button from '$lib/components/ui/Button.svelte';
@@ -27,6 +29,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let runOpen = $state(false);
   let runResult = $state<HookRunResult | null>(null);
   let runName = $state('');
+  // Hook ids currently executing — guards runHook against a double-click / parallel run (4.147).
+  const running = new SvelteSet<string>();
 
   onMount(() => {
     load();
@@ -36,17 +40,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await hooks.refresh();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
-    }
-  }
-
-  function formatDateTime(iso: string | null | undefined): string {
-    if (!iso) return '–';
-    const loc = $language === 'de' ? 'de-DE' : 'en-GB';
-    try {
-      return new Date(iso).toLocaleString(loc);
-    } catch {
-      return '–';
+      showError(err);
     }
   }
 
@@ -61,11 +55,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       editing = full;
       modalOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
-  async function handleModalClose(created?: { token?: string | null }) {
+  function handleModalClose(created?: { token?: string | null }) {
     modalOpen = false;
     editing = null;
     if (created?.token) {
@@ -73,7 +67,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       tokenTitle = $t('toast.hook.created');
       tokenOpen = true;
     }
-    await load();
+    // No refetch: HookModal writes through the hooks store, so the list is current.
   }
 
   async function removeHook(h: Hook) {
@@ -83,11 +77,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       await hooks.remove(h.id);
       showToast($t('toast.hook.deleted'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
   async function runHook(h: Hook) {
+    if (running.has(h.id)) return;
+    running.add(h.id);
     showToast($t('toast.hook.running'));
     try {
       const result = await hookApi.run(h.id);
@@ -95,7 +91,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       runName = h.name;
       runOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
+    } finally {
+      running.delete(h.id);
     }
   }
 
@@ -108,7 +106,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       tokenTitle = $t('toast.hook.tokenGenerated');
       tokenOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -116,7 +114,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await hooks.toggle(h.id);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 </script>
@@ -190,7 +188,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
                   <button class="btn small" onclick={() => openEdit(h)}>
                     {$t('action.edit')}
                   </button>
-                  <button class="btn small ghost" onclick={() => runHook(h)}>
+                  <button
+                    class="btn small ghost"
+                    onclick={() => runHook(h)}
+                    disabled={running.has(h.id)}
+                  >
                     {$t('action.run')}
                   </button>
                   {#if h.hook_type === 'webhook'}

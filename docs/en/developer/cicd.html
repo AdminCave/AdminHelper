@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -74,7 +74,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           <ul>
             <li>Desktop client: <code>.deb</code> + <code>.rpm</code> (Tauri) + ELF binary</li>
             <li>Go agent: <code>.deb</code> + <code>.rpm</code> + <code>linux</code>/<code>windows</code> binaries</li>
-            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo, once <code>REPO_GPG_PRIVATE_KEY</code> is set)</li>
+            <li>Agent package repo: <code>adminhelper-agent-repo-&lt;tag&gt;.tar.gz</code> (GPG-signed apt+rpm repo, once <code>REPO_GPG_PRIVATE_KEY</code> is set) &mdash; plus the archive keyring <code>adminhelper-archive-keyring.gpg</code> as a standalone asset (a second channel to fingerprint-verify it against <code>SHA256SUMS</code> + minisign)</li>
             <li>Desktop client Windows <code>.msi</code> (best-effort &ndash; does not block the release if the Windows build fails)</li>
             <li><code>SHA256SUMS</code> over all assets &ndash; plus <code>SHA256SUMS.minisig</code> (minisign signature) once armed</li>
           </ul>
@@ -91,7 +91,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           </ul>
           <div class="callout">
             <div><div class="callout-title">Arming (maintainer, one-time)</div>
-            <p>Until the key is pinned, <code>install.sh</code>/<code>update.sh</code> fall back to checksum-only verification (with a warning) &ndash; no breakage. To arm:</p>
+            <p>This repo is armed: the key is pinned, so verification fails closed &ndash; a missing/invalid signature aborts <code>install.sh</code>/<code>update.sh</code>, and the release workflow fails if <code>MINISIGN_SECRET_KEY</code> is absent. A fork that has not set its own key falls back to checksum-only verification (with a warning) until armed. To arm a fork:</p>
 <pre><code>minisign -G -W                 # generate a passwordless keypair
 # 1) store the secret-key file base64-encoded as the GitHub Actions secret
 #    (single line, paste-safe — a raw multi-line key gets mangled otherwise):
@@ -117,6 +117,15 @@ gpg --export-secret-keys --armor &lt;KEYID&gt; | base64 -w0 | gh secret set REPO
 # 3) Pin the fingerprint: replace the &lt;REPO-GPG-FINGERPRINT&gt; placeholder in
 #    agent-deployment.html (DE+EN) with this value:
 gpg --fingerprint &lt;KEYID&gt;</code></pre>
+            </div>
+          </div>
+          <div class="callout">
+            <div><div class="callout-title">Key rotation (overlap window)</div>
+            <p>When the signing key expires or is compromised the clients must not break fleet-wide: they pin the <strong>old</strong> key via <code>Signed-By=</code> (apt) or the imported RPM key, and the only way to fetch the new keyring is the very repo they no longer trust without an overlap. So rotate in two steps:</p>
+            <ol>
+              <li><strong>Overlap:</strong> generate the new key (as in arming). Keep signing with the <em>old</em> one (<code>REPO_GPG_KEY_ID=&lt;OLD&gt;</code>) but ship <strong>both</strong> public keys: <code>REPO_GPG_EXPORT_IDS="&lt;OLD&gt; &lt;NEW&gt;"</code>. Cut a release &ndash; every host gets the new key into its keyring and trusts both from then on.</li>
+              <li><strong>Switch</strong> (once the fleet has pulled the overlap release): sign with the <em>new</em> key (<code>REPO_GPG_KEY_ID=&lt;NEW&gt;</code>), ship only the new one (<code>REPO_GPG_EXPORT_IDS=&lt;NEW&gt;</code>) and update the fingerprint in <code>agent-deployment.html</code> (DE+EN). The old key can then be revoked.</li>
+            </ol>
             </div>
           </div>
 

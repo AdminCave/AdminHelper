@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type { FrpConfig, FrpProtocol, FrpTunnel, FrpTunnelType } from '$lib/api/types';
   import {
     TUNNEL_TYPES,
@@ -36,6 +37,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let tagsInput = $state('');
   let saving = $state(false);
   let confirmDelete = $state(false);
+  // The STCP secret is masked like every other secret field; reveal on demand (3.63).
+  let showSecret = $state(false);
 
   let isNew = $derived(editing === null);
   let isStcp = $derived(form.tunnelType === 'stcp');
@@ -59,10 +62,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     if (form.localPort === null) {
       form = { ...form, localPort: PROTOCOL_DEFAULT_PORT[form.protocol] };
     }
-  }
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
   }
 
   async function onDelete(): Promise<void> {
@@ -150,7 +149,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         <label class="field">
           <span class="field-label">{$t('infra.field.name')}</span>
-          <input type="text" bind:value={form.name} placeholder="k01-lnx1-ssh" required />
+          <input
+            type="text"
+            name="name"
+            bind:value={form.name}
+            placeholder="k01-lnx1-ssh"
+            required
+          />
         </label>
 
         <label class="field">
@@ -208,11 +213,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {#if isStcp}
           <label class="field span2">
             <span class="field-label">{$t('infra.tun.secretKey')}</span>
-            <input
-              type="text"
-              bind:value={form.secretKey}
-              placeholder={$t('infra.tun.secretHint')}
-            />
+            <div class="secret-row">
+              <input
+                type={showSecret ? 'text' : 'password'}
+                bind:value={form.secretKey}
+                placeholder={$t('infra.tun.secretHint')}
+              />
+              <button
+                type="button"
+                class="reveal-btn"
+                onclick={() => (showSecret = !showSecret)}
+                aria-label={showSecret ? $t('infra.tun.secretHide') : $t('infra.tun.secretShow')}
+              >
+                {showSecret ? '🙈' : '👁'}
+              </button>
+            </div>
           </label>
           <label class="field">
             <span class="field-label">{$t('infra.tun.visitorPort')}</span>
@@ -345,5 +360,29 @@ SPDX-License-Identifier: GPL-3.0-or-later
     padding: var(--sp-4) var(--sp-5);
     border-top: 1px solid var(--border);
     align-items: center;
+  }
+  .secret-row {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: stretch;
+  }
+  .secret-row input {
+    flex: 1;
+  }
+  .reveal-btn {
+    background: var(--bg-input, var(--bg-panel));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: var(--sp-2) var(--sp-3);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .reveal-btn:hover {
+    border-color: var(--accent);
+  }
+  .reveal-btn:focus-visible {
+    outline: 1px solid var(--accent);
   }
 </style>

@@ -18,12 +18,31 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
+// ApplyParams groups frpc.Apply's arguments — 7 same-typed positionals before,
+// where a swapped serverID/apiKey only surfaced at runtime as an HTTP 401.
+type ApplyParams struct {
+	AdminHelperURL string
+	ServerID       string
+	APIKey         string
+	FrpConfigB64   string
+	PkiBundleB64   string
+	TLS            config.TLSOpts
+}
+
 // Apply writes the FRP config + PKI bundle from a provisioning response
 // to disk and activates the service. NO HTTP call happens here anymore —
 // the token-activate call has been centralized since v0.23.0 in the
 // `provision` subcommand, which invokes `Apply` with the already-decoded
 // values.
-func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert string, insecure bool) error {
+func Apply(p ApplyParams) error {
+	adminHelperURL := p.AdminHelperURL
+	serverID := p.ServerID
+	apiKey := p.APIKey
+	frpConfigB64 := p.FrpConfigB64
+	pkiBundleB64 := p.PkiBundleB64
+	cacert := p.TLS.CACert
+	insecure := p.TLS.Insecure
+
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 
 	frpDir := config.FrpDir()
@@ -33,8 +52,9 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 	if err := os.MkdirAll(pkiDir, 0700); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
-	_ = os.Chmod(frpDir, 0700)
-	_ = os.Chmod(pkiDir, 0700)
+	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
+	_ = config.SecureDir(frpDir)
+	_ = config.SecureDir(pkiDir)
 
 	// Copy the CA cert if provided
 	if cacert != "" {
@@ -79,19 +99,21 @@ func Apply(adminHelperURL, serverID, apiKey, frpConfigB64, pkiBundleB64, cacert 
 		if err != nil {
 			return fmt.Errorf("Config base64 decodieren: %w", err)
 		}
-		if err := os.WriteFile(config.FrpConfigFile(), decoded, 0600); err != nil {
+		if err := os.WriteFile(config.FrpConfigFile(), rewriteIdentityPaths(decoded), 0600); err != nil {
 			return fmt.Errorf("frpc.toml schreiben: %w", err)
 		}
 		logger.Infof("frpc.toml geschrieben")
 	}
 
-	// Extract the PKI bundle (base64-encoded tar.gz)
+	// Extract the PKI bundle (base64-encoded tar.gz). The PKI is essential for the FRP mTLS
+	// handshake — fail hard instead of warning (4.9): otherwise provisioning reports "OK" while
+	// the STCP tunnel silently never establishes (cryptic TLS errors in the frpc log), and since
+	// the provision token is one-time it takes manual diagnosis to recover.
 	if pkiBundleB64 != "" {
 		if err := extractPkiBundle(pkiBundleB64, frpDir); err != nil {
-			logger.Warnf("PKI-Bundle konnte nicht entpackt werden: %v", err)
-		} else {
-			logger.Infof("PKI-Zertifikate installiert")
+			return fmt.Errorf("PKI-Bundle entpacken: %w", err)
 		}
+		logger.Infof("PKI-Zertifikate installiert")
 	}
 
 	// Compute the initial hash

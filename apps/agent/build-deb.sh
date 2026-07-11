@@ -2,11 +2,10 @@
 # Build .deb package for adminhelper-agent (unified Go agent)
 set -euo pipefail
 
-if [ -z "${VERSION:-}" ]; then
-    echo "FEHLER: VERSION ist nicht gesetzt (z.B. VERSION=0.26.0 bash apps/agent/build-deb.sh)." >&2
-    exit 1
-fi
-PKG_NAME="adminhelper-agent"
+cd "$(dirname "$0")/../.."   # repo root, regardless of the caller's CWD
+source apps/agent/build-common.sh
+
+require_version "apps/agent/build-deb.sh"
 BUILD_DIR="build-deb/${PKG_NAME}_${VERSION}_amd64"
 
 echo "=== Building ${PKG_NAME} ${VERSION} (deb) ==="
@@ -25,28 +24,17 @@ cp apps/agent/deb/DEBIAN/prerm    "${BUILD_DIR}/DEBIAN/"
 cp apps/agent/deb/DEBIAN/postrm   "${BUILD_DIR}/DEBIAN/"
 chmod 755 "${BUILD_DIR}/DEBIAN/postinst" "${BUILD_DIR}/DEBIAN/prerm" "${BUILD_DIR}/DEBIAN/postrm"
 
-# adminhelper-agent Go binary (must exist, built by CI or make)
-if [ -f apps/agent/bin/adminhelper-agent ]; then
-    cp apps/agent/bin/adminhelper-agent "${BUILD_DIR}/usr/bin/adminhelper-agent"
-    chmod 755 "${BUILD_DIR}/usr/bin/adminhelper-agent"
-else
-    echo "FEHLER: apps/agent/bin/adminhelper-agent nicht gefunden. Bitte zuerst bauen."
-    exit 1
-fi
+# adminhelper-agent Go binary (built by CI or make) + frpc (downloaded by CI)
+require_binary apps/agent/bin/adminhelper-agent
+cp apps/agent/bin/adminhelper-agent "${BUILD_DIR}/usr/bin/adminhelper-agent"
+chmod 755 "${BUILD_DIR}/usr/bin/adminhelper-agent"
 
-# frpc binary (downloaded by CI)
-if [ -f frpc ]; then
-    cp frpc "${BUILD_DIR}/usr/bin/frpc"
-    chmod 755 "${BUILD_DIR}/usr/bin/frpc"
-else
-    echo "FEHLER: frpc Binary nicht gefunden (./frpc im Repo-Root erwartet)." >&2
-    exit 1
-fi
+require_binary frpc
+cp frpc "${BUILD_DIR}/usr/bin/frpc"
+chmod 755 "${BUILD_DIR}/usr/bin/frpc"
 
 # systemd units
-cp apps/agent/systemd/frpc.service                "${BUILD_DIR}/etc/systemd/system/"
-cp apps/agent/systemd/adminhelper-agent.service    "${BUILD_DIR}/etc/systemd/system/"
-cp apps/agent/systemd/adminhelper-agent.timer      "${BUILD_DIR}/etc/systemd/system/"
+copy_units "${BUILD_DIR}/etc/systemd/system"
 
 # Build
 dpkg-deb --root-owner-group --build "${BUILD_DIR}"

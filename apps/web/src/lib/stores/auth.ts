@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { writable, derived, get } from 'svelte/store';
-import type { User } from '$lib/api/types';
+import { ApiError, type User } from '$lib/api/types';
 import { restoreSession, registerAuthFailureHandler } from '$lib/api/client';
 import * as authApi from '$lib/api/auth';
 
@@ -28,8 +28,14 @@ export const auth = {
     try {
       const user = await authApi.me();
       _auth.set({ user, ready: true });
-    } catch {
-      authApi.logout();
+    } catch (err) {
+      // Only a real auth failure (401/403) should end the session server-side. A transient /me
+      // error (a 500 or a network blip right after a successful restoreSession) must NOT log out
+      // and invalidate the still-valid refresh cookie — fall back to logged-out locally and let
+      // the next reload retry (4.77).
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        authApi.logout();
+      }
       _auth.set({ user: null, ready: true });
     }
   },

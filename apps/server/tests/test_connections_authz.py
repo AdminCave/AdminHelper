@@ -19,6 +19,7 @@ the documented feature). For genuinely admin-only/no-API-key endpoints the code
 uses `get_current_admin` directly instead.
 """
 
+import logging
 import secrets
 
 from app.core.auth import hash_api_key
@@ -70,3 +71,20 @@ class TestConnectionsWriteAuthz:
         key = _api_key(db_session, "read")
         r = test_client.get("/api/connections", headers={"X-API-Key": key})
         assert r.status_code == 200, r.text
+
+
+def test_apikey_via_query_param_is_audited(test_client, db_session, caplog):
+    """3.87: the ?api_key= fallback still authenticates but logs a WARNING naming the
+    key, so the operator can rotate the one that just leaked into the access logs; the
+    header path stays quiet."""
+    key = _api_key(db_session, "read")
+    with caplog.at_level(logging.WARNING, logger="adminhelper.auth"):
+        r = test_client.get(f"/api/connections?api_key={key}")
+    assert r.status_code == 200, r.text
+    assert any("Query-Parameter" in rec.message for rec in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="adminhelper.auth"):
+        r = test_client.get("/api/connections", headers={"X-API-Key": key})
+    assert r.status_code == 200, r.text
+    assert not any("Query-Parameter" in rec.message for rec in caplog.records)

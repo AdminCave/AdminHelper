@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,10 +20,13 @@ _FRPS_CERT_DIR = "/etc/frp-pki"
 # than a separate server-minted client cert.
 _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
 # Where the desktop STCP visitor finds its mTLS identity: the desktop exports its
-# enrolled ACCESS identity (key + cert + CA) from the keyring into this dir and
-# rewrites the relative paths to absolute (F2). frps trusts the access
-# intermediate (ca-issuer extra_trust) so this access cert is accepted.
-_VISITOR_IDENTITY_DIR = "identity"
+# enrolled ACCESS identity (key + cert + CA) from the keyring into a local dir and
+# substitutes this placeholder with that absolute path (F2). An explicit token —
+# not a bare "identity/" prefix — keeps the server<->desktop contract greppable on
+# both sides (see IDENTITY_DIR_PLACEHOLDER in the desktop's frpc.rs) instead of
+# hinging on a substring match. frps trusts the access intermediate (ca-issuer
+# extra_trust) so this access cert is accepted.
+_VISITOR_IDENTITY_DIR = "{{IDENTITY_DIR}}"
 
 
 def _tls_server_block(
@@ -57,9 +61,9 @@ def _tls_agent_block() -> list[str]:
 def _tls_client_block() -> list[str]:
     """Generates the [transport.tls] block for a STCP visitor (frpc). The desktop
     presents its enrolled ACCESS identity (F2): it exports key/cert/CA from its
-    keyring into the visitor identity dir and rewrites these relative paths to
-    absolute. frps trusts the access intermediate (ca-issuer extra_trust), so the
-    access cert is accepted on the frp plane (ADR 0001 D8)."""
+    keyring into a local dir and replaces the {{IDENTITY_DIR}} placeholder with
+    that absolute path. frps trusts the access intermediate (ca-issuer
+    extra_trust), so the access cert is accepted on the frp plane (ADR 0001 D8)."""
     return [
         "",
         "[transport.tls]",
@@ -82,15 +86,23 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     if config.subdomain_host:
         lines.append(f'subDomainHost = "{config.subdomain_host}"')
 
-    if config.max_ports_per_client:
-        lines.append(f"maxPortsPerClient = {config.max_ports_per_client}")
+    # Always cap ports per client: without it frps defaults to unlimited, so a
+    # compromised/malicious enrolled agent could register arbitrarily many proxies.
+    # 16 is generous for a normal host (SSH/RDP/web + a few services) yet bounds the
+    # blast radius; an operator can raise it per config (3.34).
+    lines.append(f"maxPortsPerClient = {config.max_ports_per_client or 16}")
 
     lines.append("detailedErrorsToClient = false")
     lines.append("")
 
     # Dashboard
     if config.dashboard_port:
-        lines.append('webServer.addr = "127.0.0.1"')
+        # Bind all interfaces, not loopback: the server container polls the dashboard over
+        # the compose bridge (http://frps:<port>), so 127.0.0.1 would listen only inside the
+        # frps container and every /api/frp/status probe would fail. The dashboard port is
+        # never published in compose, so it stays reachable only from the compose network,
+        # not the host or the public internet (4.6).
+        lines.append('webServer.addr = "0.0.0.0"')
         lines.append(f"webServer.port = {config.dashboard_port}")
         if config.dashboard_user:
             lines.append(f'webServer.user = "{config.dashboard_user}"')
@@ -101,6 +113,20 @@ def generate_frps_toml(config: FrpServerConfig) -> str:
     # Auth
     lines.append('auth.method = "token"')
     lines.append(f'auth.token = "{config.auth_token}"')
+
+    # Operator-supplied extra frps.toml fields (e.g. maxPoolCount, transport.*).
+    # _check_extra_config already validated the keys as TOML bare keys and the
+    # values as str/bool/int/float, so they can be emitted verbatim.
+    extra = json.loads(config.extra_config) if config.extra_config else None
+    if extra:
+        lines.append("")
+        for key, value in extra.items():
+            if isinstance(value, bool):
+                lines.append(f"{key} = {'true' if value else 'false'}")
+            elif isinstance(value, str):
+                lines.append(f'{key} = "{value}"')
+            else:
+                lines.append(f"{key} = {value}")
 
     lines.extend(_tls_server_block())
 
@@ -120,8 +146,6 @@ def generate_frpc_toml(
         tunnels: All tunnels belonging to this host.
         frpc_user: The frpc user identifier (e.g. "k01-lnx1").
     """
-    import json as _json
-
     lines = [
         f'serverAddr = "{config.server_addr}"',
         f"serverPort = {config.bind_port}",
@@ -156,7 +180,7 @@ def generate_frpc_toml(
 
         if tunnel.extra_config:
             extra = (
-                _json.loads(tunnel.extra_config)
+                json.loads(tunnel.extra_config)
                 if isinstance(tunnel.extra_config, str)
                 else tunnel.extra_config
             )

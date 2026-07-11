@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::time::Duration;
+
 use tauri::State;
 
 use crate::ansible;
@@ -14,29 +16,40 @@ use crate::models::{
     AuthSession, ClientInfo, Connection, PasswordState, RdpOptions, Settings, TunnelStatus,
 };
 use crate::password;
+use crate::proxy;
 use crate::storage;
 use crate::sync;
 use crate::tofu;
 use crate::tunnel;
-use crate::validation;
 
-/// Checks whether the server certificate is valid. Returns true if valid,
-/// false if self-signed/invalid.
+/// Resolve the "allow self-signed certs" flag: an explicit per-call override, else
+/// the persisted setting (default false on a missing/corrupt settings.json). The
+/// single source so the default semantics can't drift across the many commands.
+fn self_signed_setting(app: &tauri::AppHandle, explicit: Option<bool>) -> bool {
+    explicit.unwrap_or_else(|| {
+        storage::load_settings(app)
+            .map(|s| s.allow_self_signed_certs)
+            .unwrap_or(false)
+    })
+}
+
+/// Build the RDP launch options from the persisted settings — the borrow of
+/// custom_size ties the returned RdpOptions to `settings`.
+fn rdp_options(settings: &Settings) -> RdpOptions<'_> {
+    RdpOptions {
+        scaling_mode: settings.rdp_scaling_mode,
+        window_mode: settings.rdp_window_mode,
+        custom_size: settings.rdp_custom_size.as_deref(),
+        performance_profile: settings.rdp_performance_profile,
+    }
+}
+
+/// Checks whether the server certificate is valid. Returns true only if the
+/// server is reachable with a publicly-trusted cert; any error (self-signed/
+/// invalid cert, but also DNS/timeout/connection failures) returns false.
 #[tauri::command]
 pub async fn check_server_cert(server_url: String) -> Result<bool, AppError> {
-    // Never probe a cleartext network URL (https, or http only for loopback).
-    validation::validate_server_url_secure(&server_url)?;
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(false)
-        .build()
-        .map_err(AppError::from)?;
-
-    let url = format!("{}/api/auth/me", server_url.trim_end_matches('/'));
-    match client.get(&url).send().await {
-        Ok(_) => Ok(true),
-        Err(e) if e.is_connect() => Ok(false), // TLS/connection error
-        Err(_) => Ok(false),
-    }
+    proxy::check_server_cert(&server_url).await
 }
 
 /// Build a redacted diagnostics report (version, OS, recent log tail) for a bug
@@ -87,11 +100,7 @@ pub async fn enroll_device(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     enrollment::enroll(&server_url, &token, self_signed).await
 }
 
@@ -105,11 +114,7 @@ pub async fn enroll_with_token(
     token: String,
     allow_self_signed: Option<bool>,
 ) -> Result<(), AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     enrollment::enroll_with_token(&server_url, &token, self_signed).await
 }
 
@@ -126,11 +131,7 @@ pub async fn export_browser_p12(
     dest_path: String,
     allow_self_signed: Option<bool>,
 ) -> Result<String, AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     let der = enrollment::export_browser_p12(&server_url, &token, &password, self_signed).await?;
     storage::write_browser_p12(&dest_path, &der)
 }
@@ -147,60 +148,8 @@ pub async fn api_proxy(
     body: Option<String>,
     allow_self_signed: Option<bool>,
 ) -> Result<serde_json::Value, AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
-    // Token-destination pin: the session JWT must only be sent to the server the
-    // user logged into. A (compromised) frontend that passes a foreign server_url
-    // — or a `path` that rewrites the URL authority (leading `@`, `\`, `://`) —
-    // alongside the real token would otherwise leak it; TOFU would happily pin the
-    // attacker's cert on first use for that new host. Pin the FINAL composed URL's
-    // origin, not just server_url.
-    if let Some(stored) = auth::stored_server_url() {
-        validation::validate_proxy_path(&server_url, &path, &stored)?;
-    }
-    let client = auth::build_client(&server_url, self_signed)?;
-    let url = format!("{}{}", server_url.trim_end_matches('/'), path);
-
-    let mut req = match method.as_str() {
-        "POST" => client.post(&url),
-        "PUT" => client.put(&url),
-        "DELETE" => client.delete(&url),
-        _ => client.get(&url),
-    };
-
-    req = req.header("Authorization", format!("Bearer {token}"));
-
-    if let Some(b) = body {
-        req = req.header("Content-Type", "application/json").body(b);
-    }
-
-    let response = req.send().await?;
-    let status = response.status();
-
-    if status == reqwest::StatusCode::NO_CONTENT {
-        return Ok(serde_json::Value::Null);
-    }
-
-    if !status.is_success() {
-        let text = crate::diagnostics::redact_body(&response.text().await.unwrap_or_default());
-        return Err(AppError::Validation(format!(
-            "HTTP {}: {}",
-            status.as_u16(),
-            text
-        )));
-    }
-
-    // An empty 2xx body (no JSON payload) stays Null; an actually malformed
-    // body is a real error and must not be silently mapped to Null.
-    let text = response.text().await?;
-    if text.is_empty() {
-        return Ok(serde_json::Value::Null);
-    }
-    let value: serde_json::Value = serde_json::from_str(&text)?;
-    Ok(value)
+    let self_signed = self_signed_setting(&app, allow_self_signed);
+    proxy::forward(&server_url, &token, &method, &path, body, self_signed).await
 }
 
 #[tauri::command]
@@ -223,9 +172,7 @@ pub async fn sync_connections(
     app: tauri::AppHandle,
     url: String,
 ) -> Result<Vec<Connection>, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     sync::sync_connections(app, url, allow_self_signed).await
 }
 
@@ -237,56 +184,74 @@ pub fn save_connections(
     storage::save_connections(&app, &connections)
 }
 
+/// Deadline around the blocking connect work. open_connection runs the RDP auth check
+/// (xfreerdp +auth-only) and preflight synchronously; a hung NLA handshake after TCP accept
+/// could otherwise block the whole webview forever. spawn_blocking moves it off the async
+/// thread so the UI stays responsive, and the timeout turns an eternal freeze into an error
+/// the user can act on (4.3). tauri::async_runtime::spawn_blocking — the crate's tokio only
+/// enables the "time" feature, not "rt", so tokio::task::spawn_blocking isn't available.
+const OPEN_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+async fn run_with_deadline<F>(timeout: Duration, work: F) -> Result<(), AppError>
+where
+    F: FnOnce() -> Result<(), AppError> + Send + 'static,
+{
+    let handle = tauri::async_runtime::spawn_blocking(work);
+    match tokio::time::timeout(timeout, handle).await {
+        Ok(joined) => joined
+            .map_err(|e| AppError::Connection(format!("Verbindungsaufbau abgebrochen: {e}")))?,
+        Err(_) => Err(AppError::Connection(
+            "Verbindungsaufbau: Zeitueberschreitung (Server nicht erreichbar oder haengt)".into(),
+        )),
+    }
+}
+
 #[tauri::command]
-pub fn open_connection(
+pub async fn open_connection(
     app: tauri::AppHandle,
     connection: Connection,
     password: Option<String>,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
-    let settings = storage::load_settings(&app)?;
-    let cid = correlation_id.unwrap_or_default();
-    let rdp = RdpOptions {
-        scaling_mode: settings.rdp_scaling_mode,
-        window_mode: settings.rdp_window_mode,
-        custom_size: settings.rdp_custom_size.as_deref(),
-        performance_profile: settings.rdp_performance_profile,
-    };
-    connection::open_connection(
-        &connection,
-        password.as_deref(),
-        client.as_ref(),
-        rdp,
-        settings.language.as_deref(),
-        &cid,
-        &app,
-    )
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        let settings = storage::load_settings(&app)?;
+        let cid = correlation_id.unwrap_or_default();
+        let rdp = rdp_options(&settings);
+        connection::open_connection(
+            &connection,
+            password.as_deref(),
+            client.as_ref(),
+            rdp,
+            settings.language.as_deref(),
+            &cid,
+            &app,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn open_connection_stored(
+pub async fn open_connection_stored(
     app: tauri::AppHandle,
     connection: Connection,
     client: Option<ClientInfo>,
     correlation_id: Option<String>,
 ) -> Result<(), AppError> {
-    let settings = storage::load_settings(&app)?;
-    let cid = correlation_id.unwrap_or_default();
-    let rdp = RdpOptions {
-        scaling_mode: settings.rdp_scaling_mode,
-        window_mode: settings.rdp_window_mode,
-        custom_size: settings.rdp_custom_size.as_deref(),
-        performance_profile: settings.rdp_performance_profile,
-    };
-    connection::open_connection_stored(
-        &app,
-        &connection,
-        client.as_ref(),
-        rdp,
-        settings.language.as_deref(),
-        &cid,
-    )
+    run_with_deadline(OPEN_CONNECTION_TIMEOUT, move || {
+        let settings = storage::load_settings(&app)?;
+        let cid = correlation_id.unwrap_or_default();
+        let rdp = rdp_options(&settings);
+        connection::open_connection_stored(
+            &app,
+            &connection,
+            client.as_ref(),
+            rdp,
+            settings.language.as_deref(),
+            &cid,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -312,19 +277,13 @@ pub async fn login(
     password: String,
     allow_self_signed: Option<bool>,
 ) -> Result<AuthSession, AppError> {
-    let self_signed = allow_self_signed.unwrap_or_else(|| {
-        storage::load_settings(&app)
-            .map(|s| s.allow_self_signed_certs)
-            .unwrap_or(false)
-    });
+    let self_signed = self_signed_setting(&app, allow_self_signed);
     auth::login(&server_url, &username, &password, self_signed).await
 }
 
 #[tauri::command]
 pub async fn logout(app: tauri::AppHandle) -> Result<(), AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     auth::logout(allow_self_signed).await
 }
 
@@ -334,9 +293,7 @@ pub async fn fetch_connections_jwt(
     server_url: String,
     token: String,
 ) -> Result<Vec<Connection>, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     sync::fetch_connections_jwt(app, &server_url, &token, allow_self_signed).await
 }
 
@@ -348,9 +305,7 @@ pub async fn start_tunnel(
     token: String,
     username: String,
 ) -> Result<TunnelStatus, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     let frpc_state = state.inner().clone();
     frpc::start_tunnel(
         app,
@@ -380,9 +335,7 @@ pub async fn start_notification_stream(
     server_url: String,
     token: String,
 ) -> Result<(), AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     let stream_state = state.inner().clone();
     crate::notifications::start(app, stream_state, server_url, token, allow_self_signed).await
 }
@@ -398,9 +351,7 @@ pub async fn fetch_tunnels(
     server_url: String,
     token: String,
 ) -> Result<Vec<tunnel::TunnelMapping>, AppError> {
-    let allow_self_signed = storage::load_settings(&app)
-        .map(|s| s.allow_self_signed_certs)
-        .unwrap_or(false);
+    let allow_self_signed = self_signed_setting(&app, None);
     tunnel::fetch_tunnels(&server_url, &token, allow_self_signed).await
 }
 
@@ -427,4 +378,39 @@ pub fn ansible_write_playbook(filename: String, content: String) -> Result<Strin
 #[tauri::command]
 pub fn ansible_launch(inventory_path: String, playbook_path: String) -> Result<(), AppError> {
     ansible::launch_ansible(&inventory_path, &playbook_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_with_deadline;
+    use crate::error::AppError;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn run_with_deadline_returns_ok_for_fast_work() {
+        assert!(run_with_deadline(Duration::from_secs(5), || Ok(()))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_maps_a_hung_task_to_a_timeout_error() {
+        // 4.3: a blocking task that overruns the deadline surfaces a Connection error (the
+        // user gets a message, not a frozen webview) instead of hanging.
+        let r = run_with_deadline(Duration::from_millis(50), || {
+            std::thread::sleep(Duration::from_millis(500));
+            Ok(())
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+    }
+
+    #[tokio::test]
+    async fn run_with_deadline_passes_through_work_errors() {
+        let r = run_with_deadline(Duration::from_secs(5), || {
+            Err(AppError::Connection("boom".into()))
+        })
+        .await;
+        assert!(matches!(r, Err(AppError::Connection(_))));
+    }
 }

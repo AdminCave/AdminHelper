@@ -42,6 +42,25 @@ _TRUSTED_PROXIES = (
 )
 
 
+def _ip_from_proxy_headers(request: Request) -> str | None:
+    """The client IP a proxy forwarded: the first hop of X-Forwarded-For, else
+    X-Real-IP, else None. The trust decision is the caller's.
+
+    XFF is preferred because the bundled gateway pins X-Forwarded-For to
+    $remote_addr but does NOT set X-Real-IP — a client-supplied X-Real-IP is
+    passed through unchanged, so if it won over the gateway-fixed XFF a client
+    could spoof its source IP and bypass the ALLOWED_IPS allowlist / per-IP rate
+    limits and forge the audit-log source_ip (3.8). X-Real-IP stays only as a
+    fallback for proxies that set it but no XFF."""
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        return real_ip
+    return None
+
+
 def resolve_client_ip(request: Request) -> str:
     """Determines the real client IP.
 
@@ -57,22 +76,16 @@ def resolve_client_ip(request: Request) -> str:
     if _TRUSTED_PROXIES:
         # Secure path: accept headers only from known proxies
         if _in_networks(direct_ip, _TRUSTED_PROXIES):
-            real_ip = request.headers.get("X-Real-IP", "").strip()
-            if real_ip:
-                return real_ip
-            forwarded_for = request.headers.get("X-Forwarded-For", "")
-            if forwarded_for:
-                return forwarded_for.split(",")[0].strip()
+            header_ip = _ip_from_proxy_headers(request)
+            if header_ip:
+                return header_ip
         return direct_ip
 
     if TRUST_PROXY_HEADERS:
         # Legacy: evaluate headers from any IP (backward compatible)
-        real_ip = request.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
+        header_ip = _ip_from_proxy_headers(request)
+        if header_ip:
+            return header_ip
 
     return direct_ip
 

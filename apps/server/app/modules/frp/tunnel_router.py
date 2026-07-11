@@ -38,6 +38,17 @@ def list_tunnels(
     return [t.to_dict() for t in tunnels]
 
 
+def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
+    """Create the paired auto-connection for a tunnel (if the checker returns one)
+    and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
+    the JSON-encoded tags — and the linking stay identical (2.47)."""
+    auto_conn = create_auto_connection(tunnel, username=username)
+    if auto_conn:
+        db.add(auto_conn)
+        db.flush()
+        tunnel.connection_id = auto_conn.id
+
+
 @router.post("/tunnels", status_code=status.HTTP_201_CREATED)
 def create_tunnel(
     data: FrpTunnelCreate,
@@ -56,9 +67,6 @@ def create_tunnel(
     existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits")
-
-    if data.tunnel_type not in ("stcp", "https"):
-        raise HTTPException(status_code=400, detail="tunnel_type muss 'stcp' oder 'https' sein")
 
     secret = data.secret_key
     if data.tunnel_type == "stcp" and not secret:
@@ -100,21 +108,7 @@ def create_tunnel(
     db.flush()
 
     if data.auto_create_connection:
-        auto_conn = create_auto_connection(
-            data.name,
-            data.tunnel_type,
-            data.protocol,
-            data.custom_domains,
-            visitor_port,
-            data.server_id,
-            db,
-            tags=json.dumps(data.tags) if data.tags else None,
-            username=data.auto_connection_username,
-        )
-        if auto_conn:
-            db.add(auto_conn)
-            db.flush()
-            tunnel.connection_id = auto_conn.id
+        _attach_auto_connection(db, tunnel, data.auto_connection_username)
 
     try:
         db.commit()
@@ -160,9 +154,6 @@ def update_tunnel(
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
     sent = data.model_fields_set
-
-    if "tunnel_type" in sent and data.tunnel_type not in ("stcp", "https"):
-        raise HTTPException(status_code=400, detail="tunnel_type muss 'stcp' oder 'https' sein")
 
     if "name" in sent and data.name != tunnel.name:
         existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
@@ -211,21 +202,7 @@ def update_tunnel(
         tunnel.tags = json.dumps(data.tags) if data.tags else None
 
     if data.auto_create_connection and not tunnel.connection_id:
-        auto_conn = create_auto_connection(
-            tunnel.name,
-            tunnel.tunnel_type,
-            tunnel.protocol,
-            tunnel.custom_domains,
-            tunnel.visitor_port,
-            tunnel.server_id,
-            db,
-            tags=tunnel.tags,
-            username=data.auto_connection_username,
-        )
-        if auto_conn:
-            db.add(auto_conn)
-            db.flush()
-            tunnel.connection_id = auto_conn.id
+        _attach_auto_connection(db, tunnel, data.auto_connection_username)
 
     try:
         db.commit()
@@ -257,10 +234,12 @@ def delete_tunnel(
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
-    fire_event("frp.tunnel.deleted", {"id": tunnel.id, "name": tunnel.name})
     tunnel_name = tunnel.name
     db.delete(tunnel)
     db.commit()
+    # Fire only after the commit succeeds — a rolled-back delete must not leave
+    # hooks/notifications having observed a deletion that never happened (2.48).
+    fire_event("frp.tunnel.deleted", {"id": tunnel_id, "name": tunnel_name})
     audit.record(
         db,
         "frp.tunnel.deleted",

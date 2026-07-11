@@ -10,8 +10,10 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.check_types import VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.pagination import paginate
@@ -19,7 +21,6 @@ from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
 from app.scheduler import add_check, remove_check
 from app.schemas import (
-    VALID_CHECK_TYPES,
     VALID_INTERVALS,
     VALID_SEVERITIES,
     CheckCreate,
@@ -36,6 +37,21 @@ def _escape_label(value) -> str:
     then `"`.
     """
     return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict]:
+    """Serialize checks with their current state, batch-loading the states with a
+    single in_ query. Shared by the three check-listing endpoints."""
+    check_ids = [c.id for c in checks]
+    states = (
+        {
+            s.check_id: s
+            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
+        }
+        if check_ids
+        else {}
+    )
+    return [c.to_dict(state=states.get(c.id)) for c in checks]
 
 
 router = APIRouter()
@@ -104,17 +120,7 @@ def list_checks(
         q = q.filter(MonitorCheck.server_id == server_id)
     checks = paginate(q.order_by(MonitorCheck.name, MonitorCheck.id), response, limit, offset).all()
 
-    check_ids = [c.id for c in checks]
-    states = (
-        {
-            s.check_id: s
-            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
-        }
-        if check_ids
-        else {}
-    )
-
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    return _serialize_with_states(db, checks)
 
 
 @router.post(
@@ -279,16 +285,7 @@ def get_all_status(
     """Returns all check states for the dashboard."""
     query = db.query(MonitorCheck).order_by(MonitorCheck.name, MonitorCheck.id)
     checks = paginate(query, response, limit, offset).all()
-    check_ids = [c.id for c in checks]
-    states = (
-        {
-            s.check_id: s
-            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
-        }
-        if check_ids
-        else {}
-    )
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    return _serialize_with_states(db, checks)
 
 
 @router.get("/status/server/{server_id}", dependencies=[Depends(require_internal)])
@@ -300,34 +297,29 @@ def get_server_status(server_id: str, db: Session = Depends(get_db)):
         .order_by(MonitorCheck.name)
         .all()
     )
-    check_ids = [c.id for c in checks]
-    states = (
-        {
-            s.check_id: s
-            for s in db.query(MonitorState).filter(MonitorState.check_id.in_(check_ids)).all()
-        }
-        if check_ids
-        else {}
-    )
-    return [c.to_dict(state=states.get(c.id)) for c in checks]
+    return _serialize_with_states(db, checks)
 
 
 @router.get("/status/summary", dependencies=[Depends(require_internal)])
 def get_status_summary(db: Session = Depends(get_db)):
     """Summary: count per status. Dict response (aggregate, not a list) —
     deliberately unpaginated."""
-    states = db.query(MonitorState).all()
+    # Aggregate in SQL: a GROUP BY count avoids materializing every MonitorState row (incl. the
+    # message/details JSON blobs) just to tally per status — thousands of rows with large text
+    # columns per dashboard poll at scale (5.21).
+    rows = db.query(MonitorState.status, func.count()).group_by(MonitorState.status).all()
     summary = {
-        "total": len(states),
+        "total": 0,
         "ok": 0,
         "warning": 0,
         "critical": 0,
         "unknown": 0,
         "pending": 0,
     }
-    for s in states:
-        if s.status in summary:
-            summary[s.status] += 1
+    for status_, count in rows:
+        if status_ in summary:
+            summary[status_] = count
+        summary["total"] += count
     return summary
 
 
@@ -369,10 +361,17 @@ def get_check_metrics(
         else f'check_id="{_escape_label(check_id)}"'
     )
 
-    # Query type-specific metrics
+    # Query all type-specific metrics in one __name__ regex range query instead of one serial
+    # query_range per metric (up to 4 for e.g. service_process/http): the calls are independent, so
+    # serializing them — each with a 10s httpx timeout — is pure latency on the dashboard path (5.22).
+    # PromQL/VictoriaMetrics anchors the __name__ regex fully (^(...)$), and the metric names are
+    # literal [a-z_] identifiers, so the |-join matches exactly those names.
     metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
-    for metric in metric_names:
-        query = f"{metric}{{{filter_label}}}"
+    if metric_names:
+        # zfs_health maps to an empty list (only dynamic patterns) — skip rather than fire a
+        # degenerate {__name__=~""} query, matching the old loop which ran zero times.
+        names = "|".join(metric_names)
+        query = f'{{__name__=~"{names}",{filter_label}}}'
         result = victoria.query_range(query=query, start=f"now-{duration}", end="now", step=step)
         all_results.extend(result.get("data", {}).get("result", []))
 

@@ -19,15 +19,23 @@ _E2E_COMPOSE=(-f "$E2E_REPO_ROOT/docker-compose.yml" -f "$E2E_REPO_ROOT/docker-c
 _E2E_API="$_E2E_LIB_DIR/e2e_api.py"
 
 # e2e_api <token> <op> [args...] — admin-API seed/query over the test gateway.
-# Ops: server <name> <hostname> | config <name> <addr> <port> |
-#      tunnel <server_id> <config_id> <name> <port> | count-tunnels <server_id>.
+# Ops: server | config | tunnel | count-tunnels | tunnel-conn | provision-token |
+#      connection | web-connection — see e2e_api.py for each op's args (2.122).
 e2e_api() { python3 "$_E2E_API" "$E2E_SERVER_URL" "$@"; }
+
+# Headless WebKit: disable GPU paths xvfb can't provide (else the webview may fail to
+# render). crabbox_desktopbox set these inline; exporting them here — every desktop_e2e_*
+# suite sources this lib, and export reaches the dbus-run-session subshells — gives them
+# all the same env instead of only some; the divergence was already real. The full
+# dbus/keyring/xvfb wrapper dedup is a separate, riskier refactor (2.40).
+export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
 
 # Populated by e2e_init.
 E2E_WORK=""
 E2E_PROJECT=""
 E2E_HTTPS_PORT=""
 E2E_ENROLL_PORT=""
+E2E_REPO_PORT=""
 E2E_SERVER_URL=""
 E2E_ADMIN_PW=""
 
@@ -35,11 +43,13 @@ e2e_rand() { openssl rand -hex 16; }
 
 e2e_require() {
     local bin
+    # Exit 75 (EX_TEMPFAIL) is run.sh's self-SKIP sentinel: a missing precondition
+    # must report SKIP, not a green PASS via a bare exit 0 (6.9).
     for bin in docker openssl curl python3 "$@"; do
-        command -v "$bin" >/dev/null 2>&1 || { echo "SKIP: '$bin' not available"; exit 0; }
+        command -v "$bin" >/dev/null 2>&1 || { echo "SKIP: '$bin' not available"; exit 75; }
     done
-    docker compose version >/dev/null 2>&1 || { echo "SKIP: docker compose v2 missing"; exit 0; }
-    docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not reachable"; exit 0; }
+    docker compose version >/dev/null 2>&1 || { echo "SKIP: docker compose v2 missing"; exit 75; }
+    docker info >/dev/null 2>&1 || { echo "SKIP: docker daemon not reachable"; exit 75; }
 }
 
 e2e_dc() {
@@ -63,6 +73,7 @@ e2e_init() {
     # The desktop app derives the enrollment plane as <server-host>:8444, so this
     # one must be the fixed 8444 — only the data plane gets a high per-run port.
     E2E_ENROLL_PORT=8444
+    E2E_REPO_PORT=8445
     E2E_SERVER_URL="https://localhost:$E2E_HTTPS_PORT"
     E2E_ADMIN_PW="e2e-$(e2e_rand)"
     cat > "$E2E_WORK/.env" <<EOF
@@ -75,6 +86,7 @@ ADMIN_PASSWORD=$E2E_ADMIN_PW
 MTLS_ENFORCE=${1:?e2e_init needs MTLS_ENFORCE (true|false)}
 ITEST_HTTPS_PORT=$E2E_HTTPS_PORT
 ITEST_ENROLL_PORT=$E2E_ENROLL_PORT
+ITEST_REPO_PORT=$E2E_REPO_PORT
 EOF
     trap e2e_teardown EXIT
 }
@@ -83,7 +95,11 @@ EOF
 # Returns non-zero (and dumps gateway logs) if the gateway never answers.
 e2e_up() {
     echo "[e2e] building + starting: $* (on :$E2E_HTTPS_PORT)..."
-    e2e_dc up --build -d "$@" >/dev/null 2>&1 || return 1
+    # Don't swallow the build output: on failure the caller needs to see WHY the
+    # build/up broke, not just a bare non-zero return (4.57).
+    local buildlog
+    buildlog="$(e2e_dc up --build -d "$@" 2>&1)" \
+        || { echo "[e2e] build/up failed:" >&2; printf '%s\n' "$buildlog" | tail -30 >&2; return 1; }
     local code
     for _ in $(seq 1 120); do
         code=$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 3 "$E2E_SERVER_URL/" 2>/dev/null || echo 000)

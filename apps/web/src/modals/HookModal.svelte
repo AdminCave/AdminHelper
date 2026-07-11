@@ -8,8 +8,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Modal from '$lib/components/ui/Modal.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
-  import { showToast } from '$lib/stores/notifications';
-  import * as api from '$lib/api/hooks';
+  import { showToast, showError } from '$lib/stores/notifications';
+  import { hooks } from '$lib/stores/hooks';
   import { HOOK_EVENTS, HOOK_INTERVAL_PRESETS } from '$lib/utils/hooks';
   import type { HookCreate, HookDetail, HookType, HookUpdate } from '$lib/api/types';
 
@@ -90,7 +90,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         };
         if (isEvent) payload.event_triggers = [...events];
         if (isSchedule) payload.schedule_interval = intervalValue;
-        await api.update(editing.id, payload);
+        await hooks.update(editing.id, payload);
         showToast($t('toast.hook.saved'));
         onClose();
       } else {
@@ -102,7 +102,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         };
         if (isEvent) payload.event_triggers = [...events];
         if (isSchedule) payload.schedule_interval = intervalValue;
-        const created = await api.create(payload);
+        const created = await hooks.create(payload);
         if (hookType === 'webhook' && created.token) {
           onClose({ token: created.token });
         } else {
@@ -111,7 +111,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         }
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       submitting = false;
     }
@@ -191,17 +191,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
         style="min-height:220px;font-family:monospace;font-size:13px"
         bind:value={script}
       ></textarea>
-      <small style="color:var(--text-muted)">{@html scriptHelp}</small>
+      <small style="color:var(--text-muted)"
+        >{#each scriptHelp.split('`') as part, i (i)}{#if i % 2 === 1}<code>{part}</code
+            >{:else}{part}{/if}{/each}</small
+      >
     </div>
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={() => onClose()}>{$t('action.cancel')}</Button>
-    <Button
-      variant="primary"
-      type="submit"
-      disabled={submitting}
-      onclick={() => (document.getElementById('hook-form') as HTMLFormElement)?.requestSubmit()}
-    >
+    <Button variant="primary" type="submit" disabled={submitting} form="hook-form">
       {$t('action.save')}
     </Button>
   {/snippet}

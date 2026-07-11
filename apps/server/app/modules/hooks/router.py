@@ -17,8 +17,8 @@ from app.modules.hooks.models import Hook
 
 # Scheduled-hook jobs are owned by the dedicated scheduler process; the web
 # workers only persist hook rows to the DB and let the periodic reconcile pick
-# them up. _INTERVAL_MAP is still needed here for interval validation.
-from app.modules.hooks.scheduler import _INTERVAL_MAP
+# them up. INTERVAL_MAP is still needed here for interval validation.
+from app.modules.hooks.scheduler import INTERVAL_MAP
 from app.modules.hooks.schemas import (
     VALID_EVENTS,
     VALID_INTERVALS,
@@ -31,6 +31,10 @@ from app.modules.hooks.schemas import (
 from app.modules.hooks.script_runner import run_hook_script
 
 router = APIRouter(prefix="/api/hooks", tags=["hooks"])
+# Public webhook ingest (token-authenticated, no access scope). Split from the
+# admin router so main.py can scope-guard the human admin CRUD (get_current_admin
+# alone is not scope separation) while leaving only this ingest route open.
+trigger_router = APIRouter(prefix="/api/hooks", tags=["hooks"])
 
 # Rate limiting for webhook triggers: max 20 calls per IP in 60 seconds.
 # Uses the central rate_limit backend (in-memory eviction / Redis TTL) — the
@@ -75,7 +79,7 @@ def _validate_schedule_interval(interval: str) -> None:
     expression. Shared by create and update so a bad cron on PUT raises 422
     instead of reaching add_hook -> _parse_trigger as an unhandled 500."""
     parts = interval.split()
-    if interval not in _INTERVAL_MAP and len(parts) != 5:
+    if interval not in INTERVAL_MAP and len(parts) != 5:
         raise HTTPException(
             status_code=422,
             detail=f"Ungültiges Intervall. Erlaubt: {', '.join(VALID_INTERVALS)} oder Cron (5 Felder)",
@@ -101,8 +105,6 @@ def _validate_create(data: HookCreate) -> None:
                 status_code=422, detail="schedule_interval erforderlich für Scheduled Hooks"
             )
         _validate_schedule_interval(data.schedule_interval)
-    else:
-        raise HTTPException(status_code=422, detail=f"Unbekannter Hook-Typ: {data.hook_type!r}")
 
 
 @router.get("", response_model=list[HookResponse])
@@ -156,10 +158,15 @@ def create_hook(
     return result
 
 
-# IMPORTANT: /trigger/{token} must be defined before /{hook_id}
-@router.post("/trigger/{token}")
-async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
-    # This handler must stay async (request.json(), run_in_threadpool), so the
+# Only these request headers are exposed to the (privileged) webhook script context.
+# Never pass client-controlled headers like Authorization/Cookie/X-Forwarded-* into the
+# exec namespace: a naive hook doing http_post(url, headers=headers) to a payload-chosen
+# URL would forward AdminHelper credentials to an attacker-picked target (3.36).
+_SAFE_WEBHOOK_HEADERS = {"content-type", "user-agent", "x-hook-source"}
+
+
+async def _do_trigger(token: str, request: Request, db: Session):
+    # This helper must stay async (request.json(), run_in_threadpool), so the
     # sync pieces — Redis rate-limit increment and the DB lookup — must not run
     # on the event loop directly (single-worker backend, see comment below).
     await run_in_threadpool(_check_trigger_rate_limit, request)
@@ -189,7 +196,9 @@ async def trigger_webhook(token: str, request: Request, db: Session = Depends(ge
             hook_type="webhook",
             context={
                 "payload": payload,
-                "headers": dict(request.headers),
+                "headers": {
+                    k: v for k, v in request.headers.items() if k.lower() in _SAFE_WEBHOOK_HEADERS
+                },
                 "params": dict(request.query_params),
             },
         )
@@ -197,6 +206,26 @@ async def trigger_webhook(token: str, request: Request, db: Session = Depends(ge
         return {"success": False, "error": str(exc), "result": {}, "logs": []}
 
     return result
+
+
+@trigger_router.post("/trigger")
+async def trigger_webhook_header(request: Request, db: Session = Depends(get_db)):
+    # Token via X-Hook-Token header instead of the URL path: a token in the path leaks
+    # into nginx/proxy access logs, browser history and referrers. Both variants work;
+    # the UI now prefers this one (3.101).
+    token = request.headers.get("X-Hook-Token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="X-Hook-Token-Header fehlt"
+        )
+    return await _do_trigger(token, request, db)
+
+
+# Mounted BEFORE the admin router in main.py so /trigger/{token} wins over the
+# admin /{hook_id}/... routes (e.g. /trigger/run vs /{hook_id}/run).
+@trigger_router.post("/trigger/{token}")
+async def trigger_webhook(token: str, request: Request, db: Session = Depends(get_db)):
+    return await _do_trigger(token, request, db)
 
 
 @router.get("/{hook_id}", response_model=HookDetailResponse)

@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,6 +11,7 @@ from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.identity import SCOPE_ACCESS
 from app.core.request_context import actor_from_request
+from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import clear_revocation, revoke_identity
 from app.modules.servers.models import Server
@@ -47,7 +46,7 @@ def create_user(
 ):
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername bereits vergeben"
+            status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
         )
     user = User(
         username=data.username,
@@ -66,10 +65,10 @@ def create_user(
     except IntegrityError:
         # Lost the race against a concurrent create of the same username (the
         # check above has a TOCTOU window; users.username is unique). Map to the
-        # same 400 the pre-check returns.
+        # same 409 the pre-check returns.
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername bereits vergeben"
+            status_code=status.HTTP_409_CONFLICT, detail="Benutzername bereits vergeben"
         )
     db.refresh(user)
     fire_event(
@@ -101,13 +100,16 @@ def update_user(
         user.hashed_password = hash_password(data.password)
         # Revoke all existing JWTs for this user (password reset invalidates
         # sessions); stored naive UTC to match the other DateTime columns.
-        user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None)
+        user.tokens_valid_after = utcnow_naive()
     if data.is_admin is not None:
         # Never let the last admin be demoted — that would brick all management
         # (admin-only endpoints) with no recovery path short of a DB edit.
         if user.is_admin and not data.is_admin:
-            admin_count = db.query(User).filter(User.is_admin.is_(True)).count()
-            if admin_count <= 1:
+            # Lock the admin rows so a concurrent demotion sees this one: two parallel PUTs (A
+            # demotes B, B demotes A) could both read admin_count==2 and both commit, leaving zero
+            # admins and bricking every admin-only endpoint. with_for_update serializes them (4.142).
+            admins = db.query(User).filter(User.is_admin.is_(True)).with_for_update().all()
+            if len(admins) <= 1:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Der letzte Admin kann nicht herabgestuft werden",

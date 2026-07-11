@@ -7,11 +7,11 @@ import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_admin, get_current_user
 from app.core.database import get_db
-from app.modules.frp._helpers import get_allow_users
+from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import (
     generate_frpc_toml,
     generate_frps_toml,
@@ -24,18 +24,46 @@ from app.modules.users.models import User
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
 
+def _resolve_config(db: Session, config_id: str | None) -> FrpServerConfig:
+    """Resolve the FRP config (by id, else the deterministic singleton) or 404.
+    Wraps get_frp_config so every generate endpoint resolves it the same way (2.44)."""
+    config = get_frp_config(db, config_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    return config
+
+
+def _visible_stcp_tunnels(db: Session, config: FrpServerConfig, user: User) -> list[FrpTunnel]:
+    """The enabled STCP tunnels of `config` visible to `user`: all for an admin,
+    else only those on the user's own servers. Centralised because it is a security
+    invariant — a non-admin must never see foreign tunnels, and duplicating it
+    risks breaking that at one site (2.44)."""
+    # Eager-load target_server: generate_visitor_toml reads tunnel.target_server.name per tunnel,
+    # which would otherwise fire one SELECT per tunnel (the backref is lazy) (5.29).
+    q = (
+        db.query(FrpTunnel)
+        .options(joinedload(FrpTunnel.target_server))
+        .filter(
+            FrpTunnel.frp_config_id == config.id,
+            FrpTunnel.tunnel_type == "stcp",
+            FrpTunnel.enabled.is_(True),
+        )
+    )
+    if user.is_admin:
+        return q.all()
+    server_ids = [s.id for s in user.servers]
+    if not server_ids:
+        return []
+    return q.filter(FrpTunnel.server_id.in_(server_ids)).all()
+
+
 @router.get("/generate/frps-toml")
 def gen_frps_toml(
     config_id: str | None = Query(None),
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    if config_id:
-        config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
-    else:
-        config = db.query(FrpServerConfig).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    config = _resolve_config(db, config_id)
     toml = generate_frps_toml(config)
     return PlainTextResponse(toml, media_type="application/toml")
 
@@ -76,12 +104,7 @@ def gen_visitor_toml(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    if config_id:
-        config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
-    else:
-        config = db.query(FrpServerConfig).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    config = _resolve_config(db, config_id)
 
     user = current_user
     if user_id and current_user.is_admin:
@@ -89,20 +112,12 @@ def gen_visitor_toml(
         if not user:
             raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    tunnel_query = db.query(FrpTunnel).filter(
-        FrpTunnel.frp_config_id == config.id,
-        FrpTunnel.tunnel_type == "stcp",
-        FrpTunnel.enabled.is_(True),
-    )
-
-    if user.is_admin:
-        tunnels = tunnel_query.all()
-    else:
-        server_ids = [s.id for s in user.servers]
-        if not server_ids:
-            tunnels = []
-        else:
-            tunnels = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids)).all()
+    tunnels = _visible_stcp_tunnels(db, config, user)
+    # The visitor TOML embeds the shared frps auth token; without visible STCP
+    # tunnels the user has no legitimate reason for it, so refuse rather than hand
+    # the global secret to any authenticated (non-admin, server-less) user (3.33).
+    if not tunnels:
+        raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
 
     toml = generate_visitor_toml(config, tunnels, user.username)
     return PlainTextResponse(toml, media_type="application/toml")
@@ -120,27 +135,13 @@ def gen_visitor_bundle(
     signing capability, D6). The desktop supplies its own enrolled access identity
     for the visitor's mTLS, so the bundle carries only the TOML; ``pki`` stays
     empty for backward compatibility with the desktop's response shape."""
-    if config_id:
-        config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
-    else:
-        config = db.query(FrpServerConfig).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    config = _resolve_config(db, config_id)
 
-    tunnel_query = db.query(FrpTunnel).filter(
-        FrpTunnel.frp_config_id == config.id,
-        FrpTunnel.tunnel_type == "stcp",
-        FrpTunnel.enabled.is_(True),
-    )
-
-    if current_user.is_admin:
-        tunnels = tunnel_query.all()
-    else:
-        server_ids = [s.id for s in current_user.servers]
-        if not server_ids:
-            tunnels = []
-        else:
-            tunnels = tunnel_query.filter(FrpTunnel.server_id.in_(server_ids)).all()
+    tunnels = _visible_stcp_tunnels(db, config, current_user)
+    # See gen_visitor_toml: don't hand the shared frps auth token to a user with no
+    # visible STCP tunnels (3.33).
+    if not tunnels:
+        raise HTTPException(status_code=404, detail="Keine sichtbaren STCP-Tunnel")
     toml = generate_visitor_toml(config, tunnels, current_user.username)
 
     return {"toml": toml, "pki": {}}
@@ -153,12 +154,7 @@ def gen_bulk_zip(
     _admin=Depends(get_current_admin),
 ):
     """Generates a ZIP with frps.toml, visitor.toml and one frpc.toml per server."""
-    if config_id:
-        config = db.query(FrpServerConfig).filter(FrpServerConfig.id == config_id).first()
-    else:
-        config = db.query(FrpServerConfig).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Keine FRP-Config vorhanden")
+    config = _resolve_config(db, config_id)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -166,6 +162,9 @@ def gen_bulk_zip(
 
         all_tunnels = (
             db.query(FrpTunnel)
+            .options(
+                joinedload(FrpTunnel.target_server)
+            )  # 5.29: no per-tunnel target_server SELECT
             .filter(
                 FrpTunnel.frp_config_id == config.id,
                 FrpTunnel.enabled.is_(True),

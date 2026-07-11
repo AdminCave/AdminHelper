@@ -22,9 +22,10 @@ const ROUTES: RouteCase[] = [
 async function gotoAuthenticated(page: Page, hash: string): Promise<void> {
   await mockApi(page);
   await page.goto(`/${hash}`);
+  // The visible .page-title is the deterministic ready signal (the router has swapped
+  // the component and it rendered); networkidle is fragile — it breaks under any polling
+  // and doesn't guarantee the UI is rendered anyway (Playwright advises against it) (6.155).
   await page.waitForSelector('.page-title', { state: 'visible' });
-  // Warte auf vollstaendiges Hydration-Render (Router tauscht Komponente).
-  await page.waitForLoadState('networkidle');
 }
 
 test.describe('Navigation smoke tests (alle migrierten Seiten)', () => {
@@ -51,8 +52,8 @@ test.describe('Visual-Diff pro Seite', () => {
   for (const r of ROUTES) {
     test(`Screenshot ${r.name}`, async ({ page }) => {
       await gotoAuthenticated(page, r.hash);
-      // Layout-Settling: kleine Stabilisierungs-Pause fuer gerenderte Listen.
-      await page.waitForTimeout(200);
+      // No manual settle pause: toHaveScreenshot already retries until two consecutive
+      // screenshots match, so a fixed 200ms sleep was both redundant and flaky (6.157).
       await expect(page).toHaveScreenshot(`${r.name}.png`, { fullPage: true });
     });
   }

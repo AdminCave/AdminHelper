@@ -27,11 +27,6 @@ def create_api_key(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
 ):
-    if data.permission not in ("read", "read_write"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Permission muss 'read' oder 'read_write' sein",
-        )
     raw_key = generate_api_key()
     api_key = ApiKey(
         name=data.name,

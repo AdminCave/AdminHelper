@@ -19,6 +19,7 @@ Hierarchy (ADR 0001 §3.1):
 from __future__ import annotations
 
 import datetime
+import ipaddress
 from dataclasses import dataclass
 
 from cryptography import x509
@@ -307,8 +308,6 @@ def build_server_leaf(
 
 
 def _build_san(spec: LeafSpec) -> x509.SubjectAlternativeName | None:
-    import ipaddress
-
     entries: list[x509.GeneralName] = [x509.DNSName(d) for d in spec.dns_names]
     for ip in spec.ip_addresses:
         entries.append(x509.IPAddress(ipaddress.ip_address(ip)))

@@ -111,3 +111,74 @@ class TestBootstrapEndpoint:
         )
         # Pydantic validation takes effect before the endpoint logic
         assert res.status_code == 422
+
+
+def test_bootstrap_token_written_to_file_not_log(caplog):
+    """3.91: the raw setup token lands in a 0600 file, never in the log."""
+    import logging
+
+    from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
+    from app.main import _emit_bootstrap_token
+
+    try:
+        with caplog.at_level(logging.WARNING):
+            _emit_bootstrap_token()
+        assert BOOTSTRAP_SETUP_FILE.exists()
+        raw = BOOTSTRAP_SETUP_FILE.read_text().strip()
+        assert raw
+        assert raw not in caplog.text  # the raw token is never logged (3.91)
+        assert BOOTSTRAP_TOKEN_FILE.read_text().strip() != raw  # hash file holds the hash
+    finally:
+        BOOTSTRAP_SETUP_FILE.unlink(missing_ok=True)
+        BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+
+
+def test_short_env_admin_password_falls_back_to_bootstrap(db_session, monkeypatch):
+    """3.90: an ADMIN_PASSWORD < 8 chars must not create an admin — fall back to the
+    bootstrap-token path instead of silently making a weak-password prod admin."""
+    import app.main as m
+    from app.core.config import BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
+    from app.modules.users.models import User
+
+    monkeypatch.setattr(m, "ADMIN_PASSWORD", "abc")  # < 8 chars
+    try:
+        m._ensure_admin(db_session)
+        assert db_session.query(User).filter(User.username == "admin").count() == 0
+        assert BOOTSTRAP_TOKEN_FILE.exists()  # bootstrap emitted instead
+    finally:
+        BOOTSTRAP_SETUP_FILE.unlink(missing_ok=True)
+        BOOTSTRAP_TOKEN_FILE.unlink(missing_ok=True)
+
+
+def test_lifespan_survives_redis_outage_at_boot(monkeypatch):
+    """4.68: Redis carries only the optional SSE push fan-out (rate-limit degrades to in-memory,
+    SSE has a polling fallback). If stream_hub.start raises at boot (compose race, a Redis
+    restart during a redeploy), the lifespan must still reach yield — the server must start, not
+    crash-loop, on an optional channel being briefly unavailable."""
+    import asyncio
+
+    import app.core.events as events
+    import app.main as m
+    from app.modules.notifications import stream_hub
+
+    monkeypatch.setattr(m, "_run_startup_tasks", lambda: None)
+    monkeypatch.setattr(events, "fire_event", lambda *a, **k: None)
+
+    async def _boom(*_a, **_k):
+        raise ConnectionError("redis down at boot")
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(stream_hub, "start", _boom)
+    monkeypatch.setattr(stream_hub, "stop", _noop)
+
+    reached_yield = False
+
+    async def scenario():
+        nonlocal reached_yield
+        async with m.lifespan(m.app):
+            reached_yield = True
+
+    asyncio.run(scenario())
+    assert reached_yield  # the server started despite the Redis outage

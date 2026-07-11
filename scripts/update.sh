@@ -78,12 +78,17 @@ command -v curl >/dev/null 2>&1 || die "curl fehlt."
 # Set or replace KEY=value in .env (idempotent), un-commenting if needed.
 upsert_env() {
     local key="$1" value="$2" tmp
-    if grep -qE "^#?[[:space:]]*${key}=" .env; then
-        tmp=$(mktemp)
-        sed -E "s|^#?[[:space:]]*${key}=.*|${key}=${value}|" .env > "$tmp"; mv "$tmp" .env
-    else
-        printf '%s=%s\n' "$key" "$value" >> .env
-    fi
+    # Reject a value with newlines: it would inject extra .env lines (3.79).
+    case $value in
+        *[$'\n\r']*) die "ungueltiger Wert fuer ${key} (Zeilenumbruch)." ;;
+    esac
+    # Delete any existing (possibly commented) line for the key, then append the
+    # literal value. No sed replacement, so |, & or \1 in the value aren't
+    # interpreted (3.79). grep -v exits 1 when it filters every line — tolerate it.
+    tmp=$(mktemp)
+    grep -vE "^#?[[:space:]]*${key}=" .env > "$tmp" 2>/dev/null || true
+    mv "$tmp" .env
+    printf '%s=%s\n' "$key" "$value" >> .env
 }
 
 # Currently installed version = the tag pinned on SERVER_IMAGE in .env (X.Y.Z),
@@ -99,10 +104,20 @@ installed_version() {
 
 # Resolve the latest published, non-prerelease, non-draft release tag via the API.
 # (releases/latest excludes prereleases and drafts by definition.) No jq on hosts.
+gh_curl() {
+    # Add an optional GITHUB_TOKEN as an Authorization header via a curl config on
+    # stdin (--config -), never argv: on a multi-user host argv is readable from ps /
+    # /proc/<pid>/cmdline while the request runs, and stdin keeps it off disk too (3.86).
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl --config - "$@"
+    else
+        curl "$@"
+    fi
+}
+
 resolve_latest_tag() {
-    local auth=() json tag
-    [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
-    json=$(curl -fsSL "${auth[@]}" -H "Accept: application/vnd.github+json" \
+    local json tag
+    json=$(gh_curl -fsSL -H "Accept: application/vnd.github+json" \
         "${API_BASE}/repos/${REPO}/releases/latest" 2>/dev/null) \
         || die "Konnte das neueste Release nicht abfragen (Netz/Rate-Limit?). Nutze --ref vX.Y.Z."
     tag=$(printf '%s' "$json" | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]*)"$/\1/')
@@ -125,10 +140,10 @@ verify_sums_signature() {
         log "WARNUNG: Release-Signatur nicht konfiguriert — nur Transport-Integritaet (Checksumme)."
         return 0
     fi
-    if ! command -v minisign >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq minisign || true
-    fi
-    command -v minisign >/dev/null 2>&1 || die "minisign fehlt — Signatur nicht pruefbar (installiere 'minisign')."
+    # Don't silently sudo apt-get install minisign — abort with a clear instruction
+    # rather than escalating + touching the host's package set unasked (3.78).
+    command -v minisign >/dev/null 2>&1 \
+        || die "minisign fehlt — Signatur nicht pruefbar. Bitte installieren (z.B. 'sudo apt-get install minisign' bzw. das Paket der Distribution) und erneut ausfuehren."
     curl -fsSL --retry 3 -o "${tmp}/SHA256SUMS.minisig" "${dl}/SHA256SUMS.minisig" \
         || die "Release-Signatur (SHA256SUMS.minisig) fehlt."
     minisign -Vm "${tmp}/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "${tmp}/SHA256SUMS.minisig" >/dev/null 2>&1 \
@@ -173,18 +188,30 @@ update_agent_repo() {
     local tag="$1" tmp="$2" asset dl expected
     asset="adminhelper-agent-repo-${tag}.tar.gz"
     dl="${DL_BASE}/${REPO}/releases/download/${tag}"
-    if ! curl -fsSL --retry 3 --retry-connrefused -o "${tmp}/${asset}" "${dl}/${asset}" 2>/dev/null; then
-        log "Kein Agent-Repo-Asset in ${tag} — ueberspringe Repo-Update (Paket-Repo unveraendert)."
-        return 0
+    local code rc=0
+    code=$(curl -fsSL --retry 3 --retry-connrefused -o "${tmp}/${asset}" -w '%{http_code}' "${dl}/${asset}" 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        # 404 (asset genuinely absent) or 000 (file:// tests / no HTTP layer) → skip;
+        # a 5xx or other failure means the asset may exist but the fetch failed —
+        # that must NOT be mistaken for "no asset" (4.58).
+        case "$code" in
+            404|000) log "Kein Agent-Repo-Asset in ${tag} — ueberspringe Repo-Update (Paket-Repo unveraendert)."; return 0 ;;
+            *) die "Agent-Repo-Asset ${asset} nicht ladbar (HTTP ${code}) — Abbruch." ;;
+        esac
     fi
     expected=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/SHA256SUMS" 2>/dev/null || true)
     [ -n "$expected" ] || { log "Keine Checksumme fuer ${asset} — ueberspringe Repo-Update."; return 0; }
     echo "${expected}  ${tmp}/${asset}" | sha256sum -c - >/dev/null 2>&1 \
         || die "Checksumme des Agent-Repo-Assets stimmt nicht — Abbruch (moegliche Manipulation)."
     log "Aktualisiere Paket-Repo unter ./repo ..."
+    # Unpack into staging FIRST: a tar failure (set -e) exits before ./repo is
+    # touched, so a corrupt asset can't leave the gateway serving an empty repo. The
+    # dir inode is kept (content swapped in place) so the live bind mount stays valid (4.59).
+    local staging; staging=$(mktemp -d "${tmp}/repo.XXXXXX")
+    tar xzf "${tmp}/${asset}" -C "$staging"
     mkdir -p repo
     find repo -mindepth 1 -delete 2>/dev/null || true
-    tar xzf "${tmp}/${asset}" -C repo
+    cp -a "$staging"/. repo/
 }
 
 # Wait until the server accepts connections (migrations done, uvicorn up).
@@ -277,7 +304,14 @@ fi
 mkdir -p backups
 SNAP="backups/runtime-prev-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 SNAP_FILES=(docker-compose.yml .env.example scripts)
-tar czf "$SNAP" "${SNAP_FILES[@]}" 2>/dev/null || true
+# Include ./repo so a rollback restores the old agent package repo too — not just
+# compose + scripts (else a rolled-back update keeps the new version's repo) (4.129).
+[ -d repo ] && SNAP_FILES+=(repo)
+# The snapshot is the auto-rollback's ONLY basis, so a failure here (full disk,
+# backups/ perms) must abort — nothing is swapped yet, so aborting is clean. A
+# best-effort snapshot would let a later health-fail rollback restore nothing while
+# claiming success, leaving old images + new compose (2.41).
+tar czf "$SNAP" "${SNAP_FILES[@]}" || die "Laufzeit-Snapshot fehlgeschlagen — Abbruch (noch nichts veraendert)."
 chmod 600 "$SNAP" 2>/dev/null || true
 log "Laufzeit-Snapshot: ${SNAP}"
 
@@ -336,7 +370,9 @@ update_agent_repo "$TARGET" "$TMP"
 rollback() {
     echo >&2
     log "Rolle Laufzeit-Dateien + Image-Pins auf ${INSTALLED} zurueck (Snapshot ${SNAP})..." >&2
-    tar xzf "$SNAP" 2>/dev/null || true
+    # If the snapshot restore fails, the rollback is INCOMPLETE (new runtime files
+    # stay in place) — say so loudly rather than claiming a clean rollback (4.60).
+    tar xzf "$SNAP" || log "WARN: Snapshot-Restore fehlgeschlagen — Rollback UNVOLLSTAENDIG, bitte manuell pruefen."
     if [ "$INSTALLED" != "unknown" ]; then
         upsert_env SERVER_IMAGE     "ghcr.io/admincave/adminhelper/server:${INSTALLED}"
         upsert_env GATEWAY_IMAGE    "ghcr.io/admincave/adminhelper/gateway:${INSTALLED}"

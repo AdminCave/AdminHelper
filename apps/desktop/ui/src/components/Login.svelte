@@ -5,12 +5,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { get } from 'svelte/store';
   import { login, setMode, settings } from '$lib/stores/session';
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
   import { t } from '$lib/i18n';
-
-  let { onBack }: { onBack?: () => void } = $props();
+  import { confirm } from '@tauri-apps/plugin-dialog';
 
   // Pre-fill the server URL + username from the last successful login so only
   // the password has to be entered on each start (a password is required every
@@ -34,11 +34,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // A pinned-certificate / enrolled-CA mismatch (server reinstall or MITM) is a
   // dead end here otherwise: the only reset actions live in the settings modal,
-  // which is unreachable until logged in. Detect it from the backend message and
-  // offer the matching reset right on the login screen. The CA-pin (enrolled)
-  // message names the device enrollment; the TOFU leaf-pin message says "TOFU".
-  let caPinError = $derived(/gepinnten CA|Geräte-Registrierung/.test(error));
-  let pinError = $derived(/TOFU|MITM-Attacke/.test(error) || caPinError);
+  // which is unreachable until logged in. Detect it and offer the matching reset
+  // right on the login screen. Match the backend's stable, language-independent
+  // error codes (not its German prose, which is free to change / be localized):
+  // ERR_CA_PIN_MISMATCH is the enrolled-CA case (reset device identity),
+  // ERR_TOFU_PIN_MISMATCH the self-signed leaf case (reset pin). The codes arrive
+  // buried in the reqwest source chain, so match them anywhere in the string.
+  let caPinError = $derived(error.includes('ERR_CA_PIN_MISMATCH'));
+  let pinError = $derived(error.includes('ERR_TOFU_PIN_MISMATCH') || caPinError);
+  // Never show the machine-readable code to the user; keep only the human text.
+  let displayError = $derived(error.replace(/ERR_(?:CA|TOFU)_PIN_MISMATCH:\s*/g, ''));
 
   async function resetCertTrust(): Promise<void> {
     const target = serverUrl.trim();
@@ -46,6 +51,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = $t('login.resetPin.missingUrl');
       return;
     }
+    // A pin mismatch is exactly the signature of an active MITM, and this is where
+    // it actually surfaces — require the same explicit warning the settings modal
+    // does before pinning whatever cert the server currently presents (3.20).
+    const ok = await confirm($t('login.resetPin.confirmMitm'), {
+      title: caPinError ? $t('login.resetDeviceId') : $t('login.resetPin'),
+      kind: 'warning',
+    });
+    if (!ok) return;
     busy = true;
     try {
       // The enrolled-CA case must also drop the stale device cert (which is what
@@ -58,7 +71,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       error = '';
       info = $t('login.resetPin.done');
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -74,7 +87,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await setMode('local');
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -91,7 +104,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       username = '';
       password = '';
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -105,12 +118,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     info = '';
     busy = true;
     try {
-      await enrollWithToken(serverUrl.trim(), enrollToken.trim());
+      // Pass allowSelfSignedCerts through like the login path does — otherwise enrollment from
+      // the login screen (the bootstrap path meant for fresh devices) can fail the TLS handshake
+      // against a self-signed server even though the user opted in (4.101).
+      await enrollWithToken(
+        serverUrl.trim(),
+        enrollToken.trim(),
+        get(settings)?.allowSelfSignedCerts ?? false,
+      );
       enrollToken = '';
       info = $t('login.enroll.done');
       mode = 'login';
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = errMsg(err);
     } finally {
       busy = false;
     }
@@ -151,7 +171,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
 
         {#if error}
-          <div class="login-error">{error}</div>
+          <div class="login-error">{displayError}</div>
           {#if pinError}
             <button
               type="button"
@@ -171,6 +191,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button
         type="button"
         class="btn ghost login-secondary"
+        data-action="enroll-switch"
         onclick={() => switchMode('enroll')}
         disabled={busy}
       >
@@ -203,7 +224,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </label>
 
         {#if error}
-          <div class="login-error">{error}</div>
+          <div class="login-error">{displayError}</div>
           {#if pinError}
             <button
               type="button"
@@ -223,16 +244,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button
         type="button"
         class="btn ghost login-secondary"
+        data-action="enroll-back"
         onclick={() => switchMode('login')}
         disabled={busy}
       >
         {$t('login.enroll.back')}
-      </button>
-    {/if}
-
-    {#if onBack}
-      <button type="button" class="btn ghost login-back" onclick={onBack}>
-        {$t('login.back')}
       </button>
     {/if}
   </div>

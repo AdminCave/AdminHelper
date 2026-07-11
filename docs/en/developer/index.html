@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -37,8 +37,8 @@
           <div class="card-grid">
             <div class="card"><h3>Server</h3><p>FastAPI 0.11, SQLAlchemy 2 + Alembic, APScheduler, Redis. 100+ pytest tests.</p></div>
             <div class="card"><h3>Frontend</h3><p>Svelte 5 Runes, TypeScript strict, Vite 5, Playwright E2E.</p></div>
-            <div class="card"><h3>Desktop</h3><p>Tauri 2, Rust 1.83, Svelte 5, 41 Vitest unit tests.</p></div>
-            <div class="card"><h3>Agent</h3><p>Go 1.24, Cobra CLI, cross-compiled Linux + Windows DEB/RPM/MSI.</p></div>
+            <div class="card"><h3>Desktop</h3><p>Tauri 2, Rust (stable), Svelte 5, ~250 Vitest unit tests.</p></div>
+            <div class="card"><h3>Agent</h3><p>Go 1.25, Cobra CLI, gopsutil, cross-compiled Linux + Windows DEB/RPM.</p></div>
           </div>
 
           <h2>Repository Tree</h2>
@@ -47,6 +47,8 @@
 ├── apps/             All runnable units
 │   ├── server/       FastAPI backend (Python)
 │   ├── monitoring/   Check-execution service (own DB)
+│   ├── ca-issuer/    PKI enrollment plane (FastAPI, own mTLS)
+│   ├── gateway/      nginx reverse proxy (TLS/mTLS/headers, rate limit)
 │   ├── agent/        Unified Go agent (Linux + Windows)
 │   ├── web/          Svelte 5 web admin panel
 │   └── desktop/      Tauri client (Rust backend + Svelte UI)
@@ -79,9 +81,9 @@ go run ./cmd/adminhelper-agent run</code></pre>
           <ul>
             <li><strong>Trust chain:</strong> one Root → scoped intermediates <code>tunnel</code> (frps + agents), <code>access</code> (humans: desktop/browser), <code>internal</code> (phase B). Clients pin the <em>Root/CA</em>, not a leaf — server certs rotate freely (D2).</li>
             <li><strong><code>ca-issuer</code></strong> (own container) is the <em>only</em> signing capability (D6): creates the hierarchy on first boot, holds the online intermediates, signs via <code>/enroll</code> (one-time token) and <code>/renew</code> (presented cert). The Root key stays cold + passphrase-encrypted (D7).</li>
-            <li><strong><code>gateway</code></strong> (nginx) is the single public TLS edge (`:443` data, `:8444` enroll). It terminates TLS/mTLS and forwards the verified identity as <code>X-Client-*</code> headers to the internal services — uvicorn can't see the cert itself (V1). <code>server</code>/<code>ca-issuer</code> have no host port, so the header is unforgeable.</li>
+            <li><strong><code>gateway</code></strong> (nginx) is the single public TLS edge (`:443` data, `:8444` enroll). It terminates TLS/mTLS and forwards the verified identity as <code>X-Client-*</code> headers to the internal services — uvicorn can't see the cert itself (V1). <code>server</code>/<code>ca-issuer</code> have no host port; the <code>ca-issuer</code> further sits on the internal <code>pki</code> compose network (only the gateway reaches it — not the internet-facing <code>frps</code>), so the header is unforgeable. <code>frps</code> itself sits on its own <code>frpedge</code> network, fenced off the internal default net, so a compromised frps can't reach the auth-less <code>redis</code> or <code>victoria</code> (3.28).</li>
             <li><strong>Enrollment (one pattern, three clients):</strong> one-time token → on-device ECDSA key + CSR → issuer signs (identity issuer-dictated, the CSR subject cosmetic). Go agent (at provisioning), desktop (after login), frps/tunnel certs. Native clients auto-renew at ~50% lifetime; the browser gets a long-lived cert as a <strong>PKCS12 export</strong> from the desktop (D5).</li>
-            <li><strong>Per-route scope:</strong> <code>access</code> = human, <code>tunnel</code> = agent (D8). <strong>Permissive by default</strong> (`MTLS_ENFORCE=false`): a scope mismatch is logged, the request proceeds. Flipping to <code>CERT_REQUIRED</code> means <code>MTLS_ENFORCE=true</code> — implemented + end-to-end verified (A8), a deliberate operator decision.</li>
+            <li><strong>Per-route scope:</strong> <code>access</code> = human, <code>tunnel</code> = agent (D8). <strong>Enforced by default</strong> (<code>MTLS_ENFORCE=true</code>, since 0.29.0): a scope mismatch is a <code>403</code>. Set <code>MTLS_ENFORCE=false</code> for a permissive rollout where a mismatch is only logged (needed only for a manual first bootstrap) — a deliberate operator decision (A8, end-to-end verified).</li>
             <li><strong>Backup crown jewel</strong> is the <code>ca-pki</code> volume (Root + intermediates) — <code>scripts/backup.sh</code>/<code>restore.sh</code> back it up; the regenerable cert volumes are deliberately excluded (ADR 0001 §5).</li>
           </ul>
 

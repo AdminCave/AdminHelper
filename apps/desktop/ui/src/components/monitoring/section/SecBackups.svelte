@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MonitorCheck } from '$lib/api/types';
+  import type { MonitorCheck, MonitorBackupDetails } from '$lib/api/types';
   import { worstStatus } from '$lib/models/monitoring';
   import MonSectionHeader from './MonSectionHeader.svelte';
   import MonCheckLine from './MonCheckLine.svelte';
@@ -18,13 +18,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let worst = $derived(worstStatus(checks));
 
-  interface Vm {
-    vmid: string | number;
-    name: string;
-    type?: string;
-    backupStatus: 'ok' | 'missing' | 'outdated';
-    ageHours?: number;
-  }
+  type Vm = NonNullable<MonitorBackupDetails['vms']>[number];
   interface Info {
     vms: Vm[];
     total: number;
@@ -35,8 +29,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 
   function info(check: MonitorCheck): Info {
-    const d = (check.state?.details ?? null) as Record<string, unknown> | null;
-    const list = (d?.vms ?? []) as Vm[];
+    const list = (check.state?.details as MonitorBackupDetails | undefined)?.vms ?? [];
     let ok = 0,
       outdated = 0,
       missing = 0;

@@ -3,12 +3,26 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Alembic env.py — reads DATABASE_URL from app.core.config and imports all
-models so autogenerate sees the full Base.metadata."""
+models so autogenerate sees the full Base.metadata.
+
+Convention (4.130): a migration that ADDS AN INDEX to a growing table
+(audit_log, notification) must create it CONCURRENTLY inside an autocommit
+block — a plain CREATE INDEX takes a SHARE lock that blocks writers for the
+whole build, which freezes an old container still writing during a rolling
+update:
+
+    def upgrade() -> None:
+        with op.get_context().autocommit_block():
+            op.create_index(..., postgresql_concurrently=True)
+
+Small/empty inventory tables (connections, frp_tunnels, provision_tokens, or an
+index created in the same migration as its table) don't need it — there is
+nothing to block, and the single-replica app is down during the migration."""
 
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 import app.modules.ansible.models  # noqa: F401
 import app.modules.api_keys.models  # noqa: F401
@@ -38,9 +52,19 @@ config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # Logging
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: the default (True) deactivates every already-created logger not
+    # named in alembic.ini — including the app's own loggers (e.g. adminhelper.servers) — so running a
+    # migration after the app is imported silently kills that logger for the rest of the process. In
+    # tests that surfaced as a lost caplog assertion; in a combined "migrate then serve" process it
+    # would drop real log lines.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
+
+# Advisory-lock key for the migration run. DISTINCT from monitoring's (0xAD314C): both services
+# share one Postgres cluster (separate DBs) and advisory locks are cluster-wide, so a shared key
+# would needlessly serialize server vs monitoring migrations.
+_MIGRATION_LOCK = 0xAD314B
 
 
 def run_migrations_offline() -> None:
@@ -68,15 +92,29 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-            compare_server_default=True,
-        )
+        # Serialize concurrent migration runs (docker compose up --scale server=2, a rolling
+        # update): only the scheduler is pinned to one replica, not the server. A session-level
+        # advisory lock makes the second starter block here until the first releases it, instead
+        # of both reading the same alembic_version and racing into a DuplicateTable/unique
+        # violation. commit() ends the autobegun transaction so Alembic owns its own; the
+        # session-level lock survives it and is released explicitly in finally — reliably even for
+        # a no-op run, and it also guards non-transactional steps a per-migration transaction
+        # wouldn't (4.61).
+        connection.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _MIGRATION_LOCK})
+        connection.commit()
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_type=True,
+                compare_server_default=True,
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            connection.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _MIGRATION_LOCK})
+            connection.commit()
 
 
 if context.is_offline_mode():

@@ -7,8 +7,9 @@
 // and drives the create/edit/delete server modal. Server mode only — the page
 // that uses it is gated like monitoring/ansible.
 
-import { writable, derived, get } from 'svelte/store';
-import { sessionStore } from './session';
+import { errMsg } from '$lib/utils/errors';
+import { writable, derived } from 'svelte/store';
+import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
 import { serversApi } from '$lib/api/servers';
 import { tNow } from '$lib/i18n';
@@ -65,17 +66,9 @@ export function setSelectedServer(id: string | null): void {
   _state.update((s) => ({ ...s, selectedServerId: id }));
 }
 
-function requireSession() {
-  return get(sessionStore).session;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 // ── Data + mutations ─────────────────────────────────────────────────────────
 export async function loadServers(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   _state.update((s) => ({ ...s, loading: true }));
   try {
@@ -97,7 +90,7 @@ export async function loadServers(): Promise<void> {
 }
 
 export async function saveServer(input: ServerInput, id: string | null): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     if (id) {
@@ -117,7 +110,7 @@ export async function saveServer(input: ServerInput, id: string | null): Promise
 }
 
 export async function deleteServer(id: string): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     await serversApi.remove(session, id);

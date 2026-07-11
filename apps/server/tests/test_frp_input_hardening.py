@@ -27,6 +27,15 @@ def _tunnel(**over):
     return FrpTunnelCreate(**base)
 
 
+def test_tunnel_type_rejects_unknown_value():
+    # 2.46: tunnel_type is a Literal, so an unknown value is rejected at the schema
+    # boundary (Pydantic -> 422), not by an ad-hoc router check (-> 400).
+    with pytest.raises(ValidationError):
+        _tunnel(tunnel_type="ftp")
+    assert _tunnel(tunnel_type="stcp").tunnel_type == "stcp"
+    assert _tunnel(tunnel_type="https").tunnel_type == "https"
+
+
 def test_tunnel_name_rejects_toml_breakers():
     with pytest.raises(ValidationError):
         _tunnel(name='evil"\nauth.token = "attacker')
@@ -44,6 +53,18 @@ def test_secret_key_entropy_floor():
     assert _tunnel(secret_key="x" * 20).secret_key == "x" * 20
     # empty stays valid (server auto-generates)
     assert _tunnel(secret_key="").secret_key == ""
+
+
+def test_dashboard_password_requires_entropy_floor():
+    # 3.35: dashboard_password guards the frps web UI (all proxy metadata + traffic),
+    # so it gets the same >=16-char floor as auth_token, not just the injection guard.
+    with pytest.raises(ValidationError):
+        FrpServerConfigCreate(name="n", server_addr="a.example", dashboard_password="short")
+    ok = FrpServerConfigCreate(name="n", server_addr="a.example", dashboard_password="x" * 20)
+    assert ok.dashboard_password == "x" * 20
+    # empty stays valid — the router auto-generates when a dashboard port is set
+    empty = FrpServerConfigCreate(name="n", server_addr="a.example", dashboard_password="")
+    assert empty.dashboard_password == ""
 
 
 def test_server_extra_config_rejects_breakers():

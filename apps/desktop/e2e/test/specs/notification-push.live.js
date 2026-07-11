@@ -11,7 +11,7 @@
 // the event — the next poll is still ~25s away, so a badge appearing within a
 // few seconds can ONLY be the push.
 
-import { login, injectEvent } from '../lib/live.js';
+import { login, injectEvent, ensureAllSubscription } from '../lib/live.js';
 
 describe('Notification bell — SSE push', () => {
   it('shows a pushed notification in real time (well under the 30s poll)', async () => {
@@ -21,19 +21,32 @@ describe('Notification bell — SSE push', () => {
     await browser.pause(500);
     await expect($('.notif-badge')).not.toBeExisting();
 
-    // Give the Rust SSE client time to open + register the stream before the
-    // event arrives (otherwise the push would land with no subscriber).
-    await browser.pause(5000);
+    // A fresh admin carries no subscription, so the hub resolves 0 recipients and
+    // the push has no destination — seed a scope=all subscription first (4.32).
+    ensureAllSubscription();
 
+    // Retry the inject until the badge appears, rather than a fixed pause that raced
+    // the (variably slow, headless) SSE connect and dropped the event (4.32). Each
+    // inject now resolves the admin (subscription seeded), so the first one the
+    // connected client receives paints the badge; the badge landing well before the
+    // ~30s poll is what proves this is the push, not the poll.
     const t0 = Date.now();
-    const res = injectEvent('E2E SSE push notification');
-    expect(res.notified).toBe(1); // admin (scope=all subscription) was resolved
-
-    // The badge must appear fast — the next poll is ~25s away, so this proves push.
-    await $('.notif-badge').waitForExist({ timeout: 15000 });
+    let notified = 0;
+    await browser.waitUntil(
+      async () => {
+        notified = injectEvent('E2E SSE push notification').notified;
+        return notified >= 1 && (await $('.notif-badge').isExisting());
+      },
+      {
+        timeout: 20000,
+        interval: 1500,
+        timeoutMsg: 'the pushed notification never reached the bell within 20s',
+      },
+    );
+    expect(notified).toBe(1); // admin (scope=all subscription) was the recipient
     const elapsed = Date.now() - t0;
-    console.log(`[sse-e2e] badge appeared ${elapsed}ms after the event injection`);
-    expect(elapsed).toBeLessThan(15000);
+    console.log(`[sse-e2e] badge appeared ${elapsed}ms after the first injection`);
+    expect(elapsed).toBeLessThan(30000); // under the poll interval → this is the push
 
     // Open the panel and verify the pushed item is shown.
     await $('.notif-bell').click();

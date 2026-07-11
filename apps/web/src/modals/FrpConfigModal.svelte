@@ -9,7 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import Button from '$lib/components/ui/Button.svelte';
   import { t } from '$lib/i18n';
   import { frpConfig } from '$lib/stores/frp';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import type { FrpConfig, FrpConfigInput } from '$lib/api/types';
 
   interface Props {
@@ -87,7 +87,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       showToast(editing ? $t('toast.frpConfig.saved') : $t('toast.frpConfig.created'));
       onClose();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     } finally {
       submitting = false;
     }
@@ -149,13 +149,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   </form>
   {#snippet footer()}
     <Button variant="ghost" onclick={onClose}>{$t('action.cancel')}</Button>
-    <Button
-      variant="primary"
-      type="submit"
-      disabled={submitting}
-      onclick={() =>
-        (document.getElementById('frp-config-form') as HTMLFormElement)?.requestSubmit()}
-    >
+    <Button variant="primary" type="submit" disabled={submitting} form="frp-config-form">
       {$t('action.save')}
     </Button>
   {/snippet}

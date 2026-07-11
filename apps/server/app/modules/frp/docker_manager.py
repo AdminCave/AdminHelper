@@ -14,8 +14,16 @@ from app.modules.frp.config_generator import generate_frps_toml
 logger = logging.getLogger(__name__)
 
 
-def write_frps_config(config) -> Path:
-    """Writes frps.toml into FRP_CONFIG_DIR. Returns the file path."""
+def write_frps_config(config, *, warn_restart: bool = False) -> Path:
+    """Writes frps.toml into FRP_CONFIG_DIR. Returns the file path.
+
+    frps has no config hot-reload, and the server container has no docker socket to trigger
+    a restart. So a config change made at runtime (auth_token / dashboard credentials / ports
+    via the web UI) is written to disk immediately but the RUNNING frps keeps the old config
+    until a manual `docker compose restart frps` — a security-relevant inconsistency on e.g.
+    token rotation. warn_restart=True surfaces that in the log; at startup frps boots straight
+    from the fresh file, so no restart is needed and no warning is emitted (4.7).
+    """
     toml = generate_frps_toml(config)
     path = FRP_CONFIG_DIR / "frps.toml"
     # frps.toml carries the global auth.token + dashboard password and lives in
@@ -29,6 +37,13 @@ def write_frps_config(config) -> Path:
     # O_CREAT leaves an existing file's mode unchanged -> enforce it explicitly.
     path.chmod(0o600)
     logger.info("frps.toml geschrieben: %s", path)
+    if warn_restart:
+        logger.warning(
+            "frps.toml wurde zur Laufzeit geändert (%s) — das laufende frps liest die Datei "
+            "NICHT automatisch neu. Für Wirksamkeit (z. B. Token-Rotation): "
+            "'docker compose restart frps'.",
+            path,
+        )
     return path
 
 

@@ -20,7 +20,7 @@ describe('Connection CRUD via the GUI', () => {
   it('creates, renames and deletes a connection on the seeded server', async () => {
     await login();
     await gotoInfrastructure();
-    await openServerTab(1); // connections tab
+    await openServerTab('connections');
 
     // create (ssh kind by default: name + host required)
     await $('.conn-toolbar .btn.primary').click();

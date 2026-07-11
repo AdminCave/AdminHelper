@@ -24,9 +24,9 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
-from app.modules.frp._helpers import get_allow_users
+from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import generate_frpc_toml
-from app.modules.frp.models import FrpServerConfig, FrpTunnel
+from app.modules.frp.models import FrpTunnel
 
 logger = logging.getLogger("adminhelper.provisioning")
 
@@ -78,7 +78,7 @@ def fetch_or_skip_monitor_key(server_id: str, timeout: float = 5.0) -> Optional[
 def build_frp_bundle(server_id: str, db: Session) -> Optional[dict[str, Any]]:
     """Builds frpc.toml + PKI bundle for a server. Optional — if no FRP
     config exists OR the server has no tunnels, None is returned."""
-    config = db.query(FrpServerConfig).first()
+    config = get_frp_config(db)
     if not config:
         return None
 

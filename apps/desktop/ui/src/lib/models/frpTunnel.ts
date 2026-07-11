@@ -8,10 +8,13 @@
 
 import type { FrpProtocol, FrpTunnel, FrpTunnelInput, FrpTunnelType } from '$lib/api/types';
 import { tNow } from '$lib/i18n';
+import { DEFAULT_PORTS } from './connection';
+import { parseTags, type ValidationResult } from './shared';
+export { parseTags };
 
 export const TUNNEL_TYPES: FrpTunnelType[] = ['stcp', 'https'];
 export const TUNNEL_PROTOCOLS: FrpProtocol[] = ['ssh', 'rdp', 'web'];
-export const PROTOCOL_DEFAULT_PORT: Record<FrpProtocol, number> = { ssh: 22, rdp: 3389, web: 8006 };
+export const PROTOCOL_DEFAULT_PORT: Record<FrpProtocol, number> = { ...DEFAULT_PORTS, web: 8006 };
 
 export interface TunnelForm {
   id: string | null;
@@ -28,11 +31,6 @@ export interface TunnelForm {
   tags: string[];
   autoCreateConnection: boolean;
   autoConnectionUsername: string;
-}
-
-export interface ValidationResult {
-  ok: boolean;
-  message?: string;
 }
 
 export function emptyTunnelForm(serverId: string, frpConfigId = ''): TunnelForm {
@@ -71,17 +69,6 @@ export function tunnelToForm(t: FrpTunnel): TunnelForm {
     autoCreateConnection: !!t.connectionId,
     autoConnectionUsername: '',
   };
-}
-
-export function parseTags(raw: string): string[] {
-  return [
-    ...new Set(
-      raw
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0),
-    ),
-  ];
 }
 
 /** Builds the server payload. Type-irrelevant fields are nulled (an stcp tunnel

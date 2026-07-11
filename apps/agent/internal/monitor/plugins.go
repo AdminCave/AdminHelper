@@ -7,6 +7,7 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -16,6 +17,21 @@ import (
 // dockerTimeout caps every docker CLI call: a hanging daemon must not stall
 // the whole 5-minute report cycle.
 const dockerTimeout = 10 * time.Second
+
+// pluginTimeout caps every non-docker plugin exec (pvesh, zpool). These
+// tools really do hang: `zpool list` blocks indefinitely on a suspended pool and
+// `pvesh` on quorum loss — exactly when monitoring matters most. Without a cap the
+// whole report cycle stalls and systemd kills the oneshot at its TimeoutStartSec
+// (no push, no FRPC sync for that run).
+const pluginTimeout = 15 * time.Second
+
+// runWithTimeout runs a plugin command under pluginTimeout, mirroring the docker
+// path, so a hung external tool can never block the report cycle.
+func runWithTimeout(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
 
 // collectDocker collects Docker container status (cross-platform).
 func collectDocker() map[string]any {
@@ -36,25 +52,7 @@ func collectDocker() map[string]any {
 		return nil
 	}
 
-	var containers []map[string]string
-	var ids []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		var c map[string]string
-		if err := json.Unmarshal([]byte(line), &c); err != nil {
-			continue
-		}
-		containers = append(containers, map[string]string{
-			"id":     c["ID"],
-			"name":   c["Names"],
-			"image":  c["Image"],
-			"state":  c["State"],
-			"status": c["Status"],
-		})
-		ids = append(ids, c["ID"])
-	}
+	containers, ids := parseDockerPS(out)
 	if len(containers) == 0 {
 		return nil
 	}
@@ -81,8 +79,37 @@ func inspectRestartPolicies(ids []string) map[string]string {
 	// container vanished between ps and inspect) — parse what we got, the
 	// missing IDs simply keep no restart_policy.
 	out, _ := exec.CommandContext(ctx, "docker", args...).Output()
+	return parseRestartPolicies(out)
+}
 
-	policies := make(map[string]string, len(ids))
+// parseDockerPS parses `docker ps -a --format {{json .}}` (one JSON object per line) into container
+// maps and their IDs, skipping blank/unparseable lines — the parsing, testable without docker (6.16).
+func parseDockerPS(out []byte) (containers []map[string]string, ids []string) {
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		var c map[string]string
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue
+		}
+		containers = append(containers, map[string]string{
+			"id":     c["ID"],
+			"name":   c["Names"],
+			"image":  c["Image"],
+			"state":  c["State"],
+			"status": c["Status"],
+		})
+		ids = append(ids, c["ID"])
+	}
+	return containers, ids
+}
+
+// parseRestartPolicies parses the batched `docker inspect` output ("{{.Id}} {{.Name}}" per line),
+// keyed by the short (12-char) container ID as printed by `docker ps`; lines with a too-short ID are
+// skipped (6.16).
+func parseRestartPolicies(out []byte) map[string]string {
+	policies := map[string]string{}
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fullID, policy, _ := strings.Cut(line, " ")
 		if len(fullID) < 12 {
@@ -102,13 +129,13 @@ func collectProxmox() map[string]any {
 	result := map[string]any{"node": nil, "vms": []any{}}
 
 	// Node status
-	hostname, err := exec.Command("hostname", "-s").Output()
+	host, err := os.Hostname()
 	if err != nil {
 		return nil
 	}
-	nodeName := strings.TrimSpace(string(hostname))
-	nodeOut, err := exec.Command("pvesh", "get", "/nodes/"+nodeName+"/status",
-		"--output-format", "json").Output()
+	nodeName, _, _ := strings.Cut(host, ".") // FQDN -> short name (pvesh nodes are short)
+	nodeOut, err := runWithTimeout("pvesh", "get", "/nodes/"+nodeName+"/status",
+		"--output-format", "json")
 	if err == nil {
 		var nd map[string]any
 		if json.Unmarshal(nodeOut, &nd) == nil {
@@ -130,8 +157,8 @@ func collectProxmox() map[string]any {
 
 	// VMs + LXC containers
 	var vmList []map[string]any
-	vmsOut, err := exec.Command("pvesh", "get", "/cluster/resources", "--type", "vm",
-		"--output-format", "json").Output()
+	vmsOut, err := runWithTimeout("pvesh", "get", "/cluster/resources", "--type", "vm",
+		"--output-format", "json")
 	if err == nil {
 		var vms []map[string]any
 		if json.Unmarshal(vmsOut, &vms) == nil {
@@ -169,8 +196,8 @@ func collectProxmox() map[string]any {
 func buildBackupIndex(nodeName string) map[int]int64 {
 	index := make(map[int]int64)
 
-	storagesOut, err := exec.Command("pvesh", "get", "/storage",
-		"--output-format", "json").Output()
+	storagesOut, err := runWithTimeout("pvesh", "get", "/storage",
+		"--output-format", "json")
 	if err != nil {
 		return index
 	}
@@ -187,9 +214,9 @@ func buildBackupIndex(nodeName string) map[int]int64 {
 		sid, _ := storage["storage"].(string)
 
 		// Fetch all backups of this storage at once (without the --vmid filter)
-		backupsOut, err := exec.Command("pvesh", "get",
+		backupsOut, err := runWithTimeout("pvesh", "get",
 			"/nodes/"+nodeName+"/storage/"+sid+"/content",
-			"--content", "backup", "--output-format", "json").Output()
+			"--content", "backup", "--output-format", "json")
 		if err != nil {
 			continue
 		}
@@ -217,12 +244,36 @@ func collectZFS() map[string]any {
 		return nil
 	}
 
-	out, err := exec.Command("zpool", "list", "-H", "-o",
-		"name,size,alloc,free,cap,health").Output()
+	out, err := runWithTimeout("zpool", "list", "-H", "-o",
+		"name,size,alloc,free,cap,health")
 	if err != nil {
 		return nil
 	}
 
+	pools := parseZpoolList(out)
+	if len(pools) == 0 {
+		return nil
+	}
+
+	result := map[string]any{"pools": pools}
+
+	// Error details for non-ONLINE pools
+	for _, p := range pools {
+		if p["health"] != "ONLINE" {
+			statusOut, err := runWithTimeout("zpool", "status", "-x")
+			if err == nil {
+				result["errors"] = strings.TrimSpace(string(statusOut))
+			}
+			break
+		}
+	}
+	return result
+}
+
+// parseZpoolList parses `zpool list -H -o name,size,alloc,free,cap,health` (tab-separated) into pool
+// maps, skipping lines with too few columns and stripping the % from the capacity column — the
+// positional parsing, testable without running zpool (6.16).
+func parseZpoolList(out []byte) []map[string]any {
 	var pools []map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		parts := strings.Split(line, "\t")
@@ -240,23 +291,7 @@ func collectZFS() map[string]any {
 			"health":           parts[5],
 		})
 	}
-	if len(pools) == 0 {
-		return nil
-	}
-
-	result := map[string]any{"pools": pools}
-
-	// Error details for non-ONLINE pools
-	for _, p := range pools {
-		if p["health"] != "ONLINE" {
-			statusOut, err := exec.Command("zpool", "status", "-x").Output()
-			if err == nil {
-				result["errors"] = strings.TrimSpace(string(statusOut))
-			}
-			break
-		}
-	}
-	return result
+	return pools
 }
 
 // getFloat extracts a float64 value from a map.

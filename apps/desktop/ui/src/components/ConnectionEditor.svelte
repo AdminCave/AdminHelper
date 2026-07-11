@@ -5,8 +5,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import type { Connection, ConnectionKind } from '$lib/bridge/types';
   import {
+    DEFAULT_PORTS,
     emptyConnection,
     normalizeConnection,
     parseTags,
@@ -56,7 +58,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       // old client id would create a duplicate on a second save.
       closeEditor();
     } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
+      reportError(errMsg(err));
     }
   }
 
@@ -75,7 +77,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       showStatus($t('editor.status.deleted'));
       closeEditor();
     } catch (err) {
-      reportError(err instanceof Error ? err.message : String(err));
+      reportError(errMsg(err));
     }
   }
 
@@ -122,6 +124,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('editor.field.name')}</span>
           <input
             type="text"
+            name="name"
             bind:value={form.name}
             placeholder={$t('editor.field.name.placeholder')}
             required
@@ -146,6 +149,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span class="field-label">{$t('editor.field.host')}</span>
             <input
               type="text"
+              name="host"
               bind:value={form.host}
               placeholder={$t('editor.field.host.placeholder')}
             />
@@ -160,7 +164,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 const v = (e.currentTarget as HTMLInputElement).value;
                 form = { ...form, port: v === '' ? null : Number(v) };
               }}
-              placeholder={form.kind === 'ssh' ? '22' : '3389'}
+              placeholder={form.kind === 'ssh'
+                ? String(DEFAULT_PORTS.ssh)
+                : String(DEFAULT_PORTS.rdp)}
             />
           </label>
 
@@ -231,7 +237,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         {/if}
         <div style="flex: 1;"></div>
         <button class="btn" onclick={onClose}>{$t('action.cancel')}</button>
-        <button class="btn" onclick={onSave}>{$t('action.save')}</button>
+        <button class="btn save" onclick={onSave}>{$t('action.save')}</button>
         <button class="btn primary" onclick={onConnect}>{$t('action.connect')}</button>
       </div>
     </div>

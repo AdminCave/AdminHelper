@@ -13,8 +13,11 @@ _USERNAME_PATTERN = r"^[a-zA-Z0-9._-]+$"
 
 # Auth
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    # Bound the fields at the boundary like the rest of the module (3.96). Login stays
+    # charset-tolerant (no pattern — an existing user's name is whatever it is), but an
+    # unbounded username/password ties up DB + prehash work on an unauthenticated call.
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class TokenResponse(BaseModel):

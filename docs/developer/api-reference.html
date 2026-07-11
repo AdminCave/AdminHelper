@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="../admin/index.html">Übersicht</a><a href="../admin/installation.html">Installation</a><a href="../admin/betrieb.html">Betrieb &amp; Konfiguration</a><a href="../admin/benutzer.html">Benutzer &amp; Zugriff</a><a href="../admin/agent-deployment.html">Agent-Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP-Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="./index.html">Übersicht</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web-Panel</a><a href="./desktop.html">Desktop-Client</a><a href="./agent.html">Go-Agent</a><a href="./monitoring.html">Monitoring-Stack</a><a href="./api-reference.html">API-Referenz</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -41,7 +41,7 @@
           </ul>
 
           <h2>Pagination (Listen-Endpunkte)</h2>
-          <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter bleibt das Verhalten unver&auml;ndert: volle Liste.</p>
+          <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter liefern die kleinen Listen (servers/connections/hooks) die volle Liste; <code>GET /api/audit</code> deckelt dagegen ohne <code>limit</code> auf 200 Eintr&auml;ge, da der Trail unbeschr&auml;nkt w&auml;chst (mehr via <code>offset</code>).</p>
 
           <h2>Auth</h2>
           <div class="endpoint">
@@ -105,7 +105,7 @@
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/toggle</code><p>Enable/Disable; aktualisiert Scheduler-Registrierung.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/rotate</code><p>Webhook-Token erneuern.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/{id}/run</code><p>Manueller Test-Lauf mit leerem Context.</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/trigger/{token}</code><p><strong>&Ouml;ffentlich</strong> (kein JWT). Rate-Limit: 20 Anfragen / 60&nbsp;s / IP. Context: <code>{ payload, headers, params }</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/hooks/trigger</code> mit <code>X-Hook-Token</code>-Header <em>(bevorzugt &ndash; Token nicht in Access-Logs/History)</em>, oder <code>/api/hooks/trigger/{token}</code> (Token im Pfad)<p><strong>&Ouml;ffentlich</strong> (kein JWT). Rate-Limit: 20 Anfragen / 60&nbsp;s / IP. Context: <code>{ payload, headers, params }</code>.</p></div>
 
           <h2>Ansible-Playbooks</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/ansible/playbooks</code></div>
@@ -163,6 +163,35 @@
             <div><div class="callout-title">Keine eigenen <code>alerts</code>-, <code>audit</code>- oder <code>settings</code>-Endpoints im AdminHelper</div><p>Alerts und Check-Status werden &uuml;ber den Monitoring-Proxy aus dem separaten Service geliefert. Audit-Trails laufen via Hook-Events &uuml;ber das Logging-System; ein dedizierter <code>/api/audit</code>-Endpoint existiert (Stand v0.23.2) nicht.</p></div>
           </div>
 
+          <h2>Notifications (ab v0.38.0)</h2>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications</code>
+            <p>Glocken-Feed des aktuellen Users, neueste zuerst. Query: <code>unread_only</code> (bool, Default <code>false</code>), <code>limit</code> (1&ndash;1000), <code>offset</code> (&ge;0). Antwort: Liste der Notification-Objekte.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/unread-count</code>
+            <p>Schlanker Badge-Z&auml;hler f&uuml;r die Glocke. Antwort: <code>{ "count" }</code>.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/notifications/read</code>
+            <p>Markiert Benachrichtigungen als gelesen. Body: <code>{ "ids": [&hellip;] }</code> &ndash; <code>ids</code> weglassen bzw. <code>null</code> markiert <strong>alle</strong> als gelesen.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/notifications/stream</code>
+            <p>Server-Sent-Events (<code>text/event-stream</code>): pusht ein &bdquo;refresh"-Signal, sobald der User eine neue Benachrichtigung bekommt (Push statt Polling). Worker-&uuml;bergreifend via Redis&nbsp;Pub/Sub. Das Gateway proxyt den Stream <strong>ungepuffert mit langem Read-Timeout</strong>; ein Heartbeat-Kommentar h&auml;lt die Verbindung offen, die Auth (JWT/mTLS) wird periodisch re-validiert.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-get">GET</span><code>/api/users/me/notification-prefs</code>
+            <p>Abo-Regeln + Kontaktdaten des aktuellen Users.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-put">PUT</span><code>/api/users/me/notification-prefs</code>
+            <p>Replace-all: setzt <code>email</code>/<code>telegram_chat_id</code> (verbatim, <code>null</code> l&ouml;scht) und ersetzt die Abo-Menge. Jede Subscription: <code>scope_type</code> (<code>all</code>/<code>tag</code>/<code>server</code>), <code>scope_ref</code>, <code>min_severity</code> (Default <code>warning</code>), optionaler <code>categories</code>-Filter.</p>
+          </div>
+          <div class="endpoint">
+            <span class="method-post">POST</span><code>/api/internal/events</code>
+            <p><strong>Nur intern</strong> (Header <code>X-Internal-Key</code>): Event-Ingress f&uuml;r den Monitoring&rarr;Hub-Pfad. Body: <code>{ "event_type", "severity", "category", &hellip; }</code>. F&auml;chert das Event an die passenden Empf&auml;nger auf. Status <code>202</code>, Antwort <code>{ "notified" }</code>.</p>
+          </div>
           <h2>Fehler-Format</h2>
           <div class="code-header"><span>json</span></div>
 <pre><code>HTTP/1.1 422 Unprocessable Entity

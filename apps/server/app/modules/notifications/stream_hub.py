@@ -26,6 +26,10 @@ from collections import defaultdict
 logger = logging.getLogger("adminhelper.notifications.stream")
 
 CHANNEL = "notif:events"
+
+# Backoff before the SSE reader re-subscribes after a lost Redis connection (module-level so
+# tests can shrink it).
+_RECONNECT_DELAY = 5.0
 # Bounded so a stuck consumer cannot grow memory without limit; on overflow we
 # drop the refresh nudge (the client's poll fallback reconciles).
 _QUEUE_MAXSIZE = 32
@@ -34,6 +38,8 @@ _subscribers: dict[int, set[asyncio.Queue]] = defaultdict(set)
 
 _redis = None
 _reader_task: asyncio.Task | None = None
+# Process-wide synchronous client for the fan-out publish, reused across notifications (5.32).
+_pub_client = None
 
 
 def register(user_id: int) -> asyncio.Queue:
@@ -60,6 +66,20 @@ def deliver_local(user_id: int, payload: str) -> None:
             logger.debug("SSE queue full for user %s — dropping refresh", user_id)
 
 
+def _get_pub_client():
+    """Lazily build the process-wide publish client instead of a fresh from_url + TCP connect per
+    notification — redis-py's connection pool reconnects transparently after a Redis restart, and
+    rate_limit reuses its client the same way (5.32)."""
+    global _pub_client
+    if _pub_client is None:
+        import redis
+
+        from app.core.config import REDIS_URL
+
+        _pub_client = redis.Redis.from_url(REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
+    return _pub_client
+
+
 def publish(user_ids, max_id: int) -> None:
     """Publish a refresh signal for the given users. Called from the sync ingest
     path, so it uses the synchronous redis client (same as rate_limit)."""
@@ -68,10 +88,9 @@ def publish(user_ids, max_id: int) -> None:
     if not REDIS_URL or not user_ids:
         return
     try:
-        import redis
-
-        client = redis.Redis.from_url(REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
-        client.publish(CHANNEL, json.dumps({"user_ids": list(user_ids), "maxId": max_id}))
+        _get_pub_client().publish(
+            CHANNEL, json.dumps({"user_ids": list(user_ids), "maxId": max_id})
+        )
     except Exception:
         logger.warning("SSE fan-out publish failed — clients fall back to polling", exc_info=True)
 
@@ -92,23 +111,38 @@ async def start(redis_url: str) -> None:
 
 
 async def _reader(pubsub) -> None:
-    try:
-        while True:
+    while True:
+        try:
             # timeout keeps the loop responsive to cancellation at shutdown.
             msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if msg is None:
-                continue
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A Redis restart / brief network hiccup / failover makes get_message raise. The
+            # except used to sit OUTSIDE the loop, so the reader ended for good and this worker's
+            # SSE push fan-out went silently dead until a process restart — open SSE streams kept
+            # their heartbeats but never saw a refresh nudge again. Reconnect and keep going: the
+            # next get_message re-raises if Redis is still down, so we back off and retry (4.72).
+            logger.warning(
+                "SSE Redis reader: Verbindung verloren — Reconnect in %ss",
+                _RECONNECT_DELAY,
+                exc_info=True,
+            )
+            await asyncio.sleep(_RECONNECT_DELAY)
             try:
-                data = json.loads(msg["data"])
-            except (ValueError, TypeError):
-                continue
-            payload = json.dumps({"type": "refresh", "maxId": data.get("maxId", 0)})
-            for uid in data.get("user_ids", ()):
-                deliver_local(int(uid), payload)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("SSE Redis reader crashed")
+                await pubsub.subscribe(CHANNEL)
+            except Exception:
+                pass
+            continue
+        if msg is None:
+            continue
+        try:
+            data = json.loads(msg["data"])
+        except (ValueError, TypeError):
+            continue
+        payload = json.dumps({"type": "refresh", "maxId": data.get("maxId", 0)})
+        for uid in data.get("user_ids", ()):
+            deliver_local(int(uid), payload)
 
 
 async def stop() -> None:

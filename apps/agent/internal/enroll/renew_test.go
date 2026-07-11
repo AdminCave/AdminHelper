@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -106,9 +107,26 @@ func TestServerClientUsesIdentityWhenProvisioned(t *testing.T) {
 // agent presents its current cert (mTLS), the server returns a new fullchain,
 // and Renew must persist it (new key + cert).
 func TestRenewSwapsIdentity(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dir := t.TempDir()
+	now := time.Now()
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	// Enforce mTLS: the server must actually demand + verify the agent's client cert, so a
+	// regression where the client stops presenting it (or falls into the legacy fallback) fails the
+	// handshake instead of staying green (6.13). The agent cert is self-signed, so it is its own
+	// client CA.
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		t.Fatal("Agent-Cert nicht als Client-CA ladbar")
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ca/renew" {
 			t.Errorf("Pfad = %q, erwartet /ca/renew", r.URL.Path)
+		}
+		if len(r.TLS.PeerCertificates) == 0 {
+			t.Error("Server sah kein Client-Zertifikat (mTLS nicht präsentiert)")
 		}
 		var body RenewRequest
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -119,13 +137,10 @@ func TestRenewSwapsIdentity(t *testing.T) {
 			Cert: "new-leaf", Fullchain: "new-leaf+int", Chain: "int+root",
 		})
 	}))
+	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	srv.StartTLS()
 	defer srv.Close()
 
-	dir := t.TempDir()
-	now := time.Now()
-	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
-	mustWrite(t, CertPath(dir), certPEM)
-	mustWrite(t, KeyPath(dir), keyPEM)
 	// Trust the test server's own cert (so the client verifies it under custom-root).
 	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
 	mustWrite(t, CAPath(dir), srvCertPEM)
@@ -142,9 +157,139 @@ func TestRenewSwapsIdentity(t *testing.T) {
 	}
 }
 
+// TestServerClientMTLSPresentationVsFallback proves the security-critical property directly: the
+// provisioned client presents its cert and is accepted by an mTLS-enforcing server, while the
+// fallback (unprovisioned) client — which presents no client cert — is rejected at the handshake.
+// A plain `client != nil` assertion cannot tell these two apart (6.13).
+func TestServerClientMTLSPresentationVsFallback(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(certPEM) {
+		t.Fatal("Agent-Cert nicht als Client-CA ladbar")
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}
+	srv.StartTLS()
+	defer srv.Close()
+	srvCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	mustWrite(t, CAPath(dir), srvCertPEM)
+
+	// Provisioned client presents the agent cert -> accepted.
+	client, err := ServerClient(dir, "", false, 5*time.Second)
+	if err != nil {
+		t.Fatalf("ServerClient (provisioned): %v", err)
+	}
+	resp, err := client.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("provisionierter Client abgelehnt: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Status = %d, erwartet 200", resp.StatusCode)
+	}
+
+	// Fallback client (unprovisioned dir, insecure so it trusts the server cert) presents no client
+	// cert -> the mTLS server rejects the handshake.
+	fallback, err := ServerClient(t.TempDir(), "", true, 5*time.Second)
+	if err != nil {
+		t.Fatalf("ServerClient (fallback): %v", err)
+	}
+	if _, err := fallback.Get(srv.URL); err == nil {
+		t.Fatal("Fallback-Client ohne Client-Cert wurde akzeptiert — erwartet Handshake-Fehler")
+	}
+}
+
 func mustWrite(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMaybeRenewSkipsWhenNotProvisioned(t *testing.T) {
+	orig := renewFunc
+	called := false
+	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	done, err := MaybeRenew(t.TempDir(), "https://x", time.Second)
+	if err != nil || done {
+		t.Fatalf("not provisioned -> (false, nil), got (%v, %v)", done, err)
+	}
+	if called {
+		t.Error("renewFunc darf bei nicht-provisioniert nicht laufen")
+	}
+}
+
+func TestMaybeRenewSkipsWhenNotDue(t *testing.T) {
+	orig := renewFunc
+	called := false
+	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	dir := t.TempDir()
+	now := time.Now()
+	day := 24 * time.Hour
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-10*day), now.Add(80*day)) // 11% through -> not due
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	done, err := MaybeRenew(dir, "https://x", time.Second)
+	if err != nil || done {
+		t.Fatalf("not due -> (false, nil), got (%v, %v)", done, err)
+	}
+	if called {
+		t.Error("renewFunc darf bei nicht-faelligem Cert nicht laufen")
+	}
+}
+
+func TestMaybeRenewRenewsWhenDue(t *testing.T) {
+	orig := renewFunc
+	called := false
+	renewFunc = func(string, string, time.Duration) error { called = true; return nil }
+	t.Cleanup(func() { renewFunc = orig })
+
+	dir := t.TempDir()
+	now := time.Now()
+	day := 24 * time.Hour
+	certPEM, keyPEM := selfSigned(t, "agent", now.Add(-80*day), now.Add(10*day)) // well past half -> due
+	mustWrite(t, CertPath(dir), certPEM)
+	mustWrite(t, KeyPath(dir), keyPEM)
+
+	done, err := MaybeRenew(dir, "https://x", time.Second)
+	if err != nil || !done {
+		t.Fatalf("due -> (true, nil), got (%v, %v)", done, err)
+	}
+	if !called {
+		t.Error("renewFunc muss bei faelligem Cert laufen")
+	}
+}
+
+func TestLeafExpired(t *testing.T) {
+	now := time.Now()
+
+	valid, _ := selfSigned(t, "agent", now.Add(-time.Hour), now.Add(time.Hour))
+	if exp, _, err := leafExpired(valid); err != nil || exp {
+		t.Errorf("gueltiges Leaf: expired=%v err=%v, want false/nil", exp, err)
+	}
+
+	stale, _ := selfSigned(t, "agent", now.Add(-2*time.Hour), now.Add(-time.Hour))
+	exp, notAfter, err := leafExpired(stale)
+	if err != nil || !exp {
+		t.Errorf("abgelaufenes Leaf: expired=%v err=%v, want true/nil", exp, err)
+	}
+	if notAfter.After(now) {
+		t.Errorf("abgelaufenes Leaf: notAfter %v sollte in der Vergangenheit liegen", notAfter)
+	}
+
+	if _, _, err := leafExpired([]byte("kein PEM")); err == nil {
+		t.Error("Muell-PEM: want error, got nil")
 	}
 }

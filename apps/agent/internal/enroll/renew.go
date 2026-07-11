@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -27,17 +26,6 @@ type RenewRequest struct {
 	CSR string `json:"csr"`
 }
 
-// ServerClient returns the HTTP client the agent uses for server pushes: mTLS
-// with the enrolled identity when present (client cert + custom-root-only),
-// otherwise the legacy fallback (pinned cacert / insecure) so pre-enrollment
-// and not-yet-migrated agents keep working during the permissive rollout.
-func ServerClient(dir, fallbackCacert string, fallbackInsecure bool, timeout time.Duration) (*http.Client, error) {
-	if Provisioned(dir) {
-		return httpclient.NewMTLS(CertPath(dir), KeyPath(dir), CAPath(dir), timeout)
-	}
-	return httpclient.New(fallbackCacert, fallbackInsecure, timeout)
-}
-
 // NeedsRenewal reports whether the leaf in certPEM is past `fraction` of its
 // lifetime.
 func NeedsRenewal(certPEM []byte, fraction float64) (bool, error) {
@@ -54,6 +42,22 @@ func NeedsRenewal(certPEM []byte, fraction float64) (bool, error) {
 		return true, nil // malformed / already expired -> renew
 	}
 	return time.Since(cert.NotBefore) >= time.Duration(float64(total)*fraction), nil
+}
+
+// leafExpired reports whether the leaf in certPEM is already past NotAfter, returning
+// the expiry time for a clear operator message. An expired leaf can never complete the
+// mTLS handshake, and under enforcement there is no fallback — so the agent must be
+// re-provisioned rather than hang on generic handshake errors (4.8).
+func leafExpired(certPEM []byte) (bool, time.Time, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, time.Time{}, fmt.Errorf("kein Zertifikat-PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, time.Time{}, fmt.Errorf("Zertifikat parsen: %w", err)
+	}
+	return time.Now().After(cert.NotAfter), cert.NotAfter, nil
 }
 
 // Renew submits a fresh CSR to <baseURL>/ca/renew using the CURRENT identity for
@@ -95,8 +99,12 @@ func MaybeRenew(dir, baseURL string, timeout time.Duration) (bool, error) {
 	if err != nil || !due {
 		return false, err
 	}
-	if err := Renew(dir, baseURL, timeout); err != nil {
+	if err := renewFunc(dir, baseURL, timeout); err != nil {
 		return false, err
 	}
 	return true, nil
 }
+
+// renewFunc is the seam MaybeRenew uses for the network renewal, so tests can drive the
+// orchestration (provisioned? / due?) without a live enroll server.
+var renewFunc = Renew

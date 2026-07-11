@@ -8,12 +8,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { auth, currentUser, isAdmin } from '$lib/stores/auth';
   import { t, toggleLanguage, language } from '$lib/i18n';
   import { path as routerPath } from '$lib/router';
+  import { routes } from '../../../routes';
 
   interface NavEntry {
     page: string;
     label: string;
     icon: string;
-    adminOnly: boolean;
     group?: 'top' | 'mid' | 'bot';
   }
 
@@ -21,41 +21,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {
       page: 'users',
       label: 'nav.users',
-      adminOnly: true,
       group: 'mid',
       icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 3a4 4 0 100 8 4 4 0 000-8zM22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
     },
     {
       page: 'apikeys',
       label: 'nav.apikeys',
-      adminOnly: true,
       group: 'mid',
       icon: 'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.78 7.78 5.5 5.5 0 017.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4',
     },
     {
       page: 'hooks',
       label: 'nav.hooks',
-      adminOnly: true,
       group: 'mid',
       icon: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
     },
     {
       page: 'frp',
       label: 'nav.frp',
-      adminOnly: true,
       group: 'mid',
       icon: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71',
     },
     {
       page: 'audit',
       label: 'nav.audit',
-      adminOnly: true,
       group: 'bot',
       icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
     },
   ];
 
-  const visibleItems = $derived(items.filter((i) => !i.adminOnly || $isAdmin));
+  // adminOnly is the single source of truth in routes.ts; the sidebar reads it
+  // from there so nav visibility and the router guard can never drift.
+  const visibleItems = $derived(items.filter((i) => !routes['/' + i.page]?.adminOnly || $isAdmin));
 
   function currentPage(loc: string): string {
     return (loc || '').replace(/^\//, '').split('/')[0] || 'users';

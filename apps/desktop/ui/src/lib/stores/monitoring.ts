@@ -5,11 +5,17 @@
 // Monitoring store: holds checks, servers, filters, alert rules, alert log.
 // Auto-refresh via activate()/deactivate() from the monitoring page.
 
-import { writable, derived, get } from 'svelte/store';
-import { sessionStore } from './session';
+import { errMsg, SESSION_EXPIRED } from '$lib/utils/errors';
+import { writable, derived } from 'svelte/store';
+import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
 import { monitoringApi } from '$lib/api/monitoring';
-import { filterChecks, type MonitoringFilters } from '$lib/models/monitoring';
+import {
+  filterChecks,
+  worstStatus,
+  STATUS_PRIORITY,
+  type MonitoringFilters,
+} from '$lib/models/monitoring';
 import { tNow } from '$lib/i18n';
 import type {
   AlertLogEntry,
@@ -23,32 +29,26 @@ import type {
 
 export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
 
-const STATUS_PRIO: Record<string, number> = {
-  critical: 4,
-  warning: 3,
-  unknown: 2,
-  pending: 1,
-  ok: 0,
-};
+// Auto-refresh cadence for the monitoring page (same period as the notification poll).
+const REFRESH_INTERVAL_MS = 30_000;
+// Grace period after triggering a check so the server-side runner can persist the
+// new state before the reload reads it back.
+const RECHECK_DELAY_MS = 2000;
 
 function pickWorstServerId(checks: MonitorCheck[]): string | null {
-  const bySrv = new Map<string, number>();
+  const bySrv = new Map<string, MonitorCheck[]>();
   for (const c of checks) {
     const key = c.serverId || '__none';
-    const st = (c.state?.status ?? 'pending') as string;
-    const p = STATUS_PRIO[st] ?? 0;
-    const cur = bySrv.get(key) ?? -1;
-    if (p > cur) bySrv.set(key, p);
+    const list = bySrv.get(key);
+    if (list) list.push(c);
+    else bySrv.set(key, [c]);
   }
-  let bestKey: string | null = null;
-  let bestP = -1;
-  for (const [k, p] of bySrv) {
-    if (p > bestP) {
-      bestP = p;
-      bestKey = k;
-    }
+  let best: [string, number] | null = null;
+  for (const [k, list] of bySrv) {
+    const p = STATUS_PRIORITY[worstStatus(list)];
+    if (!best || p > best[1]) best = [k, p];
   }
-  return bestKey;
+  return best?.[0] ?? null;
 }
 
 interface MonitoringState {
@@ -108,11 +108,6 @@ export function setServerSearch(v: string): void {
 
 export const filteredChecks = derived(_state, ($s) => filterChecks($s.checks, $s.filters));
 
-function requireSession() {
-  const { session } = get(sessionStore);
-  return session;
-}
-
 export function setTab(tab: MonitoringTab): void {
   _state.update((s) => ({ ...s, tab, expandedCheckId: null }));
   if (tab === 'alerts') void loadAlerts();
@@ -139,20 +134,20 @@ export function toggleExpanded(id: string): void {
 }
 
 export async function loadServers(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const servers = await monitoringApi.fetchServers(session);
     _state.update((s) => ({ ...s, servers: Array.isArray(servers) ? servers : [] }));
   } catch (err) {
     _state.update((s) => ({ ...s, servers: [] }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
 export async function loadMonitoring(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   const gen = ++statusGen;
   try {
@@ -172,77 +167,74 @@ export async function loadMonitoring(): Promise<void> {
   } catch (err) {
     if (gen !== statusGen) return;
     _state.update((s) => ({ ...s, checks: [], loading: false }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
 export async function loadAlerts(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const alerts = await monitoringApi.fetchAlerts(session);
     _state.update((s) => ({ ...s, alerts }));
   } catch (err) {
     _state.update((s) => ({ ...s, alerts: [] }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
 export async function loadAlertLog(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const log = await monitoringApi.fetchAlertLog(session, 50);
     _state.update((s) => ({ ...s, log }));
   } catch (err) {
     _state.update((s) => ({ ...s, log: [] }));
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    const msg = errMsg(err);
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
 export async function toggleCheck(checkId: string): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await monitoringApi.toggleCheck(session, checkId);
     await loadMonitoring();
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }
 
 export async function runCheck(checkId: string): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await monitoringApi.runCheck(session, checkId);
-    setTimeout(() => void loadMonitoring(), 2000);
+    if (runReloadTimer) clearTimeout(runReloadTimer);
+    runReloadTimer = setTimeout(() => void loadMonitoring(), RECHECK_DELAY_MS);
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
 }
 
 export async function toggleAlert(ruleId: string): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     await monitoringApi.toggleAlert(session, ruleId);
     await loadAlerts();
   } catch (err) {
-    reportError(err instanceof Error ? err.message : String(err));
+    reportError(errMsg(err));
   }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // ── Alert rule CRUD ──────────────────────────────────────────────────────────
 export async function saveAlert(input: AlertRuleInput, id: string | null): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     if (id) await monitoringApi.updateAlert(session, id, input);
@@ -257,7 +249,7 @@ export async function saveAlert(input: AlertRuleInput, id: string | null): Promi
 }
 
 export async function deleteAlert(id: string): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     await monitoringApi.removeAlert(session, id);
@@ -272,7 +264,7 @@ export async function deleteAlert(id: string): Promise<boolean> {
 
 // ── Monitoring template CRUD ─────────────────────────────────────────────────
 export async function loadTemplates(): Promise<void> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return;
   try {
     const templates = await monitoringApi.fetchTemplates(session);
@@ -280,7 +272,7 @@ export async function loadTemplates(): Promise<void> {
   } catch (err) {
     _state.update((s) => ({ ...s, templates: [] }));
     const msg = errMsg(err);
-    if (msg !== 'SESSION_EXPIRED') reportError(tNow('error.monitoring', { message: msg }));
+    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
   }
 }
 
@@ -288,7 +280,7 @@ export async function saveTemplate(
   input: MonitoringTemplateInput,
   id: string | null,
 ): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     if (id) await monitoringApi.updateTemplate(session, id, input);
@@ -303,7 +295,7 @@ export async function saveTemplate(
 }
 
 export async function deleteTemplate(id: string): Promise<boolean> {
-  const session = requireSession();
+  const session = currentSession();
   if (!session) return false;
   try {
     await monitoringApi.removeTemplate(session, id);
@@ -317,17 +309,24 @@ export async function deleteTemplate(id: string): Promise<boolean> {
 }
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+// The post-run reload timer (runCheck) — tracked so deactivateMonitoring can cancel it, else a
+// full /status request fires ~2 s after the user already left the monitoring page (4.105).
+let runReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function activateMonitoring(): void {
   void loadServers().then(() => loadMonitoring());
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => void loadMonitoring(), 30_000);
+  refreshTimer = setInterval(() => void loadMonitoring(), REFRESH_INTERVAL_MS);
 }
 
 export function deactivateMonitoring(): void {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
+  }
+  if (runReloadTimer) {
+    clearTimeout(runReloadTimer);
+    runReloadTimer = null;
   }
   _state.update((s) => ({ ...s, expandedCheckId: null }));
 }

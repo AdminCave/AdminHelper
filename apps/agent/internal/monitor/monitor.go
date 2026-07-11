@@ -6,7 +6,11 @@ package monitor
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/pem"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -14,16 +18,48 @@ import (
 	"adminhelper-agent/internal/config"
 )
 
+// InitParams groups monitor.Init's arguments (6 same-typed positionals before).
+type InitParams struct {
+	URL      string
+	APIKey   string
+	ServerID string
+	Services string
+	TLS      config.TLSOpts
+}
+
+// preserveServices keeps the configured watch list when a re-provisioning (token rotation) passes an
+// empty services string, so the list isn't wiped. Extracted from Init for testability (6.15).
+func preserveServices(services string) string {
+	if services != "" {
+		return services
+	}
+	if existing, err := config.LoadMonitorConfig(); err == nil && len(existing.Services) > 0 {
+		return strings.Join(existing.Services, ",")
+	}
+	return services
+}
+
 // Init performs the initial setup of the monitor agent.
-func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
+func Init(p InitParams) error {
+	url := p.URL
+	apiKey := p.APIKey
+	serverID := p.ServerID
+	services := p.Services
+	cacert := p.TLS.CACert
+	insecure := p.TLS.Insecure
+
 	url = strings.TrimRight(url, "/")
+	if err := config.RequireHTTPS(url); err != nil {
+		return err
+	}
 
 	monitorDir := config.MonitorDir()
 	// Holds the agent API key + pinned CA cert -> 0700.
 	if err := os.MkdirAll(monitorDir, 0700); err != nil {
 		return fmt.Errorf("Verzeichnis anlegen: %w", err)
 	}
-	_ = os.Chmod(monitorDir, 0700)
+	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
+	_ = config.SecureDir(monitorDir)
 
 	// Copy the CA cert if provided
 	storedCACert := ""
@@ -31,7 +67,7 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		if _, err := os.Stat(cacert); err != nil {
 			return fmt.Errorf("CA-Zertifikat nicht gefunden: %s", cacert)
 		}
-		dest := config.MonitorDir() + "/ca.crt"
+		dest := config.MonitorCACert()
 		data, err := os.ReadFile(cacert)
 		if err != nil {
 			return err
@@ -43,13 +79,29 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 		logger.Infof("CA-Zertifikat kopiert: %s", dest)
 	}
 
-	// Preserve an existing SERVICES line on re-provisioning: a token rotation
-	// passes empty services and must not wipe the configured watch list.
-	if services == "" {
-		if existing, err := config.LoadMonitorConfig(); err == nil && len(existing.Services) > 0 {
-			services = strings.Join(existing.Services, ",")
+	// A blind --insecure (the deb/rpm postinst's alternative setup path) would
+	// otherwise persist INSECURE=1 and run every 5-minute push with TLS
+	// verification off, leaking the long-lived API key each cycle. Pin the
+	// presented server cert (TOFU) instead, so --insecure applies only to this
+	// init call — the same defense provision.Run uses via pinIfBlindInsecure.
+	if insecure && cacert == "" {
+		if pemBytes, err := fetchServerCertPEM(url); err != nil {
+			logger.Warnf("Server-Zertifikat fuer TOFU-Pinning nicht abrufbar: %v", err)
+		} else if len(pemBytes) > 0 {
+			dest := config.MonitorCACert()
+			if werr := os.WriteFile(dest, pemBytes, 0644); werr != nil {
+				logger.Warnf("Server-Zertifikat pinnen fehlgeschlagen: %v", werr)
+			} else {
+				storedCACert, insecure = dest, false
+				logger.Infof("Server-Zertifikat gepinnt (TOFU) — --insecure gilt nur fuer diesen Aufruf.")
+			}
 		}
 	}
+
+	// Preserve an existing SERVICES line on re-provisioning: a token rotation passes empty services
+	// and must not wipe the configured watch list (the derivation is in preserveServices so it is
+	// unit-tested without the full HTTPS/TOFU/push path, 6.15).
+	services = preserveServices(services)
 
 	// Write the config
 	entries := []config.KeyValue{
@@ -72,16 +124,14 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 	logger.Infof("Config geschrieben: %s", config.MonitorConfFile())
 
 	// Test push
-	var serviceList []string
-	if services != "" {
-		for _, s := range strings.Split(services, ",") {
-			if n := strings.TrimSpace(s); n != "" {
-				serviceList = append(serviceList, n)
-			}
-		}
-	}
-	report := BuildReport(serviceList)
-	if err := PushReport(context.Background(), url, apiKey, serverID, report, storedCACert, insecure); err != nil {
+	report := BuildReport(config.SplitServices(services))
+	if err := PushReport(context.Background(), PushReportParams{
+		URL:      url,
+		APIKey:   apiKey,
+		ServerID: serverID,
+		Report:   report,
+		TLS:      config.TLSOpts{CACert: storedCACert, Insecure: insecure},
+	}); err != nil {
 		logger.Warnf("Test-Push fehlgeschlagen: %v", err)
 		logger.Warnf("Pruefe URL und API-Key")
 	} else {
@@ -95,6 +145,32 @@ func Init(url, apiKey, serverID, services, cacert string, insecure bool) error {
 	}
 
 	return nil
+}
+
+// fetchServerCertPEM opens a bare TLS connection to url's host (verification off)
+// solely to capture the presented certificate chain as PEM, so a blind --insecure
+// init can pin it (TOFU) instead of persisting INSECURE=1. The captured cert is
+// verified against nothing here — it is pinned immediately, matching provision.Run.
+func fetchServerCertPEM(rawURL string) ([]byte, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	host := u.Host
+	if u.Port() == "" {
+		host = net.JoinHostPort(u.Hostname(), "443")
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := tls.DialWithDialer(dialer, "tcp", host, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // TOFU capture, cert is pinned immediately
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	var pemBytes []byte
+	for _, c := range conn.ConnectionState().PeerCertificates {
+		pemBytes = append(pemBytes, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
+	}
+	return pemBytes, nil
 }
 
 // Push reads the config and sends a one-off report. The ctx aborts the push
@@ -114,7 +190,13 @@ func Push(ctx context.Context) error {
 	report := BuildReport(cfg.Services)
 	statePath := config.MonitorInventoryStateFile()
 	newState, sentFull := throttleInventory(report, statePath, time.Now())
-	if err := PushReport(ctx, cfg.MonitorURL, cfg.APIKey, cfg.ServerID, report, cfg.CACert, cfg.Insecure); err != nil {
+	if err := PushReport(ctx, PushReportParams{
+		URL:      cfg.MonitorURL,
+		APIKey:   cfg.APIKey,
+		ServerID: cfg.ServerID,
+		Report:   report,
+		TLS:      config.TLSOpts{CACert: cfg.CACert, Insecure: cfg.Insecure},
+	}); err != nil {
 		logger.Errorf("Report senden fehlgeschlagen: %v", err)
 		return err
 	}

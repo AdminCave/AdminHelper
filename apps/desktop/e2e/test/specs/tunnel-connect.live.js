@@ -9,11 +9,9 @@
 // frpc server → the real target container. All three paths are verified at the
 // target containers by desktop_e2e_connect_tunnel.sh.
 
-import { clickItemByName, jsClick } from '../lib/live.js';
+import { login, clickItemByName, jsClick } from '../lib/live.js';
 
 const SERVER_URL = process.env.AH_SERVER_URL;
-const USER = process.env.AH_ADMIN_USER;
-const PASS = process.env.AH_ADMIN_PASS;
 const ENROLL_TOKEN = process.env.AH_ENROLL_TOKEN;
 
 describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
@@ -33,12 +31,8 @@ describe('Open SSH/Web/RDP connections over FRP tunnels', () => {
     );
     expect(err).toBe(null);
 
-    const inputs = await $$('.login-card input'); // serverUrl, username, password
-    await inputs[0].setValue(SERVER_URL);
-    await inputs[1].setValue(USER);
-    await inputs[2].setValue(PASS);
-    await browser.keys('Enter');
-    await $('.sidebar-nav').waitForExist({ timeout: 20000 });
+    // Shared helper — the inline login was duplicated across the tunnel specs (2.16).
+    await login();
 
     // The seeded tunnels auto-start; wait until the visitor side is connected.
     const indicator = await $('.tunnel-indicator');

@@ -80,6 +80,34 @@ ruff check apps/server apps/monitoring          # Lint (mit --fix zum Beheben)
 ruff format apps/server apps/monitoring         # Formatieren
 ```
 
+### Python-Tests lokal (ohne Docker)
+
+`monitoring` und `ca-issuer` sind reine Logik-Suiten und brauchen **kein** Postgres.
+`ca-issuer` benötigt allerdings `httpx` (nur der starlette-`TestClient` der Tests, nicht
+die App selbst — steht daher nicht in `requirements.in`):
+
+```bash
+apps/monitoring/.venv/bin/python -m pytest -q
+apps/ca-issuer/.venv/bin/pip install httpx      # einmalig
+apps/ca-issuer/.venv/bin/python -m pytest -q
+```
+
+`server`-pytest braucht ein Postgres — entweder testcontainers (Docker) **oder** ein
+injiziertes `DATABASE_URL` (conftest wählt automatisch). Docker-frei einmalig eine
+Test-Rolle + -DB anlegen. Wichtig: `CREATEDB` ist Pflicht, weil die Alembic-Smoke
+(`test_migrations_smoke.py`) pro Lauf eine Wegwerf-DB anlegt:
+
+```bash
+sudo -u postgres psql \
+  -c "CREATE ROLE adminhelper LOGIN CREATEDB PASSWORD 'adminhelper';" \
+  -c "CREATE DATABASE adminhelper_test OWNER adminhelper;"
+
+# DATABASE_URL NUR für die server-Suite setzen — global gesetzt würde es
+# monitorings Alembic-Smoke fälschlich gegen das falsche Schema aktivieren:
+DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminhelper_test" \
+  apps/server/.venv/bin/python -m pytest -q
+```
+
 ### Go Toolchain (Agent)
 
 ```bash
@@ -168,7 +196,9 @@ Das startet:
 - **frps** auf Port 7000 (FRP-Protokoll) und 7443 (HTTPS-vhosts)
 - **Monitoring** nur intern im Compose-Network (`expose 8080`, kein Host-Port); Agent-Metriken laufen tunnelfrei über den Server unter `/api/monitoring`
 - **VictoriaMetrics** auf Port 8428 (intern, Time-Series DB)
-- **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start von `scripts/postgres-init.sh` angelegt
+- **PostgreSQL 17** (`postgres:17-alpine`, nur intern, kein Port-Mapping) — gemeinsame DB für Server (`adminhelper`) und Monitoring (`adminhelper_monitor`); die zweite DB wird beim ersten Start des Monitoring-Service (durch dessen Entrypoint) angelegt
+- **scheduler** (Server-Image mit `RUN_MODE=scheduler`, nur intern, seit 0.38.0) — die **einzige** APScheduler-Instanz für periodische Jobs (u. a. FRP-Zertifikats-Renewals); bewusst **nicht** skalieren, sonst laufen die Jobs doppelt
+- **redis** (`redis:7-alpine`, nur intern, ohne Persistenz) — Backing-Store für das Rate-Limiting und den SSE-Fan-out zwischen den Server-Workern
 
 **Erstanmeldung:** Es gibt keinen Default-Login. Entweder den
 Bootstrap-Token-Flow nutzen (`docker compose logs server | grep -A2
@@ -293,7 +323,7 @@ Vollstaendige Integration mit dem AdminHelper-Server:
 
 1. **Server + frps starten** (siehe oben)
 2. Im Client: Einstellungen -> Modus: **Server** -> Server-URL: `https://localhost`
-3. Login mit `admin` / `admin`
+3. Login mit dem beim Setup angelegten Admin — lokal am schnellsten via `ADMIN_PASSWORD=dev` in der `.env` (→ `admin` / `dev`, siehe Erstanmeldung oben); es gibt **keinen** `admin`/`admin`-Default
 4. Connections werden per JWT-API geladen
 5. frpc-Visitor startet automatisch im Hintergrund (wenn frpc-Binary vorhanden)
 
@@ -412,10 +442,10 @@ curl http://127.0.0.1:8080/api/docs
 ### Server-Login per CLI testen
 
 ```bash
-# JWT holen
+# JWT holen (password = dein ADMIN_PASSWORD; hier das lokale `dev`, es gibt keinen admin/admin-Default)
 TOKEN=$(curl -sk https://localhost/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"username":"admin","password":"dev"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # Connections abrufen
 curl -sk https://localhost/api/connections \
@@ -433,7 +463,7 @@ curl -sk https://localhost/api/frp/tunnels \
 ```text
 .
 ├─ apps/                     # alle lauffähigen Einheiten
-│  ├─ server/                # FastAPI-Backend (modularer Monolith, 8 Module)
+│  ├─ server/                # FastAPI-Backend (modularer Monolith, 12 Module)
 │  │  ├─ app/
 │  │  │  ├─ main.py
 │  │  │  ├─ core/                # config, auth, database, events, middleware, rate_limit
@@ -448,6 +478,8 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  │  ├─ core/                # auth, config, database, victoria
 │  │  │  └─ scheduler.py         # APScheduler für Pull-Checks
 │  │  └─ Dockerfile
+│  ├─ ca-issuer/             # Python/FastAPI PKI-Enrollment-Plane (eigenes mTLS, eigene pytest-Suite)
+│  ├─ gateway/               # nginx Reverse-Proxy: TLS-/Header-/mTLS-Terminierung, Ratelimit
 │  ├─ agent/                 # Unified Go Agent (Linux + Windows)
 │  │  ├─ cmd/adminhelper-agent/  # Cobra CLI (run, frpc, monitor, service, version)
 │  │  ├─ internal/               # config, frpc, monitor, service
@@ -456,16 +488,16 @@ curl -sk https://localhost/api/frp/tunnels \
 │  │  └─ Makefile                # build-linux, build-windows, deb, rpm
 │  ├─ web/                   # PRODUKTIV: Svelte 5 + TS Web-Admin-Panel
 │  │  ├─ src/
-│  │  │  ├─ lib/api/             # 11 Module (client + 9 Domain-Wrapper + types)
-│  │  │  ├─ lib/stores/          # 10 Stores
+│  │  │  ├─ lib/api/             # 9 Module (client + 7 Domain-Wrapper + types)
+│  │  │  ├─ lib/stores/          # 6 Stores
 │  │  │  ├─ lib/i18n/            # DE/EN-Dictionaries
-│  │  │  ├─ pages/               # 8 Produktiv-Pages + Login + Placeholder
-│  │  │  └─ modals/              # 19 Modal-Komponenten
-│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts)
+│  │  │  ├─ pages/               # 5 Produktiv-Pages + Login + Placeholder
+│  │  │  └─ modals/              # 9 Modal-Komponenten
+│  │  └─ tests/e2e/              # Playwright (login.spec.ts, smoke.spec.ts, crud.spec.ts)
 │  └─ desktop/               # Tauri Desktop-Client (Backend + UI zusammen)
 │     ├─ src-tauri/          # Rust/Tauri-Backend
 │     │  ├─ src/
-│     │  │  ├─ main.rs            # invoke_handler mit 23 Tauri-Commands
+│     │  │  ├─ main.rs            # invoke_handler mit 32 Tauri-Commands
 │     │  │  ├─ commands.rs        # IPC-Schnittstelle
 │     │  │  ├─ auth.rs            # JWT-Login, Keyring-Persistenz
 │     │  │  ├─ frpc.rs            # frpc-Sidecar Prozess-Management
@@ -478,12 +510,12 @@ curl -sk https://localhost/api/frp/tunnels \
 │     │  └─ capabilities/        # Tauri v2 Security Permissions
 │     └─ ui/                 # PRODUKTIV: Svelte 5 + TS Desktop-Frontend
 │        ├─ src/
-│        │  ├─ lib/bridge/       # 22 typisierte invoke()-Wrapper
+│        │  ├─ lib/bridge/       # 31 typisierte invoke()-Wrapper
 │        │  ├─ lib/stores/       # 12 Stores
 │        │  ├─ lib/models/       # connection, settings, ansible, monitoring (typisiert)
-│        │  ├─ components/       # ~30 Components
-│        │  └─ pages/            # 4 Pages (Dashboard, Connections, Ansible, Monitoring)
-│        └─ vitest.setup.ts      # ~41 Vitest-Unit-Tests
+│        │  ├─ components/       # ~46 Components
+│        │  └─ pages/            # 5 Pages (Dashboard, Connections, Infrastructure, Ansible, Monitoring)
+│        └─ vitest.setup.ts      # ~250 Vitest-Unit-Tests
 ├─ docs/                     # Dokumentation (DE + EN, statisches HTML)
 ├─ scripts/                  # Ops-/DB-Skripte (+ tests/: integration_stack_test, desktop_e2e_live, lib_e2e_stack)
 ├─ data/                     # Server-Daten (gitignored, Bind-Mount)

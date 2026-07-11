@@ -6,16 +6,15 @@ import json
 from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.time import utc_now_sql
 
 # Fields mapped between camelCase (API) and snake_case (DB)
 _CAMEL_TO_SNAKE = {
     "keyPath": "key_path",
     "trustCert": "trust_cert",
     "lastUsed": "last_used",
-    "scalingMode": "scaling_mode",
     "serverId": "server_id",
 }
 _SNAKE_TO_CAMEL = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
@@ -35,7 +34,6 @@ _KNOWN_FIELDS = {
     "tags",
     "trustCert",
     "lastUsed",
-    "scalingMode",
     "serverId",
 }
 
@@ -56,12 +54,11 @@ class Connection(Base):
     tags = Column(String, nullable=True)  # JSON array as a string
     trust_cert = Column(Boolean, default=False)
     last_used = Column(String, nullable=True)
-    scaling_mode = Column(String, nullable=True)
     extra_data = Column(String, nullable=True)  # JSON for unknown extra fields
     server_id = Column(
         String, ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=utc_now_sql())
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the ORM object into an API-compatible dict (camelCase)."""
@@ -79,7 +76,6 @@ class Connection(Base):
             "tags": json.loads(self.tags) if self.tags else [],
             "trustCert": self.trust_cert or False,
             "lastUsed": self.last_used,
-            "scalingMode": self.scaling_mode,
         }
         if self.server_id:
             result["serverId"] = self.server_id

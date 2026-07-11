@@ -11,15 +11,44 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
 
 from app.alerter import process_alert
+from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.core.database import SessionLocal
+from app.core.time import utcnow_naive
 from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
 
 logger = logging.getLogger("monitor.engine")
+
+# Alerts are dispatched OFF the APScheduler check-worker thread via this small pool: a slow/hung
+# webhook or SMTP server (up to 10s each, serial) would otherwise tie up the check workers and
+# misfire the next checks — exactly during an incident when many checks transition at once. Same
+# isolation as the agent push path's _dispatch_alert_bg (5.3).
+_alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
+
+
+def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
+    """Dispatch one alert (webhook/SMTP) in the alert pool with its own session.
+
+    The check-worker's session is already closed by the time this runs, so it
+    reloads the check. Errors are contained — a failed dispatch must never bubble
+    out of the pool thread.
+    """
+    db = SessionLocal()
+    try:
+        check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
+        if check is None:
+            return
+        process_alert(db, check, old_status, new_status)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Alert-Dispatch fuer Check %s fehlgeschlagen", check_id)
+    finally:
+        db.close()
 
 
 def next_fail_count(result_status: str, prev_fail_count: int) -> int:
@@ -72,35 +101,44 @@ def execute_check(check_id: str) -> None:
         if not check:
             return
 
-        config = json.loads(check.config) if check.config else {}
+        try:
+            config = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            config = None
 
         # Do not run push-only checks from the scheduler
-        from app.scheduler import PUSH_ONLY_TYPES
-
         if check.check_type in PUSH_ONLY_TYPES:
             return
 
-        try:
-            checker = get_checker(check.check_type)
-        except ValueError as exc:
-            logger.warning("Check %s: %s", check.name, exc)
-            return
+        checker = None
+        if config is not None:
+            try:
+                checker = get_checker(check.check_type)
+            except ValueError as exc:
+                logger.warning("Check %s: %s", check.name, exc)
 
-        # Run the check
+        # A corrupt config or an unknown check type must surface as unknown so the normal alert
+        # chain fires — not silently freeze the state on its last value (a "dead" check that still
+        # looks healthy, with no alert and no dashboard hint) (4.109).
         start = time.monotonic()
-        try:
-            result_status, message, metrics = checker.run(config)
-        except Exception as exc:
-            result_status = "unknown"
-            message = f"Unerwarteter Fehler: {exc}"
-            metrics = None
-            logger.exception("Check %s fehlgeschlagen", check.name)
+        if config is None:
+            result_status, message, metrics = "unknown", "Ungueltige Check-Konfiguration", None
+        elif checker is None:
+            result_status, message, metrics = "unknown", "Unbekannter Check-Typ", None
+        else:
+            try:
+                result_status, message, metrics = checker.run(config)
+            except Exception as exc:
+                result_status = "unknown"
+                message = f"Unerwarteter Fehler: {exc}"
+                metrics = None
+                logger.exception("Check %s fehlgeschlagen", check.name)
         duration_ms = int((time.monotonic() - start) * 1000)
 
         # Extract structured details (not sent to VictoriaMetrics)
         details = metrics.pop("_details", None) if metrics else None
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utcnow_naive()
 
         # Send metrics to VictoriaMetrics
         victoria.write_check_result(
@@ -113,8 +151,18 @@ def execute_check(check_id: str) -> None:
             extra_metrics=metrics,
         )
 
-        # Update state
-        state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+        # Update state. Lock the row for the read-modify-write (fail_count, status): the
+        # scheduler's max_instances=1 isn't the only writer — POST /checks/{id}/run runs the same
+        # check synchronously on the request thread, and the agent push path can fire two
+        # near-simultaneous reports for one server. Without the lock both could read fail_count=2
+        # and write 3 instead of 4, or both see the same transition and double-alert (4.46).
+        # with_for_update is a no-op on sqlite (tests); the real lock is on Postgres.
+        state = (
+            db.query(MonitorState)
+            .filter(MonitorState.check_id == check.id)
+            .with_for_update()
+            .first()
+        )
         old_status = state.status if state else "pending"
 
         prev_fail_count = state.fail_count if state else 0
@@ -158,16 +206,12 @@ def execute_check(check_id: str) -> None:
 
         db.commit()
 
-        # Alerting on status change. process_alert only flushes the alert log
-        # (it no longer commits the session); persist it with an own commit so
-        # a failing dispatch/log cannot roll back the already-committed state.
+        # Alerting on status change: dispatch OFF the check-worker thread (see _alert_pool /
+        # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the scheduler pool and
+        # misfire following checks. Pass the id, not the session-bound check — the pool thread
+        # reloads it in its own session (5.3).
         if old_status != eff_status:
-            try:
-                process_alert(db, check, old_status, eff_status)
-                db.commit()
-            except Exception:
-                db.rollback()
-                logger.exception("Alerting fuer Check '%s' fehlgeschlagen", check.name)
+            _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
 
     except Exception:
         logger.exception("execute_check(%s) fehlgeschlagen", check_id)

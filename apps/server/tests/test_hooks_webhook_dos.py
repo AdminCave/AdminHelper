@@ -47,3 +47,25 @@ def test_webhook_trigger_is_rate_limited(test_client, db_session, admin_user):
     ]
     assert 429 in statuses, f"no rate limit hit: {statuses}"
     assert statuses.count(200) <= 20, statuses
+
+
+def test_unknown_webhook_token_is_404(test_client, db_session):
+    # The token IS the auth for the public trigger; an unknown token must be a 404 via the
+    # hashed_token lookup (a regression comparing against plaintext would open script exec) (6.75).
+    reset_backend_for_tests()
+    r = test_client.post("/api/hooks/trigger/definitiv-falsch", json={})
+    assert r.status_code == 404, r.text
+
+
+def test_disabled_webhook_is_403(test_client, db_session, admin_user):
+    # A disabled hook must be refused (403), not executed (6.75).
+    from app.modules.hooks.models import Hook
+
+    reset_backend_for_tests()
+    wt = _create_webhook(test_client, _admin_token(test_client), "log('x')")
+    hook = db_session.query(Hook).filter(Hook.hook_type == "webhook").first()
+    hook.enabled = False
+    db_session.commit()
+
+    r = test_client.post(f"/api/hooks/trigger/{wt}", json={})
+    assert r.status_code == 403, r.text

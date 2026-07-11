@@ -116,6 +116,14 @@ verify_for_keytype() {
     pkgsha=$(sha256sum "${APT}/dists/stable/main/binary-amd64/Packages" | cut -d' ' -f1)
     grep -q "$pkgsha" "${APT}/dists/stable/Release" || fail "[$label] Release deckt Packages-SHA256 nicht"
     grep -q "^SHA256:" "${APT}/dists/stable/Release" || fail "[$label] Release ohne SHA256-Sektion"
+    # Release identity: the deb822 source binds to Origin/Suite/Codename; a changed
+    # REPO_SUITE would silently break every installed apt source (6.69).
+    grep -q '^Origin: AdminHelper$' "${APT}/dists/stable/Release" || fail "[$label] Release Origin falsch"
+    grep -q '^Suite: stable$'       "${APT}/dists/stable/Release" || fail "[$label] Release Suite falsch"
+    grep -q '^Codename: stable$'    "${APT}/dists/stable/Release" || fail "[$label] Release Codename falsch"
+    # Valid-Until bounds a freeze/replay attack on the certless repo plane (3.10); assert
+    # it exists AND is in apt's RFC 2822 English form (LC_ALL=C), not a localized date.
+    grep -qE '^Valid-Until: (Mon|Tue|Wed|Thu|Fri|Sat|Sun), ' "${APT}/dists/stable/Release" || fail "[$label] Release Valid-Until fehlt/localized"
     gpg --verify "${APT}/dists/stable/InRelease" >/dev/null 2>&1 \
         || fail "[$label] InRelease-Signatur ungültig"
     gpg --verify "${APT}/dists/stable/Release.gpg" "${APT}/dists/stable/Release" >/dev/null 2>&1 \

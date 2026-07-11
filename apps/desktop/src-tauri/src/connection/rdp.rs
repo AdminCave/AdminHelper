@@ -10,7 +10,9 @@ use crate::models::{RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
 #[cfg(any(unix, target_os = "windows"))]
 use super::rdp_logic::parse_custom_size;
 #[cfg(unix)]
-use super::rdp_logic::{buffer_has_connected, fit_window_size, hdpi_scale, parse_freerdp_error};
+use super::rdp_logic::{
+    auth_only_unsupported, buffer_has_connected, fit_window_size, hdpi_scale, parse_freerdp_error,
+};
 
 #[cfg(unix)]
 fn emit_rdp_error(app: &tauri::AppHandle, correlation_id: &str, message: impl Into<String>) {
@@ -40,6 +42,25 @@ use tauri::Emitter;
 
 #[cfg(unix)]
 use crate::terminal::which;
+
+// --- RDP connection-monitoring tuning ---
+// The login-failure heuristic hangs on these: a connect that exits sooner than
+// LOGIN_FAIL_THRESHOLD_MS *after* connecting is read as a server-side login abort.
+// CONNECT_TIMEOUT must stay above a slow VPN's connect time, or a valid login is
+// misreported as "Anmeldung fehlgeschlagen".
+#[cfg(unix)]
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
+#[cfg(unix)]
+const LOGIN_FAIL_THRESHOLD_MS: u64 = 8000;
+#[cfg(unix)]
+const OUTPUT_BUFFER_CAP: usize = 8192; // cap the retained xfreerdp stderr tail
+#[cfg(unix)]
+const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(3); // TCP reachability probe
+
+/// The .rdp launch file lingers this long after spawn so mstsc can read it, then
+/// is deleted — long enough for a slow mstsc start, short enough not to leak.
+#[cfg(target_os = "windows")]
+const RDP_FILE_CLEANUP_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub fn open_rdp(
     connection: &Connection,
@@ -105,7 +126,7 @@ pub fn open_rdp(
             if username.is_empty() {
                 return Err(AppError::Validation("Benutzer fehlt".to_string()));
             }
-            match check_rdp_auth(
+            check_rdp_auth(
                 rdp_binary,
                 host,
                 port,
@@ -113,11 +134,7 @@ pub fn open_rdp(
                 domain,
                 connection.trust_cert,
                 secret,
-            ) {
-                Ok(true) => {}
-                Ok(false) => {}
-                Err(message) => return Err(message),
-            }
+            )?;
             args.push("/from-stdin:force".to_string());
             args.push("/log-level:INFO".to_string());
             spawn_rdp_with_password(rdp_binary, args, secret, correlation_id, app)?;
@@ -294,16 +311,30 @@ fn linux_keyboard_layout_arg_from_ui_language(ui_language: Option<&str>) -> Stri
     format!("/kbd:layout:0x{lang_id:08X},lang:0x{lang_id:04X}")
 }
 
+/// The context every RDP output/exit monitor shares (audit 2.13): bundling the
+/// five hand-threaded fields keeps a new one from having to be added to three
+/// 7-arg signatures at once. Cheap to clone — Arcs, a String and an AppHandle.
 #[cfg(unix)]
-fn spawn_output_monitor(
-    mut reader: impl Read + Send + 'static,
+#[derive(Clone)]
+struct RdpWatch {
     emitted: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
     connected_at_ms: Arc<AtomicU64>,
     started_at: Instant,
     correlation_id: String,
     app: tauri::AppHandle,
-) {
+}
+
+#[cfg(unix)]
+fn spawn_output_monitor(mut reader: impl Read + Send + 'static, watch: RdpWatch) {
+    let RdpWatch {
+        emitted,
+        connected,
+        connected_at_ms,
+        started_at,
+        correlation_id,
+        app,
+    } = watch;
     std::thread::spawn(move || {
         let mut buffer: Vec<u8> = Vec::new();
         let mut chunk = [0u8; 1024];
@@ -314,8 +345,8 @@ fn spawn_output_monitor(
                 Err(_) => break,
             };
             buffer.extend_from_slice(&chunk[..read]);
-            if buffer.len() > 8192 {
-                buffer.drain(0..buffer.len().saturating_sub(8192));
+            if buffer.len() > OUTPUT_BUFFER_CAP {
+                buffer.drain(0..buffer.len().saturating_sub(OUTPUT_BUFFER_CAP));
             }
             if !connected.load(Ordering::SeqCst) && buffer_has_connected(&buffer) {
                 let elapsed_ms = started_at.elapsed().as_millis() as u64;
@@ -335,15 +366,15 @@ fn spawn_output_monitor(
 }
 
 #[cfg(unix)]
-fn monitor_rdp_exit(
-    mut child: std::process::Child,
-    emitted: Arc<AtomicBool>,
-    connected: Arc<AtomicBool>,
-    connected_at_ms: Arc<AtomicU64>,
-    started_at: Instant,
-    correlation_id: String,
-    app: tauri::AppHandle,
-) {
+fn monitor_rdp_exit(mut child: std::process::Child, watch: RdpWatch) {
+    let RdpWatch {
+        emitted,
+        connected,
+        connected_at_ms,
+        started_at,
+        correlation_id,
+        app,
+    } = watch;
     // Timeout thread
     {
         let emitted = emitted.clone();
@@ -351,7 +382,7 @@ fn monitor_rdp_exit(
         let app = app.clone();
         let correlation_id = correlation_id.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(12));
+            std::thread::sleep(CONNECT_TIMEOUT);
             if !connected.load(Ordering::SeqCst) && !emitted.swap(true, Ordering::SeqCst) {
                 emit_rdp_error(
                     &app,
@@ -372,7 +403,9 @@ fn monitor_rdp_exit(
                     &correlation_id,
                     "RDP Verbindung fehlgeschlagen. Bitte Host, Port und Netzwerk pruefen.",
                 );
-            } else if elapsed_ms.saturating_sub(connected_at_ms.load(Ordering::SeqCst)) < 8000 {
+            } else if elapsed_ms.saturating_sub(connected_at_ms.load(Ordering::SeqCst))
+                < LOGIN_FAIL_THRESHOLD_MS
+            {
                 emit_rdp_error(
                     &app,
                     &correlation_id,
@@ -381,6 +414,32 @@ fn monitor_rdp_exit(
             }
         }
     });
+}
+
+/// Feed a password to a spawned child's stdin, then scrub the local copy. The
+/// security-critical secret-handling shared by the RDP launch and the auth probe,
+/// so a later hardening (e.g. zeroize, or a forgotten kill on BrokenPipe) can't
+/// land in only one of the two copies.
+#[cfg(unix)]
+fn feed_password_stdin(child: &mut std::process::Child, password: &str) -> Result<(), AppError> {
+    if let Some(mut stdin) = child.stdin.take() {
+        let mut payload = format!("{password}\n");
+        let write_result = stdin.write_all(payload.as_bytes());
+        // Scrub the password copy regardless of the write outcome (parity with the
+        // Windows credential path in password.rs).
+        unsafe {
+            for byte in payload.as_bytes_mut() {
+                *byte = 0;
+            }
+        }
+        if let Err(e) = write_result {
+            // A BrokenPipe (child already exited / refused stdin) would otherwise
+            // leave the spawned process around — reap it before propagating.
+            let _ = child.kill();
+            return Err(e.into());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -401,65 +460,29 @@ fn spawn_rdp_with_password(
         .env("WLOG_APPENDER", "console");
     let mut child = command.spawn()?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let mut payload = format!("{password}\n");
-        let write_result = stdin.write_all(payload.as_bytes());
-        // Scrub the password copy regardless of the write outcome (parity with the
-        // Windows credential path in password.rs).
-        unsafe {
-            for byte in payload.as_bytes_mut() {
-                *byte = 0;
-            }
-        }
-        if let Err(e) = write_result {
-            // A BrokenPipe (child already exited / refused stdin) would otherwise
-            // leave the spawned process around — reap it before propagating.
-            let _ = child.kill();
-            return Err(e.into());
-        }
-    }
+    feed_password_stdin(&mut child, password)?;
 
-    let emitted = Arc::new(AtomicBool::new(false));
     // Separate "connected" flag instead of `connected_at_ms == 0`: a
     // sub-millisecond connect would also store 0 and look like "never
     // connected", producing a false connection-failed toast.
-    let connected = Arc::new(AtomicBool::new(false));
-    let connected_at_ms = Arc::new(AtomicU64::new(0));
-    let cid = correlation_id.to_string();
+    let watch = RdpWatch {
+        emitted: Arc::new(AtomicBool::new(false)),
+        connected: Arc::new(AtomicBool::new(false)),
+        connected_at_ms: Arc::new(AtomicU64::new(0)),
+        started_at,
+        correlation_id: correlation_id.to_string(),
+        app: app.clone(),
+    };
 
     if let Some(stdout) = child.stdout.take() {
-        spawn_output_monitor(
-            stdout,
-            emitted.clone(),
-            connected.clone(),
-            connected_at_ms.clone(),
-            started_at,
-            cid.clone(),
-            app.clone(),
-        );
+        spawn_output_monitor(stdout, watch.clone());
     }
 
     if let Some(stderr) = child.stderr.take() {
-        spawn_output_monitor(
-            stderr,
-            emitted.clone(),
-            connected.clone(),
-            connected_at_ms.clone(),
-            started_at,
-            cid.clone(),
-            app.clone(),
-        );
+        spawn_output_monitor(stderr, watch.clone());
     }
 
-    monitor_rdp_exit(
-        child,
-        emitted,
-        connected,
-        connected_at_ms,
-        started_at,
-        cid,
-        app.clone(),
-    );
+    monitor_rdp_exit(child, watch);
     Ok(())
 }
 
@@ -505,7 +528,7 @@ pub fn preflight_rdp(host: &str, port: u16) -> Result<(), AppError> {
     let addrs = addr.to_socket_addrs().map_err(|_| {
         AppError::Connection(format!("Host konnte nicht aufgeloest werden: {host}"))
     })?;
-    let timeout = Duration::from_secs(3);
+    let timeout = PREFLIGHT_TIMEOUT;
     for socket in addrs {
         if TcpStream::connect_timeout(&socket, timeout).is_ok() {
             return Ok(());
@@ -525,7 +548,7 @@ pub fn check_rdp_auth(
     domain: &str,
     trust_cert: bool,
     password: &str,
-) -> Result<bool, AppError> {
+) -> Result<(), AppError> {
     let mut args = vec![
         format!("/v:{host}:{port}"),
         "+auth-only".to_string(),
@@ -551,23 +574,7 @@ pub fn check_rdp_auth(
         .env("WLOG_APPENDER", "console");
     let mut child = command.spawn()?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        let mut payload = format!("{password}\n");
-        let write_result = stdin.write_all(payload.as_bytes());
-        // Scrub the password copy regardless of the write outcome (parity with the
-        // Windows credential path in password.rs).
-        unsafe {
-            for byte in payload.as_bytes_mut() {
-                *byte = 0;
-            }
-        }
-        if let Err(e) = write_result {
-            // A BrokenPipe (child already exited / refused stdin) would otherwise
-            // leave the spawned process around — reap it before propagating.
-            let _ = child.kill();
-            return Err(e.into());
-        }
-    }
+    feed_password_stdin(&mut child, password)?;
 
     let output = child.wait_with_output()?;
     let mut combined = output.stderr;
@@ -575,18 +582,14 @@ pub fn check_rdp_auth(
     let output_text = String::from_utf8_lossy(&combined);
     let output_lower = output_text.to_lowercase();
 
-    if output_lower.contains("unknown option") && output_lower.contains("auth-only") {
-        return Ok(false);
-    }
-    if output_lower.contains("unrecognized option") && output_lower.contains("auth-only") {
-        return Ok(false);
-    }
-    if output_lower.contains("invalid option") && output_lower.contains("auth-only") {
-        return Ok(false);
+    // An xfreerdp too old for +auth-only rejects the probe flag; skip the check and
+    // let the real launch surface any auth failure.
+    if auth_only_unsupported(&output_lower) {
+        return Ok(());
     }
 
     if output.status.success() {
-        return Ok(true);
+        return Ok(());
     }
 
     if let Some(message) = parse_freerdp_error(combined.as_slice()) {
@@ -631,6 +634,39 @@ fn performance_rdp_lines(profile: RdpPerformanceProfile) -> Vec<String> {
     }
 }
 
+/// Reap `.rdp` files a previously killed session leaked. The per-launch cleanup
+/// thread below is best-effort: it dies with the app, so a `.rdp` file (which
+/// carries the host + username) survives on disk if the app is closed within
+/// RDP_FILE_CLEANUP_DELAY. Sweeping leftovers on the next launch bounds the
+/// exposure to a single session instead of leaving the file forever (4.93). Only
+/// files older than the cleanup delay are removed, so a sibling `.rdp` that a
+/// concurrent launch may still be opening is never deleted out from under it.
+#[cfg(target_os = "windows")]
+fn sweep_stale_rdp_files(dir: &std::path::Path) {
+    use std::time::SystemTime;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("adminhelper-") && name.ends_with(".rdp")) {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|mtime| now.duration_since(mtime).ok())
+            .map(|age| age >= RDP_FILE_CLEANUP_DELAY)
+            .unwrap_or(true); // unreadable/future mtime → treat as stale (best-effort)
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn write_rdp_file(
     host: &str,
@@ -644,6 +680,8 @@ pub fn write_rdp_file(
 ) -> Result<std::path::PathBuf, AppError> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let mut path = std::env::temp_dir();
+    // Reap any .rdp a previously killed session leaked before its cleanup ran (4.93).
+    sweep_stale_rdp_files(&path);
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_nanos())
@@ -694,9 +732,191 @@ pub fn write_rdp_file(
 
     let cleanup_path = path.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(30));
+        std::thread::sleep(RDP_FILE_CLEANUP_DELAY);
         let _ = std::fs::remove_file(&cleanup_path);
     });
 
     Ok(path)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feed_password_stdin_writes_and_returns_ok() {
+        // `cat` accepts the piped stdin; the helper must write, scrub, and succeed.
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("cat available");
+        assert!(feed_password_stdin(&mut child, "s3cret").is_ok());
+        // stdin was consumed by the helper, so cat sees EOF and exits.
+        let _ = child.wait();
+    }
+}
+
+// Security invariants of the xfreerdp arg builder: /cert:ignore only with trust_cert, the window
+// title is sanitized, and the password never reaches argv (fed via stdin instead) (6.31).
+#[cfg(all(test, unix))]
+mod args_tests {
+    use super::*;
+    use crate::models::{ConnectionKind, RdpPerformanceProfile, RdpScalingMode, RdpWindowMode};
+
+    fn conn(name: &str, trust_cert: bool) -> Connection {
+        Connection {
+            id: "id".into(),
+            name: name.into(),
+            kind: ConnectionKind::Rdp,
+            host: Some("h".into()),
+            port: Some(3389),
+            username: Some("user".into()),
+            domain: Some("dom".into()),
+            key_path: None,
+            url: None,
+            notes: None,
+            tags: vec![],
+            trust_cert,
+            last_used: None,
+            server_id: None,
+        }
+    }
+
+    fn opts() -> RdpOptions<'static> {
+        RdpOptions {
+            scaling_mode: RdpScalingMode::Normal,
+            window_mode: RdpWindowMode::Fit,
+            custom_size: None,
+            performance_profile: RdpPerformanceProfile::Auto,
+        }
+    }
+
+    #[test]
+    fn cert_ignore_only_with_trust_cert() {
+        let without = build_rdp_args(&conn("n", false), "h", 3389, None, opts(), None).unwrap();
+        assert!(
+            !without.iter().any(|a| a == "/cert:ignore"),
+            "no trust_cert must not disable the TLS check: {without:?}"
+        );
+        let with = build_rdp_args(&conn("n", true), "h", 3389, None, opts(), None).unwrap();
+        assert!(
+            with.iter().any(|a| a == "/cert:ignore"),
+            "trust_cert -> /cert:ignore"
+        );
+    }
+
+    #[test]
+    fn window_title_is_sanitized() {
+        let args = build_rdp_args(
+            &conn("evil; rm -rf $HOME", false),
+            "h",
+            3389,
+            None,
+            opts(),
+            None,
+        )
+        .unwrap();
+        let title = args
+            .iter()
+            .find(|a| a.starts_with("/title:"))
+            .expect("has a /title: arg");
+        assert!(
+            !title.contains(';') && !title.contains('$'),
+            "title metacharacters not sanitized: {title}"
+        );
+    }
+
+    #[test]
+    fn password_never_in_argv() {
+        // build_rdp_args takes no password; the secret is fed via stdin (feed_password_stdin).
+        let args = build_rdp_args(&conn("n", false), "h", 3389, None, opts(), None).unwrap();
+        assert!(
+            !args.iter().any(|a| a.starts_with("/p:")),
+            "password must never land in argv: {args:?}"
+        );
+    }
+}
+
+// The .rdp file (host + username) and its stale-leftover sweep are Windows-only.
+#[cfg(all(test, windows))]
+mod rdp_file_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    // A fresh, isolated temp subdir so the sweep never touches real .rdp files.
+    fn scratch_dir() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ah-rdp-sweep-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn sweep_reaps_only_stale_adminhelper_rdp_files() {
+        let dir = scratch_dir();
+        let stale = dir.join("adminhelper-111.rdp"); // leaked by a killed session
+        let fresh = dir.join("adminhelper-222.rdp"); // maybe still being read by mstsc
+        let other = dir.join("keep-me.rdp"); // wrong prefix — not ours
+        for p in [&stale, &fresh, &other] {
+            std::fs::write(p, "full address:s:h:3389").unwrap();
+        }
+        // Backdate the stale file's mtime past the cleanup delay so the sweep reaps it,
+        // while the freshly written one stays inside the window and must be kept.
+        let old = SystemTime::now() - (RDP_FILE_CLEANUP_DELAY + Duration::from_secs(5));
+        std::fs::File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        sweep_stale_rdp_files(&dir);
+
+        assert!(!stale.exists(), "a stale adminhelper .rdp must be reaped");
+        assert!(
+            fresh.exists(),
+            "a fresh adminhelper .rdp (maybe in use) must be kept"
+        );
+        assert!(other.exists(), "a non-adminhelper file must be left alone");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_rdp_file_reaps_prior_leftovers() {
+        // A leaked, backdated file in the real temp dir must be gone after the next
+        // write_rdp_file call (which sweeps first). Use a distinctive backdated file.
+        let leftover = std::env::temp_dir().join("adminhelper-000-stale-test.rdp");
+        std::fs::write(&leftover, "full address:s:h:3389").unwrap();
+        let old = SystemTime::now() - (RDP_FILE_CLEANUP_DELAY + Duration::from_secs(5));
+        std::fs::File::options()
+            .write(true)
+            .open(&leftover)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        let written = write_rdp_file(
+            "host",
+            3389,
+            "user",
+            "",
+            false,
+            RdpWindowMode::Fit,
+            None,
+            RdpPerformanceProfile::Auto,
+        )
+        .unwrap();
+
+        assert!(
+            !leftover.exists(),
+            "write_rdp_file must reap prior stale leftovers"
+        );
+        assert!(written.exists(), "the freshly written .rdp must exist");
+        let _ = std::fs::remove_file(&written);
+    }
 }

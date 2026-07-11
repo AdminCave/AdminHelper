@@ -35,6 +35,12 @@ async def lifespan(app: FastAPI):
 
     load_all_checks()
     schedule_alert_log_cleanup()
+    # INVARIANT: exactly one worker process. This APScheduler and the in-memory
+    # _last_report map (checkers/agent.py) are process-local — running uvicorn with
+    # --workers > 1 would run every scheduled check + alert N times and split agent
+    # pushes across processes (agent_ping would then see false staleness). The
+    # entrypoint starts uvicorn without --workers; scale by running more
+    # single-worker monitoring instances, not more workers per instance.
     scheduler.start()
     logger.info("Scheduler gestartet")
 

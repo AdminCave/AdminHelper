@@ -30,6 +30,9 @@ services:
     logging: *default-logging
     restart: unless-stopped
     # KEIN ports:-Mapping - Postgres ist nur intern im Compose-Network erreichbar.
+    # In pki (so the ca-issuer reaches it without sharing the default net with frps)
+    # + default (server/scheduler/monitoring). No host port either way (1.1).
+    networks: [default, pki]
 
   server:
     image: ${SERVER_IMAGE:-ghcr.io/admincave/adminhelper/server:latest}
@@ -62,6 +65,10 @@ services:
       # window (e.g. a manual first-admin bootstrap). Flipped together with the
       # gateway. scripts/install.sh mints the first cert out-of-band; see docs (Betrieb).
       - MTLS_ENFORCE=${MTLS_ENFORCE:-true}
+      # The server stamps <host>:ENROLL_PORT/enroll into every enrollment grant, so it MUST match the
+      # gateway's published enroll-plane port below — otherwise agent/desktop enrollment dials a closed
+      # port (4.50).
+      - ENROLL_PORT=${ENROLL_PORT:-8444}
       - FRP_CONFIG_DIR=/app/frp-config
       # Postgres
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
@@ -74,13 +81,13 @@ services:
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       # IP-Zugangsbeschränkung (leer = kein Filter)
       # Beispiel: ALLOWED_IPS=192.168.1.0/24,10.0.0.5
-      - ALLOWED_IPS=
+      - ALLOWED_IPS=${ALLOWED_IPS:-}
       # Auf true setzen wenn hinter Reverse-Proxy (X-Forwarded-For auswerten)
       # Wird ignoriert wenn TRUSTED_PROXIES gesetzt ist.
-      - TRUST_PROXY_HEADERS=false
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
       # Empfohlen statt TRUST_PROXY_HEADERS: IPs/CIDRs der Reverse-Proxies
       # Beispiel: TRUSTED_PROXIES=172.17.0.1,10.0.0.0/8
-      - TRUSTED_PROXIES=
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       # Redis fuer Rate-Limit ueber mehrere Worker hinweg
       - REDIS_URL=redis://redis:6379/0
       # Audit-Log-Aufbewahrung in Tagen (0 = unbegrenzt); taeglicher Prune-Job.
@@ -96,9 +103,18 @@ services:
       - SMTP_FROM=${SMTP_FROM:-adminhelper@localhost}
     logging: *default-logging
     restart: unless-stopped
+    # TCP-readiness on the uvicorn port. The entrypoint runs `alembic upgrade head` BEFORE uvicorn binds
+    # 8080, so a successful connect means migrations are done — lets dependants wait on service_healthy
+    # instead of racing Alembic (the gateway otherwise serves 502s to fresh clients) (1.22).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 48
+      start_period: 60s
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
@@ -138,7 +154,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/admincave/adminhelper/gateway:latest}
@@ -170,12 +186,15 @@ services:
       ca-issuer:
         condition: service_started
       server:
-        condition: service_started
+        condition: service_healthy
+    # default to reach server:8080; pki to reach ca-issuer:8090 (1.1).
+    networks: [default, pki]
 
   ca-issuer:
     image: ${CA_ISSUER_IMAGE:-ghcr.io/admincave/adminhelper/ca-issuer:latest}
     # Internal-only PKI plane: the single signing capability (D6). Reachable only
-    # via the gateway's enroll listener; never from the host (no port mapping).
+    # via the gateway's enroll listener — now ENFORCED by the `pki` network below,
+    # not merely asserted (1.1); never from the host (no port mapping).
     expose:
       - "8090"
     volumes:
@@ -199,6 +218,8 @@ services:
       # to DOMAIN.
       - CA_FRPS_CERT_DIR=/app/frps-certs
       - CA_FRPS_SERVER_ADDR=${FRP_SERVER_ADDR:-${DOMAIN:-localhost}}
+      # Extra SANs for the frps leaf; empty falls back to EXTRA_SANS (the gateway's).
+      - CA_FRPS_EXTRA_SANS=${CA_FRPS_EXTRA_SANS:-}
       # Reads enrollment tokens + identity revocations from the shared DB (the
       # server's tables); the issuer only ever READS them.
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
@@ -216,6 +237,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # ONLY pki — deliberately NOT on the default net, so no other service (above all
+    # the internet-facing frps) can reach :8090 to forge the gateway's mTLS headers
+    # and mint certs. gateway + postgres are its only pki peers (1.1).
+    networks: [pki]
 
   redis:
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
@@ -224,6 +249,13 @@ services:
       - "6379"
     logging: *default-logging
     restart: unless-stopped
+    healthcheck:
+      # A wedged-but-running process shows unhealthy (not just Up); dependants that
+      # wait on service_healthy then hold until redis actually answers (4.49).
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   frps:
     # Pinned to match the bundled frpc (FRP_VERSION in .github/workflows/*.yml).
@@ -231,7 +263,11 @@ services:
     # the client and break the tunnel (e.g. wire-protocol changes).
     image: snowdreamtech/frps:0.69.1@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a
     ports:
-      - "${FRP_BIND_PORT:-7000}:7000"
+      # Container side bound to the SAME var: frps.toml's bindPort is generated by the
+      # server from FrpServerConfig.bind_port (the FRP-config UI), so FRP_BIND_PORT must
+      # equal that DB value — otherwise frps listens on one port and the mapping on
+      # another and every tunnel breaks (1.23).
+      - "${FRP_BIND_PORT:-7000}:${FRP_BIND_PORT:-7000}"
       - "${FRP_HTTPS_PORT:-7443}:443"
     volumes:
       - frp-config:/etc/frp:ro
@@ -245,6 +281,12 @@ services:
         condition: service_started
       ca-issuer:
         condition: service_healthy
+    # ONLY frpedge — the internet-facing tunnel edge gets its own network, off the
+    # default net, so a compromised frps (foreign image, RCE) can't reach the auth-less
+    # redis:6379 or victoria:8428 to inject SSE, wipe rate-limit state, or forge metrics.
+    # frps needs no other service at runtime — just its ports, depends_on, and the cert
+    # volume, all network-independent (3.28, second line of defense after 1.1).
+    networks: [frpedge]
 
   monitoring:
     image: ${MONITORING_IMAGE:-ghcr.io/admincave/adminhelper/monitoring:latest}
@@ -265,7 +307,10 @@ services:
       # resolves which users to notify (best-effort; auth via MONITOR_API_KEY as
       # X-Internal-Key). No depends_on — the push tolerates the server being down
       # and a hard dependency would be circular (server proxies to monitoring).
+      # Plaintext http is deliberate on the internal compose network; ALLOW_INSECURE_HUB
+      # acknowledges it so config.py doesn't warn on every start (3.74).
       - SERVER_HUB_URL=http://server:8080
+      - ALLOW_INSECURE_HUB=1
       # Postgres
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper_monitor
       - PGHOST=postgres
@@ -274,6 +319,14 @@ services:
       - PGPASSWORD=${POSTGRES_PASSWORD}
     logging: *default-logging
     restart: unless-stopped
+    healthcheck:
+      # /health exists (app.main); a wedged-but-running monitoring shows unhealthy, not
+      # just Up (4.49). Same TCP-connect probe as the server (python is in the image).
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     depends_on:
       victoria:
         condition: service_started
@@ -315,6 +368,19 @@ services:
   #   depends_on:
   #     postgres:
   #       condition: service_healthy
+
+# Two planes. `pki` (internal) carries gateway↔ca-issuer↔postgres so the PKI signing
+# plane is NOT on the shared default net — a compromised internet-facing frps could
+# otherwise reach ca-issuer:8090 and forge the gateway's mTLS headers to /renew, minting
+# client certs (1.1). Everything else stays on `default`.
+networks:
+  default: {}
+  pki:
+    internal: true
+  # The internet-facing frps tunnel edge, fenced off the internal default net so a
+  # compromised frps can't reach the auth-less redis/victoria (3.28). Not `internal`:
+  # frps IS the public edge and needs its published ports.
+  frpedge: {}
 
 volumes:
   frp-config:

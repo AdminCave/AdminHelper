@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin-Handbuch</div><a href="./index.html">Übersicht</a><a href="./installation.html">Installation</a><a href="./betrieb.html">Betrieb &amp; Konfiguration</a><a href="./benutzer.html">Benutzer &amp; Zugriff</a><a href="./agent-deployment.html">Agent-Deployment</a><a href="./monitoring.html">Monitoring</a><a href="./ansible.html">Ansible</a><a href="./frp-tunnel.html">FRP-Tunnel</a><a href="./troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Entwickler-Handbuch</div><a href="../developer/index.html">Übersicht</a><a href="../developer/server.html">Server (Backend)</a><a href="../developer/webui.html">Web-Panel</a><a href="../developer/desktop.html">Desktop-Client</a><a href="../developer/agent.html">Go-Agent</a><a href="../developer/monitoring.html">Monitoring-Stack</a><a href="../developer/api-reference.html">API-Referenz</a><a href="../developer/hooks.html">Hooks &amp; Events</a><a href="../developer/cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -121,7 +121,7 @@
             <thead><tr><th>Kanal</th><th>Konfiguration</th></tr></thead>
             <tbody>
               <tr><td><code>webhook</code></td><td><code>url</code> – AdminHelper sendet ein JSON-POST mit Check-Name, Typ, Server, Severity, altem/neuem Status und Klartext-Nachricht (Timeout 10 s, ohne Redirects, Erfolg bei HTTP &lt; 300). Aus Sicherheitsgründen (SSRF) werden Ziele, die auf private/reservierte Adressen auflösen (z. B. <code>127.0.0.0/8</code>, <code>10/8</code>, <code>169.254.0.0/16</code>), abgelehnt — für ein internes Webhook-Ziel den Empfänger über einen öffentlich auflösbaren Namen ansprechen.</td></tr>
-              <tr><td><code>email</code></td><td><code>recipients</code> (oder <code>to</code>, auch als CSV). SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar. Bei Port 465 wird implizites TLS (SMTPS) genutzt, bei Port 587 STARTTLS.</td></tr>
+              <tr><td><code>email</code></td><td><code>recipients</code> (oder <code>to</code>, auch als CSV). SMTP standardmäßig aus den Umgebungsvariablen <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>; pro Regel überschreibbar. Bei Port 465 wird implizites TLS (SMTPS) genutzt, bei jedem anderen Port STARTTLS; beide prüfen das Server-Zertifikat (kann kein TLS aufgebaut werden, schlägt der Versand fehl, statt Zugangsdaten im Klartext zu senden).</td></tr>
             </tbody>
           </table>
           <p><strong>Cooldown:</strong> Nach einem erfolgreich versendeten Alert unterdrückt <code>cooldown_minutes</code> (Default 30) weitere Alerts derselben Regel für denselben Check.</p>

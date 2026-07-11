@@ -14,9 +14,9 @@ export function create(data: UserCreate): Promise<User> {
 }
 
 export function update(id: number, data: UserUpdate): Promise<User> {
-  return http.put<User>(`/api/users/${id}`, data);
+  return http.put<User>(`/api/users/${encodeURIComponent(id)}`, data);
 }
 
 export function remove(id: number): Promise<void> {
-  return http.del<void>(`/api/users/${id}`);
+  return http.del<void>(`/api/users/${encodeURIComponent(id)}`);
 }

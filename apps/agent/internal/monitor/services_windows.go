@@ -7,9 +7,17 @@
 package monitor
 
 import (
-	"os/exec"
+	"regexp"
 	"strings"
 )
+
+// reWinServiceName matches the characters a real Windows service name uses
+// (including `$` for named instances like MSSQL$SQLEXPRESS). `sc` has no `--` option
+// terminator (unlike the systemctl path in services_linux.go), so a server-supplied
+// name that looks like an sc query option (type=, state=, bufsize=) would otherwise
+// change the command's behaviour — the dangerous characters are `=` and whitespace,
+// which this class excludes (3.44).
+var reWinServiceName = regexp.MustCompile(`^[A-Za-z0-9._$-]+$`)
 
 // collectServiceHealth collects Windows service status.
 // The format is compatible with the systemd format for the monitoring server.
@@ -17,78 +25,19 @@ func collectServiceHealth() map[string]any {
 	result := map[string]any{
 		"failed":           []string{},
 		"enabled_inactive": []string{},
-		"all_services":     []map[string]string{},
+		"all_services":     []ServiceEntry{},
 	}
 
 	// Run sc query state= all
-	out, err := exec.Command("sc", "query", "state=", "all").Output()
+	out, err := runWithTimeout("sc", "query", "state=", "all")
 	if err != nil {
 		return result
 	}
 
-	var (
-		allServices  []map[string]string
-		currentName  string
-		currentState string
-	)
-
-	// Flush the in-progress service entry. Called both when a new SERVICE_NAME
-	// starts the next record AND once after the loop, so the LAST service
-	// isn't dropped (off-by-one).
-	//
-	// STOPPED services are deliberately NOT classified as enabled_inactive:
-	// `sc query` does not expose the start type, so "enabled but inactive" is
-	// unknowable here. The monitoring service derives the same empty result
-	// from all_services (enabled_state is always "unknown" on Windows); the
-	// legacy key must match, because it becomes the fallback when the
-	// throttled push omits all_services.
-	flush := func() {
-		if currentName == "" {
-			return
-		}
-		allServices = append(allServices, mapWindowsService(currentName, currentState))
-	}
-
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "SERVICE_NAME:") {
-			flush()
-			currentName = strings.TrimSpace(strings.TrimPrefix(line, "SERVICE_NAME:"))
-			currentState = ""
-		} else if strings.HasPrefix(line, "STATE") {
-			parts := strings.Fields(line)
-			for _, p := range parts {
-				if p == "RUNNING" || p == "STOPPED" || p == "PAUSED" || p == "START_PENDING" || p == "STOP_PENDING" {
-					currentState = p
-					break
-				}
-			}
-		}
-	}
-	flush()
-
-	result["all_services"] = allServices
+	// The sc-query parsing lives in parseScQuery (no build tag) so it is unit-tested on any
+	// platform — see scquery.go / scquery_test.go (6.20).
+	result["all_services"] = parseScQuery(string(out))
 	return result
-}
-
-// mapWindowsService maps a Windows service to the systemd-compatible format.
-func mapWindowsService(name, state string) map[string]string {
-	activeState := "unknown"
-	switch state {
-	case "RUNNING":
-		activeState = "active"
-	case "STOPPED":
-		activeState = "inactive"
-	case "PAUSED":
-		activeState = "inactive"
-	case "START_PENDING", "STOP_PENDING":
-		activeState = "activating"
-	}
-	return map[string]string{
-		"unit":          name,
-		"active_state":  activeState,
-		"enabled_state": "unknown",
-	}
 }
 
 // collectWatchedServices checks the status of specific Windows services.
@@ -96,12 +45,18 @@ func collectWatchedServices(names []string) []map[string]any {
 	var services []map[string]any
 	for _, name := range names {
 		svc := map[string]any{"name": name, "running": false, "pid": nil}
-		out, err := exec.Command("sc", "query", name).Output()
+		// Reject names that aren't plain service names rather than passing an
+		// option-looking string to sc (which has no `--`) — report not-running (3.44).
+		if !reWinServiceName.MatchString(name) {
+			services = append(services, svc)
+			continue
+		}
+		out, err := runWithTimeout("sc", "query", name)
 		if err == nil {
 			output := string(out)
 			if strings.Contains(output, "RUNNING") {
 				svc["running"] = true
-				exOut, err := exec.Command("sc", "queryex", name).Output()
+				exOut, err := runWithTimeout("sc", "queryex", name)
 				if err == nil {
 					for _, line := range strings.Split(string(exOut), "\n") {
 						if strings.Contains(line, "PID") && !strings.Contains(line, "FLAGS") {

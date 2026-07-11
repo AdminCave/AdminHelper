@@ -19,7 +19,7 @@ describe('Tunnel CRUD via the GUI', () => {
   it('creates, renames and deletes a tunnel', async () => {
     await login();
     await gotoInfrastructure();
-    await openServerTab(2); // tunnels tab
+    await openServerTab('tunnels');
 
     // create (the lone seeded FRP config is preselected)
     await $('.tun-toolbar .btn.primary').waitForEnabled({ timeout: 15000 });

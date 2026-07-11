@@ -34,9 +34,6 @@ use url::Url;
 
 use crate::error::AppError;
 
-/// Keyring service shared with `auth.rs` / `password.rs`.
-const KEYRING_SERVICE: &str = "com.admincave.adminhelper";
-
 // ── Pure logic (unit-tested) ──────────────────────────────────────────
 
 /// SHA-256 of a leaf certificate's DER, lower-case hex. This is what we pin.
@@ -92,7 +89,9 @@ fn decide(pinned: Option<&str>, presented: &str) -> PinDecision {
 /// Where pinned fingerprints live. Abstracted so the verifier is unit-testable
 /// without a real OS keyring.
 trait PinStore: Send + Sync {
-    fn load(&self, identity: &str) -> Option<String>;
+    /// `Ok(None)` = no pin (first use), `Ok(Some)` = the pin, `Err(())` = the store
+    /// could not be read. The last one must fail closed at the decision (3.60).
+    fn load(&self, identity: &str) -> Result<Option<String>, ()>;
     fn store(&self, identity: &str, fingerprint: &str);
 
     /// Atomically decide the TOFU outcome for `presented` and, on first use,
@@ -102,7 +101,12 @@ trait PinStore: Send + Sync {
     /// non-atomic fallback (fine for the single-threaded in-memory test store);
     /// the keyring store overrides it to hold its cache lock across the decision.
     fn load_or_store(&self, identity: &str, presented: &str) -> PinDecision {
-        let decision = decide(self.load(identity).as_deref(), presented);
+        // Fail closed: an unreadable store must not be taken as "no pin" (3.60).
+        let pinned = match self.load(identity) {
+            Err(()) => return PinDecision::Reject,
+            Ok(opt) => opt,
+        };
+        let decision = decide(pinned.as_deref(), presented);
         if decision == PinDecision::Capture {
             self.store(identity, presented);
         }
@@ -124,23 +128,23 @@ fn cache() -> &'static Mutex<HashMap<String, String>> {
 }
 
 impl PinStore for KeyringPinStore {
-    fn load(&self, identity: &str) -> Option<String> {
+    fn load(&self, identity: &str) -> Result<Option<String>, ()> {
         if let Some(hit) = cache()
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(identity)
             .cloned()
         {
-            return Some(hit);
+            return Ok(Some(hit));
         }
-        let stored = keyring_read(identity);
+        let stored = keyring_read(identity)?;
         if let Some(ref fingerprint) = stored {
             cache()
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .insert(identity.to_string(), fingerprint.clone());
         }
-        stored
+        Ok(stored)
     }
 
     fn store(&self, identity: &str, fingerprint: &str) {
@@ -160,13 +164,18 @@ impl PinStore for KeyringPinStore {
         let mut guard = cache().lock().unwrap_or_else(|e| e.into_inner());
         let pinned = match guard.get(identity) {
             Some(hit) => Some(hit.clone()),
-            None => {
-                let stored = keyring_read(identity);
-                if let Some(ref fingerprint) = stored {
-                    guard.insert(identity.to_string(), fingerprint.clone());
+            None => match keyring_read(identity) {
+                // Fail closed: a keyring we cannot read must not be taken as "no pin"
+                // and capture the presented cert — an MITM presenting its own cert
+                // during a keyring outage would otherwise be pinned and trusted (3.60).
+                Err(()) => return PinDecision::Reject,
+                Ok(stored) => {
+                    if let Some(ref fingerprint) = stored {
+                        guard.insert(identity.to_string(), fingerprint.clone());
+                    }
+                    stored
                 }
-                stored
-            }
+            },
         };
         let decision = decide(pinned.as_deref(), presented);
         if decision == PinDecision::Capture {
@@ -181,65 +190,20 @@ fn keyring_key(identity: &str) -> String {
     format!("tofu|cert|{identity}")
 }
 
-// A keyring read error (locked, transient) degrades to "no pin", i.e. first-use
-// capture — never fail-closed, matching the lenient keyring handling elsewhere.
-// The handshake signature check still proves the server holds the key.
-#[cfg(unix)]
-fn keyring_read(identity: &str) -> Option<String> {
-    use keyring::Entry;
-    Entry::new(KEYRING_SERVICE, &keyring_key(identity))
-        .ok()?
-        .get_password()
-        .ok()
+/// `Ok(None)` = no pin yet (genuine first use), `Ok(Some)` = the pinned fingerprint,
+/// `Err(())` = the keyring couldn't be read (locked/transient). The caller must treat
+/// `Err` as fail-closed, not as "no pin" (3.60).
+fn keyring_read(identity: &str) -> Result<Option<String>, ()> {
+    crate::keyring_store::try_get(&keyring_key(identity)).map_err(|_| ())
 }
 
-#[cfg(unix)]
 fn keyring_write(identity: &str, fingerprint: &str) {
-    use keyring::Entry;
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE, &keyring_key(identity)) {
-        let _ = entry.set_password(fingerprint);
-    }
+    let _ = crate::keyring_store::set(&keyring_key(identity), fingerprint);
 }
 
-#[cfg(unix)]
 fn keyring_delete(identity: &str) {
-    use keyring::Entry;
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE, &keyring_key(identity)) {
-        let _ = entry.delete_credential();
-    }
+    let _ = crate::keyring_store::delete(&keyring_key(identity));
 }
-
-#[cfg(target_os = "windows")]
-fn keyring_read(identity: &str) -> Option<String> {
-    crate::password::windows_read_credential(&keyring_key(identity))
-        .ok()
-        .filter(|value| !value.is_empty())
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_write(identity: &str, fingerprint: &str) {
-    let _ = crate::password::windows_store_credential(
-        &keyring_key(identity),
-        "adminhelper",
-        fingerprint,
-    );
-}
-
-#[cfg(target_os = "windows")]
-fn keyring_delete(identity: &str) {
-    let _ = crate::password::windows_delete_credential(&keyring_key(identity));
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_read(_identity: &str) -> Option<String> {
-    None
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_write(_identity: &str, _fingerprint: &str) {}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn keyring_delete(_identity: &str) {}
 
 // ── rustls verifier ───────────────────────────────────────────────────
 
@@ -283,9 +247,14 @@ impl ServerCertVerifier for TofuVerifier {
         let presented = fingerprint(end_entity.as_ref());
         match self.store.load_or_store(&self.identity, &presented) {
             PinDecision::Trust | PinDecision::Capture => Ok(ServerCertVerified::assertion()),
+            // The ERR_TOFU_PIN_MISMATCH prefix is a stable, language-independent
+            // contract: the login screen keys the "reset pin" recovery action off
+            // it (Login.svelte) instead of the human prose, which is free to change
+            // or be localized. It reaches the UI buried in the reqwest source chain,
+            // so the frontend matches it as a substring, not a prefix.
             PinDecision::Reject => Err(TlsError::General(format!(
-                "AdminHelper TOFU: Das Server-Zertifikat für {} hat sich seit dem \
-                 ersten Verbinden geändert (mögliche MITM-Attacke). War der Wechsel \
+                "ERR_TOFU_PIN_MISMATCH: AdminHelper TOFU: Das Server-Zertifikat für {} hat sich \
+                 seit dem ersten Verbinden geändert (mögliche MITM-Attacke). War der Wechsel \
                  erwartet, den gepinnten Eintrag in den Einstellungen zurücksetzen.",
                 self.identity
             ))),
@@ -338,7 +307,7 @@ fn client_with_verifier(
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
-    reqwest::Client::builder()
+    crate::http_client::with_timeouts(reqwest::Client::builder())
         .use_preconfigured_tls(tls)
         .build()
         .map_err(AppError::from)
@@ -365,6 +334,8 @@ pub fn forget_pin(server_url: &str) {
         .unwrap_or_else(|e| e.into_inner())
         .remove(&identity);
     keyring_delete(&identity);
+    // Drop the cached http client — it may hold a pool pinned to the old cert (5.1).
+    crate::http_client::invalidate_client_cache();
 }
 
 #[cfg(test)]
@@ -383,14 +354,26 @@ mod tests {
         map: Mutex<HashMap<String, String>>,
     }
     impl PinStore for InMemoryPinStore {
-        fn load(&self, identity: &str) -> Option<String> {
-            self.map.lock().unwrap().get(identity).cloned()
+        fn load(&self, identity: &str) -> Result<Option<String>, ()> {
+            Ok(self.map.lock().unwrap().get(identity).cloned())
         }
         fn store(&self, identity: &str, fingerprint: &str) {
             self.map
                 .lock()
                 .unwrap()
                 .insert(identity.to_string(), fingerprint.to_string());
+        }
+    }
+
+    /// A store whose load() always reports a read failure — models a locked/
+    /// unavailable keyring so the fail-closed path is unit-testable (3.60).
+    struct FailingPinStore;
+    impl PinStore for FailingPinStore {
+        fn load(&self, _identity: &str) -> Result<Option<String>, ()> {
+            Err(())
+        }
+        fn store(&self, _identity: &str, _fingerprint: &str) {
+            panic!("store must not be called when the pin store is unreadable");
         }
     }
 
@@ -413,12 +396,20 @@ mod tests {
         let store = InMemoryPinStore::default();
         // First use: capture and persist.
         assert_eq!(store.load_or_store("h:8443", FP_A), PinDecision::Capture);
-        assert_eq!(store.load("h:8443").as_deref(), Some(FP_A));
+        assert_eq!(store.load("h:8443").unwrap().as_deref(), Some(FP_A));
         // Same cert later: trust, no change.
         assert_eq!(store.load_or_store("h:8443", FP_A), PinDecision::Trust);
         // Changed cert: reject, pin unchanged.
         assert_eq!(store.load_or_store("h:8443", FP_B), PinDecision::Reject);
-        assert_eq!(store.load("h:8443").as_deref(), Some(FP_A));
+        assert_eq!(store.load("h:8443").unwrap().as_deref(), Some(FP_A));
+    }
+
+    #[test]
+    fn load_or_store_fails_closed_when_store_unreadable() {
+        // 3.60: an unreadable keyring must reject, not treat the outage as "no pin"
+        // and capture+trust whatever cert is presented (an MITM's during a keyring hang).
+        let store = FailingPinStore;
+        assert_eq!(store.load_or_store("h:8443", FP_A), PinDecision::Reject);
     }
 
     #[test]
@@ -428,6 +419,32 @@ mod tests {
         // Default https port is filled in so scheme-implicit and explicit match.
         assert_eq!(pin_identity("https://h.example"), "h.example:443");
         assert_eq!(pin_identity("https://h.example:443/api"), "h.example:443");
+    }
+
+    #[test]
+    fn forget_pin_clears_the_cache_under_the_normalized_identity() {
+        // 6.111: forget_pin is the only recovery after a legitimate cert rotation. It must clear the
+        // process cache under the SAME pin_identity normalization used when pinning — so a URL with
+        // the implicit default port must forget a pin stored under the explicit ":443". A regression
+        // that forgets the cache (or normalizes differently) leaves the user stuck in a pin mismatch
+        // until restart. keyring_delete is fail-silent, so this needs no keyring backend.
+        let identity = pin_identity("https://forget-test.example:443/");
+        cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(identity.clone(), FP_A.to_string());
+
+        // A different spelling (no explicit port, trailing path) that normalizes to the same identity.
+        forget_pin("https://forget-test.example/api");
+
+        let present = cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&identity);
+        assert!(
+            !present,
+            "forget_pin must clear the cached pin under the normalized identity"
+        );
     }
 
     #[test]
@@ -447,17 +464,23 @@ mod tests {
         assert!(verifier
             .verify_server_cert(&cert_a, &[], &name, &[], now)
             .is_ok());
-        assert_eq!(store.load("server").as_deref(), Some(FP_A));
+        assert_eq!(store.load("server").unwrap().as_deref(), Some(FP_A));
 
         // Reconnect with the same cert: trusted.
         assert!(verifier
             .verify_server_cert(&cert_a, &[], &name, &[], now)
             .is_ok());
 
-        // The server presents a *different* cert under the same identity: reject.
-        assert!(verifier
-            .verify_server_cert(&cert_b, &[], &name, &[], now)
-            .is_err());
+        // The server presents a *different* cert under the same identity: reject
+        // with the stable ERR_TOFU_PIN_MISMATCH code the login screen keys its
+        // "reset pin" recovery off (symmetric to the CA-pin test in enrollment.rs).
+        match verifier.verify_server_cert(&cert_b, &[], &name, &[], now) {
+            Err(TlsError::General(msg)) => assert!(
+                msg.contains("ERR_TOFU_PIN_MISMATCH"),
+                "Reject muss den stabilen Fehlercode fuer das Login-Recovery tragen, war: {msg}"
+            ),
+            other => panic!("erwartet General-Reject mit Fehlercode, war: {other:?}"),
+        }
     }
 
     // Real-handshake proof: an in-process TLS server presenting a controlled
@@ -466,10 +489,9 @@ mod tests {
     // exactly the property that could not be checked without a live server.
     mod tls_handshake {
         use super::*;
-        use std::time::Duration;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
-        use tokio_rustls::TlsAcceptor;
+
+        use crate::test_tls::{get, serve_once};
 
         const KEY_A: &[u8] = include_bytes!("../test-fixtures/keyA.der");
         const KEY_B: &[u8] = include_bytes!("../test-fixtures/keyB.der");
@@ -487,25 +509,6 @@ mod tests {
             Arc::new(config)
         }
 
-        /// Accept exactly one TLS connection, answer a minimal HTTP/1.1 200, and
-        /// stay tolerant of a client that aborts mid-handshake (the reject case).
-        async fn serve_once(listener: TcpListener, config: Arc<rustls::ServerConfig>) {
-            let acceptor = TlsAcceptor::from(config);
-            if let Ok((tcp, _)) = listener.accept().await {
-                if let Ok(mut tls) = acceptor.accept(tcp).await {
-                    let mut buf = [0u8; 1024];
-                    let _ = tls.read(&mut buf).await;
-                    let _ = tls
-                        .write_all(
-                            b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                        )
-                        .await;
-                    let _ = tls.flush().await;
-                    let _ = tls.shutdown().await;
-                }
-            }
-        }
-
         fn pinning_client_for(identity: &str, store: Arc<dyn PinStore>) -> reqwest::Client {
             let verifier = Arc::new(TofuVerifier {
                 identity: identity.to_string(),
@@ -513,14 +516,6 @@ mod tests {
                 provider: ring_provider(),
             });
             client_with_verifier(verifier).unwrap()
-        }
-
-        async fn get(client: &reqwest::Client, port: u16) -> Result<reqwest::StatusCode, ()> {
-            let url = format!("https://127.0.0.1:{port}/");
-            match tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await {
-                Ok(Ok(resp)) => Ok(resp.status()),
-                _ => Err(()),
-            }
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -533,7 +528,7 @@ mod tests {
             tokio::spawn(serve_once(listener, server_config(CERT_A, KEY_A)));
             let client = pinning_client_for("pin-test", store.clone());
             assert_eq!(get(&client, port).await, Ok(reqwest::StatusCode::OK));
-            assert_eq!(store.load("pin-test").as_deref(), Some(FP_A));
+            assert_eq!(store.load("pin-test").unwrap().as_deref(), Some(FP_A));
 
             // Reconnect, same cert A under the same pin identity: accepted.
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

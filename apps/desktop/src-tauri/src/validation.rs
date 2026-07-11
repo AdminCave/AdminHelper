@@ -93,8 +93,8 @@ fn is_loopback_host(host: Option<Host<&str>>) -> bool {
 /// while no secret ever crosses a network in cleartext.
 ///
 /// The public read-only sync URL has its own stricter `validate_https_url`
-/// (no loopback exception) in sync.rs; this guards the authenticated JWT path
-/// funnelled through `auth::build_client`.
+/// (no loopback exception) below; this guards the authenticated JWT path
+/// funnelled through `http_client::build_client`.
 pub fn validate_server_url_secure(raw: &str) -> Result<(), AppError> {
     let url = Url::parse(raw)?;
     match url.scheme() {
@@ -104,6 +104,19 @@ pub fn validate_server_url_secure(raw: &str) -> Result<(), AppError> {
             "Server-URL muss https:// verwenden (http:// nur fuer localhost)".to_string(),
         )),
     }
+}
+
+/// Stricter than `validate_server_url_secure`: NO loopback exception. The public
+/// read-only sync URL is always a network target, so cleartext `http://` is never
+/// acceptable there — not even for localhost.
+pub fn validate_https_url(raw: &str) -> Result<(), AppError> {
+    let url = Url::parse(raw)?;
+    if url.scheme() != "https" {
+        return Err(AppError::Validation(
+            "Nur https:// URLs sind erlaubt".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// True if two URLs point at the same server origin (scheme + host + port),
@@ -155,6 +168,24 @@ pub fn validate_proxy_path(server_url: &str, path: &str, stored: &str) -> Result
     Ok(())
 }
 
+/// Enforce the token-destination pin fail-closed: a token may only travel to the
+/// server stored at login. If there is no stored session — e.g. the user logged out
+/// (which clears the stored URL) but the frontend still holds a JWT in memory — refuse
+/// the request rather than send the token to an unpinned, caller-supplied URL. The
+/// previous best-effort guard silently skipped the pin when the URL was absent (3.56).
+pub fn require_pinned_destination(
+    server_url: &str,
+    path: &str,
+    stored: Option<&str>,
+) -> Result<(), AppError> {
+    match stored {
+        Some(stored) => validate_proxy_path(server_url, path, stored),
+        None => Err(AppError::Validation(
+            "Keine aktive Sitzung — Anfrage abgelehnt".to_string(),
+        )),
+    }
+}
+
 /// Sanitizes a connection name for safe use as an RDP window title
 /// (xfreerdp `/title:`). Defense-in-depth: passing via argv already prevents
 /// argument splitting, but sanitization guards against control characters,
@@ -173,6 +204,16 @@ pub fn sanitize_synced_connections(connections: Vec<Connection>) -> Vec<Connecti
         .into_iter()
         .filter(|c| validate_connection_input(c).is_ok())
         .collect()
+}
+
+/// Trim a value and error if it is empty — the shared "field X is required" check
+/// used across connection/SSH/RDP input validation.
+pub fn required(value: &Option<String>, label: &str) -> Result<String, AppError> {
+    let trimmed = value.as_deref().unwrap_or("").trim().to_string();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(format!("{label} fehlt")));
+    }
+    Ok(trimmed)
 }
 
 #[cfg(test)]
@@ -203,6 +244,15 @@ mod tests {
     fn validate_host_accepts_plain_hostname() {
         assert!(validate_host("host.example.com").is_ok());
         assert!(validate_host("192.168.0.1").is_ok());
+    }
+
+    #[test]
+    fn validate_https_url_requires_https_without_loopback_exception() {
+        assert!(validate_https_url("https://sync.example.com/connections").is_ok());
+        // Stricter than validate_server_url_secure: even loopback http is rejected.
+        assert!(validate_https_url("http://localhost/connections").is_err());
+        assert!(validate_https_url("http://sync.example.com").is_err());
+        assert!(validate_https_url("ftp://sync.example.com").is_err());
     }
 
     #[test]
@@ -399,5 +449,53 @@ mod tests {
         );
         // scheme downgrade is also a different origin
         assert!(validate_proxy_path("http://adminhelper.example:8443", "/api/x", stored).is_err());
+    }
+
+    #[test]
+    fn require_pinned_destination_fails_closed_without_session() {
+        // 3.56: no stored session -> refuse rather than send the token unpinned.
+        assert!(
+            require_pinned_destination("https://adminhelper.example:8443", "/api/x", None).is_err()
+        );
+    }
+
+    #[test]
+    fn require_pinned_destination_pins_when_session_present() {
+        let stored = "https://adminhelper.example:8443";
+        assert!(require_pinned_destination(stored, "/api/auth/me", Some(stored)).is_ok());
+        // a foreign server_url is still rejected when a session exists
+        assert!(require_pinned_destination(
+            "https://attacker.example:8443",
+            "/api/x",
+            Some(stored)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn sanitize_window_title_keeps_safe_chars_drops_the_rest_and_caps_at_64() {
+        // Defense-in-depth against X11/terminal escapes fed to xfreerdp /title: only the safe charset
+        // survives, and the title is capped at 64 chars (6.112).
+        assert_eq!(
+            sanitize_window_title("srv-01 (ssh).lab:22"),
+            "srv-01 (ssh).lab:22"
+        );
+        // Disallowed chars — ';', ESC, brackets — are stripped.
+        assert_eq!(sanitize_window_title("a;b\u{1b}[0m"), "ab0m");
+        // Capped at 64 chars.
+        assert_eq!(sanitize_window_title(&"x".repeat(100)).chars().count(), 64);
+        // Trimmed.
+        assert_eq!(sanitize_window_title("  hi  "), "hi");
+    }
+
+    #[test]
+    fn sanitize_synced_connections_drops_invalid_entries() {
+        // The only filter between server data and the local store: an entry that fails
+        // validate_connection_input (here a path-traversal key_path) is dropped, valid ones kept (6.112).
+        let valid = ssh_connection_with_key_path("/home/u/.ssh/id_rsa");
+        let invalid = ssh_connection_with_key_path("../../../etc/passwd");
+        let out = sanitize_synced_connections(vec![valid.clone(), invalid]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key_path, valid.key_path);
     }
 }

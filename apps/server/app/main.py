@@ -10,9 +10,10 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import IntegrityError
 
 from app.core.auth import hash_api_key, hash_password
-from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_TOKEN_FILE
+from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
 from app.core.middleware import IPFilterMiddleware
@@ -29,7 +30,8 @@ from app.modules.frp.models import FrpServerConfig, FrpTunnel  # noqa: F401
 from app.modules.frp.router import router as frp_router
 from app.modules.hooks.models import Hook  # noqa: F401
 from app.modules.hooks.router import router as hooks_router
-from app.modules.monitoring_proxy import router as monitoring_proxy_router
+from app.modules.hooks.router import trigger_router as hooks_trigger_router
+from app.modules.monitoring_proxy.router import router as monitoring_proxy_router
 from app.modules.notifications.models import (  # noqa: F401
     Notification,
     NotificationOutbox,
@@ -69,16 +71,23 @@ def _ensure_admin(db):
       (for CI/test/power users with an explicitly set password).
     """
     if db.query(User).count() > 0:
-        # Already initialized – clean up the bootstrap token from old setups
+        # Already initialized – clean up any bootstrap token (hash + raw setup file)
         # in case an admin signed in by other means than bootstrap.
-        if BOOTSTRAP_TOKEN_FILE.exists():
-            try:
-                BOOTSTRAP_TOKEN_FILE.unlink()
-            except OSError:
-                pass
+        _purge_bootstrap_files()
         return
 
     if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
+        _emit_bootstrap_token()
+        return
+
+    if len(ADMIN_PASSWORD) < 8:
+        # Enforce the same 8-char minimum as the CLI (_MIN_PASSWORD_LEN) and the
+        # schema (Field(min_length=8)) at the env boundary — otherwise ADMIN_PASSWORD=abc
+        # would create a prod admin with a 3-char password unnoticed. Fall back to the
+        # bootstrap-token path instead (3.90).
+        logger.warning(
+            "ADMIN_PASSWORD hat < 8 Zeichen — ignoriert; weiche auf den Bootstrap-Token aus."
+        )
         _emit_bootstrap_token()
         return
 
@@ -88,34 +97,64 @@ def _ensure_admin(db):
         is_admin=True,
     )
     db.add(admin)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # With uvicorn --workers N, every worker runs the lifespan on a fresh DB and all see
+        # count()==0, so all try to insert the admin. The unique users.username constraint lets
+        # exactly one win; the losers catch the conflict and return instead of crashing the
+        # worker at first boot (4.67).
+        db.rollback()
+        return
+    # A direct admin obsoletes any pending bootstrap token, so don't leave the raw
+    # setup file lingering for a run (3.91).
+    _purge_bootstrap_files()
     logger.info("Default-Admin 'admin' aus ADMIN_PASSWORD-Env angelegt.")
 
 
+def _purge_bootstrap_files():
+    for f in (BOOTSTRAP_TOKEN_FILE, BOOTSTRAP_SETUP_FILE):
+        if f.exists():
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
 def _emit_bootstrap_token():
-    """Generates and persists a one-time bootstrap token, logging it prominently."""
+    """Generates a one-time bootstrap token: hash to disk for verification, raw token to
+    a 0600 file for the operator to read — never logged in cleartext (3.91)."""
     token = secrets.token_urlsafe(32)
     BOOTSTRAP_TOKEN_FILE.write_text(hash_api_key(token))
     try:
         BOOTSTRAP_TOKEN_FILE.chmod(0o600)
     except OSError:
         pass
+    # Raw token to a 0600 file, NOT the log: docker keeps logs (json-file, 5x10MB) and
+    # central shipping would carry the token off-box, where it survives even after the
+    # token is used. The operator reads it from the file instead (3.91).
+    BOOTSTRAP_SETUP_FILE.write_text(token)
+    try:
+        BOOTSTRAP_SETUP_FILE.chmod(0o600)
+    except OSError:
+        pass
 
     bar = "=" * 78
     logger.warning(bar)
     logger.warning("KEIN ADMIN-USER vorhanden und ADMIN_PASSWORD ist leer/'admin'.")
-    logger.warning("Setup-Token (gilt einmal, wird nach Verbrauch geloescht):")
-    logger.warning("    %s", token)
+    logger.warning(
+        "Setup-Token (gilt einmal) liegt in %s (0600) — auslesen mit:", BOOTSTRAP_SETUP_FILE
+    )
+    logger.warning("    docker compose exec server cat %s", BOOTSTRAP_SETUP_FILE)
     logger.warning("")
-    logger.warning("Ersten Admin anlegen mit:")
+    logger.warning("Ersten Admin anlegen (Token aus der Datei einsetzen):")
     logger.warning("    curl -k -X POST https://<host>/api/auth/bootstrap \\")
     logger.warning("         -H 'Content-Type: application/json' \\")
     logger.warning(
-        '         -d \'{"token":"%s","username":"<dein-name>","password":"<dein-pw>"}\'',
-        token,
+        '         -d \'{"token":"<TOKEN>","username":"<dein-name>","password":"<dein-pw>"}\''
     )
     logger.warning("")
-    logger.warning("Token-Hash liegt in %s (gegen unauthorized read 0600).", BOOTSTRAP_TOKEN_FILE)
+    logger.warning("Nach Verbrauch werden Token-Hash und Setup-Datei geloescht.")
     logger.warning(bar)
 
 
@@ -125,10 +164,11 @@ def _ensure_frps_config(db):
     longer runs its own FRP CA (D6/F3): no CA generation, no cert minting, no
     publish. Only the non-secret frps.toml (ports, auth token, TLS file paths
     pointing at /etc/frp-pki) is regenerated here."""
+    from app.modules.frp._helpers import get_frp_config
     from app.modules.frp.docker_manager import write_frps_config
 
     try:
-        config = db.query(FrpServerConfig).first()
+        config = get_frp_config(db)
         if not config:
             return
         write_frps_config(config)
@@ -166,10 +206,21 @@ async def lifespan(app: FastAPI):
     # drain, duplicate scheduled-hook runs). docker-entrypoint.sh starts exactly
     # one scheduler process (RUN_MODE=scheduler); the web workers run uvicorn only.
     # The SSE fan-out subscription IS per web worker (each holds its own streams).
-    await stream_hub.start(REDIS_URL)
+    try:
+        await stream_hub.start(REDIS_URL)
+    except Exception:
+        # Redis carries only the optional SSE push fan-out — rate-limit already degrades to
+        # in-memory and SSE has a polling fallback. A brief Redis outage at boot (compose race,
+        # a Redis restart during a server redeploy) must not crash-loop the whole API; start
+        # best-effort and let push stay disabled until the next boot (4.68).
+        logger.exception("SSE-Fan-out-Start fehlgeschlagen — Push deaktiviert (Polling-Fallback)")
     fire_event("server.startup", {})
     yield
     await stream_hub.stop()
+    # Close the process-wide proxy client's connection pool (5.30).
+    from app.modules.monitoring_proxy import router as monitoring_proxy_mod
+
+    await monitoring_proxy_mod._client.aclose()
 
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
@@ -209,15 +260,18 @@ async def security_headers(request, call_next):
 # routers that are purely human/admin get a router-level `access`-scope guard.
 # Mixed routers (frp = admin + agent sync, monitoring/provisioning = admin +
 # agent/bootstrap) wire scope per route inside the router. Deliberately left
-# open here: auth (login/bootstrap), hooks (public webhook trigger) — their
-# enforcement nuance (certless bootstrap, public ingest) is handled in A8.
+# open here: auth (login/bootstrap) and the public hooks webhook ingest — their
+# enforcement nuance (certless bootstrap, public ingest) is handled in A8. The
+# hooks ADMIN CRUD is a human data plane and gets the access-scope guard like the
+# other admin routers; only the token-authenticated /trigger route stays open.
 _access = [Depends(require_scope(SCOPE_ACCESS))]
 app.include_router(auth_router)
 app.include_router(connections_router, dependencies=_access)
 app.include_router(users_router, dependencies=_access)
 app.include_router(api_keys_router, dependencies=_access)
 app.include_router(audit_router, dependencies=_access)
-app.include_router(hooks_router)
+app.include_router(hooks_trigger_router)  # public webhook ingest — no access scope
+app.include_router(hooks_router, dependencies=_access)  # admin CRUD — access scope
 app.include_router(servers_router, dependencies=_access)
 app.include_router(provisioning_router)
 # Enrollment-token mint is JWT-gated (the client has no cert yet) — a bootstrap
@@ -255,4 +309,9 @@ def spa_fallback(full_path: str):
         and candidate.resolve().is_relative_to(static_dir.resolve())
     ):
         return FileResponse(candidate)
-    return FileResponse(static_dir / "index.html")
+    index = static_dir / "index.html"
+    if not index.is_file():
+        # No frontend build present (API-only deployment, or the build hasn't run):
+        # a clean 404 instead of a 500 from FileResponse stat-ing a missing file.
+        raise HTTPException(status_code=404, detail="Frontend build not found")
+    return FileResponse(index)

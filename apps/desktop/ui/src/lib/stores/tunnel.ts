@@ -6,6 +6,7 @@
 // Triggered by AppShell on login/mode switch and reacts to
 // Tauri events frpc-terminated / frpc-error.
 
+import { errMsg } from '$lib/utils/errors';
 import { writable, derived, get } from 'svelte/store';
 import * as bridge from '$lib/bridge';
 import type { TunnelMapping, TunnelStatus } from '$lib/bridge/types';
@@ -55,7 +56,7 @@ export async function startIfServerMode(): Promise<void> {
     });
   } catch (err) {
     _state.set({ ui: 'disconnected', status: { running: false }, mappings: [] });
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     reportError(tNow('error.tunnel', { message: msg }));
   }
 }

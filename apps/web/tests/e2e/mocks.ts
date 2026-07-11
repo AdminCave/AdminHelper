@@ -76,18 +76,26 @@ export async function mockApi(page: Page): Promise<void> {
   // Playwright prueft Routes in LIFO-Reihenfolge (zuletzt registriert zuerst),
   // deshalb wird der generische Fallback ZUERST angelegt und von den spezifischen
   // Handlern unten ueberschrieben.
+  // An unmocked API call must break the test loudly, not silently return [] — else a
+  // forgotten mock (or a new endpoint) renders an empty list and the test passes blind (6.93).
   await page.route(/^https?:\/\/[^/]+\/api\//, async (route) => {
-    const method = route.request().method();
-    if (method === 'DELETE') {
-      return route.fulfill({ status: 204, body: '' });
-    }
-    return route.fulfill(json({ body: [] }));
+    return route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: `unmocked: ${route.request().method()} ${route.request().url()}`,
+      }),
+    });
   });
 
   await page.route(api('auth/login'), async (route) => route.fulfill(json({ body: TOKENS })));
   await page.route(api('auth/refresh'), async (route) => route.fulfill(json({ body: TOKENS })));
   await page.route(api('auth/me'), async (route) => route.fulfill(json({ body: ADMIN_USER })));
   await page.route(api('auth/logout'), async (route) => route.fulfill({ status: 204, body: '' }));
+
+  // The user modal fetches the servers list; empty is fine for the current suites.
+  // Any other unmocked /api call now 500s loudly instead of silently returning [] (6.93).
+  await page.route(api('servers'), async (route) => route.fulfill(json({ body: [] })));
 
   await page.route(api('users'), async (route) => {
     if (route.request().method() === 'POST') {

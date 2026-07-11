@@ -19,7 +19,7 @@
           <div class="nav-group"><div class="nav-title">Admin Guide</div><a href="../admin/index.html">Overview</a><a href="../admin/installation.html">Installation</a><a href="../admin/operations.html">Operations &amp; Config</a><a href="../admin/users.html">Users &amp; Access</a><a href="../admin/agent-deployment.html">Agent Deployment</a><a href="../admin/monitoring.html">Monitoring</a><a href="../admin/frp-tunnel.html">FRP Tunnel</a><a href="../admin/troubleshooting.html">Troubleshooting</a></div>
           <div class="nav-group"><div class="nav-title">Developer Guide</div><a href="./index.html">Overview</a><a href="./server.html">Server (Backend)</a><a href="./webui.html">Web Panel</a><a href="./desktop.html">Desktop Client</a><a href="./agent.html">Go Agent</a><a href="./monitoring.html">Monitoring Stack</a><a href="./api-reference.html">API Reference</a><a href="./hooks.html">Hooks &amp; Events</a><a href="./cicd.html">CI/CD &amp; Release</a></div>
         </nav>
-        <div class="sidebar-footer"><span>v0.37.2</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -37,9 +37,9 @@
           <div class="code-header"><span>tree</span></div>
 <pre><code>apps/server/app/modules/hooks/
 ├── router.py          /api/hooks CRUD
-├── models.py          Hook, HookExecution
+├── models.py          Hook
 ├── schemas.py         Pydantic schemas
-├── scheduler.py       Event dispatch + retry queue
+├── scheduler.py       Schedule-hook cron + notification outbox
 ├── script_runner.py   Async subprocess spawn
 └── script_worker.py   Child process: stdin=JSON, stdout/stderr capture</code></pre>
 
@@ -47,13 +47,14 @@
           <table>
             <thead><tr><th>Event</th><th>Payload (excerpt)</th></tr></thead>
             <tbody>
-              <tr><td><code>server.provisioned</code></td><td><code>server_id</code>, <code>hostname</code>, <code>ip</code></td></tr>
-              <tr><td><code>server.online</code> / <code>server.offline</code></td><td><code>server_id</code>, <code>last_seen</code></td></tr>
               <tr><td><code>connection.created</code> / <code>updated</code> / <code>deleted</code></td><td>Connection object</td></tr>
-              <tr><td><code>connection.launched</code></td><td><code>connection_id</code>, <code>user</code>, <code>client</code> (desktop / web)</td></tr>
-              <tr><td><code>alert.triggered</code> / <code>resolved</code> / <code>acknowledged</code></td><td><code>check_id</code>, <code>severity</code>, <code>value</code></td></tr>
-              <tr><td><code>user.login</code> / <code>login_failed</code></td><td><code>user_id</code>, <code>ip</code>, <code>reason?</code></td></tr>
-              <tr><td><code>hook.failed</code></td><td>Meta-event on hook failure (CANNOT trigger more hooks – loop guard)</td></tr>
+              <tr><td><code>connections.imported</code></td><td><code>count</code>, <code>mode</code></td></tr>
+              <tr><td><code>server.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>hostname</code>)</td></tr>
+              <tr><td><code>server.startup</code></td><td>(no <code>event_data</code>)</td></tr>
+              <tr><td><code>user.created</code> / <code>deleted</code></td><td><code>id</code>, <code>username</code> (<code>created</code> also <code>is_admin</code>)</td></tr>
+              <tr><td><code>frp.config.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
+              <tr><td><code>frp.tunnel.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (<code>created</code> also <code>serverId</code>)</td></tr>
+              <tr><td><code>playbook.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
             </tbody>
           </table>
 
@@ -61,22 +62,20 @@
           <div class="code-header"><span>json</span></div>
 <pre><code>{
   "name": "Slack alert",
-  "event": "alert.triggered",
-  "script": "#!/usr/bin/env bash\nset -euo pipefail\nEVENT=$(cat)\ncurl -sS -X POST $SLACK_URL -d \"payload={\\\"text\\\": \\\"Alert: $(echo $EVENT | jq .check_name)\\\"}\"",
-  "timeout_sec": 10,
-  "enabled": true
+  "hook_type": "event",
+  "event_triggers": ["server.updated"],
+  "script": "http_post('https://hooks.slack.com/services/T000/B000/XXX', json_data={'text': f'AdminHelper: {event_type}'})\nresult['notified'] = True"
 }</code></pre>
 
-          <p>The event JSON is passed via <strong>stdin</strong>, not via argument or env var. This avoids shell-escape issues and <code>ARG_MAX</code> limits.</p>
+          <p>The <code>script</code> field is <strong>Python</strong> (not shell), run by the worker via <code>exec()</code>. The event's context keys are available as variables (for <code>event</code> hooks <code>event_type</code> and <code>event_data</code>, for <code>schedule</code> <code>triggered_at</code>/<code>last_run</code>, for <code>webhook</code> <code>payload</code>/<code>headers</code>/<code>params</code>); output goes through the <code>result</code> dict and <code>log(...)</code>. For security, <code>headers</code> is restricted to a safe allow-list (<code>content-type</code>, <code>user-agent</code>, <code>x-hook-source</code>) — client-controlled headers like <code>Authorization</code>, <code>Cookie</code> and <code>X-Forwarded-*</code> are never exposed to the script. The whole context is passed to the worker as JSON (<code>json.dumps</code> with <code>default=str</code>), so only JSON-native types survive — non-native values in <code>event_data</code> (datetime, Decimal, bytes, ORM objects) reach the script as their <code>str()</code> form, not the original type.</p>
 
-          <h2>Sandbox Model</h2>
-          <p>Hook scripts run in a fork with tightened defaults:</p>
+          <h2>Environment Model</h2>
+          <p>Hook scripts run in a dedicated Python subprocess with a reduced environment — this is crash/timeout isolation, <strong>not</strong> a security sandbox:</p>
           <ul>
-            <li><strong>Minimal env</strong>: only <code>PATH</code>, <code>HOME</code>, <code>LANG</code>, plus explicitly configured secrets (<code>SLACK_URL</code>, etc.). No leakage of <code>SECRET_KEY</code>, <code>ADMIN_PASSWORD</code>, etc.</li>
-            <li><strong>CWD</strong> is a <code>tempfile.mkdtemp()</code> directory, cleaned up afterwards.</li>
-            <li><strong>Timeout</strong> via <code>asyncio.wait_for</code> + <code>process.kill()</code>, default 10 s, max 300 s.</li>
-            <li><strong>Output limit</strong>: 64 KiB each for stdout and stderr; the rest is truncated and marked in the log (<code>[truncated]</code>).</li>
-            <li><strong>User switch</strong>: runs as <code>nobody</code> when the server is deployed with root capabilities (Docker: <code>--user 65534</code>).</li>
+            <li><strong>Reduced env</strong>: only <code>PATH</code>, <code>PYTHONPATH</code>, <code>DATABASE_URL</code> and <code>DATA_DIR</code> are passed through (<code>ADMIN_PASSWORD</code>, <code>MONITOR_API_KEY</code>, <code>REDIS_URL</code> are dropped). <code>SECRET_KEY</code> and the DB credentials stay reachable, however (via <code>DATA_DIR/.secret_key</code> resp. <code>DATABASE_URL</code>) — <strong>no secret jail</strong>.</li>
+            <li><strong>CWD</strong> is the server directory (<code>server_dir</code>), not a temp directory.</li>
+            <li><strong>Timeout</strong> via <code>subprocess.run(timeout=…)</code>, default 30 s; on expiry the worker process is killed, not necessarily its child processes.</li>
+            <li><strong>No output limit</strong> and <strong>no user switch</strong>: stdout/stderr are captured in full, and the worker runs as the same user as the server.</li>
           </ul>
 
           <div class="callout callout-warn" data-reveal>
@@ -84,47 +83,44 @@
             <div><div class="callout-title">Not a full sandbox</div><p>The hook isolation is defense-in-depth, <strong>not</strong> a seccomp/namespace jail. Admins with hook-CRUD privileges can run arbitrary code on the server host. Grant hook access only to trusted roles.</p></div>
           </div>
 
-          <h2>Retry Strategy</h2>
-          <p>If a hook fails (<code>exit_code != 0</code> or timeout), it is retried with exponential backoff: 30 s, 2 min, 10 min, 1 h. After the fourth failure <code>HookExecution.state = failed</code> is set and the meta-event <code>hook.failed</code> is emitted (loop guard prevents cascades).</p>
+          <h2>Failure behaviour</h2>
+          <p>If a hook fails (<code>exit_code != 0</code> or timeout), the error is logged: event and schedule hooks via <code>logger.exception</code> in the server log, the webhook trigger additionally in the response body (<code>success: false</code>, <code>error</code>). There is currently no automatic retry and no <code>hook.failed</code> meta-event; a failed hook blocks neither other hooks nor the triggering request.</p>
 
           <h2>Script Runner Implementation</h2>
           <div class="code-header"><span>python</span></div>
-<pre><code>async def run_hook(hook: Hook, event: dict) -&gt; HookExecution:
-    payload = json.dumps(event).encode()
-    env = _sanitised_env(hook)  # only PATH, HOME, LANG, + explicit secrets
+<pre><code>SCRIPT_TIMEOUT_SECONDS = 30
 
-    with tempfile.TemporaryDirectory() as cwd:
-        proc = await asyncio.create_subprocess_exec(
-            "/bin/sh", "-c", hook.script,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd, env=env,
+def run_hook_script(script, hook_type, context, timeout=SCRIPT_TIMEOUT_SECONDS):
+    payload = json.dumps({"script": script, "context": context}, default=str)
+
+    # Reduced env: drops ADMIN_PASSWORD, MONITOR_API_KEY, REDIS_URL. NOT a jail —
+    # DATABASE_URL is deliberately inherited (hooks need DB), SECRET_KEY stays
+    # reachable via DATA_DIR/.secret_key. Hooks = trusted code.
+    server_dir = str(Path(__file__).parents[3])
+    worker_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": server_dir,
+        "DATABASE_URL": os.environ.get("DATABASE_URL", ""),
+        "DATA_DIR": os.environ.get("DATA_DIR", ""),
+    }
+    try:
+        proc = subprocess.run(
+            [sys.executable, _WORKER_SCRIPT],  # runs the script via a Python worker
+            input=payload, capture_output=True, text=True,
+            timeout=timeout, cwd=server_dir, env=worker_env,
         )
-        try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(payload),
-                timeout=min(hook.timeout_sec, MAX_TIMEOUT),
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            return HookExecution(state="timeout", ...)
-        return HookExecution(state="ok" if proc.returncode == 0 else "failed",
-                             stdout=out[:65_536], stderr=err[:65_536],
-                             exit_code=proc.returncode)</code></pre>
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": f"Timeout nach {timeout}s"}
+    return _parse_worker_output(proc)  # success/result/logs from stdout</code></pre>
 
           <h2>Firing Custom Events</h2>
           <p>Internal code can emit events at any time:</p>
           <div class="code-header"><span>python</span></div>
-<pre><code>from app.modules.hooks import dispatch_event
+<pre><code>from app.core.events import fire_event
 
-await dispatch_event("connection.launched", {
-    "connection_id": conn.id,
-    "user": current_user.username,
-    "client": "desktop",
-})</code></pre>
+fire_event("server.updated", {"id": server.id, "name": server.name})</code></pre>
 
-          <p><code>dispatch_event</code> is non-blocking: the hook scheduler queues the run and returns immediately. The HTTP response of the emitter does <strong>not</strong> wait on the hook.</p>
+          <p><code>fire_event</code> is non-blocking: the dispatch runs in a thread pool, the call returns immediately. The HTTP response of the emitter does <strong>not</strong> wait on the hook.</p>
 
           <h2>Test Execution</h2>
           <p>Every hook can be tested from the web panel with a sample event: <code>POST /api/hooks/{id}/test</code>. The execution log shows stdout/stderr/exit_code in real time – handy for script debugging.</p>

@@ -5,7 +5,7 @@
 //! Long-lived SSE client for the notification bell.
 //!
 //! The WebView cannot open an `EventSource` against the self-signed server, so
-//! the stream is tunnelled through `reqwest` here — reusing `auth::build_client`,
+//! the stream is tunnelled through `reqwest` here — reusing `http_client::build_client`,
 //! so it inherits the same mTLS / TOFU-pin / public-CA path and JWT bearer that
 //! `api_proxy` uses. Each `notification` SSE frame is forwarded to the UI as a
 //! `notification` Tauri event (the UI then reloads the feed), exactly like the
@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use tauri::Emitter;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration, Instant};
 
 use crate::auth;
 use crate::error::AppError;
@@ -39,6 +39,12 @@ pub fn new_stream_state() -> StreamState {
 
 const BASE_BACKOFF: Duration = Duration::from_millis(500);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
+// The server heartbeats the SSE stream ~every 30 s, so no chunk for 90 s means the connection is
+// dead (silent TCP drop) — read past this treats it as a disconnect and reconnects (4.95).
+const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+// A connection must live at least this long before a clean close is treated as healthy; else a
+// proxy that closes SSE immediately traps the client in a fast reconnect loop (4.94).
+const MIN_HEALTHY_UPTIME: Duration = Duration::from_secs(30);
 
 pub async fn start(
     app: tauri::AppHandle,
@@ -49,9 +55,11 @@ pub async fn start(
 ) -> Result<(), AppError> {
     // Token-destination pin (same guard as api_proxy): never stream the JWT to a
     // server other than the one stored on login.
-    if let Some(stored) = auth::stored_server_url() {
-        crate::validation::validate_proxy_path(&server_url, "/api/notifications/stream", &stored)?;
-    }
+    crate::validation::require_pinned_destination(
+        &server_url,
+        "/api/notifications/stream",
+        auth::stored_server_url().as_deref(),
+    )?;
     let my_epoch = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         run_loop(app, state, my_epoch, server_url, token, allow_self_signed).await;
@@ -79,9 +87,17 @@ async fn run_loop(
 ) {
     let mut backoff = BASE_BACKOFF;
     while state.epoch.load(Ordering::SeqCst) == my_epoch {
+        let connected_at = Instant::now();
         match connect_and_read(&app, &state, my_epoch, &server_url, &token, self_signed).await {
             Ok(StreamEnd::Superseded) => break,
-            Ok(StreamEnd::Closed) => backoff = BASE_BACKOFF, // clean close -> reconnect promptly
+            Ok(StreamEnd::Closed) => {
+                // Only a connection that lived a while is "healthy" enough to reset the backoff; a
+                // proxy that closes SSE instantly would otherwise never let the backoff grow and
+                // trap the client in a 2 Hz reconnect loop (4.94).
+                if connected_at.elapsed() > MIN_HEALTHY_UPTIME {
+                    backoff = BASE_BACKOFF;
+                }
+            }
             Ok(StreamEnd::AuthFailed) => {
                 // 401/403: token expired. Stop and let the UI fall back to
                 // polling; a fresh login restarts the stream.
@@ -107,7 +123,7 @@ async fn connect_and_read(
     token: &str,
     self_signed: bool,
 ) -> Result<StreamEnd, AppError> {
-    let client = auth::build_client(server_url, self_signed)?;
+    let client = crate::http_client::build_client(server_url, self_signed)?;
     let url = format!(
         "{}/api/notifications/stream",
         server_url.trim_end_matches('/')
@@ -129,7 +145,16 @@ async fn connect_and_read(
 
     let mut stream = resp.bytes_stream();
     let mut parser = SseParser::new();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        // Idle-timeout the read: on a silent TCP drop (suspend/resume, wifi switch, NAT timeout)
+        // no chunk ever arrives, so a plain stream.next().await would hang forever — the epoch
+        // check below never runs, run_loop's reconnect never fires, and stop()/re-login can't
+        // cancel the task. A read past IDLE_TIMEOUT is treated as a disconnect and reconnected (4.95).
+        let chunk = match timeout(IDLE_TIMEOUT, stream.next()).await {
+            Err(_) => return Err(AppError::Validation("SSE idle timeout".into())),
+            Ok(None) => break,
+            Ok(Some(c)) => c,
+        };
         // Cooperative cancellation: drop the connection the moment a newer
         // start/stop/logout bumped the epoch.
         if state.epoch.load(Ordering::SeqCst) != my_epoch {
@@ -155,6 +180,13 @@ struct SseFrame {
     data: String,
 }
 
+// Hard caps on the SSE parse buffers. A broken or hostile server sending an endless stream without
+// a newline (or endless data: lines without a frame boundary) would otherwise grow buf/data
+// unbounded (OOM) and rescan the whole buffer per chunk (quadratic). Frames here are only refresh
+// nudges, so discarding a pathological one is lossless (5.10).
+const MAX_SSE_BUF: usize = 64 * 1024;
+const MAX_SSE_DATA_LINES: usize = 1024;
+
 /// Parses SSE frames out of a rolling byte buffer. A frame is delimited by a
 /// blank line; fields are `field: value` lines. A frame may arrive split across
 /// several `bytes_stream` chunks, hence the buffer.
@@ -175,6 +207,12 @@ impl SseParser {
 
     fn push(&mut self, bytes: &[u8]) -> Vec<SseFrame> {
         self.buf.extend_from_slice(bytes);
+        if self.buf.len() > MAX_SSE_BUF {
+            // An endless stream without a newline — discard rather than grow/rescan unbounded.
+            self.buf.clear();
+            self.event = None;
+            self.data.clear();
+        }
         let mut frames = Vec::new();
         while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
             let raw: Vec<u8> = self.buf.drain(..=pos).collect();
@@ -198,6 +236,11 @@ impl SseParser {
             } else if let Some(v) = line.strip_prefix("data:") {
                 // Per spec, one leading space after the colon is stripped.
                 self.data.push(v.strip_prefix(' ').unwrap_or(v).to_string());
+                if self.data.len() > MAX_SSE_DATA_LINES {
+                    // Endless data: lines without a frame boundary — discard the pathological frame.
+                    self.event = None;
+                    self.data.clear();
+                }
             }
             // `id:` / `retry:` are not needed for the coarse refresh model.
         }
@@ -251,5 +294,31 @@ mod tests {
         let frames = p.push(b"data: line1\ndata: line2\n\n");
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].data, "line1\nline2");
+    }
+
+    #[test]
+    fn caps_a_newline_less_flood() {
+        // 5.10: an endless stream without a newline is discarded, not grown/rescanned unbounded.
+        let mut p = SseParser::new();
+        let frames = p.push(&vec![b'x'; MAX_SSE_BUF + 100]);
+        assert!(frames.is_empty());
+        assert_eq!(p.buf.len(), 0, "over-cap buffer should be cleared");
+    }
+
+    #[test]
+    fn caps_endless_data_lines_without_a_frame_boundary() {
+        // 5.10: endless data: lines that never hit a blank-line boundary are discarded.
+        let mut input = String::new();
+        for _ in 0..(MAX_SSE_DATA_LINES + 10) {
+            input.push_str("data: x\n");
+        }
+        let mut p = SseParser::new();
+        let frames = p.push(input.as_bytes());
+        assert!(frames.is_empty(), "no frame boundary -> no frame");
+        assert!(
+            p.data.len() <= MAX_SSE_DATA_LINES,
+            "data lines should be capped, got {}",
+            p.data.len()
+        );
     }
 }

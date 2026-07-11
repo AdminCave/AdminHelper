@@ -2,11 +2,10 @@
 # Build .rpm package for adminhelper-agent (unified Go agent)
 set -euo pipefail
 
-if [ -z "${VERSION:-}" ]; then
-    echo "FEHLER: VERSION ist nicht gesetzt (z.B. VERSION=0.26.0 bash apps/agent/build-rpm.sh)." >&2
-    exit 1
-fi
-PKG_NAME="adminhelper-agent"
+cd "$(dirname "$0")/../.."   # repo root, regardless of the caller's CWD
+source apps/agent/build-common.sh
+
+require_version "apps/agent/build-rpm.sh"
 
 echo "=== Building ${PKG_NAME} ${VERSION} (rpm) ==="
 
@@ -28,28 +27,17 @@ mkdir -p "${SRCDIR}/etc/systemd/system"
 mkdir -p "${SRCDIR}/etc/frp/pki"
 mkdir -p "${SRCDIR}/etc/adminhelper"
 
-# adminhelper-agent Go binary
-if [ -f apps/agent/bin/adminhelper-agent ]; then
-    cp apps/agent/bin/adminhelper-agent "${SRCDIR}/usr/bin/adminhelper-agent"
-    chmod 755 "${SRCDIR}/usr/bin/adminhelper-agent"
-else
-    echo "FEHLER: apps/agent/bin/adminhelper-agent nicht gefunden."
-    exit 1
-fi
+# adminhelper-agent Go binary (built by CI or make) + frpc (downloaded by CI)
+require_binary apps/agent/bin/adminhelper-agent
+cp apps/agent/bin/adminhelper-agent "${SRCDIR}/usr/bin/adminhelper-agent"
+chmod 755 "${SRCDIR}/usr/bin/adminhelper-agent"
 
-# frpc binary
-if [ -f frpc ]; then
-    cp frpc "${SRCDIR}/usr/bin/frpc"
-    chmod 755 "${SRCDIR}/usr/bin/frpc"
-else
-    echo "FEHLER: frpc Binary nicht gefunden (./frpc im Repo-Root erwartet)." >&2
-    exit 1
-fi
+require_binary frpc
+cp frpc "${SRCDIR}/usr/bin/frpc"
+chmod 755 "${SRCDIR}/usr/bin/frpc"
 
 # systemd units
-cp apps/agent/systemd/frpc.service                "${SRCDIR}/etc/systemd/system/"
-cp apps/agent/systemd/adminhelper-agent.service    "${SRCDIR}/etc/systemd/system/"
-cp apps/agent/systemd/adminhelper-agent.timer      "${SRCDIR}/etc/systemd/system/"
+copy_units "${SRCDIR}/etc/systemd/system"
 
 cd "${RPMBUILD_DIR}/SOURCES"
 tar czf "${PKG_NAME}-${VERSION}.tar.gz" "${PKG_NAME}-${VERSION}"

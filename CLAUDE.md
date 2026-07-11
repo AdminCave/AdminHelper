@@ -5,16 +5,19 @@
 **AdminHelper** (GitHub-Repo `AdminCave/AdminHelper`, Teil von **[Admin Cave](https://admincave.com)**) ist ein Multi-Komponenten-Remote-
 Management-System: zentrale Verwaltung von SSH-/RDP-/Web-Verbindungen,
 Server-Inventar, Monitoring, FRP-Tunneln und Ansible-Playbooks. Fünf
-Code-Komponenten in vier Sprachen:
+Kern-Komponenten in vier Sprachen, dazu zwei Infrastruktur-Dienste
+(CA-Issuer, Gateway):
 
 | Komponente | Pfad | Stack | Tests |
 |---|---|---|---|
-| Server (modularer Monolith, 8 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`, inkl. Alembic-Smoke) |
+| Server (modularer Monolith, 12 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`, inkl. Alembic-Smoke) |
 | Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest` (`apps/monitoring/tests/`) |
 | Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `go test` (`internal/*/..._test.go`) |
 | Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo test` (`#[cfg(test)]` in den Modulen) |
 | Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
 | Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Vitest (Unit) + Playwright (E2E) |
+| CA-Issuer (eigene PKI fürs mTLS-Enrollment) | `apps/ca-issuer/` | Python · FastAPI · cryptography | `pytest` (`apps/ca-issuer/tests/`) |
+| Gateway (Reverse-Proxy: Header-/mTLS-Terminierung, Ratelimit) | `apps/gateway/` | nginx | kein Unit-Test; `nginx -t` + `integration_stack_test.sh` |
 
 Externe Integrationen mit eigenem Wire-Format/Protokoll: **FRP** (`frps.toml`,
 STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
@@ -23,7 +26,7 @@ STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
 
 **Repo-Struktur:** Alle lauffähigen Einheiten liegen unter `apps/`
 (`apps/server/`, `apps/monitoring/`, `apps/agent/`, `apps/web/`,
-`apps/desktop/`); Doku in `docs/`, Ops-Skripte in
+`apps/desktop/`, `apps/ca-issuer/`, `apps/gateway/`); Doku in `docs/`, Ops-Skripte in
 `scripts/`. Der Desktop-Client vereint Rust/Tauri-Backend
 (`apps/desktop/src-tauri/`) und Svelte-UI (`apps/desktop/ui/`) unter einem
 Dach — die frühere `desktop/` vs. `desktop-src/`-Geschwister-Kollision (die
@@ -35,9 +38,10 @@ unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
 - **Release = mehrere Versions-Stellen synchron bumpen:** Desktop-Version in
   `apps/desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
   aus dem Git-Tag ab (`apps/agent/build-deb.sh` / `build-rpm.sh` brechen ohne
-  gesetzte `VERSION` ab), die `FRP_VERSION` ist in den GitHub-Workflows
-  (`.github/workflows/`) gepinnt — ein CI-Job prüft die drei Pin-Stellen auf
-  Gleichstand; Server/Monitoring ziehen die Version aus dem Git-Tag
+  gesetzte `VERSION` ab), die `FRP_VERSION` ist an vier Stellen gepinnt
+  (`.github/workflows/ci.yml`, `.github/workflows/release.yml`, `docker-compose.yml`,
+  `scripts/tests/crabbox_bootstrap.sh`) — der CI-Job `frp-consistency` prüft die vier
+  Pin-Stellen auf Gleichstand; Server/Monitoring ziehen die Version aus dem Git-Tag
   (Docker-Build-Arg). Detaillierte Stellen-Liste: lokale Agent-Memory
   `.claude/agent-memory/adminhelper-release-manager/version_locations.md`
   (gitignored — existiert nur auf dem Dev-Rechner, nicht im Clone).
@@ -120,7 +124,7 @@ Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-App
   ständiges Nachfragen.
 - **Vor "fertig" melden, alle Checks tatsächlich ausführen** — nicht nur
   behaupten, und nur das ausführen, was es real gibt:
-  - **Python (`apps/server/`, `apps/monitoring/`):** in beiden Verzeichnissen
+  - **Python (`apps/server/`, `apps/monitoring/`, `apps/ca-issuer/`):** in allen dreien
     `pytest -q`; dazu `ruff check` + `ruff format --check` (Config in
     `ruff.toml` im Root, CI-Gate vorhanden). Kein Typechecker konfiguriert.
   - **Go (`apps/agent/`):** `gofmt -l .`, `go vet ./...`, `go test ./...`.

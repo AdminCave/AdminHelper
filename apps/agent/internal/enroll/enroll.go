@@ -22,10 +22,12 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"adminhelper-agent/internal/config"
+	"adminhelper-agent/internal/httpclient"
 )
 
 // File layout inside the agent identity directory.
@@ -40,8 +42,8 @@ func KeyPath(dir string) string  { return filepath.Join(dir, KeyFileName) }
 func CertPath(dir string) string { return filepath.Join(dir, CertFileName) }
 func CAPath(dir string) string   { return filepath.Join(dir, CAFileName) }
 
-// EnrollRequest is the body the ca-issuer /enroll expects (token + PEM CSR).
-type EnrollRequest struct {
+// Request is the body the ca-issuer /enroll expects (token + PEM CSR).
+type Request struct {
 	Token string `json:"token"`
 	CSR   string `json:"csr"`
 }
@@ -85,7 +87,7 @@ func encodeKeyPEM(key *ecdsa.PrivateKey) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }
 
-// Submit POSTs a JSON body (an EnrollRequest, or a {csr} renewal) to the issuer
+// Submit POSTs a JSON body (a Request, or a {csr} renewal) to the issuer
 // endpoint via the given client and decodes the issued materials. The client
 // carries the TLS trust: a TOFU-pinned gateway cert on enroll, the persisted
 // pinned CA on renew.
@@ -100,18 +102,9 @@ func Submit(client *http.Client, endpoint string, body any) (*IssueResponse, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	data, err := httpclient.Do(client, req)
 	if err != nil {
-		return nil, fmt.Errorf("Verbindung zum Issuer: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Issuer-Aufruf fehlgeschlagen (HTTP %d): %s", resp.StatusCode, string(data))
+		return nil, fmt.Errorf("Issuer-Aufruf: %w", err)
 	}
 
 	var out IssueResponse
@@ -139,6 +132,8 @@ func Store(dir string, key *ecdsa.PrivateKey, resp *IssueResponse) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("Identity-Verzeichnis anlegen: %w", err)
 	}
+	// Harden the ACL on Windows (mode bits are ignored there) / chmod 0700 on Linux.
+	_ = config.SecureDir(dir)
 	commit, err := stageIdentity(dir, key, resp)
 	if err != nil {
 		return err

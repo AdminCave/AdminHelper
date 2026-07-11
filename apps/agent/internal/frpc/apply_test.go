@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -102,5 +103,32 @@ func TestExtractPkiBundleRejectsZipSlip(t *testing.T) {
 func TestExtractPkiBundleRejectsGarbageBase64(t *testing.T) {
 	if err := extractPkiBundle("not-valid-base64!!!", t.TempDir()); err == nil {
 		t.Fatal("extractPkiBundle akzeptierte ungueltiges Base64")
+	}
+}
+
+func TestExtractPkiBundleRejectsZipBomb(t *testing.T) {
+	// A single file over the 10-MiB limit must be rejected AND removed from disk. Highly
+	// compressible, so the base64 bundle stays tiny while the extracted size trips the guard (6.14).
+	big := strings.Repeat("A", int(maxBundleBytes)+1)
+	bundle := makeBundle(t, map[string]string{"huge.crt": big})
+	dest := t.TempDir()
+
+	if err := extractPkiBundle(bundle, dest); err == nil {
+		t.Fatal("Bundle > maxBundleBytes haette abgelehnt werden muessen")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "huge.crt")); !os.IsNotExist(err) {
+		t.Error("abgelehnte Datei blieb auf der Platte liegen")
+	}
+}
+
+func TestExtractPkiBundleRejectsCumulativeOverLimit(t *testing.T) {
+	// Two files, each under the limit, whose sum exceeds it — exercises the cumulative totalBytes
+	// check, not just the single-file guard (6.14).
+	half := strings.Repeat("A", int(maxBundleBytes/2)+1)
+	bundle := makeBundle(t, map[string]string{"a.crt": half, "b.crt": half})
+	dest := t.TempDir()
+
+	if err := extractPkiBundle(bundle, dest); err == nil {
+		t.Fatal("kumulative Summe > maxBundleBytes haette abgelehnt werden muessen")
 	}
 }

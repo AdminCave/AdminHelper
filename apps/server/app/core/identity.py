@@ -77,7 +77,9 @@ def get_client_identity(request: Request) -> ClientIdentity:
     if request.headers.get(_H_VERIFY, "").upper() != "SUCCESS":
         return _UNVERIFIED
     escaped = request.headers.get(_H_CERT, "")
-    if not escaped:
+    # Cap the header before unquote()+parse: a very large forwarded value would otherwise burn
+    # CPU/memory unbounded. A leaf PEM is well under 16 KiB (4.132).
+    if not escaped or len(escaped) > 16384:
         return _UNVERIFIED
     try:
         pem = urllib.parse.unquote(escaped).encode()
@@ -120,9 +122,16 @@ def require_scope(*allowed: str):
         identity: ClientIdentity = Depends(get_client_identity),
         db: Session = Depends(get_db),
     ) -> ClientIdentity:
-        revoked = identity.verified and _is_revoked(db, identity.cn, identity.scope)
-        if identity.verified and not revoked and identity.scope in allowed_set:
-            return identity
+        # Check the scope before the revocation query: a wrong-scope cert is rejected regardless, so
+        # spare the revoked_identities SELECT on the hot data-plane path when the scope already
+        # settles it (5.27). revoked stays False for the wrong-scope case — the scope mismatch is the
+        # reported reason, which is at least as informative.
+        if identity.verified and identity.scope in allowed_set:
+            if not _is_revoked(db, identity.cn, identity.scope):
+                return identity
+            revoked = True
+        else:
+            revoked = False
 
         if config.MTLS_ENFORCE:
             raise HTTPException(

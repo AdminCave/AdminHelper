@@ -53,13 +53,15 @@ That one control is load-bearing. Therefore, treated as **accepted risk**:
   `secretKey` on offboarding**; for higher assurance move to per-agent tokens or
   cert-CN binding.
 
-### Single-worker availability profile
+### Worker / availability profile
 
-The server runs one uvicorn worker / one event loop, so any event-loop stall is
-a full outage. **Blocking work in an `async def` MUST go through
-`run_in_threadpool` / `asyncio.to_thread`** (the webhook bug that violated this
-is fixed). Horizontal scale needs `--workers N` + Redis (the rate-limit backend
-already supports it).
+By default the server runs a single uvicorn worker / one event loop, so on that
+profile any event-loop stall is a full outage. **Blocking work in an `async def`
+MUST go through `run_in_threadpool` / `asyncio.to_thread`** (the webhook bug that
+violated this is fixed) — this holds at any worker count. Horizontal scale is
+supported via `WEB_CONCURRENCY` (uvicorn `--workers N`): Redis backs the
+rate-limiter across workers, the SSE fan-out is per web worker, and a dedicated
+`scheduler` service (`RUN_MODE=scheduler`) keeps the periodic jobs single-instance.
 
 ## Audit residuals
 

@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { errMsg } from '$lib/utils/errors';
   import { onMount } from 'svelte';
   import type { MonitorCheck, Server } from '$lib/api/types';
   import { monitoringApi } from '$lib/api/monitoring';
@@ -24,10 +25,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let modalOpen = $state(false);
   let editing = $state<MonitorCheck | null>(null);
   let running = $state<string | null>(null);
-
-  function errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
 
   async function load(): Promise<void> {
     const s = $session;

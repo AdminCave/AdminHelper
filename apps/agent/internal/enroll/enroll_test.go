@@ -57,7 +57,7 @@ func TestSubmitParsesIssueResponse(t *testing.T) {
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("Content-Type fehlt: %q", r.Header.Get("Content-Type"))
 		}
-		var got EnrollRequest
+		var got Request
 		_ = json.NewDecoder(r.Body).Decode(&got)
 		if got.Token != "tok" || got.CSR != "csr-pem" {
 			t.Errorf("Body falsch: %+v", got)
@@ -66,7 +66,7 @@ func TestSubmitParsesIssueResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := Submit(srv.Client(), srv.URL, EnrollRequest{Token: "tok", CSR: "csr-pem"})
+	got, err := Submit(srv.Client(), srv.URL, Request{Token: "tok", CSR: "csr-pem"})
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestSubmitRejectsHTTPError(t *testing.T) {
 		http.Error(w, "bad token", http.StatusForbidden)
 	}))
 	defer srv.Close()
-	if _, err := Submit(srv.Client(), srv.URL, EnrollRequest{}); err == nil {
+	if _, err := Submit(srv.Client(), srv.URL, Request{}); err == nil {
 		t.Fatal("erwartet Fehler bei HTTP 403")
 	}
 }
@@ -91,7 +91,7 @@ func TestSubmitRejectsIncompleteResponse(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(IssueResponse{Cert: "leaf"})
 	}))
 	defer srv.Close()
-	if _, err := Submit(srv.Client(), srv.URL, EnrollRequest{}); err == nil {
+	if _, err := Submit(srv.Client(), srv.URL, Request{}); err == nil {
 		t.Fatal("erwartet Fehler bei unvollstaendiger Antwort")
 	}
 }
@@ -185,5 +185,33 @@ func TestStoreStagesBeforeCommit(t *testing.T) {
 		if strings.HasSuffix(e.Name(), tmpSuffix) {
 			t.Fatalf("Staging-Datei nicht aufgeraeumt: %s", e.Name())
 		}
+	}
+}
+
+// TestStageIdentityCleansUpStagedTempsOnWriteError pins the best-effort cleanup (enroll.go 174-177):
+// if a later staging write fails, the temps already written must be removed so no .tmp corpses linger
+// to confuse the next renewal (6.98).
+func TestStageIdentityCleansUpStagedTempsOnWriteError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "identity")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	key, _ := GenerateKey()
+	resp := &IssueResponse{Cert: "leaf", Fullchain: "full", Chain: "chain"}
+
+	// Block the SECOND staging write (agent.crt.tmp) by pre-creating its target as a directory, so
+	// OpenFile fails. The first write (agent.key.tmp) succeeds and must then be cleaned up.
+	if err := os.Mkdir(CertPath(dir)+tmpSuffix, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := stageIdentity(dir, key, resp); err == nil {
+		t.Fatal("erwartet Schreibfehler, wenn der cert-Temp-Pfad ein Verzeichnis ist")
+	}
+
+	// The already-written key temp must be gone — no .tmp leftovers after the aborted staging.
+	if _, statErr := os.Stat(KeyPath(dir) + tmpSuffix); !os.IsNotExist(statErr) {
+		t.Errorf("agent.key.tmp muss nach dem Schreibfehler aufgeraeumt sein, stat err = %v", statErr)
 	}
 }

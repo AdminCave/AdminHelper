@@ -32,6 +32,15 @@ type MonitorConfig struct {
 	Insecure   bool
 }
 
+// TLSOpts bundles the CA-cert-path / insecure pair that travels together through
+// every provisioning call (Apply, Init, PushReport). Grouping them keeps a new
+// TLS option (e.g. a client-cert path) from having to be threaded through 4+
+// same-typed positional args — and stops a swapped cacert/insecure at a call site.
+type TLSOpts struct {
+	CACert   string
+	Insecure bool
+}
+
 // LoadKeyValue reads a Key=Value config file (compatible with the existing format).
 func LoadKeyValue(path string) (map[string]string, error) {
 	f, err := os.Open(path)
@@ -96,8 +105,10 @@ func frpcConfigFromKV(kv map[string]string) *FrpcConfig {
 		CACert:         kv["CACERT"],
 		Insecure:       kv["INSECURE"] == "1",
 	}
-	// Fallback: CACert from the FRP directory
-	if cfg.CACert == "" && cfg.CurlSSL != "" && strings.Contains(cfg.CurlSSL, "cacert") {
+	// Legacy migration: the bash agent (< v0.19) wrote CURL_SSL="--cacert /etc/frp/ca.crt"
+	// instead of a CACERT field. Match only that exact flag (not a stray "cacert"
+	// substring); drops away once every agent has been re-provisioned. (2.57)
+	if cfg.CACert == "" && strings.Contains(cfg.CurlSSL, "--cacert") {
 		cfg.CACert = FrpCACert()
 	}
 	return cfg
@@ -113,7 +124,7 @@ func LoadMonitorConfig() (*MonitorConfig, error) {
 		MonitorURL: kv["MONITOR_URL"],
 		APIKey:     kv["API_KEY"],
 		ServerID:   kv["SERVER_ID"],
-		Services:   splitServices(kv["SERVICES"]),
+		Services:   SplitServices(kv["SERVICES"]),
 		CACert:     kv["CACERT"],
 		Insecure:   kv["INSECURE"] == "1",
 	}, nil
@@ -143,9 +154,26 @@ func baseURL(raw string) (string, error) {
 	return u.Scheme + "://" + u.Host, nil
 }
 
-// splitServices splits a comma-separated SERVICES list, ignoring whitespace
+// RequireHTTPS rejects a non-https server URL at the boundary. The agent carries
+// the provision token and API key in request headers, so plaintext http would leak
+// them on the wire — there is no legitimate http mode (even --insecure still uses
+// TLS, it only skips certificate verification) (3.11).
+func RequireHTTPS(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("URL parsen: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf(
+			"--url muss https sein (Token/API-Key gehen sonst im Klartext ueber das Netz): %q", raw,
+		)
+	}
+	return nil
+}
+
+// SplitServices splits a comma-separated SERVICES list, ignoring whitespace
 // and empty entries.
-func splitServices(s string) []string {
+func SplitServices(s string) []string {
 	if s == "" {
 		return nil
 	}

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import re
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -91,10 +91,13 @@ class FrpServerConfigCreate(BaseModel):
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
 
-    _v_str = field_validator(
-        "name", "server_addr", "subdomain_host", "dashboard_user", "dashboard_password"
-    )(_reject_toml_breakers)
-    _v_token = field_validator("auth_token")(_check_secret)
+    _v_str = field_validator("name", "server_addr", "subdomain_host", "dashboard_user")(
+        _reject_toml_breakers
+    )
+    # dashboard_password guards a web UI exposing all proxy metadata + traffic, so
+    # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
+    # by the router when a dashboard port is set) (3.35).
+    _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_extra_config)
 
 
@@ -111,10 +114,13 @@ class FrpServerConfigUpdate(BaseModel):
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
 
-    _v_str = field_validator(
-        "name", "server_addr", "subdomain_host", "dashboard_user", "dashboard_password"
-    )(_reject_toml_breakers)
-    _v_token = field_validator("auth_token")(_check_secret)
+    _v_str = field_validator("name", "server_addr", "subdomain_host", "dashboard_user")(
+        _reject_toml_breakers
+    )
+    # dashboard_password guards a web UI exposing all proxy metadata + traffic, so
+    # give it the same >=16-char entropy floor as auth_token (empty -> auto-generated
+    # by the router when a dashboard port is set) (3.35).
+    _v_token = field_validator("auth_token", "dashboard_password")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_extra_config)
 
 
@@ -125,7 +131,7 @@ class FrpTunnelCreate(BaseModel):
     server_id: str
     frp_config_id: str
     name: str  # proxy name, e.g. "k01-lnx1-ssh"
-    tunnel_type: str  # "stcp" or "https"
+    tunnel_type: Literal["stcp", "https"]
     protocol: str  # "ssh", "rdp", "web"
     local_ip: str = "127.0.0.1"
     local_port: int
@@ -149,7 +155,7 @@ class FrpTunnelCreate(BaseModel):
 
 class FrpTunnelUpdate(BaseModel):
     name: Optional[str] = None
-    tunnel_type: Optional[str] = None
+    tunnel_type: Optional[Literal["stcp", "https"]] = None
     protocol: Optional[str] = None
     local_ip: Optional[str] = None
     local_port: Optional[int] = None

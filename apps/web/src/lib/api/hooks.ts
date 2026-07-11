@@ -18,7 +18,7 @@ export function list(): Promise<Hook[]> {
 }
 
 export function get(id: string): Promise<HookDetail> {
-  return http.get<HookDetail>(`/api/hooks/${id}`);
+  return http.get<HookDetail>(`/api/hooks/${encodeURIComponent(id)}`);
 }
 
 export function create(data: HookCreate): Promise<HookCreateResult> {
@@ -26,21 +26,21 @@ export function create(data: HookCreate): Promise<HookCreateResult> {
 }
 
 export function update(id: string, data: HookUpdate): Promise<HookDetail> {
-  return http.put<HookDetail>(`/api/hooks/${id}`, data);
+  return http.put<HookDetail>(`/api/hooks/${encodeURIComponent(id)}`, data);
 }
 
 export function remove(id: string): Promise<void> {
-  return http.del<void>(`/api/hooks/${id}`);
+  return http.del<void>(`/api/hooks/${encodeURIComponent(id)}`);
 }
 
 export function toggle(id: string): Promise<Hook> {
-  return http.post<Hook>(`/api/hooks/${id}/toggle`, {});
+  return http.post<Hook>(`/api/hooks/${encodeURIComponent(id)}/toggle`, {});
 }
 
 export function run(id: string): Promise<HookRunResult> {
-  return http.post<HookRunResult>(`/api/hooks/${id}/run`, {});
+  return http.post<HookRunResult>(`/api/hooks/${encodeURIComponent(id)}/run`, {});
 }
 
 export function rotate(id: string): Promise<HookTokenResult> {
-  return http.post<HookTokenResult>(`/api/hooks/${id}/rotate`, {});
+  return http.post<HookTokenResult>(`/api/hooks/${encodeURIComponent(id)}/rotate`, {});
 }

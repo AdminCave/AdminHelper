@@ -8,7 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n';
   import { frpConfig } from '$lib/stores/frp';
-  import { showToast } from '$lib/stores/notifications';
+  import { showToast, showError } from '$lib/stores/notifications';
   import * as api from '$lib/api/frp';
   import Button from '$lib/components/ui/Button.svelte';
   import FrpConfigModal from '$modals/FrpConfigModal.svelte';
@@ -31,7 +31,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     try {
       await frpConfig.refresh();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -46,7 +46,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       previewContent = content;
       previewOpen = true;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 
@@ -58,10 +58,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
       a.href = url;
       a.download = 'frp-configs.zip';
       a.click();
-      URL.revokeObjectURL(url);
+      // Revoking synchronously after click() can abort the download before the browser has read the
+      // blob (especially larger ZIPs); defer it so the download starts first (4.146).
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       showToast($t('toast.frp.zipDownloaded'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : $t('error.generic'), 'error');
+      showError(err);
     }
   }
 </script>

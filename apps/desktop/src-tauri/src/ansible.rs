@@ -5,7 +5,7 @@
 use std::io::Write;
 
 use crate::error::AppError;
-use crate::terminal::{open_linux_terminal, open_windows_terminal, which};
+use crate::terminal::{open_linux_terminal, open_windows_terminal, shell_escape, which};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct AnsibleTarget {
@@ -13,12 +13,38 @@ pub struct AnsibleTarget {
     pub groups: Vec<String>,
 }
 
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
+/// Creates a fresh temp file for our ansible scratch data. On Unix it is created
+/// 0600 (the shared /tmp is world-readable), and everywhere `create_new` (O_EXCL)
+/// refuses to follow a pre-planted symlink at the predictable path. A stale file from
+/// our own prior run is cleared first; a racing local attacker can then only cause the
+/// O_EXCL open to fail, not overwrite a victim path or read the contents (3.55).
+fn create_temp_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let _ = std::fs::remove_file(path);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)
 }
 
 /// Generates an Ansible inventory file in INI format and returns the path.
 pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError> {
+    // Host + group names arrive as attacker-controllable Tauri-command params and go straight into
+    // the INI. Validate them like the ssh/rdp spawn paths do: a newline or [/] would otherwise
+    // inject extra inventory lines or group headers — at best a broken, hard-to-diagnose
+    // inventory, at worst the playbook running against unintended targets (4.91).
+    for server in servers {
+        crate::validation::validate_host(&server.hostname)?;
+        for tag in &server.groups {
+            crate::validation::validate_no_control_chars(tag, "Gruppe")?;
+            if tag.contains(['[', ']']) {
+                return Err(AppError::Validation("Ungueltiger Gruppenname".to_string()));
+            }
+        }
+    }
     let mut content = String::from("[all]\n");
     for server in servers {
         content.push_str(&server.hostname);
@@ -47,11 +73,19 @@ pub fn generate_inventory(servers: &[AnsibleTarget]) -> Result<String, AppError>
         content.push('\n');
     }
 
+    // process::id() alone is identical for every generate_inventory call in one process, so two
+    // concurrent inventories (parallel ansible runs, or the test suite) race on the same temp file —
+    // one caller's create_temp_file collides with another's write/remove. A per-call sequence makes
+    // each inventory's temp file unique; the "adminhelper_ansible" prefix is kept so the path still
+    // passes is_confined_ansible_path.
+    static INVENTORY_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = INVENTORY_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        "adminhelper_ansible_inventory_{}.ini",
-        std::process::id()
+        "adminhelper_ansible_inventory_{}_{}.ini",
+        std::process::id(),
+        seq
     ));
-    let mut file = std::fs::File::create(&path)?;
+    let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
 
     Ok(path.to_string_lossy().to_string())
@@ -65,7 +99,7 @@ pub fn write_playbook_temp(filename: &str, content: &str) -> Result<String, AppE
         .trim()
         .to_string();
     let path = std::env::temp_dir().join(format!("adminhelper_ansible_{}", safe_name));
-    let mut file = std::fs::File::create(&path)?;
+    let mut file = create_temp_file(&path)?;
     file.write_all(content.as_bytes())?;
 
     Ok(path.to_string_lossy().to_string())
@@ -136,8 +170,74 @@ pub fn launch_ansible(inventory_path: &str, playbook_path: &str) -> Result<(), A
 
 #[cfg(test)]
 mod tests {
-    use super::is_confined_ansible_path;
+    use super::{
+        create_temp_file, generate_inventory, is_confined_ansible_path, write_playbook_temp,
+        AnsibleTarget,
+    };
     use std::fs;
+
+    #[test]
+    fn generate_inventory_rejects_host_and_group_injection() {
+        // 4.91: a hostname with a newline or a group name with [/] must be rejected — otherwise it
+        // injects extra inventory lines or group headers into the INI.
+        let bad_host = vec![AnsibleTarget {
+            hostname: "host\nevil ansible_connection=local".to_string(),
+            groups: vec![],
+        }];
+        assert!(generate_inventory(&bad_host).is_err());
+
+        let bad_group = vec![AnsibleTarget {
+            hostname: "host".to_string(),
+            groups: vec!["[evil]".to_string()],
+        }];
+        assert!(generate_inventory(&bad_group).is_err());
+
+        // A clean target still passes.
+        let ok = vec![AnsibleTarget {
+            hostname: "web01.example.com".to_string(),
+            groups: vec!["web".to_string()],
+        }];
+        assert!(generate_inventory(&ok).is_ok());
+    }
+
+    #[test]
+    fn generate_inventory_builds_group_sections() {
+        let targets = vec![
+            AnsibleTarget {
+                hostname: "web01".to_string(),
+                groups: vec!["web".to_string()],
+            },
+            AnsibleTarget {
+                hostname: "db01".to_string(),
+                groups: vec!["db".to_string()],
+            },
+        ];
+        let path = generate_inventory(&targets).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert!(
+            content.contains("[all]\nweb01\ndb01\n"),
+            "all section: {content}"
+        );
+        assert!(
+            content.contains("[db]\ndb01\n"),
+            "db group (sorted first): {content}"
+        );
+        assert!(content.contains("[web]\nweb01\n"), "web group: {content}");
+    }
+
+    #[test]
+    fn write_playbook_temp_sanitizes_traversal() {
+        // Path separators and .. in the filename must be neutralized so the written playbook stays a
+        // confined adminhelper_ansible temp file (an unconfined path is RCE via ansible-playbook).
+        let path = write_playbook_temp("../../etc/passwd", "- hosts: all\n").unwrap();
+        assert!(
+            is_confined_ansible_path(&path),
+            "traversal filename escaped temp: {path}"
+        );
+        assert!(!path.contains(".."), "'..' not sanitized: {path}");
+        let _ = fs::remove_file(&path);
+    }
 
     #[test]
     fn confines_ansible_paths_to_own_temp_files() {
@@ -167,5 +267,59 @@ mod tests {
 
         let _ = fs::remove_file(&ours);
         let _ = fs::remove_file(&foreign);
+    }
+
+    #[test]
+    fn create_temp_file_is_exclusive_and_hardened() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "adminhelper_ansible_create_test_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&path);
+
+        let f = create_temp_file(&path).unwrap();
+        drop(f);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "ansible temp file must be 0600");
+        }
+        // A second call over our own stale file still succeeds (remove-first).
+        assert!(create_temp_file(&path).is_ok());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_temp_file_does_not_write_through_a_pre_planted_symlink() {
+        let dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let victim = dir.join(format!("adminhelper_ansible_victim_{pid}"));
+        let link = dir.join(format!("adminhelper_ansible_symlink_{pid}"));
+        let _ = fs::remove_file(&victim);
+        let _ = fs::remove_file(&link);
+        fs::write(&victim, b"important").unwrap();
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+
+        let f = create_temp_file(&link).unwrap();
+        drop(f);
+        // The symlink was unlinked (remove-first) and a fresh regular file created —
+        // the victim it pointed at is untouched, not truncated through the link.
+        assert_eq!(
+            fs::read(&victim).unwrap(),
+            b"important",
+            "victim must be untouched"
+        );
+        assert!(
+            !fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "link must now be a fresh regular file, not a symlink"
+        );
+        let _ = fs::remove_file(&victim);
+        let _ = fs::remove_file(&link);
     }
 }

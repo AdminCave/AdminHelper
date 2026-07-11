@@ -125,9 +125,9 @@ def main(argv):
     elif op == "web-connection":
         name, url = rest
         print(
-            _call(base, token, "POST", "/api/connections", {"name": name, "kind": "web", "url": url})[
-                "id"
-            ]
+            _call(
+                base, token, "POST", "/api/connections", {"name": name, "kind": "web", "url": url}
+            )["id"]
         )
     else:
         sys.exit(f"unknown op: {op}")
