@@ -39,12 +39,16 @@ VMID="$(cbx list 2>/dev/null | grep -E "slug=$SLUG( |\$)" | grep -oE '^[0-9]+' |
 cat <<EOF
 
 ── Box $SLUG (VMID ${VMID:-?}) hydrated + cleaned. To bake it into a reusable template ──
-On the Proxmox host (node babo):
-    qm shutdown ${VMID:-<VMID>} && qm template ${VMID:-<VMID>}
-    # then set CRABBOX_PROXMOX_TEMPLATE_ID=<that id> in .claude/settings.local.json
+On the Proxmox host (node babo) — template a CLONE, never the leased VM itself
+(crabbox stop AND the ttl self-reap DELETE the lease's VM, template or not — templating
+the leased VMID destroys your template at stop/ttl; learned the hard way, cost one bake):
+    qm shutdown ${VMID:-<VMID>}
+    qm clone ${VMID:-<VMID>} <free-id, e.g. 9402> --full
+    qm template <free-id>
+    # then set CRABBOX_PROXMOX_TEMPLATE_ID=<free-id> in .claude/settings.local.json
     # (NOT settings.json — that file is public, homelab details stay in the gitignored local file)
 Afterwards crabbox_warm.sh clones the fat template → cold starts SKIP the ~18 min bootstrap
 (only an incremental build runs). Rebuild the template whenever the pinned tool versions in
-crabbox_bootstrap.sh bump (FRP/Go/Node/tauri-cli). This box is NOT auto-stopped — after
-templating: crabbox stop --id $SLUG
+crabbox_bootstrap.sh bump (FRP/Go/Node/tauri-cli). Finally destroy the original leased box:
+    crabbox stop --id $SLUG
 EOF
