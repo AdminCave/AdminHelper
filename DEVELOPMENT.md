@@ -416,7 +416,10 @@ genannten Komponenten — gefilterte Steps melden SKIP).
   bekommt ihren **eigenen Warm-Pond** (`ah-warm-<slug>`, abgeleitet vom
   Checkout-Namen; `AH_LANE` ueberschreibt) — Reap einer Lane laesst die anderen
   stehen; Leases sind host-global serialisiert (parallele Warmups haengen den
-  Provider). `lane.sh done <slug>` reapt die Boxen und raeumt Worktree + Branch ab.
+  Provider). crabbox bindet Leases an den leasenden Checkout-Pfad (fremder Checkout
+  muesste `--reclaim`); der Sync aus Worktrees ist validiert und traegt nur den
+  Source-Tree — auf der Box liegt kein `.git` (Agent-Makefile faellt auf `VERSION=dev`
+  zurueck). `lane.sh done <slug>` reapt die Boxen und raeumt Worktree + Branch ab.
   Kompletter autonomer Ablauf: `AUTONOMOUS.md` („Parallel-Betrieb").
 - **Verteilt (Multi-Host).** `crabbox_multibox.sh --agents N [--desktop]` least
   Server- + Agent-Box(en) auf `vmbr1`; mit `--desktop` zusaetzlich eine Box, die die

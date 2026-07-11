@@ -116,7 +116,12 @@ Mechanik dahinter:
   historisches `ah-warm`; `AH_LANE` überschreibt). `crabbox_reap.sh` kehrt nur den eigenen
   Pond — Lanes können sich nicht gegenseitig die Boxen stoppen. Leases sind host-global
   serialisiert (flock — parallele Warmups hängen den Provider); Bootstrap und Iterationen
-  laufen parallel.
+  laufen parallel. crabbox bindet eine Lease zusätzlich an den Checkout-Pfad, der sie
+  geleast hat (fremder Checkout müsste explizit `--reclaim`) — Lanes syncen also auch nie
+  versehentlich in fremde Boxen. Der Sync aus Worktrees ist validiert; er trägt nur den
+  Source-Tree, **auf der Box liegt kein `.git`** — einziger on-box-Nutzer ist das
+  Agent-Makefile (`git describe`), das auf `dev` zurückfällt; `build-deb/rpm` bekommen
+  `VERSION` ohnehin explizit.
 - **`Fast-Suite: crabbox` im Ledger-Kopf.** Eine Lane hat keine lokalen
   Toolchain-Artefakte (venvs/`node_modules`/`target`), und N parallele lokale Suiten
   würden die Dev-Box überlasten (plus Kollision auf der geteilten Test-DB). Der Build
