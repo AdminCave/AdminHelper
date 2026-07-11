@@ -5,6 +5,41 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.40.0] - 2026-07-11
+
+Umfassendes Security- und Qualitaets-Audit ueber alle Komponenten (Server,
+Monitoring, Agent, Desktop, CA-Issuer, Gateway, Web): 590 Funde behoben,
+CI (inkl. Windows) und die vollen Test-Suiten gruen.
+
+### Fixed
+
+- **Sicherheit:** Netz-Segmentierung des CA-Issuers (nur ueber die interne
+  PKI-Plane erreichbar), Rate-Limit auf der CA-Renew-Plane, Secrets nur noch
+  ueber stdin statt argv, Zip-Bomb-Schutz beim Report-Ingest, IPv6-taugliche
+  Enroll-Endpunkte, gehaertete Header-/mTLS-Terminierung am Gateway.
+- **Korrektheit:** deterministische FRP-Config-/Tunnel-Generierung, explizite
+  UTC-Defaults in der Datenbank (Zeitzonen-Bug), Entfernung doppelt
+  geschriebener Monitoring-Metriken, robustere System-Metrik-Parser (systemd,
+  Docker/ZFS, SMART).
+- **Desktop:** Windows-.rdp-Launch-Dateien (Host/Benutzername) werden beim
+  naechsten Start zuverlaessig aufgeraeumt, Enrollment respektiert die
+  Self-Signed-Einstellung, stabilere RDP-/SSH-/Tunnel-Verbindungsfluesse.
+
+### Changed
+
+- **Architektur:** Import-Zyklen aufgebrochen, Client-/Factory-Logik
+  extrahiert, ConnectionKind-Vertrag auf ssh/rdp/web vereinheitlicht,
+  Validierung konsequent an den Boundaries.
+- **Betrieb:** Healthchecks und Startup-Reihenfolge im docker-compose-Stack
+  gehaertet, FRP-bindPort-Kopplung entschaerft, Doku (DE/EN) durchgaengig
+  nachgezogen.
+
+### Added
+
+- Umfangreiche Test-Abdeckung: neue Live-E2E-Specs (Enrollment-Formular,
+  Tunnel-Erstellung/-Start/-Connect, SSH-/Web-/RDP-Connect), Windows-gated
+  Unit-Tests, deterministische Alembic-Smoke- und Integrations-Suiten.
+
 ## [0.39.0] - 2026-07-04
 
 ### Changed
