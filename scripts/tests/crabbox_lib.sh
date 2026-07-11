@@ -82,7 +82,10 @@ cbx_warmup_locked() {
   mkdir -p "$(dirname "$lock")" 2>/dev/null || true
   : >>"$lock" 2>/dev/null || { echo "lease lock $lock not writable"; return 1; }
   { flock -w 1800 9 || { echo "lease lock timeout (another lane leasing?)"; return 1; }
-    CBX_TIMEOUT=420 cbx warmup "$@" 2>&1 9>&-
+    # 1200s, not 420: cloning the FAT template (baked toolchains, raid5) measured
+    # 637s — the old bound SIGTERMed crabbox mid-clone ("context canceled") and
+    # left an orphaned VM behind. Override per-call with CBX_LEASE_TIMEOUT.
+    CBX_TIMEOUT="${CBX_LEASE_TIMEOUT:-1200}" cbx warmup "$@" 2>&1 9>&-
   } 9>"$lock"
 }
 
