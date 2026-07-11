@@ -117,7 +117,7 @@ layer_lint() {
 
   if ! only scripts; then skip "shellcheck" "AH_ONLY"
   elif have shellcheck; then
-    run_step "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh
+    run_step "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh
   else skip "shellcheck" "shellcheck not installed"; fi
 }
 
@@ -220,6 +220,18 @@ layer_e2e() {
     run_step "$s" -- bash "scripts/tests/$s.sh"
   done
 }
+
+# Validate AH_ONLY tokens HARD before anything runs: an unknown key (typo, comma
+# separator) would otherwise SKIP every step and still exit 0 — a false green in
+# the autonomous chain ("SKIP heißt nicht verifiziert", CLAUDE.md).
+AH_KEYS="server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts"
+if [ -n "${AH_ONLY:-}" ]; then
+  for k in $AH_ONLY; do
+    case " $AH_KEYS " in *" $k "*) ;; *)
+      echo "unknown AH_ONLY key: '$k' — known (space-separated): $AH_KEYS"; exit 2 ;;
+    esac
+  done
+fi
 
 echo "AdminHelper test aggregator — layer=$LAYER  root=$ROOT"
 echo "docker=$(have_docker && echo yes || echo no) node=$(have_node && echo yes || echo no) go=$(have go && echo yes || echo no) cargo=$(have cargo && echo yes || echo no) display=$(have_display && echo yes || echo no)"

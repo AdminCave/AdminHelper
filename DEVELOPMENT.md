@@ -411,8 +411,10 @@ genannten Komponenten — gefilterte Steps melden SKIP).
   die Box stehen (`crabbox ssh`) und Screenshots/Logs landen automatisch lokal unter
   `.crabbox-out/`.
 - **Parallele Lanes.** `bash scripts/dev/lane.sh new <slug>` legt fuer ein Vorhaben
-  einen Git-Worktree `../AdminHelper-<slug>` an (Branch `feature/<slug>` von `main`,
-  Links auf die gitignorten `.devenv.sh` + `.claude/settings.local.json`). Jede Lane
+  einen Git-Worktree `../AdminHelper-<slug>` an (Branch `feature/<slug>` von `main`;
+  `.devenv.sh` als Symlink, `.claude/settings.local.json` als **Kopie** — Claude Code
+  schreibt die Datei bei Permission-Grants, ein Symlink waere ein geteiltes
+  Write-Target aller Lanes). Jede Lane
   bekommt ihren **eigenen Warm-Pond** (`ah-warm-<slug>`, abgeleitet vom
   Checkout-Namen; `AH_LANE` ueberschreibt) — Reap einer Lane laesst die anderen
   stehen; Leases sind host-global serialisiert (parallele Warmups haengen den

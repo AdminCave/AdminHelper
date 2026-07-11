@@ -60,11 +60,22 @@ elif [ "${1:-}" = "--cmd" ]; then
   BOX="$(warm_get desktop)"
   [ -n "$BOX" ] || { echo "no warm box (run: crabbox_warm.sh desktop)"; exit 1; }
   echo "== cmd on warm box $BOX: $CMD =="
-  if CBX_TIMEOUT=3000 cbx run --id "$BOX" "${CAP[@]}" -- "$CMD"; then
+  # run.sh's python suites install into the box venv (AH_VENV, default /tmp/ah-venv)
+  # and only run.sh activates it — bridge it here so a task Verify like
+  # 'python3 -m pytest …' sees the same deps. The $-expansion happens ON THE BOX.
+  VENVPRE='v="${AH_VENV:-/tmp/ah-venv}"; [ -f "$v/bin/activate" ] && . "$v/bin/activate"; '
+  if CBX_TIMEOUT=3000 cbx run --id "$BOX" "${CAP[@]}" -- "$VENVPRE$CMD"; then
     echo "  ✓ cmd green"
   else report_fail "$BOX"; exit 1; fi
 else
   LAYER="${1:-quick}"
+  # Validate AH_ONLY BEFORE warming — a rejected value must not lease a box.
+  # The value is embedded in the remote command string → reject anything beyond
+  # the key charset so a stray quote can't break/inject the box shell; run.sh
+  # validates the keys themselves.
+  case "${AH_ONLY:-}" in *[!a-z0-9\ -]*)
+    echo "invalid AH_ONLY '${AH_ONLY:-}' (lowercase keys, space-separated)"; exit 2 ;;
+  esac
   bash "$DIR/crabbox_warm.sh" desktop >/dev/null || exit 1
   BOX="$(warm_get desktop)"
   [ -n "$BOX" ] || { echo "no warm box (run: crabbox_warm.sh desktop)"; exit 1; }

@@ -99,8 +99,8 @@ demselben Ledger** — der Ledger ist die einzige Fortschritts-Wahrheit, es gibt
 ```bash
 # 1. Planen wie gehabt (/feature-plan → Gate → Freigabe). Danach committet die
 #    Plan-Session Spec + Ledger auf main — Worktrees sehen nur Committetes.
-# 2. Lane aufmachen (Worktree ../AdminHelper-<slug> + Links auf die gitignorten
-#    Per-Maschine-Dateien .devenv.sh / .claude/settings.local.json):
+# 2. Lane aufmachen (Worktree ../AdminHelper-<slug>; .devenv.sh als Symlink,
+#    settings.local.json als Kopie — Claude Code schreibt sie bei Grants):
 bash scripts/dev/lane.sh new <slug>
 # 3. Lane starten (eigenes Terminal/tmux-Pane):
 cd ../AdminHelper-<slug> && claude --model opus --permission-mode acceptEdits

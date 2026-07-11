@@ -70,16 +70,26 @@ box_ip() {  # box_ip <slug> -> prints the box IPv4
 
 # --- lease a box (warmup + wait-for-ready), echo "<slug> <ip>". Callers (warm/bake)
 # self-reap via -ttl/-idle-timeout, so there's no lease-id tracking to leak here (4.55).
-cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
-  local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug lock
-  # CONCURRENT warmups on this provider hang (ssh-lease, coordinator:never — once ran
-  # ~7 h), so serialize the lease itself through a host-global lock; parallel lanes
-  # queue here for the lease only, everything after (bootstrap, runs) stays parallel.
-  lock="${XDG_RUNTIME_DIR:-$HOME/.cache}/adminhelper-crabbox-lease.lock"
+# Serialize `crabbox warmup` host-globally: CONCURRENT warmups on this provider hang
+# (ssh-lease, coordinator:never — once ran ~7 h). Only the lease is locked; bootstrap
+# and runs stay parallel. Used by cbx_lease AND crabbox_multibox.sh's lease() — every
+# warmup in the repo must go through here or the serialization guarantee is void.
+# fd 9 is closed for the child (9>&-) so an orphaned warmup process surviving the
+# `timeout` kill cannot keep the lock held past this group. Diagnostics go to stdout
+# on purpose — callers capture it into $out and print it in their failure banner.
+cbx_warmup_locked() {
+  local lock="${XDG_RUNTIME_DIR:-$HOME/.cache}/adminhelper-crabbox-lease.lock"
   mkdir -p "$(dirname "$lock")" 2>/dev/null || true
-  out="$( { flock -w 1800 9 || { echo "lease lock timeout (another lane leasing?)"; exit 1; }
-          CBX_TIMEOUT=420 cbx warmup -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
-            -ttl "$ttl" -idle-timeout "$idle" 2>&1; } 9>"$lock" )" \
+  : >>"$lock" 2>/dev/null || { echo "lease lock $lock not writable"; return 1; }
+  { flock -w 1800 9 || { echo "lease lock timeout (another lane leasing?)"; return 1; }
+    CBX_TIMEOUT=420 cbx warmup "$@" 2>&1 9>&-
+  } 9>"$lock"
+}
+
+cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
+  local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug
+  out="$(cbx_warmup_locked -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
+        -ttl "$ttl" -idle-timeout "$idle")" \
     || { echo "warmup failed/timed out: $out" >&2; return 1; }
   rslug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"; [ -n "$rslug" ] && slug="$rslug"
   CBX_TIMEOUT=300 cbx status --id "$slug" --wait >/dev/null 2>&1 || true

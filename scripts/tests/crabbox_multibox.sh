@@ -64,7 +64,9 @@ lease() {
   local out id slug ip
   # Every crabbox call is timeout-bounded so a stuck lease can NEVER hang the run
   # (the -ttl backstop + trap cleanup still bound cost even if a timeout fires).
-  out="$(timeout 420 crabbox warmup -slug "$1" -pond "$POND" -proxmox-bridge vmbr1 -ttl 90m -idle-timeout 30m 2>&1)" \
+  # cbx_warmup_locked (crabbox_lib.sh) serializes the lease host-globally against
+  # parallel lanes' warmups — concurrent warmups hang this provider.
+  out="$(cbx_warmup_locked -slug "$1" -pond "$POND" -proxmox-bridge vmbr1 -ttl 90m -idle-timeout 30m)" \
     || { echo "warmup failed/timed out: $out" >&2; return 1; }
   id="$(printf '%s' "$out" | grep -oE 'cbx_[a-z0-9]+' | head -1)"
   [ -n "$id" ] && echo "$id" >> "$LEASES_FILE"           # record in the shared file (crosses the subshell) FIRST
