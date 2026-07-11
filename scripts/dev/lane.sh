@@ -70,7 +70,11 @@ lane_done() {
   command -v crabbox >/dev/null || { echo "crabbox not installed — NOT removing the worktree (boxes may still run)"; exit 1; }
   cbx_load_env || { echo "crabbox env not loadable — NOT removing the worktree (boxes may still run)"; exit 1; }
   local pond ids s
-  pond="$(AH_LANE="$slug" cbx_pond)"
+  # Derive the pond EXACTLY like the lane derives it in-lane: from the DIR NAME
+  # (incl. cbx_lane's adminhelper-prefix strip). Deriving from the bare slug is
+  # asymmetric for adminhelper*-slugs — `adminhelper` would sweep the main
+  # checkout's ah-warm pond, `adminhelper-foo` a neighbor lane's ah-warm-foo.
+  pond="$(AH_LANE="$(basename "$wt")" cbx_pond)"
   if [ -f "$wt/.crabbox/warm.env" ]; then
     while IFS='=' read -r role s; do
       case "$role" in desktop|server)

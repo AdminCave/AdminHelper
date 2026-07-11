@@ -42,5 +42,7 @@ done
 
 echo "== remaining leases (should be empty) =="
 cbx list 2>/dev/null | sed 's/^/  /'; echo "  <<empty = clean>>"
-echo "  (leases listed above live OUTSIDE this pond and were NOT stopped — sweep a"
-echo "   lane's pond with --pond ah-warm-<lane>, or everything with --all)"
+if [ "$ALL" != 1 ]; then  # after --all, survivors are failed stops, not out-of-pond leases
+  echo "  (leases listed above live OUTSIDE this pond and were NOT stopped — sweep a"
+  echo "   lane's pond with --pond ah-warm-<lane>, or everything with --all)"
+fi

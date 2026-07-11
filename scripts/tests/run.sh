@@ -226,6 +226,12 @@ layer_e2e() {
 # the autonomous chain ("SKIP heißt nicht verifiziert", CLAUDE.md).
 AH_KEYS="server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts"
 if [ -n "${AH_ONLY:-}" ]; then
+  # Charset first: the key loop tokenizes on IFS (tab/newline too), but only()
+  # matches spaces only — a tab-separated list would pass the key check and then
+  # skip everything (false green). Space is the ONLY allowed separator.
+  case "$AH_ONLY" in *[!a-z0-9\ -]*)
+    echo "invalid AH_ONLY (lowercase keys, SPACE-separated): '$AH_ONLY'"; exit 2 ;;
+  esac
   for k in $AH_ONLY; do
     case " $AH_KEYS " in *" $k "*) ;; *)
       echo "unknown AH_ONLY key: '$k' — known (space-separated): $AH_KEYS"; exit 2 ;;
