@@ -2,9 +2,11 @@
 #
 # crabbox_reap.sh — stop warm crabbox boxes so they don't linger (cost). Warm boxes
 # self-reap via -idle-timeout/-ttl; this is the manual sweep for branch-switch / EOD.
-# Stops the boxes recorded in .crabbox/warm.env + everything in the ah-warm pond,
-# then clears warm.env. --all also sweeps leases OUTSIDE the pond (catch strays,
-# e.g. boxes a read-only workflow agent leaked).
+# Stops the boxes recorded in .crabbox/warm.env + everything in THIS LANE's pond
+# (ah-warm, or ah-warm-<lane> in a worktree-lane — see cbx_lane in crabbox_lib.sh;
+# other lanes' ponds are untouched), then clears warm.env. --all also sweeps leases
+# OUTSIDE the pond (catch strays, e.g. boxes a read-only workflow agent leaked —
+# careful: that includes OTHER lanes' boxes).
 #
 #   bash scripts/tests/crabbox_reap.sh [--pond <name>] [--all]
 set -uo pipefail
@@ -15,7 +17,7 @@ cd "$CBX_ROOT" || exit 1
 command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
 cbx_load_env || exit 1
 
-POND="ah-warm"; ALL=0
+POND="$(cbx_pond)"; ALL=0
 while [ $# -gt 0 ]; do case "$1" in
   --pond) POND="${2:?}"; shift ;; --all) ALL=1 ;;
   *) echo "unknown arg: $1 (use --pond <name> | --all)"; exit 2 ;;

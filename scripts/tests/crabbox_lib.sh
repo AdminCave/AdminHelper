@@ -29,6 +29,22 @@ for f in [".claude/settings.json",".claude/settings.local.json"]:
 # default 420s suits warmup/status/ssh/stop. Use a larger CBX_TIMEOUT for `run`.
 cbx() { timeout "${CBX_TIMEOUT:-420}" crabbox "$@"; }
 
+# --- lane identity ----------------------------------------------------------------
+# Parallel lanes (git worktrees, scripts/dev/lane.sh) must not share a pond:
+# crabbox_reap.sh sweeps a WHOLE pond, so a shared name would let lane A reap
+# lane B's warm boxes. Derive a lane id from the checkout dir name; AH_LANE
+# overrides. The main checkout ("AdminHelper") maps to "" so solo behavior and
+# the historic ah-warm pond stay unchanged.
+cbx_lane() {
+  local lane="${AH_LANE:-}"
+  [ -n "$lane" ] || lane="$(basename "$CBX_ROOT")"
+  lane="$(printf '%s' "$lane" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')"
+  lane="${lane#-}"; lane="${lane%-}"
+  case "$lane" in adminhelper) lane="" ;; adminhelper-*) lane="${lane#adminhelper-}" ;; esac
+  printf '%s\n' "$lane"
+}
+cbx_pond() { local l; l="$(cbx_lane)"; printf 'ah-warm%s\n' "${l:+-$l}"; }
+
 # --- warm-slug persistence (.crabbox/warm.env: one ROLE=slug line per role) -------
 cbx_warm_file() { echo "$CBX_ROOT/.crabbox/warm.env"; }
 warm_get() {  # warm_get <role> -> prints the slug (empty if none)
@@ -55,9 +71,16 @@ box_ip() {  # box_ip <slug> -> prints the box IPv4
 # --- lease a box (warmup + wait-for-ready), echo "<slug> <ip>". Callers (warm/bake)
 # self-reap via -ttl/-idle-timeout, so there's no lease-id tracking to leak here (4.55).
 cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
-  local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug
-  out="$(CBX_TIMEOUT=420 cbx warmup -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
-        -ttl "$ttl" -idle-timeout "$idle" 2>&1)" || { echo "warmup failed/timed out: $out" >&2; return 1; }
+  local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug lock
+  # CONCURRENT warmups on this provider hang (ssh-lease, coordinator:never — once ran
+  # ~7 h), so serialize the lease itself through a host-global lock; parallel lanes
+  # queue here for the lease only, everything after (bootstrap, runs) stays parallel.
+  lock="${XDG_RUNTIME_DIR:-$HOME/.cache}/adminhelper-crabbox-lease.lock"
+  mkdir -p "$(dirname "$lock")" 2>/dev/null || true
+  out="$( { flock -w 1800 9 || { echo "lease lock timeout (another lane leasing?)"; exit 1; }
+          CBX_TIMEOUT=420 cbx warmup -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
+            -ttl "$ttl" -idle-timeout "$idle" 2>&1; } 9>"$lock" )" \
+    || { echo "warmup failed/timed out: $out" >&2; return 1; }
   rslug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"; [ -n "$rslug" ] && slug="$rslug"
   CBX_TIMEOUT=300 cbx status --id "$slug" --wait >/dev/null 2>&1 || true
   ip="$(box_ip "$slug")"; [ -n "$ip" ] || ip="$(printf '%s' "$out" | grep -oE 'ip=[0-9.]+' | head -1 | cut -d= -f2)"
