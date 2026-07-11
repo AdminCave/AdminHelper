@@ -149,7 +149,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
         <label class="field">
           <span class="field-label">{$t('infra.field.name')}</span>
-          <input type="text" name="name" bind:value={form.name} placeholder="k01-lnx1-ssh" required />
+          <input
+            type="text"
+            name="name"
+            bind:value={form.name}
+            placeholder="k01-lnx1-ssh"
+            required
+          />
         </label>
 
         <label class="field">
