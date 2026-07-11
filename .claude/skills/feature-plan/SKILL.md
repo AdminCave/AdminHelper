@@ -58,6 +58,7 @@ Slug = kurz, kebab-case. Abschnitte:
 # <Feature> — Task-Ledger
 Status: geplant · Branch: feature/<slug> · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/<slug>.md
+Fast-Suite: lokal · Warm-Profil: desktop
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 ```
@@ -66,6 +67,17 @@ nutzen — bei einem Report-Backlog stattdessen z. B. `Spec: ../fabelreport.md`.
 (`Status:` = Ledger-Zustand `geplant|aktiv|erledigt|blockiert`. `feature-plan` schreibt
 `geplant` — die menschliche Freigabe bzw. der Start von `/feature-build` macht daraus `aktiv`.
 Nicht mit dem Task-Status `[ ]`/`[x]` verwechseln.)
+(`Fast-Suite:` = wo Verify + Schnellsuite laufen: `lokal` (Solo-Session im Haupt-Checkout,
+Default) oder `crabbox` (parallele Worktree-Lane ohne lokale Toolchain-Artefakte — siehe
+AUTONOMOUS.md „Parallel-Betrieb"). Wird das Vorhaben als Lane gebaut → `crabbox` setzen.)
+(`Warm-Profil:` = crabbox-Box-Bedarf, aus „Betroffene Komponenten" der Spec ableiten:
+`desktop` = eine volle Box, der Default — Stack, Agent und GUI testen dort zusammen;
+`pond` = Server- + Desktop-Box, NUR wenn Desktop-**Journeys** berührt sind (Connect/
+Tunnel/Enrollment-UI, `apps/desktop/e2e/*.live.js`). Berührt die Spec **Cross-Host-Pfade**
+(FRP-Tunnel-Datenpfad, :8444-Provisioning, `build-deb.sh`/`build-rpm.sh`,
+`scripts/install|update`, mTLS/PKI, `docker-compose*.yml`), zusätzlich eine Zeile
+`Abschluss: multibox <flags>` (nur die passenden: `--tunnel`, `--agents 1`, `--rpm`,
+`--enforce`) — der Lauf bleibt ask-first, `feature-build` fragt am Ende.)
 
 **Task-Größe = autonomietauglich** (die wichtigste Regel dieser Phase):
 - Eine Task ≈ **eine fokussierte Änderung**, möglichst **eine Komponente**, ≤ ~3 Dateien.
@@ -94,6 +106,17 @@ Abhängt von: T<k>   (nur falls nötig)
 ## 4. Design-Gate — STOPP
 - Präsentiere im Chat: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify),
   und **alle offenen Fragen** klar herausgestellt.
+- **Parallel-Tauglichkeit prüfen:** Laufen andere Lanes (`bash scripts/dev/lane.sh list`
+  bzw. weitere `Status: aktiv`-Ledger unter `tasks/`)? Dann gegen jede prüfen, ob dieses
+  Vorhaben disjunkt ist — Komponenten, geteilte Contracts (API-Routen/Pydantic-Schemas,
+  DB-Migrationen, FRP-Config-Format, Tauri-Commands), primäre `docs/`-Seiten. Ergebnis am
+  Gate mit ausgeben: „parallel-tauglich zu <lane>: ja/nein — <Grund>". Überlappt es →
+  seriell empfehlen, nicht parallel.
 - Sage explizit: „Bitte `docs/features/<slug>.md` und `tasks/<slug>.md` prüfen/anpassen.
-  Zum autonomen Bauen: **`/feature-build tasks/<slug>.md`** in einer Opus-Session."
-- **Implementiere nichts, lege keinen Branch an.** Diese Phase endet hier.
+  Zum autonomen Bauen: **`/feature-build tasks/<slug>.md`** in einer Opus-Session — oder
+  als parallele Lane: nach der Freigabe committe ich Spec + Ledger auf `main`, dann
+  **`bash scripts/dev/lane.sh new <slug>`** (AUTONOMOUS.md „Parallel-Betrieb")."
+- **Implementiere nichts, lege keinen Branch an.** Diese Phase endet hier. Einzige
+  Ausnahme nach erteilter Freigabe (nächster User-Turn): für eine **Lane** Spec + Ledger
+  auf `main` committen (`chore(plan): add spec + ledger for <slug>`) — Worktree-Lanes
+  sehen nur Committetes. Weiterhin kein Produktivcode, kein Branch.

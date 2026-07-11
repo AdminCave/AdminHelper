@@ -18,7 +18,7 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 | `Status:` | Bedeutung |
 |---|---|
 | `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Das Starten von `/feature-build` ist die Freigabe (setzt auf `aktiv`). |
-| `aktiv` | freigegeben, wird bearbeitet. **Höchstens EIN Ledger darf `aktiv` sein** — dann nimmt `/feature-build` ohne Pfad genau dieses. |
+| `aktiv` | freigegeben, wird bearbeitet. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
 | `erledigt` | fertig + PR offen/gemergt; bleibt als Historie liegen. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
@@ -26,7 +26,10 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 nie interaktiv** — findet er ohne Pfad mehrere/keine `aktiv`, bricht er mit klarer Meldung ab.
 
 Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe), `Commit-Granularität:`
-(pro Task | pro Komponente | pro Abschnitt), `Review:`, `Modell:`, DoD-Verweis auf `CLAUDE.md`.
+(pro Task | pro Komponente | pro Abschnitt), `Review:`, `Modell:`, `Fast-Suite:`
+(lokal | crabbox — wo Verify + Schnellsuite laufen; `crabbox` in Worktree-Lanes),
+`Warm-Profil:` (desktop | pond — Box-Bedarf; optional `Abschluss: multibox <flags>`,
+bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.
 
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
 `[?]` braucht menschliche Entscheidung.

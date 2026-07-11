@@ -31,8 +31,10 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
    Under the hood: `crabbox run --id <slug> -no-hydrate -keep-on-failure -capture-stdout/-stderr
    -artifact-glob '.crabbox-out/**' -- 'AH_ALLOW_REAL=1 AH_CAPTURE=1 bash scripts/tests/run.sh <layer>'`.
    `AH_NO_SYNC=1` re-runs the already-synced tree (flaky retry, no rsync).
-3. **Reap** at branch-switch / EOD: `bash scripts/tests/crabbox_reap.sh` (stops the `ah-warm`
-   pond + clears warm.env). Warm boxes also self-reap via `-ttl 8h -idle-timeout 4h`.
+3. **Reap** at branch-switch / EOD: `bash scripts/tests/crabbox_reap.sh` (stops THIS lane's
+   pond — `ah-warm`, or `ah-warm-<lane>` in a worktree-lane (see cbx_lane in crabbox_lib.sh) —
+   + clears warm.env; other lanes' boxes stay). Warm boxes also self-reap via
+   `-ttl 8h -idle-timeout 4h`.
 
 ## Auto-debug on failure (no re-run needed)
 

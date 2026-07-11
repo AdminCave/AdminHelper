@@ -89,6 +89,60 @@ startest du es unter `/loop`, damit es batchweise über viele Iterationen läuft
 /loop /feature-build tasks/audit-fixes.md
 ```
 
+## Parallel-Betrieb: mehrere Lanes gleichzeitig
+
+Mehrere Vorhaben laufen parallel, indem jedes Ledger seine eigene **Lane** bekommt: ein
+Git-Worktree + eigene Opus-Session + eigene warme crabbox-Box. Geplant wird weiterhin
+seriell (das Design-Gate braucht dich); gebaut wird parallel. **Nie zwei Builds auf
+demselben Ledger** — der Ledger ist die einzige Fortschritts-Wahrheit, es gibt kein Locking.
+
+```bash
+# 1. Planen wie gehabt (/feature-plan → Gate → Freigabe). Danach committet die
+#    Plan-Session Spec + Ledger auf main — Worktrees sehen nur Committetes.
+# 2. Lane aufmachen (Worktree ../AdminHelper-<slug> + Links auf die gitignorten
+#    Per-Maschine-Dateien .devenv.sh / .claude/settings.local.json):
+bash scripts/dev/lane.sh new <slug>
+# 3. Lane starten (eigenes Terminal/tmux-Pane):
+cd ../AdminHelper-<slug> && claude --model opus --permission-mode acceptEdits
+#    → /feature-build tasks/<slug>.md
+# 4. Lane gemergt / Feierabend:
+bash scripts/dev/lane.sh done <slug>   # reapt die Lane-Boxen, räumt Worktree + Branch
+```
+
+Mechanik dahinter:
+
+- **Eigener Pond pro Lane.** `crabbox_lib.sh` leitet aus dem Checkout-Namen eine
+  Lane-Kennung ab (`AdminHelper-conn-note` → Pond `ah-warm-conn-note`; Haupt-Checkout →
+  historisches `ah-warm`; `AH_LANE` überschreibt). `crabbox_reap.sh` kehrt nur den eigenen
+  Pond — Lanes können sich nicht gegenseitig die Boxen stoppen. Leases sind host-global
+  serialisiert (flock — parallele Warmups hängen den Provider); Bootstrap und Iterationen
+  laufen parallel.
+- **`Fast-Suite: crabbox` im Ledger-Kopf.** Eine Lane hat keine lokalen
+  Toolchain-Artefakte (venvs/`node_modules`/`target`), und N parallele lokale Suiten
+  würden die Dev-Box überlasten (plus Kollision auf der geteilten Test-DB). Der Build
+  fährt deshalb das Task-`Verify:` via `crabbox_iter.sh --cmd '…'` und die
+  Komponenten-Schnellsuite via `AH_ONLY='<komponenten>' crabbox_iter.sh quick` auf der
+  warmen Lane-Box (~1,5–3,5 min pro Iteration).
+- **`Warm-Profil:` im Ledger-Kopf.** `desktop` (eine volle Box — Stack, Agent und GUI
+  testen dort zusammen) reicht für fast alles; `pond` (2 Boxen) nur für Desktop-Journeys;
+  Cross-Host-Pfade bekommen `Abschluss: multibox <flags>` — ein einmaliger, weiterhin
+  ask-first-Lauf am Ende, keine warme Dauer-Infrastruktur. `/feature-plan` leitet das aus
+  der Spec ab, `feature-build` re-checkt es am realen Branch-Diff.
+
+Regeln:
+
+- **Der Haupt-Checkout bleibt auf `main`** — nur Planen, Mergen, Rebasen. Gebaut wird
+  ausschließlich in Lanes.
+- **Lanes komponenten-disjunkt schneiden.** Das Gate prüft gegen aktive Lanes:
+  Komponenten, geteilte Contracts (API-Schemas, Migrationen, FRP-Format, Tauri-Commands),
+  primäre `docs/`-Seiten. Überlappt es → seriell statt parallel.
+- **PRs landen einzeln.** Nach jedem Merge in den verbleibenden Lanes
+  `git rebase origin/main` + einmal `crabbox_iter.sh quick`. Bekannte, triviale
+  Rebase-Konflikte: `CHANGELOG.md` (Unreleased) und geteilte docs-Seiten — additiv.
+- **Kosten:** pro Lane eine warme beast-Box (pond: zwei) über Stunden; Tokens ≈ wie
+  seriell, nur die Burn-Rate steigt (Rate-Limits drosseln ggf. von selbst). Mehr als
+  2–3 Lanes stauen an deinen Gates/Reviews, nicht am Compute.
+
 ## Was eine Task „autonomietauglich" macht
 
 Das ist der Punkt, an dem die meiste Qualität entsteht — `/feature-plan` achtet darauf, aber
