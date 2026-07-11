@@ -634,6 +634,39 @@ fn performance_rdp_lines(profile: RdpPerformanceProfile) -> Vec<String> {
     }
 }
 
+/// Reap `.rdp` files a previously killed session leaked. The per-launch cleanup
+/// thread below is best-effort: it dies with the app, so a `.rdp` file (which
+/// carries the host + username) survives on disk if the app is closed within
+/// RDP_FILE_CLEANUP_DELAY. Sweeping leftovers on the next launch bounds the
+/// exposure to a single session instead of leaving the file forever (4.93). Only
+/// files older than the cleanup delay are removed, so a sibling `.rdp` that a
+/// concurrent launch may still be opening is never deleted out from under it.
+#[cfg(target_os = "windows")]
+fn sweep_stale_rdp_files(dir: &std::path::Path) {
+    use std::time::SystemTime;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("adminhelper-") && name.ends_with(".rdp")) {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|mtime| now.duration_since(mtime).ok())
+            .map(|age| age >= RDP_FILE_CLEANUP_DELAY)
+            .unwrap_or(true); // unreadable/future mtime → treat as stale (best-effort)
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn write_rdp_file(
     host: &str,
@@ -647,6 +680,8 @@ pub fn write_rdp_file(
 ) -> Result<std::path::PathBuf, AppError> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let mut path = std::env::temp_dir();
+    // Reap any .rdp a previously killed session leaked before its cleanup ran (4.93).
+    sweep_stale_rdp_files(&path);
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_nanos())
@@ -800,5 +835,88 @@ mod args_tests {
             !args.iter().any(|a| a.starts_with("/p:")),
             "password must never land in argv: {args:?}"
         );
+    }
+}
+
+// The .rdp file (host + username) and its stale-leftover sweep are Windows-only.
+#[cfg(all(test, windows))]
+mod rdp_file_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    // A fresh, isolated temp subdir so the sweep never touches real .rdp files.
+    fn scratch_dir() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ah-rdp-sweep-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn sweep_reaps_only_stale_adminhelper_rdp_files() {
+        let dir = scratch_dir();
+        let stale = dir.join("adminhelper-111.rdp"); // leaked by a killed session
+        let fresh = dir.join("adminhelper-222.rdp"); // maybe still being read by mstsc
+        let other = dir.join("keep-me.rdp"); // wrong prefix — not ours
+        for p in [&stale, &fresh, &other] {
+            std::fs::write(p, "full address:s:h:3389").unwrap();
+        }
+        // Backdate the stale file's mtime past the cleanup delay so the sweep reaps it,
+        // while the freshly written one stays inside the window and must be kept.
+        let old = SystemTime::now() - (RDP_FILE_CLEANUP_DELAY + Duration::from_secs(5));
+        std::fs::File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        sweep_stale_rdp_files(&dir);
+
+        assert!(!stale.exists(), "a stale adminhelper .rdp must be reaped");
+        assert!(
+            fresh.exists(),
+            "a fresh adminhelper .rdp (maybe in use) must be kept"
+        );
+        assert!(other.exists(), "a non-adminhelper file must be left alone");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_rdp_file_reaps_prior_leftovers() {
+        // A leaked, backdated file in the real temp dir must be gone after the next
+        // write_rdp_file call (which sweeps first). Use a distinctive backdated file.
+        let leftover = std::env::temp_dir().join("adminhelper-000-stale-test.rdp");
+        std::fs::write(&leftover, "full address:s:h:3389").unwrap();
+        let old = SystemTime::now() - (RDP_FILE_CLEANUP_DELAY + Duration::from_secs(5));
+        std::fs::File::options()
+            .write(true)
+            .open(&leftover)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        let written = write_rdp_file(
+            "host",
+            3389,
+            "user",
+            "",
+            false,
+            RdpWindowMode::Fit,
+            None,
+            RdpPerformanceProfile::Auto,
+        )
+        .unwrap();
+
+        assert!(
+            !leftover.exists(),
+            "write_rdp_file must reap prior stale leftovers"
+        );
+        assert!(written.exists(), "the freshly written .rdp must exist");
+        let _ = std::fs::remove_file(&written);
     }
 }
