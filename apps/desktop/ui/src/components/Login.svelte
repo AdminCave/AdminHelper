@@ -191,6 +191,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button
         type="button"
         class="btn ghost login-secondary"
+        data-action="enroll-switch"
         onclick={() => switchMode('enroll')}
         disabled={busy}
       >
@@ -243,6 +244,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <button
         type="button"
         class="btn ghost login-secondary"
+        data-action="enroll-back"
         onclick={() => switchMode('login')}
         disabled={busy}
       >
