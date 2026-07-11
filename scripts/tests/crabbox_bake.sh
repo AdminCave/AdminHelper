@@ -41,7 +41,8 @@ cat <<EOF
 ── Box $SLUG (VMID ${VMID:-?}) hydrated + cleaned. To bake it into a reusable template ──
 On the Proxmox host (node babo):
     qm shutdown ${VMID:-<VMID>} && qm template ${VMID:-<VMID>}
-    # then set CRABBOX_PROXMOX_TEMPLATE_ID=<that id>  (e.g. 9402) in .claude/settings.json
+    # then set CRABBOX_PROXMOX_TEMPLATE_ID=<that id> in .claude/settings.local.json
+    # (NOT settings.json — that file is public, homelab details stay in the gitignored local file)
 Afterwards crabbox_warm.sh clones the fat template → cold starts SKIP the ~18 min bootstrap
 (only an incremental build runs). Rebuild the template whenever the pinned tool versions in
 crabbox_bootstrap.sh bump (FRP/Go/Node/tauri-cli). This box is NOT auto-stopped — after
