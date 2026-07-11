@@ -2,9 +2,11 @@
 #
 # crabbox_reap.sh — stop warm crabbox boxes so they don't linger (cost). Warm boxes
 # self-reap via -idle-timeout/-ttl; this is the manual sweep for branch-switch / EOD.
-# Stops the boxes recorded in .crabbox/warm.env + everything in the ah-warm pond,
-# then clears warm.env. --all also sweeps leases OUTSIDE the pond (catch strays,
-# e.g. boxes a read-only workflow agent leaked).
+# Stops the boxes recorded in .crabbox/warm.env + everything in THIS LANE's pond
+# (ah-warm, or ah-warm-<lane> in a worktree-lane — see cbx_lane in crabbox_lib.sh;
+# other lanes' ponds are untouched), then clears warm.env. --all also sweeps leases
+# OUTSIDE the pond (catch strays, e.g. boxes a read-only workflow agent leaked —
+# careful: that includes OTHER lanes' boxes).
 #
 #   bash scripts/tests/crabbox_reap.sh [--pond <name>] [--all]
 set -uo pipefail
@@ -15,7 +17,7 @@ cd "$CBX_ROOT" || exit 1
 command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
 cbx_load_env || exit 1
 
-POND="ah-warm"; ALL=0
+POND="$(cbx_pond)"; ALL=0
 while [ $# -gt 0 ]; do case "$1" in
   --pond) POND="${2:?}"; shift ;; --all) ALL=1 ;;
   *) echo "unknown arg: $1 (use --pond <name> | --all)"; exit 2 ;;
@@ -34,7 +36,13 @@ fi
 printf '%s\n' "$LIST" | grep -oE 'lease=cbx_[a-z0-9]+' | cut -d= -f2 | sort -u | while read -r id; do
   [ -n "$id" ] && { cbx stop --id "$id" >/dev/null 2>&1 || true; echo "  stopped $id"; }
 done
-: > "$(cbx_warm_file)" 2>/dev/null || true
+# 2>/dev/null FIRST: redirections apply left-to-right, so a failing `>` (fresh
+# worktree without .crabbox/) would otherwise print to the not-yet-redirected stderr.
+: 2>/dev/null > "$(cbx_warm_file)" || true
 
 echo "== remaining leases (should be empty) =="
 cbx list 2>/dev/null | sed 's/^/  /'; echo "  <<empty = clean>>"
+if [ "$ALL" != 1 ]; then  # after --all, survivors are failed stops, not out-of-pond leases
+  echo "  (leases listed above live OUTSIDE this pond and were NOT stopped — sweep a"
+  echo "   lane's pond with --pond ah-warm-<lane>, or everything with --all)"
+fi

@@ -11,7 +11,8 @@
 #              stashing the server IP + admin/monitor creds for iter
 #     pond     server (stack up) + desktop — the distributed desktop fast loop
 #
-# Warm boxes carry `-ttl 8h -idle-timeout 4h` (self-reap) and the `ah-warm` pond;
+# Warm boxes carry `-ttl 8h -idle-timeout 4h` (self-reap) and the lane's pond
+# (ah-warm, or ah-warm-<lane> in a worktree-lane — see cbx_lane in crabbox_lib.sh);
 # sweep strays with crabbox_reap.sh. State is in .crabbox/warm.env (gitignored).
 set -uo pipefail
 ROLE="${1:-}"
@@ -21,7 +22,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$CBX_ROOT" || exit 1
 command -v crabbox >/dev/null || { echo "crabbox not installed"; exit 1; }
 cbx_load_env || exit 1
-POND="ah-warm"
+# Lane-aware pond + slug hints (cbx_lane derives from the checkout dir; AH_LANE
+# overrides) so parallel worktree-lanes never share a pond — see crabbox_lib.sh.
+LANE="$(cbx_lane)"
+POND="$(cbx_pond)"
 
 # warm_role <role> <profile> -> stdout: slug ; stderr: progress
 warm_role() {
@@ -32,7 +36,7 @@ warm_role() {
   fi
   [ -n "$slug" ] && { echo "  recorded $role slug $slug is gone — re-warming" >&2; warm_clear "$role"; }
   echo "  lease + hydrate $role box (profile=$profile) — one-time bootstrap" >&2
-  read -r slug ip < <(cbx_lease "ah-$role" "$POND") || { echo "  lease failed" >&2; return 1; }
+  read -r slug ip < <(cbx_lease "ah-$role${LANE:+-$LANE}" "$POND") || { echo "  lease failed" >&2; return 1; }
   echo "  $role box $slug @ ${ip:-?} — hydrating" >&2
   CBX_TIMEOUT=2700 cbx run --id "$slug" -no-hydrate -- \
     "AH_BOOTSTRAP_PROFILE=$profile bash scripts/tests/crabbox_bootstrap.sh" >&2 \
@@ -52,7 +56,7 @@ warm_server() {
   fi
   [ -n "$slug" ] && { echo "  recorded server slug $slug is gone — re-warming" >&2; warm_clear server; }
   echo "  lease server box + hydrate + bring up the stack (one-time)" >&2
-  read -r slug ip < <(cbx_lease "ah-server" "$POND") || { echo "  server lease failed" >&2; return 1; }
+  read -r slug ip < <(cbx_lease "ah-server${LANE:+-$LANE}" "$POND") || { echo "  server lease failed" >&2; return 1; }
   echo "  server box $slug @ ${ip:-?} — crabbox_serverbox.sh (bootstrap + stack up)" >&2
   out="$(CBX_TIMEOUT=2700 cbx run --id "$slug" -no-hydrate -- bash scripts/tests/crabbox_serverbox.sh "$ip" 2>&1)"
   sid="$(cbx_marker MB_SID "$out")"
@@ -73,7 +77,7 @@ case "$ROLE" in
 esac
 
 echo ""
-echo "── warm boxes ready (.crabbox/warm.env) ──"
+echo "── warm boxes ready (.crabbox/warm.env · pond $POND) ──"
 grep -vE '_admin_pw=|_monitor_key=|_ptok=' "$(cbx_warm_file)" 2>/dev/null | sed 's/^/  /'
 echo "  (server creds stashed in warm.env — gitignored, not printed)"
 echo "  iterate:  bash scripts/tests/crabbox_iter.sh [--desktop] <quick|integration|e2e>"

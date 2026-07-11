@@ -6,7 +6,10 @@
 # not ~40. On failure the box is kept (-keep-on-failure) for `crabbox ssh`.
 #
 #   bash scripts/tests/crabbox_iter.sh <lint|unit|quick|integration|e2e|all>
-#       run run.sh <layer> on the warm full box
+#       run run.sh <layer> on the warm full box (AH_ONLY="server web" limits the
+#       lint/unit steps to the named components — the per-task fast loop)
+#   bash scripts/tests/crabbox_iter.sh --cmd '<command>'
+#       sync + run an arbitrary command on the warm full box (a task's Verify:)
 #   bash scripts/tests/crabbox_iter.sh --desktop [spec ...]
 #       drive the Tauri GUI on the warm desktop box against the warm server box
 #
@@ -49,14 +52,40 @@ if [ "${1:-}" = "--desktop" ]; then
         bash scripts/tests/crabbox_desktopbox.sh "$SRV_IP" "$PW" "$KEY" "$@"; then
     echo "  ✓ desktop journeys green"
   else report_fail "$DT"; exit 1; fi
-else
-  LAYER="${1:-quick}"
+elif [ "${1:-}" = "--cmd" ]; then
+  shift
+  CMD="${*:-}"
+  [ -n "$CMD" ] || { echo "usage: crabbox_iter.sh --cmd '<command>'"; exit 2; }
   bash "$DIR/crabbox_warm.sh" desktop >/dev/null || exit 1
   BOX="$(warm_get desktop)"
   [ -n "$BOX" ] || { echo "no warm box (run: crabbox_warm.sh desktop)"; exit 1; }
-  echo "== run.sh $LAYER on warm box $BOX =="
+  echo "== cmd on warm box $BOX: $CMD =="
+  # run.sh's python suites install into the box venv (AH_VENV, default /tmp/ah-venv)
+  # and only run.sh activates it — bridge it here so a task Verify like
+  # 'python3 -m pytest …' sees the same deps. The $-expansion happens ON THE BOX.
+  VENVPRE='v="${AH_VENV:-/tmp/ah-venv}"; [ -f "$v/bin/activate" ] && . "$v/bin/activate"; '
+  if CBX_TIMEOUT=3000 cbx run --id "$BOX" "${CAP[@]}" -- "$VENVPRE$CMD"; then
+    echo "  ✓ cmd green"
+  else report_fail "$BOX"; exit 1; fi
+else
+  LAYER="${1:-quick}"
+  # Validate AH_ONLY BEFORE warming — a rejected value must not lease a box.
+  # The value is embedded in the remote command string → reject anything beyond
+  # the key charset so a stray quote can't break/inject the box shell; run.sh
+  # validates the keys themselves.
+  case "${AH_ONLY:-}" in *[!a-z0-9\ -]*)
+    echo "invalid AH_ONLY '${AH_ONLY:-}' (lowercase keys, space-separated)"; exit 2 ;;
+  esac
+  bash "$DIR/crabbox_warm.sh" desktop >/dev/null || exit 1
+  BOX="$(warm_get desktop)"
+  [ -n "$BOX" ] || { echo "no warm box (run: crabbox_warm.sh desktop)"; exit 1; }
+  # Forward AH_ONLY so a lane's per-task iteration only runs the touched
+  # component's lint/unit steps (run.sh skips the rest).
+  ENVS="AH_ALLOW_REAL=1 AH_CAPTURE=1"
+  [ -n "${AH_ONLY:-}" ] && ENVS="$ENVS AH_ONLY='$AH_ONLY'"
+  echo "== run.sh $LAYER on warm box $BOX${AH_ONLY:+ (AH_ONLY=$AH_ONLY)} =="
   if CBX_TIMEOUT=3000 cbx run --id "$BOX" "${CAP[@]}" -- \
-        "AH_ALLOW_REAL=1 AH_CAPTURE=1 bash scripts/tests/run.sh $LAYER"; then
+        "$ENVS bash scripts/tests/run.sh $LAYER"; then
     echo "  ✓ run.sh $LAYER green"
   else report_fail "$BOX"; exit 1; fi
 fi

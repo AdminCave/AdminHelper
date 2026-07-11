@@ -22,6 +22,11 @@
 # The heavy layers (integration|e2e|all) refuse to run unless AH_ALLOW_REAL=1,
 # so they never fire by accident on a dev box. The crabbox /test skill sets it.
 #
+# AH_ONLY="server web …" limits the lint/unit steps to the named components —
+# the per-task fast loop of a parallel lane (see crabbox_iter.sh). Filtered
+# steps report SKIP (reason AH_ONLY). Keys: server monitoring ca-issuer agent
+# desktop (or desktop-rs|desktop-ui|desktop-e2e) web scripts.
+#
 # Exit code: non-zero if any step FAILED (SKIPs never fail the run).
 
 set -uo pipefail
@@ -70,6 +75,11 @@ run_step() { local name="$1"; shift; [ "$1" = "--" ] && shift
 }
 
 have()        { command -v "$1" >/dev/null 2>&1; }
+only() {  # only <key…> -> 0 if AH_ONLY is unset or names any of the given keys
+  [ -n "${AH_ONLY:-}" ] || return 0
+  local k; for k in "$@"; do case " $AH_ONLY " in *" $k "*) return 0 ;; esac; done
+  return 1
+}
 have_docker() { have docker && docker info >/dev/null 2>&1; }
 have_compose(){ docker compose version >/dev/null 2>&1; }
 have_node()   { have node && have npm; }
@@ -94,17 +104,20 @@ require_real() {
 
 # ── lint ─────────────────────────────────────────────────────────────────────
 layer_lint() {
-  if have ruff; then
+  if ! only server monitoring; then skip "ruff" "AH_ONLY"
+  elif have ruff; then
     run_step "ruff check"        -- ruff check apps/server apps/monitoring
     run_step "ruff format check" -- ruff format --check apps/server apps/monitoring
   else skip "ruff" "ruff not installed"; fi
 
-  if have gofmt; then
+  if ! only agent; then skip "gofmt" "AH_ONLY"
+  elif have gofmt; then
     run_step "gofmt (agent)" -- bash -c 'u=$(cd apps/agent && gofmt -l .); [ -z "$u" ] || { echo "unformatted:"; echo "$u"; exit 1; }'
   else skip "gofmt" "go not installed"; fi
 
-  if have shellcheck; then
-    run_step "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh
+  if ! only scripts; then skip "shellcheck" "AH_ONLY"
+  elif have shellcheck; then
+    run_step "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh
   else skip "shellcheck" "shellcheck not installed"; fi
 }
 
@@ -113,22 +126,26 @@ layer_unit() {
   # All python suites share one venv so pip never mutates system site-packages (6.140).
   ensure_venv || true
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
-  if have python3; then
+  if ! only monitoring; then skip "monitoring pytest" "AH_ONLY"
+  elif have python3; then
     run_step "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements.in pytest pytest-cov && python3 -m pytest -q'
   else skip "monitoring pytest" "python3 not installed"; fi
 
   # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
-  if have python3 && [ -d apps/ca-issuer/tests ]; then
+  if ! only ca-issuer; then skip "ca-issuer pytest" "AH_ONLY"
+  elif have python3 && [ -d apps/ca-issuer/tests ]; then
     run_step "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements.in pytest 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q'
   else skip "ca-issuer pytest" "python3 missing or no tests"; fi
 
   # Server pytest — needs a Postgres: testcontainers (docker) or an injected DATABASE_URL.
-  if have python3 && { [ -n "${DATABASE_URL:-}" ] || have_docker; }; then
+  if ! only server; then skip "server pytest" "AH_ONLY"
+  elif have python3 && { [ -n "${DATABASE_URL:-}" ] || have_docker; }; then
     run_step "server pytest" -- bash -c 'cd apps/server && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q'
   else skip "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Go agent — fmt + vet + test + cross-compile (matches CI).
-  if have go; then
+  if ! only agent; then skip "go agent (vet+test+cross)" "AH_ONLY"
+  elif have go; then
     run_step "go agent (vet+test+cross)" -- bash -c '
       cd apps/agent &&
       go vet ./... &&
@@ -138,24 +155,28 @@ layer_unit() {
   else skip "go agent" "go not installed"; fi
 
   # Rust/Tauri backend — needs tauri system libs + the frpc sidecar (externalBin).
-  if have cargo && [ -f "$FRPC_SIDECAR" ]; then
+  if ! only desktop desktop-rs; then skip "cargo test (desktop)" "AH_ONLY"
+  elif have cargo && [ -f "$FRPC_SIDECAR" ]; then
     run_step "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test'
   else skip "cargo test (desktop)" "cargo or frpc sidecar ($FRPC_SIDECAR) missing"; fi
 
   # Desktop UI (Svelte) — check + lint + vitest.
-  if have_node; then
+  if ! only desktop desktop-ui; then skip "desktop-ui vitest" "AH_ONLY"
+  elif have_node; then
     run_step "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm_ci_if_stale && npm run check && npm run lint && npm run test'
   else skip "desktop-ui vitest" "node/npm not installed"; fi
 
   # Desktop E2E specs — lint only. The suite itself needs a display + Docker (heavy
   # tier), but linting the ~600 lines of wdio JS is cheap and catches spec bugs
   # before a costly build (2.89).
-  if have_node; then
+  if ! only desktop desktop-e2e; then skip "desktop-e2e lint" "AH_ONLY"
+  elif have_node; then
     run_step "desktop-e2e lint" -- bash -c 'cd apps/desktop/e2e && npm_ci_if_stale && npm run lint'
   else skip "desktop-e2e lint" "node/npm not installed"; fi
 
   # Web frontend — check + lint + vitest unit.
-  if have_node; then
+  if ! only web; then skip "web vitest" "AH_ONLY"
+  elif have_node; then
     run_step "web vitest" -- bash -c 'cd apps/web && npm_ci_if_stale && npm run check && npm run lint && npm run test:unit'
   else skip "web vitest" "node/npm not installed"; fi
 }
@@ -199,6 +220,24 @@ layer_e2e() {
     run_step "$s" -- bash "scripts/tests/$s.sh"
   done
 }
+
+# Validate AH_ONLY tokens HARD before anything runs: an unknown key (typo, comma
+# separator) would otherwise SKIP every step and still exit 0 — a false green in
+# the autonomous chain ("SKIP heißt nicht verifiziert", CLAUDE.md).
+AH_KEYS="server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts"
+if [ -n "${AH_ONLY:-}" ]; then
+  # Charset first: the key loop tokenizes on IFS (tab/newline too), but only()
+  # matches spaces only — a tab-separated list would pass the key check and then
+  # skip everything (false green). Space is the ONLY allowed separator.
+  case "$AH_ONLY" in *[!a-z0-9\ -]*)
+    echo "invalid AH_ONLY (lowercase keys, SPACE-separated): '$AH_ONLY'"; exit 2 ;;
+  esac
+  for k in $AH_ONLY; do
+    case " $AH_KEYS " in *" $k "*) ;; *)
+      echo "unknown AH_ONLY key: '$k' — known (space-separated): $AH_KEYS"; exit 2 ;;
+    esac
+  done
+fi
 
 echo "AdminHelper test aggregator — layer=$LAYER  root=$ROOT"
 echo "docker=$(have_docker && echo yes || echo no) node=$(have_node && echo yes || echo no) go=$(have go && echo yes || echo no) cargo=$(have cargo && echo yes || echo no) display=$(have_display && echo yes || echo no)"

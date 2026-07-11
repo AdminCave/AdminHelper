@@ -397,16 +397,32 @@ Suites auf **crabbox** (least ephemere Proxmox-VMs; Provider-Env in
 `.claude/settings.json`, Token nur im gitignored `.claude/settings.local.json`).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]` (schwere Layer
-verlangen `AH_ALLOW_REAL=1`).
+verlangen `AH_ALLOW_REAL=1`; `AH_ONLY="server web"` begrenzt lint/unit auf die
+genannten Komponenten — gefilterte Steps melden SKIP).
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
   `crabbox_warm.sh <desktop|server|pond>` hydriert **einmal** und merkt den Slug
   (`.crabbox/warm.env`); danach ist jede Iteration inkrementell (`target/` +
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
-  `crabbox_iter.sh <layer>` bzw. `crabbox_iter.sh --desktop`. `crabbox_reap.sh`
-  raeumt die Warm-Boxen auf. Bei Fehler bleibt die Box stehen (`crabbox ssh`) und
-  Screenshots/Logs landen automatisch lokal unter `.crabbox-out/`.
+  `crabbox_iter.sh <layer>` bzw. `crabbox_iter.sh --desktop`; `crabbox_iter.sh
+  --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
+  auf der warmen Box. `crabbox_reap.sh` raeumt die Warm-Boxen auf. Bei Fehler bleibt
+  die Box stehen (`crabbox ssh`) und Screenshots/Logs landen automatisch lokal unter
+  `.crabbox-out/`.
+- **Parallele Lanes.** `bash scripts/dev/lane.sh new <slug>` legt fuer ein Vorhaben
+  einen Git-Worktree `../AdminHelper-<slug>` an (Branch `feature/<slug>` von `main`;
+  `.devenv.sh` als Symlink, `.claude/settings.local.json` als **Kopie** — Claude Code
+  schreibt die Datei bei Permission-Grants, ein Symlink waere ein geteiltes
+  Write-Target aller Lanes). Jede Lane
+  bekommt ihren **eigenen Warm-Pond** (`ah-warm-<slug>`, abgeleitet vom
+  Checkout-Namen; `AH_LANE` ueberschreibt) — Reap einer Lane laesst die anderen
+  stehen; Leases sind host-global serialisiert (parallele Warmups haengen den
+  Provider). crabbox bindet Leases an den leasenden Checkout-Pfad (fremder Checkout
+  muesste `--reclaim`); der Sync aus Worktrees ist validiert und traegt nur den
+  Source-Tree — auf der Box liegt kein `.git` (Agent-Makefile faellt auf `VERSION=dev`
+  zurueck). `lane.sh done <slug>` reapt die Boxen und raeumt Worktree + Branch ab.
+  Kompletter autonomer Ablauf: `AUTONOMOUS.md` („Parallel-Betrieb").
 - **Verteilt (Multi-Host).** `crabbox_multibox.sh --agents N [--desktop]` least
   Server- + Agent-Box(en) auf `vmbr1`; mit `--desktop` zusaetzlich eine Box, die die
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/

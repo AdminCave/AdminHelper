@@ -29,6 +29,22 @@ for f in [".claude/settings.json",".claude/settings.local.json"]:
 # default 420s suits warmup/status/ssh/stop. Use a larger CBX_TIMEOUT for `run`.
 cbx() { timeout "${CBX_TIMEOUT:-420}" crabbox "$@"; }
 
+# --- lane identity ----------------------------------------------------------------
+# Parallel lanes (git worktrees, scripts/dev/lane.sh) must not share a pond:
+# crabbox_reap.sh sweeps a WHOLE pond, so a shared name would let lane A reap
+# lane B's warm boxes. Derive a lane id from the checkout dir name; AH_LANE
+# overrides. The main checkout ("AdminHelper") maps to "" so solo behavior and
+# the historic ah-warm pond stay unchanged.
+cbx_lane() {
+  local lane="${AH_LANE:-}"
+  [ -n "$lane" ] || lane="$(basename "$CBX_ROOT")"
+  lane="$(printf '%s' "$lane" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')"
+  lane="${lane#-}"; lane="${lane%-}"
+  case "$lane" in adminhelper) lane="" ;; adminhelper-*) lane="${lane#adminhelper-}" ;; esac
+  printf '%s\n' "$lane"
+}
+cbx_pond() { local l; l="$(cbx_lane)"; printf 'ah-warm%s\n' "${l:+-$l}"; }
+
 # --- warm-slug persistence (.crabbox/warm.env: one ROLE=slug line per role) -------
 cbx_warm_file() { echo "$CBX_ROOT/.crabbox/warm.env"; }
 warm_get() {  # warm_get <role> -> prints the slug (empty if none)
@@ -54,10 +70,30 @@ box_ip() {  # box_ip <slug> -> prints the box IPv4
 
 # --- lease a box (warmup + wait-for-ready), echo "<slug> <ip>". Callers (warm/bake)
 # self-reap via -ttl/-idle-timeout, so there's no lease-id tracking to leak here (4.55).
+# Serialize `crabbox warmup` host-globally: CONCURRENT warmups on this provider hang
+# (ssh-lease, coordinator:never — once ran ~7 h). Only the lease is locked; bootstrap
+# and runs stay parallel. Used by cbx_lease AND crabbox_multibox.sh's lease() — every
+# warmup in the repo must go through here or the serialization guarantee is void.
+# fd 9 is closed for the child (9>&-) so an orphaned warmup process surviving the
+# `timeout` kill cannot keep the lock held past this group. Diagnostics go to stdout
+# on purpose — callers capture it into $out and print it in their failure banner.
+cbx_warmup_locked() {
+  local lock="${XDG_RUNTIME_DIR:-$HOME/.cache}/adminhelper-crabbox-lease.lock"
+  mkdir -p "$(dirname "$lock")" 2>/dev/null || true
+  : >>"$lock" 2>/dev/null || { echo "lease lock $lock not writable"; return 1; }
+  { flock -w 1800 9 || { echo "lease lock timeout (another lane leasing?)"; return 1; }
+    # 1200s, not 420: cloning the FAT template (baked toolchains, raid5) measured
+    # 637s — the old bound SIGTERMed crabbox mid-clone ("context canceled") and
+    # left an orphaned VM behind. Override per-call with CBX_LEASE_TIMEOUT.
+    CBX_TIMEOUT="${CBX_LEASE_TIMEOUT:-1200}" cbx warmup "$@" 2>&1 9>&-
+  } 9>"$lock"
+}
+
 cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
   local slug="$1" pond="$2" ttl="${3:-8h}" idle="${4:-4h}" out ip rslug
-  out="$(CBX_TIMEOUT=420 cbx warmup -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
-        -ttl "$ttl" -idle-timeout "$idle" 2>&1)" || { echo "warmup failed/timed out: $out" >&2; return 1; }
+  out="$(cbx_warmup_locked -slug "$slug" -pond "$pond" -proxmox-bridge vmbr1 \
+        -ttl "$ttl" -idle-timeout "$idle")" \
+    || { echo "warmup failed/timed out: $out" >&2; return 1; }
   rslug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"; [ -n "$rslug" ] && slug="$rslug"
   CBX_TIMEOUT=300 cbx status --id "$slug" --wait >/dev/null 2>&1 || true
   ip="$(box_ip "$slug")"; [ -n "$ip" ] || ip="$(printf '%s' "$out" | grep -oE 'ip=[0-9.]+' | head -1 | cut -d= -f2)"

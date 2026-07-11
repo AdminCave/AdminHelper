@@ -17,7 +17,15 @@ nie automatisch gebaut.
 
 ## Vor dem Start
 - Ledger-Kopf lesen: **Status**, **Branch**, **Spec**, **Commit-Granularität**, **Review**-
-  Granularität, DoD-Verweis.
+  Granularität, **Fast-Suite**, **Warm-Profil**, DoD-Verweis.
+- **`Fast-Suite: crabbox`** (parallele Worktree-Lane, keine lokalen Toolchain-Artefakte —
+  AUTONOMOUS.md „Parallel-Betrieb"): ALLE Verify-/Schnellsuite-Schritte laufen auf der
+  warmen Lane-Box statt lokal. Einmalig `bash scripts/tests/crabbox_warm.sh <Warm-Profil>`
+  (Default `desktop`; `pond` nur wenn im Kopf). Pro Task: das `Verify:` via
+  `bash scripts/tests/crabbox_iter.sh --cmd '<befehl>'`, die Komponenten-Schnellsuite via
+  `AH_ONLY='<komponenten>' bash scripts/tests/crabbox_iter.sh quick` (Keys: server
+  monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts). Nichts lokal bauen/testen.
+  Fehlt das Feld oder steht `lokal` → unverändert lokale Suiten (Solo-Default).
 - **Status prüfen:** `geplant` → das Starten von `feature-build` IST die Freigabe: Kopf auf
   `aktiv` setzen und bauen. `aktiv` → bauen. `blockiert`/`erledigt` → **nicht** bauen, melden.
 - **Branch prüfen:** Ist `Branch:` der Default-Branch (`main`)? → **abbrechen** und melden
@@ -52,6 +60,8 @@ nie automatisch gebaut.
    - `apps/desktop/src-tauri`: `cargo fmt --check` · `cargo clippy -- -D warnings` · `cargo test`
    - `apps/desktop/ui`: `npm run check` · `npm run lint` · `npm run test`
    - `apps/web`: `npm run check` · `npm run lint` · `npm run test:unit`  (NICHT `test:e2e` — schwer)
+   - Bei `Fast-Suite: crabbox`: dieselben Checks remote über `crabbox_iter.sh` (s. „Vor
+     dem Start"), nicht lokal.
    - **Grün** → Eintrag `[x]` (+ 1 Stichwort was geändert).
    - **Rot durch deine Änderung** → fixen; nicht in ~2 Versuchen lösbar → `git checkout -- <datei>`
      (Änderung zurücknehmen), `[~] (verworfen: Test rot: <kurz>)`, weiter.
@@ -79,7 +89,8 @@ nie automatisch gebaut.
    ist. **Nie einen roten oder ungereviewten Stand committen.** Commit-Body: Task-IDs + Stichwort.
 
 ## Abschluss (kein `[ ]` mehr offen)
-1. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit).
+1. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit); bei
+   `Fast-Suite: crabbox` stattdessen `bash scripts/tests/crabbox_iter.sh quick` (ohne `AH_ONLY`).
 2. **Schwere Suite auf crabbox — nur wenn nötig (path-gated, CLAUDE.md).** Erst den Branch-Diff
    prüfen (`git diff --stat main...`): Berührt er **heavy-relevante** Pfade? (`apps/server`-API/
    Gateway, `apps/ca-issuer`, `apps/gateway`, `apps/agent`, `apps/desktop` Connect/Tunnel/
@@ -87,7 +98,13 @@ nie automatisch gebaut.
    nein** (z. B. reine `docs/`-, Web-UI- oder Kleinkram-Änderung) → schwere Suite **überspringen**
    mit begründetem Vermerk, direkt zu Schritt 3. **Wenn ja:** dem `/test`-Skill folgen — Box warm
    → `run.sh quick` → `AH_ALLOW_REAL=1 run.sh integration` (+ `e2e` nur bei berührter
-   `apps/web`/`apps/desktop`-Journey). Danach **`crabbox list`** prüfen (keine geleakten Leases)
+   `apps/web`/`apps/desktop`-Journey). Dabei das **`Warm-Profil` am realen Diff re-checken**,
+   in beide Richtungen: `pond` geplant, aber keine Desktop-Journey im Diff → Single-Box
+   reicht (zweite Box sparen); steht **`Abschluss: multibox …`** im Kopf ODER berührt der
+   Diff Cross-Host-Pfade (FRP-Tunnel-Datenpfad, :8444-Provisioning, `build-deb/rpm`,
+   `scripts/install|update`, mTLS/PKI) → den Multibox-Lauf **beim Nutzer anfragen**
+   (ask-first — `crabbox_multibox.sh` bleibt bewusst prompt-pflichtig) und das Ergebnis in
+   den PR-Body aufnehmen. Danach **`crabbox list`** prüfen (keine geleakten Leases)
    und `crabbox stop`/reap. **Nur bei realem Pass weiter — SKIP ≠ grün.** (Nutzt VM-Leases, die
    per `-ttl`/`-idle-timeout` self-reapen — nur der single-box-Warm-Loop, kein `multibox`/`bake`
    ohne Nachfrage.)
