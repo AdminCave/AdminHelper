@@ -133,7 +133,7 @@ Verify: `apps/desktop/ui` vitest `theme.test.ts` grün; crabbox-GUI: Umschalten 
 Doku: docs/developer/desktop.html + docs/en/developer/desktop.html (Theme-Umschalter) — selber Commit.
 Abhängt von: T8
 
-### T13 — Desktop: AdminCave-Brand-Mark  [ ]
+### T13 — Desktop: AdminCave-Brand-Mark  [x] (inline currentColor-Mark, Favicon prefers-color-scheme, Wortmarke 600/300)
 Komponente: apps/desktop/ui · Dateien: public/logo.svg · src/components/AppShell.svelte · src/components/Login.svelte
 Änderung: `logo.svg` durch AdminCave-Mark ersetzen; Wortmarken-Gewicht „Admin"(600)/
 „Helper"(300); Mark via `currentColor`.

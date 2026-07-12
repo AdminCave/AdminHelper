@@ -177,11 +177,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <aside class="sidebar">
     <div class="sidebar-brand">
       <div class="sidebar-logo">
-        <img src="/logo.svg" alt="AdminHelper" width="36" height="36" />
+        <svg width="36" height="36" viewBox="0 0 100 100" fill="currentColor" aria-hidden="true">
+          <path
+            fill-rule="evenodd"
+            clip-rule="evenodd"
+            d="M28 0C12.536 0 0 12.536 0 28v44c0 15.464 12.536 28 28 28h44c15.464 0 28-12.536 28-28V28C100 12.536 87.464 0 72 0H28Zm22 26.5L24.5 52a6 6 0 0 0 8.485 8.485L50 43.97l16.515 16.515A6 6 0 0 0 75 51.999L50 26.5ZM31 66a6 6 0 0 0 0 12h38a6 6 0 0 0 0-12H31Z"
+          />
+        </svg>
       </div>
       <div class="sidebar-brand-text">
-        <div class="sidebar-title">Admin</div>
-        <div class="sidebar-subtitle">Helper</div>
+        <div class="sidebar-title" style="font-weight:600">Admin</div>
+        <div class="sidebar-subtitle" style="font-weight:300">Helper</div>
       </div>
     </div>
 
