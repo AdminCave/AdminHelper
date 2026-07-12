@@ -33,7 +33,7 @@ Verify: `cd apps/web && npm run check && npm run test:unit` grün; `npm run buil
 Doku: keine (intern).
 Abhängt von: T1
 
-### T3 — Web: Komponenten-Look (Buttons/Inputs/Cards/Status)  [ ]
+### T3 — Web: Komponenten-Look (Buttons/Inputs/Cards/Status)  [x] (Pill-Radien, monochrome Primary, Fokus-Ring, Scrollbar-Token)
 Komponente: apps/web · Dateien: src/styles/global.css
 Änderung: `.btn*` → `--radius-pill`, `.btn.primary` monochrom
 (`--fill-solid`/`--fill-solid-text`); Inputs/Select/Search → Pill, Textarea → 12px;
@@ -144,6 +144,18 @@ Abhängt von: T8
 ---
 
 ## Phase C — Doku & Abschluss
+
+### T15 — Web+Desktop: generische Hover-Overlays theme-adaptiv  [ ]
+Komponente: apps/web · apps/desktop/ui · Dateien: src/styles/global.css · src/styles/app.css (+ ggf. Scoped-Styles)
+Änderung: die verbliebenen `rgba(255,255,255,.02–.06)`-Overlays (Nav-/Tabellen-Zeilen-/
+Icon-Button-Hover, getönte `badge-read/-inactive`/`tag`-bg), die im Light-Mode nicht
+kippen (weiß auf weiß = unsichtbar/invertiert). Ein neutrales `--hover`-Token (Dark:
+`rgba(255,255,255,.05)`, Light: `rgba(0,0,0,.05)`) in beiden `:root`-Blöcken (web+desktop,
+wertgleich) + betroffene Hover-Regeln darauf umstellen. Aufgetaucht im T3-Review als
+Light-Mode-Kante (T3 adressierte laut Wortlaut nur die enumerierten Komponenten).
+Verify: `npm run check && npm run build` (web+desktop) grün; Light-Screenshot: Row-/Nav-Hover sichtbar.
+Doku: keine (intern).
+Abhängt von: T3, T9
 
 ### T14 — Doku + CHANGELOG konsolidieren  [ ]
 Komponente: docs · Dateien: docs/developer/webui.html · docs/developer/desktop.html · docs/en/developer/{webui,desktop}.html · CHANGELOG.md · (ggf. README.md)
