@@ -155,6 +155,9 @@ async fn connect_rdp(
             <li>Nach Exit wird der Tunnel wieder abgebaut</li>
           </ol>
 
+          <h2>Theming &amp; Design-System</h2>
+          <p>Die UI folgt dem <a href="https://admincave.com" rel="noopener">AdminCave</a>-Design-System (monochrom, True-Black dark-first, Geist-Font geb&uuml;ndelt via <code>@fontsource-variable</code> &ndash; offline/CSP-fest, kein CDN, Pill-Radien). Farben/Radien/Schatten sind CSS-Custom-Properties in <code>src/styles/app.css</code> &ndash; ein <code>:root</code>-Block (Dark) plus ein <code>:root[data-theme="light"]</code>-Block (Light), wertgleich zum Web-Panel. Der <strong>Theme-Umschalter</strong> (Icon-Button im Sidebar-Footer neben &bdquo;Einstellungen&ldquo;) kippt &uuml;ber den <code>theme</code>-Store zwischen Dark und Light; die Wahl liegt in <code>localStorage.ah-theme</code> &ndash; bewusst <em>nicht</em> im persistierten <code>Settings</code>-Contract (kein Rust-/Migrations-Eingriff). Ein Inline-Script im <code>&lt;head&gt;</code> setzt <code>data-theme</code> FOUC-frei vor dem ersten Paint. Die uPlot-Monitoring-Charts lesen Achsen-/Grid-Farben aus den Tokens und rendern bei Theme-Wechsel neu. Default = Dark.</p>
+
           <h2>Tests &amp; Build</h2>
           <div class="code-header"><span>bash</span></div>
 <pre><code>cd apps/desktop/ui

@@ -122,7 +122,7 @@ Verify: crabbox-GUI: Monitoring-Charts in Dark **und** Light lesbar (Screenshot 
 Doku: keine (intern).
 Abhängt von: T8, T10
 
-### T12 — Desktop: Theme-Store + Umschalter + Persistenz  [ ]
+### T12 — Desktop: Theme-Store + Umschalter + Persistenz  [x] (FOUC + theme.ts + AppShell-Toggle + Test + Doku)
 Komponente: apps/desktop/ui · Dateien: src/lib/stores/theme.ts (neu) · index.html · src/components/AppShell.svelte
 Änderung: **FOUC-frei** — Inline-Script im `index.html`-`<head>` setzt `data-theme`
 aus `localStorage['ah-theme']` vor dem ersten Paint. Store `theme.ts` (SPDX; Default

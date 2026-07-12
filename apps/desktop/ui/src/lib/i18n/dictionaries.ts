@@ -21,6 +21,7 @@ export const translations: Translations = {
     'nav.ansible': 'Ansible',
     'nav.monitoring': 'Monitoring',
     'nav.logout': 'Abmelden',
+    'theme.toggle': 'Design umschalten',
 
     // ── Infrastructure hub ─────────────────────────────────────────────
     'infra.search.placeholder': 'Server suchen…',
@@ -526,6 +527,7 @@ export const translations: Translations = {
     'nav.ansible': 'Ansible',
     'nav.monitoring': 'Monitoring',
     'nav.logout': 'Sign out',
+    'theme.toggle': 'Toggle theme',
 
     // ── Infrastructure hub ─────────────────────────────────────────────
     'infra.search.placeholder': 'Search servers…',

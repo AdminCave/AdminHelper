@@ -14,6 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { markRdpError } from '$lib/stores/connectFlow';
   import { markTerminated, markError, startIfServerMode } from '$lib/stores/tunnel';
   import { t, tNow } from '$lib/i18n';
+  import { theme, toggleTheme } from '$lib/stores/theme';
   import Dashboard from '../pages/Dashboard.svelte';
   import Connections from '../pages/Connections.svelte';
   import Infrastructure from '../pages/Infrastructure.svelte';
@@ -212,6 +213,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
         </svg>
         <span class="sidebar-label">{$t('settings.label')}</span>
         <span class="sidebar-badge">{modeBadge}</span>
+      </button>
+      <button
+        class="sidebar-item"
+        onclick={toggleTheme}
+        title={$t('theme.toggle')}
+        aria-label={$t('theme.toggle')}
+      >
+        {#if $theme === 'dark'}
+          <svg class="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        {:else}
+          <svg class="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"
+            />
+          </svg>
+        {/if}
+        <span class="sidebar-label">{$t('theme.toggle')}</span>
       </button>
       <div class="sidebar-version">v{appVersion}</div>
     </div>
