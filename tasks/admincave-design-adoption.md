@@ -96,7 +96,7 @@ Verify: `cd apps/desktop/ui && npm run check && npm run test` grün; `npm run bu
 Doku: keine (intern).
 Abhängt von: T7
 
-### T9 — Desktop: Komponenten-Look in app.css  [ ]
+### T9 — Desktop: Komponenten-Look in app.css  [x] (Pill/monochrome/Fokus-Ring/Card+Modal-Radien, wie Web-T3)
 Komponente: apps/desktop/ui · Dateien: src/styles/app.css
 Änderung: analog Web-T3 — Buttons/Inputs Pill, monochrome Primary, Cards/Panels
 (16px) und Modals (28px), Status-Pills, Fokus-Ring; Aktiv-Nav gefüllt nur Farben.
