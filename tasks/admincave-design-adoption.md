@@ -52,7 +52,7 @@ Verify: `grep -rniE '#[0-9a-f]{3,8}' apps/web/src --include='*.svelte'` liefert 
 Doku: keine (intern).
 Abhängt von: T2
 
-### T5 — Web: Theme-Store + Umschalter + Persistenz  [ ]
+### T5 — Web: Theme-Store + Umschalter + Persistenz  [x] (FOUC-Init + theme.ts + Sidebar-Toggle + Tests + Doku)
 Komponente: apps/web · Dateien: src/lib/stores/theme.ts (neu) · index.html · src/lib/components/layout/Sidebar.svelte
 Änderung: **FOUC-frei** — winziges Inline-Script im `index.html`-`<head>` liest
 `localStorage['ah-theme']` und setzt `document.documentElement.dataset.theme` **vor**

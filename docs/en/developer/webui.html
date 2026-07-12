@@ -78,8 +78,11 @@
           <h2>i18n</h2>
           <p>Languages: DE and EN. Active language is persisted in <code>localStorage.adminhelper_language</code>; browser detection only supplies the initial fallback. The <code>t()</code> function is a store &ndash; this avoids i18n leaks in reactive components.</p>
 
+          <h2>Theming &amp; design system</h2>
+          <p>The UI follows the <a href="https://admincave.com" rel="noopener">AdminCave</a> design system (monochrome, True-Black dark-first, Geist font, pill radii). Colours/radii/shadows are CSS custom properties in <code>src/styles/global.css</code> &ndash; a <code>:root</code> block (dark) plus a <code>:root[data-theme="light"]</code> block (light). The <strong>theme switcher</strong> (icon button in the sidebar footer next to <code>EN/DE</code>) flips between dark and light via the <code>theme</code> store; the choice is persisted in <code>localStorage.ah-theme</code>. A tiny inline script in the <code>&lt;head&gt;</code> sets <code>data-theme</code> <em>before</em> the first paint (FOUC-free), so light-mode users don't flash dark on load. Default = dark.</p>
+
           <h2>Tests</h2>
-          <p>Playwright smoke tests cover the production pages. Two specs: <code>login.spec.ts</code> and <code>smoke.spec.ts</code>; visual diffs live in <code>tests/e2e/*.spec.ts-snapshots/</code>. Tolerance is <code>maxDiffPixelRatio: 0.02</code> (2&nbsp;%). Locale <code>de-DE</code>, viewport 1280&times;800. Reports are uploaded as a CI artifact (<code>frontend_e2e</code> job).</p>
+          <p>Playwright E2E cover login, CRUD, authorization, navigation and the theme switcher (specs in <code>tests/e2e/</code>, incl. <code>login.spec.ts</code>, <code>smoke.spec.ts</code>, <code>theme.spec.ts</code>); visual diffs live in <code>tests/e2e/*.spec.ts-snapshots/</code>. Tolerance is <code>maxDiffPixelRatio: 0.02</code> (2&nbsp;%). Locale <code>de-DE</code>, viewport 1280&times;800. Reports are uploaded as a CI artifact (<code>frontend_e2e</code> job).</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code>cd apps/web

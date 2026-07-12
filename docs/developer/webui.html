@@ -78,8 +78,11 @@
           <h2>i18n</h2>
           <p>Sprachen: DE und EN. Aktive Sprache wird in <code>localStorage.adminhelper_language</code> persistiert; Browser-Detect dient nur als initialer Fallback. Die <code>t()</code>-Funktion ist als Store implementiert &ndash; das verhindert i18n-Leaks in reaktiven Komponenten.</p>
 
+          <h2>Theming &amp; Design-System</h2>
+          <p>Die Oberfl&auml;che folgt dem <a href="https://admincave.com" rel="noopener">AdminCave</a>-Design-System (monochrom, True-Black dark-first, Geist-Font, Pill-Radien). Farben/Radien/Schatten sind CSS-Custom-Properties in <code>src/styles/global.css</code> &ndash; ein <code>:root</code>-Block (Dark) plus ein <code>:root[data-theme="light"]</code>-Block (Light). Der <strong>Theme-Umschalter</strong> (Icon-Button im Sidebar-Footer neben <code>EN/DE</code>) kippt &uuml;ber den <code>theme</code>-Store zwischen Dark und Light; die Wahl wird in <code>localStorage.ah-theme</code> persistiert. Ein winziges Inline-Script im <code>&lt;head&gt;</code> setzt <code>data-theme</code> bereits <em>vor</em> dem ersten Paint (FOUC-frei), damit Light-User beim Laden nicht kurz Dark sehen. Default = Dark.</p>
+
           <h2>Tests</h2>
-          <p>Playwright-Smoketests decken die Produktiv-Seiten ab. Zwei Spec-Dateien: <code>login.spec.ts</code> und <code>smoke.spec.ts</code>; Visual-Diffs liegen in <code>tests/e2e/*.spec.ts-snapshots/</code>. Toleranz ist <code>maxDiffPixelRatio: 0.02</code> (2&nbsp;%). Locale ist <code>de-DE</code>, Viewport 1280&times;800. Reports landen als CI-Artifact (<code>frontend_e2e</code>-Job).</p>
+          <p>Playwright-E2E decken Login, CRUD, Autorisierung, Navigation und den Theme-Umschalter ab (Specs in <code>tests/e2e/</code>, u.&nbsp;a. <code>login.spec.ts</code>, <code>smoke.spec.ts</code>, <code>theme.spec.ts</code>); Visual-Diffs liegen in <code>tests/e2e/*.spec.ts-snapshots/</code>. Toleranz ist <code>maxDiffPixelRatio: 0.02</code> (2&nbsp;%). Locale ist <code>de-DE</code>, Viewport 1280&times;800. Reports landen als CI-Artifact (<code>frontend_e2e</code>-Job).</p>
 
           <div class="code-header"><span>bash</span></div>
 <pre><code>cd apps/web
