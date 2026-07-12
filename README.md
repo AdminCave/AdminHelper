@@ -18,6 +18,7 @@ A lightweight Windows + Linux connection manager built with **Tauri v2 + Rust** 
 - **Sync mode**: load connections from a remote **HTTPS JSON** on startup and on a schedule
 - **Secure by design**: passwords are **not stored by default** (optional per-device storage)
 - **Localization**: German + English, auto-detected on first start (changeable later)
+- **AdminCave design**: monochrome, dark-first theme with an equivalent light mode (toggle in the sidebar footer), bundled Geist font
 
 ## Platform behavior
 

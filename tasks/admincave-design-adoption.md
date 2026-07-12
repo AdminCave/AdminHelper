@@ -157,7 +157,7 @@ Verify: `npm run check && npm run build` (web+desktop) grün; Light-Screenshot: 
 Doku: keine (intern).
 Abhängt von: T3, T9
 
-### T14 — Doku + CHANGELOG konsolidieren  [ ]
+### T14 — Doku + CHANGELOG konsolidieren  [x] (CHANGELOG [Unreleased] + README-Zeile; webui/desktop-Doku via T5/T12)
 Komponente: docs · Dateien: docs/developer/webui.html · docs/developer/desktop.html · docs/en/developer/{webui,desktop}.html · CHANGELOG.md · (ggf. README.md)
 Änderung: DS-Adoption + Light-Mode/Theme-Umschalter in beiden Entwickler-Doku-Seiten
 (DE+EN) knapp beschreiben; `CHANGELOG.md` `## [Unreleased]` → `### Added`
