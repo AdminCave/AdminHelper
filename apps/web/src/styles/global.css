@@ -198,8 +198,6 @@ body {
   height: 36px;
   border-radius: var(--radius-sm);
   display: block;
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
 }
 
 .sidebar-brand-text .brand-title {
@@ -504,7 +502,7 @@ body {
 }
 
 .badge-read {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -540,7 +538,7 @@ body {
 }
 
 .badge-inactive {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -551,7 +549,7 @@ body {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover);
   color: var(--text-muted);
 }
 
