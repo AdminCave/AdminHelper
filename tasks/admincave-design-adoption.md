@@ -81,7 +81,7 @@ Abhängt von: T2
 
 ## Phase B — Desktop (apps/desktop/ui)
 
-### T7 — Desktop: Geist-Font bündeln  [ ]
+### T7 — Desktop: Geist-Font bündeln  [x] (Geist in dependencies + Ambient-d.ts, wertgleich Web)
 Komponente: apps/desktop/ui · Dateien: package.json · src/main.ts · src/styles/app.css
 Änderung: analog T1 (gleiche Deps, Import in `main.ts`, `--font`/`--font-mono` in `app.css`).
 Verify: `cd apps/desktop/ui && npm run build` grün; computed font-family enthält „Geist".

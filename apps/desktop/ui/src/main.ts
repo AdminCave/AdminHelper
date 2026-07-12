@@ -6,6 +6,8 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import { registerConnectionsSync } from '$lib/stores/session';
 import { reloadForMode, clearInMemory } from '$lib/stores/connections';
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
 import './styles/global.css';
 
 // Wire the session store to the connections store here (a leaf module) so the
