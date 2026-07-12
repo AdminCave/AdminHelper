@@ -22,7 +22,7 @@ hinzufügen (exakten npm-Namen verifizieren, Fallback `@fontsource/geist`), in
 Verify: `cd apps/web && npm run build` grün; DevTools `getComputedStyle(document.body).fontFamily` enthält „Geist".
 Doku: keine (intern).
 
-### T2 — Web: Token-Blöcke Dark + Light  [ ]
+### T2 — Web: Token-Blöcke Dark + Light  [x] (DS-Dark-Werte + Light-Block + neue Tokens)
 Komponente: apps/web · Dateien: src/styles/global.css
 Änderung: `:root` auf DS-Dark-Werte setzen (Spec-Mapping); neuen
 `:root[data-theme="light"]`-Block anlegen; fehlende Tokens ergänzen (`--fill-solid`,
