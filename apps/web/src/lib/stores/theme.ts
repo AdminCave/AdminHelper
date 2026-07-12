@@ -24,9 +24,19 @@ const _theme = writable<Theme>(initial());
 _theme.subscribe((theme) => {
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.theme = theme;
+    // Keep the mobile browser chrome in sync with the theme (web only; the desktop
+    // index.html has no theme-color meta, so querySelector returns null and this skips).
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#fff' : '#000');
   }
-  if (typeof localStorage !== 'undefined') {
+  // setItem can THROW (Safari private mode / quota / blocked storage); an unhandled throw
+  // here propagates out of this module's import and blanks the app. Swallow it — the theme
+  // still applies via the attribute, only persistence is best-effort. (typeof-guard dropped:
+  // try/catch also covers a missing localStorage.)
+  try {
     localStorage.setItem(STORAGE_KEY, theme);
+  } catch {
+    /* storage unavailable — persistence best-effort */
   }
 });
 

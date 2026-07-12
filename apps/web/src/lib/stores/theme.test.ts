@@ -7,7 +7,7 @@
 // localStorage (so the choice survives a reload). theme.ts reads document + localStorage
 // at import time, so each test resets both and re-imports fresh.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 describe('theme store', () => {
@@ -15,6 +15,10 @@ describe('theme store', () => {
     vi.resetModules();
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('defaults to dark when no attribute or storage is set', async () => {
@@ -41,5 +45,18 @@ describe('theme store', () => {
     expect(get(theme)).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(localStorage.getItem('ah-theme')).toBe('dark');
+  });
+
+  it('does not throw when localStorage.setItem is blocked (private mode / quota)', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError');
+    });
+    // The module-level subscribe writes to storage at import time — must not blank the app.
+    const mod = await import('./theme');
+    expect(get(mod.theme)).toBe('dark');
+    // Toggle still applies the theme via the attribute even though persistence fails.
+    expect(() => mod.toggleTheme()).not.toThrow();
+    expect(get(mod.theme)).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
   });
 });
