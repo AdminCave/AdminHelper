@@ -65,7 +65,7 @@ Verify: `apps/web` vitest `theme.test.ts` grün (Toggle flippt Attribut + persis
 Doku: docs/developer/webui.html + docs/en/developer/webui.html (Theme-Umschalter erwähnen) — im selben Commit.
 Abhängt von: T2
 
-### T6 — Web: AdminCave-Brand-Mark + App-Name/Meta  [ ]
+### T6 — Web: AdminCave-Brand-Mark + App-Name/Meta  [x] (inline currentColor-Mark, Favicon prefers-color-scheme, Titel/theme-color)
 Komponente: apps/web · Dateien: public/logo.svg · public/assets/logo.svg · index.html · src/lib/components/layout/Sidebar.svelte · src/pages/Login.svelte
 Änderung: Verlaufs-`logo.svg` durch AdminCave-Mark (`currentColor`, aus DS
 `assets/admincave-mark.svg`) ersetzen — **beide** Dateien (`public/logo.svg` =

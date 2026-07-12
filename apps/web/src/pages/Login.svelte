@@ -36,10 +36,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="login-page">
   <div class="login-card">
     <div class="login-brand">
-      <img src="/assets/logo.svg" alt="Logo" class="logo-mark" />
+      <svg class="logo-mark" viewBox="0 0 100 100" fill="currentColor" aria-hidden="true">
+        <path
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M28 0C12.536 0 0 12.536 0 28v44c0 15.464 12.536 28 28 28h44c15.464 0 28-12.536 28-28V28C100 12.536 87.464 0 72 0H28Zm22 26.5L24.5 52a6 6 0 0 0 8.485 8.485L50 43.97l16.515 16.515A6 6 0 0 0 75 51.999L50 26.5ZM31 66a6 6 0 0 0 0 12h38a6 6 0 0 0 0-12H31Z"
+        />
+      </svg>
       <div>
-        <div class="brand-title">Admin</div>
-        <div class="brand-subtitle">Helper</div>
+        <div class="brand-title" style="font-weight:600">Admin</div>
+        <div class="brand-subtitle" style="font-weight:300">Helper</div>
       </div>
       <button
         class="btn small ghost"
