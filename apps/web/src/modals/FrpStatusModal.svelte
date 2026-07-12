@@ -85,9 +85,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <tr>
             <td>
               {#if online}
-                <span style="color:#22c55e" title="Online">&#x25CF;</span>
+                <span style="color:var(--success)" title="Online">&#x25CF;</span>
               {:else}
-                <span style="color:#ef4444" title="Offline">&#x25CF;</span>
+                <span style="color:var(--danger)" title="Offline">&#x25CF;</span>
               {/if}
             </td>
             <td>{p.name}</td>

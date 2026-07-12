@@ -168,7 +168,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-size: 0.9em;
   }
   .status-bad {
-    color: var(--danger, #d23);
+    color: var(--danger);
     font-weight: 600;
   }
   .audit-hint {

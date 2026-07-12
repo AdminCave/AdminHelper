@@ -44,7 +44,7 @@ Verify: `npm run check && npm run build` grün; crabbox-Screenshot Dashboard/Log
 Doku: keine (intern).
 Abhängt von: T2
 
-### T4 — Web: hartkodierte Hex → Tokens  [ ]
+### T4 — Web: hartkodierte Hex → Tokens  [x] (4 Inline-Hex → --success/--danger)
 Komponente: apps/web · Dateien: src/pages/Frp.svelte · src/pages/Audit.svelte · src/modals/FrpStatusModal.svelte
 Änderung: die 4 Inline-Hex (`#22c55e`, `#ef4444`, `#d23`) auf `--success`/`--danger`
 umstellen, damit sie im Light-Mode korrekt kippen.
