@@ -1,5 +1,5 @@
 # AdminCave-Design-System-Adoption (Web + Desktop) — Task-Ledger
-Status: aktiv · Branch: feature/admincave-design-adoption · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/admincave-design-adoption · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/admincave-design-adoption.md
 Fast-Suite: crabbox · Warm-Profil: desktop
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -170,7 +170,16 @@ Abhängt von: T5, T12
 ---
 
 ## Abschluss-Lauf (nach allen Tasks)
-Fast-Suite lief pro Task auf crabbox. Vor dem Draft-PR die schwere Suite fahren:
-`bash scripts/tests/run.sh e2e` (bzw. warm-Box `desktop`) mit `AH_ALLOW_REAL=1` —
+Fast-Suite lief pro Task auf crabbox. Vor dem Draft-PR die schwere Suite gefahren:
 GUI-E2E beider Frontends, Screenshots Dark **und** Light. Kein Multibox nötig (keine
 Cross-Host-/PKI-/Install-Pfade berührt).
+
+### Ergebnis (erledigt)
+- Alle 15 Tasks fertig, pro Task frisch reviewt + committet.
+- Gesamt-Schnellcheck (`run.sh quick`, alle Komponenten): 12/0/0 grün (673+ Tests).
+- Web-Playwright-E2E: 22 passing, Visual-Baselines fürs Retheme neu erzeugt (Dark, verifiziert).
+- Desktop-Toggle-Live-E2E (echte Tauri-GUI): grün.
+- xhigh-`/code-review` (main...HEAD): 9 Funde, alle behoben (Store-Storage-Bug, veraltete
+  Baselines, unvollständiger Light-Mode, theme-color-Meta, Favicon-Fallback, Orphan/tote
+  CSS, Desktop-Toggle-Test).
+- Draft-PR: AdminCave/AdminHelper#3 — CI `success` (alle Jobs inkl. frontend-e2e-Visual-Gate).
