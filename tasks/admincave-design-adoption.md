@@ -87,7 +87,7 @@ Komponente: apps/desktop/ui · Dateien: package.json · src/main.ts · src/style
 Verify: `cd apps/desktop/ui && npm run build` grün; computed font-family enthält „Geist".
 Doku: keine (intern).
 
-### T8 — Desktop: Token-Blöcke Dark + Light  [ ]
+### T8 — Desktop: Token-Blöcke Dark + Light  [x] (wertgleich Web + desktop-Tokens erhalten)
 Komponente: apps/desktop/ui · Dateien: src/styles/app.css
 Änderung: `:root` auf DS-Dark-Werte (wertgleich zu Web-T2) + `:root[data-theme="light"]`
 + neue Tokens; **desktop-spezifische Tokens behalten** (`--bg-panel`, `--bg-input`,
