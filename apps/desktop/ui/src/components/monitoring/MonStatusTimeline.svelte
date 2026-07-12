@@ -18,11 +18,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     color: string;
   }
 
+  // Semantic tokens (defined in app.css :root + :root[data-theme=light]); used inline,
+  // so var() resolves live per theme — the timeline flips with the toggle, no re-render.
   const STATUS_COLORS: Record<number, string> = {
-    0: 'var(--mon-ok-bg, #22c55e)',
-    1: 'var(--mon-warn-bg, #f59e0b)',
-    2: 'var(--mon-crit-bg, #ef4444)',
-    3: 'var(--mon-unknown-bg, #94a3b8)',
+    0: 'var(--success)',
+    1: 'var(--warning)',
+    2: 'var(--danger)',
+    3: 'var(--text-muted)',
   };
 
   let segments = $derived.by<Segment[]>(() => {

@@ -114,7 +114,7 @@ Verify: `grep -rniE '#[0-9a-f]{3,8}' apps/desktop/ui/src --include='*.svelte'` n
 Doku: keine (intern).
 Abhängt von: T8
 
-### T11 — Desktop: Monitoring-/Chart-Theming (uPlot)  [ ]
+### T11 — Desktop: Monitoring-/Chart-Theming (uPlot)  [x] (Achsen/Grid aus Tokens + Re-Render on Toggle; Timeline→Tokens) — Abschluss: Serien #38bdf8/#ec4899 auf Weiß prüfen
 Komponente: apps/desktop/ui · Dateien: src/components/monitoring/MonChart.svelte · MonStatusTimeline.svelte · src/styles/app.css (uPlot-Overrides)
 Änderung: uPlot Achsen/Grid/Serien + Timeline theme-adaptiv über Tokens statt fixer
 Dark-Werte; Serien-Palette in beiden Themes lesbar halten (kein Neon/Pastel, DS-Regel).

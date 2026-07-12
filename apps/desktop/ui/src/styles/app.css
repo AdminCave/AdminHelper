@@ -1560,6 +1560,12 @@ body {
   font-size: var(--text-sm);
 }
 
+/* uPlot legend is DOM (not canvas) — make its text follow the theme token
+   (axis/grid strokes are re-themed from JS in MonChart.svelte). */
+.mon-chart-container .u-legend {
+  color: var(--text-muted);
+}
+
 /* ──────────────────────────────────────────────────────────────────
    Monitoring Dashboard — Split-Layout, Server-List, Dashboard, Sections
    ────────────────────────────────────────────────────────────────── */
