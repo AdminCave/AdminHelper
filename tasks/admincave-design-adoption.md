@@ -1,5 +1,5 @@
 # AdminCave-Design-System-Adoption (Web + Desktop) — Task-Ledger
-Status: geplant · Branch: feature/admincave-design-adoption · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/admincave-design-adoption · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/admincave-design-adoption.md
 Fast-Suite: crabbox · Warm-Profil: desktop
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -13,7 +13,7 @@ Leitplanken (für JEDE Task): Nur *Look* ändern — DOM-Struktur und alle Layou
 
 ## Phase A — Web (apps/web)
 
-### T1 — Web: Geist-Font bündeln  [ ]
+### T1 — Web: Geist-Font bündeln  [x] (Geist gebündelt via @fontsource-variable + Ambient-d.ts)
 Komponente: apps/web · Dateien: package.json · src/main.ts · src/styles/global.css
 Änderung: `@fontsource-variable/geist` + `@fontsource-variable/geist-mono` als Dep
 hinzufügen (exakten npm-Namen verifizieren, Fallback `@fontsource/geist`), in

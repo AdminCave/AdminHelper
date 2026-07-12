@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
 import './styles/global.css';
 import { mount } from 'svelte';
 import App from './App.svelte';
