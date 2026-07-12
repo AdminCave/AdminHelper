@@ -16,6 +16,7 @@
   /* Borders — Hairlines statt Flächen */
   --border: rgba(255, 255, 255, 0.1);
   --border-hover: rgba(255, 255, 255, 0.18);
+  --hover: rgba(255, 255, 255, 0.06); /* neutrales Hover-Overlay, kippt im Light */
 
   /* Text */
   --text: #ededee;
@@ -93,6 +94,7 @@
   /* Borders */
   --border: rgba(0, 0, 0, 0.1);
   --border-hover: rgba(0, 0, 0, 0.16);
+  --hover: rgba(0, 0, 0, 0.06);
 
   /* Text */
   --text: #16181c;
@@ -244,7 +246,7 @@ body {
 }
 
 .sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -543,7 +545,7 @@ body {
 
 .btn:hover {
   border-color: var(--border-hover);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
 }
 
 .btn.primary {
@@ -743,7 +745,7 @@ body {
 }
 
 .tree-header:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover);
 }
 
 .tree-tag {
@@ -1303,7 +1305,7 @@ body {
 }
 
 .dash-list-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 
 .dash-list-item-name {
@@ -1652,7 +1654,7 @@ body {
   width: 100%;
 }
 .mon-srv-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 .mon-srv-item:focus-visible {
   outline: 2px solid var(--accent);
@@ -2156,7 +2158,7 @@ body {
   padding: 8px var(--sp-4);
 }
 .mon-line:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover);
 }
 .mon-line:focus-visible {
   outline: 2px solid var(--accent);
@@ -2286,7 +2288,7 @@ body {
     border-color 0.15s ease;
 }
 .mon-line-action:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
   color: var(--text);
   border-color: var(--border);
 }
@@ -2378,7 +2380,7 @@ body {
   font-size: var(--text-sm);
 }
 .mon-expand-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 .mon-expand-row.level-ok {
   background: rgba(52, 211, 153, 0.04);
@@ -2635,7 +2637,7 @@ body {
 }
 
 .ansible-server-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 .ansible-server-row input[type='checkbox'] {
   flex-shrink: 0;

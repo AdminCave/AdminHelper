@@ -145,12 +145,12 @@ Abhängt von: T8
 
 ## Phase C — Doku & Abschluss
 
-### T15 — Web+Desktop: generische Hover-Overlays theme-adaptiv  [ ]
+### T15 — Web+Desktop: generische Hover-Overlays theme-adaptiv  [x] (3 web + 9 desktop :hover → --hover-Token .06)
 Komponente: apps/web · apps/desktop/ui · Dateien: src/styles/global.css · src/styles/app.css (+ ggf. Scoped-Styles)
 Änderung: die verbliebenen `rgba(255,255,255,.02–.06)`-Overlays (Nav-/Tabellen-Zeilen-/
 Icon-Button-Hover, getönte `badge-read/-inactive`/`tag`-bg), die im Light-Mode nicht
 kippen (weiß auf weiß = unsichtbar/invertiert). Ein neutrales `--hover`-Token (Dark:
-`rgba(255,255,255,.05)`, Light: `rgba(0,0,0,.05)`) in beiden `:root`-Blöcken (web+desktop,
+`rgba(255,255,255,.06)`, Light: `rgba(0,0,0,.06)`) in beiden `:root`-Blöcken (web+desktop,
 wertgleich) + betroffene Hover-Regeln darauf umstellen. Aufgetaucht im T3-Review als
 Light-Mode-Kante (T3 adressierte laut Wortlaut nur die enumerierten Komponenten).
 Verify: `npm run check && npm run build` (web+desktop) grün; Light-Screenshot: Row-/Nav-Hover sichtbar.
