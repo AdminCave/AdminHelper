@@ -36,8 +36,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     z-index: 80;
   }
   .status-bar.error {
-    border-color: var(--error, #e05555);
-    color: var(--error, #e05555);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   .status-text {
     font-size: 13px;

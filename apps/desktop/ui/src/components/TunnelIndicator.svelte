@@ -49,12 +49,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     background: var(--text-muted);
   }
   .tunnel-indicator[data-status='connected'] .tunnel-dot {
-    background: var(--success, #4caf50);
+    background: var(--success);
   }
   .tunnel-indicator[data-status='connecting'] .tunnel-dot {
-    background: var(--warning, #e0a500);
+    background: var(--warning);
   }
   .tunnel-indicator[data-status='disconnected'] .tunnel-dot {
-    background: var(--error, #e05555);
+    background: var(--danger);
   }
 </style>

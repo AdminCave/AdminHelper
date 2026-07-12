@@ -81,16 +81,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     height: 36px;
     border: none;
     background: transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     cursor: pointer;
     border-radius: var(--radius, 6px);
   }
   .notif-bell:hover {
     background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-    color: var(--text, #eee);
+    color: var(--text);
   }
   .notif-bell.has-unread {
-    color: var(--text, #eee);
+    color: var(--text);
   }
   .notif-badge {
     position: absolute;
@@ -100,7 +100,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     height: 16px;
     padding: 0 4px;
     border-radius: 8px;
-    background: var(--danger, #e5484d);
+    background: var(--danger);
     color: #fff;
     font-size: 10px;
     line-height: 16px;
@@ -124,7 +124,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     max-height: 70vh;
     display: flex;
     flex-direction: column;
-    background: var(--bg-elevated, #1e1e1e);
+    background: var(--bg-elevated);
     border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
     border-radius: var(--radius, 8px);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
@@ -146,7 +146,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .notif-empty {
     padding: var(--sp-4, 16px);
     text-align: center;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
   }
   .notif-item {
     display: flex;
@@ -163,16 +163,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     height: 8px;
     margin-top: 5px;
     border-radius: 50%;
-    background: var(--text-muted, #888);
+    background: var(--text-muted);
   }
   .notif-sev.sev-critical {
-    background: var(--danger, #e5484d);
+    background: var(--danger);
   }
   .notif-sev.sev-warning {
-    background: var(--warning, #f5a623);
+    background: var(--warning);
   }
   .notif-sev.sev-info {
-    background: var(--info, #5082dc);
+    background: var(--accent);
   }
   .notif-item-body {
     min-width: 0;
@@ -182,13 +182,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-weight: 500;
   }
   .notif-item-text {
-    color: var(--text-muted, #aaa);
+    color: var(--text-muted);
     font-size: 0.85em;
     margin-top: 2px;
     white-space: pre-line;
   }
   .notif-item-meta {
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     font-size: 0.75em;
     margin-top: 4px;
   }

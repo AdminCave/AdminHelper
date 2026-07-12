@@ -105,7 +105,7 @@ Verify: `npm run check && npm run build` grün; crabbox-GUI-Screenshot — kein 
 Doku: keine (intern).
 Abhängt von: T8
 
-### T10 — Desktop: theme-aware Scoped-Styles (Hex → Tokens)  [ ]
+### T10 — Desktop: theme-aware Scoped-Styles (Hex → Tokens)  [x] (tote Fallback-Hex entfernt, --error→--danger, --info→--accent)
 Komponente: apps/desktop/ui · Dateien: src/components/StatusBar.svelte · NotificationBell.svelte · TunnelIndicator.svelte · components/infra/tabs/MonitoringTab.svelte (+ weitere mit Chrome-Hex)
 Änderung: die ~32 hartkodierten Hex in Scoped-`<style>`-Blöcken auf Tokens
 umstellen (Status → `--success`/`--warning`/`--danger`, Chrome → `--text*`/`--border`/
