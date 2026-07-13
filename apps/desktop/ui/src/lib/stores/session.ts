@@ -140,6 +140,18 @@ export async function dropSession(): Promise<void> {
   _state.update((s) => ({ ...s, session: null }));
 }
 
+/** Persist "allow self-signed certificates". Used by the login screen's trust
+ * dialog (ERR_TLS_UNKNOWN_ISSUER): before the first login/enrollment the
+ * settings modal is unreachable, so the dialog is the only way to opt in to
+ * the TOFU pin against a server running the standard own-PKI gateway. */
+export async function setAllowSelfSignedCerts(allow: boolean): Promise<void> {
+  const current = get(_state);
+  if (!current.settings) return;
+  const next = { ...current.settings, allowSelfSignedCerts: allow };
+  await bridge.saveSettings(next);
+  _state.update((s) => ({ ...s, settings: next }));
+}
+
 export async function setMode(mode: SyncMode): Promise<void> {
   const current = get(_state);
   if (!current.settings) return;

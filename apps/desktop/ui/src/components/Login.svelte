@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { errMsg } from '$lib/utils/errors';
   import { get } from 'svelte/store';
-  import { login, setMode, settings } from '$lib/stores/session';
+  import { login, setAllowSelfSignedCerts, setMode, settings } from '$lib/stores/session';
   import { enrollWithToken, resetServerCertPin, resetDeviceIdentity } from '$lib/bridge';
   import { t } from '$lib/i18n';
   import { confirm } from '@tauri-apps/plugin-dialog';
@@ -26,6 +26,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let info = $state('');
   let busy = $state(false);
 
+  // Trust dialog for ERR_TLS_UNKNOWN_ISSUER (error.rs): the standard install
+  // serves its own-PKI gateway leaf, so the very first contact fails public-CA
+  // validation by design while "allow self-signed certificates" is off — and
+  // the settings modal hosting that checkbox is unreachable before login. The
+  // dialog offers the opt-in right here and retries the interrupted action.
+  let trustPrompt = $state<'login' | 'enroll' | null>(null);
+  // The original message, shown inline (code stripped) if the user declines.
+  let trustError = $state('');
+
   function switchMode(next: 'login' | 'enroll'): void {
     mode = next;
     error = '';
@@ -43,7 +52,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let caPinError = $derived(error.includes('ERR_CA_PIN_MISMATCH'));
   let pinError = $derived(error.includes('ERR_TOFU_PIN_MISMATCH') || caPinError);
   // Never show the machine-readable code to the user; keep only the human text.
-  let displayError = $derived(error.replace(/ERR_(?:CA|TOFU)_PIN_MISMATCH:\s*/g, ''));
+  let displayError = $derived(
+    error.replace(/ERR_(?:(?:CA|TOFU)_PIN_MISMATCH|TLS_UNKNOWN_ISSUER):\s*/g, ''),
+  );
 
   async function resetCertTrust(): Promise<void> {
     const target = serverUrl.trim();
@@ -93,16 +104,84 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  async function doLogin(): Promise<void> {
+    await login(serverUrl.trim(), username.trim(), password);
+    serverUrl = '';
+    username = '';
+    password = '';
+  }
+
+  // Decoupled enrollment (ADR 0003): redeem an admin-issued token to fetch a
+  // client cert WITHOUT logging in — the bootstrap path under enforced mTLS.
+  // Passes allowSelfSignedCerts through like the login path does — otherwise
+  // enrollment from the login screen (the bootstrap path meant for fresh
+  // devices) can fail the TLS handshake against a self-signed server even
+  // though the user opted in (4.101).
+  async function doEnroll(): Promise<void> {
+    await enrollWithToken(
+      serverUrl.trim(),
+      enrollToken.trim(),
+      get(settings)?.allowSelfSignedCerts ?? false,
+    );
+    enrollToken = '';
+    info = $t('login.enroll.done');
+    mode = 'login';
+  }
+
+  // An unknown issuer on first contact opens the trust dialog instead of a
+  // dead-end error; everything else surfaces inline as before.
+  function surfaceError(err: unknown, retry: 'login' | 'enroll'): void {
+    const msg = errMsg(err);
+    if (msg.includes('ERR_TLS_UNKNOWN_ISSUER')) {
+      trustError = msg;
+      trustPrompt = retry;
+    } else {
+      error = msg;
+    }
+  }
+
   async function handleSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     error = '';
     info = '';
     busy = true;
     try {
-      await login(serverUrl.trim(), username.trim(), password);
-      serverUrl = '';
-      username = '';
-      password = '';
+      await doLogin();
+    } catch (err) {
+      surfaceError(err, 'login');
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleEnroll(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    error = '';
+    info = '';
+    busy = true;
+    try {
+      await doEnroll();
+    } catch (err) {
+      surfaceError(err, 'enroll');
+    } finally {
+      busy = false;
+    }
+  }
+
+  // "Trust anyway": persist the opt-in (the TOFU pin replaces public-CA
+  // validation from here on — doLogin/doEnroll read the store, so the retry
+  // picks it up), then retry what the handshake interrupted.
+  async function trustServerCert(): Promise<void> {
+    const retry = trustPrompt;
+    trustPrompt = null;
+    busy = true;
+    try {
+      await setAllowSelfSignedCerts(true);
+      if (retry === 'login') {
+        await doLogin();
+      } else {
+        await doEnroll();
+      }
     } catch (err) {
       error = errMsg(err);
     } finally {
@@ -110,30 +189,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  // Decoupled enrollment (ADR 0003): redeem an admin-issued token to fetch a
-  // client cert WITHOUT logging in — the bootstrap path under enforced mTLS.
-  async function handleEnroll(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    error = '';
-    info = '';
-    busy = true;
-    try {
-      // Pass allowSelfSignedCerts through like the login path does — otherwise enrollment from
-      // the login screen (the bootstrap path meant for fresh devices) can fail the TLS handshake
-      // against a self-signed server even though the user opted in (4.101).
-      await enrollWithToken(
-        serverUrl.trim(),
-        enrollToken.trim(),
-        get(settings)?.allowSelfSignedCerts ?? false,
-      );
-      enrollToken = '';
-      info = $t('login.enroll.done');
-      mode = 'login';
-    } catch (err) {
-      error = errMsg(err);
-    } finally {
-      busy = false;
-    }
+  function declineServerCert(): void {
+    // Keep the full message — displayError strips the machine-readable code.
+    error = trustError;
+    trustPrompt = null;
   }
 </script>
 
@@ -259,3 +318,84 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/if}
   </div>
 </div>
+
+{#if trustPrompt}
+  <div
+    class="trust-overlay"
+    role="dialog"
+    aria-modal="true"
+    data-testid="trust-dialog"
+    tabindex="-1"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) declineServerCert();
+    }}
+    onkeydown={(e) => {
+      if (e.key === 'Escape') declineServerCert();
+    }}
+  >
+    <div class="trust-panel">
+      <h3 class="trust-title">{$t('login.trust.title')}</h3>
+      <p class="trust-body">{$t('login.trust.body')}</p>
+      <div class="trust-actions">
+        <button
+          type="button"
+          class="btn ghost"
+          data-action="trust-cancel"
+          onclick={declineServerCert}
+        >
+          {$t('action.cancel')}
+        </button>
+        <button
+          type="button"
+          class="btn accent"
+          data-action="trust-accept"
+          onclick={trustServerCert}
+        >
+          {$t('login.trust.accept')}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .trust-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+    padding: var(--sp-4);
+  }
+  .trust-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 460px;
+    padding: var(--sp-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .trust-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .trust-body {
+    color: var(--text-muted);
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .trust-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--border);
+  }
+</style>

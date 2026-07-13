@@ -301,6 +301,10 @@ export const translations: Translations = {
     'login.resetPin.missingUrl': 'Bitte zuerst die Server-URL eintragen.',
     'login.resetPin.confirmMitm':
       'Achtung: Ein unerwarteter Zertifikatswechsel kann auf einen MITM-Angriff hindeuten. Nur zurücksetzen, wenn der Server tatsächlich neu installiert bzw. sein Zertifikat neu ausgestellt wurde — sonst pinnst du das Zertifikat eines Angreifers und sendest ihm Zugangsdaten und Sitzung. Fortfahren?',
+    'login.trust.title': 'Server-Zertifikat nicht öffentlich vertrauenswürdig',
+    'login.trust.body':
+      'Das Zertifikat dieses Servers stammt nicht von einer öffentlich vertrauenswürdigen CA. Bei einer Standard-Installation mit AdminHelper-eigener PKI ist das zu erwarten. Dennoch vertrauen? Das Zertifikat wird beim ersten Kontakt gepinnt (wie bei SSH known_hosts), jede spätere Änderung wird abgelehnt. Die Einstellung „Selbstsignierte Zertifikate erlauben“ wird dabei dauerhaft aktiviert.',
+    'login.trust.accept': 'Vertrauen & fortfahren',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Verbindungen gesamt',
@@ -805,6 +809,10 @@ export const translations: Translations = {
     'login.resetPin.missingUrl': 'Please enter the server URL first.',
     'login.resetPin.confirmMitm':
       'Warning: an unexpected certificate change can indicate a MITM attack. Only reset if the server was genuinely reinstalled or its certificate re-issued — otherwise you pin an attacker’s certificate and hand them your credentials and session. Continue?',
+    'login.trust.title': 'Server certificate is not publicly trusted',
+    'login.trust.body':
+      'The certificate presented by this server is not issued by a publicly trusted CA. For a standard installation using the AdminHelper-managed PKI this is expected. Trust it anyway? The certificate is pinned on first contact (like SSH known_hosts) and any later change is rejected. This permanently enables the “Allow self-signed certificates” setting.',
+    'login.trust.accept': 'Trust & continue',
 
     // ── Desktop: Dashboard ────────────────────────────────────────────
     'dashboard.total': 'Connections total',

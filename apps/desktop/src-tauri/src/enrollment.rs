@@ -224,9 +224,13 @@ pub async fn enroll(server_url: &str, jwt: &str, allow_self_signed: bool) -> Res
 /// enforced mTLS where a certless client cannot reach the login on `:443`. The
 /// issuer dictates the cert CN from the token's subject (issuer.py:
 /// `subject_cn=grant.subject_id`), so the CSR CN here is only a placeholder.
-/// TLS trust is TOFU-pinned on first contact with the enroll plane (same gateway
-/// leaf as `:443`), like the agent's first enrollment. Assumes the default enroll
-/// port; a non-default port must be reachable under that name.
+/// TLS trust follows the same setting as the login: with `allow_self_signed`
+/// the first contact TOFU-pins the gateway leaf (same leaf as `:443`), like the
+/// agent's first enrollment; without it the public-CA path applies — against
+/// the standard install's own-PKI gateway that fails as ERR_TLS_UNKNOWN_ISSUER
+/// (error.rs), which the login screen answers with its trust dialog (retry with
+/// the setting on). Assumes the default enroll port; a non-default port must be
+/// reachable under that name.
 pub async fn enroll_with_token(
     server_url: &str,
     token: &str,

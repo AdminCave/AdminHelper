@@ -29,6 +29,8 @@ import {
   isAuthenticated,
   ready,
   session,
+  settings,
+  setAllowSelfSignedCerts,
   registerConnectionsSync,
 } from './session';
 
@@ -196,6 +198,33 @@ describe('session store', () => {
       await expect(logout()).rejects.toThrow('server unreachable');
       expect(clear).toHaveBeenCalledOnce();
       expect(get(session)).toBeNull();
+    });
+  });
+
+  describe('setAllowSelfSignedCerts (login-screen trust dialog)', () => {
+    it('persists the opt-in and updates the store so a retry reads true', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', allowSelfSignedCerts: false }),
+      );
+      await hydrate();
+
+      await setAllowSelfSignedCerts(true);
+
+      expect(bridge.saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ allowSelfSignedCerts: true }),
+      );
+      expect(get(settings)?.allowSelfSignedCerts).toBe(true);
+    });
+
+    it('does not touch the store when persisting fails', async () => {
+      vi.mocked(bridge.loadSettings).mockResolvedValue(
+        baseSettings({ mode: 'server', allowSelfSignedCerts: false }),
+      );
+      await hydrate();
+      vi.mocked(bridge.saveSettings).mockRejectedValueOnce(new Error('disk full'));
+
+      await expect(setAllowSelfSignedCerts(true)).rejects.toThrow('disk full');
+      expect(get(settings)?.allowSelfSignedCerts).toBe(false);
     });
   });
 });

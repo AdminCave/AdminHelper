@@ -300,10 +300,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <span class="field-label">{$t('settings.interval')}</span>
           <input type="number" min="1" max="1440" bind:value={intervalMinutes} />
         </label>
-        <label class="field checkbox">
-          <input type="checkbox" bind:checked={allowSelfSignedCerts} />
-          <span>{$t('settings.allowSelfSigned')}</span>
-        </label>
       {:else if mode === 'server'}
         <label class="field">
           <span class="field-label">{$t('settings.serverUrl')}</span>
@@ -341,6 +337,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
 
       {#if mode === 'sync' || mode === 'server'}
+        <!-- TLS trust applies to BOTH remote modes: server-mode login/enrollment
+             reads this setting too, so it must not hide in the sync branch (the
+             bootstrap against the standard own-PKI install depends on it). -->
+        <label class="field checkbox">
+          <input type="checkbox" bind:checked={allowSelfSignedCerts} />
+          <span>{$t('settings.allowSelfSigned')}</span>
+        </label>
         <div class="sm-reset-pin">
           <button class="btn ghost small" onclick={onResetPin}>{$t('settings.resetCertPin')}</button
           >
