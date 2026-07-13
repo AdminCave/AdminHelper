@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.39.0</span>
+          <span>v0.42.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -260,7 +260,48 @@
             </div>
           </div>
 
-          <h2>What's new in 0.39.0?</h2>
+          <h2>What's new in 0.42.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.42.0 &ndash; First-contact trust dialog (2026-07-13)</div>
+              <p>
+                <strong>Added:</strong> When the server presents a certificate that is not publicly trusted (a standard
+                installation with the AdminHelper-managed PKI), the desktop now asks via a <strong>dialog</strong> on
+                sign-in and token enrollment whether to trust the server — accepting pins the certificate (TOFU) and
+                automatically retries the action; new stable error code <code>ERR_TLS_UNKNOWN_ISSUER</code> replaces the
+                raw rustls message. <strong>Fix:</strong> the <em>&ldquo;Allow self-signed certificates&rdquo;</em>
+                setting is now visible in server mode too. Details in the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.41.0 &ndash; AdminCave design system &amp; light mode (2026-07-13)</div>
+              <p>
+                <strong>Changed:</strong> Both Svelte frontends (web + desktop) adopt the visual language of the
+                <strong>AdminCave design system</strong> — monochrome, true-black dark-first, bundled Geist font,
+                monochrome brand mark. <strong>Added:</strong> a first-class <strong>light mode</strong> with an icon
+                toggle (FOUC-free, preference in <code>localStorage</code>). Details in the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.40.0 &ndash; Hardening &amp; stability (2026-07-11)</div>
+              <p>
+                <strong>Changed:</strong> network segmentation of the CA issuer (internal-only reachability),
+                deterministic FRP config/tunnel generation, health checks and startup ordering in the compose stack,
+                import cycles in the desktop backend untangled. <strong>Fix:</strong> Windows <code>.rdp</code> launch
+                files carry host/username correctly. Details in the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

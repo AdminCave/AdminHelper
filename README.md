@@ -136,7 +136,7 @@ runtime bundle** (the self-contained `docker-compose.yml` + the ops scripts,
 enrollment token, and leaves mTLS **enforced by default**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.39.0/scripts/install.sh \
+curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installs the latest published release; pin a specific one with --ref vX.Y.Z
 ```

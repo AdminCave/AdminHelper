@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.39.0</span>
+          <span>v0.42.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -262,7 +262,48 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.39.0?</h2>
+          <h2>Was ist neu in 0.42.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.42.0 &ndash; Trust-Dialog beim Erstkontakt (2026-07-13)</div>
+              <p>
+                <strong>Added:</strong> Präsentiert der Server ein nicht öffentlich vertrauenswürdiges Zertifikat
+                (Standard-Installation mit AdminHelper-eigener PKI), fragt der Desktop bei Anmeldung und Token-Enrollment
+                jetzt per <strong>Dialog</strong>, ob dem Server vertraut werden soll — Bestätigen pinnt das Zertifikat
+                (TOFU) und wiederholt die Aktion automatisch; neuer stabiler Fehlercode <code>ERR_TLS_UNKNOWN_ISSUER</code>
+                statt der rohen rustls-Meldung. <strong>Fix:</strong> Die Einstellung <em>„Selbstsignierte Zertifikate
+                erlauben"</em> ist jetzt auch im Server-Modus sichtbar. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.41.0 &ndash; AdminCave-Design-System &amp; Light-Mode (2026-07-13)</div>
+              <p>
+                <strong>Changed:</strong> Beide Svelte-Frontends (Web + Desktop) auf die visuelle Sprache des
+                <strong>AdminCave-Design-Systems</strong> umgestellt — monochrom, True-Black dark-first, gebündelte
+                Geist-Schrift, monochromer Brand-Mark. <strong>Added:</strong> Gleichwertiger <strong>Light-Mode</strong>
+                mit Icon-Umschalter (FOUC-frei, Präferenz in <code>localStorage</code>). Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.40.0 &ndash; Härtung &amp; Stabilität (2026-07-11)</div>
+              <p>
+                <strong>Changed:</strong> Netz-Segmentierung des CA-Issuers (nur noch intern erreichbar), deterministische
+                FRP-Config-/Tunnel-Generierung, Healthchecks und Startup-Reihenfolge im Compose-Stack, Import-Zyklen im
+                Desktop-Backend aufgebrochen. <strong>Fix:</strong> Windows-<code>.rdp</code>-Launch-Dateien übernehmen
+                Host/Benutzername korrekt. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

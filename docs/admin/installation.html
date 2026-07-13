@@ -46,7 +46,7 @@
             <a href="../developer/cicd.html">CI/CD &amp; Release</a>
           </div>
         </nav>
-        <div class="sidebar-footer"><span>v0.39.0</span><span id="year"></span></div>
+        <div class="sidebar-footer"><span>v0.42.0</span><span id="year"></span></div>
       </aside>
 
       <header class="topbar">
@@ -90,7 +90,7 @@
           <h2 id="schnell-install">Schnell-Install (ein Befehl)</h2>
           <p>Der Installer lädt <strong>nur die Laufzeit-Dateien</strong> (die selbstgenügsame <code>docker-compose.yml</code> + ein paar Ops-Skripte, <em>nicht</em> den Quellbaum), fährt den Stack hoch, legt den Erst-Admin samt einmaligem Enrollment-Token an und lässt mTLS <strong>per Default erzwungen</strong>:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/v0.34.0/scripts/install.sh \
+<pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/install.sh \
   | bash -s -- --domain srm.example.com
 # installiert das neueste Release; gezielt pinnen mit --ref vX.Y.Z.
 # fragt das Admin-Passwort ab. Non-interaktiv: --admin-password … --yes.
