@@ -5,6 +5,34 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.42.0] - 2026-07-13
+
+### Added
+
+- **Trust-Dialog beim Erstkontakt (Desktop):** Praesentiert der Server ein nicht
+  oeffentlich vertrauenswuerdiges Zertifikat (Standard-Installation mit
+  AdminHelper-eigener PKI), fragt der Login-Screen bei Anmeldung und
+  Token-Enrollment per Dialog, ob dem Server dennoch vertraut werden soll —
+  Bestaetigen aktiviert dauerhaft "Selbstsignierte Zertifikate erlauben"
+  (TOFU-Pin) und wiederholt die unterbrochene Aktion automatisch. Neuer
+  stabiler Fehlercode `ERR_TLS_UNKNOWN_ISSUER` ersetzt die rohe rustls-Meldung.
+
+### Fixed
+
+- **"invalid peer certificate: UnknownIssuer" beim Bootstrap:** Der allererste
+  Login-/Enrollment-Versuch mit Default-Einstellungen lief gegen die
+  Standard-PKI in eine Sackgasse (roher TLS-Fehler ohne Handlungs-Hinweis) —
+  jetzt Trust-Dialog bzw. verstaendliche Meldung mit Verweis auf die
+  Einstellung.
+- **"Selbstsignierte Zertifikate erlauben" war im Server-Modus unsichtbar**
+  (die Checkbox wurde nur im Sync-Modus gerendert, obwohl Login/Enrollment sie
+  auch im Server-Modus auswerten) — liegt jetzt im gemeinsamen Bereich beider
+  Remote-Modi.
+- **desktop_e2e_crud.sh laeuft standalone auf frischen Boxen:** fehlende
+  node_modules werden selbst installiert (vorher zog `npx wdio` das falsche
+  Wizard-Paket aus der Registry und der Tauri-Build scheiterte an fehlendem
+  svelte-check).
+
 ## [0.41.0] - 2026-07-13
 
 ### Added
