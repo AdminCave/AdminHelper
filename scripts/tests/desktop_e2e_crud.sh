@@ -26,6 +26,13 @@ e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-ke
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }
 
+# Standalone-run self-sufficiency (fresh box, no prior run.sh layer): without the
+# local node_modules, `npx wdio` fetches the interactive `wdio` WIZARD package from
+# the registry instead of the local @wdio/cli, and the tauri beforeBuildCommand
+# dies on `svelte-check: not found` in ui/.
+( cd "$E2E_REPO_ROOT/apps/desktop/ui" && { [ -d node_modules ] || npm ci; } ) || exit 1
+( cd "$E2E_DIR" && { [ -d node_modules ] || npm ci; } ) || exit 1
+
 e2e_init false
 e2e_up gateway && ok "gateway live on :$E2E_HTTPS_PORT" || { bad "gateway never came up"; exit 1; }
 
@@ -36,11 +43,31 @@ e2e_api "$TOKEN" config e2e-frps localhost 7000 >/dev/null || { bad "seed FRP co
 ok "seeded a server + FRP config"
 
 XDG_DATA_HOME="$E2E_WORK/xdg-data"; export XDG_DATA_HOME
+SETTINGS_JSON="$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
 mkdir -p "$XDG_DATA_HOME/com.admincave.adminhelper"
-echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$XDG_DATA_HOME/com.admincave.adminhelper/settings.json"
+
+export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
+
+# First contact with DEFAULT trust settings: the trust-dialog spec needs
+# allowSelfSignedCerts=false (the fresh-install state that used to dead-end in a
+# raw UnknownIssuer error); accepting the dialog makes the APP persist true.
+echo '{"mode": "server", "allowSelfSignedCerts": false}' > "$SETTINGS_JSON"
+
+echo "[e2e-crud] running the trust-dialog spec under xvfb..."
+dbus-run-session -- bash -c '
+    eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)" || true
+    export GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
+    cd "$E2E_DIR" && xvfb-run -a npx wdio run wdio.conf.js \
+        --spec test/specs/enroll-trust-dialog.live.js
+' && ok "trust-dialog spec passed" || bad "trust-dialog spec failed"
+grep -Eq '"allowSelfSignedCerts": ?true' "$SETTINGS_JSON" \
+    && ok "accepting the dialog persisted allowSelfSignedCerts=true" \
+    || bad "settings.json does not carry the persisted opt-in"
+
+# Known-good seed for the remaining specs, independent of the outcome above.
+echo '{"mode": "server", "allowSelfSignedCerts": true}' > "$SETTINGS_JSON"
 
 echo "[e2e-crud] running the CRUD specs under xvfb..."
-export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E_ADMIN_PW" E2E_DIR
 
 # Order: enroll-form is login-screen-only (never logs in, touches no server data),
 # so it leads; connection + tunnel run while only the seeded server exists; the
