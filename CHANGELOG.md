@@ -5,6 +5,46 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.43.0] - 2026-07-13
+
+### Added
+
+- **Ein-Befehl-Agent-Rollout (`scripts/agent-install.sh`):** richtet auf
+  Debian/Ubuntu (apt) und Rocky/Alma/RHEL (dnf) das server-eigene Paket-Repo
+  ein (Repo-Schluessel von `:8445` mit **erzwungenem** GPG-Fingerprint-Vergleich
+  gegen den gepinnten Projekt-Schluessel), installiert den Agent und
+  provisioniert ihn direkt mit. Nach erfolgreichem mTLS-Enrollment stellt das
+  Skript die Repo-Quelle automatisch auf CA-Pinning um (apt `CAInfo` /
+  dnf `sslcacert`). Token optional per `/dev/tty`-Abfrage;
+  `--from-github`-Fallback (minisign-verifiziert, apt). Liegt auch im
+  Runtime-Bundle (`/opt/adminhelper/scripts/agent-install.sh`).
+- **Verifizierter Erstkontakt (`adminhelper-agent provision --ca-fp`):** Der
+  Agent prueft im TLS-Handshake, dass die praesentierte Kette die interne CA
+  mit genau diesem SHA-256-Fingerprint enthaelt und das Server-Leaf
+  kryptografisch daran haengt — der Einmal-Token verlaesst den Host erst nach
+  bestandener Pruefung (ersetzt blindes Trust-on-first-use).
+- **Provisionierungs-Tab als Vertrauensanker-Kurier:** generiert den
+  Install-Einzeiler und den `provision`-Befehl inklusive `--ca-fp` (der
+  Desktop kennt die interne CA aus seinem eigenen Enrollment) und zeigt den
+  CA-Fingerprint fuer den Out-of-band-Vergleich an; ohne enrollte Identitaet
+  sichtbarer Hinweis auf den unverifizierten TOFU-Erstkontakt.
+
+### Changed
+
+- **Multibox-Suite testet den echten User-Pfad:** Server-Box baut und signiert
+  ein Test-Repo auf `:8445`, Agent-Box installiert ueber das reale
+  `agent-install.sh` mit `--gpg-fp`/`--ca-fp` und asserted Repo-Quelle und
+  CA-Pinning-Endzustand.
+
+### Fixed
+
+- **Multibox: .deb-Pfad-Capture repariert** — `cbx_build_agent_deb` leakte
+  make-/dpkg-Ausgaben in den per Command-Substitution zurueckgegebenen Pfad
+  (betraf alle vier Rollen-Boxen der Suite).
+- **Doku:** toter Verweis auf eine Ansible-Beispiel-Role
+  (`apps/agent/ansible/`) ersetzt; veraltete Versionsbeispiele im
+  Agent-Install-Abschnitt (README, EN-Doku) bereinigt.
+
 ## [0.42.0] - 2026-07-13
 
 ### Added

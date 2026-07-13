@@ -118,7 +118,7 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span>v0.42.0</span>
+          <span>v0.43.0</span>
           <span id="year"></span>
           <span>Part of <a href="https://admincave.com">Admin Cave</a></span>
         </div>
@@ -262,7 +262,22 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.42.0?</h2>
+          <h2>Was ist neu in 0.43.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.43.0 &ndash; Ein-Befehl-Agent-Rollout &amp; verifizierter Erstkontakt (2026-07-13)</div>
+              <p>
+                <strong>Added:</strong> Der Provisionierungs-Tab generiert einen fertigen <strong>Install-Einzeiler</strong>
+                (<code>agent-install.sh</code>): Paket-Repo mit erzwungenem GPG-Fingerprint-Vergleich einrichten, Agent
+                installieren, provisionieren — und nach dem Enrollment automatisch auf <strong>CA-Pinning</strong> für
+                künftige Updates umstellen. Neu ist auch <code>provision --ca-fp</code>: Der Agent verifiziert die interne
+                CA <strong>im TLS-Handshake</strong>, bevor der Einmal-Token den Host verlässt — statt blindem
+                Trust-on-first-use; der Tab zeigt den CA-Fingerprint dafür an. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
