@@ -113,7 +113,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <div><strong>Dashboard:</strong> :{$frpConfig.dashboardPort}</div>
         {/if}
         <div>
-          <strong>mTLS:</strong> <span style="color:#22c55e">{$t('page.frp.mtlsActive')}</span>
+          <strong>mTLS:</strong>
+          <span style="color:var(--success)">{$t('page.frp.mtlsActive')}</span>
         </div>
       </div>
     {:else}

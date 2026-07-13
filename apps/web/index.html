@@ -3,8 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0e14" />
-    <title>Simple Remote Manager</title>
+    <script>
+      // FOUC-free theme init: apply the persisted theme before the first paint, so a
+      // light-mode user never flashes dark on load. Default = dark (no attribute).
+      try {
+        var stored = localStorage.getItem('ah-theme');
+        if (stored === 'light' || stored === 'dark') {
+          document.documentElement.dataset.theme = stored;
+        }
+      } catch (e) {
+        /* localStorage unavailable (private mode) — stay on the dark default */
+      }
+    </script>
+    <meta name="theme-color" content="#000" />
+    <title>AdminHelper</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   </head>
   <body>

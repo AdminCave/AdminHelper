@@ -25,6 +25,7 @@ export const translations: Translations = {
     'nav.frp': 'FRP Tunnels',
     'nav.audit': 'Audit-Log',
     'nav.logout': 'Abmelden',
+    'theme.toggle': 'Design umschalten',
 
     // ── Roles ──────────────────────────────────────────────────────────
     'role.admin': 'Admin',
@@ -250,6 +251,7 @@ export const translations: Translations = {
     'nav.frp': 'FRP Tunnels',
     'nav.audit': 'Audit log',
     'nav.logout': 'Sign out',
+    'theme.toggle': 'Toggle theme',
 
     // ── Roles ──────────────────────────────────────────────────────────
     'role.admin': 'Admin',

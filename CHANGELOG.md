@@ -5,6 +5,21 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.41.0] - 2026-07-13
+
+### Added
+
+- **AdminCave-Design-System-Retheme (Web + Desktop):** beide Svelte-Frontends auf die
+  visuelle Sprache des AdminCave-Design-Systems umgestellt — monochrom, True-Black
+  dark-first, gebuendelte Geist-Schrift (offline-/CSP-fest, kein CDN), Pill-Radien,
+  monochrome Primary-Buttons, Hairline-Borders und der AdminCave-Brand-Mark
+  (currentColor, keine Verlaeufe mehr). DOM-Struktur und Layout bleiben unangetastet.
+- **Light-Mode mit Umschalter:** gleichwertiger Light-Mode neben dem Default-Dark;
+  Icon-Umschalter im Sidebar-Footer (Web neben EN/DE, Desktop neben Einstellungen),
+  FOUC-frei via Inline-Script im `<head>`, Praeferenz in `localStorage['ah-theme']`
+  (nicht im persistierten Settings-Contract, keine Migration). Monitoring-Charts (uPlot)
+  und Status-Timeline sind theme-adaptiv.
+
 ## [0.40.0] - 2026-07-11
 
 Umfassendes Security- und Qualitaets-Audit ueber alle Komponenten (Server,

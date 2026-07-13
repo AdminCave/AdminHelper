@@ -2,35 +2,43 @@
 :root {
   color-scheme: dark;
 
-  /* Backgrounds */
-  --bg: #0f1117;
-  --bg-surface: #161922;
-  --bg-elevated: #1c2030;
-  --bg-sidebar: #0c0e14;
+  /* Backgrounds — AdminCave DS (dark, True-Black); wertgleich zu apps/web */
+  --bg: #000;
+  --bg-surface: #050506;
+  --bg-elevated: #101013;
+  --bg-sidebar: #000; /* getrennt von --bg via Border, nicht per Fläche */
   /* Aliase fuer Modal-Panels und Input-Felder (verwendet in
-     SettingsModal, ConnectionEditor, PasswordPrompt, StatusBar, Ansible). */
+     SettingsModal, ConnectionEditor, PasswordPrompt, StatusBar, Ansible).
+     Folgen als var()-Aliase automatisch dem Light-Override von --bg-elevated/-surface. */
   --bg-panel: var(--bg-elevated);
   --bg-input: var(--bg-surface);
 
-  /* Borders */
-  --border: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.15);
+  /* Borders — Hairlines statt Flächen */
+  --border: rgba(255, 255, 255, 0.1);
+  --border-hover: rgba(255, 255, 255, 0.18);
+  --hover: rgba(255, 255, 255, 0.06); /* neutrales Hover-Overlay, kippt im Light */
 
   /* Text */
-  --text: #e8eaed;
-  --text-muted: #9aa0a6;
-  --text-faint: #5f6368;
+  --text: #ededee;
+  --text-muted: #9aa1a8;
+  --text-faint: #6e757c;
 
-  /* Accent */
-  --accent: #4d9fff;
-  --accent-hover: #6db3ff;
-  --accent-bg: rgba(77, 159, 255, 0.12);
+  /* Accent — Blau nur als Akzent */
+  --accent: #4f9dff;
+  --accent-hover: #7db3ff;
+  --accent-bg: rgba(79, 157, 255, 0.14);
+
+  /* Solid fill — monochrome Primary (Weiß auf Schwarz) */
+  --fill-solid: #fff;
+  --fill-solid-hover: #dfe2e5;
+  --fill-solid-text: #000;
 
   /* Semantic */
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
-  --green: #22c55e;
+  --success: #34d186;
+  --warning: #f5b454;
+  --danger: #ff6b6b;
+  /* --green: Alt-Alias (genutzt in ProvisioningTab + app.css) — = --success */
+  --green: #34d186;
 
   /* Spacing */
   --sp-1: 4px;
@@ -41,18 +49,22 @@
   --sp-6: 32px;
   --sp-7: 48px;
 
-  /* Radii */
-  --radius-lg: 12px;
-  --radius-md: 8px;
-  --radius-sm: 6px;
+  /* Radii — DS: großzügiger; Pill (999px) für Buttons/Inputs/Chips */
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --radius-2xl: 28px;
 
-  /* Shadows */
+  /* Shadows + Fokus-Ring */
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
+  --ring: rgba(79, 157, 255, 0.55);
 
   /* Typography */
-  --font: 'Inter', 'SF Pro Text', 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font: 'Geist Variable', 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, 'SF Mono', monospace;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
   --text-base: 0.875rem;
@@ -63,6 +75,53 @@
   /* Layout */
   --sidebar-width: 240px;
   --header-height: 56px;
+}
+
+/* ── Light theme ────────────────────────────────────────────────────── */
+/* DS-Light-Aliase auf dieselben AH-Namen; nur Farben/Schatten kippen,
+   Radien/Spacing/Fonts/Layout erben aus :root. Wertgleich zu apps/web.
+   --bg-panel/--bg-input folgen automatisch (var()-Aliase auf --bg-elevated/-surface).
+   Aktiv via <html data-theme="light"> (Default = dark, Attribut fehlt/"dark"). */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* Backgrounds — Pure-White */
+  --bg: #fff;
+  --bg-surface: #fff;
+  --bg-elevated: #fff;
+  --bg-sidebar: #f4f5f6;
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.1);
+  --border-hover: rgba(0, 0, 0, 0.16);
+  --hover: rgba(0, 0, 0, 0.06);
+
+  /* Text */
+  --text: #16181c;
+  --text-muted: #565c64;
+  --text-faint: #868d94;
+
+  /* Accent */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-bg: rgba(37, 99, 235, 0.1);
+
+  /* Solid fill — monochrome Primary (Schwarz auf Weiß) */
+  --fill-solid: #000;
+  --fill-solid-hover: #2a2d33;
+  --fill-solid-text: #fff;
+
+  /* Semantic */
+  --success: #1f9d57;
+  --warning: #e0961f;
+  --danger: #e5484d;
+  --green: #1f9d57;
+
+  /* Shadows + Fokus-Ring — hell */
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.15);
+  --ring: rgba(37, 99, 235, 0.55);
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────── */
@@ -134,12 +193,6 @@ body {
   justify-content: center;
 }
 
-.sidebar-logo img {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-}
-
 .sidebar-brand-text {
   overflow: hidden;
   white-space: nowrap;
@@ -187,7 +240,7 @@ body {
 }
 
 .sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -353,14 +406,14 @@ body {
   align-items: center;
   gap: var(--sp-2);
   padding: 6px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--bg-surface);
   transition: border-color 0.15s ease;
 }
 
 .search-box:focus-within {
-  border-color: rgba(77, 159, 255, 0.4);
+  border-color: var(--accent);
 }
 
 .search-icon {
@@ -440,7 +493,7 @@ body {
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   padding: 5px 12px;
   cursor: pointer;
   font-size: var(--text-sm);
@@ -451,7 +504,7 @@ body {
 .chip.active,
 .chip:hover {
   color: var(--text);
-  border-color: rgba(77, 159, 255, 0.4);
+  border-color: var(--accent);
   background: var(--accent-bg);
 }
 
@@ -467,7 +520,7 @@ body {
 
 /* ── Buttons ───────────────────────────────────────────────────────── */
 .btn {
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text);
@@ -486,23 +539,23 @@ body {
 
 .btn:hover {
   border-color: var(--border-hover);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
 }
 
 .btn.primary {
-  background: var(--accent);
-  color: #0f1117;
+  background: var(--fill-solid);
+  color: var(--fill-solid-text);
   border: none;
   font-weight: 600;
 }
 
 .btn.primary:hover {
-  background: var(--accent-hover);
+  background: var(--fill-solid-hover);
 }
 
 .btn.accent {
   background: var(--success);
-  color: #0f1117;
+  color: #000;
   border: none;
   font-weight: 600;
 }
@@ -573,7 +626,7 @@ body {
 }
 
 .card {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--bg-surface);
   padding: var(--sp-3) var(--sp-4);
@@ -661,9 +714,9 @@ body {
 .tag {
   font-size: 10px;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--hover);
   color: var(--text-muted);
 }
 
@@ -686,7 +739,7 @@ body {
 }
 
 .tree-header:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover);
 }
 
 .tree-tag {
@@ -774,7 +827,7 @@ body {
   scrollbar-gutter: stable;
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
   padding: var(--sp-5);
   box-shadow: var(--shadow-lg);
 }
@@ -837,7 +890,7 @@ body {
 .field textarea {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   padding: 8px 12px;
   color: var(--text);
   font-size: var(--text-base);
@@ -854,8 +907,8 @@ body {
 .field select:focus,
 .field textarea:focus {
   outline: none;
-  border-color: rgba(77, 159, 255, 0.5);
-  box-shadow: 0 0 0 2px rgba(77, 159, 255, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--ring);
 }
 
 .field select {
@@ -876,6 +929,7 @@ body {
 .field textarea {
   min-height: 100px;
   resize: vertical;
+  border-radius: var(--radius-md);
 }
 
 .field.meta {
@@ -1020,7 +1074,7 @@ body {
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
   cursor: default;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover);
   border: 1px solid var(--border);
 }
 
@@ -1093,7 +1147,7 @@ body {
 .login-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
   padding: 40px 36px 32px;
   width: min(420px, 90vw);
   text-align: center;
@@ -1171,7 +1225,7 @@ body {
 .stat-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--sp-4) var(--sp-5);
   transition: border-color 0.15s ease;
 }
@@ -1245,7 +1299,7 @@ body {
 }
 
 .dash-list-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 
 .dash-list-item-name {
@@ -1428,7 +1482,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1500,6 +1554,12 @@ body {
   height: 250px;
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+/* uPlot legend is DOM (not canvas) — make its text follow the theme token
+   (axis/grid strokes are re-themed from JS in MonChart.svelte). */
+.mon-chart-container .u-legend {
+  color: var(--text-muted);
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -1588,7 +1648,7 @@ body {
   width: 100%;
 }
 .mon-srv-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 .mon-srv-item:focus-visible {
   outline: 2px solid var(--accent);
@@ -1679,7 +1739,7 @@ body {
   color: var(--danger);
 }
 .mon-pill.pill-muted {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--hover);
   color: var(--text-muted);
 }
 
@@ -1721,7 +1781,7 @@ body {
   display: block;
   width: 100%;
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   align-self: center;
 }
 
@@ -1749,7 +1809,7 @@ body {
   grid-area: ring;
 }
 .mon-ring-track {
-  stroke: rgba(255, 255, 255, 0.08);
+  stroke: var(--border);
 }
 .mon-ring-progress {
   transition: stroke-dasharray 0.4s ease;
@@ -1809,7 +1869,7 @@ body {
 }
 .mon-hero-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1871,7 +1931,7 @@ body {
   color: var(--danger);
 }
 .mon-chip.chip-muted {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   color: var(--text-muted);
 }
 
@@ -1987,7 +2047,7 @@ body {
   padding-left: calc(var(--sp-4) + 6px);
   border-bottom: 1px solid var(--border);
   position: relative;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--hover);
 }
 .mon-section-stripe {
   position: absolute;
@@ -2022,7 +2082,7 @@ body {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hover);
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -2050,7 +2110,7 @@ body {
 .mon-section-count {
   font-size: 11px;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   padding: 2px 8px;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
@@ -2068,7 +2128,7 @@ body {
 
 /* ── Check-Line (klickbare Zeile mit Expand) ────────────────────────── */
 .mon-line-wrapper {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border);
 }
 .mon-line-wrapper:last-child {
   border-bottom: none;
@@ -2092,7 +2152,7 @@ body {
   padding: 8px var(--sp-4);
 }
 .mon-line:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover);
 }
 .mon-line:focus-visible {
   outline: 2px solid var(--accent);
@@ -2165,7 +2225,7 @@ body {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   color: var(--text-muted);
 }
 .mon-line-pill.pill-ok {
@@ -2222,7 +2282,7 @@ body {
     border-color 0.15s ease;
 }
 .mon-line-action:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
   color: var(--text);
   border-color: var(--border);
 }
@@ -2267,7 +2327,7 @@ body {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -2314,7 +2374,7 @@ body {
   font-size: var(--text-sm);
 }
 .mon-expand-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 .mon-expand-row.level-ok {
   background: rgba(52, 211, 153, 0.04);
@@ -2335,7 +2395,7 @@ body {
   letter-spacing: 0.04em;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
   color: var(--text-muted);
   font-weight: 600;
 }
@@ -2408,7 +2468,7 @@ body {
   gap: var(--sp-3);
   align-items: center;
   padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border);
   font-size: var(--text-sm);
 }
 .mon-log-time {
@@ -2571,7 +2631,7 @@ body {
 }
 
 .ansible-server-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover);
 }
 .ansible-server-row input[type='checkbox'] {
   flex-shrink: 0;
@@ -2663,12 +2723,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--border);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--border-hover);
 }
 
 /* ── Responsive ────────────────────────────────────────────────────── */

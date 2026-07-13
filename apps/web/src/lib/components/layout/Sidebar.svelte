@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import { auth, currentUser, isAdmin } from '$lib/stores/auth';
   import { t, toggleLanguage, language } from '$lib/i18n';
+  import { theme, toggleTheme } from '$lib/stores/theme';
   import { path as routerPath } from '$lib/router';
   import { routes } from '../../../routes';
 
@@ -61,10 +62,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="/assets/logo.svg" alt="Logo" class="logo-mark" />
+    <svg class="logo-mark" viewBox="0 0 100 100" fill="currentColor" aria-hidden="true">
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M28 0C12.536 0 0 12.536 0 28v44c0 15.464 12.536 28 28 28h44c15.464 0 28-12.536 28-28V28C100 12.536 87.464 0 72 0H28Zm22 26.5L24.5 52a6 6 0 0 0 8.485 8.485L50 43.97l16.515 16.515A6 6 0 0 0 75 51.999L50 26.5ZM31 66a6 6 0 0 0 0 12h38a6 6 0 0 0 0-12H31Z"
+      />
+    </svg>
     <div class="sidebar-brand-text">
-      <div class="brand-title">Admin</div>
-      <div class="brand-subtitle">Helper</div>
+      <div class="brand-title" style="font-weight:600">Admin</div>
+      <div class="brand-subtitle" style="font-weight:300">Helper</div>
     </div>
   </div>
 
@@ -101,6 +108,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div style="display:flex;gap:6px;width:100%">
       <button class="btn small ghost" style="flex:1" onclick={() => auth.logout()}>
         {$t('nav.logout')}
+      </button>
+      <button
+        class="btn small ghost"
+        style="width:40px;flex-shrink:0"
+        onclick={toggleTheme}
+        aria-label={$t('theme.toggle')}
+        title={$t('theme.toggle')}
+      >
+        {#if $theme === 'dark'}
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        {:else}
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+            />
+          </svg>
+        {/if}
       </button>
       <button
         class="btn small ghost"

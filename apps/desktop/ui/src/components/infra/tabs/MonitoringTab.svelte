@@ -146,13 +146,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     background: var(--text-muted);
   }
   .status-dot.mon-ok {
-    background: var(--success, #3fb950);
+    background: var(--success);
   }
   .status-dot.mon-warning {
-    background: var(--warning, #d29922);
+    background: var(--warning);
   }
   .status-dot.mon-critical {
-    background: var(--danger, #f85149);
+    background: var(--danger);
   }
   .status-dot.mon-pending,
   .status-dot.mon-unknown {

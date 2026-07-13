@@ -29,7 +29,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // the next render — else the stale rAF fires later, builds a uPlot into the detached/emptied
   // container and overwrites `chart`, leaking the previous instance's DOM + listeners (4.103).
   let raf = 0;
+  // Bumped when <html data-theme> changes so the render $effect re-themes the uPlot canvas
+  // (axis/grid stroke are baked into the chart at build time, unlike the CSS-var timeline).
+  let themeVersion = $state(0);
 
+  // Series palette: mid-saturation (no neon/pastel), each hue stays legible on both the
+  // True-Black dark and pure-white light background.
   const COLORS = ['#38bdf8', '#22c55e', '#f97316', '#a855f7', '#ec4899', '#14b8a6'];
 
   function destroy(): void {
@@ -87,10 +92,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
     const unit = checkTypeUnit(checkType);
     const pctCheck = isPercentCheck(checkType);
+    // Axis/grid colours from the theme tokens (read live so a data-theme toggle re-themes
+    // the canvas on the next render); fall back to the old slate values if unresolved.
+    const cs = getComputedStyle(document.documentElement);
+    const axisStroke = cs.getPropertyValue('--text-muted').trim() || '#94a3b8';
+    const gridStroke = cs.getPropertyValue('--border').trim() || 'rgba(148,163,184,0.12)';
     const axisStyle = {
-      stroke: '#94a3b8',
-      grid: { stroke: 'rgba(148,163,184,0.12)' },
-      ticks: { stroke: 'rgba(148,163,184,0.12)' },
+      stroke: axisStroke,
+      grid: { stroke: gridStroke },
+      ticks: { stroke: gridStroke },
     };
 
     const opts: Options = {
@@ -129,10 +139,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
     resizer.observe(el);
   }
 
+  // Re-render on theme toggle: uPlot bakes axis/grid colours into the canvas at build
+  // time, so the chart must be rebuilt when <html data-theme> flips.
+  $effect(() => {
+    const obs = new MutationObserver(() => themeVersion++);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  });
+
   $effect(() => {
     // Track checkType too: render() reads it (fill/unit/scale) but only `metrics`
     // would otherwise be a dependency, so a pure checkType change must re-render.
     void checkType;
+    void themeVersion;
     if (!container) return;
     if (!metrics) {
       showPlaceholder(container, 'monitoring.chart.loading');

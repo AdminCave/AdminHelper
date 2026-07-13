@@ -140,7 +140,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <div class="login-screen">
   <div class="login-card">
     <div class="login-logo" aria-label="AdminHelper Logo">
-      <img src="/logo.svg" alt="AdminHelper" width="48" height="48" />
+      <svg width="48" height="48" viewBox="0 0 100 100" fill="currentColor" aria-hidden="true">
+        <path
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M28 0C12.536 0 0 12.536 0 28v44c0 15.464 12.536 28 28 28h44c15.464 0 28-12.536 28-28V28C100 12.536 87.464 0 72 0H28Zm22 26.5L24.5 52a6 6 0 0 0 8.485 8.485L50 43.97l16.515 16.515A6 6 0 0 0 75 51.999L50 26.5ZM31 66a6 6 0 0 0 0 12h38a6 6 0 0 0 0-12H31Z"
+        />
+      </svg>
     </div>
     <h2>{$t('login.title')}</h2>
     <p class="login-subtitle">{$t('login.subtitle')}</p>
