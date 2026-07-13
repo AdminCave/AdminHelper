@@ -6,6 +6,7 @@ package provision
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -40,7 +41,7 @@ func TestCallActivateCapturesServerCert(t *testing.T) {
 	// server is on a random port, so pass that port through unchanged.
 	u, _ := url.Parse(srv.URL)
 	port, _ := strconv.Atoi(u.Port())
-	resp, certPEM, err := callActivate(srv.URL, "tok", "srv-1", "", true, port)
+	resp, certPEM, err := callActivate(srv.URL, "tok", "srv-1", "", true, nil, port)
 	if err != nil {
 		t.Fatalf("callActivate: %v", err)
 	}
@@ -133,8 +134,71 @@ func TestCallActivateRejectsConsumedToken(t *testing.T) {
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
 	port, _ := strconv.Atoi(u.Port())
-	if _, _, err := callActivate(srv.URL, "used", "srv-1", "", true, port); err == nil {
+	if _, _, err := callActivate(srv.URL, "used", "srv-1", "", true, nil, port); err == nil {
 		t.Fatal("403 (verbrauchter Token) haette einen Fehler ergeben muessen")
+	}
+}
+
+func TestRunRejectsCAFPCombinedWithOtherTrust(t *testing.T) {
+	// One trust source per call: --ca-fp must not be silently weakened by
+	// --insecure or diluted by --cacert. Validation fails BEFORE any network I/O
+	// (the URL is unroutable on purpose — reaching it would hang/fail differently).
+	if err := Run("https://192.0.2.1", "tok", "srv-1", "", true, "ab"); err == nil ||
+		!strings.Contains(err.Error(), "--ca-fp") {
+		t.Fatalf("--ca-fp + --insecure haette die Kombi-Validierung treffen muessen, war: %v", err)
+	}
+	if err := Run("https://192.0.2.1", "tok", "srv-1", "/tmp/ca.pem", false, "ab"); err == nil ||
+		!strings.Contains(err.Error(), "--ca-fp") {
+		t.Fatalf("--ca-fp + --cacert haette die Kombi-Validierung treffen muessen, war: %v", err)
+	}
+	// A malformed fingerprint must also die before any network I/O.
+	if err := Run("https://192.0.2.1", "tok", "srv-1", "", false, "nicht-hex"); err == nil ||
+		!strings.Contains(err.Error(), "SHA-256") {
+		t.Fatalf("kaputter Fingerprint haette die Parse-Validierung treffen muessen, war: %v", err)
+	}
+}
+
+func TestPinVerifiedAnchorWritesOnlyTheAnchor(t *testing.T) {
+	// The pinned file must contain EXACTLY the fingerprint-matched cert — pinning
+	// the whole presented chain would anchor the rotating leaf too, defeating the
+	// point of a CA pin.
+	leafPEM := []byte("-----BEGIN CERTIFICATE-----\nbGVhZg==\n-----END CERTIFICATE-----\n")
+	caPEM := []byte("-----BEGIN CERTIFICATE-----\nY2E=\n-----END CERTIFICATE-----\n")
+	chain := append(append([]byte{}, leafPEM...), caPEM...)
+
+	caBlock, _ := pem.Decode(caPEM)
+	fp := sha256.Sum256(caBlock.Bytes)
+
+	path, _, err := pinVerifiedAnchor(chain, fp)
+	if err != nil {
+		t.Fatalf("pinVerifiedAnchor: %v", err)
+	}
+	defer os.Remove(path)
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := 0
+	rest := got
+	for {
+		var b *pem.Block
+		b, rest = pem.Decode(rest)
+		if b == nil {
+			break
+		}
+		blocks++
+		if sha256.Sum256(b.Bytes) != fp {
+			t.Fatal("gepinnter Block ist nicht der Anchor")
+		}
+	}
+	if blocks != 1 {
+		t.Fatalf("erwartet genau 1 gepinntes Zertifikat, war %d", blocks)
+	}
+
+	// Fingerprint not present in the chain -> fail closed.
+	var wrong [sha256.Size]byte
+	if _, _, err := pinVerifiedAnchor(chain, wrong); err == nil {
+		t.Fatal("fehlender Anchor haette einen Fehler ergeben muessen")
 	}
 }
 
@@ -146,7 +210,7 @@ func TestCallActivateRejectsBadJSON(t *testing.T) {
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
 	port, _ := strconv.Atoi(u.Port())
-	if _, _, err := callActivate(srv.URL, "tok", "srv-1", "", true, port); err == nil {
+	if _, _, err := callActivate(srv.URL, "tok", "srv-1", "", true, nil, port); err == nil {
 		t.Fatal("kaputtes JSON haette einen Fehler ergeben muessen")
 	}
 }

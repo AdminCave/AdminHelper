@@ -61,8 +61,12 @@ type activateResponse struct {
 }
 
 // Run redeems a provision token against the server endpoint and
-// installs the returned bundles in a platform-appropriate way.
-func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
+// installs the returned bundles in a platform-appropriate way. A non-empty
+// caFP (SHA-256 of the internal CA, handed over out-of-band via the desktop's
+// provisioning tab) upgrades the first contact from trust-on-first-use to a
+// VERIFIED handshake: the token never leaves the host unless the presented
+// chain proves the pinned CA (httpclient.NewCAFingerprint).
+func Run(adminHelperURL, token, serverID, cacert string, insecure bool, caFP string) error {
 	adminHelperURL = strings.TrimRight(adminHelperURL, "/")
 	if adminHelperURL == "" || token == "" || serverID == "" {
 		return fmt.Errorf("--url, --token und --server-id sind erforderlich")
@@ -70,8 +74,22 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 	if err := config.RequireHTTPS(adminHelperURL); err != nil {
 		return err
 	}
+	// One trust source per call: --ca-fp verifies, --cacert trusts a file,
+	// --insecure pins blind. Combinations would silently weaken the strongest
+	// one, so refuse them instead of guessing.
+	if caFP != "" && (cacert != "" || insecure) {
+		return fmt.Errorf("--ca-fp cannot be combined with --cacert/--insecure")
+	}
+	var fingerprint *[sha256.Size]byte
+	if caFP != "" {
+		fp, err := httpclient.ParseCAFingerprint(caFP)
+		if err != nil {
+			return err
+		}
+		fingerprint = &fp
+	}
 
-	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, 8444)
+	resp, serverCertPEM, err := callActivate(adminHelperURL, token, serverID, cacert, insecure, fingerprint, 8444)
 	if err != nil {
 		return err
 	}
@@ -81,7 +99,14 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Printf("Provisioning fuer Server %q gestartet.\n", resp.ServerName)
 
-	effectiveCacert, effectiveInsecure, cleanupPin, err := pinIfBlindInsecure(cacert, insecure, serverCertPEM)
+	var effectiveCacert string
+	var effectiveInsecure bool
+	cleanupPin := func() {}
+	if fingerprint != nil {
+		effectiveCacert, cleanupPin, err = pinVerifiedAnchor(serverCertPEM, *fingerprint)
+	} else {
+		effectiveCacert, effectiveInsecure, cleanupPin, err = pinIfBlindInsecure(cacert, insecure, serverCertPEM)
+	}
 	if err != nil {
 		return err
 	}
@@ -142,6 +167,33 @@ func Run(adminHelperURL, token, serverID, cacert string, insecure bool) error {
 
 	fmt.Println("OK: Provisioning abgeschlossen.")
 	return nil
+}
+
+// pinVerifiedAnchor persists the --ca-fp-verified trust for the follow-up calls
+// (enroll, monitor init, frpc apply): it extracts EXACTLY the fingerprint-matched
+// certificate from the chain the (already handshake-verified) activate call saw
+// and writes it as the pinned CA file. Only the anchor — pinning the whole
+// presented chain would also anchor the rotating leaf, defeating the point of a
+// CA pin. The chain is handshake-verified, so a missing match here is a bug,
+// not an attack — still fail closed.
+func pinVerifiedAnchor(serverCertPEM []byte, fp [sha256.Size]byte) (string, func(), error) {
+	rest := serverCertPEM
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return "", func() {}, fmt.Errorf("verified CA anchor not found in the presented chain")
+		}
+		if block.Type != "CERTIFICATE" || sha256.Sum256(block.Bytes) != fp {
+			continue
+		}
+		pinnedPath, err := writePinnedCert(pem.EncodeToMemory(block))
+		if err != nil {
+			return "", func() {}, fmt.Errorf("pinning the verified CA anchor: %w", err)
+		}
+		fmt.Println("→ CA fingerprint verified — chain cryptographically checked, CA pinned as trust anchor.")
+		return pinnedPath, func() { os.Remove(pinnedPath) }, nil
+	}
 }
 
 // pinIfBlindInsecure turns a blind --insecure (no --cacert) into TOFU-pinned trust:
@@ -249,10 +301,18 @@ func activateEndpoint(adminHelperURL string, port int, serverID string) (string,
 	return u.String(), nil
 }
 
-func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool, enrollPort int) (*activateResponse, []byte, error) {
-	client, err := httpclient.New(cacert, insecure, 30*time.Second)
-	if err != nil {
-		return nil, nil, fmt.Errorf("HTTP-Client: %w", err)
+func callActivate(adminHelperURL, token, serverID, cacert string, insecure bool, fingerprint *[sha256.Size]byte, enrollPort int) (*activateResponse, []byte, error) {
+	var client *http.Client
+	if fingerprint != nil {
+		// Anchor verify inside the handshake: the provision token below is only
+		// ever sent over a connection that proved the pinned CA (3.45 hardened).
+		client = httpclient.NewCAFingerprint(*fingerprint, 30*time.Second)
+	} else {
+		var err error
+		client, err = httpclient.New(cacert, insecure, 30*time.Second)
+		if err != nil {
+			return nil, nil, fmt.Errorf("HTTP-Client: %w", err)
+		}
 	}
 
 	// Activate is a token-gated bootstrap door on the gateway's certless enroll

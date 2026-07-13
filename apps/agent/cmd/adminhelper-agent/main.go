@@ -82,21 +82,23 @@ func diagnosticsCmd() *cobra.Command {
 // --- Provision subcommand (server-centric, replaces frpc init since v0.23.0) ---
 
 func provisionCmd() *cobra.Command {
-	var url, token, serverID, cacert string
+	var url, token, serverID, cacert, caFP string
 	var insecure bool
 
 	cmd := &cobra.Command{
 		Use:   "provision",
-		Short: "Server gegen AdminHelper provisionieren (Server-API-Key + optional Monitor + FRP)",
+		Short: "Provision this host against an AdminHelper server (server API key + optional monitor + FRP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return provision.Run(url, token, serverID, cacert, insecure)
+			return provision.Run(url, token, serverID, cacert, insecure, caFP)
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "AdminHelper Server URL (erforderlich)")
-	cmd.Flags().StringVar(&token, "token", "", "Provision-Token (erforderlich)")
-	cmd.Flags().StringVar(&serverID, "server-id", "", "Server-ID (erforderlich)")
-	cmd.Flags().StringVar(&cacert, "cacert", "", "CA-Zertifikat fuer self-signed Server")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "SSL-Verifikation deaktivieren")
+	cmd.Flags().StringVar(&url, "url", "", "AdminHelper server URL (required)")
+	cmd.Flags().StringVar(&token, "token", "", "provision token (required)")
+	cmd.Flags().StringVar(&serverID, "server-id", "", "server ID (required)")
+	cmd.Flags().StringVar(&cacert, "cacert", "", "CA certificate for a self-signed server")
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "disable TLS verification for this call (TOFU-pins the presented cert)")
+	cmd.Flags().StringVar(&caFP, "ca-fp", "",
+		"SHA-256 fingerprint of the internal CA (shown in the provisioning tab) — verifies the first contact instead of TOFU")
 	cmd.MarkFlagRequired("url")
 	cmd.MarkFlagRequired("token")
 	cmd.MarkFlagRequired("server-id")
