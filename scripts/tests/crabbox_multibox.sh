@@ -126,8 +126,16 @@ VIS_PTOK="$(mb MB_VIS_PTOK)"
 VIS_B64="$(mb MB_VISITOR_B64)"
 MC_OK_STATUS="$(mb MC_OK_STATUS)"
 MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
+REPO_FP="$(mb MB_REPO_GPG_FP)"
+CAFP="$(mb MB_CA_FP)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
+# The signed test repo is the backbone of the user install path — its absence
+# means the dogfooded agent-install.sh flow silently degrades, so fail loudly.
+[ -n "$REPO_FP" ] && ok "signed test repo live on :8445 (gpg $REPO_FP)" \
+  || bad "signed repo missing on :8445 (serverbox package/repo build failed — agents fall back to the local .deb path)"
+[ -n "$CAFP" ] && ok "gateway intermediate fingerprint extracted (--ca-fp $CAFP)" \
+  || bad "MB_CA_FP missing — agents fall back to TOFU first contact"
 [ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
   && ok "MTLS_ENFORCE=true: certless :443 rejected (400) — cert-gated data plane over the hop" \
   || bad "enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)"; }
@@ -135,10 +143,15 @@ MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 echo "== provision each agent against https://$SRV_IP =="
 for a in "${AGENT_SLUGS[@]:-}"; do
   [ -n "$a" ] || continue
-  AOUT="$(timeout 1800 crabbox run --id "$a" -- bash scripts/tests/crabbox_agentbox.sh "$SRV_IP" "$SID" "$PTOK" 2>&1)"; echo "$AOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -50
+  AOUT="$(timeout 1800 crabbox run --id "$a" -- bash scripts/tests/crabbox_agentbox.sh "$SRV_IP" "$SID" "$PTOK" "$REPO_FP" "$CAFP" 2>&1)"; echo "$AOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -50
   printf '%s' "$AOUT" | grep -q AGENT_PROVISION_OK && printf '%s' "$AOUT" | grep -q AGENT_CERT_OK \
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + vmbr1 firewall)"
+  if [ -n "$REPO_FP" ]; then
+    printf '%s' "$AOUT" | grep -q AGENT_REPO_OK && printf '%s' "$AOUT" | grep -q AGENT_CAFLIP_OK \
+      && ok "agent $a: installed from the :8445 repo via agent-install.sh, CA-pinned steady state" \
+      || bad "agent $a: user-path markers missing (AGENT_REPO_OK/AGENT_CAFLIP_OK)"
+  fi
 done
 
 if [ "$RPM" = 1 ]; then

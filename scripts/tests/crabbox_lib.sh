@@ -110,11 +110,15 @@ cbx_marker() { printf '%s' "$2" | grep -oE "$1=[^ ]+" | tail -1 | cut -d= -f2; }
 # repo root (not dist/). Shared by agentbox/tunnelbox/visitorbox so a build-path change
 # lands once — and no box can swallow the build error (visitorbox did, surfacing only as
 # a cryptic 'no .deb') (2.118).
-cbx_build_agent_deb() {  # cbx_build_agent_deb <tag> -> echoes the .deb path, returns 1 on failure
+cbx_build_agent_deb() {  # cbx_build_agent_deb <tag> -> echoes ONLY the .deb path, returns 1 on failure
   local tag="${1:?}" deb
-  ( cd apps/agent && make build-linux ) || { echo "[$tag] go build failed" >&2; return 1; }
+  # Build noise goes to STDERR: every caller captures stdout via $(...) and
+  # expects a bare path — make's echoed go-build recipe and dpkg-deb's chatter
+  # on stdout poisoned the captured value into a multi-line string, which then
+  # failed `dpkg -i "$DEB"` / `[ -f "$DEB" ]` at all four call sites (4.139).
+  ( cd apps/agent && make build-linux ) >&2 || { echo "[$tag] go build failed" >&2; return 1; }
   cp -f apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu ./frpc 2>/dev/null || true
-  VERSION="0.0.0-test" bash apps/agent/build-deb.sh || { echo "[$tag] build-deb failed" >&2; return 1; }
+  VERSION="0.0.0-test" bash apps/agent/build-deb.sh >&2 || { echo "[$tag] build-deb failed" >&2; return 1; }
   deb="$(ls -1 ./adminhelper-agent_*_amd64.deb 2>/dev/null | head -1)"
   [ -n "$deb" ] || { echo "[$tag] no .deb produced (looked in repo root)" >&2; return 1; }
   echo "$deb"

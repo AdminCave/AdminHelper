@@ -143,6 +143,57 @@ echo "$OUT"
 # Also hand the desktop-capstone box what it needs to log in + inject SSE events.
 echo "MB_ADMIN_PW=$ADMIN_PW"
 echo "MB_MONITOR_KEY=$(grep -E '^MONITOR_API_KEY=' .env | head -1 | cut -d= -f2-)"
+
+# Signed test package repo on the :8445 plane: build the agent .deb/.rpm from
+# THIS checkout, sign the repo with a throwaway key, and drop it into ./repo —
+# the gateway's read-only bind mount (nginx checks the root per request, no
+# restart needed). Agent boxes then install through scripts/agent-install.sh
+# over the real repo plane, exactly like a user host (dogfooding).
+echo "[serverbox] build agent packages + signed test repo for :8445"
+# shellcheck source=scripts/tests/crabbox_lib.sh
+. scripts/tests/crabbox_lib.sh
+export PATH="$PATH:/usr/local/go/bin"
+REPO_FP=""
+if DEB="$(cbx_build_agent_deb serverbox)"; then
+  # rpm forbids '-' in Version (0.0.0, not 0.0.0-test); build-repo.sh needs BOTH packages.
+  VERSION=0.0.0 bash apps/agent/build-rpm.sh >/dev/null 2>&1 \
+    && RPMF="$(ls -1 ./adminhelper-agent-0.0.0-1*.x86_64.rpm 2>/dev/null | head -1)" || RPMF=""
+  if [ -n "$RPMF" ]; then
+    export GNUPGHOME="$PWD/.mb-gnupg"
+    install -d -m 700 "$GNUPGHOME"
+    # rsa3072, not ed25519: rocky8's rpm/dnf EdDSA support is patchy, and the
+    # rpm repo must verify there too (repo_gpgcheck=1).
+    gpg --batch --passphrase '' --quick-generate-key "AH Test Repo <repo@test.invalid>" rsa3072 sign never >/dev/null 2>&1
+    REPO_FP="$(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')"
+    # Build into a STAGING dir, then copy the contents into ./repo: the gateway
+    # already bind-mounts ./repo (root-owned, live), and build-repo.sh rm -rf's
+    # its OUT_DIR — nuking a live bind-mount source would leave the container on
+    # the old inode (and the rm would fail on the root-owned dir anyway).
+    if [ -n "$REPO_FP" ] && VERSION=0.0.0-test DEB="$DEB" RPM="$RPMF" REPO_GPG_KEY_ID="$REPO_FP" \
+         OUT_DIR="$PWD/.mb-repo-stage" bash apps/agent/build-repo.sh >/dev/null; then
+      sudo mkdir -p repo && sudo cp -a "$PWD/.mb-repo-stage/." repo/ \
+        && echo "MB_REPO_GPG_FP=$REPO_FP" \
+        || { REPO_FP=""; echo "[serverbox] repo publish (cp into bind mount) failed"; }
+    else
+      REPO_FP=""; echo "[serverbox] build-repo failed — agent boxes fall back to the local .deb path"
+    fi
+    unset GNUPGHOME
+  else
+    echo "[serverbox] rpm build failed — skipping the signed repo (fallback path)"
+  fi
+else
+  echo "[serverbox] deb build failed — skipping the signed repo (fallback path)"
+fi
+# The CA fingerprint the desktop would embed as --ca-fp: the access intermediate
+# is the SECOND cert the gateway presents (fullchain = leaf + intermediate).
+openssl s_client -connect 127.0.0.1:443 -showcerts </dev/null 2>/dev/null \
+  | awk '/-----BEGIN CERTIFICATE-----/{c++} c==2{print} /-----END CERTIFICATE-----/{if(c==2)exit}' \
+  > /tmp/mb-inter.pem || true
+if openssl x509 -in /tmp/mb-inter.pem -outform der -out /tmp/mb-inter.der 2>/dev/null; then
+  echo "MB_CA_FP=$(sha256sum /tmp/mb-inter.der | cut -d' ' -f1)"
+else
+  echo "[serverbox] could not extract the intermediate for MB_CA_FP (agents fall back to TOFU)"
+fi
 # Tunnel mode: the FRP config seed above wrote frps.toml into the shared volume;
 # bring frps up now (its ca-issuer-provisioned leaf carries the DOMAIN=$SRV_IP SAN).
 if [ "$DO_TUNNEL" = 1 ]; then
