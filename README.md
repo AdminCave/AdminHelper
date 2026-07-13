@@ -290,17 +290,28 @@ The **monitoring service** runs as a separate container alongside the server and
 
 ### Installing the agent
 
-The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows:
+The **Unified Go Agent** (`adminhelper-agent`) combines FRP sync and monitoring in a single package for Linux and Windows. The recommended rollout is the one-liner the desktop client generates in *Infrastructure → Server → Provisioning* — it sets up the server's signed package repo (GPG-fingerprint-checked), installs the agent and provisions it with a **verified first contact** (`--ca-fp`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \
+  | sudo bash -s -- \
+  --server https://<server> --token <PROVISION-TOKEN> \
+  --server-id <SERVER-ID> --ca-fp <SHA256-FROM-THE-TAB>
+```
+
+Manual alternative (package from the [GitHub release](https://github.com/AdminCave/AdminHelper/releases) assets):
 
 ```bash
 # Install the DEB:
-sudo apt install ./adminhelper-agent_0.37.2_amd64.deb
+sudo apt install ./adminhelper-agent_<version>_amd64.deb
 
-# Full provisioning in a single call (server API key + optional monitor + optional FRP):
+# Full provisioning in a single call (server API key + optional monitor + optional FRP);
+# --ca-fp (from the provisioning tab) verifies the first contact instead of TOFU:
 sudo adminhelper-agent provision \
   --url https://<server> \
   --token <PROVISION-TOKEN> \
-  --server-id <SERVER-ID>
+  --server-id <SERVER-ID> \
+  --ca-fp <SHA256-FROM-THE-TAB>
 
 # Start continuous operation (FRP sync + monitor push every 5 min):
 sudo adminhelper-agent run

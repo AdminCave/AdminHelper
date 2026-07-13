@@ -241,7 +241,8 @@ jobs:
           cp docker-compose.yml .env.example stage/
           cp scripts/install.sh scripts/update.sh scripts/init-secrets.sh \
              scripts/pg-backup.sh scripts/backup.sh scripts/restore.sh \
-             scripts/uninstall.sh scripts/diagnostics.sh stage/scripts/
+             scripts/uninstall.sh scripts/diagnostics.sh scripts/agent-install.sh \
+             stage/scripts/
           printf '%s\n' "$TAG" > stage/VERSION
           ( cd stage && find docker-compose.yml .env.example scripts -type f | sort \
               | xargs sha256sum > MANIFEST.sha256 )

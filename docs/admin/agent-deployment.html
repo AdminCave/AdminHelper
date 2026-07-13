@@ -40,6 +40,17 @@
             <li><strong>Updates</strong>: neues DEB/RPM von der GitHub-Releases-Seite installieren; Konfig und Service werden bei Upgrades nicht überschrieben. <em>Hinweis:</em> Beim Umstieg auf das interne-only-Monitoring (Server-Proxy statt Host-Port <code>8480</code>) müssen bestehende Agents einmal <strong>neu provisioniert</strong> werden, damit ihre gespeicherte <code>MONITOR_URL</code> auf <code>/api/monitoring</code> umgestellt wird.</li>
           </ul>
 
+          <h2 id="schnell-rollout">Schnell-Rollout (ein Befehl, empfohlen)</h2>
+          <p>Der Desktop-Client generiert im Tab <em>Infrastruktur &rarr; Server &rarr; Provisionierung</em> einen fertigen Einzeiler auf Basis von <code>scripts/agent-install.sh</code> &mdash; inklusive Einmal-Token, Server-ID und dem <strong>CA-Fingerprint</strong> der Installation:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \
+  | sudo bash -s -- \
+  --server https://srm.example.com \
+  --token &lt;provision-token&gt; \
+  --server-id &lt;server-id&gt; \
+  --ca-fp &lt;sha256-aus-dem-tab&gt;</code></pre>
+          <p>Das Skript erledigt den kompletten Rollout <strong>fail-closed</strong>: Es holt den Repo-Signaturschl&uuml;ssel von der <code>:8445</code>-Plane und vergleicht dessen OpenPGP-Fingerprint <em>erzwungen</em> gegen den im Skript gepinnten Projekt-Schl&uuml;ssel (eigene Repos: <code>--gpg-fp</code>), richtet die apt-/dnf-Quelle ein (deb822 mit <code>Signed-By</code> bzw. <code>.repo</code> mit lokal verifiziertem <code>gpgkey</code>), installiert <code>adminhelper-agent</code> und provisioniert direkt mit. Dank <code>--ca-fp</code> (Wert aus dem Provisionierungs-Tab &mdash; der Desktop kennt die interne CA aus seinem eigenen Enrollment) wird der Erstkontakt <strong>im TLS-Handshake verifiziert</strong> statt blind gepinnt; der Token verl&auml;sst den Host erst nach bestandener Pr&uuml;fung. Nach erfolgreichem mTLS-Enrollment stellt das Skript die Repo-Quelle automatisch auf <strong>CA-Pinning</strong> um (<code>CAInfo</code>/<code>sslcacert</code> auf <code>/etc/adminhelper/identity/ca.crt</code>) &mdash; der geh&auml;rtete Dauerzustand f&uuml;r <code>apt upgrade</code>/<code>dnf upgrade</code>. Ohne <code>--token</code>/<code>--server-id</code> installiert es nur das Paket; l&auml;sst man nur <code>--token</code> weg, fragt es ihn &uuml;ber <code>/dev/tty</code> ab (h&auml;lt das Secret aus der Shell-History). L&auml;uft der Server ohne signiertes Repo (<code>:8445</code> liefert 404), weicht <code>--from-github</code> auf das minisign-verifizierte Release-Paket aus (nur apt). Das Skript liegt auch im Runtime-Bundle unter <code>/opt/adminhelper/scripts/agent-install.sh</code> &mdash; f&uuml;r Hosts ohne GitHub-Zugang per <code>scp</code> kopierbar.</p>
+
           <h2>Paket installieren (Debian/Ubuntu)</h2>
           <p>Die DEB- und RPM-Pakete h&auml;ngen als Assets an jedem <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub-Release</a>. Datei herunterladen und lokal installieren:</p>
           <div class="code-header"><span>bash</span></div>
@@ -138,7 +149,7 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
 
           <div class="callout callout-tip" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 3 2 5 3 7h8c1-2 3-4 3-7a7 7 0 0 0-7-7z"/></svg>
-            <div><div class="callout-title">Ansible-One-Liner</div><p>Für Rollouts auf viele Hosts: ein Playbook mit <code>apt</code>/<code>yum</code>-Modul plus <code>command: adminhelper-agent provision ...</code>. Beispiel-Role im Repo unter <code>apps/agent/ansible/</code>.</p></div>
+            <div><div class="callout-title">Ansible / cloud-init</div><p>Für Rollouts auf viele Hosts ist der <a href="#schnell-rollout">Schnell-Rollout-Einzeiler</a> der passende Baustein: ein <code>command:</code>-/<code>runcmd:</code>-Schritt mit <code>agent-install.sh --server … --token … --server-id … --ca-fp …</code> pro Host (Token je Host einmalig erzeugen). Idempotent: ohne Token/Server-ID aktualisiert derselbe Aufruf nur das Paket.</p></div>
           </div>
 
           <h2>Subcommand-Referenz</h2>
@@ -150,7 +161,7 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
             <tbody>
               <tr><td><code>version</code></td><td>Zeigt die Version an</td><td>—</td></tr>
               <tr><td><code>run</code></td><td>FRPC-Sync + Monitor-Push ausführen (ohne Flag Dauerbetrieb, alle 5 Minuten)</td><td><code>--once</code></td></tr>
-              <tr><td><code>provision</code></td><td>Server gegen AdminHelper provisionieren (Server-API-Key + optional Monitor + FRP)</td><td><code>--url</code>*, <code>--token</code>*, <code>--server-id</code>*, <code>--cacert</code>, <code>--insecure</code></td></tr>
+              <tr><td><code>provision</code></td><td>Server gegen AdminHelper provisionieren (Server-API-Key + optional Monitor + FRP)</td><td><code>--url</code>*, <code>--token</code>*, <code>--server-id</code>*, <code>--ca-fp</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
               <tr><td><code>frpc sync</code></td><td>Einmaliger Config-Sync</td><td>—</td></tr>
               <tr><td><code>monitor init</code></td><td>Ersteinrichtung des Monitor-Agents</td><td><code>--url</code>*, <code>--api-key</code>*, <code>--server-id</code>*, <code>--services</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
               <tr><td><code>monitor push</code></td><td>Einmaliger Metriken-Push</td><td>—</td></tr>
@@ -158,7 +169,8 @@ sudo dnf install adminhelper-agent     # spaetere Updates: dnf upgrade</code></p
               <tr><td><code>service uninstall</code></td><td>OS-Service deregistrieren</td><td>—</td></tr>
             </tbody>
           </table>
-          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>- oder <code>monitor init</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen. <strong>Trust-on-first-use-Trade-off:</strong> sitzt ein Angreifer bereits waehrend dieses ersten Aufrufs on-path, pinnt <code>--insecure</code> <em>dessen</em> Zertifikat als permanenten Trust-Anchor. Um das zu erkennen, gibt <code>provision</code> den SHA-256-Fingerprint des gepinnten Zertifikats aus &mdash; pruefe ihn out-of-band gegen den vom AdminHelper-Server angezeigten Fingerprint, oder nutze <code>--cacert</code>, um das Risiko ganz zu vermeiden.</p>
+          <p><strong><code>--ca-fp &lt;sha256&gt;</code> ist der bevorzugte Trust-Anker f&uuml;r den Erstkontakt:</strong> Der Agent akzeptiert die Verbindung nur, wenn die pr&auml;sentierte Zertifikatskette ein Zertifikat mit genau diesem Fingerprint enth&auml;lt <em>und</em> das Server-Leaf kryptografisch daran h&auml;ngt &mdash; gepr&uuml;ft <em>im</em> TLS-Handshake, bevor der Einmal-Token den Host verl&auml;sst. Den Wert zeigt der Desktop im Provisionierungs-Tab an (die dort generierten Befehle enthalten ihn bereits). Nicht mit <code>--cacert</code>/<code>--insecure</code> kombinierbar.</p>
+          <p><strong><code>--insecure</code> gilt nur fuer den einmaligen <code>provision</code>- oder <code>monitor init</code>-Aufruf:</strong> der Agent erfasst dabei das vom Server praesentierte Zertifikat und pinnt es (Trust-on-first-use), sodass die wiederkehrende Sync-/Push-Schleife wieder verifiziert &mdash; statt die TLS-Pruefung dauerhaft abzuschalten. Mit <code>--cacert</code> wird gar nichts uebersprungen. <strong>Trust-on-first-use-Trade-off:</strong> sitzt ein Angreifer bereits waehrend dieses ersten Aufrufs on-path, pinnt <code>--insecure</code> <em>dessen</em> Zertifikat als permanenten Trust-Anchor. Um das zu erkennen, gibt <code>provision</code> den SHA-256-Fingerprint des gepinnten Zertifikats aus &mdash; pruefe ihn out-of-band gegen den im Provisionierungs-Tab angezeigten CA-Fingerprint, oder nutze <code>--ca-fp</code>/<code>--cacert</code>, um das Risiko ganz zu vermeiden.</p>
 
           <h2>Windows (MSI)</h2>
           <p>Die Windows-Binary <code>adminhelper-agent.exe</code> wird als signiertes MSI verteilt. Nach Installation:</p>

@@ -33,10 +33,21 @@
           <h1>Agent Deployment</h1>
           <p class="lead">One Go binary, two packages (DEB + RPM), shipped with matching service units. The provision flow redeems a one-time token and installs a persistent client certificate.</p>
 
+          <h2 id="quick-rollout">Quick rollout (one command, recommended)</h2>
+          <p>The desktop client generates a ready-made one-liner in <em>Infrastructure &rarr; Server &rarr; Provisioning</em>, based on <code>scripts/agent-install.sh</code> &mdash; including the one-time token, the server ID and the installation's <strong>CA fingerprint</strong>:</p>
+          <div class="code-header"><span>bash</span></div>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \
+  | sudo bash -s -- \
+  --server https://srm.example.com \
+  --token &lt;provision-token&gt; \
+  --server-id &lt;server-id&gt; \
+  --ca-fp &lt;sha256-from-the-tab&gt;</code></pre>
+          <p>The script performs the whole rollout <strong>fail-closed</strong>: it fetches the repo signing key from the <code>:8445</code> plane and <em>hard-compares</em> its OpenPGP fingerprint against the project key pinned in the script (self-built repos: <code>--gpg-fp</code>), writes the apt/dnf source (deb822 with <code>Signed-By</code>, resp. a <code>.repo</code> with a locally verified <code>gpgkey</code>), installs <code>adminhelper-agent</code> and provisions it right away. With <code>--ca-fp</code> (shown in the provisioning tab &mdash; the desktop knows the internal CA from its own enrollment) the first contact is <strong>verified inside the TLS handshake</strong> instead of blindly pinned; the token only leaves the host after the check passes. After a successful mTLS enrollment the script automatically flips the repo source to <strong>CA pinning</strong> (<code>CAInfo</code>/<code>sslcacert</code> to <code>/etc/adminhelper/identity/ca.crt</code>) &mdash; the hardened steady state for <code>apt upgrade</code>/<code>dnf upgrade</code>. Without <code>--token</code>/<code>--server-id</code> it only installs the package; omitting just <code>--token</code> makes it prompt via <code>/dev/tty</code> (keeps the secret out of the shell history). If the server runs without a signed repo (<code>:8445</code> answers 404), <code>--from-github</code> falls back to the minisign-verified release package (apt only). The script also ships in the runtime bundle at <code>/opt/adminhelper/scripts/agent-install.sh</code> &mdash; <code>scp</code>-able for hosts without GitHub access. For fleet rollouts it is the natural Ansible/cloud-init building block (one <code>command:</code>/<code>runcmd:</code> step per host, token minted per host).</p>
+
           <h2>Debian / Ubuntu</h2>
           <p>The DEB and RPM packages are attached as assets to every <a href="https://github.com/AdminCave/AdminHelper/releases" rel="noopener">GitHub release</a>. Download the file and install it locally:</p>
           <div class="code-header"><span>bash</span></div>
-<pre><code>VERSION=0.26.0
+<pre><code>VERSION=0.42.0  # adjust to the current release
 curl -fsSLO "https://github.com/AdminCave/AdminHelper/releases/download/v${VERSION}/adminhelper-agent_${VERSION}_amd64.deb"
 
 # Installs deps and supersedes the old srm-* packages (Replaces/Conflicts):
@@ -146,7 +157,7 @@ sudo adminhelper-agent provision \
             <tbody>
               <tr><td><code>version</code></td><td>Print the version</td><td>—</td></tr>
               <tr><td><code>run</code></td><td>Run FRPC sync + monitor push (without flag: continuous, every 5 minutes)</td><td><code>--once</code></td></tr>
-              <tr><td><code>provision</code></td><td>Provision the server against AdminHelper (server API key + optional monitor + FRP)</td><td><code>--url</code>*, <code>--token</code>*, <code>--server-id</code>*, <code>--cacert</code>, <code>--insecure</code></td></tr>
+              <tr><td><code>provision</code></td><td>Provision the server against AdminHelper (server API key + optional monitor + FRP)</td><td><code>--url</code>*, <code>--token</code>*, <code>--server-id</code>*, <code>--ca-fp</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
               <tr><td><code>frpc sync</code></td><td>One-off config sync</td><td>—</td></tr>
               <tr><td><code>monitor init</code></td><td>First-time setup of the monitor agent</td><td><code>--url</code>*, <code>--api-key</code>*, <code>--server-id</code>*, <code>--services</code>, <code>--cacert</code>, <code>--insecure</code></td></tr>
               <tr><td><code>monitor push</code></td><td>One-off metrics push</td><td>—</td></tr>
@@ -154,7 +165,8 @@ sudo adminhelper-agent provision \
               <tr><td><code>service uninstall</code></td><td>Deregister the OS service</td><td>—</td></tr>
             </tbody>
           </table>
-          <p><strong><code>--insecure</code> applies only to the one-off <code>provision</code> or <code>monitor init</code> call:</strong> the agent captures the certificate the server presents and pins it (trust-on-first-use), so the recurring sync/push loop verifies again &mdash; instead of disabling TLS verification permanently. With <code>--cacert</code> nothing is skipped at all. <strong>Trust-on-first-use trade-off:</strong> if an attacker is already on-path during that first call, <code>--insecure</code> pins <em>the attacker's</em> certificate as the permanent trust anchor. To detect this, <code>provision</code> prints the pinned certificate's SHA-256 fingerprint &mdash; verify it out-of-band against the fingerprint the AdminHelper server shows, or use <code>--cacert</code> to avoid the risk entirely.</p>
+          <p><strong><code>--ca-fp &lt;sha256&gt;</code> is the preferred trust anchor for the first contact:</strong> the agent only accepts the connection if the presented certificate chain contains a certificate with exactly this fingerprint <em>and</em> the server leaf cryptographically chains to it &mdash; checked <em>inside</em> the TLS handshake, before the one-time token ever leaves the host. The desktop shows the value in the provisioning tab (the commands generated there already include it). Cannot be combined with <code>--cacert</code>/<code>--insecure</code>.</p>
+          <p><strong><code>--insecure</code> applies only to the one-off <code>provision</code> or <code>monitor init</code> call:</strong> the agent captures the certificate the server presents and pins it (trust-on-first-use), so the recurring sync/push loop verifies again &mdash; instead of disabling TLS verification permanently. With <code>--cacert</code> nothing is skipped at all. <strong>Trust-on-first-use trade-off:</strong> if an attacker is already on-path during that first call, <code>--insecure</code> pins <em>the attacker's</em> certificate as the permanent trust anchor. To detect this, <code>provision</code> prints the pinned certificate's SHA-256 fingerprint &mdash; verify it out-of-band against the CA fingerprint shown in the provisioning tab, or use <code>--ca-fp</code>/<code>--cacert</code> to avoid the risk entirely.</p>
 
           <h2>Verification</h2>
           <div class="code-header"><span>bash</span></div>

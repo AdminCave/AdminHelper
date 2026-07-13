@@ -194,6 +194,7 @@ layer_integration() {
   run_step "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
   # Hermetic (no docker) but cheap and valuable to keep green here too.
   run_step "update.sh sandbox"                -- bash scripts/tests/update_test.sh
+  run_step "agent-install.sh sandbox"         -- bash scripts/tests/agent_install_test.sh
   run_step "diagnostics.sh redaction"         -- bash scripts/tests/diagnostics_test.sh
 }
 
