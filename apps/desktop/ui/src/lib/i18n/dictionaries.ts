@@ -56,7 +56,13 @@ export const translations: Translations = {
     'infra.prov.hint':
       'Erzeuge ein Einmal-Token und führe den Befehl auf dem Zielserver aus, um dessen Agenten zu registrieren.',
     'infra.prov.createToken': 'Token erzeugen',
-    'infra.prov.runOnTarget': 'Auf dem Zielserver ausführen:',
+    'infra.prov.installScript':
+      'Install-Skript (empfohlen — richtet Paket-Repo ein, installiert und provisioniert):',
+    'infra.prov.runOnTarget': 'Nur provisionieren (Paket bereits installiert):',
+    'infra.prov.caFp':
+      'CA-Fingerprint für --ca-fp (verifizierter Erstkontakt; auch für den Out-of-band-Vergleich):',
+    'infra.prov.noCaFp':
+      'Dieses Gerät ist nicht enrollt — Befehle ohne --ca-fp: Der Erstkontakt der Agents bleibt unverifiziert (Trust-on-first-use).',
     'infra.prov.existingTokens': 'Vorhandene Tokens',
     'infra.prov.noTokens': 'Keine Tokens',
     'infra.prov.created': 'Token erzeugt',
@@ -566,7 +572,13 @@ export const translations: Translations = {
     'infra.prov.hint':
       'Create a one-time token and run the command on the target server to enroll its agent.',
     'infra.prov.createToken': 'Create token',
-    'infra.prov.runOnTarget': 'Run on the target server:',
+    'infra.prov.installScript':
+      'Install script (recommended — sets up the package repo, installs and provisions):',
+    'infra.prov.runOnTarget': 'Provision only (package already installed):',
+    'infra.prov.caFp':
+      'CA fingerprint for --ca-fp (verified first contact; also for out-of-band comparison):',
+    'infra.prov.noCaFp':
+      'This device is not enrolled — commands omit --ca-fp: the agents’ first contact stays unverified (trust-on-first-use).',
     'infra.prov.existingTokens': 'Existing tokens',
     'infra.prov.noTokens': 'No tokens',
     'infra.prov.created': 'Token created',

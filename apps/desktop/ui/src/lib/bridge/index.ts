@@ -94,6 +94,12 @@ export function resetDeviceIdentity(serverUrl: string): Promise<void> {
   return invoke('reset_device_identity', { serverUrl });
 }
 
+// SHA-256 fingerprint of the CA pinned at enrollment (access intermediate) —
+// embedded as the agent's --ca-fp by the provisioning tab. Null until enrolled.
+export function pinnedCaFingerprint(): Promise<string | null> {
+  return invoke<string | null>('pinned_ca_fingerprint');
+}
+
 // Decoupled enrollment (ADR 0003): enroll this device with a one-time token an
 // admin minted out-of-band — without a prior login. Lets a brand-new client get
 // its mTLS cert under enforced mTLS, where it can't reach the login on :443.

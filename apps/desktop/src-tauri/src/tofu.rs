@@ -37,7 +37,7 @@ use crate::error::AppError;
 // ── Pure logic (unit-tested) ──────────────────────────────────────────
 
 /// SHA-256 of a leaf certificate's DER, lower-case hex. This is what we pin.
-fn fingerprint(cert_der: &[u8]) -> String {
+pub(crate) fn fingerprint(cert_der: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(cert_der);
     let mut hex = String::with_capacity(digest.len() * 2);

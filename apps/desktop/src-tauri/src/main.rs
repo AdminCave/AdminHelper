@@ -30,9 +30,9 @@ use commands::{
     check_server_cert, delete_password, enroll_device, enroll_with_token, export_browser_p12,
     fetch_connections_jwt, fetch_tunnels, generate_diagnostics, is_device_enrolled,
     load_connections, load_settings, login, logout, open_connection, open_connection_stored,
-    password_state, reset_device_identity, reset_server_cert_pin, resolve_connection,
-    save_connections, save_password, save_settings, start_notification_stream, start_tunnel,
-    stop_notification_stream, stop_tunnel, sync_connections, tunnel_status,
+    password_state, pinned_ca_fingerprint, reset_device_identity, reset_server_cert_pin,
+    resolve_connection, save_connections, save_password, save_settings, start_notification_stream,
+    start_tunnel, stop_notification_stream, stop_tunnel, sync_connections, tunnel_status,
 };
 use tauri::Manager;
 
@@ -110,6 +110,7 @@ fn main() {
             check_server_cert,
             reset_server_cert_pin,
             is_device_enrolled,
+            pinned_ca_fingerprint,
             reset_device_identity,
             enroll_device,
             enroll_with_token,

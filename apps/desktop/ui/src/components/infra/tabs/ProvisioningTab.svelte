@@ -9,6 +9,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { onMount, onDestroy } from 'svelte';
   import type { FrpProvisionToken, Server } from '$lib/api/types';
   import { provisioningApi } from '$lib/api/provisioning';
+  import { pinnedCaFingerprint } from '$lib/bridge';
   import { session, settings } from '$lib/stores/session';
   import { reportError, showStatus } from '$lib/stores/statusBar';
   import { t, language } from '$lib/i18n';
@@ -20,14 +21,22 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let tokens = $state<FrpProvisionToken[]>([]);
   let loading = $state(false);
+  let scriptCommand = $state('');
   let command = $state('');
+  // The desktop's pinned CA fingerprint (access intermediate): handed to the
+  // agent as --ca-fp so its first contact is VERIFIED instead of TOFU. The
+  // desktop is the trusted courier here — it talks to the server over its own
+  // pinned channel, so embedding the value in the command closes the
+  // trust-on-first-use gap. Null while this device is not enrolled.
+  let caFp = $state<string | null>(null);
 
-  // The provision command embeds a one-time token that's redeemable until it
-  // expires, so don't leave it on screen indefinitely — auto-hide it (3.64).
+  // The commands embed a one-time token that's redeemable until it expires, so
+  // don't leave them on screen indefinitely — auto-hide (3.64).
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleHide(ms: number): void {
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
+      scriptCommand = '';
       command = '';
       hideTimer = null;
     }, ms);
@@ -58,12 +67,24 @@ SPDX-License-Identifier: GPL-3.0-or-later
       const result = await provisioningApi.createToken(s, server.id);
       // The agent fetches its API key, optional monitor key and optional FRP
       // bundle from the activate response in this single provision call.
-      const insecure = $settings?.allowSelfSignedCerts ? ' \\\n  --insecure' : '';
+      const fpArg = caFp ? ` \\\n  --ca-fp ${caFp}` : '';
+      // Recommended path: the install script sets up the signed package repo,
+      // installs the agent and provisions it in one go.
+      scriptCommand =
+        `curl -fsSL https://raw.githubusercontent.com/AdminCave/AdminHelper/main/scripts/agent-install.sh \\\n` +
+        `  | sudo bash -s -- \\\n` +
+        `  --server ${s.serverUrl} \\\n` +
+        `  --token ${result.token} \\\n` +
+        `  --server-id ${server.id}${fpArg}`;
+      // Provision-only variant for hosts that already carry the package.
+      // --ca-fp supersedes --insecure; without an enrolled identity fall back
+      // to the previous TOFU behaviour (only when the user opted in).
+      const trust = caFp ? fpArg : $settings?.allowSelfSignedCerts ? ' \\\n  --insecure' : '';
       command =
         `sudo adminhelper-agent provision \\\n` +
         `  --url ${s.serverUrl} \\\n` +
         `  --token ${result.token} \\\n` +
-        `  --server-id ${server.id}${insecure}`;
+        `  --server-id ${server.id}${trust}`;
       showStatus($t('infra.prov.created'));
       scheduleHide(60_000); // auto-hide the token after a minute if left untouched
       await loadTokens();
@@ -72,10 +93,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
-  async function copyCommand(): Promise<void> {
-    if (!command) return;
+  async function copyText(text: string): Promise<void> {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(text);
       showStatus($t('infra.prov.commandCopied'));
       scheduleHide(10_000); // it's on the clipboard now — clear the screen shortly
     } catch {
@@ -98,20 +119,47 @@ SPDX-License-Identifier: GPL-3.0-or-later
     return { label: $t('infra.prov.expired'), cls: 'expired' };
   }
 
-  onMount(loadTokens);
+  onMount(() => {
+    void loadTokens();
+    pinnedCaFingerprint()
+      .then((fp) => (caFp = fp))
+      .catch(() => (caFp = null));
+  });
 </script>
 
 <div class="prov">
   <p class="prov-hint">{$t('infra.prov.hint')}</p>
+
+  {#if caFp}
+    <p class="prov-fp" data-testid="ca-fp">
+      <span>{$t('infra.prov.caFp')}</span>
+      <code>{caFp}</code>
+    </p>
+  {:else}
+    <p class="prov-fp-warn" data-testid="no-ca-fp">{$t('infra.prov.noCaFp')}</p>
+  {/if}
+
   <div>
     <button class="btn primary small" onclick={createToken}>{$t('infra.prov.createToken')}</button>
   </div>
 
+  {#if scriptCommand}
+    <div class="cmd-box" data-testid="script-command">
+      <div class="cmd-head">
+        <strong>{$t('infra.prov.installScript')}</strong>
+        <button class="btn small" onclick={() => copyText(scriptCommand)}>
+          {$t('action.copy')}
+        </button>
+      </div>
+      <pre>{scriptCommand}</pre>
+    </div>
+  {/if}
+
   {#if command}
-    <div class="cmd-box">
+    <div class="cmd-box" data-testid="provision-command">
       <div class="cmd-head">
         <strong>{$t('infra.prov.runOnTarget')}</strong>
-        <button class="btn small" onclick={copyCommand}>{$t('action.copy')}</button>
+        <button class="btn small" onclick={() => copyText(command)}>{$t('action.copy')}</button>
       </div>
       <pre>{command}</pre>
     </div>
@@ -157,6 +205,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
     margin: 0;
     color: var(--text-muted);
     font-size: var(--text-sm);
+  }
+  .prov-fp {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    align-items: baseline;
+  }
+  .prov-fp code {
+    font-size: var(--text-xs);
+    word-break: break-all;
+    color: var(--text);
+  }
+  .prov-fp-warn {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--danger);
   }
   .cmd-box {
     background: var(--bg-surface);

@@ -68,6 +68,14 @@ pub fn reset_server_cert_pin(server_url: String) -> Result<(), AppError> {
     Ok(())
 }
 
+/// SHA-256 fingerprint of the CA pinned at enrollment (the access
+/// intermediate). The provisioning tab embeds it as the agent's `--ca-fp`, so
+/// the agent's first contact is verified instead of TOFU. None until enrolled.
+#[tauri::command]
+pub fn pinned_ca_fingerprint() -> Option<String> {
+    enrollment::pinned_ca_fingerprint()
+}
+
 /// Whether this device currently holds an enrolled mTLS identity. Drives the
 /// visibility of the "reset device identity" action in the settings UI.
 #[tauri::command]

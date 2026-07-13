@@ -178,6 +178,25 @@ pub fn is_enrolled() -> bool {
     keyring_store::get(KEYRING_KEY).is_some() && keyring_store::get(KEYRING_CERT).is_some()
 }
 
+/// SHA-256 (lowercase hex) of the pinned access-intermediate CA — the FIRST
+/// certificate of the enrolled chain (`enroll|ca` = intermediate + root). The
+/// provisioning tab embeds it as the agent's `--ca-fp`, turning the agent's
+/// first contact into a verified handshake instead of blind TOFU: the gateway
+/// presents exactly this intermediate in its TLS chain (fullchain = leaf +
+/// intermediate), so the value survives leaf rotation. `None` until enrolled.
+pub fn pinned_ca_fingerprint() -> Option<String> {
+    ca_fingerprint_of_chain(&keyring_store::get(KEYRING_CA)?)
+}
+
+/// The fingerprint of the first PEM certificate in `chain_pem`. Split out so it
+/// is unit-testable without a keyring.
+fn ca_fingerprint_of_chain(chain_pem: &str) -> Option<String> {
+    let cert = CertificateDer::pem_slice_iter(chain_pem.as_bytes())
+        .next()?
+        .ok()?;
+    Some(crate::tofu::fingerprint(cert.as_ref()))
+}
+
 /// Forget the enrolled mTLS identity. NOT called on logout (that would lock the
 /// user out under enforced mTLS — the cert is needed to reach the login). Invoked
 /// by the explicit "reset device identity" settings action (`reset_device_identity`)
@@ -665,6 +684,30 @@ mod tests {
             want_spki.as_slice(),
             "Renew muss den vorhandenen Schlüssel wiederverwenden, nicht neu erzeugen"
         );
+    }
+
+    #[test]
+    fn ca_fingerprint_is_the_first_chain_cert() {
+        use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+        // The provisioning tab hands out the INTERMEDIATE's fingerprint — the
+        // cert the gateway actually presents — i.e. the FIRST cert of the
+        // stored chain (intermediate + root), never the root's.
+        let make = || {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            CertificateParams::new(vec![])
+                .unwrap()
+                .self_signed(&key)
+                .unwrap()
+        };
+        let inter = make();
+        let root = make();
+        let chain = format!("{}{}", inter.pem(), root.pem());
+
+        let got = ca_fingerprint_of_chain(&chain).unwrap();
+        assert_eq!(got, crate::tofu::fingerprint(inter.der()));
+        assert_ne!(got, crate::tofu::fingerprint(root.der()));
+        assert_eq!(ca_fingerprint_of_chain("kein pem"), None);
     }
 
     #[test]
