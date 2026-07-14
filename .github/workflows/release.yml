@@ -105,13 +105,14 @@ jobs:
         working-directory: apps/agent
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags "-s -w -X main.version=${VERSION}" \
-            -o bin/adminhelper-agent ./cmd/adminhelper-agent
-          GOOS=windows GOARCH=amd64 go build -trimpath \
-            -ldflags "-s -w -X main.version=${VERSION}" \
-            -o bin/adminhelper-agent.exe ./cmd/adminhelper-agent
+        # Build THROUGH the Makefile, not an inline `go build`: build-linux pins
+        # CGO_ENABLED=0 for a fully static binary. An inline build inherits the
+        # runner's default CGO_ENABLED=1 (gcc present) and dynamically links the
+        # host glibc (2.39) — the released agent then won't start on older distros
+        # (GLIBC_2.34 not found on Debian Stretch / RHEL 8 / UniFi firmware), while
+        # the crabbox tests — which DO use `make` — stayed green. One build
+        # definition means the tested binary is the shipped binary.
+        run: make build-linux build-windows
       - name: Download frpc (bundled into deb/rpm)
         run: |
           curl -fsSL -o frpc.tar.gz \
