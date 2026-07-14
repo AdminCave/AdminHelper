@@ -128,6 +128,7 @@ MC_OK_STATUS="$(mb MC_OK_STATUS)"
 MC_CRIT_STATUS="$(mb MC_CRIT_STATUS)"
 REPO_FP="$(mb MB_REPO_GPG_FP)"
 CAFP="$(mb MB_CA_FP)"
+OLDDPKG="$(mb MB_DEB_OLDDPKG_OK)"
 [ -n "$SID" ] && [ -n "$PTOK" ] && ok "stack up + provision token minted (server $SID)" \
   || { bad "server bring-up / token seed"; exit 1; }
 # The signed test repo is the backbone of the user install path — its absence
@@ -136,6 +137,15 @@ CAFP="$(mb MB_CA_FP)"
   || bad "signed repo missing on :8445 (serverbox package/repo build failed — agents fall back to the local .deb path)"
 [ -n "$CAFP" ] && ok "gateway intermediate fingerprint extracted (--ca-fp $CAFP)" \
   || bad "MB_CA_FP missing — agents fall back to TOFU first contact"
+# Old-Debian regression guard: the .deb must install AND its binary must run on
+# debian:9 (dpkg 1.18 + glibc 2.24 = Stretch / UniFi firmware). "0" is either the
+# zstd-compression break (v0.43.0) or the dynamic-glibc break (v0.43.1); empty
+# means the archived image could not pull (skip, not verified).
+case "$OLDDPKG" in
+  1) ok "agent .deb installs + binary runs on old Debian (debian:9: dpkg 1.18, glibc 2.24)" ;;
+  0) bad "agent .deb/binary fails on debian:9 — zstd-compression OR dynamic-glibc regression!" ;;
+  *) echo "  note old-Debian check skipped (debian:9 image unavailable) — not verified" ;;
+esac
 [ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
   && ok "MTLS_ENFORCE=true: certless :443 rejected (400) — cert-gated data plane over the hop" \
   || bad "enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)"; }

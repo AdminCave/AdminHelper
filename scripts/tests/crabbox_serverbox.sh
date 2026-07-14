@@ -155,6 +155,33 @@ echo "[serverbox] build agent packages + signed test repo for :8445"
 export PATH="$PATH:/usr/local/go/bin"
 REPO_FP=""
 if DEB="$(cbx_build_agent_deb serverbox)"; then
+  # Old-Debian regression guard on a debian:9 (Stretch) container — the exact
+  # dpkg 1.18 + glibc 2.24 environment that failed on UniFi/appliance firmware.
+  # Catches TWO distinct breaks that the all-modern build/test fleet hid, both of
+  # which shipped to real users:
+  #   1. .deb member compression: dpkg-deb --info/--contents reads control.tar +
+  #      data.tar — fails on zstd (needs xz), the v0.43.0 break.
+  #   2. binary glibc linkage: extract + RUN adminhelper-agent — a dynamically
+  #      linked binary (CGO_ENABLED=1) fails with "GLIBC_2.34 not found", the
+  #      v0.43.1 break. Only executing it on old glibc surfaces this.
+  # Mirrors the rpm cross-distro test (rockylinux:8). Skips (not fails) if the
+  # archived image can't pull.
+  if sudo docker pull -q debian:9 >/dev/null 2>&1; then
+    if sudo docker run --rm -v "$(realpath "$DEB"):/tmp/pkg.deb:ro" debian:9 sh -c '
+         set -e
+         dpkg-deb --info /tmp/pkg.deb >/dev/null      # control.tar readable?
+         dpkg-deb --contents /tmp/pkg.deb >/dev/null   # data.tar readable?
+         dpkg-deb --fsys-tarfile /tmp/pkg.deb | tar -xO ./usr/bin/adminhelper-agent > /tmp/ah
+         chmod +x /tmp/ah
+         /tmp/ah version >/dev/null                    # runs on glibc 2.24 (static)?
+       ' 2>/dev/null; then
+      echo "MB_DEB_OLDDPKG_OK=1"
+    else
+      echo "MB_DEB_OLDDPKG_OK=0"
+    fi
+  else
+    echo "[serverbox] debian:9 image unavailable — skipping the old-Debian install+run check"
+  fi
   # rpm forbids '-' in Version (0.0.0, not 0.0.0-test); build-repo.sh needs BOTH packages.
   VERSION=0.0.0 bash apps/agent/build-rpm.sh >/dev/null 2>&1 \
     && RPMF="$(ls -1 ./adminhelper-agent-0.0.0-1*.x86_64.rpm 2>/dev/null | head -1)" || RPMF=""
