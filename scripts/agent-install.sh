@@ -149,7 +149,7 @@ setup_repo_apt() {
     ensure_gpg
     # -k on purpose: transport to the certless repo plane is unverified during
     # bootstrap; the fingerprint check right below carries the authenticity.
-    curl -fsSk "${REPO_BASE}/apt/adminhelper-archive-keyring.gpg" -o "$_TMPROOT/keyring.gpg" \
+    curl -fsSk --connect-timeout 10 "${REPO_BASE}/apt/adminhelper-archive-keyring.gpg" -o "$_TMPROOT/keyring.gpg" \
         || die "could not fetch the repo keyring from ${REPO_BASE}/apt/ (server without a signed repo? use --from-github or the release .deb)"
     verify_keyring "$_TMPROOT/keyring.gpg"
     install -D -m 0644 "$_TMPROOT/keyring.gpg" "${KEYRING_DIR}/adminhelper-archive-keyring.gpg"
@@ -179,7 +179,7 @@ EOF
 
 setup_repo_dnf() {
     ensure_gpg
-    curl -fsSk "${REPO_BASE}/rpm/RPM-GPG-KEY-adminhelper" -o "$_TMPROOT/rpmkey.asc" \
+    curl -fsSk --connect-timeout 10 "${REPO_BASE}/rpm/RPM-GPG-KEY-adminhelper" -o "$_TMPROOT/rpmkey.asc" \
         || die "could not fetch the repo key from ${REPO_BASE}/rpm/ (server without a signed repo?)"
     verify_keyring "$_TMPROOT/rpmkey.asc"
     # gpgkey points at the LOCAL, fingerprint-verified file — never back at the
@@ -215,14 +215,14 @@ install_from_github() {
         apt-get install -y minisign >/dev/null || die "minisign is required to verify the release"
     }
     local tag ver deb
-    tag=$(curl -fsSL "${API_BASE}/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
+    tag=$(curl -fsSL --connect-timeout 10 "${API_BASE}/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
     [ -n "$tag" ] || die "could not resolve the latest release"
     ver="${tag#v}"
     deb="adminhelper-agent_${ver}_amd64.deb"
     log "fetching ${deb} (release ${tag}) from GitHub..."
-    curl -fsSL "${DL_BASE}/${REPO}/releases/download/${tag}/${deb}" -o "$_TMPROOT/$deb" || die "download failed: $deb"
-    curl -fsSL "${DL_BASE}/${REPO}/releases/download/${tag}/SHA256SUMS" -o "$_TMPROOT/SHA256SUMS" || die "download failed: SHA256SUMS"
-    curl -fsSL "${DL_BASE}/${REPO}/releases/download/${tag}/SHA256SUMS.minisig" -o "$_TMPROOT/SHA256SUMS.minisig" || die "download failed: SHA256SUMS.minisig"
+    curl -fsSL --connect-timeout 10 "${DL_BASE}/${REPO}/releases/download/${tag}/${deb}" -o "$_TMPROOT/$deb" || die "download failed: $deb"
+    curl -fsSL --connect-timeout 10 "${DL_BASE}/${REPO}/releases/download/${tag}/SHA256SUMS" -o "$_TMPROOT/SHA256SUMS" || die "download failed: SHA256SUMS"
+    curl -fsSL --connect-timeout 10 "${DL_BASE}/${REPO}/releases/download/${tag}/SHA256SUMS.minisig" -o "$_TMPROOT/SHA256SUMS.minisig" || die "download failed: SHA256SUMS.minisig"
     minisign -Vm "$_TMPROOT/SHA256SUMS" -P "$MINISIGN_PUBKEY" -x "$_TMPROOT/SHA256SUMS.minisig" >/dev/null \
         || die "SHA256SUMS signature verification FAILED — refusing the release"
     ( cd "$_TMPROOT" && grep " ${deb}\$" SHA256SUMS | sha256sum -c --quiet ) \

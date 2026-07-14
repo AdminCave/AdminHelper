@@ -36,8 +36,26 @@ chmod 755 "${BUILD_DIR}/usr/bin/frpc"
 # systemd units
 copy_units "${BUILD_DIR}/etc/systemd/system"
 
-# Build
-dpkg-deb --root-owner-group --build "${BUILD_DIR}"
+# Build. -Zxz, not the modern dpkg-deb default (zstd): zstd-compressed members
+# are unreadable by dpkg on older targets (Debian Stretch/Buster, and the Debian-
+# based firmware on UniFi/appliance hosts), which fail with "unknown compression
+# for member 'control.tar.zst'". xz is understood by every dpkg since Debian 6,
+# so the package installs across the whole supported fleet. The agent binary is
+# already static (CGO_ENABLED=0), so only the container format limited reach.
+dpkg-deb --root-owner-group -Zxz --build "${BUILD_DIR}"
 mv "build-deb/${PKG_NAME}_${VERSION}_amd64.deb" .
+
+# Regression guard (the zstd-on-old-dpkg incident): assert the built package uses
+# xz members, so a future dpkg-deb default change or a dropped -Zxz fails the
+# build instead of shipping a package that installs on modern CI/crabbox boxes
+# but breaks on older-Debian / appliance targets. `ar t` lists the members.
+members="$(ar t "${PKG_NAME}_${VERSION}_amd64.deb")"
+case "$members" in
+    *control.tar.zst*|*data.tar.zst*)
+        echo "FEHLER: .deb verwendet zstd-Kompression — bricht auf aeltererem dpkg (Debian Stretch/Buster, Appliances). -Zxz muss greifen." >&2
+        exit 1 ;;
+    *control.tar.xz*) ;;  # expected
+    *) echo "WARNUNG: unerwartete .deb-Member-Kompression: ${members}" >&2 ;;
+esac
 
 echo "=== Paket erstellt: ${PKG_NAME}_${VERSION}_amd64.deb ==="
