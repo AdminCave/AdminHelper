@@ -5,6 +5,23 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.43.2] - 2026-07-14
+
+### Fixed
+
+- **Agent-Binary laeuft wieder auf aelterer glibc (Debian Stretch, RHEL 8,
+  UniFi-/Appliance-Firmware):** Der Release-Build baute den Agent mit einem
+  nackten `go build`, das die Runner-Default `CGO_ENABLED=1` erbt und dadurch
+  **dynamisch** gegen die glibc des Build-Hosts (2.39) linkt — das ausgelieferte
+  Binary brach mit `GLIBC_2.34 not found`. Der Release baut den Agent jetzt
+  **ueber den Makefile** (`CGO_ENABLED=0`, vollstatisch), sodass es genau das
+  getestete Binary ist. Zusammen mit dem xz-Fix aus 0.43.1 installiert **und**
+  laeuft das Paket damit auf dem gesamten unterstuetzten Feld.
+- **Regressions-Guard:** Der Multibox-Test installiert das frische `.deb` jetzt
+  in einem `debian:9`-Container (dpkg 1.18 + glibc 2.24) **und fuehrt das Binary
+  aus** — faengt kuenftig beide Klassen (Kompression und glibc-Linkage), die die
+  reine Modern-Ubuntu-Testflotte durchrutschen liess.
+
 ## [0.43.1] - 2026-07-14
 
 ### Fixed
