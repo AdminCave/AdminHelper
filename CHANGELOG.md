@@ -5,6 +5,21 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.43.1] - 2026-07-14
+
+### Fixed
+
+- **Agent-`.deb` installiert wieder auf aelterem Debian / Appliance-Hosts:** Das
+  Paket wurde auf modernen Build-Hosts mit **zstd**-Kompression gebaut, die ein
+  aelteres `dpkg` (Debian Stretch/Buster, UniFi- und aehnliche Debian-basierte
+  Firmware) nicht lesen kann (`unknown compression for member 'control.tar.zst'`).
+  `build-deb.sh` erzwingt jetzt **xz** (verstaendlich fuer jedes `dpkg` seit
+  Debian 6), plus ein Build-Guard, der einen zstd-Rueckfall hart failt. Das
+  Agent-Binary selbst war nie betroffen (statisch, `CGO_ENABLED=0`).
+- **`agent-install.sh` haengt nicht mehr an einem nicht erreichbaren Port:** die
+  Repo-/Release-Fetches bekommen `--connect-timeout 10`, brechen also mit klarer
+  Meldung ab, statt am TCP-SYN eines gefilterten `:8445` stillzustehen.
+
 ## [0.43.0] - 2026-07-13
 
 ### Added
