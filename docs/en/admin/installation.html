@@ -38,7 +38,7 @@
             <li>Linux host (Debian 12+, Ubuntu 22.04+, Rocky 9)</li>
             <li>Docker Engine + Docker Compose v2</li>
             <li>Public IPv4/IPv6 with DNS A records for <code>srm.example.com</code> (panel) and <code>frp.example.com</code> (tunnel endpoint)</li>
-            <li>Open ports: <code>443/tcp</code> (web/API), <code>8444/tcp</code> (enrollment), <code>7000/tcp</code> (FRP control), <code>7443/tcp</code> (FRP mTLS), <code>6000-6999/tcp</code> (visitor ports), <code>8445/tcp</code> (agent package repo, optional)</li>
+            <li>Open ports (all TCP, inbound): <code>443</code> (web/API), <code>8444</code> (enrollment), <code>7000</code> (FRP control) and <code>7443</code> (FRP mTLS tunnel) when FRP tunnels are used, <code>8445</code> (agent package repo, recommended). The STCP visitor port range (<code>6000-6999</code>) binds <em>locally on the desktop client</em> — it is never exposed on the server.</li>
           </ul>
 
           <h2>Environment Variables</h2>
