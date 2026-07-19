@@ -23,7 +23,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
     formToInput,
     validateTemplateForm,
   } from '$lib/models/monitorTemplate';
-  import { saveTemplate, deleteTemplate } from '$lib/stores/monitoring';
+  import {
+    saveTemplate,
+    deleteTemplate,
+    assignTemplateToServers,
+    unassignTemplateFromServer,
+    assignTagToTemplate,
+    removeTagFromTemplate,
+    monitoringServers,
+    monitoringTemplates,
+  } from '$lib/stores/monitoring';
   import { reportError } from '$lib/stores/statusBar';
   import { t } from '$lib/i18n';
   import CheckConfigFields from './CheckConfigFields.svelte';
@@ -43,9 +52,21 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let alertDefs = $state<TemplateAlertDef[]>([]);
   let saving = $state(false);
   let confirmDelete = $state(false);
+  let selectedServerIds = $state<string[]>([]);
+  let newTag = $state('');
+  let assignBusy = $state(false);
 
   let isNew = $derived(editing === null);
-  let assignments = $derived(editing?.assignments ?? []);
+  // Assignments come from the LIVE store copy, not the editing snapshot —
+  // assign/unassign reload the templates and the section must follow.
+  let live = $derived(
+    editing ? ($monitoringTemplates.find((tpl) => tpl.id === editing.id) ?? editing) : null,
+  );
+  let assignments = $derived(live?.assignments ?? []);
+  let tagAssignments = $derived(live?.tagAssignments ?? []);
+  let unassignedServers = $derived(
+    $monitoringServers.filter((s) => !assignments.some((a) => a.serverId === s.id)),
+  );
 
   $effect(() => {
     if (!open) return;
@@ -55,7 +76,44 @@ SPDX-License-Identifier: GPL-3.0-or-later
     checkDefs = form.checkDefs;
     alertDefs = form.alertDefs;
     confirmDelete = false;
+    selectedServerIds = [];
+    newTag = '';
   });
+
+  async function onAssignSelected(): Promise<void> {
+    if (!editing || selectedServerIds.length === 0 || assignBusy) return;
+    // From unassignedServers, not the raw server list: a stale selection (e.g.
+    // a server materialized via tag meanwhile) must not produce a 409 assign.
+    const targets = unassignedServers.filter((s) => selectedServerIds.includes(s.id));
+    assignBusy = true;
+    await assignTemplateToServers(editing.id, targets);
+    assignBusy = false;
+    selectedServerIds = [];
+  }
+
+  async function onUnassign(serverId: string): Promise<void> {
+    if (!editing) return;
+    assignBusy = true;
+    await unassignTemplateFromServer(editing.id, serverId);
+    assignBusy = false;
+  }
+
+  async function onAddTag(): Promise<void> {
+    const tag = newTag.trim();
+    // assignBusy check: Enter in the input bypasses the disabled button.
+    if (!editing || !tag || assignBusy) return;
+    assignBusy = true;
+    const ok = await assignTagToTemplate(editing.id, tag);
+    assignBusy = false;
+    if (ok) newTag = '';
+  }
+
+  async function onRemoveTag(tag: string): Promise<void> {
+    if (!editing) return;
+    assignBusy = true;
+    await removeTagFromTemplate(editing.id, tag);
+    assignBusy = false;
+  }
 
   function addCheck(): void {
     checkDefs = [...checkDefs, emptyCheckDef()];
@@ -294,19 +352,93 @@ SPDX-License-Identifier: GPL-3.0-or-later
           {/each}
         </div>
 
-        <!-- Assignments (read-only) -->
-        <div class="def-section">
-          <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
-          {#if assignments.length === 0}
-            <div class="mon-empty">{$t('monitoring.tplEdit.noAssignments')}</div>
-          {:else}
-            <div class="assign-list">
-              {#each assignments as a (a.serverId)}
-                <span class="assign-pill">{a.serverName ?? a.serverId}</span>
-              {/each}
+        <!-- Assignments: servers (manual + bulk) and tags -->
+        {#if !isNew}
+          <div class="def-section">
+            <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
+            {#if assignments.length === 0}
+              <div class="mon-empty">{$t('monitoring.tplEdit.noAssignments')}</div>
+            {:else}
+              <div class="assign-list">
+                {#each assignments as a (a.serverId)}
+                  <span class="assign-pill">
+                    {a.serverName ?? a.serverId}
+                    {#if a.source === 'tag'}
+                      <span class="assign-via-tag">{$t('monitoring.tplEdit.viaTag')}</span>
+                    {:else}
+                      <button
+                        class="assign-remove"
+                        title={$t('monitoring.tplEdit.remove')}
+                        aria-label={`${$t('monitoring.tplEdit.remove')} ${a.serverName ?? a.serverId}`}
+                        disabled={assignBusy}
+                        onclick={() => onUnassign(a.serverId)}>×</button
+                      >
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {/if}
+            {#if unassignedServers.length > 0}
+              <div class="assign-add">
+                <div class="assign-choices">
+                  {#each unassignedServers as s (s.id)}
+                    <label class="assign-choice">
+                      <input type="checkbox" value={s.id} bind:group={selectedServerIds} />
+                      <span>{s.name}</span>
+                    </label>
+                  {/each}
+                </div>
+                <button
+                  class="btn small"
+                  disabled={assignBusy || selectedServerIds.length === 0}
+                  onclick={onAssignSelected}
+                >
+                  {$t('monitoring.tplEdit.assignSelected')} ({selectedServerIds.length})
+                </button>
+              </div>
+            {:else if assignments.length > 0}
+              <div class="mon-empty">{$t('monitoring.tplEdit.noUnassigned')}</div>
+            {/if}
+          </div>
+
+          <div class="def-section">
+            <h3 class="def-section-title">{$t('monitoring.tplEdit.tagAssignments')}</h3>
+            {#if tagAssignments.length > 0}
+              <div class="assign-list">
+                {#each tagAssignments as ta (ta.id)}
+                  <span class="assign-pill">
+                    {ta.tag}
+                    <button
+                      class="assign-remove"
+                      title={$t('monitoring.tplEdit.remove')}
+                      aria-label={`${$t('monitoring.tplEdit.remove')} ${ta.tag}`}
+                      disabled={assignBusy}
+                      onclick={() => onRemoveTag(ta.tag)}>×</button
+                    >
+                  </span>
+                {/each}
+              </div>
+            {/if}
+            <div class="assign-add-tag">
+              <input
+                type="text"
+                placeholder={$t('monitoring.tplEdit.tagPlaceholder')}
+                bind:value={newTag}
+                onkeydown={(e) => e.key === 'Enter' && onAddTag()}
+              />
+              <button
+                class="btn small"
+                disabled={assignBusy || newTag.trim().length === 0}
+                onclick={onAddTag}>{$t('monitoring.tplEdit.addTag')}</button
+              >
             </div>
-          {/if}
-        </div>
+          </div>
+        {:else}
+          <div class="def-section">
+            <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
+            <div class="mon-empty">{$t('monitoring.tplEdit.saveFirst')}</div>
+          </div>
+        {/if}
       </div>
 
       <div class="panel-actions">
@@ -435,6 +567,58 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border-radius: var(--radius-sm);
     padding: var(--sp-1, 2px) var(--sp-3);
     font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .assign-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .assign-remove:hover:not(:disabled) {
+    color: var(--danger, #e45959);
+  }
+  .assign-via-tag {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .assign-add {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .assign-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2) var(--sp-4);
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .assign-choice {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: 13px;
+  }
+  .assign-add-tag {
+    display: flex;
+    gap: var(--sp-2);
+  }
+  .assign-add-tag input {
+    background: var(--bg-input, var(--bg-panel));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: var(--sp-2) var(--sp-3);
+    font-size: 13px;
+    font-family: inherit;
+    flex: 1;
+    max-width: 240px;
   }
   .panel-actions {
     display: flex;

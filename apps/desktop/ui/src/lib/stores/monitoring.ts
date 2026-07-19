@@ -308,6 +308,76 @@ export async function deleteTemplate(id: string): Promise<boolean> {
   }
 }
 
+// ── Template assignments (server, bulk, tag) ─────────────────────────────────
+export async function assignTemplateToServers(
+  templateId: string,
+  servers: { id: string; hostname: string; name: string }[],
+): Promise<boolean> {
+  const session = currentSession();
+  if (!session || servers.length === 0) return false;
+  // Sequential on purpose: each assign materializes checks server-side; a
+  // failed one is reported individually and must not abort the rest.
+  let failed = 0;
+  for (const srv of servers) {
+    try {
+      await monitoringApi.assignTemplate(session, templateId, srv.id, srv.hostname, srv.name);
+    } catch (err) {
+      failed += 1;
+      reportError(errMsg(err));
+    }
+  }
+  await loadTemplates();
+  if (failed === 0) {
+    showStatus(tNow('monitoring.tplEdit.assigned', { count: String(servers.length) }));
+  }
+  return failed === 0;
+}
+
+export async function unassignTemplateFromServer(
+  templateId: string,
+  serverId: string,
+): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.unassignTemplate(session, templateId, serverId);
+    showStatus(tNow('monitoring.tplEdit.unassigned'));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+export async function assignTagToTemplate(templateId: string, tag: string): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.assignTemplateTag(session, templateId, tag);
+    showStatus(tNow('monitoring.tplEdit.tagAssigned', { tag }));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+export async function removeTagFromTemplate(templateId: string, tag: string): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.unassignTemplateTag(session, templateId, tag);
+    showStatus(tNow('monitoring.tplEdit.tagRemoved', { tag }));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 // The post-run reload timer (runCheck) — tracked so deactivateMonitoring can cancel it, else a
 // full /status request fires ~2 s after the user already left the monitoring page (4.105).
