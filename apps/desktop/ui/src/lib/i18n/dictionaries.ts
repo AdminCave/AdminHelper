@@ -122,6 +122,8 @@ export const translations: Translations = {
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Speichern',
     'action.cancel': 'Abbrechen',
+    'action.confirm': 'Bestätigen',
+    'confirm.title': 'Bestätigung',
     'action.delete': 'Löschen',
     'action.edit': 'Bearbeiten',
     'action.close': 'Schließen',
@@ -658,6 +660,8 @@ export const translations: Translations = {
     // ── Common Actions ─────────────────────────────────────────────────
     'action.save': 'Save',
     'action.cancel': 'Cancel',
+    'action.confirm': 'Confirm',
+    'confirm.title': 'Confirmation',
     'action.delete': 'Delete',
     'action.edit': 'Edit',
     'action.close': 'Close',
