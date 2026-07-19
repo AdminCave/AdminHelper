@@ -33,6 +33,7 @@ vi.mock('$lib/stores/monitoring', async () => {
     monitoringChecks: writable(checks),
     monitoringServers: writable(servers),
     monitoringServerSearch: writable(''),
+    maintenanceActive: writable({ global: false, servers: new Set(['srv-ok']) }),
     setSelectedServer: mocks.setSelectedServer,
     setOverviewView: mocks.setOverviewView,
   };
@@ -55,6 +56,10 @@ describe('MonServerGrid (T21)', () => {
     expect(tiles).toHaveLength(3);
     expect(tiles[0].textContent).toContain('burning'); // critical sorts first
     expect(tiles[0].classList.contains('worst-critical')).toBe(true);
+    // Maintenance badge only on the server the active set contains (T27).
+    const okTile = tiles.find((tile) => tile.textContent?.includes('okay')) as HTMLElement;
+    expect(okTile.querySelector('.maint-badge')).toBeTruthy();
+    expect(tiles[0].querySelector('.maint-badge')).toBeNull();
   });
 
   it('a pending-only server gets a muted pill and no global mon-* class on the root', async () => {

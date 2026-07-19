@@ -16,11 +16,13 @@ import {
   STATUS_PRIORITY,
   type MonitoringFilters,
 } from '$lib/models/monitoring';
+import { activeMaintenance } from '$lib/models/maintenance';
 import { tNow } from '$lib/i18n';
 import type {
   AlertLogEntry,
   AlertRule,
   AlertRuleInput,
+  MaintenanceWindow,
   MonitorCheck,
   MonitoringTemplateFull,
   MonitoringTemplateInput,
@@ -81,6 +83,7 @@ interface MonitoringState {
   selectedServerId: string | null;
   serverSearch: string;
   overviewView: OverviewView;
+  maintenance: MaintenanceWindow[];
 }
 
 const initial: MonitoringState = {
@@ -98,6 +101,7 @@ const initial: MonitoringState = {
   selectedServerId: null,
   serverSearch: '',
   overviewView: initialOverviewView(),
+  maintenance: [],
 };
 
 const _state = writable<MonitoringState>(initial);
@@ -122,6 +126,11 @@ export const monitoringError = derived(_state, ($s) => $s.error);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
 export const overviewView = derived(_state, ($s) => $s.overviewView);
+// Recomputed whenever the store updates — the 30s refresh cycle keeps the
+// "active now" evaluation fresh enough for a badge.
+export const maintenanceActive = derived(_state, ($s) =>
+  activeMaintenance($s.maintenance, new Date()),
+);
 
 export function setSelectedServer(id: string | null): void {
   _state.update((s) => ({ ...s, selectedServerId: id, expandedCheckId: null }));
@@ -177,6 +186,17 @@ export async function loadServers(): Promise<void> {
     _state.update((s) => ({ ...s, servers: [] }));
     const msg = errMsg(err);
     if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+  }
+}
+
+export async function loadMaintenanceWindows(): Promise<void> {
+  const session = currentSession();
+  if (!session) return;
+  try {
+    const windows = await monitoringApi.fetchMaintenance(session);
+    _state.update((s) => ({ ...s, maintenance: Array.isArray(windows) ? windows : [] }));
+  } catch {
+    // Badge-only data: a failed fetch silently keeps the previous list.
   }
 }
 
@@ -454,8 +474,12 @@ let runReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function activateMonitoring(): void {
   void loadServers().then(() => loadMonitoring());
+  void loadMaintenanceWindows();
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => void loadMonitoring(), REFRESH_INTERVAL_MS);
+  refreshTimer = setInterval(() => {
+    void loadMonitoring();
+    void loadMaintenanceWindows();
+  }, REFRESH_INTERVAL_MS);
 }
 
 export function deactivateMonitoring(): void {

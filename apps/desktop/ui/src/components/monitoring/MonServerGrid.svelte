@@ -6,12 +6,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 <script lang="ts">
   import {
+    maintenanceActive,
     monitoringChecks,
     monitoringServers,
     monitoringServerSearch,
     setSelectedServer,
     setOverviewView,
   } from '$lib/stores/monitoring';
+  import { serverInMaintenance } from '$lib/models/maintenance';
   import { groupChecksByServerWithSummary, statusClass } from '$lib/models/monitoring';
   import { t } from '$lib/i18n';
   import MonHeartbeatBar from './MonHeartbeatBar.svelte';
@@ -39,6 +41,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <span class="mon-tile-head">
           <span class="mon-dot {statusClass(g.worst)}"></span>
           <span class="mon-tile-name">{g.serverName}</span>
+          {#if serverInMaintenance($maintenanceActive, g.serverId)}
+            <span class="maint-badge">{$t('monitoring.maint.badge')}</span>
+          {/if}
         </span>
         <span class="mon-tile-counts">
           {#if g.summary.critical > 0}
@@ -95,6 +100,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
   .mon-tile.worst-critical {
     border-left-color: var(--danger);
+  }
+  .maint-badge {
+    margin-left: auto;
+    background: var(--bg-input, var(--bg-panel));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--sp-2);
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
   .mon-grid-empty {
     grid-column: 1 / -1;
