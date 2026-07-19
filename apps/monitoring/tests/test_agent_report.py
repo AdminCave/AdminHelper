@@ -332,3 +332,24 @@ def test_report_round_trips_hysteresis_memory(client_db):
     assert client.post("/agent/srv-1/report", json=_report(cpu=65)).status_code == 200
     with factory() as db:
         assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "ok"
+
+
+def test_degenerate_report_keeps_hysteresis_memory(client_db):
+    # T38: a push without a 'resources' block evaluates to unknown (details
+    # None) — that must NOT wipe the stored problems map, or the next normal
+    # report loses the release threshold and flaps ok despite the band.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=92)).status_code == 200
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert state.status == "unknown"
+        assert json.loads(state.details)["problems"] == {"cpu": "warning"}
+
+    # 75 sits in the release band (warn 80 - 10): with the memory intact the
+    # metric must STAY warning instead of flipping ok.
+    assert client.post("/agent/srv-1/report", json=_report(cpu=75)).status_code == 200
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "warning"

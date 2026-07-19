@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
@@ -52,7 +52,7 @@ class AlertRuleCreate(BaseModel):
     match_server_id: str | None = None
     channel: str  # webhook, email
     channel_config: dict = {}
-    cooldown_minutes: int = 30
+    cooldown_minutes: int = Field(30, ge=0)
     enabled: bool = True
 
 
@@ -62,7 +62,7 @@ class AlertRuleUpdate(BaseModel):
     match_server_id: str | None = None
     channel: str | None = None
     channel_config: dict | None = None
-    cooldown_minutes: int | None = None
+    cooldown_minutes: int | None = Field(None, ge=0)
     enabled: bool | None = None
 
 
@@ -116,7 +116,7 @@ class TemplateAlertDef(BaseModel):
     match_severity: str | None = None
     channel: str
     channel_config: dict = {}
-    cooldown_minutes: int = 30
+    cooldown_minutes: int = Field(30, ge=0)
     enabled: bool = True
 
     # Previously missing: an invalid channel in a template alert def only failed

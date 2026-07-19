@@ -22,8 +22,10 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     MonitorAgentKey,
+    MonitorAgentLiveness,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -437,6 +439,13 @@ def cleanup_server(db: Session, server_id: str) -> dict:
 
     # Delete agent key
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
+
+    # Server-scoped maintenance windows would otherwise become orphans no UI
+    # can reach (the only maintenance view is the per-server tab), and a stale
+    # liveness row would be re-hydrated on every restart (T42). Global windows
+    # (server_id NULL) stay.
+    db.query(MonitorMaintenance).filter(MonitorMaintenance.server_id == server_id).delete()
+    db.query(MonitorAgentLiveness).filter(MonitorAgentLiveness.server_id == server_id).delete()
 
     db.commit()
     _apply_scheduler_actions(actions)

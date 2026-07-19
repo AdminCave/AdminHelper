@@ -271,7 +271,7 @@ def agent_report(
             if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
                 message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
 
-            details_json = json.dumps(details) if details else None
+            details_json = json.dumps(details) if details is not None else None
 
             if not state:
                 state = MonitorState(
@@ -291,7 +291,12 @@ def agent_report(
                 state.fail_count = new_fail_count
                 state.last_check = now
                 state.message = message
-                state.details = details_json
+                # None details = the checker had nothing to evaluate (e.g. a
+                # report without a 'resources' block -> unknown). Keep the
+                # stored details then: nulling them would wipe the per-metric
+                # hysteresis memory ('problems') one degenerate push (T38).
+                if details is not None:
+                    state.details = details_json
 
             # Alerting on status change: collect now, dispatch after the commit
             # in a background task (blocking webhook/SMTP must not stall this

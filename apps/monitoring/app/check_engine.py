@@ -90,6 +90,24 @@ def effective_status(
     return result_status
 
 
+def resolve_config_server_id(
+    config: dict | None, check_type: str, server_id: str | None
+) -> dict | None:
+    """agent_ping/disk_forecast read their data source from config["server_id"].
+
+    Template defs inject it via {{server_id}}, but a hand-created check only
+    carries the column — without this fallback it would sit at 'unknown'
+    forever (T37). An explicit config value always wins."""
+    if (
+        config is not None
+        and check_type in ("agent_ping", "disk_forecast")
+        and not config.get("server_id")
+        and server_id
+    ):
+        config["server_id"] = server_id
+    return config
+
+
 def execute_check(check_id: str) -> None:
     """Called by the scheduler for each check interval."""
     db = SessionLocal()
@@ -110,6 +128,8 @@ def execute_check(check_id: str) -> None:
         # Do not run push-only checks from the scheduler
         if check.check_type in PUSH_ONLY_TYPES:
             return
+
+        config = resolve_config_server_id(config, check.check_type, check.server_id)
 
         checker = None
         if config is not None:

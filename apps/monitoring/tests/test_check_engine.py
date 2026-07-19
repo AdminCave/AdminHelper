@@ -9,7 +9,12 @@ next_fail_count / effective_status / is_suppressed — the consecutive_fails
 damping, without DB, scheduler or VictoriaMetrics.
 """
 
-from app.check_engine import effective_status, is_suppressed, next_fail_count
+from app.check_engine import (
+    effective_status,
+    is_suppressed,
+    next_fail_count,
+    resolve_config_server_id,
+)
 
 
 class TestNextFailCount:
@@ -196,3 +201,25 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
     fn, args = submitted[0]
     assert fn is ce._dispatch_alert_bg
     assert args == ("c1", "ok", "critical")
+
+
+class TestResolveConfigServerId:
+    """T37: hand-created agent_ping/disk_forecast checks carry server_id only
+    as a column — the fallback keeps them from sitting at 'unknown' forever."""
+
+    def test_injects_column_value_when_config_lacks_it(self):
+        for ct in ("agent_ping", "disk_forecast"):
+            assert resolve_config_server_id({}, ct, "srv-1") == {"server_id": "srv-1"}
+
+    def test_explicit_config_value_wins(self):
+        cfg = {"server_id": "from-template"}
+        assert resolve_config_server_id(cfg, "agent_ping", "srv-1") == {
+            "server_id": "from-template"
+        }
+
+    def test_other_types_untouched(self):
+        assert resolve_config_server_id({}, "ping", "srv-1") == {}
+
+    def test_none_config_and_empty_column_pass_through(self):
+        assert resolve_config_server_id(None, "agent_ping", "srv-1") is None
+        assert resolve_config_server_id({}, "agent_ping", None) == {}

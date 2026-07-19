@@ -204,9 +204,24 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
             except (json.JSONDecodeError, TypeError):
                 effective_config = {}
         try:
-            validate_check_config(effective_type, effective_config)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc))
+            stored_config = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            stored_config = None
+        # A round-tripped, UNCHANGED config skips the strict boundary: the UI
+        # resends the stored config on every edit, so re-validating it would
+        # make a legacy check with a formerly-valid extra key permanently
+        # uneditable (interval/severity edits included). Any actual config or
+        # type change still validates strictly (T40).
+        unchanged = (
+            effective_type == check.check_type
+            and stored_config is not None
+            and effective_config == stored_config
+        )
+        if not unchanged:
+            try:
+                validate_check_config(effective_type, effective_config)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
 
     for field in [
         "server_id",
