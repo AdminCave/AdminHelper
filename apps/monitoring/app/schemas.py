@@ -146,6 +146,25 @@ class TemplateAssign(BaseModel):
     server_name: str
 
 
+class TemplateTagAssign(BaseModel):
+    tag: str
+
+    @field_validator("tag")
+    @classmethod
+    def _tag_valid(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Tag must not be empty")
+        # '/' would make the DELETE path (/assign-tag/{tag}) unmatchable — the
+        # ASGI path is percent-decoded before routing, so such a binding could
+        # never be removed again. Reject at the boundary instead.
+        if "/" in v:
+            raise ValueError("Tag must not contain '/'")
+        if len(v) > 50:
+            raise ValueError("Tag must be at most 50 characters")
+        return v
+
+
 VALID_CHANNELS = {"webhook", "email"}
 
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1h", "6h", "12h", "24h"}

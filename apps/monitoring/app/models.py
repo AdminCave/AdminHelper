@@ -173,7 +173,7 @@ class MonitorTemplate(Base):
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
-    def to_dict(self, assignments: list | None = None) -> dict:
+    def to_dict(self, assignments: list | None = None, tag_assignments: list | None = None) -> dict:
         d = {
             "id": self.id,
             "name": self.name,
@@ -190,6 +190,8 @@ class MonitorTemplate(Base):
         }
         if assignments is not None:
             d["assignments"] = [a.to_dict() for a in assignments]
+        if tag_assignments is not None:
+            d["tagAssignments"] = [t.to_dict() for t in tag_assignments]
         return d
 
 
@@ -209,6 +211,10 @@ class MonitorTemplateAssignment(Base):
     server_id = Column(String, nullable=False, index=True)
     server_hostname = Column(String, nullable=False)
     server_name = Column(String, nullable=False)
+    # 'manual' = user-created, 'tag' = materialized by tag_sync. The sync only
+    # ever creates/removes its own 'tag' rows — manual assignments are never
+    # touched by tag membership changes.
+    source = Column(String, nullable=False, default="manual", server_default="manual")
 
     def to_dict(self) -> dict:
         return {
@@ -217,6 +223,31 @@ class MonitorTemplateAssignment(Base):
             "serverId": self.server_id,
             "serverHostname": self.server_hostname,
             "serverName": self.server_name,
+            "source": self.source,
+        }
+
+
+class MonitorTemplateTagAssignment(Base):
+    """Template→tag binding. Materialization into per-server assignments
+    (source='tag') happens in app/tag_sync.py — the server DB stays the only
+    source of tag membership (GET /api/internal/servers)."""
+
+    __tablename__ = "monitor_template_tag_assignments"
+    __table_args__ = (
+        UniqueConstraint("template_id", "tag", name="uq_tag_assignment_template_tag"),
+    )
+
+    id = Column(String, primary_key=True)
+    template_id = Column(
+        String, ForeignKey("monitor_templates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tag = Column(String, nullable=False, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "templateId": self.template_id,
+            "tag": self.tag,
         }
 
 

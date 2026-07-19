@@ -15,9 +15,15 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import require_internal
 from app.core.database import get_db
-from app.models import MonitorAlertRule, MonitorCheck, MonitorTemplate, MonitorTemplateAssignment
+from app.models import (
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorTemplate,
+    MonitorTemplateAssignment,
+    MonitorTemplateTagAssignment,
+)
 from app.scheduler import remove_check
-from app.schemas import TemplateAssign, TemplateCreate, TemplateUpdate
+from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
 from app.template_sync import apply_template, remove_template, sync_template
 
 router = APIRouter()
@@ -30,10 +36,11 @@ router = APIRouter()
 
 @router.get("/templates", dependencies=[Depends(require_internal)])
 def list_templates(db: Session = Depends(get_db)):
-    """Lists all templates with assignment counts."""
+    """Lists all templates with their server and tag assignments."""
     templates = db.query(MonitorTemplate).order_by(MonitorTemplate.name).all()
     template_ids = [t.id for t in templates]
     by_template: dict[str, list] = {}
+    tags_by_template: dict[str, list] = {}
     if template_ids:
         for a in (
             db.query(MonitorTemplateAssignment)
@@ -41,7 +48,19 @@ def list_templates(db: Session = Depends(get_db)):
             .all()
         ):
             by_template.setdefault(a.template_id, []).append(a)
-    return [t.to_dict(assignments=by_template.get(t.id, [])) for t in templates]
+        for ta in (
+            db.query(MonitorTemplateTagAssignment)
+            .filter(MonitorTemplateTagAssignment.template_id.in_(template_ids))
+            .all()
+        ):
+            tags_by_template.setdefault(ta.template_id, []).append(ta)
+    return [
+        t.to_dict(
+            assignments=by_template.get(t.id, []),
+            tag_assignments=tags_by_template.get(t.id, []),
+        )
+        for t in templates
+    ]
 
 
 @router.get("/templates/assignments/{server_id}", dependencies=[Depends(require_internal)])
@@ -113,7 +132,12 @@ def get_template(template_id: str, db: Session = Depends(get_db)):
         .filter(MonitorTemplateAssignment.template_id == template_id)
         .all()
     )
-    return template.to_dict(assignments=assignments)
+    tag_assignments = (
+        db.query(MonitorTemplateTagAssignment)
+        .filter(MonitorTemplateTagAssignment.template_id == template_id)
+        .all()
+    )
+    return template.to_dict(assignments=assignments, tag_assignments=tag_assignments)
 
 
 @router.put("/templates/{template_id}", dependencies=[Depends(require_internal)])
@@ -230,3 +254,51 @@ def unassign_template(template_id: str, server_id: str, db: Session = Depends(ge
         raise HTTPException(404, "Zuweisung nicht gefunden")
 
     remove_template(db, template_id, server_id)
+
+
+# ---------------------------------------------------------------------------
+# Tag Assignment (materialized by app/tag_sync.py)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/templates/{template_id}/assign-tag",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_internal)],
+)
+def assign_template_tag(template_id: str, data: TemplateTagAssign, db: Session = Depends(get_db)):
+    """Binds a template to a server tag. Materialization into per-server
+    assignments happens in tag_sync (triggered separately)."""
+    template = db.query(MonitorTemplate).filter(MonitorTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(404, "Template nicht gefunden")
+
+    row = MonitorTemplateTagAssignment(id=str(uuid.uuid4()), template_id=template_id, tag=data.tag)
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Template already assigned to this tag")
+    return row.to_dict()
+
+
+@router.delete(
+    "/templates/{template_id}/assign-tag/{tag}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal)],
+)
+def unassign_template_tag(template_id: str, tag: str, db: Session = Depends(get_db)):
+    """Removes a template→tag binding. Materialized per-server assignments are
+    cleaned up by the next tag_sync run."""
+    deleted = (
+        db.query(MonitorTemplateTagAssignment)
+        .filter(
+            MonitorTemplateTagAssignment.template_id == template_id,
+            MonitorTemplateTagAssignment.tag == tag,
+        )
+        .delete()
+    )
+    if not deleted:
+        raise HTTPException(404, "Tag assignment not found")
+    db.commit()
