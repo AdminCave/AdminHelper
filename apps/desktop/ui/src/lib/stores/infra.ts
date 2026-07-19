@@ -12,6 +12,7 @@ import { writable, derived } from 'svelte/store';
 import { currentSession } from './session';
 import { reportError, showStatus } from './statusBar';
 import { serversApi } from '$lib/api/servers';
+import { monitoringApi } from '$lib/api/monitoring';
 import { tNow } from '$lib/i18n';
 import type { Server, ServerInput } from '$lib/api/types';
 
@@ -89,7 +90,11 @@ export async function loadServers(): Promise<void> {
   }
 }
 
-export async function saveServer(input: ServerInput, id: string | null): Promise<boolean> {
+export async function saveServer(
+  input: ServerInput,
+  id: string | null,
+  monitoringTemplateId: string | null = null,
+): Promise<boolean> {
   const session = currentSession();
   if (!session) return false;
   try {
@@ -99,7 +104,25 @@ export async function saveServer(input: ServerInput, id: string | null): Promise
     } else {
       const created = await serversApi.create(session, input);
       showStatus(tNow('infra.status.serverCreated'));
-      if (created?.id) _state.update((s) => ({ ...s, selectedServerId: created.id }));
+      if (created?.id) {
+        _state.update((s) => ({ ...s, selectedServerId: created.id }));
+        if (monitoringTemplateId) {
+          // Opt-in monitoring template (T15): a failed assign must not fail
+          // the just-created server — report it and move on.
+          try {
+            await monitoringApi.assignTemplate(
+              session,
+              monitoringTemplateId,
+              created.id,
+              created.hostname ?? input.hostname,
+              created.name ?? input.name,
+            );
+            showStatus(tNow('infra.status.templateAssigned'));
+          } catch (err) {
+            reportError(tNow('infra.error.templateAssign', { message: errMsg(err) }));
+          }
+        }
+      }
     }
     await loadServers();
     return true;

@@ -12,10 +12,16 @@ import type { Server } from '$lib/api/types';
 const h = vi.hoisted(() => ({
   list: vi.fn(async (..._a: unknown[]) => [] as Server[]),
   remove: vi.fn(async (..._a: unknown[]) => {}),
+  create: vi.fn(async (..._a: unknown[]) => ({}) as Server),
+  assignTemplate: vi.fn(async (..._a: unknown[]) => ({})),
+  reportError: vi.fn(),
 }));
 
 vi.mock('$lib/api/servers', () => ({
-  serversApi: { list: h.list, create: vi.fn(), update: vi.fn(), remove: h.remove },
+  serversApi: { list: h.list, create: h.create, update: vi.fn(), remove: h.remove },
+}));
+vi.mock('$lib/api/monitoring', () => ({
+  monitoringApi: { assignTemplate: h.assignTemplate },
 }));
 vi.mock('./session', () => ({
   currentSession: () => ({
@@ -26,10 +32,10 @@ vi.mock('./session', () => ({
     isAdmin: true,
   }),
 }));
-vi.mock('./statusBar', () => ({ showStatus: vi.fn(), reportError: vi.fn() }));
+vi.mock('./statusBar', () => ({ showStatus: vi.fn(), reportError: h.reportError }));
 vi.mock('$lib/i18n', () => ({ tNow: (k: string) => k }));
 
-import { loadServers, deleteServer, setSelectedServer, infraSelectedId } from './infra';
+import { loadServers, deleteServer, saveServer, setSelectedServer, infraSelectedId } from './infra';
 
 const server = (id: string): Server => ({ id, name: id, hostname: 'h' });
 
@@ -71,5 +77,49 @@ describe('infra store selection invariants', () => {
 
     await deleteServer('s2'); // the selected one -> cleared
     expect(get(infraSelectedId)).toBeNull();
+  });
+});
+
+describe('saveServer monitoring-template opt-in (T15)', () => {
+  const input = (name: string, hostname: string) => ({
+    name,
+    hostname,
+    os_type: null,
+    tags: [],
+    notes: '',
+  });
+
+  beforeEach(() => {
+    h.create.mockReset();
+    h.assignTemplate.mockReset();
+    h.reportError.mockReset();
+    h.list.mockResolvedValue([]);
+  });
+
+  it('assigns the chosen template with the created server data', async () => {
+    h.create.mockResolvedValueOnce({ id: 'new-1', name: 'web01', hostname: 'web01.example' });
+    const ok = await saveServer(input('web01', 'web01.example'), null, 'tpl-x');
+    expect(ok).toBe(true);
+    expect(h.assignTemplate).toHaveBeenCalledWith(
+      expect.anything(),
+      'tpl-x',
+      'new-1',
+      'web01.example',
+      'web01',
+    );
+  });
+
+  it('a failed assign reports but never fails the create', async () => {
+    h.create.mockResolvedValueOnce({ id: 'new-1', name: 'web01', hostname: 'web01.example' });
+    h.assignTemplate.mockRejectedValueOnce(new Error('monitoring down'));
+    const ok = await saveServer(input('web01', 'web01.example'), null, 'tpl-x');
+    expect(ok).toBe(true); // server stays created, modal may close
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it('no template id means no assign call', async () => {
+    h.create.mockResolvedValueOnce({ id: 'new-1', name: 'a', hostname: 'h' });
+    await saveServer(input('a', 'h'), null, null);
+    expect(h.assignTemplate).not.toHaveBeenCalled();
   });
 });
