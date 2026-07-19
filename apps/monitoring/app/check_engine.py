@@ -55,11 +55,12 @@ def next_fail_count(result_status: str, prev_fail_count: int) -> int:
     """Counts consecutive failures. 'ok' resets to 0.
 
     POLICY NOTE: any non-'ok' status increments the counter, including
-    'unknown' (e.g. "waiting for agent data", or an SSRF-blocked target). A
-    check that stays 'unknown' therefore escalates to an alert after
-    ``consecutive_fails`` occurrences, exactly like a real failure. Whether
-    'unknown' should alert is a deliberate open policy question — change here
-    if 'unknown' should be treated as neutral instead.
+    'unknown' (e.g. "waiting for agent data", or an SSRF-blocked target), so a
+    persistently-unknown check still becomes visible as such on the dashboard
+    after ``consecutive_fails`` occurrences. Notifications are decided
+    elsewhere: transitions INTO 'unknown' are deliberately never dispatched —
+    neither rules nor hub (guard in process_alert); real "agent gone" is the
+    persisted agent_ping check going critical.
     """
     if result_status != "ok":
         return prev_fail_count + 1

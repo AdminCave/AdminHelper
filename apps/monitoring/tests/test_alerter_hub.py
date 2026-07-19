@@ -124,3 +124,12 @@ class TestProcessAlertEmits:
         )
         process_alert(_CapturingDb([make_rule()]), make_check(), "ok", "ok")
         assert calls["n"] == 0
+
+    def test_no_emit_on_transition_into_unknown(self, monkeypatch):
+        # unknown-Policy: the hub is suppressed together with the rule dispatch.
+        calls = {"n": 0}
+        monkeypatch.setattr(
+            alerter, "_emit_to_hub", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+        )
+        process_alert(_CapturingDb([make_rule()]), make_check(), "warning", "unknown")
+        assert calls["n"] == 0

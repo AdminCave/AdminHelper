@@ -5,8 +5,9 @@
 """Pure-logic tests for app/alerter.py.
 
 Tested without a real DB: rule filter (_rule_matches), cooldown time window
-(_is_in_cooldown via a fake query) and the guarantee that recovery
-(new_status == 'ok') bypasses the cooldown (process_alert).
+(_is_in_cooldown via a fake query), the guarantee that recovery
+(new_status == 'ok') bypasses the cooldown (process_alert), and the
+unknown-policy (transitions into 'unknown' never notify).
 """
 
 from types import SimpleNamespace
@@ -311,3 +312,51 @@ def test_build_message_recovery_escalation_and_details():
     assert "CRITICAL" in esc["subject"]
     assert "Severity: critical" in esc["text"]
     assert "Details: Port 22: refused" in esc["text"]
+
+
+class TestUnknownNeverNotifies:
+    """unknown-Policy (Spec monitoring-overhaul): transitions INTO 'unknown'
+    dispatch nothing — no rules, no hub emit, no alert log. unknown -> ok still
+    dispatches as a normal recovery."""
+
+    def _spies(self, monkeypatch):
+        dispatched = {"n": 0}
+        emitted = {"n": 0}
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+        monkeypatch.setattr(
+            alerter,
+            "_dispatch",
+            lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None),
+        )
+        monkeypatch.setattr(
+            alerter, "_emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
+        )
+        return dispatched, emitted
+
+    def test_ok_to_unknown_dispatches_nothing(self, monkeypatch):
+        dispatched, emitted = self._spies(monkeypatch)
+        db = _CapturingDb([make_rule()])
+        process_alert(db, make_check(), old_status="ok", new_status="unknown")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+        assert db.flushed is False
+
+    def test_critical_to_unknown_dispatches_nothing(self, monkeypatch):
+        # Even from an alerted state: going unknown is not a recovery and not an
+        # escalation — stay silent, the dashboard still shows it.
+        dispatched, emitted = self._spies(monkeypatch)
+        db = _CapturingDb([make_rule()])
+        process_alert(db, make_check(), old_status="critical", new_status="unknown")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+        assert db.flushed is False
+
+    def test_unknown_to_ok_is_a_normal_recovery(self, monkeypatch):
+        dispatched, emitted = self._spies(monkeypatch)
+        db = _CapturingDb([make_rule()])
+        process_alert(db, make_check(), old_status="unknown", new_status="ok")
+        assert dispatched["n"] == 1
+        assert emitted["n"] == 1
+        assert len(db.added) == 1

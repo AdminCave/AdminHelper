@@ -63,6 +63,14 @@ def process_alert(
     if old_status == new_status:
         return
 
+    # Transitions INTO 'unknown' never notify (spec: unknown-Policy): the state
+    # stays visible on the dashboard, but a check going unknown (stale agent
+    # data, SSRF-blocked target, corrupt config) is not an incident — real
+    # "agent gone" is the persisted agent_ping going critical. unknown -> ok
+    # passes below and dispatches as a normal recovery.
+    if new_status == "unknown":
+        return
+
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
 
     is_recovery = new_status == "ok"
