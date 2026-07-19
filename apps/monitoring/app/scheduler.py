@@ -20,6 +20,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.check_engine import execute_check
 from app.check_types import PUSH_ONLY_TYPES
+from app.core.config import ALERT_LOG_RETENTION_DAYS
 from app.core.time import utcnow_naive
 
 logger = logging.getLogger("monitor.scheduler")
@@ -131,7 +132,6 @@ def load_all_checks() -> None:
 # ---------------------------------------------------------------------------
 
 _ALERT_LOG_CLEANUP_JOB_ID = "system:alert-log-cleanup"
-ALERT_LOG_RETENTION_DAYS = 90
 
 
 def _run_alert_log_cleanup() -> None:
