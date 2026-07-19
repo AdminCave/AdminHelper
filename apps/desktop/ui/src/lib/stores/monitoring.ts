@@ -126,6 +126,12 @@ export const monitoringError = derived(_state, ($s) => $s.error);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
 export const overviewView = derived(_state, ($s) => $s.overviewView);
+// Servers the monitoring service knows nothing about yet — drives the
+// overview's bulk-assign CTA (T32).
+export const serversWithoutChecks = derived(_state, ($s) => {
+  const covered = new Set($s.checks.map((c) => c.serverId).filter(Boolean));
+  return $s.servers.filter((srv) => !covered.has(srv.id));
+});
 // Recomputed whenever the store updates — the 30s refresh cycle keeps the
 // "active now" evaluation fresh enough for a badge.
 export const maintenanceActive = derived(_state, ($s) =>
