@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
+from app.core.events import fire_event
 from app.core.pagination import paginate
 from app.modules.notifications.models import Notification, NotificationSubscription
 from app.modules.notifications.schemas import (
@@ -169,4 +170,16 @@ def ingest(
 ):
     """Accept one event from an event source and fan it out to recipients."""
     notified = ingest_event(db, event)
+    if event.event_type == "monitoring.check.transition" and event.severity == "critical":
+        # The documented alert.triggered hook: a critical check transition also
+        # reaches registered event hooks (docs/developer/hooks.html).
+        fire_event(
+            "alert.triggered",
+            {
+                "server_id": event.source_id,
+                "severity": event.severity,
+                "title": event.title,
+                "message": event.body,
+            },
+        )
     return {"notified": notified}

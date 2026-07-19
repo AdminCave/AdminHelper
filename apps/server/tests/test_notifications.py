@@ -407,6 +407,57 @@ class TestIngress:
         assert _count(db_session, admin) == 1
 
 
+class TestAlertTriggeredHook:
+    """T31: a critical monitoring.check.transition additionally fires the
+    documented alert.triggered event hook; anything else does not."""
+
+    _PATH = "/api/internal/events"
+
+    def _post(self, test_client, monkeypatch, fired, **overrides):
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        monkeypatch.setattr(
+            "app.modules.notifications.router.fire_event",
+            lambda event_type, event_data: fired.append((event_type, event_data)),
+        )
+        payload = {
+            "event_type": "monitoring.check.transition",
+            "severity": "critical",
+            "category": "monitoring",
+            "title": "CPU critical on web01",
+            "body": "cpu 99% > 95%",
+            "source_type": "server",
+            "source_id": "srv-1",
+            **overrides,
+        }
+        return test_client.post(self._PATH, headers={"X-Internal-Key": "secret"}, json=payload)
+
+    def test_critical_transition_fires_alert_triggered(self, test_client, monkeypatch):
+        fired: list = []
+        assert self._post(test_client, monkeypatch, fired).status_code == 202
+        assert fired == [
+            (
+                "alert.triggered",
+                {
+                    "server_id": "srv-1",
+                    "severity": "critical",
+                    "title": "CPU critical on web01",
+                    "message": "cpu 99% > 95%",
+                },
+            )
+        ]
+
+    def test_warning_transition_does_not_fire_alert_triggered(self, test_client, monkeypatch):
+        fired: list = []
+        assert self._post(test_client, monkeypatch, fired, severity="warning").status_code == 202
+        assert fired == []
+
+    def test_other_critical_event_does_not_fire_alert_triggered(self, test_client, monkeypatch):
+        fired: list = []
+        res = self._post(test_client, monkeypatch, fired, event_type="pki.cert.expiring")
+        assert res.status_code == 202
+        assert fired == []
+
+
 # --- malformed-data tolerance (fail-open, never drop an alert) --------------
 
 
