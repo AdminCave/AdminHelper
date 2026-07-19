@@ -28,6 +28,24 @@ logger = logging.getLogger("adminhelper.servers")
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
+
+def _notify_monitoring_tag_sync(reason: str) -> None:
+    """Best-effort nudge to the monitoring service after inventory changes so
+    tag-based template assignments materialize promptly (its 15-minute
+    scheduler safety net catches missed notifies). Must never fail the server
+    operation — same contract as the cleanup call on delete."""
+    try:
+        resp = httpx.post(
+            f"{MONITOR_SERVICE_URL}/templates/tag-sync",
+            headers={"X-Internal-Key": MONITOR_API_KEY},
+            timeout=5,
+        )
+        if resp.status_code >= 300:
+            logger.warning("Tag-sync notify (%s): HTTP %d", reason, resp.status_code)
+    except Exception as exc:
+        logger.warning("Tag-sync notify (%s) failed: %s", reason, exc)
+
+
 # Service-to-service surface (X-Internal-Key, same gate as /api/internal/events).
 # Registered WITHOUT the session-auth dependencies of the admin router.
 internal_router = APIRouter(prefix="/api/internal", tags=["internal"])
@@ -95,6 +113,7 @@ def create_server(
         object_id=server.id,
         object_label=server.name,
     )
+    _notify_monitoring_tag_sync("server.created")
     return server.to_dict()
 
 
@@ -135,6 +154,12 @@ def update_server(
         object_id=server.id,
         object_label=server.name,
     )
+    # Only tag/name/hostname affect tag-materialization (membership or the
+    # {{hostname}}/{{server_name}} substitution of future materializations).
+    # Gates on sent, not necessarily changed — over-notification is harmless,
+    # the sync is idempotent.
+    if sent & {"tags", "name", "hostname"}:
+        _notify_monitoring_tag_sync("server.updated")
     return server.to_dict()
 
 
@@ -182,3 +207,6 @@ def delete_server(
             )
     except Exception as exc:
         logger.warning("Monitoring-Cleanup fuer Server %s fehlgeschlagen: %s", server_id, exc)
+    # Belt-and-braces after the cleanup: if it failed, the reconciliation still
+    # removes materialized tag assignments of the vanished server.
+    _notify_monitoring_tag_sync("server.deleted")
