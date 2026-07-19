@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.database import get_db
@@ -191,6 +192,24 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         raise HTTPException(400, "Ungueltiges Intervall")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Ungueltige Severity")
+
+    # Validate the effective (type, config) pair whenever either changes — a
+    # type switch that keeps the old config must fail here, not surface as a
+    # permanently-unknown check at runtime (see app/check_configs.py). The
+    # schema can't do this: CheckUpdate doesn't know the stored type.
+    if "config" in sent or "check_type" in sent:
+        effective_type = data.check_type if "check_type" in sent else check.check_type
+        if "config" in sent:
+            effective_config = data.config
+        else:
+            try:
+                effective_config = json.loads(check.config) if check.config else {}
+            except (json.JSONDecodeError, TypeError):
+                effective_config = {}
+        try:
+            validate_check_config(effective_type, effective_config)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
 
     for field in [
         "server_id",

@@ -114,8 +114,7 @@ class AgentResourcesChecker:
         "memory_warn": 80,
         "memory_crit": 95,
         "disk_warn": 85,
-        "disk_crit": 95,
-        "stale_minutes": 5
+        "disk_crit": 95
     }
     """
 

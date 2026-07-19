@@ -11,7 +11,14 @@ from app.models import MonitorCheck
 
 
 def _payload(**over):
-    p = {"name": "c", "check_type": "ping", "interval": "5m", "severity": "critical"}
+    p = {
+        "name": "c",
+        "check_type": "ping",
+        "interval": "5m",
+        "severity": "critical",
+        # T4: ping configs require a target at the boundary now.
+        "config": {"target": "127.0.0.1"},
+    }
     p.update(over)
     return p
 

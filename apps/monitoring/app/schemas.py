@@ -4,8 +4,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
+from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 
 
@@ -19,6 +20,14 @@ class CheckCreate(BaseModel):
     interval: str = "5m"
     severity: str = "critical"
     consecutive_fails: int = 3
+
+    # Per-type config validation (T4): a typo'd key or out-of-range threshold
+    # must fail here, not surface as a permanently-unknown check at runtime.
+    # Unknown check_type passes — the router rejects it against VALID_CHECK_TYPES.
+    @model_validator(mode="after")
+    def _config_valid(self):
+        validate_check_config(self.check_type, self.config)
+        return self
 
 
 class CheckUpdate(BaseModel):
@@ -89,6 +98,13 @@ class TemplateCheckDef(BaseModel):
             raise ValueError(f"Ungueltige Severity: {v}")
         return v
 
+    # Same boundary as CheckCreate: template configs contain pre-substitution
+    # placeholders ({{hostname}}), which pass as ordinary non-empty strings.
+    @model_validator(mode="after")
+    def _config_valid(self):
+        validate_check_config(self.check_type, self.config)
+        return self
+
 
 class TemplateAlertDef(BaseModel):
     def_id: str | None = None
@@ -98,6 +114,16 @@ class TemplateAlertDef(BaseModel):
     channel_config: dict = {}
     cooldown_minutes: int = 30
     enabled: bool = True
+
+    # Previously missing: an invalid channel in a template alert def only failed
+    # later at dispatch time ("Unbekannter Kanal" in the alerter) — reject it at
+    # the same boundary the check defs use.
+    @field_validator("channel")
+    @classmethod
+    def _channel_valid(cls, v: str) -> str:
+        if v not in VALID_CHANNELS:
+            raise ValueError(f"Ungueltiger Kanal: {v}")
+        return v
 
 
 class TemplateCreate(BaseModel):
