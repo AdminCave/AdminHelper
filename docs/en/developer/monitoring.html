@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Developer Guide</span>
           <h1>Monitoring Stack</h1>
-          <p class="lead">Monitoring is three layers cooperating: the AdminHelper server acts as a reverse proxy and forwards UI queries, the separate <code>monitoring/</code> service holds checks/alerts/templates and runs scheduler-based pull checks, VictoriaMetrics stores the time-series data (90-day retention).</p>
+          <p class="lead">Monitoring is three layers cooperating: the AdminHelper server acts as a reverse proxy and forwards UI queries, the separate <code>monitoring/</code> service holds checks/alerts/templates and runs scheduler-based pull checks, VictoriaMetrics stores the time-series data (retention configurable via <code>VM_RETENTION</code>, default 90 days).</p>
 
           <h2>Data Flow</h2>
           <div class="code-header"><span>flow</span></div>
@@ -53,23 +53,28 @@
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>public</strong> (X-API-Key), forwarded 1:1 to the service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, internally augmented with <code>X-Internal-Key: $MONITOR_API_KEY</code></li>
-            <li>SSRF guard: allowed path prefixes are <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>agent</code>; path traversal (<code>..</code>) is blocked</li>
+            <li>SSRF guard: allowed path prefixes are <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>; path traversal (<code>..</code>) is blocked</li>
             <li>Deleting a server in AdminHelper fires <code>DELETE /servers/{id}/cleanup</code> at the monitoring service &ndash; orphaned checks/alerts are pruned automatically</li>
           </ul>
 
           <h2>Monitoring service structure</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>apps/monitoring/app/
-&#9500;&#9472;&#9472; main.py            FastAPI app, lifespan (scheduler start), route registration
-&#9500;&#9472;&#9472; models.py          MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey
-&#9500;&#9472;&#9472; schemas.py         Pydantic input schemas (CheckCreate, AlertRuleCreate, TemplateCreate)
-&#9500;&#9472;&#9472; check_engine.py    execute_check() dispatcher
-&#9500;&#9472;&#9472; alerter.py         process_alert() (webhook / email), cooldown
-&#9500;&#9472;&#9472; scheduler.py       APScheduler integration (pull checks)
-&#9500;&#9472;&#9472; template_sync.py   template sync onto server assignments
-&#9500;&#9472;&#9472; checkers/          agent.py / smart.py / http.py / ping.py / tcp.py / plugins.py
-&#9500;&#9472;&#9472; routers/           admin.py / agent.py / alerts.py / checks.py / templates.py
-&#9492;&#9472;&#9472; core/              auth.py / config.py / database.py / victoria.py</code></pre>
+&#9500;&#9472;&#9472; main.py               FastAPI app, lifespan (liveness hydrate, seeding, scheduler start)
+&#9500;&#9472;&#9472; models.py             MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey,
+&#9474;                         MonitorSeedState, MonitorAgentLiveness, MonitorMaintenance, MonitorTemplateTagAssignment
+&#9500;&#9472;&#9472; schemas.py            Pydantic input schemas (CheckCreate, AlertRuleCreate, TemplateCreate, MaintenanceInput)
+&#9500;&#9472;&#9472; check_configs.py      strict per-type config models (unknown keys/bounds &rarr; 422)
+&#9500;&#9472;&#9472; check_engine.py       execute_check() dispatcher
+&#9500;&#9472;&#9472; alerter.py            process_alert() (guards, webhook / email, cooldown, hub emit)
+&#9500;&#9472;&#9472; maintenance.py        is_in_maintenance() (one-off + weekly, zoneinfo/DST)
+&#9500;&#9472;&#9472; scheduler.py          APScheduler integration (pull checks, cleanup, tag sync)
+&#9500;&#9472;&#9472; builtin_templates.py  standard templates + tombstone seeding
+&#9500;&#9472;&#9472; template_sync.py      template sync onto server assignments
+&#9500;&#9472;&#9472; tag_sync.py           tag-based assignments (server inventory &rarr; assignments)
+&#9500;&#9472;&#9472; checkers/             agent.py / smart.py / http.py / ping.py / tcp.py / plugins.py / forecast.py
+&#9500;&#9472;&#9472; routers/              admin.py / agent.py / alerts.py / checks.py / templates.py / maintenance.py
+&#9492;&#9472;&#9472; core/                 auth.py / config.py / database.py / victoria.py</code></pre>
 
           <h2>Push checks vs. pull checks</h2>
           <p>There are two classes of checks &ndash; what matters is <em>who</em> gathers the data:</p>
@@ -77,11 +82,11 @@
             <thead><tr><th>Mode</th><th>Check types</th><th>Trigger</th></tr></thead>
             <tbody>
               <tr><td>Push (agent)</td><td><code>agent_resources</code>, <code>service_process</code>, <code>docker_health</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>smart_health</code></td><td>On the next agent push (5-minute timer); APScheduler is <strong>not</strong> involved.</td></tr>
-              <tr><td>Pull (service)</td><td><code>http</code>, <code>ping</code>, <code>tcp</code>, <code>agent_ping</code></td><td>APScheduler inside the monitoring service, by a fixed <code>interval</code>.</td></tr>
+              <tr><td>Pull (service)</td><td><code>http</code>, <code>ping</code>, <code>tcp</code>, <code>agent_ping</code>, <code>disk_forecast</code></td><td>APScheduler inside the monitoring service, by a fixed <code>interval</code>.</td></tr>
             </tbody>
           </table>
           <p>Both paths converge in <code>execute_check()</code> &rarr; status update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics write &rarr; <code>process_alert()</code> when <code>fail_count &ge; consecutive_fails</code>.</p>
-          <p>APScheduler (<code>scheduler.py</code>) runs with a thread pool of 30 workers and <code>misfire_grace_time=30&nbsp;s</code> &ndash; runs that start late are caught up within 30&nbsp;s instead of being dropped. A daily cleanup job additionally prunes <code>monitor_alert_log</code> (90-day retention).</p>
+          <p>APScheduler (<code>scheduler.py</code>) runs with a thread pool of 30 workers and <code>misfire_grace_time=30&nbsp;s</code> &ndash; runs that start late are caught up within 30&nbsp;s instead of being dropped. A daily cleanup job additionally prunes <code>monitor_alert_log</code> (retention via <code>ALERT_LOG_RETENTION_DAYS</code>, default 90 days), and the tag sync runs every 15 minutes (see below).</p>
 
           <h2>Push payload (agent &rarr; service)</h2>
           <p>The Go agent assembles the report in <code>apps/agent/internal/monitor/report.go</code> (<code>BuildReport</code>) and sends it as JSON via <code>POST {url}/agent/{server_id}/report</code> with the headers <code>Content-Type: application/json</code> and <code>X-API-Key</code> (<code>PushReport</code>). The server handler in <code>routers/agent.py</code> accepts the JSON as a free-form <code>dict</code>. Structure:</p>
@@ -124,7 +129,8 @@
               <tr><td><code>http.py</code></td><td><code>http</code></td><td>HTTP/HTTPS request via <code>httpx</code> (method configurable, follows redirects). Compares the status code against <code>expected_status</code>, optionally searches for <code>search_string</code> in the body, measures response time. SSRF guard: URLs that resolve to private/reserved IP ranges are rejected.</td></tr>
               <tr><td><code>ping.py</code></td><td><code>ping</code></td><td>ICMP echo via <code>ping -c 1 -W &lt;timeout&gt;</code> as a subprocess. The target is validated against an allowlist regex (hostnames/IPs); parses the RTT from the output.</td></tr>
               <tr><td><code>tcp.py</code></td><td><code>tcp</code></td><td>TCP connect via <code>socket.create_connection((target, port))</code> with timeout. <code>ok</code> on a successful connect (with connect time), <code>critical</code> on timeout/refused.</td></tr>
-              <tr><td><code>agent.py</code></td><td><code>agent_ping</code>, <code>agent_resources</code>, <code>service_process</code></td><td><code>AgentPingChecker</code> checks (scheduler-driven) the age of the last push against <code>stale_minutes</code>. <code>AgentResourcesChecker</code> evaluates CPU/RAM/disk/temp against warn/crit thresholds. <code>ServiceProcessChecker</code> checks services &ndash; mode <code>auto</code> (failed + enabled-but-inactive systemd units, with an ignore list) or <code>list</code> (explicitly named services).</td></tr>
+              <tr><td><code>agent.py</code></td><td><code>agent_ping</code>, <code>agent_resources</code>, <code>service_process</code></td><td><code>AgentPingChecker</code> checks (scheduler-driven) the age of the last push against <code>stale_minutes</code>. <code>AgentResourcesChecker</code> evaluates CPU/RAM/disk/temp against warn/crit thresholds. <code>ServiceProcessChecker</code> checks services &ndash; mode <code>auto</code> (failed + enabled-but-inactive systemd units, with an ignore list) or <code>list</code> (explicitly named services). The resources checker applies <strong>per-metric</strong> hysteresis (<code>hysteresis_pp</code>, release = entry &minus; 10&nbsp;pp); push timestamps are persisted by the push handler (<code>routers/agent.py</code>) in <code>monitor_agent_liveness</code> and hydrated by the lifespan at startup &ndash; no false-alert storm after a monitoring restart.</td></tr>
+              <tr><td><code>forecast.py</code></td><td><code>disk_forecast</code></td><td>Pull checker: <code>query_range</code> over <code>monitor_agent_disk_percent_value{server_id="&hellip;"}</code> (window <code>window_hours</code>, step 10&nbsp;m), least-squares slope per mount &rarr; <code>hours_left = (100 &minus; last) / rate</code>. Rates &le; 0.01&nbsp;pp/h count as stable (<code>ok</code>); too little history &rarr; <code>unknown</code>. <code>server_id</code> is escaped with <code>escape_label_value()</code>.</td></tr>
               <tr><td><code>smart.py</code></td><td><code>smart_health</code></td><td>Evaluates SMART data from the push (ATA HDD/SSD and NVMe). Checks reallocated/pending sectors, NVMe <code>critical_warning</code> bits and temperatures against type-specific thresholds, among others. A missing <code>smart</code> key (VM or no <code>smartctl</code>) is <code>ok</code>, not an error.</td></tr>
             </tbody>
           </table>
@@ -145,14 +151,28 @@
             <li>The push handler (<code>routers/agent.py</code>) additionally checks that the <code>server_id</code> derived from the key matches the <code>server_id</code> in the path; otherwise <code>403</code>. A valid key for server A therefore cannot submit metrics for server B (<code>__internal__</code> excepted).</li>
           </ul>
 
-          <h2>Templates</h2>
-          <p><code>MonitorTemplate</code> bundles multiple <code>CheckDef</code>+<code>AlertRuleDef</code> entries under a stable <code>template_def_id</code>. <code>POST /templates/{id}/assign/{server_id}</code> rolls out the template; <code>template_sync.py</code> reconciles changes so server assignments stay drift-free.</p>
+          <h2>Templates, seeding &amp; tag sync</h2>
+          <p><code>MonitorTemplate</code> bundles check and alert definitions as JSON with a stable <code>def_id</code> per definition. <code>POST /templates/{id}/assign/{server_id}</code> rolls out the template; <code>template_sync.py</code> reconciles changes so server assignments stay drift-free.</p>
+          <h3>Built-in seeding (tombstone)</h3>
+          <p>At startup the lifespan seeds five standard templates from <code>builtin_templates.py</code> (marked via <code>builtin_slug</code>). The tombstone in <code>monitor_seed_state</code> guarantees: each slug is seeded <strong>at most once</strong> &ndash; a user-deleted or user-edited built-in is never restored or overwritten by later startups; new built-ins of later releases seed only themselves. The definitions pass the same schema boundary as user templates (test <code>tests/test_seed.py</code>).</p>
+          <h3>Tag sync (server &harr; monitoring)</h3>
+          <p>Tags live in the server DB (<code>Server.tags</code>); monitoring only knows <code>server_id</code> strings. <code>tag_sync.py</code> pulls the inventory via <code>GET /api/internal/servers</code> on the AdminHelper server (service-to-service, <code>X-Internal-Key</code>) and materializes the server assignments for every <code>MonitorTemplateTagAssignment</code> with <code>source='tag'</code>. Triggers: every 15 minutes via the scheduler <em>and</em> immediately as a best-effort nudge &ndash; the AdminHelper server POSTs to <code>/templates/tag-sync</code> after server create/update(tags/name/hostname)/delete. When a server loses the tag, the tag assignment and its materialized checks are removed; <code>source='manual'</code> assignments are never touched by the sync. An unreachable server API (<code>None</code>) is strictly distinguished from an empty inventory (<code>[]</code>) &ndash; an outage deletes no assignments.</p>
+
+          <h2>Alert pipeline: guards &amp; suppression</h2>
+          <p>Order in <code>process_alert()</code> (applies to rule dispatch <em>and</em> the hub emit, since <code>_emit_to_hub</code> sits behind the same guards):</p>
+          <ol>
+            <li><code>old == new</code> &rarr; no alert (real transitions only).</li>
+            <li>Transition <em>into</em> <code>unknown</code> &rarr; never notify (unknown policy); <code>unknown &rarr; ok</code> is a normal recovery.</li>
+            <li>Active maintenance window of the server &rarr; collect-but-mute: status/metrics keep flowing, the notification is suppressed, no alert-log row. <code>is_in_maintenance()</code> evaluates weekly windows in the configured IANA time zone (zoneinfo, DST-correct; including day wrap across midnight).</li>
+            <li>Host-down inhibition: while the server's <code>agent_ping</code> stands at <code>critical</code>, all other checks of that server stay silent; <code>agent_ping</code> itself always alerts.</li>
+          </ol>
+          <p>Maintenance CRUD lives in <code>routers/maintenance.py</code> (<code>/maintenance</code>, <code>require_internal</code>; proxy prefix <code>maintenance</code>).</p>
 
           <h2>VictoriaMetrics</h2>
-          <p>External container (see <code>docker-compose.yml</code>), 90-day retention. The service writes in InfluxDB line protocol via <code>core/victoria.py</code>:</p>
+          <p>External container (see <code>docker-compose.yml</code>), retention <code>-retentionPeriod=${VM_RETENTION:-90d}</code> &ndash; independent of <code>ALERT_LOG_RETENTION_DAYS</code> (alert log in Postgres). The service writes in InfluxDB line protocol via <code>core/victoria.py</code>:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>monitor_agent_cpu_percent,server_id=srv123 value=45.2 1683000000</code></pre>
-          <p>Reads use the standard Prometheus endpoints <code>/api/v1/query</code> and <code>/api/v1/query_range</code>. uPlot in the desktop client renders the charts.</p>
+          <p>Reads use the standard Prometheus endpoints <code>/api/v1/query</code> and <code>/api/v1/query_range</code>. uPlot in the desktop client renders the charts. The UI chart queries are never raw: <code>GET /checks/{id}/metrics</code> builds the PromQL query server-side from a per-check-type metric allowlist (<code>CHECK_TYPE_METRICS</code>) and escapes label values &ndash; free-text queries from the UI never reach VictoriaMetrics (SSRF/injection guard).</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>

@@ -5,6 +5,69 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- **Monitoring: Standard-Templates + Seeding:** Fuenf Built-in-Templates (Linux
+  Server, Windows Server, Proxmox Host, Docker Host, ZFS Storage) mit
+  recherchierten Schwellwerten (Zabbix/Netdata/Checkmk/Backblaze) werden beim
+  Start des Monitoring-Dienstes einmalig geseedet (Tombstone in
+  `monitor_seed_state` — User-Edits und -Deletes ueberleben jeden Neustart).
+- **Tag-basierte Template-Zuweisung:** Ein Template laesst sich an einen
+  Server-Tag binden; der Sync materialisiert Zuweisungen sofort bei
+  Server-Aenderungen und alle 15 Minuten (`GET /api/internal/servers`,
+  `POST /templates/tag-sync`). Manuelle Zuweisungen bleiben unangetastet.
+- **Template-Zuweisung in der UI:** Template-Modal mit Server-Mehrfachauswahl
+  (Bulk), Opt-in-Template-Dropdown im Server-Anlege-Dialog, Zuweisungs-Sektion
+  im Server-Monitoring-Tab und Uebersichts-Banner "N Server ohne Monitoring"
+  mit Bulk-Zuweisungs-Dialog.
+- **Maintenance-Fenster (pro Server oder global):** einmalig oder woechentlich (Wochentage +
+  Zeitfenster in IANA-Zeitzone, DST-korrekt), collect-but-mute — Checks und
+  Metriken laufen weiter, Alerts und Hub-Benachrichtigungen sind unterdrueckt.
+- **Disk-Full-Prognose (`disk_forecast`):** Least-Squares-Fuellrate aus der
+  VictoriaMetrics-Historie pro Mountpoint — warnt bei "voll in <= 24 h",
+  kritisch bei "<= 8 h", deutlich vor den statischen Disk-Schwellen.
+- **Kachel-Grid + Heartbeat:** Die Monitoring-Uebersicht bekommt eine
+  umschaltbare Kachel-Ansicht (Worst-State-Farbe pro Server) und einen
+  24-h-Verfuegbarkeits-Balken aus der `agent_ping`-Timeline; Loading-/Empty-/
+  Error-States mit Retry.
+- **Default-Subscription fuer neue Admins:** Jeder Admin-Create-Pfad (API, CLI
+  `create-admin`, `ADMIN_PASSWORD`-Env, Bootstrap-Endpoint) legt automatisch
+  eine Benachrichtigungs-Regel "Alle Server / warning / Glocke" an — auf
+  Frisch-Installationen erreicht damit jeder Alert mindestens die Admins.
+- **`alert.triggered`-Event-Hook:** Kritische Monitoring-Transitionen feuern
+  den bisher nur dokumentierten Hook jetzt wirklich (Payload `server_id`,
+  `severity`, `title`, `message`).
+- **Retention konfigurierbar:** `ALERT_LOG_RETENTION_DAYS` (Alert-Log, Default
+  90 Tage) und `VM_RETENTION` (VictoriaMetrics, Default 90d) als Env-Variablen.
+
+### Changed
+
+- **unknown-Policy:** Uebergaenge nach `unknown` benachrichtigen nie mehr
+  (vorher eskalierte `unknown` wie ein Failure); `unknown -> ok` bleibt eine
+  normale Recovery.
+- **Alert-Daempfung:** `agent_resources` arbeitet pro Metrik mit Hysterese
+  (Release = Entry - 10 pp, konfigurierbar via `hysteresis_pp`); steht der
+  `agent_ping` eines Servers auf critical, sind alle anderen Checks des
+  Servers unterdrueckt (Host-down-Inhibition).
+- **Agent-Liveness persistiert:** Der letzte Push-Zeitpunkt liegt jetzt in
+  `monitor_agent_liveness` und wird beim Start hydratisiert — kein
+  False-Alert-Sturm nach einem Monitoring-Restart; `stale_minutes`-Default 15.
+- **Check-Konfiguration strikt validiert:** Pro Check-Typ ein striktes
+  Pydantic-Modell — Tippfehler in Config-Keys und Werte ausserhalb der Grenzen
+  geben 422 statt stumm `unknown`.
+- **Monitoring-Modals vereinheitlicht:** Gemeinsame UI-Primitives (Modal,
+  ConfirmDialog, EmptyState) im AdminCave-Design ersetzen die duplizierten
+  Editor-Overlays; Check-CRUD direkt auf der Monitoring-Seite.
+
+### Fixed
+
+- **Admin-Doku Monitoring (DE+EN):** Das dokumentierte
+  `warn_threshold`/`crit_threshold`-Modell existierte nicht — ersetzt durch
+  die echten per-Typ-Config-Keys samt Defaults; der `alert.triggered`-Abschnitt
+  beschreibt jetzt den implementierten Hook.
+
 ## [0.43.2] - 2026-07-14
 
 ### Fixed
