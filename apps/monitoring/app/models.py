@@ -285,6 +285,48 @@ class MonitorSeedState(Base):
     seeded_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
 
 
+class MonitorMaintenance(Base):
+    """Maintenance window (collect-but-mute): state transitions keep flowing,
+    but process_alert suppresses dispatch + hub emit while a window is active.
+
+    kind 'once': naive-UTC starts_at/ends_at.
+    kind 'weekly': weekdays (JSON list, 0=Monday) + start_time "HH:MM" +
+    duration_minutes, evaluated in `timezone` (IANA) via zoneinfo — "Sunday
+    02:00" stays wall-clock correct across DST transitions.
+    server_id NULL = window applies to every server."""
+
+    __tablename__ = "monitor_maintenance"
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, nullable=True, index=True)
+    note = Column(String, nullable=True)
+    kind = Column(String, nullable=False)  # once | weekly
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    weekdays = Column(String, nullable=True)  # JSON [0-6], 0=Monday
+    start_time = Column(String, nullable=True)  # "HH:MM" wall clock in `timezone`
+    duration_minutes = Column(Integer, nullable=True)
+    timezone = Column(String, nullable=False, default="UTC", server_default="UTC")
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=utc_now_sql())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "serverId": self.server_id,
+            "note": self.note,
+            "kind": self.kind,
+            "startsAt": self.starts_at.isoformat() if self.starts_at else None,
+            "endsAt": self.ends_at.isoformat() if self.ends_at else None,
+            "weekdays": json.loads(self.weekdays) if self.weekdays else [],
+            "startTime": self.start_time,
+            "durationMinutes": self.duration_minutes,
+            "timezone": self.timezone,
+            "enabled": self.enabled,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class MonitorAgentLiveness(Base):
     """Persisted last agent report per server. The in-memory _last_report map
     (checkers/agent.py) alone made every service restart look like agent
