@@ -262,6 +262,25 @@ export async function deleteAlert(id: string): Promise<boolean> {
   }
 }
 
+// ── Check editor modal (T18) ─────────────────────────────────────────────────
+// Store-driven so MonCheckLine (nested in the type sections) can open the
+// editor without threading callbacks through every section component.
+interface CheckEditorState {
+  open: boolean;
+  target: MonitorCheck | null;
+  serverId: string;
+}
+const _checkEditor = writable<CheckEditorState>({ open: false, target: null, serverId: '' });
+export const checkEditor = { subscribe: _checkEditor.subscribe };
+
+export function openCheckEditor(target: MonitorCheck | null, serverId: string): void {
+  _checkEditor.set({ open: true, target, serverId });
+}
+
+export function closeCheckEditor(): void {
+  _checkEditor.set({ open: false, target: null, serverId: '' });
+}
+
 // ── Monitoring template CRUD ─────────────────────────────────────────────────
 export async function loadTemplates(): Promise<void> {
   const session = currentSession();

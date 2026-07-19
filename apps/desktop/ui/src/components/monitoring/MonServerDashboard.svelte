@@ -5,9 +5,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { monitoringChecks, monitoringServers, selectedServerId } from '$lib/stores/monitoring';
+  import {
+    monitoringChecks,
+    monitoringServers,
+    selectedServerId,
+    checkEditor,
+    openCheckEditor,
+    closeCheckEditor,
+    loadMonitoring,
+  } from '$lib/stores/monitoring';
   import { computeSummary, statusClass, worstStatus } from '$lib/models/monitoring';
   import type { MonitorCheck, MonitorCheckType } from '$lib/api/types';
+  import MonitorCheckModal from './MonitorCheckModal.svelte';
   import SecLive from './section/SecLive.svelte';
   import SecNetwork from './section/SecNetwork.svelte';
   import SecHeartbeat from './section/SecHeartbeat.svelte';
@@ -96,6 +105,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
             >
           {/if}
         </div>
+        {#if selected !== '__none'}
+          <button
+            class="btn primary small mon-dashboard-add"
+            onclick={() => openCheckEditor(null, selected ?? '')}
+          >
+            + {$t('monitoring.checkEdit.add')}
+          </button>
+        {/if}
       </div>
     </header>
 
@@ -129,3 +146,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/if}
   {/if}
 </div>
+
+<MonitorCheckModal
+  open={$checkEditor.open}
+  target={$checkEditor.target}
+  serverId={$checkEditor.serverId}
+  onClose={closeCheckEditor}
+  onSaved={() => void loadMonitoring()}
+/>

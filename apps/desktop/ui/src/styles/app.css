@@ -1987,6 +1987,11 @@ body {
   flex: 1;
   min-width: 0;
 }
+
+.mon-dashboard-add {
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .mon-dashboard-dot {
   width: 14px;
   height: 14px;
