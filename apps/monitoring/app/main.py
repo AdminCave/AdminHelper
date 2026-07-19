@@ -32,17 +32,25 @@ async def lifespan(app: FastAPI):
     (see monitoring/alembic/), no longer by Base.metadata.create_all().
     Historical SQLite PRAGMA migrations have been removed without replacement —
     pre-release, no existing data."""
+    from app.builtin_templates import seed_builtin_templates
     from app.checkers.agent import hydrate_agent_liveness
     from app.core.database import SessionLocal
     from app.scheduler import load_all_checks, schedule_alert_log_cleanup, scheduler
 
     # Rehydrate agent liveness before the scheduler starts: without this, every
-    # restart made agent_ping report 'unknown' until the next push.
+    # restart made agent_ping report 'unknown' until the next push. Then seed
+    # the built-in standard templates (tombstone-guarded, best-effort — a seed
+    # failure must not keep the service down).
     db = SessionLocal()
     try:
         hydrate_agent_liveness(
             {row.server_id: row.last_report_at for row in db.query(MonitorAgentLiveness).all()}
         )
+        try:
+            seed_builtin_templates(db)
+        except Exception:
+            db.rollback()
+            logger.exception("Seeding der Standard-Templates fehlgeschlagen")
     finally:
         db.close()
 
