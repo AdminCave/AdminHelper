@@ -64,6 +64,26 @@ describe('Modal', () => {
   });
 });
 
+describe('Modal stacking', () => {
+  it('Escape closes only the top-most stacked modal', async () => {
+    const onClose = vi.fn();
+    render(Modal, { props: { open: true, title: 'Editor', onClose, children: bodySnippet } });
+    render(ConfirmDialog);
+    const pending = confirmDialog('Sicher?');
+    await tick();
+
+    // First Escape: the stacked dialog resolves false, the editor stays open.
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await expect(pending).resolves.toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Second Escape: now the editor is top of stack and closes.
+    await tick();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ConfirmDialog', () => {
   it('resolves true on confirm and false on cancel', async () => {
     const { getByText } = render(ConfirmDialog);

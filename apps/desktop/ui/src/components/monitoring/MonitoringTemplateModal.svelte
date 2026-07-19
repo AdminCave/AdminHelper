@@ -36,6 +36,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { reportError } from '$lib/stores/statusBar';
   import { t } from '$lib/i18n';
   import CheckConfigFields from './CheckConfigFields.svelte';
+  import Modal from '../ui/Modal.svelte';
+  import { confirmDialog } from '../ui/ConfirmDialog.svelte';
 
   interface Props {
     open: boolean;
@@ -51,7 +53,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let checkDefs = $state<TemplateCheckDef[]>([]);
   let alertDefs = $state<TemplateAlertDef[]>([]);
   let saving = $state(false);
-  let confirmDelete = $state(false);
   let selectedServerIds = $state<string[]>([]);
   let newTag = $state('');
   let assignBusy = $state(false);
@@ -75,7 +76,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     description = form.description;
     checkDefs = form.checkDefs;
     alertDefs = form.alertDefs;
-    confirmDelete = false;
     selectedServerIds = [];
     newTag = '';
   });
@@ -163,10 +163,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   async function onDelete(): Promise<void> {
     if (isNew || !editing) return;
-    if (!confirmDelete) {
-      confirmDelete = true;
-      return;
-    }
+    const confirmed = await confirmDialog($t('monitoring.tplEdit.deleteConfirm'), {
+      confirmLabel: $t('action.delete'),
+    });
+    if (!confirmed) return;
     saving = true;
     const ok = await deleteTemplate(editing.id);
     saving = false;
@@ -174,327 +174,264 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 </script>
 
-{#if open}
-  <div
-    class="editor-overlay"
-    role="dialog"
-    aria-modal="true"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) onClose();
-    }}
-    onkeydown={(e) => e.key === 'Escape' && onClose()}
-    tabindex="-1"
-  >
-    <div class="editor-panel">
-      <div class="panel-header">
-        <h2 class="panel-title">
-          {isNew ? $t('monitoring.tplEdit.new') : name || $t('monitoring.tplEdit.edit')}
-        </h2>
-        <button class="btn ghost small" onclick={onClose} aria-label={$t('editor.close')}>×</button>
-      </div>
+<Modal
+  {open}
+  title={isNew ? $t('monitoring.tplEdit.new') : name || $t('monitoring.tplEdit.edit')}
+  width="760px"
+  {onClose}
+>
+  <div class="form-grid">
+    <label class="field">
+      <span class="field-label">{$t('infra.field.name')}</span>
+      <input type="text" bind:value={name} required />
+    </label>
+    <label class="field">
+      <span class="field-label">{$t('monitoring.tplEdit.description')}</span>
+      <input type="text" bind:value={description} />
+    </label>
+  </div>
 
-      <div class="panel-body">
+  <!-- Check definitions -->
+  <div class="def-section">
+    <div class="def-section-head">
+      <h3 class="def-section-title">{$t('monitoring.tplEdit.checkDefs')}</h3>
+      <button class="btn small" onclick={addCheck}>+ {$t('monitoring.tplEdit.addCheck')}</button>
+    </div>
+    {#each checkDefs as def, idx (idx)}
+      <div class="def-card">
         <div class="form-grid">
           <label class="field">
             <span class="field-label">{$t('infra.field.name')}</span>
-            <input type="text" bind:value={name} required />
+            <input type="text" bind:value={def.name} />
           </label>
           <label class="field">
-            <span class="field-label">{$t('monitoring.tplEdit.description')}</span>
-            <input type="text" bind:value={description} />
+            <span class="field-label">{$t('monitoring.checkEdit.type')}</span>
+            <select
+              value={def.check_type}
+              onchange={(e) => {
+                def.check_type = e.currentTarget.value as MonitorCheckType;
+                def.config = {};
+              }}
+            >
+              {#each CHECK_TYPES as ct (ct)}
+                <option value={ct}>{ct}</option>
+              {/each}
+            </select>
           </label>
-        </div>
-
-        <!-- Check definitions -->
-        <div class="def-section">
-          <div class="def-section-head">
-            <h3 class="def-section-title">{$t('monitoring.tplEdit.checkDefs')}</h3>
-            <button class="btn small" onclick={addCheck}
-              >+ {$t('monitoring.tplEdit.addCheck')}</button
+          <label class="field">
+            <span class="field-label">{$t('monitoring.checkEdit.interval')}</span>
+            <select
+              value={def.interval}
+              onchange={(e) => (def.interval = e.currentTarget.value as MonitorInterval)}
             >
-          </div>
-          {#each checkDefs as def, idx (idx)}
-            <div class="def-card">
-              <div class="form-grid">
-                <label class="field">
-                  <span class="field-label">{$t('infra.field.name')}</span>
-                  <input type="text" bind:value={def.name} />
-                </label>
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.checkEdit.type')}</span>
-                  <select
-                    value={def.check_type}
-                    onchange={(e) => {
-                      def.check_type = e.currentTarget.value as MonitorCheckType;
-                      def.config = {};
-                    }}
-                  >
-                    {#each CHECK_TYPES as ct (ct)}
-                      <option value={ct}>{ct}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.checkEdit.interval')}</span>
-                  <select
-                    value={def.interval}
-                    onchange={(e) => (def.interval = e.currentTarget.value as MonitorInterval)}
-                  >
-                    {#each INTERVALS as iv (iv)}
-                      <option value={iv}>{iv}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.checkEdit.severity')}</span>
-                  <select
-                    value={def.severity}
-                    onchange={(e) => (def.severity = e.currentTarget.value as MonitorSeverity)}
-                  >
-                    {#each SEVERITIES as sv (sv)}
-                      <option value={sv}>{sv}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.checkEdit.consecutiveFails')}</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={def.consecutive_fails ?? 3}
-                    oninput={(e) => (def.consecutive_fails = Number(e.currentTarget.value) || 1)}
-                  />
-                </label>
-                <CheckConfigFields checkType={def.check_type} config={def.config} />
-              </div>
-              <div class="def-card-actions">
-                <button class="btn small danger" onclick={() => removeCheck(idx)}
-                  >{$t('monitoring.tplEdit.remove')}</button
-                >
-              </div>
-            </div>
-          {/each}
-        </div>
-
-        <!-- Alert definitions -->
-        <div class="def-section">
-          <div class="def-section-head">
-            <h3 class="def-section-title">{$t('monitoring.tplEdit.alertDefs')}</h3>
-            <button class="btn small" onclick={addAlert}
-              >+ {$t('monitoring.tplEdit.addAlert')}</button
+              {#each INTERVALS as iv (iv)}
+                <option value={iv}>{iv}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">{$t('monitoring.checkEdit.severity')}</span>
+            <select
+              value={def.severity}
+              onchange={(e) => (def.severity = e.currentTarget.value as MonitorSeverity)}
             >
-          </div>
-          {#each alertDefs as def, idx (idx)}
-            <div class="def-card">
-              <div class="form-grid">
-                <label class="field">
-                  <span class="field-label">{$t('infra.field.name')}</span>
-                  <input type="text" bind:value={def.name} />
-                </label>
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.alerts.channel')}</span>
-                  <select
-                    value={def.channel}
-                    onchange={(e) => onChannelChange(def, e.currentTarget.value as AlertChannel)}
-                  >
-                    <option value="webhook">{$t('monitoring.alerts.channelWebhook')}</option>
-                    <option value="email">{$t('monitoring.alerts.channelEmail')}</option>
-                  </select>
-                </label>
-                {#if def.channel === 'webhook'}
-                  <label class="field span2">
-                    <span class="field-label">{$t('monitoring.alerts.webhookUrl')}</span>
-                    <input
-                      type="url"
-                      placeholder="https://hooks.example.com/alert"
-                      value={def.channel_config.url ?? ''}
-                      oninput={(e) => setWebhookUrl(def, e.currentTarget.value)}
-                    />
-                  </label>
-                {:else}
-                  <label class="field span2">
-                    <span class="field-label">{$t('monitoring.alertEdit.recipients')}</span>
-                    <input
-                      type="text"
-                      placeholder="admin@example.com, ops@example.com"
-                      value={recipientsVal(def)}
-                      oninput={(e) => setRecipients(def, e.currentTarget.value)}
-                    />
-                  </label>
-                {/if}
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.alerts.severity')}</span>
-                  <select
-                    value={def.match_severity ?? ''}
-                    onchange={(e) =>
-                      (def.match_severity = (e.currentTarget.value as MonitorSeverity) || null)}
-                  >
-                    <option value="">{$t('monitoring.alertEdit.allSeverities')}</option>
-                    <option value="critical">critical</option>
-                    <option value="warning">warning</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">{$t('monitoring.alerts.cooldown')} (min)</span>
-                  <input
-                    type="number"
-                    value={def.cooldown_minutes}
-                    oninput={(e) => (def.cooldown_minutes = Number(e.currentTarget.value) || 30)}
-                  />
-                </label>
-              </div>
-              <div class="def-card-actions">
-                <button class="btn small danger" onclick={() => removeAlert(idx)}
-                  >{$t('monitoring.tplEdit.remove')}</button
-                >
-              </div>
-            </div>
-          {/each}
+              {#each SEVERITIES as sv (sv)}
+                <option value={sv}>{sv}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">{$t('monitoring.checkEdit.consecutiveFails')}</span>
+            <input
+              type="number"
+              min="1"
+              value={def.consecutive_fails ?? 3}
+              oninput={(e) => (def.consecutive_fails = Number(e.currentTarget.value) || 1)}
+            />
+          </label>
+          <CheckConfigFields checkType={def.check_type} config={def.config} />
         </div>
+        <div class="def-card-actions">
+          <button class="btn small danger" onclick={() => removeCheck(idx)}
+            >{$t('monitoring.tplEdit.remove')}</button
+          >
+        </div>
+      </div>
+    {/each}
+  </div>
 
-        <!-- Assignments: servers (manual + bulk) and tags -->
-        {#if !isNew}
-          <div class="def-section">
-            <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
-            {#if assignments.length === 0}
-              <div class="mon-empty">{$t('monitoring.tplEdit.noAssignments')}</div>
-            {:else}
-              <div class="assign-list">
-                {#each assignments as a (a.serverId)}
-                  <span class="assign-pill">
-                    {a.serverName ?? a.serverId}
-                    {#if a.source === 'tag'}
-                      <span class="assign-via-tag">{$t('monitoring.tplEdit.viaTag')}</span>
-                    {:else}
-                      <button
-                        class="assign-remove"
-                        title={$t('monitoring.tplEdit.remove')}
-                        aria-label={`${$t('monitoring.tplEdit.remove')} ${a.serverName ?? a.serverId}`}
-                        disabled={assignBusy}
-                        onclick={() => onUnassign(a.serverId)}>×</button
-                      >
-                    {/if}
-                  </span>
-                {/each}
-              </div>
-            {/if}
-            {#if unassignedServers.length > 0}
-              <div class="assign-add">
-                <div class="assign-choices">
-                  {#each unassignedServers as s (s.id)}
-                    <label class="assign-choice">
-                      <input type="checkbox" value={s.id} bind:group={selectedServerIds} />
-                      <span>{s.name}</span>
-                    </label>
-                  {/each}
-                </div>
-                <button
-                  class="btn small"
-                  disabled={assignBusy || selectedServerIds.length === 0}
-                  onclick={onAssignSelected}
-                >
-                  {$t('monitoring.tplEdit.assignSelected')} ({selectedServerIds.length})
-                </button>
-              </div>
-            {:else if assignments.length > 0}
-              <div class="mon-empty">{$t('monitoring.tplEdit.noUnassigned')}</div>
-            {/if}
-          </div>
-
-          <div class="def-section">
-            <h3 class="def-section-title">{$t('monitoring.tplEdit.tagAssignments')}</h3>
-            {#if tagAssignments.length > 0}
-              <div class="assign-list">
-                {#each tagAssignments as ta (ta.id)}
-                  <span class="assign-pill">
-                    {ta.tag}
-                    <button
-                      class="assign-remove"
-                      title={$t('monitoring.tplEdit.remove')}
-                      aria-label={`${$t('monitoring.tplEdit.remove')} ${ta.tag}`}
-                      disabled={assignBusy}
-                      onclick={() => onRemoveTag(ta.tag)}>×</button
-                    >
-                  </span>
-                {/each}
-              </div>
-            {/if}
-            <div class="assign-add-tag">
+  <!-- Alert definitions -->
+  <div class="def-section">
+    <div class="def-section-head">
+      <h3 class="def-section-title">{$t('monitoring.tplEdit.alertDefs')}</h3>
+      <button class="btn small" onclick={addAlert}>+ {$t('monitoring.tplEdit.addAlert')}</button>
+    </div>
+    {#each alertDefs as def, idx (idx)}
+      <div class="def-card">
+        <div class="form-grid">
+          <label class="field">
+            <span class="field-label">{$t('infra.field.name')}</span>
+            <input type="text" bind:value={def.name} />
+          </label>
+          <label class="field">
+            <span class="field-label">{$t('monitoring.alerts.channel')}</span>
+            <select
+              value={def.channel}
+              onchange={(e) => onChannelChange(def, e.currentTarget.value as AlertChannel)}
+            >
+              <option value="webhook">{$t('monitoring.alerts.channelWebhook')}</option>
+              <option value="email">{$t('monitoring.alerts.channelEmail')}</option>
+            </select>
+          </label>
+          {#if def.channel === 'webhook'}
+            <label class="field span2">
+              <span class="field-label">{$t('monitoring.alerts.webhookUrl')}</span>
+              <input
+                type="url"
+                placeholder="https://hooks.example.com/alert"
+                value={def.channel_config.url ?? ''}
+                oninput={(e) => setWebhookUrl(def, e.currentTarget.value)}
+              />
+            </label>
+          {:else}
+            <label class="field span2">
+              <span class="field-label">{$t('monitoring.alertEdit.recipients')}</span>
               <input
                 type="text"
-                placeholder={$t('monitoring.tplEdit.tagPlaceholder')}
-                bind:value={newTag}
-                onkeydown={(e) => e.key === 'Enter' && onAddTag()}
+                placeholder="admin@example.com, ops@example.com"
+                value={recipientsVal(def)}
+                oninput={(e) => setRecipients(def, e.currentTarget.value)}
               />
-              <button
-                class="btn small"
-                disabled={assignBusy || newTag.trim().length === 0}
-                onclick={onAddTag}>{$t('monitoring.tplEdit.addTag')}</button
-              >
-            </div>
-          </div>
-        {:else}
-          <div class="def-section">
-            <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
-            <div class="mon-empty">{$t('monitoring.tplEdit.saveFirst')}</div>
-          </div>
-        {/if}
+            </label>
+          {/if}
+          <label class="field">
+            <span class="field-label">{$t('monitoring.alerts.severity')}</span>
+            <select
+              value={def.match_severity ?? ''}
+              onchange={(e) =>
+                (def.match_severity = (e.currentTarget.value as MonitorSeverity) || null)}
+            >
+              <option value="">{$t('monitoring.alertEdit.allSeverities')}</option>
+              <option value="critical">critical</option>
+              <option value="warning">warning</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">{$t('monitoring.alerts.cooldown')} (min)</span>
+            <input
+              type="number"
+              value={def.cooldown_minutes}
+              oninput={(e) => (def.cooldown_minutes = Number(e.currentTarget.value) || 30)}
+            />
+          </label>
+        </div>
+        <div class="def-card-actions">
+          <button class="btn small danger" onclick={() => removeAlert(idx)}
+            >{$t('monitoring.tplEdit.remove')}</button
+          >
+        </div>
       </div>
+    {/each}
+  </div>
 
-      <div class="panel-actions">
-        {#if !isNew}
-          <button class="btn danger" onclick={onDelete} disabled={saving}>
-            {confirmDelete ? $t('infra.server.confirmDelete') : $t('action.delete')}
+  <!-- Assignments: servers (manual + bulk) and tags -->
+  {#if !isNew}
+    <div class="def-section">
+      <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
+      {#if assignments.length === 0}
+        <div class="mon-empty">{$t('monitoring.tplEdit.noAssignments')}</div>
+      {:else}
+        <div class="assign-list">
+          {#each assignments as a (a.serverId)}
+            <span class="assign-pill">
+              {a.serverName ?? a.serverId}
+              {#if a.source === 'tag'}
+                <span class="assign-via-tag">{$t('monitoring.tplEdit.viaTag')}</span>
+              {:else}
+                <button
+                  class="assign-remove"
+                  title={$t('monitoring.tplEdit.remove')}
+                  aria-label={`${$t('monitoring.tplEdit.remove')} ${a.serverName ?? a.serverId}`}
+                  disabled={assignBusy}
+                  onclick={() => onUnassign(a.serverId)}>×</button
+                >
+              {/if}
+            </span>
+          {/each}
+        </div>
+      {/if}
+      {#if unassignedServers.length > 0}
+        <div class="assign-add">
+          <div class="assign-choices">
+            {#each unassignedServers as s (s.id)}
+              <label class="assign-choice">
+                <input type="checkbox" value={s.id} bind:group={selectedServerIds} />
+                <span>{s.name}</span>
+              </label>
+            {/each}
+          </div>
+          <button
+            class="btn small"
+            disabled={assignBusy || selectedServerIds.length === 0}
+            onclick={onAssignSelected}
+          >
+            {$t('monitoring.tplEdit.assignSelected')} ({selectedServerIds.length})
           </button>
-        {/if}
-        <div style="flex: 1;"></div>
-        <button class="btn" onclick={onClose} disabled={saving}>{$t('action.cancel')}</button>
-        <button class="btn primary" onclick={onSave} disabled={saving}>{$t('action.save')}</button>
+        </div>
+      {:else if assignments.length > 0}
+        <div class="mon-empty">{$t('monitoring.tplEdit.noUnassigned')}</div>
+      {/if}
+    </div>
+
+    <div class="def-section">
+      <h3 class="def-section-title">{$t('monitoring.tplEdit.tagAssignments')}</h3>
+      {#if tagAssignments.length > 0}
+        <div class="assign-list">
+          {#each tagAssignments as ta (ta.id)}
+            <span class="assign-pill">
+              {ta.tag}
+              <button
+                class="assign-remove"
+                title={$t('monitoring.tplEdit.remove')}
+                aria-label={`${$t('monitoring.tplEdit.remove')} ${ta.tag}`}
+                disabled={assignBusy}
+                onclick={() => onRemoveTag(ta.tag)}>×</button
+              >
+            </span>
+          {/each}
+        </div>
+      {/if}
+      <div class="assign-add-tag">
+        <input
+          type="text"
+          placeholder={$t('monitoring.tplEdit.tagPlaceholder')}
+          bind:value={newTag}
+          onkeydown={(e) => e.key === 'Enter' && onAddTag()}
+        />
+        <button
+          class="btn small"
+          disabled={assignBusy || newTag.trim().length === 0}
+          onclick={onAddTag}>{$t('monitoring.tplEdit.addTag')}</button
+        >
       </div>
     </div>
-  </div>
-{/if}
+  {:else}
+    <div class="def-section">
+      <h3 class="def-section-title">{$t('monitoring.tplEdit.assignments')}</h3>
+      <div class="mon-empty">{$t('monitoring.tplEdit.saveFirst')}</div>
+    </div>
+  {/if}
+  {#snippet footer()}
+    {#if !isNew}
+      <button class="btn danger" onclick={onDelete} disabled={saving}>{$t('action.delete')}</button>
+    {/if}
+    <div style="flex: 1;"></div>
+    <button class="btn" onclick={onClose} disabled={saving}>{$t('action.cancel')}</button>
+    <button class="btn primary" onclick={onSave} disabled={saving}>{$t('action.save')}</button>
+  {/snippet}
+</Modal>
 
 <style>
-  .editor-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-    padding: var(--sp-4);
-  }
-  .editor-panel {
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    width: 100%;
-    max-width: 760px;
-    max-height: 90vh;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-  .panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--sp-4) var(--sp-5);
-    border-bottom: 1px solid var(--border);
-  }
-  .panel-title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-  }
-  .panel-body {
-    padding: var(--sp-5);
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-5);
-  }
   .form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -619,12 +556,5 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-family: inherit;
     flex: 1;
     max-width: 240px;
-  }
-  .panel-actions {
-    display: flex;
-    gap: var(--sp-2);
-    padding: var(--sp-4) var(--sp-5);
-    border-top: 1px solid var(--border);
-    align-items: center;
   }
 </style>

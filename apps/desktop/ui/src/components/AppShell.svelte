@@ -23,6 +23,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import ConnectionEditor from './ConnectionEditor.svelte';
   import PasswordPrompt from './PasswordPrompt.svelte';
   import SettingsModal from './SettingsModal.svelte';
+  import ConfirmDialog from './ui/ConfirmDialog.svelte';
   import StatusBar from './StatusBar.svelte';
   import TunnelIndicator from './TunnelIndicator.svelte';
   import NotificationBell from './NotificationBell.svelte';
@@ -298,4 +299,5 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <ConnectionEditor />
 <PasswordPrompt />
 <SettingsModal />
+<ConfirmDialog />
 <StatusBar />

@@ -413,6 +413,10 @@ export const translations: Translations = {
     'monitoring.tplEdit.tagRemoved': 'Tag "{tag}" entfernt',
     'monitoring.tplEdit.viaTag': 'via Tag',
     'monitoring.tplEdit.saveFirst': 'Erst speichern, dann zuweisen',
+    'monitoring.tplEdit.deleteConfirm':
+      'Template wirklich löschen? Alle zugehörigen Checks und Alerts auf allen Servern werden entfernt.',
+    'monitoring.alertEdit.deleteConfirm': 'Alert-Regel wirklich löschen?',
+    'monitoring.checkEdit.deleteConfirm': 'Check wirklich löschen?',
     'infra.monTab.templates': 'Monitoring-Templates',
     'infra.monTab.noTemplates': 'Keine Templates zugewiesen',
     'infra.monTab.selectTemplate': 'Template wählen …',
@@ -949,6 +953,10 @@ export const translations: Translations = {
     'monitoring.tplEdit.tagRemoved': 'Tag "{tag}" removed',
     'monitoring.tplEdit.viaTag': 'via tag',
     'monitoring.tplEdit.saveFirst': 'Save first, then assign',
+    'monitoring.tplEdit.deleteConfirm':
+      'Really delete this template? All associated checks and alerts on all servers will be removed.',
+    'monitoring.alertEdit.deleteConfirm': 'Really delete this alert rule?',
+    'monitoring.checkEdit.deleteConfirm': 'Really delete this check?',
     'infra.monTab.templates': 'Monitoring templates',
     'infra.monTab.noTemplates': 'No templates assigned',
     'infra.monTab.selectTemplate': 'Select template…',

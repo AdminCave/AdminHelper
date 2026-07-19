@@ -7,7 +7,7 @@
 // tag-materialized assignments (source='tag') as not manually removable.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import { render, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { MonitoringTemplateFull } from '$lib/api/types';
 
@@ -35,8 +35,12 @@ const mocks = vi.hoisted(() => {
     unassignTemplateFromServer: vi.fn().mockResolvedValue(true),
     assignTagToTemplate: vi.fn().mockResolvedValue(true),
     removeTagFromTemplate: vi.fn().mockResolvedValue(true),
+    deleteTemplate: vi.fn().mockResolvedValue(true),
+    confirmDialog: vi.fn().mockResolvedValue(true),
   };
 });
+
+vi.mock('../ui/ConfirmDialog.svelte', () => ({ confirmDialog: mocks.confirmDialog }));
 
 vi.mock('$lib/stores/monitoring', async () => {
   const { writable } = await import('svelte/store');
@@ -44,7 +48,7 @@ vi.mock('$lib/stores/monitoring', async () => {
     monitoringTemplates: writable([mocks.template]),
     monitoringServers: writable(mocks.servers),
     saveTemplate: vi.fn().mockResolvedValue(true),
-    deleteTemplate: vi.fn().mockResolvedValue(true),
+    deleteTemplate: mocks.deleteTemplate,
     assignTemplateToServers: mocks.assignTemplateToServers,
     unassignTemplateFromServer: mocks.unassignTemplateFromServer,
     assignTagToTemplate: mocks.assignTagToTemplate,
@@ -119,5 +123,18 @@ describe('MonitoringTemplateModal assignments', () => {
     await tick();
     await fireEvent.click(getByLabelText('Entfernen web'));
     expect(mocks.removeTagFromTemplate).toHaveBeenCalledWith('tpl-1', 'web');
+  });
+
+  it('delete asks via confirmDialog and deletes only on confirm (T17)', async () => {
+    const { getByText } = mount();
+    await tick();
+    mocks.confirmDialog.mockResolvedValueOnce(false);
+    await fireEvent.click(getByText('Löschen'));
+    expect(mocks.confirmDialog).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteTemplate).not.toHaveBeenCalled();
+
+    mocks.confirmDialog.mockResolvedValueOnce(true);
+    await fireEvent.click(getByText('Löschen'));
+    await waitFor(() => expect(mocks.deleteTemplate).toHaveBeenCalledWith('tpl-1'));
   });
 });

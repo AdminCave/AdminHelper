@@ -16,6 +16,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { saveAlert, deleteAlert } from '$lib/stores/monitoring';
   import { reportError } from '$lib/stores/statusBar';
   import { t } from '$lib/i18n';
+  import Modal from '../ui/Modal.svelte';
+  import { confirmDialog } from '../ui/ConfirmDialog.svelte';
 
   interface Props {
     open: boolean;
@@ -33,7 +35,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let webhookUrl = $state('');
   let emailRecipients = $state('');
   let saving = $state(false);
-  let confirmDelete = $state(false);
 
   let isNew = $derived(editing === null);
 
@@ -47,7 +48,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
     const cfg = editing?.channelConfig ?? {};
     webhookUrl = cfg.url ?? '';
     emailRecipients = Array.isArray(cfg.recipients) ? cfg.recipients.join(', ') : '';
-    confirmDelete = false;
   });
 
   function buildChannelConfig(): AlertChannelConfig {
@@ -89,10 +89,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   async function onDelete(): Promise<void> {
     if (isNew || !editing) return;
-    if (!confirmDelete) {
-      confirmDelete = true;
-      return;
-    }
+    const confirmed = await confirmDialog($t('monitoring.alertEdit.deleteConfirm'), {
+      confirmLabel: $t('action.delete'),
+    });
+    if (!confirmed) return;
     saving = true;
     const ok = await deleteAlert(editing.id);
     saving = false;
@@ -100,147 +100,89 @@ SPDX-License-Identifier: GPL-3.0-or-later
   }
 </script>
 
-{#if open}
-  <div
-    class="editor-overlay"
-    role="dialog"
-    aria-modal="true"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) onClose();
-    }}
-    onkeydown={(e) => e.key === 'Escape' && onClose()}
-    tabindex="-1"
-  >
-    <div class="editor-panel">
-      <div class="panel-header">
-        <h2 class="panel-title">
-          {isNew ? $t('monitoring.alertEdit.new') : name || $t('monitoring.alertEdit.edit')}
-        </h2>
-        <button class="btn ghost small" onclick={onClose} aria-label={$t('editor.close')}>×</button>
-      </div>
+<Modal
+  {open}
+  title={isNew ? $t('monitoring.alertEdit.new') : name || $t('monitoring.alertEdit.edit')}
+  width="600px"
+  {onClose}
+>
+  <div class="form-grid">
+    <label class="field span2">
+      <span class="field-label">{$t('infra.field.name')}</span>
+      <input type="text" bind:value={name} required />
+    </label>
 
-      <div class="form-grid">
-        <label class="field span2">
-          <span class="field-label">{$t('infra.field.name')}</span>
-          <input type="text" bind:value={name} required />
-        </label>
+    <label class="field">
+      <span class="field-label">{$t('monitoring.alerts.channel')}</span>
+      <select
+        value={channel}
+        onchange={(e) => (channel = (e.currentTarget as HTMLSelectElement).value as AlertChannel)}
+      >
+        <option value="webhook">{$t('monitoring.alerts.channelWebhook')}</option>
+        <option value="email">{$t('monitoring.alerts.channelEmail')}</option>
+      </select>
+    </label>
 
-        <label class="field">
-          <span class="field-label">{$t('monitoring.alerts.channel')}</span>
-          <select
-            value={channel}
-            onchange={(e) =>
-              (channel = (e.currentTarget as HTMLSelectElement).value as AlertChannel)}
-          >
-            <option value="webhook">{$t('monitoring.alerts.channelWebhook')}</option>
-            <option value="email">{$t('monitoring.alerts.channelEmail')}</option>
-          </select>
-        </label>
+    <label class="field">
+      <span class="field-label">{$t('monitoring.alerts.severity')}</span>
+      <select
+        value={matchSeverity}
+        onchange={(e) =>
+          (matchSeverity = (e.currentTarget as HTMLSelectElement).value as '' | MonitorSeverity)}
+      >
+        <option value="">{$t('monitoring.alertEdit.allSeverities')}</option>
+        <option value="critical">critical</option>
+        <option value="warning">warning</option>
+      </select>
+    </label>
 
-        <label class="field">
-          <span class="field-label">{$t('monitoring.alerts.severity')}</span>
-          <select
-            value={matchSeverity}
-            onchange={(e) =>
-              (matchSeverity = (e.currentTarget as HTMLSelectElement).value as
-                | ''
-                | MonitorSeverity)}
-          >
-            <option value="">{$t('monitoring.alertEdit.allSeverities')}</option>
-            <option value="critical">critical</option>
-            <option value="warning">warning</option>
-          </select>
-        </label>
+    <label class="field">
+      <span class="field-label">{$t('monitoring.alerts.matchServer')}</span>
+      <select
+        value={matchServerId}
+        onchange={(e) => (matchServerId = (e.currentTarget as HTMLSelectElement).value)}
+      >
+        <option value="">{$t('monitoring.alertEdit.allServers')}</option>
+        {#each servers as s (s.id)}
+          <option value={s.id}>{s.name}</option>
+        {/each}
+      </select>
+    </label>
 
-        <label class="field">
-          <span class="field-label">{$t('monitoring.alerts.matchServer')}</span>
-          <select
-            value={matchServerId}
-            onchange={(e) => (matchServerId = (e.currentTarget as HTMLSelectElement).value)}
-          >
-            <option value="">{$t('monitoring.alertEdit.allServers')}</option>
-            {#each servers as s (s.id)}
-              <option value={s.id}>{s.name}</option>
-            {/each}
-          </select>
-        </label>
+    <label class="field">
+      <span class="field-label">{$t('monitoring.alerts.cooldown')} (min)</span>
+      <input type="number" bind:value={cooldown} />
+    </label>
 
-        <label class="field">
-          <span class="field-label">{$t('monitoring.alerts.cooldown')} (min)</span>
-          <input type="number" bind:value={cooldown} />
-        </label>
-
-        {#if channel === 'webhook'}
-          <label class="field span2">
-            <span class="field-label">{$t('monitoring.alerts.webhookUrl')}</span>
-            <input
-              type="url"
-              bind:value={webhookUrl}
-              placeholder="https://hooks.example.com/alert"
-            />
-          </label>
-        {:else}
-          <label class="field span2">
-            <span class="field-label">{$t('monitoring.alertEdit.recipients')}</span>
-            <input
-              type="text"
-              bind:value={emailRecipients}
-              placeholder="admin@example.com, ops@example.com"
-            />
-          </label>
-        {/if}
-      </div>
-
-      <div class="panel-actions">
-        {#if !isNew}
-          <button class="btn danger" onclick={onDelete} disabled={saving}>
-            {confirmDelete ? $t('infra.server.confirmDelete') : $t('action.delete')}
-          </button>
-        {/if}
-        <div style="flex: 1;"></div>
-        <button class="btn" onclick={onClose} disabled={saving}>{$t('action.cancel')}</button>
-        <button class="btn primary" onclick={onSave} disabled={saving}>{$t('action.save')}</button>
-      </div>
-    </div>
+    {#if channel === 'webhook'}
+      <label class="field span2">
+        <span class="field-label">{$t('monitoring.alerts.webhookUrl')}</span>
+        <input type="url" bind:value={webhookUrl} placeholder="https://hooks.example.com/alert" />
+      </label>
+    {:else}
+      <label class="field span2">
+        <span class="field-label">{$t('monitoring.alertEdit.recipients')}</span>
+        <input
+          type="text"
+          bind:value={emailRecipients}
+          placeholder="admin@example.com, ops@example.com"
+        />
+      </label>
+    {/if}
   </div>
-{/if}
+
+  {#snippet footer()}
+    {#if !isNew}
+      <button class="btn danger" onclick={onDelete} disabled={saving}>{$t('action.delete')}</button>
+    {/if}
+    <div style="flex: 1;"></div>
+    <button class="btn" onclick={onClose} disabled={saving}>{$t('action.cancel')}</button>
+    <button class="btn primary" onclick={onSave} disabled={saving}>{$t('action.save')}</button>
+  {/snippet}
+</Modal>
 
 <style>
-  .editor-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-    padding: var(--sp-4);
-  }
-  .editor-panel {
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    width: 100%;
-    max-width: 600px;
-    max-height: 90vh;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-  .panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--sp-4) var(--sp-5);
-    border-bottom: 1px solid var(--border);
-  }
-  .panel-title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-  }
   .form-grid {
-    padding: var(--sp-5);
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--sp-4);
@@ -270,12 +212,5 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .field input:focus,
   .field select:focus {
     outline: 1px solid var(--accent);
-  }
-  .panel-actions {
-    display: flex;
-    gap: var(--sp-2);
-    padding: var(--sp-4) var(--sp-5);
-    border-top: 1px solid var(--border);
-    align-items: center;
   }
 </style>

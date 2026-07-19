@@ -10,10 +10,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // a stacked Modal B is still open. Only the last close restores scrolling.
   // (Ported from the web panel's Modal, 4.76.)
   let openModalCount = 0;
+  // Stack of open modal instances: Escape must only close the TOP modal.
+  // Document keydown listeners fire in registration order (bottom modal
+  // first) — without this check, Escape under a stacked ConfirmDialog would
+  // close the editor modal underneath and leave the dialog orphaned.
+  const modalStack: symbol[] = [];
 </script>
 
 <script lang="ts">
   import { type Snippet } from 'svelte';
+  import { t } from '$lib/i18n';
 
   interface Props {
     open: boolean;
@@ -26,12 +32,16 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   let { open, title = '', width = '520px', onClose, children, footer }: Props = $props();
 
+  const instance = Symbol();
+
   function close() {
     onClose?.();
   }
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
+      // Only the top-most open modal reacts (see modalStack above).
+      if (modalStack[modalStack.length - 1] !== instance) return;
       // stopImmediatePropagation, not stopPropagation: each mounted modal adds
       // its own document keydown listener, so one Escape must not close two
       // stacked modals at once (web 2.136).
@@ -48,8 +58,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   // listener around (web 4.144).
   $effect(() => {
     if (!open) return;
+    modalStack.push(instance);
     document.addEventListener('keydown', onKeydown);
-    return () => document.removeEventListener('keydown', onKeydown);
+    return () => {
+      document.removeEventListener('keydown', onKeydown);
+      const i = modalStack.indexOf(instance);
+      if (i >= 0) modalStack.splice(i, 1);
+    };
   });
 
   $effect(() => {
@@ -73,7 +88,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {#if title}
         <div class="modal-header">
           <h3 class="modal-title">{title}</h3>
-          <button class="btn ghost small" onclick={close} aria-label="Close">&times;</button>
+          <button class="btn ghost small" onclick={close} aria-label={$t('editor.close')}
+            >&times;</button
+          >
         </div>
       {/if}
       <div class="modal-body">
