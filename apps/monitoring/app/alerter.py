@@ -33,7 +33,14 @@ from app.core.config import (
 )
 from app.core.ssrf import is_private_url
 from app.core.time import utcnow_naive
-from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
+from app.maintenance import is_in_maintenance
+from app.models import (
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorMaintenance,
+    MonitorState,
+)
 
 logger = logging.getLogger("monitor.alerter")
 
@@ -69,6 +76,16 @@ def process_alert(
     # "agent gone" is the persisted agent_ping going critical. unknown -> ok
     # passes below and dispatches as a normal recovery.
     if new_status == "unknown":
+        return
+
+    # Maintenance windows (collect-but-mute, T25): the state transition has
+    # already been persisted by the caller — only notifications are muted.
+    # No alert-log entry either: the log records SENT notifications.
+    windows = (
+        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
+    )
+    if windows and is_in_maintenance(windows, check.server_id, utcnow_naive()):
+        logger.debug("Alert for check %s suppressed (maintenance window)", check.id)
         return
 
     # Host-down suppression (Alertmanager inhibition pattern, T7): while this

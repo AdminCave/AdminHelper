@@ -57,17 +57,36 @@ def make_msg(**kw):
     return defaults
 
 
+class _ListQuery:
+    """query(Model)-shim returning a fixed list (filter chainable)."""
+
+    def __init__(self, items):
+        self._items = items
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def all(self):
+        return self._items
+
+
 class _CapturingDb:
     """Fake DB for process_alert: provides the rules list, collects add()
     and flush() calls. process_alert only flushes the alert log now; the
-    caller owns the commit (see the H7 fix)."""
+    caller owns the commit (see the H7 fix). Maintenance-window queries are
+    answered model-aware (default: none active)."""
 
-    def __init__(self, rules):
+    def __init__(self, rules, maintenance=None):
         self._rules = rules
+        self._maintenance = maintenance or []
         self.added = []
         self.flushed = False
 
     def query(self, *args, **kwargs):
+        from app.models import MonitorMaintenance
+
+        if args and args[0] is MonitorMaintenance:
+            return _ListQuery(self._maintenance)
         return self
 
     def join(self, *args, **kwargs):

@@ -474,3 +474,86 @@ def test_host_is_down_query_semantics():
         assert alerter._host_is_down(db, make_check(server_id="srv-9")) is False
     finally:
         db.close()
+
+
+class TestMaintenanceSuppression:
+    """T25: an active maintenance window mutes rule dispatch, hub emit and the
+    alert log — including agent_ping (the whole server is deliberately quiet);
+    state transitions themselves are the caller's business and keep flowing."""
+
+    def _spies(self, monkeypatch):
+        dispatched = {"n": 0}
+        emitted = {"n": 0}
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+        monkeypatch.setattr(alerter, "_build_message", lambda *a, **k: make_msg())
+        monkeypatch.setattr(
+            alerter,
+            "_dispatch",
+            lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None),
+        )
+        monkeypatch.setattr(
+            alerter, "_emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
+        )
+        return dispatched, emitted
+
+    @staticmethod
+    def _window(**kw):
+        from datetime import datetime, timedelta
+
+        from app.models import MonitorMaintenance
+
+        now = datetime(2026, 7, 19, 12, 0)
+        defaults = dict(
+            id="mw-1",
+            server_id=None,
+            kind="once",
+            starts_at=now - timedelta(hours=1),
+            ends_at=now + timedelta(hours=1),
+            enabled=True,
+        )
+        defaults.update(kw)
+        return MonitorMaintenance(**defaults)
+
+    def _now(self, monkeypatch):
+        from datetime import datetime
+
+        monkeypatch.setattr(alerter, "utcnow_naive", lambda: datetime(2026, 7, 19, 12, 0))
+
+    def test_active_window_mutes_everything(self, monkeypatch):
+        dispatched, emitted = self._spies(monkeypatch)
+        self._now(monkeypatch)
+        db = _CapturingDb([make_rule()], maintenance=[self._window()])
+        process_alert(db, make_check(), "ok", "critical")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+
+    def test_agent_ping_is_muted_too(self, monkeypatch):
+        # Unlike host-down suppression, maintenance mutes the heartbeat as well.
+        dispatched, emitted = self._spies(monkeypatch)
+        self._now(monkeypatch)
+        db = _CapturingDb([make_rule()], maintenance=[self._window()])
+        process_alert(db, make_check(check_type="agent_ping"), "ok", "critical")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+
+    def test_window_for_other_server_does_not_mute(self, monkeypatch):
+        dispatched, emitted = self._spies(monkeypatch)
+        self._now(monkeypatch)
+        db = _CapturingDb([make_rule()], maintenance=[self._window(server_id="srv-9")])
+        process_alert(db, make_check(server_id="srv-1"), "ok", "critical")
+        assert dispatched["n"] == 1
+        assert emitted["n"] == 1
+
+    def test_expired_window_does_not_mute(self, monkeypatch):
+        from datetime import datetime, timedelta
+
+        dispatched, _emitted = self._spies(monkeypatch)
+        self._now(monkeypatch)
+        past = datetime(2026, 7, 19, 12, 0) - timedelta(hours=3)
+        db = _CapturingDb(
+            [make_rule()],
+            maintenance=[self._window(starts_at=past, ends_at=past + timedelta(hours=1))],
+        )
+        process_alert(db, make_check(), "ok", "critical")
+        assert dispatched["n"] == 1
