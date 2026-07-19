@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 from app.models import (  # noqa: F401
     MonitorAgentKey,
+    MonitorAgentLiveness,
     MonitorCheck,
     MonitorState,
     MonitorTemplate,
@@ -31,7 +32,19 @@ async def lifespan(app: FastAPI):
     (see monitoring/alembic/), no longer by Base.metadata.create_all().
     Historical SQLite PRAGMA migrations have been removed without replacement —
     pre-release, no existing data."""
+    from app.checkers.agent import hydrate_agent_liveness
+    from app.core.database import SessionLocal
     from app.scheduler import load_all_checks, schedule_alert_log_cleanup, scheduler
+
+    # Rehydrate agent liveness before the scheduler starts: without this, every
+    # restart made agent_ping report 'unknown' until the next push.
+    db = SessionLocal()
+    try:
+        hydrate_agent_liveness(
+            {row.server_id: row.last_report_at for row in db.query(MonitorAgentLiveness).all()}
+        )
+    finally:
+        db.close()
 
     load_all_checks()
     schedule_alert_log_cleanup()

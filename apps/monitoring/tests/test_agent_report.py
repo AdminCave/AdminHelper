@@ -284,3 +284,27 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
 
     # metricsWritten reflects the actual lines written (no checks in this payload).
     assert r.json()["metricsWritten"] == len(captured)
+
+
+def test_report_persists_agent_liveness(client_db, monkeypatch):
+    # T2: every push upserts monitor_agent_liveness so agent_ping survives
+    # service restarts (main.py rehydrates the in-memory map from it).
+    from datetime import datetime
+
+    import app.routers.agent as agent_router
+    from app.models import MonitorAgentLiveness
+
+    client, factory = client_db
+    t1 = datetime(2026, 7, 19, 12, 0, 0)
+    monkeypatch.setattr(agent_router, "utcnow_naive", lambda: t1)
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    with factory() as db:
+        row = db.get(MonitorAgentLiveness, "srv-1")
+        assert row is not None
+        assert row.last_report_at == t1
+
+    t2 = datetime(2026, 7, 19, 12, 5, 0)
+    monkeypatch.setattr(agent_router, "utcnow_naive", lambda: t2)
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    with factory() as db:
+        assert db.get(MonitorAgentLiveness, "srv-1").last_report_at == t2

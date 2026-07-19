@@ -11,21 +11,32 @@ The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 
 from __future__ import annotations
 
-import time
+from datetime import datetime
+
+from app.core.time import utcnow_naive
 
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
-# In-memory map: server_id -> last report time (time.monotonic, not wall clock).
-# Process-local, so it is valid only under a single worker process (see the
-# invariant in main.py lifespan) and is lost on restart — agent_ping then falls
-# back to 'unknown' until the next push.
-_last_report: dict[str, float] = {}
+# In-memory map: server_id -> last report time (naive UTC wall clock). Process-
+# local (single-worker invariant, see main.py lifespan); hydrated at startup
+# from monitor_agent_liveness so a restart no longer makes agent_ping fall back
+# to 'unknown' until the next push. Wall clock instead of time.monotonic on
+# purpose — a monotonic value cannot be persisted across processes.
+_last_report: dict[str, datetime] = {}
 
 
 def record_agent_report(server_id: str) -> None:
     """Called on agent push to store the timestamp."""
-    _last_report[server_id] = time.monotonic()
+    _last_report[server_id] = utcnow_naive()
+
+
+def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
+    """Seed _last_report from the persisted monitor_agent_liveness rows at
+    startup. setdefault: a push that arrived before hydration must not be
+    overwritten by an older persisted value."""
+    for server_id, last_report_at in entries.items():
+        _last_report.setdefault(server_id, last_report_at)
 
 
 class AgentPingChecker:
@@ -33,7 +44,7 @@ class AgentPingChecker:
 
     Config example:
     {
-        "stale_minutes": 5
+        "stale_minutes": 15
     }
 
     This check is run by the scheduler (not on push).
@@ -42,7 +53,10 @@ class AgentPingChecker:
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         server_id = config.get("server_id", "")
-        stale_minutes = config.get("stale_minutes", 5)
+        # Default 15 = three missed 5-minute push intervals. The old default of
+        # 5 equalled the agent's push cadence and flagged a single late report
+        # as critical.
+        stale_minutes = config.get("stale_minutes", 15)
 
         if not server_id:
             return "unknown", "Keine server_id konfiguriert", None
@@ -51,7 +65,7 @@ class AgentPingChecker:
         if last is None:
             return "unknown", "Noch kein Agent-Report empfangen", None
 
-        age_seconds = time.monotonic() - last
+        age_seconds = (utcnow_naive() - last).total_seconds()
         age_minutes = age_seconds / 60
 
         if age_minutes > stale_minutes:

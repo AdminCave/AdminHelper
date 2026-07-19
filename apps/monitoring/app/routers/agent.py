@@ -24,7 +24,7 @@ from app.core.auth import require_agent
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, safe_metric_part, victoria
-from app.models import MonitorCheck, MonitorState
+from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,15 @@ def agent_report(
         )
 
     record_agent_report(server_id)
+    # Persist liveness so agent_ping survives service restarts. Own commit: the
+    # shared commit below only happens when agent checks exist, and a failed
+    # persist must only cost the hydration, never the report.
+    try:
+        db.merge(MonitorAgentLiveness(server_id=server_id, last_report_at=utcnow_naive()))
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Persistieren der Agent-Liveness fehlgeschlagen (%s)", server_id)
 
     ts = int(time.time())
     base_tags = {"server_id": server_id}
