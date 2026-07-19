@@ -310,8 +310,12 @@ def apply_template(
     server_id: str,
     hostname: str,
     server_name: str,
+    source: str = "manual",
 ) -> dict:
-    """Assigns a template to a server and creates all checks/alerts."""
+    """Assigns a template to a server and creates all checks/alerts.
+
+    source='tag' marks rows materialized by tag_sync — only those may be
+    removed again by the sync; manual rows are never touched by it."""
     # Create assignment
     assignment = MonitorTemplateAssignment(
         id=str(uuid.uuid4()),
@@ -319,6 +323,7 @@ def apply_template(
         server_id=server_id,
         server_hostname=hostname,
         server_name=server_name,
+        source=source,
     )
     db.add(assignment)
 

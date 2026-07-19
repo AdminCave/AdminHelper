@@ -173,3 +173,36 @@ def schedule_alert_log_cleanup(hours: int = 24) -> None:
         replace_existing=True,
         next_run_time=datetime.now(timezone.utc),
     )
+
+
+_TAG_SYNC_JOB_ID = "system:tag-sync"
+
+
+def _run_tag_sync() -> None:
+    """Safety-net reconciliation of tag-based template assignments — catches
+    server-notifies that were lost while the monitoring service was down.
+    Imports stay function-local: tag_sync -> template_sync -> scheduler would
+    otherwise be an import cycle."""
+    from app.core.database import SessionLocal
+    from app.tag_sync import sync_tag_assignments
+
+    db = SessionLocal()
+    try:
+        sync_tag_assignments(db)
+    except Exception:
+        db.rollback()
+        logger.exception("Tag-sync job failed")
+    finally:
+        db.close()
+
+
+def schedule_tag_sync(minutes: int = 15) -> None:
+    """Register the periodic tag-sync safety net (idempotent). First run after
+    one interval — startup materialization is not needed: bindings are synced
+    on CRUD and by the server's notify hook."""
+    scheduler.add_job(
+        _run_tag_sync,
+        trigger=IntervalTrigger(minutes=minutes),
+        id=_TAG_SYNC_JOB_ID,
+        replace_existing=True,
+    )

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,9 +25,22 @@ from app.models import (
 )
 from app.scheduler import remove_check
 from app.schemas import TemplateAssign, TemplateCreate, TemplateTagAssign, TemplateUpdate
+from app.tag_sync import sync_tag_assignments
 from app.template_sync import apply_template, remove_template, sync_template
 
+logger = logging.getLogger("monitor.templates")
+
 router = APIRouter()
+
+
+def _tag_sync_best_effort(db: Session) -> None:
+    """Materialize after a binding change; a hub outage must not fail the CRUD
+    call — the 15-minute scheduler safety net catches up later."""
+    try:
+        sync_tag_assignments(db)
+    except Exception:
+        db.rollback()
+        logger.exception("Tag-sync after binding change failed")
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +294,7 @@ def assign_template_tag(template_id: str, data: TemplateTagAssign, db: Session =
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "Template already assigned to this tag")
+    _tag_sync_best_effort(db)
     return row.to_dict()
 
 
@@ -302,3 +317,15 @@ def unassign_template_tag(template_id: str, tag: str, db: Session = Depends(get_
     if not deleted:
         raise HTTPException(404, "Tag assignment not found")
     db.commit()
+    _tag_sync_best_effort(db)
+
+
+@router.post("/templates/tag-sync", dependencies=[Depends(require_internal)])
+def trigger_tag_sync(db: Session = Depends(get_db)):
+    """Reconcile materialized tag assignments now. Called by the server after
+    inventory changes (create/update/delete); the scheduler runs the same
+    reconciliation as a 15-minute safety net."""
+    result = sync_tag_assignments(db)
+    if result is None:
+        raise HTTPException(502, "Server inventory unavailable")
+    return result

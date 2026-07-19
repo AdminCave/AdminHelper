@@ -35,7 +35,12 @@ async def lifespan(app: FastAPI):
     from app.builtin_templates import seed_builtin_templates
     from app.checkers.agent import hydrate_agent_liveness
     from app.core.database import SessionLocal
-    from app.scheduler import load_all_checks, schedule_alert_log_cleanup, scheduler
+    from app.scheduler import (
+        load_all_checks,
+        schedule_alert_log_cleanup,
+        schedule_tag_sync,
+        scheduler,
+    )
 
     # Rehydrate agent liveness before the scheduler starts: without this, every
     # restart made agent_ping report 'unknown' until the next push. Then seed
@@ -56,6 +61,7 @@ async def lifespan(app: FastAPI):
 
     load_all_checks()
     schedule_alert_log_cleanup()
+    schedule_tag_sync()
     # INVARIANT: exactly one worker process. This APScheduler and the in-memory
     # _last_report map (checkers/agent.py) are process-local — running uvicorn with
     # --workers > 1 would run every scheduled check + alert N times and split agent

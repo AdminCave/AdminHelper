@@ -161,3 +161,49 @@ class TestTagAssignments:
             client.post(f"/templates/{tid}/assign-tag", json={"tag": "web prod"}).status_code == 201
         )
         assert client.delete(f"/templates/{tid}/assign-tag/web%20prod").status_code == 204
+
+    def test_tag_sync_endpoint_502_when_hub_unavailable(self, client, monkeypatch):
+        client, _factory = client
+        import app.routers.templates as templates_mod
+
+        monkeypatch.setattr(templates_mod, "sync_tag_assignments", lambda db: None)
+        assert client.post("/templates/tag-sync").status_code == 502
+
+    def test_tag_sync_endpoint_returns_counts(self, client, monkeypatch):
+        client, _factory = client
+        import app.routers.templates as templates_mod
+
+        monkeypatch.setattr(
+            templates_mod, "sync_tag_assignments", lambda db: {"created": 2, "removed": 1}
+        )
+        r = client.post("/templates/tag-sync")
+        assert r.status_code == 200
+        assert r.json() == {"created": 2, "removed": 1}
+
+    def test_assign_tag_triggers_sync(self, client, monkeypatch):
+        client, _factory = client
+        import app.routers.templates as templates_mod
+
+        calls = {"n": 0}
+        monkeypatch.setattr(
+            templates_mod,
+            "sync_tag_assignments",
+            lambda db: calls.__setitem__("n", calls["n"] + 1) or {"created": 0, "removed": 0},
+        )
+        tid = self._mk_template(client)
+        client.post(f"/templates/{tid}/assign-tag", json={"tag": "web"})
+        client.delete(f"/templates/{tid}/assign-tag/web")
+        assert calls["n"] == 2
+
+    def test_assign_tag_survives_a_raising_sync(self, client, monkeypatch):
+        # Best-effort guarantee: a sync that raises must not fail the CRUD call.
+        client, _factory = client
+        import app.routers.templates as templates_mod
+
+        def boom(db):
+            raise RuntimeError("sync exploded")
+
+        monkeypatch.setattr(templates_mod, "sync_tag_assignments", boom)
+        tid = self._mk_template(client)
+        assert client.post(f"/templates/{tid}/assign-tag", json={"tag": "web"}).status_code == 201
+        assert client.delete(f"/templates/{tid}/assign-tag/web").status_code == 204
