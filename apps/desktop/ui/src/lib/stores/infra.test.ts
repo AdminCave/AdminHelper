@@ -122,4 +122,14 @@ describe('saveServer monitoring-template opt-in (T15)', () => {
     await saveServer(input('a', 'h'), null, null);
     expect(h.assignTemplate).not.toHaveBeenCalled();
   });
+
+  it('a 409 (already assigned by the tag sync) counts as success (T45)', async () => {
+    h.create.mockResolvedValueOnce({ id: 'new-1', name: 'web01', hostname: 'web01.example' });
+    h.assignTemplate.mockRejectedValueOnce(
+      new Error('HTTP 409: Template bereits diesem Server zugewiesen'),
+    );
+    const ok = await saveServer(input('web01', 'web01.example'), null, 'tpl-x');
+    expect(ok).toBe(true);
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
 });

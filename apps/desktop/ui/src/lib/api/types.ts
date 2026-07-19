@@ -332,6 +332,17 @@ export interface MonitorSmartDetails {
   }[];
 }
 
+export interface MonitorForecastDetails {
+  // Field names match the disk_forecast checker's _details verbatim.
+  mounts?: {
+    mount: string;
+    percent?: number;
+    rate_pp_per_hour?: number;
+    hours_left?: number | null;
+    note?: string;
+  }[];
+}
+
 export type MonitorCheckDetails =
   | MonitorResourceDetails
   | MonitorServiceDetails
@@ -339,6 +350,7 @@ export type MonitorCheckDetails =
   | MonitorBackupDetails
   | MonitorZfsDetails
   | MonitorSmartDetails
+  | MonitorForecastDetails
   | Record<string, unknown>;
 
 export interface MonitorCheckState {

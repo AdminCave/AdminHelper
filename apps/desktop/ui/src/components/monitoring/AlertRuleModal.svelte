@@ -79,9 +79,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       match_severity: matchSeverity || null,
       match_server_id: matchServerId || null,
       // Clamp: min="0" only guards the spinner (no form submit), and the
-      // backend has no ge=0 backstop — a negative cooldown would put the
-      // cutoff in the future and disable cooldown entirely (alert spam).
-      cooldown_minutes: Math.max(0, cooldown || 30),
+      // Clamp negatives; an empty spinner (NaN) falls back to the default.
+      // An explicit 0 stays 0 — "no cooldown" is a valid choice (T44); the
+      // backend now also rejects negatives (ge=0).
+      cooldown_minutes: Math.max(0, Number.isFinite(cooldown) ? cooldown : 30),
       channel_config: buildChannelConfig(),
     };
     saving = true;

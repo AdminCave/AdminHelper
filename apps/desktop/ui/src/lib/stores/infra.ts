@@ -119,7 +119,15 @@ export async function saveServer(
             );
             showStatus(tNow('infra.status.templateAssigned'));
           } catch (err) {
-            reportError(tNow('infra.error.templateAssign', { message: errMsg(err) }));
+            const msg = errMsg(err);
+            if (msg.startsWith('HTTP 409')) {
+              // The create nudge can let the tag-sync materialize a tag-bound
+              // assignment before this opt-in call lands — the template IS
+              // assigned then, not an error (T45).
+              showStatus(tNow('infra.status.templateAssigned'));
+            } else {
+              reportError(tNow('infra.error.templateAssign', { message: msg }));
+            }
           }
         }
       }

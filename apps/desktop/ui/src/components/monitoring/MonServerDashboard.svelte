@@ -26,6 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import SecBackups from './section/SecBackups.svelte';
   import SecZfs from './section/SecZfs.svelte';
   import SecSmart from './section/SecSmart.svelte';
+  import SecForecast from './section/SecForecast.svelte';
   import { t } from '$lib/i18n';
 
   let selected = $derived($selectedServerId);
@@ -65,6 +66,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let backupChecks = $derived(pick('proxmox_backup'));
   let zfsChecks = $derived(pick('zfs_health'));
   let smartChecks = $derived(pick('smart_health'));
+  let forecastChecks = $derived(pick('disk_forecast'));
 </script>
 
 <div class="mon-dashboard">
@@ -148,6 +150,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {/if}
       {#if smartChecks.length > 0}
         <SecSmart checks={smartChecks} />
+      {/if}
+      {#if forecastChecks.length > 0}
+        <SecForecast checks={forecastChecks} />
       {/if}
     {/if}
   {/if}
