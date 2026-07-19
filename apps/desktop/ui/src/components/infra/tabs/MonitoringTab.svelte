@@ -8,6 +8,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { errMsg } from '$lib/utils/errors';
   import { onMount } from 'svelte';
   import type {
+    MaintenanceWindow,
     MonitorCheck,
     MonitoringTemplateFull,
     Server,
@@ -18,6 +19,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
   import MonitorCheckModal from '../../monitoring/MonitorCheckModal.svelte';
+  import MaintenanceModal from '../../monitoring/MaintenanceModal.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -31,6 +33,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let editing = $state<MonitorCheck | null>(null);
   let running = $state<string | null>(null);
   let assignments = $state<TemplateAssignment[]>([]);
+  let maintenance = $state<MaintenanceWindow[]>([]);
+  let maintModalOpen = $state(false);
+  let maintEditing = $state<MaintenanceWindow | null>(null);
   let templates = $state<MonitoringTemplateFull[]>([]);
   let selectedTemplateId = $state('');
   let assignBusy = $state(false);
@@ -130,9 +135,34 @@ SPDX-License-Identifier: GPL-3.0-or-later
     }
   }
 
+  async function loadMaintenance(): Promise<void> {
+    const s = $session;
+    if (!s) return;
+    try {
+      const all = await monitoringApi.fetchMaintenance(s);
+      // This server's windows plus global ones (serverId null).
+      maintenance = (Array.isArray(all) ? all : []).filter(
+        (w) => w.serverId == null || w.serverId === server.id,
+      );
+    } catch (err) {
+      reportError(errMsg(err));
+    }
+  }
+
+  function maintSummary(w: MaintenanceWindow): string {
+    if (w.kind === 'once') {
+      const fmt = (iso: string | null | undefined) =>
+        iso ? new Date(iso.endsWith('Z') ? iso : `${iso}Z`).toLocaleString() : '?';
+      return `${fmt(w.startsAt)} – ${fmt(w.endsAt)}`;
+    }
+    const days = (w.weekdays ?? []).map((d) => $t(`monitoring.maint.day.${d}`)).join(', ');
+    return `${days} ${w.startTime ?? ''} (${w.durationMinutes ?? 0} min, ${w.timezone})`;
+  }
+
   onMount(() => {
     void load();
     void loadAssignments();
+    void loadMaintenance();
   });
 </script>
 
@@ -179,6 +209,46 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/if}
   </div>
 
+  <div class="tpl-section">
+    <h4 class="tpl-title">{$t('monitoring.maint.title')}</h4>
+    {#if maintenance.length === 0}
+      <p class="muted">{$t('monitoring.maint.empty')}</p>
+    {:else}
+      <div class="maint-list">
+        {#each maintenance as w (w.id)}
+          <div class="maint-row" class:disabled={!w.enabled}>
+            <span class="maint-kind"
+              >{w.kind === 'once'
+                ? $t('monitoring.maint.kindOnce')
+                : $t('monitoring.maint.kindWeekly')}</span
+            >
+            <span class="maint-summary">{maintSummary(w)}</span>
+            {#if w.note}<span class="maint-note">{w.note}</span>{/if}
+            {#if w.serverId == null}
+              <span class="tpl-badge">{$t('monitoring.maint.globalBadge')}</span>
+            {/if}
+            <button
+              class="btn small"
+              onclick={() => {
+                maintEditing = w;
+                maintModalOpen = true;
+              }}>{$t('action.edit')}</button
+            >
+          </div>
+        {/each}
+      </div>
+    {/if}
+    <div>
+      <button
+        class="btn small"
+        onclick={() => {
+          maintEditing = null;
+          maintModalOpen = true;
+        }}>+ {$t('monitoring.maint.add')}</button
+      >
+    </div>
+  </div>
+
   <div class="mon-toolbar">
     <button class="btn primary small" onclick={openNew}>+ {$t('monitoring.checkEdit.add')}</button>
   </div>
@@ -216,6 +286,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   serverId={server.id}
   onClose={() => (modalOpen = false)}
   onSaved={load}
+/>
+
+<MaintenanceModal
+  open={maintModalOpen}
+  editing={maintEditing}
+  serverId={server.id}
+  onClose={() => (maintModalOpen = false)}
+  onSaved={() => void loadMaintenance()}
 />
 
 <style>
@@ -285,6 +363,38 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .tpl-assign {
     display: flex;
     gap: var(--sp-2);
+  }
+  .maint-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .maint-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+  .maint-row.disabled {
+    opacity: 0.55;
+  }
+  .maint-kind {
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .maint-summary {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .maint-note {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
   .tpl-assign select {
     background: var(--bg-input, var(--bg-panel));

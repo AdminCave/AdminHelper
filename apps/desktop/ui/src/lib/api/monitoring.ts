@@ -19,6 +19,8 @@ import type {
   MonitoringTemplateFull,
   MonitoringTemplateInput,
   MonitoringTemplateTagAssignment,
+  MaintenanceWindow,
+  MaintenanceInput,
   Server,
   TemplateAssignment,
 } from '$lib/api/types';
@@ -180,6 +182,33 @@ export const monitoringApi = {
       session,
       'DELETE',
       `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign-tag/${encodeURIComponent(tag)}`,
+    );
+  },
+
+  // ── Maintenance windows ────────────────────────────────────────────────────
+  fetchMaintenance(session: AuthSession): Promise<MaintenanceWindow[]> {
+    return apiRequest<MaintenanceWindow[]>(session, 'GET', '/api/monitoring/maintenance');
+  },
+  createMaintenance(session: AuthSession, data: MaintenanceInput): Promise<MaintenanceWindow> {
+    return apiRequest<MaintenanceWindow>(session, 'POST', '/api/monitoring/maintenance', data);
+  },
+  updateMaintenance(
+    session: AuthSession,
+    id: string,
+    data: MaintenanceInput,
+  ): Promise<MaintenanceWindow> {
+    return apiRequest<MaintenanceWindow>(
+      session,
+      'PUT',
+      `/api/monitoring/maintenance/${encodeURIComponent(id)}`,
+      data,
+    );
+  },
+  removeMaintenance(session: AuthSession, id: string): Promise<void> {
+    return apiRequest<void>(
+      session,
+      'DELETE',
+      `/api/monitoring/maintenance/${encodeURIComponent(id)}`,
     );
   },
 };

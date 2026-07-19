@@ -372,6 +372,34 @@ export interface MonitoringMetricSeries {
   values: [number, string][];
 }
 
+export interface MaintenanceWindow {
+  id: string;
+  serverId?: string | null;
+  note?: string | null;
+  kind: 'once' | 'weekly';
+  startsAt?: string | null;
+  endsAt?: string | null;
+  weekdays?: number[];
+  startTime?: string | null;
+  durationMinutes?: number | null;
+  timezone: string;
+  enabled: boolean;
+  createdAt?: string | null;
+}
+
+export interface MaintenanceInput {
+  server_id: string | null;
+  note: string | null;
+  kind: 'once' | 'weekly';
+  starts_at: string | null;
+  ends_at: string | null;
+  weekdays: number[];
+  start_time: string | null;
+  duration_minutes: number | null;
+  timezone: string;
+  enabled: boolean;
+}
+
 export interface MonitoringMetricsResponse {
   data?: MonitoringMetricSeries[];
   statusHistory?: MonitoringMetricSeries[];
