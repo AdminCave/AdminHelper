@@ -14,6 +14,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   } from '$lib/stores/monitoring';
   import { groupChecksByServerWithSummary, statusClass } from '$lib/models/monitoring';
   import { t } from '$lib/i18n';
+  import MonHeartbeatBar from './MonHeartbeatBar.svelte';
 
   let groups = $derived(
     groupChecksByServerWithSummary($monitoringChecks, $monitoringServers, $monitoringServerSearch),
@@ -53,6 +54,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <span class="mon-pill pill-muted">{g.summary.unknown + g.summary.pending}</span>
           {/if}
         </span>
+        {#each g.checks.filter((c) => c.checkType === 'agent_ping').slice(0, 1) as hb (hb.id)}
+          <MonHeartbeatBar checkId={hb.id} />
+        {/each}
         <span class="mon-tile-total">{g.checks.length} {$t('monitoring.grid.checks')}</span>
       </button>
     {/each}

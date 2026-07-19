@@ -1992,6 +1992,10 @@ body {
   margin-left: auto;
   flex-shrink: 0;
 }
+
+.mon-dashboard-heartbeat {
+  margin-top: var(--sp-3);
+}
 .mon-dashboard-dot {
   width: 14px;
   height: 14px;

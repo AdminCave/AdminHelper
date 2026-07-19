@@ -17,6 +17,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import { computeSummary, statusClass, worstStatus } from '$lib/models/monitoring';
   import type { MonitorCheck, MonitorCheckType } from '$lib/api/types';
   import MonitorCheckModal from './MonitorCheckModal.svelte';
+  import MonHeartbeatBar from './MonHeartbeatBar.svelte';
   import SecLive from './section/SecLive.svelte';
   import SecNetwork from './section/SecNetwork.svelte';
   import SecHeartbeat from './section/SecHeartbeat.svelte';
@@ -114,6 +115,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
           </button>
         {/if}
       </div>
+      {#if heartbeatChecks.length > 0}
+        <div class="mon-dashboard-heartbeat">
+          <MonHeartbeatBar checkId={heartbeatChecks[0].id} />
+        </div>
+      {/if}
     </header>
 
     {#if serverChecks.length === 0}
