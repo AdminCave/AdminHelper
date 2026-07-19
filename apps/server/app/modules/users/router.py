@@ -14,6 +14,7 @@ from app.core.request_context import actor_from_request
 from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import clear_revocation, revoke_identity
+from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
 from app.modules.users.models import User
@@ -108,6 +109,18 @@ def update_user(
         # sessions); stored naive UTC to match the other DateTime columns.
         user.tokens_valid_after = utcnow_naive()
     if data.is_admin is not None:
+        # Promotion gets the same baseline notification rule as every other
+        # admin-create path — but only if the user has none, so a deliberately
+        # deleted rule does not resurrect on re-promotion (T39).
+        if data.is_admin and not user.is_admin:
+            has_subscription = (
+                db.query(NotificationSubscription)
+                .filter(NotificationSubscription.user_id == user.id)
+                .first()
+                is not None
+            )
+            if not has_subscription:
+                db.add(default_admin_subscription(user.id))
         # Never let the last admin be demoted — that would brick all management
         # (admin-only endpoints) with no recovery path short of a DB edit.
         if user.is_admin and not data.is_admin:

@@ -128,3 +128,72 @@ class TestDefaultAdminSubscription:
             .count()
             == 0
         )
+
+
+class TestPromotionDefaultSubscription:
+    """T39: promoting an existing user to admin adds the baseline rule —
+    unless the user already has any subscription (a deliberately deleted rule
+    must not resurrect)."""
+
+    def _create_plain(self, test_client, name="promo-user"):
+        res = test_client.post(
+            "/api/users",
+            headers=_admin_headers(test_client),
+            json={"username": name, "password": "validpass123"},
+        )
+        assert res.status_code == 201, res.text
+        return res.json()["id"]
+
+    def test_promotion_adds_default_subscription(self, test_client, admin_user, db_session):
+        from app.modules.notifications.models import NotificationSubscription
+
+        uid = self._create_plain(test_client)
+        res = test_client.put(
+            f"/api/users/{uid}", headers=_admin_headers(test_client), json={"is_admin": True}
+        )
+        assert res.status_code == 200, res.text
+        sub = (
+            db_session.query(NotificationSubscription)
+            .filter(NotificationSubscription.user_id == uid)
+            .one()
+        )
+        assert (sub.scope_type, sub.min_severity) == ("all", "warning")
+
+    def test_promotion_does_not_duplicate_default_subscription(
+        self, test_client, admin_user, db_session
+    ):
+        from app.modules.notifications.models import NotificationSubscription
+
+        uid = self._create_plain(test_client, name="promo-user2")
+        # An existing rule (any rule) suppresses the baseline on promotion.
+        db_session.add(NotificationSubscription(user_id=uid, scope_type="tag", scope_ref="prod"))
+        db_session.commit()
+        res = test_client.put(
+            f"/api/users/{uid}", headers=_admin_headers(test_client), json={"is_admin": True}
+        )
+        assert res.status_code == 200, res.text
+        subs = (
+            db_session.query(NotificationSubscription)
+            .filter(NotificationSubscription.user_id == uid)
+            .all()
+        )
+        assert len(subs) == 1
+        assert subs[0].scope_type == "tag"
+
+    def test_readmin_of_admin_does_not_duplicate(self, test_client, admin_user, db_session):
+        from app.modules.notifications.models import NotificationSubscription
+
+        # admin_user has no subscription (created directly by the fixture);
+        # PUT is_admin=True on an already-admin user is a no-op promotion-wise.
+        res = test_client.put(
+            f"/api/users/{admin_user.id}",
+            headers=_admin_headers(test_client),
+            json={"is_admin": True},
+        )
+        assert res.status_code == 200, res.text
+        assert (
+            db_session.query(NotificationSubscription)
+            .filter(NotificationSubscription.user_id == admin_user.id)
+            .count()
+            == 0
+        )

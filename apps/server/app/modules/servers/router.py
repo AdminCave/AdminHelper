@@ -5,6 +5,7 @@
 import json
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -29,16 +30,28 @@ logger = logging.getLogger("adminhelper.servers")
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
 
+# Single worker: notifies are best-effort nudges — serialize them instead of
+# stacking threads when many CRUD calls land at once (T46).
+_NOTIFY_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tag-sync-notify")
+
+
 def _notify_monitoring_tag_sync(reason: str) -> None:
     """Best-effort nudge to the monitoring service after inventory changes so
     tag-based template assignments materialize promptly (its 15-minute
     scheduler safety net catches missed notifies). Must never fail the server
-    operation — same contract as the cleanup call on delete."""
+    operation — same contract as the cleanup call on delete. Fire-and-forget
+    on a worker thread: the callee's reconciliation (inventory round-trip +
+    apply commits) can take longer than any sane inline deadline, and server
+    CRUD must not stall on it (T46)."""
+    _NOTIFY_POOL.submit(_do_notify_tag_sync, reason)
+
+
+def _do_notify_tag_sync(reason: str) -> None:
     try:
         resp = httpx.post(
             f"{MONITOR_SERVICE_URL}/templates/tag-sync",
             headers={"X-Internal-Key": MONITOR_API_KEY},
-            timeout=5,
+            timeout=30,
         )
         if resp.status_code >= 300:
             logger.warning("Tag-sync notify (%s): HTTP %d", reason, resp.status_code)

@@ -32,6 +32,14 @@ def _spy_notify(monkeypatch):
     return calls
 
 
+def _drain_notify():
+    """The notify runs fire-and-forget on the single-worker pool (T46) — a
+    no-op barrier guarantees every queued notify has completed."""
+    import app.modules.servers.router as servers_router
+
+    servers_router._NOTIFY_POOL.submit(lambda: None).result()
+
+
 def _create(client, headers, name="tsn-srv"):
     r = client.post(
         "/api/servers",
@@ -39,6 +47,7 @@ def _create(client, headers, name="tsn-srv"):
         headers=headers,
     )
     assert r.status_code in (200, 201), r.text
+    _drain_notify()
     return r.json()["id"]
 
 
@@ -46,6 +55,7 @@ def test_create_notifies(test_client, db_session, admin_user, monkeypatch):
     calls = _spy_notify(monkeypatch)
     headers = _auth(_login(test_client, "admin", "adminpass"))
     _create(test_client, headers)
+    _drain_notify()
     assert len(calls) == 1
     assert calls[0].endswith("/templates/tag-sync")
 
@@ -60,6 +70,7 @@ def test_update_of_tags_notifies_but_notes_do_not(test_client, db_session, admin
         test_client.put(f"/api/servers/{sid}", json={"tags": ["db"]}, headers=headers).status_code
         == 200
     )
+    _drain_notify()
     assert len(calls) == 1
 
     calls.clear()
@@ -69,6 +80,7 @@ def test_update_of_tags_notifies_but_notes_do_not(test_client, db_session, admin
         ).status_code
         == 200
     )
+    _drain_notify()
     assert calls == []
 
 
@@ -79,6 +91,7 @@ def test_delete_notifies(test_client, db_session, admin_user, monkeypatch):
     calls.clear()
 
     assert test_client.delete(f"/api/servers/{sid}", headers=headers).status_code == 204
+    _drain_notify()
     assert len(calls) == 1
 
 
@@ -96,3 +109,41 @@ def test_raising_notify_never_fails_the_operation(test_client, db_session, admin
         headers=headers,
     )
     assert r.status_code in (200, 201), r.text
+    # Barrier before the monkeypatch teardown: the queued notify must run
+    # against the raising spy, not the real httpx afterwards.
+    _drain_notify()
+
+
+def test_notify_does_not_block_the_request(test_client, db_session, admin_user, monkeypatch):
+    # T46: the notify is fire-and-forget — a slow monitoring service must not
+    # stall server CRUD. The spy blocks until released; the request has to
+    # return while it is still blocked.
+    import threading
+    import time
+
+    import app.modules.servers.router as servers_router
+
+    release = threading.Event()
+
+    class _Resp:
+        status_code = 200
+
+    def slow_post(url, **kw):
+        release.wait(timeout=10)
+        return _Resp()
+
+    monkeypatch.setattr(servers_router.httpx, "post", slow_post)
+    headers = _auth(_login(test_client, "admin", "adminpass"))
+    t0 = time.monotonic()
+    r = test_client.post(
+        "/api/servers",
+        json={"name": "tsn-slow", "hostname": "slow.example", "tags": ["web"]},
+        headers=headers,
+    )
+    elapsed = time.monotonic() - t0
+    assert r.status_code in (200, 201), r.text
+    # Synchronous notify would sit in release.wait's 10s timeout — the
+    # request must return while the spy is still blocked.
+    assert elapsed < 5, f"request blocked on the notify ({elapsed:.1f}s)"
+    release.set()
+    _drain_notify()
