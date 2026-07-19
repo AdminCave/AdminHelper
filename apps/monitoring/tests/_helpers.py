@@ -70,6 +70,10 @@ class _CapturingDb:
     def query(self, *args, **kwargs):
         return self
 
+    def join(self, *args, **kwargs):
+        # _host_is_down joins state<->check; chainable like filter().
+        return self
+
     def filter(self, *args, **kwargs):
         return self
 

@@ -360,3 +360,117 @@ class TestUnknownNeverNotifies:
         assert dispatched["n"] == 1
         assert emitted["n"] == 1
         assert len(db.added) == 1
+
+
+class TestHostDownSuppression:
+    """T7: while the server's agent_ping stands critical, other checks of the
+    same server neither dispatch rules nor emit to the hub — one incident, one
+    notification (the agent_ping alert itself)."""
+
+    class _HostDownDb(_CapturingDb):
+        # _host_is_down's state query hits first(); a ("critical",) row means
+        # the server's agent_ping stands critical.
+        def first(self):
+            return ("critical",)
+
+    def _spies(self, monkeypatch):
+        dispatched = {"n": 0}
+        emitted = {"n": 0}
+        monkeypatch.setattr(alerter, "_is_in_cooldown", lambda *a, **k: False)
+        monkeypatch.setattr(alerter, "_build_message", lambda *a, **k: make_msg())
+        monkeypatch.setattr(
+            alerter,
+            "_dispatch",
+            lambda *a, **k: dispatched.__setitem__("n", dispatched["n"] + 1) or (True, None),
+        )
+        monkeypatch.setattr(
+            alerter, "_emit_to_hub", lambda *a, **k: emitted.__setitem__("n", emitted["n"] + 1)
+        )
+        return dispatched, emitted
+
+    def test_other_check_is_suppressed_while_host_down(self, monkeypatch):
+        dispatched, emitted = self._spies(monkeypatch)
+        db = self._HostDownDb([make_rule()])
+        process_alert(db, make_check(check_type="ping"), "ok", "critical")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+
+    def test_agent_ping_itself_still_alerts(self, monkeypatch):
+        dispatched, emitted = self._spies(monkeypatch)
+        db = self._HostDownDb([make_rule()])
+        process_alert(db, make_check(check_type="agent_ping"), "ok", "critical")
+        assert dispatched["n"] == 1
+        assert emitted["n"] == 1
+
+    def test_host_up_does_not_suppress(self, monkeypatch):
+        # Default _CapturingDb.first() -> None = no critical agent_ping row.
+        dispatched, emitted = self._spies(monkeypatch)
+        db = _CapturingDb([make_rule()])
+        process_alert(db, make_check(check_type="ping"), "ok", "critical")
+        assert dispatched["n"] == 1
+        assert emitted["n"] == 1
+
+    def test_check_without_server_is_unaffected(self, monkeypatch):
+        # server_id None short-circuits before the DB query — a fleet-wide
+        # check can never be muted by some server's heartbeat.
+        dispatched, _emitted = self._spies(monkeypatch)
+        db = self._HostDownDb([make_rule()])
+        process_alert(db, make_check(check_type="ping", server_id=None), "ok", "critical")
+        assert dispatched["n"] == 1
+
+    def test_recovery_of_other_check_is_also_suppressed(self, monkeypatch):
+        # Spec-mandated and counterintuitive: while the host is down, even a
+        # critical -> ok recovery of another check stays silent — one incident,
+        # one notification stream.
+        dispatched, emitted = self._spies(monkeypatch)
+        db = self._HostDownDb([make_rule()])
+        process_alert(db, make_check(check_type="ping"), "critical", "ok")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+
+
+def test_host_is_down_query_semantics():
+    """Real-session pin for _host_is_down (mock tests ignore filters): ANY
+    enabled agent_ping in critical mutes; a disabled one never does."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    try:
+
+        def add_ping(cid, enabled, status):
+            db.add(
+                MonitorCheck(
+                    id=cid,
+                    server_id="srv-1",
+                    name=cid,
+                    check_type="agent_ping",
+                    config="{}",
+                    enabled=enabled,
+                )
+            )
+            db.add(MonitorState(check_id=cid, status=status))
+
+        # ok + critical side by side: ANY-semantics -> down, regardless of row order.
+        add_ping("hb-ok", True, "ok")
+        add_ping("hb-crit", True, "critical")
+        db.commit()
+        assert alerter._host_is_down(db, make_check(server_id="srv-1")) is True
+
+        # Only a DISABLED critical heartbeat left -> never mutes.
+        db.query(MonitorCheck).filter_by(id="hb-crit").update({"enabled": False})
+        db.commit()
+        assert alerter._host_is_down(db, make_check(server_id="srv-1")) is False
+
+        # Other server untouched.
+        assert alerter._host_is_down(db, make_check(server_id="srv-9")) is False
+    finally:
+        db.close()

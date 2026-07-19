@@ -71,6 +71,14 @@ def process_alert(
     if new_status == "unknown":
         return
 
+    # Host-down suppression (Alertmanager inhibition pattern, T7): while this
+    # server's agent_ping stands critical, every OTHER check of the server
+    # stays silent — one incident, one notification (the agent_ping alert).
+    # agent_ping itself always alerts; checks without a server are unaffected.
+    if check.check_type != "agent_ping" and check.server_id and _host_is_down(db, check):
+        logger.debug("Alert for check %s suppressed (host down)", check.id)
+        return
+
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
 
     is_recovery = new_status == "ok"
@@ -113,6 +121,27 @@ def process_alert(
     # Independently of the rule-based webhook/email dispatch above, push every
     # status transition to the server's notification hub for per-user routing.
     _emit_to_hub(check, old_status, new_status, msg)
+
+
+def _host_is_down(db: Session, check: MonitorCheck) -> bool:
+    """True when ANY enabled agent_ping check of the same server stands critical.
+
+    ANY-semantics on purpose: with several agent_ping checks per server (manual
+    plus template is possible — no unique constraint), picking an arbitrary row
+    would make suppression depend on row order; filtering on critical makes it
+    deterministic."""
+    row = (
+        db.query(MonitorState.status)
+        .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
+        .filter(
+            MonitorCheck.server_id == check.server_id,
+            MonitorCheck.check_type == "agent_ping",
+            MonitorCheck.enabled == True,  # noqa: E712
+            MonitorState.status == "critical",
+        )
+        .first()
+    )
+    return row is not None
 
 
 def _hub_severity(old_status: str, new_status: str) -> str:
