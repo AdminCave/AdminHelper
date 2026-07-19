@@ -69,41 +69,86 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
   // Numeric threshold fields rendered data-driven via the numField snippet, so a
   // new threshold is one array entry instead of an 8-line copy-paste block.
-  type NumField = { key: Extract<keyof MonitorCheckConfig, string>; labelKey: string };
+  // min/max mirror the T4 backend boundary (app/check_configs.py) — the hard
+  // rejection lives server-side; these keep the spinners/form validation sane.
+  type NumField = {
+    key: Extract<keyof MonitorCheckConfig, string>;
+    labelKey: string;
+    min?: number;
+    max?: number;
+  };
 
   const RESOURCE_NUM_FIELDS: NumField[] = [
-    { key: 'cpu_warn', labelKey: 'monitoring.checkCfg.cpuWarn' },
-    { key: 'cpu_crit', labelKey: 'monitoring.checkCfg.cpuCrit' },
-    { key: 'memory_warn', labelKey: 'monitoring.checkCfg.memoryWarn' },
-    { key: 'memory_crit', labelKey: 'monitoring.checkCfg.memoryCrit' },
-    { key: 'disk_warn', labelKey: 'monitoring.checkCfg.diskWarn' },
-    { key: 'disk_crit', labelKey: 'monitoring.checkCfg.diskCrit' },
-    { key: 'temp_warn', labelKey: 'monitoring.checkCfg.tempWarn' },
-    { key: 'temp_crit', labelKey: 'monitoring.checkCfg.tempCrit' },
+    { key: 'cpu_warn', labelKey: 'monitoring.checkCfg.cpuWarn', min: 0, max: 100 },
+    { key: 'cpu_crit', labelKey: 'monitoring.checkCfg.cpuCrit', min: 0, max: 100 },
+    { key: 'memory_warn', labelKey: 'monitoring.checkCfg.memoryWarn', min: 0, max: 100 },
+    { key: 'memory_crit', labelKey: 'monitoring.checkCfg.memoryCrit', min: 0, max: 100 },
+    { key: 'disk_warn', labelKey: 'monitoring.checkCfg.diskWarn', min: 0, max: 100 },
+    { key: 'disk_crit', labelKey: 'monitoring.checkCfg.diskCrit', min: 0, max: 100 },
+    { key: 'temp_warn', labelKey: 'monitoring.checkCfg.tempWarn', min: 0, max: 200 },
+    { key: 'temp_crit', labelKey: 'monitoring.checkCfg.tempCrit', min: 0, max: 200 },
+    { key: 'hysteresis_pp', labelKey: 'monitoring.checkCfg.hysteresisPp', min: 0, max: 50 },
   ];
 
   const SMART_NUM_FIELDS: NumField[] = [
-    { key: 'reallocated_warn', labelKey: 'monitoring.checkCfg.reallocatedWarn' },
-    { key: 'reallocated_crit', labelKey: 'monitoring.checkCfg.reallocatedCrit' },
-    { key: 'pending_warn', labelKey: 'monitoring.checkCfg.pendingWarn' },
-    { key: 'pending_crit', labelKey: 'monitoring.checkCfg.pendingCrit' },
-    { key: 'nvme_spare_warn', labelKey: 'monitoring.checkCfg.nvmeSpareWarn' },
-    { key: 'nvme_spare_crit', labelKey: 'monitoring.checkCfg.nvmeSpareCrit' },
-    { key: 'nvme_used_warn', labelKey: 'monitoring.checkCfg.nvmeUsedWarn' },
-    { key: 'nvme_used_crit', labelKey: 'monitoring.checkCfg.nvmeUsedCrit' },
-    { key: 'temp_hdd_warn', labelKey: 'monitoring.checkCfg.tempHddWarn' },
-    { key: 'temp_hdd_crit', labelKey: 'monitoring.checkCfg.tempHddCrit' },
-    { key: 'temp_ssd_warn', labelKey: 'monitoring.checkCfg.tempSsdWarn' },
-    { key: 'temp_ssd_crit', labelKey: 'monitoring.checkCfg.tempSsdCrit' },
-    { key: 'temp_nvme_warn', labelKey: 'monitoring.checkCfg.tempNvmeWarn' },
-    { key: 'temp_nvme_crit', labelKey: 'monitoring.checkCfg.tempNvmeCrit' },
+    { key: 'reallocated_warn', labelKey: 'monitoring.checkCfg.reallocatedWarn', min: 0 },
+    { key: 'reallocated_crit', labelKey: 'monitoring.checkCfg.reallocatedCrit', min: 0 },
+    { key: 'pending_warn', labelKey: 'monitoring.checkCfg.pendingWarn', min: 0 },
+    { key: 'pending_crit', labelKey: 'monitoring.checkCfg.pendingCrit', min: 0 },
+    { key: 'nvme_spare_warn', labelKey: 'monitoring.checkCfg.nvmeSpareWarn', min: 0, max: 100 },
+    { key: 'nvme_spare_crit', labelKey: 'monitoring.checkCfg.nvmeSpareCrit', min: 0, max: 100 },
+    { key: 'nvme_used_warn', labelKey: 'monitoring.checkCfg.nvmeUsedWarn', min: 0 },
+    { key: 'nvme_used_crit', labelKey: 'monitoring.checkCfg.nvmeUsedCrit', min: 0 },
+    { key: 'temp_hdd_warn', labelKey: 'monitoring.checkCfg.tempHddWarn', min: 0, max: 200 },
+    { key: 'temp_hdd_crit', labelKey: 'monitoring.checkCfg.tempHddCrit', min: 0, max: 200 },
+    { key: 'temp_ssd_warn', labelKey: 'monitoring.checkCfg.tempSsdWarn', min: 0, max: 200 },
+    { key: 'temp_ssd_crit', labelKey: 'monitoring.checkCfg.tempSsdCrit', min: 0, max: 200 },
+    { key: 'temp_nvme_warn', labelKey: 'monitoring.checkCfg.tempNvmeWarn', min: 0, max: 200 },
+    { key: 'temp_nvme_crit', labelKey: 'monitoring.checkCfg.tempNvmeCrit', min: 0, max: 200 },
   ];
+
+  const FORECAST_NUM_FIELDS: NumField[] = [
+    { key: 'warn_hours', labelKey: 'monitoring.checkCfg.warnHours', min: 1, max: 8760 },
+    { key: 'crit_hours', labelKey: 'monitoring.checkCfg.critHours', min: 1, max: 8760 },
+    { key: 'window_hours', labelKey: 'monitoring.checkCfg.windowHours', min: 1, max: 168 },
+    { key: 'min_history_hours', labelKey: 'monitoring.checkCfg.minHistoryHours', min: 1, max: 48 },
+  ];
+
+  // warn >= crit sanity hint. nvme_spare is excluded on purpose: lower is
+  // worse there, warn > crit is the CORRECT configuration.
+  const WARN_CRIT_PAIRS: { warn: string; crit: string; label: string }[] = [
+    { warn: 'cpu_warn', crit: 'cpu_crit', label: 'CPU' },
+    { warn: 'memory_warn', crit: 'memory_crit', label: 'RAM' },
+    { warn: 'disk_warn', crit: 'disk_crit', label: 'Disk' },
+    { warn: 'temp_warn', crit: 'temp_crit', label: 'Temp' },
+    { warn: 'capacity_warn', crit: 'capacity_crit', label: 'Capacity' },
+    { warn: 'reallocated_warn', crit: 'reallocated_crit', label: 'Reallocated' },
+    { warn: 'pending_warn', crit: 'pending_crit', label: 'Pending' },
+    { warn: 'nvme_used_warn', crit: 'nvme_used_crit', label: 'NVMe used' },
+    { warn: 'temp_hdd_warn', crit: 'temp_hdd_crit', label: 'Temp HDD' },
+    { warn: 'temp_ssd_warn', crit: 'temp_ssd_crit', label: 'Temp SSD' },
+    { warn: 'temp_nvme_warn', crit: 'temp_nvme_crit', label: 'Temp NVMe' },
+  ];
+
+  let thresholdWarnings = $derived(
+    WARN_CRIT_PAIRS.filter((pair) => {
+      const w = config[pair.warn];
+      const c = config[pair.crit];
+      return typeof w === 'number' && typeof c === 'number' && w >= c;
+    }).map((pair) => pair.label),
+  );
 </script>
 
-{#snippet numField(key: Extract<keyof MonitorCheckConfig, string>, labelKey: string)}
+{#snippet numField(f: NumField)}
   <label class="field">
-    <span class="field-label">{$t(labelKey)}</span>
-    <input type="number" value={numVal(key)} oninput={(e) => setNum(key, e.currentTarget.value)} />
+    <span class="field-label">{$t(f.labelKey)}</span>
+    <input
+      type="number"
+      min={f.min}
+      max={f.max}
+      value={numVal(f.key)}
+      oninput={(e) => setNum(f.key, e.currentTarget.value)}
+    />
   </label>
 {/snippet}
 
@@ -120,6 +165,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.timeout')}</span>
     <input
       type="number"
+      min="1"
+      max="300"
       value={numVal('timeout')}
       oninput={(e) => setNum('timeout', e.currentTarget.value)}
     />
@@ -137,6 +184,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.port')}</span>
     <input
       type="number"
+      min="1"
+      max="65535"
       value={numVal('port')}
       oninput={(e) => setNum('port', e.currentTarget.value)}
     />
@@ -145,6 +194,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.timeout')}</span>
     <input
       type="number"
+      min="1"
+      max="300"
       value={numVal('timeout')}
       oninput={(e) => setNum('timeout', e.currentTarget.value)}
     />
@@ -175,6 +226,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.expectedStatus')}</span>
     <input
       type="number"
+      min="100"
+      max="599"
       value={numVal('expected_status')}
       oninput={(e) => setNum('expected_status', e.currentTarget.value)}
     />
@@ -183,6 +236,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.timeout')}</span>
     <input
       type="number"
+      min="1"
+      max="300"
       value={numVal('timeout')}
       oninput={(e) => setNum('timeout', e.currentTarget.value)}
     />
@@ -208,12 +263,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.staleMinutes')}</span>
     <input
       type="number"
+      min="1"
+      max="1440"
       value={numVal('stale_minutes')}
       oninput={(e) => setNum('stale_minutes', e.currentTarget.value)}
     />
   </label>
 {:else if checkType === 'agent_resources'}
-  {#each RESOURCE_NUM_FIELDS as f (f.key)}{@render numField(f.key, f.labelKey)}{/each}
+  {#each RESOURCE_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
 {:else if checkType === 'service_process'}
   <label class="field">
     <span class="field-label">{$t('monitoring.checkCfg.mode')}</span>
@@ -247,6 +304,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.maxBackupAgeHours')}</span>
     <input
       type="number"
+      min="1"
+      max="8760"
       value={numVal('max_backup_age_hours')}
       oninput={(e) => setNum('max_backup_age_hours', e.currentTarget.value)}
     />
@@ -273,6 +332,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.capacityWarn')}</span>
     <input
       type="number"
+      min="0"
+      max="100"
       value={numVal('capacity_warn')}
       oninput={(e) => setNum('capacity_warn', e.currentTarget.value)}
     />
@@ -281,6 +342,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <span class="field-label">{$t('monitoring.checkCfg.capacityCrit')}</span>
     <input
       type="number"
+      min="0"
+      max="100"
       value={numVal('capacity_crit')}
       oninput={(e) => setNum('capacity_crit', e.currentTarget.value)}
     />
@@ -295,16 +358,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setCsvStr('ignore_containers', e.currentTarget.value)}
     />
   </label>
-  <label class="field checkbox">
-    <input
-      type="checkbox"
-      checked={boolVal('check_restarts', false)}
-      onchange={(e) => setBool('check_restarts', e.currentTarget.checked)}
-    />
-    <span>{$t('monitoring.checkCfg.checkRestarts')}</span>
-  </label>
+{:else if checkType === 'disk_forecast'}
+  {#each FORECAST_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
 {:else if checkType === 'smart_health'}
-  {#each SMART_NUM_FIELDS as f (f.key)}{@render numField(f.key, f.labelKey)}{/each}
+  {#each SMART_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
   <label class="field" style="grid-column: span 2;">
     <span class="field-label">{$t('monitoring.checkCfg.ignoreDevices')}</span>
     <input
@@ -314,6 +371,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setCsvStr('ignore_devices', e.currentTarget.value)}
     />
   </label>
+{/if}
+
+{#if thresholdWarnings.length > 0}
+  <div class="cfg-hint" role="note">
+    {$t('monitoring.checkCfg.warnGeCrit', { fields: thresholdWarnings.join(', ') })}
+  </div>
 {/if}
 
 <style>
@@ -330,6 +393,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
   .field-label {
     font-size: 12px;
     color: var(--text-muted);
+  }
+  .cfg-hint {
+    grid-column: span 2;
+    font-size: 12px;
+    color: var(--warning, #ffc859);
   }
   .field input,
   .field select {

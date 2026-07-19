@@ -303,6 +303,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - VICTORIA_METRICS_URL=http://victoria:8428
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
+      # Alert-log retention (days). Independent of the VictoriaMetrics metric
+      # retention below (VM_RETENTION) — changing one does NOT change the other.
+      - ALERT_LOG_RETENTION_DAYS=${ALERT_LOG_RETENTION_DAYS:-90}
       # Notification hub: push check-status transitions to the server, which
       # resolves which users to notify (best-effort; auth via MONITOR_API_KEY as
       # X-Internal-Key). No depends_on — the push tolerates the server being down
@@ -340,7 +343,10 @@ services:
     volumes:
       - victoria-data:/victoria-metrics-data
     command:
-      - "-retentionPeriod=90d"
+      # Metric retention. Independent of ALERT_LOG_RETENTION_DAYS on the
+      # monitoring service (alert-log rows in Postgres) — two separate knobs
+      # that do not sync.
+      - "-retentionPeriod=${VM_RETENTION:-90d}"
       - "-storageDataPath=/victoria-metrics-data"
     expose:
       - "8428"

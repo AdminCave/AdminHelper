@@ -11,21 +11,32 @@ The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 
 from __future__ import annotations
 
-import time
+from datetime import datetime
+
+from app.core.time import utcnow_naive
 
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 
-# In-memory map: server_id -> last report time (time.monotonic, not wall clock).
-# Process-local, so it is valid only under a single worker process (see the
-# invariant in main.py lifespan) and is lost on restart — agent_ping then falls
-# back to 'unknown' until the next push.
-_last_report: dict[str, float] = {}
+# In-memory map: server_id -> last report time (naive UTC wall clock). Process-
+# local (single-worker invariant, see main.py lifespan); hydrated at startup
+# from monitor_agent_liveness so a restart no longer makes agent_ping fall back
+# to 'unknown' until the next push. Wall clock instead of time.monotonic on
+# purpose — a monotonic value cannot be persisted across processes.
+_last_report: dict[str, datetime] = {}
 
 
 def record_agent_report(server_id: str) -> None:
     """Called on agent push to store the timestamp."""
-    _last_report[server_id] = time.monotonic()
+    _last_report[server_id] = utcnow_naive()
+
+
+def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
+    """Seed _last_report from the persisted monitor_agent_liveness rows at
+    startup. setdefault: a push that arrived before hydration must not be
+    overwritten by an older persisted value."""
+    for server_id, last_report_at in entries.items():
+        _last_report.setdefault(server_id, last_report_at)
 
 
 class AgentPingChecker:
@@ -33,7 +44,7 @@ class AgentPingChecker:
 
     Config example:
     {
-        "stale_minutes": 5
+        "stale_minutes": 15
     }
 
     This check is run by the scheduler (not on push).
@@ -42,7 +53,10 @@ class AgentPingChecker:
 
     def run(self, config: dict) -> tuple[str, str, dict | None]:
         server_id = config.get("server_id", "")
-        stale_minutes = config.get("stale_minutes", 5)
+        # Default 15 = three missed 5-minute push intervals. The old default of
+        # 5 equalled the agent's push cadence and flagged a single late report
+        # as critical.
+        stale_minutes = config.get("stale_minutes", 15)
 
         if not server_id:
             return "unknown", "Keine server_id konfiguriert", None
@@ -51,7 +65,7 @@ class AgentPingChecker:
         if last is None:
             return "unknown", "Noch kein Agent-Report empfangen", None
 
-        age_seconds = time.monotonic() - last
+        age_seconds = (utcnow_naive() - last).total_seconds()
         age_minutes = age_seconds / 60
 
         if age_minutes > stale_minutes:
@@ -76,18 +90,26 @@ def _grade(
     unit: str,
     problems: list[str],
     status: str,
-) -> str:
+    warn_release: float = 0.0,
+    crit_release: float = 0.0,
+) -> tuple[str, str | None]:
     """Escalate `status` for one threshold measurement: >= crit -> critical, >= warn
     -> warning (never downgrading an already-critical status). Appends the breached
     `label` plus the crossed threshold to `problems`. Shared by the CPU/RAM/disk/
-    temperature checks so the escalation rule lives in one place (2.31)."""
-    if value >= crit:
+    temperature checks so the escalation rule lives in one place (2.31).
+
+    Hysteresis (T6): `warn_release`/`crit_release` lower the respective threshold
+    for a metric that already sat at that level last round — a value hovering at
+    the edge stays in its band until it clears entry − hysteresis_pp
+    (Netdata-style entry/release). Returns (status, level): level is this
+    metric's own grade (None/"warning"/"critical"), remembered for next round."""
+    if value >= crit - crit_release:
         problems.append(f"{label} (>={crit}{unit})")
-        return "critical"
-    if value >= warn:
+        return "critical", "critical"
+    if value >= warn - warn_release:
         problems.append(f"{label} (>={warn}{unit})")
-        return "critical" if status == "critical" else "warning"
-    return status
+        return ("critical" if status == "critical" else "warning"), "warning"
+    return status, None
 
 
 class AgentResourcesChecker:
@@ -100,8 +122,7 @@ class AgentResourcesChecker:
         "memory_warn": 80,
         "memory_crit": 95,
         "disk_warn": 85,
-        "disk_crit": 95,
-        "stale_minutes": 5
+        "disk_crit": 95
     }
     """
 
@@ -109,8 +130,13 @@ class AgentResourcesChecker:
         # Not called by the scheduler, but directly on agent push
         return "unknown", "Wartet auf Agent-Daten", None
 
-    def evaluate(self, config: dict, report: dict) -> tuple[str, str, dict | None]:
-        """Evaluates an agent report against thresholds."""
+    def evaluate(
+        self, config: dict, report: dict, prev_details: dict | None = None
+    ) -> tuple[str, str, dict | None]:
+        """Evaluates an agent report against thresholds.
+
+        `prev_details` is this check's previous `_details` blob (state.details);
+        its "problems" map {metric_key: level} drives the per-metric hysteresis."""
         resources = report.get("resources", {})
         if not resources:
             return "unknown", "Keine Ressourcen-Daten", None
@@ -119,13 +145,33 @@ class AgentResourcesChecker:
         status = "ok"
         metrics = {}
 
+        # Hysteresis memory is per METRIC (not per check) on purpose: a shared
+        # flag would let an alerting CPU lower the disk thresholds and create a
+        # self-sustaining warning for a metric that never crossed entry.
+        hysteresis_pp = config.get("hysteresis_pp", 10)
+        prev_problems = (prev_details or {}).get("problems") or {}
+        if not isinstance(prev_problems, dict):
+            prev_problems = {}
+        problem_levels: dict[str, str] = {}
+
+        def grade(key: str, value: float, warn: float, crit: float, label: str, unit: str):
+            nonlocal status
+            prev_level = prev_problems.get(key)
+            warn_rel = hysteresis_pp if prev_level in ("warning", "critical") else 0.0
+            crit_rel = hysteresis_pp if prev_level == "critical" else 0.0
+            status, level = _grade(
+                value, warn, crit, label, unit, problems, status, warn_rel, crit_rel
+            )
+            if level:
+                problem_levels[key] = level
+
         # CPU
         cpu = resources.get("cpu_percent")
         if cpu is not None:
             metrics["agent_cpu_percent"] = cpu
             cpu_crit = config.get("cpu_crit", 95)
             cpu_warn = config.get("cpu_warn", 80)
-            status = _grade(cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%", problems, status)
+            grade("cpu", cpu, cpu_warn, cpu_crit, f"CPU {cpu}%", "%")
 
         # Memory
         mem = resources.get("memory_percent")
@@ -133,7 +179,7 @@ class AgentResourcesChecker:
             metrics["agent_memory_percent"] = mem
             mem_crit = config.get("memory_crit", 95)
             mem_warn = config.get("memory_warn", 80)
-            status = _grade(mem, mem_warn, mem_crit, f"RAM {mem}%", "%", problems, status)
+            grade("memory", mem, mem_warn, mem_crit, f"RAM {mem}%", "%")
 
         # Disks — filter pseudo filesystems server-side
         # Old agents send no fstype → default "_real_" passes the filter
@@ -148,9 +194,7 @@ class AgentResourcesChecker:
             # No per-mount metric: the agent router already writes monitor_agent_disk_percent
             # dimensionally (mount tag). Encoding the mount into the metric NAME here was a
             # duplicate series in a second schema (1.18); the value is still graded below.
-            status = _grade(
-                pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%", problems, status
-            )
+            grade(f"disk:{mount}", pct, disk_warn, disk_crit, f"Disk {mount} {pct}%", "%")
 
         # Temperatures (optional — VMs provide no sensor data)
         temperatures = resources.get("temperatures", [])
@@ -166,14 +210,13 @@ class AgentResourcesChecker:
                 ov = temp_overrides.get(sensor_name, {})
                 s_crit = ov.get("crit", temp_crit)
                 s_warn = ov.get("warn", temp_warn)
-                status = _grade(
+                grade(
+                    f"temp:{sensor_name}",
                     temp_c,
                     s_warn,
                     s_crit,
                     f"Temp {sensor_name} {temp_c}\u00b0C",
                     "\u00b0C",
-                    problems,
-                    status,
                 )
 
         if problems:
@@ -189,6 +232,8 @@ class AgentResourcesChecker:
         metrics["_details"] = {
             "cpu": cpu,
             "memory": mem,
+            # Next round's hysteresis memory (see grade() above).
+            "problems": problem_levels,
             "memory_total_mb": resources.get("memory_total_mb"),
             "memory_used_mb": resources.get("memory_used_mb"),
             "disks": [

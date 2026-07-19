@@ -194,5 +194,16 @@ class VictoriaClient:
             return {"status": "error", "data": {"result": []}}
 
 
+def escape_label_value(value) -> str:
+    """Escape a value for a MetricsQL/PromQL label matcher string.
+
+    Interpolating server_id/check_id into a matcher without escaping would let
+    a value containing a quote or backslash break out of the matcher and read
+    other servers' metrics (query injection). PromQL label-value escaping =
+    backslash, then quote. Shared by the checks router and the forecast
+    checker so the two call sites cannot drift."""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
 # Singleton instance
 victoria = VictoriaClient()

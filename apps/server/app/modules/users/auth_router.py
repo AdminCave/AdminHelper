@@ -28,6 +28,7 @@ from app.core.rate_limit import get_backend as get_rate_limit_backend
 from app.core.request_context import Actor
 from app.core.time import utcnow_naive
 from app.modules.audit import service as audit
+from app.modules.notifications.service import default_admin_subscription
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     BootstrapRequest,
@@ -295,6 +296,10 @@ def bootstrap(
         is_admin=True,
     )
     db.add(user)
+    # Baseline notification rule — the bootstrap admin is the only user a
+    # fresh install has (same as the other admin-create paths).
+    db.flush()
+    db.add(default_admin_subscription(user.id))
     db.commit()
     db.refresh(user)
     audit.record(

@@ -15,7 +15,13 @@ import { translations } from './dictionaries';
 // src/lib/i18n -> src
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // Keys assembled at runtime from a suffix (t(`prefix.${x}`)); grep can't see them.
-const DYNAMIC_PREFIXES = ['notifPrefs.scope.', 'notifPrefs.sev.', 'settings.mode.'];
+const DYNAMIC_PREFIXES = [
+  'notifPrefs.scope.',
+  'notifPrefs.sev.',
+  'settings.mode.',
+  // Weekday labels resolved via template literal (monitoring.maint.day.${d}).
+  'monitoring.maint.day.',
+];
 
 function collectUsedStrings(dir: string, acc: Set<string>): void {
   for (const entry of readdirSync(dir)) {

@@ -29,6 +29,7 @@ CHECK_TYPES: dict[str, dict[str, bool]] = {
     "zfs_health": {"push_only": True},
     "docker_health": {"push_only": True},
     "smart_health": {"push_only": True},
+    "disk_forecast": {"push_only": False},
 }
 
 VALID_CHECK_TYPES = set(CHECK_TYPES)

@@ -22,8 +22,10 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     MonitorAgentKey,
+    MonitorAgentLiveness,
     MonitorAlertRule,
     MonitorCheck,
+    MonitorMaintenance,
     MonitorState,
     MonitorTemplate,
     MonitorTemplateAssignment,
@@ -310,8 +312,12 @@ def apply_template(
     server_id: str,
     hostname: str,
     server_name: str,
+    source: str = "manual",
 ) -> dict:
-    """Assigns a template to a server and creates all checks/alerts."""
+    """Assigns a template to a server and creates all checks/alerts.
+
+    source='tag' marks rows materialized by tag_sync — only those may be
+    removed again by the sync; manual rows are never touched by it."""
     # Create assignment
     assignment = MonitorTemplateAssignment(
         id=str(uuid.uuid4()),
@@ -319,6 +325,7 @@ def apply_template(
         server_id=server_id,
         server_hostname=hostname,
         server_name=server_name,
+        source=source,
     )
     db.add(assignment)
 
@@ -432,6 +439,13 @@ def cleanup_server(db: Session, server_id: str) -> dict:
 
     # Delete agent key
     db.query(MonitorAgentKey).filter(MonitorAgentKey.server_id == server_id).delete()
+
+    # Server-scoped maintenance windows would otherwise become orphans no UI
+    # can reach (the only maintenance view is the per-server tab), and a stale
+    # liveness row would be re-hydrated on every restart (T42). Global windows
+    # (server_id NULL) stay.
+    db.query(MonitorMaintenance).filter(MonitorMaintenance.server_id == server_id).delete()
+    db.query(MonitorAgentLiveness).filter(MonitorAgentLiveness.server_id == server_id).delete()
 
     db.commit()
     _apply_scheduler_actions(actions)

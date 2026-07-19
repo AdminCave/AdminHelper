@@ -50,6 +50,12 @@ export interface MonCheckSummary {
 export interface TemplateAssignment {
   templateId: string;
   serverId: string;
+  id?: string;
+  serverHostname?: string;
+  serverName?: string;
+  templateName?: string | null;
+  // 'manual' = user-created, 'tag' = materialized by the monitoring tag-sync.
+  source?: 'manual' | 'tag';
 }
 
 export interface Playbook {
@@ -172,7 +178,8 @@ export type MonitorCheckType =
   | 'proxmox_backup'
   | 'zfs_health'
   | 'docker_health'
-  | 'smart_health';
+  | 'smart_health'
+  | 'disk_forecast';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';
@@ -202,6 +209,7 @@ export interface MonitorCheckConfig {
   disk_crit?: number;
   temp_warn?: number;
   temp_crit?: number;
+  hysteresis_pp?: number;
   temp_overrides?: Record<string, { warn?: number; crit?: number }>;
 
   // service_process
@@ -221,6 +229,12 @@ export interface MonitorCheckConfig {
   // docker_health
   ignore_containers?: string[];
   check_restarts?: boolean;
+
+  // disk_forecast
+  window_hours?: number;
+  min_history_hours?: number;
+  warn_hours?: number;
+  crit_hours?: number;
 
   // smart_health
   reallocated_warn?: number;
@@ -318,6 +332,17 @@ export interface MonitorSmartDetails {
   }[];
 }
 
+export interface MonitorForecastDetails {
+  // Field names match the disk_forecast checker's _details verbatim.
+  mounts?: {
+    mount: string;
+    percent?: number;
+    rate_pp_per_hour?: number;
+    hours_left?: number | null;
+    note?: string;
+  }[];
+}
+
 export type MonitorCheckDetails =
   | MonitorResourceDetails
   | MonitorServiceDetails
@@ -325,6 +350,7 @@ export type MonitorCheckDetails =
   | MonitorBackupDetails
   | MonitorZfsDetails
   | MonitorSmartDetails
+  | MonitorForecastDetails
   | Record<string, unknown>;
 
 export interface MonitorCheckState {
@@ -363,6 +389,34 @@ export interface MonitorCheckInput {
 export interface MonitoringMetricSeries {
   metric?: { __name__?: string; mount?: string; sensor?: string; [k: string]: string | undefined };
   values: [number, string][];
+}
+
+export interface MaintenanceWindow {
+  id: string;
+  serverId?: string | null;
+  note?: string | null;
+  kind: 'once' | 'weekly';
+  startsAt?: string | null;
+  endsAt?: string | null;
+  weekdays?: number[];
+  startTime?: string | null;
+  durationMinutes?: number | null;
+  timezone: string;
+  enabled: boolean;
+  createdAt?: string | null;
+}
+
+export interface MaintenanceInput {
+  server_id: string | null;
+  note: string | null;
+  kind: 'once' | 'weekly';
+  starts_at: string | null;
+  ends_at: string | null;
+  weekdays: number[];
+  start_time: string | null;
+  duration_minutes: number | null;
+  timezone: string;
+  enabled: boolean;
 }
 
 export interface MonitoringMetricsResponse {
@@ -489,15 +543,26 @@ export interface TemplateAlertDef {
 export interface MonitoringTemplateAssignment {
   serverId: string;
   serverName?: string;
+  serverHostname?: string;
+  source?: 'manual' | 'tag';
+}
+
+export interface MonitoringTemplateTagAssignment {
+  id: string;
+  templateId: string;
+  tag: string;
 }
 
 export interface MonitoringTemplateFull {
   id: string;
   name: string;
   description?: string | null;
+  // Set on shipped standard templates (seeded at monitoring startup).
+  builtinSlug?: string | null;
   checkDefinitions?: TemplateCheckDef[];
   alertDefinitions?: TemplateAlertDef[];
   assignments?: MonitoringTemplateAssignment[];
+  tagAssignments?: MonitoringTemplateTagAssignment[];
 }
 
 export interface MonitoringTemplateInput {

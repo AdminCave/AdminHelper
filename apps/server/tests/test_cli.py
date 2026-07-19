@@ -16,6 +16,7 @@ from app.cli import create_admin, mint_enroll_token, reset_admin
 from app.core.auth import hash_api_key, verify_password
 from app.core.identity import SCOPE_ACCESS
 from app.modules.enrollment.models import EnrollmentToken
+from app.modules.notifications.models import NotificationSubscription
 from app.modules.users.models import User
 
 
@@ -102,3 +103,19 @@ def test_reset_admin_refuses_unknown_user(db_session):
 def test_reset_admin_refuses_short_password(db_session):
     assert create_admin(db_session, "kevin", "supersecret") == 0
     assert reset_admin(db_session, "kevin", "kurz") == 1
+
+
+def test_create_admin_gets_default_subscription(db_session):
+    """T30: the install-time bootstrap admin must also get the baseline rule —
+    it is the only user a fresh install has."""
+    assert create_admin(db_session, "kevin", "supersecret") == 0
+    user = db_session.query(User).filter_by(username="kevin").one()
+    sub = (
+        db_session.query(NotificationSubscription)
+        .filter(NotificationSubscription.user_id == user.id)
+        .one()
+    )
+    assert (sub.scope_type, sub.min_severity) == ("all", "warning")
+    assert sub.enabled is True
+    assert sub.channel_email is False
+    assert sub.channel_telegram is False

@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { ServerInput } from '$lib/api/types';
+  import type { MonitoringTemplateFull, ServerInput } from '$lib/api/types';
   import {
     emptyServerInput,
     serverToInput,
@@ -13,6 +13,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
     normalizeServerInput,
     validateServerInput,
   } from '$lib/models/infra';
+  import { monitoringApi } from '$lib/api/monitoring';
+  import { currentSession } from '$lib/stores/session';
   import { serverEditor, closeServerEditor, saveServer, deleteServer } from '$lib/stores/infra';
   import { reportError } from '$lib/stores/statusBar';
   import { t } from '$lib/i18n';
@@ -23,6 +25,31 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let isNew = $state(true);
   let confirmDelete = $state(false);
   let saving = $state(false);
+  let monitoringTemplateId = $state('');
+  let templates = $state<MonitoringTemplateFull[]>([]);
+
+  // Built-ins first, then alphabetically — the standard templates are the
+  // expected choice for a fresh server.
+  let templateOptions = $derived(
+    [...templates].sort(
+      (a, b) =>
+        Number(Boolean(b.builtinSlug)) - Number(Boolean(a.builtinSlug)) ||
+        a.name.localeCompare(b.name),
+    ),
+  );
+
+  async function loadTemplateOptions(): Promise<void> {
+    const s = currentSession();
+    if (!s) return;
+    try {
+      const tpls = await monitoringApi.fetchTemplates(s);
+      templates = Array.isArray(tpls) ? tpls : [];
+    } catch {
+      // Silent: monitoring being unreachable must not nag while creating a
+      // server — the dropdown simply stays empty.
+      templates = [];
+    }
+  }
 
   $effect(() => {
     const st = $serverEditor;
@@ -37,8 +64,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       tagsInput = '';
       editingId = null;
       isNew = true;
+      void loadTemplateOptions();
     }
     confirmDelete = false;
+    monitoringTemplateId = '';
   });
 
   async function onSave(): Promise<void> {
@@ -49,7 +78,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       return;
     }
     saving = true;
-    const ok = await saveServer(input, editingId);
+    const ok = await saveServer(input, editingId, isNew ? monitoringTemplateId || null : null);
     saving = false;
     if (ok) closeServerEditor();
   }
@@ -135,6 +164,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
           />
         </label>
 
+        {#if isNew}
+          <label class="field">
+            <span class="field-label">{$t('infra.field.monitoringTemplate')}</span>
+            <select bind:value={monitoringTemplateId}>
+              <option value="">{$t('infra.field.monitoringTemplate.none')}</option>
+              {#each templateOptions as tpl (tpl.id)}
+                <option value={tpl.id}>{tpl.name}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+
         <label class="field" style="grid-column: span 2;">
           <span class="field-label">{$t('infra.field.notes')}</span>
           <textarea rows="3" bind:value={form.notes}></textarea>
@@ -207,6 +248,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     color: var(--text-muted);
   }
   .field input,
+  .field select,
   .field textarea {
     background: var(--bg-input, var(--bg-panel));
     border: 1px solid var(--border);
@@ -217,6 +259,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     font-family: inherit;
   }
   .field input:focus,
+  .field select:focus,
   .field textarea:focus {
     outline: 1px solid var(--accent);
   }

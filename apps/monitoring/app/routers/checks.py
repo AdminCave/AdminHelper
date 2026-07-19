@@ -13,11 +13,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.pagination import paginate
-from app.core.victoria import victoria
+from app.core.victoria import escape_label_value, victoria
 from app.models import MonitorCheck, MonitorState
 from app.scheduler import add_check, remove_check
 from app.schemas import (
@@ -27,16 +28,9 @@ from app.schemas import (
     CheckUpdate,
 )
 
-
-def _escape_label(value) -> str:
-    """Escape a value for a MetricsQL/PromQL label matcher string.
-
-    server_id / check_id are interpolated into label matchers; without escaping a
-    value containing a quote or backslash could break out of the matcher and read
-    other servers' metrics (query injection). PromQL label-value escaping = `\\`
-    then `"`.
-    """
-    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+# Moved to core/victoria.py (shared with the forecast checker); alias kept so
+# the existing call sites and tests stay untouched.
+_escape_label = escape_label_value
 
 
 def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict]:
@@ -90,6 +84,10 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
         "monitor_smart_disks_ok_value",
         "monitor_smart_disks_warning_value",
         "monitor_smart_disks_critical_value",
+    ],
+    "disk_forecast": [
+        "monitor_check_duration_ms_value",
+        "monitor_disk_forecast_min_hours_value",
     ],
 }
 
@@ -191,6 +189,39 @@ def update_check(check_id: str, data: CheckUpdate, db: Session = Depends(get_db)
         raise HTTPException(400, "Ungueltiges Intervall")
     if "severity" in sent and data.severity not in VALID_SEVERITIES:
         raise HTTPException(400, "Ungueltige Severity")
+
+    # Validate the effective (type, config) pair whenever either changes — a
+    # type switch that keeps the old config must fail here, not surface as a
+    # permanently-unknown check at runtime (see app/check_configs.py). The
+    # schema can't do this: CheckUpdate doesn't know the stored type.
+    if "config" in sent or "check_type" in sent:
+        effective_type = data.check_type if "check_type" in sent else check.check_type
+        if "config" in sent:
+            effective_config = data.config
+        else:
+            try:
+                effective_config = json.loads(check.config) if check.config else {}
+            except (json.JSONDecodeError, TypeError):
+                effective_config = {}
+        try:
+            stored_config = json.loads(check.config) if check.config else {}
+        except (json.JSONDecodeError, TypeError):
+            stored_config = None
+        # A round-tripped, UNCHANGED config skips the strict boundary: the UI
+        # resends the stored config on every edit, so re-validating it would
+        # make a legacy check with a formerly-valid extra key permanently
+        # uneditable (interval/severity edits included). Any actual config or
+        # type change still validates strictly (T40).
+        unchanged = (
+            effective_type == check.check_type
+            and stored_config is not None
+            and effective_config == stored_config
+        )
+        if not unchanged:
+            try:
+                validate_check_config(effective_type, effective_config)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
 
     for field in [
         "server_id",
@@ -366,7 +397,7 @@ def get_check_metrics(
     # serializing them — each with a 10s httpx timeout — is pure latency on the dashboard path (5.22).
     # PromQL/VictoriaMetrics anchors the __name__ regex fully (^(...)$), and the metric names are
     # literal [a-z_] identifiers, so the |-join matches exactly those names.
-    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
+    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms_value"])
     if metric_names:
         # zfs_health maps to an empty list (only dynamic patterns) — skip rather than fire a
         # degenerate {__name__=~""} query, matching the old loop which ran zero times.

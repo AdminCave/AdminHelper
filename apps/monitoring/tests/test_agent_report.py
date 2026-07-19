@@ -284,3 +284,72 @@ def test_report_writes_only_filtered_and_sanitized_lines(client_db, monkeypatch)
 
     # metricsWritten reflects the actual lines written (no checks in this payload).
     assert r.json()["metricsWritten"] == len(captured)
+
+
+def test_report_persists_agent_liveness(client_db, monkeypatch):
+    # T2: every push upserts monitor_agent_liveness so agent_ping survives
+    # service restarts (main.py rehydrates the in-memory map from it).
+    from datetime import datetime
+
+    import app.routers.agent as agent_router
+    from app.models import MonitorAgentLiveness
+
+    client, factory = client_db
+    t1 = datetime(2026, 7, 19, 12, 0, 0)
+    monkeypatch.setattr(agent_router, "utcnow_naive", lambda: t1)
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    with factory() as db:
+        row = db.get(MonitorAgentLiveness, "srv-1")
+        assert row is not None
+        assert row.last_report_at == t1
+
+    t2 = datetime(2026, 7, 19, 12, 5, 0)
+    monkeypatch.setattr(agent_router, "utcnow_naive", lambda: t2)
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    with factory() as db:
+        assert db.get(MonitorAgentLiveness, "srv-1").last_report_at == t2
+
+
+def test_report_round_trips_hysteresis_memory(client_db):
+    # T6 wiring: the push endpoint must read the previous state.details under
+    # the row lock, feed them into evaluate() and store the new problems map —
+    # otherwise the per-metric hysteresis silently dies while unit tests stay
+    # green. cpu_warn is 80 here: 92 -> warning; 75 sits in the release band
+    # (80-10=70) and must STAY warning; 65 clears it.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=92)).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert state.status == "warning"
+        assert json.loads(state.details)["problems"] == {"cpu": "warning"}
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=75)).status_code == 200
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "warning"
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=65)).status_code == 200
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "ok"
+
+
+def test_degenerate_report_keeps_hysteresis_memory(client_db):
+    # T38: a push without a 'resources' block evaluates to unknown (details
+    # None) — that must NOT wipe the stored problems map, or the next normal
+    # report loses the release threshold and flaps ok despite the band.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=92)).status_code == 200
+    assert client.post("/agent/srv-1/report", json={}).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert state.status == "unknown"
+        assert json.loads(state.details)["problems"] == {"cpu": "warning"}
+
+    # 75 sits in the release band (warn 80 - 10): with the memory intact the
+    # metric must STAY warning instead of flipping ok.
+    assert client.post("/agent/srv-1/report", json=_report(cpu=75)).status_code == 200
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "warning"

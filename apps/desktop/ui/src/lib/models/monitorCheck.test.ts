@@ -137,7 +137,7 @@ describe('validateCheckForm', () => {
 describe('constants', () => {
   it('expose every check type, interval and severity', () => {
     expect(CHECK_TYPES).toContain('smart_health');
-    expect(CHECK_TYPES).toHaveLength(10);
+    expect(CHECK_TYPES).toHaveLength(11); // + disk_forecast (T29)
     expect(INTERVALS).toEqual(['1m', '5m', '15m', '30m', '1h', '6h', '12h', '24h']);
     expect(SEVERITIES).toEqual(['critical', 'warning', 'info']);
   });

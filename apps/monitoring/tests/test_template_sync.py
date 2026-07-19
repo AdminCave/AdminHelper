@@ -323,6 +323,10 @@ def test_remove_template_deletes_only_this_assignment(db):
 
 
 def test_cleanup_server_removes_everything_for_server(db):
+    from datetime import datetime
+
+    from app.models import MonitorAgentLiveness, MonitorMaintenance
+
     tpl = _template(db, [PING_DEF], [{"def_id": "a1", "name": "A", "channel": "webhook"}])
     apply_template(db, tpl, "srv-1", "web01.example", "Web 01")
     db.add(MonitorAgentKey(id="k1", server_id="srv-1", hashed_key="h1"))
@@ -331,6 +335,11 @@ def test_cleanup_server_removes_everything_for_server(db):
             id="manual-1", server_id="srv-1", name="Manuell", check_type="ping", config="{}"
         )
     )
+    # T42: server-scoped maintenance + liveness must go with the server; a
+    # GLOBAL window (server_id NULL) must survive.
+    db.add(MonitorMaintenance(id="m1", server_id="srv-1", kind="once", enabled=True))
+    db.add(MonitorMaintenance(id="m-global", server_id=None, kind="once", enabled=True))
+    db.add(MonitorAgentLiveness(server_id="srv-1", last_report_at=datetime(2026, 1, 1)))
     db.commit()
 
     result = cleanup_server(db, "srv-1")
@@ -340,3 +349,5 @@ def test_cleanup_server_removes_everything_for_server(db):
     assert db.query(MonitorAlertRule).count() == 0
     assert db.query(MonitorTemplateAssignment).count() == 0
     assert db.query(MonitorAgentKey).count() == 0
+    assert db.query(MonitorAgentLiveness).count() == 0
+    assert [m.id for m in db.query(MonitorMaintenance).all()] == ["m-global"]
