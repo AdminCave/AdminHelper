@@ -321,7 +321,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
             <input
               type="number"
               value={def.cooldown_minutes}
-              oninput={(e) => (def.cooldown_minutes = Number(e.currentTarget.value) || 30)}
+              oninput={(e) =>
+                (def.cooldown_minutes = Math.max(0, Number(e.currentTarget.value) || 30))}
             />
           </label>
         </div>

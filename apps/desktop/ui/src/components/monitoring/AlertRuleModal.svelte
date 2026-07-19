@@ -78,7 +78,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       channel,
       match_severity: matchSeverity || null,
       match_server_id: matchServerId || null,
-      cooldown_minutes: cooldown || 30,
+      // Clamp: min="0" only guards the spinner (no form submit), and the
+      // backend has no ge=0 backstop — a negative cooldown would put the
+      // cutoff in the future and disable cooldown entirely (alert spam).
+      cooldown_minutes: Math.max(0, cooldown || 30),
       channel_config: buildChannelConfig(),
     };
     saving = true;
@@ -133,6 +136,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
         <option value="">{$t('monitoring.alertEdit.allSeverities')}</option>
         <option value="critical">critical</option>
         <option value="warning">warning</option>
+        <option value="info">info</option>
       </select>
     </label>
 
@@ -151,7 +155,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
     <label class="field">
       <span class="field-label">{$t('monitoring.alerts.cooldown')} (min)</span>
-      <input type="number" bind:value={cooldown} />
+      <input type="number" min="0" bind:value={cooldown} />
     </label>
 
     {#if channel === 'webhook'}

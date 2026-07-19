@@ -208,6 +208,7 @@ export interface MonitorCheckConfig {
   disk_crit?: number;
   temp_warn?: number;
   temp_crit?: number;
+  hysteresis_pp?: number;
   temp_overrides?: Record<string, { warn?: number; crit?: number }>;
 
   // service_process
