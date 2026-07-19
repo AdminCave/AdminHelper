@@ -9,11 +9,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
     monitoringChecks,
     monitoringError,
     monitoringHasLoaded,
+    overviewView,
     loadMonitoring,
+    setOverviewView,
     setTab,
   } from '$lib/stores/monitoring';
   import MonSummaryCards from './MonSummaryCards.svelte';
   import MonServerList from './MonServerList.svelte';
+  import MonServerGrid from './MonServerGrid.svelte';
   import MonServerDashboard from './MonServerDashboard.svelte';
   import EmptyState from '../ui/EmptyState.svelte';
   import { t } from '$lib/i18n';
@@ -54,17 +57,41 @@ SPDX-License-Identifier: GPL-3.0-or-later
 {:else if $monitoringChecks.length > 0}
   <MonSummaryCards />
 
-  <div class="mon-split">
-    <aside class="mon-split-sidebar">
-      <MonServerList />
-    </aside>
-    <section class="mon-split-main">
-      <MonServerDashboard />
-    </section>
+  <div class="mon-view-toggle" role="group" aria-label={$t('monitoring.view.toggleLabel')}>
+    <button
+      class="btn small"
+      class:primary={$overviewView === 'list'}
+      aria-pressed={$overviewView === 'list'}
+      onclick={() => setOverviewView('list')}>{$t('monitoring.view.list')}</button
+    >
+    <button
+      class="btn small"
+      class:primary={$overviewView === 'grid'}
+      aria-pressed={$overviewView === 'grid'}
+      onclick={() => setOverviewView('grid')}>{$t('monitoring.view.grid')}</button
+    >
   </div>
+
+  {#if $overviewView === 'grid'}
+    <MonServerGrid />
+  {:else}
+    <div class="mon-split">
+      <aside class="mon-split-sidebar">
+        <MonServerList />
+      </aside>
+      <section class="mon-split-main">
+        <MonServerDashboard />
+      </section>
+    </div>
+  {/if}
 {/if}
 
 <style>
+  .mon-view-toggle {
+    display: flex;
+    gap: var(--sp-2);
+    margin: var(--sp-4) 0;
+  }
   .mon-error-banner {
     display: flex;
     align-items: center;

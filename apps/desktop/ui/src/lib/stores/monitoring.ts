@@ -28,6 +28,18 @@ import type {
 } from '$lib/api/types';
 
 export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
+export type OverviewView = 'list' | 'grid';
+
+// Persisted view choice for the overview (list+detail vs tile grid).
+const VIEW_STORAGE_KEY = 'ah.monitoring.view';
+
+function initialOverviewView(): OverviewView {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'list';
+  } catch {
+    return 'list';
+  }
+}
 
 // Auto-refresh cadence for the monitoring page (same period as the notification poll).
 const REFRESH_INTERVAL_MS = 30_000;
@@ -68,6 +80,7 @@ interface MonitoringState {
   expandedCheckId: string | null;
   selectedServerId: string | null;
   serverSearch: string;
+  overviewView: OverviewView;
 }
 
 const initial: MonitoringState = {
@@ -84,6 +97,7 @@ const initial: MonitoringState = {
   expandedCheckId: null,
   selectedServerId: null,
   serverSearch: '',
+  overviewView: initialOverviewView(),
 };
 
 const _state = writable<MonitoringState>(initial);
@@ -107,6 +121,7 @@ export const monitoringHasLoaded = derived(_state, ($s) => $s.hasLoaded);
 export const monitoringError = derived(_state, ($s) => $s.error);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
+export const overviewView = derived(_state, ($s) => $s.overviewView);
 
 export function setSelectedServer(id: string | null): void {
   _state.update((s) => ({ ...s, selectedServerId: id, expandedCheckId: null }));
@@ -114,6 +129,15 @@ export function setSelectedServer(id: string | null): void {
 
 export function setServerSearch(v: string): void {
   _state.update((s) => ({ ...s, serverSearch: v }));
+}
+
+export function setOverviewView(view: OverviewView): void {
+  _state.update((s) => ({ ...s, overviewView: view }));
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, view);
+  } catch {
+    // Private mode / storage denied: the choice simply doesn't persist.
+  }
 }
 
 export const filteredChecks = derived(_state, ($s) => filterChecks($s.checks, $s.filters));
