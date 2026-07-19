@@ -50,6 +50,12 @@ export interface MonCheckSummary {
 export interface TemplateAssignment {
   templateId: string;
   serverId: string;
+  id?: string;
+  serverHostname?: string;
+  serverName?: string;
+  templateName?: string | null;
+  // 'manual' = user-created, 'tag' = materialized by the monitoring tag-sync.
+  source?: 'manual' | 'tag';
 }
 
 export interface Playbook {
@@ -489,15 +495,26 @@ export interface TemplateAlertDef {
 export interface MonitoringTemplateAssignment {
   serverId: string;
   serverName?: string;
+  serverHostname?: string;
+  source?: 'manual' | 'tag';
+}
+
+export interface MonitoringTemplateTagAssignment {
+  id: string;
+  templateId: string;
+  tag: string;
 }
 
 export interface MonitoringTemplateFull {
   id: string;
   name: string;
   description?: string | null;
+  // Set on shipped standard templates (seeded at monitoring startup).
+  builtinSlug?: string | null;
   checkDefinitions?: TemplateCheckDef[];
   alertDefinitions?: TemplateAlertDef[];
   assignments?: MonitoringTemplateAssignment[];
+  tagAssignments?: MonitoringTemplateTagAssignment[];
 }
 
 export interface MonitoringTemplateInput {

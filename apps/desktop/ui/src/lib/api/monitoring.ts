@@ -18,6 +18,7 @@ import type {
   MonitoringMetricsResponse,
   MonitoringTemplateFull,
   MonitoringTemplateInput,
+  MonitoringTemplateTagAssignment,
   Server,
   TemplateAssignment,
 } from '$lib/api/types';
@@ -160,6 +161,25 @@ export const monitoringApi = {
       session,
       'DELETE',
       `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign/${encodeURIComponent(serverId)}`,
+    );
+  },
+  assignTemplateTag(
+    session: AuthSession,
+    templateId: string,
+    tag: string,
+  ): Promise<MonitoringTemplateTagAssignment> {
+    return apiRequest<MonitoringTemplateTagAssignment>(
+      session,
+      'POST',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign-tag`,
+      { tag },
+    );
+  },
+  unassignTemplateTag(session: AuthSession, templateId: string, tag: string): Promise<void> {
+    return apiRequest<void>(
+      session,
+      'DELETE',
+      `/api/monitoring/templates/${encodeURIComponent(templateId)}/assign-tag/${encodeURIComponent(tag)}`,
     );
   },
 };
