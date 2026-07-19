@@ -40,6 +40,7 @@ from app.modules.notifications.models import (  # noqa: F401
 from app.modules.notifications.router import feed_router as notifications_feed_router
 from app.modules.notifications.router import internal_router as notifications_internal_router
 from app.modules.notifications.router import prefs_router as notifications_prefs_router
+from app.modules.notifications.service import default_admin_subscription
 from app.modules.notifications.stream import stream_router as notifications_stream_router
 from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.provisioning.router import router as provisioning_router
@@ -99,6 +100,11 @@ def _ensure_admin(db):
     )
     db.add(admin)
     try:
+        # Baseline notification rule for the very first admin (same as the API
+        # and CLI create paths). Flush inside the try: a lost multi-worker race
+        # rolls back both rows together.
+        db.flush()
+        db.add(default_admin_subscription(admin.id))
         db.commit()
     except IntegrityError:
         # With uvicorn --workers N, every worker runs the lifespan on a fresh DB and all see

@@ -88,3 +88,43 @@ def test_login_rejects_oversized_fields(test_client):
         test_client.post("/api/auth/login", json={"username": "", "password": "x"}).status_code
         == 422
     )
+
+
+class TestDefaultAdminSubscription:
+    """T30: a user created with is_admin=True gets the bell-only baseline
+    subscription (all / warning), so alerts on a fresh install reach someone."""
+
+    def test_new_admin_gets_default_subscription(self, test_client, admin_user, db_session):
+        from app.modules.notifications.models import NotificationSubscription
+
+        res = test_client.post(
+            "/api/users",
+            headers=_admin_headers(test_client),
+            json={"username": "second-admin", "password": "validpass123", "is_admin": True},
+        )
+        assert res.status_code == 201, res.text
+        sub = (
+            db_session.query(NotificationSubscription)
+            .filter(NotificationSubscription.user_id == res.json()["id"])
+            .one()
+        )
+        assert (sub.scope_type, sub.scope_ref, sub.min_severity) == ("all", None, "warning")
+        assert sub.enabled is True
+        assert sub.channel_email is False
+        assert sub.channel_telegram is False
+
+    def test_plain_user_gets_no_default_subscription(self, test_client, admin_user, db_session):
+        from app.modules.notifications.models import NotificationSubscription
+
+        res = test_client.post(
+            "/api/users",
+            headers=_admin_headers(test_client),
+            json={"username": "plain-user", "password": "validpass123"},
+        )
+        assert res.status_code == 201, res.text
+        assert (
+            db_session.query(NotificationSubscription)
+            .filter(NotificationSubscription.user_id == res.json()["id"])
+            .count()
+            == 0
+        )
