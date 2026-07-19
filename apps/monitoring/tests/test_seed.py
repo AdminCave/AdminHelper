@@ -50,7 +50,11 @@ def test_fresh_seed_creates_all_builtins(db):
         "system-resources",
         "service-health",
         "smart-health",
+        "disk-forecast",
     }
+    windows = next(t for t in templates if t.builtin_slug == "windows-base")
+    windows_defs = json.loads(windows.check_definitions)
+    assert "disk-forecast" in {d["def_id"] for d in windows_defs}
 
 
 def test_second_run_is_idempotent(db):
@@ -102,7 +106,9 @@ def test_heartbeat_defs_carry_the_server_id_placeholder():
     # the liveness map).
     for tpl in BUILTIN_TEMPLATES:
         for check_def in tpl["check_definitions"]:
-            if check_def["check_type"] == "agent_ping":
+            if check_def["check_type"] in ("agent_ping", "disk_forecast"):
+                # Both need the id to resolve their data source — without the
+                # placeholder the materialized check sits at 'unknown' forever.
                 assert check_def["config"]["server_id"] == "{{server_id}}"
 
 

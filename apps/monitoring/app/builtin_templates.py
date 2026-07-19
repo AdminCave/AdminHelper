@@ -65,6 +65,20 @@ _AGENT_RESOURCES = {
     "consecutive_fails": 3,
 }
 
+# Prediction pairs with the static disk thresholds: warns ~a day before a
+# disk runs full instead of only at 80/90 % (severity 'warning' — a forecast
+# has lead time by definition and must not page the critical chain).
+_DISK_FORECAST = {
+    "def_id": "disk-forecast",
+    "name": "Disk Forecast",
+    "description": "Predicts time-until-full from the recent fill rate.",
+    "check_type": "disk_forecast",
+    "config": {"server_id": "{{server_id}}"},
+    "interval": "1h",
+    "severity": "warning",
+    "consecutive_fails": 1,
+}
+
 _SMART_HEALTH = {
     "def_id": "smart-health",
     "name": "SMART Health",
@@ -96,6 +110,7 @@ BUILTIN_TEMPLATES: list[dict] = [
                 "consecutive_fails": 2,
             },
             _SMART_HEALTH,
+            _DISK_FORECAST,
         ],
         "alert_definitions": [],
     },
@@ -103,7 +118,7 @@ BUILTIN_TEMPLATES: list[dict] = [
         "slug": "windows-base",
         "name": "Windows Server — Standard",
         "description": "Baseline monitoring for Windows servers: heartbeat, resources and SMART.",
-        "check_definitions": [_AGENT_HEARTBEAT, _AGENT_RESOURCES, _SMART_HEALTH],
+        "check_definitions": [_AGENT_HEARTBEAT, _AGENT_RESOURCES, _SMART_HEALTH, _DISK_FORECAST],
         "alert_definitions": [],
     },
     {

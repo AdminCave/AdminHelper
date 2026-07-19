@@ -178,7 +178,8 @@ export type MonitorCheckType =
   | 'proxmox_backup'
   | 'zfs_health'
   | 'docker_health'
-  | 'smart_health';
+  | 'smart_health'
+  | 'disk_forecast';
 
 export type MonitorSeverity = 'critical' | 'warning' | 'info';
 export type MonitorInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '6h' | '12h' | '24h';
@@ -228,6 +229,12 @@ export interface MonitorCheckConfig {
   // docker_health
   ignore_containers?: string[];
   check_restarts?: boolean;
+
+  // disk_forecast
+  window_hours?: number;
+  min_history_hours?: number;
+  warn_hours?: number;
+  crit_hours?: number;
 
   // smart_health
   reallocated_warn?: number;

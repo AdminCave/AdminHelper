@@ -107,6 +107,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
     { key: 'temp_nvme_crit', labelKey: 'monitoring.checkCfg.tempNvmeCrit', min: 0, max: 200 },
   ];
 
+  const FORECAST_NUM_FIELDS: NumField[] = [
+    { key: 'warn_hours', labelKey: 'monitoring.checkCfg.warnHours', min: 1, max: 8760 },
+    { key: 'crit_hours', labelKey: 'monitoring.checkCfg.critHours', min: 1, max: 8760 },
+    { key: 'window_hours', labelKey: 'monitoring.checkCfg.windowHours', min: 1, max: 168 },
+    { key: 'min_history_hours', labelKey: 'monitoring.checkCfg.minHistoryHours', min: 1, max: 48 },
+  ];
+
   // warn >= crit sanity hint. nvme_spare is excluded on purpose: lower is
   // worse there, warn > crit is the CORRECT configuration.
   const WARN_CRIT_PAIRS: { warn: string; crit: string; label: string }[] = [
@@ -351,6 +358,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
       oninput={(e) => setCsvStr('ignore_containers', e.currentTarget.value)}
     />
   </label>
+{:else if checkType === 'disk_forecast'}
+  {#each FORECAST_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
 {:else if checkType === 'smart_health'}
   {#each SMART_NUM_FIELDS as f (f.key)}{@render numField(f)}{/each}
   <label class="field" style="grid-column: span 2;">
