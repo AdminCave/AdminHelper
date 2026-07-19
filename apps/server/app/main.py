@@ -44,6 +44,7 @@ from app.modules.notifications.stream import stream_router as notifications_stre
 from app.modules.provisioning.models import ProvisionToken  # noqa: F401
 from app.modules.provisioning.router import router as provisioning_router
 from app.modules.servers.models import Server  # noqa: F401
+from app.modules.servers.router import internal_router as servers_internal_router
 from app.modules.servers.router import router as servers_router
 
 # Import routers
@@ -285,6 +286,7 @@ app.include_router(notifications_feed_router, dependencies=_access)
 app.include_router(notifications_prefs_router, dependencies=_access)
 app.include_router(notifications_stream_router, dependencies=_access)
 app.include_router(notifications_internal_router)
+app.include_router(servers_internal_router)
 app.include_router(ansible_router, dependencies=_access)
 
 # Serve static files from frontend/ (Vite build output).

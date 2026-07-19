@@ -19,6 +19,7 @@ from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
+from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
@@ -26,6 +27,30 @@ logger = logging.getLogger("adminhelper.servers")
 
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
+
+# Service-to-service surface (X-Internal-Key, same gate as /api/internal/events).
+# Registered WITHOUT the session-auth dependencies of the admin router.
+internal_router = APIRouter(prefix="/api/internal", tags=["internal"])
+
+
+@internal_router.get("/servers")
+def list_servers_internal(
+    db: Session = Depends(get_db),
+    _internal: None = Depends(require_internal_key),
+):
+    """Inventory listing for the monitoring service's tag-sync: the server DB
+    is the only source of tag membership. Deliberately minimal — id, hostname,
+    name, tags; no connections, notes or pagination (fleet-sized, not user-facing)."""
+    servers = db.query(Server).order_by(Server.id).all()
+    return [
+        {
+            "id": s.id,
+            "hostname": s.hostname,
+            "name": s.name,
+            "tags": json.loads(s.tags) if s.tags else [],
+        }
+        for s in servers
+    ]
 
 
 @router.get("")
