@@ -183,7 +183,7 @@
           </table>
           <p><strong>Cooldown:</strong> After a successfully sent alert, <code>cooldown_minutes</code> (default 30) suppresses further alerts from the same rule for the same check.</p>
           <p><strong>Recovery:</strong> When a check returns to <code>ok</code>, a recovery notification is sent – it deliberately bypasses the cooldown so the all-clear always gets through. Every dispatch is recorded in the alert log with success/error. The alert log is pruned automatically every day (retention configurable via <code>ALERT_LOG_RETENTION_DAYS</code>, default 90 days).</p>
-          <p><strong>Event hook:</strong> On transitions with severity <code>critical</code> the server additionally fires the <code>alert.triggered</code> event hook (payload: <code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code>). Hook configuration details: <a href="../developer/hooks.html">Hooks &amp; Events</a>.</p>
+          <p><strong>Event hook:</strong> On transitions <em>into</em> <code>critical</code> the server additionally fires the <code>alert.triggered</code> event hook (payload: <code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code>). Hook configuration details: <a href="../developer/hooks.html">Hooks &amp; Events</a>.</p>
 
           <h2>Personal notifications (notification hub)</h2>
           <p>Independently of the rule-based alert channels above, the <strong>notification hub</strong> fans events out <em>per user</em>: each user decides what they are notified about and how. Where the <code>webhook</code>/<code>email</code> rules above send to <em>fixed</em> destinations (e.g. a team webhook), the hub targets the <strong>people</strong> assigned to a server.</p>

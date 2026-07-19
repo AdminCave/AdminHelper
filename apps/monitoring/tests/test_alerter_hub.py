@@ -77,6 +77,24 @@ class TestEmitToHub:
         assert body["severity"] == "critical"
         assert body["source_id"] == "srv-1"
         assert body["event_type"] == "monitoring.check.transition"
+        # T36: the server-side alert.triggered hook needs the actual target
+        # status — severity alone cannot distinguish alert from recovery.
+        assert body["new_status"] == "critical"
+
+    def test_recovery_carries_new_status_ok(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(status_code=202)
+
+        self._patch(monkeypatch)
+        monkeypatch.setattr(alerter.httpx, "post", fake_post)
+
+        _emit_to_hub(make_check(), "critical", "ok", make_msg())
+        # worse-of-both severity stays critical, but new_status exposes the leg.
+        assert captured["json"]["severity"] == "critical"
+        assert captured["json"]["new_status"] == "ok"
 
     def test_best_effort_swallows_errors(self, monkeypatch):
         self._patch(monkeypatch)

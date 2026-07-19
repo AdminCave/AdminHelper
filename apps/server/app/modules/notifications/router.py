@@ -170,7 +170,14 @@ def ingest(
 ):
     """Accept one event from an event source and fan it out to recipients."""
     notified = ingest_event(db, event)
-    if event.event_type == "monitoring.check.transition" and event.severity == "critical":
+    if (
+        event.event_type == "monitoring.check.transition"
+        and event.severity == "critical"
+        # severity is worse-of-both, so critical -> ok/warning arrives as
+        # "critical" too — only a transition INTO critical is an alert. Old
+        # senders without new_status keep the severity-only behavior.
+        and (event.new_status or "critical") == "critical"
+    ):
         # The documented alert.triggered hook: a critical check transition also
         # reaches registered event hooks (docs/developer/hooks.html).
         fire_event(

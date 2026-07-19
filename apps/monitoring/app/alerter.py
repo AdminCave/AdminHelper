@@ -190,6 +190,11 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dic
         "body": msg["text"],
         "source_type": "server",
         "source_id": check.server_id,
+        # severity is worse-of-both so recoveries reach warning-level
+        # subscribers; new_status lets the server distinguish a real alert
+        # from a recovery (the alert.triggered hook must not fire on the
+        # critical -> ok leg).
+        "new_status": new_status,
     }
     try:
         resp = httpx.post(

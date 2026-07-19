@@ -451,6 +451,19 @@ class TestAlertTriggeredHook:
         assert self._post(test_client, monkeypatch, fired, severity="warning").status_code == 202
         assert fired == []
 
+    def test_recovery_does_not_fire_alert_triggered(self, test_client, monkeypatch):
+        # T36: critical -> ok arrives with severity critical (worse-of-both);
+        # new_status distinguishes the recovery leg from a real alert.
+        fired: list = []
+        res = self._post(test_client, monkeypatch, fired, new_status="ok")
+        assert res.status_code == 202
+        assert fired == []
+
+    def test_new_status_critical_fires(self, test_client, monkeypatch):
+        fired: list = []
+        assert self._post(test_client, monkeypatch, fired, new_status="critical").status_code == 202
+        assert len(fired) == 1
+
     def test_other_critical_event_does_not_fire_alert_triggered(self, test_client, monkeypatch):
         fired: list = []
         res = self._post(test_client, monkeypatch, fired, event_type="pki.cert.expiring")

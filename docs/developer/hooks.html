@@ -55,7 +55,7 @@
               <tr><td><code>frp.config.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
               <tr><td><code>frp.tunnel.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code> (bei <code>created</code> zusätzlich <code>serverId</code>)</td></tr>
               <tr><td><code>playbook.created</code> / <code>updated</code> / <code>deleted</code></td><td><code>id</code>, <code>name</code></td></tr>
-              <tr><td><code>alert.triggered</code></td><td><code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code> — feuert bei einer kritischen Monitoring-Transition (<code>monitoring.check.transition</code> mit Severity <code>critical</code>)</td></tr>
+              <tr><td><code>alert.triggered</code></td><td><code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code> — feuert bei einem Übergang <em>nach</em> <code>critical</code> (<code>monitoring.check.transition</code>); Entwarnungen (<code>critical → ok</code>) feuern nicht</td></tr>
             </tbody>
           </table>
 
