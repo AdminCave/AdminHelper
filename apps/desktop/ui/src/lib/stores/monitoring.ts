@@ -60,6 +60,11 @@ interface MonitoringState {
   log: AlertLogEntry[];
   filters: MonitoringFilters;
   loading: boolean;
+  // True once the FIRST status load resolved (success or failure) — the
+  // overview's skeleton keys off this, not off `loading`, so the 30s refresh
+  // can never flicker the empty/error states away.
+  hasLoaded: boolean;
+  error: string | null;
   expandedCheckId: string | null;
   selectedServerId: string | null;
   serverSearch: string;
@@ -74,6 +79,8 @@ const initial: MonitoringState = {
   log: [],
   filters: { server: '', type: '', status: '', search: '' },
   loading: false,
+  hasLoaded: false,
+  error: null,
   expandedCheckId: null,
   selectedServerId: null,
   serverSearch: '',
@@ -95,6 +102,9 @@ export const monitoringServers = derived(_state, ($s) => $s.servers);
 export const monitoringAlerts = derived(_state, ($s) => $s.alerts);
 export const monitoringTemplates = derived(_state, ($s) => $s.templates);
 export const monitoringLog = derived(_state, ($s) => $s.log);
+export const monitoringLoading = derived(_state, ($s) => $s.loading);
+export const monitoringHasLoaded = derived(_state, ($s) => $s.hasLoaded);
+export const monitoringError = derived(_state, ($s) => $s.error);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
 
@@ -151,6 +161,8 @@ export async function loadMonitoring(): Promise<void> {
   if (!session) return;
   const gen = ++statusGen;
   try {
+    // error is NOT cleared here: during an outage the banner must survive the
+    // 30s refresh cycle instead of blinking away while the retry is in flight.
     _state.update((s) => ({ ...s, loading: true }));
     const checks = await monitoringApi.fetchStatus(session);
     if (gen !== statusGen) return;
@@ -162,13 +174,27 @@ export async function loadMonitoring(): Promise<void> {
       if (!selected && checks.length > 0) {
         selected = pickWorstServerId(checks);
       }
-      return { ...s, checks, loading: false, selectedServerId: selected };
+      return {
+        ...s,
+        checks,
+        loading: false,
+        hasLoaded: true,
+        error: null,
+        selectedServerId: selected,
+      };
     });
   } catch (err) {
     if (gen !== statusGen) return;
-    _state.update((s) => ({ ...s, checks: [], loading: false }));
     const msg = errMsg(err);
-    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+    // Inline error state instead of a toast (T19): the overview renders the
+    // failure with a retry — a vanished toast is no help on the primary view.
+    _state.update((s) => ({
+      ...s,
+      checks: [],
+      loading: false,
+      hasLoaded: true,
+      error: msg === SESSION_EXPIRED ? null : msg,
+    }));
   }
 }
 
