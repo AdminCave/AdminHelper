@@ -47,6 +47,7 @@ _ALLOWED_PATH_PREFIXES = (
     "metrics",
     "status",
     "templates",
+    "maintenance",
     "agent",
 )
 

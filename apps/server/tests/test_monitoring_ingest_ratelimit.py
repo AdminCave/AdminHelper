@@ -81,3 +81,22 @@ def test_monitoring_proxy_allows_known_prefix(test_client, db_session, admin_use
     monkeypatch.setattr(mp._client, "request", fake_request)
     resp = test_client.get("/api/monitoring/status", headers=_admin_headers(test_client))
     assert resp.status_code == 200  # allowed prefix -> forwarded, not 400
+
+
+def test_monitoring_proxy_allows_maintenance_prefix(
+    test_client, db_session, admin_user, monkeypatch
+):
+    # T24: the new maintenance CRUD must pass the proxy allowlist.
+    from app.modules.monitoring_proxy import router as mp
+
+    class _FakeResp:
+        content = b"[]"
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+    async def fake_request(**kw):
+        return _FakeResp()
+
+    monkeypatch.setattr(mp._client, "request", fake_request)
+    resp = test_client.get("/api/monitoring/maintenance", headers=_admin_headers(test_client))
+    assert resp.status_code == 200
