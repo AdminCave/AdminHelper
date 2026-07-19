@@ -18,7 +18,7 @@ from app.check_types import VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.pagination import paginate
-from app.core.victoria import victoria
+from app.core.victoria import escape_label_value, victoria
 from app.models import MonitorCheck, MonitorState
 from app.scheduler import add_check, remove_check
 from app.schemas import (
@@ -28,16 +28,9 @@ from app.schemas import (
     CheckUpdate,
 )
 
-
-def _escape_label(value) -> str:
-    """Escape a value for a MetricsQL/PromQL label matcher string.
-
-    server_id / check_id are interpolated into label matchers; without escaping a
-    value containing a quote or backslash could break out of the matcher and read
-    other servers' metrics (query injection). PromQL label-value escaping = `\\`
-    then `"`.
-    """
-    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+# Moved to core/victoria.py (shared with the forecast checker); alias kept so
+# the existing call sites and tests stay untouched.
+_escape_label = escape_label_value
 
 
 def _serialize_with_states(db: Session, checks: list[MonitorCheck]) -> list[dict]:
@@ -91,6 +84,10 @@ CHECK_TYPE_METRICS: dict[str, list[str]] = {
         "monitor_smart_disks_ok_value",
         "monitor_smart_disks_warning_value",
         "monitor_smart_disks_critical_value",
+    ],
+    "disk_forecast": [
+        "monitor_check_duration_ms_value",
+        "monitor_disk_forecast_min_hours_value",
     ],
 }
 
@@ -385,7 +382,7 @@ def get_check_metrics(
     # serializing them — each with a 10s httpx timeout — is pure latency on the dashboard path (5.22).
     # PromQL/VictoriaMetrics anchors the __name__ regex fully (^(...)$), and the metric names are
     # literal [a-z_] identifiers, so the |-join matches exactly those names.
-    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms"])
+    metric_names = CHECK_TYPE_METRICS.get(check.check_type, ["monitor_check_duration_ms_value"])
     if metric_names:
         # zfs_health maps to an empty list (only dynamic patterns) — skip rather than fire a
         # degenerate {__name__=~""} query, matching the old loop which ran zero times.

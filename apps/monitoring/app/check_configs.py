@@ -113,6 +113,16 @@ class DockerHealthConfig(_StrictConfig):
     check_restarts: bool = False
 
 
+class DiskForecastConfig(_StrictConfig):
+    # server_id via template placeholder {{server_id}}; empty degrades to
+    # 'unknown' at runtime like agent_ping.
+    server_id: str = ""
+    window_hours: float = Field(24, ge=1, le=168)
+    min_history_hours: float = Field(6, ge=1, le=48)
+    warn_hours: float = Field(24, ge=1, le=8760)
+    crit_hours: float = Field(8, ge=1, le=8760)
+
+
 CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "ping": PingConfig,
     "tcp": TcpConfig,
@@ -124,6 +134,7 @@ CONFIG_MODELS: dict[str, type[_StrictConfig]] = {
     "proxmox_backup": ProxmoxBackupConfig,
     "zfs_health": ZfsHealthConfig,
     "docker_health": DockerHealthConfig,
+    "disk_forecast": DiskForecastConfig,
 }
 
 
