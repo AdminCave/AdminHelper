@@ -308,3 +308,27 @@ def test_report_persists_agent_liveness(client_db, monkeypatch):
     assert client.post("/agent/srv-1/report", json={}).status_code == 200
     with factory() as db:
         assert db.get(MonitorAgentLiveness, "srv-1").last_report_at == t2
+
+
+def test_report_round_trips_hysteresis_memory(client_db):
+    # T6 wiring: the push endpoint must read the previous state.details under
+    # the row lock, feed them into evaluate() and store the new problems map —
+    # otherwise the per-metric hysteresis silently dies while unit tests stay
+    # green. cpu_warn is 80 here: 92 -> warning; 75 sits in the release band
+    # (80-10=70) and must STAY warning; 65 clears it.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=92)).status_code == 200
+    with factory() as db:
+        state = db.query(MonitorState).filter_by(check_id="chk-1").one()
+        assert state.status == "warning"
+        assert json.loads(state.details)["problems"] == {"cpu": "warning"}
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=75)).status_code == 200
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "warning"
+
+    assert client.post("/agent/srv-1/report", json=_report(cpu=65)).status_code == 200
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "ok"

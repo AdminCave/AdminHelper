@@ -50,7 +50,7 @@ kein Loading/Empty-State, dupliziertes Modal-CSS, keine Bulk-Aktionen).
 - Keine Auto-Zuweisung nach OS-Typ (User-Entscheidung: Opt-in im Dialog).
 - Kein SSE/WebSocket für Monitoring-Status (30s-Polling bleibt).
 - Keine Vereinheitlichung Alert-Regeln ↔ Notification-Subscriptions.
-- Keine per-Metrik-Hysterese (nur pro Check, s. u.), kein Telegram-Kanal.
+- Kein Telegram-Kanal.
 - Keine Konsolidierung des duplizierten Push-Pfads (`routers/agent.py` ↔
   `check_engine.py`) über das Nötige hinaus — Änderungen betreffen beide Pfade
   über die gemeinsame Stelle `process_alert()`.
@@ -177,12 +177,16 @@ Positives (Standard anderswo: 3 verpasste Intervalle).
    Recovery (bypass Cooldown, wie bisher). Echtes „Agent weg“ meldet der
    persistierte `agent_ping` als `critical`. POLICY NOTE in
    `check_engine.next_fail_count` wird entsprechend aktualisiert.
-2. **Hysterese** (nur `agent_resources`, pro Check): War der vorherige
-   Status `warning`/`critical`, gelten Release-Schwellen
-   `threshold − hysteresis_pp` (Config-Key, Default 10). Umsetzung: `evaluate()`
-   bekommt `prev_status`; `_grade()` erhält den Release-Abschlag. Bewusst
-   Check-Granularität statt per-Metrik-State (YAGNI, kleiner Trade-off bei
-   Multi-Disk-Hosts).
+2. **Hysterese** (nur `agent_resources`, **per Metrik**): War eine Metrik in
+   der Vorrunde `warning`/`critical`, gelten für sie Release-Schwellen
+   `threshold − hysteresis_pp` (Config-Key, Default 10); die crit-Schwelle
+   sinkt nur für zuvor kritische Metriken (keine Eskalation über die
+   Release-Schwelle). Umsetzung: `evaluate()` bekommt die vorherigen
+   `state.details`, deren `problems`-Map `{metrik: level}` das Gedächtnis ist.
+   Ursprünglich war Check-Granularität geplant (`prev_status`) — verworfen,
+   weil ein alarmierender CPU-Wert die Release-Schwellen aller anderen
+   Metriken kontaminiert hätte (selbsterhaltende Warnings für Metriken, die
+   nie Entry gerissen haben).
 3. **Host-down-Suppression** (Alertmanager-Inhibition-Muster): Ist der
    `agent_ping`-Check eines Servers `critical`, werden Dispatch + Hub-Emit
    für alle anderen Checks desselben Servers unterdrückt (ein Incident = eine

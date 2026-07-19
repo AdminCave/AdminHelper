@@ -65,6 +65,9 @@ class AgentResourcesConfig(_StrictConfig):
     temp_warn: float = Field(80, ge=0, le=200)
     temp_crit: float = Field(95, ge=0, le=200)
     temp_overrides: dict[str, _TempOverride] = {}
+    # Entry/release hysteresis in percentage points (T6): once a metric is
+    # warning/critical, its thresholds drop by this much until it clears.
+    hysteresis_pp: float = Field(10, ge=0, le=50)
 
 
 class ServiceProcessConfig(_StrictConfig):

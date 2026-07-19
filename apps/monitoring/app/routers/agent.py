@@ -215,7 +215,35 @@ def agent_report(
             # the dispatch. The filter above guarantees check_type is a push type,
             # so get_checker always resolves; each push checker implements evaluate().
             checker = get_checker(check.check_type)
-            result_status, message, metrics = checker.evaluate(config, report)
+
+            # Lock the state row BEFORE evaluating: agent_resources needs the
+            # previous _details for per-metric hysteresis (T6), and the lock has
+            # to cover the read-modify-write anyway — two near-simultaneous
+            # pushes must not clobber fail_count or double-alert (4.46).
+            # Evaluate is pure CPU, so holding the lock across it is harmless.
+            # with_for_update is a no-op on sqlite (tests).
+            state = (
+                db.query(MonitorState)
+                .filter(MonitorState.check_id == check.id)
+                .with_for_update()
+                .first()
+            )
+            old_status = state.status if state else "pending"
+            prev_fail_count = state.fail_count if state else 0
+
+            if check.check_type == "agent_resources":
+                try:
+                    prev_details = json.loads(state.details) if state and state.details else None
+                except (json.JSONDecodeError, TypeError):
+                    prev_details = None
+                # Valid-but-non-dict JSON ("[]") must degrade the same way —
+                # evaluate expects a mapping and the loop-except would otherwise
+                # freeze this check on every push.
+                if not isinstance(prev_details, dict):
+                    prev_details = None
+                result_status, message, metrics = checker.evaluate(config, report, prev_details)
+            else:
+                result_status, message, metrics = checker.evaluate(config, report)
 
             # Extract structured details
             details = metrics.pop("_details", None) if metrics else None
@@ -236,18 +264,6 @@ def agent_report(
             # Update state — same damping logic as the scheduler path; the
             # check_engine pure functions are the single source (audit: the
             # previous inline copy could drift from the tested implementation).
-            # Lock the state row for the read-modify-write so two near-simultaneous pushes for
-            # one server (agent restart/retry) can't both read the same fail_count and clobber it
-            # or double-alert — same race as the scheduler path (4.46). No-op on sqlite.
-            state = (
-                db.query(MonitorState)
-                .filter(MonitorState.check_id == check.id)
-                .with_for_update()
-                .first()
-            )
-            old_status = state.status if state else "pending"
-
-            prev_fail_count = state.fail_count if state else 0
             new_fail_count = next_fail_count(result_status, prev_fail_count)
             eff_status = effective_status(
                 result_status, new_fail_count, check.consecutive_fails, old_status

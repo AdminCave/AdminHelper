@@ -71,3 +71,61 @@ def test_per_sensor_temperature_override_lowers_the_threshold():
     cfg = {**T, "temp_warn": 80, "temp_crit": 95, "temp_overrides": {"cpu": {"crit": 65}}}
     # 70 is below the default crit (95) but >= the per-sensor override (65).
     assert CHECKER.evaluate(cfg, report)[0] == "critical"
+
+
+class TestHysteresis:
+    """Per-metric entry/release hysteresis (T6): once a metric is warning or
+    critical, its thresholds drop by hysteresis_pp (default 10) until the value
+    clears the release band. Memory travels via _details["problems"]."""
+
+    CFG = {"cpu_warn": 90, "cpu_crit": 95}
+
+    def test_release_band_keeps_warning(self):
+        prev = {"problems": {"cpu": "warning"}}
+        status, _msg, _m = CHECKER.evaluate(self.CFG, _report(cpu_percent=84), prev)
+        assert status == "warning"
+
+    def test_below_release_band_recovers(self):
+        prev = {"problems": {"cpu": "warning"}}
+        status, _msg, _m = CHECKER.evaluate(self.CFG, _report(cpu_percent=79), prev)
+        assert status == "ok"
+
+    def test_without_previous_problem_entry_threshold_applies(self):
+        status, _msg, _m = CHECKER.evaluate(self.CFG, _report(cpu_percent=84), None)
+        assert status == "ok"
+
+    def test_hysteresis_pp_zero_disables(self):
+        cfg = {**self.CFG, "hysteresis_pp": 0}
+        prev = {"problems": {"cpu": "warning"}}
+        status, _msg, _m = CHECKER.evaluate(cfg, _report(cpu_percent=84), prev)
+        assert status == "ok"
+
+    def test_warning_metric_never_escalates_via_lowered_crit(self):
+        # 92 was warning last round; the lowered crit (95-10=85) must NOT apply —
+        # only a previously-critical metric gets the crit release.
+        prev = {"problems": {"cpu": "warning"}}
+        status, _msg, _m = CHECKER.evaluate(self.CFG, _report(cpu_percent=92), prev)
+        assert status == "warning"
+
+    def test_critical_metric_keeps_critical_in_release_band(self):
+        prev = {"problems": {"cpu": "critical"}}
+        status, _msg, _m = CHECKER.evaluate(self.CFG, _report(cpu_percent=92), prev)
+        assert status == "critical"
+
+    def test_hysteresis_is_per_metric_not_per_check(self):
+        # CPU was warning; a disk idling just below its entry threshold must not
+        # be dragged into the release band by the CPU's state.
+        cfg = {**self.CFG, "disk_warn": 80, "disk_crit": 90}
+        prev = {"problems": {"cpu": "warning"}}
+        report = _report(
+            cpu_percent=50,
+            disks=[{"mount": "/", "percent": 79, "fstype": "ext4"}],
+        )
+        status, _msg, _m = CHECKER.evaluate(cfg, report, prev)
+        assert status == "ok"
+
+    def test_problems_map_is_written_to_details(self):
+        _status, _msg, m = CHECKER.evaluate(self.CFG, _report(cpu_percent=92), None)
+        assert m["_details"]["problems"] == {"cpu": "warning"}
+        _status, _msg, m = CHECKER.evaluate(self.CFG, _report(cpu_percent=50), None)
+        assert m["_details"]["problems"] == {}
