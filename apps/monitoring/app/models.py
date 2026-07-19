@@ -165,6 +165,9 @@ class MonitorTemplate(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    # Origin marker for shipped standard templates (app/builtin_templates.py).
+    # Informational after creation — built-ins stay fully editable/deletable.
+    builtin_slug = Column(String, nullable=True, unique=True, index=True)
     check_definitions = Column(String, nullable=False, default="[]")
     alert_definitions = Column(String, nullable=False, default="[]")
     created_at = Column(DateTime, server_default=utc_now_sql())
@@ -175,6 +178,7 @@ class MonitorTemplate(Base):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "builtinSlug": self.builtin_slug,
             "checkDefinitions": json.loads(self.check_definitions)
             if self.check_definitions
             else [],
@@ -237,3 +241,25 @@ class MonitorAgentKey(Base):
             "apiKey": "***" + self.hashed_key[-8:],
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class MonitorSeedState(Base):
+    """Tombstone for built-in template seeding: a slug recorded here has been
+    seeded once and is never re-created — user deletions and edits win over
+    re-seeding (see app/builtin_templates.py)."""
+
+    __tablename__ = "monitor_seed_state"
+
+    slug = Column(String, primary_key=True)
+    seeded_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+
+
+class MonitorAgentLiveness(Base):
+    """Persisted last agent report per server. The in-memory _last_report map
+    (checkers/agent.py) alone made every service restart look like agent
+    staleness; this row rehydrates it on startup."""
+
+    __tablename__ = "monitor_agent_liveness"
+
+    server_id = Column(String, primary_key=True)
+    last_report_at = Column(DateTime, nullable=False)
