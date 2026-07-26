@@ -44,9 +44,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Alerter mit Sent-State (Level-Semantik):** Der Alerter merkt sich pro Check
+  den zuletzt real gemeldeten Status (`monitor_states.notified_status`, Migration
+  mit Backfill) und meldet Diskrepanzen nach, sobald keine Unterdrueckung mehr
+  greift: Ein Problem, das waehrend eines Host-Ausfalls entstand und danach
+  bestehen bleibt, wird nach der Agent-Recovery nachgemeldet; Recoveries fuer
+  vor einem Maintenance-Fenster gesendete Alerts und Probleme, die das Fenster
+  ueberdauern, werden nach Fenster-Ende nachgeholt; `unknown -> ok` erzeugt nur
+  noch dann eine Recovery, wenn zuvor real ein Problem gemeldet wurde (kein
+  Recovery-Spam durch ok/unknown-Flapping). Transitionen vollstaendig innerhalb
+  eines Fensters bleiben weiterhin stumm.
 - **unknown-Policy:** Uebergaenge nach `unknown` benachrichtigen nie mehr
-  (vorher eskalierte `unknown` wie ein Failure); `unknown -> ok` bleibt eine
-  normale Recovery.
+  (vorher eskalierte `unknown` wie ein Failure); `unknown -> ok` meldet nur
+  noch nach einem real gemeldeten Problem eine Recovery (siehe Sent-State-
+  Eintrag oben).
 - **Alert-Daempfung:** `agent_resources` arbeitet pro Metrik mit Hysterese
   (Release = Entry - 10 pp, konfigurierbar via `hysteresis_pp`); steht der
   `agent_ping` eines Servers auf critical, sind alle anderen Checks des
