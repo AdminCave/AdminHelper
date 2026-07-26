@@ -54,6 +54,29 @@ _STATUS_LEVEL = {"ok": 0, "info": 0, "pending": 0, "unknown": 1, "warning": 1, "
 _LEVEL_SEVERITY = {0: "info", 1: "warning", 2: "critical"}
 
 
+def resolve_notification(notified_status: str | None, new_status: str) -> str:
+    """Sent-state decision (docs/features/alert-sent-state.md): compare the
+    status the alerter last actually reported with the current evaluation.
+
+    Returns:
+        "notify"     — report the discrepancy (alert or recovery).
+        "silent_ack" — record new_status as reported WITHOUT notifying: an ok
+                       that never had a reported problem (first evaluation,
+                       unknown flapping) must not dispatch a recovery.
+        "skip"       — nothing to report; notified_status stays untouched so a
+                       suppressed discrepancy survives for later catch-up.
+    """
+    if new_status == notified_status:
+        return "skip"
+    # unknown never notifies (unknown policy) and never counts as reported —
+    # the pre-unknown discrepancy stays pending.
+    if new_status == "unknown":
+        return "skip"
+    if new_status == "ok" and notified_status not in ("warning", "critical"):
+        return "silent_ack"
+    return "notify"
+
+
 def process_alert(
     db: Session,
     check: MonitorCheck,
