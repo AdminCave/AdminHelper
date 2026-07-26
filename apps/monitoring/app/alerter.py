@@ -98,7 +98,13 @@ def process_alert(
     together. Committing here would prematurely persist any state changes the
     caller has accumulated on the same session.
     """
-    state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+    # FOR UPDATE serializes concurrent BG dispatches for the same check: the
+    # second one re-reads the already-updated notified_status and skips —
+    # without the lock both could read the stale value and double-report
+    # (no-op on sqlite). Held until the caller's commit.
+    state = (
+        db.query(MonitorState).filter(MonitorState.check_id == check.id).with_for_update().first()
+    )
     notified = state.notified_status if state is not None else old_status
     decision = resolve_notification(notified, new_status)
     if decision == "skip":

@@ -355,3 +355,54 @@ def test_degenerate_report_keeps_hysteresis_memory(client_db):
     assert client.post("/agent/srv-1/report", json=_report(cpu=75)).status_code == 200
     with factory() as db:
         assert db.query(MonitorState).filter_by(check_id="chk-1").one().status == "warning"
+
+
+def test_push_without_transition_catches_up_discrepancy(client_db, monkeypatch):
+    # T5 (alert-sent-state): a push whose status does NOT change still
+    # dispatches when the state was never reported (e.g. suppressed while the
+    # host was down) — and stays silent once the sent-state matches.
+    # cooldown 0: the rule cooldown would otherwise damp the catch-up (both
+    # reports are minutes apart in real life, milliseconds here).
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+    with factory() as db:
+        db.add(
+            MonitorAlertRule(
+                id="r1",
+                name="rule",
+                channel="webhook",
+                channel_config=json.dumps({"url": "https://hooks.example/x"}),
+                cooldown_minutes=0,
+            )
+        )
+        db.commit()
+
+    from app import alerter
+
+    dispatched: list[tuple] = []
+    monkeypatch.setattr(
+        alerter,
+        "_dispatch",
+        lambda rule, check, msg: (
+            dispatched.append((check.id, msg["old_status"], msg["new_status"])) or (True, None)
+        ),
+    )
+
+    # Push 1 flips to critical and reports it (dispatch #1).
+    assert client.post("/agent/srv-1/report", json=_report(cpu=99)).status_code == 200
+    assert dispatched == [("chk-1", "ok", "critical")]
+
+    # Simulate a suppressed report: the state stays critical but the sent-state
+    # is rolled back to "ok" (as a maintenance/host-down window would leave it).
+    with factory() as db:
+        db.query(MonitorState).filter_by(check_id="chk-1").update({"notified_status": "ok"})
+        db.commit()
+
+    # Push 2: critical -> critical, no transition — but the discrepancy must
+    # dispatch the catch-up report.
+    assert client.post("/agent/srv-1/report", json=_report(cpu=99)).status_code == 200
+    assert dispatched == [("chk-1", "ok", "critical"), ("chk-1", "ok", "critical")]
+
+    # Push 3: sent-state now matches — silent.
+    assert client.post("/agent/srv-1/report", json=_report(cpu=99)).status_code == 200
+    assert len(dispatched) == 2

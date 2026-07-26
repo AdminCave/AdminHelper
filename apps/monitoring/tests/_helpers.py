@@ -79,6 +79,9 @@ class _FirstQuery:
     def filter(self, *args, **kwargs):
         return self
 
+    def with_for_update(self, *args, **kwargs):
+        return self
+
     def first(self):
         return self._row
 
