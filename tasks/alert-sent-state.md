@@ -1,5 +1,5 @@
 # Sent-State-Tracking für den Monitoring-Alerter — Task-Ledger
-Status: aktiv · Branch: feature/alert-sent-state · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/alert-sent-state · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/alert-sent-state.md
 Basis: feature/monitoring-overhaul (stacked auf PR #4 — NICHT von main forken: `git switch -c feature/alert-sent-state feature/monitoring-overhaul`; nach Merge von PR #4 auf main rebasen, PR-Base entsprechend)
 Fast-Suite: lokal · Warm-Profil: desktop
