@@ -70,23 +70,43 @@ class _ListQuery:
         return self._items
 
 
+class _FirstQuery:
+    """query(Model)-shim returning a fixed single row (filter chainable)."""
+
+    def __init__(self, row):
+        self._row = row
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def first(self):
+        return self._row
+
+
 class _CapturingDb:
     """Fake DB for process_alert: provides the rules list, collects add()
     and flush() calls. process_alert only flushes the alert log now; the
     caller owns the commit (see the H7 fix). Maintenance-window queries are
     answered model-aware (default: none active)."""
 
-    def __init__(self, rules, maintenance=None):
+    def __init__(self, rules, maintenance=None, state=None):
         self._rules = rules
         self._maintenance = maintenance or []
+        # The sent-state load queries the MonitorState ENTITY; None = no row
+        # (process_alert then falls back to the caller's old_status). NOTE:
+        # _host_is_down queries the MonitorState.status COLUMN and is not
+        # answered here — subclasses override first() for that.
+        self._state = state
         self.added = []
         self.flushed = False
 
     def query(self, *args, **kwargs):
-        from app.models import MonitorMaintenance
+        from app.models import MonitorMaintenance, MonitorState
 
         if args and args[0] is MonitorMaintenance:
             return _ListQuery(self._maintenance)
+        if args and args[0] is MonitorState:
+            return _FirstQuery(self._state)
         return self
 
     def join(self, *args, **kwargs):

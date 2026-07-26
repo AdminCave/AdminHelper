@@ -85,20 +85,32 @@ def process_alert(
 ) -> None:
     """Evaluates all alert rules and sends out matching notifications.
 
+    Sent-state semantics (docs/features/alert-sent-state.md): the decision is
+    driven by MonitorState.notified_status — the status last actually reported
+    — not by the raw transition. Suppressed discrepancies (maintenance,
+    host-down) leave notified_status untouched, so a later evaluation catches
+    them up once the suppression is gone. ``old_status`` is the caller's
+    transition context; it only serves as the notified fallback when no state
+    row exists.
+
     The alert-log rows are only flushed, not committed: the caller (scheduler
     path / agent push path) owns the transaction and commits state + alert log
     together. Committing here would prematurely persist any state changes the
     caller has accumulated on the same session.
     """
-    if old_status == new_status:
+    state = db.query(MonitorState).filter(MonitorState.check_id == check.id).first()
+    notified = state.notified_status if state is not None else old_status
+    decision = resolve_notification(notified, new_status)
+    if decision == "skip":
+        # Nothing new to report (incl. every transition INTO 'unknown' — the
+        # unknown policy; a pre-unknown discrepancy stays pending for catch-up).
         return
-
-    # Transitions INTO 'unknown' never notify (spec: unknown-Policy): the state
-    # stays visible on the dashboard, but a check going unknown (stale agent
-    # data, SSRF-blocked target, corrupt config) is not an incident — real
-    # "agent gone" is the persisted agent_ping going critical. unknown -> ok
-    # passes below and dispatches as a normal recovery.
-    if new_status == "unknown":
+    if decision == "silent_ack":
+        # An ok that never had a reported problem (first evaluation, unknown
+        # flapping): record it as reported WITHOUT dispatching a recovery.
+        if state is not None:
+            state.notified_status = new_status
+            db.flush()
         return
 
     # Maintenance windows (collect-but-mute, T25): the state transition has
@@ -122,10 +134,16 @@ def process_alert(
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
 
     is_recovery = new_status == "ok"
+    # The receiver-facing "old" is the last REPORTED status, not the raw
+    # transition: a catch-up after host-down reads ok -> critical, a
+    # post-maintenance recovery critical -> ok. None/pending/unknown mean
+    # "nothing was ever reported" (unknown only via the migration backfill)
+    # and read as ok.
+    reported_old = notified if notified not in (None, "pending", "unknown") else "ok"
     # Build the alert message once per transition on the caller's session, then
     # reuse it for every rule dispatch and the hub emit — avoids N+1 sessions and
     # a text that could diverge if the state row changed between builds (2.30).
-    msg = _build_message(db, check, old_status, new_status)
+    msg = _build_message(db, check, reported_old, new_status)
 
     for rule in rules:
         if not _rule_matches(rule, check):
@@ -148,7 +166,7 @@ def process_alert(
         log_entry = MonitorAlertLog(
             alert_rule_id=rule.id,
             check_id=check.id,
-            old_status=old_status,
+            old_status=reported_old,
             new_status=new_status,
             sent_at=utcnow_naive(),
             success=success,
@@ -156,11 +174,16 @@ def process_alert(
         )
         db.add(log_entry)
 
+    # Mark the status as reported in the SAME flush/commit unit as the dispatch
+    # decision (spec: race note) — "reported" means the notify branch ran, not
+    # that every channel succeeded (the alert log tracks per-channel outcome).
+    if state is not None:
+        state.notified_status = new_status
     db.flush()
 
     # Independently of the rule-based webhook/email dispatch above, push every
     # status transition to the server's notification hub for per-user routing.
-    _emit_to_hub(check, old_status, new_status, msg)
+    _emit_to_hub(check, reported_old, new_status, msg)
 
 
 def _host_is_down(db: Session, check: MonitorCheck) -> bool:

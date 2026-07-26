@@ -315,9 +315,10 @@ def test_build_message_recovery_escalation_and_details():
 
 
 class TestUnknownNeverNotifies:
-    """unknown-Policy (Spec monitoring-overhaul): transitions INTO 'unknown'
-    dispatch nothing — no rules, no hub emit, no alert log. unknown -> ok still
-    dispatches as a normal recovery."""
+    """unknown-Policy (Spec monitoring-overhaul + alert-sent-state): transitions
+    INTO 'unknown' dispatch nothing — no rules, no hub emit, no alert log.
+    unknown -> ok recovers only when a problem was actually REPORTED before;
+    otherwise it acknowledges silently (F7)."""
 
     def _spies(self, monkeypatch):
         dispatched = {"n": 0}
@@ -353,13 +354,42 @@ class TestUnknownNeverNotifies:
         assert db.added == []
         assert db.flushed is False
 
-    def test_unknown_to_ok_is_a_normal_recovery(self, monkeypatch):
+    def test_unknown_to_ok_without_reported_problem_is_silent(self, monkeypatch):
+        # Sent-state (alert-sent-state F7): unknown -> ok used to dispatch as a
+        # recovery; without a previously REPORTED problem it now acknowledges
+        # silently — ok->unknown->ok flapping produces zero notifications.
         dispatched, emitted = self._spies(monkeypatch)
         db = _CapturingDb([make_rule()])
+        process_alert(db, make_check(), old_status="unknown", new_status="ok")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+
+    def test_unknown_to_ok_after_reported_problem_recovers(self, monkeypatch):
+        # critical was REPORTED, then the check went unknown (silent), then ok:
+        # the previously lost recovery is delivered now (sent-state catch-up).
+        dispatched, emitted = self._spies(monkeypatch)
+        state = SimpleNamespace(notified_status="critical", message=None)
+        db = _CapturingDb([make_rule()], state=state)
         process_alert(db, make_check(), old_status="unknown", new_status="ok")
         assert dispatched["n"] == 1
         assert emitted["n"] == 1
         assert len(db.added) == 1
+        assert state.notified_status == "ok"
+
+    def test_silent_ack_records_ok_without_dispatch(self, monkeypatch):
+        # The silent_ack branch must PERSIST notified_status: without the write
+        # the discrepancy would stay forever and (with the T4/T5 call sites)
+        # re-dispatch on every cycle.
+        dispatched, emitted = self._spies(monkeypatch)
+        state = SimpleNamespace(notified_status=None, message=None)
+        db = _CapturingDb([make_rule()], state=state)
+        process_alert(db, make_check(), old_status="pending", new_status="ok")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+        assert state.notified_status == "ok"
+        assert db.flushed is True
 
 
 class TestHostDownSuppression:

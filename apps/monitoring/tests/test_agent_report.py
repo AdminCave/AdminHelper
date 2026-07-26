@@ -143,7 +143,9 @@ def test_status_change_dispatches_alert_in_background(client_db, monkeypatch):
 
     r = client.post("/agent/srv-1/report", json=_report(cpu=99))
     assert r.status_code == 200
-    assert dispatched == [("chk-1", "pending", "critical")]
+    # Sent-state: the receiver-facing old status is the last REPORTED one;
+    # pending/None (never reported) read as "ok" (alert-sent-state T3).
+    assert dispatched == [("chk-1", "ok", "critical")]
 
 
 def test_capped_limits_length_and_rejects_non_list():
