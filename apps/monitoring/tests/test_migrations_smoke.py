@@ -126,3 +126,48 @@ def test_uniq_template_assignment_dedupes_before_constraint(monkeypatch):
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch):
+    # alert-sent-state T1: the upgrade must backfill notified_status = status —
+    # without it every pre-existing warning/critical state would count as a
+    # discrepancy and trigger a catch-up notification storm on deploy.
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+
+    import app.core.config as app_config
+
+    admin_engine = create_engine(_normalize(DB_URL), isolation_level="AUTOCOMMIT")
+    dbname = f"alembic_sentstate_{uuid.uuid4().hex[:8]}"
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_engine.url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(MONITORING_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(MONITORING_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    try:
+        command.upgrade(cfg, "b7d9f1a3c5e7")  # just before the sent-state migration
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_checks"
+                    " (id, name, check_type, config, interval, severity)"
+                    " VALUES ('c1', 'C', 'ping', '{}', '5m', 'critical')"
+                )
+            )
+            conn.execute(
+                text("INSERT INTO monitor_states (check_id, status) VALUES ('c1', 'critical')")
+            )
+        command.upgrade(cfg, "c1d3e5f7a9b1")
+        with engine.connect() as conn:
+            val = conn.execute(
+                text("SELECT notified_status FROM monitor_states WHERE check_id = 'c1'")
+            ).scalar()
+        assert val == "critical"
+    finally:
+        engine.dispose()
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        admin_engine.dispose()
