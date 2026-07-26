@@ -88,8 +88,9 @@ class _FirstQuery:
 
 class _CapturingDb:
     """Fake DB for process_alert: provides the rules list, collects add()
-    and flush() calls. process_alert only flushes the alert log now; the
-    caller owns the commit (see the H7 fix). Maintenance-window queries are
+    and flush()/commit() calls. process_alert commits the sent-state claim
+    itself (claim-then-dispatch) and flushes the alert-log rows for the
+    caller's commit. Maintenance-window queries are
     answered model-aware (default: none active)."""
 
     def __init__(self, rules, maintenance=None, state=None):
@@ -102,6 +103,7 @@ class _CapturingDb:
         self._state = state
         self.added = []
         self.flushed = False
+        self.committed = False
 
     def query(self, *args, **kwargs):
         from app.models import MonitorMaintenance, MonitorState
@@ -131,3 +133,8 @@ class _CapturingDb:
 
     def flush(self):
         self.flushed = True
+
+    def commit(self):
+        # process_alert commits the sent-state claim itself (claim-then-
+        # dispatch); the fake only records that it happened.
+        self.committed = True

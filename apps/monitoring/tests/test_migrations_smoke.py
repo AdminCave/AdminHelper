@@ -160,12 +160,44 @@ def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch)
             conn.execute(
                 text("INSERT INTO monitor_states (check_id, status) VALUES ('c1', 'critical')")
             )
+        # A check standing on unknown at deploy time: the last SENT status
+        # comes from the alert log (c2 -> critical, recovery after the deploy
+        # must not be swallowed); without a log entry it stays unknown (c3).
+        with engine.begin() as conn:
+            for cid in ("c2", "c3"):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks"
+                        " (id, name, check_type, config, interval, severity)"
+                        f" VALUES ('{cid}', 'C', 'ping', '{{}}', '5m', 'critical')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"INSERT INTO monitor_states (check_id, status) VALUES ('{cid}', 'unknown')"
+                    )
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_alert_rules (id, name, channel, channel_config)"
+                    " VALUES ('r1', 'R', 'webhook', '{}')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_alert_log"
+                    " (alert_rule_id, check_id, old_status, new_status, sent_at, success)"
+                    " VALUES ('r1', 'c2', 'ok', 'critical', '2026-01-01 00:00:00', true)"
+                )
+            )
         command.upgrade(cfg, "c1d3e5f7a9b1")
         with engine.connect() as conn:
-            val = conn.execute(
-                text("SELECT notified_status FROM monitor_states WHERE check_id = 'c1'")
-            ).scalar()
-        assert val == "critical"
+            rows = dict(
+                conn.execute(
+                    text("SELECT check_id, notified_status FROM monitor_states")
+                ).fetchall()
+            )
+        assert rows == {"c1": "critical", "c2": "critical", "c3": "unknown"}
     finally:
         engine.dispose()
         with admin_engine.connect() as conn:

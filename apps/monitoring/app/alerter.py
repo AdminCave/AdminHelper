@@ -5,7 +5,8 @@
 """
 Alerter — webhook + email dispatch for monitoring alerts.
 
-Called by check_engine when a check status changes.
+Called from both BG dispatch paths whenever a check evaluation diverges from
+the last reported status (sent-state, docs/features/alert-sent-state.md).
 Evaluates alert rules, cooldown and sends out notifications.
 """
 
@@ -91,22 +92,27 @@ def process_alert(
     host-down) leave notified_status untouched, so a later evaluation catches
     them up once the suppression is gone. ``old_status`` is the caller's
     transition context; it only serves as the notified fallback when no state
-    row exists.
+    row exists. ``new_status`` is likewise only a snapshot — the CURRENT
+    state.status re-read under the lock is authoritative.
 
-    The alert-log rows are only flushed, not committed: the caller (scheduler
-    path / agent push path) owns the transaction and commits state + alert log
-    together. Committing here would prematurely persist any state changes the
-    caller has accumulated on the same session.
+    Claim-then-dispatch: the claim (notified_status = current) is committed by
+    THIS function BEFORE any channel I/O, so the row lock never spans
+    webhook/SMTP timeouts and a later commit failure cannot re-fire an
+    already-sent alert (at-most-once). The alert-log rows written afterwards
+    are only flushed — the caller's commit persists them.
     """
-    # FOR UPDATE serializes concurrent BG dispatches for the same check: the
-    # second one re-reads the already-updated notified_status and skips —
-    # without the lock both could read the stale value and double-report
-    # (no-op on sqlite). Held until the caller's commit.
+    # Claim phase — a short FOR UPDATE window with no I/O inside. The lock
+    # serializes concurrent BG dispatches for the same check: the second one
+    # re-reads the already-claimed notified_status and skips (no-op on sqlite).
     state = (
         db.query(MonitorState).filter(MonitorState.check_id == check.id).with_for_update().first()
     )
+    # Re-read the CURRENT status under the lock: the caller's new_status may be
+    # stale when dispatches run out of submission order — dispatching the
+    # snapshot would report a phantom transition and move notified backwards.
+    current = state.status if state is not None else new_status
     notified = state.notified_status if state is not None else old_status
-    decision = resolve_notification(notified, new_status)
+    decision = resolve_notification(notified, current)
     if decision == "skip":
         # Nothing new to report (incl. every transition INTO 'unknown' — the
         # unknown policy; a pre-unknown discrepancy stays pending for catch-up).
@@ -115,9 +121,10 @@ def process_alert(
         # An ok that never had a reported problem (first evaluation, unknown
         # flapping): record it as reported WITHOUT dispatching a recovery.
         if state is not None:
-            state.notified_status = new_status
+            state.notified_status = current
             db.flush()
         return
+    new_status = current
 
     # Maintenance windows (collect-but-mute, T25): the state transition has
     # already been persisted by the caller — only notifications are muted.
@@ -146,6 +153,16 @@ def process_alert(
     # "nothing was ever reported" (unknown only via the migration backfill)
     # and read as ok.
     reported_old = notified if notified not in (None, "pending", "unknown") else "ok"
+
+    # Claim BEFORE the channel I/O and commit it: the row lock is released, so
+    # scheduler workers and push threads never wait on webhook/SMTP timeouts
+    # (the 5.3 isolation stays intact), and a commit failure after the send can
+    # no longer re-fire an already-sent alert — at-most-once by design
+    # ("reported" = the claim persisted).
+    if state is not None:
+        state.notified_status = new_status
+        db.commit()
+
     # Build the alert message once per transition on the caller's session, then
     # reuse it for every rule dispatch and the hub emit — avoids N+1 sessions and
     # a text that could diverge if the state row changed between builds (2.30).
@@ -180,11 +197,8 @@ def process_alert(
         )
         db.add(log_entry)
 
-    # Mark the status as reported in the SAME flush/commit unit as the dispatch
-    # decision (spec: race note) — "reported" means the notify branch ran, not
-    # that every channel succeeded (the alert log tracks per-channel outcome).
-    if state is not None:
-        state.notified_status = new_status
+    # The claim was committed before the I/O above; only the alert-log rows
+    # remain for the caller's commit.
     db.flush()
 
     # Independently of the rule-based webhook/email dispatch above, push every

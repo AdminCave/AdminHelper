@@ -176,7 +176,7 @@ def agent_report(
 
     # Evaluate agent-based checks for this server
     checks_updated = 0
-    # (check_id, old_status, new_status) for each status change; dispatched in
+    # (check_id, old_status, new_status) for each sent-state discrepancy; dispatched in
     # the background after the response so webhook/SMTP never block the request.
     pending_alerts: list[tuple[str, str, str]] = []
     agent_checks = (

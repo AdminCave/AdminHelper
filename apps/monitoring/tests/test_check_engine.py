@@ -280,3 +280,20 @@ def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
         db.commit()
     ce.execute_check("c1")  # no discrepancy -> no dispatch
     assert submitted == []
+
+    # F9: the inline silent_ack in the scheduler path — an ok that was never
+    # reported books notified_status without any BG task.
+    class _OkChecker:
+        def run(self, config):
+            return "ok", "fine", None
+
+    monkeypatch.setattr(ce, "get_checker", lambda t: _OkChecker())
+    with factory() as db:
+        db.query(MonitorState).filter_by(check_id="c1").update(
+            {"status": "ok", "notified_status": None, "fail_count": 0}
+        )
+        db.commit()
+    ce.execute_check("c1")
+    assert submitted == []
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="c1").one().notified_status == "ok"

@@ -369,7 +369,7 @@ class TestUnknownNeverNotifies:
         # critical was REPORTED, then the check went unknown (silent), then ok:
         # the previously lost recovery is delivered now (sent-state catch-up).
         dispatched, emitted = self._spies(monkeypatch)
-        state = SimpleNamespace(notified_status="critical", message=None)
+        state = SimpleNamespace(status="ok", notified_status="critical", message=None)
         db = _CapturingDb([make_rule()], state=state)
         process_alert(db, make_check(), old_status="unknown", new_status="ok")
         assert dispatched["n"] == 1
@@ -377,12 +377,59 @@ class TestUnknownNeverNotifies:
         assert len(db.added) == 1
         assert state.notified_status == "ok"
 
+    def test_second_dispatch_for_same_discrepancy_skips(self, monkeypatch):
+        # F8: the claim under FOR UPDATE is the double-dispatch guard — a
+        # second BG task re-reads the already-claimed notified_status and must
+        # no-op even though ITS caller snapshot still says "transition".
+        dispatched, emitted = self._spies(monkeypatch)
+        state = SimpleNamespace(status="critical", notified_status="critical", message=None)
+        db = _CapturingDb([make_rule()], state=state)
+        process_alert(db, make_check(), old_status="ok", new_status="critical")
+        assert dispatched["n"] == 0
+        assert emitted["n"] == 0
+        assert db.added == []
+
+    def test_stale_snapshot_dispatches_current_row_status(self, monkeypatch):
+        # F2: the caller's new_status is a snapshot; the CURRENT row status
+        # wins — an out-of-order older task must not report a phantom
+        # improvement or move notified backwards.
+        dispatched, emitted = self._spies(monkeypatch)
+        captured = {}
+        monkeypatch.setattr(
+            alerter,
+            "_build_message",
+            lambda db, check, old, new: captured.update(old=old, new=new) or make_msg(),
+        )
+        state = SimpleNamespace(status="critical", notified_status="ok", message=None)
+        db = _CapturingDb([make_rule()], state=state)
+        # The dispatch spy records whether the claim was committed BEFORE the
+        # channel I/O ran — the core of claim-then-dispatch (F1/F5).
+        committed_at_dispatch = []
+        monkeypatch.setattr(
+            alerter,
+            "_dispatch",
+            lambda rule, check, msg: (
+                (
+                    committed_at_dispatch.append(db.committed),
+                    dispatched.__setitem__("n", dispatched["n"] + 1),
+                )
+                and None
+                or (True, None)
+            ),
+        )
+        # Stale caller snapshot says "warning" — the row says critical.
+        process_alert(db, make_check(), old_status="ok", new_status="warning")
+        assert dispatched["n"] == 1
+        assert captured == {"old": "ok", "new": "critical"}
+        assert state.notified_status == "critical"
+        assert committed_at_dispatch == [True]  # claim committed before channel I/O
+
     def test_silent_ack_records_ok_without_dispatch(self, monkeypatch):
         # The silent_ack branch must PERSIST notified_status: without the write
         # the discrepancy would stay forever and (with the T4/T5 call sites)
         # re-dispatch on every cycle.
         dispatched, emitted = self._spies(monkeypatch)
-        state = SimpleNamespace(notified_status=None, message=None)
+        state = SimpleNamespace(status="ok", notified_status=None, message=None)
         db = _CapturingDb([make_rule()], state=state)
         process_alert(db, make_check(), old_status="pending", new_status="ok")
         assert dispatched["n"] == 0
