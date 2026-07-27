@@ -146,6 +146,10 @@ export const translations: Translations = {
     'hook.event.frp.tunnel.created': 'FRP-Tunnel erstellt',
     'hook.event.frp.tunnel.updated': 'FRP-Tunnel geändert',
     'hook.event.frp.tunnel.deleted': 'FRP-Tunnel gelöscht',
+    'hook.event.playbook.created': 'Playbook erstellt',
+    'hook.event.playbook.updated': 'Playbook geändert',
+    'hook.event.playbook.deleted': 'Playbook gelöscht',
+    'hook.event.alert.triggered': 'Monitoring-Alert (critical)',
 
     // ── Hook Script Help ──────────────────────────────────────────────
     'hook.scriptHelp.webhook': 'Kontext: `payload`, `headers`, `params`',
@@ -371,6 +375,10 @@ export const translations: Translations = {
     'hook.event.frp.tunnel.created': 'FRP tunnel created',
     'hook.event.frp.tunnel.updated': 'FRP tunnel updated',
     'hook.event.frp.tunnel.deleted': 'FRP tunnel deleted',
+    'hook.event.playbook.created': 'Playbook created',
+    'hook.event.playbook.updated': 'Playbook updated',
+    'hook.event.playbook.deleted': 'Playbook deleted',
+    'hook.event.alert.triggered': 'Monitoring alert (critical)',
 
     // ── Hook Script Help ──────────────────────────────────────────────
     'hook.scriptHelp.webhook': 'Context: `payload`, `headers`, `params`',
