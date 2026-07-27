@@ -99,6 +99,21 @@ class _Channels:
         self.telegram = False
 
 
+def default_admin_subscription(user_id: int) -> NotificationSubscription:
+    """Baseline rule for a freshly created admin: everything at warning+ lands
+    in the bell feed; external channels stay opt-in. Without it a fresh install
+    has zero subscriptions and resolve_recipients routes alerts to nobody."""
+    return NotificationSubscription(
+        user_id=user_id,
+        scope_type="all",
+        scope_ref=None,
+        min_severity="warning",
+        channel_email=False,
+        channel_telegram=False,
+        enabled=True,
+    )
+
+
 def resolve_recipients(db: Session, event: IncomingEvent) -> list[tuple[User, _Channels]]:
     """Return (user, channels) for every user a subscription routes this event to.
 

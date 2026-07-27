@@ -24,7 +24,7 @@ from app.core.auth import require_agent
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, safe_metric_part, victoria
-from app.models import MonitorCheck, MonitorState
+from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,15 @@ def agent_report(
         )
 
     record_agent_report(server_id)
+    # Persist liveness so agent_ping survives service restarts. Own commit: the
+    # shared commit below only happens when agent checks exist, and a failed
+    # persist must only cost the hydration, never the report.
+    try:
+        db.merge(MonitorAgentLiveness(server_id=server_id, last_report_at=utcnow_naive()))
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Persistieren der Agent-Liveness fehlgeschlagen (%s)", server_id)
 
     ts = int(time.time())
     base_tags = {"server_id": server_id}
@@ -206,7 +215,35 @@ def agent_report(
             # the dispatch. The filter above guarantees check_type is a push type,
             # so get_checker always resolves; each push checker implements evaluate().
             checker = get_checker(check.check_type)
-            result_status, message, metrics = checker.evaluate(config, report)
+
+            # Lock the state row BEFORE evaluating: agent_resources needs the
+            # previous _details for per-metric hysteresis (T6), and the lock has
+            # to cover the read-modify-write anyway — two near-simultaneous
+            # pushes must not clobber fail_count or double-alert (4.46).
+            # Evaluate is pure CPU, so holding the lock across it is harmless.
+            # with_for_update is a no-op on sqlite (tests).
+            state = (
+                db.query(MonitorState)
+                .filter(MonitorState.check_id == check.id)
+                .with_for_update()
+                .first()
+            )
+            old_status = state.status if state else "pending"
+            prev_fail_count = state.fail_count if state else 0
+
+            if check.check_type == "agent_resources":
+                try:
+                    prev_details = json.loads(state.details) if state and state.details else None
+                except (json.JSONDecodeError, TypeError):
+                    prev_details = None
+                # Valid-but-non-dict JSON ("[]") must degrade the same way —
+                # evaluate expects a mapping and the loop-except would otherwise
+                # freeze this check on every push.
+                if not isinstance(prev_details, dict):
+                    prev_details = None
+                result_status, message, metrics = checker.evaluate(config, report, prev_details)
+            else:
+                result_status, message, metrics = checker.evaluate(config, report)
 
             # Extract structured details
             details = metrics.pop("_details", None) if metrics else None
@@ -227,18 +264,6 @@ def agent_report(
             # Update state — same damping logic as the scheduler path; the
             # check_engine pure functions are the single source (audit: the
             # previous inline copy could drift from the tested implementation).
-            # Lock the state row for the read-modify-write so two near-simultaneous pushes for
-            # one server (agent restart/retry) can't both read the same fail_count and clobber it
-            # or double-alert — same race as the scheduler path (4.46). No-op on sqlite.
-            state = (
-                db.query(MonitorState)
-                .filter(MonitorState.check_id == check.id)
-                .with_for_update()
-                .first()
-            )
-            old_status = state.status if state else "pending"
-
-            prev_fail_count = state.fail_count if state else 0
             new_fail_count = next_fail_count(result_status, prev_fail_count)
             eff_status = effective_status(
                 result_status, new_fail_count, check.consecutive_fails, old_status
@@ -246,7 +271,7 @@ def agent_report(
             if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
                 message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
 
-            details_json = json.dumps(details) if details else None
+            details_json = json.dumps(details) if details is not None else None
 
             if not state:
                 state = MonitorState(
@@ -266,7 +291,12 @@ def agent_report(
                 state.fail_count = new_fail_count
                 state.last_check = now
                 state.message = message
-                state.details = details_json
+                # None details = the checker had nothing to evaluate (e.g. a
+                # report without a 'resources' block -> unknown). Keep the
+                # stored details then: nulling them would wipe the per-metric
+                # hysteresis memory ('problems') one degenerate push (T38).
+                if details is not None:
+                    state.details = details_json
 
             # Alerting on status change: collect now, dispatch after the commit
             # in a background task (blocking webhook/SMTP must not stall this

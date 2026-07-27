@@ -31,7 +31,7 @@
         <div class="content-inner">
           <span class="eyebrow">Entwickler-Handbuch</span>
           <h1>Monitoring-Stack</h1>
-          <p class="lead">Monitoring ist ein Zusammenspiel aus drei Ebenen: der AdminHelper-Server agiert als Reverse-Proxy und reicht UI-Queries weiter, der separate <code>monitoring/</code>-Service h&auml;lt Checks/Alerts/Templates und f&uuml;hrt Scheduler-Checks aus, VictoriaMetrics speichert die Zeitreihen (Retention 90&nbsp;Tage).</p>
+          <p class="lead">Monitoring ist ein Zusammenspiel aus drei Ebenen: der AdminHelper-Server agiert als Reverse-Proxy und reicht UI-Queries weiter, der separate <code>monitoring/</code>-Service h&auml;lt Checks/Alerts/Templates und f&uuml;hrt Scheduler-Checks aus, VictoriaMetrics speichert die Zeitreihen (Retention konfigurierbar &uuml;ber <code>VM_RETENTION</code>, Default 90&nbsp;Tage).</p>
 
           <h2>Daten-Fluss</h2>
           <div class="code-header"><span>flow</span></div>
@@ -53,23 +53,28 @@
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>&ouml;ffentlich</strong> (X-API-Key), reicht 1:1 an den Service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, intern erweitert um <code>X-Internal-Key: $MONITOR_API_KEY</code></li>
-            <li>SSRF-Schutz: erlaubte Pfad-Prefixe sind <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>agent</code>; Path-Traversal (<code>..</code>) wird blockiert</li>
+            <li>SSRF-Schutz: erlaubte Pfad-Prefixe sind <code>checks</code>, <code>alerts</code>, <code>log</code>, <code>metrics</code>, <code>status</code>, <code>templates</code>, <code>maintenance</code>, <code>agent</code>; Path-Traversal (<code>..</code>) wird blockiert</li>
             <li>Beim Server-Delete im AdminHelper wird <code>DELETE /servers/{id}/cleanup</code> am Monitoring-Service gefeuert &ndash; verwaiste Checks/Alerts werden so automatisch aufger&auml;umt</li>
           </ul>
 
           <h2>Monitoring-Service-Struktur</h2>
           <div class="code-header"><span>tree</span></div>
 <pre><code>apps/monitoring/app/
-&#9500;&#9472;&#9472; main.py            FastAPI-App, Lifespan (Scheduler-Start), Routen-Registrierung
-&#9500;&#9472;&#9472; models.py          MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey
-&#9500;&#9472;&#9472; schemas.py         Pydantic Input-Schemas (CheckCreate, AlertRuleCreate, TemplateCreate)
-&#9500;&#9472;&#9472; check_engine.py    execute_check()-Dispatcher
-&#9500;&#9472;&#9472; alerter.py         process_alert() (Webhook / E-Mail), Cooldown
-&#9500;&#9472;&#9472; scheduler.py       APScheduler-Integration (Pull-Checks)
-&#9500;&#9472;&#9472; template_sync.py   Template-Sync auf Server-Zuweisungen
-&#9500;&#9472;&#9472; checkers/          agent.py / smart.py / http.py / ping.py / tcp.py / plugins.py
-&#9500;&#9472;&#9472; routers/           admin.py / agent.py / alerts.py / checks.py / templates.py
-&#9492;&#9472;&#9472; core/              auth.py / config.py / database.py / victoria.py</code></pre>
+&#9500;&#9472;&#9472; main.py               FastAPI-App, Lifespan (Liveness-Hydrate, Seeding, Scheduler-Start)
+&#9500;&#9472;&#9472; models.py             MonitorCheck, MonitorState, MonitorAlertRule, MonitorTemplate, MonitorAgentKey,
+&#9474;                         MonitorSeedState, MonitorAgentLiveness, MonitorMaintenance, MonitorTemplateTagAssignment
+&#9500;&#9472;&#9472; schemas.py            Pydantic Input-Schemas (CheckCreate, AlertRuleCreate, TemplateCreate, MaintenanceInput)
+&#9500;&#9472;&#9472; check_configs.py      Strikte per-Typ-Config-Modelle (unbekannte Keys/Bounds &rarr; 422)
+&#9500;&#9472;&#9472; check_engine.py       execute_check()-Dispatcher
+&#9500;&#9472;&#9472; alerter.py            process_alert() (Guards, Webhook / E-Mail, Cooldown, Hub-Emit)
+&#9500;&#9472;&#9472; maintenance.py        is_in_maintenance() (einmalig + w&ouml;chentlich, zoneinfo/DST)
+&#9500;&#9472;&#9472; scheduler.py          APScheduler-Integration (Pull-Checks, Cleanup, Tag-Sync)
+&#9500;&#9472;&#9472; builtin_templates.py  Standard-Templates + Tombstone-Seeding
+&#9500;&#9472;&#9472; template_sync.py      Template-Sync auf Server-Zuweisungen
+&#9500;&#9472;&#9472; tag_sync.py           Tag-basierte Zuweisungen (Server-Inventar &rarr; Assignments)
+&#9500;&#9472;&#9472; checkers/             agent.py / smart.py / http.py / ping.py / tcp.py / plugins.py / forecast.py
+&#9500;&#9472;&#9472; routers/              admin.py / agent.py / alerts.py / checks.py / templates.py / maintenance.py
+&#9492;&#9472;&#9472; core/                 auth.py / config.py / database.py / victoria.py</code></pre>
 
           <h2>Push-Checks vs. Pull-Checks</h2>
           <p>Es gibt zwei Klassen von Checks &ndash; entscheidend ist, <em>wer</em> die Daten beschafft:</p>
@@ -77,11 +82,11 @@
             <thead><tr><th>Modus</th><th>Check-Typen</th><th>Trigger</th></tr></thead>
             <tbody>
               <tr><td>Push (Agent)</td><td><code>agent_resources</code>, <code>service_process</code>, <code>docker_health</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>smart_health</code></td><td>Beim n&auml;chsten Agent-Push (5-Min-Timer); APScheduler ist <strong>nicht</strong> beteiligt.</td></tr>
-              <tr><td>Pull (Service)</td><td><code>http</code>, <code>ping</code>, <code>tcp</code>, <code>agent_ping</code></td><td>APScheduler im Monitoring-Service nach festem <code>interval</code>.</td></tr>
+              <tr><td>Pull (Service)</td><td><code>http</code>, <code>ping</code>, <code>tcp</code>, <code>agent_ping</code>, <code>disk_forecast</code></td><td>APScheduler im Monitoring-Service nach festem <code>interval</code>.</td></tr>
             </tbody>
           </table>
           <p>Beide Pfade landen am Ende in <code>execute_check()</code> &rarr; Status-Update in <code>MonitorState</code> &rarr; <code>format_line()</code> &rarr; VictoriaMetrics-Write &rarr; ggf. <code>process_alert()</code>, sobald <code>fail_count &ge; consecutive_fails</code>.</p>
-          <p>Der APScheduler (<code>scheduler.py</code>) l&auml;uft mit einem ThreadPool von 30 Workern und <code>misfire_grace_time=30&nbsp;s</code> &ndash; verz&ouml;gert startende Runs werden bis 30&nbsp;s nachgeholt statt verworfen. Ein t&auml;glicher Cleanup-Job bereinigt au&szlig;erdem <code>monitor_alert_log</code> (Retention 90&nbsp;Tage).</p>
+          <p>Der APScheduler (<code>scheduler.py</code>) l&auml;uft mit einem ThreadPool von 30 Workern und <code>misfire_grace_time=30&nbsp;s</code> &ndash; verz&ouml;gert startende Runs werden bis 30&nbsp;s nachgeholt statt verworfen. Ein t&auml;glicher Cleanup-Job bereinigt au&szlig;erdem <code>monitor_alert_log</code> (Retention &uuml;ber <code>ALERT_LOG_RETENTION_DAYS</code>, Default 90&nbsp;Tage), und alle 15&nbsp;Minuten l&auml;uft der Tag-Sync (siehe unten).</p>
 
           <h2>Push-Payload (Agent &rarr; Service)</h2>
           <p>Der Go-Agent baut den Report in <code>apps/agent/internal/monitor/report.go</code> (<code>BuildReport</code>) und sendet ihn als JSON per <code>POST {url}/agent/{server_id}/report</code> mit den Headern <code>Content-Type: application/json</code> und <code>X-API-Key</code> (<code>PushReport</code>). Der Server-Handler in <code>routers/agent.py</code> nimmt das JSON als freies <code>dict</code> entgegen. Struktur:</p>
@@ -124,7 +129,8 @@
               <tr><td><code>http.py</code></td><td><code>http</code></td><td>HTTP/HTTPS-Request via <code>httpx</code> (Methode konfigurierbar, folgt Redirects). Vergleicht Statuscode mit <code>expected_status</code>, optional Suche nach <code>search_string</code> im Body, misst Antwortzeit. SSRF-Schutz: URLs, die auf private/reservierte IP-Bereiche aufl&ouml;sen, werden abgewiesen.</td></tr>
               <tr><td><code>ping.py</code></td><td><code>ping</code></td><td>ICMP-Echo via <code>ping -c 1 -W &lt;timeout&gt;</code> als Subprozess. Ziel wird gegen ein Allowlist-Regex (Hostnamen/IPs) validiert; parst die RTT aus dem Output.</td></tr>
               <tr><td><code>tcp.py</code></td><td><code>tcp</code></td><td>TCP-Connect via <code>socket.create_connection((target, port))</code> mit Timeout. <code>ok</code> bei erfolgreichem Connect (mit Connect-Zeit), <code>critical</code> bei Timeout/Refused.</td></tr>
-              <tr><td><code>agent.py</code></td><td><code>agent_ping</code>, <code>agent_resources</code>, <code>service_process</code></td><td><code>AgentPingChecker</code> pr&uuml;ft (scheduler-getrieben) das Alter des letzten Push gegen <code>stale_minutes</code>. <code>AgentResourcesChecker</code> wertet CPU/RAM/Disk/Temp gegen Warn-/Crit-Thresholds aus. <code>ServiceProcessChecker</code> pr&uuml;ft Dienste &ndash; Modus <code>auto</code> (failed + enabled-but-inactive systemd-Units, mit Ignore-Liste) oder <code>list</code> (explizit benannte Dienste).</td></tr>
+              <tr><td><code>agent.py</code></td><td><code>agent_ping</code>, <code>agent_resources</code>, <code>service_process</code></td><td><code>AgentPingChecker</code> pr&uuml;ft (scheduler-getrieben) das Alter des letzten Push gegen <code>stale_minutes</code>. <code>AgentResourcesChecker</code> wertet CPU/RAM/Disk/Temp gegen Warn-/Crit-Thresholds aus. <code>ServiceProcessChecker</code> pr&uuml;ft Dienste &ndash; Modus <code>auto</code> (failed + enabled-but-inactive systemd-Units, mit Ignore-Liste) oder <code>list</code> (explizit benannte Dienste). Der Resources-Checker arbeitet <strong>pro Metrik</strong> mit Hysterese (<code>hysteresis_pp</code>, Release = Entry &minus; 10&nbsp;pp); die Push-Zeitpunkte persistiert der Push-Handler (<code>routers/agent.py</code>) in <code>monitor_agent_liveness</code>, der Lifespan hydratisiert sie beim Start &ndash; kein False-Alert-Sturm nach einem Monitoring-Restart.</td></tr>
+              <tr><td><code>forecast.py</code></td><td><code>disk_forecast</code></td><td>Pull-Checker: <code>query_range</code> &uuml;ber <code>monitor_agent_disk_percent_value{server_id="&hellip;"}</code> (Fenster <code>window_hours</code>, Step 10&nbsp;m), Least-Squares-Slope pro Mount &rarr; <code>hours_left = (100 &minus; last) / rate</code>. Raten &le; 0.01&nbsp;pp/h gelten als stabil (<code>ok</code>); zu wenig Historie &rarr; <code>unknown</code>. <code>server_id</code> wird mit <code>escape_label_value()</code> escapet.</td></tr>
               <tr><td><code>smart.py</code></td><td><code>smart_health</code></td><td>Wertet SMART-Daten aus dem Push aus (ATA-HDD/SSD und NVMe). Pr&uuml;ft u.&nbsp;a. reallocated/pending Sectors, NVMe-<code>critical_warning</code>-Bits und Temperaturen gegen typ-spezifische Thresholds. Fehlt der <code>smart</code>-Key (VM oder kein <code>smartctl</code>), ist das <code>ok</code>, kein Fehler.</td></tr>
             </tbody>
           </table>
@@ -145,14 +151,28 @@
             <li>Im Push-Handler (<code>routers/agent.py</code>) wird zus&auml;tzlich gepr&uuml;ft, dass die aus dem Key abgeleitete <code>server_id</code> der <code>server_id</code> im Pfad entspricht; sonst <code>403</code>. Ein g&uuml;ltiger Key f&uuml;r Server A kann also keine Metriken f&uuml;r Server B einliefern (<code>__internal__</code> ausgenommen).</li>
           </ul>
 
-          <h2>Templates</h2>
-          <p><code>MonitorTemplate</code> b&uuml;ndelt mehrere <code>CheckDef</code>+<code>AlertRuleDef</code>-Eintr&auml;ge unter einer stabilen <code>template_def_id</code>. <code>POST /templates/{id}/assign/{server_id}</code> rollt das Template aus; <code>template_sync.py</code> reconciled bei &Auml;nderungen, sodass die Server-Zuweisungen drift-frei bleiben.</p>
+          <h2>Templates, Seeding &amp; Tag-Sync</h2>
+          <p><code>MonitorTemplate</code> b&uuml;ndelt Check- und Alert-Definitionen als JSON mit stabiler <code>def_id</code> pro Definition. <code>POST /templates/{id}/assign/{server_id}</code> rollt das Template aus; <code>template_sync.py</code> reconciled bei &Auml;nderungen, sodass die Server-Zuweisungen drift-frei bleiben.</p>
+          <h3>Built-in-Seeding (Tombstone)</h3>
+          <p>Der Lifespan seedet beim Start f&uuml;nf Standard-Templates aus <code>builtin_templates.py</code> (markiert &uuml;ber <code>builtin_slug</code>). Der Tombstone in <code>monitor_seed_state</code> garantiert: pro Slug wird <strong>h&ouml;chstens einmal</strong> geseedet &ndash; ein vom Nutzer gel&ouml;schtes oder angepasstes Built-in wird von sp&auml;teren Starts nie wiederhergestellt oder &uuml;berschrieben; neue Built-ins sp&auml;terer Releases seeden nur sich selbst. Die Definitionen passieren dieselbe Schema-Boundary wie User-Templates (Test <code>tests/test_seed.py</code>).</p>
+          <h3>Tag-Sync (Server &harr; Monitoring)</h3>
+          <p>Tags leben in der Server-DB (<code>Server.tags</code>); Monitoring kennt nur <code>server_id</code>-Strings. <code>tag_sync.py</code> zieht das Inventar &uuml;ber <code>GET /api/internal/servers</code> am AdminHelper-Server (Service-to-Service, <code>X-Internal-Key</code>) und materialisiert f&uuml;r jede <code>MonitorTemplateTagAssignment</code> die Server-Zuweisungen mit <code>source='tag'</code>. Trigger: alle 15&nbsp;Minuten per Scheduler <em>und</em> sofort als Best-Effort-Nudge &ndash; der AdminHelper-Server POSTet nach Server-Create/-Update(Tags/Name/Hostname)/-Delete auf <code>/templates/tag-sync</code>. Verliert ein Server den Tag, wird die Tag-Zuweisung samt materialisierter Checks entfernt; <code>source='manual'</code>-Zuweisungen fasst der Sync nie an. Ein nicht erreichbares Server-API (<code>None</code>) ist strikt von einem leeren Inventar (<code>[]</code>) unterschieden &ndash; ein Ausfall l&ouml;scht keine Zuweisungen.</p>
+
+          <h2>Alert-Pipeline: Guards &amp; Suppression</h2>
+          <p>Reihenfolge in <code>process_alert()</code> (gilt f&uuml;r Regel-Dispatch <em>und</em> Hub-Emit, da <code>_emit_to_hub</code> hinter denselben Guards sitzt):</p>
+          <ol>
+            <li><code>old == new</code> &rarr; kein Alert (nur echte Transitionen).</li>
+            <li>Transition <em>nach</em> <code>unknown</code> &rarr; nie benachrichtigen (unknown-Policy); <code>unknown &rarr; ok</code> ist normale Recovery.</li>
+            <li>Aktives Maintenance-Fenster des Servers &rarr; collect-but-mute: Status/Metriken laufen weiter, Benachrichtigung unterdr&uuml;ckt, kein Alert-Log-Eintrag. <code>is_in_maintenance()</code> rechnet w&ouml;chentliche Fenster in der konfigurierten IANA-Zeitzone (zoneinfo, DST-korrekt; Tages-Wrap &uuml;ber Mitternacht inklusive).</li>
+            <li>Host-down-Inhibition: steht der <code>agent_ping</code> des Servers auf <code>critical</code>, bleiben alle anderen Checks des Servers stumm; <code>agent_ping</code> selbst alertet immer.</li>
+          </ol>
+          <p>Maintenance-CRUD liegt in <code>routers/maintenance.py</code> (<code>/maintenance</code>, <code>require_internal</code>; Proxy-Prefix <code>maintenance</code>).</p>
 
           <h2>VictoriaMetrics</h2>
-          <p>Externer Container (siehe <code>docker-compose.yml</code>), Retention 90&nbsp;Tage. Der Service schreibt im InfluxDB-Line-Protocol &uuml;ber <code>core/victoria.py</code>:</p>
+          <p>Externer Container (siehe <code>docker-compose.yml</code>), Retention <code>-retentionPeriod=${VM_RETENTION:-90d}</code> &ndash; unabh&auml;ngig von <code>ALERT_LOG_RETENTION_DAYS</code> (Alert-Log in Postgres). Der Service schreibt im InfluxDB-Line-Protocol &uuml;ber <code>core/victoria.py</code>:</p>
           <div class="code-header"><span>bash</span></div>
 <pre><code>monitor_agent_cpu_percent,server_id=srv123 value=45.2 1683000000</code></pre>
-          <p>Reads laufen &uuml;ber den Standard-Prometheus-Endpoint <code>/api/v1/query</code> bzw. <code>/api/v1/query_range</code>. Im Desktop-Client zeichnet uPlot daraus die Charts.</p>
+          <p>Reads laufen &uuml;ber den Standard-Prometheus-Endpoint <code>/api/v1/query</code> bzw. <code>/api/v1/query_range</code>. Im Desktop-Client zeichnet uPlot daraus die Charts. Die Chart-Queries der UI sind dabei nie roh: <code>GET /checks/{id}/metrics</code> baut die PromQL-Query serverseitig aus einer Metrik-Allowlist pro Check-Typ (<code>CHECK_TYPE_METRICS</code>) und escapet Label-Werte &ndash; Freitext-Queries aus der UI erreichen VictoriaMetrics nicht (SSRF-/Injection-Schutz).</p>
 
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>

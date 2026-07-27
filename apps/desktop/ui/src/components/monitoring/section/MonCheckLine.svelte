@@ -8,7 +8,13 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import type { Snippet } from 'svelte';
   import type { MonitorCheck } from '$lib/api/types';
   import { statusClass, formatCheckTime } from '$lib/models/monitoring';
-  import { toggleExpanded, monitoring, toggleCheck, runCheck } from '$lib/stores/monitoring';
+  import {
+    toggleExpanded,
+    monitoring,
+    toggleCheck,
+    runCheck,
+    openCheckEditor,
+  } from '$lib/stores/monitoring';
   import MonSectionIcon from './MonSectionIcon.svelte';
   import ExpandChart from './ExpandChart.svelte';
   import { t } from '$lib/i18n';
@@ -35,6 +41,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
     void toggleCheck(check.id);
   }
 
+  function onEdit(e: MouseEvent | KeyboardEvent): void {
+    e.stopPropagation();
+    openCheckEditor(check, check.serverId ?? '');
+  }
+
   function onRun(e: MouseEvent | KeyboardEvent): void {
     e.stopPropagation();
     void runCheck(check.id);
@@ -57,6 +68,15 @@ SPDX-License-Identifier: GPL-3.0-or-later
     {/if}
     <span class="mon-line-time">{formatCheckTime(check.state?.lastCheck)}</span>
     <div class="mon-line-actions">
+      <button
+        class="mon-line-action"
+        onclick={onEdit}
+        onkeydown={(e) => e.key === 'Enter' && onEdit(e)}
+        title={$t('action.edit')}
+        aria-label={$t('action.edit')}
+      >
+        <MonSectionIcon name="edit" />
+      </button>
       <button
         class="mon-line-action"
         onclick={onRun}

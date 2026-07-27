@@ -281,12 +281,20 @@ The **monitoring service** runs as a separate container alongside the server and
 
 ### Features
 
-- **Check types**: Ping, TCP, HTTP, agent-based resource checks
+- **Check types**: Ping, TCP, HTTP, agent-based resource checks, disk-full forecast
 - **Agent plugins**: CPU, RAM, Disk, Systemd Health, Docker, ZFS, Proxmox (auto-detected)
-- **Templates**: define monitoring configurations as templates and assign them to servers
-- **Alerting**: webhook and email notifications with a configurable cooldown
+- **Templates**: define monitoring configurations as templates and assign them to servers — five built-in standard templates (Linux/Windows/Proxmox/Docker/ZFS) are seeded at startup; assignment via template modal, server dialog (opt-in), server tab, tag binding or the overview's bulk CTA
+- **Alerting**: webhook and email notifications with a configurable cooldown, plus damping — `unknown` never notifies, per-metric hysteresis, host-down suppression, and maintenance windows per server or global (one-off/weekly, IANA time zone)
 - **Recovery alerts**: automatic notification when a check is OK again
-- **Personal notifications**: per-user notification hub — a bell with a feed in the desktop client, native OS notifications, and e-mail — with per-user rules (scope all/tag/single server, minimum severity). Also surfaces security (new admin) and lifecycle events.
+- **Overview**: list and tile-grid views with worst-state coloring and a 24 h heartbeat bar per server
+- **Personal notifications**: per-user notification hub — a bell with a feed in the desktop client, native OS notifications, and e-mail — with per-user rules (scope all/tag/single server, minimum severity). Also surfaces security (new admin) and lifecycle events. New admin users start with a default rule (all servers / warning / bell).
+
+### Configuration (env)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALERT_LOG_RETENTION_DAYS` | `90` | Days the monitoring alert log is kept (daily cleanup job). |
+| `VM_RETENTION` | `90d` | VictoriaMetrics metric retention (`-retentionPeriod`). Independent of the alert-log knob — the two do not sync. |
 
 ### Installing the agent
 

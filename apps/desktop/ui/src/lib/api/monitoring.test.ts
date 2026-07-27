@@ -192,6 +192,21 @@ const cases: [string, () => Promise<unknown>, string, string, string | undefined
     '/api/monitoring/templates/t1/assign/s1',
     undefined,
   ],
+  [
+    'assignTemplateTag',
+    () => monitoringApi.assignTemplateTag(session, 't1', 'web srv'),
+    'POST',
+    '/api/monitoring/templates/t1/assign-tag',
+    // Tag with a space: body stays raw JSON, only the path is encoded (see DELETE).
+    JSON.stringify({ tag: 'web srv' }),
+  ],
+  [
+    'unassignTemplateTag',
+    () => monitoringApi.unassignTemplateTag(session, 't1', 'web srv'),
+    'DELETE',
+    '/api/monitoring/templates/t1/assign-tag/web%20srv',
+    undefined,
+  ],
 ];
 
 describe('monitoringApi', () => {

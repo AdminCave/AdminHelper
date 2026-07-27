@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.checkers.agent import AgentPingChecker, AgentResourcesChecker, ServiceProcessChecker
+from app.checkers.forecast import DiskForecastChecker
 from app.checkers.http import HttpChecker
 from app.checkers.ping import PingChecker
 from app.checkers.plugins import DockerHealthChecker, ProxmoxBackupChecker, ZfsHealthChecker
@@ -37,6 +38,7 @@ _REGISTRY: dict[str, Checker] = {
     "zfs_health": ZfsHealthChecker(),
     "docker_health": DockerHealthChecker(),
     "smart_health": SmartHealthChecker(),
+    "disk_forecast": DiskForecastChecker(),
 }
 
 

@@ -39,6 +39,7 @@ from app.core.auth import hash_password
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS
 from app.modules.enrollment.service import mint_enrollment_token
+from app.modules.notifications.service import default_admin_subscription
 from app.modules.users.models import User
 
 _MIN_PASSWORD_LEN = 8
@@ -52,7 +53,12 @@ def create_admin(db, username: str, password: str) -> int:
     if db.query(User).filter(User.username == username).first() is not None:
         print(f"Fehler: Benutzer '{username}' existiert bereits.", file=sys.stderr)
         return 1
-    db.add(User(username=username, hashed_password=hash_password(password), is_admin=True))
+    user = User(username=username, hashed_password=hash_password(password), is_admin=True)
+    db.add(user)
+    # Same baseline as the API path: without a subscription no alert would
+    # reach the very first admin on a fresh install.
+    db.flush()
+    db.add(default_admin_subscription(user.id))
     db.commit()
     print(f"Admin '{username}' angelegt.", file=sys.stderr)
     return 0

@@ -26,6 +26,10 @@ class IncomingEvent(BaseModel):
     body: Optional[str] = None
     source_type: Optional[str] = Field(default=None, max_length=64)
     source_id: Optional[str] = Field(default=None, max_length=256)
+    # Monitoring transitions only: the status the check moved TO. severity is
+    # the worse of old/new (so recoveries reach warning subscribers) — this
+    # field lets the ingest tell an actual alert from a recovery.
+    new_status: Optional[str] = Field(default=None, max_length=32)
 
 
 class MarkReadRequest(BaseModel):

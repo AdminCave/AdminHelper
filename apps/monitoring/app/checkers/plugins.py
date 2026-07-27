@@ -172,8 +172,7 @@ class DockerHealthChecker:
 
     Config example:
     {
-        "ignore_containers": ["watchtower"],
-        "check_restarts": true
+        "ignore_containers": ["watchtower"]
     }
     """
 

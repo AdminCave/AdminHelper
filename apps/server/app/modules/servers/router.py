@@ -5,6 +5,7 @@
 import json
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -19,6 +20,7 @@ from app.core.pagination import paginate
 from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.enrollment.models import revoke_identity
+from app.modules.notifications.router import require_internal_key
 from app.modules.servers.models import Server
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
@@ -26,6 +28,60 @@ logger = logging.getLogger("adminhelper.servers")
 
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
+
+
+# Single worker: notifies are best-effort nudges — serialize them instead of
+# stacking threads when many CRUD calls land at once (T46).
+_NOTIFY_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tag-sync-notify")
+
+
+def _notify_monitoring_tag_sync(reason: str) -> None:
+    """Best-effort nudge to the monitoring service after inventory changes so
+    tag-based template assignments materialize promptly (its 15-minute
+    scheduler safety net catches missed notifies). Must never fail the server
+    operation — same contract as the cleanup call on delete. Fire-and-forget
+    on a worker thread: the callee's reconciliation (inventory round-trip +
+    apply commits) can take longer than any sane inline deadline, and server
+    CRUD must not stall on it (T46)."""
+    _NOTIFY_POOL.submit(_do_notify_tag_sync, reason)
+
+
+def _do_notify_tag_sync(reason: str) -> None:
+    try:
+        resp = httpx.post(
+            f"{MONITOR_SERVICE_URL}/templates/tag-sync",
+            headers={"X-Internal-Key": MONITOR_API_KEY},
+            timeout=30,
+        )
+        if resp.status_code >= 300:
+            logger.warning("Tag-sync notify (%s): HTTP %d", reason, resp.status_code)
+    except Exception as exc:
+        logger.warning("Tag-sync notify (%s) failed: %s", reason, exc)
+
+
+# Service-to-service surface (X-Internal-Key, same gate as /api/internal/events).
+# Registered WITHOUT the session-auth dependencies of the admin router.
+internal_router = APIRouter(prefix="/api/internal", tags=["internal"])
+
+
+@internal_router.get("/servers")
+def list_servers_internal(
+    db: Session = Depends(get_db),
+    _internal: None = Depends(require_internal_key),
+):
+    """Inventory listing for the monitoring service's tag-sync: the server DB
+    is the only source of tag membership. Deliberately minimal — id, hostname,
+    name, tags; no connections, notes or pagination (fleet-sized, not user-facing)."""
+    servers = db.query(Server).order_by(Server.id).all()
+    return [
+        {
+            "id": s.id,
+            "hostname": s.hostname,
+            "name": s.name,
+            "tags": json.loads(s.tags) if s.tags else [],
+        }
+        for s in servers
+    ]
 
 
 @router.get("")
@@ -70,6 +126,7 @@ def create_server(
         object_id=server.id,
         object_label=server.name,
     )
+    _notify_monitoring_tag_sync("server.created")
     return server.to_dict()
 
 
@@ -110,6 +167,12 @@ def update_server(
         object_id=server.id,
         object_label=server.name,
     )
+    # Only tag/name/hostname affect tag-materialization (membership or the
+    # {{hostname}}/{{server_name}} substitution of future materializations).
+    # Gates on sent, not necessarily changed — over-notification is harmless,
+    # the sync is idempotent.
+    if sent & {"tags", "name", "hostname"}:
+        _notify_monitoring_tag_sync("server.updated")
     return server.to_dict()
 
 
@@ -157,3 +220,6 @@ def delete_server(
             )
     except Exception as exc:
         logger.warning("Monitoring-Cleanup fuer Server %s fehlgeschlagen: %s", server_id, exc)
+    # Belt-and-braces after the cleanup: if it failed, the reconciliation still
+    # removes materialized tag assignments of the vanished server.
+    _notify_monitoring_tag_sync("server.deleted")

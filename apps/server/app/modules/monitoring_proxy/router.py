@@ -11,6 +11,8 @@ are forwarded internally within the Docker network to the monitoring container.
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
@@ -47,6 +49,7 @@ _ALLOWED_PATH_PREFIXES = (
     "metrics",
     "status",
     "templates",
+    "maintenance",
     "agent",
 )
 
@@ -92,7 +95,19 @@ async def proxy_to_monitoring(
     if ".." in normalized or not any(normalized.startswith(p) for p in _ALLOWED_PATH_PREFIXES):
         raise HTTPException(status_code=400, detail="Unerlaubter Proxy-Pfad")
 
-    target_url = f"{_MONITOR_BASE}/{path}"
+    # Forward the still-encoded wire path: `path` is percent-DECODED by
+    # Starlette, so re-embedding it would let '#'/'?' in a segment (e.g. a tag
+    # name like "web#1") truncate the target URL as fragment/query (T41). The
+    # guard above stays on the decoded form ('%2e%2e' is caught there too).
+    raw = request.scope.get("raw_path", b"")
+    raw_path = raw.decode("ascii", errors="replace") if isinstance(raw, bytes) else str(raw)
+    prefix = "/api/monitoring/"
+    if raw_path.startswith(prefix):
+        forward_path = raw_path[len(prefix) :]
+    else:
+        forward_path = quote(path, safe="/")
+
+    target_url = f"{_MONITOR_BASE}/{forward_path}"
     resp = await _client.request(
         method=request.method,
         url=target_url,

@@ -31,46 +31,72 @@
         <div class="content-inner">
           <span class="eyebrow">Admin Guide</span>
           <h1>Monitoring</h1>
-          <p class="lead">Define checks, set thresholds, wire alerts into hooks. Since v0.32.0 checks, alert rules, and templates are maintained in the <strong>desktop client</strong> (server mode) – on the fleet-wide <em>Monitoring</em> page and per server in the <em>Monitoring</em> tab under <em>Infrastructure</em>. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage with 90 days retention.</p>
+          <p class="lead">Define checks, set thresholds, wire alerts into hooks. Since v0.32.0 checks, alert rules, and templates are maintained in the <strong>desktop client</strong> (server mode) – on the fleet-wide <em>Monitoring</em> page and per server in the <em>Monitoring</em> tab under <em>Infrastructure</em>. The actual evaluation happens in the separate <code>monitoring</code> service, backed by VictoriaMetrics for metric storage (configurable retention, default 90 days).</p>
 
           <h2>Check Types</h2>
-          <p>The type identifier (<code>check_type</code>) is exactly the value the desktop client shows in its dropdown. Server-side probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run inside the monitoring container; all <code>agent_*</code> and plugin checks evaluate data pushed by the agent.</p>
+          <p>The type identifier (<code>check_type</code>) is exactly the value the desktop client shows in its dropdown. Server-side probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run inside the monitoring container; all <code>agent_*</code> and plugin checks evaluate data pushed by the agent; <code>disk_forecast</code> reads the metric history from VictoriaMetrics.</p>
           <table>
-            <thead><tr><th>Kind</th><th>Runs where</th><th>Typical use</th></tr></thead>
+            <thead><tr><th>Type</th><th>What is measured</th><th>Runs where</th></tr></thead>
             <tbody>
-              <tr><td><code>ping</code></td><td>Monitoring service</td><td>ICMP reachability + round-trip time</td></tr>
-              <tr><td><code>tcp</code></td><td>Monitoring service</td><td>Port reachability + connect time</td></tr>
-              <tr><td><code>http</code></td><td>Monitoring service</td><td>HTTP status code, latency, optional body text match</td></tr>
-              <tr><td><code>agent_ping</code></td><td>Agent (push)</td><td>Did the agent report within <code>stale_minutes</code>?</td></tr>
-              <tr><td><code>agent_resources</code></td><td>Agent (push)</td><td>CPU, RAM, disk mountpoints and temperature sensors vs. thresholds</td></tr>
-              <tr><td><code>service_process</code></td><td>Agent (push)</td><td>systemd units: <code>auto</code> mode (failed + enabled-but-inactive) or <code>list</code> mode (explicit service names)</td></tr>
-              <tr><td><code>proxmox_backup</code></td><td>Agent (push)</td><td>Backup age of all VMs/CTs vs. <code>max_backup_age_hours</code></td></tr>
-              <tr><td><code>zfs_health</code></td><td>Agent (push)</td><td>Pool health (DEGRADED/FAULTED/…) + capacity vs. <code>capacity_warn/crit</code></td></tr>
-              <tr><td><code>docker_health</code></td><td>Agent (push)</td><td>Container state + <code>unhealthy</code> detection, optional <code>ignore_containers</code></td></tr>
-              <tr><td><code>smart_health</code></td><td>Agent (push)</td><td>SMART attributes + temperature for ATA (HDD/SSD) and NVMe</td></tr>
+              <tr><td><code>ping</code></td><td>ICMP reachability + round-trip time</td><td>Monitoring service (central)</td></tr>
+              <tr><td><code>tcp</code></td><td>Port reachability + connect time</td><td>Monitoring service</td></tr>
+              <tr><td><code>http</code></td><td>HTTP status code, latency, optional body text match</td><td>Monitoring service</td></tr>
+              <tr><td><code>agent_ping</code></td><td>Did the agent report within <code>stale_minutes</code>?</td><td>Agent (push)</td></tr>
+              <tr><td><code>agent_resources</code></td><td>CPU, RAM, disk mountpoints and temperature sensors vs. thresholds</td><td>Agent (push)</td></tr>
+              <tr><td><code>service_process</code></td><td>systemd units: <code>auto</code> mode (failed + enabled-but-inactive) or <code>list</code> mode (explicit service names)</td><td>Agent (push)</td></tr>
+              <tr><td><code>proxmox_backup</code></td><td>Backup age of all VMs/CTs vs. <code>max_backup_age_hours</code></td><td>Agent (push)</td></tr>
+              <tr><td><code>zfs_health</code></td><td>Pool health (DEGRADED/FAULTED/…) + capacity vs. <code>capacity_warn/crit</code></td><td>Agent (push)</td></tr>
+              <tr><td><code>docker_health</code></td><td>Container state + <code>unhealthy</code> detection, optional <code>ignore_containers</code></td><td>Agent (push)</td></tr>
+              <tr><td><code>smart_health</code></td><td>SMART attributes + temperature for ATA (HDD/SSD) and NVMe</td><td>Agent (push)</td></tr>
+              <tr><td><code>disk_forecast</code></td><td>"Disk full in X hours" prediction from the fill-rate history (see <a href="#disk-forecast">Disk forecast</a>)</td><td>Monitoring service (reads VictoriaMetrics)</td></tr>
             </tbody>
           </table>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <div><div class="callout-title">Agent plugins are auto-detected</div><p>The plugin checks <code>proxmox_backup</code>, <code>zfs_health</code> and <code>docker_health</code> only evaluate data when the agent finds the respective subsystem (Proxmox, ZFS, Docker) on the host. If the subsystem is absent, the check simply has no data – that is not an error.</p></div>
+            <div><div class="callout-title">Agent plugins are auto-detected</div><p>The plugin checks <code>proxmox_backup</code>, <code>zfs_health</code> and <code>docker_health</code> only evaluate data when the agent finds the respective subsystem (Proxmox, ZFS, Docker) on the host. If the subsystem is absent, the check simply has no data – that is not an error. The <code>agent_*</code> and plugin checks require the Go agent on the target; <code>ping</code>/<code>tcp</code>/<code>http</code> need no agent.</p></div>
           </div>
 
-          <h2>Thresholds &amp; Alerts</h2>
-          <p>Each check has a <code>threshold</code> block with three severities: <code>warn</code>, <code>crit</code>, <code>recover</code>. Transitions fire events that can trigger hooks (Slack, email, webhook).</p>
+          <h2>Creating a check</h2>
+          <ol>
+            <li>Desktop client (server mode) → <em>Monitoring → New check</em> (or per server: <em>Infrastructure → Server → Monitoring tab</em>)</li>
+            <li>Pick the type, choose the target (server or URL)</li>
+            <li>Fill in the parameters – type-specific, e.g. for <code>http</code>: URL, expected status code, timeout</li>
+            <li>Set the interval, severity (<code>severity</code>) and <code>consecutive_fails</code> – the thresholds themselves live in the type-specific configuration (next section)</li>
+          </ol>
 
-          <div class="code-header"><span>yaml</span></div>
-<pre><code>kind: http
-config:
-  url: https://api.example.com/health
-  expected_codes: [200]
-  timeout_sec: 5.0
-threshold:
-  warn:  { latency_ms: 1000 }
-  crit:  { latency_ms: 3000, status: unreachable }
-interval_sec: 60</code></pre>
+          <h2>Thresholds &amp; status</h2>
+          <p>Every check evaluates to one of four states: <span class="badge badge-success">ok</span>, <span class="badge badge-warning">warning</span>, <span class="badge badge-danger">critical</span> or <code>unknown</code>. The thresholds live <strong>in the type-specific check configuration</strong> – there is no global threshold field. The configuration is validated strictly: unknown keys and out-of-bounds values are rejected at save time (instead of silently degrading to <code>unknown</code>).</p>
+          <p>In addition, every check carries two damping parameters: <code>severity</code> (how the check is classified) and <code>consecutive_fails</code> (how many failing measurements <em>in a row</em> are needed before the status flips – anti-flapping; at a 5-minute interval a value of 3 means the condition must hold for ~15 minutes).</p>
+          <table>
+            <thead><tr><th>Type</th><th>Threshold keys (default)</th></tr></thead>
+            <tbody>
+              <tr><td><code>ping</code> / <code>tcp</code> / <code>http</code></td><td><code>timeout</code> (5 s, 10 s for http); <code>http</code> additionally <code>expected_status</code> (200), <code>verify_ssl</code>, <code>search_string</code></td></tr>
+              <tr><td><code>agent_ping</code></td><td><code>stale_minutes</code> (15)</td></tr>
+              <tr><td><code>agent_resources</code></td><td><code>cpu_warn/cpu_crit</code> (80/95), <code>memory_warn/memory_crit</code> (80/95), <code>disk_warn/disk_crit</code> (85/95), <code>temp_warn/temp_crit</code> (80/95 °C), <code>hysteresis_pp</code> (10)</td></tr>
+              <tr><td><code>smart_health</code></td><td><code>reallocated_warn/crit</code> (1/10), <code>pending_warn/crit</code> (1/5), <code>temp_hdd_warn/crit</code> (55/60), <code>temp_ssd_warn/crit</code> (60/70), <code>temp_nvme_warn/crit</code> (65/75), <code>nvme_spare_warn/crit</code> (20/10 %), <code>nvme_used_warn/crit</code> (90/100 %)</td></tr>
+              <tr><td><code>proxmox_backup</code></td><td><code>max_backup_age_hours</code> (26), <code>exclude_vmids</code>, <code>exclude_stopped</code> (true)</td></tr>
+              <tr><td><code>zfs_health</code></td><td><code>capacity_warn/capacity_crit</code> (80/90)</td></tr>
+              <tr><td><code>docker_health</code></td><td><code>ignore_containers</code> (empty)</td></tr>
+              <tr><td><code>disk_forecast</code></td><td><code>warn_hours/crit_hours</code> (24/8), <code>window_hours</code> (24), <code>min_history_hours</code> (6)</td></tr>
+            </tbody>
+          </table>
 
-          <h2>NVMe Critical Warning</h2>
-          <p>The <code>smart</code> collector decodes the NVMe Critical-Warning byte:</p>
+          <h2 id="alert-behavior">Alert behavior: damping &amp; suppression</h2>
+          <h3>Hysteresis</h3>
+          <p>The <code>agent_resources</code> check applies a <strong>per-metric</strong> release threshold: once a server's CPU sits at <code>warning</code>, its thresholds drop by <code>hysteresis_pp</code> (default 10 percentage points) until the metric clears. A server hovering around the 90 % mark produces <em>one</em> notification instead of a flapping series – only dropping below 80 % counts as recovery.</p>
+          <h3><code>unknown</code> never notifies</h3>
+          <p>Transitions <em>into</em> <code>unknown</code> (missing agent data, unreachable data source, incomplete configuration) never trigger a notification – the state stays visible on the dashboard, but it is not an incident. A real "agent gone" is reported by the <code>agent_ping</code> check going <code>critical</code>. <code>unknown → ok</code> is delivered as a normal recovery.</p>
+          <h3>Host-down suppression</h3>
+          <p>While a server's <code>agent_ping</code> stands at <code>critical</code>, every <em>other</em> check of that server stays silent (inhibition): one incident, one notification. Once the agent is back, checks report normally again.</p>
+          <h3>Maintenance windows</h3>
+          <p>Maintenance windows are defined per server – <strong>one-off</strong> (start/end) or <strong>weekly</strong> (weekdays + time window in an <strong>IANA time zone</strong>, e.g. <code>Europe/Berlin</code>; daylight-saving transitions are handled correctly). They are managed in the server's Monitoring tab (<em>Infrastructure → Server → Monitoring</em>); active windows show as a badge on the monitoring overview. The semantics are <em>collect-but-mute</em>: checks keep running and keep writing metrics/status, only notifications (alert rules <em>and</em> the notification hub) are suppressed.</p>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">No catch-up after the window ends</div><p>The alerter is transition-based: a status transition that happens entirely <em>inside</em> the window (e.g. <code>ok → critical → ok</code> during maintenance) is <strong>not reported retroactively</strong> after the window ends. If the check still shows a problem state when the window closes, the notification arrives with the next transition.</p></div>
+          </div>
+
+          <h2>SMART monitoring</h2>
+          <p>The agent auto-detects SATA, SAS and NVMe disks (<code>smartctl --scan-open</code>). For NVMe the critical-warning bits are decoded individually:</p>
           <table>
             <thead><tr><th>Bit</th><th>Meaning</th></tr></thead>
             <tbody>
@@ -83,13 +109,24 @@ interval_sec: 60</code></pre>
             </tbody>
           </table>
 
+          <h2 id="disk-forecast">Disk forecast (time-until-full)</h2>
+          <p>The <code>disk_forecast</code> check computes, per mountpoint, the time until "disk full" from the fill-rate history in VictoriaMetrics (linear regression over <code>window_hours</code>, default 24 h): <span class="badge badge-warning">warning</span> when full within <code>warn_hours</code> (24), <span class="badge badge-danger">critical</span> within <code>crit_hours</code> (8). Stable or shrinking usage is <code>ok</code>; with less than <code>min_history_hours</code> (6) of history the check stays <code>unknown</code> – and therefore never notifies (see above). It warns well <em>before</em> the static <code>disk_warn/disk_crit</code> thresholds fire.</p>
+
+          <h2>VictoriaMetrics</h2>
+          <p>VictoriaMetrics stores the time series; retention is controlled by the compose variable <code>VM_RETENTION</code> (<code>-retentionPeriod=${VM_RETENTION:-90d}</code>, default 90 days). It is <strong>independent</strong> of the alert log (<code>ALERT_LOG_RETENTION_DAYS</code>, see below) – the two knobs do not sync. Four labels are written per metric: <code>server</code>, <code>check</code>, <code>type</code>, plus check-specific labels like <code>mountpoint</code> or <code>device</code>. Direct access (debug): <code>http://victoria:8428/api/v1/query?query=up</code>.</p>
+
           <div class="callout callout-warn" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-            <div><div class="callout-title">Agent-based checks need an agent</div><p>The <code>agent_*</code> and plugin checks (<code>agent_resources</code>, <code>service_process</code>, <code>smart_health</code>, <code>docker_health</code>, <code>zfs_health</code>, <code>proxmox_backup</code>) require the Go agent on the target. Server-based probes (<code>ping</code>, <code>tcp</code>, <code>http</code>) run from the monitoring container and don't need an agent.</p></div>
+            <div><div class="callout-title">Ingest authentication</div><p>The agent sends its metrics via <code>POST /api/monitoring/agent/{server_id}/report</code> to the AdminHelper server (port 443, tunnel-free) and authenticates with its <strong>server-specific</strong> <code>X-API-Key</code> (issued at provisioning). The shared <code>MONITOR_API_KEY</code> is separate from that: it only secures the internal server&rarr;monitoring proxy leg (<code>X-Internal-Key</code>) and must be identical between the server and monitoring containers.</p></div>
           </div>
 
-          <h2>Charts &amp; overview (desktop client)</h2>
-          <p>The <em>Monitoring</em> page of the desktop client combines uPlot line charts with a checks overview, the alert rules, and the alert log. Charts query VictoriaMetrics via the AdminHelper proxy – the allowlist permits only <code>/api/v1/query</code> and <code>/api/v1/query_range</code>, so raw-host SSRF is impossible. The view refreshes automatically.</p>
+          <h2>Overview: list, tiles &amp; heartbeat</h2>
+          <p>The desktop client's <em>Monitoring</em> page offers two switchable views (the choice is remembered):</p>
+          <ul>
+            <li><strong>List</strong>: server list with dashboard – uPlot line charts, checks overview, alert rules and the alert log. Selectable time windows: 1h, 6h, 24h, 7d, 30d; clicking a line opens the detail view with raw data.</li>
+            <li><strong>Tiles</strong>: one tile per server, colored by the <em>worst</em> check status, with a <strong>heartbeat bar</strong> – the bar shows the availability of the last 24 h from the <code>agent_ping</code> timeline (servers without an <code>agent_ping</code> check show no bar).</li>
+          </ul>
+          <p>If servers exist that have no check at all, the overview shows a banner ("N servers without monitoring") with a direct <strong>bulk-assign dialog</strong>: servers preselected, template selectable (standard templates first). The view refreshes automatically every 30 seconds.</p>
 
           <h2>Templates</h2>
           <p>A <strong>monitoring template</strong> bundles several check and alert definitions and is assigned to a server instead of creating each check by hand. On assignment the definitions are materialized into real checks and alert rules for that server.</p>
@@ -109,7 +146,33 @@ interval_sec: 60</code></pre>
           </table>
           <p>Removing an assignment deletes the checks and alerts it created. Deleting a template removes them on <em>all</em> assigned servers.</p>
 
-          <h2>Notifications &amp; Alerting</h2>
+          <h3>Standard templates</h3>
+          <p>On first startup the monitoring service seeds five standard templates (English names). The thresholds distill the consensus of common tools (Zabbix, Netdata, Checkmk) plus Backblaze SMART statistics:</p>
+          <table>
+            <thead><tr><th>Template</th><th>Contents</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Linux Server — Standard</strong></td><td>Agent Heartbeat (stale after 15 min ≈ 3 missed pushes), System Resources (CPU 90/95, RAM 90/98, disk 80/90 – with <code>consecutive_fails</code> 3 ≈ 15 min anti-flap), Service Health (systemd, <code>auto</code> mode), SMART Health, Disk Forecast</td></tr>
+              <tr><td><strong>Windows Server — Standard</strong></td><td>like Linux, without Service Health</td></tr>
+              <tr><td><strong>Proxmox Host</strong></td><td>Proxmox Backups (backup age &lt; 26 h)</td></tr>
+              <tr><td><strong>Docker Host</strong></td><td>Docker Health (exited/unhealthy containers)</td></tr>
+              <tr><td><strong>ZFS Storage</strong></td><td>ZFS Health (pool state + capacity 80/90)</td></tr>
+            </tbody>
+          </table>
+          <p>Seeding is <strong>one-time</strong> per template: if you delete, rename or tune a standard template, that state sticks – a later restart restores nothing and overwrites nothing. The plugin templates (Proxmox/Docker/ZFS) are deliberately separate: on a host without the subsystem the check would sit at <code>unknown</code> forever.</p>
+
+          <h3>Assigning templates</h3>
+          <p>There are four ways to assign:</p>
+          <ul>
+            <li><strong>Template modal</strong> (<em>Monitoring → Templates</em>): server multi-select for bulk assignment, removal via the assignment pill.</li>
+            <li><strong>Server-create dialog</strong>: optional template dropdown – hand a standard template to a server right at creation (opt-in, no automatic assignment by OS type).</li>
+            <li><strong>Server → Monitoring tab</strong>: view, add and remove the assignments of a single server.</li>
+            <li><strong>Overview banner</strong>: the bulk dialog for all servers without checks (see above).</li>
+          </ul>
+
+          <h3>Tag assignment</h3>
+          <p>A template can additionally be bound to a <strong>server tag</strong> (in the template modal): every server carrying the tag gets the template automatically – including servers that receive the tag later. The sync runs immediately on server changes and additionally every 15 minutes. When a server loses the tag, the tag-created assignment (and its materialized checks) is removed again. Tag-assigned servers are marked "via tag" in the template modal; a <em>manually</em> created assignment stays manual and is never touched by the tag sync.</p>
+
+          <h2>Notifications &amp; alerting</h2>
           <p>Alert rules fire when a check <strong>changes</strong> status (e.g. <code>ok → critical</code>). Each rule optionally filters by <code>severity</code> and server and dispatches over one channel.</p>
           <table>
             <thead><tr><th>Channel</th><th>Configuration</th></tr></thead>
@@ -119,7 +182,8 @@ interval_sec: 60</code></pre>
             </tbody>
           </table>
           <p><strong>Cooldown:</strong> After a successfully sent alert, <code>cooldown_minutes</code> (default 30) suppresses further alerts from the same rule for the same check.</p>
-          <p><strong>Recovery:</strong> When a check returns to <code>ok</code>, a recovery notification is sent – it deliberately bypasses the cooldown so the all-clear always gets through. Every dispatch is recorded in the alert log with success/error. The alert log is pruned automatically every day (90-day retention).</p>
+          <p><strong>Recovery:</strong> When a check returns to <code>ok</code>, a recovery notification is sent – it deliberately bypasses the cooldown so the all-clear always gets through. Every dispatch is recorded in the alert log with success/error. The alert log is pruned automatically every day (retention configurable via <code>ALERT_LOG_RETENTION_DAYS</code>, default 90 days).</p>
+          <p><strong>Event hook:</strong> On transitions <em>into</em> <code>critical</code> the server additionally fires the <code>alert.triggered</code> event hook (payload: <code>server_id</code>, <code>severity</code>, <code>title</code>, <code>message</code>). Hook configuration details: <a href="../developer/hooks.html">Hooks &amp; Events</a>.</p>
 
           <h2>Personal notifications (notification hub)</h2>
           <p>Independently of the rule-based alert channels above, the <strong>notification hub</strong> fans events out <em>per user</em>: each user decides what they are notified about and how. Where the <code>webhook</code>/<code>email</code> rules above send to <em>fixed</em> destinations (e.g. a team webhook), the hub targets the <strong>people</strong> assigned to a server.</p>
@@ -127,33 +191,34 @@ interval_sec: 60</code></pre>
           <h3>What is delivered</h3>
           <ul>
             <li><strong>Bell</strong> in the desktop client (header): a personal feed with an unread counter that refreshes <strong>in real time</strong> (server push, while a server session is active) — a new notification appears immediately, without waiting for the next poll. Opening it marks the entries as read.</li>
-            <li><strong>Desktop notifications</strong> (native OS toasts): optional, enabled under <em>Settings → Notifications</em> (asks for the system permission once).</li>
-            <li><strong>E-mail</strong>: additionally, when enabled in a rule and a contact e-mail is set.</li>
+            <li><strong>Desktop notifications</strong> (native OS alerts): optional, enabled under <em>Settings → Notifications</em> (asks for the system permission once).</li>
+            <li><strong>Email</strong>: additionally, when enabled in a rule and a contact email is set.</li>
           </ul>
 
           <h3>Configure your own rules</h3>
-          <p>Under <em>Settings → Notifications</em> in the desktop client every user sets a contact e-mail and any number of rules. Each rule consists of:</p>
+          <p>Under <em>Settings → Notifications</em> in the desktop client every user maintains a contact email and any number of rules. Each rule consists of:</p>
           <table>
             <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
             <tbody>
-              <tr><td>Scope</td><td><strong>All servers</strong> (all you may see), <strong>Tag</strong> (every server with that tag) or <strong>Single server</strong>.</td></tr>
-              <tr><td>Minimum severity</td><td>From which level on you are notified: <span class="badge badge-success">info</span>, <span class="badge badge-warning">warning</span> or <span class="badge badge-danger">critical</span>.</td></tr>
-              <tr><td>Channel</td><td>The bell receives every match; <strong>e-mail</strong> can be added optionally. (Telegram is prepared in the data model but not yet exposed in the UI.)</td></tr>
+              <tr><td>Scope</td><td><strong>All servers</strong> (all the user may see), <strong>Tag</strong> (all servers with that tag) or <strong>Single server</strong>.</td></tr>
+              <tr><td>Minimum severity</td><td>From which level on to notify: <span class="badge badge-success">info</span>, <span class="badge badge-warning">warning</span> or <span class="badge badge-danger">critical</span>.</td></tr>
+              <tr><td>Channel</td><td>The bell receives every match; <strong>email</strong> can be enabled on top. (Telegram is prepared in the data model but not yet exposed in the UI.)</td></tr>
             </tbody>
           </table>
-          <p>A user's rules are merged – one event produces exactly one feed entry, and the channels are the union of all matching rules.</p>
+          <p>Multiple rules of one user are merged – one event produces exactly one feed entry, and the channels are the union of all matching rules.</p>
+          <p><strong>Starter rule for admins:</strong> Newly created admin users automatically get a rule <em>All servers / minimum severity warning / bell only</em> – so on a fresh install every alert reaches at least the admins. The rule can be edited or deleted like any other; existing users do not receive one retroactively.</p>
 
           <h3>What triggers a notification</h3>
           <ul>
-            <li><strong>Monitoring</strong>: every status <em>transition</em> of a check (e.g. <code>ok → critical</code> and the all-clear back). A transition's severity is the worse of the two states, so the recovery also reaches subscribers with a "warning" threshold.</li>
+            <li><strong>Monitoring</strong>: every status <em>transition</em> of a check (e.g. <code>ok → critical</code> and the recovery back). The severity of a transition is the worse of the two states, so the all-clear also reaches subscribers with a "warning" threshold. Transitions into <code>unknown</code>, maintenance windows and host-down suppression apply here too (see <a href="#alert-behavior">Alert behavior</a>).</li>
             <li><strong>Security</strong>: a new admin user was created.</li>
             <li><strong>Lifecycle</strong>: a server was removed from the inventory, an FRP tunnel was created.</li>
           </ul>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <div><div class="callout-title">Only what you may see</div><p>The hub only delivers a user events for servers they may see – all of them as an admin, otherwise only those assigned to them (see <a href="./users.html">Users &amp; access</a>). "All servers" therefore means "all servers visible to me", not the whole inventory.</p></div>
+            <div><div class="callout-title">Only what you may see</div><p>The hub only delivers events for servers the user is allowed to see – all of them for admins, otherwise only the assigned ones (see <a href="./users.html">Users &amp; Access</a>). "All servers" accordingly means "all servers visible to me", not the whole inventory.</p></div>
           </div>
-          <p><strong>E-mail delivery:</strong> outbound e-mails are sent via an external SMTP relay (<code>SMTP_HOST</code>/<code>SMTP_PORT</code>/<code>SMTP_USER</code>/<code>SMTP_PASSWORD</code>/<code>SMTP_FROM</code>, see <a href="./operations.html">Operations &amp; configuration</a>). Delivery runs asynchronously through an outbox with automatic retry (linear backoff up to <code>NOTIFICATION_MAX_ATTEMPTS</code>, default 5); if no SMTP relay is configured, the bell still works fully.</p>
+          <p><strong>Email delivery:</strong> outgoing emails are delivered via an external SMTP relay (<code>SMTP_HOST</code>/<code>SMTP_PORT</code>/<code>SMTP_USER</code>/<code>SMTP_PASSWORD</code>/<code>SMTP_FROM</code>, see <a href="./operations.html">Operation &amp; Configuration</a>). Delivery runs asynchronously through an outbox with automatic retry (linear backoff up to <code>NOTIFICATION_MAX_ATTEMPTS</code>, default 5); without a configured SMTP relay the bell remains fully functional.</p>
 
           <div class="page-nav">
             <a class="prev" href="./agent-deployment.html"><span class="label">← Previous chapter</span><span class="title">Agent Deployment</span></a>

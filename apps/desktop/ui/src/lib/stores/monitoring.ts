@@ -16,11 +16,13 @@ import {
   STATUS_PRIORITY,
   type MonitoringFilters,
 } from '$lib/models/monitoring';
+import { activeMaintenance } from '$lib/models/maintenance';
 import { tNow } from '$lib/i18n';
 import type {
   AlertLogEntry,
   AlertRule,
   AlertRuleInput,
+  MaintenanceWindow,
   MonitorCheck,
   MonitoringTemplateFull,
   MonitoringTemplateInput,
@@ -28,6 +30,18 @@ import type {
 } from '$lib/api/types';
 
 export type MonitoringTab = 'overview' | 'alerts' | 'templates' | 'log';
+export type OverviewView = 'list' | 'grid';
+
+// Persisted view choice for the overview (list+detail vs tile grid).
+const VIEW_STORAGE_KEY = 'ah.monitoring.view';
+
+function initialOverviewView(): OverviewView {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'list';
+  } catch {
+    return 'list';
+  }
+}
 
 // Auto-refresh cadence for the monitoring page (same period as the notification poll).
 const REFRESH_INTERVAL_MS = 30_000;
@@ -60,9 +74,16 @@ interface MonitoringState {
   log: AlertLogEntry[];
   filters: MonitoringFilters;
   loading: boolean;
+  // True once the FIRST status load resolved (success or failure) — the
+  // overview's skeleton keys off this, not off `loading`, so the 30s refresh
+  // can never flicker the empty/error states away.
+  hasLoaded: boolean;
+  error: string | null;
   expandedCheckId: string | null;
   selectedServerId: string | null;
   serverSearch: string;
+  overviewView: OverviewView;
+  maintenance: MaintenanceWindow[];
 }
 
 const initial: MonitoringState = {
@@ -74,9 +95,13 @@ const initial: MonitoringState = {
   log: [],
   filters: { server: '', type: '', status: '', search: '' },
   loading: false,
+  hasLoaded: false,
+  error: null,
   expandedCheckId: null,
   selectedServerId: null,
   serverSearch: '',
+  overviewView: initialOverviewView(),
+  maintenance: [],
 };
 
 const _state = writable<MonitoringState>(initial);
@@ -95,8 +120,23 @@ export const monitoringServers = derived(_state, ($s) => $s.servers);
 export const monitoringAlerts = derived(_state, ($s) => $s.alerts);
 export const monitoringTemplates = derived(_state, ($s) => $s.templates);
 export const monitoringLog = derived(_state, ($s) => $s.log);
+export const monitoringLoading = derived(_state, ($s) => $s.loading);
+export const monitoringHasLoaded = derived(_state, ($s) => $s.hasLoaded);
+export const monitoringError = derived(_state, ($s) => $s.error);
 export const selectedServerId = derived(_state, ($s) => $s.selectedServerId);
 export const monitoringServerSearch = derived(_state, ($s) => $s.serverSearch);
+export const overviewView = derived(_state, ($s) => $s.overviewView);
+// Servers the monitoring service knows nothing about yet — drives the
+// overview's bulk-assign CTA (T32).
+export const serversWithoutChecks = derived(_state, ($s) => {
+  const covered = new Set($s.checks.map((c) => c.serverId).filter(Boolean));
+  return $s.servers.filter((srv) => !covered.has(srv.id));
+});
+// Recomputed whenever the store updates — the 30s refresh cycle keeps the
+// "active now" evaluation fresh enough for a badge.
+export const maintenanceActive = derived(_state, ($s) =>
+  activeMaintenance($s.maintenance, new Date()),
+);
 
 export function setSelectedServer(id: string | null): void {
   _state.update((s) => ({ ...s, selectedServerId: id, expandedCheckId: null }));
@@ -104,6 +144,15 @@ export function setSelectedServer(id: string | null): void {
 
 export function setServerSearch(v: string): void {
   _state.update((s) => ({ ...s, serverSearch: v }));
+}
+
+export function setOverviewView(view: OverviewView): void {
+  _state.update((s) => ({ ...s, overviewView: view }));
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, view);
+  } catch {
+    // Private mode / storage denied: the choice simply doesn't persist.
+  }
 }
 
 export const filteredChecks = derived(_state, ($s) => filterChecks($s.checks, $s.filters));
@@ -146,11 +195,24 @@ export async function loadServers(): Promise<void> {
   }
 }
 
+export async function loadMaintenanceWindows(): Promise<void> {
+  const session = currentSession();
+  if (!session) return;
+  try {
+    const windows = await monitoringApi.fetchMaintenance(session);
+    _state.update((s) => ({ ...s, maintenance: Array.isArray(windows) ? windows : [] }));
+  } catch {
+    // Badge-only data: a failed fetch silently keeps the previous list.
+  }
+}
+
 export async function loadMonitoring(): Promise<void> {
   const session = currentSession();
   if (!session) return;
   const gen = ++statusGen;
   try {
+    // error is NOT cleared here: during an outage the banner must survive the
+    // 30s refresh cycle instead of blinking away while the retry is in flight.
     _state.update((s) => ({ ...s, loading: true }));
     const checks = await monitoringApi.fetchStatus(session);
     if (gen !== statusGen) return;
@@ -162,13 +224,27 @@ export async function loadMonitoring(): Promise<void> {
       if (!selected && checks.length > 0) {
         selected = pickWorstServerId(checks);
       }
-      return { ...s, checks, loading: false, selectedServerId: selected };
+      return {
+        ...s,
+        checks,
+        loading: false,
+        hasLoaded: true,
+        error: null,
+        selectedServerId: selected,
+      };
     });
   } catch (err) {
     if (gen !== statusGen) return;
-    _state.update((s) => ({ ...s, checks: [], loading: false }));
     const msg = errMsg(err);
-    if (msg !== SESSION_EXPIRED) reportError(tNow('error.monitoring', { message: msg }));
+    // Inline error state instead of a toast (T19): the overview renders the
+    // failure with a retry — a vanished toast is no help on the primary view.
+    _state.update((s) => ({
+      ...s,
+      checks: [],
+      loading: false,
+      hasLoaded: true,
+      error: msg === SESSION_EXPIRED ? null : msg,
+    }));
   }
 }
 
@@ -262,6 +338,25 @@ export async function deleteAlert(id: string): Promise<boolean> {
   }
 }
 
+// ── Check editor modal (T18) ─────────────────────────────────────────────────
+// Store-driven so MonCheckLine (nested in the type sections) can open the
+// editor without threading callbacks through every section component.
+interface CheckEditorState {
+  open: boolean;
+  target: MonitorCheck | null;
+  serverId: string;
+}
+const _checkEditor = writable<CheckEditorState>({ open: false, target: null, serverId: '' });
+export const checkEditor = { subscribe: _checkEditor.subscribe };
+
+export function openCheckEditor(target: MonitorCheck | null, serverId: string): void {
+  _checkEditor.set({ open: true, target, serverId });
+}
+
+export function closeCheckEditor(): void {
+  _checkEditor.set({ open: false, target: null, serverId: '' });
+}
+
 // ── Monitoring template CRUD ─────────────────────────────────────────────────
 export async function loadTemplates(): Promise<void> {
   const session = currentSession();
@@ -308,6 +403,76 @@ export async function deleteTemplate(id: string): Promise<boolean> {
   }
 }
 
+// ── Template assignments (server, bulk, tag) ─────────────────────────────────
+export async function assignTemplateToServers(
+  templateId: string,
+  servers: { id: string; hostname: string; name: string }[],
+): Promise<boolean> {
+  const session = currentSession();
+  if (!session || servers.length === 0) return false;
+  // Sequential on purpose: each assign materializes checks server-side; a
+  // failed one is reported individually and must not abort the rest.
+  let failed = 0;
+  for (const srv of servers) {
+    try {
+      await monitoringApi.assignTemplate(session, templateId, srv.id, srv.hostname, srv.name);
+    } catch (err) {
+      failed += 1;
+      reportError(errMsg(err));
+    }
+  }
+  await loadTemplates();
+  if (failed === 0) {
+    showStatus(tNow('monitoring.tplEdit.assigned', { count: String(servers.length) }));
+  }
+  return failed === 0;
+}
+
+export async function unassignTemplateFromServer(
+  templateId: string,
+  serverId: string,
+): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.unassignTemplate(session, templateId, serverId);
+    showStatus(tNow('monitoring.tplEdit.unassigned'));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+export async function assignTagToTemplate(templateId: string, tag: string): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.assignTemplateTag(session, templateId, tag);
+    showStatus(tNow('monitoring.tplEdit.tagAssigned', { tag }));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
+export async function removeTagFromTemplate(templateId: string, tag: string): Promise<boolean> {
+  const session = currentSession();
+  if (!session) return false;
+  try {
+    await monitoringApi.unassignTemplateTag(session, templateId, tag);
+    showStatus(tNow('monitoring.tplEdit.tagRemoved', { tag }));
+    await loadTemplates();
+    return true;
+  } catch (err) {
+    reportError(errMsg(err));
+    return false;
+  }
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 // The post-run reload timer (runCheck) — tracked so deactivateMonitoring can cancel it, else a
 // full /status request fires ~2 s after the user already left the monitoring page (4.105).
@@ -315,8 +480,12 @@ let runReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function activateMonitoring(): void {
   void loadServers().then(() => loadMonitoring());
+  void loadMaintenanceWindows();
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => void loadMonitoring(), REFRESH_INTERVAL_MS);
+  refreshTimer = setInterval(() => {
+    void loadMonitoring();
+    void loadMaintenanceWindows();
+  }, REFRESH_INTERVAL_MS);
 }
 
 export function deactivateMonitoring(): void {

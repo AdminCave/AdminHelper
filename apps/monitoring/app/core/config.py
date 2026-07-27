@@ -78,3 +78,22 @@ except ValueError:
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "adminhelper@localhost")
+
+# Alert-log retention in days (periodic cleanup job in scheduler.py). NOTE:
+# VictoriaMetrics has its own, independent retention knob (`VM_RETENTION` /
+# -retentionPeriod in docker-compose.yml) — the two do not sync. Invalid or
+# non-positive values fall back to 90 instead of crashing the service (a typo
+# must not delete the whole log or crash-loop the container).
+try:
+    ALERT_LOG_RETENTION_DAYS = int(os.environ.get("ALERT_LOG_RETENTION_DAYS", "90"))
+except ValueError:
+    logger.warning(
+        "Invalid ALERT_LOG_RETENTION_DAYS %r — falling back to 90",
+        os.environ.get("ALERT_LOG_RETENTION_DAYS"),
+    )
+    ALERT_LOG_RETENTION_DAYS = 90
+if ALERT_LOG_RETENTION_DAYS < 1:
+    logger.warning(
+        "ALERT_LOG_RETENTION_DAYS %d is < 1 — falling back to 90", ALERT_LOG_RETENTION_DAYS
+    )
+    ALERT_LOG_RETENTION_DAYS = 90

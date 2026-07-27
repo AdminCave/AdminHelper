@@ -81,3 +81,50 @@ def test_monitoring_proxy_allows_known_prefix(test_client, db_session, admin_use
     monkeypatch.setattr(mp._client, "request", fake_request)
     resp = test_client.get("/api/monitoring/status", headers=_admin_headers(test_client))
     assert resp.status_code == 200  # allowed prefix -> forwarded, not 400
+
+
+def test_monitoring_proxy_allows_maintenance_prefix(
+    test_client, db_session, admin_user, monkeypatch
+):
+    # T24: the new maintenance CRUD must pass the proxy allowlist.
+    from app.modules.monitoring_proxy import router as mp
+
+    class _FakeResp:
+        content = b"[]"
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+    async def fake_request(**kw):
+        return _FakeResp()
+
+    monkeypatch.setattr(mp._client, "request", fake_request)
+    resp = test_client.get("/api/monitoring/maintenance", headers=_admin_headers(test_client))
+    assert resp.status_code == 200
+
+
+def test_monitoring_proxy_preserves_percent_encoding(
+    test_client, db_session, admin_user, monkeypatch
+):
+    # T41: the forward URL must carry the still-encoded wire path — a decoded
+    # '#'/'?' in a segment (tag names allow both) would truncate the target as
+    # fragment/query and hit the wrong monitoring route.
+    from app.modules.monitoring_proxy import router as mp
+
+    captured = {}
+
+    class _FakeResp:
+        content = b"{}"
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+    async def fake_request(**kw):
+        captured.update(kw)
+        return _FakeResp()
+
+    monkeypatch.setattr(mp._client, "request", fake_request)
+    resp = test_client.delete(
+        "/api/monitoring/templates/tpl-1/assign-tag/web%231%3Fx",
+        headers=_admin_headers(test_client),
+    )
+    assert resp.status_code == 200
+    assert captured["url"].endswith("/templates/tpl-1/assign-tag/web%231%3Fx")

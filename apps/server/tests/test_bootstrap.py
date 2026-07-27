@@ -182,3 +182,41 @@ def test_lifespan_survives_redis_outage_at_boot(monkeypatch):
 
     asyncio.run(scenario())
     assert reached_yield  # the server started despite the Redis outage
+
+
+def test_bootstrap_admin_gets_default_subscription(test_client, db_session, fresh_token):
+    """T30: the bootstrap-token admin is the only user a fresh install has —
+    it must start with the bell-only baseline subscription."""
+    from app.modules.notifications.models import NotificationSubscription
+
+    res = test_client.post(
+        "/api/auth/bootstrap",
+        json={"token": fresh_token, "username": "first", "password": "abcdefgh"},
+    )
+    assert res.status_code == 201, res.text
+    user = db_session.query(User).filter(User.username == "first").one()
+    sub = (
+        db_session.query(NotificationSubscription)
+        .filter(NotificationSubscription.user_id == user.id)
+        .one()
+    )
+    assert (sub.scope_type, sub.min_severity) == ("all", "warning")
+    assert sub.enabled is True
+    assert sub.channel_email is False
+    assert sub.channel_telegram is False
+
+
+def test_env_admin_gets_default_subscription(db_session, monkeypatch):
+    """T30: same baseline for the ADMIN_PASSWORD env path of _ensure_admin."""
+    import app.main as m
+    from app.modules.notifications.models import NotificationSubscription
+
+    monkeypatch.setattr(m, "ADMIN_PASSWORD", "supersecret")
+    m._ensure_admin(db_session)
+    user = db_session.query(User).filter(User.username == "admin").one()
+    sub = (
+        db_session.query(NotificationSubscription)
+        .filter(NotificationSubscription.user_id == user.id)
+        .one()
+    )
+    assert (sub.scope_type, sub.min_severity) == ("all", "warning")

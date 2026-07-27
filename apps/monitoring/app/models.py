@@ -165,16 +165,20 @@ class MonitorTemplate(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    # Origin marker for shipped standard templates (app/builtin_templates.py).
+    # Informational after creation — built-ins stay fully editable/deletable.
+    builtin_slug = Column(String, nullable=True, unique=True, index=True)
     check_definitions = Column(String, nullable=False, default="[]")
     alert_definitions = Column(String, nullable=False, default="[]")
     created_at = Column(DateTime, server_default=utc_now_sql())
     updated_at = Column(DateTime, server_default=utc_now_sql(), onupdate=utc_now_sql())
 
-    def to_dict(self, assignments: list | None = None) -> dict:
+    def to_dict(self, assignments: list | None = None, tag_assignments: list | None = None) -> dict:
         d = {
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "builtinSlug": self.builtin_slug,
             "checkDefinitions": json.loads(self.check_definitions)
             if self.check_definitions
             else [],
@@ -186,6 +190,8 @@ class MonitorTemplate(Base):
         }
         if assignments is not None:
             d["assignments"] = [a.to_dict() for a in assignments]
+        if tag_assignments is not None:
+            d["tagAssignments"] = [t.to_dict() for t in tag_assignments]
         return d
 
 
@@ -205,6 +211,10 @@ class MonitorTemplateAssignment(Base):
     server_id = Column(String, nullable=False, index=True)
     server_hostname = Column(String, nullable=False)
     server_name = Column(String, nullable=False)
+    # 'manual' = user-created, 'tag' = materialized by tag_sync. The sync only
+    # ever creates/removes its own 'tag' rows — manual assignments are never
+    # touched by tag membership changes.
+    source = Column(String, nullable=False, default="manual", server_default="manual")
 
     def to_dict(self) -> dict:
         return {
@@ -213,6 +223,31 @@ class MonitorTemplateAssignment(Base):
             "serverId": self.server_id,
             "serverHostname": self.server_hostname,
             "serverName": self.server_name,
+            "source": self.source,
+        }
+
+
+class MonitorTemplateTagAssignment(Base):
+    """Template→tag binding. Materialization into per-server assignments
+    (source='tag') happens in app/tag_sync.py — the server DB stays the only
+    source of tag membership (GET /api/internal/servers)."""
+
+    __tablename__ = "monitor_template_tag_assignments"
+    __table_args__ = (
+        UniqueConstraint("template_id", "tag", name="uq_tag_assignment_template_tag"),
+    )
+
+    id = Column(String, primary_key=True)
+    template_id = Column(
+        String, ForeignKey("monitor_templates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tag = Column(String, nullable=False, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "templateId": self.template_id,
+            "tag": self.tag,
         }
 
 
@@ -237,3 +272,67 @@ class MonitorAgentKey(Base):
             "apiKey": "***" + self.hashed_key[-8:],
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class MonitorSeedState(Base):
+    """Tombstone for built-in template seeding: a slug recorded here has been
+    seeded once and is never re-created — user deletions and edits win over
+    re-seeding (see app/builtin_templates.py)."""
+
+    __tablename__ = "monitor_seed_state"
+
+    slug = Column(String, primary_key=True)
+    seeded_at = Column(DateTime, nullable=False, server_default=utc_now_sql())
+
+
+class MonitorMaintenance(Base):
+    """Maintenance window (collect-but-mute): state transitions keep flowing,
+    but process_alert suppresses dispatch + hub emit while a window is active.
+
+    kind 'once': naive-UTC starts_at/ends_at.
+    kind 'weekly': weekdays (JSON list, 0=Monday) + start_time "HH:MM" +
+    duration_minutes, evaluated in `timezone` (IANA) via zoneinfo — "Sunday
+    02:00" stays wall-clock correct across DST transitions.
+    server_id NULL = window applies to every server."""
+
+    __tablename__ = "monitor_maintenance"
+
+    id = Column(String, primary_key=True)
+    server_id = Column(String, nullable=True, index=True)
+    note = Column(String, nullable=True)
+    kind = Column(String, nullable=False)  # once | weekly
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    weekdays = Column(String, nullable=True)  # JSON [0-6], 0=Monday
+    start_time = Column(String, nullable=True)  # "HH:MM" wall clock in `timezone`
+    duration_minutes = Column(Integer, nullable=True)
+    timezone = Column(String, nullable=False, default="UTC", server_default="UTC")
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=utc_now_sql())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "serverId": self.server_id,
+            "note": self.note,
+            "kind": self.kind,
+            "startsAt": self.starts_at.isoformat() if self.starts_at else None,
+            "endsAt": self.ends_at.isoformat() if self.ends_at else None,
+            "weekdays": json.loads(self.weekdays) if self.weekdays else [],
+            "startTime": self.start_time,
+            "durationMinutes": self.duration_minutes,
+            "timezone": self.timezone,
+            "enabled": self.enabled,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class MonitorAgentLiveness(Base):
+    """Persisted last agent report per server. The in-memory _last_report map
+    (checkers/agent.py) alone made every service restart look like agent
+    staleness; this row rehydrates it on startup."""
+
+    __tablename__ = "monitor_agent_liveness"
+
+    server_id = Column(String, primary_key=True)
+    last_report_at = Column(DateTime, nullable=False)

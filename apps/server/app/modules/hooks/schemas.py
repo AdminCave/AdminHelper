@@ -29,6 +29,7 @@ VALID_EVENTS = [
     "playbook.created",
     "playbook.updated",
     "playbook.deleted",
+    "alert.triggered",
 ]
 
 VALID_INTERVALS = list(INTERVAL_MAP)

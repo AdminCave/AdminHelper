@@ -33,7 +33,14 @@ from app.core.config import (
 )
 from app.core.ssrf import is_private_url
 from app.core.time import utcnow_naive
-from app.models import MonitorAlertLog, MonitorAlertRule, MonitorCheck, MonitorState
+from app.maintenance import is_in_maintenance
+from app.models import (
+    MonitorAlertLog,
+    MonitorAlertRule,
+    MonitorCheck,
+    MonitorMaintenance,
+    MonitorState,
+)
 
 logger = logging.getLogger("monitor.alerter")
 
@@ -61,6 +68,32 @@ def process_alert(
     caller has accumulated on the same session.
     """
     if old_status == new_status:
+        return
+
+    # Transitions INTO 'unknown' never notify (spec: unknown-Policy): the state
+    # stays visible on the dashboard, but a check going unknown (stale agent
+    # data, SSRF-blocked target, corrupt config) is not an incident — real
+    # "agent gone" is the persisted agent_ping going critical. unknown -> ok
+    # passes below and dispatches as a normal recovery.
+    if new_status == "unknown":
+        return
+
+    # Maintenance windows (collect-but-mute, T25): the state transition has
+    # already been persisted by the caller — only notifications are muted.
+    # No alert-log entry either: the log records SENT notifications.
+    windows = (
+        db.query(MonitorMaintenance).filter(MonitorMaintenance.enabled == True).all()  # noqa: E712
+    )
+    if windows and is_in_maintenance(windows, check.server_id, utcnow_naive()):
+        logger.debug("Alert for check %s suppressed (maintenance window)", check.id)
+        return
+
+    # Host-down suppression (Alertmanager inhibition pattern, T7): while this
+    # server's agent_ping stands critical, every OTHER check of the server
+    # stays silent — one incident, one notification (the agent_ping alert).
+    # agent_ping itself always alerts; checks without a server are unaffected.
+    if check.check_type != "agent_ping" and check.server_id and _host_is_down(db, check):
+        logger.debug("Alert for check %s suppressed (host down)", check.id)
         return
 
     rules = db.query(MonitorAlertRule).filter(MonitorAlertRule.enabled == True).all()  # noqa: E712
@@ -107,6 +140,27 @@ def process_alert(
     _emit_to_hub(check, old_status, new_status, msg)
 
 
+def _host_is_down(db: Session, check: MonitorCheck) -> bool:
+    """True when ANY enabled agent_ping check of the same server stands critical.
+
+    ANY-semantics on purpose: with several agent_ping checks per server (manual
+    plus template is possible — no unique constraint), picking an arbitrary row
+    would make suppression depend on row order; filtering on critical makes it
+    deterministic."""
+    row = (
+        db.query(MonitorState.status)
+        .join(MonitorCheck, MonitorCheck.id == MonitorState.check_id)
+        .filter(
+            MonitorCheck.server_id == check.server_id,
+            MonitorCheck.check_type == "agent_ping",
+            MonitorCheck.enabled == True,  # noqa: E712
+            MonitorState.status == "critical",
+        )
+        .first()
+    )
+    return row is not None
+
+
 def _hub_severity(old_status: str, new_status: str) -> str:
     """Severity of a transition for the hub = the worse of the two states."""
     level = max(_STATUS_LEVEL.get(old_status, 1), _STATUS_LEVEL.get(new_status, 1))
@@ -136,6 +190,11 @@ def _emit_to_hub(check: MonitorCheck, old_status: str, new_status: str, msg: dic
         "body": msg["text"],
         "source_type": "server",
         "source_id": check.server_id,
+        # severity is worse-of-both so recoveries reach warning-level
+        # subscribers; new_status lets the server distinguish a real alert
+        # from a recovery (the alert.triggered hook must not fire on the
+        # critical -> ok leg).
+        "new_status": new_status,
     }
     try:
         resp = httpx.post(

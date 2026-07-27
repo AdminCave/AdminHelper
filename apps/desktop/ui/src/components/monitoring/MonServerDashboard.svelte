@@ -5,9 +5,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { monitoringChecks, monitoringServers, selectedServerId } from '$lib/stores/monitoring';
+  import {
+    monitoringChecks,
+    monitoringServers,
+    selectedServerId,
+    checkEditor,
+    openCheckEditor,
+    closeCheckEditor,
+    loadMonitoring,
+  } from '$lib/stores/monitoring';
   import { computeSummary, statusClass, worstStatus } from '$lib/models/monitoring';
   import type { MonitorCheck, MonitorCheckType } from '$lib/api/types';
+  import MonitorCheckModal from './MonitorCheckModal.svelte';
+  import MonHeartbeatBar from './MonHeartbeatBar.svelte';
   import SecLive from './section/SecLive.svelte';
   import SecNetwork from './section/SecNetwork.svelte';
   import SecHeartbeat from './section/SecHeartbeat.svelte';
@@ -16,6 +26,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   import SecBackups from './section/SecBackups.svelte';
   import SecZfs from './section/SecZfs.svelte';
   import SecSmart from './section/SecSmart.svelte';
+  import SecForecast from './section/SecForecast.svelte';
   import { t } from '$lib/i18n';
 
   let selected = $derived($selectedServerId);
@@ -55,6 +66,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let backupChecks = $derived(pick('proxmox_backup'));
   let zfsChecks = $derived(pick('zfs_health'));
   let smartChecks = $derived(pick('smart_health'));
+  let forecastChecks = $derived(pick('disk_forecast'));
 </script>
 
 <div class="mon-dashboard">
@@ -96,7 +108,20 @@ SPDX-License-Identifier: GPL-3.0-or-later
             >
           {/if}
         </div>
+        {#if selected !== '__none'}
+          <button
+            class="btn primary small mon-dashboard-add"
+            onclick={() => openCheckEditor(null, selected ?? '')}
+          >
+            + {$t('monitoring.checkEdit.add')}
+          </button>
+        {/if}
       </div>
+      {#if heartbeatChecks.length > 0}
+        <div class="mon-dashboard-heartbeat">
+          <MonHeartbeatBar checkId={heartbeatChecks[0].id} />
+        </div>
+      {/if}
     </header>
 
     {#if serverChecks.length === 0}
@@ -126,6 +151,17 @@ SPDX-License-Identifier: GPL-3.0-or-later
       {#if smartChecks.length > 0}
         <SecSmart checks={smartChecks} />
       {/if}
+      {#if forecastChecks.length > 0}
+        <SecForecast checks={forecastChecks} />
+      {/if}
     {/if}
   {/if}
 </div>
+
+<MonitorCheckModal
+  open={$checkEditor.open}
+  target={$checkEditor.target}
+  serverId={$checkEditor.serverId}
+  onClose={closeCheckEditor}
+  onSaved={() => void loadMonitoring()}
+/>

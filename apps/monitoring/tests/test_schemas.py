@@ -13,7 +13,14 @@ from app.schemas import TemplateCheckDef
 
 
 def _def(**over):
-    base = {"name": "cpu", "check_type": "ping", "interval": "5m", "severity": "critical"}
+    base = {
+        "name": "cpu",
+        "check_type": "ping",
+        "interval": "5m",
+        "severity": "critical",
+        # T4: ping configs require a target at the boundary now.
+        "config": {"target": "127.0.0.1"},
+    }
     return {**base, **over}
 
 
