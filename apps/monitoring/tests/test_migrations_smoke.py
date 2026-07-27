@@ -126,3 +126,80 @@ def test_uniq_template_assignment_dedupes_before_constraint(monkeypatch):
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch):
+    # alert-sent-state T1: the upgrade must backfill notified_status = status —
+    # without it every pre-existing warning/critical state would count as a
+    # discrepancy and trigger a catch-up notification storm on deploy.
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+
+    import app.core.config as app_config
+
+    admin_engine = create_engine(_normalize(DB_URL), isolation_level="AUTOCOMMIT")
+    dbname = f"alembic_sentstate_{uuid.uuid4().hex[:8]}"
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_engine.url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(MONITORING_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(MONITORING_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    try:
+        command.upgrade(cfg, "b7d9f1a3c5e7")  # just before the sent-state migration
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_checks"
+                    " (id, name, check_type, config, interval, severity)"
+                    " VALUES ('c1', 'C', 'ping', '{}', '5m', 'critical')"
+                )
+            )
+            conn.execute(
+                text("INSERT INTO monitor_states (check_id, status) VALUES ('c1', 'critical')")
+            )
+        # A check standing on unknown at deploy time: the last SENT status
+        # comes from the alert log (c2 -> critical, recovery after the deploy
+        # must not be swallowed); without a log entry it stays unknown (c3).
+        with engine.begin() as conn:
+            for cid in ("c2", "c3"):
+                conn.execute(
+                    text(
+                        "INSERT INTO monitor_checks"
+                        " (id, name, check_type, config, interval, severity)"
+                        f" VALUES ('{cid}', 'C', 'ping', '{{}}', '5m', 'critical')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"INSERT INTO monitor_states (check_id, status) VALUES ('{cid}', 'unknown')"
+                    )
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_alert_rules (id, name, channel, channel_config)"
+                    " VALUES ('r1', 'R', 'webhook', '{}')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO monitor_alert_log"
+                    " (alert_rule_id, check_id, old_status, new_status, sent_at, success)"
+                    " VALUES ('r1', 'c2', 'ok', 'critical', '2026-01-01 00:00:00', true)"
+                )
+            )
+        command.upgrade(cfg, "c1d3e5f7a9b1")
+        with engine.connect() as conn:
+            rows = dict(
+                conn.execute(
+                    text("SELECT check_id, notified_status FROM monitor_states")
+                ).fetchall()
+            )
+        assert rows == {"c1": "critical", "c2": "critical", "c3": "unknown"}
+    finally:
+        engine.dispose()
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        admin_engine.dispose()

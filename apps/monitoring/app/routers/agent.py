@@ -14,7 +14,7 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.alerter import process_alert
+from app.alerter import process_alert, resolve_notification
 from app.check_engine import effective_status, is_suppressed, next_fail_count
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
@@ -176,7 +176,7 @@ def agent_report(
 
     # Evaluate agent-based checks for this server
     checks_updated = 0
-    # (check_id, old_status, new_status) for each status change; dispatched in
+    # (check_id, old_status, new_status) for each sent-state discrepancy; dispatched in
     # the background after the response so webhook/SMTP never block the request.
     pending_alerts: list[tuple[str, str, str]] = []
     agent_checks = (
@@ -298,10 +298,17 @@ def agent_report(
                 if details is not None:
                     state.details = details_json
 
-            # Alerting on status change: collect now, dispatch after the commit
-            # in a background task (blocking webhook/SMTP must not stall this
-            # request — see _dispatch_alert_bg).
-            if old_status != eff_status:
+            # Alerting on a DISCREPANCY to the last reported status, not on the
+            # raw transition (sent-state, alert-sent-state T5): the next push
+            # catches suppressed reports up once maintenance/host-down is over.
+            # silent_ack is recorded inline (bookkeeping, no BG task); notify is
+            # collected now and dispatched after the commit in a background task
+            # (blocking webhook/SMTP must not stall this request — see
+            # _dispatch_alert_bg). process_alert re-checks under FOR UPDATE.
+            decision = resolve_notification(state.notified_status, eff_status)
+            if decision == "silent_ack":
+                state.notified_status = eff_status
+            elif decision == "notify":
                 pending_alerts.append((check.id, old_status, eff_status))
 
             checks_updated += 1

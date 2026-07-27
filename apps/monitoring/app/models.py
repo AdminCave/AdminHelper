@@ -70,6 +70,10 @@ class MonitorState(Base):
     fail_count = Column(Integer, default=0)
     message = Column(String, nullable=True)
     details = Column(String, nullable=True)
+    # Sent-state (docs/features/alert-sent-state.md): the status the alerter
+    # last actually reported. NULL = never reported. A discrepancy to `status`
+    # means a suppressed transition awaits catch-up notification.
+    notified_status = Column(String, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +84,7 @@ class MonitorState(Base):
             "failCount": self.fail_count,
             "message": self.message,
             "details": json.loads(self.details) if self.details else None,
+            "notifiedStatus": self.notified_status,
         }
 
 

@@ -13,7 +13,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from app.alerter import process_alert
+from app.alerter import process_alert, resolve_notification
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.core.database import SessionLocal
@@ -225,13 +225,23 @@ def execute_check(check_id: str) -> None:
             state.message = message
             state.details = details_json
 
+        # Alerting on a DISCREPANCY to the last reported status, not on the raw
+        # transition (sent-state, alert-sent-state T4): once a suppression
+        # (maintenance/host-down) is gone, the next cycle catches the pending
+        # report up even though the status itself did not change. A silent_ack
+        # (an ok that never had a reported problem) is pure bookkeeping and is
+        # recorded inline — no BG task. process_alert re-checks the decision
+        # under FOR UPDATE, so a stale read here only costs a no-op task.
+        decision = resolve_notification(state.notified_status, eff_status)
+        if decision == "silent_ack":
+            state.notified_status = eff_status
         db.commit()
 
-        # Alerting on status change: dispatch OFF the check-worker thread (see _alert_pool /
-        # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the scheduler pool and
-        # misfire following checks. Pass the id, not the session-bound check — the pool thread
-        # reloads it in its own session (5.3).
-        if old_status != eff_status:
+        # Dispatch OFF the check-worker thread (see _alert_pool /
+        # _dispatch_alert_bg) so a slow webhook/SMTP server can't stall the
+        # scheduler pool and misfire following checks. Pass the id, not the
+        # session-bound check — the pool thread reloads it in its own session (5.3).
+        if decision == "notify":
             _alert_pool.submit(_dispatch_alert_bg, check.id, old_status, eff_status)
 
     except Exception:

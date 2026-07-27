@@ -223,3 +223,77 @@ class TestResolveConfigServerId:
     def test_none_config_and_empty_column_pass_through(self):
         assert resolve_config_server_id(None, "agent_ping", "srv-1") is None
         assert resolve_config_server_id({}, "agent_ping", None) == {}
+
+
+def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
+    # T4 (alert-sent-state): the dispatch condition is eff_status !=
+    # notified_status — a suppressed discrepancy is caught up on the next
+    # cycle even WITHOUT a status change; a matching sent-state stays silent.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import app.check_engine as ce
+    from app.core import victoria as victoria_mod
+    from app.models import Base, MonitorCheck, MonitorState
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    with factory() as db:
+        db.add(
+            MonitorCheck(
+                id="c1",
+                server_id="s1",
+                name="c",
+                check_type="ping",
+                config='{"target": "127.0.0.1"}',
+                enabled=True,
+                interval="5m",
+                severity="critical",
+                consecutive_fails=1,
+            )
+        )
+        # Status is already critical but was never reported (e.g. suppressed
+        # while the host was down) -> discrepancy.
+        db.add(MonitorState(check_id="c1", status="critical", notified_status="ok"))
+        db.commit()
+
+    class _Checker:
+        def run(self, config):
+            return "critical", "still broken", None
+
+    submitted = []
+    monkeypatch.setattr(ce, "SessionLocal", factory)
+    monkeypatch.setattr(ce, "get_checker", lambda t: _Checker())
+    monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
+    monkeypatch.setattr(ce._alert_pool, "submit", lambda fn, *a: submitted.append(a))
+
+    ce.execute_check("c1")  # critical -> critical, notified=ok -> catch-up dispatch
+    assert submitted == [("c1", "critical", "critical")]
+
+    submitted.clear()
+    with factory() as db:
+        db.query(MonitorState).filter_by(check_id="c1").update({"notified_status": "critical"})
+        db.commit()
+    ce.execute_check("c1")  # no discrepancy -> no dispatch
+    assert submitted == []
+
+    # F9: the inline silent_ack in the scheduler path — an ok that was never
+    # reported books notified_status without any BG task.
+    class _OkChecker:
+        def run(self, config):
+            return "ok", "fine", None
+
+    monkeypatch.setattr(ce, "get_checker", lambda t: _OkChecker())
+    with factory() as db:
+        db.query(MonitorState).filter_by(check_id="c1").update(
+            {"status": "ok", "notified_status": None, "fail_count": 0}
+        )
+        db.commit()
+    ce.execute_check("c1")
+    assert submitted == []
+    with factory() as db:
+        assert db.query(MonitorState).filter_by(check_id="c1").one().notified_status == "ok"

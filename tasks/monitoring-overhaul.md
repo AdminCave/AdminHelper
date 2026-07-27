@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Monitoring-Überarbeitung — Task-Ledger
-Status: blockiert (Build komplett, T47 braucht Entscheidung) · Branch: feature/monitoring-overhaul · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (T47-Entscheidung: Sent-State als Folge-Vorhaben, siehe tasks/alert-sent-state.md) · Branch: feature/monitoring-overhaul · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/monitoring-overhaul.md
 Fast-Suite: lokal · Warm-Profil: desktop
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -328,7 +328,7 @@ Komponente: apps/server · Dateien: app/modules/servers/router.py
 Änderung: Synchroner 5s-Notify vor kürzerem Callee-Deadline → langsame Saves + spurious ReadTimeout-Warnings (F14). Notify fire-and-forget in den Event-Thread-Pool auslagern.
 Verify: pytest -k tag_sync (CRUD-Antwort wartet nicht auf den Notify; Notify wird weiterhin gefeuert)
 
-### T47 — Alert-Semantik ohne Sent-State  [?]
+### T47 — Alert-Semantik ohne Sent-State  [x] (Entscheidung 2026-07-26: Sent-State-Tracking als Folge-Vorhaben geplant — Spec docs/features/alert-sent-state.md, Ledger tasks/alert-sent-state.md)
 F1 (Host-down edge-triggered: Alert geht verloren, wenn der Check nach Host-Recovery critical BLEIBT; Recovery ohne gesendeten Alert), F2 (Maintenance: Recovery für VOR dem Fenster gesendete Alerts entfällt — Catch-up wäre neues Feature; „keine Nachmeldung IM Fenster" ist dokumentierte Gate-Entscheidung), F7 (ok→unknown→ok-Flapping erzeugt Recovery-Spam für nie gemeldete Incidents). Gemeinsame Wurzel: der Alerter ist rein transitionsbasiert, es gibt kein „Alert wurde gesendet"-State. Sauber lösbar nur mit Sent-State-Tracking (Alertmanager-Level-Semantik: Re-Emit bei Suppression-Release, Recovery nur nach gesendetem Alert). ENTSCHEIDUNG NÖTIG: Sent-State-Feature als Folge-Vorhaben planen, oder Ist-Verhalten dokumentieren und akzeptieren?
 Merker (kein Fix, pre-existing): restore.sh ist auf Warm-Boxen nicht idempotent — `find data -mindepth 1 -delete 2>/dev/null || true` lässt root-owned Reste (Container-Writes) stehen, das folgende `tar xzf` scheitert als non-root an `Cannot utime` (Zweitlauf von backup_restore_test rot; Erstlauf grün). Fix-Kandidat: `tar -m` oder sudo-Cleanup in restore.sh. Unabhängig vom Branch-Diff (Workaround: data/ auf der Box löschen).
 Merker (kein Fix): F4 — agent_ping-Staleness ist seit T6 wall-clock-basiert (Persistenz erfordert das); NTP-Step > stale_minutes erzeugte einen fleet-weiten False-Positive-Sturm. Bewusster Trade-off, ggf. später Slew-Guard.
