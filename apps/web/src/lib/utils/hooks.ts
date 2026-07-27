@@ -21,6 +21,10 @@ export const HOOK_EVENTS = [
   'frp.tunnel.created',
   'frp.tunnel.updated',
   'frp.tunnel.deleted',
+  'playbook.created',
+  'playbook.updated',
+  'playbook.deleted',
+  'alert.triggered',
 ] as const;
 
 export const HOOK_INTERVAL_PRESETS = ['5m', '15m', '30m', '1h', '6h', '12h', '24h'] as const;

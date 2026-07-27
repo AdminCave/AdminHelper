@@ -74,6 +74,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Web-Panel: Hook-Editor bietet alle Events an:** Die Event-Auswahl im
+  Hook-Dialog fuehrte eine eigene, veraltete Liste — `playbook.*` und das neue
+  `alert.triggered` fehlten und waren nur per API abonnierbar. Die Liste ist
+  ergaenzt (inkl. Labels DE+EN) und ein Guard-Test pinnt sie jetzt gegen die
+  Server-Whitelist `VALID_EVENTS`.
 - **Admin-Doku Monitoring (DE+EN):** Das dokumentierte
   `warn_threshold`/`crit_threshold`-Modell existierte nicht — ersetzt durch
   die echten per-Typ-Config-Keys samt Defaults; der `alert.triggered`-Abschnitt
