@@ -17,11 +17,26 @@ from app.checkers.tcp import TcpChecker
     "target",
     ["127.0.0.1", "10.0.0.5", "192.168.1.1", "169.254.169.254", "0.0.0.0"],
 )
-def test_private_targets_refused_ssrf(target):
-    status, msg, metrics = TcpChecker().run({"target": target, "port": 8428})
-    assert status == "unknown"
-    assert "SSRF" in msg
-    assert metrics is None
+def test_private_targets_are_allowed(target, monkeypatch):
+    # Checking an internal service port is what this check is for — no
+    # private/reserved block (see the checker's comment). Pinned against a
+    # copy-paste reintroduction from http.py.
+    import socket
+
+    class _Sock:
+        def close(self):
+            pass
+
+    seen = {}
+
+    def fake_conn(addr, timeout=None):
+        seen["addr"] = addr
+        return _Sock()
+
+    monkeypatch.setattr(socket, "create_connection", fake_conn)
+    status, msg, _metrics = TcpChecker().run({"target": target, "port": 8428})
+    assert "SSRF" not in msg
+    assert seen["addr"] == (target, 8428)
 
 
 def test_missing_target_or_port_is_unknown():
@@ -35,13 +50,7 @@ def test_port_zero_is_unknown():
     assert TcpChecker().run({"target": "example.com", "port": 0})[0] == "unknown"
 
 
-def _no_ssrf(monkeypatch):
-    monkeypatch.setattr("app.checkers.tcp.is_private_url", lambda u: False)
-
-
 def test_successful_connect_is_ok(monkeypatch):
-    _no_ssrf(monkeypatch)
-
     class _Sock:
         def close(self):
             pass
@@ -53,8 +62,6 @@ def test_successful_connect_is_ok(monkeypatch):
 
 
 def test_timeout_is_critical(monkeypatch):
-    _no_ssrf(monkeypatch)
-
     def boom(*a, **k):
         raise socket.timeout()
 
@@ -63,8 +70,6 @@ def test_timeout_is_critical(monkeypatch):
 
 
 def test_connection_refused_is_critical(monkeypatch):
-    _no_ssrf(monkeypatch)
-
     def boom(*a, **k):
         raise ConnectionRefusedError()
 
@@ -73,8 +78,6 @@ def test_connection_refused_is_critical(monkeypatch):
 
 
 def test_oserror_is_critical(monkeypatch):
-    _no_ssrf(monkeypatch)
-
     def boom(*a, **k):
         raise OSError("no route to host")
 

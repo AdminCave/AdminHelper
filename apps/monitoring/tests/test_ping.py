@@ -51,9 +51,21 @@ class TestPingTargetHardening:
     def test_invalid_targets_refused_before_subprocess(self, evil):
         assert self._status(evil) == "unknown"
 
-    @pytest.mark.parametrize("target", ["127.0.0.1", "10.0.0.1", "169.254.169.254"])
-    def test_private_targets_refused_ssrf(self, target):
-        # 3.25: a valid-format but private/reserved target is blocked before ping.
+    @pytest.mark.parametrize("target", ["127.0.0.1", "10.0.0.1", "192.168.1.10"])
+    def test_private_targets_are_allowed(self, target, monkeypatch):
+        # Monitoring RFC1918 hosts is the product's core use case, so ping does
+        # NOT apply the http checker's private/reserved block (admin-only
+        # creation, reachability-only signal). Pinned so the guard is not
+        # reintroduced by a copy-paste from http.py.
+        import subprocess
+
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, "1 packets transmitted, 1 received", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
         status, msg, _ = PingChecker().run({"target": target})
-        assert status == "unknown"
-        assert "SSRF" in msg
+        assert "SSRF" not in msg
+        assert seen["cmd"][-1] == target  # the probe really ran against it

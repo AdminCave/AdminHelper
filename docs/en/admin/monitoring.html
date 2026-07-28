@@ -38,7 +38,7 @@
           <table>
             <thead><tr><th>Type</th><th>What is measured</th><th>Runs where</th></tr></thead>
             <tbody>
-              <tr><td><code>ping</code></td><td>ICMP reachability + round-trip time</td><td>Monitoring service (central)</td></tr>
+              <tr><td><code>ping</code></td><td>ICMP reachability + round-trip time (private networks included &ndash; see the note below)</td><td>Monitoring service (central)</td></tr>
               <tr><td><code>tcp</code></td><td>Port reachability + connect time</td><td>Monitoring service</td></tr>
               <tr><td><code>http</code></td><td>HTTP status code, latency, optional body text match</td><td>Monitoring service</td></tr>
               <tr><td><code>agent_ping</code></td><td>Did the agent report within <code>stale_minutes</code>?</td><td>Agent (push)</td></tr>
@@ -51,6 +51,10 @@
               <tr><td><code>disk_forecast</code></td><td>"Disk full in X hours" prediction from the fill-rate history (see <a href="#disk-forecast">Disk forecast</a>)</td><td>Monitoring service (reads VictoriaMetrics)</td></tr>
             </tbody>
           </table>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">Private targets: what is allowed</div><p><code>ping</code> and <code>tcp</code> may probe <strong>private and internal addresses</strong> (10.x, 192.168.x, localhost) &ndash; that is exactly what they are for. <code>http</code> checks and <strong>alert webhooks</strong> still reject private/reserved targets (SSRF protection): they return resp. forward response <em>content</em>, which could be used to pull cloud-metadata credentials. Creating checks is admin-only in any case.</p></div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
             <div><div class="callout-title">Agent plugins are auto-detected</div><p>The plugin checks <code>proxmox_backup</code>, <code>zfs_health</code> and <code>docker_health</code> only evaluate data when the agent finds the respective subsystem (Proxmox, ZFS, Docker) on the host. If the subsystem is absent, the check simply has no data – that is not an error. The <code>agent_*</code> and plugin checks require the Go agent on the target; <code>ping</code>/<code>tcp</code>/<code>http</code> need no agent.</p></div>

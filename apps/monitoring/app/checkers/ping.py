@@ -7,8 +7,6 @@ from __future__ import annotations
 import re
 import subprocess
 
-from app.core.ssrf import is_private_url
-
 _VALID_TARGET = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
@@ -25,10 +23,14 @@ class PingChecker:
         if not _VALID_TARGET.match(target) or len(target) > 253:
             return "unknown", "Ungueltiges Ziel (nur Hostnamen und IPs erlaubt)", None
 
-        # Same SSRF guard as the other probes: a ping to a private/reserved target
-        # would let anyone who can create a check probe the internal network (3.25).
-        if is_private_url(f"//{target}"):
-            return "unknown", "Ziel ist privat/reserviert (SSRF-Schutz)", None
+        # NO private/reserved block here (unlike the http checker): monitoring
+        # servers on RFC1918 networks IS the product's core use case — a ping
+        # check that refuses 10.x/192.168.x is useless for a self-hosted
+        # infrastructure tool. The risk is acceptable because check creation is
+        # admin-only (require_internal behind the server's admin proxy) and an
+        # ICMP probe yields reachability only, never response content. The
+        # http checker and alert webhooks stay guarded: those DO return/forward
+        # response bodies (cloud metadata credentials).
 
         try:
             result = subprocess.run(
