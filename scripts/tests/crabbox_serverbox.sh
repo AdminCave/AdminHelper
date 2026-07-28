@@ -12,10 +12,10 @@ SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP
 # Independent, composable modes (so the S6 capstone can do BOTH at once):
 #   tunnel            S4: seed an STCP tunnel + bring up frps
 #   moncheck <IP>     S5: seed ping checks + an email alert to the mailhog sink <IP>
-DO_TUNNEL=0; DO_MONCHECK=0; DO_ENFORCE=0; SMTP_IP=""
+DO_TUNNEL=0; DO_MONCHECK=0; DO_ENFORCE=0; SMTP_IP=""; SMTP_CA_B64=""
 while [ $# -gt 0 ]; do case "$1" in
   tunnel)   DO_TUNNEL=1 ;;
-  moncheck) DO_MONCHECK=1; SMTP_IP="${2:-}"; shift ;;
+  moncheck) DO_MONCHECK=1; SMTP_IP="${2:-}"; SMTP_CA_B64="${3:-}"; shift 2 ;;
   enforce)  DO_ENFORCE=1 ;;   # S5-hardening (D2): MTLS_ENFORCE=true + cert-based seed
   *) ;; esac; shift; done
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
@@ -236,7 +236,21 @@ if [ "$DO_MONCHECK" = 1 ]; then
   # ping check with an empty target + an alert with an empty smtp_host and fail the S5
   # assertions far downstream with a misleading verdict (2.120).
   [ -n "$SMTP_IP" ] || { echo "[serverbox] moncheck: SMTP_IP leer (Moncheck-Box-Lease fehlgeschlagen?) — Abbruch." >&2; exit 1; }
-  echo "[serverbox] moncheck mode: seed ping checks + email alert (smtp -> $SMTP_IP:1025)"
+  echo "[serverbox] moncheck mode: seed ping checks + email alert (smtp -> $SMTP_IP:1025, STARTTLS)"
+  # Trust the sink's self-signed cert INSIDE the monitoring container: the
+  # alerter mandates STARTTLS with a verifying context (3.24), so without this
+  # anchor the send dies with "certificate verify failed" and the closed loop
+  # proves nothing. Appending to the bundle avoids needing update-ca-certificates
+  # (OpenSSL reads concatenated PEMs); the context is built per send, so the
+  # anchor is live for the seed run below.
+  if [ -n "$SMTP_CA_B64" ] && [ "$SMTP_CA_B64" != none ]; then
+    printf '%s' "$SMTP_CA_B64" | base64 -d \
+      | "${DC[@]}" exec -T -u root monitoring sh -c 'cat >> /etc/ssl/certs/ca-certificates.crt' \
+      && echo "[serverbox] sink CA appended to the monitoring trust store" \
+      || { echo "[serverbox] moncheck: sink CA konnte nicht installiert werden — Abbruch." >&2; exit 1; }
+  else
+    echo "[serverbox] moncheck: kein sink-CA uebergeben — STARTTLS-Verify wuerde fehlschlagen." >&2; exit 1
+  fi
   # Quoted heredoc + -e: pass SMTP_IP through the container env, no shell text in the
   # Python literals (matches the seed block's <<'PY' + export pattern) (2.120).
   "${DC[@]}" exec -T -e SMTP_IP="$SMTP_IP" monitoring python - <<'PY'

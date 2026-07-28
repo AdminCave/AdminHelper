@@ -38,7 +38,10 @@ sudo sed -i \
   -e 's#{{IDENTITY_DIR}}/cert.pem#/etc/adminhelper/identity/agent.crt#' \
   -e 's#{{IDENTITY_DIR}}/key.pem#/etc/adminhelper/identity/agent.key#' \
   /etc/frp/visitor.toml
-VPORT="$(grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0-9]+')"
+# sudo: the agent package keeps /etc/frp root-only (it holds tunnel credentials),
+# so a plain grep here died with "Permission denied" and the whole visitor leg
+# was reported as "could not reach the agent's sshd".
+VPORT="$(sudo grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0-9]+')"
 [ -n "$VPORT" ] && echo "VIS_BIND_PORT=$VPORT" || { echo "VIS_NO_BIND_PORT"; sudo cat /etc/frp/visitor.toml; exit 1; }
 
 echo "[visitorbox] run frpc visitor -> bind 127.0.0.1:$VPORT (through frps to the agent's sshd)"

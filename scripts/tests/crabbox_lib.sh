@@ -103,7 +103,10 @@ cbx_lease() {  # cbx_lease <slug-hint> <pond> [ttl] [idle]
 
 # Extract the LAST 'KEY=value' marker from a captured box output (last in case a
 # line repeats). Shared by multibox + warm so a warmup-parsing fix lands once (2.39).
-cbx_marker() { printf '%s' "$2" | grep -oE "$1=[^ ]+" | tail -1 | cut -d= -f2; }
+# -f2- (NOT -f2): base64 payload markers (MB_VISITOR_B64, MC_CA_B64) end in '='
+# padding, and -f2 silently dropped it — the receiving box then died with
+# "base64: invalid input" and the tunnel/alert paths failed for years.
+cbx_marker() { printf '%s' "$2" | grep -oE "$1=[^ ]+" | tail -1 | cut -d= -f2-; }
 
 # Build the Go agent + its .deb from the synced checkout (run from the repo root), echo
 # the .deb path. build-deb.sh needs a frpc at the repo root and MOVES the package to the

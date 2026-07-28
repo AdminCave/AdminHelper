@@ -96,9 +96,13 @@ if [ "$MONCHECK" = 1 ]; then
   echo "== moncheck (S5): lease the client/sink box + start mailhog (before the seed) =="
   if read -r MC_SLUG MC_IP < <(lease ah-moncheck); then
     ok "moncheck-box $MC_SLUG @ $MC_IP"
-    MCSTART="$(timeout 1500 crabbox run --id "$MC_SLUG" -- bash scripts/tests/crabbox_moncheckbox.sh start 2>&1)"
+    MCSTART="$(timeout 1500 crabbox run --id "$MC_SLUG" -- bash scripts/tests/crabbox_moncheckbox.sh start "$MC_IP" 2>&1)"
     echo "$MCSTART" | grep -vE 'Compiling|Downloaded ' | tail -20
-    printf '%s' "$MCSTART" | grep -q MC_MAILHOG_UP && ok "mailhog sink up on $MC_IP (:1025/:8025)" || bad "mailhog did not start"
+    printf '%s' "$MCSTART" | grep -q MC_MAILHOG_UP && ok "mailpit sink up on $MC_IP (:1025/:8025, STARTTLS)" || bad "mailpit did not start"
+    # The sink's self-signed cert travels to the server box so the monitoring
+    # container can verify it — the alerter refuses unverified TLS (3.24).
+    MC_CA_B64="$(cbx_marker MC_CA_B64 "$MCSTART")"
+    [ -n "$MC_CA_B64" ] || bad "sink CA marker missing (STARTTLS verify will fail)"
   else bad "moncheck-box lease"; fi
 fi
 
@@ -107,7 +111,7 @@ SRVARG=""
 [ "$TUNNEL" = 1 ]   && SRVARG="$SRVARG tunnel"
 # Only when the lease succeeded — an empty MC_IP would pass `moncheck` with no IP,
 # shifting serverbox's positional args (4.124).
-[ "$MONCHECK" = 1 ] && [ -n "$MC_IP" ] && SRVARG="$SRVARG moncheck $MC_IP"
+[ "$MONCHECK" = 1 ] && [ -n "$MC_IP" ] && SRVARG="$SRVARG moncheck $MC_IP ${MC_CA_B64:-none}"
 [ "$ENFORCE" = 1 ]  && SRVARG="$SRVARG enforce"
 SRVOUT="$(timeout 2700 crabbox run --id "$SRV_SLUG" -- bash scripts/tests/crabbox_serverbox.sh "$SRV_IP" $SRVARG 2>&1)"; echo "$SRVOUT" | grep -vE 'Compiling|Downloaded |Container |Network |Volume |Pulling|Waiting|Pull complete' | tail -40
 # mb <KEY> — server-box marker via the shared cbx_marker (crabbox_lib.sh), bound to

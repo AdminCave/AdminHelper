@@ -31,8 +31,22 @@ PROFILE="${AH_BOOTSTRAP_PROFILE:-full}"
 SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
 log() { printf '\n\033[1m[bootstrap] %s\033[0m\n' "$*"; }
 
+# A freshly booted VM still runs cloud-init/unattended-upgrades, which hold the
+# dpkg lock for the first minute or two. Without waiting, bootstrap dies with
+# "Could not get lock /var/lib/dpkg/lock-frontend" — the single most common
+# transient failure of a fresh multibox lease (it took out the rpm and tunnel
+# boxes of a whole capstone run).
+wait_apt_lock() {
+    for _ in $(seq 1 90); do
+        $SUDO fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || return 0
+        sleep 5
+    done
+    echo "[bootstrap] WARNUNG: dpkg-Lock nach 7.5 min noch belegt — versuche es trotzdem." >&2
+}
+
 log "apt base + tauri libs + display + repo-build + keyring tooling"
 export DEBIAN_FRONTEND=noninteractive
+wait_apt_lock
 $SUDO apt-get update -qq
 $SUDO apt-get install -y --no-install-recommends \
   ca-certificates curl git rsync openssl gnupg jq unzip build-essential pkg-config \
@@ -40,7 +54,13 @@ $SUDO apt-get install -y --no-install-recommends \
   libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \
   libayatana-appindicator3-dev libssl-dev patchelf file \
   xvfb webkit2gtk-driver at-spi2-core dbus-x11 gnome-keyring \
-  minisign dpkg-dev apt-utils createrepo-c rpm locales
+  minisign dpkg-dev apt-utils createrepo-c rpm locales \
+  xterm freerdp2-x11
+
+# xterm + freerdp2-x11: the desktop client SPAWNS these to open an SSH terminal
+# (terminal.rs profile list) resp. an RDP session. Without them desktop_e2e_connect
+# fails with "sshd/xrdp saw no connection" — the launch silently has nothing to
+# exec, while web-connect still passes (xdg-open/webview). Cost: ~30 MB.
 
 log "generate a valid UTF-8 locale (headless boxes default to C — breaks Intl.NumberFormat in the desktop webview -> blank app)"
 $SUDO locale-gen en_US.UTF-8 >/dev/null 2>&1 || true

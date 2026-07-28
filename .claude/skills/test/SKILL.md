@@ -96,8 +96,12 @@ a Proxmox template so cold starts skip the ~18 min bootstrap. Provisions → run
 - **rpm cross-distro:** RHEL 9 needs x86-64-v2 (Proxmox kvm64 lacks it → use `rockylinux:8`);
   RPM `Version` forbids `-` (use `0.0.0`, not `0.0.0-test`); the agent must be **static**
   (`CGO_ENABLED=0`, in the Makefile) to run on RHEL 8's older glibc.
-- **Monitoring SSRF guard blocks private IPs** for HTTP-checks + webhooks → the closed loop uses
-  ping (ICMP) + SMTP (`smtp_host` in the alert `channel_config`), both un-guarded. The monitoring
+- **Monitoring SSRF guard blocks private IPs** for HTTP-checks + alert webhooks only; `ping`/`tcp`
+  deliberately allow private targets (v0.44.0 — monitoring internal hosts is the point). The closed
+  loop therefore uses ping (ICMP) + SMTP (`smtp_host` in the alert `channel_config`). The sink is
+  **mailpit with STARTTLS** and an IP-SAN cert whose PEM is injected into the monitoring container's
+  trust store: the alerter mandates STARTTLS on every non-465 port and verifies cert+hostname (3.24),
+  so a plaintext catcher (mailhog) can never receive an alert. The monitoring
   internal API (`/checks`, `/alerts`) is reachable only inside the compose net (`docker compose
   exec monitoring`, auth `X-Internal-Key: $MONITOR_API_KEY`); trigger a check with `POST /checks/{id}/run`.
 - **enforce: agents bootstrap via the certless :8444 plane** (`/provision/activate` + `/enroll`,

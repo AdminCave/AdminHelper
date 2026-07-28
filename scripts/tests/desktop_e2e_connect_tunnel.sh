@@ -39,6 +39,19 @@ cleanup_extra() {
 }
 wait_log() { for _ in $(seq 1 "$3"); do docker logs "$1" 2>&1 | grep -qE "$2" && return 0; sleep 1; done; return 1; }
 
+# The RDP client is spawned by the app and connects a moment AFTER the GUI spec
+# returns — a one-shot grep races it (SSH/web land earlier and were never
+# flaky). Poll the container log instead of asserting once.
+wait_rdp_log() {  # container timeout
+    for _ in $(seq 1 "$2"); do
+        docker exec "$1" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
+            | grep -qiE "connect|incoming|login|session|TLS" && return 0
+        docker logs "$1" 2>&1 | grep -qiE "connect|incoming" && return 0
+        sleep 1
+    done
+    return 1
+}
+
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker go
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
     || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }
@@ -172,8 +185,7 @@ else
     docker logs --tail 15 "$WEB_C"
 fi
 
-if docker exec "$RDP_C" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
-        | grep -qiE "connect|incoming|login|session|TLS"; then
+if wait_rdp_log "$RDP_C" 20; then
     ok "xrdp logged the RDP connection over the tunnel"
 else
     bad "xrdp saw no tunneled connection"

@@ -35,6 +35,19 @@ wait_log() {  # container pattern timeout — readiness via the log, so we don't
     return 1
 }
 
+# The RDP client is spawned by the app and connects a moment AFTER the GUI spec
+# returns — a one-shot grep races it (SSH/web land earlier and were never
+# flaky). Poll the container log instead of asserting once.
+wait_rdp_log() {  # container timeout
+    for _ in $(seq 1 "$2"); do
+        docker exec "$1" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
+            | grep -qiE "connect|incoming|login|session|TLS" && return 0
+        docker logs "$1" 2>&1 | grep -qiE "connect|incoming" && return 0
+        sleep 1
+    done
+    return 1
+}
+
 
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
@@ -124,10 +137,7 @@ else
 fi
 
 # RDP: the xrdp server logged the desktop's incoming connection (xfreerdp3).
-if docker exec "$RDP_C" sh -c 'cat /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null' 2>/dev/null \
-        | grep -qiE "connect|incoming|login|session|TLS"; then
-    ok "xrdp logged the desktop's RDP connection (direct)"
-elif docker logs "$RDP_C" 2>&1 | grep -qiE "connect|incoming"; then
+if wait_rdp_log "$RDP_C" 20; then
     ok "xrdp logged the desktop's RDP connection (direct)"
 else
     bad "xrdp saw no connection from the desktop"
