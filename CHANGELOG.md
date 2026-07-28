@@ -5,7 +5,7 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.44.0] - 2026-07-28
 
 ### Added
 
@@ -74,6 +74,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Ping-/TCP-Checks erreichen wieder interne Ziele:** Der SSRF-Schutz lehnte in
+  `ping` und `tcp` auch private/reservierte Adressen ab (10.x, 192.168.x,
+  localhost) — damit war der Hauptanwendungsfall, interne Server zu ueberwachen,
+  nicht moeglich; die Checks blieben dauerhaft auf `unknown`. Beide pruefen jetzt
+  beliebige Ziele (Anlegen bleibt Admin-only, das Signal ist reine
+  Erreichbarkeit). `http`-Checks und Alert-Webhooks bleiben bewusst geschuetzt:
+  Sie liefern bzw. verschicken Antwort-Inhalte (Cloud-Metadaten).
 - **Web-Panel: Hook-Editor bietet alle Events an:** Die Event-Auswahl im
   Hook-Dialog fuehrte eine eigene, veraltete Liste — `playbook.*` und das neue
   `alert.triggered` fehlten und waren nur per API abonnierbar. Die Liste ist

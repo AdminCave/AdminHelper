@@ -262,7 +262,23 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.43.0?</h2>
+          <h2>Was ist neu in 0.44.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.44.0 &ndash; Monitoring-Ueberarbeitung: Standard-Templates, Wartungsfenster &amp; verlaesslicheres Alerting (2026-07-28)</div>
+              <p>
+                <strong>Added:</strong> Fuenf <strong>Standard-Templates</strong> (Linux, Windows, Proxmox, Docker, ZFS) machen
+                neue Server sofort ueberwacht — zuweisbar per Template-Modal, Server-Dialog, <strong>Server-Tag</strong> oder
+                Bulk-Aktion; dazu <strong>Wartungsfenster</strong> (einmalig/woechentlich, DST-korrekt),
+                <strong>Disk-voll-Prognose</strong>, Kachel-Grid mit Heartbeat-Balken und der <code>alert.triggered</code>-Hook.
+                <strong>Changed:</strong> Das Alerting merkt sich den zuletzt <em>gemeldeten</em> Status — unterdrueckte Alerts
+                (Host-Ausfall, Wartung) werden nachgemeldet, <code>unknown</code>-Flapping bleibt stumm, Hysterese und
+                Host-down-Unterdrueckung daempfen Alarm-Stuerme. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

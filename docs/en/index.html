@@ -260,7 +260,23 @@
             </div>
           </div>
 
-          <h2>What's new in 0.43.0?</h2>
+          <h2>What's new in 0.44.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.44.0 &ndash; Monitoring overhaul: standard templates, maintenance windows &amp; reliable alerting (2026-07-28)</div>
+              <p>
+                <strong>Added:</strong> Five <strong>standard templates</strong> (Linux, Windows, Proxmox, Docker, ZFS) make new
+                servers monitored out of the box — assignable via the template modal, the server dialog, a
+                <strong>server tag</strong> or a bulk action; plus <strong>maintenance windows</strong> (one-off/weekly,
+                DST-correct), a <strong>disk-full forecast</strong>, a tile grid with heartbeat bars and the
+                <code>alert.triggered</code> hook. <strong>Changed:</strong> Alerting now remembers the last
+                <em>reported</em> status — suppressed alerts (host outage, maintenance) are caught up,
+                <code>unknown</code> flapping stays silent, hysteresis and host-down suppression damp alert storms.
+                Details in the <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
