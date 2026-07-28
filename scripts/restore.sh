@@ -91,8 +91,17 @@ if [ -f "$STAGE/server-data.tar.gz" ]; then
     fi
     rm -f "$STAGE/.dnames" "$STAGE/.dverbose"
     mkdir -p data
-    find data -mindepth 1 -delete 2>/dev/null || true
-    tar xzf "$STAGE/server-data.tar.gz" -C data --no-same-owner --no-same-permissions
+    # Wipe + extract as container-root, symmetric to how backup.sh captured this
+    # dir (dump_dir tars /app/data INSIDE the server container) and to
+    # restore_volume above. The server container owns these files as root, so a
+    # host-side tar run by the invoking user cannot clean up or write into the
+    # dir at all — that failed silently (find) and then died confusingly
+    # ("Cannot utime" / "Cannot mkdir: Permission denied"), breaking DR exactly
+    # when it is needed. The escape guard above still applies (defense in
+    # depth); the extraction is now jailed to /dst as well.
+    docker run --rm -v "$PWD/data:/dst" -v "$STAGE:/src:ro" alpine \
+        sh -c 'find /dst -mindepth 1 -delete 2>/dev/null || true; tar xzf /src/server-data.tar.gz -C /dst' \
+        || { echo "[restore] FEHLER: ./data konnte nicht wiederhergestellt werden." >&2; exit 1; }
 else
     echo "[restore] server-data.tar.gz nicht im Backup — überspringe ./data"
 fi
