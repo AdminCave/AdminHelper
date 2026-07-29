@@ -36,12 +36,23 @@ log() { printf '\n\033[1m[bootstrap] %s\033[0m\n' "$*"; }
 # "Could not get lock /var/lib/dpkg/lock-frontend" — the single most common
 # transient failure of a fresh multibox lease (it took out the rpm and tunnel
 # boxes of a whole capstone run).
+# ALL four locks, not just lock-frontend: `apt-get update` takes
+# /var/lib/apt/lists/lock while `apt-get install` takes the dpkg ones — waiting
+# for a single file let the update step race straight into "Could not get lock
+# /var/lib/apt/lists/lock" and killed a fresh rpm box mid-capstone.
 wait_apt_lock() {
+    local locks="/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock"
+    local l held
     for _ in $(seq 1 90); do
-        $SUDO fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || return 0
+        held=0
+        for l in $locks; do
+            [ -e "$l" ] || continue
+            $SUDO fuser "$l" >/dev/null 2>&1 && { held=1; break; }
+        done
+        [ "$held" = 0 ] && return 0
         sleep 5
     done
-    echo "[bootstrap] WARNUNG: dpkg-Lock nach 7.5 min noch belegt — versuche es trotzdem." >&2
+    echo "[bootstrap] WARNUNG: apt/dpkg-Lock nach 7.5 min noch belegt — versuche es trotzdem." >&2
 }
 
 log "apt base + tauri libs + display + repo-build + keyring tooling"

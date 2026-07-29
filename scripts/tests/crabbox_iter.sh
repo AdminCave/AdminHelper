@@ -84,7 +84,12 @@ else
   ENVS="AH_ALLOW_REAL=1 AH_CAPTURE=1"
   [ -n "${AH_ONLY:-}" ] && ENVS="$ENVS AH_ONLY='$AH_ONLY'"
   echo "== run.sh $LAYER on warm box $BOX${AH_ONLY:+ (AH_ONLY=$AH_ONLY)} =="
-  if CBX_TIMEOUT=3000 cbx run --id "$BOX" "${CAP[@]}" -- \
+  # 'all' = integration + GUI-e2e + unit + lint in one go: ~42 min on a warm box
+  # and well past 50 min on a cold one (the Tauri release build alone is ~20).
+  # The flat 3000s bound killed it mid-suite, which reads exactly like a test
+  # failure (no summary line, box kept) — give the long layer its own headroom.
+  case "$LAYER" in all) LAYER_TMO=6000 ;; *) LAYER_TMO=3000 ;; esac
+  if CBX_TIMEOUT=$LAYER_TMO cbx run --id "$BOX" "${CAP[@]}" -- \
         "$ENVS bash scripts/tests/run.sh $LAYER"; then
     echo "  ✓ run.sh $LAYER green"
   else report_fail "$BOX"; exit 1; fi
