@@ -5,6 +5,19 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
+  agent_ping-Staleness
+  misst auf der Wanduhr (nur die ist ueber Prozessgrenzen persistierbar) — ein
+  NTP-Vorwaertssprung groesser als `stale_minutes` liess dadurch schlagartig
+  ALLE Agents als "nicht erreichbar" gelten und schaltete ueber die
+  Host-down-Unterdrueckung zugleich alle anderen Alerts dieser Server stumm.
+  Ein monotoner Zweit-Zeitstempel entlarvt den Sprung jetzt (Divergenz > 60 s)
+  und setzt die Zeitbasis neu, statt zu alarmieren.
+
 ## [0.44.0] - 2026-07-28
 
 ### Added

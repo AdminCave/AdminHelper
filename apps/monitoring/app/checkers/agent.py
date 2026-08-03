@@ -11,9 +11,13 @@ The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime
 
 from app.core.time import utcnow_naive
+
+logger = logging.getLogger("monitor.agent")
 
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
@@ -24,11 +28,23 @@ EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 # to 'unknown' until the next push. Wall clock instead of time.monotonic on
 # purpose — a monotonic value cannot be persisted across processes.
 _last_report: dict[str, datetime] = {}
+# Monotonic companion to _last_report, same key. Only the wall-clock value can be
+# persisted across processes, but comparing BOTH deltas reveals a clock jump:
+# wall time can leap (NTP step, VM suspend/resume), monotonic time cannot. Absent
+# for a server hydrated from the DB after a restart — then the wall clock alone
+# decides, exactly as before.
+_last_report_mono: dict[str, float] = {}
+
+# A wall/monotonic divergence above this counts as "the clock jumped", not as
+# elapsed time. Generous on purpose: scheduler jitter and slow checks must never
+# be mistaken for a jump (that would suppress a REAL outage alert).
+_CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 
 
 def record_agent_report(server_id: str) -> None:
     """Called on agent push to store the timestamp."""
     _last_report[server_id] = utcnow_naive()
+    _last_report_mono[server_id] = time.monotonic()
 
 
 def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
@@ -37,6 +53,9 @@ def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
     overwritten by an older persisted value."""
     for server_id, last_report_at in entries.items():
         _last_report.setdefault(server_id, last_report_at)
+        # Deliberately NO monotonic companion: the persisted value predates this
+        # process, so there is nothing to compare against. The guard stays off
+        # for that server until its next push (wall-clock behavior as before).
 
 
 class AgentPingChecker:
@@ -65,7 +84,37 @@ class AgentPingChecker:
         if last is None:
             return "unknown", "Noch kein Agent-Report empfangen", None
 
-        age_seconds = (utcnow_naive() - last).total_seconds()
+        now = utcnow_naive()
+        age_seconds = (now - last).total_seconds()
+
+        # Clock-jump guard: with a monotonic baseline available, an NTP step (or
+        # a resumed VM) shows up as wall time advancing far more than monotonic
+        # time. Without this, one forward step > stale_minutes marks EVERY agent
+        # as gone at once — and via the host-down inhibition that also silences
+        # every other check of those servers.
+        last_mono = _last_report_mono.get(server_id)
+        if last_mono is not None:
+            mono_age = time.monotonic() - last_mono
+            if abs(age_seconds - mono_age) > _CLOCK_JUMP_TOLERANCE_SECONDS:
+                # unknown, not ok: across the jump the real age is unknowable —
+                # and unknown never notifies (unknown policy). Both stamps are
+                # taken in THIS process, so a divergence means the MONITORING
+                # host's clock moved, not the monitored server's.
+                logger.warning(
+                    "Clock jump on the monitoring host (%s): wall %.0fs vs monotonic %.0fs — "
+                    "heartbeat baseline re-armed instead of alerting",
+                    server_id,
+                    age_seconds,
+                    mono_age,
+                )
+                _last_report[server_id] = now
+                _last_report_mono[server_id] = time.monotonic()
+                return (
+                    "unknown",
+                    "Zeitsprung der Monitoring-Uhr erkannt — Heartbeat-Basis neu gesetzt",
+                    None,
+                )
+
         age_minutes = age_seconds / 60
 
         if age_minutes > stale_minutes:

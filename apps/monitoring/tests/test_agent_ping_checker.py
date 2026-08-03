@@ -92,3 +92,100 @@ def test_hydrated_entry_feeds_the_checker(monkeypatch):
     monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=20))
     status, _msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
     assert status == "critical"
+
+
+class TestClockJumpGuard:
+    """merker-cleanup T1: staleness is measured on the wall clock (only that can
+    be persisted), so an NTP step or a resumed VM would mark EVERY agent as gone
+    at once — and via the host-down inhibition silence every other check of those
+    servers too. A monotonic companion reveals the jump."""
+
+    def test_forward_clock_jump_does_not_alarm(self, monkeypatch):
+        monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
+        monkeypatch.setattr(agent, "_last_report_mono", {"srv-1": 1000.0})
+        # Wall clock leaps 2 h; monotonic advanced 30 s (one scheduler tick).
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(hours=2))
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 1030.0)
+
+        status, msg, metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+        assert status == "unknown"  # never notifies (unknown policy)
+        assert "Zeitsprung" in msg
+        assert metrics is None
+        # Baseline re-armed on BOTH clocks, so the next cycle grades normally.
+        assert agent._last_report["srv-1"] == T0 + timedelta(hours=2)
+        assert agent._last_report_mono["srv-1"] == 1030.0
+
+    def test_real_outage_still_critical(self, monkeypatch):
+        # Both clocks advance together -> genuinely gone, must still alarm.
+        monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
+        monkeypatch.setattr(agent, "_last_report_mono", {"srv-1": 1000.0})
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=30))
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 1000.0 + 30 * 60)
+
+        status, _msg, metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+        assert status == "critical"
+        assert metrics["agent_last_seen_seconds"] == 1800
+
+    def test_scheduler_jitter_is_not_a_jump(self, monkeypatch):
+        # 20 s divergence (slow check, jitter) stays under the tolerance and must
+        # NOT suppress a real staleness verdict.
+        monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
+        monkeypatch.setattr(agent, "_last_report_mono", {"srv-1": 1000.0})
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=30))
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 1000.0 + 30 * 60 - 20)
+
+        status, _msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+        assert status == "critical"
+
+    def test_hydrated_server_without_monotonic_behaves_as_before(self, monkeypatch):
+        # After a restart the persisted row has no monotonic companion — the
+        # guard stays off and the plain wall-clock verdict applies.
+        monkeypatch.setattr(agent, "_last_report", {})
+        monkeypatch.setattr(agent, "_last_report_mono", {})
+        hydrate_agent_liveness({"srv-1": T0})
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=30))
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 5.0)
+
+        status, _msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+        assert status == "critical"
+        assert "srv-1" not in agent._last_report_mono
+
+    def test_exactly_at_tolerance_is_not_a_jump(self, monkeypatch):
+        # Strict >: a divergence of exactly the tolerance must still grade
+        # normally, mirroring test_exactly_at_limit_is_not_stale above.
+        monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
+        monkeypatch.setattr(agent, "_last_report_mono", {"srv-1": 1000.0})
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 + timedelta(minutes=30))
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 1000.0 + 30 * 60 - 60)
+
+        status, _msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+        assert status == "critical"
+
+    def test_backward_clock_jump_also_re_arms(self, monkeypatch):
+        # A backward step makes age_seconds negative — the abs() comparison must
+        # catch it too, otherwise the check would silently report a "fresh"
+        # agent for as long as the clock stays behind.
+        monkeypatch.setattr(agent, "_last_report", {"srv-1": T0})
+        monkeypatch.setattr(agent, "_last_report_mono", {"srv-1": 1000.0})
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0 - timedelta(hours=2))
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 1030.0)
+
+        status, msg, _metrics = AgentPingChecker().run({"server_id": "srv-1", "stale_minutes": 15})
+
+        assert status == "unknown"
+        assert "Zeitsprung" in msg
+        assert agent._last_report["srv-1"] == T0 - timedelta(hours=2)
+
+    def test_record_sets_both_clocks(self, monkeypatch):
+        monkeypatch.setattr(agent, "_last_report", {})
+        monkeypatch.setattr(agent, "_last_report_mono", {})
+        monkeypatch.setattr(agent, "utcnow_naive", lambda: T0)
+        monkeypatch.setattr(agent.time, "monotonic", lambda: 42.0)
+        record_agent_report("srv-1")
+        assert agent._last_report["srv-1"] == T0
+        assert agent._last_report_mono["srv-1"] == 42.0
