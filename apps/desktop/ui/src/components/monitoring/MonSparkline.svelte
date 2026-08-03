@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { sessionStore } from '$lib/stores/session';
   import { monitoringApi } from '$lib/api/monitoring';
 
@@ -60,7 +60,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
     if (!host) return;
     if (!('IntersectionObserver' in window)) {
-      void load();
+      // untrack: load() reads `loaded`/$sessionStore — called synchronously
+      // inside this effect, those reads would register as dependencies and
+      // loop the effect (effect_update_depth_exceeded). Same fix as
+      // MonHeartbeatBar; unreachable in practice (every browser has the
+      // observer), but a trap for whoever touches this next.
+      untrack(() => void load());
       return () => {
         observer?.disconnect();
         observer = null;
@@ -70,7 +75,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
       (entries) => {
         for (const e of entries) {
           if (e.isIntersecting) {
-            void load();
+            // untrack for the same reason as the fallback path: an observer
+            // implementation may fire this callback synchronously.
+            untrack(() => void load());
             observer?.disconnect();
             observer = null;
             break;
