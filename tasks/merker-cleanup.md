@@ -27,7 +27,7 @@ Komponente: apps/desktop/ui · Dateien: src/components/monitoring/MonSparkline.s
 Verify: `cd apps/desktop/ui && npm run check && npx vitest run src/components/monitoring/` — plus ein Test wie in MonHeartbeatBar.test.ts (IO-Stub abwesend → genau ein `load()`, keine Endlosschleife)
 Doku: keine (intern)
 
-### T3 — Smoke-Test-Gerüst deduplizieren  [ ]
+### T3 — Smoke-Test-Gerüst deduplizieren  [x] (scratch_db-Contextmanager, 3 Kopien → 1; Nebeneffekt: das upgrade der Fixture liegt jetzt im try/finally, ein Migrationsfehler leakt die Scratch-DB nicht mehr)
 Komponente: apps/monitoring · Dateien: tests/test_migrations_smoke.py
 Änderung: Das dreifach kopierte Scratch-DB-Gerüst (CREATE DATABASE, `monkeypatch` auf `app_config.DATABASE_URL`, alembic-Config, `finally`-DROP mit FORCE) in einen Contextmanager `scratch_db()` ziehen; die bestehende `migrated_engine`-Fixture und die zwei Zwischenstand-Tests (uniq-dedupe, notified_status-Backfill) nutzen ihn. Verhalten und Assertions unverändert.
 Verify: `source .devenv.sh && cd apps/monitoring && DATABASE_URL="$AH_TEST_DB" .venv/bin/python -m pytest -q tests/test_migrations_smoke.py` (weiterhin 3 passed) `&& .venv/bin/python -m pytest -q tests/`

@@ -11,6 +11,7 @@ the result matches the models exactly."""
 
 import os
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -32,36 +33,51 @@ def _normalize(url: str) -> str:
     return url
 
 
-@pytest.fixture()
-def migrated_engine(monkeypatch):
-    from alembic import command
+@contextmanager
+def scratch_db(monkeypatch, tag: str):
+    """A throwaway database plus a ready alembic Config, yielded as (cfg, engine).
+
+    Every test here needs the same four steps — CREATE DATABASE, point
+    app.core.config.DATABASE_URL at it (env.py reads that attribute at
+    execution time, so patching the ini would not take), build the Config, and
+    DROP it afterwards.
+
+    The caller decides how far to migrate: `command.upgrade(cfg, "head")` for
+    the parity check, or a specific revision to plant data at an intermediate
+    state before applying the next one.
+    """
     from alembic.config import Config
     from sqlalchemy import create_engine, text
 
     import app.core.config as app_config
 
     admin_engine = create_engine(_normalize(DB_URL), isolation_level="AUTOCOMMIT")
-    dbname = f"alembic_smoke_{uuid.uuid4().hex[:8]}"
+    dbname = f"alembic_{tag}_{uuid.uuid4().hex[:8]}"
     with admin_engine.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{dbname}"'))
 
     smoke_url = admin_engine.url.set(database=dbname).render_as_string(hide_password=False)
-
-    # env.py reads app.core.config.DATABASE_URL at execution time and
-    # overrides sqlalchemy.url with it — patch the attribute, not the ini.
     monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
     cfg = Config(str(MONITORING_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(MONITORING_DIR / "alembic"))
-    command.upgrade(cfg, "head")
 
     engine = create_engine(smoke_url)
     try:
-        yield engine
+        yield cfg, engine
     finally:
         engine.dispose()
         with admin_engine.connect() as conn:
             conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
         admin_engine.dispose()
+
+
+@pytest.fixture()
+def migrated_engine(monkeypatch):
+    from alembic import command
+
+    with scratch_db(monkeypatch, "smoke") as (cfg, engine):
+        command.upgrade(cfg, "head")
+        yield engine
 
 
 def test_migration_chain_matches_models(migrated_engine):
@@ -86,21 +102,9 @@ def test_uniq_template_assignment_dedupes_before_constraint(monkeypatch):
     # before adding the unique constraint — else ADD CONSTRAINT fails and the container
     # crash-loops on boot. Migrate to just before it, plant duplicates, then apply it.
     from alembic import command
-    from alembic.config import Config
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
-    import app.core.config as app_config
-
-    admin_engine = create_engine(_normalize(DB_URL), isolation_level="AUTOCOMMIT")
-    dbname = f"alembic_dedupe_{uuid.uuid4().hex[:8]}"
-    with admin_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
-    smoke_url = admin_engine.url.set(database=dbname).render_as_string(hide_password=False)
-    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
-    cfg = Config(str(MONITORING_DIR / "alembic.ini"))
-    cfg.set_main_option("script_location", str(MONITORING_DIR / "alembic"))
-    engine = create_engine(smoke_url)
-    try:
+    with scratch_db(monkeypatch, "dedupe") as (cfg, engine):
         command.upgrade(cfg, "c85e6dacd792")  # just before the uniq-constraint migration
         with engine.begin() as conn:
             conn.execute(
@@ -121,11 +125,6 @@ def test_uniq_template_assignment_dedupes_before_constraint(monkeypatch):
         with engine.connect() as conn:
             n = conn.execute(text("SELECT count(*) FROM monitor_template_assignments")).scalar()
         assert n == 1  # exactly one row per (template_id, server_id) pair survived
-    finally:
-        engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
-        admin_engine.dispose()
 
 
 def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch):
@@ -133,21 +132,9 @@ def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch)
     # without it every pre-existing warning/critical state would count as a
     # discrepancy and trigger a catch-up notification storm on deploy.
     from alembic import command
-    from alembic.config import Config
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
-    import app.core.config as app_config
-
-    admin_engine = create_engine(_normalize(DB_URL), isolation_level="AUTOCOMMIT")
-    dbname = f"alembic_sentstate_{uuid.uuid4().hex[:8]}"
-    with admin_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
-    smoke_url = admin_engine.url.set(database=dbname).render_as_string(hide_password=False)
-    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
-    cfg = Config(str(MONITORING_DIR / "alembic.ini"))
-    cfg.set_main_option("script_location", str(MONITORING_DIR / "alembic"))
-    engine = create_engine(smoke_url)
-    try:
+    with scratch_db(monkeypatch, "sentstate") as (cfg, engine):
         command.upgrade(cfg, "b7d9f1a3c5e7")  # just before the sent-state migration
         with engine.begin() as conn:
             conn.execute(
@@ -198,8 +185,3 @@ def test_notified_status_backfill_marks_existing_states_as_reported(monkeypatch)
                 ).fetchall()
             )
         assert rows == {"c1": "critical", "c2": "critical", "c3": "unknown"}
-    finally:
-        engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
-        admin_engine.dispose()
