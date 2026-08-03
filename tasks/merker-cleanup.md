@@ -1,5 +1,5 @@
 # Merker-Aufräumer — Task-Ledger
-Status: aktiv · Branch: feature/merker-cleanup · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/merker-cleanup · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/merker-cleanup.md
 Fast-Suite: lokal · Warm-Profil: desktop
 DoD je Task: CLAUDE.md (Tests grün, ruff/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -35,7 +35,7 @@ Doku: keine (intern)
 
 ## Phase 3 — Ledger-Hygiene
 
-### T4 — Erledigte und geschlossene Merker in den Ledgern markieren  [ ]
+### T4 — Erledigte und geschlossene Merker in den Ledgern markieren  [x] (7 Annotationen im Overhaul-Ledger, 1 Sammel-Annotation im Sent-State-Ledger; grep-Verify grün)
 Komponente: tasks · Dateien: tasks/monitoring-overhaul.md, tasks/alert-sent-state.md
 Änderung: Jeden der acht Merker mit seinem Triage-Ergebnis aus der Spec annotieren — vier als „erledigt durch <Commit/PR>", vier als „geschlossen: <Grund>", die drei hier umgesetzten als „gefixt in feature/merker-cleanup". Damit liest niemand die Ledger erneut als offene Halde.
 Verify: `! grep -qE "bei Gelegenheit fixen|Fix-Kandidat" tasks/monitoring-overhaul.md tasks/alert-sent-state.md`

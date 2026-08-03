@@ -131,7 +131,7 @@ Komponente: apps/desktop/ui · Dateien: src/components/ui/Modal.svelte, src/comp
 Verify: `cd apps/desktop/ui && npm run check && npx vitest run src/components/ui/` (Rendern, Escape schließt, Confirm ruft Callback)
 Doku: keine (intern)
 
-### T17 — Monitoring-Modals auf Primitives umstellen (inkl. Design)  [x] (3 Modals migriert, Review fand Stacked-Escape-Bug → modalStack-Fix im Primitive. Merker: Web-Modal hat dieselbe Escape-Schwäche — portieren, falls Web je confirmDialog aus einem offenen Modal ruft)
+### T17 — Monitoring-Modals auf Primitives umstellen (inkl. Design)  [x] (3 Modals migriert, Review fand Stacked-Escape-Bug → modalStack-Fix im Primitive. Merker GESCHLOSSEN (merker-cleanup, 2026-08-03): Web ruft confirmDialog ausschließlich aus Listen-Aktionen (removeHook/rotateToken in Hooks, analog Users und ApiKeys — 4 Call-Sites, alle an Listen-Buttons), nie aus einem offenen Modal; zudem hat das Web-Modal mit stopImmediatePropagation bereits einen eigenen Stacking-Schutz — der modalStack-Port wäre eine Lösung ohne Problem)
 Komponente: apps/desktop/ui · Dateien: src/components/monitoring/AlertRuleModal.svelte, src/components/monitoring/MonitorCheckModal.svelte, src/components/monitoring/MonitoringTemplateModal.svelte
 Änderung: Dupliziertes `.editor-overlay`/`.editor-panel`-CSS entfernen, auf `Modal` umstellen; Zwei-Klick-Delete durch `ConfirmDialog` ersetzen; visuelles Design vereinheitlichen (Abstände, Buttons, Formular-Layout) — streng nach AdminCave-Design-System, keine neuen Stil-Erfindungen.
 Verify: `cd apps/desktop/ui && npm run check && npm run lint && npm run test` (bestehende + angepasste Modal-Tests grün)
@@ -152,7 +152,7 @@ Verify: `cd apps/desktop/ui && npm run check && npx vitest run src/components/mo
 Doku: keine (intern)
 Abhängt von: T16
 
-### T20 — Validierungs-Fixes in Monitoring-Formularen  [x] (Bounds = T4-Spiegel, warn≥crit-Hinweis, Cooldown-Clamp, info-Option, check_restarts raus, hysteresis_pp-Feld. Kandidat notiert: Backend Field(ge=0) für cooldown_minutes in AlertRuleCreate/TemplateAlertDef)
+### T20 — Validierungs-Fixes in Monitoring-Formularen  [x] (Bounds = T4-Spiegel, warn≥crit-Hinweis, Cooldown-Clamp, info-Option, check_restarts raus, hysteresis_pp-Feld. Kandidat ERLEDIGT (T44): Field(ge=0) steht in AlertRuleCreate/AlertRuleUpdate/TemplateAlertDef)
 Komponente: apps/desktop/ui · Dateien: src/components/monitoring/AlertRuleModal.svelte, src/components/monitoring/CheckConfigFields.svelte
 Änderung: Zahlenfelder gegen negative/unsinnige Werte begrenzen (cooldown ≥ 0, Thresholds 0–100 wo prozentual, warn < crit-Hinweis); Severity-Optionen konsistent zu `VALID_SEVERITIES` (info/warning/critical).
 Verify: `cd apps/desktop/ui && npm run check && npx vitest run src/components/monitoring/` (invalide Eingaben blockiert)
@@ -168,7 +168,7 @@ Verify: `cd apps/desktop/ui && npm run check && npx vitest run src/components/mo
 Doku: keine (intern; Bedien-Doku in T34)
 Abhängt von: T19
 
-### T22 — MonHeartbeatBar: Verfügbarkeits-Balken  [x] (Lazy-Timeline via MonStatusTimeline-Reuse, untrack-Fix gegen Effect-Loop, 2 Tests. Merker: MonSparkline hat denselben latenten untrack-Fallback-Bug — in Produktion unerreichbar, bei Gelegenheit fixen)
+### T22 — MonHeartbeatBar: Verfügbarkeits-Balken  [x] (Lazy-Timeline via MonStatusTimeline-Reuse, untrack-Fix gegen Effect-Loop, 2 Tests. Merker ERLEDIGT (merker-cleanup T2, 718f76c): MonSparkline untrackt jetzt BEIDE Lazy-Load-Pfade — der Test zeigte, dass auch der Observer-Callback loopt)
 Komponente: apps/desktop/ui · Dateien: src/components/monitoring/MonHeartbeatBar.svelte (neu, SPDX), src/components/monitoring/MonServerGrid.svelte, src/components/monitoring/MonServerDashboard.svelte
 Änderung: Segment-Balken der letzten 24 h aus der Status-Timeline des `agent_ping`-Checks (`fetchMetrics`, lazy via IntersectionObserver wie `MonSparkline`); in Grid-Kachel + Dashboard-Header; Server ohne agent_ping → ausgeblendet.
 Verify: `cd apps/desktop/ui && npm run check && npx vitest run src/components/monitoring/MonHeartbeatBar.test.ts` (Segmente aus Timeline, lazy-load)
@@ -236,7 +236,7 @@ Komponente: apps/server · Dateien: User-Create-Pfade (users-Router + create-adm
 Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k default_subscription` (Admin-Create legt Subscription an, Non-Admin nicht)
 Doku: keine (intern; CHANGELOG in T35)
 
-### T31 — alert.triggered-Hook implementieren  [x] (Ingest feuert bei critical-Transition; Payload = Ingress-Pass-Through {server_id, severity, title, message} — check_name/old_status/new_status sind nicht im Monitoring→Server-Contract; Doku DE+EN — d12b10e. Merker: Web-HOOK_EVENTS-Picker (apps/web/src/lib/utils/hooks.ts) driftet gegen VALID_EVENTS — playbook.* fehlte schon vorher, jetzt auch alert.triggered + i18n-Keys; Follow-up mit Sync-Guard-Test analog test_event_whitelist)
+### T31 — alert.triggered-Hook implementieren  [x] (Ingest feuert bei critical-Transition; Payload = Ingress-Pass-Through {server_id, severity, title, message} — check_name/old_status/new_status sind nicht im Monitoring→Server-Contract; Doku DE+EN — d12b10e. Merker ERLEDIGT (PR #6, eef3844): alert.triggered + playbook.* + i18n-Keys ergänzt, Sync-Guard-Test pinnt HOOK_EVENTS jetzt gegen VALID_EVENTS)
 Komponente: apps/server · Dateien: app/modules/notifications/router.py, app/modules/hooks/schemas.py
 Änderung: Im internen Ingest (`/api/internal/events`): bei `event_type == "monitoring.check.transition"` mit Severity `critical` zusätzlich `fire_event("alert.triggered", {server_id, check_name, old_status, new_status, message})`; `"alert.triggered"` in die Event-Liste in hooks/schemas.py aufnehmen — macht die bestehende Doku-Aussage wahr.
 Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k alert_triggered` (critical → fire_event aufgerufen; warning/info → nicht)
@@ -257,7 +257,7 @@ Doku: keine (intern; README-Env-Tabelle + CHANGELOG in T35)
 
 ## Phase 9 — Doku
 
-### T34 — Admin-Doku DE+EN: Fehler fixen + Neues dokumentieren  [x] (beide Seiten komplett neu strukturiert + synchron, Fakten gegen Code verifiziert; Review-Fixes: Sparkline-Behauptung raus, Hysterese auf agent_resources eingegrenzt. Merker für T35: Proxy-Allowlist-/SSRF-Hinweis in docs/developer/monitoring.html aufnehmen)
+### T34 — Admin-Doku DE+EN: Fehler fixen + Neues dokumentieren  [x] (beide Seiten komplett neu strukturiert + synchron, Fakten gegen Code verifiziert; Review-Fixes: Sparkline-Behauptung raus, Hysterese auf agent_resources eingegrenzt. Merker ERLEDIGT (T35): der CHECK_TYPE_METRICS-Allowlist-Absatz steht in docs/developer/monitoring.html DE+EN)
 Komponente: docs · Dateien: docs/admin/monitoring.html, docs/en/admin/monitoring.html
 Änderung: Threshold-Doku-Fehler fixen (`warn_threshold`/`crit_threshold`-Modell durch echte per-Typ-Config-Keys ersetzen); `alert.triggered`-Abschnitt an den implementierten Hook (T31) angleichen (Auslösebedingung + Payload); neue Abschnitte: Standard-Templates + Schwellwert-Tabelle, Zuweisung (Dialog/Server/Tag/Bulk-CTA), unknown-Policy, Hysterese, Host-down-Suppression, Maintenance-Fenster (inkl. Zeitzonen-Verhalten und Hinweis: Transitionen, die vollständig IM Fenster passieren, werden nach Fenster-Ende nicht nachgemeldet — Alerter ist transitionsbasiert), disk_forecast, Grid/Heartbeat-Ansicht, Default-Subscription. Beide Sprachen synchron.
 Verify: `! grep -q "warn_threshold" docs/admin/monitoring.html docs/en/admin/monitoring.html && grep -qi "Linux Server" docs/admin/monitoring.html docs/en/admin/monitoring.html`
@@ -330,5 +330,5 @@ Verify: pytest -k tag_sync (CRUD-Antwort wartet nicht auf den Notify; Notify wir
 
 ### T47 — Alert-Semantik ohne Sent-State  [x] (Entscheidung 2026-07-26: Sent-State-Tracking als Folge-Vorhaben geplant — Spec docs/features/alert-sent-state.md, Ledger tasks/alert-sent-state.md)
 F1 (Host-down edge-triggered: Alert geht verloren, wenn der Check nach Host-Recovery critical BLEIBT; Recovery ohne gesendeten Alert), F2 (Maintenance: Recovery für VOR dem Fenster gesendete Alerts entfällt — Catch-up wäre neues Feature; „keine Nachmeldung IM Fenster" ist dokumentierte Gate-Entscheidung), F7 (ok→unknown→ok-Flapping erzeugt Recovery-Spam für nie gemeldete Incidents). Gemeinsame Wurzel: der Alerter ist rein transitionsbasiert, es gibt kein „Alert wurde gesendet"-State. Sauber lösbar nur mit Sent-State-Tracking (Alertmanager-Level-Semantik: Re-Emit bei Suppression-Release, Recovery nur nach gesendetem Alert). ENTSCHEIDUNG NÖTIG: Sent-State-Feature als Folge-Vorhaben planen, oder Ist-Verhalten dokumentieren und akzeptieren?
-Merker (kein Fix, pre-existing): restore.sh ist auf Warm-Boxen nicht idempotent — `find data -mindepth 1 -delete 2>/dev/null || true` lässt root-owned Reste (Container-Writes) stehen, das folgende `tar xzf` scheitert als non-root an `Cannot utime` (Zweitlauf von backup_restore_test rot; Erstlauf grün). Fix-Kandidat: `tar -m` oder sudo-Cleanup in restore.sh. Unabhängig vom Branch-Diff (Workaround: data/ auf der Box löschen).
-Merker (kein Fix): F4 — agent_ping-Staleness ist seit T6 wall-clock-basiert (Persistenz erfordert das); NTP-Step > stale_minutes erzeugte einen fleet-weiten False-Positive-Sturm. Bewusster Trade-off, ggf. später Slew-Guard.
+Merker ERLEDIGT (56d7cbf, v0.44.0): restore.sh wipet und extrahiert ./data jetzt als Container-Root (symmetrisch zu backup.sh dump_dir) — der stille find-Fehlschlag und das darauf folgende 'Cannot utime' sind weg; backup_restore_test läuft auch auf warmen Boxen grün.
+Merker ERLEDIGT (merker-cleanup T1, 6b3a542): ein monotoner Zweit-Zeitstempel entlarvt den Uhr-Sprung (Divergenz > 60 s) und setzt die Heartbeat-Basis neu, statt die Flotte zu alarmieren.

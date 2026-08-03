@@ -89,5 +89,5 @@ Verify: grep-Checks + HTML-Balance
 Fixt F10: die Task-Abhaken T1–T7 waren nur im Working Tree.
 Verify: git show HEAD:tasks/alert-sent-state.md zeigt [x]
 
-Merker (bewusst kein Fix): F4 No-op-Task-Churn während langer Suppressionen — nach T8 sind No-ops Millisekunden-billig; ein Dedup über die zwei Task-Mechanismen (Pool + FastAPI BackgroundTasks) wäre fehleranfällige Komplexität. F12 (_build_message-Re-SELECT) ist nach T8 korrekt so (State nach Claim-Commit expired). F13 (old_status-Parameter) bleibt als notified-Fallback der Fake-DB-Tests. F14 (Smoke-Test-Gerüst 3× kopiert) — Aufräumer bei der nächsten Migration.
+Merker GESCHLOSSEN/ERLEDIGT (merker-cleanup, 2026-08-03): F4 No-op-Task-Churn — geschlossen, nach T8 sind unterdrückte Dispatches Millisekunden-billig und ein Dedup über zwei Task-Mechanismen (Pool + BackgroundTasks) wäre fehleranfällige Komplexität. F12 (_build_message-Re-SELECT) — geschlossen, nach T8 korrekt so (State ist nach dem Claim-Commit expired). F13 (old_status-Parameter) — geschlossen per Gate-Entscheidung: der Alert-Pfad wurde gerade stabilisiert, die Signatur-Änderung berührt beide BG-Dispatcher plus die Fake-DB-Tests, Nutzen gering. F14 (Smoke-Test-Gerüst 3x kopiert) — ERLEDIGT (merker-cleanup T3, ba54ec4): scratch_db-Contextmanager, eine Kopie statt drei.
 

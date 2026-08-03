@@ -87,6 +87,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **`restore.sh` stellt `./data` wieder her, statt daran zu scheitern:**
+  `backup.sh` sichert das Verzeichnis im Container (als root), der Restore
+  raeumte und entpackte es aber mit dem Host-`tar` als aufrufender Nutzer — die
+  Bereinigung schlug still fehl und das Entpacken starb an `Cannot utime` /
+  `Cannot mkdir`. Disaster Recovery scheiterte damit genau dann, wenn man sie
+  braucht, mit irrefuehrender Meldung. Wipe und Extraktion laufen jetzt als
+  Container-Root (wie `restore_volume`), der Tar-Escape-Guard bleibt davor.
 - **Ping-/TCP-Checks erreichen wieder interne Ziele:** Der SSRF-Schutz lehnte in
   `ping` und `tcp` auch private/reservierte Adressen ab (10.x, 192.168.x,
   localhost) — damit war der Hauptanwendungsfall, interne Server zu ueberwachen,
