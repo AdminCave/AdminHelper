@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.core.time import utcnow_naive
 
@@ -36,8 +36,10 @@ _last_report: dict[str, datetime] = {}
 _last_report_mono: dict[str, float] = {}
 
 # A wall/monotonic divergence above this counts as "the clock jumped", not as
-# elapsed time. Generous on purpose: scheduler jitter and slow checks must never
-# be mistaken for a jump (that would suppress a REAL outage alert).
+# elapsed time. Both clocks are read a few statements apart, so only measurement
+# noise and a concurrent push landing between the two reads can diverge them at
+# all — 60 s is far above either. Correcting is safe in both directions, so the
+# constant only decides WHEN to prefer monotonic, never whether to alert.
 _CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 
 
@@ -87,33 +89,38 @@ class AgentPingChecker:
         now = utcnow_naive()
         age_seconds = (now - last).total_seconds()
 
-        # Clock-jump guard: with a monotonic baseline available, an NTP step (or
-        # a resumed VM) shows up as wall time advancing far more than monotonic
-        # time. Without this, one forward step > stale_minutes marks EVERY agent
-        # as gone at once — and via the host-down inhibition that also silences
-        # every other check of those servers.
+        # Clock-jump correction. Both stamps are taken in THIS process, so a
+        # divergence means the MONITORING host's clock moved (NTP step, resumed
+        # VM) — not the monitored server's. Monotonic time is then the truth:
+        # re-anchor the stored wall stamp to it and grade on the real age.
+        #
+        # Deliberately a CORRECTION, not a bail-out: returning 'unknown' here
+        # would (a) declare a genuinely dead agent fresh and fire a recovery,
+        # and (b) drop agent_ping out of the host-down inhibition (which matches
+        # status == 'critical'), releasing every suppressed check of that host
+        # at once. Correcting keeps the verdict truthful in both directions —
+        # a fresh agent stays ok, a dead one stays critical.
         last_mono = _last_report_mono.get(server_id)
         if last_mono is not None:
             mono_age = time.monotonic() - last_mono
             if abs(age_seconds - mono_age) > _CLOCK_JUMP_TOLERANCE_SECONDS:
-                # unknown, not ok: across the jump the real age is unknowable —
-                # and unknown never notifies (unknown policy). Both stamps are
-                # taken in THIS process, so a divergence means the MONITORING
-                # host's clock moved, not the monitored server's.
-                logger.warning(
-                    "Clock jump on the monitoring host (%s): wall %.0fs vs monotonic %.0fs — "
-                    "heartbeat baseline re-armed instead of alerting",
+                logger.info(
+                    "Clock jump on the monitoring host (%s): wall age %.0fs vs monotonic %.0fs "
+                    "— heartbeat anchor corrected by %.0fs, verdict unchanged",
                     server_id,
                     age_seconds,
                     mono_age,
+                    age_seconds - mono_age,
                 )
-                _last_report[server_id] = now
-                _last_report_mono[server_id] = time.monotonic()
-                return (
-                    "unknown",
-                    "Zeitsprung der Monitoring-Uhr erkannt — Heartbeat-Basis neu gesetzt",
-                    None,
-                )
+                age_seconds = mono_age
+                _last_report[server_id] = now - timedelta(seconds=mono_age)
+        elif age_seconds < 0:
+            # No monotonic companion (hydrated from the DB after a restart) and
+            # the stored stamp lies in the future: the clock moved backwards
+            # before this process started. Treat it as "just seen" rather than
+            # reporting a negative age.
+            logger.info("Future heartbeat stamp for %s — clamped to 0s", server_id)
+            age_seconds = 0.0
 
         age_minutes = age_seconds / 60
 

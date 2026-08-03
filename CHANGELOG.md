@@ -15,8 +15,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   NTP-Vorwaertssprung groesser als `stale_minutes` liess dadurch schlagartig
   ALLE Agents als "nicht erreichbar" gelten und schaltete ueber die
   Host-down-Unterdrueckung zugleich alle anderen Alerts dieser Server stumm.
-  Ein monotoner Zweit-Zeitstempel entlarvt den Sprung jetzt (Divergenz > 60 s)
-  und setzt die Zeitbasis neu, statt zu alarmieren.
+  Ein monotoner Zweit-Zeitstempel entlarvt den Sprung jetzt (Divergenz > 60 s);
+  der Checker rechnet ihn heraus und bewertet auf der echten Stillstandszeit
+  weiter — ein frischer Agent bleibt ok, ein wirklich toter bleibt critical.
 
 ## [0.44.0] - 2026-07-28
 
