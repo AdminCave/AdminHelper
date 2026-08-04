@@ -11,9 +11,13 @@ The data comes from the adminhelper-agent via POST /agent/{server_id}/report.
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+import time
+from datetime import datetime, timedelta
 
 from app.core.time import utcnow_naive
+
+logger = logging.getLogger("monitor.agent")
 
 # Pseudo filesystems ignored during disk evaluation
 EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
@@ -24,11 +28,25 @@ EXCLUDED_FSTYPES = {"", "squashfs", "tmpfs", "devtmpfs", "overlay"}
 # to 'unknown' until the next push. Wall clock instead of time.monotonic on
 # purpose — a monotonic value cannot be persisted across processes.
 _last_report: dict[str, datetime] = {}
+# Monotonic companion to _last_report, same key. Only the wall-clock value can be
+# persisted across processes, but comparing BOTH deltas reveals a clock jump:
+# wall time can leap (NTP step, VM suspend/resume), monotonic time cannot. Absent
+# for a server hydrated from the DB after a restart — then the wall clock alone
+# decides, exactly as before.
+_last_report_mono: dict[str, float] = {}
+
+# A wall/monotonic divergence above this counts as "the clock jumped", not as
+# elapsed time. Both clocks are read a few statements apart, so only measurement
+# noise and a concurrent push landing between the two reads can diverge them at
+# all — 60 s is far above either. Correcting is safe in both directions, so the
+# constant only decides WHEN to prefer monotonic, never whether to alert.
+_CLOCK_JUMP_TOLERANCE_SECONDS = 60.0
 
 
 def record_agent_report(server_id: str) -> None:
     """Called on agent push to store the timestamp."""
     _last_report[server_id] = utcnow_naive()
+    _last_report_mono[server_id] = time.monotonic()
 
 
 def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
@@ -37,6 +55,9 @@ def hydrate_agent_liveness(entries: dict[str, datetime]) -> None:
     overwritten by an older persisted value."""
     for server_id, last_report_at in entries.items():
         _last_report.setdefault(server_id, last_report_at)
+        # Deliberately NO monotonic companion: the persisted value predates this
+        # process, so there is nothing to compare against. The guard stays off
+        # for that server until its next push (wall-clock behavior as before).
 
 
 class AgentPingChecker:
@@ -65,7 +86,42 @@ class AgentPingChecker:
         if last is None:
             return "unknown", "Noch kein Agent-Report empfangen", None
 
-        age_seconds = (utcnow_naive() - last).total_seconds()
+        now = utcnow_naive()
+        age_seconds = (now - last).total_seconds()
+
+        # Clock-jump correction. Both stamps are taken in THIS process, so a
+        # divergence means the MONITORING host's clock moved (NTP step, resumed
+        # VM) — not the monitored server's. Monotonic time is then the truth:
+        # re-anchor the stored wall stamp to it and grade on the real age.
+        #
+        # Deliberately a CORRECTION, not a bail-out: returning 'unknown' here
+        # would (a) declare a genuinely dead agent fresh and fire a recovery,
+        # and (b) drop agent_ping out of the host-down inhibition (which matches
+        # status == 'critical'), releasing every suppressed check of that host
+        # at once. Correcting keeps the verdict truthful in both directions —
+        # a fresh agent stays ok, a dead one stays critical.
+        last_mono = _last_report_mono.get(server_id)
+        if last_mono is not None:
+            mono_age = time.monotonic() - last_mono
+            if abs(age_seconds - mono_age) > _CLOCK_JUMP_TOLERANCE_SECONDS:
+                logger.info(
+                    "Clock jump on the monitoring host (%s): wall age %.0fs vs monotonic %.0fs "
+                    "— heartbeat anchor corrected by %.0fs, verdict unchanged",
+                    server_id,
+                    age_seconds,
+                    mono_age,
+                    age_seconds - mono_age,
+                )
+                age_seconds = mono_age
+                _last_report[server_id] = now - timedelta(seconds=mono_age)
+        elif age_seconds < 0:
+            # No monotonic companion (hydrated from the DB after a restart) and
+            # the stored stamp lies in the future: the clock moved backwards
+            # before this process started. Treat it as "just seen" rather than
+            # reporting a negative age.
+            logger.info("Future heartbeat stamp for %s — clamped to 0s", server_id)
+            age_seconds = 0.0
+
         age_minutes = age_seconds / 60
 
         if age_minutes > stale_minutes:

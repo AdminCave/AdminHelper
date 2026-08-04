@@ -5,6 +5,20 @@ Alle nennenswerten Aenderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
+  agent_ping-Staleness
+  misst auf der Wanduhr (nur die ist ueber Prozessgrenzen persistierbar) — ein
+  NTP-Vorwaertssprung groesser als `stale_minutes` liess dadurch schlagartig
+  ALLE Agents als "nicht erreichbar" gelten und schaltete ueber die
+  Host-down-Unterdrueckung zugleich alle anderen Alerts dieser Server stumm.
+  Ein monotoner Zweit-Zeitstempel entlarvt den Sprung jetzt (Divergenz > 60 s);
+  der Checker rechnet ihn heraus und bewertet auf der echten Stillstandszeit
+  weiter — ein frischer Agent bleibt ok, ein wirklich toter bleibt critical.
+
 ## [0.44.0] - 2026-07-28
 
 ### Added
@@ -74,6 +88,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **`restore.sh` stellt `./data` wieder her, statt daran zu scheitern:**
+  `backup.sh` sichert das Verzeichnis im Container (als root), der Restore
+  raeumte und entpackte es aber mit dem Host-`tar` als aufrufender Nutzer — die
+  Bereinigung schlug still fehl und das Entpacken starb an `Cannot utime` /
+  `Cannot mkdir`. Disaster Recovery scheiterte damit genau dann, wenn man sie
+  braucht, mit irrefuehrender Meldung. Wipe und Extraktion laufen jetzt als
+  Container-Root (wie `restore_volume`), der Tar-Escape-Guard bleibt davor.
 - **Ping-/TCP-Checks erreichen wieder interne Ziele:** Der SSRF-Schutz lehnte in
   `ping` und `tcp` auch private/reservierte Adressen ab (10.x, 192.168.x,
   localhost) — damit war der Hauptanwendungsfall, interne Server zu ueberwachen,
