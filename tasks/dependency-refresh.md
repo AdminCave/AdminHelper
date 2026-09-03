@@ -1,5 +1,5 @@
 # Dependency-Refresh — Task-Ledger
-Status: aktiv · Branch: feature/dependency-refresh · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: blockiert (T2/T4 auf [?] — die e2e-Entscheidung gehört zum Menschen) · Branch: feature/dependency-refresh · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/dependency-refresh.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Abschluss: multibox --agents 1 --enforce
