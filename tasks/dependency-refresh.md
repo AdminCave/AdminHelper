@@ -67,7 +67,7 @@ Doku: CHANGELOG (Security) — im selben Commit
 
 ## Phase 2 — Nachweis
 
-### T4 — Audit-Workflow auf dem Branch grün fahren  [ ]
+### T4 — Audit-Workflow auf dem Branch grün fahren  [?] (3 von 4 Jobs grün — Lauf 33746834514 auf feature/dependency-refresh: `pip-audit` **success** (war rot), `cargo audit` **success** (war rot), `govulncheck` success. `npm audit` **failure**, und zwar ausschließlich im Step „Audit e2e lockfile" — „Audit web lockfile" und „Audit desktop-ui lockfile" sind beide grün. T1 und T3 sind damit auch in der CI belegt, nicht nur lokal. Das Kriterium „alle vier Jobs grün" hängt allein an der offenen `[?]`-Entscheidung aus T2. Nebenbefund: der e2e-Lock trägt zusätzlich brace-expansion-Funde inkl. des neuen GHSA-rgw5-rvv9-x895, die `npm audit fix` dort nicht löst.)
 Komponente: .github/workflows · Dateien: keine (reiner Nachweis)
 Änderung: Keine Code-Änderung. Nach T1–T3 den Branch pushen und den Audit real auslösen: `gh workflow run audit.yml --ref feature/dependency-refresh`, Lauf mit `gh run watch <id> --exit-status` bis zum Ende verfolgen (CLAUDE.md: CI nach dem Auslösen immer überwachen). Rot heißt: Ursache verstehen, nicht ignorieren.
 Verify: Alle vier Jobs (`pip-audit`, `cargo audit`, `npm audit`, `govulncheck`) mit `conclusion: success`. Das ist das eigentliche Erfolgskriterium des Vorhabens — lokale Einzel-Checks zählen nur als Vorstufe.
