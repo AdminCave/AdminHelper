@@ -36,10 +36,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `postcss`, `postcss-selector-parser` und `undici` an, im Web zusaetzlich
   `@humanfs/core` und `@humanfs/node` — durchweg Build- und Test-Werkzeug, das
   nicht ausgeliefert wird. Beide Projekte melden jetzt `found 0
-  vulnerabilities`. **Offen bleibt `apps/desktop/e2e`:** dort haengt der
-  WebdriverIO-Stack an `extract-zip`, fuer das es keine gepatchte Version gibt
-  (GHSA-jmr9-qjv8-65gv, „Patched versions: None"). Der npm-Audit-Job bleibt
-  deshalb rot, bis darueber entschieden ist.
+  vulnerabilities`. Fuer `apps/desktop/e2e` reichte das nicht: der
+  WebdriverIO-Stack hing an `extract-zip`, fuer das es **keine** gepatchte
+  Version gibt (GHSA-jmr9-qjv8-65gv). Zwei `overrides` loesen das ohne
+  Unterdrueckung — `deepmerge-ts ^8.0.0` und `@puppeteer/browsers ^3.2.1`, das
+  den Entpack-Pfad von `extract-zip` auf `modern-tar` umstellt. Danach greift
+  auch dort `npm audit fix`, und alle drei Projekte melden
+  `found 0 vulnerabilities`.
 - **Rust-Abhaengigkeiten des Desktop-Clients entschaerft:** `quick-xml` steht
   jetzt auf 0.41.0 statt 0.37.5/0.38.4 (RUSTSEC-2026-0194 und -0195, ueber
   `plist` 1.10.0; `tauri-winrt-notification` 0.7.3 streicht seine

@@ -1,5 +1,5 @@
 # Dependency-Refresh — Task-Ledger
-Status: blockiert (T2/T4 auf [?] — die e2e-Entscheidung gehört zum Menschen) · Branch: feature/dependency-refresh · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv (e2e-Entscheidung getroffen: Variante (b); Abschluss-Suiten laufen) · Branch: feature/dependency-refresh · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/dependency-refresh.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Abschluss: multibox --agents 1 --enforce
@@ -26,7 +26,7 @@ Komponente: apps/server, apps/ca-issuer · Dateien: apps/server/requirements.{in
 Verify: `docker run --rm -v "$PWD:/w" -w /w python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r apps/server/requirements.txt --disable-pip && pip-audit -r apps/ca-issuer/requirements.txt --disable-pip"` → keine Funde. **Danach zwingend** die Code-Kompatibilität: `source .devenv.sh && AH_ONLY='server ca-issuer' bash scripts/tests/run.sh quick` plus explizit `apps/server/.venv/bin/ruff check apps/server apps/ca-issuer` (run.sh überspringt ruff mangels PATH-Eintrag). Bricht eine cryptography-API weg (CSR-Parsing/Signieren in `apps/ca-issuer/app/{pki,issuer,storage}.py`, `apps/server/app/core/identity.py`), ist das ein echter Code-Fix → nicht raten, `[?]` setzen.
 Doku: CHANGELOG (Security) — im selben Commit
 
-### T2 — npm-Lockfiles entschärfen (web, desktop-ui, e2e)  [?] (2 von 3 erledigt und committet — web + desktop-ui melden `found 0 vulnerabilities`. **apps/desktop/e2e braucht eine Entscheidung, siehe unten.** Review-Korrektur: der CHANGELOG nannte zunächst fast-xml-parser und js-yaml als behoben — die liegen ausschließlich im unangetasteten e2e-Lock; jetzt stehen dort die per Lockfile-Diff erhobenen echten Bumps.)
+### T2 — npm-Lockfiles entschärfen (web, desktop-ui, e2e)  [x] (alle drei melden `found 0 vulnerabilities`. Zunächst nur 2 von 3; die e2e-Frage wurde am 2026-09-03 vom Menschen mit **(b)** entschieden — `overrides` für `deepmerge-ts ^8.0.0` und `@puppeteer/browsers ^3.2.1`, wodurch `extract-zip` durch `modern-tar` ersetzt wird und danach auch dort `npm audit fix` greift. Gate laut Entscheidung: echter GUI-E2E-Lauf auf crabbox. Frühere Notiz: 2 von 3 erledigt und committet — web + desktop-ui melden `found 0 vulnerabilities`. **apps/desktop/e2e braucht eine Entscheidung, siehe unten.** Review-Korrektur: der CHANGELOG nannte zunächst fast-xml-parser und js-yaml als behoben — die liegen ausschließlich im unangetasteten e2e-Lock; jetzt stehen dort die per Lockfile-Diff erhobenen echten Bumps.)
 
 **[?] Entscheidung nötig — `apps/desktop/e2e` ist nicht sauber zu bekommen:**
 Nach `npm audit fix` bleiben dort zwei Wurzel-Advisories, 13 high gesamt:
