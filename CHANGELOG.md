@@ -19,6 +19,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   der Checker rechnet ihn heraus und bewertet auf der echten Stillstandszeit
   weiter — ein frischer Agent bleibt ok, ein wirklich toter bleibt critical.
 
+### Security
+
+- **cryptography auf 50.0.1 angehoben (Server + CA-Issuer):** Die gepinnte
+  Version 48.0.1 war von PYSEC-2026-3552, -3553 und -3554 betroffen
+  (PKCS#7-Entschluesselung bzw. X.509-Verifier; behoben ab 50.0.0). **Diese
+  Pfade nutzt der Code nicht** — gebaut und signiert wird ueber
+  `CertificateBuilder`/`CertificateSigningRequestBuilder`, PKCS#7 und
+  `x509.verification` kommen nirgends vor. Angehoben wird trotzdem, weil
+  cryptography ausgeliefert in der eigenen PKI (CA-Issuer) und im mTLS-Pfad des
+  Servers steckt. Die Untergrenze in beiden `requirements.in` steht jetzt auf
+  `>=50.0.0`, damit ein spaeterer Resolver nicht hinter die Sicherheitsschwelle
+  zurueckfaellt; die gehashten Lockfiles wurden neu erzeugt.
+
 ## [0.44.0] - 2026-07-28
 
 ### Added
