@@ -21,7 +21,7 @@ Abschnitt **„Auflagen & Hinweise"** am Ende zusammengefasst.
 > **Erzeugung:** die Paket-Tabellen werden aus dem echten Dependency-Stand
 > generiert — `scripts/gen-third-party-licenses.sh` (pip-licenses × Server/
 > Monitoring/CA-Issuer, go-licenses für Linux + Windows, cargo-license,
-> license-checker × Frontends). Stand **2026-07-10**. Die Auflagen-Abschnitte
+> license-checker × Frontends). Stand **2026-09-03**. Die Auflagen-Abschnitte
 > sind manuell kuratiert. Transitive Abhängigkeiten können sich bei einem
 > erneuten Lock verschieben — dann das Skript erneut laufen lassen.
 
@@ -37,7 +37,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 |---|---|---|:-:|:-:|:-:|
 | bcrypt | 5.0.0 | Apache-2.0 | x |  |  |
 | python-multipart | 0.0.32 | Apache-2.0 | x |  |  |
-| cryptography | 48.0.1 | Apache-2.0 OR BSD-3-Clause | x |  | x |
+| cryptography | 50.0.1 | Apache-2.0 OR BSD-3-Clause | x |  | x |
 | uvloop | 0.22.1 | Apache-2.0 OR MIT | x | x | x |
 | click | 8.4.1 | BSD-3-Clause | x | x | x |
 | httpcore | 1.0.9 | BSD-3-Clause | x | x |  |
@@ -130,19 +130,19 @@ Pakete). Der Agent-eigene Code steht unter GPL-3.0-or-later.
 
 ### Lizenzverteilung über den gesamten Crate-Graphen
 
-Erzeugt mit `cargo-license` (648 Fremd-Crates; das App-Crate `adminhelper`
+Erzeugt mit `cargo-license` (625 Fremd-Crates; das App-Crate `adminhelper`
 selbst ist GPL-3.0-or-later und hier nicht mitgezählt).
 
 | Lizenz(-Ausdruck) | Crates |
 |---|--:|
-| Apache-2.0 OR MIT | 386 |
-| MIT | 162 |
+| Apache-2.0 OR MIT | 381 |
+| MIT | 145 |
 | Apache-2.0 OR MIT OR Zlib | 21 |
 | Unicode-3.0 | 18 |
 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | 15 |
 | MIT OR Unlicense | 7 |
 | MPL-2.0 | 7 |
-| Apache-2.0 | 3 |
+| Apache-2.0 | 2 |
 | BSD-3-Clause | 3 |
 | ISC | 3 |
 | Zlib | 2 |

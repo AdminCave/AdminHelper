@@ -35,6 +35,11 @@ Advisory-Text.
 **Ziel:** Alle vier Audit-Jobs grün — durch echte Updates, nachgewiesen über
 einen `workflow_dispatch`-Lauf auf dem Feature-Branch.
 
+**Erreicht wurden drei von vier** (Lauf 33746834514): `pip-audit`, `cargo audit`
+und `govulncheck` sind grün, `npm audit` bleibt rot — dort fällt ausschließlich
+der Step „Audit e2e lockfile", weil `extract-zip` keine gepatchte Version hat
+(GHSA-jmr9-qjv8-65gv). Das ist als `[?]` eskaliert (siehe Offene Fragen).
+
 **Nicht-Ziele:**
 
 - **Keine Ignore-/Allowlist-Einträge.** Ein stummgeschalteter Audit ist
@@ -53,7 +58,8 @@ einen `workflow_dispatch`-Lauf auf dem Feature-Branch.
 - `apps/ca-issuer/requirements.in` + `requirements.txt`
 - `apps/web/package-lock.json`
 - `apps/desktop/ui/package-lock.json`
-- `apps/desktop/e2e/package-lock.json`
+- `apps/desktop/e2e/package-lock.json` — **im Ergebnis unangetastet**, siehe
+  Offene Fragen
 - `apps/desktop/src-tauri/Cargo.lock`
 - `CHANGELOG.md`
 
@@ -83,10 +89,11 @@ Keine Wire-Protokolle berührt. Verifizierte Fakten für die Umsetzung:
   bewege nur diese Kronen — das war aus einer gefilterten Dry-Run-Ausgabe
   geschlossen und ist widerlegt: der volle Lauf bewegt 246 Zeilen. Siehe
   Trade-offs.)*
-- **npm:** `npm audit fix --dry-run --package-lock-only` in `apps/web` meldet
-  „To address all issues, run: npm audit fix" (6 Funde, ohne `--force`). Für
-  `apps/desktop/ui` und `apps/desktop/e2e` sagt das CI-Log dasselbe („fix
-  available via `npm audit fix`"), **einzeln nachgeprüft wurde nur `apps/web`**.
+- **npm:** `npm audit fix` ohne `--force` räumt `apps/web` und
+  `apps/desktop/ui` vollständig ab (beide danach `found 0 vulnerabilities`,
+  in der CI bestätigt). Für `apps/desktop/e2e` galt dieselbe Annahme — sie ist
+  **widerlegt**: dort bleiben `deepmerge-ts <8.0.0` und vor allem `extract-zip`,
+  für das es laut GitHub-Advisory keine gepatchte Version gibt.
 
 ## Trade-offs & Alternativen
 
@@ -147,6 +154,14 @@ in den Auftrag (in T4 nur als Notiz vermerkt).
 
 ## Offene Fragen
 
-Keine. Die Zielversionen sind gegen PyPI bzw. die crates.io-Auflösung
-verifiziert; die einzige echte Unbekannte (bricht `cryptography` 50 den
-CA-Issuer-Code?) ist keine Design-Frage, sondern fällt beim Verify von T1 auf.
+**Eine, und sie blockiert das Ziel:** Wie soll `apps/desktop/e2e` behandelt
+werden? Die drei Wege — rot lassen, per `overrides` (`deepmerge-ts ^8.0.0`
+plus `@puppeteer/browsers ^3.2.1`) mit anschließendem echten GUI-E2E-Lauf als
+Gate erzwingen, oder den Lockfile aus `audit.yml` nehmen — stehen samt Kosten
+im Ledger bei T2. Die Entscheidung gehört zum Menschen; bis dahin bleibt das
+Vorhaben `blockiert`.
+
+Nicht mehr offen: Die Zielversionen sind gegen PyPI bzw. die
+crates.io-Auflösung verifiziert, und die Frage, ob `cryptography` 50 den
+CA-Issuer-Code bricht, hat T1 beantwortet — sie tut es nicht (65 + 492 Tests
+grün gegen 50.0.1).
