@@ -1,5 +1,5 @@
 # Dependency-Refresh — Task-Ledger
-Status: aktiv (e2e-Entscheidung getroffen: Variante (b); Abschluss-Suiten laufen) · Branch: feature/dependency-refresh · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: blockiert (Ziel erreicht und CI-belegt; das von Variante (b) geforderte GUI-E2E-Gate ist NICHT bestanden — siehe Abschluss-Notiz) · Branch: feature/dependency-refresh · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/dependency-refresh.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Abschluss: multibox --agents 1 --enforce
@@ -73,3 +73,43 @@ Komponente: .github/workflows · Dateien: keine (reiner Nachweis)
 Verify: Alle vier Jobs (`pip-audit`, `cargo audit`, `npm audit`, `govulncheck`) mit `conclusion: success`. Das ist das eigentliche Erfolgskriterium des Vorhabens — lokale Einzel-Checks zählen nur als Vorstufe.
 Doku: keine (Nachweis)
 Abhängt von: T1, T2, T3
+
+## Abschluss-Notiz (2026-09-03)
+
+**Ziel erreicht und belegt:** Audit-Lauf 33749518192 gegen `f8d4376` — alle vier
+Jobs `success`. CI-Lauf 33749521184 vollständig grün (20 Jobs), inkl. der drei
+Ebenen, die lokal nicht prüfbar sind: Windows-`cargo test` (einziger Ort, an dem
+`tauri-winrt-notification` 0.7.3 kompiliert), die vier Image-Builds mit
+`pip install --require-hashes` gegen die neuen Locks, und der Lockstep-Check.
+
+**Multibox (`--agents 1 --enforce --desktop`): 11 ok, 1 failed.**
+Grün und damit belegt: Agent über echten Netz-Hop provisioniert und
+**mTLS-enrolled**, aus dem `:8445`-Repo installiert, CA-gepinnter Steady State,
+Monitoring hat 8 Reports verarbeitet. Der PKI-/mTLS-Pfad trägt cryptography 50
+also real.
+
+**Rot: der Desktop-GUI-Lauf, beide Specs** (`server-crud.live.js` und
+`monitoring-check.live.js`, `DESKTOP_FAILED (2/2)`). Das ist genau das Gate, das
+die (b)-Entscheidung verlangt — **es ist nicht bestanden.**
+
+Was dazu gesichert ist: Die Overrides haben die wdio-Harness NICHT gebrochen —
+kein Modul-/Auflösungs-/Startfehler im Log, die Tauri-App ist nachweislich
+hochgefahren (dbus/a11y-Aktivierung), der Abbruch kam auf Spec-Ebene. Dass
+*beide* Specs fallen, deutet auf Login-/Verbindungsebene statt auf
+Monitoring-Inhalt; `rustls` und alle anderen TLS-Pins wurden bewusst nicht
+bewegt. Beide Specs waren am 2026-07-10 grün, und der v0.44.0-Capstone
+(Anfang August, `main`) war grün.
+
+**Nicht geklärt:** Ob der Fehler vom Branch kommt. Der entscheidende
+Vergleichslauf gegen `main` konnte **dreimal nicht gefahren werden** — jedes Mal
+scheiterte die Proxmox-Provisionierung (abgerissene API-Verbindung bzw. Timeout
+beim Klonen), nie ein Test. Das ist Infrastruktur, nicht Code.
+
+**Konsequenz:** Nicht mergen, bevor der Desktop-E2E-Lauf entweder grün ist oder
+der Fehler nachweislich schon auf `main` besteht. Der Rest des Branches ist
+fertig und belegt.
+
+**Aufräumen offen:** Zwei verwaiste, gestoppte VMs aus den fehlgeschlagenen
+Leasings — `104 crabbox-ah-srv-d976a76f` und `106 crabbox-ah-desktop-0989-243e153c`.
+Ihre Leases sind bereits freigegeben, `crabbox stop` findet sie nicht mehr;
+sie brauchen manuelles Entfernen am Hypervisor.
