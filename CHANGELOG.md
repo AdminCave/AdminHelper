@@ -31,6 +31,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Servers steckt. Die Untergrenze in beiden `requirements.in` steht jetzt auf
   `>=50.0.0`, damit ein spaeterer Resolver nicht hinter die Sicherheitsschwelle
   zurueckfaellt; die gehashten Lockfiles wurden neu erzeugt.
+- **npm-Lockfiles von Web und Desktop-UI bereinigt:** `npm audit fix` (ohne
+  `--force`, also rein semver-kompatibel) hebt `brace-expansion`, `nanoid`,
+  `postcss`, `postcss-selector-parser` und `undici` an, im Web zusaetzlich
+  `@humanfs/core` und `@humanfs/node` — durchweg Build- und Test-Werkzeug, das
+  nicht ausgeliefert wird. Beide Projekte melden jetzt `found 0
+  vulnerabilities`. **Offen bleibt `apps/desktop/e2e`:** dort haengt der
+  WebdriverIO-Stack an `extract-zip`, fuer das es keine gepatchte Version gibt
+  (GHSA-jmr9-qjv8-65gv, „Patched versions: None"). Der npm-Audit-Job bleibt
+  deshalb rot, bis darueber entschieden ist.
 
 ## [0.44.0] - 2026-07-28
 
