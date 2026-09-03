@@ -26,7 +26,34 @@ Komponente: apps/server, apps/ca-issuer · Dateien: apps/server/requirements.{in
 Verify: `docker run --rm -v "$PWD:/w" -w /w python:3.12-slim sh -c "pip install -q pip-audit && pip-audit -r apps/server/requirements.txt --disable-pip && pip-audit -r apps/ca-issuer/requirements.txt --disable-pip"` → keine Funde. **Danach zwingend** die Code-Kompatibilität: `source .devenv.sh && AH_ONLY='server ca-issuer' bash scripts/tests/run.sh quick` plus explizit `apps/server/.venv/bin/ruff check apps/server apps/ca-issuer` (run.sh überspringt ruff mangels PATH-Eintrag). Bricht eine cryptography-API weg (CSR-Parsing/Signieren in `apps/ca-issuer/app/{pki,issuer,storage}.py`, `apps/server/app/core/identity.py`), ist das ein echter Code-Fix → nicht raten, `[?]` setzen.
 Doku: CHANGELOG (Security) — im selben Commit
 
-### T2 — npm-Lockfiles entschärfen (web, desktop-ui, e2e)  [ ]
+### T2 — npm-Lockfiles entschärfen (web, desktop-ui, e2e)  [?] (2 von 3 erledigt und committet — web + desktop-ui melden `found 0 vulnerabilities`. **apps/desktop/e2e braucht eine Entscheidung, siehe unten.** Review-Korrektur: der CHANGELOG nannte zunächst fast-xml-parser und js-yaml als behoben — die liegen ausschließlich im unangetasteten e2e-Lock; jetzt stehen dort die per Lockfile-Diff erhobenen echten Bumps.)
+
+**[?] Entscheidung nötig — `apps/desktop/e2e` ist nicht sauber zu bekommen:**
+Nach `npm audit fix` bleiben dort zwei Wurzel-Advisories, 13 high gesamt:
+`deepmerge-ts <8.0.0` (GHSA-ggr8-5vv4-36mx) und **`extract-zip`** (GHSA-jmr9-qjv8-65gv)
+— letzteres laut GitHub-Advisory mit „Patched versions: **None**", also durch kein
+Update lösbar. Beides kommt über `@wdio/utils` (`@puppeteer/browsers` → `extract-zip`,
+plus `deepmerge-ts ^7`) in den Baum. `npm audit fix --force` ist keine Option: es stuft
+`@wdio/cli` auf 7.40.0 bzw. `@wdio/mocha-framework` auf 8.14.0 **zurück** (package.json
+pinnt `^9.19.0`) und erzeugt einen Peer-Konflikt. Drei Wege:
+
+- **(a) So lassen, `npm audit`-Job bleibt rot.** Ehrlich, aber T4 („alle vier Jobs grün")
+  ist dann nicht erreichbar, und das Signal bleibt dauerhaft rot — genau der Zustand,
+  den dieses Vorhaben beseitigen sollte.
+- **(b) Overrides erzwingen:** `deepmerge-ts: ^8.0.0` **plus** `@puppeteer/browsers: ^3.2.1`
+  ergibt nachweislich `found 0 vulnerabilities` (vom Review verifiziert). Preis: zwei
+  Majors über die deklarierten Ranges von `@wdio/utils` hinweg erzwungen, davon einer in
+  einen Baum, in dem der Browser-Download-/Entpack-Pfad komplett ausgetauscht wurde
+  (`extract-zip` → `modern-tar`). Kein Unit-Test fängt einen Bruch ab — nur der echte
+  GUI-E2E-Lauf auf crabbox (Display nötig) würde es zeigen.
+- **(c) Den e2e-Lockfile aus `audit.yml` nehmen.** Widerspricht dem Nicht-Ziel „keine
+  Ignore-Einträge" der Spec und macht das Gate blind.
+
+Einschätzung: Das Risiko ist real begrenzt — es ist reines Test-Werkzeug, wird nie
+ausgeliefert und verarbeitet nur selbstgeschriebene wdio-Configs bzw. von uns
+angestoßene Browser-Downloads. Ich tendiere zu **(b) mit anschließendem echten
+E2E-Lauf auf crabbox als Gate**; ohne diesen Lauf wäre (b) ein ungedeckter Scheck.
+Entscheidung gehört zum Menschen.
 Komponente: apps/web, apps/desktop/ui, apps/desktop/e2e · Dateien: die drei `package-lock.json`
 Änderung: Nach `source .devenv.sh` (bringt node 22 / npm 10 via nvm) in allen drei Projekten `npm audit fix --package-lock-only` **ohne** `--force` (nur semver-kompatibel). Betrifft brace-expansion, PostCSS, fast-xml-parser, js-yaml — durchweg Dev-/Build-Werkzeug. Verlangt ein Fund `--force` (Major-Bump einer Build-Abhängigkeit), NICHT erzwingen → `[?]`.
 Verify: je Projekt `npm audit --audit-level=high` ohne Fund, danach `source .devenv.sh && AH_ONLY='web desktop-ui desktop-e2e' bash scripts/tests/run.sh quick` — svelte-check, eslint und die Unit-Suiten müssen grün bleiben.
