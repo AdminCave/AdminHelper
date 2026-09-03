@@ -40,6 +40,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   WebdriverIO-Stack an `extract-zip`, fuer das es keine gepatchte Version gibt
   (GHSA-jmr9-qjv8-65gv, „Patched versions: None"). Der npm-Audit-Job bleibt
   deshalb rot, bis darueber entschieden ist.
+- **Rust-Abhaengigkeiten des Desktop-Clients entschaerft:** `quick-xml` steht
+  jetzt auf 0.41.0 statt 0.37.5/0.38.4 (RUSTSEC-2026-0194 und -0195, ueber
+  `plist` 1.10.0; `tauri-winrt-notification` 0.7.3 streicht seine
+  quick-xml-Abhaengigkeit ganz), und mit
+  `tauri-plugin-log` 2.9.1 faellt der Teilbaum `byte-unit` → `rust_decimal` →
+  `rkyv` samt RUSTSEC-2026-0235 ganz aus dem Baum. `cargo audit` meldet keine
+  Vulnerabilities mehr. Bewusst als gezielte `-p`-Bumps (26 Pakete) statt eines
+  vollen `cargo update` (246 Zeilen inkl. tokio, hyper, rustls und einem
+  signal-hook-Major) — vor einem Release nur so viel Flaeche wie noetig.
 
 ## [0.44.0] - 2026-07-28
 

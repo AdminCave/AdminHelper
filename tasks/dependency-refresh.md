@@ -61,7 +61,7 @@ Doku: CHANGELOG (Security) — im selben Commit
 
 ### T3 — Cargo.lock aktualisieren (quick-xml, rkyv)  [ ]
 Komponente: apps/desktop/src-tauri · Dateien: apps/desktop/src-tauri/Cargo.lock, CHANGELOG.md
-Änderung: `cargo update` im Verzeichnis `apps/desktop/src-tauri` (semver, **kein** `--aggressive`). Laut Dry-Run bewegt das `plist 1.8.0 → 1.10.0` und `tauri-winrt-notification 0.7.2 → 0.7.3` (beide ziehen dann `quick-xml 0.41.0`) und entfernt `rust_decimal` samt `rkyv 0.7.46` aus dem Baum; `Cargo.toml` bleibt unangetastet.
+Änderung: **Gezielte** `-p`-Bumps in `apps/desktop/src-tauri` statt eines vollen `cargo update` — `cargo update -p plist -p tauri-winrt-notification -p byte-unit -p tauri-plugin-log`. Das hebt `plist 1.8.0 → 1.10.0` (zieht `quick-xml 0.41.0` statt 0.37.5/0.38.4) und `tauri-winrt-notification 0.7.2 → 0.7.3` (streicht seine quick-xml-Abhängigkeit ganz) und entfernt über `tauri-plugin-log 2.8.0 → 2.9.1` den Teilbaum `byte-unit` → `rust_decimal` → `rkyv 0.7.46`; `Cargo.toml` bleibt unangetastet. **Nicht** der volle Lauf: der bewegt real 246 Zeilen inkl. tokio/hyper/rustls/rand-0.10 und signal-hook-Major (die gegenteilige Annahme der Spec war aus einer gefilterten Dry-Run-Ausgabe entstanden und ist widerlegt).
 Verify: `cargo audit` im selben Verzeichnis meldet 0 Vulnerabilities (die unmaintained-GTK3-Warnungen dürfen bleiben), dann `source .devenv.sh && AH_ONLY='desktop-rs' bash scripts/tests/run.sh quick` — `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` grün.
 Doku: CHANGELOG (Security) — im selben Commit
 

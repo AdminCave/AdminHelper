@@ -73,12 +73,16 @@ Keine Wire-Protokolle berührt. Verifizierte Fakten für die Umsetzung:
   ">=3.9,!=3.9.0,!=3.9.1"` — kompatibel mit dem `python:3.12-slim` der
   Dockerfiles. 50.0.x deckt alle drei PYSEC-Einträge (der schärfste verlangt
   50.0.0).
-- **cargo:** `cargo update --dry-run` in `apps/desktop/src-tauri` löst **alle
-  fünf** Rust-Advisories ohne Handarbeit:
-  `plist 1.8.0 → 1.10.0` und `tauri-winrt-notification 0.7.2 → 0.7.3` ziehen
-  `quick-xml 0.41.0` statt 0.37.5/0.38.4; `rust_decimal` (über `byte-unit`)
-  und mit ihm `rkyv 0.7.46` fallen **ganz aus dem Baum**. Alles innerhalb
-  semver — kein `--aggressive`, kein Major-Bump nötig.
+- **cargo:** Vier gezielte `-p`-Bumps in `apps/desktop/src-tauri` lösen alle
+  fünf Rust-Advisories, alles innerhalb semver (kein `--aggressive`):
+  `plist 1.8.0 → 1.10.0` zieht `quick-xml 0.41.0` statt 0.37.5/0.38.4,
+  `tauri-winrt-notification 0.7.2 → 0.7.3` streicht seine quick-xml-Abhängigkeit
+  ganz, und `tauri-plugin-log 2.8.0 → 2.9.1` lässt den Teilbaum `byte-unit` →
+  `rust_decimal` → `rkyv 0.7.46` **komplett aus dem Baum** fallen.
+  *(Die frühere Fassung dieses Absatzes behauptete, ein volles `cargo update`
+  bewege nur diese Kronen — das war aus einer gefilterten Dry-Run-Ausgabe
+  geschlossen und ist widerlegt: der volle Lauf bewegt 246 Zeilen. Siehe
+  Trade-offs.)*
 - **npm:** `npm audit fix --dry-run --package-lock-only` in `apps/web` meldet
   „To address all issues, run: npm audit fix" (6 Funde, ohne `--force`). Für
   `apps/desktop/ui` und `apps/desktop/e2e` sagt das CI-Log dasselbe („fix
@@ -91,10 +95,21 @@ Keine Wire-Protokolle berührt. Verifizierte Fakten für die Umsetzung:
   ziehen, aber nicht festhalten *warum*. Empfehlung: Untergrenze auf
   `>=50.0.0`, damit ein späterer Resolver nicht hinter die Sicherheitsschwelle
   zurückfällt. Kostet nichts, dokumentiert den Grund im Diff.
-- **`cargo update` (semver) statt gezielter `-p`-Bumps:** Der Dry-Run zeigt,
-  dass der Gesamtlauf genau die betroffenen Kronen bewegt und nebenbei
-  `thiserror 2.0.18 → 2.0.20` mitnimmt. Ein chirurgischer Einzel-Bump wäre
-  mehr Aufwand bei gleichem Ergebnis; die volle Testsuite ist ohnehin das Gate.
+- **Gezielte `-p`-Bumps statt vollem `cargo update`** (korrigiert während der
+  Umsetzung). Die ursprüngliche Annahme, der Gesamtlauf bewege „genau die
+  betroffenen Kronen", stammte aus einer gefilterten Dry-Run-Ausgabe und ist
+  **falsch**: real bewegt `cargo update` **246** Zeilen, darunter `tokio`,
+  `hyper`, `rustls`, mehrere Tauri-Plugins und `rand` auf 0.10. Für eine
+  ausgelieferte Desktop-App, deren Laufzeitverhalten hier nur von Unit-Tests
+  abgedeckt ist, ist das zu viel Fläche vor einem Release (CLAUDE.md: „Nur
+  anfassen, was nötig ist"). Gewählt:
+  `cargo update -p plist -p tauri-winrt-notification -p byte-unit -p tauri-plugin-log`
+  — bewegt **26** Pakete, davon vier echte Bumps; die übrigen 22 sind
+  Entfernungen: 21 davon der wegfallende `byte-unit` → `rust_decimal` →
+  `rkyv`-Teilbaum, dazu `value-bag`, weil `tauri-plugin-log` 2.9.1 statt des
+  veralteten `kv_unstable` nur noch `kv` aktiviert — `value-bag` hängt allein
+  am alten Alias.
+  `tauri-plugin-log` muss mit, weil genau darüber `byte-unit` hereinkommt.
 - **Zwei Vorhaben statt einem?** Ursprünglich als „Python/npm mechanisch, Rust
   braucht Tiefenanalyse" geplant. Der Dry-Run hat das widerlegt — auch Rust ist
   mechanisch. Ein Vorhaben mit vier Tasks ist die schlankere Form (YAGNI).
