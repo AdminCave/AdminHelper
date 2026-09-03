@@ -18,7 +18,7 @@ berührt (CLAUDE.md: Cross-Host-Pfad) — der Lauf bleibt ask-first.
 
 ## Phase 1 — Die Locks
 
-### T1 — cryptography auf ≥ 50.0.0 (Server + CA-Issuer)  [ ]
+### T1 — cryptography auf ≥ 50.0.0 (Server + CA-Issuer)  [x] (50.0.1, Locks per Container regeneriert; pip-audit clean, ca-issuer 65 + server 492 passed gegen die neue Version. Review-Korrektur: der CHANGELOG behauptete zunächst, die CVEs träfen CSR-Verarbeitung und mTLS-Identität — falsch, sie betreffen PKCS#7 und den X.509-Verifier, die der Code nicht nutzt; Eintrag sagt das jetzt. Nebenbei DEVELOPMENT.md:48 um apps/ca-issuer ergänzt, das dort fehlte.)
 Komponente: apps/server, apps/ca-issuer · Dateien: apps/server/requirements.{in,txt}, apps/ca-issuer/requirements.{in,txt}, CHANGELOG.md
 Änderung: In beiden `.in` die Zeile `cryptography>=48.0.0` auf `>=50.0.0` anheben (dokumentiert die Sicherheitsschwelle, statt sie nur zufällig zu treffen). Locks mit dem in DEVELOPMENT.md dokumentierten Verfahren neu erzeugen — je Komponente:
 `docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/apps/<komp>:/w" -w /w python:3.12-slim sh -c "pip install -q --user pip-tools && python -m piptools compile --generate-hashes --output-file=requirements.txt requirements.in"`.
