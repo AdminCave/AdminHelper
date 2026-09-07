@@ -98,9 +98,9 @@ jobs:
         # in sync with the ruff floor in apps/server/requirements-dev.txt (4.88).
         run: pip install ruff==0.15.20
       - name: ruff check
-        run: ruff check apps/server apps/monitoring
+        run: ruff check apps/server apps/monitoring apps/ca-issuer
       - name: ruff format --check
-        run: ruff format --check apps/server apps/monitoring
+        run: ruff format --check apps/server apps/monitoring apps/ca-issuer
 
   monitoring:
     name: Monitoring (pytest)

@@ -28,6 +28,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erschoepftem Thread-Kontingent —, war das Permit dauerhaft verloren. Nach acht
   solchen Fehlschlaegen meldete **jeder** Hook bis zum Neustart „Server
   ausgelastet", obwohl gar keiner mehr lief.
+- **Deaktivierte Schaltflaechen sehen im Desktop-Client jetzt auch deaktiviert
+  aus:** Das Stylesheet hatte keine einzige `:disabled`-Regel — ein gesperrter
+  Knopf war optisch nicht von einem funktionierenden zu unterscheiden und
+  leuchtete beim Ueberfahren weiter auf. Betrifft ueber die Monitoring-Knoepfe
+  hinaus alle `.btn`-Schaltflaechen, etwa Speichern-Knoepfe waehrend eines
+  laufenden Vorgangs.
 
 - **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
   agent_ping-Staleness

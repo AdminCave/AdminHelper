@@ -9,8 +9,9 @@ Hinweis: Fünf Befunde, sechs Tasks (B1 zerfällt in Backend und UI, weil es zwe
 Komponenten sind; B5 kam beim Nachprüfen am 03.09. hinzu). Jeder Task bringt
 einen Test mit, der auf dem alten Code rot ist — sonst ist nicht bewiesen, dass
 er den Befund trifft. T1/T2 hängen zusammen (API-Vertrag), der Rest ist
-unabhängig. Verifiziert: `run.sh quick` läuft lokal grün (10 Schritte), node
-22 / npm 10 kommen über `source .devenv.sh`. Kein `Abschluss: multibox`:
+unabhängig. Verifiziert: `run.sh quick` läuft lokal grün — nach T6 mit **12 passed,
+0 skipped** statt vorher 10 passed / 1 skipped; node 22 / npm 10 kommen über
+`source .devenv.sh`. Kein `Abschluss: multibox`:
 der Diff berührt keinen Cross-Host-Pfad; ob die schwere Suite nötig ist,
 entscheidet der Abschluss anhand des realen Diffs (B4 fasst die Server-API an).
 

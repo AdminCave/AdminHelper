@@ -1,16 +1,18 @@
 # Code-Review-Fixes (Befunde vom 2026-08-12)
 
-Arbeitet die vier Befunde ab, die das Review vom 2026-08-12 nach der
-Angemessenheitsprüfung übrig gelassen hat. Sie waren bisher **nirgends
+Arbeitet die Befunde ab, die das Review vom 2026-08-12 nach der
+Angemessenheitsprüfung übrig gelassen hat (B1–B4), plus den Nachtrag B5 vom
+2026-09-03. Sie waren bisher **nirgends
 erfasst** — sie standen nur im Chatverlauf und wären damit genau die
 „Merker-Halde" geworden, die `tasks/merker-cleanup.md` gerade beseitigt hat.
 
 ## Problem / Motivation
 
 Das Review war bewusst hart priorisiert: aus dem gesamten Durchgang blieben vier
-belegte Befunde, alles andere wurde als Rauschen gestrichen. Der schwerste
+belegte Befunde (B1–B4), alles andere wurde als Rauschen gestrichen; B5 kam beim
+spaeteren Nachpruefen dazu. Der schwerste
 (B1) trifft die Kernfunktion des Produkts an der Stelle, an der man sich im
-Incident darauf verlässt. Keiner der vier ist ein Sicherheitsloch — es geht um
+Incident darauf verlässt. Keiner davon ist ein Sicherheitsloch — es geht um
 stille Fehlschläge und um Zustand, der ohne Spur verschwindet.
 
 | ID | Schwere | Kern |
@@ -119,7 +121,8 @@ brauchen keine).
 
 ## Offene Fragen
 
-Eine, und sie ist am Gate zu bestätigen statt zu erraten: **Ist „Backend 409 +
-UI blendet aus" die gewünschte Auflösung von B1**, oder soll der Button
-sichtbar bleiben und die Absage als Fehlermeldung zeigen? Die Spec geht von der
-ersten Variante aus.
+**Beantwortet am 2026-09-07** (die Freigabe zum Bauen war die Entscheidung):
+B1 wird auf **beiden** Seiten korrigiert — das Backend antwortet mit `409`, und
+die UI bietet die Aktion nicht mehr an. Umgesetzt als **deaktivierter Knopf mit
+erklärendem Tooltip**, nicht als Ausblenden: So bleibt sichtbar, dass es die
+Aktion gibt, und der Grund steht daneben.

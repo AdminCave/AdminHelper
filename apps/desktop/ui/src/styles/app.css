@@ -2306,6 +2306,11 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* A disabled CHECK already dims the whole row; multiplying both opacities
+   (0.55 x 0.4) left the icon practically invisible instead of greyed out. */
+.mon-line-wrapper.disabled .mon-line-action:disabled {
+  opacity: 1;
+}
 .mon-line-action.muted {
   color: var(--warning);
 }

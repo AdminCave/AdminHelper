@@ -428,6 +428,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
   }
+  /* Same reason as .mon-line-wrapper.disabled in app.css: the row already
+     dims, so do not multiply it with the button's own disabled opacity. */
+  .mon-row.disabled :global(.btn:disabled) {
+    opacity: 1;
+  }
+
   .mon-row.disabled {
     opacity: 0.55;
   }
