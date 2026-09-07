@@ -31,7 +31,7 @@ Abhängt von: T1
 
 ## Phase 2 — Die übrigen drei Befunde
 
-### T3 — B2: Semaphore-Leak im Hook-Runner schließen  [ ]
+### T3 — B2: Semaphore-Leak im Hook-Runner schließen  [x] (except-Zweig um genau das ungeschuetzte Fenster; killt einen schon gestarteten Worker, gibt das Permit zurueck, reicht die Exception durch. Rest der Funktion bewusst nicht umindentiert. 2 Tests (Popen- und Thread.start-Fehler), beide mutationsgeprueft; Review hat alle 10 Pfade auf Doppel-Release geprueft — keiner feuert beide Freigaben.)
 Komponente: apps/server · Dateien: app/modules/hooks/script_runner.py, tests/test_hook_isolation.py
 Änderung: Das in Z. 127 geholte Permit wird erst ab Z. 170 durch `try`/`finally` (Z. 188–189) geschützt. Alles dazwischen — `subprocess.Popen` (Z. 138) und die beiden `Thread.start()` (Z. 168–169) — kann werfen und das Permit dauerhaft verlieren; bei `BoundedSemaphore(8)` sind Hooks nach acht solchen Fehlschlägen bis zum Neustart tot und melden irreführend „Server ausgelastet". Den geschützten Bereich so ausweiten, dass er unmittelbar nach dem `acquire` beginnt.
 Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" .venv/bin/python -m pytest -q tests/` mit einem neuen Test, der `subprocess.Popen` auf `OSError` patcht: nach N Aufrufen ist der Semaphore-Zähler unverändert und ein anschließender regulärer Hook läuft noch (auf dem alten Code rot). Dann `source .devenv.sh && AH_ONLY='server' bash scripts/tests/run.sh quick`.
