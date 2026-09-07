@@ -21,6 +21,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ausgegraut und nennt im Tooltip den Grund. `agent_ping` bleibt ausloesbar — er
   misst das Ausbleiben eines Pushes und wird vom Scheduler ausgewertet.
 
+- **Hook-Ausfuehrung bleibt nach einem fehlgeschlagenen Prozess-Start nutzbar:**
+  Das Semaphore-Permit wurde vor `subprocess.Popen` geholt, das freigebende
+  `try`/`finally` begann aber erst nach dem Start der Lese-Threads. Schlug
+  dazwischen etwas fehl — `Popen` bei Speicherdruck, `Thread.start` bei
+  erschoepftem Thread-Kontingent —, war das Permit dauerhaft verloren. Nach acht
+  solchen Fehlschlaegen meldete **jeder** Hook bis zum Neustart „Server
+  ausgelastet", obwohl gar keiner mehr lief.
+
 - **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
   agent_ping-Staleness
   misst auf der Wanduhr (nur die ist ueber Prozessgrenzen persistierbar) — ein

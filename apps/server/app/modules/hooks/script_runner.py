@@ -131,42 +131,58 @@ def run_hook_script(
             "logs": ["Server ausgelastet: zu viele gleichzeitige Hook-Ausführungen"],
             "error": "Server ausgelastet (Hook-Limit erreicht)",
         }
-    # Run the worker in its OWN process group (start_new_session) so a timeout can kill the
-    # WHOLE tree, not just the direct child: hook scripts get real builtins and can spawn
-    # grandchildren (os.system, subprocess, multiprocessing) that would otherwise be orphaned and
-    # keep running unbounded past the timeout (4.69).
-    proc = subprocess.Popen(
-        [sys.executable, _WORKER_SCRIPT],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=server_dir,
-        env=worker_env,
-        start_new_session=True,
-    )
-    # Read stdout/stderr in threads with a hard byte budget instead of communicate(): the latter
-    # buffers unbounded, so a hook flooding fd 1/2 past the worker's log cap could OOM the parent
-    # (4.139). Once a reader hits the budget it stops; the full pipe then blocks the worker, which
-    # the timeout (or the over-budget check below) kills.
-    out_holder: list[str] = []
-    err_holder: list[str] = []
+    # The permit is held from here on, but the try/finally that releases it only starts after the
+    # threads are up. Guard the gap: Popen can fail (fork under memory pressure) and Thread.start
+    # can fail (thread exhaustion), and a permit lost there is lost for good — with
+    # BoundedSemaphore(_MAX_CONCURRENT_HOOKS) eight such failures disable hooks until restart, and
+    # the caller only ever sees the misleading "Server ausgelastet".
+    proc = None
+    try:
+        # Run the worker in its OWN process group (start_new_session) so a timeout can kill the
+        # WHOLE tree, not just the direct child: hook scripts get real builtins and can spawn
+        # grandchildren (os.system, subprocess, multiprocessing) that would otherwise be orphaned
+        # and keep running unbounded past the timeout (4.69).
+        proc = subprocess.Popen(
+            [sys.executable, _WORKER_SCRIPT],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=server_dir,
+            env=worker_env,
+            start_new_session=True,
+        )
+        # Read stdout/stderr in threads with a hard byte budget instead of communicate(): the
+        # latter buffers unbounded, so a hook flooding fd 1/2 past the worker's log cap could OOM
+        # the parent (4.139). Once a reader hits the budget it stops; the full pipe then blocks the
+        # worker, which the timeout (or the over-budget check below) kills.
+        out_holder: list[str] = []
+        err_holder: list[str] = []
 
-    def _drain(stream, holder):
-        data = stream.read(_MAX_HOOK_OUTPUT_BYTES + 1)
-        holder.append(data)
-        if len(data) > _MAX_HOOK_OUTPUT_BYTES:
-            # Over budget: the reader stops here, so the worker will block on a full pipe. Kill it
-            # now so proc.wait() returns at once instead of burning the whole timeout.
+        def _drain(stream, holder):
+            data = stream.read(_MAX_HOOK_OUTPUT_BYTES + 1)
+            holder.append(data)
+            if len(data) > _MAX_HOOK_OUTPUT_BYTES:
+                # Over budget: the reader stops here, so the worker will block on a full pipe. Kill
+                # it now so proc.wait() returns at once instead of burning the whole timeout.
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+
+        t_out = threading.Thread(target=_drain, args=(proc.stdout, out_holder), daemon=True)
+        t_err = threading.Thread(target=_drain, args=(proc.stderr, err_holder), daemon=True)
+        t_out.start()
+        t_err.start()
+    except BaseException:
+        # A worker that started before the failure must not outlive this request either.
+        if proc is not None:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 pass
-
-    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_holder), daemon=True)
-    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_holder), daemon=True)
-    t_out.start()
-    t_err.start()
+        _hook_semaphore.release()
+        raise
     try:
         try:
             proc.stdin.write(payload)
