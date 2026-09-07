@@ -537,9 +537,14 @@ body {
   font-size: var(--text-xs);
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   border-color: var(--border-hover);
   background: var(--hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn.primary {
@@ -549,7 +554,7 @@ body {
   font-weight: 600;
 }
 
-.btn.primary:hover {
+.btn.primary:hover:not(:disabled) {
   background: var(--fill-solid-hover);
 }
 
@@ -560,7 +565,7 @@ body {
   font-weight: 600;
 }
 
-.btn.accent:hover {
+.btn.accent:hover:not(:disabled) {
   background: #4ade80;
 }
 
@@ -570,7 +575,7 @@ body {
   color: var(--text-muted);
 }
 
-.btn.ghost:hover {
+.btn.ghost:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--border-hover);
 }
@@ -586,7 +591,7 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.btn.icon:hover {
+.btn.icon:hover:not(:disabled) {
   color: var(--text);
   background: var(--bg-elevated);
 }
@@ -2290,10 +2295,16 @@ body {
     color 0.15s ease,
     border-color 0.15s ease;
 }
-.mon-line-action:hover {
+.mon-line-action:hover:not(:disabled) {
   background: var(--hover);
   color: var(--text);
   border-color: var(--border);
+}
+/* Without this the button looks and hovers like a working one while doing
+   nothing — the very confusion the 409 guard set out to remove. */
+.mon-line-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .mon-line-action.muted {
   color: var(--warning);

@@ -16,7 +16,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und fuer deaktivierte Checks auf. Beide steigen dort still aus; der Endpunkt
   antwortete trotzdem mit HTTP 200 und unveraendertem Zustand, was von
   „geprueft, unveraendert" nicht zu unterscheiden war. Jetzt kommt in beiden
-  Faellen ein `409` mit Klartext-Begruendung.
+  Faellen ein `409` mit Klartext-Begruendung. Der Desktop-Client bietet die tote
+  Aktion gar nicht mehr an: Der „Jetzt pruefen"-Knopf ist fuer diese Checks
+  ausgegraut und nennt im Tooltip den Grund. `agent_ping` bleibt ausloesbar — er
+  misst das Ausbleiben eines Pushes und wird vom Scheduler ausgewertet.
 
 - **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
   agent_ping-Staleness

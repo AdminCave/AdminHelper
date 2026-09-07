@@ -57,6 +57,10 @@
           </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div><div class="callout-title">&ldquo;Run now&rdquo; exists for pull checks only</div><p>Push-evaluated checks (<code>agent_resources</code>, <code>service_process</code>, <code>proxmox_backup</code>, <code>zfs_health</code>, <code>docker_health</code>, <code>smart_health</code>) receive their data solely through the agent push and therefore <strong>cannot be triggered manually</strong> &ndash; the button is greyed out there and the API answers <code>409</code>. The same applies to disabled checks. <code>agent_ping</code> is deliberately exempt: it measures the <em>absence</em> of a push and is evaluated by the scheduler, so it can be run manually.</p></div>
+          </div>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
             <div><div class="callout-title">Agent plugins are auto-detected</div><p>The plugin checks <code>proxmox_backup</code>, <code>zfs_health</code> and <code>docker_health</code> only evaluate data when the agent finds the respective subsystem (Proxmox, ZFS, Docker) on the host. If the subsystem is absent, the check simply has no data – that is not an error. The <code>agent_*</code> and plugin checks require the Go agent on the target; <code>ping</code>/<code>tcp</code>/<code>http</code> need no agent.</p></div>
           </div>
 

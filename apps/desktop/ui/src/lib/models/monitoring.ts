@@ -167,6 +167,32 @@ export function isPercentCheck(checkType: MonitorCheckType | string): boolean {
   return ['agent_resources', 'zfs_health'].includes(checkType);
 }
 
+// Push-evaluated check types — data arrives only via the agent report, so the
+// scheduler never runs them and a manual trigger is impossible (the backend
+// answers 409). Source of truth is apps/monitoring/app/check_types.py
+// (push_only: true); keep in sync there. agent_ping is deliberately NOT in here
+// — the scheduler evaluates it, since it measures the ABSENCE of a push.
+const PUSH_ONLY_CHECK_TYPES = [
+  'agent_resources',
+  'service_process',
+  'proxmox_backup',
+  'zfs_health',
+  'docker_health',
+  'smart_health',
+];
+
+export function isPushOnlyCheck(checkType: MonitorCheckType | string): boolean {
+  return PUSH_ONLY_CHECK_TYPES.includes(checkType);
+}
+
+/** A manual run only does something for an enabled, non-push check. */
+export function canRunManually(check: {
+  checkType: MonitorCheckType | string;
+  enabled: boolean;
+}): boolean {
+  return check.enabled && !isPushOnlyCheck(check.checkType);
+}
+
 export interface MonitoringSummary {
   total: number;
   ok: number;

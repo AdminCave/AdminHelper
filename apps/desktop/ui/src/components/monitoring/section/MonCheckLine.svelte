@@ -7,7 +7,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import type { MonitorCheck } from '$lib/api/types';
-  import { statusClass, formatCheckTime } from '$lib/models/monitoring';
+  import {
+    statusClass,
+    formatCheckTime,
+    canRunManually,
+    isPushOnlyCheck,
+  } from '$lib/models/monitoring';
   import {
     toggleExpanded,
     monitoring,
@@ -30,6 +35,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
   let { check, label, value, extraBody, showChart = true, dense = false }: Props = $props();
 
   let status = $derived(check.state?.status || 'pending');
+  // A manual run is a no-op for push-evaluated and disabled checks — the backend
+  // answers 409. Do not offer a dead action; explain why instead.
+  let runnable = $derived(canRunManually(check));
+  let runBlockedReason = $derived(
+    isPushOnlyCheck(check.checkType)
+      ? $t('monitoring.check.runPushOnly')
+      : $t('monitoring.check.runDisabled'),
+  );
   let expanded = $derived($monitoring.expandedCheckId === check.id);
 
   function onClick(): void {
@@ -81,8 +94,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
         class="mon-line-action"
         onclick={onRun}
         onkeydown={(e) => e.key === 'Enter' && onRun(e)}
-        title={$t('monitoring.check.runNow')}
-        aria-label={$t('monitoring.check.runNow')}
+        disabled={!runnable}
+        title={runnable ? $t('monitoring.check.runNow') : runBlockedReason}
+        aria-label={runnable ? $t('monitoring.check.runNow') : runBlockedReason}
       >
         <MonSectionIcon name="play" />
       </button>
