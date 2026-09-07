@@ -1,5 +1,5 @@
 # Code-Review-Fixes — Task-Ledger
-Status: aktiv · Branch: feature/code-review-fixes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/code-review-fixes · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/code-review-fixes.md
 Fast-Suite: lokal · Warm-Profil: desktop
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
