@@ -287,6 +287,17 @@ def agent_report(
             else:
                 if eff_status != state.status:
                     state.since = now
+                    # Same line the scheduler path writes (check_engine.execute_check).
+                    # Without it a push-evaluated transition leaves no trace at all:
+                    # MonitorAlertLog only records SENT notifications, so a transition
+                    # suppressed by maintenance or host-down was invisible afterwards.
+                    logger.info(
+                        "Check '%s': %s -> %s (%s)",
+                        check.name,
+                        old_status,
+                        eff_status,
+                        message,
+                    )
                 state.status = eff_status
                 state.fail_count = new_fail_count
                 state.last_check = now
