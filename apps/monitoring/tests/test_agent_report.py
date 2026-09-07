@@ -421,13 +421,17 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     # (there is no previous status to transition FROM).
     with caplog.at_level(logging.INFO, logger="app.routers.agent"):
         client.post("/agent/srv-1/report", json=_report(cpu=5))
-    assert [r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()] == []
+    assert [
+        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+    ] == []
 
     # ok -> critical: exactly one transition line.
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="app.routers.agent"):
         client.post("/agent/srv-1/report", json=_report(cpu=99))
-    transitions = [r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()]
+    transitions = [
+        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+    ]
     assert len(transitions) == 1, [r.getMessage() for r in caplog.records]
     assert "ok -> critical" in transitions[0].getMessage()
 
@@ -436,4 +440,6 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="app.routers.agent"):
         client.post("/agent/srv-1/report", json=_report(cpu=99))
-    assert [r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()] == []
+    assert [
+        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+    ] == []
