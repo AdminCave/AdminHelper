@@ -51,7 +51,7 @@ Doku: keine (intern)
 
 ## Phase 3 — Nachtrag aus der Verifikation
 
-### T6 — run.sh überspringt das Python-Lint-Gate stillschweigend  [ ]
+### T6 — run.sh überspringt das Python-Lint-Gate stillschweigend  [x] (venv-Fallback + ca-issuer; run.sh quick geht von '10 passed, 1 skipped' auf '12 passed, 0 skipped'. Gegenprobe mit absichtlichem Formatfehler in ca-issuer faerbt rot. Review-Nits uebernommen: DEVELOPMENT.md und ruff.toml behaupteten weiterhin 'beide Komponenten' — korrigiert; $ROOT statt $PWD als Datei-Idiom.)
 Komponente: scripts · Dateien: scripts/tests/run.sh
 Änderung: **Nicht aus dem Review vom 12.08., sondern beim Nachprüfen am 03.09. gefunden.** `run.sh` sucht `ruff` per `have ruff` im PATH (Z. 108); das Binary liegt aber unter `apps/server/.venv/bin/ruff` und ist nicht im PATH. Ergebnis: Der Lauf meldet „10 passed, 0 failed, 1 skipped", ohne dass Python jemals gelintet wurde — dieselbe Klasse von stillem Fehlschlag wie B1, und laut CLAUDE.md heißt SKIP „nicht verifiziert", nicht „ok". Zusätzlich lintet der Schritt nur `apps/server apps/monitoring`, obwohl CLAUDE.md alle **drei** Python-Komponenten nennt: `apps/ca-issuer` fehlt. Beides beheben: die Venv-Pfade als Fallback zur PATH-Suche heranziehen und `apps/ca-issuer` in beide ruff-Aufrufe aufnehmen.
 Verify: `bash scripts/tests/run.sh quick` zeigt `PASS ruff check` und `PASS ruff format check` statt SKIP (real geprüft: der Lint ist inhaltlich sauber — `ruff check` meldet „All checks passed!", `ruff format --check` „263 files already formatted" über alle drei Komponenten). Gegenprobe: ein absichtlicher Formatfehler in `apps/ca-issuer` färbt den Schritt rot.
