@@ -37,7 +37,7 @@ Komponente: apps/server · Dateien: app/modules/hooks/script_runner.py, tests/te
 Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" .venv/bin/python -m pytest -q tests/` mit einem neuen Test, der `subprocess.Popen` auf `OSError` patcht: nach N Aufrufen ist der Semaphore-Zähler unverändert und ein anschließender regulärer Hook läuft noch (auf dem alten Code rot). Dann `source .devenv.sh && AH_ONLY='server' bash scripts/tests/run.sh quick`.
 Doku: CHANGELOG (Fixed) — im selben Commit
 
-### T4 — B3: Statusübergänge im Push-Pfad loggen  [ ]
+### T4 — B3: Statusübergänge im Push-Pfad loggen  [x] (formatgleiche Zeile im else-Zweig, feuert nur beim Wechsel; Test prueft beide Richtungen und ist in beide Richtungen mutationsgeprueft. Review-Nit uebernommen: caplog-Filter auf den Logger eingeschraenkt, damit kuenftige Alerter-Zeilen mit '->' nicht hereinrutschen.)
 Komponente: apps/monitoring · Dateien: app/routers/agent.py, tests/test_agent_report.py
 Änderung: Im Push-Pfad (Z. 288–289) fehlt beim Statuswechsel die Log-Zeile, die der Scheduler-Pfad schreibt (`check_engine.py` Z. 213–221: `logger.info("Check '%s': %s -> %s (%s)")`). Dieselbe Zeile ergänzen, gleiches Format. Ohne sie hinterlässt ein unterdrückter Übergang (Maintenance, Host-down) nirgends eine Spur — `MonitorAlertLog` hält nur versendete Alerts.
 Verify: `cd apps/monitoring && .venv/bin/python -m pytest -q tests/` mit einem Test, der über `caplog` prüft: ein Push, der einen Check von ok auf critical bringt, erzeugt genau eine Übergangs-Log-Zeile; ein Push ohne Statuswechsel keine.
