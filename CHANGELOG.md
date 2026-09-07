@@ -9,6 +9,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **„Jetzt pruefen" meldet keinen Erfolg mehr, wo nichts passiert:** Der Endpunkt
+  `POST /api/monitoring/checks/{id}/run` rief `execute_check` auch fuer
+  push-ausgewertete Check-Typen (`agent_resources`, `service_process`,
+  `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health` — 6 von 11)
+  und fuer deaktivierte Checks auf. Beide steigen dort still aus; der Endpunkt
+  antwortete trotzdem mit HTTP 200 und unveraendertem Zustand, was von
+  „geprueft, unveraendert" nicht zu unterscheiden war. Jetzt kommt in beiden
+  Faellen ein `409` mit Klartext-Begruendung.
+
 - **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
   agent_ping-Staleness
   misst auf der Wanduhr (nur die ist ueber Prozessgrenzen persistierbar) — ein
