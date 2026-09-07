@@ -43,7 +43,7 @@ Komponente: apps/monitoring · Dateien: app/routers/agent.py, tests/test_agent_r
 Verify: `cd apps/monitoring && .venv/bin/python -m pytest -q tests/` mit einem Test, der über `caplog` prüft: ein Push, der einen Check von ok auf critical bringt, erzeugt genau eine Übergangs-Log-Zeile; ein Push ohne Statuswechsel keine.
 Doku: keine (intern)
 
-### T5 — B4: Internal-Key-Gate im Server nachhärten  [ ]
+### T5 — B4: Internal-Key-Gate im Server nachhärten  [x] (Byte-Vergleich wie im Monitoring-Vorbild; Review verglich beide Implementierungen ueber 40 Eingabekombinationen differentiell — keine Divergenz — und bestaetigte, dass die dritte compare_digest-Stelle (auth_router) nicht betroffen ist, weil der Operand dort vorher gehasht wird. Mutationsgeprueft.)
 Komponente: apps/server · Dateien: app/modules/notifications/router.py, tests/test_notifications.py
 Änderung: `require_internal_key` (Z. 161) übergibt rohe `str` an `secrets.compare_digest`; ein Nicht-ASCII-Header löst dort einen `TypeError` aus → unbehandelter 500 statt 403. Die Monitoring-Fassung (`apps/monitoring/app/core/auth.py` Z. 14–19) ist bereits gehärtet: Byte-Vergleich, `None`-tolerant, mit Docstring-Begründung. Den Server auf dieselbe Semantik ziehen (fail-closed bei leerem erwarteten Key bleibt unverändert).
 Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" .venv/bin/python -m pytest -q tests/` mit einem Test: `X-Internal-Key` mit Nicht-ASCII-Zeichen ergibt 403 (nicht 500); gültiger Key weiterhin 202; leerer erwarteter Key lehnt weiterhin alles ab.
