@@ -104,11 +104,24 @@ require_real() {
 
 # ── lint ─────────────────────────────────────────────────────────────────────
 layer_lint() {
-  if ! only server monitoring; then skip "ruff" "AH_ONLY"
-  elif have ruff; then
-    run_step "ruff check"        -- ruff check apps/server apps/monitoring
-    run_step "ruff format check" -- ruff format --check apps/server apps/monitoring
-  else skip "ruff" "ruff not installed"; fi
+  # ruff usually lives in a component venv, not on PATH — `have ruff` alone made
+  # the whole Python lint gate SKIP while the summary still read "N passed",
+  # which reads as "ok" and is exactly what CLAUDE.md warns SKIP does not mean.
+  # Fall back to the venvs before giving up. ca-issuer is linted too: CLAUDE.md
+  # names all THREE Python components, the step only ever covered two.
+  local ruff_bin=""
+  if have ruff; then ruff_bin="ruff"
+  else
+    local c
+    for c in apps/server apps/monitoring apps/ca-issuer; do
+      if [ -x "$c/.venv/bin/ruff" ]; then ruff_bin="$ROOT/$c/.venv/bin/ruff"; break; fi
+    done
+  fi
+  if ! only server monitoring ca-issuer; then skip "ruff" "AH_ONLY"
+  elif [ -n "$ruff_bin" ]; then
+    run_step "ruff check"        -- "$ruff_bin" check apps/server apps/monitoring apps/ca-issuer
+    run_step "ruff format check" -- "$ruff_bin" format --check apps/server apps/monitoring apps/ca-issuer
+  else skip "ruff" "ruff not installed (not on PATH, no component venv)"; fi
 
   if ! only agent; then skip "gofmt" "AH_ONLY"
   elif have gofmt; then
