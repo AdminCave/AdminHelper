@@ -16,7 +16,7 @@ entscheidet der Abschluss anhand des realen Diffs (B4 fasst die Server-API an).
 
 ## Phase 1 — B1: Der stille No-op (Hoch)
 
-### T1 — Backend: manueller Lauf sagt die Wahrheit  [ ]
+### T1 — Backend: manueller Lauf sagt die Wahrheit  [x] (409 fuer Push-Typen und deaktivierte Checks; Guard im Router, execute_check unberuehrt. 3 Tests, 2 davon mutationsgeprueft — der Endpunkt hatte vorher gar keinen. Review-Korrektur: neue Kommentare und detail-Strings waren deutsch geschrieben, auf Englisch umgestellt (Projekt-Konvention: Altbestand nicht matchen); dazu State-unveraendert-Assert ergaenzt.)
 Komponente: apps/monitoring · Dateien: app/routers/checks.py, tests/test_checks_crud.py
 Änderung: **Der `/run`-Endpunkt ist heute von keinem einzigen Test abgedeckt** (verifiziert) — das ist der Grund, warum der No-op überlebt hat; die neuen Fälle gehören zu den bestehenden Router-Tests in `test_checks_crud.py`. `run_check_now` (Z. 288–301) prüft VOR dem Aufruf von `execute_check`: ist `check.check_type` in `PUSH_ONLY_TYPES` oder ist der Check deaktiviert, dann `409 Conflict` mit verständlichem `detail` statt eines 200 mit unverändertem State. Grund: `execute_check` steigt für beide Fälle still aus (`check_engine.py` Z. 117 `enabled`-Filter, Z. 129–130 Push-Only-Return), der Endpunkt meldete das aber als Erfolg. Die Prüfung gehört in den Router — `execute_check` selbst wird vom Scheduler aufgerufen und darf dort weiter still aussteigen.
 Verify: `cd apps/monitoring && .venv/bin/python -m pytest -q tests/` mit neuen Fällen: (a) `smart_health`-Check → 409, State unverändert; (b) deaktivierter `ping`-Check → 409; (c) aktiver `ping`-Check → weiterhin 200 und `execute_check` lief. Dann `source .devenv.sh && AH_ONLY='monitoring' bash scripts/tests/run.sh quick`.
