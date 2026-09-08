@@ -82,8 +82,10 @@ die()  { echo "[agent-install] ERROR: $*" >&2; exit 1; }
 # which sent people looking in entirely the wrong place. Waits for all four
 # apt/dpkg locks; on timeout it proceeds so a stuck lock cannot hang the install
 # forever (apt then produces its own, accurate error).
-# apt waits on the lock itself with this; unknown -o options are ignored by older
-# apt (verified), so it is safe on oldstable where the option does not exist yet.
+# Covers the dpkg locks only: `apt-get update` takes /var/lib/apt/lists/lock, for
+# which apt has no timeout knob (verified in apt-pkg/update.cc) — that one is
+# handled by wait_apt_lock plus the retry around the update below. Unknown -o
+# options are ignored by older apt (verified), so this is safe on oldstable.
 APT_LOCK_OPTS="-o DPkg::Lock::Timeout=300"
 
 wait_apt_lock() {
@@ -208,9 +210,19 @@ EOF
     # Error-Mode=any: index fetch failures are mere warnings by default (exit 0),
     # which would let the run limp on and die confusingly at install time.
     wait_apt_lock
-    # shellcheck disable=SC2086  # word splitting of the -o pair is intended
-    apt-get update -qq $APT_LOCK_OPTS -o APT::Update::Error-Mode=any \
-        || die "apt-get update failed — repo unreachable, TLS/GPG problem, or another apt process holds the lock"
+    # Retry, because the lists lock is the one apt cannot wait on and the one that
+    # actually broke installs on freshly booted hosts. Without fuser present this
+    # retry is the ONLY protection for it.
+    _apt_update_ok=0
+    for _try in 1 2 3; do
+        # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+        if apt-get update -qq $APT_LOCK_OPTS -o APT::Update::Error-Mode=any; then
+            _apt_update_ok=1; break
+        fi
+        [ "$_try" -lt 3 ] && { log "apt-get update failed (attempt $_try/3) — retrying in 15s"; sleep 15; wait_apt_lock; }
+    done
+    [ "$_apt_update_ok" = 1 ] \
+        || die "apt-get update failed after 3 attempts — repo unreachable, TLS/GPG problem, or another apt process holds the lock"
     wait_apt_lock
     # shellcheck disable=SC2086  # word splitting of the -o pair is intended
     apt-get install -y $APT_LOCK_OPTS adminhelper-agent || die "apt-get install adminhelper-agent failed"

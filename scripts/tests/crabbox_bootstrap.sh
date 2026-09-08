@@ -55,9 +55,37 @@ wait_apt_lock() {
     echo "[bootstrap] WARNUNG: apt/dpkg-Lock nach 7.5 min noch belegt — versuche es trotzdem." >&2
 }
 
+# Waiting is treatment, not cure: unattended-upgrades can start at ANY point
+# during the bootstrap, so a single wait at the top only moves the race later
+# (it took out the docker and node steps). Shut the racer down for the box's
+# lifetime — these are throwaway test VMs, they need no background updates.
+disable_apt_timers() {
+    local u
+    for u in unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer \
+             apt-daily.service apt-daily-upgrade.service; do
+        $SUDO systemctl stop "$u" 2>/dev/null || true
+        $SUDO systemctl mask "$u" 2>/dev/null || true
+    done
+}
+
+# A drop-in, not a shell variable: this way EVERY apt process inherits it,
+# including the ones the nodesource setup script spawns internally, which no
+# wrapper could bracket. Covers the dpkg locks only — `apt-get update` takes
+# /var/lib/apt/lists/lock, for which apt has no timeout knob (verified in
+# apt-pkg/update.cc), so wait_apt_lock stays responsible for that one.
+write_apt_lock_dropin() {
+    printf 'DPkg::Lock::Timeout "300";\n' \
+        | $SUDO tee /etc/apt/apt.conf.d/99lock-timeout >/dev/null 2>&1 || true
+}
+
 log "apt base + tauri libs + display + repo-build + keyring tooling"
 export DEBIAN_FRONTEND=noninteractive
+disable_apt_timers
+write_apt_lock_dropin
 wait_apt_lock
+# If the stopped unattended-upgrades run was killed mid-transaction, the next
+# apt call dies with "dpkg was interrupted". Cheap insurance, no-op otherwise.
+$SUDO dpkg --configure -a >/dev/null 2>&1 || true
 $SUDO apt-get update -qq
 $SUDO apt-get install -y --no-install-recommends \
   ca-certificates curl git rsync openssl gnupg jq unzip build-essential pkg-config \
@@ -88,6 +116,7 @@ if ! command -v docker >/dev/null 2>&1; then
   . /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
     | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
+  wait_apt_lock
   $SUDO apt-get update -qq
   $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
@@ -106,6 +135,7 @@ export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
 log "Node ${NODE_MAJOR}.x"
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | grep -oE '[0-9]+' | head -1)" != "$NODE_MAJOR" ]; then
   curl -fsSL --retry 3 --retry-connrefused "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | $SUDO -E bash -
+  wait_apt_lock
   $SUDO apt-get install -y nodejs
 fi
 

@@ -21,7 +21,7 @@ echo "[visitorbox] hydrate + build/install the agent (for the binary + frpc side
 AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[visitorbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
 DEB="$(cbx_build_agent_deb visitorbox)" || exit 1
-sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[visitorbox] install failed"; exit 1; }
+sudo apt-get install -y -o DPkg::Lock::Timeout=300 "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[visitorbox] install failed"; exit 1; }
 
 echo "[visitorbox] provision -> CA-signed mTLS identity for the visitor's TLS to frps"
 sudo adminhelper-agent provision --url "https://$SRV_IP" --token "$VPTOK" --server-id "$VSID" --insecure \

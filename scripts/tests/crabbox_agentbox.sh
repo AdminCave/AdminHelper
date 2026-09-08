@@ -42,7 +42,7 @@ else
   echo "AGENT_DEB=$DEB"
 
   echo "[agentbox] install + provision against https://$SRV_IP (server $SID)"
-  sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[agentbox] install failed"; exit 1; }
+  sudo apt-get install -y -o DPkg::Lock::Timeout=300 "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[agentbox] install failed"; exit 1; }
   # --insecure = TOFU-pin the presented chain on first contact; the agent then pins
   # the CA from the enroll response and verifies the IP-SAN leaf on every later call.
   sudo adminhelper-agent provision --url "https://$SRV_IP" --token "$PTOK" --server-id "$SID" --insecure \

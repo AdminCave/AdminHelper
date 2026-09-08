@@ -20,7 +20,7 @@ export PATH="$PATH:/usr/local/go/bin"
 
 echo "[tunnelbox] build + install the .deb"
 DEB="$(cbx_build_agent_deb tunnelbox)" || exit 1
-sudo apt-get install -y "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[tunnelbox] install failed"; exit 1; }
+sudo apt-get install -y -o DPkg::Lock::Timeout=300 "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[tunnelbox] install failed"; exit 1; }
 
 echo "[tunnelbox] ensure sshd is listening on :22 (the STCP target)"
 sudo systemctl enable --now ssh 2>/dev/null || sudo systemctl enable --now sshd 2>/dev/null || true
