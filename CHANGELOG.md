@@ -7,6 +7,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-09-08
+
 ### Fixed
 
 - **„Jetzt pruefen" meldet keinen Erfolg mehr, wo nichts passiert:** Der Endpunkt

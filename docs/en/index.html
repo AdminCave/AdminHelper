@@ -260,7 +260,25 @@
             </div>
           </div>
 
-          <h2>What's new in 0.44.0?</h2>
+          <h2>What's new in 0.45.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.45.0 &ndash; Dependencies cleared &amp; silent failures removed (2026-09-08)</div>
+              <p>
+                <strong>Security:</strong> <code>cryptography</code> is now 50.0.1 (three PYSEC entries),
+                the npm lockfiles report no findings, and five RUSTSEC advisories drop out of the desktop
+                client &ndash; achieved with four targeted bumps instead of a blanket update, so with as
+                little surface as necessary.
+                <strong>Fixed:</strong> &ldquo;Run now&rdquo; reported success without doing anything for
+                <strong>6 of 11</strong> check types &ndash; the service now answers <code>409</code>, and the
+                client no longer offers the action at all. Plus: hook execution survives a failed process
+                start, status transitions from agent pushes are logged, and disabled buttons finally look
+                disabled. Details in the
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>

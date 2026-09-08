@@ -262,7 +262,25 @@
             </div>
           </div>
 
-          <h2>Was ist neu in 0.44.0?</h2>
+          <h2>Was ist neu in 0.45.0?</h2>
+          <div class="callout callout-note" data-reveal>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+            <div>
+              <div class="callout-title">v0.45.0 &ndash; Abhaengigkeiten entschaerft &amp; stille Fehlschlaege beseitigt (2026-09-08)</div>
+              <p>
+                <strong>Security:</strong> <code>cryptography</code> steht auf 50.0.1 (drei PYSEC-Eintraege),
+                die npm-Lockfiles melden keine Funde mehr, und im Desktop-Client fallen fuenf
+                RUSTSEC-Advisories weg &ndash; erreicht mit vier gezielten Bumps statt eines
+                Rundum-Updates, also mit so wenig Flaeche wie noetig.
+                <strong>Fixed:</strong> &bdquo;Jetzt pruefen&ldquo; meldete bei <strong>6 von 11</strong> Check-Typen
+                Erfolg, ohne etwas zu tun &ndash; jetzt antwortet der Dienst mit <code>409</code>, und der Client
+                bietet die Aktion gar nicht erst an. Dazu: Hook-Ausfuehrung bleibt nach einem
+                fehlgeschlagenen Prozess-Start nutzbar, Statuswechsel aus Agent-Pushes werden geloggt,
+                und deaktivierte Schaltflaechen sehen endlich auch deaktiviert aus. Details im
+                <a href="https://github.com/AdminCave/AdminHelper/blob/main/CHANGELOG.md">CHANGELOG</a>.
+              </p>
+            </div>
+          </div>
           <div class="callout callout-note" data-reveal>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
             <div>
