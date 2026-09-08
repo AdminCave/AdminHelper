@@ -66,8 +66,28 @@ lease() {
   # (the -ttl backstop + trap cleanup still bound cost even if a timeout fires).
   # cbx_warmup_locked (crabbox_lib.sh) serializes the lease host-globally against
   # parallel lanes' warmups — concurrent warmups hang this provider.
-  out="$(cbx_warmup_locked -slug "$1" -pond "$POND" -proxmox-bridge vmbr1 -ttl 90m -idle-timeout 30m)" \
-    || { echo "warmup failed/timed out: $out" >&2; return 1; }
+  # Retry the warmup: the proxmox provider aborts its task polling on a transient
+  # keep-alive close (pveproxy answers every request with `Connection: close`) and
+  # gives up instead of re-issuing the idempotent GET. Server-side EVERY qmclone
+  # completes — the clone the client declared failed ran through fine. At roughly
+  # one failure in ten leases, a capstone with five to seven boxes fails about
+  # half the time for reasons that have nothing to do with the code under test.
+  # Best-effort orphan stop: the aborted clone leaves a VM behind, and afterwards
+  # no cleanup path in this repo can reach it (they all address VMs by lease id).
+  # Often crabbox has already released the lease by then and answers "not found" —
+  # then the VM has to go at the hypervisor. Trying costs nothing and catches the
+  # cases where the lease is still registered.
+  local attempt out_rc stale
+  for attempt in 1 2 3; do
+    out="$(cbx_warmup_locked -slug "$1" -pond "$POND" -proxmox-bridge vmbr1 -ttl 90m -idle-timeout 30m)"
+    out_rc=$?
+    [ "$out_rc" -eq 0 ] && break
+    stale="$(printf '%s' "$out" | grep -oE 'cbx_[a-z0-9]+' | head -1)"
+    [ -n "$stale" ] && timeout 300 crabbox stop -id "$stale" >/dev/null 2>&1
+    echo "lease attempt $attempt/3 for $1 failed: $out" >&2
+    [ "$attempt" -lt 3 ] && sleep 20
+  done
+  [ "$out_rc" -eq 0 ] || { echo "warmup failed/timed out after 3 attempts: $out" >&2; return 1; }
   id="$(printf '%s' "$out" | grep -oE 'cbx_[a-z0-9]+' | head -1)"
   [ -n "$id" ] && echo "$id" >> "$LEASES_FILE"           # record in the shared file (crosses the subshell) FIRST
   slug="$(printf '%s' "$out" | grep -oE 'slug=[a-z0-9-]+' | head -1 | cut -d= -f2)"
