@@ -19,6 +19,8 @@
     "globals": "^17.6.0"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.5"
+    "serialize-javascript": "^7.0.5",
+    "deepmerge-ts": "^8.0.0",
+    "@puppeteer/browsers": "^3.2.1"
   }
 }

@@ -45,7 +45,7 @@ pip install -r requirements-dev.txt   # zieht requirements.in (lose) + Test-Deps
 
 ### Python-Dependencies & Lockfiles
 
-`apps/server` und `apps/monitoring` trennen **Intent** von **Lock**:
+`apps/server`, `apps/monitoring` und `apps/ca-issuer` trennen **Intent** von **Lock**:
 
 - `requirements.in` — die editierbare Quelle (lose `>=`-Constraints). Hier
   Dependencies hinzufügen/ändern.
