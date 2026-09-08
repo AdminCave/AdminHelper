@@ -13,6 +13,8 @@ import {
   isPercentCheck,
   buildAlignedData,
   metricSeriesLabel,
+  isPushOnlyCheck,
+  canRunManually,
 } from './monitoring';
 import type { MonitorCheck, Server } from '$lib/api/types';
 
@@ -175,5 +177,35 @@ describe('buildAlignedData (4.102)', () => {
       typeof buildAlignedData
     >[0];
     expect(buildAlignedData(series)[1]).toEqual([null]);
+  });
+});
+
+describe('isPushOnlyCheck / canRunManually', () => {
+  // All six push-evaluated types, so a typo in any single list entry shows up —
+  // the component test only ever touches smart_health.
+  const pushOnly = [
+    'agent_resources',
+    'service_process',
+    'proxmox_backup',
+    'zfs_health',
+    'docker_health',
+    'smart_health',
+  ];
+
+  it('flags every push-evaluated type', () => {
+    for (const t of pushOnly) expect(isPushOnlyCheck(t)).toBe(true);
+  });
+
+  it('leaves pull types and agent_ping alone', () => {
+    // agent_ping measures the ABSENCE of a push and is scheduler-evaluated.
+    for (const t of ['ping', 'tcp', 'http', 'agent_ping', 'disk_forecast'])
+      expect(isPushOnlyCheck(t)).toBe(false);
+  });
+
+  it('requires both enabled and non-push for a manual run', () => {
+    expect(canRunManually({ checkType: 'ping', enabled: true })).toBe(true);
+    expect(canRunManually({ checkType: 'ping', enabled: false })).toBe(false);
+    expect(canRunManually({ checkType: 'smart_health', enabled: true })).toBe(false);
+    expect(canRunManually({ checkType: 'smart_health', enabled: false })).toBe(false);
   });
 });

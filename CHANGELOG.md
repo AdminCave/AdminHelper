@@ -9,6 +9,32 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **„Jetzt pruefen" meldet keinen Erfolg mehr, wo nichts passiert:** Der Endpunkt
+  `POST /api/monitoring/checks/{id}/run` rief `execute_check` auch fuer
+  push-ausgewertete Check-Typen (`agent_resources`, `service_process`,
+  `proxmox_backup`, `zfs_health`, `docker_health`, `smart_health` — 6 von 11)
+  und fuer deaktivierte Checks auf. Beide steigen dort still aus; der Endpunkt
+  antwortete trotzdem mit HTTP 200 und unveraendertem Zustand, was von
+  „geprueft, unveraendert" nicht zu unterscheiden war. Jetzt kommt in beiden
+  Faellen ein `409` mit Klartext-Begruendung. Der Desktop-Client bietet die tote
+  Aktion gar nicht mehr an: Der „Jetzt pruefen"-Knopf ist fuer diese Checks
+  ausgegraut und nennt im Tooltip den Grund. `agent_ping` bleibt ausloesbar — er
+  misst das Ausbleiben eines Pushes und wird vom Scheduler ausgewertet.
+
+- **Hook-Ausfuehrung bleibt nach einem fehlgeschlagenen Prozess-Start nutzbar:**
+  Das Semaphore-Permit wurde vor `subprocess.Popen` geholt, das freigebende
+  `try`/`finally` begann aber erst nach dem Start der Lese-Threads. Schlug
+  dazwischen etwas fehl — `Popen` bei Speicherdruck, `Thread.start` bei
+  erschoepftem Thread-Kontingent —, war das Permit dauerhaft verloren. Nach acht
+  solchen Fehlschlaegen meldete **jeder** Hook bis zum Neustart „Server
+  ausgelastet", obwohl gar keiner mehr lief.
+- **Deaktivierte Schaltflaechen sehen im Desktop-Client jetzt auch deaktiviert
+  aus:** Das Stylesheet hatte keine einzige `:disabled`-Regel — ein gesperrter
+  Knopf war optisch nicht von einem funktionierenden zu unterscheiden und
+  leuchtete beim Ueberfahren weiter auf. Betrifft ueber die Monitoring-Knoepfe
+  hinaus alle `.btn`-Schaltflaechen, etwa Speichern-Knoepfe waehrend eines
+  laufenden Vorgangs.
+
 - **Kein Heartbeat-Sturm mehr bei Uhr-Spruengen des Monitoring-Hosts:** Die
   agent_ping-Staleness
   misst auf der Wanduhr (nur die ist ueber Prozessgrenzen persistierbar) — ein

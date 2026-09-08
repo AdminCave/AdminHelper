@@ -15,7 +15,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     TemplateAssignment,
   } from '$lib/api/types';
   import { monitoringApi } from '$lib/api/monitoring';
-  import { statusClass } from '$lib/models/monitoring';
+  import { statusClass, canRunManually, isPushOnlyCheck } from '$lib/models/monitoring';
   import { session } from '$lib/stores/session';
   import { reportError } from '$lib/stores/statusBar';
   import MonitorCheckModal from '../../monitoring/MonitorCheckModal.svelte';
@@ -269,7 +269,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
           <button
             class="btn small"
             onclick={() => onRun(c)}
-            disabled={running === c.id || !c.enabled}
+            disabled={running === c.id || !canRunManually(c)}
+            title={isPushOnlyCheck(c.checkType)
+              ? $t('monitoring.check.runPushOnly')
+              : !c.enabled
+                ? $t('monitoring.check.runDisabled')
+                : undefined}
           >
             {$t('action.run')}
           </button>
@@ -423,6 +428,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
   }
+  /* Same reason as .mon-line-wrapper.disabled in app.css: the row already
+     dims, so do not multiply it with the button's own disabled opacity. */
+  .mon-row.disabled :global(.btn:disabled) {
+    opacity: 1;
+  }
+
   .mon-row.disabled {
     opacity: 0.55;
   }

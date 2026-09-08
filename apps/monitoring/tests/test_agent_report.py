@@ -7,6 +7,7 @@ consecutive-fails damping as the scheduler path — including the
 "(Fehler n/m)" suppression suffix that the inline copy used to lack."""
 
 import json
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
@@ -406,3 +407,39 @@ def test_push_without_transition_catches_up_discrepancy(client_db, monkeypatch):
     # Push 3: sent-state now matches — silent.
     assert client.post("/agent/srv-1/report", json=_report(cpu=99)).status_code == 200
     assert len(dispatched) == 2
+
+
+def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
+    # code-review-fixes T4 (B3): the scheduler path logs every transition, the
+    # push path did not. A transition suppressed by maintenance or host-down left
+    # no trace anywhere afterwards — MonitorAlertLog only records SENT
+    # notifications, and `since` is overwritten by the next change.
+    client, factory = client_db
+    _add_resources_check(factory, consecutive_fails=1)
+
+    # First push creates the state row; neither path logs a transition there
+    # (there is no previous status to transition FROM).
+    with caplog.at_level(logging.INFO, logger="app.routers.agent"):
+        client.post("/agent/srv-1/report", json=_report(cpu=5))
+    assert [
+        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+    ] == []
+
+    # ok -> critical: exactly one transition line.
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="app.routers.agent"):
+        client.post("/agent/srv-1/report", json=_report(cpu=99))
+    transitions = [
+        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+    ]
+    assert len(transitions) == 1, [r.getMessage() for r in caplog.records]
+    assert "ok -> critical" in transitions[0].getMessage()
+
+    # A push without a status change stays silent, otherwise every report of a
+    # healthy fleet would spam the log.
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="app.routers.agent"):
+        client.post("/agent/srv-1/report", json=_report(cpu=99))
+    assert [
+        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+    ] == []

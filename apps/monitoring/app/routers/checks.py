@@ -14,7 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.check_configs import validate_check_config
-from app.check_types import VALID_CHECK_TYPES
+from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
 from app.core.auth import require_internal
 from app.core.database import get_db
 from app.core.pagination import paginate
@@ -291,6 +291,18 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
     check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
     if not check:
         raise HTTPException(404, "Check nicht gefunden")
+
+    # execute_check bails out silently for both cases (the enabled filter and the
+    # push-only return). Without this guard the endpoint still answered 200 with an
+    # unchanged state — indistinguishable from "ran, nothing changed".
+    if check.check_type in PUSH_ONLY_TYPES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Check type '{check.check_type}' is evaluated only from the agent push "
+            "and cannot be triggered manually",
+        )
+    if not check.enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Check is disabled")
 
     from app.check_engine import execute_check
 

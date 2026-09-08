@@ -557,6 +557,9 @@ export const translations: Translations = {
     'monitoring.check.enable': 'Aktivieren',
     'monitoring.check.disable': 'Deaktivieren',
     'monitoring.check.runNow': 'Jetzt prüfen',
+    'monitoring.check.runPushOnly':
+      'Wird nur per Agent-Push aktualisiert und lässt sich nicht manuell auslösen',
+    'monitoring.check.runDisabled': 'Check ist deaktiviert',
     'monitoring.server.noServer': 'Ohne Server',
     'monitoring.serverList.search': 'Server suchen…',
     'monitoring.serverList.empty': 'Keine Server',
@@ -1147,6 +1150,8 @@ export const translations: Translations = {
     'monitoring.check.enable': 'Enable',
     'monitoring.check.disable': 'Disable',
     'monitoring.check.runNow': 'Run now',
+    'monitoring.check.runPushOnly': 'Updated only by the agent push — cannot be triggered manually',
+    'monitoring.check.runDisabled': 'Check is disabled',
     'monitoring.server.noServer': 'No server',
     'monitoring.serverList.search': 'Search server…',
     'monitoring.serverList.empty': 'No servers',

@@ -128,3 +128,50 @@ def test_alert_rule_rejects_negative_cooldown(client_db):
         json={"name": "r", "channel": "webhook", "cooldown_minutes": -5},
     )
     assert r.status_code == 422
+
+
+# --- POST /checks/{id}/run (B1) ---------------------------------------------
+# The endpoint had no test at all until here — which is exactly why it went
+# unnoticed that it silently did nothing for push-evaluated and disabled checks
+# while still reporting 200.
+
+
+def _make_check(client, **over):
+    r = client.post("/checks", json=_payload(**over))
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def test_run_now_rejects_push_only_check(client_db):
+    client, _ = client_db
+    cid = _make_check(client, check_type="smart_health", interval="15m", config={})
+    before = client.get(f"/checks/{cid}").json()
+    r = client.post(f"/checks/{cid}/run")
+    assert r.status_code == 409
+    assert "agent push" in r.json()["detail"]
+    # The task's Verify (a) demands it literally: the state must stay untouched.
+    assert client.get(f"/checks/{cid}").json() == before
+
+
+def test_run_now_rejects_disabled_check(client_db):
+    client, factory = client_db
+    cid = _make_check(client)
+    db = factory()
+    db.query(MonitorCheck).filter(MonitorCheck.id == cid).update({"enabled": False})
+    db.commit()
+    db.close()
+    r = client.post(f"/checks/{cid}/run")
+    assert r.status_code == 409
+    assert "disabled" in r.json()["detail"]
+
+
+def test_run_now_executes_enabled_pull_check(client_db, monkeypatch):
+    client, _ = client_db
+    cid = _make_check(client)
+    called = []
+    import app.check_engine as engine_mod
+
+    monkeypatch.setattr(engine_mod, "execute_check", lambda c: called.append(c))
+    r = client.post(f"/checks/{cid}/run")
+    assert r.status_code == 200
+    assert called == [cid]

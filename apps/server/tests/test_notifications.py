@@ -394,6 +394,25 @@ class TestIngress:
         res = test_client.post(self._PATH, headers={"X-Internal-Key": ""}, json=self._payload())
         assert res.status_code == 403
 
+    def test_non_ascii_key_is_rejected_not_a_500(self, test_client, monkeypatch):
+        # code-review-fixes T5 (B4): secrets.compare_digest raises TypeError on
+        # str arguments holding non-ASCII, and header values are latin-1 decoded
+        # — so one byte above 0x7F turned this gate into an unhandled 500 that an
+        # unauthenticated caller could trigger at will. The monitoring side was
+        # already hardened (app/core/auth.py::_key_matches); this pins the server.
+        monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
+        # Bytes, because httpx refuses a non-ASCII str header outright (that
+        # would test the client, not us). httpx transcodes them to UTF-8, so the
+        # handler sees a different code point than a real 0xE9 on the wire would
+        # deliver — irrelevant here: what matters is that the value reaches
+        # compare_digest as a non-ASCII str, which is what made it throw.
+        res = test_client.post(
+            self._PATH,
+            headers={"X-Internal-Key": "sécret".encode("latin-1")},
+            json=self._payload(),
+        )
+        assert res.status_code == 403
+
     def test_valid_key_fans_out(self, test_client, db_session, monkeypatch):
         monkeypatch.setattr("app.modules.notifications.router.MONITOR_API_KEY", "secret")
         admin = _user(db_session, "boss", is_admin=True)

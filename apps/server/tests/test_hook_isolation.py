@@ -178,3 +178,47 @@ def test_worker_nonzero_exit_maps_to_error(monkeypatch):
     res = run_hook_script("import os\nos._exit(3)", "webhook", {})
     assert res["success"] is False
     assert res["error"]
+
+
+def test_popen_failure_does_not_leak_the_semaphore_permit(monkeypatch):
+    # code-review-fixes T3 (B2): the permit was acquired before Popen, but the
+    # try/finally releasing it only started after the reader threads were up. A
+    # failing Popen (fork under memory pressure) lost the permit for good — after
+    # _MAX_CONCURRENT_HOOKS such failures every hook returned the misleading
+    # "Server ausgelastet" until the process restarted.
+    import pytest
+
+    from app.modules.hooks import script_runner
+
+    def _boom(*a, **kw):
+        raise OSError("Cannot allocate memory")
+
+    monkeypatch.setattr(script_runner.subprocess, "Popen", _boom)
+    for _ in range(script_runner._MAX_CONCURRENT_HOOKS + 2):
+        with pytest.raises(OSError):
+            run_hook_script("log('x')", "webhook", {})
+    monkeypatch.undo()
+
+    # The permit pool must be intact: a regular hook still runs.
+    res = run_hook_script("log('x')", "webhook", {})
+    assert res["success"] is True, res
+
+
+def test_thread_start_failure_does_not_leak_the_semaphore_permit(monkeypatch):
+    # Same unguarded window, second failure mode: Thread.start() raises
+    # RuntimeError once the process cannot spawn more threads.
+    import pytest
+
+    from app.modules.hooks import script_runner
+
+    def _boom(self):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(script_runner.threading.Thread, "start", _boom)
+    for _ in range(script_runner._MAX_CONCURRENT_HOOKS + 2):
+        with pytest.raises(RuntimeError):
+            run_hook_script("log('x')", "webhook", {})
+    monkeypatch.undo()
+
+    res = run_hook_script("log('x')", "webhook", {})
+    assert res["success"] is True, res

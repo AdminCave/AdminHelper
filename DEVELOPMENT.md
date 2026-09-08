@@ -72,13 +72,18 @@ Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Bef
 
 ### Python-Lint/Format (ruff)
 
-Beide Python-Komponenten nutzen [ruff](https://docs.astral.sh/ruff/) (Lint +
-Formatter, Config in `ruff.toml` im Repo-Root; CI erzwingt beides):
+Alle drei Python-Komponenten nutzen [ruff](https://docs.astral.sh/ruff/) (Lint +
+Formatter, Config in `ruff.toml` im Repo-Root):
 
 ```bash
-ruff check apps/server apps/monitoring          # Lint (mit --fix zum Beheben)
-ruff format apps/server apps/monitoring         # Formatieren
+ruff check apps/server apps/monitoring apps/ca-issuer    # Lint (--fix behebt)
+ruff format apps/server apps/monitoring apps/ca-issuer   # Formatieren
 ```
+
+`scripts/tests/run.sh` lintet alle drei und findet ruff auch dann, wenn es
+nicht im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job
+`python-lint` deckt derzeit nur `apps/server` und `apps/monitoring` ab —
+`apps/ca-issuer` faellt lokal auf, nicht im PR-Gate.
 
 ### Python-Tests lokal (ohne Docker)
 
