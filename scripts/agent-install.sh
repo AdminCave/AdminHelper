@@ -76,6 +76,40 @@ log()  { echo "[agent-install] $*"; }
 warn() { echo "[agent-install] WARNING: $*" >&2; }
 die()  { echo "[agent-install] ERROR: $*" >&2; exit 1; }
 
+# A fresh Debian/Ubuntu host runs unattended-upgrades right after boot, so the
+# very first apt call of an install often races it. Without this the run died on
+# "Could not get lock /var/lib/apt/lists/lock" — reported as a repo/TLS problem,
+# which sent people looking in entirely the wrong place. Waits for all four
+# apt/dpkg locks; on timeout it proceeds so a stuck lock cannot hang the install
+# forever (apt then produces its own, accurate error).
+# apt waits on the lock itself with this; unknown -o options are ignored by older
+# apt (verified), so it is safe on oldstable where the option does not exist yet.
+APT_LOCK_OPTS="-o DPkg::Lock::Timeout=300"
+
+wait_apt_lock() {
+    # APT_LOCK_OPTS below is the primary mechanism — apt blocks on the lock itself
+    # and needs no extra binary. This loop is the add-on that also covers the dpkg
+    # locks and produces a readable log line; it needs `fuser` (package psmisc,
+    # Priority: optional), which minimal images may lack.
+    if ! command -v fuser >/dev/null 2>&1; then
+        warn "fuser not found (psmisc) — relying on apt's own lock timeout only."
+        return 0
+    fi
+    local locks="/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock"
+    local l held waited=0
+    while [ "$waited" -lt 300 ]; do
+        held=0
+        for l in $locks; do
+            [ -e "$l" ] || continue
+            fuser "$l" >/dev/null 2>&1 && { held=1; break; }
+        done
+        [ "$held" = 0 ] && return 0
+        [ "$waited" = 0 ] && log "waiting for another apt/dpkg process to finish ..."
+        sleep 5; waited=$((waited + 5))
+    done
+    warn "apt/dpkg lock still held after 5 min — continuing anyway."
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --server) SERVER_URL="${2:?}"; shift ;;
@@ -125,7 +159,7 @@ ensure_gpg() {
     command -v gpg >/dev/null 2>&1 && return 0
     log "gpg not present — installing it from the distro repo..."
     case "$PKG_MGR" in
-        apt) apt-get update -qq >/dev/null 2>&1 || true; apt-get install -y gnupg >/dev/null ;;
+        apt) wait_apt_lock; apt-get update -qq >/dev/null 2>&1 || true; apt-get install -y gnupg >/dev/null ;;
         dnf) dnf install -y gnupg2 >/dev/null ;;
     esac
     command -v gpg >/dev/null 2>&1 || die "gpg is required for the keyring fingerprint check"
@@ -173,8 +207,13 @@ EOF
     log "apt source configured (${REPO_BASE}/apt, Signed-By pinned)."
     # Error-Mode=any: index fetch failures are mere warnings by default (exit 0),
     # which would let the run limp on and die confusingly at install time.
-    apt-get update -qq -o APT::Update::Error-Mode=any || die "apt-get update failed (repo unreachable or TLS/GPG problem)"
-    apt-get install -y adminhelper-agent || die "apt-get install adminhelper-agent failed"
+    wait_apt_lock
+    # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+    apt-get update -qq $APT_LOCK_OPTS -o APT::Update::Error-Mode=any \
+        || die "apt-get update failed — repo unreachable, TLS/GPG problem, or another apt process holds the lock"
+    wait_apt_lock
+    # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+    apt-get install -y $APT_LOCK_OPTS adminhelper-agent || die "apt-get install adminhelper-agent failed"
 }
 
 setup_repo_dnf() {
@@ -211,7 +250,7 @@ install_from_github() {
     [ "$PKG_MGR" = apt ] || die "--from-github supports apt hosts only (no reliable minisign package for dnf distros) — download the release .rpm manually instead"
     command -v minisign >/dev/null 2>&1 || {
         log "minisign not present — installing it from the distro repo..."
-        apt-get update -qq >/dev/null 2>&1 || true
+        wait_apt_lock; apt-get update -qq >/dev/null 2>&1 || true
         apt-get install -y minisign >/dev/null || die "minisign is required to verify the release"
     }
     local tag ver deb
@@ -227,7 +266,9 @@ install_from_github() {
         || die "SHA256SUMS signature verification FAILED — refusing the release"
     ( cd "$_TMPROOT" && grep " ${deb}\$" SHA256SUMS | sha256sum -c --quiet ) \
         || die "checksum mismatch for ${deb}"
-    apt-get install -y "$_TMPROOT/$deb" || die "package install failed"
+    wait_apt_lock
+    # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+    apt-get install -y $APT_LOCK_OPTS "$_TMPROOT/$deb" || die "package install failed"
 }
 
 # ── 1) package ────────────────────────────────────────────────────────────────

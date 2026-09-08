@@ -11,6 +11,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Agent-Installation scheitert nicht mehr am apt-Lock:** Auf einer frischen
+  Debian-/Ubuntu-Maschine laeuft `unattended-upgrades` direkt nach dem Boot, und
+  `agent-install.sh` lief mit seinem ersten `apt-get update` genau da hinein. Der
+  Abbruch meldete „repo unreachable or TLS/GPG problem" — eine Fehldiagnose, die
+  in die voellig falsche Richtung schickt. Jeder apt-Aufruf laeuft jetzt mit
+  `DPkg::Lock::Timeout` (apt wartet damit selbst auf die Sperre, ohne Zusatz-
+  Werkzeug) und wird zusaetzlich von einer Warteschleife ueber alle vier
+  apt/dpkg-Sperren gedeckt; der Fehlertext nennt die Sperre als moegliche
+  Ursache.
+
 - **„Jetzt pruefen" meldet keinen Erfolg mehr, wo nichts passiert:** Der Endpunkt
   `POST /api/monitoring/checks/{id}/run` rief `execute_check` auch fuer
   push-ausgewertete Check-Typen (`agent_resources`, `service_process`,

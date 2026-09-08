@@ -51,6 +51,17 @@ cat > "$BIN/apt-get" <<EOF
 echo "\$@" >> "$WORK/apt-get.calls"
 exit 0
 EOF
+# fuser stub for the apt-lock wait: reports "held" on the first call and free
+# afterwards, so the waiting path runs for real instead of being skipped. Also
+# isolates the test from the host's actual /var/lib/dpkg locks.
+cat > "$BIN/fuser" <<EOF
+#!/usr/bin/env bash
+n=\$(cat "$WORK/fuser.count" 2>/dev/null || echo 0)
+echo \$((n + 1)) > "$WORK/fuser.count"
+echo "\$@" >> "$WORK/fuser.calls"
+[ "\$n" -lt 1 ] && exit 0   # 0 = lock IS held
+exit 1                      # 1 = nobody holds it
+EOF
 cat > "$BIN/dnf" <<EOF
 #!/usr/bin/env bash
 echo "\$@" >> "$WORK/dnf.calls"
@@ -114,8 +125,15 @@ grep -q -- "--ca-fp" "$WORK/provision.args" 2>/dev/null \
     && ok "provision got --ca-fp (capable agent)" || bad "--ca-fp missing in provision args"
 grep -q "CAInfo \"$AH_IDENTITY_CA\"" "$AH_APT_CONF_DIR/99adminhelper-ca" 2>/dev/null \
     && ok "post-enroll flip pins the internal CA (apt CAInfo)" || bad "CA flip missing"
-grep -q "install -y adminhelper-agent" "$WORK/apt-get.calls" 2>/dev/null \
+grep -qE "install -y .*adminhelper-agent" "$WORK/apt-get.calls" 2>/dev/null \
     && ok "apt-get install ran" || bad "apt-get install not called"
+grep -q -- "-o DPkg::Lock::Timeout=300" "$WORK/apt-get.calls" 2>/dev/null \
+    && ok "apt calls carry the lock timeout" || bad "DPkg::Lock::Timeout missing from apt calls"
+[ -s "$WORK/fuser.calls" ] \
+    && ok "wait_apt_lock probed the apt/dpkg locks" || bad "wait_apt_lock never probed a lock"
+grep -q "/var/lib/apt/lists/lock" "$WORK/fuser.calls" 2>/dev/null \
+    && ok "the lists lock is covered (the one the capstone tripped over)" \
+    || bad "/var/lib/apt/lists/lock not probed"
 
 echo "── GPG fingerprint mismatch: abort before any source is written ──"
 fresh_env; export AH_PKG_MGR=apt
