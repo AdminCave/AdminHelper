@@ -66,7 +66,7 @@ Verify: `bash scripts/tests/desktop_e2e_skip_test.sh` → `7 passed, 0 failed`
 Doku: keine (intern)
 Abhängt von: T6
 
-### T8 — Shell-Sandbox-Tests: SKIP heißt 75, Bootstrap ohne || true  [ ]
+### T8 — Shell-Sandbox-Tests: SKIP heißt 75, Bootstrap ohne || true  [x] (minisign ist jetzt Vorbedingung statt „neutralisiert"; die SIGN-Verzweigungen entfallen damit)
 Komponente: scripts/tests · Dateien: scripts/tests/agent_install_test.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh, scripts/tests/crabbox_bootstrap.sh
 Änderung: `agent_install_test.sh:27,28,37,39` `exit 0` ⇒ `exit 75`; minisign-Weiche in `update_test.sh:33–38` und `install_test.sh:31–36`: fehlendes/unbrauchbares minisign ⇒ `echo "SKIP: minisign …"; exit 75` statt „neutralisiert"; `crabbox_bootstrap.sh:152–153` `|| true` entfernen (fehlgeschlagene Installation bricht den Bootstrap ab, Meldung nennt `tauri-cli`).
 Verify: `bash scripts/tests/agent_install_test.sh` → `26 passed, 0 failed`; `update_test.sh` und `install_test.sh` auf einem PATH ohne minisign → Exit `75` (Shim-PATH aus Coreutils, im Lauf belegt); `shellcheck --severity=warning scripts/tests/crabbox_bootstrap.sh` leer

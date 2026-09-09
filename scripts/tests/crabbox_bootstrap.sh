@@ -148,9 +148,14 @@ if [ "$PROFILE" = full ]; then
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
   rustup component add rustfmt clippy 2>/dev/null || true
 
+  # No `|| true` here: a failed install used to leave the box looking bootstrapped
+  # while all seven desktop_e2e_*.sh suites then skipped on the missing tauri-cli.
+  # Failing the bootstrap is loud and fixable; a half-hydrated box is neither.
   log "tauri-driver + tauri-cli ${TAURI_CLI_VERSION} (for desktop build + GUI E2E)  [full profile only]"
-  command -v tauri-driver >/dev/null 2>&1 || cargo install tauri-driver --locked || true
-  cargo tauri --version >/dev/null 2>&1 || cargo install tauri-cli --locked --version "$TAURI_CLI_VERSION" || true
+  command -v tauri-driver >/dev/null 2>&1 || cargo install tauri-driver --locked \
+    || { log "FATAL: tauri-driver install failed — the GUI E2E suites cannot run on this box"; exit 1; }
+  cargo tauri --version >/dev/null 2>&1 || cargo install tauri-cli --locked --version "$TAURI_CLI_VERSION" \
+    || { log "FATAL: tauri-cli install failed — the seven desktop_e2e_*.sh suites would all SKIP"; exit 1; }
 else
   log "skipping Rust/Tauri toolchain (profile=$PROFILE — no Tauri on this box)"
 fi
