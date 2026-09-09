@@ -88,6 +88,18 @@ export AH_ONLY AH_STRICT
 AH_REQUIRED_DEFAULT="ruff server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest"
 AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 
+# Under --strict the python suites must report their own skips; without -rs a
+# skipped test leaves no trace in `pytest -q` output at all. Exported because the
+# suite commands run in `bash -c` subshells.
+AH_PYTEST_RS=""; [ "$AH_STRICT" = "1" ] && AH_PYTEST_RS="-rs"
+export AH_PYTEST_RS
+
+# AH_ARGS — extra arguments for the suite runner itself, how verify.sh forwards
+# `verify.sh server -- tests/test_x.py`. run.sh does not interpret them; they are
+# word-split by the suite's shell, so a single argument cannot contain spaces.
+AH_ARGS="${AH_ARGS:-}"
+export AH_ARGS
+
 # Python suites install into a venv (AH_VENV, default /tmp/ah-venv) so a dev's
 # default `run.sh quick` never mutates the host's system site-packages (PEP 668) —
 # no host-wide PIP_BREAK_SYSTEM_PACKAGES. ensure_venv (called at the top of
@@ -113,6 +125,10 @@ PASS=0 FAIL=0 SKIP=0
 ONLY_APPLIES=0
 FAILED_STEPS=()
 STRICT_FAILED=()
+STEP_RESULTS=()   # "name|result|seconds" per step, for the run artifact
+TEST_SKIPS=()     # tests pytest itself skipped (-rs), invisible in the summary before
+RERUNS=0          # always 0 in stage 1; the field exists so stage 3 can fill it
+SKIP_VERDICT=""   # set by _skip: "skip" or "strict-failed"
 STEP_NAMES=()
 STEP_PROBE=0   # 1 = --step dry pass: collect names, run nothing
 hdr()  { printf '\n\033[1m### %s\033[0m\n' "$*"; }
@@ -133,20 +149,23 @@ skip() {
   want_step "$2" || return 0
   [ "$STEP_PROBE" = "1" ] && return 0
   _skip "$@"
+  record_step "$2" "$SKIP_VERDICT" 0
 }
 _skip() {
   local id="$1" name="$2" reason="$3"
-  echo "  SKIP  $name ($reason)"; SKIP=$((SKIP+1))
+  echo "  SKIP  $name ($reason)"; SKIP=$((SKIP+1)); SKIP_VERDICT="skip"
   [ "$AH_STRICT" = "1" ] || return 0
   [ "$reason" = "AH_ONLY" ] && return 0
   # Counted as a SKIP *and* a FAIL on purpose: both are true, so the summary line
-  # is informative, not additive. T4 gives each step exactly one `result` in the
-  # JSON artifact, which is where a single verdict belongs.
+  # is informative, not additive. The artifact carries one verdict per step
+  # instead ("strict-failed"), which is where a single value belongs.
   if { [ "$ONLY_APPLIES" = 1 ] && [ -n "$AH_ONLY" ]; } || required "$id"; then
     echo "  strict-failed: $name (SKIP)"
     STRICT_FAILED+=("$name"); FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
+    SKIP_VERDICT="strict-failed"
   fi
 }
+record_step() { STEP_RESULTS+=("$1|$2|$3"); }
 
 # want_step <name> -> 0 if this step should run at all. With --step it also
 # records the name, so the dry pass can reject an unknown or ambiguous one
@@ -165,12 +184,85 @@ want_step() {
 run_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
   want_step "$name" || return 0
   [ "$STEP_PROBE" = "1" ] && return 0
-  hdr "$name"; local rc=0; ( "$@" ) || rc=$?
+  hdr "$name"; local rc=0 t0=$SECONDS result=""
+  ( "$@" ) || rc=$?
   case "$rc" in
-    0)  pass "$name" ;;
-    75) _skip "$id" "$name" "self-skipped" ;;
-    *)  fail "$name" ;;
+    0)  pass "$name"; result="pass" ;;
+    75) _skip "$id" "$name" "self-skipped"; result="$SKIP_VERDICT" ;;
+    *)  fail "$name"; result="fail" ;;
   esac
+  record_step "$name" "$result" "$((SECONDS - t0))"
+}
+
+# run_py_step — run_step for the python suites, keeping the output so pytest's
+# OWN skips can be judged. A test that skipped inside a passing suite is
+# invisible in "N passed": test_migrations_smoke and test_stream_redis have been
+# skipping for months while the summary read green.
+run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
+  want_step "$name" || return 0
+  [ "$STEP_PROBE" = "1" ] && return 0
+  mkdir -p "$AH_OUT_DIR" 2>/dev/null
+  local log="$AH_OUT_DIR/step-$id.log"
+  hdr "$name"; local rc=0 t0=$SECONDS result=""
+  ( "$@" ) 2>&1 | tee "$log"; rc=${PIPESTATUS[0]}
+  case "$rc" in
+    0)  pass "$name"; result="pass" ;;
+    75) _skip "$id" "$name" "self-skipped"; result="$SKIP_VERDICT" ;;
+    *)  fail "$name"; result="fail" ;;
+  esac
+  record_step "$name" "$result" "$((SECONDS - t0))"
+  scan_test_skips "$log"
+}
+
+# Tests that MUST NOT skip once their precondition is met. Each guards a path
+# nothing else covers, and a skip inside an otherwise passing suite is invisible:
+# "N passed" quietly means "N minus this one". Each precondition mirrors what
+# that test gates on, so a box that truly cannot run it stays honest while a box
+# that can may not hide the hole. test_auth_token_lifecycle has no skipif today
+# and therefore never skips; it is listed because the spec names it and because
+# the entry costs nothing if one is ever added.
+#   test_migrations_smoke     reads DATABASE_URL from the environment. The dev box
+#     deliberately leaves it unset (.devenv.sh: a global DATABASE_URL would arm
+#     this very test against the wrong database); CI's postgres service sets it.
+#   test_auth_token_lifecycle runs in the server suite, which run.sh feeds from
+#     DATABASE_URL or AH_TEST_DB, and which can also fall back to testcontainers.
+#   test_stream_redis         needs a reachable Redis on the port it names.
+#   test_db_token_store       needs AH_TEST_DB to point at a real Postgres; the
+#     TOCTOU test needs true concurrency, so SQLite is not a substitute.
+# Port from test_stream_redis.py's REDIS_URL (redis://localhost:6380/0).
+redis_reachable() { (exec 3<>/dev/tcp/localhost/6380) >/dev/null 2>&1; }
+
+test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must not skip
+  case "$1" in
+    *test_migrations_smoke*)     [ -n "${DATABASE_URL:-}" ] ;;
+    *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
+    *test_stream_redis*)         redis_reachable ;;
+    *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *) return 1 ;;
+  esac
+}
+
+# scan_test_skips <logfile> — read pytest's `-rs` short summary. Only populated
+# under --strict, where the suites are told to report their skips at all.
+scan_test_skips() {
+  local log="$1" line name
+  [ -f "$log" ] || return 0
+  while IFS= read -r line; do
+    # Strip pytest's own "SKIPPED [n] " prefix, count included.
+    name="${line#SKIPPED }"; name="${name#\[*\] }"
+    TEST_SKIPS+=("$name")
+    [ "$AH_STRICT" = "1" ] || continue
+    if test_skip_is_required "$line"; then
+      echo "  strict-failed: $name (test-skip)"
+      STRICT_FAILED+=("$name"); FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
+    fi
+  # -a because a single NUL byte anywhere in the log makes GNU grep treat the
+  # file as binary and print NOTHING — the skips would vanish and the run would
+  # report green, which is the exact failure this function exists to catch. The
+  # pattern is anchored on pytest's short-summary format so a test that merely
+  # PRINTS a line starting with SKIPPED cannot forge one. No 2>/dev/null: a grep
+  # that fails must be visible.
+  done < <(grep -aE '^SKIPPED \[[0-9]+\] ' "$log")
 }
 
 # py_step_possible -> 0 unless --step names something no python step matches.
@@ -181,6 +273,62 @@ py_step_possible() {
     case "$n" in *"$AH_STEP"*) return 0 ;; esac
   done
   return 1
+}
+
+# ── run artifact ──────────────────────────────────────────────────────────────
+# Written by every run so a "green" can be checked against a tree instead of
+# believed. No python3 here on purpose: run.sh must stay runnable on a box whose
+# python is exactly what a step is about to install.
+# Control characters (a tab in a pytest skip reason) are invalid inside a JSON
+# string and would make the artifact unparseable for the very readers it exists
+# for (verify.sh, the ledger's own Verify line). Replace them with a space.
+json_str() {
+  printf '"%s"' "$(printf '%s' "$1" \
+    | LC_ALL=C tr '\000-\037' ' ' \
+    | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+json_list() {  # json_list <item…>
+  local first=1 i
+  printf '['
+  for i in "$@"; do [ "$first" = 1 ] && first=0 || printf ', '; json_str "$i"; done
+  printf ']'
+}
+write_artifact() {
+  local f="$AH_OUT_DIR/last-$LAYER.json" e name result secs first=1
+  mkdir -p "$AH_OUT_DIR" 2>/dev/null \
+    || { echo "  artifact: cannot create $AH_OUT_DIR — not written" >&2; return 0; }
+  # Drop the previous run's file first: if writing fails below, a stale artifact
+  # left in place would be read as the evidence of THIS run. Missing evidence is
+  # honest, outdated evidence is not.
+  rm -f "$f"
+  {
+    printf '{\n'
+    printf '  "layer": %s,\n'      "$(json_str "$LAYER")"
+    printf '  "strict": %s,\n'     "$([ "$AH_STRICT" = 1 ] && echo true || echo false)"
+    printf '  "only": %s,\n'       "$(json_str "$AH_ONLY")"
+    printf '  "step": %s,\n'       "$(json_str "$AH_STEP")"
+    printf '  "required": %s,\n'   "$(json_str "$AH_REQUIRED")"
+    printf '  "head": %s,\n'       "$(json_str "$(git rev-parse HEAD 2>/dev/null)")"
+    printf '  "tree_hash": %s,\n'  "$(json_str "$(bash "$ROOT/scripts/dev/tree-hash.sh" 2>/dev/null)")"
+    printf '  "started": %s,\n'    "$(json_str "$STARTED")"
+    printf '  "finished": %s,\n'   "$(json_str "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+    printf '  "passed": %s,\n'     "$PASS"
+    printf '  "failed": %s,\n'     "$FAIL"
+    printf '  "skipped": %s,\n'    "$SKIP"
+    printf '  "reruns": %s,\n'     "$RERUNS"
+    printf '  "steps": ['
+    for e in ${STEP_RESULTS+"${STEP_RESULTS[@]}"}; do
+      name="${e%%|*}"; result="${e#*|}"; secs="${result#*|}"; result="${result%%|*}"
+      [ "$first" = 1 ] && { first=0; printf '\n'; } || printf ',\n'
+      printf '    {"name": %s, "result": %s, "seconds": %s}' \
+        "$(json_str "$name")" "$(json_str "$result")" "$secs"
+    done
+    [ "$first" = 1 ] || printf '\n  '
+    printf '],\n'
+    printf '  "test_skips": %s\n' "$(json_list ${TEST_SKIPS+"${TEST_SKIPS[@]}"})"
+    printf '}\n'
+  } > "$f" || { echo "  artifact: could not write $f" >&2; return 0; }
+  echo "  artifact: $f"
 }
 
 have()        { command -v "$1" >/dev/null 2>&1; }
@@ -258,19 +406,21 @@ layer_unit() {
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if ! only monitoring; then skip monitoring-pytest "monitoring pytest" "AH_ONLY"
   elif have python3; then
-    run_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements.in pytest pytest-cov && python3 -m pytest -q'
+    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements.in pytest pytest-cov && python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
   else skip monitoring-pytest "monitoring pytest" "python3 not installed"; fi
 
   # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
   if ! only ca-issuer; then skip ca-issuer-pytest "ca-issuer pytest" "AH_ONLY"
   elif have python3 && [ -d apps/ca-issuer/tests ]; then
-    run_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements.in pytest 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q'
+    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements.in pytest 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
   else skip ca-issuer-pytest "ca-issuer pytest" "python3 missing or no tests"; fi
 
-  # Server pytest — needs a Postgres: testcontainers (docker) or an injected DATABASE_URL.
+  # Server pytest — needs a Postgres: testcontainers (docker) or an injected
+  # DATABASE_URL. AH_TEST_DB (from .devenv.sh) IS that injection on the dev box;
+  # without the fallback the step skipped there silently, every single run.
   if ! only server; then skip server-pytest "server pytest" "AH_ONLY"
-  elif have python3 && { [ -n "${DATABASE_URL:-}" ] || have_docker; }; then
-    run_step server-pytest "server pytest" -- bash -c 'cd apps/server && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q'
+  elif have python3 && { [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker; }; then
+    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Go agent — fmt + vet + test + cross-compile (matches CI).
@@ -279,7 +429,7 @@ layer_unit() {
     run_step go-agent "go agent (vet+test+cross)" -- bash -c '
       cd apps/agent &&
       go vet ./... &&
-      go test -cover ./... &&
+      go test -cover ./... $AH_ARGS &&
       GOOS=linux   GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent &&
       GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent'
   else skip go-agent "go agent (vet+test+cross)" "go not installed"; fi
@@ -287,13 +437,13 @@ layer_unit() {
   # Rust/Tauri backend — needs tauri system libs + the frpc sidecar (externalBin).
   if ! only desktop desktop-rs; then skip desktop-cargo "cargo test (desktop)" "AH_ONLY"
   elif have cargo && [ -f "$FRPC_SIDECAR" ]; then
-    run_step desktop-cargo "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test'
+    run_step desktop-cargo "cargo test (desktop)" -- bash -c 'cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test $AH_ARGS'
   else skip desktop-cargo "cargo test (desktop)" "cargo or frpc sidecar ($FRPC_SIDECAR) missing"; fi
 
   # Desktop UI (Svelte) — check + lint + vitest.
   if ! only desktop desktop-ui; then skip desktop-ui-vitest "desktop-ui vitest" "AH_ONLY"
   elif have_node; then
-    run_step desktop-ui-vitest "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm_ci_if_stale && npm run check && npm run lint && npm run test'
+    run_step desktop-ui-vitest "desktop-ui vitest" -- bash -c 'cd apps/desktop/ui && npm_ci_if_stale && npm run check && npm run lint && npm run test ${AH_ARGS:+-- $AH_ARGS}'
   else skip desktop-ui-vitest "desktop-ui vitest" "node/npm not installed"; fi
 
   # Desktop E2E specs — lint only. The suite itself needs a display + Docker (heavy
@@ -307,7 +457,7 @@ layer_unit() {
   # Web frontend — check + lint + vitest unit.
   if ! only web; then skip web-vitest "web vitest" "AH_ONLY"
   elif have_node; then
-    run_step web-vitest "web vitest" -- bash -c 'cd apps/web && npm_ci_if_stale && npm run check && npm run lint && npm run test:unit'
+    run_step web-vitest "web vitest" -- bash -c 'cd apps/web && npm_ci_if_stale && npm run check && npm run lint && npm run test:unit ${AH_ARGS:+-- $AH_ARGS}'
   else skip web-vitest "web vitest" "node/npm not installed"; fi
 }
 
@@ -375,6 +525,7 @@ if [ -n "${AH_ONLY:-}" ]; then
   done
 fi
 
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "AdminHelper test aggregator — layer=$LAYER  root=$ROOT"
 echo "docker=$(have_docker && echo yes || echo no) node=$(have_node && echo yes || echo no) go=$(have go && echo yes || echo no) cargo=$(have cargo && echo yes || echo no) display=$(have_display && echo yes || echo no)"
 
@@ -425,10 +576,11 @@ if [ "$AH_STRICT" = "1" ] && [ "$PASS" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
   STRICT_FAILED+=("no step ran"); FAIL=$((FAIL+1)); FAILED_STEPS+=("no step ran")
 fi
 
-echo "  run.sh[$LAYER]: $PASS passed, $FAIL failed, $SKIP skipped"
+echo "  run.sh[$LAYER]: $PASS passed, $FAIL failed, $SKIP skipped, ${#TEST_SKIPS[@]} test-skips, $RERUNS reruns"
 # Under --strict the required set decides what a SKIP costs, so print it: a run
 # narrowed to nothing by an over-trimmed AH_REQUIRED must be visible, not implied.
 [ "$AH_STRICT" = "1" ] && echo "  required (strict): $AH_REQUIRED"
 [ "${#STRICT_FAILED[@]}" -gt 0 ] && printf '  strict-failed: %s\n' "${STRICT_FAILED[*]}"
+write_artifact
 [ "$FAIL" -gt 0 ] && { printf '  failed: %s\n' "${FAILED_STEPS[*]}"; exit 1; }
 exit 0

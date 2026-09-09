@@ -38,11 +38,12 @@ Fund aus dem T3-Review (nicht in der Spec): `crabbox_iter.sh:71` liest nur `$1` 
 Verify: `bash scripts/tests/crabbox_iter_flags_test.sh` → `8 passed, 0 failed`, auch mit `PATH=/usr/bin:/bin` ohne `crabbox` und ohne `CRABBOX_PROVIDER` (der Trockenlauf überspringt die Provider-Prüfungen, ein crabbox-Shim im Test macht ein Durchrutschen zu Exit 99 statt zu einem Lease); `shellcheck --severity=warning scripts/tests/crabbox_iter.sh` leer. Realer Beweis im Heavy-Lauf (Ausgabe enthält dann `required (strict):`).
 Doku: keine (intern)
 
-### T4 — run.sh: pytest-Skips sichtbar, AH_TEST_DB-Fallback, last-<layer>.json  [ ]
+### T4 — run.sh: pytest-Skips sichtbar, AH_TEST_DB-Fallback, last-<layer>.json  [x] (run_py_step + -rs, Vorbedingungen je Test, JSON-Artefakt, AH_ARGS, 43 Assertions)
 Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
 Änderung: Python-Suiten unter `--strict` mit `-rs`; Skip-Zeilen parsen; Required-Tests je Vorbedingung (Postgres erreichbar ⇒ `test_migrations_smoke`, `test_auth_token_lifecycle`; Redis ⇒ `test_stream_redis`) ⇒ `strict-failed: <test> (test-skip)`; Summary `…, J test-skips, R reruns` (`reruns` fest 0); Server-Schritt `DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"`; Artefakt `$AH_OUT_DIR/last-<layer>.json` (Schema laut Spec, Tree-Hash aus T2). Test: Fixture-pytest mit einem Skip ⇒ `test-skip`; JSON hat `head` und `tree_hash`.
 Verify: `bash scripts/tests/run_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/run.sh lint --only scripts && python3 -c "import json;d=json.load(open('.crabbox-out/last-lint.json'));assert len(d['tree_hash'])==40"`
-Doku: keine (Doku-Task T15)
+Zusätzlich (nicht in der Spec): `AH_ARGS` reicht Argumente an die Suite-Kommandos durch — ohne die Variable lässt sich T5 (`verify.sh <komp> -- <args>`) nicht bauen, und die Alternative wäre, `run.sh` zweimal anzufassen. Aus dem Review: `test_db_token_store` (ca-issuer, vierter pytest-interner Skip im Repo) als Required-Test bei gesetztem `AH_TEST_DB` ergänzt — in der Spec nicht aufgeführt.
+Doku: keine (Doku-Task T15; `AH_ARGS` dort mit aufnehmen)
 Abhängt von: T2, T3
 
 ### T5 — verify.sh und Allowlist-Eintrag  [ ]
@@ -112,7 +113,7 @@ Abhängt von: T3
 
 ### T15 — Doku cicd.html DE+EN  [ ]
 Komponente: docs · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
-Änderung: „cargo check auf Windows" ⇒ `cargo test --locked`; neuer Job `agent-windows`; Abschnitt „Test-Aggregator" um Flags `--strict`/`--only`/`--step`, Exit-75-, test-skip- und rerun-Semantik, Required-Menge (`AH_REQUIRED`), `last-<layer>.json`/`last-verify.json` und Tree-Hash-Definition, `verify.sh` als Verify-Konvention; `ops-scripts` läuft über `run.sh`. Beide Sprachen gleichlautend.
+Änderung: „cargo check auf Windows" ⇒ `cargo test --locked`; neuer Job `agent-windows`; Abschnitt „Test-Aggregator" (den es noch nicht gibt — neu anlegen) mit Flags `--strict`/`--only`/`--step`/`AH_ARGS`, Exit-75-, test-skip- und rerun-Semantik, Required-Menge (`AH_REQUIRED`), `last-<layer>.json`/`last-verify.json` und Tree-Hash-Definition, `verify.sh` als Verify-Konvention; `ops-scripts` läuft über `run.sh`. Beide Sprachen gleichlautend.
 Verify: `grep -c 'cargo check' docs/developer/cicd.html docs/en/developer/cicd.html` → 0 und 0; `grep -c 'agent-windows' docs/developer/cicd.html docs/en/developer/cicd.html` → ≥ 1 und ≥ 1
 Doku: ist die Doku
 Abhängt von: T9, T11
