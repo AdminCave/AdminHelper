@@ -4,10 +4,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 1 — Grün heißt Beweis — Task-Ledger
-Status: aktiv · Branch: feature/harness-stufe-1 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (17/17 Tasks; offen nur T18 `[?]` — fünf Funde aus dem Abschluss-Review, keine Blocker, brauchen Kevins Entscheidung) · Branch: feature/harness-stufe-1 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-1.md
 Fast-Suite: lokal · Warm-Profil: desktop
-Heavy: nach T8 einmal `bash scripts/tests/crabbox_iter.sh quick --strict` auf der warmen Desktop-Box (Exit 0, `0 test-skips`) — ask-first, kein Capstone nötig
+Heavy: nach T8 einmal `bash scripts/tests/crabbox_iter.sh quick --strict` auf der warmen Desktop-Box — **steht aus, ask-first**. Anmerkung zur Erwartung `0 test-skips`: auf einer Box ohne gesetztes `DATABASE_URL` skippt der monitoring-Alembic-Smoke, dort sind also 3 test-skips das ehrliche Ergebnis. Der path-gated Check des Skills verlangt den Lauf nicht (der Branch-Diff berührt keinen heavy-relevanten Pfad); der Ledger-Kopf verlangt ihn.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Vorab (Kevin, 2 min): `AH_REQUIRED` in `.devenv.sh` setzen (Vorschlag in der Spec, Frage 4); ohne die Zeile ist `--strict` auf der Dev-Box rot, weil `cargo test (desktop)` dort SKIP ist.
