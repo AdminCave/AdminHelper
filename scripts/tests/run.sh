@@ -79,13 +79,12 @@ export AH_ONLY AH_STRICT
 # the summary so it can never silently shrink a run to nothing.
 #   lint/unit: ruff · gofmt · shellcheck · server-pytest · monitoring-pytest
 #              ca-issuer-pytest · go-agent · desktop-cargo · desktop-ui-vitest
-#              desktop-e2e-lint · web-vitest
+#              desktop-e2e-lint · web-vitest · scripts
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build · update-test · agent-install-test
-#                diagnostics-test
+#                agent-monitoring · repo-build
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (the seven GUI suites carry their script name as id, underscores and all)
-AH_REQUIRED_DEFAULT="ruff server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest"
+AH_REQUIRED_DEFAULT="ruff server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
 AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 
 # Under --strict the python suites must report their own skips; without -rs a
@@ -396,13 +395,66 @@ layer_lint() {
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
+# The hermetic shell tests as ONE step. They need nothing but bash and coreutils,
+# run in seconds, and cover the ops scripts nothing else touches. As a block
+# rather than a dozen steps because a dozen entries would drown the summary; the
+# trade-off is that the first red one hides the rest until you read the log.
+# Overridable so the aggregation logic itself can be tested with fixture scripts
+# (run_flags_test.sh) — that logic was wrong once already, and hand-checking it is
+# exactly what this stage abolishes. An empty list would make the block trivially
+# green, so it is refused.
+# ${VAR-…}, not ${VAR:-…}: unset means "use the default", but an explicitly empty
+# list is a mistake worth reporting, not a silent full run.
+AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
+restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
+session_status_test run_flags_test verify_test crabbox_iter_flags_test
+desktop_e2e_skip_test"
+AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
+# Where the block looks for them. Overridable so a test can keep its fixtures in
+# a temp dir instead of littering the checkout — an untracked leftover there would
+# shift every later tree_hash, which is the evidence this stage is built on.
+AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
+scripts_block() {
+  local t rc skipped=0 ran=0
+  # Two of the block's tests start run.sh themselves. They pin --step or a layer
+  # that never reaches this block, but a future one might not — and 13 tests per
+  # level is a fork bomb, not a test run.
+  [ -z "${AH_IN_SCRIPTS_BLOCK:-}" ] || { echo "  refusing to nest the scripts block"; return 1; }
+  export AH_IN_SCRIPTS_BLOCK=1
+  for t in $AH_SCRIPT_TESTS; do
+    ran=$((ran + 1))
+    printf '  ── %s\n' "$t"
+    rc=0; bash "$AH_SCRIPT_TESTS_DIR/$t.sh" || rc=$?
+    case "$rc" in
+      0)  ;;
+      75) skipped=$((skipped + 1)); echo "     $t: SKIP (75)" ;;
+      *)  echo "     $t: FAILED (rc=$rc)"; return "$rc" ;;
+    esac
+  done
+  # One block, one result for thirteen tests: if even one could not run, PASS
+  # would bury it. Returning 75 hands the verdict to _skip, which owns the strict
+  # policy for every other step too — so the block gets the same `strict-failed`
+  # wording, obeys AH_REQUIRED like everything else, and every skip stays visible
+  # instead of the run stopping at the first one.
+  # Counted, not pattern-matched: any whitespace-only value would slip past a
+  # string check and report a green block for zero tests.
+  [ "$ran" -gt 0 ] || { echo "  AH_SCRIPT_TESTS is empty — nothing to verify"; return 1; }
+  if [ "$skipped" -gt 0 ]; then
+    echo "  $skipped of the block's tests could not run — block is not verified"
+    return 75
+  fi
+  return 0
+}
+
 # ── unit ─────────────────────────────────────────────────────────────────────
 layer_unit() {
   ONLY_APPLIES=1
   # All python suites share one venv so pip never mutates system site-packages (6.140).
   # Skip the setup entirely when --step cannot reach a python step: creating a venv
   # for `--step shellcheck` is a side effect nobody asked for.
-  [ "$STEP_PROBE" = "1" ] || ! py_step_possible || ensure_venv || true
+  if [ "$STEP_PROBE" != "1" ] && only server monitoring ca-issuer && py_step_possible; then
+    ensure_venv || true
+  fi
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if ! only monitoring; then skip monitoring-pytest "monitoring pytest" "AH_ONLY"
   elif have python3; then
@@ -454,6 +506,16 @@ layer_unit() {
     run_step desktop-e2e-lint "desktop-e2e lint" -- bash -c 'cd apps/desktop/e2e && npm_ci_if_stale && npm run lint'
   else skip desktop-e2e-lint "desktop-e2e lint" "node/npm not installed"; fi
 
+  # Ops/harness shell tests — hermetic, no docker, no display (see scripts_block).
+  if ! only scripts; then skip scripts "scripts (hermetic)" "AH_ONLY"
+  else
+    # Say so when the list was narrowed, for the reason the required set is
+    # printed under --strict: a shrunken run must not look like a full one.
+    [ "$AH_SCRIPT_TESTS" = "$AH_SCRIPT_TESTS_DEFAULT" ] \
+      || echo "  (scripts block: $(printf '%s\n' $AH_SCRIPT_TESTS | grep -c .) tests, not the default list)"
+    run_step scripts "scripts (hermetic)" -- scripts_block
+  fi
+
   # Web frontend — check + lint + vitest unit.
   if ! only web; then skip web-vitest "web vitest" "AH_ONLY"
   elif have_node; then
@@ -473,10 +535,10 @@ layer_integration() {
   run_step sse-push "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
   run_step agent-monitoring "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
   run_step repo-build "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
-  # Hermetic (no docker) but cheap and valuable to keep green here too.
-  run_step update-test "update.sh sandbox"                -- bash scripts/tests/update_test.sh
-  run_step agent-install-test "agent-install.sh sandbox"         -- bash scripts/tests/agent_install_test.sh
-  run_step diagnostics-test "diagnostics.sh redaction"         -- bash scripts/tests/diagnostics_test.sh
+  # update_test/agent_install_test/diagnostics_test used to run here too. They are
+  # hermetic, so they belong in the unit layer's scripts block — running them in
+  # both meant the heavy layer paid for them twice and the unit layer looked
+  # thinner than it was.
 }
 
 # ── e2e (docker + display) ─────────────────────────────────────────────────────

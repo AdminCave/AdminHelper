@@ -20,7 +20,8 @@ set -uo pipefail
 # Every case sets what it needs explicitly, so inherited AH_* would only corrupt
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
-unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB
+unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -251,6 +252,69 @@ grep -q 'ARGV: -m pytest -q$' <<<"$OUT" \
 # "fail" or "skip" — the summary counts it twice, the artifact must not.
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out2" AH_REQUIRED="go-agent"       "$BARE/bash" "$RUN" unit --strict --step "go agent" 2>&1)
 grep -q '"result": "strict-failed"' "$WORK/out2/last-unit.json"   && ok "artifact: a strict-failed skip has its own verdict"   || bad "verdict: $(grep -A2 '"steps"' "$WORK/out2/last-unit.json" | tr -d '\n')"
+
+# ══ the scripts block's own aggregation logic (T9) ════════════════════════════
+echo "── the scripts block ──"
+# Thirteen tests, one result: the mapping from their exit codes to that result is
+# logic in its own right — and it was wrong once, reporting PASS while two tests
+# had not run. Fixture scripts stand in for the real ones.
+BLOCK="$WORK/block"; mkdir -p "$BLOCK"
+mk_case() { printf '#!/bin/sh\nexit %s\n' "$2" > "$BLOCK/$1.sh"; chmod +x "$BLOCK/$1.sh"; }
+mk_case blockpass 0
+mk_case blockskip 75
+mk_case blockfail 1
+# AH_SCRIPT_TESTS_DIR keeps the fixtures in the temp dir: a leftover under
+# scripts/tests/ would shift every later tree_hash — the evidence this stage is
+# built on. AH_IN_SCRIPTS_BLOCK is cleared per call rather than for the whole
+# file, so the nesting guard stays live for every other case: from T9 on this
+# test runs INSIDE the block, and only these cases need it out of the way. Each
+# passes a two- or three-entry list, so nothing recurses.
+block_run() { OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_SCRIPT_TESTS="$1" \
+  AH_SCRIPT_TESTS_DIR="$BLOCK" AH_IN_SCRIPTS_BLOCK='' \
+  "$BARE/bash" "$RUN" unit --only scripts "${@:2}" 2>&1); rc=$?; }
+
+block_run "blockpass blockpass"
+[ $rc -eq 0 ] && grep -q "PASS  scripts (hermetic)" <<<"$OUT" \
+  && ok "block: all green -> PASS" || bad "all green: rc=$rc"
+
+block_run "blockpass blockskip"
+[ $rc -eq 0 ] && grep -q "SKIP  scripts (hermetic)" <<<"$OUT" \
+  && grep -q "1 of the block's tests could not run" <<<"$OUT" \
+  && ok "block: one skip -> SKIP, not a PASS that buries it" || bad "one skip: rc=$rc"
+
+block_run "blockskip blockskip" --strict
+[ $rc -eq 1 ] && grep -q "strict-failed: scripts (hermetic) (SKIP)" <<<"$OUT" \
+  && ok "block: a skip under --strict fails with the same wording as any step" || bad "strict skip: rc=$rc"
+grep -q "2 of the block's tests could not run" <<<"$OUT" \
+  && ok "block: every skip stays visible, not just the first" || bad "only the first skip reported"
+
+block_run "blockpass blockfail blockpass"
+[ $rc -eq 1 ] && grep -q "blockfail: FAILED" <<<"$OUT" \
+  && ok "block: a failing test fails the block" || bad "failing test: rc=$rc"
+[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 2 ] \
+  && ok "block: stops at the first failure" || bad "did not stop: $(grep -c '^  ── block' <<<"$OUT") ran"
+
+block_run ""
+[ $rc -ne 0 ] && grep -q "AH_SCRIPT_TESTS is empty" <<<"$OUT" \
+  && ok "block: an empty list is refused, not trivially green" || bad "empty list: rc=$rc"
+
+block_run "blockpass"
+grep -q "refusing to nest" <<<"$OUT" && bad "nesting guard fired on a normal run" \
+  || ok "block: the nesting guard does not fire on a normal run"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_SCRIPT_TESTS="blockpass" \
+  AH_SCRIPT_TESTS_DIR="$BLOCK" AH_IN_SCRIPTS_BLOCK=1 \
+  "$BARE/bash" "$RUN" unit --only scripts 2>&1); rc=$?
+grep -q "refusing to nest" <<<"$OUT" && ok "block: refuses to nest inside itself" || bad "no nesting guard"
+
+# Whitespace-only is the same "nothing to verify" as empty — a string check let
+# a lone newline through and reported a green block for zero tests.
+block_run "$(printf '\n\t ')"
+[ $rc -ne 0 ] && grep -q "AH_SCRIPT_TESTS is empty" <<<"$OUT" \
+  && ok "block: a whitespace-only list is refused too" || bad "whitespace list: rc=$rc"
+
+block_run "blockpass"
+grep -q "not the default list" <<<"$OUT" \
+  && ok "block: a narrowed list is announced, not silent" || bad "narrowed list not announced"
 
 echo ""
 echo "run_flags_test: $PASS passed, $FAIL failed"

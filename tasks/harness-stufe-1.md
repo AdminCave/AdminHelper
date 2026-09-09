@@ -72,10 +72,10 @@ Komponente: scripts/tests · Dateien: scripts/tests/agent_install_test.sh, scrip
 Verify: `bash scripts/tests/agent_install_test.sh` → `26 passed, 0 failed`; `update_test.sh` und `install_test.sh` auf einem PATH ohne minisign → Exit `75` (Shim-PATH aus Coreutils, im Lauf belegt); `shellcheck --severity=warning scripts/tests/crabbox_bootstrap.sh` leer
 Doku: keine (intern)
 
-### T9 — Scripts-Block im unit-Layer, CI ops-scripts über run.sh  [ ]
+### T9 — Scripts-Block im unit-Layer, CI ops-scripts über run.sh  [x] (13 Tests als ein Step, 20s; ops-scripts von acht Zeilen auf eine)
 Komponente: scripts/tests · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml
-Änderung: neuer Step `scripts (hermetic)` unter Key `scripts` im unit-Layer: führt `install_test`, `update_test`, `init-secrets_test`, `uninstall_test`, `restore_guard_test`, `gateway_mtls_test`, `agent_install_test`, `diagnostics_test`, `session_status_test`, `run_flags_test`, `verify_test`, `desktop_e2e_skip_test` nacheinander aus (erster Fehler ⇒ FAIL, jeder 75 ⇒ SKIP des Blocks nur ohne `--strict`); `update_test`/`agent_install_test`/`diagnostics_test` aus `layer_integration` entfernen; `ops-scripts` in `ci.yml`: shellcheck-Zeile bleibt, die acht Test-Zeilen ⇒ `bash scripts/tests/run.sh unit --strict --only scripts`. `scripts` in `AH_REQUIRED_DEFAULT`.
-Verify: `bash scripts/tests/run.sh unit --strict --only scripts` → Exit 0, Summary `… 0 skipped, 0 test-skips`; `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))"`
+Änderung: neuer Step `scripts (hermetic)` unter Key `scripts` im unit-Layer: führt `install_test`, `update_test`, `init-secrets_test`, `uninstall_test`, `restore_guard_test`, `gateway_mtls_test`, `agent_install_test`, `diagnostics_test`, `session_status_test`, `run_flags_test`, `verify_test`, `desktop_e2e_skip_test` sowie `crabbox_iter_flags_test` aus T3b nacheinander aus — 13 statt der geplanten 12 (erster Fehler ⇒ FAIL, jeder 75 ⇒ SKIP des Blocks; das Verdikt fällt `_skip`, damit `--strict`, `AH_REQUIRED` und die `strict-failed`-Formulierung dieselben sind wie bei jedem anderen Step); `update_test`/`agent_install_test`/`diagnostics_test` aus `layer_integration` entfernen; `ops-scripts` in `ci.yml`: shellcheck-Zeile bleibt, die acht Test-Zeilen ⇒ `bash scripts/tests/run.sh unit --strict --only scripts`. `scripts` in `AH_REQUIRED_DEFAULT`.
+Verify: `bash scripts/tests/run.sh unit --strict --only scripts` → Exit 0, `PASS scripts (hermetic)`, `0 test-skips` (die per `--only` gefilterten Steps zählen weiterhin als `skipped` — „0 skipped" ist mit `--only` nicht erreichbar); `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))"`
 Doku: keine (Doku-Task T15)
 Abhängt von: T1, T3, T4, T5, T7, T8
 
