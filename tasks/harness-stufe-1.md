@@ -25,11 +25,18 @@ Komponente: scripts/dev · Dateien: scripts/dev/tree-hash.sh (neu)
 Verify: `h1=$(bash scripts/dev/tree-hash.sh); touch probe.tmp; h2=$(bash scripts/dev/tree-hash.sh); rm probe.tmp; [ "$h1" != "$h2" ] && echo ok` → `ok`; eine Änderung unter `tasks/` lässt den Hash gleich
 Doku: keine (intern)
 
-### T3 — run.sh: Flag-Parser, --strict, --only, --step, Required-Menge  [x] (Step-Ids, Probe-Lauf fuer --step, 22 Assertions)
+### T3 — run.sh: Flag-Parser, --strict, --only, --step, Required-Menge  [x] (Step-Ids, Probe-Lauf für --step, leerer strict-Lauf = Fehler, 25 Assertions)
 Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh (neu)
 Änderung: Argument-Parser (Layer positional, dann Flags), `AH_REQUIRED_DEFAULT` im Kopf, `AH_REQUIRED`-Override, unter `AH_STRICT=1`: SKIP eines Required-Steps oder eines per `--only` angeforderten Keys ⇒ FAIL mit `strict-failed: <step> (SKIP)`; Summary nennt die wirksame Required-Menge; `--step` führt genau einen Step aus. Hermetischer Test mit PATH-Shims (`go` maskiert ⇒ `strict-failed: go agent (SKIP)`; ohne `--strict` Exit 0 mit `K skipped`; unbekannter `--only`-Key ⇒ Exit 2). Kopf-Kommentar der Usage nachziehen.
 Verify: `bash scripts/tests/run_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/run.sh lint --only scripts` → Exit 0
 Doku: keine (Doku-Task T15)
+
+### T3b — crabbox_iter.sh reicht die run.sh-Flags an die Box weiter  [x] (Flags %q-gequotet, Layer validiert, AH_DRY_RUN, 8 Assertions)
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_iter.sh, scripts/tests/crabbox_iter_flags_test.sh (neu)
+Fund aus dem T3-Review (nicht in der Spec): `crabbox_iter.sh:71` liest nur `$1` und baut daraus `run.sh $LAYER` — alle weiteren Argumente fallen weg. Die `Heavy:`-Zeile dieses Ledger-Kopfs (`crabbox_iter.sh quick --strict`) liefe damit ohne strengen Modus und meldete trotzdem grün: genau der Fehlermodus, den Stufe 1 abschafft.
+Änderung: Restargumente nach dem Layer einsammeln, jedes per `printf %q` shell-quoten (der String läuft als Remote-Befehl auf der Box) und an `run.sh` anhängen; unbekannte Flags hart ablehnen statt blind weiterreichen. Aus dem Review dazu: den Layer nach demselben Muster wie `AH_ONLY` validieren, **bevor** eine Box geleast wird (`crabbox_iter.sh --strict` wurde sonst zu `LAYER=--strict` und verbrannte eine VM); Usage-Kopf nachziehen; `AH_DRY_RUN=1` druckt den Remote-Befehl und beendet ohne Lease — erst dadurch ist die Argumentbehandlung überhaupt automatisiert prüfbar. SPDX-Header im neuen Test.
+Verify: `bash scripts/tests/crabbox_iter_flags_test.sh` → `8 passed, 0 failed`, auch mit `PATH=/usr/bin:/bin` ohne `crabbox` und ohne `CRABBOX_PROVIDER` (der Trockenlauf überspringt die Provider-Prüfungen, ein crabbox-Shim im Test macht ein Durchrutschen zu Exit 99 statt zu einem Lease); `shellcheck --severity=warning scripts/tests/crabbox_iter.sh` leer. Realer Beweis im Heavy-Lauf (Ausgabe enthält dann `required (strict):`).
+Doku: keine (intern)
 
 ### T4 — run.sh: pytest-Skips sichtbar, AH_TEST_DB-Fallback, last-<layer>.json  [ ]
 Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
@@ -61,7 +68,7 @@ Abhängt von: T6
 ### T8 — Shell-Sandbox-Tests: SKIP heißt 75, Bootstrap ohne || true  [ ]
 Komponente: scripts/tests · Dateien: scripts/tests/agent_install_test.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh, scripts/tests/crabbox_bootstrap.sh
 Änderung: `agent_install_test.sh:27,28,37,39` `exit 0` ⇒ `exit 75`; minisign-Weiche in `update_test.sh:33–38` und `install_test.sh:31–36`: fehlendes/unbrauchbares minisign ⇒ `echo "SKIP: minisign …"; exit 75` statt „neutralisiert"; `crabbox_bootstrap.sh:152–153` `|| true` entfernen (fehlgeschlagene Installation bricht den Bootstrap ab, Meldung nennt `tauri-cli`).
-Verify: `bash scripts/tests/agent_install_test.sh` → `26 passed, 0 failed`; `PATH=/usr/bin:/bin bash -c 'command -v minisign >/dev/null || true; d=$(mktemp -d); ln -s /bin/true $d/x; PATH=$d bash scripts/tests/update_test.sh; echo $?'` → `75`; `shellcheck --severity=warning scripts/tests/crabbox_bootstrap.sh` leer
+Verify: `bash scripts/tests/agent_install_test.sh` → `26 passed, 0 failed`; `update_test.sh` und `install_test.sh` auf einem PATH ohne minisign → Exit `75` (Shim-PATH aus Coreutils, im Lauf belegt); `shellcheck --severity=warning scripts/tests/crabbox_bootstrap.sh` leer
 Doku: keine (intern)
 
 ### T9 — Scripts-Block im unit-Layer, CI ops-scripts über run.sh  [ ]
@@ -91,8 +98,8 @@ Doku: keine (Skill-Doku ist die Datei selbst)
 
 ### T13 — AUTONOMOUS.md, tasks/README.md, Verify-Zeilen in tasks/*.md  [ ]
 Komponente: Repo-Root · Dateien: AUTONOMOUS.md, tasks/README.md, tasks/{code-review-fixes,dependency-refresh,merker-cleanup,monitoring-overhaul}.md
-Änderung: `AUTONOMOUS.md:84` und `tasks/README.md:40` ohne `fabelreport.md`; „Aktueller Stand" in `tasks/README.md` auf Ist (`audit-fixes.md` gitignored und abgeschlossen, `harness-stufe-1.md` aktiv); die elf `Verify:`-Zeilen mit `source …`/`DATABASE_URL=`/`AH_ONLY=` in den vier Ledgern auf `bash scripts/dev/verify.sh <komp> [-- <args>]`-Form (historische Ledger, Bedeutung unverändert).
-Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 0; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore'` → 0
+Änderung: `AUTONOMOUS.md:84` und `tasks/README.md:40` ohne `fabelreport.md`; „Aktueller Stand" in `tasks/README.md` auf Ist (`audit-fixes.md` gitignored und abgeschlossen, `harness-stufe-1.md` aktiv); die elf `Verify:`-Zeilen mit Env-Präfix (`source …`, gesetztes `DATABASE_URL`, gesetztes `AH_ONLY`) in den vier Ledgern auf `bash scripts/dev/verify.sh <komp> [-- <args>]`-Form (historische Ledger, Bedeutung unverändert).
+Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 0; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore' ':!docs/features/harness-stufe-1.md' ':!tasks/harness-stufe-1.md'` → 0 (Spec und Ledger dieser Stufe nennen das Wort, weil sie die Aufgabe beschreiben)
 Doku: keine (intern)
 Abhängt von: T5
 
