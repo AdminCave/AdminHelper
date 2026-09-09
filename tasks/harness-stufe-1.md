@@ -46,10 +46,10 @@ Zusätzlich (nicht in der Spec): `AH_ARGS` reicht Argumente an die Suite-Kommand
 Doku: keine (Doku-Task T15; `AH_ARGS` dort mit aufnehmen)
 Abhängt von: T2, T3
 
-### T5 — verify.sh und Allowlist-Eintrag  [ ]
+### T5 — verify.sh und Allowlist-Eintrag  [x] (Flag-Form, --tree, AH_ARGS, last-verify.json nur aus DIESEM Lauf, 27 Assertions)
 Komponente: scripts/dev · Dateien: scripts/dev/verify.sh (neu), scripts/tests/verify_test.sh (neu), .claude/settings.json
 Änderung: Interface laut Spec (`<komponente> [--strict] [--tree <pfad>] [-- <args>]`), sourct `.devenv.sh`/`$AH_DEVENV`, delegiert an `run.sh unit --only`, gezielte Args an pytest/go/vitest, `--tree` per `cd`, schreibt `last-verify.json` (Schema + `component`, `args`, `tree`), Exit durchgereicht. `permissions.allow` += `Bash(bash scripts/dev/verify.sh:*)`. Hermetischer Test mit Shims (Komponente `scripts`, `--tree` gegen ein zweites Fixture). SPDX-Header.
-Verify: `bash scripts/tests/verify_test.sh` → `N passed, 0 failed`; `bash scripts/dev/verify.sh scripts --strict` → Exit 0 und `.crabbox-out/last-verify.json` existiert
+Verify: `bash scripts/tests/verify_test.sh` → `27 passed, 0 failed` (auch unter `env -i`); `bash scripts/dev/verify.sh monitoring --strict` → Exit 0 und `.crabbox-out/last-verify.json` existiert (den Step `scripts (hermetic)` legt erst T9 an; nach T9 ist auch die Ledger-Fassung `verify.sh scripts --strict` Exit 0)
 Doku: keine (Doku-Task T16)
 Abhängt von: T4
 
