@@ -1,275 +1,179 @@
 # CLAUDE.md
 
-## Projekt-Überblick
+<!-- Stufe 0 · Quelle: Autonomie-Roadmap §3.5(a) · Fahrplan §7.0 · roter Faden: tasks/private/ROADMAP.md -->
 
-**AdminHelper** (GitHub-Repo `AdminCave/AdminHelper`, Teil von **[Admin Cave](https://admincave.com)**) ist ein Multi-Komponenten-Remote-
-Management-System: zentrale Verwaltung von SSH-/RDP-/Web-Verbindungen,
-Server-Inventar, Monitoring, FRP-Tunneln und Ansible-Playbooks. Fünf
-Kern-Komponenten in vier Sprachen, dazu zwei Infrastruktur-Dienste
-(CA-Issuer, Gateway):
+## 1. Projekt-Überblick
 
-| Komponente | Pfad | Stack | Tests |
+**AdminHelper** (GitHub `AdminCave/AdminHelper`, Teil von [Admin Cave](https://admincave.com), GPL-3.0-or-later,
+Repo ist **öffentlich**) verwaltet SSH-/RDP-/Web-Verbindungen, Server-Inventar, Monitoring, FRP-Tunnel und
+Ansible-Playbooks zentral. Lauffähiges liegt unter `apps/`, Doku unter `docs/` (HTML, DE + EN), Skripte unter `scripts/`.
+
+| Komponente | Pfad | Stack | Schnelltest (im Komponenten-Verzeichnis) |
 |---|---|---|---|
-| Server (modularer Monolith, 12 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest` (`apps/server/tests/`, inkl. Alembic-Smoke) |
-| Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest` (`apps/monitoring/tests/`) |
-| Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `go test` (`internal/*/..._test.go`) |
-| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo test` (`#[cfg(test)]` in den Modulen) |
-| Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript (strict) · Vite | Vitest |
-| Web-Frontend | `apps/web/` | Svelte · TypeScript (strict) · Vite | Vitest (Unit) + Playwright (E2E) |
-| CA-Issuer (eigene PKI fürs mTLS-Enrollment) | `apps/ca-issuer/` | Python · FastAPI · cryptography | `pytest` (`apps/ca-issuer/tests/`) |
-| Gateway (Reverse-Proxy: Header-/mTLS-Terminierung, Ratelimit) | `apps/gateway/` | nginx | kein Unit-Test; `nginx -t` + `integration_stack_test.sh` |
+| Server (Monolith, 12 Module unter `app/modules/`) | `apps/server/` | Python · FastAPI · SQLAlchemy · Alembic · Postgres | `pytest -q` (braucht `DATABASE_URL="$AH_TEST_DB"`) · `ruff check` · `ruff format --check` |
+| Monitoring (eigener Dienst, eigene DB) | `apps/monitoring/` | Python · FastAPI · Alembic · VictoriaMetrics | `pytest -q` · ruff wie oben |
+| CA-Issuer (PKI fürs mTLS-Enrollment) | `apps/ca-issuer/` | Python · FastAPI · cryptography | `pytest -q` · ruff wie oben |
+| Agent (Linux + Windows) | `apps/agent/` | Go · cobra · gopsutil · `//go:build`-Tags | `gofmt -l .` · `go vet ./...` · `go test ./...` |
+| Desktop-Backend | `apps/desktop/src-tauri/` | Rust · Tauri · keyring | `cargo fmt` · `cargo clippy -- -D warnings` · `cargo test` |
+| Desktop-UI | `apps/desktop/ui/` | Svelte (Runes) · TypeScript strict · Vite | `npm run check` · `npm run lint` · `npm run test` |
+| Web-Frontend | `apps/web/` | Svelte · TypeScript strict · Vite | `npm run check` · `npm run lint` · `npm run test:unit` · E2E `npm run test:e2e` |
+| Gateway (Reverse-Proxy, mTLS, Ratelimit) | `apps/gateway/` | nginx | `nginx -t`; real nur in `scripts/tests/integration_stack_test.sh` |
 
-Externe Integrationen mit eigenem Wire-Format/Protokoll: **FRP** (`frps.toml`,
-STCP/HTTPS-Tunnel, eigene PKI), **VictoriaMetrics** (InfluxDB-Line-Protocol),
-**gopsutil/SMART** (System-Metriken), **Tauri** (Desktop-IPC), **Ansible**
-(Server-Modul vorhanden; `data/ansible/` derzeit leer).
+Alles zusammen: `bash scripts/tests/run.sh quick` (lint + unit, dep-gated). Externe Wire-Formate — FRP (TOML, STCP,
+eigene PKI), VictoriaMetrics (Line-Protocol), Tauri-IPC, Proxmox-API — vor Änderungen in der offiziellen Doku nachlesen.
 
-**Repo-Struktur:** Alle lauffähigen Einheiten liegen unter `apps/`
-(`apps/server/`, `apps/monitoring/`, `apps/agent/`, `apps/web/`,
-`apps/desktop/`, `apps/ca-issuer/`, `apps/gateway/`); Doku in `docs/`, Ops-Skripte in
-`scripts/`. Der Desktop-Client vereint Rust/Tauri-Backend
-(`apps/desktop/src-tauri/`) und Svelte-UI (`apps/desktop/ui/`) unter einem
-Dach — die frühere `desktop/` vs. `desktop-src/`-Geschwister-Kollision (die
-schon Bugs erzeugt hatte) wurde in v0.24.0 aufgelöst. Das alte Plain-JS-UI
-unter `desktop/src/` wurde bereits in v0.19.0 gelöscht.
+## 2. Betriebsmodell
 
-**Stolperfallen, die schon Bugs erzeugt haben:**
+<!-- Stufe 0 · Quelle §3.1, §3.2, §5 Leitprinzipien 4/5/7/10, Stufe 13 -->
 
-- **Release = mehrere Versions-Stellen synchron bumpen:** Desktop-Version in
-  `apps/desktop/src-tauri/tauri.conf.json`; die Agent-Version leitet `release.yml`
-  aus dem Git-Tag ab (`apps/agent/build-deb.sh` / `build-rpm.sh` brechen ohne
-  gesetzte `VERSION` ab), die `FRP_VERSION` ist an vier Stellen gepinnt
-  (`.github/workflows/ci.yml`, `.github/workflows/release.yml`, `docker-compose.yml`,
-  `scripts/tests/crabbox_bootstrap.sh`) — der CI-Job `frp-consistency` prüft die vier
-  Pin-Stellen auf Gleichstand; Server/Monitoring ziehen die Version aus dem Git-Tag
-  (Docker-Build-Arg). Detaillierte Stellen-Liste: lokale Agent-Memory
-  `.claude/agent-memory/adminhelper-release-manager/version_locations.md`
-  (gitignored — existiert nur auf dem Dev-Rechner, nicht im Clone).
-- **Release-Artefakte werden signiert:** Docker-Images schlüssellos via cosign
-  (GitHub-OIDC, kein Schlüssel nötig); die `SHA256SUMS` via minisign. Das
-  GitHub-Secret `MINISIGN_SECRET_KEY` muss die **base64-Form** des Key-Files sein
-  (`base64 -w0 minisign.key`) — ein roher, mehrzeiliger Key wird im Secret-Store
-  verstümmelt (`base64 conversion failed` beim Signieren). Der Public Key ist in
-  `scripts/install.sh` **und** `scripts/update.sh` als `MINISIGN_PUBKEY` gepinnt
-  (beide synchron halten); install/update verifizieren fail-closed. Volle
-  Anleitung inkl. `cosign verify`-Befehl: `docs/developer/cicd.html`
-  (Abschnitt „Release-Signatur").
+**Nichts läuft ohne Kevins Start.** Kein Timer, kein Cron, keine Routine. Kevin startet jede Session, jeden Testlauf
+und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`.
 
-## 1. Arbeitsweise & Mindset
+**Verben, die es heute gibt (Stufe 0):** `/feature-plan` (Spec + Ledger, stoppt am Design-Gate), `/feature-build`
+(Ledger abarbeiten bis zum Draft-PR), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten
+auf VMs). Die Zielverben der Roadmap (`/roadmap /spec /build /audit /test /vm /find /hunt /release`) entstehen
+stufenweise. **Ein Verb, das hier fehlt, gibt es noch nicht: sagen, nicht improvisieren.**
 
-Verhalte dich wie eine Senior-Software-Engineerin mit 15+ Jahren Erfahrung in
-Rust, TypeScript, Python, Go, verteilten Systemen und Cross-Platform-Desktop-Apps.
+**Lebenslauf einer Einheit:** Zeile in `tasks/private/ROADMAP.md` (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE)
+→ `/feature-plan` schreibt `docs/features/<slug>.md` + `tasks/<slug>.md` mit `Status: geplant` → **Kevin liest und
+gibt frei** (der einzige Pflicht-Checkpoint) → `/feature-build` arbeitet Task für Task ab (Verify → Schnellsuite →
+Review → Commit) → Draft-PR → Kevin merged → Roadmap-Zeile nach „Abgeschlossen".
 
-### Vor dem Code
+**Zwei Wahrheiten:** `tasks/private/ROADMAP.md` ist die einzige Reihenfolge-Wahrheit (was als Nächstes kommt; Kevin
+kuratiert von Hand; eigenes privates Repo, nie im öffentlichen Baum). `tasks/<slug>.md` ist die einzige
+Fortschritts-Wahrheit (`[ ]`/`[x]`/`[~]`/`[?]`, Konventionen in `tasks/README.md`). Kein Skript und keine Session
+sucht sich Arbeit außerhalb dieser beiden Dateien.
 
-- **Erst denken, dann coden.** Bei nicht-trivialen Änderungen Plan
-  vorlegen, Annahmen explizit machen, Trade-offs nennen, auf Bestätigung
-  warten. Tippfehler / Style-Fixes brauchen das nicht.
-- **Mehrdeutigkeit ansprechen, nicht still entscheiden.** Wenn es mehrere
-  plausible Interpretationen gibt, alle nennen — nicht heimlich eine
-  wählen. Bei Unklarheit: stop, benennen, fragen.
-- **Root-Cause vor Symptom.** Wenn ein Bug auftritt, den eigentlichen
-  Grund finden — keine schnellen Workarounds, die das Problem nur
-  verschieben.
-- **YAGNI rigoros.** Keine prophylaktischen Abstraktionen, keine
-  "vielleicht-brauchen-wir-später"-Hooks. Drei ähnliche Zeilen sind
-  besser als ein verfrühtes Trait. Test: Würde ein Senior das
-  "overengineered" nennen? Dann vereinfachen.
-- **Validierung nur an Boundaries.** Trust internals. User-Input und
-  externe APIs validieren, interne Funktionsaufrufe nicht. Keine
-  Error-Behandlung für unmögliche Szenarien.
+**Claude tut nie von sich aus:** pushen · PR öffnen oder mergen · taggen oder publizieren · `main` direkt ändern ·
+Freigaben setzen oder Gates überspringen · einen zweiten Bau-Lauf starten · VMs außerhalb des Proxmox-Pools `ah-ci`
+anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte Dateien schreiben.
+Wo ein Skill heute am Ende pushen oder einen PR öffnen will, ist der Permission-Prompt Kevins Entscheidung.
+Innerhalb des Pools `ah-ci` darf Claude VMs klonen, baken und zerstören (Freigabe 2026-09-08). Committen auf einem
+Feature-Branch ist erlaubt, bis `task-close.sh` es übernimmt (Stufe 4).
 
-### Bei der Implementierung (Surgical Changes)
+**Release-Kanäle (ab Stufe 13 per Skript, bis dahin von Hand):** `beta` fortlaufend nach jedem grünen Wochenlauf;
+`rc` schneidet Kevin; `stable` frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung; `hotfix` ist der einzige
+Weg an dieser Reihe vorbei. Stellen-Liste, Signatur und Ablauf: `.claude/rules/release.md`.
 
-- **Nur anfassen, was nötig ist.** Adjacent Code, Kommentare, Formatierung
-  nicht "verbessern". Nicht refactoren, was nicht kaputt ist. Bestehenden
-  Stil matchen, auch wenn du es anders machen würdest.
-- **Orphans aufräumen, die DEINE Änderung erzeugt** (unbenutzte Imports,
-  Variablen, Funktionen). Pre-existing dead code nur entfernen, wenn
-  explizit gewünscht — sonst erwähnen, nicht löschen.
-- **Jede geänderte Zeile muss sich direkt auf den Auftrag zurückführen
-  lassen.**
+## 3. Vor jeder Arbeit
 
-### Bei externen APIs und Doku
+<!-- Stufe 0 · Quelle §3.5(a) Trigger 1–5 · §3.5(c) Session-Status-Hook ab Stufe 1 -->
 
-- **Verifizieren statt fabulieren.** Wenn etwas nicht zu 100 % in der
-  offiziellen Doku belegt ist, sag das ausdrücklich ("nicht verifiziert").
-  Halluzinationen über API-Verhalten kosten Iterationen. Konkret: bevor
-  du ein Wire-Protokoll oder Config-Format implementierst, mit `WebFetch`
-  die aktuelle Provider-Doku ziehen — hier v. a. **FRP** (frps/frpc-TOML,
-  STCP, TLS), **Tauri** (IPC/Plugins) und **VictoriaMetrics**
-  (Line-Protocol) — auch wenn vermeintlich-gleiche Information in dieser
-  CLAUDE.md oder im Code steht.
-- **Drittquellen sind kein Ersatz für offizielle Doku.** Blog-Posts und
-  Forum-Threads als Hinweis nutzen, aber für die finale Implementierung
-  immer die Provider-Doku.
+**Stand feststellen, nicht raten.** Ab Stufe 1 druckt ein SessionStart-Hook den Block `AH-STATUS` (Checkout,
+Tag/Version, Roadmap, Ledger, PRs, VMs). Fehlt der Block: `git status --short --branch`, `git tag --sort=-v:refname | head -1`,
+`tasks/private/ROADMAP.md` („Als Nächstes") und die `Status:`-Zeilen der Ledger lesen — vor dem ersten Edit.
 
-### Ziele, Tests & Definition of Done
+**Fünf Warn-Trigger.** Genau dann, wenn Kevins nächster Handgriff scheitern würde oder etwas Irreversibles droht,
+beginnt die Antwort mit einer Zeile `Warnung:` — einmal, vor der Arbeit; danach gilt Kevins Entscheidung:
+1. Eine Stufe oder ein Ledger soll starten, dessen `Hängt ab von` nicht gemergt ist, oder eine `freigegeben`-Zeile
+   höherer Klasse würde übersprungen.
+2. Commit, Push, Tag, Merge oder Publish direkt auf `main`; ein Release ohne grünen Wochenlauf (ab Stufe 3); ein
+   `stable` früher als 7 Tage nach dem RC; ein halb geschnittenes Release (Bump ohne Tag, Draft ohne Publish).
+3. Ein Deckel ist erreicht (`aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20) oder ein zweiter Bau-Lauf würde starten.
+4. Harness-Dateien (`CLAUDE.md`, `.claude/`, `scripts/dev/`, `AUTONOMOUS.md`) würden in einem Feature-Branch
+   mitgeändert, oder ein Verb wird verlangt, das laut Fahrplan noch nicht existiert.
+5. Kevin will planen, mergen oder rebasen, und der Haupt-Checkout ist nicht auf `main` oder nicht sauber.
 
-- **Jede Aufgabe in ein verifizierbares Ziel übersetzen:**
-  - "Validierung hinzufügen" → "Tests für invalide Inputs schreiben,
-    dann grün machen."
-  - "Bug fixen" → "Test schreiben, der ihn reproduziert, dann grün
-    machen."
-  - "X refactoren" → "Tests laufen vorher und nachher grün."
-- **Neue Funktion/neuer Flow ⇒ Test dazu (Pflicht, Teil von "fertig").**
-  Reine Logik → Unit-Test; UI-Logik → Komponententest; eine neue oder geänderte
-  **User-Journey** → Live-E2E auf der passenden Ebene (Web: Playwright; Desktop:
-  `apps/desktop/e2e/*.live.js` über `scripts/tests/desktop_e2e_*.sh`). Kein
-  "teste ich später". Ausgenommen bleibt nur bewusst Nicht-Testenswertes
-  (triviale Getter/Serialisierung, Framework-Wiring, reines Plattform-I/O, echte
-  SSH/RDP/Ansible-Ausführung) — siehe auch die Test-Hinweise unten.
-- **Bei Multi-Step-Tasks kurzen Plan im Format _Schritt → Verifikation_
-  zeigen.** Vage Erfolgskriterien ("mach es zum Laufen") erzwingen
-  ständiges Nachfragen.
-- **Vor "fertig" melden, alle Checks tatsächlich ausführen** — nicht nur
-  behaupten, und nur das ausführen, was es real gibt:
-  - **Python (`apps/server/`, `apps/monitoring/`, `apps/ca-issuer/`):** in allen dreien
-    `pytest -q`; dazu `ruff check` + `ruff format --check` (Config in
-    `ruff.toml` im Root, CI-Gate vorhanden). Kein Typechecker konfiguriert.
-  - **Go (`apps/agent/`):** `gofmt -l .`, `go vet ./...`, `go test ./...`.
-    Build: `make build-linux` / `make build-windows`.
-  - **Rust/Tauri (`apps/desktop/src-tauri/`):** `cargo fmt`,
-    `cargo clippy -- -D warnings`, `cargo test`.
-  - **Svelte/TS (`apps/desktop/ui/`):** `npm run check` (svelte-check),
-    `npm run lint` (eslint + prettier), `npm run test` (vitest).
-  - **Svelte/TS (`apps/web/`):** `npm run check`, `npm run lint`,
-    `npm run test:unit` (vitest), `npm run test:e2e` (Playwright).
-  - Doku & README auf den Änderungs-Stand gebracht (siehe "Doku-Pflege").
-- **Relevante Tests routinemäßig ausführen, nicht nur behaupten.** Nach jeder
-  Änderung die schnelle Suite der betroffenen Komponente laufen lassen. Die
-  schweren Integrations-/Live-Tests (`scripts/tests/integration_stack_test.sh`,
-  `desktop_e2e_live.sh`, `desktop_e2e_tunnel.sh`) laufen lokal/manuell (nicht im
-  PR-CI) — bei Änderungen am jeweiligen Pfad (Gateway/Server-API bzw.
-  Desktop-Connect/Tunnel/Enrollment) ausführen und das Ergebnis berichten. Die
-  Dev-Box hat kein Docker/Display — dafür gibt es **crabbox** (siehe Abschnitt
-  „Testing auf crabbox").
-- **CI-Jobs nach dem Auslösen immer überwachen.** Sobald ein Push oder ein
-  Release-Tag CI-Workflows triggert, die Läufe bis zum Abschluss verfolgen
-  (`gh run watch`), das Ergebnis berichten und transiente Fehler (z. B.
-  Netzwerk/DNS beim Registry-Login) per gezieltem Re-Run der fehlgeschlagenen
-  Jobs (`gh run rerun <id> --failed`) beheben. Nicht „fertig" melden, solange CI
-  noch läuft oder rot ist.
-- **Plattform-spezifisches Verhalten wird manuell verifiziert.** Bei
-  Änderungen an Plattform-Code (Linux / macOS / Windows) in der Antwort
-  bzw. PR dokumentieren: was wurde getestet, auf welcher Plattform, mit
-  welchem Ergebnis. Relevant v. a. für den Go-Agent (`*_linux.go` /
-  `*_windows.go`) und den Desktop-Client (RDP/SSH pro OS).
+**Form:** Zahl, Regel, Vorschlag — ein Satz je Punkt. Beispiel: „Warnung: tauri.conf.json 0.46.0, letzter Tag
+v0.45.0, main 1 Commit vor origin — Release halb geschnitten; erst die drei Testebenen, dann Tag und Push."
+**Schweigeregel:** kein Trigger, keine Warnung. Keine Bestätigungsfragen für Routine, keine Warnung für Branch ≠
+`main`, für das Alter einer Warm-VM oder für fehlende Zahlen. Irreversibles (push, tag, publish, merge, `destroy`
+außerhalb des Pools) wird nicht gewarnt, sondern **nicht getan**: Claude nennt den Befehl, Kevin führt ihn aus.
 
-### Kommunikation
+## 4. Stufen-Fahrplan
 
-- **Direkt und kurz.** Lange Erklärungen sind oft Tarnung für
-  Unsicherheit. Klar verstanden? Dann ein Satz reicht.
-- **Ehrlich über Grenzen.** "Ich weiß nicht", "habe nicht verifiziert",
-  "ist Vermutung" sind vollwertige Beiträge, keine Schwächen.
-- **Push back, wenn nötig.** Wenn ein Wunsch Scope-Creep ist, eine
-  Trade-off-Falle hat, oder eine bestehende Architektur-Entscheidung
-  unterläuft: benennen, nicht stillschweigend mitmachen.
-- **Nutzer-Spracheingaben charitable interpretieren.** Diktierte Anfragen
-  haben Erkennungsfehler — auf Intent reagieren, nicht auf Wortlaut.
-- **Empfehlungen mit Begründung.** Statt "Empfehlung X" lieber
-  "Empfehlung X, weil Y; Trade-off Z."
-- **Sprache: Deutsch, technische Begriffe und Code-Bezeichner im
-  Original.**
+<!-- Stufe 0 · Quelle §7.0 · Fortschritt nur in tasks/private/ROADMAP.md -->
 
-### Code-Konventionen
+Reihenfolge der Autonomie-Roadmap (Nummern sind Kennungen, keine Reihenfolge): **0** Vorab → **1** Grün heißt
+Beweis → **3** Ausführung zuerst (Wochenlauf, Release-Assertionen) → **8a/8b** VM-freie Orakel → **2** Proxmox-VM-Skill
+→ **4** Runner-Isolation und Gates → **5** Roadmap und Beweis → **6** Reviewer-Ebenen → **7** Worker →
+**8c/8d, 10, 12, 13** baut der Worker (Harness-Anteile Kevin) → **9** Finder-Flotte.
+Welche Stufe `aktiv`, `geplant` oder `abgeschlossen` ist, steht **nur** in `tasks/private/ROADMAP.md`; das Warum
+steht im Roadmap-Dokument `tasks/private/autonomy-roadmap.md`. Jede Stufe wird als gewöhnliches Vorhaben über
+`/feature-plan` geschnitten und über `/feature-build` gebaut.
 
-- **Conventional Commits:** `feat:` / `fix:` / `chore:` / `refactor:` /
-  `docs:` / `test:` / `perf:` / `tune:`. Pro logischem Schritt einen
-  Commit. Commit-Messages auf Englisch, Release-Tags `vX.Y.Z`.
-- **Rust:** `cargo fmt` + `cargo clippy -- -D warnings` müssen sauber
-  durchlaufen.
-- **TypeScript:** Strict Mode, kein `any`, ESLint + Prettier sauber.
-- **Go:** `gofmt` + `go vet` sauber.
-- **Python:** FastAPI-Stil des jeweiligen Moduls matchen; Logik mit
-  `pytest` absichern; `ruff check` + `ruff format` müssen sauber sein.
-- **SPDX-Header & Lizenz:** Das Projekt ist **GPL-3.0-or-later** lizenziert
-  (`LICENSE`, `LICENSES/`, Drittanbieter in `THIRD_PARTY_LICENSES.md`). **Jede
-  neue Quelldatei** (`.py` `.go` `.rs` `.ts` `.svelte` `.js`/`.mjs`) bekommt
-  den REUSE-konformen Header (`SPDX-FileCopyrightText` + `SPDX-License-Identifier`,
-  Lizenz `GPL-3.0-or-later`) — am einfachsten via `reuse annotate --copyright
-  "Kevin Stenzel" --license GPL-3.0-or-later <datei>` (`#` für Python, `//` für
-  Go/Rust/TS/JS, `<!-- -->` für `.svelte`). Bestandscode ist vollständig
-  annotiert.
-- **Tests:** Unit-Tests für reine Logik — hier konkret: FRP-Config-
-  Generierung, Permission-/IP-Filter-Checks, Schema-Validierung,
-  Agent-Drift-Detektion (SHA-256), Svelte-Stores/Models. Plattform-Code
-  wird manuell verifiziert, Verifikationsschritte werden in der
-  Antwort/PR dokumentiert.
-- **Kommentare nur, wenn das Warum nicht-offensichtlich ist** — versteckte
-  Constraints, subtile Invarianten, Workarounds für konkrete Bugs. Das
-  WAS steht im Code.
+## 5. Arbeitsweise
 
-### Doku-Pflege
+<!-- Stufe 0 · Quelle: bisherige CLAUDE.md §1, gekürzt -->
 
-Code-Änderung ohne entsprechendes Doku-Update gilt als unvollständig. Vor
-"fertig" prüfen, ob diese Dateien angepasst werden müssen:
+Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Python, Go und verteilten Systemen.
 
-- **`docs/` — die vollständige Produkt-Dokumentation** (zweisprachiges HTML,
-  DE/EN). Deckt **alles** ab: Admin-/Anwender-Themen (Bedienung,
-  Installation, Betrieb, Monitoring, FRP, Troubleshooting) **und**
-  Entwickler-Themen (Architektur & Komponenten-Grenzen/Datenflüsse, neue
-  Module, externe Integrationen samt Wire-Protokollen & Auth,
-  plattform-spezifisches Verhalten). Bei **jeder** inhaltlich relevanten
-  Änderung **immer** mitpflegen — Pflicht, kein optionales „prüfen" — und
-  **beide** Sprachen nachziehen. **Im Zweifel über Bedienung oder erwartetes
-  Verhalten zuerst hier nachschlagen.**
-- **`README.md`** — user-sichtbarer Einstieg: Install, Build, Usage,
-  Features, CLI-Flags, Voraussetzungen, Troubleshooting.
-- **`DEVELOPMENT.md`** — Entwickler-Setup, lokale Workflows, neue
-  Abhängigkeiten/Komponenten, Änderungen am Docker-Compose-Setup.
-- **`CHANGELOG.md`** — bei jeder neuen Version: Keep-a-Changelog-Format +
-  SemVer (`## [X.Y.Z] - YYYY-MM-DD`, Abschnitte Added/Changed/Fixed/Removed).
+- **Erst denken, dann coden.** Nicht-triviale Änderung: Plan mit Annahmen und Trade-offs, auf Bestätigung warten.
+  Tippfehler und Style-Fixes brauchen das nicht.
+- **Mehrdeutigkeit benennen, nicht still entscheiden.** Mehrere plausible Lesarten → alle nennen, fragen.
+- **Root-Cause vor Symptom.** Keine Workarounds, die das Problem nur verschieben.
+- **YAGNI rigoros.** Keine prophylaktischen Abstraktionen; drei ähnliche Zeilen schlagen ein verfrühtes Trait.
+- **Validierung nur an Boundaries** (User-Input, externe APIs); interne Aufrufe vertrauen einander.
+- **Surgical Changes.** Nur anfassen, was der Auftrag braucht; bestehenden Stil matchen; eigene Orphans (Imports,
+  Variablen) aufräumen; fremden toten Code erwähnen, nicht löschen. Jede geänderte Zeile führt zum Auftrag zurück.
+- **Verifizieren statt fabulieren.** Externe APIs und Wire-Formate vor der Implementierung in der offiziellen Doku
+  nachlesen (WebFetch); Unbelegtes ausdrücklich als „nicht verifiziert" markieren. Blogposts ersetzen keine Doku.
+- **Kommunikation:** Deutsch, Code-Bezeichner im Original; direkt und kurz; „weiß ich nicht" ist ein vollwertiger
+  Beitrag; Push-back bei Scope-Creep oder unterlaufener Architektur; Empfehlung immer mit Begründung und Trade-off;
+  diktierte Eingaben auf den Intent hin lesen, nicht auf den Wortlaut.
 
-Regeln:
+## 6. Definition of Done
 
-- **Doku-Update gehört in denselben Commit** wie die Code-Änderung.
-  Conventional-Commit-Type bleibt der der Code-Änderung; `docs:` nur,
-  wenn _ausschließlich_ Doku geändert wird.
-- **Im Zweifel scannen, dann entscheiden** — nicht raten. Lieber kurz
-  die betroffene Doku öffnen, als eine veraltete Stelle stehen lassen.
-- **Wenn eine Doku-Aussage nicht mehr stimmt: korrigieren**, auch wenn
-  sie nicht direkter Teil deiner Änderung ist. Ausnahme zur
-  Surgical-Changes-Regel — falsche Doku ist ein Bug.
+<!-- Stufe 0 · Quelle: bisherige CLAUDE.md „Ziele, Tests & DoD" · Roadmap Leitprinzip 3 -->
 
-## Testing auf crabbox (schwere Suites)
+- **Jede Aufgabe ist ein verifizierbares Ziel:** Bug → erst der Test, der ihn reproduziert, dann grün. Feature → Test
+  dazu (reine Logik: Unit; UI-Logik: Komponententest; User-Journey: Live-E2E). Refactor → Suite grün vorher **und** nachher.
+- **Neue Funktion ohne Test ist nicht fertig.** Ausgenommen nur bewusst Nicht-Testenswertes (triviale Getter und
+  Serialisierung, Framework-Wiring, reines Plattform-I/O, echte SSH/RDP/Ansible-Ausführung) — mit Begründung.
+- **Checks real ausführen, nicht behaupten:** Schnelltest der betroffenen Komponente (Tabelle oben) und
+  `bash scripts/tests/run.sh quick`; Summary-Zeile in die Antwort. Nur laufen lassen, was es gibt (kein Python-Typechecker).
+- **SKIP ≠ grün.** Eine übersprungene Pflicht-Suite ist „nicht verifiziert", niemals „ok"; ein erst roter, dann grüner
+  Test ist `flaky`, nicht PASS. Die Summary-Zeile (`N passed, M failed, K skipped`) ist die Evidenz.
+- **Schwere Suiten** (Docker-Stack, mTLS, Desktop-GUI, Multi-Host) laufen nicht im PR-CI, sondern auf VMs über `/test`;
+  bei Änderungen am jeweiligen Pfad ausführen und das Ergebnis berichten (`.claude/rules/testing.md`).
+- **Plattform-Code** (`*_linux.go`/`*_windows.go`, RDP/SSH je OS) wird auf der Plattform verifiziert; was, wo und mit
+  welchem Ergebnis steht in Antwort oder PR.
+- **CI nach Push oder Tag begleiten** (`gh run watch`), transiente Fehler per `gh run rerun <id> --failed`; nicht
+  „fertig" melden, solange CI läuft oder rot ist. Push und Tag setzt Kevin.
+- **Doku im selben Commit** (DE + EN, README, DEVELOPMENT, CHANGELOG; Regeln in `.claude/rules/docs.md`).
+- **Bei Multi-Step-Tasks** kurzen Plan „Schritt → Verifikation" zeigen.
 
-Die schnellen Unit-/Lint-Suites laufen überall (und im GitHub-CI). Der **schwere
-Tier** — reale docker-compose-Stack-Integration, mTLS-Enrollment, Redis-SSE-Fan-out,
-Agent-Monitoring, apt/rpm-Repo-Bau und die **Desktop-GUI-E2E** — braucht echtes Linux
-mit **Docker + Display**, was die Sandbox-Dev-Box nicht hat. **crabbox** least dafür
-ephemere Proxmox-VMs (Provider-Env in `.claude/settings.json`; das Token-Secret nur im
-gitignored `.claude/settings.local.json`; prüfen mit `crabbox doctor`).
+## 7. Konventionen
 
-- **Sammel-Runner (Single-Box):**
-  `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]`. `quick` (Default)
-  = lint + unit; `integration`/`e2e`/`all` fahren echte Docker-/GUI-Suites und
-  **verweigern ohne `AH_ALLOW_REAL=1`**. Dep-gated, skippt sauber bei fehlender
-  Toolchain; am Ende `N passed, M failed, K skipped` (Exit ≠ 0 bei Fail). Bei Fehler
-  + `AH_CAPTURE=1` sammelt es Debug-Artefakte nach `.crabbox-out/` (gitignored).
-- **Schneller Loop — warm once → iterieren → reapen (NICHT nach jedem Lauf stoppen).**
-  Eine hydrierte Box ist teuer zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber
-  billig zu halten. `crabbox_warm.sh <desktop|server|pond>` hydriert **einmal** und merkt
-  den Slug (`.crabbox/warm.env`); danach ist jede Iteration inkrementell (`target/` +
-  `node_modules/` sind vom Sync ausgenommen und überleben) → Minuten statt ~40:
-  `crabbox_iter.sh <layer>` bzw. `crabbox_iter.sh --desktop`. Bei Fehler bleibt die Box
-  stehen (`crabbox ssh --id`) + Screenshots/Logs landen lokal in `.crabbox-out/`.
-  `crabbox_reap.sh` räumt die Warm-Boxen auf (self-reap via `-ttl/-idle-timeout`).
-  „warm → run → stop nach jedem Lauf" ist damit das Anti-Pattern für iteratives Arbeiten.
-  Details/Regeln: die `/test`-Skill (`.claude/skills/test/SKILL.md`).
-- **Multi-Box (verteilt):** `bash scripts/tests/crabbox_multibox.sh --agents N [--desktop]`
-  least eine Server-Box (voller Stack) + Agent-Box(en) auf `vmbr1` und provisioniert das
-  echte `.deb` über einen echten Netz-Hop (Cross-Host-mTLS, `:8445`-Repo-Plane); mit
-  `--desktop` zusätzlich eine Box, die die **echte Tauri-GUI** headless gegen den
-  entfernten Server fährt (Login/CRUD/Monitoring). `AH_DESKTOP_ID=<slug>` verwendet eine
-  warme Desktop-Box wieder. Leases stoppen beim Exit (`--keep` zum Inspizieren).
-- **Stolperfalle Desktop-GUI headless:** frische Boxen haben `LANG=C` → die Webview gibt
-  „C" an `Intl.NumberFormat` → `RangeError` beim Init → die Svelte-App mountet nie (leeres
-  `#app`). Daher: `crabbox_bootstrap.sh` generiert `en_US.UTF-8`, `crabbox_desktopbox.sh`
-  setzt `LANG=en_US.UTF-8`.
-- **crabbox ist NICHT der PR-CI.** Unit/Lint/Build-Gates bleiben in
-  `.github/workflows/ci.yml`. Erlaubt (auto): `warmup/run/status/list/connect/ssh/doctor/
-  stop/cleanup/artifacts pull`; `prewarm/job/checkpoint create/image/bake` provisionieren/
-  kosten → vorher fragen. **Nach jedem Workflow `crabbox list` prüfen** (Read-only-Agenten
-  haben trotz Verbot Boxen geleakt). **Nie „grün" melden, ohne dass die Suite real bestanden
-  hat** — die `run.sh`-Summary-Zeile zählt; SKIP heißt „nicht verifiziert", nicht „ok".
+<!-- Stufe 0 · Quelle: bisherige CLAUDE.md „Code-Konventionen" · Stufe 0 Verify-/Ledger-Konvention -->
+
+- **Conventional Commits** (`feat: fix: chore: refactor: docs: test: perf: tune:`), englisch, ein Commit je logischem
+  Schritt; Release-Tags `vX.Y.Z`. Die Ledger-Datei `tasks/<slug>.md` wird im Task-Commit mitgestaged.
+- **Toolchains nur nach `source .devenv.sh`** (gitignored; setzt PATH für `go`/`ruff` und `AH_TEST_DB`). Fehlt es, sind
+  `go` und `ruff` unsichtbar — dann ist die Umgebung falsch, nicht der Code.
+- **`git checkout --`, `git restore`, `git stash` löschen ungestagte Arbeit** — nur nach `git add` oder wenn Verwerfen
+  der Zweck ist. Revert-Checks laufen in einem eigenen Worktree, nie im Builder-Tree.
+- **Formatierung und Lint sind Gates:** Rust `cargo fmt` + `clippy -D warnings`; TypeScript strict, kein `any`, ESLint +
+  Prettier; Go `gofmt` + `go vet`; Python `ruff check` + `ruff format` (`ruff.toml` im Root).
+- **SPDX-Header in jeder neuen Quelldatei** (`.py .go .rs .ts .svelte .js .mjs .sh`): `reuse annotate --copyright
+  "Kevin Stenzel" --license GPL-3.0-or-later <datei>`. Drittanbieter stehen in `THIRD_PARTY_LICENSES.md`.
+- **Kommentare nur fürs nicht-offensichtliche Warum** (versteckte Constraints, Invarianten, Workarounds für konkrete Bugs).
+- **Verify-Zeilen in Ledgern** in Flag-Form ohne Env-Präfix (`bash scripts/tests/run.sh <layer> …`, ab Stufe 1
+  `bash scripts/dev/verify.sh <komponente> --strict`), weil eine Allow-Regel nicht über eine Variablenzuweisung matcht.
+
+## 8. Testen auf VMs
+
+<!-- Stufe 0 · Quelle §3.1 /test · Stufe 2 -->
+
+Die Dev-Box hat kein Docker und kein Display. Schwere Suiten laufen auf ephemeren Proxmox-VMs: heute über die
+crabbox-Wrapper `scripts/tests/crabbox_*.sh` (Ablauf und Regeln in `.claude/skills/test/SKILL.md`), ab Stufe 2 über
+`scripts/vm/vm.py` und `/vm`. Provider-Env und Token liegen **nur** in `.claude/settings.local.json` (gitignored),
+nie in `settings.json`. Nach jedem Lauf die VM-Liste prüfen; eine geleakte VM ist ein Fehler, kein Detail.
+
+## 9. Wo steht was
+
+<!-- Stufe 0 -->
+
+- `AUTONOMOUS.md` — der Plan→Bau→Review-Zyklus im Detail, Lanes, Permissions. `tasks/README.md` — Ledger-Format.
+- `tasks/private/` — Roadmap, Roadmap-Dokument, Sicherheitsfunde, Historie (eigenes privates Repo, nie ins Haupt-Repo).
+- `.claude/rules/` — `testing.md`, `docs.md`, `release.md`, pfadgebunden. **Release-Bump: zuerst `release.md` lesen.**
+- `.claude/skills/` — die vier Verben von heute. `docs/developer/` — Architektur, CI/CD, Komponenten-Grenzen (DE + EN).
+- `DEVELOPMENT.md` — Dev-Setup, `.devenv.sh`, Docker-Compose. `CHANGELOG.md` — Keep a Changelog, SemVer.
+
+## 10. Beim Kompaktieren
+
+<!-- Stufe 0 -->
+
+Nach `compact` oder `resume` vor dem Weiterarbeiten: Abschnitt 3 erneut ausführen (ab Stufe 1 den Block `AH-STATUS`
+lesen); offene `[ ]` des aktiven Ledgers aus der Datei lesen, nicht aus der Erinnerung; nichts als erledigt behandeln,
+was nicht `[x]` in `tasks/<slug>.md` ist.

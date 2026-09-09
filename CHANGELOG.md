@@ -7,6 +7,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Entwickler-Harness (Autonomie-Roadmap, Stufe 0):** `CLAUDE.md` auf 179 Zeilen neu
+  geschnitten (Betriebsmodell, Warn-Trigger, Stufen-Fahrplan, Definition of Done); die
+  Release- und Test-Stolperfallen leben jetzt als pfadgebundene Regeln unter
+  `.claude/rules/` (`testing.md`, `docs.md`, `release.md`). `.gitignore` gibt
+  `.claude/rules/` und `.claude/agents/` frei und haelt `.ah-out/`, `.vm/` und
+  `tasks/private/` lokal. Die Autonomie-Roadmap liegt im privaten Repo statt unter
+  `docs/features/`.
+
 ## [0.45.0] - 2026-09-08
 
 ### Fixed
