@@ -19,7 +19,7 @@ Komponente: scripts/dev · Dateien: scripts/dev/hooks/session-status.sh (neu), s
 Verify: `bash scripts/tests/session_status_test.sh` → `N passed, 0 failed`; `shellcheck --severity=warning scripts/dev/hooks/session-status.sh` leer
 Doku: keine (intern; DEVELOPMENT.md-Absatz kommt in T16)
 
-### T2 — tree-hash.sh  [ ]
+### T2 — tree-hash.sh  [x] (Wegwerf-Index, sieht untracked, ignoriert tasks/)
 Komponente: scripts/dev · Dateien: scripts/dev/tree-hash.sh (neu)
 Änderung: ~10 Zeilen: `GIT_INDEX_FILE=$(mktemp)`, `git add -A -- . ':(exclude)tasks/' ':(exclude).ah-out/' ':(exclude).crabbox-out/'`, `git write-tree`, Index-Datei löschen; druckt 40 Hex. SPDX-Header.
 Verify: `h1=$(bash scripts/dev/tree-hash.sh); touch probe.tmp; h2=$(bash scripts/dev/tree-hash.sh); rm probe.tmp; [ "$h1" != "$h2" ] && echo ok` → `ok`; eine Änderung unter `tasks/` lässt den Hash gleich
