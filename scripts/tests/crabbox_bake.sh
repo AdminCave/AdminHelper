@@ -25,10 +25,10 @@ cbx_load_env || exit 1
 echo "== bake a hydrated box for role=$ROLE (profile=$PROFILE) — PROVISIONS a VM =="
 read -r SLUG IP < <(cbx_lease "ah-bake" "ah-bake") || { echo "lease failed"; exit 1; }
 echo "  baking box $SLUG @ ${IP:-?}"
+# NOTE: the bootstrap masks unattended-upgrades + the apt-daily timers, and
+# those mask symlinks survive into the template — every box cloned from it
+# starts without background updates. Intended for throwaway test VMs.
 CBX_TIMEOUT=2700 cbx run --id "$SLUG" -no-hydrate -- \
-  # NOTE: the bootstrap masks unattended-upgrades + the apt-daily timers, and
-  # those mask symlinks survive into the template — every box cloned from it
-  # starts without background updates. Intended for throwaway test VMs.
   "AH_BOOTSTRAP_PROFILE=$PROFILE bash scripts/tests/crabbox_bootstrap.sh" \
   || { echo "  bootstrap failed ($SLUG kept for inspection)"; exit 1; }
 echo "  warming build caches (populate target/ + node_modules)"

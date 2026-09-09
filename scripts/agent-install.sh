@@ -161,7 +161,9 @@ ensure_gpg() {
     command -v gpg >/dev/null 2>&1 && return 0
     log "gpg not present — installing it from the distro repo..."
     case "$PKG_MGR" in
-        apt) wait_apt_lock; apt-get update -qq >/dev/null 2>&1 || true; apt-get install -y gnupg >/dev/null ;;
+        apt) wait_apt_lock; apt-get update -qq >/dev/null 2>&1 || true
+             # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+             apt-get install -y $APT_LOCK_OPTS gnupg >/dev/null ;;
         dnf) dnf install -y gnupg2 >/dev/null ;;
     esac
     command -v gpg >/dev/null 2>&1 || die "gpg is required for the keyring fingerprint check"
@@ -263,7 +265,8 @@ install_from_github() {
     command -v minisign >/dev/null 2>&1 || {
         log "minisign not present — installing it from the distro repo..."
         wait_apt_lock; apt-get update -qq >/dev/null 2>&1 || true
-        apt-get install -y minisign >/dev/null || die "minisign is required to verify the release"
+        # shellcheck disable=SC2086  # word splitting of the -o pair is intended
+        apt-get install -y $APT_LOCK_OPTS minisign >/dev/null || die "minisign is required to verify the release"
     }
     local tag ver deb
     tag=$(curl -fsSL --connect-timeout 10 "${API_BASE}/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)
