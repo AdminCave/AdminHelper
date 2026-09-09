@@ -53,13 +53,13 @@ Verify: `bash scripts/tests/verify_test.sh` → `27 passed, 0 failed` (auch unte
 Doku: keine (Doku-Task T16)
 Abhängt von: T4
 
-### T6 — desktop_e2e_*.sh: exit 0 → exit 75 im tauri-cli-Zweig  [ ]
+### T6 — desktop_e2e_*.sh: exit 0 → exit 75 im tauri-cli-Zweig  [x] (7/7; kein `exit 0` mehr in den sieben Dateien)
 Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_live.sh, desktop_e2e_crud.sh, desktop_e2e_connect.sh, desktop_e2e_connect_tunnel.sh, desktop_e2e_tunnel.sh, desktop_e2e_monitoring.sh, desktop_e2e_sse_push.sh
 Änderung: je Datei die eine Zeile `|| { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }` auf `exit 75`. Sonst nichts.
 Verify: `git grep -n 'exit 0' scripts/tests/desktop_e2e_*.sh` → 0 Treffer im SKIP-Zweig; `shellcheck --severity=warning scripts/tests/desktop_e2e_*.sh` leer
 Doku: keine (intern)
 
-### T7 — desktop_e2e_skip_test.sh (hermetisch)  [ ]
+### T7 — desktop_e2e_skip_test.sh (hermetisch)  [x] (7 passed; Suite-Liste aus dem Verzeichnis abgeleitet, prueft Exit 75 UND die tauri-cli-Meldung)
 Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_skip_test.sh (neu)
 Änderung: PATH-Shims für `docker`, `openssl`, `curl`, `python3`, `node`, `xvfb-run`, `WebKitWebDriver`, `tauri-driver`, `dbus-run-session`, `gnome-keyring-daemon`, `go` (Exit 0), `docker compose version`/`docker info` per Shim; `cargo` fehlt im PATH ⇒ jedes der sieben Skripte muss mit 75 enden und „SKIP: tauri-cli" drucken. SPDX-Header.
 Verify: `bash scripts/tests/desktop_e2e_skip_test.sh` → `7 passed, 0 failed`

@@ -51,7 +51,7 @@ wait_rdp_log() {  # container timeout
 
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon docker
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
-    || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }
+    || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 
 e2e_init false
 # Chain target cleanup in front of the lib's compose teardown (don't replace it).

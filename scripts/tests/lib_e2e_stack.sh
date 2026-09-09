@@ -3,7 +3,7 @@
 # lib_e2e_stack.sh — shared boot/seed/teardown for the docker-compose-backed
 # integration + E2E tests. Source it, then:
 #
-#   e2e_require [extra-bins...]      # preconditions; SKIPs (exit 0) when missing
+#   e2e_require [extra-bins...]      # preconditions; SKIPs (exit 75) when missing
 #   e2e_init <true|false>            # MTLS_ENFORCE; sets up env + EXIT teardown
 #   e2e_up <service...>              # build + start services, wait for the gateway
 #   token=$(e2e_admin_token)         # admin JWT through the gateway

@@ -31,7 +31,7 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
-    || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }
+    || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 
 e2e_init false                                 # permissive: login (JWT) reaches the API
 e2e_up gateway && ok "gateway live on :$E2E_HTTPS_PORT" || { bad "gateway never came up"; exit 1; }
