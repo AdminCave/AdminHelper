@@ -105,7 +105,7 @@ Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 1 Treffer, und d
 Doku: keine (intern)
 Abhängt von: T5
 
-### T14 — ESLint no-unused-vars auf error (web + desktop-ui)  [ ]
+### T14 — ESLint no-unused-vars auf error (web + desktop-ui)  [x] (0 bestehende Funde in beiden Frontends — nichts zu fixen, kein REF-Eintrag nötig)
 Komponente: apps/web, apps/desktop/ui · Dateien: apps/web/eslint.config.js, apps/desktop/ui/eslint.config.js (+ betroffene Quelldateien, falls ≤ 10 Funde)
 Änderung: Regel `@typescript-eslint/no-unused-vars` von `warn` auf `error`; vorher `npm run lint` zählen; ≤ 10 Funde in derselben Task fixen (Orphans), > 10 ⇒ `[?]` und Roadmap-Zeile REF (Spec Frage 3).
 Verify: `bash scripts/tests/run.sh unit --strict --only web desktop-ui` → Exit 0; eine absichtlich eingebaute unbenutzte Variable macht `npm run lint` rot (danach zurücknehmen)

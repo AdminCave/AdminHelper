@@ -35,8 +35,14 @@ export default [
   },
   {
     rules: {
+      // error, nicht warn: eine Warnung, die niemand liest, ist kein Gate — und
+      // ein verwaister Import oder eine tote Variable ist der billigste Fund,
+      // den ein Werkzeug liefern kann — erster Baustein der Finder-Werkzeugschicht
+      // (Stufe 9 F0), gebaut in Stufe 1. Absichtlich Ungenutztes bekommt einen
+      // _-Präfix; modul-private Stores heissen hier ebenfalls so, ein toter
+      // _store faellt der Regel also nicht auf.
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
