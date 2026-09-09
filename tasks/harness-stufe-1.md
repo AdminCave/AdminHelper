@@ -25,7 +25,7 @@ Komponente: scripts/dev · Dateien: scripts/dev/tree-hash.sh (neu)
 Verify: `h1=$(bash scripts/dev/tree-hash.sh); touch probe.tmp; h2=$(bash scripts/dev/tree-hash.sh); rm probe.tmp; [ "$h1" != "$h2" ] && echo ok` → `ok`; eine Änderung unter `tasks/` lässt den Hash gleich
 Doku: keine (intern)
 
-### T3 — run.sh: Flag-Parser, --strict, --only, --step, Required-Menge  [ ]
+### T3 — run.sh: Flag-Parser, --strict, --only, --step, Required-Menge  [x] (Step-Ids, Probe-Lauf fuer --step, 22 Assertions)
 Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh (neu)
 Änderung: Argument-Parser (Layer positional, dann Flags), `AH_REQUIRED_DEFAULT` im Kopf, `AH_REQUIRED`-Override, unter `AH_STRICT=1`: SKIP eines Required-Steps oder eines per `--only` angeforderten Keys ⇒ FAIL mit `strict-failed: <step> (SKIP)`; Summary nennt die wirksame Required-Menge; `--step` führt genau einen Step aus. Hermetischer Test mit PATH-Shims (`go` maskiert ⇒ `strict-failed: go agent (SKIP)`; ohne `--strict` Exit 0 mit `K skipped`; unbekannter `--only`-Key ⇒ Exit 2). Kopf-Kommentar der Usage nachziehen.
 Verify: `bash scripts/tests/run_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/run.sh lint --only scripts` → Exit 0
