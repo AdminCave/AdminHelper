@@ -20,7 +20,7 @@ paths:
 ## Vor dem Tag: drei Ebenen real grün
 
 `bash scripts/tests/run.sh quick` auf der Dev-Box · `run.sh all` auf einer VM · Multibox-Capstone
-(`crabbox_multibox.sh --agents 2 --desktop`). Rot oder übersprungen heißt: nicht taggen. Ab Stufe 3 liefert
+(`crabbox_multibox.sh --agents 2 --desktop --strict`). Rot oder übersprungen heißt: nicht taggen — `--strict` macht einen Guard, der nicht laufen konnte, selbst zum Fehler. Ab Stufe 3 liefert
 `/test weekly` die Evidenz, ab Stufe 13 prüft `release.sh check` sie mechanisch.
 
 ## Bump-Commit `chore(release): bump version to X.Y.Z` — synchron ändern

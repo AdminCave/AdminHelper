@@ -79,7 +79,7 @@ Verify: `bash scripts/tests/run.sh unit --strict --only scripts` → Exit 0, `PA
 Doku: keine (Doku-Task T15)
 Abhängt von: T1, T3, T4, T5, T7, T8
 
-### T10 — crabbox_multibox.sh: skipped zählen, debian:9 als Marker  [ ]
+### T10 — crabbox_multibox.sh: skipped zählen, debian:9 als Marker  [x] (SKIPPED-Zähler, MB_DEBIAN9_SKIPPED, `--strict`-Flag statt Env — sonst wäre der strenge Zweig unerreichbar)
 Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh
 Änderung: Zähler `SKIPPED` neben ok/bad; `:171` debian:9-Zweig setzt Marker `MB_DEBIAN9_SKIPPED` und zählt skipped; unter `AH_STRICT=1` ⇒ `bad` statt note; Summary-Zeile `multibox: N ok, M failed, K skipped`.
 Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -n 'K skipped\|SKIPPED' scripts/tests/crabbox_multibox.sh` zeigt Zähler und Summary; realer Lauf in der Heavy-Zeile des Ledger-Kopfs bzw. beim nächsten Capstone

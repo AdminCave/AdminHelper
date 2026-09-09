@@ -51,15 +51,19 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
 `crabbox warmup -slug <s> -pond <p> -proxmox-bridge <bridge> -ttl 8h -idle-timeout 4h` →
 `crabbox run --id <s> -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/tests/crabbox_bootstrap.sh'` →
 `crabbox run --id <s> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `crabbox stop --id <s>`.
-`run.sh [lint|unit|quick|integration|e2e|all]` prints `N passed, M failed, K skipped`, exits
-non-zero on fail; integration/e2e/all need `AH_ALLOW_REAL=1`. Bootstrap profiles:
+`run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>]`
+prints `N passed, M failed, K skipped, J test-skips, R reruns` and exits non-zero on fail;
+under `--strict` a skipped required step is a failure, and so is a run in which nothing ran.
+integration/e2e/all need `AH_ALLOW_REAL=1`. Bootstrap profiles:
 `server`/`agent` skip Rust/Tauri (~18 min faster); `full` (desktop + single-box) keeps it.
 
 ## Multi-host scenarios — `crabbox_multibox.sh` (composable flags)
 
 `bash scripts/tests/crabbox_multibox.sh [flags]` leases a server-box + role boxes on the same
 provider bridge,
-prints one `N ok, M failed` summary, tears leases down on exit (`--keep` to inspect):
+prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--keep` to inspect):
+- `--strict`    a guard that could not run (e.g. the debian:9 image would not pull)
+                fails the run instead of passing as a note — use it for a release capstone.
 - `--agents N`  N agent-boxes: real `.deb` install + provision over the hop (cross-host mTLS).
 - `--rpm`       + a cross-distro rpm agent in a `rockylinux:8` container (crabbox_agentbox_rpm.sh).
 - `--tunnel`    + frps + an agent frpc STCP server + a visitor: full 3-host FRP tunnel data path.
