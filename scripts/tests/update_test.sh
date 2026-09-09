@@ -93,7 +93,7 @@ make_release() {
   ( cd "$assetdir" && sha256sum "adminhelper-runtime-$tag.tar.gz" > SHA256SUMS )
   minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
     -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
-    || { echo "SKIP: minisign cannot sign the fixture"; exit 75; }
+    || { echo "FATAL: minisign cannot sign the fixture"; exit 1; }
   [ -n "$latest" ] && printf '{"tag_name": "%s", "prerelease": false, "draft": false}\n' "$latest" \
     > "$apiroot/repos/$REPO/releases/latest"
   rm -rf "$stage"
@@ -221,11 +221,41 @@ mkdir -p "$WORK/repostage/dists"; printf 'repo-marker-0.34.0\n' > "$WORK/reposta
 tar czf "$ASSETDIR/adminhelper-agent-repo-v0.34.0.tar.gz" -C "$WORK/repostage" .
 ( cd "$ASSETDIR" && sha256sum "adminhelper-agent-repo-v0.34.0.tar.gz" >> SHA256SUMS )
 minisign -S -s "$WORK/test.key" -m "$ASSETDIR/SHA256SUMS" \
-  -x "$ASSETDIR/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+  -x "$ASSETDIR/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
+  || { echo "FATAL: minisign cannot sign the agent-repo fixture"; exit 1; }
 INST="$WORK/inst12"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'repo-marker-0.34.0' "$INST/repo/dists/Release" 2>/dev/null; } \
   && ok "agent-repo asset unpacked into ./repo" || bad "agent-repo not updated: rc=$rc"
+
+# ── 13. unarmed pubkey → warn + checksum-only, and it must FAIL OPEN on purpose ─
+# Making minisign a precondition removed the only coverage of this branch
+# (update.sh's `[ -z "$MINISIGN_PUBKEY" ] && return 0`). It is live production
+# code that accepts an unsigned bundle by design, so it needs a test of its own:
+# a future edit that empties the pubkey must not ship a silently-unsigned updater.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst13"; make_install 0.33.0 "$SRC_OLD" "$INST"
+# The signature file stays: update.sh downloads it before it looks at the pubkey,
+# so the unarmed branch is only reachable with the .minisig present — a signed
+# release met by an updater that carries no key.
+sed -i 's|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=""|' "$INST/scripts/update.sh"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'server:0.34.0' "$INST/.env"; } \
+  && ok "unarmed pubkey: update proceeds on the checksum alone" \
+  || bad "unarmed path broken: rc=$rc"
+printf '%s' "$out" | grep -q 'Release-Signatur nicht konfiguriert' \
+  && ok "unarmed pubkey warns that only transport integrity was checked" \
+  || bad "no warning on the unarmed path"
+
+# ...but the checksum still has to hold, or the unarmed path would accept anything.
+make_release 0.35.0 "$SRC_NEW" "$DL" "$API" v0.35.0
+INST="$WORK/inst13b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+sed -i 's|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=""|' "$INST/scripts/update.sh"
+printf 'x' >> "$DL/$REPO/releases/download/v0.35.0/adminhelper-runtime-v0.35.0.tar.gz"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+  && ok "unarmed pubkey still rejects a tampered bundle (checksum)" \
+  || bad "unarmed path accepted a tampered bundle: rc=$rc"
 
 echo
 echo "──────────────────────────────────────────"

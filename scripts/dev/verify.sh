@@ -61,6 +61,17 @@ TREE="$(cd "$TREE" && pwd)"
 RUN="$TREE/scripts/tests/run.sh"
 [ -f "$RUN" ] || { echo "not an AdminHelper checkout (no scripts/tests/run.sh): $TREE"; exit 2; }
 
+# Both artifacts go the moment the target tree is known — before the devenv file
+# can abort the run and before run.sh can refuse. "The file is there" then only
+# ever means "this run wrote it". The one thing this cannot cover is an argument
+# error: the parser exits before any tree is resolved, and a call that never
+# picked a target has no business deleting that target's evidence.
+OUT_DIR="${AH_OUT_DIR:-$TREE/.crabbox-out}"
+LAYER="quick"
+SRC="$OUT_DIR/last-$LAYER.json"
+DST="$OUT_DIR/last-verify.json"
+rm -f "$SRC" "$DST"
+
 # The devenv file is gitignored and per-host; it is what makes AH_TEST_DB and the
 # go/ruff toolchains reachable. Missing is not an error — a crabbox box has the
 # toolchains on PATH and no devenv file at all.
@@ -89,16 +100,6 @@ fi
 
 cd "$TREE" || exit 2
 export AH_ARGS="${ARGS[*]:-}"
-
-# Both artifacts go BEFORE the run, so "the file is there" can only mean "this run
-# wrote it". Without this, a run that never reached run.sh's writer (an unknown
-# component, a failed cd) would stamp a new component name onto an older run's
-# record — exactly what run.sh guards against one task earlier.
-OUT_DIR="${AH_OUT_DIR:-$TREE/.crabbox-out}"
-LAYER="quick"
-SRC="$OUT_DIR/last-$LAYER.json"
-DST="$OUT_DIR/last-verify.json"
-rm -f "$SRC" "$DST"
 
 "${CMD[@]}"; rc=$?
 

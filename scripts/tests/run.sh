@@ -84,7 +84,7 @@ export AH_ONLY AH_STRICT
 #                agent-monitoring · repo-build
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (the seven GUI suites carry their script name as id, underscores and all)
-AH_REQUIRED_DEFAULT="ruff server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
+AH_REQUIRED_DEFAULT="ruff shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
 AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 
 # Under --strict the python suites must report their own skips; without -rs a
@@ -391,7 +391,7 @@ layer_lint() {
 
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
-    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh
+    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
@@ -507,6 +507,12 @@ layer_unit() {
   else skip desktop-e2e-lint "desktop-e2e lint" "node/npm not installed"; fi
 
   # Ops/harness shell tests — hermetic, no docker, no display (see scripts_block).
+  # AH_ARGS has no meaning here (the knob is AH_SCRIPT_TESTS), and silently
+  # ignoring it would let `verify.sh scripts -- install_test` look narrowed while
+  # all thirteen ran.
+  if [ -n "$AH_ARGS" ] && only scripts && [ -n "$AH_ONLY" ]; then
+    echo "the 'scripts' step takes no -- args (use AH_SCRIPT_TESTS); got: $AH_ARGS"; exit 2
+  fi
   if ! only scripts; then skip scripts "scripts (hermetic)" "AH_ONLY"
   else
     # Say so when the list was narrowed, for the reason the required set is
@@ -559,9 +565,13 @@ layer_e2e() {
   if ! have_docker || ! have_display; then
     skip desktop-e2e-gui "desktop GUI E2E" "docker + xvfb + WebKitWebDriver + tauri-driver required"; return
   fi
-  local s
-  for s in desktop_e2e_live desktop_e2e_crud desktop_e2e_connect desktop_e2e_connect_tunnel \
-           desktop_e2e_tunnel desktop_e2e_monitoring desktop_e2e_sse_push; do
+  # Globbed, not listed: desktop_e2e_skip_test.sh derives the same set from the
+  # directory, and a hand-kept copy here would let an eighth suite be asserted
+  # by that test while never actually running in the heavy tier.
+  local f s
+  for f in "$ROOT"/scripts/tests/desktop_e2e_*.sh; do
+    s="$(basename "$f" .sh)"
+    [ "$s" = "desktop_e2e_skip_test" ] && continue
     run_step "$s" "$s" -- bash "scripts/tests/$s.sh"
   done
 }

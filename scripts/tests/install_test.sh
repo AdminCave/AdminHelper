@@ -81,7 +81,7 @@ make_release() {
   ( cd "$assetdir" && sha256sum "adminhelper-runtime-$tag.tar.gz" > SHA256SUMS )
   minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
     -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
-    || { echo "SKIP: minisign cannot sign the fixture"; exit 75; }
+    || { echo "FATAL: minisign cannot sign the fixture"; exit 1; }
   [ "$tamper" = 1 ] && printf '%064d  adminhelper-runtime-%s.tar.gz\n' 0 "$tag" > "$assetdir/SHA256SUMS"
   printf '{"tag_name": "%s", "prerelease": false, "draft": false}\n' "$tag" \
     > "$API/repos/$REPO/releases/latest"

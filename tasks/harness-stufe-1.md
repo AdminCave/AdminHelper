@@ -101,7 +101,7 @@ Doku: keine (Skill-Doku ist die Datei selbst)
 ### T13 — AUTONOMOUS.md, tasks/README.md, Verify-Zeilen in tasks/*.md  [x] (13 Verify-Zeilen in vier Ledgern auf Flag-Form — nicht elf wie geplant)
 Komponente: Repo-Root · Dateien: AUTONOMOUS.md, tasks/README.md, tasks/{code-review-fixes,dependency-refresh,merker-cleanup,monitoring-overhaul}.md
 Änderung: `AUTONOMOUS.md:84` und `tasks/README.md:40` ohne `fabelreport.md`; „Aktueller Stand" in `tasks/README.md` auf Ist (`audit-fixes.md` gitignored und abgeschlossen, `harness-stufe-1.md` aktiv); die elf `Verify:`-Zeilen mit Env-Präfix (`source …`, gesetztes `DATABASE_URL`, gesetztes `AH_ONLY`) in den vier Ledgern auf `bash scripts/dev/verify.sh <komp> [-- <args>]`-Form (historische Ledger, Bedeutung unverändert).
-Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 1 Treffer, und der ist ein Falsch-Positiv: die T3b-Zeile dieses Ledgers nennt `PATH=/usr/bin:/bin` als Beschreibung einer Testumgebung, nicht als Env-Präfix vor einem Kommando; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore' ':!docs/features/harness-stufe-1.md' ':!tasks/harness-stufe-1.md'` → 0 (Spec und Ledger dieser Stufe nennen das Wort, weil sie die Aufgabe beschreiben)
+Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 3 Treffer, alle in diesem Ledger und alle Falsch-Positive: die T3b-Zeile nennt `PATH=/usr/bin:/bin` als Testumgebung, die T11-Zeile `GOOS=windows go vet` als Befehl über den ein Review berichtet, und diese Zeile hier zitiert das Suchmuster selbst. Kein Treffer in den vier historischen Ledgern; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore' ':!docs/features/harness-stufe-1.md' ':!tasks/harness-stufe-1.md'` → 0 (Spec und Ledger dieser Stufe nennen das Wort, weil sie die Aufgabe beschreiben)
 Doku: keine (intern)
 Abhängt von: T5
 
@@ -118,6 +118,30 @@ Komponente: docs · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.ht
 Verify: `grep -c 'cargo check' docs/developer/cicd.html docs/en/developer/cicd.html` → 0 und 0; `grep -c 'agent-windows' docs/developer/cicd.html docs/en/developer/cicd.html` → ≥ 1 und ≥ 1
 Doku: ist die Doku
 Abhängt von: T9, T11
+
+### T17 — Funde aus dem Abschluss-`/code-review` (behoben)  [x]
+Komponente: scripts/tests, scripts/dev, .claude · Dateien: scripts/tests/verify_test.sh, scripts/dev/verify.sh, scripts/tests/run.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh, scripts/dev/hooks/session-status.sh, .claude/rules/release.md
+Der `/code-review` über den Branch-Diff fand 14 Punkte; neun davon sind hier behoben:
+1. **`verify_test.sh` löschte die echten Evidenz-Dateien des Checkouts.** `run_v nixkomponente` lief ohne `--tree` und ohne `AH_OUT_DIR` gegen den realen Baum, und `verify.sh` räumt die Artefakte des Zielbaums vor dem Lauf ab — seit T9 zerstörte damit jeder `run.sh quick` sein eigenes `last-quick.json`. Empirisch bestätigt, jetzt umgeleitet plus Assertion.
+2. `verify.sh` entfernt die Artefakte, sobald der Zielbaum feststeht (vorher erst nach dem devenv-Sourcen) — ein abbrechendes `.devenv.sh` ließ ein altes Artefakt stehen. Reine Argument-Fehler bleiben ausgenommen und das steht jetzt im Kommentar.
+3. Der checksum-only-Pfad von `update.sh` (`MINISIGN_PUBKEY=""`, fällt bewusst OPEN) hatte nach T8 keine Abdeckung mehr — zwei neue Fälle in `update_test.sh` (24 passed).
+4. `shellcheck`-Glob war nicht rekursiv: `scripts/dev/hooks/session-status.sh` wurde nie gelintet.
+5. `shellcheck` fehlte in `AH_REQUIRED_DEFAULT` — auf einer Box ohne shellcheck war `--strict` grün, obwohl die Ops-Skripte ungelintet blieben.
+6. `layer_e2e` hielt die sieben GUI-Suiten als zweite Handliste; jetzt aus dem Verzeichnis abgeleitet wie im Test.
+7. `verify.sh <komp> -- <args>` ignorierte die Args für `scripts` stillschweigend; wird jetzt abgelehnt.
+8. `exit 75` aus `make_release` heraus hätte einen schon roten Lauf zu SKIP gemacht — ein Signier-Fehler nach erfolgreichem Key-Erzeugen ist jetzt `exit 1`.
+9. Zwei Zusagen zurückgenommen, die der Code nicht hält: der Hook-Header behauptete „die fünf Trigger aus CLAUDE.md §3" (vier davon fehlen — steht jetzt da), und `release.md` versprach, `--strict` mache jeden nicht gelaufenen Capstone-Guard rot (es deckt nur den debian:9-Zweig ab).
+Verify: `bash scripts/tests/verify_test.sh` → `29 passed`; `bash scripts/tests/update_test.sh` → `24 passed`; `bash scripts/tests/run.sh quick --strict` → Exit 0; `.crabbox-out/last-quick.json` überlebt einen vollen Lauf
+Doku: keine (intern)
+
+### T18 — Offene Funde aus dem `/code-review` (nicht in dieser Stufe)  [?]
+Fünf Punkte sind echt, aber keine Blocker dieses PR — sie brauchen eine Entscheidung oder eine eigene Stufe:
+1. **`crabbox_multibox.sh`: vier weitere stille Skips.** Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop-Lease, moncheck-Lease und `--enforce` fallen ohne Zähler aus; scheitern alle Agent-Leases, meldet die Monitoring-Assertion `0 >= 0` sogar ein grünes `ok`. `--strict` deckt bisher nur debian:9 ab. Gehört zum Capstone-Umbau (Stufe 3).
+2. **`--capstone` setzt `ENFORCE` nicht** — der `MTLS_ENFORCE`-Guard ist in keinem Release-Capstone enthalten.
+3. **`tree-hash.sh` bei jedem Lauf** ist teuer: leerer Index heißt kein stat-Cache, also volles Re-Hashing des Baums und lose Objekte in `.git/objects` (~30× je hermetischem Block). Billiger: den echten Index kopieren oder einen Temp-Index pro Lauf wiederverwenden.
+4. **`json_str` ist in `run.sh` und `verify.sh` byte-identisch dupliziert**, zusammen mit dem Artefakt-Schema. Ein `scripts/dev/json_lib.sh` hielte die Regel an einer Stelle.
+5. **`printf %q` ist bash-spezifisch**, der Remote-Befehl läuft aber in der Shell der Box; bei nicht-ASCII-Werten erzeugt es `$'…'`, das `sh`/dash anders parst. Heute latent (alle Werte sind ASCII).
+Dazu drei Beobachtungen ohne Task: `varsIgnorePattern: '^_'` kollidiert mit der Store-Namenskonvention beider Frontends (ein toter `_store` fällt der neuen Regel nicht auf); `cargo install tauri-driver` in `crabbox_bootstrap.sh` ist ungepinnt und seit T8 tragend; `CLAUDE.md:158` sagt „die Dev-Box hat kein Docker" — sie hat Docker, nur kein Display (Harness-Datei, nicht in diesem Branch geändert).
 
 ### T16 — DEVELOPMENT.md, CHANGELOG, Capstone-Ledger-Notiz  [x] (drei neue DEVELOPMENT-Abschnitte; toter CI-Job entfernt)
 Komponente: Repo-Root · Dateien: DEVELOPMENT.md, CHANGELOG.md, tasks/test-infra-capstone-release.md

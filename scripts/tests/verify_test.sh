@@ -89,9 +89,15 @@ run_v server --tree "$WORK/notacheckout"
 
 # Without --tree the wrapper must target ITS OWN checkout. Proven without running
 # a suite: the real run.sh rejects an unknown component before any step starts.
-run_v nixkomponente
+# AH_OUT_DIR is redirected — verify.sh clears the artifacts of the tree it targets
+# BEFORE the run, and this case targets the real checkout. Without the redirect
+# this test deletes the evidence files of the run it is part of: from T9 on it
+# executes inside `run.sh quick`, whose own last-quick.json was the casualty.
+OUT=$(AH_OUT_DIR="$WORK/real-tree-out" bash "$VERIFY" nixkomponente 2>&1); rc=$?
 [ $rc -eq 2 ] && grep -q "unknown AH_ONLY key: 'nixkomponente'" <<<"$OUT" \
   && ok "no --tree targets the wrapper's own checkout" || bad "default tree: rc=$rc out=$OUT"
+[ -z "$(ls "$WORK/real-tree-out" 2>/dev/null)" ] \
+  && ok "a refused run leaves the target tree's artifacts alone" || bad "artifact written by a refused run"
 
 # ══ what reaches run.sh ═══════════════════════════════════════════════════════
 echo "── the call verify.sh builds ──"
@@ -169,6 +175,15 @@ OUT=$(AH_OUT_DIR="$REAL_OUT" bash "$VERIFY" nixkomponente 2>&1); rc=$?
 [ $rc -eq 2 ] && [ ! -f "$REAL_OUT/last-verify.json" ] \
   && ok "a refused run leaves no artifact, not an older one" \
   || bad "refused run: rc=$rc, artifact: $(cat "$REAL_OUT/last-verify.json" 2>/dev/null)"
+
+# A devenv file that aborts the run must not leave the previous run's record
+# behind either — the rm sits before the sourcing.
+printf '{"component": "from-an-older-run"}\n' > "$ART"
+printf 'exit 0\n' > "$A/.devenv.sh"
+OUT=$(bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
+[ $rc -eq 2 ] && [ ! -f "$ART" ] \
+  && ok "a devenv that aborts leaves no stale artifact" || bad "devenv abort: rc=$rc"
+printf 'export FIXTURE_DEVENV=sourced\n' > "$A/.devenv.sh"
 
 # A truncated source (an aborted run, a full disk) must be refused, not patched
 # into invalid JSON. The FIXTURE writes the broken file — laying it down here

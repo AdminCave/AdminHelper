@@ -13,9 +13,18 @@
 #   AH_AUTONOMOUS=1  print nothing (settings hooks fire in `claude -p` too)
 #   AH_DEVENV        path to the devenv file (default <root>/.devenv.sh)
 #
-# The WARN lines are the five triggers of CLAUDE.md §3 plus the two repo-hygiene
-# ones from the roadmap: they fire ONLY when Kevin's next move would fail or
-# something irreversible looms. No trigger, no WARN line.
+# The WARN lines fire ONLY when Kevin's next move would fail or something
+# irreversible looms. No trigger, no WARN line.
+#
+# Implemented: version bumped without a tag · main ahead of origin · an open draft
+# release · .claude/rules or .claude/agents gitignored · an env block in the public
+# settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing.
+#
+# NOT yet implemented, so their silence means nothing: CLAUDE.md §3 trigger 1
+# (a stage whose `Hängt ab von` is unmerged), 3 (the WIP caps aktiv 1 · bereit 2 ·
+# pr 3 · neu 20 — the ledger line below merges aktiv and bereit, so the two caps
+# cannot be told apart as printed), 4 (harness files changed in a feature branch)
+# and 5 (the main checkout not clean while planning or merging).
 
 set -uo pipefail
 
