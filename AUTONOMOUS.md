@@ -67,10 +67,9 @@ claude --model opus --permission-mode acceptEdits
 ```
 
 Der einzige Prompt, den du im autonomen Lauf standardmäßig noch siehst, ist das
-**PR-Öffnen** am Ende (bewusst prompt-pflichtig gelassen, weil es nach außen wirkt). Willst
-du auch das promptlos: `Bash(gh pr create:*)` in `.claude/settings.json` → `allow`
-aufnehmen, oder die Session mit `--dangerously-skip-permissions` fahren (nur auf einem
-Branch sinnvoll).
+**PR-Öffnen** am Ende — bewusst prompt-pflichtig, weil es nach außen wirkt, und das bleibt
+so: Push, PR und Merge sind deine Entscheidung (Betriebsmodell in `CLAUDE.md`). Eine
+Allow-Regel für `gh pr create` oder `--dangerously-skip-permissions` ist nicht vorgesehen.
 
 ## Zweiter Einstiegspunkt: einen Fable-Report abarbeiten
 
@@ -178,7 +177,8 @@ prüf es am Gate mit:
 ## Die Automatisierungs-Schicht (`.claude/`)
 
 > **`.claude/` wird per Whitelist geteilt** (das Repo ist PUBLIC). Versioniert sind die
-> wiederverwendbare Automatisierung: `settings.json` (Permissions + Hook) und `skills/`.
+> wiederverwendbare Automatisierung: `settings.json` (Permissions + Hook), `skills/`,
+> `rules/` (pfadgebundene Regeln) und `agents/`.
 > **Draußen bleibt nur `settings.local.json`** — sie trägt jetzt sowohl das crabbox-Token
 > als auch die Proxmox-Infra (`env`, aus `settings.json` dorthin verschoben, damit keine
 > Homelab-Details öffentlich werden). Neue `.claude/`-Dateien sind per Default ignoriert, bis

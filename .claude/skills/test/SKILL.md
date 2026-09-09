@@ -10,8 +10,9 @@ docker-compose stack, mTLS enrollment, Redis SSE fan-out, agent monitoring, apt/
 build, and multi-host scenarios (cross-distro rpm, 3-host FRP tunnel, monitoring
 closed-loop, the real Tauri desktop GUI) — needs real Linux with Docker + a display, which
 the sandboxed dev box lacks. crabbox leases ephemeral Proxmox VMs, rsyncs the tree, runs,
-and tears down. Provider env: `.claude/settings.json` (+ secret in the gitignored
-`.claude/settings.local.json`); confirm with `crabbox doctor`.
+and tears down. Provider env AND token live only in the gitignored
+`.claude/settings.local.json` (nothing infra-bearing in the public `settings.json`);
+confirm with `crabbox doctor`.
 
 ## Fast loop — warm once → iterate → reap (the default; do NOT stop after each run)
 
