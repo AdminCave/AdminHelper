@@ -37,7 +37,7 @@
           <table>
             <thead><tr><th>Workflow</th><th>Aufgabe</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo check</code> auf Windows, <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>). Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate). Auf <code>main</code>-Pushes + manuell (bewusst noch kein PR-Gate, da Image-Build + 5-Container-Boot): ein From-outside-Integrationstest (<code>scripts/tests/integration_stack_test.sh</code>), der den echten Stack mit erzwungenem mTLS hochf&auml;hrt und nur &uuml;ber das nginx-Gateway den vollen Pfad pr&uuml;ft &ndash; Enrollment-Token, CSR&nbsp;&rarr;&nbsp;Enroll-Plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;Client-Cert, certless&nbsp;&rarr;&nbsp;abgewiesen, Cert+JWT&nbsp;&rarr;&nbsp;200. Der Desktop-E2E (WebdriverIO + <code>tauri-driver</code> unter <code>xvfb</code>, <code>apps/desktop/e2e/</code>) l&auml;uft <strong>bewusst nicht in CI</strong>, sondern lokal/manuell (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): die headless-WebKit-Kette (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) driftet mit Runner-Image + ungepinnten Upstream-Tools und f&auml;rbte <code>main</code> rot ohne echten Defekt. Der schwere Tier (Multi-Host-Stack, mTLS &uuml;ber einen echten Netz-Hop, Desktop-GUI) l&auml;uft stattdessen auf <strong>crabbox</strong> (ephemere Proxmox-VMs) &ndash; siehe <code>DEVELOPMENT.md</code> und die <code>/test</code>-Skill</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo test --locked</code> auf Windows, die Go-Suite nativ unter Windows (Job <code>agent-windows</code>: <code>go test -v ./...</code>, Build und <code>version</code>-Smoke der <code>.exe</code>), <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>). Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate). Auf <code>main</code>-Pushes + manuell (bewusst noch kein PR-Gate, da Image-Build + 5-Container-Boot): ein From-outside-Integrationstest (<code>scripts/tests/integration_stack_test.sh</code>), der den echten Stack mit erzwungenem mTLS hochf&auml;hrt und nur &uuml;ber das nginx-Gateway den vollen Pfad pr&uuml;ft &ndash; Enrollment-Token, CSR&nbsp;&rarr;&nbsp;Enroll-Plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;Client-Cert, certless&nbsp;&rarr;&nbsp;abgewiesen, Cert+JWT&nbsp;&rarr;&nbsp;200. Der Desktop-E2E (WebdriverIO + <code>tauri-driver</code> unter <code>xvfb</code>, <code>apps/desktop/e2e/</code>) l&auml;uft <strong>bewusst nicht in CI</strong>, sondern lokal/manuell (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): die headless-WebKit-Kette (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) driftet mit Runner-Image + ungepinnten Upstream-Tools und f&auml;rbte <code>main</code> rot ohne echten Defekt. Der schwere Tier (Multi-Host-Stack, mTLS &uuml;ber einen echten Netz-Hop, Desktop-GUI) l&auml;uft stattdessen auf <strong>crabbox</strong> (ephemere Proxmox-VMs) &ndash; siehe <code>DEVELOPMENT.md</code> und die <code>/test</code>-Skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Server- + Monitoring-Image bauen &amp; nach <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code> pushen; jeden Digest schlüssellos mit cosign signieren (+ SLSA-Provenance/SBOM)</td></tr>
               <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), <code>SHA256SUMS</code> (+ minisign-Signatur), Draft-Release</td></tr>
               <tr><td><code>audit.yml</code></td><td>W&ouml;chentlicher Dependency-Audit (Montag fr&uuml;h, auch manuell per <code>workflow_dispatch</code>): <code>pip-audit</code> (Server- + Monitoring-Locks), <code>cargo audit</code> (Desktop), <code>govulncheck</code> (Agent), <code>npm audit</code> (Web + Desktop-UI)</td></tr>
@@ -54,6 +54,62 @@
               <tr><td>Schedule (w&ouml;chentlich)</td><td><code>audit.yml</code> (Dependency-Audit)</td></tr>
             </tbody>
           </table>
+
+          <h2>Test-Aggregator (<code>scripts/tests/run.sh</code>)</h2>
+          <p>Ein Einstiegspunkt f&uuml;r alle Suiten &ndash; lokal, auf einer crabbox-VM und im CI-Job
+          <code>ops-scripts</code>. Der Aufruf ist <code>bash scripts/tests/run.sh [layer] [flags]</code>;
+          Layer sind <code>lint</code>, <code>unit</code>, <code>quick</code> (Default), <code>integration</code>,
+          <code>e2e</code>, <code>all</code>. Die schweren Layer verweigern ohne <code>AH_ALLOW_REAL=1</code>.</p>
+          <table>
+            <thead><tr><th>Flag / Env</th><th>Wirkung</th></tr></thead>
+            <tbody>
+              <tr><td><code>--strict</code></td><td>Ein SKIP eines Pflicht-Schritts ist ein <strong>Fehler</strong>, kein PASS. Ebenso ein strenger Lauf, in dem &uuml;berhaupt kein Schritt lief.</td></tr>
+              <tr><td><code>--only &lt;keys&hellip;&gt;</code></td><td>Beschr&auml;nkt lint/unit auf Komponenten (<code>server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts</code>). Unter <code>--strict</code> gilt ein so angeforderter Schritt als Pflicht. Env-Form: <code>AH_ONLY</code>.</td></tr>
+              <tr><td><code>--step &lt;name&gt;</code></td><td>Genau ein Schritt (Teilstring seines Namens). Ein unbekannter oder mehrdeutiger Name wird in einem Trockenlauf abgelehnt, bevor eine Suite startet.</td></tr>
+              <tr><td><code>AH_REQUIRED</code></td><td>Die Pflicht-Menge dieses Rechners (Step-Ids, Leerzeichen-getrennt), &uuml;berschreibt <code>AH_REQUIRED_DEFAULT</code>; geh&ouml;rt in die gitignorete <code>.devenv.sh</code>. Die wirksame Menge steht unter <code>--strict</code> in der Summary.</td></tr>
+              <tr><td><code>AH_ARGS</code></td><td>Zus&auml;tzliche Argumente f&uuml;r die Suite selbst (so reicht <code>verify.sh &lt;komp&gt; -- &lt;args&gt;</code> sie durch).</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Exit 75 heisst SKIP.</strong> Ein Skript, dem eine Voraussetzung fehlt, endet mit 75
+          (<code>EX_TEMPFAIL</code>) und wird als SKIP gez&auml;hlt. Ein blankes <code>exit 0</code> w&auml;re ein
+          gr&uuml;nes PASS, obwohl nichts lief &ndash; so blieben die sieben Desktop-GUI-Suiten und
+          <code>agent_install_test.sh</code> monatelang unsichtbar. Die minisign-Weichen in
+          <code>install_test.sh</code> / <code>update_test.sh</code> waren der sch&auml;rfere Fall: sie
+          meldeten <em>PASS</em>, nachdem sie den Signaturpfad neutralisiert hatten.
+          <strong>SKIP heisst nicht verifiziert.</strong></p>
+          <p><strong>test-skips.</strong> Auch innerhalb einer gr&uuml;nen pytest-Suite kann ein einzelner Test
+          stillschweigend &uuml;bersprungen werden. Unter <code>--strict</code> laufen die Python-Suiten mit
+          <code>-rs</code>, und <code>run.sh</code> wertet die Skip-Zeilen aus: ist die Vorbedingung eines
+          Pflicht-Tests erf&uuml;llt und er skippt trotzdem, endet der Lauf mit
+          <code>strict-failed: &lt;test&gt; (test-skip)</code>. Vorbedingungen sind das, worauf der Test selbst
+          pr&uuml;ft &ndash; <code>DATABASE_URL</code> f&uuml;r <code>test_migrations_smoke</code>, ein erreichbares
+          Redis f&uuml;r <code>test_stream_redis</code>, ein Postgres in <code>AH_TEST_DB</code> f&uuml;r
+          <code>test_db_token_store</code>, eine erreichbare Datenbank (oder Docker) f&uuml;r
+          <code>test_auth_token_lifecycle</code>. Auf einer Box, die einen Test wirklich nicht fahren kann,
+          bleibt er ein sichtbarer SKIP.</p>
+          <p>Die Summary lautet deshalb
+          <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> ist vorerst
+          immer 0 und existiert, damit die Flaky-Erkennung sp&auml;ter dort einh&auml;ngt.</p>
+          <p><strong>Evidenz.</strong> Jeder Lauf schreibt <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
+          (Default <code>.crabbox-out/</code>, gitignored) mit Layer, Flags, Pflicht-Menge, Zeitstempeln,
+          jedem Schritt samt Ergebnis und Dauer, den test-skips &ndash; und mit <code>head</code> plus
+          <code>tree_hash</code>. Den Tree-Hash liefert <code>scripts/dev/tree-hash.sh</code>: er wird in einem
+          Wegwerf-Index gebildet, sieht also auch <em>untracked</em> Dateien, w&auml;hrend <code>tasks/</code>
+          und die Ausgabeverzeichnisse ausgeklammert bleiben. Ein Haken im Ledger &auml;ndert die Evidenz
+          eines Laufs damit nicht, eine neue, noch nicht committete Quelldatei sehr wohl.</p>
+
+          <h2>Verify-Konvention (<code>scripts/dev/verify.sh</code>)</h2>
+          <p>Die <code>Verify:</code>-Zeile einer Task ruft eine Komponenten-Suite immer in dieser Form auf:</p>
+          <div class="code-header"><span>bash</span></div>
+          <pre><code>bash scripts/dev/verify.sh &lt;komponente&gt; [--strict] [--tree &lt;pfad&gt;] [-- &lt;args&gt;]</code></pre>
+          <p>Das Skript sourct <code>.devenv.sh</code> (bzw. <code>$AH_DEVENV</code>), l&ouml;st
+          <code>AH_TEST_DB</code> auf, delegiert an <code>run.sh quick --only &lt;komponente&gt;</code>
+          (also Lint <em>und</em> Unit dieser Komponente), l&auml;uft mit <code>--tree</code> gegen einen anderen
+          Checkout und schreibt <code>last-verify.json</code> &ndash; das Lauf-Artefakt plus
+          <code>component</code>, <code>args</code>, <code>tree</code>. Der Grund f&uuml;r den Wrapper ist die
+          Allowlist: eine Bash-Allow-Regel matcht nie &uuml;ber ein Env-Pr&auml;fix, <code>source .devenv.sh
+          &amp;&amp; DATABASE_URL=&hellip; pytest</code> ist also nicht freigebbar. Env-Bedarf l&ouml;st das
+          Skript auf, der Aufrufer schreibt Flags.</p>
 
           <h2>Container-Images (ghcr.io)</h2>
           <p>Getaggt wird über <code>docker/metadata-action</code>. <code>:latest</code> entsteht nur auf einem (Nicht-Prerelease-)Semver-Tag &ndash; nicht bei jedem <code>main</code>-Push:</p>

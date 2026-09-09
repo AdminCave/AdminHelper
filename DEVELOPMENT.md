@@ -113,6 +113,60 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
   apps/server/.venv/bin/python -m pytest -q
 ```
 
+### Schnelltest einer Komponente: verify.sh
+
+`scripts/dev/verify.sh` ist die eine Form, in der eine Task-`Verify:`-Zeile eine
+Komponenten-Suite startet. Es sourct `.devenv.sh` (bzw. `$AH_DEVENV`), loest
+`AH_TEST_DB` auf und delegiert an `scripts/tests/run.sh`:
+
+```bash
+bash scripts/dev/verify.sh <komponente> [--strict] [--tree <pfad>] [-- <args>]
+
+bash scripts/dev/verify.sh monitoring --strict           # eine Komponente
+bash scripts/dev/verify.sh server -- tests/test_auth.py  # gezielt eine Datei
+bash scripts/dev/verify.sh all --strict                  # der ganze quick-Layer
+bash scripts/dev/verify.sh web --tree ../lane-b          # ein anderer Worktree
+```
+
+Komponenten: `server monitoring ca-issuer agent desktop desktop-rs desktop-ui
+desktop-e2e web scripts` und `all`. Ein Lauf, der die Suite erreicht, hinterlaesst
+`.crabbox-out/last-verify.json` (das Artefakt von `run.sh` plus `component`,
+`args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
+Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
+loescht eine aeltere: veraltete Evidenz ist schlechter als fehlende.
+
+Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
+ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
+nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
+
+### AH_REQUIRED in .devenv.sh
+
+`--strict` macht aus einem SKIP einen Fehler — aber nur fuer die Steps der
+**Required-Menge**. Die haengt vom Rechner ab (diese Box hat kein Display,
+`run.sh e2e --strict` waere hier also dauerhaft rot), deshalb steht sie in der
+gitignoreten `.devenv.sh` und ueberschreibt `AH_REQUIRED_DEFAULT` aus `run.sh`.
+Die gueltigen Step-Ids stehen im Kopf von `scripts/tests/run.sh`. Beispiel fuer
+eine Box ohne frpc-Sidecar (also ohne `cargo test (desktop)`):
+
+```bash
+export AH_REQUIRED="ruff server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-ui-vitest web-vitest scripts"
+```
+
+Auf dieser Box deckt sich die Menge mit dem Default; ohne die Zeile gilt er. Die wirksame Menge druckt `run.sh` unter
+`--strict` in die Summary, damit sie nicht still schrumpfen kann. Ein strenger
+Lauf, in dem **kein** Step lief, ist ebenfalls ein Fehler — sonst meldete er
+gruen, ohne etwas geprueft zu haben.
+
+### Session-Status-Hook
+
+`scripts/dev/hooks/session-status.sh` laeuft als `SessionStart`-Hook
+(`.claude/settings.json`) und druckt einen `AH-STATUS`-Block: Checkout und
+Dirty-Stand, `tauri.conf.json`-Version gegen den letzten Tag, die naechsten
+Roadmap-Zeilen, aktive Ledger, offene PRs und warme Boxen. Er ist rein lesend,
+endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 — kein
+Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
+feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`.
+
 ### Go Toolchain (Agent)
 
 ```bash
@@ -389,11 +443,12 @@ Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`
 `xvfb`, `tauri-driver`, `tauri-cli` und `gnome-keyring`/`dbus`
 (siehe `apps/desktop/e2e/README.md`).
 
-In CI laeuft (jeweils nur auf `main`-Push/manuell, kein PR-Gate) der
-From-outside-Test (`integration-stack`) und der Desktop-Smoke-E2E
-(`desktop-e2e`, `npm test`). Die **Desktop-Live-E2E** (`desktop_e2e_live.sh`
-+ `desktop_e2e_tunnel.sh`) laufen bewusst **nur lokal/manuell** — vor Releases
-von Hand ausfuehren.
+In CI laeuft (nur auf `main`-Push/manuell, kein PR-Gate) der From-outside-Test
+(`integration-stack`). Einen CI-Job fuer den Desktop-Smoke-E2E gibt es **nicht**:
+die headless-WebKit-Kette driftet mit dem Runner-Image und faerbte `main` rot
+ohne echten Defekt. Der Smoke wie auch die **Desktop-Live-E2E**
+(`desktop_e2e_live.sh` + `desktop_e2e_tunnel.sh`) laufen auf crabbox bzw. lokal
+— vor Releases von Hand ausfuehren.
 
 ### Schwere Suites auf crabbox (Multi-Host + schneller Loop)
 
@@ -401,9 +456,10 @@ Wer kein lokales Docker/Display hat (z. B. die Agent-Sandbox), faehrt die schwer
 Suites auf **crabbox** (least ephemere Proxmox-VMs; Provider-Env in
 `.claude/settings.json`, Token nur im gitignored `.claude/settings.local.json`).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
-`bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all]` (schwere Layer
-verlangen `AH_ALLOW_REAL=1`; `AH_ONLY="server web"` begrenzt lint/unit auf die
-genannten Komponenten — gefilterte Steps melden SKIP).
+`bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
+[--only <keys…>] [--step <name>]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
+`--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
+Steps melden SKIP). `crabbox_iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:

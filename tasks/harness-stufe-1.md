@@ -112,14 +112,14 @@ Verify: `bash scripts/tests/run.sh unit --strict --only web desktop-ui` → Exit
 Doku: keine (intern)
 Abhängt von: T3
 
-### T15 — Doku cicd.html DE+EN  [ ]
+### T15 — Doku cicd.html DE+EN  [x] (Abschnitt „Test-Aggregator" + „Verify-Konvention" neu angelegt — es gab keinen)
 Komponente: docs · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
 Änderung: „cargo check auf Windows" ⇒ `cargo test --locked`; neuer Job `agent-windows`; Abschnitt „Test-Aggregator" (den es noch nicht gibt — neu anlegen) mit Flags `--strict`/`--only`/`--step`/`AH_ARGS`, Exit-75-, test-skip- und rerun-Semantik, Required-Menge (`AH_REQUIRED`), `last-<layer>.json`/`last-verify.json` und Tree-Hash-Definition, `verify.sh` als Verify-Konvention; `ops-scripts` läuft über `run.sh`. Beide Sprachen gleichlautend.
 Verify: `grep -c 'cargo check' docs/developer/cicd.html docs/en/developer/cicd.html` → 0 und 0; `grep -c 'agent-windows' docs/developer/cicd.html docs/en/developer/cicd.html` → ≥ 1 und ≥ 1
 Doku: ist die Doku
 Abhängt von: T9, T11
 
-### T16 — DEVELOPMENT.md, CHANGELOG, Capstone-Ledger-Notiz  [ ]
+### T16 — DEVELOPMENT.md, CHANGELOG, Capstone-Ledger-Notiz  [x] (drei neue DEVELOPMENT-Abschnitte; toter CI-Job entfernt)
 Komponente: Repo-Root · Dateien: DEVELOPMENT.md, CHANGELOG.md, tasks/test-infra-capstone-release.md
 Änderung: `DEVELOPMENT.md:394` toten CI-Job `desktop-e2e` entfernen; Abschnitte `verify.sh` (Aufruf, `last-verify.json`), `AH_REQUIRED` in `.devenv.sh`, Session-Status-Hook (was er druckt, `AH_AUTONOMOUS=1`); `CHANGELOG.md` Unreleased „Changed: Test-Aggregator strict/only/step, Exit 75 statt stillem PASS, verify.sh, agent-windows-Job, Session-Status-Hook"; im Capstone-Ledger unter A4 eine Notiz „Stand 2026-09: JUnit-Reporter nicht vorhanden (`wdio.conf.js:67` `spec`), kommt in Stufe 5".
 Verify: `grep -n 'desktop-e2e' DEVELOPMENT.md` → 0 Treffer als CI-Job-Name; `grep -c 'verify.sh' DEVELOPMENT.md` ≥ 1; `grep -n 'JUnit-Reporter nicht vorhanden' tasks/test-infra-capstone-release.md` → 1
