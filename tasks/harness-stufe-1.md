@@ -48,7 +48,7 @@ Abhängt von: T2, T3
 
 ### T5 — verify.sh und Allowlist-Eintrag  [x] (Flag-Form, --tree, AH_ARGS, last-verify.json nur aus DIESEM Lauf, 27 Assertions)
 Komponente: scripts/dev · Dateien: scripts/dev/verify.sh (neu), scripts/tests/verify_test.sh (neu), .claude/settings.json
-Änderung: Interface laut Spec (`<komponente> [--strict] [--tree <pfad>] [-- <args>]`), sourct `.devenv.sh`/`$AH_DEVENV`, delegiert an `run.sh unit --only`, gezielte Args an pytest/go/vitest, `--tree` per `cd`, schreibt `last-verify.json` (Schema + `component`, `args`, `tree`), Exit durchgereicht. `permissions.allow` += `Bash(bash scripts/dev/verify.sh:*)`. Hermetischer Test mit Shims (Komponente `scripts`, `--tree` gegen ein zweites Fixture). SPDX-Header.
+Änderung: Interface laut Spec (`<komponente> [--strict] [--tree <pfad>] [-- <args>]`), sourct `.devenv.sh`/`$AH_DEVENV`, delegiert an `run.sh unit --only` (in T12 auf `quick --only` korrigiert: eine Komponenten-Schnellsuite ist Lint *und* Unit), gezielte Args an pytest/go/vitest, `--tree` per `cd`, schreibt `last-verify.json` (Schema + `component`, `args`, `tree`), Exit durchgereicht. `permissions.allow` += `Bash(bash scripts/dev/verify.sh:*)`. Hermetischer Test mit Shims (Komponente `scripts`, `--tree` gegen ein zweites Fixture). SPDX-Header.
 Verify: `bash scripts/tests/verify_test.sh` → `27 passed, 0 failed` (auch unter `env -i`); `bash scripts/dev/verify.sh monitoring --strict` → Exit 0 und `.crabbox-out/last-verify.json` existiert (den Step `scripts (hermetic)` legt erst T9 an; nach T9 ist auch die Ledger-Fassung `verify.sh scripts --strict` Exit 0)
 Doku: keine (Doku-Task T16)
 Abhängt von: T4
@@ -91,16 +91,17 @@ Komponente: .github · Dateien: .github/workflows/ci.yml
 Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert 'agent-windows' in d['jobs']"` (grün, Pins identisch zu Job `agent`, `GOOS=windows go vet ./...` Exit 0); PR-CI: Job grün, Log enthält `TestReWinServiceName` und `PASS` — **steht aus**, der Job kann erst nach dem Push laufen. Statische Vorhersage aus dem Review: grün erwartet; einziger Bruch-Kandidat ist `config.SecureDir` (zwei `icacls`-Aufrufe) auf `t.TempDir()` in vier enroll/renew-Tests — falls rot, `SecureDir` in `Store` injizierbar machen statt den Test aufzuweichen (T11b)
 Doku: keine (Doku-Task T15)
 
-### T12 — feature-build/plan/review Skills: Verify-Aufruf, restore statt checkout, fabelreport  [ ]
+### T12 — feature-build/plan/review Skills: Verify-Aufruf, restore statt checkout, fabelreport  [x] (0 Treffer für `git checkout --` und `fabelreport` unter .claude; zusätzlich `scripts/dev/verify.sh` + Test + `.claude/rules/testing.md`, siehe unten)
 Komponente: .claude/skills · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-review/SKILL.md
 Änderung: feature-build Schritt „Pro Iteration": Schnellsuite als `bash scripts/tests/run.sh quick --strict --only <komp>` bzw. `bash scripts/dev/verify.sh <komp> --strict`; Z. 66 `git checkout -- <datei>` ⇒ `git restore --source=HEAD --staged --worktree -- <datei>`, Revert-Check ausdrücklich nie im Builder-Tree (eigener Worktree); `fabelreport`-Verweise (feature-build:76, feature-plan:66, feature-review:19) auf „Spec-Feld des Ledger-Kopfs"; feature-plan Task-Schema: `Verify:` nur in Flag-Form (Beispielzeile).
 Verify: `git grep -n 'git checkout --' .claude/skills` → 0; `git grep -n fabelreport .claude` → 0; `git grep -n 'verify.sh\|run.sh quick --strict' .claude/skills/feature-build/SKILL.md` ≥ 1
+Zusätzlich, aus dem Review dieser Task: `scripts/dev/verify.sh` delegiert jetzt an `run.sh quick --only <komp>` statt `unit --only` (samt Test und Spec-Notiz). Eine Komponenten-Schnellsuite ist laut CLAUDE.md Lint *und* Unit — mit `unit` allein hätte jede auf `verify.sh` umgeschriebene Ledger-Zeile weniger verifiziert als die Zeile davor, und `verify.sh server` hätte ruff still übersprungen. `.claude/rules/testing.md` schränkt die Flag-Form auf neue und aktive Ledger ein (abgeschlossene bleiben Historie).
 Doku: keine (Skill-Doku ist die Datei selbst)
 
-### T13 — AUTONOMOUS.md, tasks/README.md, Verify-Zeilen in tasks/*.md  [ ]
+### T13 — AUTONOMOUS.md, tasks/README.md, Verify-Zeilen in tasks/*.md  [x] (13 Verify-Zeilen in vier Ledgern auf Flag-Form — nicht elf wie geplant)
 Komponente: Repo-Root · Dateien: AUTONOMOUS.md, tasks/README.md, tasks/{code-review-fixes,dependency-refresh,merker-cleanup,monitoring-overhaul}.md
 Änderung: `AUTONOMOUS.md:84` und `tasks/README.md:40` ohne `fabelreport.md`; „Aktueller Stand" in `tasks/README.md` auf Ist (`audit-fixes.md` gitignored und abgeschlossen, `harness-stufe-1.md` aktiv); die elf `Verify:`-Zeilen mit Env-Präfix (`source …`, gesetztes `DATABASE_URL`, gesetztes `AH_ONLY`) in den vier Ledgern auf `bash scripts/dev/verify.sh <komp> [-- <args>]`-Form (historische Ledger, Bedeutung unverändert).
-Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 0; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore' ':!docs/features/harness-stufe-1.md' ':!tasks/harness-stufe-1.md'` → 0 (Spec und Ledger dieser Stufe nennen das Wort, weil sie die Aufgabe beschreiben)
+Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 1 Treffer, und der ist ein Falsch-Positiv: die T3b-Zeile dieses Ledgers nennt `PATH=/usr/bin:/bin` als Beschreibung einer Testumgebung, nicht als Env-Präfix vor einem Kommando; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore' ':!docs/features/harness-stufe-1.md' ':!tasks/harness-stufe-1.md'` → 0 (Spec und Ledger dieser Stufe nennen das Wort, weil sie die Aufgabe beschreiben)
 Doku: keine (intern)
 Abhängt von: T5
 

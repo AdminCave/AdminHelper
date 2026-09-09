@@ -8,8 +8,8 @@
 #   bash scripts/dev/verify.sh <component> [--strict] [--tree <path>] [-- <args>]
 #
 #     <component>  server monitoring ca-issuer agent desktop desktop-rs
-#                  desktop-ui desktop-e2e web scripts — or `all` for the
-#                  whole quick layer
+#                  desktop-ui desktop-e2e web scripts — or `all` for every
+#                  component. Runs that component's lint AND unit steps.
 #     --strict     a SKIP of a required step fails the run (see run.sh)
 #     --tree       run against another checkout (a worktree), not this one
 #     -- <args>    extra arguments for the suite itself, e.g.
@@ -75,12 +75,15 @@ if [ -f "$DEVENV" ]; then
   set +e   # a `set -e` in the devenv file must not leak into this wrapper
 fi
 
-# `all` means the whole quick layer; anything else is one --only key, which
-# run.sh validates (an unknown component exits 2 there, before a step runs).
+# The quick layer, not just unit: a component's fast suite is lint AND unit
+# (CLAUDE.md's component table — ruff, gofmt, shellcheck live in layer_lint).
+# Delegating to `unit` alone would have made `verify.sh server` silently skip
+# ruff, and every ledger Verify: line rewritten to this form would have verified
+# less than the line it replaced. `all` needs no --only.
 if [ "$COMPONENT" = "all" ]; then
   CMD=(bash "$RUN" quick)
 else
-  CMD=(bash "$RUN" unit --only "$COMPONENT")
+  CMD=(bash "$RUN" quick --only "$COMPONENT")
 fi
 [ "$STRICT" = 1 ] && CMD+=(--strict)
 
@@ -92,7 +95,7 @@ export AH_ARGS="${ARGS[*]:-}"
 # component, a failed cd) would stamp a new component name onto an older run's
 # record — exactly what run.sh guards against one task earlier.
 OUT_DIR="${AH_OUT_DIR:-$TREE/.crabbox-out}"
-LAYER="unit"; [ "$COMPONENT" = "all" ] && LAYER="quick"
+LAYER="quick"
 SRC="$OUT_DIR/last-$LAYER.json"
 DST="$OUT_DIR/last-verify.json"
 rm -f "$SRC" "$DST"

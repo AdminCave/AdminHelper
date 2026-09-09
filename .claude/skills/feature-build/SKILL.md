@@ -23,7 +23,7 @@ nie automatisch gebaut.
   warmen Lane-Box statt lokal. Einmalig `bash scripts/tests/crabbox_warm.sh <Warm-Profil>`
   (Default `desktop`; `pond` nur wenn im Kopf). Pro Task: das `Verify:` via
   `bash scripts/tests/crabbox_iter.sh --cmd '<befehl>'`, die Komponenten-Schnellsuite via
-  `AH_ONLY='<komponenten>' bash scripts/tests/crabbox_iter.sh quick` (Keys: server
+  `bash scripts/tests/crabbox_iter.sh quick --strict --only <komponenten>` (Keys: server
   monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts). Nichts lokal bauen/testen.
   Fehlt das Feld oder steht `lokal` → unverändert lokale Suiten (Solo-Default).
 - **Status prüfen:** `geplant` → das Starten von `feature-build` IST die Freigabe: Kopf auf
@@ -54,17 +54,25 @@ nie automatisch gebaut.
    - **Braucht Entscheidung / destruktiv / mehrdeutig** → NICHT raten, `[?]` + kurze Frage,
      überspringen (das ist ein legitimes Ergebnis, kein Versagen).
 3. Erst das `Verify:` des Eintrags ausführen, dann die **schnelle Suite der berührten
-   Komponente(n)** — nur was real existiert:
-   - `apps/server`, `apps/monitoring`, `apps/ca-issuer`: `pytest -q` · `ruff check` · `ruff format --check`
-   - `apps/agent`: `gofmt -l .` · `go vet ./...` · `go test ./...`
-   - `apps/desktop/src-tauri`: `cargo fmt --check` · `cargo clippy -- -D warnings` · `cargo test`
-   - `apps/desktop/ui`: `npm run check` · `npm run lint` · `npm run test`
-   - `apps/web`: `npm run check` · `npm run lint` · `npm run test:unit`  (NICHT `test:e2e` — schwer)
+   Komponente(n)** — in Flag-Form, weil eine Allow-Regel nie über ein Env-Präfix matcht:
+   - `bash scripts/dev/verify.sh <komponente> --strict` — fährt den **quick**-Layer
+     dieser Komponente (Lint *und* Unit: ruff/gofmt/shellcheck plus die Suite),
+     löst `.devenv.sh`/`AH_TEST_DB` selbst auf und schreibt `last-verify.json`;
+     gezielte Args nach `--` (z. B. `… server --strict -- tests/test_auth.py`).
+   - Mehrere Komponenten auf einmal: `bash scripts/tests/run.sh quick --strict --only <komp…>`.
+     Keys: server monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts.
+   - `--strict` ist Pflicht: ohne das Flag zählt ein SKIP als Erfolg, und genau daran
+     ist die alte Kette grün geworden, ohne dass etwas lief.
    - Bei `Fast-Suite: crabbox`: dieselben Checks remote über `crabbox_iter.sh` (s. „Vor
      dem Start"), nicht lokal.
    - **Grün** → Eintrag `[x]` (+ 1 Stichwort was geändert).
-   - **Rot durch deine Änderung** → fixen; nicht in ~2 Versuchen lösbar → `git checkout -- <datei>`
-     (Änderung zurücknehmen), `[~] (verworfen: Test rot: <kurz>)`, weiter.
+   - **Rot durch deine Änderung** → fixen; nicht in ~2 Versuchen lösbar →
+     `git restore --source=HEAD --staged --worktree -- <datei>` (Änderung zurücknehmen),
+     `[~] (verworfen: Test rot: <kurz>)`, weiter. Diese Rücknahme passiert **im**
+     Builder-Tree — Verwerfen ist hier der Zweck. Eine *Revert-Probe* dagegen
+     (einen fertigen Fix testweise entfernen, um den Test rot zu sehen) läuft nie
+     hier, sondern in einem eigenen Worktree: sonst löscht sie ungestagte Arbeit
+     an anderen Tasks.
    - **Rot strukturell / unabhängig von dir** → **STOPP**: im Ledger vermerken, Lauf beenden,
      berichten. Nicht auf rotem Fundament weiterbauen.
 4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): erst die berührten Dateien
@@ -73,7 +81,7 @@ nie automatisch gebaut.
    einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst `.claude/skills/feature-review/
    SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er lädt den Skill NICHT von selbst);
    (b) der zu prüfende Diff ist `git diff --staged`; (c) die Soll-Vorgabe ist die Task +
-   die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des Ledger-Kopfs bzw. `../fabelreport.md`).
+   die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des Ledger-Kopfs).
    Er sieht **nur** das — nicht deinen Bau-Verlauf. Urteil:
    - `approve` → weiter zum Commit.
    - `request_changes` mit `blocker`/`wichtig` → Punkte beheben, betroffene Schnelltests

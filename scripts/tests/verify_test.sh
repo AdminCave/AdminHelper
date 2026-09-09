@@ -97,7 +97,8 @@ run_v nixkomponente
 echo "── the call verify.sh builds ──"
 run_v scripts --tree "$A"
 [ "$(called marker)" = "A" ] && ok "--tree runs the target tree's run.sh" || bad "marker=$(called marker)"
-[ "$(called args)" = "unit --only scripts" ] && ok "component -> unit --only <component>" || bad "args=$(called args)"
+[ "$(called args)" = "quick --only scripts" ] \
+  && ok "component -> quick --only <component> (lint AND unit, not unit alone)" || bad "args=$(called args)"
 [ "$(called cwd)" = "$A" ] && ok "the suite runs with the tree as cwd" || bad "cwd=$(called cwd)"
 [ "$(called devenv_marker)" = "sourced" ] && ok "the tree's .devenv.sh is sourced" || bad "devenv: $(called devenv_marker)"
 
@@ -109,7 +110,7 @@ run_v scripts --tree "$B"
 grep -q "warning" <<<"$OUT" && bad "a missing devenv file warned" || ok "a missing devenv file is silent"
 
 run_v scripts --strict --tree "$A"
-[ "$(called args)" = "unit --only scripts --strict" ] && ok "--strict is forwarded" || bad "args=$(called args)"
+[ "$(called args)" = "quick --only scripts --strict" ] && ok "--strict is forwarded" || bad "args=$(called args)"
 
 run_v all --tree "$A"
 [ "$(called args)" = "quick" ] && ok "'all' means the whole quick layer" || bad "args=$(called args)"
@@ -117,7 +118,7 @@ python3 -c "
 import json
 d=json.load(open('$A/.crabbox-out/last-verify.json'))
 assert d['layer']=='quick' and d['component']=='all', d
-" 2>/dev/null && ok "'all' reads the artifact of the quick layer" || bad "all-layer artifact"
+" 2>/dev/null && ok "'all' reads the quick-layer artifact too" || bad "all-layer artifact"
 
 run_v server --tree "$A" -- tests/test_auth.py -k lifecycle
 [ "$(called ah_args)" = "tests/test_auth.py -k lifecycle" ] \
@@ -145,7 +146,7 @@ d=json.load(open('$ART'))
 assert d['component']=='scripts', d
 assert d['args']=='tests/x.py', d
 assert d['tree']=='$A', d
-assert d['layer']=='unit', d
+assert d['layer']=='quick', d
 " 2>/dev/null && ok "artifact: valid JSON with component, args, tree" || bad "artifact content: $(cat "$ART")"
 
 # ══ the artifact may only ever describe THIS run ══════════════════════════════
@@ -163,7 +164,7 @@ OUT=$(FIXTURE_NO_ARTIFACT=1 bash "$VERIFY" server --tree "$A" 2>&1); rc=$?
 # this case uses it — with AH_OUT_DIR redirected, so the checkout stays untouched.
 REAL_OUT="$WORK/real-out"; mkdir -p "$REAL_OUT"
 printf '{"component": "from-an-older-run"}\n' > "$REAL_OUT/last-verify.json"
-printf '{\n  "layer": "unit",\n  "test_skips": []\n}\n' > "$REAL_OUT/last-unit.json"
+printf '{\n  "layer": "quick",\n  "test_skips": []\n}\n' > "$REAL_OUT/last-quick.json"
 OUT=$(AH_OUT_DIR="$REAL_OUT" bash "$VERIFY" nixkomponente 2>&1); rc=$?
 [ $rc -eq 2 ] && [ ! -f "$REAL_OUT/last-verify.json" ] \
   && ok "a refused run leaves no artifact, not an older one" \
@@ -182,7 +183,7 @@ python3 -c "import json;json.load(open('$ART'))" 2>/dev/null \
   && ok "a tab in the args keeps the artifact valid JSON" || bad "invalid JSON from a tab in args"
 
 # A run that never produced an artifact must not fabricate one.
-rm -f "$A/.crabbox-out/last-unit.json" "$ART"
+rm -f "$A/.crabbox-out/last-quick.json" "$ART"
 cat > "$A/scripts/tests/run.sh" <<'EOF'
 #!/usr/bin/env bash
 exit 2

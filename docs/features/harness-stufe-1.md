@@ -96,7 +96,10 @@ Keine JUnit-Produktion (Stufe 5). Kein `-race` unter Windows (cgo-Frage offen). 
 
 `bash scripts/dev/verify.sh <komponente> [--strict] [--tree <pfad>] [-- <args>]`: sourct `.devenv.sh`
 (bzw. `$AH_DEVENV`), löst `AH_TEST_DB` auf, delegiert an `run.sh unit --only <komponente>` (`quick` für
-`all`), optional gezielte Args (`-- tests/test_x.py`) für die pytest-/go-/vitest-Schritte, `--tree`
+`all`) — **in der Umsetzung `quick --only <komponente>`**: eine Komponenten-Schnellsuite ist laut CLAUDE.md
+Lint *und* Unit, mit `unit` allein hätte `verify.sh server` ruff still übersprungen und jede auf diese Form
+umgeschriebene Ledger-Zeile weniger verifiziert als zuvor (Fund aus dem T12-Review; der Abschnitt
+„Konventionen und Skills" unten verlangte `quick` ohnehin) —, optional gezielte Args (`-- tests/test_x.py`) für die pytest-/go-/vitest-Schritte, `--tree`
 fährt gegen einen anderen Checkout (Worktree; Reviewer-Probe ab Stufe 6) und schreibt
 `$AH_OUT_DIR/last-verify.json` im selben Schema plus `component`, `args`, `tree`. Exit = Exit von `run.sh`.
 Allowlist: `Bash(bash scripts/dev/verify.sh:*)` neben dem vorhandenen `Bash(bash scripts/tests/run.sh:*)`.

@@ -63,7 +63,7 @@ DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im se
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 ```
 (`Spec:` = Rück-Link zur Soll-Vorgabe, die `feature-build`/`feature-review` als Referenz
-nutzen — bei einem Report-Backlog stattdessen z. B. `Spec: ../fabelreport.md`.)
+nutzen; bei einem Report-Backlog zeigt das Feld auf den Report statt auf eine Spec.)
 (`Status:` = Ledger-Zustand `geplant|aktiv|erledigt|blockiert`. `feature-plan` schreibt
 `geplant` — die menschliche Freigabe bzw. der Start von `/feature-build` macht daraus `aktiv`.
 Nicht mit dem Task-Status `[ ]`/`[x]` verwechseln.)
@@ -81,8 +81,12 @@ Tunnel/Enrollment-UI, `apps/desktop/e2e/*.live.js`). Berührt die Spec **Cross-H
 
 **Task-Größe = autonomietauglich** (die wichtigste Regel dieser Phase):
 - Eine Task ≈ **eine fokussierte Änderung**, möglichst **eine Komponente**, ≤ ~3 Dateien.
-- Jede Task hat ein **`Verify:`** — ein konkreter Befehl/Assertion, der grün/rot sagt
-  (Unit-Test, Route-Call, `svelte-check`, `go test`). Kein „sieht gut aus".
+- Jede Task hat ein **`Verify:`** — ein konkreter Befehl/Assertion, der grün/rot sagt.
+  Kein „sieht gut aus". **Nur in Flag-Form**, ohne Env-Präfix, weil eine Allow-Regel nie
+  über eine Variablenzuweisung matcht: `bash scripts/dev/verify.sh <komponente> --strict
+  [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <keys…>`. Env-Bedarf
+  (`DATABASE_URL`, `AH_TEST_DB`, PATH) löst das Skript auf, nicht der Aufrufer. Schwere
+  Läufe stehen als eigene `Heavy:`-Zeile im Ledger-Kopf, nie in einer Task.
 - Jede Task ist **unabhängig testbar**; Reihenfolge nur bei echter Abhängigkeit.
 - Steckt in einer Task eine **Design-Entscheidung**, ist sie zu groß → Entscheidung
   gehört in die Spec (offene Frage), nicht in die Task.
@@ -98,7 +102,7 @@ Task-Schema:
 ### T<n> — <Titel>  [ ]
 Komponente: apps/… · Dateien: …
 Änderung: <was genau, 1–3 Sätze>
-Verify: <konkreter Befehl / Assertion>
+Verify: bash scripts/dev/verify.sh <komponente> --strict     (oder: bash scripts/tests/run.sh <layer> --strict --only <keys…>)
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
 Abhängt von: T<k>   (nur falls nötig)
 ```

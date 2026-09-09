@@ -32,7 +32,8 @@ Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungen
 - **Nie grün melden ohne bestandene Suite.** Die Summary-Zeile ist die Evidenz und wird zitiert.
 - **Verify-Zeilen in Ledgern** nur in Flag-Form: `bash scripts/dev/verify.sh <komponente> [--strict] [-- <args>]`
   oder `bash scripts/tests/run.sh <layer> --strict --only <keys…>`. Nie `FOO=bar cmd` — die Allow-Regel matcht nicht
-  über die Zuweisung. Schwere Läufe stehen als eigene Zeile `Heavy:`. Env-Bedarf löst das Skript auf, nicht der Aufrufer.
+  über die Zuweisung. Gilt für neue und aktive Ledger; abgeschlossene bleiben Historie und werden nur
+  dort nachgezogen, wo eine Zeile sonst etwas Falsches behauptet. Schwere Läufe stehen als eigene Zeile `Heavy:`. Env-Bedarf löst das Skript auf, nicht der Aufrufer.
 - **Server-pytest** braucht ein Postgres; `verify.sh` löst `AH_TEST_DB` aus `.devenv.sh` selbst auf, der Aufrufer
   setzt nichts.
 - **Neue oder geänderte User-Journey ⇒ Live-E2E** auf der passenden Ebene (Web: Playwright; Desktop: `*.live.js`).
