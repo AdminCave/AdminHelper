@@ -85,10 +85,10 @@ Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh
 Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -n 'K skipped\|SKIPPED' scripts/tests/crabbox_multibox.sh` zeigt Zähler und Summary; realer Lauf in der Heavy-Zeile des Ledger-Kopfs bzw. beim nächsten Capstone
 Doku: keine (intern)
 
-### T11 — CI-Job agent-windows  [ ]
+### T11 — CI-Job agent-windows  [x] (hart, ohne continue-on-error; `workflow_dispatch` war bereits vorhanden)
 Komponente: .github · Dateien: .github/workflows/ci.yml
 Änderung: Job `agent-windows` (`name: Go Agent (test, Windows)`, `runs-on: windows-latest`, `timeout-minutes: 15`, `actions/setup-go` mit denselben Pins wie Job `agent`, `go-version: "1.25"`, `cache-dependency-path: apps/agent/go.sum`), Schritte `go test -v ./...`, `go build -o adminhelper-agent.exe ./cmd/adminhelper-agent`, `.\adminhelper-agent.exe version`; Workflow um `workflow_dispatch` ergänzen. Hart, kein `continue-on-error` (Spec Frage 2). Windows-Brüche im ersten Lauf sind Funde: als Folge-Tasks T11b… anhängen, Perm-Guards wie `enroll_test.go:131`.
-Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert 'agent-windows' in d['jobs']"`; PR-CI: Job grün, Log enthält `TestReWinServiceName` und `PASS`
+Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert 'agent-windows' in d['jobs']"` (grün, Pins identisch zu Job `agent`, `GOOS=windows go vet ./...` Exit 0); PR-CI: Job grün, Log enthält `TestReWinServiceName` und `PASS` — **steht aus**, der Job kann erst nach dem Push laufen. Statische Vorhersage aus dem Review: grün erwartet; einziger Bruch-Kandidat ist `config.SecureDir` (zwei `icacls`-Aufrufe) auf `t.TempDir()` in vier enroll/renew-Tests — falls rot, `SecureDir` in `Store` injizierbar machen statt den Test aufzuweichen (T11b)
 Doku: keine (Doku-Task T15)
 
 ### T12 — feature-build/plan/review Skills: Verify-Aufruf, restore statt checkout, fabelreport  [ ]

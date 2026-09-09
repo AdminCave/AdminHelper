@@ -198,6 +198,32 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent
           GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent
 
+  agent-windows:
+    name: Go Agent (test, Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+          cache-dependency-path: apps/agent/go.sum
+      # Nothing in apps/agent has ever RUN on Windows: `GOOS=windows go vet` on the
+      # ubuntu runner compiles and executes nothing. Seven files are windows-tagged
+      # (sc-query collector, ACL hardening, service install, path resolution) and
+      # exactly one of them has a test — so the day-one value here is the
+      # cross-platform code finally executing on Windows, not the tagged files.
+      # Hard on purpose (no continue-on-error): a red run here is a finding, not noise.
+      - name: go test
+        working-directory: apps/agent
+        run: go test -v ./...
+      - name: Build the Windows binary
+        working-directory: apps/agent
+        run: go build -o adminhelper-agent.exe ./cmd/adminhelper-agent
+      - name: Smoke the built binary
+        working-directory: apps/agent
+        run: .\adminhelper-agent.exe version
+
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
     runs-on: ubuntu-latest
