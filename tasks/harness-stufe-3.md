@@ -52,6 +52,11 @@ Verify: `bash scripts/tests/check_versions_test.sh` → `N passed, 0 failed`; `b
 Doku: .claude/rules/release.md (in der Task); DEVELOPMENT.md Release-Absatz (T18)
 Abhängt von: —
 
+### F1 — `test_migrations_smoke` ist flaky (Fund aus dem Abschlusslauf, nicht aus dieser Stufe)  [?]
+Komponente: apps/server · Datei: apps/server/tests/test_migrations_smoke.py
+Befund: Im Abschluss-Gesamtlauf war `server pytest` einmal rot, im Wiederholungslauf grün — also `flaky`, nicht PASS. Ursache steht im Log: der Teardown fährt `DROP DATABASE "alembic_smoke_<hash>" WITH (FORCE)`, und `WITH (FORCE)` verlangt, fremde Backends beenden zu dürfen — die lokale Rolle `adminhelper` hat weder `pg_signal_backend` noch die Rechte der Zielrolle (`psycopg.errors.InsufficientPrivilege`). Der FORCE-Pfad greift nur, wenn zum Wegwerf-Schema noch eine Verbindung offen ist, deshalb schlägt es zeitabhängig zu. `apps/server` ist von diesem Branch **nicht** berührt (0 Dateien im Diff), der Fund gehört also nicht zu Stufe 3.
+Frage an Kevin: Rolle lokal um `pg_signal_backend` erweitern (`GRANT pg_signal_backend TO adminhelper`) oder den Teardown die Verbindung schließen lassen, bevor er droppt (dann braucht es kein FORCE). Zweiteres behebt die Ursache statt der Berechtigung — gehört als eigene Zeile in die Roadmap. Nebenbei die erste echte Bestätigung, dass die Klassifikation aus dieser Stufe gebraucht wird: `heavy.sh` hätte den Schritt als `flaky` quarantänisiert statt ihn als Regression zu melden.
+
 ### T6a — Prerelease-Tags und die sechs Versions-Stellen  [?]
 Komponente: scripts/release · Dateien: scripts/release/check-versions.sh
 Frage an Kevin: `check-versions.sh` vergleicht **verbatim**, ein Beta-Tag `v0.46.0-beta.1` verlangt diesen String also auch in 38 Doku-Footern, im CHANGELOG-Abschnitt `## [0.46.0-beta.1]` und in beiden News-Callouts. Der alte Inline-Schritt konnte bei einem Prerelease **nie** grün werden (`grep -o '[0-9][0-9.]*'` schnitt das Suffix ab, `$VER` behielt es) — das Gate wird also nicht gelockert, sondern Prereleases erstmals überhaupt möglich. Vorschlag: Stellen 1–3 (tauri/Cargo/Cargo.lock) bleiben verbatim, Stellen 4–6 (CHANGELOG, Footer, News) prüfen gegen `${VER%%-*}`. Vor dem ersten `beta`-Tag zu entscheiden (CLAUDE.md §2 sieht `beta` nach jedem grünen Wochenlauf vor).
