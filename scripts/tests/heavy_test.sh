@@ -556,6 +556,19 @@ printf '%s' "$out" | grep -q 'someone-elses-box' \
 [ ! -f "$AH_OUT_DIR/all.log" ] && [ -z "$(ls "$AH_OUT_DIR"/weekly/*/all.log 2>/dev/null)" ] \
   && ok "no layer ran after the foreign-box abort" || bad "a layer ran despite the abort"
 
+# ── 5a: a failed lease still leaves a row in the history ─────────────────────
+# Found by the first real run: run_all returned 74 before adding any finding, so
+# history.csv held nothing but its header — a hole on exactly the days a run
+# went wrong, and the --base default reads that file.
+mk_case
+export SHIM_WARM_RC=1
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a failed warm lease -> exit 74" || bad "warm lease -> rc=$rc"
+[ "$(grep -c 'warm shim' <<<"$out")" = 2 ]   && ok "the lease is retried once before giving up" || bad "$(grep -c 'warm shim' <<<"$out") lease attempts"
+history_of | grep -q ',all,-,infra,'   && ok "history.csv records the attempt as infra" || bad "history: $(history_of)"
+report_of | grep -q 'could not be leased'   && ok "the report names the reason" || bad "no reason in the report"
+
 # ── 5b: crabbox missing entirely ─────────────────────────────────────────────
 mk_case
 artifact "ruff check:pass:3"

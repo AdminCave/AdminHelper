@@ -219,10 +219,26 @@ PY
 # ── the two layers ────────────────────────────────────────────────────────────
 run_all() {
   echo "== all: warm box + run.sh all --strict =="
-  local log="$OUT/all.log" rc=0
-  if ! bash "$WRAPPERS/crabbox_warm.sh" desktop >"$OUT/warm.log" 2>&1; then
-    set_infra "warm box could not be leased (see warm.log)"
+  local log="$OUT/all.log" rc=0 t_layer0=$SECONDS
+  # One retry: the first real run died because the PROVIDER's own guest bootstrap
+  # raced cloud-init for the apt lists lock on a fresh VM — transient, and it cost
+  # the whole run. A second attempt is minutes; a lost weekly is a week.
+  # Keyed on the exit status, not on warm.env: the file says which box, not
+  # whether THIS call succeeded, and a stale entry would read as success.
+  local warm_rc=0
+  bash "$WRAPPERS/crabbox_warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
+  if [ "$warm_rc" != 0 ]; then
+    note "warm lease failed — retrying once (the provider bootstrap is racy on a fresh VM)"
+    warm_rc=0
+    bash "$WRAPPERS/crabbox_warm.sh" desktop >>"$OUT/warm.log" 2>&1 || warm_rc=$?
+  fi
+  if [ "$warm_rc" != 0 ]; then
+    set_infra "warm box could not be leased after a retry (see warm.log)"
     tail -5 "$OUT/warm.log" | sed 's/^/  /'
+    # A row even here: the history must show that a run was attempted and why it
+    # produced nothing. Returning silently leaves a hole in history.csv exactly on
+    # the days something went wrong — and the --base default reads that file.
+    FINDINGS+=("all|-|infra|$((SECONDS - t_layer0))|-|warm box could not be leased")
     return 74
   fi
   local box; box="$(warm_get desktop)"; box="${box:-?}"
