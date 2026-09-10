@@ -83,7 +83,7 @@ export AH_ONLY AH_STRICT
 #   integration: integration · integration-stack · backup-restore · sse-push
 #                agent-monitoring · repo-build
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
-#        (the seven GUI suites carry their script name as id, underscores and all)
+#        (each GUI suite carries its script name as id, underscores and all)
 AH_REQUIRED_DEFAULT="ruff shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
 AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 

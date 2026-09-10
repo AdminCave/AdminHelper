@@ -69,7 +69,7 @@ Frage an Kevin — eine von drei, vor dem ersten Capstone-Lauf (sonst kostet der
 (c) **rote Desktop-Etappe bewusst hinnehmen** — dann muss `.claude/rules/release.md` das ausdrücklich sagen, sonst widerspricht sich das Gate selbst.
 Bis dahin gilt: `crabbox_multibox.sh --capstone --strict` ist **nicht** grün erreichbar.
 
-### T8 — desktop_e2e_misc.sh für die fünf verwaisten Specs  [ ]
+### T8 — desktop_e2e_misc.sh für die fünf verwaisten Specs  [x] (fünf verwaiste Specs, je eine `spec <name>: pass|fail`-Zeile, AH_SPEC wählt eine; run.sh brauchte nichts — layer_e2e globbt `desktop_e2e_*.sh`, desktop_e2e_skip_test zählt jetzt 8)
 Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_misc.sh (neu), scripts/tests/run.sh
 Änderung: Aufbau wie `desktop_e2e_live.sh` (e2e-Stack, `e2e_require`, Exit 75); fährt `login-error`, `logout`, `monitoring-alerts`, `connection-editor`, `theme-toggle` nacheinander (`AH_SPEC` wählt einen), Zeile `spec <name>: pass|fail` je Spec, Exit 1 bei einem Fail; Aufnahme in die e2e-Liste von `run.sh`. Ein Spec, der eine im Stack fehlende Voraussetzung braucht, wird `[?]` im Ledger, nicht verbogen. SPDX-Header.
 Verify: `shellcheck --severity=warning scripts/tests/desktop_e2e_misc.sh` leer; `bash scripts/tests/desktop_e2e_skip_test.sh` zählt jetzt 8 Skripte (Liste aus dem Verzeichnis) → `8 passed`; realer Lauf im Heavy-`all`
