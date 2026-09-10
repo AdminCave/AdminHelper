@@ -27,6 +27,7 @@
       "Bash(cargo check:*)",
       "Bash(npm run:*)",
       "Bash(bash scripts/tests/run.sh:*)",
+      "Bash(bash scripts/dev/verify.sh:*)",
       "Bash(bash scripts/dev/format-file.sh:*)",
       "Bash(reuse annotate:*)",
 
@@ -46,5 +47,14 @@
     ],
     "ask": [],
     "deny": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/session-status.sh\"" }
+        ]
+      }
+    ]
   }
 }

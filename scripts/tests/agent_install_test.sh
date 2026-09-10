@@ -24,8 +24,8 @@ PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
-command -v gpg >/dev/null 2>&1 || { echo "SKIP: gpg not available"; exit 0; }
-command -v curl >/dev/null 2>&1 || { echo "SKIP: curl not available"; exit 0; }
+command -v gpg >/dev/null 2>&1 || { echo "SKIP: gpg not available"; exit 75; }
+command -v curl >/dev/null 2>&1 || { echo "SKIP: curl not available"; exit 75; }
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -34,9 +34,9 @@ trap 'rm -rf "$WORK"' EXIT
 GNUPGHOME="$WORK/gnupg"; export GNUPGHOME
 install -d -m 700 "$GNUPGHOME"
 gpg --batch --passphrase '' --quick-generate-key "AH Test <test@example.invalid>" ed25519 sign never >/dev/null 2>&1 \
-    || { echo "SKIP: gpg cannot generate a test key"; exit 0; }
+    || { echo "SKIP: gpg cannot generate a test key"; exit 75; }
 FP=$(gpg --list-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')
-[ -n "$FP" ] || { echo "SKIP: no test key fingerprint"; exit 0; }
+[ -n "$FP" ] || { echo "SKIP: no test key fingerprint"; exit 75; }
 
 REPODIR="$WORK/repo"
 mkdir -p "$REPODIR/apt" "$REPODIR/rpm"

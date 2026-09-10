@@ -9,6 +9,27 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Test-Infrastruktur (Autonomie-Roadmap, Stufe 1 — „Gruen heisst Beweis"):** Der
+  Test-Aggregator `scripts/tests/run.sh` kennt `--strict`, `--only <keys>` und
+  `--step <name>`; unter `--strict` ist ein uebersprungener Pflicht-Schritt ein
+  Fehler statt eines PASS, ebenso ein strenger Lauf, in dem ueberhaupt nichts lief.
+  Die pytest-internen Skips sind jetzt sichtbar (`N passed, M failed, K skipped,
+  J test-skips, R reruns`) und fuer Tests mit erfuellter Vorbedingung ein Fehler.
+  Jeder Lauf schreibt `last-<layer>.json` mit Tree-Hash als Evidenz. Neu:
+  `scripts/dev/verify.sh <komponente>` als einzige Verify-Form (Flags statt
+  Env-Praefix, `last-verify.json`), `scripts/dev/tree-hash.sh` und ein
+  Session-Status-Hook, der jede Session mit einem `AH-STATUS`-Block eroeffnet.
+  Elf Stellen, die mangels Toolchain still `exit 0` meldeten (die sieben
+  Desktop-GUI-Suiten und vier in `agent_install_test.sh`), enden jetzt mit
+  `exit 75` = SKIP; die beiden minisign-Weichen in `install_test.sh`/
+  `update_test.sh` melden ebenfalls SKIP, statt den Signaturpfad zu
+  neutralisieren und PASS zu melden. Der
+  crabbox-Bootstrap bricht ab, statt eine halb hydrierte Box zu hinterlassen.
+  CI bekommt den Job `agent-windows`, der die Go-Suite erstmals nativ unter
+  Windows ausfuehrt. `@typescript-eslint/no-unused-vars` ist in Web-Panel und
+  Desktop-UI von `warn` auf `error` gestellt — ein verwaister Import laesst einen
+  PR jetzt durchfallen, statt nur zu warnen.
+
 - **Entwickler-Harness (Autonomie-Roadmap, Stufe 0):** `CLAUDE.md` auf 179 Zeilen neu
   geschnitten (Betriebsmodell, Warn-Trigger, Stufen-Fahrplan, Definition of Done); die
   Release- und Test-Stolperfallen leben jetzt als pfadgebundene Regeln unter

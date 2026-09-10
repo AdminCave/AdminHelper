@@ -9,7 +9,7 @@
 # real stack is touched. Covers: signed-bundle bootstrap + .env pinning, the
 # fail-closed abort when a release tag has no bundle (audit 3.29), and tamper detection.
 #
-# Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils)
+# Run: bash scripts/tests/install_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
 # ok()/bad() never fail, so `cond && ok || bad` is deliberate (not if-then-else).
 # shellcheck disable=SC2015,SC2001
@@ -27,14 +27,14 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# throwaway signing key so install.sh's armed verification runs end to end; if
-# minisign is missing, neutralize the pinned key so the rest still runs.
-SIGN=0; TEST_PUBKEY=""
-if command -v minisign >/dev/null 2>&1 && minisign -G -W -p "$WORK/test.pub" -s "$WORK/test.key" >/dev/null 2>&1; then
-  SIGN=1; TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
-else
-  echo "  note: minisign nicht verfuegbar — Signaturpfad neutralisiert"
-fi
+# Throwaway signing key so install.sh's armed verification runs end to end.
+# Without minisign this used to neutralize the pinned key and skip the tamper
+# test — green without ever exercising the signature path. SKIP (75) instead:
+# not verified is not verified (CLAUDE.md, .claude/rules/testing.md).
+command -v minisign >/dev/null 2>&1 \
+  && minisign -G -W -p "$WORK/test.pub" -s "$WORK/test.key" >/dev/null 2>&1 \
+  || { echo "SKIP: minisign missing or unusable — the signature path cannot be verified"; exit 75; }
+TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 
 # docker stub: readiness probe healthy, mint-enroll-token emits a token, all else ok.
 BIN="$WORK/bin"; mkdir -p "$BIN"
@@ -50,14 +50,10 @@ EOF
 chmod +x "$BIN/docker"
 export PATH="$BIN:$PATH"
 
-# install.sh copy pinned to the test key (or neutralized), used as the runner.
+# install.sh copy pinned to the test key, used as the runner.
 INSTALL="$WORK/install.sh"
 cp "$REAL_INSTALL" "$INSTALL"
-if [ "$SIGN" = 1 ]; then
-  sed -i "s|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=\"$TEST_PUBKEY\"|" "$INSTALL"
-else
-  sed -i 's|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=""|' "$INSTALL"
-fi
+sed -i "s|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=\"$TEST_PUBKEY\"|" "$INSTALL"
 
 # the runtime files a release ships (compose + .env.example + ops scripts).
 SRC="$WORK/src"; mkdir -p "$SRC/scripts"
@@ -83,8 +79,9 @@ make_release() {
   ( cd "$stage" && find docker-compose.yml .env.example scripts -type f | sort | xargs sha256sum > MANIFEST.sha256 )
   tar czf "$assetdir/adminhelper-runtime-$tag.tar.gz" -C "$stage" .
   ( cd "$assetdir" && sha256sum "adminhelper-runtime-$tag.tar.gz" > SHA256SUMS )
-  [ "$SIGN" = 1 ] && minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
-    -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+  minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
+    -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
+    || { echo "FATAL: minisign cannot sign the fixture"; exit 1; }
   [ "$tamper" = 1 ] && printf '%064d  adminhelper-runtime-%s.tar.gz\n' 0 "$tag" > "$assetdir/SHA256SUMS"
   printf '{"tag_name": "%s", "prerelease": false, "draft": false}\n' "$tag" \
     > "$API/repos/$REPO/releases/latest"
@@ -112,15 +109,11 @@ out=$(run_install --ref v9.9.9 --dir "$INST" --domain t --admin-password sikrit1
 [ ! -f "$INST/docker-compose.yml" ] && ok "no runtime files placed on abort" || bad "files placed despite abort"
 
 # ── 3. tamper: SHA256SUMS corrupted after signing → signature check fails ─────
-if [ "$SIGN" = 1 ]; then
-  make_release 0.35.0 1
-  INST="$WORK/inst3"
-  out=$(run_install --ref v0.35.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
-  { [ $rc -ne 0 ] && echo "$out" | grep -qE 'Signatur ungueltig|Checksumme'; } \
-    && ok "tampered bundle aborts" || bad "tamper not caught: rc=$rc"
-else
-  echo "  skip tamper test (unsigned mode)"
-fi
+make_release 0.35.0 1
+INST="$WORK/inst3"
+out=$(run_install --ref v0.35.0 --dir "$INST" --domain t --admin-password sikrit123 --yes 2>&1); rc=$?
+{ [ $rc -ne 0 ] && echo "$out" | grep -qE 'Signatur ungueltig|Checksumme'; } \
+  && ok "tampered bundle aborts" || bad "tamper not caught: rc=$rc"
 
 echo
 echo "──────────────────────────────────────────"

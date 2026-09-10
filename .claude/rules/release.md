@@ -20,7 +20,7 @@ paths:
 ## Vor dem Tag: drei Ebenen real grün
 
 `bash scripts/tests/run.sh quick` auf der Dev-Box · `run.sh all` auf einer VM · Multibox-Capstone
-(`crabbox_multibox.sh --agents 2 --desktop`). Rot oder übersprungen heißt: nicht taggen. Ab Stufe 3 liefert
+(`crabbox_multibox.sh --agents 2 --desktop --strict`). Rot oder übersprungen heißt: nicht taggen. `--strict` deckt bisher **nur** den debian:9-Guard ab; die übrigen bedingten Prüfungen (Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop- und moncheck-Lease, `--enforce`) fallen weiterhin still aus — `0 skipped` heißt also „kein debian:9-Skip", nicht „jede Prüfung lief". Ab Stufe 3 liefert
 `/test weekly` die Evidenz, ab Stufe 13 prüft `release.sh check` sie mechanisch.
 
 ## Bump-Commit `chore(release): bump version to X.Y.Z` — synchron ändern

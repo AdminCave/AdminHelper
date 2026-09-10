@@ -9,7 +9,8 @@
 # Then asserts each agent enrolled an mTLS identity and pushed a monitoring report.
 #
 #   bash scripts/tests/crabbox_multibox.sh [--agents N] [--rpm] [--tunnel]
-#       [--desktop] [--moncheck] [--capstone] [--keep]
+#       [--desktop] [--moncheck] [--capstone] [--keep] [--strict]
+#   --strict   a guard that could not run fails the capstone (release gate)
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
 #   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel)
 #   --desktop  + the real Tauri GUI vs the remote server     (S3)
@@ -29,10 +30,15 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 . "$(dirname "$0")/crabbox_lib.sh"
 
 AGENTS=1; KEEP=0; DESKTOP=0; RPM=0; TUNNEL=0; MONCHECK=0; ENFORCE=0
+SKIPPED=0; MB_DEBIAN9_SKIPPED=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
   --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;; --enforce) ENFORCE=1 ;;  # D2: MTLS_ENFORCE=true
   --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1 ;;  # S6: everything, one run
+  # A flag, not just the env: AH_STRICT is set by run.sh alone, which never
+  # starts this script, and a `AH_STRICT=1 crabbox_multibox.sh` prefix is what
+  # .claude/rules/testing.md forbids ("Env-Bedarf loest das Skript auf").
+  --strict) AH_STRICT=1 ;;
   *) echo "unknown arg: $1"; exit 2 ;; esac; shift; done
 
 # Proxmox provider env via the shared lib (secret in gitignored settings.local.json).
@@ -45,6 +51,10 @@ POND="ah-mb-$$"
 # guard silently tracked nothing. A shared file crosses the subshell boundary (4.55).
 LEASES_FILE="$(mktemp)"; PASS=0; FAIL=0; RPM_AGENTS=0
 ok(){ echo "  ok   $*"; PASS=$((PASS+1)); }; bad(){ echo "  FAIL $*"; FAIL=$((FAIL+1)); }
+# A check that could not run is its own outcome: counted, named in the summary,
+# and a failure under AH_STRICT=1 — a capstone that quietly dropped a guard is
+# not the evidence a release needs ("SKIP heisst nicht verifiziert").
+skipped(){ echo "  SKIP $*"; SKIPPED=$((SKIPPED+1)); [ "${AH_STRICT:-0}" = "1" ] && bad "strict: $*"; return 0; }
 cleanup() {
   [ "$KEEP" = 1 ] && { echo "--keep: leaving pond $POND up (bounded by --ttl)"; return; }
   echo "== teardown pond $POND =="
@@ -168,7 +178,8 @@ OLDDPKG="$(mb MB_DEB_OLDDPKG_OK)"
 case "$OLDDPKG" in
   1) ok "agent .deb installs + binary runs on old Debian (debian:9: dpkg 1.18, glibc 2.24)" ;;
   0) bad "agent .deb/binary fails on debian:9 — zstd-compression OR dynamic-glibc regression!" ;;
-  *) echo "  note old-Debian check skipped (debian:9 image unavailable) — not verified" ;;
+  *) MB_DEBIAN9_SKIPPED=1
+     skipped "old-Debian check (marker missing: debian:9 not pullable, or the .deb build failed) — the two release-breaking regressions of 0.43.x are unguarded" ;;
 esac
 [ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
   && ok "MTLS_ENFORCE=true: certless :443 rejected (400) — cert-gated data plane over the hop" \
@@ -267,5 +278,6 @@ EXPECT=$(( ${#AGENT_SLUGS[@]} + RPM_AGENTS ))
 
 echo ""
 echo "──────────────────────────────────────────────"
-echo "  crabbox_multibox: $PASS ok, $FAIL failed  (server=$SRV_IP, agents=${AGENT_SLUGS[*]:-none})"
+echo "  crabbox_multibox: $PASS ok, $FAIL failed, $SKIPPED skipped  (server=$SRV_IP, agents=${AGENT_SLUGS[*]:-none})"
+[ "${MB_DEBIAN9_SKIPPED:-0}" = 1 ] && echo "  MB_DEBIAN9_SKIPPED=1"
 [ "$FAIL" -gt 0 ] && exit 1 || exit 0

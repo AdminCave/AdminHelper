@@ -198,6 +198,32 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent
           GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent
 
+  agent-windows:
+    name: Go Agent (test, Windows)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+          cache-dependency-path: apps/agent/go.sum
+      # Nothing in apps/agent has ever RUN on Windows: `GOOS=windows go vet` on the
+      # ubuntu runner compiles and executes nothing. Seven files are windows-tagged
+      # (sc-query collector, ACL hardening, service install, path resolution) and
+      # exactly one of them has a test — so the day-one value here is the
+      # cross-platform code finally executing on Windows, not the tagged files.
+      # Hard on purpose (no continue-on-error): a red run here is a finding, not noise.
+      - name: go test
+        working-directory: apps/agent
+        run: go test -v ./...
+      - name: Build the Windows binary
+        working-directory: apps/agent
+        run: go build -o adminhelper-agent.exe ./cmd/adminhelper-agent
+      - name: Smoke the built binary
+        working-directory: apps/agent
+        run: .\adminhelper-agent.exe version
+
   desktop-ui:
     name: Desktop-UI (svelte-check + lint + vitest) + E2E lint
     runs-on: ubuntu-latest
@@ -477,9 +503,10 @@ jobs:
           test -n "$ins" && test "$ins" = "$upd" || {
             echo "::error::MINISIGN_PUBKEY drift (install=$ins, update=$upd) — a key rotation must touch both, else updates verify against the old key and break on every existing install"; exit 1; }
 
-  # Lint the host ops scripts and run the hermetic update.sh sandbox test (fake
-  # release over file://, stubbed docker — no real stack). --severity=warning so
-  # pre-existing info-level notes don't gate; the new scripts are clean at default.
+  # Lint the host ops scripts and run the whole hermetic shell-test block through
+  # the aggregator (fake releases over file://, stubbed docker — no real stack).
+  # --severity=warning so pre-existing info-level notes don't gate; the new
+  # scripts are clean at default.
   ops-scripts:
     name: Ops scripts (shellcheck + update test)
     runs-on: ubuntu-latest
@@ -488,18 +515,17 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: shellcheck
         run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh apps/*/docker-entrypoint.sh
-      # minisign lets the sandbox test exercise the (now armed) release-signature
-      # verification path end-to-end with a throwaway key.
+      # minisign lets the sandbox tests exercise the (armed) release-signature
+      # verification path end-to-end with a throwaway key. Without it those tests
+      # exit 75 = SKIP, and --strict below turns that into a failure — which is
+      # the point: this job must not go green on a signature path that never ran.
       - name: Install minisign
         run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
-      - name: update.sh sandbox test
-        run: bash scripts/tests/update_test.sh
-      - name: install.sh sandbox test
-        run: bash scripts/tests/install_test.sh
-      - name: init-secrets + uninstall + restore-guard tests
-        run: bash scripts/tests/init-secrets_test.sh && bash scripts/tests/uninstall_test.sh && bash scripts/tests/restore_guard_test.sh && bash scripts/tests/gateway_mtls_test.sh
-      - name: diagnostics.sh redaction test
-        run: bash scripts/tests/diagnostics_test.sh
+      # One aggregator call instead of eight lines: the same block a developer
+      # runs locally, so CI and the dev box cannot drift apart. --strict makes a
+      # skipped test a failure here, where every precondition is available.
+      - name: Hermetic shell tests
+        run: bash scripts/tests/run.sh unit --strict --only scripts
 
   gateway-config:
     name: Gateway (nginx -t)

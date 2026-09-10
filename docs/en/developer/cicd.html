@@ -37,7 +37,7 @@
           <table>
             <thead><tr><th>Workflow</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo check</code> on Windows, a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>). Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>crabbox</strong> (ephemeral Proxmox VMs) &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo test --locked</code> on Windows, the Go suite running natively on Windows (job <code>agent-windows</code>: <code>go test -v ./...</code>, a build and a <code>version</code> smoke of the <code>.exe</code>), a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>). Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>crabbox</strong> (ephemeral Proxmox VMs) &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code>; sign each digest keylessly with cosign (+ SLSA provenance/SBOM)</td></tr>
               <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code> (+ minisign signature), draft release</td></tr>
               <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
@@ -54,6 +54,62 @@
               <tr><td>Schedule (weekly)</td><td><code>audit.yml</code> (dependency audit)</td></tr>
             </tbody>
           </table>
+
+          <h2>Test aggregator (<code>scripts/tests/run.sh</code>)</h2>
+          <p>One entry point for every suite &ndash; locally, on a crabbox VM and in the CI job
+          <code>ops-scripts</code>. The call is <code>bash scripts/tests/run.sh [layer] [flags]</code>;
+          layers are <code>lint</code>, <code>unit</code>, <code>quick</code> (default),
+          <code>integration</code>, <code>e2e</code>, <code>all</code>. The heavy layers refuse to run
+          without <code>AH_ALLOW_REAL=1</code>.</p>
+          <table>
+            <thead><tr><th>Flag / env</th><th>Effect</th></tr></thead>
+            <tbody>
+              <tr><td><code>--strict</code></td><td>A SKIP of a required step is a <strong>failure</strong>, not a pass. So is a strict run in which no step executed at all.</td></tr>
+              <tr><td><code>--only &lt;keys&hellip;&gt;</code></td><td>Restricts lint/unit to components (<code>server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts</code>). Under <code>--strict</code> a step asked for this way counts as required. Env form: <code>AH_ONLY</code>.</td></tr>
+              <tr><td><code>--step &lt;name&gt;</code></td><td>Exactly one step (a substring of its name). An unknown or ambiguous name is rejected in a dry pass, before any suite starts.</td></tr>
+              <tr><td><code>AH_REQUIRED</code></td><td>This machine&rsquo;s required set (step ids, space-separated); overrides <code>AH_REQUIRED_DEFAULT</code> and belongs in the gitignored <code>.devenv.sh</code>. Under <code>--strict</code> the effective set is printed with the summary.</td></tr>
+              <tr><td><code>AH_ARGS</code></td><td>Extra arguments for the suite itself &ndash; how <code>verify.sh &lt;component&gt; -- &lt;args&gt;</code> forwards them.</td></tr>
+            </tbody>
+          </table>
+          <p><strong>Exit 75 means SKIP.</strong> A script whose precondition is missing exits 75
+          (<code>EX_TEMPFAIL</code>) and is counted as a SKIP. A bare <code>exit 0</code> would be a green
+          PASS although nothing ran &ndash; which is how the seven desktop GUI suites and
+          <code>agent_install_test.sh</code> stayed invisible for months. The minisign branches in
+          <code>install_test.sh</code> / <code>update_test.sh</code> were the sharper case: they reported
+          <em>PASS</em> after neutralising the signature path. <strong>SKIP does not mean
+          verified.</strong></p>
+          <p><strong>test-skips.</strong> Even inside a green pytest suite a single test can be skipped
+          silently. Under <code>--strict</code> the Python suites run with <code>-rs</code> and
+          <code>run.sh</code> reads the skip lines: if a required test&rsquo;s precondition is met and it
+          skips anyway, the run ends with <code>strict-failed: &lt;test&gt; (test-skip)</code>. Each
+          precondition mirrors what the test itself checks &ndash; <code>DATABASE_URL</code> for
+          <code>test_migrations_smoke</code>, a reachable Redis for <code>test_stream_redis</code>, a
+          Postgres in <code>AH_TEST_DB</code> for <code>test_db_token_store</code>, a reachable database
+          (or Docker) for <code>test_auth_token_lifecycle</code>. On a box that genuinely cannot run a test
+          it stays a visible SKIP.</p>
+          <p>The summary line is therefore
+          <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> is always 0
+          for now; the field exists so flaky detection can fill it later.</p>
+          <p><strong>Evidence.</strong> Every run writes <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
+          (default <code>.crabbox-out/</code>, gitignored) holding the layer, the flags, the required set,
+          timestamps, every step with its result and duration, the test-skips &ndash; plus <code>head</code>
+          and <code>tree_hash</code>. The tree hash comes from <code>scripts/dev/tree-hash.sh</code>: it is
+          built in a throwaway index, so it sees <em>untracked</em> files while <code>tasks/</code> and the
+          output directories stay out. Ticking a ledger box therefore does not invalidate a run&rsquo;s
+          evidence; a new, uncommitted source file does.</p>
+
+          <h2>Verify convention (<code>scripts/dev/verify.sh</code>)</h2>
+          <p>A task&rsquo;s <code>Verify:</code> line always calls a component suite in this form:</p>
+          <div class="code-header"><span>bash</span></div>
+          <pre><code>bash scripts/dev/verify.sh &lt;component&gt; [--strict] [--tree &lt;path&gt;] [-- &lt;args&gt;]</code></pre>
+          <p>The script sources <code>.devenv.sh</code> (or <code>$AH_DEVENV</code>), resolves
+          <code>AH_TEST_DB</code>, delegates to <code>run.sh quick --only &lt;component&gt;</code>
+          (its lint <em>and</em> unit steps), runs against another checkout with <code>--tree</code>
+          and writes <code>last-verify.json</code> &ndash; the run artifact plus <code>component</code>,
+          <code>args</code>, <code>tree</code>. The wrapper exists because of the allowlist: a Bash allow
+          rule never matches across an env prefix, so <code>source .devenv.sh &amp;&amp; DATABASE_URL=&hellip;
+          pytest</code> cannot be allowlisted. The script resolves what the environment needs; the caller
+          writes flags only.</p>
 
           <h2>Container Images (ghcr.io)</h2>
           <p>Tagging is driven by <code>docker/metadata-action</code>. <code>:latest</code> is produced only on a (non-prerelease) semver tag &ndash; not on every <code>main</code> push:</p>

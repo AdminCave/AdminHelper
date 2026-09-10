@@ -81,7 +81,8 @@ Der „Report fixen"-Fall ist derselbe Mechanismus — die Report-Funde _sind_ e
 ```
 
 `tasks/audit-fixes.md` ist die Fortschritts-Ledger zum letzten Audit; das Fix-Detail je Fund
-steht in `fabelreport.md` (Root, gleiche IDs). Für sehr große Backlogs (die 681 Funde)
+steht in der Quelle, auf die das `Spec:`-Feld des Ledger-Kopfs zeigt (gleiche IDs). Für sehr
+große Backlogs (die 681 Funde)
 startest du es unter `/loop`, damit es batchweise über viele Iterationen läuft:
 
 ```text
@@ -125,7 +126,7 @@ Mechanik dahinter:
   Toolchain-Artefakte (venvs/`node_modules`/`target`), und N parallele lokale Suiten
   würden die Dev-Box überlasten (plus Kollision auf der geteilten Test-DB). Der Build
   fährt deshalb das Task-`Verify:` via `crabbox_iter.sh --cmd '…'` und die
-  Komponenten-Schnellsuite via `AH_ONLY='<komponenten>' crabbox_iter.sh quick` auf der
+  Komponenten-Schnellsuite via `crabbox_iter.sh quick --strict --only <komponenten>` auf der
   warmen Lane-Box (~1,5–3,5 min pro Iteration).
 - **`Warm-Profil:` im Ledger-Kopf.** `desktop` (eine volle Box — Stack, Agent und GUI
   testen dort zusammen) reicht für fast alles; `pond` (2 Boxen) nur für Desktop-Journeys;
@@ -166,7 +167,9 @@ prüf es am Gate mit:
 - **Ein einzelner Fehlgriff:** `git revert <task-commit>` nimmt genau diese Task zurück, der
   Rest bleibt. Genau dafür committet der Loop pro Task.
 - **Ein Fix macht Tests rot** und ist nicht schnell lösbar: der Loop nimmt ihn selbst zurück
-  (`git checkout -- <datei>`), markiert die Task `[~] (verworfen: Test rot)` und macht weiter.
+  (`git restore --source=HEAD --staged --worktree -- <datei>`), markiert die Task
+  `[~] (verworfen: Test rot)` und macht weiter. Revert-Proben laufen nie im Builder-Tree,
+  sondern in einem eigenen Worktree — sonst löscht die Probe ungestagte Arbeit.
 - **Rotes Fundament** (Test rot, unabhängig von der Änderung): der Loop **stoppt** und
   berichtet, statt weiterzubauen.
 - **Ganzes Feature verwerfen:** der Branch ist isoliert — `git switch main && git branch -D

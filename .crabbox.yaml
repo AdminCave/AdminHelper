@@ -22,7 +22,14 @@ sync:
   failFiles: 150000
   failBytes: 21474836480
   exclude:
-    # keep .git (gitSeed uses it); exclude generated/heavy trees so rsync stays fast
+    # keep .git (gitSeed uses it); exclude generated/heavy trees so rsync stays fast.
+    #
+    # Never exclude a TRACKED source path here. The box gets no .git, so run.sh
+    # takes head/tree_hash from the client (crabbox_iter.sh), and that hash covers
+    # everything except tasks/ and the output dirs. An exclude over tracked source
+    # would make the artifact describe a tree the box never had — the one thing
+    # the evidence file exists to rule out. apps/server/data is safe: its only
+    # tracked entry is an empty .gitkeep.
     - .cache
     - .turbo
     - dist

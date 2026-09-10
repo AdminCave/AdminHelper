@@ -70,7 +70,7 @@ Abhängt von: T3
 ### T8 — Server: interner Endpoint GET /api/internal/servers  [x] (require_internal_key wiederverwendet, 4 Tests, Auth-Gate grün)
 Komponente: apps/server · Dateien: app/modules/servers/router.py (+ ggf. internes Auth-Dependency wiederverwenden), tests/
 Änderung: `GET /api/internal/servers` (X-Internal-Key, Muster wie `/api/internal/events`) → `[{id, hostname, name, tags}]`.
-Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k internal_servers` (ohne Key 401/403, mit Key Liste inkl. Tags)
+Verify: `bash scripts/dev/verify.sh server --strict -- tests/ -k internal_servers` (ohne Key 401/403, mit Key Liste inkl. Tags)
 Doku: keine (intern; developer-Doku in T35)
 
 ### T9 — Migration M2 + Tag-Assignment-Modell + CRUD  [x] (a5c7e9b1d3f5, source-Spalte, Slash-Guard, 9 neue Tests)
@@ -90,7 +90,7 @@ Abhängt von: T8, T9
 ### T11 — Server: Tag-Sync-Notify bei Server-Änderungen  [x] (best-effort Notify create/update/delete, 4 Tests)
 Komponente: apps/server · Dateien: app/modules/servers/router.py, tests/
 Änderung: Nach Server-Create/-Update(mit Tag-/Name-/Hostname-Änderung)/-Delete best-effort `POST /templates/tag-sync` ans Monitoring (Muster wie bestehender Cleanup-Call in `servers/router.py`).
-Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k tag_sync` (Call gemockt ausgelöst; Monitoring down → Server-Op erfolgreich, Fehler geloggt)
+Verify: `bash scripts/dev/verify.sh server --strict -- tests/ -k tag_sync` (Call gemockt ausgelöst; Monitoring down → Server-Op erfolgreich, Fehler geloggt)
 Doku: keine (intern)
 Abhängt von: T10
 
@@ -187,7 +187,7 @@ Abhängt von: T9
 ### T24 — Maintenance-Router + Proxy-Allowlist  [x] (CRUD + ZoneInfo-Validierung + Proxy-Prefix, 3+1 Tests)
 Komponente: apps/monitoring + apps/server · Dateien: app/routers/maintenance.py (neu, SPDX), app/routers/__init__.py, apps/server/app/modules/monitoring_proxy/router.py
 Änderung: `GET/POST /maintenance`, `PUT/DELETE /maintenance/{id}` (X-Internal-Key, Pydantic-Validierung: kind-abhängige Pflichtfelder, weekdays 0–6, HH:MM, `timezone` gegen ZoneInfo-Konstruktion validieren — Review-Hinweis aus T23: sonst bleibt der UTC-Fallback ein Typo-Fänger); `maintenance` in `_ALLOWED_PATH_PREFIXES` des Server-Proxys.
-Verify: `cd apps/monitoring && python -m pytest -q tests/test_maintenance_router.py` && `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k monitoring_proxy`
+Verify: `bash scripts/dev/verify.sh monitoring --strict -- tests/test_maintenance_router.py` && `bash scripts/dev/verify.sh server --strict -- tests/ -k monitoring_proxy`
 Doku: keine (intern; T34/T35)
 Abhängt von: T23
 
@@ -233,13 +233,13 @@ Abhängt von: T28, T5
 ### T30 — Default-Subscription für neue Admin-User  [x] (alle 4 Admin-Create-Pfade: API, CLI, Env, Bootstrap-Endpoint — 6d308a8)
 Komponente: apps/server · Dateien: User-Create-Pfade (users-Router + create-admin-Einstieg), Nutzung von notifications/models.py
 Änderung: Beim Anlegen eines Users mit `is_admin=True` (API **und** `create-admin`) automatisch eine `NotificationSubscription` anlegen (scope `all`, `min_severity` `warning`, Glocke/Desktop an, E-Mail/Telegram aus) — sonst erreicht auf Frisch-Installationen kein Alert irgendjemanden (`resolve_recipients` iteriert nur über existierende Subscriptions). Bewusst kein Backfill für Bestands-Admins.
-Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k default_subscription` (Admin-Create legt Subscription an, Non-Admin nicht)
+Verify: `bash scripts/dev/verify.sh server --strict -- tests/ -k default_subscription` (Admin-Create legt Subscription an, Non-Admin nicht)
 Doku: keine (intern; CHANGELOG in T35)
 
 ### T31 — alert.triggered-Hook implementieren  [x] (Ingest feuert bei critical-Transition; Payload = Ingress-Pass-Through {server_id, severity, title, message} — check_name/old_status/new_status sind nicht im Monitoring→Server-Contract; Doku DE+EN — d12b10e. Merker ERLEDIGT (PR #6, eef3844): alert.triggered + playbook.* + i18n-Keys ergänzt, Sync-Guard-Test pinnt HOOK_EVENTS jetzt gegen VALID_EVENTS)
 Komponente: apps/server · Dateien: app/modules/notifications/router.py, app/modules/hooks/schemas.py
 Änderung: Im internen Ingest (`/api/internal/events`): bei `event_type == "monitoring.check.transition"` mit Severity `critical` zusätzlich `fire_event("alert.triggered", {server_id, check_name, old_status, new_status, message})`; `"alert.triggered"` in die Event-Liste in hooks/schemas.py aufnehmen — macht die bestehende Doku-Aussage wahr.
-Verify: `source .devenv.sh && cd apps/server && DATABASE_URL="$AH_TEST_DB" python -m pytest -q tests/ -k alert_triggered` (critical → fire_event aufgerufen; warning/info → nicht)
+Verify: `bash scripts/dev/verify.sh server --strict -- tests/ -k alert_triggered` (critical → fire_event aufgerufen; warning/info → nicht)
 Doku: docs/developer/hooks.html + docs/en/developer/hooks.html (Event-Liste) im selben Commit
 
 ### T32 — Bulk-CTA „Server ohne Checks“  [x] (serversWithoutChecks-Derived, Banner + Modal-Dialog mit Vorselektion, Built-ins zuerst, 3 Tests — 4989294)

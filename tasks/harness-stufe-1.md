@@ -1,0 +1,161 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Harness Stufe 1 — Grün heißt Beweis — Task-Ledger
+Status: erledigt (18/18 Tasks, PR #11 offen, CI grün; offen nur T18 `[?]` — fünf Funde aus dem Abschluss-Review, keine Blocker, brauchen Kevins Entscheidung) · Branch: feature/harness-stufe-1 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Spec: docs/features/harness-stufe-1.md
+Fast-Suite: lokal · Warm-Profil: desktop
+Heavy: **grün** (2026-09-10, warme Desktop-Box, Template 9402): `bash scripts/tests/crabbox_iter.sh quick --strict` → `13 passed, 0 failed, 0 skipped, 6 test-skips, 0 reruns`, Artefakt mit gefülltem `head`/`tree_hash`. Die sechs test-skips sind alle legitim und sichtbar (3× Alembic-Smoke ohne `DATABASE_URL`, 2× Redis, 1× TOCTOU ohne `AH_TEST_DB`) — die Ledger-Erwartung `0 test-skips` war auf einer solchen Box nie erreichbar. **Zwei rote Vorläufe waren der Ertrag dieses Laufs, siehe T19.**
+Heavy (Historie): Die ersten zwei Anläufe (`crabbox_warm.sh desktop`, Freigabe Kevin 2026-09-09) wurden beide vom Harness als Hintergrundprozess wegen Speichermangel gekillt — das System war dabei nicht knapp (25 GB frei, Swap 0). Jeder Anlauf hat eine gestoppte VM hinterlassen (102, 106; beide `slug=ah-bake keep=true`, wie Kevins vorbestehende 101). `crabbox_reap.sh` ohne `--all` fasst sie nicht an, weil sie außerhalb des Ponds liegen; `--all` würde auch 101 stoppen und ist deshalb unterblieben. Der Lauf ist erledigt (siehe oben, grün), und die VM-Liste ist leer. Die drei Reste (101, 102, 106) hingen alle an einem seit 2026-07-11 abgelaufenen `ah-bake`-Lease (61 h über dem Idle-Timeout, `template-9400` statt des Fat-Templates 9402) und wurden auf Kevins Freigabe hin mit `crabbox stop --id cbx_ad476c61034a` abgeräumt — drei Aufrufe, weil das Kommando pro Durchgang nur eine VM des Leases entfernt und die übrigen als `duplicate_remote_lease_label` stehen lässt. Die geleaste Box des grünen Laufs (107) ist ebenfalls abgeräumt, `warm.env` leer. Anmerkung zur Erwartung `0 test-skips`: auf einer Box ohne gesetztes `DATABASE_URL` skippt der monitoring-Alembic-Smoke, dort sind also 3 test-skips das ehrliche Ergebnis. Der path-gated Check des Skills verlangt den Lauf nicht (der Branch-Diff berührt keinen heavy-relevanten Pfad); der Ledger-Kopf verlangt ihn.
+DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+Vorab (Kevin, 2 min): `AH_REQUIRED` in `.devenv.sh` setzen (Vorschlag in der Spec, Frage 4); ohne die Zeile ist `--strict` auf der Dev-Box rot, weil `cargo test (desktop)` dort SKIP ist.
+Roadmap: R-0002 · Hängt ab von: R-0001 (gemergt, PR #10)
+
+### T1 — Session-Status-Hook mit hermetischem Test  [x] (AH-STATUS-Block, 7 Trigger, 35 hermetische Assertions)
+Komponente: scripts/dev · Dateien: scripts/dev/hooks/session-status.sh (neu), scripts/tests/session_status_test.sh (neu), .claude/settings.json
+Änderung: Statusblock `AH-STATUS` nach Spec (Checkout, Tag/Version, Roadmap „Als Nächstes", Ledger-Status, PRs/Draft per `gh` unter `timeout 3`, warm.env), sieben Warn-Trigger, Exit immer 0, `AH_AUTONOMOUS=1` ⇒ sofort Exit 0, `--for <x>` akzeptiert als No-op. `hooks.SessionStart` (ohne Matcher) in `.claude/settings.json`. Test baut ein Fixture-Repo unter `mktemp -d` (Tag, Bump ohne Tag, unpushed Commit, `env`-Block, ignorierte `.claude/rules/`) mit `gh`-Shim und prüft jede Zeile und jeden Trigger; SPDX-Header in beiden neuen Dateien.
+Verify: `bash scripts/tests/session_status_test.sh` → `N passed, 0 failed`; `shellcheck --severity=warning scripts/dev/hooks/session-status.sh` leer
+Doku: keine (intern; DEVELOPMENT.md-Absatz kommt in T16)
+
+### T2 — tree-hash.sh  [x] (Wegwerf-Index, sieht untracked, ignoriert tasks/)
+Komponente: scripts/dev · Dateien: scripts/dev/tree-hash.sh (neu)
+Änderung: ~10 Zeilen: `GIT_INDEX_FILE=$(mktemp)`, `git add -A -- . ':(exclude)tasks/' ':(exclude).ah-out/' ':(exclude).crabbox-out/'`, `git write-tree`, Index-Datei löschen; druckt 40 Hex. SPDX-Header.
+Verify: `h1=$(bash scripts/dev/tree-hash.sh); touch probe.tmp; h2=$(bash scripts/dev/tree-hash.sh); rm probe.tmp; [ "$h1" != "$h2" ] && echo ok` → `ok`; eine Änderung unter `tasks/` lässt den Hash gleich
+Doku: keine (intern)
+
+### T3 — run.sh: Flag-Parser, --strict, --only, --step, Required-Menge  [x] (Step-Ids, Probe-Lauf für --step, leerer strict-Lauf = Fehler, 25 Assertions)
+Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh (neu)
+Änderung: Argument-Parser (Layer positional, dann Flags), `AH_REQUIRED_DEFAULT` im Kopf, `AH_REQUIRED`-Override, unter `AH_STRICT=1`: SKIP eines Required-Steps oder eines per `--only` angeforderten Keys ⇒ FAIL mit `strict-failed: <step> (SKIP)`; Summary nennt die wirksame Required-Menge; `--step` führt genau einen Step aus. Hermetischer Test mit PATH-Shims (`go` maskiert ⇒ `strict-failed: go agent (SKIP)`; ohne `--strict` Exit 0 mit `K skipped`; unbekannter `--only`-Key ⇒ Exit 2). Kopf-Kommentar der Usage nachziehen.
+Verify: `bash scripts/tests/run_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/run.sh lint --only scripts` → Exit 0
+Doku: keine (Doku-Task T15)
+
+### T3b — crabbox_iter.sh reicht die run.sh-Flags an die Box weiter  [x] (Flags %q-gequotet, Layer validiert, AH_DRY_RUN, 8 Assertions)
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_iter.sh, scripts/tests/crabbox_iter_flags_test.sh (neu)
+Fund aus dem T3-Review (nicht in der Spec): `crabbox_iter.sh:71` liest nur `$1` und baut daraus `run.sh $LAYER` — alle weiteren Argumente fallen weg. Die `Heavy:`-Zeile dieses Ledger-Kopfs (`crabbox_iter.sh quick --strict`) liefe damit ohne strengen Modus und meldete trotzdem grün: genau der Fehlermodus, den Stufe 1 abschafft.
+Änderung: Restargumente nach dem Layer einsammeln, jedes per `printf %q` shell-quoten (der String läuft als Remote-Befehl auf der Box) und an `run.sh` anhängen; unbekannte Flags hart ablehnen statt blind weiterreichen. Aus dem Review dazu: den Layer nach demselben Muster wie `AH_ONLY` validieren, **bevor** eine Box geleast wird (`crabbox_iter.sh --strict` wurde sonst zu `LAYER=--strict` und verbrannte eine VM); Usage-Kopf nachziehen; `AH_DRY_RUN=1` druckt den Remote-Befehl und beendet ohne Lease — erst dadurch ist die Argumentbehandlung überhaupt automatisiert prüfbar. SPDX-Header im neuen Test.
+Verify: `bash scripts/tests/crabbox_iter_flags_test.sh` → `8 passed, 0 failed`, auch mit `PATH=/usr/bin:/bin` ohne `crabbox` und ohne `CRABBOX_PROVIDER` (der Trockenlauf überspringt die Provider-Prüfungen, ein crabbox-Shim im Test macht ein Durchrutschen zu Exit 99 statt zu einem Lease); `shellcheck --severity=warning scripts/tests/crabbox_iter.sh` leer. Realer Beweis im Heavy-Lauf (Ausgabe enthält dann `required (strict):`).
+Doku: keine (intern)
+
+### T4 — run.sh: pytest-Skips sichtbar, AH_TEST_DB-Fallback, last-<layer>.json  [x] (run_py_step + -rs, Vorbedingungen je Test, JSON-Artefakt, AH_ARGS, 43 Assertions)
+Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Änderung: Python-Suiten unter `--strict` mit `-rs`; Skip-Zeilen parsen; Required-Tests je Vorbedingung (Postgres erreichbar ⇒ `test_migrations_smoke`, `test_auth_token_lifecycle`; Redis ⇒ `test_stream_redis`) ⇒ `strict-failed: <test> (test-skip)`; Summary `…, J test-skips, R reruns` (`reruns` fest 0); Server-Schritt `DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"`; Artefakt `$AH_OUT_DIR/last-<layer>.json` (Schema laut Spec, Tree-Hash aus T2). Test: Fixture-pytest mit einem Skip ⇒ `test-skip`; JSON hat `head` und `tree_hash`.
+Verify: `bash scripts/tests/run_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/run.sh lint --only scripts && python3 -c "import json;d=json.load(open('.crabbox-out/last-lint.json'));assert len(d['tree_hash'])==40"`
+Zusätzlich (nicht in der Spec): `AH_ARGS` reicht Argumente an die Suite-Kommandos durch — ohne die Variable lässt sich T5 (`verify.sh <komp> -- <args>`) nicht bauen, und die Alternative wäre, `run.sh` zweimal anzufassen. Aus dem Review: `test_db_token_store` (ca-issuer, vierter pytest-interner Skip im Repo) als Required-Test bei gesetztem `AH_TEST_DB` ergänzt — in der Spec nicht aufgeführt.
+Doku: keine (Doku-Task T15; `AH_ARGS` dort mit aufnehmen)
+Abhängt von: T2, T3
+
+### T5 — verify.sh und Allowlist-Eintrag  [x] (Flag-Form, --tree, AH_ARGS, last-verify.json nur aus DIESEM Lauf, 27 Assertions)
+Komponente: scripts/dev · Dateien: scripts/dev/verify.sh (neu), scripts/tests/verify_test.sh (neu), .claude/settings.json
+Änderung: Interface laut Spec (`<komponente> [--strict] [--tree <pfad>] [-- <args>]`), sourct `.devenv.sh`/`$AH_DEVENV`, delegiert an `run.sh unit --only` (in T12 auf `quick --only` korrigiert: eine Komponenten-Schnellsuite ist Lint *und* Unit), gezielte Args an pytest/go/vitest, `--tree` per `cd`, schreibt `last-verify.json` (Schema + `component`, `args`, `tree`), Exit durchgereicht. `permissions.allow` += `Bash(bash scripts/dev/verify.sh:*)`. Hermetischer Test mit Shims (Komponente `scripts`, `--tree` gegen ein zweites Fixture). SPDX-Header.
+Verify: `bash scripts/tests/verify_test.sh` → `27 passed, 0 failed` (auch unter `env -i`); `bash scripts/dev/verify.sh monitoring --strict` → Exit 0 und `.crabbox-out/last-verify.json` existiert (den Step `scripts (hermetic)` legt erst T9 an; nach T9 ist auch die Ledger-Fassung `verify.sh scripts --strict` Exit 0)
+Doku: keine (Doku-Task T16)
+Abhängt von: T4
+
+### T6 — desktop_e2e_*.sh: exit 0 → exit 75 im tauri-cli-Zweig  [x] (7/7; kein `exit 0` mehr in den sieben Dateien)
+Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_live.sh, desktop_e2e_crud.sh, desktop_e2e_connect.sh, desktop_e2e_connect_tunnel.sh, desktop_e2e_tunnel.sh, desktop_e2e_monitoring.sh, desktop_e2e_sse_push.sh
+Änderung: je Datei die eine Zeile `|| { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }` auf `exit 75`. Sonst nichts.
+Verify: `git grep -n 'exit 0' scripts/tests/desktop_e2e_*.sh` → 0 Treffer im SKIP-Zweig; `shellcheck --severity=warning scripts/tests/desktop_e2e_*.sh` leer
+Doku: keine (intern)
+
+### T7 — desktop_e2e_skip_test.sh (hermetisch)  [x] (7 passed; Suite-Liste aus dem Verzeichnis abgeleitet, prueft Exit 75 UND die tauri-cli-Meldung)
+Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_skip_test.sh (neu)
+Änderung: PATH-Shims für `docker`, `openssl`, `curl`, `python3`, `node`, `xvfb-run`, `WebKitWebDriver`, `tauri-driver`, `dbus-run-session`, `gnome-keyring-daemon`, `go` (Exit 0), `docker compose version`/`docker info` per Shim; `cargo` fehlt im PATH ⇒ jedes der sieben Skripte muss mit 75 enden und „SKIP: tauri-cli" drucken. SPDX-Header.
+Verify: `bash scripts/tests/desktop_e2e_skip_test.sh` → `7 passed, 0 failed`
+Doku: keine (intern)
+Abhängt von: T6
+
+### T8 — Shell-Sandbox-Tests: SKIP heißt 75, Bootstrap ohne || true  [x] (minisign ist jetzt Vorbedingung statt „neutralisiert"; die SIGN-Verzweigungen entfallen damit)
+Komponente: scripts/tests · Dateien: scripts/tests/agent_install_test.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh, scripts/tests/crabbox_bootstrap.sh
+Änderung: `agent_install_test.sh:27,28,37,39` `exit 0` ⇒ `exit 75`; minisign-Weiche in `update_test.sh:33–38` und `install_test.sh:31–36`: fehlendes/unbrauchbares minisign ⇒ `echo "SKIP: minisign …"; exit 75` statt „neutralisiert"; `crabbox_bootstrap.sh:152–153` `|| true` entfernen (fehlgeschlagene Installation bricht den Bootstrap ab, Meldung nennt `tauri-cli`).
+Verify: `bash scripts/tests/agent_install_test.sh` → `26 passed, 0 failed`; `update_test.sh` und `install_test.sh` auf einem PATH ohne minisign → Exit `75` (Shim-PATH aus Coreutils, im Lauf belegt); `shellcheck --severity=warning scripts/tests/crabbox_bootstrap.sh` leer
+Doku: keine (intern)
+
+### T9 — Scripts-Block im unit-Layer, CI ops-scripts über run.sh  [x] (13 Tests als ein Step, 20s; ops-scripts von acht Zeilen auf eine)
+Komponente: scripts/tests · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml
+Änderung: neuer Step `scripts (hermetic)` unter Key `scripts` im unit-Layer: führt `install_test`, `update_test`, `init-secrets_test`, `uninstall_test`, `restore_guard_test`, `gateway_mtls_test`, `agent_install_test`, `diagnostics_test`, `session_status_test`, `run_flags_test`, `verify_test`, `desktop_e2e_skip_test` sowie `crabbox_iter_flags_test` aus T3b nacheinander aus — 13 statt der geplanten 12 (erster Fehler ⇒ FAIL, jeder 75 ⇒ SKIP des Blocks; das Verdikt fällt `_skip`, damit `--strict`, `AH_REQUIRED` und die `strict-failed`-Formulierung dieselben sind wie bei jedem anderen Step); `update_test`/`agent_install_test`/`diagnostics_test` aus `layer_integration` entfernen; `ops-scripts` in `ci.yml`: shellcheck-Zeile bleibt, die acht Test-Zeilen ⇒ `bash scripts/tests/run.sh unit --strict --only scripts`. `scripts` in `AH_REQUIRED_DEFAULT`.
+Verify: `bash scripts/tests/run.sh unit --strict --only scripts` → Exit 0, `PASS scripts (hermetic)`, `0 test-skips` (die per `--only` gefilterten Steps zählen weiterhin als `skipped` — „0 skipped" ist mit `--only` nicht erreichbar); `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))"`
+Doku: keine (Doku-Task T15)
+Abhängt von: T1, T3, T4, T5, T7, T8
+
+### T10 — crabbox_multibox.sh: skipped zählen, debian:9 als Marker  [x] (SKIPPED-Zähler, MB_DEBIAN9_SKIPPED, `--strict`-Flag statt Env — sonst wäre der strenge Zweig unerreichbar)
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh
+Änderung: Zähler `SKIPPED` neben ok/bad; `:171` debian:9-Zweig setzt Marker `MB_DEBIAN9_SKIPPED` und zählt skipped; unter `AH_STRICT=1` ⇒ `bad` statt note; Summary-Zeile `multibox: N ok, M failed, K skipped`.
+Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -n 'K skipped\|SKIPPED' scripts/tests/crabbox_multibox.sh` zeigt Zähler und Summary; realer Lauf in der Heavy-Zeile des Ledger-Kopfs bzw. beim nächsten Capstone
+Doku: keine (intern)
+
+### T11 — CI-Job agent-windows  [x] (hart, ohne continue-on-error; `workflow_dispatch` war bereits vorhanden)
+Komponente: .github · Dateien: .github/workflows/ci.yml
+Änderung: Job `agent-windows` (`name: Go Agent (test, Windows)`, `runs-on: windows-latest`, `timeout-minutes: 15`, `actions/setup-go` mit denselben Pins wie Job `agent`, `go-version: "1.25"`, `cache-dependency-path: apps/agent/go.sum`), Schritte `go test -v ./...`, `go build -o adminhelper-agent.exe ./cmd/adminhelper-agent`, `.\adminhelper-agent.exe version`; Workflow um `workflow_dispatch` ergänzen. Hart, kein `continue-on-error` (Spec Frage 2). Windows-Brüche im ersten Lauf sind Funde: als Folge-Tasks T11b… anhängen, Perm-Guards wie `enroll_test.go:131`.
+Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert 'agent-windows' in d['jobs']"` (grün, Pins identisch zu Job `agent`, `GOOS=windows go vet ./...` Exit 0); PR-CI: **erfüllt** (PR #11, Run 34460435062): Job `Go Agent (test, Windows)` grün in 56 s, Log enthält `--- PASS: TestReWinServiceNameRejectsOptionLikeNames` — der erste Lauf dieses Tests überhaupt. Der ganze Run ist grün (20 Checks, `integration-stack` erwartungsgemäß übersprungen, weil kein `main`-Push). Statische Vorhersage aus dem Review: grün erwartet; einziger Bruch-Kandidat ist `config.SecureDir` (zwei `icacls`-Aufrufe) auf `t.TempDir()` in vier enroll/renew-Tests — falls rot, `SecureDir` in `Store` injizierbar machen statt den Test aufzuweichen (T11b)
+Doku: keine (Doku-Task T15)
+
+### T12 — feature-build/plan/review Skills: Verify-Aufruf, restore statt checkout, fabelreport  [x] (0 Treffer für `git checkout --` und `fabelreport` unter .claude; zusätzlich `scripts/dev/verify.sh` + Test + `.claude/rules/testing.md`, siehe unten)
+Komponente: .claude/skills · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-review/SKILL.md
+Änderung: feature-build Schritt „Pro Iteration": Schnellsuite als `bash scripts/tests/run.sh quick --strict --only <komp>` bzw. `bash scripts/dev/verify.sh <komp> --strict`; Z. 66 `git checkout -- <datei>` ⇒ `git restore --source=HEAD --staged --worktree -- <datei>`, Revert-Check ausdrücklich nie im Builder-Tree (eigener Worktree); `fabelreport`-Verweise (feature-build:76, feature-plan:66, feature-review:19) auf „Spec-Feld des Ledger-Kopfs"; feature-plan Task-Schema: `Verify:` nur in Flag-Form (Beispielzeile).
+Verify: `git grep -n 'git checkout --' .claude/skills` → 0; `git grep -n fabelreport .claude` → 0; `git grep -n 'verify.sh\|run.sh quick --strict' .claude/skills/feature-build/SKILL.md` ≥ 1
+Zusätzlich, aus dem Review dieser Task: `scripts/dev/verify.sh` delegiert jetzt an `run.sh quick --only <komp>` statt `unit --only` (samt Test und Spec-Notiz). Eine Komponenten-Schnellsuite ist laut CLAUDE.md Lint *und* Unit — mit `unit` allein hätte jede auf `verify.sh` umgeschriebene Ledger-Zeile weniger verifiziert als die Zeile davor, und `verify.sh server` hätte ruff still übersprungen. `.claude/rules/testing.md` schränkt die Flag-Form auf neue und aktive Ledger ein (abgeschlossene bleiben Historie).
+Doku: keine (Skill-Doku ist die Datei selbst)
+
+### T13 — AUTONOMOUS.md, tasks/README.md, Verify-Zeilen in tasks/*.md  [x] (13 Verify-Zeilen in vier Ledgern auf Flag-Form — nicht elf wie geplant)
+Komponente: Repo-Root · Dateien: AUTONOMOUS.md, tasks/README.md, tasks/{code-review-fixes,dependency-refresh,merker-cleanup,monitoring-overhaul}.md
+Änderung: `AUTONOMOUS.md:84` und `tasks/README.md:40` ohne `fabelreport.md`; „Aktueller Stand" in `tasks/README.md` auf Ist (`audit-fixes.md` gitignored und abgeschlossen, `harness-stufe-1.md` aktiv); die elf `Verify:`-Zeilen mit Env-Präfix (`source …`, gesetztes `DATABASE_URL`, gesetztes `AH_ONLY`) in den vier Ledgern auf `bash scripts/dev/verify.sh <komp> [-- <args>]`-Form (historische Ledger, Bedeutung unverändert).
+Verify: `git grep -nE 'Verify:.*[A-Z_]{3,}=' tasks .claude` → 3 Treffer, alle in diesem Ledger und alle Falsch-Positive: die T3b-Zeile nennt `PATH=/usr/bin:/bin` als Testumgebung, die T11-Zeile `GOOS=windows go vet` als Befehl über den ein Review berichtet, und diese Zeile hier zitiert das Suchmuster selbst. Kein Treffer in den vier historischen Ledgern; `git grep -n fabelreport -- ':!CHANGELOG.md' ':!.gitignore' ':!docs/features/harness-stufe-1.md' ':!tasks/harness-stufe-1.md'` → 0 (Spec und Ledger dieser Stufe nennen das Wort, weil sie die Aufgabe beschreiben)
+Doku: keine (intern)
+Abhängt von: T5
+
+### T14 — ESLint no-unused-vars auf error (web + desktop-ui)  [x] (0 bestehende Funde in beiden Frontends — nichts zu fixen, kein REF-Eintrag nötig)
+Komponente: apps/web, apps/desktop/ui · Dateien: apps/web/eslint.config.js, apps/desktop/ui/eslint.config.js (+ betroffene Quelldateien, falls ≤ 10 Funde)
+Änderung: Regel `@typescript-eslint/no-unused-vars` von `warn` auf `error`; vorher `npm run lint` zählen; ≤ 10 Funde in derselben Task fixen (Orphans), > 10 ⇒ `[?]` und Roadmap-Zeile REF (Spec Frage 3).
+Verify: `bash scripts/tests/run.sh unit --strict --only web desktop-ui` → Exit 0; eine absichtlich eingebaute unbenutzte Variable macht `npm run lint` rot (danach zurücknehmen)
+Doku: keine (intern)
+Abhängt von: T3
+
+### T15 — Doku cicd.html DE+EN  [x] (Abschnitt „Test-Aggregator" + „Verify-Konvention" neu angelegt — es gab keinen)
+Komponente: docs · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: „cargo check auf Windows" ⇒ `cargo test --locked`; neuer Job `agent-windows`; Abschnitt „Test-Aggregator" (den es noch nicht gibt — neu anlegen) mit Flags `--strict`/`--only`/`--step`/`AH_ARGS`, Exit-75-, test-skip- und rerun-Semantik, Required-Menge (`AH_REQUIRED`), `last-<layer>.json`/`last-verify.json` und Tree-Hash-Definition, `verify.sh` als Verify-Konvention; `ops-scripts` läuft über `run.sh`. Beide Sprachen gleichlautend.
+Verify: `grep -c 'cargo check' docs/developer/cicd.html docs/en/developer/cicd.html` → 0 und 0; `grep -c 'agent-windows' docs/developer/cicd.html docs/en/developer/cicd.html` → ≥ 1 und ≥ 1
+Doku: ist die Doku
+Abhängt von: T9, T11
+
+### T17 — Funde aus dem Abschluss-`/code-review` (behoben)  [x]
+Komponente: scripts/tests, scripts/dev, .claude · Dateien: scripts/tests/verify_test.sh, scripts/dev/verify.sh, scripts/tests/run.sh, scripts/tests/update_test.sh, scripts/tests/install_test.sh, scripts/dev/hooks/session-status.sh, .claude/rules/release.md
+Der `/code-review` über den Branch-Diff fand 14 Punkte; neun davon sind hier behoben:
+1. **`verify_test.sh` löschte die echten Evidenz-Dateien des Checkouts.** `run_v nixkomponente` lief ohne `--tree` und ohne `AH_OUT_DIR` gegen den realen Baum, und `verify.sh` räumt die Artefakte des Zielbaums vor dem Lauf ab — seit T9 zerstörte damit jeder `run.sh quick` sein eigenes `last-quick.json`. Empirisch bestätigt, jetzt umgeleitet plus Assertion.
+2. `verify.sh` entfernt die Artefakte, sobald der Zielbaum feststeht (vorher erst nach dem devenv-Sourcen) — ein abbrechendes `.devenv.sh` ließ ein altes Artefakt stehen. Reine Argument-Fehler bleiben ausgenommen und das steht jetzt im Kommentar.
+3. Der checksum-only-Pfad von `update.sh` (`MINISIGN_PUBKEY=""`, fällt bewusst OPEN) hatte nach T8 keine Abdeckung mehr — zwei neue Fälle in `update_test.sh` (24 passed).
+4. `shellcheck`-Glob war nicht rekursiv: `scripts/dev/hooks/session-status.sh` wurde nie gelintet.
+5. `shellcheck` fehlte in `AH_REQUIRED_DEFAULT` — auf einer Box ohne shellcheck war `--strict` grün, obwohl die Ops-Skripte ungelintet blieben.
+6. `layer_e2e` hielt die sieben GUI-Suiten als zweite Handliste; jetzt aus dem Verzeichnis abgeleitet wie im Test.
+7. `verify.sh <komp> -- <args>` ignorierte die Args für `scripts` stillschweigend; wird jetzt abgelehnt.
+8. `exit 75` aus `make_release` heraus hätte einen schon roten Lauf zu SKIP gemacht — ein Signier-Fehler nach erfolgreichem Key-Erzeugen ist jetzt `exit 1`.
+9. Zwei Zusagen zurückgenommen, die der Code nicht hält: der Hook-Header behauptete „die fünf Trigger aus CLAUDE.md §3" (vier davon fehlen — steht jetzt da), und `release.md` versprach, `--strict` mache jeden nicht gelaufenen Capstone-Guard rot (es deckt nur den debian:9-Zweig ab).
+Verify: `bash scripts/tests/verify_test.sh` → `29 passed`; `bash scripts/tests/update_test.sh` → `24 passed`; `bash scripts/tests/run.sh quick --strict` → Exit 0; `.crabbox-out/last-quick.json` überlebt einen vollen Lauf
+Doku: keine (intern)
+
+### T19 — Funde aus dem Heavy-Lauf auf der Box (behoben)  [x]
+Komponente: scripts/tests · Dateien: scripts/tests/run.sh, scripts/tests/crabbox_iter.sh, scripts/tests/run_flags_test.sh
+Der erste Lauf auf einer echten Box war rot — und fand zwei Dinge, die lokal unsichtbar waren, weil dort immer ein `.git` liegt:
+1. **Das Evidenz-Artefakt war auf jeder Box leer.** crabbox synct den Arbeitsbaum ohne `.git` (auf der Box verifiziert: `ls -d .git` → nicht vorhanden), also lieferten weder `git rev-parse HEAD` noch `tree-hash.sh` etwas — `head` und `tree_hash` waren `""`. Genau dort, wo die schweren Läufe stattfinden, bewies das Artefakt nichts. Fix: `crabbox_iter.sh` berechnet beide Werte über den Baum, den es gleich synchronisiert, und reicht sie als `AH_HEAD`/`AH_TREE_HASH` durch; ein antwortendes `git` gewinnt weiterhin.
+2. **Der neue Test setzte selbst ein Git-Repo voraus.** Die Assertion „ein echtes Repo gewinnt über den Client-Wert" ist auf einer Box ohne `.git` nicht prüfbar und wurde im zweiten Lauf rot. Sie prüft die Präzedenz jetzt mit einem git-Stub und läuft überall gleich.
+Dazu ein Fehler in einem Shim, der hätte schaden können: `printf … > "$NOGIT/git"` schrieb durch einen Symlink auf `/usr/bin/git` (scheiterte nur an den Rechten; Datei nachweislich intakt). Alle drei Shim-Stellen entfernen den Pfad jetzt vor dem Schreiben.
+Verify: `bash scripts/tests/run_flags_test.sh` → `57 passed, 0 failed`; auf der Box `crabbox_iter.sh quick --strict` → `13 passed, 0 failed`, `head`/`tree_hash` gefüllt
+Doku: keine (intern)
+
+### T18 — Offene Funde aus dem `/code-review` (nicht in dieser Stufe)  [?]
+Fünf Punkte sind echt, aber keine Blocker dieses PR — sie brauchen eine Entscheidung oder eine eigene Stufe:
+1. **`crabbox_multibox.sh`: vier weitere stille Skips.** Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop-Lease, moncheck-Lease und `--enforce` fallen ohne Zähler aus; scheitern alle Agent-Leases, meldet die Monitoring-Assertion `0 >= 0` sogar ein grünes `ok`. `--strict` deckt bisher nur debian:9 ab. Gehört zum Capstone-Umbau (Stufe 3).
+2. **`--capstone` setzt `ENFORCE` nicht** — der `MTLS_ENFORCE`-Guard ist in keinem Release-Capstone enthalten.
+3. **`tree-hash.sh` bei jedem Lauf** ist teuer: leerer Index heißt kein stat-Cache, also volles Re-Hashing des Baums und lose Objekte in `.git/objects` (~30× je hermetischem Block). Billiger: den echten Index kopieren oder einen Temp-Index pro Lauf wiederverwenden.
+4. **`json_str` ist in `run.sh` und `verify.sh` byte-identisch dupliziert**, zusammen mit dem Artefakt-Schema. Ein `scripts/dev/json_lib.sh` hielte die Regel an einer Stelle.
+5. **`printf %q` ist bash-spezifisch**, der Remote-Befehl läuft aber in der Shell der Box; bei nicht-ASCII-Werten erzeugt es `$'…'`, das `sh`/dash anders parst. Heute latent (alle Werte sind ASCII).
+Dazu drei Beobachtungen ohne Task: `varsIgnorePattern: '^_'` kollidiert mit der Store-Namenskonvention beider Frontends (ein toter `_store` fällt der neuen Regel nicht auf); `cargo install tauri-driver` in `crabbox_bootstrap.sh` ist ungepinnt und seit T8 tragend; `CLAUDE.md:158` sagt „die Dev-Box hat kein Docker" — sie hat Docker, nur kein Display (Harness-Datei, nicht in diesem Branch geändert).
+
+### T16 — DEVELOPMENT.md, CHANGELOG, Capstone-Ledger-Notiz  [x] (drei neue DEVELOPMENT-Abschnitte; toter CI-Job entfernt)
+Komponente: Repo-Root · Dateien: DEVELOPMENT.md, CHANGELOG.md, tasks/test-infra-capstone-release.md
+Änderung: `DEVELOPMENT.md:394` toten CI-Job `desktop-e2e` entfernen; Abschnitte `verify.sh` (Aufruf, `last-verify.json`), `AH_REQUIRED` in `.devenv.sh`, Session-Status-Hook (was er druckt, `AH_AUTONOMOUS=1`); `CHANGELOG.md` Unreleased „Changed: Test-Aggregator strict/only/step, Exit 75 statt stillem PASS, verify.sh, agent-windows-Job, Session-Status-Hook"; im Capstone-Ledger unter A4 eine Notiz „Stand 2026-09: JUnit-Reporter nicht vorhanden (`wdio.conf.js:67` `spec`), kommt in Stufe 5".
+Verify: `grep -n 'desktop-e2e' DEVELOPMENT.md` → 0 Treffer als CI-Job-Name; `grep -c 'verify.sh' DEVELOPMENT.md` ≥ 1; `grep -n 'JUnit-Reporter nicht vorhanden' tasks/test-infra-capstone-release.md` → 1
+Doku: ist die Doku
+Abhängt von: T5, T1

@@ -24,7 +24,7 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
 e2e_require node xvfb-run WebKitWebDriver tauri-driver dbus-run-session gnome-keyring-daemon
 ( cd "$E2E_REPO_ROOT/apps/desktop/src-tauri" && cargo tauri --version >/dev/null 2>&1 ) \
-    || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 0; }
+    || { echo "SKIP: tauri-cli (cargo tauri) not available"; exit 75; }
 
 # Standalone-run self-sufficiency (fresh box, no prior run.sh layer): without the
 # local node_modules, `npx wdio` fetches the interactive `wdio` WIZARD package from

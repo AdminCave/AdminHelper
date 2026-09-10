@@ -36,7 +36,11 @@ bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.
 
 ## Aktueller Stand
 
-- **`audit-fixes.md`** — `Status: aktiv`. Die 681 Funde aus dem Fable-Audit; Fix-Detail je Fund
-  in `../fabelreport.md` (gleiche IDs). Bewusst schlanke Checkliste, keine 681 Einzel-Tasks.
+- **`harness-stufe-1.md`** — `Status: aktiv`. Stufe 1 der Autonomie-Roadmap („Grün heißt
+  Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,
+  der Session-Status-Hook und der CI-Job `agent-windows`. Spec: `docs/features/harness-stufe-1.md`.
+- **`audit-fixes.md`** — `Status: erledigt`, gitignored (der Report enumeriert ungefixte Funde
+  inkl. ausnutzbarer Lücken; dieses Repo ist öffentlich). Die 681 Funde aus dem Fable-Audit;
+  Fix-Detail je Fund in der Quelle, auf die das `Spec:`-Feld zeigt (gleiche IDs).
 - **`test-infra-capstone-release.md`** — `Status: erledigt`. Test-Infrastruktur/Capstone/
   Release komplett (Phasen A–E), **Release v0.39.0 ist raus** (2026-07-04). Bleibt als Historie.

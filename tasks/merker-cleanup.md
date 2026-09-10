@@ -30,7 +30,7 @@ Doku: keine (intern)
 ### T3 — Smoke-Test-Gerüst deduplizieren  [x] (scratch_db-Contextmanager, 3 Kopien → 1; Nebeneffekt: das upgrade der Fixture liegt jetzt im try/finally, ein Migrationsfehler leakt die Scratch-DB nicht mehr)
 Komponente: apps/monitoring · Dateien: tests/test_migrations_smoke.py
 Änderung: Das dreifach kopierte Scratch-DB-Gerüst (CREATE DATABASE, `monkeypatch` auf `app_config.DATABASE_URL`, alembic-Config, `finally`-DROP mit FORCE) in einen Contextmanager `scratch_db()` ziehen; die bestehende `migrated_engine`-Fixture und die zwei Zwischenstand-Tests (uniq-dedupe, notified_status-Backfill) nutzen ihn. Verhalten und Assertions unverändert.
-Verify: `source .devenv.sh && cd apps/monitoring && DATABASE_URL="$AH_TEST_DB" .venv/bin/python -m pytest -q tests/test_migrations_smoke.py` (weiterhin 3 passed) `&& .venv/bin/python -m pytest -q tests/`
+Verify: `bash scripts/dev/verify.sh monitoring --strict` — der Alembic-Smoke (`tests/test_migrations_smoke.py`, damals 3 passed) braucht ein gesetztes `DATABASE_URL` und läuft deshalb nur in CI; auf der Dev-Box weist ihn `--strict` seit Stufe 1 als `test-skip` aus, statt ihn still zu verschlucken
 Doku: keine (intern)
 
 ## Phase 3 — Ledger-Hygiene

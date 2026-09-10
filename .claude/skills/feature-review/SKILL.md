@@ -15,8 +15,8 @@ unter `/loop`, oder (aus `feature-build` heraus) als **frischer Sub-Agent** (Age
 
 ## Eingabe
 - Der zu prüfende **Diff** (`git diff` gegen den Merge-Base von `main`, oder der staged Diff
-  einer Commit-Einheit) plus die zugehörige **Task/Spec** (`tasks/<slug>.md`-Eintrag bzw.
-  `fabelreport.md`-Fund) als Soll-Vorgabe.
+  einer Commit-Einheit) plus die zugehörige **Task/Spec** als Soll-Vorgabe: der
+  `tasks/<slug>.md`-Eintrag und die Stelle, auf die das `Spec:`-Feld des Ledger-Kopfs zeigt.
 
 ## Prüf-Kriterien (jede Änderung gegen ALLE durchgehen)
 1. **Auftragstreue.** Setzt der Diff **genau** die Task um — nicht weniger (fehlende Teile

@@ -8,7 +8,7 @@
 # guard, --ref force, health-fail rollback, additive .env migration, and the
 # self-update re-exec hand-off.
 #
-# Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils)
+# Run: bash scripts/tests/update_test.sh   (needs bash, curl with file://, coreutils, minisign)
 
 # ok()/bad() never fail, so the `cond && ok || bad` assertions are deliberate
 # (not if-then-else); the │-prefix sed is a readability nicety.
@@ -28,15 +28,14 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 # Sign the fake releases with a throwaway key so update.sh's now-armed signature
-# verification runs end-to-end against the real (pinned-key) logic. If minisign
-# is unavailable, neutralize the pinned key in the fixture copies instead, so the
-# rest of the flow still runs (checksum-only path).
-SIGN=0; TEST_PUBKEY=""
-if command -v minisign >/dev/null 2>&1 && minisign -G -W -p "$WORK/test.pub" -s "$WORK/test.key" >/dev/null 2>&1; then
-  SIGN=1; TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
-else
-  echo "  note: minisign nicht verfuegbar — Signaturpfad im Fixture neutralisiert"
-fi
+# verification runs end-to-end against the real (pinned-key) logic. Without
+# minisign this used to neutralize the pinned key and run the checksum-only path
+# instead — a green run for a test named after the signature path. SKIP (75) is
+# the honest answer: not verified is not verified (CLAUDE.md, .claude/rules/testing.md).
+command -v minisign >/dev/null 2>&1 \
+  && minisign -G -W -p "$WORK/test.pub" -s "$WORK/test.key" >/dev/null 2>&1 \
+  || { echo "SKIP: minisign missing or unusable — the signature path cannot be verified"; exit 75; }
+TEST_PUBKEY=$(sed -n '2p' "$WORK/test.pub")
 
 # --- a docker stub: succeeds at everything; health probe honours AH_TEST_HEALTH -
 BIN="$WORK/bin"
@@ -61,14 +60,9 @@ make_src() {
   local ver="$1" dir="$2"
   mkdir -p "$dir/scripts"
   cp "$REAL_UPDATE" "$dir/scripts/update.sh"
-  # Point the fixture's update.sh at the throwaway test key (or disable
-  # verification when unsigned) so its pinned production key doesn't reject the
-  # locally-built fake release.
-  if [ "$SIGN" = 1 ]; then
-    sed -i "s|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=\"$TEST_PUBKEY\"|" "$dir/scripts/update.sh"
-  else
-    sed -i 's|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=""|' "$dir/scripts/update.sh"
-  fi
+  # Point the fixture's update.sh at the throwaway test key so its pinned
+  # production key doesn't reject the locally-built fake release.
+  sed -i "s|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=\"$TEST_PUBKEY\"|" "$dir/scripts/update.sh"
   for s in install backup restore uninstall init-secrets; do
     cp "$REPO_ROOT/scripts/$s.sh" "$dir/scripts/$s.sh" 2>/dev/null || true
   done
@@ -97,8 +91,9 @@ make_release() {
   ( cd "$stage" && find docker-compose.yml .env.example scripts -type f | sort | xargs sha256sum > MANIFEST.sha256 )
   tar czf "$assetdir/adminhelper-runtime-$tag.tar.gz" -C "$stage" .
   ( cd "$assetdir" && sha256sum "adminhelper-runtime-$tag.tar.gz" > SHA256SUMS )
-  [ "$SIGN" = 1 ] && minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
-    -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+  minisign -S -s "$WORK/test.key" -m "$assetdir/SHA256SUMS" \
+    -x "$assetdir/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
+    || { echo "FATAL: minisign cannot sign the fixture"; exit 1; }
   [ -n "$latest" ] && printf '{"tag_name": "%s", "prerelease": false, "draft": false}\n' "$latest" \
     > "$apiroot/repos/$REPO/releases/latest"
   rm -rf "$stage"
@@ -198,28 +193,24 @@ out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
   && ok "tampered bundle rejected (checksum; install untouched)" || bad "tampered bundle NOT rejected: rc=$rc"
 
-# The signature negatives need minisign (SIGN=1); the checksum negative above always runs.
-if [ "$SIGN" = 1 ]; then
-  # ── 10. SHA256SUMS signed by a FOREIGN key → signature verify fails → abort ──
-  make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
-  INST="$WORK/inst10"; make_install 0.33.0 "$SRC_OLD" "$INST"
-  minisign -G -W -p "$WORK/evil.pub" -s "$WORK/evil.key" >/dev/null 2>&1
-  minisign -S -s "$WORK/evil.key" -m "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS" \
-    -x "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
-  out=$(run_update "$INST" 2>&1); rc=$?
-  { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
-    && ok "foreign-key signature rejected (fail-closed)" || bad "foreign-key sig NOT rejected: rc=$rc"
+# The signature negatives run unconditionally now that minisign is a precondition.
+# ── 10. SHA256SUMS signed by a FOREIGN key → signature verify fails → abort ──
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst10"; make_install 0.33.0 "$SRC_OLD" "$INST"
+minisign -G -W -p "$WORK/evil.pub" -s "$WORK/evil.key" >/dev/null 2>&1
+minisign -S -s "$WORK/evil.key" -m "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS" \
+  -x "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+  && ok "foreign-key signature rejected (fail-closed)" || bad "foreign-key sig NOT rejected: rc=$rc"
 
-  # ── 11. missing .minisig with an armed pubkey → fail-closed abort ────────────
-  make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
-  INST="$WORK/inst11"; make_install 0.33.0 "$SRC_OLD" "$INST"
-  rm -f "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS.minisig"
-  out=$(run_update "$INST" 2>&1); rc=$?
-  { [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
-    && ok "missing signature rejected (fail-closed)" || bad "missing sig NOT rejected: rc=$rc"
-else
-  echo "  note: minisign nicht verfuegbar — Signatur-Negativtests (10/11) uebersprungen (nur Checksummen-Pfad geprueft)"
-fi
+# ── 11. missing .minisig with an armed pubkey → fail-closed abort ────────────
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst11"; make_install 0.33.0 "$SRC_OLD" "$INST"
+rm -f "$DL/$REPO/releases/download/v0.34.0/SHA256SUMS.minisig"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+  && ok "missing signature rejected (fail-closed)" || bad "missing sig NOT rejected: rc=$rc"
 
 # ── 12. agent-repo asset present → unpacked into ./repo (exercises 4.58/4.59) ─
 # Nothing published an agent-repo asset before, so update_agent_repo's fetch +
@@ -229,17 +220,44 @@ ASSETDIR="$DL/$REPO/releases/download/v0.34.0"
 mkdir -p "$WORK/repostage/dists"; printf 'repo-marker-0.34.0\n' > "$WORK/repostage/dists/Release"
 tar czf "$ASSETDIR/adminhelper-agent-repo-v0.34.0.tar.gz" -C "$WORK/repostage" .
 ( cd "$ASSETDIR" && sha256sum "adminhelper-agent-repo-v0.34.0.tar.gz" >> SHA256SUMS )
-[ "$SIGN" = 1 ] && minisign -S -s "$WORK/test.key" -m "$ASSETDIR/SHA256SUMS" \
-  -x "$ASSETDIR/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1
+minisign -S -s "$WORK/test.key" -m "$ASSETDIR/SHA256SUMS" \
+  -x "$ASSETDIR/SHA256SUMS.minisig" </dev/null >/dev/null 2>&1 \
+  || { echo "FATAL: minisign cannot sign the agent-repo fixture"; exit 1; }
 INST="$WORK/inst12"; make_install 0.33.0 "$SRC_OLD" "$INST"
 out=$(run_update "$INST" 2>&1); rc=$?
 { [ $rc -eq 0 ] && grep -q 'repo-marker-0.34.0' "$INST/repo/dists/Release" 2>/dev/null; } \
   && ok "agent-repo asset unpacked into ./repo" || bad "agent-repo not updated: rc=$rc"
 
+# ── 13. unarmed pubkey → warn + checksum-only, and it must FAIL OPEN on purpose ─
+# Making minisign a precondition removed the only coverage of this branch
+# (update.sh's `[ -z "$MINISIGN_PUBKEY" ] && return 0`). It is live production
+# code that accepts an unsigned bundle by design, so it needs a test of its own:
+# a future edit that empties the pubkey must not ship a silently-unsigned updater.
+make_release 0.34.0 "$SRC_NEW" "$DL" "$API" v0.34.0
+INST="$WORK/inst13"; make_install 0.33.0 "$SRC_OLD" "$INST"
+# The signature file stays: update.sh downloads it before it looks at the pubkey,
+# so the unarmed branch is only reachable with the .minisig present — a signed
+# release met by an updater that carries no key.
+sed -i 's|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=""|' "$INST/scripts/update.sh"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -eq 0 ] && grep -q 'server:0.34.0' "$INST/.env"; } \
+  && ok "unarmed pubkey: update proceeds on the checksum alone" \
+  || bad "unarmed path broken: rc=$rc"
+printf '%s' "$out" | grep -q 'Release-Signatur nicht konfiguriert' \
+  && ok "unarmed pubkey warns that only transport integrity was checked" \
+  || bad "no warning on the unarmed path"
+
+# ...but the checksum still has to hold, or the unarmed path would accept anything.
+make_release 0.35.0 "$SRC_NEW" "$DL" "$API" v0.35.0
+INST="$WORK/inst13b"; make_install 0.33.0 "$SRC_OLD" "$INST"
+sed -i 's|^MINISIGN_PUBKEY=.*|MINISIGN_PUBKEY=""|' "$INST/scripts/update.sh"
+printf 'x' >> "$DL/$REPO/releases/download/v0.35.0/adminhelper-runtime-v0.35.0.tar.gz"
+out=$(run_update "$INST" 2>&1); rc=$?
+{ [ $rc -ne 0 ] && grep -q 'server:0.33.0' "$INST/.env"; } \
+  && ok "unarmed pubkey still rejects a tampered bundle (checksum)" \
+  || bad "unarmed path accepted a tampered bundle: rc=$rc"
+
 echo
 echo "──────────────────────────────────────────"
 echo "  update_test: ${PASS} passed, ${FAIL} failed"
-# Make the degraded coverage visible in the summary, not just mid-run: a green run
-# without minisign proves only the checksum path, not the signature path (6.142).
-[ "$SIGN" = 1 ] || echo "  WARN: minisign absent — signature path NOT verified (checksum-only)"
 [ "$FAIL" -eq 0 ]
