@@ -21,7 +21,7 @@ set -uo pipefail
 # results. It WILL be inherited: from T9 on this file runs inside `run.sh unit
 # --strict --only scripts`, which exports AH_ONLY=scripts and AH_STRICT=1.
 unset AH_ONLY AH_STRICT AH_STEP AH_REQUIRED AH_ALLOW_REAL AH_CAPTURE AH_TEST_DB \
-      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR
+      AH_SCRIPT_TESTS AH_SCRIPT_TESTS_DIR AH_HEAD AH_TREE_HASH
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -48,6 +48,7 @@ done
 # other steps skipped".
 WITHSC="$WORK/bin-sc"; mkdir -p "$WITHSC"
 cp -a "$BARE/." "$WITHSC/"
+rm -f "$WITHSC/shellcheck"
 printf '#!/bin/sh\nexit 0\n' > "$WITHSC/shellcheck"; chmod +x "$WITHSC/shellcheck"
 
 # run_bare <args…> — run.sh on the bare PATH; stdout+stderr in $OUT, code in $rc
@@ -163,6 +164,7 @@ echo "── test-skips and the run artifact ──"
 # a test — the shape that made "N passed" mean "N minus this one" for months.
 PYSHIM="$WORK/bin-py"; mkdir -p "$PYSHIM"
 cp -a "$BARE/." "$PYSHIM/"
+rm -f "$PYSHIM/python3"
 cat > "$PYSHIM/python3" <<'EOF'
 #!/bin/sh
 # `-m pip install …` and `-m venv …` succeed silently; `-m pytest …` prints a
@@ -200,8 +202,17 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" DATABASE_URL
 # The artifact ties the verdict to a tree instead of to a claim.
 ART="$WORK/out/last-unit.json"
 [ -f "$ART" ] && ok "the run writes last-<layer>.json" || bad "no artifact at $ART"
-grep -qE '"tree_hash": "[0-9a-f]{40}"' "$ART" && ok "artifact: 40-hex tree_hash" || bad "tree_hash: $(grep tree_hash "$ART")"
-grep -qE '"head": "[0-9a-f]{40}"' "$ART" && ok "artifact: head commit" || bad "head: $(grep head "$ART")"
+# Explicit values rather than whatever the surrounding checkout has: on a crabbox
+# box there is no .git, and these two would otherwise pass by inheriting the very
+# variables this file unsets — proving nothing about the code under test.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out-ev" \
+      AH_HEAD=4444444444444444444444444444444444444444 \
+      AH_TREE_HASH=5555555555555555555555555555555555555555 \
+      SHIM_SKIP="" "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
+grep -qE '"tree_hash": "[0-9a-f]{40}"' "$WORK/out-ev/last-unit.json" \
+  && ok "artifact: 40-hex tree_hash" || bad "tree_hash: $(grep tree_hash "$WORK/out-ev/last-unit.json")"
+grep -qE '"head": "[0-9a-f]{40}"' "$WORK/out-ev/last-unit.json" \
+  && ok "artifact: head commit" || bad "head: $(grep head "$WORK/out-ev/last-unit.json")"
 grep -q '"reruns": 0' "$ART" && ok "artifact: reruns field (0 in stage 1)" || bad "reruns missing"
 grep -q '"name": "monitoring pytest", "result": "pass"' "$ART"   && ok "artifact: step name and verdict" || bad "steps: $(grep -A2 '"steps"' "$ART" | tr -d '\n')"
 
@@ -247,6 +258,47 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
 grep -q 'ARGV: -m pytest -q$' <<<"$OUT" \
   && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 ARGV <<<"$OUT")"
+
+# A crabbox box has no .git, so run.sh must take the evidence fields from the
+# client that synced the tree — otherwise last-<layer>.json comes back from every
+# box with an empty head and tree_hash, and the artifact proves nothing exactly
+# where the heavy runs happen. Simulated with a git that cannot answer.
+NOGIT="$WORK/bin-nogit"; mkdir -p "$NOGIT"
+cp -a "$BARE/." "$NOGIT/"
+# rm first: the copy left a SYMLINK to the real git here, and `>` on a symlink
+# writes through it — straight into /usr/bin/git.
+rm -f "$NOGIT/git"
+printf '#!/bin/sh\nexit 128\n' > "$NOGIT/git"; chmod +x "$NOGIT/git"
+OUT=$(PATH="$NOGIT" AH_OUT_DIR="$WORK/out4" \
+      AH_HEAD=1111111111111111111111111111111111111111 \
+      AH_TREE_HASH=2222222222222222222222222222222222222222 \
+      "$NOGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": "1111111111111111111111111111111111111111"' "$WORK/out4/last-lint.json" \
+  && ok "no .git: head comes from the client" || bad "head: $(grep head "$WORK/out4/last-lint.json")"
+grep -q '"tree_hash": "2222222222222222222222222222222222222222"' "$WORK/out4/last-lint.json" \
+  && ok "no .git: tree_hash comes from the client" || bad "tree_hash: $(grep tree_hash "$WORK/out4/last-lint.json")"
+
+# ...and where git DOES answer, its answer wins over whatever the client claims.
+# Checked with a stub rather than the surrounding checkout: on a crabbox box there
+# is no .git at all, so "a real repo" is not a precondition this test can assume —
+# that is exactly what made the first heavy run red.
+FAKEGIT="$WORK/bin-fakegit"; mkdir -p "$FAKEGIT"
+cp -a "$BARE/." "$FAKEGIT/"
+rm -f "$FAKEGIT/git"
+cat > "$FAKEGIT/git" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "rev-parse HEAD") echo 3333333333333333333333333333333333333333; exit 0 ;;
+esac
+exit 128
+EOF
+chmod +x "$FAKEGIT/git"
+OUT=$(PATH="$FAKEGIT" AH_OUT_DIR="$WORK/out5" \
+      AH_HEAD=1111111111111111111111111111111111111111 \
+      "$FAKEGIT/bash" "$RUN" lint --step "shellcheck (ops" 2>&1)
+grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out5/last-lint.json" \
+  && ok "a git that answers wins over the client value" \
+  || bad "precedence: $(grep '"head"' "$WORK/out5/last-lint.json")"
 
 # A strict-failed SKIP carries its own verdict rather than being folded into
 # "fail" or "skip" — the summary counts it twice, the artifact must not.

@@ -33,6 +33,27 @@ if [ "${AH_DRY_RUN:-0}" != "1" ]; then
   cbx_load_env || exit 1
 fi
 
+# The box has no .git (the sync carries files, not the repository), so it cannot
+# compute the evidence fields of last-<layer>.json itself — without these, every
+# box returns an artifact with an empty head and tree_hash. Computed here, over
+# the tree that is about to be synced.
+#
+# Nothing is passed under AH_NO_SYNC: the box then keeps an OLDER tree, and
+# labelling it with today's hash would be a run claiming a tree it never saw.
+# Empty evidence is honest, wrong evidence is not.
+evidence_envs() {
+  [ "${AH_NO_SYNC:-0}" = 1 ] && return 0
+  local head tree
+  head="$(git rev-parse HEAD 2>/dev/null)"
+  tree="$(bash "$DIR/../dev/tree-hash.sh" 2>/dev/null)"
+  # All-or-nothing on purpose: a garbled value discards the good one too, rather
+  # than shipping half an identity that looks complete.
+  case "$head$tree" in *[!0-9a-f]*) return 0 ;; esac
+  [ -n "$head" ] && printf ' AH_HEAD=%s' "$head"
+  [ -n "$tree" ] && printf ' AH_TREE_HASH=%s' "$tree"
+  return 0
+}
+
 mkdir -p .crabbox-out .crabbox/out
 NOSYNC=(); [ "${AH_NO_SYNC:-0}" = 1 ] && NOSYNC=(-no-sync)
 # Auto-debug flags: keep the box on failure, write full local logs, pull the on-box
@@ -75,6 +96,10 @@ elif [ "${1:-}" = "--cmd" ]; then
   # and only run.sh activates it — bridge it here so a task Verify like
   # 'python3 -m pytest …' sees the same deps. The $-expansion happens ON THE BOX.
   VENVPRE='v="${AH_VENV:-/tmp/ah-venv}"; [ -f "$v/bin/activate" ] && . "$v/bin/activate"; '
+  # Same reason as the layer form: a Verify: command that writes an artifact needs
+  # the evidence fields too, and the box cannot derive them.
+  CMDENVS="$(evidence_envs)"; CMDENVS="${CMDENVS# }"
+  [ -n "$CMDENVS" ] && VENVPRE="export $CMDENVS; $VENVPRE"
   if CBX_TIMEOUT=3000 cbx run --id "$BOX" "${CAP[@]}" -- "$VENVPRE$CMD"; then
     echo "  ✓ cmd green"
   else report_fail "$BOX"; exit 1; fi
@@ -111,7 +136,7 @@ else
   esac
   # Forward AH_ONLY so a lane's per-task iteration only runs the touched
   # component's lint/unit steps (run.sh skips the rest).
-  ENVS="AH_ALLOW_REAL=1 AH_CAPTURE=1"
+  ENVS="AH_ALLOW_REAL=1 AH_CAPTURE=1$(evidence_envs)"
   [ -n "${AH_ONLY:-}" ] && ENVS="$ENVS AH_ONLY='$AH_ONLY'"
   if [ "${AH_DRY_RUN:-0}" = "1" ]; then
     echo "$ENVS bash scripts/tests/run.sh $LAYER$FLAGS"; exit 0

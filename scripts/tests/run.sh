@@ -292,6 +292,29 @@ json_list() {  # json_list <item…>
   for i in "$@"; do [ "$first" = 1 ] && first=0 || printf ', '; json_str "$i"; done
   printf ']'
 }
+# A crabbox box gets the worktree WITHOUT .git (the sync carries files, not the
+# repository), so git answers nothing there and the evidence fields would be empty
+# on exactly the machine the heavy runs happen on. The client that synced the tree
+# passes both values in.
+#
+# They describe the CLIENT's tree, which is not byte-for-byte the box's: the sync
+# excludes what .crabbox.yaml lists (today apps/server/data), while the hash
+# excludes tasks/ and the output dirs. The hash therefore only stays truthful as
+# long as no exclude in .crabbox.yaml covers a tracked source path.
+#
+# Fall back on an EMPTY answer, not on a non-zero exit: a git that exits 0 without
+# printing (or one answering for a foreign repo the tree happens to sit in) would
+# otherwise silently win over the value the client computed.
+evidence_field() {  # evidence_field <command…> -- <fallback>
+  local v; v="$("${@:1:$#-1}" 2>/dev/null)"
+  case "$v" in
+    *[!0-9a-f]*|"") printf '%s' "${@: -1}" ;;
+    *)              printf '%s' "$v" ;;
+  esac
+}
+evidence_head()      { evidence_field git rev-parse HEAD "${AH_HEAD:-}"; }
+evidence_tree_hash() { evidence_field bash "$ROOT/scripts/dev/tree-hash.sh" "${AH_TREE_HASH:-}"; }
+
 write_artifact() {
   local f="$AH_OUT_DIR/last-$LAYER.json" e name result secs first=1
   mkdir -p "$AH_OUT_DIR" 2>/dev/null \
@@ -307,8 +330,8 @@ write_artifact() {
     printf '  "only": %s,\n'       "$(json_str "$AH_ONLY")"
     printf '  "step": %s,\n'       "$(json_str "$AH_STEP")"
     printf '  "required": %s,\n'   "$(json_str "$AH_REQUIRED")"
-    printf '  "head": %s,\n'       "$(json_str "$(git rev-parse HEAD 2>/dev/null)")"
-    printf '  "tree_hash": %s,\n'  "$(json_str "$(bash "$ROOT/scripts/dev/tree-hash.sh" 2>/dev/null)")"
+    printf '  "head": %s,\n'       "$(json_str "$(evidence_head)")"
+    printf '  "tree_hash": %s,\n'  "$(json_str "$(evidence_tree_hash)")"
     printf '  "started": %s,\n'    "$(json_str "$STARTED")"
     printf '  "finished": %s,\n'   "$(json_str "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
     printf '  "passed": %s,\n'     "$PASS"
