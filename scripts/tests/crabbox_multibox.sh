@@ -270,20 +270,24 @@ if [ "$DESKTOP" = 1 ]; then
     DESK_SPECS="server-crud.live.js monitoring-check.live.js"
     DESK_ETOKS=""
     if [ "$ENFORCE" = 1 ]; then
-      for _ in $DESK_SPECS; do
-        # --ttl-minutes 240, not the 60-minute default: both tokens are minted now,
-        # but the second one is redeemed after the box bootstrap, the ~20 min Tauri
-        # build and the whole first spec. The stage's own deckel is `timeout 3000`
-        # below — the TTL has to outlive it with room, or raising that timeout
-        # (crabbox_iter.sh already had to go 3000 -> 6000 once) breaks this silently.
-        # Anchored pattern: the CLI prints the token on a line of its own, so ^…$
-        # cannot pick up a long word from some other line of the run's output.
-        t="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c \
-          'mb-dc exec -T server python -m app.cli mint-enroll-token --username admin --ttl-minutes 240' 2>/dev/null \
-          | tr -d '\r' | grep -oE '^[A-Za-z0-9_-]{20,}$' | tail -1)"
-        [ -n "$t" ] && DESK_ETOKS="$DESK_ETOKS $t"
-      done
-      DESK_ETOKS="${DESK_ETOKS# }"
+      # ONE crabbox run for all tokens, not one per spec. Every `crabbox run`
+      # re-syncs the whole repo to the box, so N rounds meant N chances to lose
+      # one — and the first capstone lost exactly one of two that way, with no
+      # diagnosis left because the output had been thrown at /dev/null.
+      # --ttl-minutes 240, not the 60-minute default: the last token is redeemed
+      # after the box bootstrap, the ~20 min Tauri build and every earlier spec.
+      # The stage's own deckel is `timeout 3000` below — the TTL has to outlive it
+      # with room, or raising that timeout breaks this silently.
+      MINTLOG="${AH_OUT_DIR:-$ROOT/.crabbox-out}/mint-desktop-tokens.log"
+      mkdir -p "$(dirname "$MINTLOG")" 2>/dev/null
+      n_want=0; for _ in $DESK_SPECS; do n_want=$((n_want + 1)); done
+      timeout 600 crabbox run --id "$SRV_SLUG" -- bash -c \
+        "for i in \$(seq 1 $n_want); do mb-dc exec -T server python -m app.cli mint-enroll-token --username admin --ttl-minutes 240; done" \
+        >"$MINTLOG" 2>&1
+      # Anchored: the CLI prints each token on a line of its own, so ^…$ cannot
+      # pick up a long word from crabbox's own output.
+      DESK_ETOKS="$(tr -d '\r' < "$MINTLOG" | grep -oE '^[A-Za-z0-9_-]{20,}$' | tail -n "$n_want" | paste -sd' ' -)"
+      [ -n "$DESK_ETOKS" ] || echo "  (mint failed — see $MINTLOG)"
     fi
     # Passed through `bash -c` because `crabbox run --` hands its arguments to
     # exec, not to a shell — a plain VAR=x prefix would be read as the program.
@@ -294,7 +298,7 @@ if [ "$DESKTOP" = 1 ]; then
     if [ "$ENFORCE" = 1 ] && [ "$n_tok" -lt "$n_spec" ]; then
       # Skip the stage rather than spend up to 50 minutes of VM time on a run that
       # cannot pass: without a token per spec the enforced gateway rejects the login.
-      bad "desktop: only $n_tok of $n_spec enrollment tokens minted"
+      bad "desktop: only $n_tok of $n_spec enrollment tokens minted (see ${MINTLOG:-the mint log})"
       skipped "desktop GUI journeys (not enough enrollment tokens under --enforce) — the S3 scenario is unverified"
       DTOUT=""
     else

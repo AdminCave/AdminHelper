@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 3 — Ausführung zuerst — Task-Ledger
-Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind drei `[?]` — T6a, T15a und die Fremdfunde F1/F2 (F3/F4 aus den echten Läufen sind behoben); T7a ist gebaut, aber erst ein Capstone-Lauf beweist es) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind drei `[?]` — T6a, T15a und die Fremdfunde F1/F2 (F3/F4 aus den echten Läufen sind behoben); T7a ist gebaut, aber im ersten Capstone NICHT zum Zug gekommen — die Etappe wurde mangels Token übersprungen, siehe F5) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-3.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt; T7a ist gebaut, aber die Capstone-Ebene beweist sich erst im Lauf
@@ -63,10 +63,16 @@ Nachträglich gelesen war der Lauf echt grün: `run.sh[all]: 29 passed, 0 failed
 Komponente: scripts/tests · Datei: scripts/tests/heavy.sh
 Auf dem Hypervisor steht eine gestoppte VM (`slug=ah-bake keep=true`, Template-Quelle). `foreign_boxes` zählte sie als fremd ⇒ Exit 74, obwohl eine gestoppte VM keine Kapazität belegt — sie hätte jeden Wochenlauf blockiert, sobald sie zum Pre-flight-Zeitpunkt gelistet ist. Der Guard zählt jetzt nur noch **laufende** Boxen; ein laufender Fremdling bricht weiterhin ab. Beide Fälle im Test.
 
+### F5 — Token-Mintung verlor eines von zwei Tokens, ohne Spur  [x] (behoben)
+Komponente: scripts/tests · Datei: scripts/tests/crabbox_multibox.sh
+Erster echter Capstone (2026-09-10-2018): `FAIL desktop: only 1 of 2 enrollment tokens minted` ⇒ die Desktop-Etappe wurde übersprungen, T7a bleibt damit **unbewiesen**. Der Skip selbst war richtig — er hat 50 Minuten VM-Zeit für einen aussichtslosen Lauf gespart, genau wie gebaut. Nicht richtig war, dass sich der Grund **nicht rekonstruieren ließ**: die Mint-Schleife schickte Ausgabe und Fehler nach `/dev/null`.
+Behoben: (1) alle Tokens in **einem** `crabbox run` statt einem pro Spec — jeder Lauf synct das ganze Repo zur Box, N Runden waren N Gelegenheiten, eines zu verlieren; (2) die Ausgabe landet in `mint-desktop-tokens.log` und der `bad`-Text nennt den Pfad. Der Reviewer hatte Punkt 1 als Nit vorgeschlagen und ich hatte ihn als kosmetisch abgetan — er hätte diesen Ausfall vermutlich verhindert.
+
 ### F2 — crabbox' eigener Provider-Bootstrap verliert das apt-Lock-Rennen gegen cloud-init  [?]
 Komponente: crabbox (extern) · nichts in diesem Repo
 Befund aus dem ersten echten `heavy.sh all` (2026-09-10-1607, Exit 74): `warmup failed/timed out: provisioning provider=proxmox … proxmox guest bootstrap exit=1 … E: Could not get lock /var/lib/apt/lists/lock. It is held by process 1347 (apt-get)`. Das ist **crabbox' eigener Guest-Bootstrap**, der auf der frischen VM `apt-get` fährt, während cloud-init noch installiert — `scripts/tests/crabbox_bootstrap.sh` aus diesem Repo ist gar nicht erst gelaufen, unsere Absicherung (Timer maskieren, `DPkg::Lock::Timeout`, `wait_apt_lock`) greift also erst danach und war nicht die Ursache.
 Der Lauf hat das korrekt als **UNVERIFIED** klassifiziert, keine VM geleakt und die Historie geschrieben — die Klassifikation stimmt, die Box kam nur nicht hoch.
+**Nachtrag aus dem Capstone-Lauf (2026-09-10-2018): systematisch, nicht transient.** Dort scheiterte das Lease der Agent-Box in Folge (`lease attempt 1/3`, `2/3` …), jedes Mal `proxmox guest bootstrap exit=1` mit demselben Rennen — mal `/var/lib/apt/lists/lock`, mal `/var/lib/dpkg/lock-frontend`. Die Server-Box kam durch, die Agent-Box nicht. `.crabbox.yaml` definiert keinen Bootstrap-Hook, es ist also belegbar crabbox' eingebauter Guest-Bootstrap; die apt-Quellen im Log (docker, nodesource) stammen aus dem Fat-Template. Jeder Fehlversuch kostet einen VM-Klon — bei sieben Boxen ist das der dominierende Kostenfaktor des Wochenlaufs.
 Frage an Kevin: Das gehört in crabbox (Guest-Bootstrap sollte `cloud-init status --wait` abwarten oder `-o DPkg::Lock::Timeout` setzen), nicht hierher. Auf unserer Seite umgesetzt: `heavy.sh` versucht ein fehlgeschlagenes Warm-Lease **einmal** erneut, weil dieser Fehler transient ist und sonst einen ganzen Wochenlauf kostet. Ob das reicht, zeigt der nächste Lauf.
 
 ### F1 — `test_migrations_smoke` ist flaky (Fund aus dem Abschlusslauf, nicht aus dieser Stufe)  [?]
