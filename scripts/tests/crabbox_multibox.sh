@@ -258,12 +258,54 @@ if [ "$DESKTOP" = 1 ]; then
     ok "desktop-box $DT_SLUG @ $DT_IP"
   else DT_SLUG=""; bad "desktop lease"; fi
   if [ -n "$DT_SLUG" ]; then
-    echo "== drive the real Tauri GUI on $DT_SLUG against https://$SRV_IP =="
-    DTOUT="$(timeout 3000 crabbox run --id "$DT_SLUG" -- bash scripts/tests/crabbox_desktopbox.sh "$SRV_IP" "$ADMIN_PW" "$MONITOR_KEY" 2>&1)"
-    echo "$DTOUT" | grep -vE 'Compiling|Downloaded |npm warn|go: downloading' | tail -40
-    printf '%s' "$DTOUT" | grep -q DESKTOP_ALL_OK \
-      && ok "desktop GUI journeys green against the remote server (login/CRUD/monitoring)" \
-      || bad "desktop GUI journeys (see output above)"
+    # With --enforce the data plane is cert-gated, so the GUI has to enroll a device
+    # identity before it can log in. Two constraints shape this:
+    #   - one token per SPEC, not per run: every spec is its own `wdio run` in its
+    #     own dbus session with an empty keyring, so each starts un-enrolled; and
+    #     an enrollment token is one-time.
+    #   - minted HERE, not on the server box hours ago: the default TTL is 60 min
+    #     and this stage starts after the agent, rpm, tunnel and visitor boxes.
+    # Kept in sync with the default in crabbox_desktopbox.sh — named here because
+    # the number of tokens to mint depends on it.
+    DESK_SPECS="server-crud.live.js monitoring-check.live.js"
+    DESK_ETOKS=""
+    if [ "$ENFORCE" = 1 ]; then
+      for _ in $DESK_SPECS; do
+        # --ttl-minutes 240, not the 60-minute default: both tokens are minted now,
+        # but the second one is redeemed after the box bootstrap, the ~20 min Tauri
+        # build and the whole first spec. The stage's own deckel is `timeout 3000`
+        # below — the TTL has to outlive it with room, or raising that timeout
+        # (crabbox_iter.sh already had to go 3000 -> 6000 once) breaks this silently.
+        # Anchored pattern: the CLI prints the token on a line of its own, so ^…$
+        # cannot pick up a long word from some other line of the run's output.
+        t="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c \
+          'mb-dc exec -T server python -m app.cli mint-enroll-token --username admin --ttl-minutes 240' 2>/dev/null \
+          | tr -d '\r' | grep -oE '^[A-Za-z0-9_-]{20,}$' | tail -1)"
+        [ -n "$t" ] && DESK_ETOKS="$DESK_ETOKS $t"
+      done
+      DESK_ETOKS="${DESK_ETOKS# }"
+    fi
+    # Passed through `bash -c` because `crabbox run --` hands its arguments to
+    # exec, not to a shell — a plain VAR=x prefix would be read as the program.
+    # That trades argv's structural safety for single-quote quoting: all four
+    # values are hex/IPv4/token_urlsafe today, none can contain a quote.
+    n_tok=0; for _ in $DESK_ETOKS; do n_tok=$((n_tok + 1)); done
+    n_spec=0; for _ in $DESK_SPECS; do n_spec=$((n_spec + 1)); done
+    if [ "$ENFORCE" = 1 ] && [ "$n_tok" -lt "$n_spec" ]; then
+      # Skip the stage rather than spend up to 50 minutes of VM time on a run that
+      # cannot pass: without a token per spec the enforced gateway rejects the login.
+      bad "desktop: only $n_tok of $n_spec enrollment tokens minted"
+      skipped "desktop GUI journeys (not enough enrollment tokens under --enforce) — the S3 scenario is unverified"
+      DTOUT=""
+    else
+      echo "== drive the real Tauri GUI on $DT_SLUG against https://$SRV_IP =="
+      DTOUT="$(timeout 3000 crabbox run --id "$DT_SLUG" -- bash -c \
+        "AH_DESKTOP_ENROLL_TOKENS='$DESK_ETOKS' bash scripts/tests/crabbox_desktopbox.sh '$SRV_IP' '$ADMIN_PW' '$MONITOR_KEY' $DESK_SPECS" 2>&1)"
+      echo "$DTOUT" | grep -vE 'Compiling|Downloaded |npm warn|go: downloading' | tail -40
+      printf '%s' "$DTOUT" | grep -q DESKTOP_ALL_OK \
+        && ok "desktop GUI journeys green against the remote server (login/CRUD/monitoring)" \
+        || bad "desktop GUI journeys (see output above)"
+    fi
   else
     # On top of the lease FAIL above, not instead of it: the two facts differ —
     # the box could not be had, AND the S3 journeys are therefore unverified.

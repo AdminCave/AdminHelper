@@ -37,10 +37,9 @@ anything.) Kevin starts it, closes the terminal, and reads the report afterwards
 
 **Name these two before ending the turn** — both cost a whole run otherwise:
 `crabbox list` must be empty (a foreign box aborts the run with 74 in its first
-minute, long after the terminal is closed), and for `capstone`/`weekly` the open
-question **T7a** must be decided — the desktop stage logs in over :443 without a
-client cert and is structurally red against the enforced gateway `--capstone`
-now sets, which is ~17 VM-h for a known answer.
+minute, long after the terminal is closed), and `capstone`/`weekly` have never
+run against the enforced gateway `--capstone` now sets — the desktop stage
+enrolls a device identity first (T7a), but only a real run proves it.
 
 ## `status` — what the last weekly run said
 
@@ -181,9 +180,10 @@ prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--ke
                 runs exactly this, with `--strict`. **Partial runs — anything short of the
                 capstone flag set — run WITHOUT `--strict`:** a missing `--enforce` reports
                 SKIP, and a SKIP fails a strict run, so `--agents 1 --desktop --strict` is
-                red before it tests anything. **Open (T7a):** the desktop stage logs in
-                over :443 without a client cert, so it is structurally red against an enforced
-                gateway — decide T7a before spending a capstone run on it.
+                red before it tests anything. **T7a:** because the enforced gateway demands
+                a client cert on :443, the desktop stage enrolls a device identity over the
+                certless :8444 plane before EACH spec (one one-time token per spec, minted
+                just before the stage). Implemented, but only a real capstone proves it.
 Roles: `crabbox_serverbox` / `agentbox` / `agentbox_rpm` / `tunnelbox` / `visitorbox` /
 `desktopbox` / `moncheckbox`. serverbox modes (tunnel/moncheck/enforce) are independent + compose.
 

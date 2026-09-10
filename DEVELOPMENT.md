@@ -551,10 +551,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 - **`--notify`** postet die Urteilszeile und den Report-Pfad an `AH_NOTIFY_URL` (aus
   `.devenv.sh`, gitignored); Default aus, ein fehlgeschlagener POST ist kein Fehler des Laufs.
 
-**Zwei offene Punkte, bevor der erste Lauf startet** (beide im Ledger `tasks/harness-stufe-3.md`):
-**T7a** — `--capstone` setzt seit Stufe 3 `--enforce`, die Desktop-Etappe loggt sich aber ohne
-Client-Cert ueber :443 ein und ist gegen das erzwungene Gateway strukturell rot; `capstone` und
-`weekly` sind damit heute **nicht gruen erreichbar** (~17 VM-h fuer eine bekannte Antwort).
+**Zwei Vorbehalte** (beide im Ledger `tasks/harness-stufe-3.md`): **T7a** — `--capstone` setzt
+seit Stufe 3 `--enforce`, das Gateway verlangt damit ein Client-Zertifikat auf :443; die
+Desktop-Etappe enrollt deshalb vor jedem Spec eine Geraete-Identitaet ueber die certlose
+Ebene :8444 (ein Einmal-Token je Spec, kurz vor der Etappe gemintet). Umgesetzt, aber erst ein echter Capstone-Lauf beweist es.
 **T15a** — `crabbox_iter.sh` reicht `AH_REQUIRED` nicht an die Box weiter, dort gilt also der
 eingebaute Default ohne einen einzigen schweren Schritt: ein Self-SKIP von `upgrade-path` oder
 `integration-stack` bleibt gruen und wird nicht einmal als UNVERIFIED klassifiziert.

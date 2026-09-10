@@ -24,7 +24,9 @@ paths:
    Mail-Alert und der `MTLS_ENFORCE`-Guard. Teilläufe (`--agents N [--desktop]` …) laufen **ohne** `--strict`:
    ein Lauf ohne `--enforce` meldet den MTLS_ENFORCE-Guard als SKIP, und unter `--strict` ist ein SKIP ein
    Fehler — `--strict` verlangt deshalb den vollen Flag-Satz, den `--capstone` setzt. `heavy.sh capstone` fährt
-   genau diese Kombination. Offen (T7a): die Desktop-Etappe ist gegen ein enforced :443 noch nicht lauffähig.
+   genau diese Kombination.
+   Seit T7a enrollt die Desktop-Etappe vor jedem Spec eine Geräte-Identität (ein Einmal-Token je Spec,
+   kurz vorher gemintet), damit sie das cert-gated :443 überhaupt erreicht — bewiesen erst im Capstone-Lauf.
 
 Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungene Ebene heißt: nicht taggen.
 

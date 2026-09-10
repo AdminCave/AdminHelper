@@ -90,6 +90,10 @@ PY
   code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "https://localhost/api/auth/me" 2>/dev/null || echo 000)"
   [ "$code" = 400 ] && echo "MB_ENFORCE_CERTLESS_REJECTED=1" || echo "MB_ENFORCE_CERTLESS_REJECTED=0 (got $code)"
   export AH_CERT=/tmp/mb-admin-fullchain.pem AH_KEY=/tmp/mb-admin.key
+  # The desktop box needs enrollment tokens too (cert-gated :443), but NOT from
+  # here: they live 60 minutes by default and the desktop stage starts hours
+  # later, after the agent, rpm, tunnel and visitor boxes. The orchestrator mints
+  # them just before that stage instead (crabbox_multibox.sh).
 fi
 
 echo "[serverbox] seed admin JWT -> server record -> provision token"

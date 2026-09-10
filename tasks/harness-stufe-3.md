@@ -4,10 +4,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 3 — Ausführung zuerst — Task-Ledger
-Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind vier `[?]` — T6a, T7a, T15a und der Fremdfund F1 — sie brauchen Kevins Entscheidung, T7a **vor** dem ersten Capstone-Lauf) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind vier `[?]` — T6a, T15a und die Fremdfunde F1/F2; T7a ist gebaut, aber erst ein Capstone-Lauf beweist es) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-3.md
 Fast-Suite: lokal · Warm-Profil: desktop
-Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt **und T7a entschieden** — sonst ist die Capstone-Ebene des Laufs per Konstruktion rot (Desktop-Etappe gegen ein enforced :443 ohne Client-Cert)
+Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt; T7a ist gebaut, aber die Capstone-Ebene beweist sich erst im Lauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Roadmap: R-0003 (schließt R-0021, R-0022 ein) · Hängt ab von: R-0002 (gemergt, PR #11)
@@ -52,6 +52,12 @@ Verify: `bash scripts/tests/check_versions_test.sh` → `N passed, 0 failed`; `b
 Doku: .claude/rules/release.md (in der Task); DEVELOPMENT.md Release-Absatz (T18)
 Abhängt von: —
 
+### F2 — crabbox' eigener Provider-Bootstrap verliert das apt-Lock-Rennen gegen cloud-init  [?]
+Komponente: crabbox (extern) · nichts in diesem Repo
+Befund aus dem ersten echten `heavy.sh all` (2026-09-10-1607, Exit 74): `warmup failed/timed out: provisioning provider=proxmox … proxmox guest bootstrap exit=1 … E: Could not get lock /var/lib/apt/lists/lock. It is held by process 1347 (apt-get)`. Das ist **crabbox' eigener Guest-Bootstrap**, der auf der frischen VM `apt-get` fährt, während cloud-init noch installiert — `scripts/tests/crabbox_bootstrap.sh` aus diesem Repo ist gar nicht erst gelaufen, unsere Absicherung (Timer maskieren, `DPkg::Lock::Timeout`, `wait_apt_lock`) greift also erst danach und war nicht die Ursache.
+Der Lauf hat das korrekt als **UNVERIFIED** klassifiziert, keine VM geleakt und die Historie geschrieben — die Klassifikation stimmt, die Box kam nur nicht hoch.
+Frage an Kevin: Das gehört in crabbox (Guest-Bootstrap sollte `cloud-init status --wait` abwarten oder `-o DPkg::Lock::Timeout` setzen), nicht hierher. Auf unserer Seite umgesetzt: `heavy.sh` versucht ein fehlgeschlagenes Warm-Lease **einmal** erneut, weil dieser Fehler transient ist und sonst einen ganzen Wochenlauf kostet. Ob das reicht, zeigt der nächste Lauf.
+
 ### F1 — `test_migrations_smoke` ist flaky (Fund aus dem Abschlusslauf, nicht aus dieser Stufe)  [?]
 Komponente: apps/server · Datei: apps/server/tests/test_migrations_smoke.py
 Befund: Im Abschluss-Gesamtlauf war `server pytest` einmal rot, im Wiederholungslauf grün — also `flaky`, nicht PASS. Ursache steht im Log: der Teardown fährt `DROP DATABASE "alembic_smoke_<hash>" WITH (FORCE)`, und `WITH (FORCE)` verlangt, fremde Backends beenden zu dürfen — die lokale Rolle `adminhelper` hat weder `pg_signal_backend` noch die Rechte der Zielrolle (`psycopg.errors.InsufficientPrivilege`). Der FORCE-Pfad greift nur, wenn zum Wegwerf-Schema noch eine Verbindung offen ist, deshalb schlägt es zeitabhängig zu. `apps/server` ist von diesem Branch **nicht** berührt (0 Dateien im Diff), der Fund gehört also nicht zu Stufe 3.
@@ -67,14 +73,14 @@ Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh, scripts
 Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -c 'skipped ' scripts/tests/crabbox_multibox.sh` ≥ 5; `grep -n 'ENFORCE=1' scripts/tests/crabbox_multibox.sh` zeigt den `--capstone`-Zweig; realer Lauf in der Heavy-Zeile
 Doku: .claude/skills/test/SKILL.md (T16)
 
-### T7a — `--capstone` erzwingt enforce, die Desktop-Etappe kann das nicht  [?]
+### T7a — `--capstone` erzwingt enforce, die Desktop-Etappe kann das nicht  [x] (Option (a) gebaut: zweites Enroll-Token, `enrollIfAsked()` vor dem Login — auf einer VM noch **unverifiziert**)
 Komponente: scripts/tests · Dateien: scripts/tests/crabbox_serverbox.sh, scripts/tests/crabbox_desktopbox.sh, scripts/tests/crabbox_multibox.sh
 Befund (statisch belegt, kein Lauf nötig): `--capstone` setzt seit T7 `DESKTOP=1` **und** `ENFORCE=1`. `ENFORCE=1` → `crabbox_serverbox.sh:35` `MTLS_ENFORCE=true` → `apps/gateway/docker-entrypoint.sh:39` `ssl_verify_client on` auf :443. `crabbox_desktopbox.sh:16` fährt default `server-crud.live.js` + `monitoring-check.live.js`; beide beginnen mit `login()` über :443, die Box ist frisch (eigenes `XDG_DATA_HOME`, leerer Keyring) und enrollt nirgends — `enrollment::enroll` ist JWT-gated, also erst *nach* dem Login. Die S3-Etappe ist im Capstone damit **strukturell** rot, nicht „beim ersten Lauf vielleicht". Alle Desktop-Suiten laufen bis heute mit `e2e_init false`; Desktop + enforce ist nie gelaufen. Spec-Frage 4 deckt das nicht ab — freigegeben war „der Enforce-Guard kann beim ersten Lauf rot sein", nicht eine dauerhaft rote GUI-Etappe.
-Frage an Kevin — eine von drei, vor dem ersten Capstone-Lauf (sonst kostet der Befund 17 VM-h):
-(a) **enforce-tauglich machen:** serverbox mintet unter `DO_ENFORCE=1` ein zweites Enroll-Token und gibt es als Marker aus, `crabbox_desktopbox.sh` enrollt damit vor den Specs (Muster: `tunnel-connect.live.js:21-25`). Meiste Arbeit, deckt am meisten ab.
-(b) **Capstone-Zusammensetzung ändern:** `--enforce` nicht zusammen mit `--desktop` (eine `.env`, ein Gateway — anders nicht trennbar); kostet S3 oder den Guard.
-(c) **rote Desktop-Etappe bewusst hinnehmen** — dann muss `.claude/rules/release.md` das ausdrücklich sagen, sonst widerspricht sich das Gate selbst.
-Bis dahin gilt: `crabbox_multibox.sh --capstone --strict` ist **nicht** grün erreichbar.
+Umgesetzt ist **Option (a)** — die einzige, die S3 *und* den `MTLS_ENFORCE`-Guard behält:
+- `crabbox_multibox.sh` mintet die Tokens **kurz vor** der Desktop-Etappe (`mint-enroll-token --ttl-minutes 240` über `crabbox run` auf der Server-Box) und **eines je Spec**; die TTL muss den `timeout 3000`-Deckel der Etappe überleben, sonst bricht ein späteres Anheben des Deckels sie still. Beides ist nötig: die Default-TTL ist 60 Minuten, die Etappe startet Stunden nach der Server-Box; und jeder Spec ist ein eigener `wdio run` in eigener dbus-Session mit leerem Keyring, startet also un-enrollt — Tokens sind einmalig. Reichen die Tokens nicht, wird die Etappe **übersprungen** (`bad` + `skipped`) statt 50 Minuten VM-Zeit in einen Lauf zu stecken, der nicht bestehen kann.
+- `crabbox_desktopbox.sh` nimmt `AH_DESKTOP_ENROLL_TOKENS` als Liste und setzt je Spec eines als `AH_DESKTOP_ENROLL_TOKEN`.
+- `live.js` bekommt `enrollIfAsked()`, aufgerufen in `login()` **nach** der Env-Validierung: fragt erst `is_device_enrolled` die App selbst (der Modul-Flag kennt nur diesen Node-Prozess), enrollt nur sonst. Bewusst **nicht** `AH_ENROLL_TOKEN` — die zwei Tunnel-Specs enrollen damit inline, ein zweiter Versuch würde ein verbrauchtes Token ausgeben.
+**Unverifiziert:** Desktop + enforce ist nie gelaufen. shellcheck, eslint und die Marker-Verkettung sind geprüft; ob die GUI mit enrollter Identität durch das cert-gated :443 kommt, zeigt erst der erste Capstone-Lauf.
 
 ### T8 — desktop_e2e_misc.sh für die fünf verwaisten Specs  [x] (fünf verwaiste Specs, je eine `spec <name>: pass|fail`-Zeile, AH_SPEC wählt eine; run.sh brauchte nichts — layer_e2e globbt `desktop_e2e_*.sh`, desktop_e2e_skip_test zählt jetzt 8)
 Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_misc.sh (neu), scripts/tests/run.sh
