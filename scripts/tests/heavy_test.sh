@@ -577,6 +577,19 @@ artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 0 ] && ok "a verbatim summary line is evidence" || bad "summary-only -> rc=$rc"
 
+# A summary line left over from the PREVIOUS run is not evidence of this one.
+mk_case
+export SHIM_NO_PULL=1
+export SHIM_ITER_OUT=""
+artifact "ruff check:pass:3"
+mkdir -p "$AH_HEAVY_ROOT/.crabbox/out"
+printf '  run.sh[all]: 41 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns\n'   > "$AH_HEAVY_ROOT/.crabbox/out/last.out.log"
+touch -d '1 hour ago' "$AH_HEAVY_ROOT/.crabbox/out/last.out.log"
+out=$(cd "$AH_HEAVY_ROOT" && bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a stale captured summary is not adopted as evidence"   || bad "stale summary -> rc=$rc"
+printf '%s' "$out" | grep -q 'predates this run'   && ok "and the run says why" || bad "no reason given"
+rm -rf "$AH_HEAVY_ROOT/.crabbox"
+
 # ── 4o: a stopped foreign box does not abort the run ─────────────────────────
 # Seen on the real hypervisor: a kept bake/template VM sits there stopped. It
 # holds disk, not capacity — aborting a 17 VM-h run over it is a false positive.

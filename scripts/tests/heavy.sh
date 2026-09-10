@@ -250,7 +250,8 @@ run_all() {
   # the whole run. A second attempt is minutes; a lost weekly is a week.
   # Keyed on the exit status, not on warm.env: the file says which box, not
   # whether THIS call succeeded, and a stale entry would read as success.
-  local warm_rc=0
+  local warm_rc=0 t_wall0
+  t_wall0="$(date +%s)"
   bash "$WRAPPERS/crabbox_warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
   if [ "$warm_rc" != 0 ]; then
     note "warm lease failed — retrying once (the provider bootstrap is racy on a fresh VM)"
@@ -278,10 +279,18 @@ run_all() {
   local secs_layer=$((SECONDS - t0))
   tail -25 "$log" | sed 's/^/  /'
   # $log first (a future wrapper may pass the output through), then where
-  # crabbox_iter.sh actually captured it.
-  capture_summary "$log" 'run\.sh\[all\]:' \
-    || capture_summary "$BOX_OUT" 'run\.sh\[all\]:' \
-    || note "no run.sh[all] summary line in $log or $BOX_OUT"
+  # crabbox_iter.sh actually captured it — but only if that file belongs to THIS
+  # run. $BOX_OUT is a fixed path crabbox overwrites per run: if the wrapper died
+  # before writing it, the previous run's summary is still sitting there, and
+  # adopting it is the same lie as a stale artifact. The artifact carries a tree
+  # hash to check; a log does not, so its mtime is the only honest stamp.
+  if ! capture_summary "$log" 'run\.sh\[all\]:'; then
+    if [ -f "$BOX_OUT" ] && [ "$(stat -c %Y "$BOX_OUT" 2>/dev/null || echo 0)" -ge "$t_wall0" ]; then
+      capture_summary "$BOX_OUT" 'run\.sh\[all\]:' || note "no run.sh[all] summary line in $log or $BOX_OUT"
+    else
+      note "no summary line: $log has none and $BOX_OUT predates this run"
+    fi
+  fi
   recover_artifacts "$log" || true
   collect_artifacts
 
