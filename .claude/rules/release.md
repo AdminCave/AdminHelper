@@ -20,8 +20,15 @@ paths:
 ## Vor dem Tag: drei Ebenen real grün
 
 `bash scripts/tests/run.sh quick` auf der Dev-Box · `run.sh all` auf einer VM · Multibox-Capstone
-(`crabbox_multibox.sh --agents 2 --desktop --strict`). Rot oder übersprungen heißt: nicht taggen. `--strict` deckt bisher **nur** den debian:9-Guard ab; die übrigen bedingten Prüfungen (Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop- und moncheck-Lease, `--enforce`) fallen weiterhin still aus — `0 skipped` heißt also „kein debian:9-Skip", nicht „jede Prüfung lief". Ab Stufe 3 liefert
-`/test weekly` die Evidenz, ab Stufe 13 prüft `release.sh check` sie mechanisch.
+(`crabbox_multibox.sh --capstone --strict`; `--strict` verlangt den vollen Flag-Satz, den `--capstone` setzt).
+Rot oder übersprungen heißt: nicht taggen. Seit Stufe 3 melden die sechs bedingten Guards (debian:9,
+Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop-Lease, moncheck-Lease, `--enforce`, Monitoring-Hop) über
+`skipped()`; **`0 failed, 0 skipped`** heißt damit „jede angeforderte Prüfung lief". Ein fehlgeschlagenes Lease
+(Agent, Tunnel, Visitor, RPM, moncheck) lässt seine Folgeprüfungen weiterhin ohne SKIP ausfallen — dort ist der
+begleitende FAIL die Evidenz. `--capstone` schließt `--enforce` ein.
+**Offen (T7a):** die Desktop-Etappe des Capstones loggt sich ohne Client-Cert über :443 ein und ist gegen ein
+enforced Gateway strukturell rot; bis das entschieden ist, ist `--capstone --strict` nicht grün erreichbar.
+Ab Stufe 3 liefert `/test weekly` die Evidenz, ab Stufe 13 prüft `release.sh check` sie mechanisch.
 
 ## Bump-Commit `chore(release): bump version to X.Y.Z` — synchron ändern
 

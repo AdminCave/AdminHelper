@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Status: aktiv · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-3.md
 Fast-Suite: lokal · Warm-Profil: desktop
-Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer und die Swap-Frage auf dem Proxmox-Host geklärt
+Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt **und T7a entschieden** — sonst ist die Capstone-Ebene des Laufs per Konstruktion rot (Desktop-Etappe gegen ein enforced :443 ohne Client-Cert)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Roadmap: R-0003 (schließt R-0021, R-0022 ein) · Hängt ab von: R-0002 (gemergt, PR #11)
@@ -54,11 +54,20 @@ Abhängt von: —
 Komponente: scripts/release · Dateien: scripts/release/check-versions.sh
 Frage an Kevin: `check-versions.sh` vergleicht **verbatim**, ein Beta-Tag `v0.46.0-beta.1` verlangt diesen String also auch in 38 Doku-Footern, im CHANGELOG-Abschnitt `## [0.46.0-beta.1]` und in beiden News-Callouts. Der alte Inline-Schritt konnte bei einem Prerelease **nie** grün werden (`grep -o '[0-9][0-9.]*'` schnitt das Suffix ab, `$VER` behielt es) — das Gate wird also nicht gelockert, sondern Prereleases erstmals überhaupt möglich. Vorschlag: Stellen 1–3 (tauri/Cargo/Cargo.lock) bleiben verbatim, Stellen 4–6 (CHANGELOG, Footer, News) prüfen gegen `${VER%%-*}`. Vor dem ersten `beta`-Tag zu entscheiden (CLAUDE.md §2 sieht `beta` nach jedem grünen Wochenlauf vor).
 
-### T7 — crabbox_multibox.sh: --capstone mit enforce, vier stille Skips gezählt, Null-Agents rot  [ ]
-Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh
+### T7 — crabbox_multibox.sh: --capstone mit enforce, vier stille Skips gezählt, Null-Agents rot  [x] (`--capstone` setzt ENFORCE=1; vier Zweige über `skipped()`; Report-Erwartung mit Floor 1; realer Lauf steht in der Heavy-Zeile aus)
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh, scripts/tests/crabbox_serverbox.sh, .claude/rules/release.md, .claude/rules/testing.md
 Änderung: `--capstone` setzt `ENFORCE=1` (R-0022); die vier stillen Skips (Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop-Lease, moncheck-Lease, `--enforce`-Zweig) laufen über `skipped()` und damit unter `--strict` rot (R-0021); die Monitoring-Assertion verlangt `erreichte Agents ≥ 1`, nicht `≥ 0`. Header und `/test`-Skill-Zeile zu `--capstone` nachziehen.
 Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -c 'skipped ' scripts/tests/crabbox_multibox.sh` ≥ 5; `grep -n 'ENFORCE=1' scripts/tests/crabbox_multibox.sh` zeigt den `--capstone`-Zweig; realer Lauf in der Heavy-Zeile
 Doku: .claude/skills/test/SKILL.md (T16)
+
+### T7a — `--capstone` erzwingt enforce, die Desktop-Etappe kann das nicht  [?]
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_serverbox.sh, scripts/tests/crabbox_desktopbox.sh, scripts/tests/crabbox_multibox.sh
+Befund (statisch belegt, kein Lauf nötig): `--capstone` setzt seit T7 `DESKTOP=1` **und** `ENFORCE=1`. `ENFORCE=1` → `crabbox_serverbox.sh:35` `MTLS_ENFORCE=true` → `apps/gateway/docker-entrypoint.sh:39` `ssl_verify_client on` auf :443. `crabbox_desktopbox.sh:16` fährt default `server-crud.live.js` + `monitoring-check.live.js`; beide beginnen mit `login()` über :443, die Box ist frisch (eigenes `XDG_DATA_HOME`, leerer Keyring) und enrollt nirgends — `enrollment::enroll` ist JWT-gated, also erst *nach* dem Login. Die S3-Etappe ist im Capstone damit **strukturell** rot, nicht „beim ersten Lauf vielleicht". Alle Desktop-Suiten laufen bis heute mit `e2e_init false`; Desktop + enforce ist nie gelaufen. Spec-Frage 4 deckt das nicht ab — freigegeben war „der Enforce-Guard kann beim ersten Lauf rot sein", nicht eine dauerhaft rote GUI-Etappe.
+Frage an Kevin — eine von drei, vor dem ersten Capstone-Lauf (sonst kostet der Befund 17 VM-h):
+(a) **enforce-tauglich machen:** serverbox mintet unter `DO_ENFORCE=1` ein zweites Enroll-Token und gibt es als Marker aus, `crabbox_desktopbox.sh` enrollt damit vor den Specs (Muster: `tunnel-connect.live.js:21-25`). Meiste Arbeit, deckt am meisten ab.
+(b) **Capstone-Zusammensetzung ändern:** `--enforce` nicht zusammen mit `--desktop` (eine `.env`, ein Gateway — anders nicht trennbar); kostet S3 oder den Guard.
+(c) **rote Desktop-Etappe bewusst hinnehmen** — dann muss `.claude/rules/release.md` das ausdrücklich sagen, sonst widerspricht sich das Gate selbst.
+Bis dahin gilt: `crabbox_multibox.sh --capstone --strict` ist **nicht** grün erreichbar.
 
 ### T8 — desktop_e2e_misc.sh für die fünf verwaisten Specs  [ ]
 Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_misc.sh (neu), scripts/tests/run.sh

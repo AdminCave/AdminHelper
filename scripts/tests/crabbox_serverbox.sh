@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 echo "[serverbox] hydrate (server profile: docker stack, no Tauri)"
 AH_BOOTSTRAP_PROFILE=server bash scripts/tests/crabbox_bootstrap.sh || { echo "[serverbox] bootstrap failed"; exit 1; }
 
-echo "[serverbox] .env: DOMAIN=$SRV_IP (IP-SAN gateway+frps leaf), MTLS_ENFORCE=false, admin pw"
+echo "[serverbox] .env: DOMAIN=$SRV_IP (IP-SAN gateway+frps leaf), MTLS_ENFORCE=$([ "$DO_ENFORCE" = 1 ] && echo true || echo false), admin pw"
 [ -f .env ] || cp .env.example .env
 bash scripts/init-secrets.sh || true
 ADMIN_PW="$(openssl rand -hex 16)"
