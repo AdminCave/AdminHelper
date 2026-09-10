@@ -111,7 +111,13 @@ $(grep -E '^[A-Za-z0-9_-]+=' "$(cbx_warm_file)" 2>/dev/null | cut -d= -f2-)"
   # Whole-line compare, not substring: 'ah-srv' must not make a foreign 'ah-srv2'
   # look like ours — that would be fail-open in the one guard that exists to be
   # fail-closed. (warm.env also holds credentials; a substring grep reads those.)
-  printf '%s\n' "$all" | grep -oE 'slug=[a-z0-9-]+' | cut -d= -f2 | sort -u | while read -r slug; do
+  # Only RUNNING boxes: a stopped one (a kept bake/template source, for instance)
+  # holds disk, not capacity, and aborting a 17 VM-h run over it would be a false
+  # positive. Seen on the real hypervisor: a stopped `keep=true` bake VM.
+  # -w, not a space-anchored pattern: the provider prints the state as a bare
+  # column ("… stopped  template-9400 …"), other callers as `state=running`.
+  printf '%s\n' "$all" | grep -iwE 'running|ready' \
+    | grep -oE 'slug=[a-z0-9-]+' | cut -d= -f2 | sort -u | while read -r slug; do
     [ -n "$slug" ] || continue
     printf '%s\n' "$own" | grep -qxF "$slug" || printf '%s\n' "$slug"
   done
@@ -158,6 +164,25 @@ collect_artifacts() {
     [ -d "$AH_OUT_DIR/$d" ] || continue
     cp -r "$AH_OUT_DIR/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
   done
+}
+
+# crabbox_iter.sh does NOT let the box's output through: it captures stdout into
+# .crabbox/out/last.out.log and leaves the pulled files as a tarball, so heavy.sh's
+# own log holds nothing but crabbox's orchestration chatter. The first real run
+# reported PASS from an exit code alone because of that — the summary line and
+# last-all.json were on disk the whole time, just not where this script looked.
+BOX_OUT=".crabbox/out/last.out.log"
+
+recover_artifacts() {  # recover_artifacts <crabbox-run-log>
+  local tgz
+  tgz="$(grep -aoE 'path=[^ ]+-artifacts\.tgz' "$1" 2>/dev/null | tail -1 | sed 's/^path=//')"
+  [ -n "$tgz" ] && [ -f "$tgz" ] || return 1
+  tar xzf "$tgz" -C "$OUT" 2>/dev/null || return 1
+  # The tarball keeps the box-side layout (.crabbox-out/…); put the artifact where
+  # read_steps looks, and leave the screenshots and step logs in the run dir.
+  [ -f "$OUT/.crabbox-out/last-all.json" ] || return 1
+  cp "$OUT/.crabbox-out/last-all.json" "$AH_OUT_DIR/last-all.json" 2>/dev/null || return 1
+  note "artifacts recovered from $(basename "$tgz")"
 }
 
 capture_summary() {  # capture_summary <logfile> <grep-pattern>
@@ -252,7 +277,12 @@ run_all() {
   bash "$WRAPPERS/crabbox_iter.sh" all --strict >"$log" 2>&1 || rc=$?
   local secs_layer=$((SECONDS - t0))
   tail -25 "$log" | sed 's/^/  /'
-  capture_summary "$log" 'run\.sh\[all\]:' || note "no run.sh[all] summary line in all.log"
+  # $log first (a future wrapper may pass the output through), then where
+  # crabbox_iter.sh actually captured it.
+  capture_summary "$log" 'run\.sh\[all\]:' \
+    || capture_summary "$BOX_OUT" 'run\.sh\[all\]:' \
+    || note "no run.sh[all] summary line in $log or $BOX_OUT"
+  recover_artifacts "$log" || true
   collect_artifacts
 
   # INFRA first, and it ends the layer: a step that could not RUN says nothing
@@ -272,12 +302,13 @@ run_all() {
   fi
 
   # Whatever the exit code says, the artifact is what the box actually did.
-  local art="$AH_OUT_DIR/last-all.json" name result secs verdict reds=0 redsteps=0
+  local art="$AH_OUT_DIR/last-all.json" name result secs verdict reds=0 redsteps=0 steps_read=0
   if [ -f "$art" ] && ! artifact_is_ours "$art"; then
     note "last-all.json describes another tree — ignored (evidence must match this run)"
     rm -f "$art"
   fi
   if read_steps "$art" > "$OUT/steps-all.tsv"; then
+    steps_read=1
     cp "$art" "$OUT/last-all.json" 2>/dev/null || true
     while IFS="$(printf '\t')" read -r name result secs; do
       [ -n "$name" ] || continue
@@ -305,6 +336,16 @@ run_all() {
     # is explained, and a quarantined flake is not a failing run (spec 3b).
     FINDINGS+=("all|-|pass|$secs_layer|$box|$redsteps flaky step(s), quarantined")
   elif [ "$rc" = 0 ]; then
+    # "The wrapper exited 0" is not evidence — it is a claim. Without a summary
+    # line AND without a readable artifact, nothing is known about which steps
+    # ran, so the run is UNVERIFIED rather than green. This is the rule the whole
+    # stage is built on, applied to heavy.sh itself (found by the first real run,
+    # which reported PASS from an exit code and an empty step table).
+    if [ "$steps_read" = 0 ] && [ "${#SUMMARY_LINES[@]}" -eq 0 ]; then
+      set_infra "the layer exited 0 but produced no evidence (no summary line, no artifact)"
+      FINDINGS+=("all|-|infra|$secs_layer|$box|exit 0 without evidence")
+      return 0
+    fi
     FINDINGS+=("all|-|pass|$secs_layer|$box|")
   else
     # Every step green but the wrapper red: something outside the step list said

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 3 — Ausführung zuerst — Task-Ledger
-Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind vier `[?]` — T6a, T15a und die Fremdfunde F1/F2; T7a ist gebaut, aber erst ein Capstone-Lauf beweist es) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind drei `[?]` — T6a, T15a und die Fremdfunde F1/F2 (F3/F4 aus den echten Läufen sind behoben); T7a ist gebaut, aber erst ein Capstone-Lauf beweist es) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-3.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt; T7a ist gebaut, aber die Capstone-Ebene beweist sich erst im Lauf
@@ -51,6 +51,17 @@ Komponente: scripts/release · Dateien: scripts/release/check-versions.sh (neu),
 Verify: `bash scripts/tests/check_versions_test.sh` → `N passed, 0 failed`; `bash scripts/release/check-versions.sh 0.45.0` → Exit 0 auf dem heutigen Stand; `bash scripts/release/check-versions.sh 0.46.0` → Exit 1 mit sechs `FEHLT`
 Doku: .claude/rules/release.md (in der Task); DEVELOPMENT.md Release-Absatz (T18)
 Abhängt von: —
+
+### F3 — heavy.sh meldete PASS ohne jede Evidenz (Fund aus dem zweiten echten Lauf)  [x] (behoben)
+Komponente: scripts/tests · Datei: scripts/tests/heavy.sh
+Der zweite `heavy.sh all` (2026-09-10-1626) endete mit **PASS** — bei leerer Schritt-Tabelle, ohne Summary-Zeile und mit `no readable last-all.json`. Das Urteil hing allein am Exit-Code des Wrappers, also genau an der Behauptung, die diese Stufe abschaffen soll.
+Ursache: `crabbox_iter.sh` lässt die Box-Ausgabe **nicht** durch, sondern schreibt stdout nach `.crabbox/out/last.out.log` und legt die gezogenen Dateien als `…-artifacts.tgz` ab. `heavy.sh`s eigenes Log enthält nur crabbox' Orchestrierungs-Zeilen. Die Evidenz lag die ganze Zeit auf der Platte — an einer anderen Stelle, als das Skript nachsah.
+Behoben, dreifach: (1) die Summary-Zeile wird zusätzlich aus `.crabbox/out/last.out.log` gelesen, (2) `last-all.json` wird aus dem Artefakt-Tarball zurückgeholt (die Screenshots und Step-Logs landen dabei gleich im Lauf-Verzeichnis, das der Report nennt), (3) **ohne Summary-Zeile UND ohne lesbares Artefakt ist ein Exit 0 jetzt `UNVERIFIED`, nicht PASS.** Punkt 3 ist der eigentliche Fix — 1 und 2 machen ihn nur selten nötig.
+Nachträglich gelesen war der Lauf echt grün: `run.sh[all]: 29 passed, 0 failed, 0 skipped`, darin `upgrade_path` (15 passed, `UPGRADE_OK` + `UPDATE_SH_OK`) und `desktop_e2e_misc` (alle fünf Specs).
+
+### F4 — gestoppte `keep=true`-VM blockierte jeden Wochenlauf  [x] (behoben)
+Komponente: scripts/tests · Datei: scripts/tests/heavy.sh
+Auf dem Hypervisor steht eine gestoppte VM (`slug=ah-bake keep=true`, Template-Quelle). `foreign_boxes` zählte sie als fremd ⇒ Exit 74, obwohl eine gestoppte VM keine Kapazität belegt — sie hätte jeden Wochenlauf blockiert, sobald sie zum Pre-flight-Zeitpunkt gelistet ist. Der Guard zählt jetzt nur noch **laufende** Boxen; ein laufender Fremdling bricht weiterhin ab. Beide Fälle im Test.
 
 ### F2 — crabbox' eigener Provider-Bootstrap verliert das apt-Lock-Rennen gegen cloud-init  [?]
 Komponente: crabbox (extern) · nichts in diesem Repo

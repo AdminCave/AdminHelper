@@ -556,6 +556,46 @@ printf '%s' "$out" | grep -q 'someone-elses-box' \
 [ ! -f "$AH_OUT_DIR/all.log" ] && [ -z "$(ls "$AH_OUT_DIR"/weekly/*/all.log 2>/dev/null)" ] \
   && ok "no layer ran after the foreign-box abort" || bad "a layer ran despite the abort"
 
+# ── 4n: exit 0 without evidence is UNVERIFIED, never PASS ────────────────────
+# The first real run reported PASS from a wrapper exit code alone: crabbox_iter.sh
+# captures the box's stdout into .crabbox/out/last.out.log and leaves the pulled
+# files as a tarball, so neither the summary line nor last-all.json was where
+# heavy.sh looked — and it called that green.
+mk_case
+export SHIM_NO_PULL=1        # no artifact
+export SHIM_ITER_OUT=""      # and no summary line
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "exit 0 without any evidence -> UNVERIFIED" || bad "no-evidence run -> rc=$rc"
+report_of | head -1 | grep -q '^UNVERIFIED ('   && ok "the report says so instead of claiming a pass" || bad "head: $(report_of | head -1)"
+history_of | grep -q ',all,-,infra,'   && ok "history.csv: infra, not pass" || bad "rows: $(history_of)"
+
+# A summary line alone is evidence enough to judge the layer.
+mk_case
+export SHIM_NO_PULL=1
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 0 ] && ok "a verbatim summary line is evidence" || bad "summary-only -> rc=$rc"
+
+# ── 4o: a stopped foreign box does not abort the run ─────────────────────────
+# Seen on the real hypervisor: a kept bake/template VM sits there stopped. It
+# holds disk, not capacity — aborting a 17 VM-h run over it is a false positive.
+mk_case
+export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm
+101  crabbox-ah-bake-1 stopped  template-9400  lease=cbx_bb22 slug=ah-bake keep=true"
+export SHIM_LIST_POND="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 0 ] && ok "a stopped foreign box does not abort the run" || bad "stopped box -> rc=$rc; $out"
+# …but a RUNNING one still does.
+mk_case
+export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm
+102  crabbox-other running  template-9400  lease=cbx_cc33 slug=someone-else keep=true"
+export SHIM_LIST_POND="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a running foreign box still aborts" || bad "running foreign -> rc=$rc"
+
 # ── 5a: a failed lease still leaves a row in the history ─────────────────────
 # Found by the first real run: run_all returned 74 before adding any finding, so
 # history.csv held nothing but its header — a hole on exactly the days a run
