@@ -103,7 +103,11 @@ def main(argv):
         (server_id,) = rest
         print(_call(base, token, "POST", f"/api/servers/{server_id}/provision/token", {})["token"])
     elif op == "connection":
-        name, kind, host, port, user = rest
+        # server_id is optional and defaults to "": without it the row carries no
+        # serverId, and a per-server read-back would count 0 before AND after an
+        # upgrade — an assertion that cannot fail (upgrade_path_test.sh).
+        name, kind, host, port, user, *maybe_server = rest
+        server_id = maybe_server[0] if maybe_server else ""
         print(
             _call(
                 base,
@@ -119,6 +123,7 @@ def main(argv):
                     "port": int(port),
                     "username": user,
                     "trustCert": True,
+                    **({"serverId": server_id} if server_id else {}),
                 },
             )["id"]
         )

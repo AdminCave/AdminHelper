@@ -502,7 +502,7 @@ layer_unit() {
   # -race mirrors ci.yml's agent job: the agent is concurrent (monitor, frpc,
   # config) and a data race is the bug class no review sees. The detector needs
   # cgo and therefore a C compiler; a box without one — or one with CGO_ENABLED=0
-  # in the environment, where  fails hard — runs the suite
+  # in the environment, where `go test -race` fails hard — runs the suite
   # unchanged and SAYS so. The log line is what tells a green run apart from a
   # green run that checked less.
   AH_RACE=""
@@ -513,7 +513,7 @@ layer_unit() {
     run_step go-agent "go agent (vet+test+cross)" -- bash -c '
       cd apps/agent &&
       go vet ./... &&
-      { [ -n "$AH_RACE" ] && echo "race: on (-race)" || echo "race: off (no gcc)"; } &&
+      { [ -n "$AH_RACE" ] && echo "race: on (-race)" || echo "race: off (no gcc or CGO_ENABLED=0)"; } &&
       go test $AH_RACE -cover ./... $AH_ARGS &&
       GOOS=linux   GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent &&
       GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent'

@@ -321,11 +321,14 @@ failing_spec() {  # failing_spec <step> <log>
   grep -aoE '^spec [a-z0-9-]+: fail' "$2" 2>/dev/null | head -1 | sed 's/^spec //; s/: fail$//'
 }
 
+# </dev/null on every remote call: the step loop reads from steps-all.tsv, and an
+# ssh-backed `crabbox run` that drains stdin would swallow the rest of the file —
+# the run would classify one red step and silently drop every later one.
 rerun_step() {  # rerun_step <step> <spec-or-empty> <logfile> -> rc
   if [ -n "$2" ]; then
-    AH_NO_SYNC=1 bash "$WRAPPERS/crabbox_iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1
+    AH_NO_SYNC=1 bash "$WRAPPERS/crabbox_iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
   else
-    AH_NO_SYNC=1 bash "$WRAPPERS/crabbox_iter.sh" all --strict --step "$1" >"$3" 2>&1
+    AH_NO_SYNC=1 bash "$WRAPPERS/crabbox_iter.sh" all --strict --step "$1" >"$3" 2>&1 </dev/null
   fi
 }
 
@@ -384,10 +387,10 @@ w2_run() {  # w2_run <step> <spec> <logfile> -> rc
   # calling the main checkout's copy would ship the wrong tree to the box.
   if [ -n "$2" ]; then
     AH_LANE=w2 AH_NO_SYNC=0 bash "$W2_DIR/scripts/tests/crabbox_iter.sh" \
-      --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1
+      --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
   else
     AH_LANE=w2 AH_NO_SYNC=0 bash "$W2_DIR/scripts/tests/crabbox_iter.sh" \
-      all --strict --step "$1" >"$3" 2>&1
+      all --strict --step "$1" >"$3" 2>&1 </dev/null
   fi
 }
 
@@ -590,7 +593,9 @@ check_audit() {
 quarantine() {  # quarantine <step>
   local step="$1" seen="$PRIVATE_DIR/seen.md" n=1 until
   mkdir -p "$PRIVATE_DIR" 2>/dev/null || { note "cannot write $seen"; return 0; }
-  [ -f "$seen" ] && n=$(( $(grep -cF "quarantine · $step · " "$seen" 2>/dev/null || echo 0) + 1 ))
+  # `grep -c` prints 0 AND exits 1 when nothing matches, so a `|| echo 0` fallback
+  # yields "0\n0" and the arithmetic dies with a syntax error. Take the count as-is.
+  [ -f "$seen" ] && n=$(( $(grep -cF "quarantine · $step · " "$seen" 2>/dev/null | head -1) + 1 ))
   until="$(date -d '+30 days' +%F 2>/dev/null || echo '?')"
   printf 'quarantine · %s · %s · %s · Ablauf +30 d (%s)\n' "$step" "$DATE" "$n" "$until" >> "$seen"
 }
@@ -602,6 +607,16 @@ run_capstone() {
   secs_layer=$((SECONDS - t0))
   tail -25 "$log" | sed 's/^/  /'
   capture_summary "$log" 'crabbox_multibox:' || note "no crabbox_multibox summary line in multibox.log"
+  # INFRA first, exactly as in run_all: an unleasable server box prints a
+  # "FAIL server lease" line and aborts, so scraping the assertions first would
+  # file that one failure as several product defects in history.csv.
+  local marker; marker="$(infra_marker "$log")"
+  if [ -n "$marker" ]; then
+    set_infra "the capstone could not run: $marker"
+    note "infra marker in multibox.log: $marker"
+    FINDINGS+=("capstone|-|infra|$secs_layer|multibox|$marker")
+    return 0
+  fi
   # Each red assertion by name, so the report says WHICH guard failed.
   local line
   while IFS= read -r line; do
@@ -610,13 +625,6 @@ run_capstone() {
     # shift every later column of the CSV and break the report table.
     FINDINGS+=("capstone|${line//|/ }|fail|0|multibox|assertion")
   done < <(grep -aE '^[[:space:]]*FAIL ' "$log" | sed 's/^[[:space:]]*FAIL[[:space:]]*//')
-  local marker; marker="$(infra_marker "$log")"
-  if [ -n "$marker" ]; then
-    set_infra "the capstone could not run: $marker"
-    note "infra marker in multibox.log: $marker"
-    FINDINGS+=("capstone|-|infra|$secs_layer|multibox|$marker")
-    return 0
-  fi
   case "$rc" in
     0)  FINDINGS+=("capstone|-|pass|$secs_layer|multibox|") ;;
     74) set_infra "crabbox_multibox.sh exited 74 (infrastructure)"

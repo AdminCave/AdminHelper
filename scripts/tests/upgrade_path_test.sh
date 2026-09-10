@@ -153,8 +153,12 @@ e2e_api "$TOKEN" tunnel "$SERVER_ID" "$CONFIG_ID" upgrade-tunnel 22 >/dev/null |
 # that starts from scratch leaves empty, so a migration that only works on an
 # empty table would pass everywhere else. (No credentials live here — those are
 # in the desktop keyring; the model has no secret column.)
-CONN_ID=$(e2e_api "$TOKEN" connection upgrade-conn ssh 10.0.0.42 22 root) || { bad "seed connection"; exit 1; }
+CONN_ID=$(e2e_api "$TOKEN" connection upgrade-conn ssh 10.0.0.42 22 root "$SERVER_ID") \
+    || { bad "seed connection"; exit 1; }
 CONNS_BEFORE=$(e2e_api "$TOKEN" count-connections "$SERVER_ID" 2>/dev/null || echo 0)
+# Without this the read-back after the upgrade would compare 0 with 0 — an
+# assertion that cannot fail is worse than none, because it reads like coverage.
+[ "${CONNS_BEFORE:-0}" -ge 1 ] || { bad "connection seed not readable on $PREV itself"; exit 1; }
 BEFORE=$(e2e_api "$TOKEN" count-tunnels "$SERVER_ID" 2>/dev/null || echo 0)
 [ "${BEFORE:-0}" -ge 1 ] && ok "seeded on $PREV (server $SERVER_ID, $BEFORE tunnel(s), connection $CONN_ID)" \
     || { bad "seeds not readable on $PREV itself"; exit 1; }
