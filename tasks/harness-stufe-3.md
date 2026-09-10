@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 3 — Ausführung zuerst — Task-Ledger
-Status: erledigt (18/18 Tasks, lokal grün, PR noch nicht offen; offen sind vier `[?]` — T6a, T7a, T15a und der Fremdfund F1 — sie brauchen Kevins Entscheidung, T7a **vor** dem ersten Capstone-Lauf) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind vier `[?]` — T6a, T7a, T15a und der Fremdfund F1 — sie brauchen Kevins Entscheidung, T7a **vor** dem ersten Capstone-Lauf) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-3.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt **und T7a entschieden** — sonst ist die Capstone-Ebene des Laufs per Konstruktion rot (Desktop-Etappe gegen ein enforced :443 ohne Client-Cert)
