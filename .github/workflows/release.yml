@@ -369,7 +369,20 @@ jobs:
             || { echo "::error::MINISIGN_SECRET_KEY must be the base64 of the key file: base64 -w0 minisign.key"; exit 1; }
           minisign -S -s minisign.key -m release/SHA256SUMS -x release/SHA256SUMS.minisig < /dev/null
           rm -f minisign.key
-          echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig"
+          # Verify against the key the FLEET pins, not against the secret we just
+          # signed with: a rotated or wrong MINISIGN_SECRET_KEY produces a
+          # perfectly valid signature that install.sh/update.sh reject — and that
+          # only shows up on user machines, after the draft is published. The
+          # public key lives in scripts/update.sh (kept in sync with install.sh).
+          # Anchored, and tolerant of "no match" so the message below is what a
+          # missing pin produces — an unanchored grep would also match the first
+          # COMMENT mentioning the variable, and under pipefail its failure would
+          # abort the step silently. Same form as ci.yml's lockstep check.
+          PUB="$(grep -m1 '^MINISIGN_PUBKEY=' scripts/update.sh | cut -d'"' -f2 || true)"
+          [ -n "$PUB" ] || { echo "::error::no MINISIGN_PUBKEY pinned in scripts/update.sh — nothing to verify the signature against"; exit 1; }
+          minisign -V -P "$PUB" -m release/SHA256SUMS -x release/SHA256SUMS.minisig \
+            || { echo "::error::SHA256SUMS.minisig does not verify against the public key pinned in scripts/update.sh — MINISIGN_SECRET_KEY is the wrong key; every install/update in the field would reject this release"; exit 1; }
+          echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig (verified against the pinned public key)"
       - name: Assert the tag images exist on ghcr
         # release.yml and docker.yml run independently on tag push, but install.sh/
         # update.sh pin ghcr.io/...:X.Y.Z hard. Creating the draft before docker.yml has

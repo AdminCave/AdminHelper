@@ -19,7 +19,7 @@ Komponente: .github · Dateien: .github/workflows/release.yml
 Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));s=[x['name'] for x in d['jobs']['agent']['steps'] if 'name' in x];assert 'Assert static agent binary' in s"`; lokale Probe der Befehle gegen `make -C apps/agent build-linux` (`file`/`objdump`/`ar` auf dem Ergebnis, statisch ⇒ grün; `CGO_ENABLED=1 go build` ⇒ rot)
 Doku: docs/developer/cicd.html DE+EN „Release-Assertionen" (T18)
 
-### T2 — release.yml: Signatur gegen den gepinnten Public Key verifizieren  [ ]
+### T2 — release.yml: Signatur gegen den gepinnten Public Key verifizieren  [x] (minisign -V gegen den Pin aus update.sh; Wegwerf-Key-Probe rot/grün/unarmed)
 Komponente: .github · Dateien: .github/workflows/release.yml
 Änderung: im Job `release` direkt nach `minisign -S`: `PUB=$(grep -m1 -o 'MINISIGN_PUBKEY="[^"]*"' scripts/update.sh | cut -d'"' -f2)`, `minisign -V -P "$PUB" -m release/SHA256SUMS` ⇒ Exit 1 bei Mismatch; Kommentar nennt den Grund (Secret ≠ gepinnter Key würde erst bei Nutzern auffallen).
 Verify: lokale Probe: Wegwerf-Key, damit signieren, `minisign -V` gegen den Repo-Pubkey ⇒ rot; gegen den passenden Pubkey ⇒ grün; `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/release.yml'))"`
