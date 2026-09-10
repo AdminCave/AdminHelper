@@ -39,7 +39,7 @@
             <tbody>
               <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo test --locked</code> auf Windows, die Go-Suite nativ unter Windows (Job <code>agent-windows</code>: <code>go test -v ./...</code>, Build und <code>version</code>-Smoke der <code>.exe</code>), <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>). Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate). Auf <code>main</code>-Pushes + manuell (bewusst noch kein PR-Gate, da Image-Build + 5-Container-Boot): ein From-outside-Integrationstest (<code>scripts/tests/integration_stack_test.sh</code>), der den echten Stack mit erzwungenem mTLS hochf&auml;hrt und nur &uuml;ber das nginx-Gateway den vollen Pfad pr&uuml;ft &ndash; Enrollment-Token, CSR&nbsp;&rarr;&nbsp;Enroll-Plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;Client-Cert, certless&nbsp;&rarr;&nbsp;abgewiesen, Cert+JWT&nbsp;&rarr;&nbsp;200. Der Desktop-E2E (WebdriverIO + <code>tauri-driver</code> unter <code>xvfb</code>, <code>apps/desktop/e2e/</code>) l&auml;uft <strong>bewusst nicht in CI</strong>, sondern lokal/manuell (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): die headless-WebKit-Kette (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) driftet mit Runner-Image + ungepinnten Upstream-Tools und f&auml;rbte <code>main</code> rot ohne echten Defekt. Der schwere Tier (Multi-Host-Stack, mTLS &uuml;ber einen echten Netz-Hop, Desktop-GUI) l&auml;uft stattdessen auf <strong>crabbox</strong> (ephemere Proxmox-VMs) &ndash; siehe <code>DEVELOPMENT.md</code> und die <code>/test</code>-Skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Server- + Monitoring-Image bauen &amp; nach <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code> pushen; jeden Digest schlüssellos mit cosign signieren (+ SLSA-Provenance/SBOM)</td></tr>
-              <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), <code>SHA256SUMS</code> (+ minisign-Signatur), Draft-Release</td></tr>
+              <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), <code>SHA256SUMS</code> (+ minisign-Signatur), Draft-Release. Jobs: <code>desktop-linux</code>, <code>agent</code>, <code>agent-windows-smoke</code> (hart &ndash; f&uuml;hrt die gebaute <code>.exe</code> einmal aus), <code>desktop-windows</code> (best-effort, installiert und deinstalliert das MSI), <code>release</code>. Die Assertionen stehen unten unter &bdquo;Release-Assertionen".</td></tr>
               <tr><td><code>audit.yml</code></td><td>W&ouml;chentlicher Dependency-Audit (Montag fr&uuml;h, auch manuell per <code>workflow_dispatch</code>): <code>pip-audit</code> (Server- + Monitoring-Locks), <code>cargo audit</code> (Desktop), <code>govulncheck</code> (Agent), <code>npm audit</code> (Web + Desktop-UI)</td></tr>
             </tbody>
           </table>
@@ -88,8 +88,25 @@
           <code>test_auth_token_lifecycle</code>. Auf einer Box, die einen Test wirklich nicht fahren kann,
           bleibt er ein sichtbarer SKIP.</p>
           <p>Die Summary lautet deshalb
-          <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> ist vorerst
-          immer 0 und existiert, damit die Flaky-Erkennung sp&auml;ter dort einh&auml;ngt.</p>
+          <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> bleibt
+          bewusst 0: der Wochenlauf wiederholt einen roten Schritt selbst und klassifiziert ihn, statt die
+          Suiten heimlich retryen zu lassen (siehe &bdquo;Wochenlauf").</p>
+          <p><strong>Go unter <code>-race</code>.</strong> Der Go-Schritt f&auml;hrt <code>go test -race -cover</code>,
+          wenn die Box einen C-Compiler mit aktivem cgo hat &ndash; der Agent ist nebenl&auml;ufig (Monitor, frpc,
+          Config), und ein Data-Race ist die Fehlerklasse, die weder ein Review noch ein einf&auml;diger Test sieht.
+          Fehlt der Compiler, l&auml;uft die Suite wie bisher und der Lauf sagt es (<code>race: off (no gcc)</code>)
+          &ndash; ein gr&uuml;ner Lauf, der weniger gepr&uuml;ft hat, muss unterscheidbar bleiben. Der CI-Job
+          <code>agent</code> hat cgo immer und f&auml;hrt <code>-race</code> unbedingt.</p>
+          <p><strong>Upgrade-Pfad.</strong> Der <code>integration</code>-Layer enth&auml;lt
+          <code>scripts/tests/upgrade_path_test.sh</code> &ndash; die einzige Suite, die <em>nicht</em> bei null
+          anf&auml;ngt: sie f&auml;hrt den Stack aus den Images des letzten ver&ouml;ffentlichten Releases hoch,
+          seedet ihn &uuml;ber die Admin-API, wechselt auf die aus dem Checkout gebauten Images (beide Dienste
+          migrieren beim Start) und pr&uuml;ft, dass die Seeds lesbar bleiben und ein frischer Agent-Report
+          ankommt (<code>UPGRADE_OK</code>). Danach l&auml;uft <code>scripts/update.sh --ref &lt;tag&gt;</code>
+          real gegen ein zweites Install-Verzeichnis (<code>UPDATE_SH_OK</code>, oder
+          <code>UPDATE_SH_SKIP</code>, wenn das Release kein Runtime-Bundle hat). Ohne Docker oder Netz endet
+          sie mit 75.</p>
+
           <p><strong>Evidenz.</strong> Jeder Lauf schreibt <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
           (Default <code>.crabbox-out/</code>, gitignored) mit Layer, Flags, Pflicht-Menge, Zeitstempeln,
           jedem Schritt samt Ergebnis und Dauer, den test-skips &ndash; und mit <code>head</code> plus
@@ -97,6 +114,53 @@
           Wegwerf-Index gebildet, sieht also auch <em>untracked</em> Dateien, w&auml;hrend <code>tasks/</code>
           und die Ausgabeverzeichnisse ausgeklammert bleiben. Ein Haken im Ledger &auml;ndert die Evidenz
           eines Laufs damit nicht, eine neue, noch nicht committete Quelldatei sehr wohl.</p>
+
+          <h2>Wochenlauf (<code>scripts/tests/heavy.sh</code>)</h2>
+          <p>Der schwere Tier lief bisher, wenn jemand daran dachte, und seine Ergebnisse wurden nirgends
+          festgehalten. <code>heavy.sh</code> ist ein <strong>Wrapper</strong> um die vorhandenen
+          crabbox-Skripte, der genau das nachtr&auml;gt: einen Report, eine Historie und eine mechanische
+          Klassifikation der roten Schritte der <code>all</code>-Ebene. (Wiederholung, Quarant&auml;ne und
+          Zweit-VM h&auml;ngen an dieser Ebene; die Capstone-Ebene meldet ihre roten Assertionen direkt als
+          <code>fail</code>.) <strong>Er startet nie von selbst</strong> &ndash; Kevin startet
+          ihn, &uuml;blicherweise in <code>tmux</code>, und liest hinterher den Report.</p>
+<pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
+
+bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
+          <p><code>all</code> = warme Box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
+          <code>crabbox_multibox.sh --capstone --strict</code>; <code>weekly</code> = beides seriell. Der
+          Capstone entf&auml;llt <strong>nur</strong>, wenn die <code>all</code>-Ebene UNVERIFIED endete
+          (sieben VMs brennen sonst in eine kaputte Umgebung) &ndash; ein reines FAIL stoppt ihn nicht. Vorab pr&uuml;ft er <code>crabbox doctor</code> und <code>crabbox list</code>: eine fremde
+          Box hei&szlig;t, die Kapazit&auml;t ist nicht da, und der Lauf bricht ab, bevor er eine VM verbraucht.</p>
+          <p>Der Report liegt unter <code>.crabbox-out/weekly/&lt;jjjj-mm-tt-hhmm&gt;/report.md</code>. Seine
+          <strong>erste Zeile</strong> ist das Urteil und wird w&ouml;rtlich zitiert, nie paraphrasiert; danach
+          folgen die Summary-Zeilen der Wrapper <strong>w&ouml;rtlich</strong>, die Schritt-Tabelle, der
+          Abschnitt &bdquo;Kevin sichtet", die Notizen, die <code>audit.yml</code>-Zeile und die VM-Liste.
+          Nie eine Bewertung, nur Fakten. Die Historie steht in <code>tasks/private/history.csv</code>
+          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>) und wird im privaten Repo
+          committet, nie gepusht.</p>
+          <table>
+            <thead><tr><th>Ergebnis</th><th>Wie es zustande kommt</th><th>Was es hei&szlig;t</th></tr></thead>
+            <tbody>
+              <tr><td><code>infra</code></td><td>die Box war nicht zu bekommen oder der Schritt konnte nicht laufen: keine warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, <code>strict-failed: no step ran</code>, <code>strict-failed: &hellip; (SKIP)</code>, Wrapper-Exit 74</td><td><strong>Nie</strong> eine Regression; der Report-Kopf lautet <code>UNVERIFIED</code>.</td></tr>
+              <tr><td><code>flaky</code></td><td>innerhalb von drei Wiederholungen auf derselben Box gr&uuml;n (<code>AH_NO_SYNC=1</code>, Desktop-Suiten spec-genau)</td><td>Quarant&auml;ne-Zeile in <code>tasks/private/seen.md</code>; der Lauf f&auml;llt deswegen nicht durch.</td></tr>
+              <tr><td><code>unbestaetigt</code></td><td>3&times; rot, aber gr&uuml;n auf einer frischen zweiten VM &ndash; oder die Gegenprobe war nicht m&ouml;glich: kein PASS-Commit in <code>history.csv</code>, <code>--no-second-vm</code>, Worktree nicht anlegbar, zweite Box nicht leasbar, Basis-Commit nicht auscheckbar</td><td>Kevin sichtet; nie eine REG-Zeile.</td></tr>
+              <tr><td><code>extern</code></td><td>rot auf der zweiten VM <em>und</em> auf dem letzten PASS-Commit</td><td>Umgebung, Abh&auml;ngigkeit, Netz &ndash; nicht der Code seit dem letzten PASS.</td></tr>
+              <tr><td><code>reg</code></td><td>rot auf der zweiten VM, gr&uuml;n auf dem letzten PASS-Commit</td><td>Roadmap-Zeile (Klasse REG, Status <code>neu</code>) plus Kurz-Ledger <code>tasks/reg-&lt;datum&gt;-&lt;schritt&gt;.md</code>. Die Freigabe bleibt Kevins Haken.</td></tr>
+              <tr><td><code>fail</code></td><td>alle drei Wiederholungen rot, aber jedes Mal <em>anders</em>; jede rote Capstone-Assertion; die Ebenen-Zeile, wenn Schritte nach den Wiederholungen rot bleiben</td><td>Reproduzierbar kaputt, aber ohne die stabile Signatur, die eine Regressions-Behauptung braucht &ndash; keine Zweit-VM.</td></tr>
+            </tbody>
+          </table>
+          <p>Die zweite VM ist ein Worktree <code>.crabbox-worktrees/w2</code> mit eigener Lane
+          (<code>AH_LANE=w2</code>, Pond <code>ah-warm-w2</code>); <code>heavy.sh</code> reapt diesen Pond und
+          entfernt den Worktree selbst. Kevins eigene Warm-Box (<code>ah-warm</code>) bleibt unber&uuml;hrt.
+          <code>--base &lt;sha&gt;</code> setzt den Vergleichs-Commit (Default: die j&uuml;ngste
+          <code>history.csv</code>-<strong>Ebenen</strong>-Zeile mit
+          <code>ebene=all,schritt=-,ergebnis=pass</code>, nicht die eines einzelnen Schritts),
+          <code>--no-second-vm</code> &uuml;berspringt die Gegenprobe, <code>--notify</code> postet Urteilszeile
+          und Report-Pfad an <code>AH_NOTIFY_URL</code> (Default aus).</p>
+          <p><strong>Exit-Codes:</strong> <code>0</code> = PASS, <code>1</code> = FAIL, <code>74</code> =
+          UNVERIFIED, <code>2</code> = Usage. UNVERIFIED hei&szlig;t: die Infrastruktur lie&szlig; den Lauf
+          nicht stattfinden, &uuml;ber den Code ist damit nichts bekannt. Genau diese Unterscheidung ist der Zweck: &bdquo;SKIP hei&szlig;t nicht
+          verifiziert" gilt auch f&uuml;r einen ganzen Lauf.</p>
 
           <h2>Verify-Konvention (<code>scripts/dev/verify.sh</code>)</h2>
           <p>Die <code>Verify:</code>-Zeile einer Task ruft eine Komponenten-Suite immer in dieser Form auf:</p>
@@ -136,6 +200,42 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
           </ul>
           <p>Die Agent-Version wird aus dem Tag abgeleitet (<code>${GITHUB_REF_NAME#v}</code>) und per <code>-ldflags "-X main.version=$VERSION"</code> in die Binaries geschrieben. Die <code>tauri-cli</code> wird in CI und Release auf eine exakte Version gepinnt (<code>cargo install tauri-cli --locked --version &hellip;</code>), damit ein neues CLI-Release keinen Tag-Build brechen kann.</p>
 
+          <h2>Release-Assertionen</h2>
+          <p>Alle sechs release-blockierenden Defekte der 0.43.x/0.44.0-Reihe kamen aus <em>Ausf&uuml;hrung</em>,
+          keiner aus statischer Review. <code>release.yml</code> pr&uuml;ft deshalb das Ergebnis, nicht das
+          Rezept:</p>
+          <ul>
+            <li><strong>Agent statisch.</strong> Nach dem Build muss <code>file</code> das Binary als
+            <code>statically linked</code> melden <em>und</em> <code>objdump -T</code> darf kein
+            <code>GLIBC_</code>-Symbol liefern. Das Makefile pinnt <code>CGO_ENABLED=0</code>, aber gepr&uuml;ft
+            wurde das Ergebnis nie: ein inline gebautes <code>go build</code> lieferte ein dynamisch gegen
+            glibc&nbsp;2.39 gelinktes Binary, das auf &auml;lteren Distributionen nicht startete &ndash; w&auml;hrend
+            die crabbox-Tests, die <code>make</code> benutzen, gr&uuml;n blieben.</li>
+            <li><strong>Ausgeliefertes <code>.deb</code>.</strong> <code>ar t</code> auf dem Artefakt, das
+            hochgeladen wird: kein <code>.zst</code>-Member. <code>build-deb.sh</code> pr&uuml;ft seine eigene
+            Ausgabe; hier wird gepr&uuml;ft, was tats&auml;chlich im Release landet.</li>
+            <li><strong>Signatur gegen den gepinnten Key.</strong> Direkt nach <code>minisign -S</code> wird die
+            frische Signatur mit dem <code>MINISIGN_PUBKEY</code> aus <code>scripts/update.sh</code>
+            verifiziert. Ein rotiertes oder falsches <code>MINISIGN_SECRET_KEY</code> erzeugt eine v&ouml;llig
+            g&uuml;ltige Signatur, die <code>install.sh</code>/<code>update.sh</code> ablehnen &ndash; das f&auml;llt
+            sonst erst auf Nutzer-Maschinen auf, nach dem Ver&ouml;ffentlichen.</li>
+            <li><strong>Windows-Binary l&auml;uft.</strong> Der harte Job <code>agent-windows-smoke</code>
+            (<code>windows-latest</code>, nur auf Tags) l&auml;dt das Agent-Artefakt und f&uuml;hrt
+            <code>adminhelper-agent-windows-x86_64.exe version</code> aus; die Ausgabe muss die Tag-Version
+            nennen. Der Draft-Job gated darauf.</li>
+            <li><strong>MSI installiert und deinstalliert.</strong> <code>desktop-windows</code> installiert das
+            MSI still (<code>msiexec /i &hellip; /qn /norestart /l*v</code>), pr&uuml;ft die Erfolgszeile im Log und
+            die installierte <code>adminhelper.exe</code> (deren Installationspfad noch unverifiziert ist
+            &ndash; der Job sucht deshalb <code>ProgramFiles</code>, <code>ProgramFiles(x86)</code> und
+            <code>LOCALAPPDATA\Programs</code> ab) und deinstalliert wieder; <code>msi.log</code> geht als
+            eigenes Artefakt hoch (nie als Release-Asset). Der Job bleibt <code>continue-on-error</code> bis zur
+            Windows-VM &ndash; ein rotes MSI ist sichtbar, blockiert aber nicht.</li>
+            <li><strong>Versions-Stellen.</strong> <code>bash scripts/release/check-versions.sh
+            ${GITHUB_REF_NAME#v}</code> pr&uuml;ft alle sechs handgepflegten Stellen statt nur
+            <code>tauri.conf.json</code> und druckt je Stelle <code>ok</code>/<code>MISSING</code>. Genau dieser
+            Aufruf geh&ouml;rt vor den Tag &ndash; was dort rot ist, bricht hier den Draft ab.</li>
+          </ul>
+
           <h2>Release-Signatur (Supply-Chain)</h2>
           <p>Die <code>curl|bash</code>-Installation/-Updates sollen <strong>Authentizität</strong> belegen, nicht nur Transport-Integrität (Bundle und <code>SHA256SUMS</code> kommen sonst aus derselben Quelle). Zwei Mechanismen:</p>
           <ul>
@@ -143,7 +243,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # pro Commit
 <pre><code>cosign verify ghcr.io/admincave/adminhelper/server \
   --certificate-identity-regexp 'https://github.com/AdminCave/AdminHelper/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre></li>
-            <li><strong>Release-Assets:</strong> <code>release.yml</code> signiert <code>SHA256SUMS</code> mit minisign zu <code>SHA256SUMS.minisig</code>. <code>install.sh</code>/<code>update.sh</code> verifizieren diese Signatur gegen einen im Skript gepinnten Public Key, <em>bevor</em> sie den Checksummen vertrauen (fail-closed).</li>
+            <li><strong>Release-Assets:</strong> <code>release.yml</code> signiert <code>SHA256SUMS</code> mit minisign zu <code>SHA256SUMS.minisig</code> &ndash; und verifiziert die frische Signatur sofort gegen denselben Public Key, den <code>scripts/update.sh</code> pinnt, sodass ein falsches Secret den Draft abbricht statt die Nutzer. <code>install.sh</code>/<code>update.sh</code> verifizieren diese Signatur gegen einen im Skript gepinnten Public Key, <em>bevor</em> sie den Checksummen vertrauen (fail-closed).</li>
           </ul>
           <div class="callout">
             <div><div class="callout-title">Scharfschalten (Maintainer, einmalig)</div>
@@ -201,8 +301,9 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
           <h2>Release-Checkliste</h2>
           <ol>
             <li>Versionen in den oben gelisteten Dateien auf den Zielwert hochziehen.</li>
-            <li>Footer-Versionen in <code>docs/**/*.html</code> aktualisieren (Footer-Span + Landing-„Was ist neu" + Code-Samples).</li>
+            <li>Footer-Versionen in <code>docs/**/*.html</code> aktualisieren (Footer-Span + Landing-„Was ist neu" + Code-Samples). Auf die <em>Klasse</em> filtern (<code>grep -rl 'class="sidebar-footer"'</code>), nicht auf das einzeilige Markup: die beiden Landing-Pages schreiben den Footer &uuml;ber zwei Zeilen und hingen deshalb von 0.43.2 bis 0.45.0 fest.</li>
             <li><code>CHANGELOG.md</code> pflegen (Keep-a-Changelog: neuer Abschnitt + Link-Ref).</li>
+            <li><code>bash scripts/release/check-versions.sh X.Y.Z</code> &ndash; muss <code>0 missing</code> melden. Derselbe Aufruf l&auml;uft im Release-Workflow auf dem Tag.</li>
             <li>Commit &amp; Tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>
             <li><code>docker.yml</code> + <code>release.yml</code> beobachten; nach dem ersten Image-Push die ghcr-Pakete (einmalig) auf public stellen.</li>

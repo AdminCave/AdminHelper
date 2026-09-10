@@ -143,7 +143,7 @@ Verify: `grep -c 'heavy.sh' DEVELOPMENT.md` ≥ 2; `grep -c 'check-versions' DEV
 Doku: ist die Doku
 Abhängt von: T9, T15
 
-### T18 — Doku cicd.html DE+EN  [ ]
+### T18 — Doku cicd.html DE+EN  [x] (Release-Assertionen und Wochenlauf DE+EN, Workflows-Tabelle, Test-Aggregator, Release-Checkliste; Struktur-Parität DE/EN 75/75 Tags, jede Behauptung im Review gegen die Skripte gegengelesen)
 Komponente: docs · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
 Änderung: Abschnitte „Release-Assertionen" (statisch, zstd, Signatur-Verify, Windows-Smoke, MSI, Versions-Check) und „Wochenlauf (heavy.sh)" mit Klassifikationstabelle (INFRA, FLAKY, unbestätigt, extern, REG), Exit-Codes, `history.csv`, Report-Aufbau; Workflows-Tabelle um `agent-windows-smoke`; Test-Aggregator um `-race` und `upgrade_path_test.sh`; Release-Checkliste um `check-versions.sh`. Beide Sprachen gleichlautend.
 Verify: `grep -c 'heavy.sh' docs/developer/cicd.html docs/en/developer/cicd.html` je ≥ 2; `grep -c 'check-versions' docs/developer/cicd.html docs/en/developer/cicd.html` je ≥ 1

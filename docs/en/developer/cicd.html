@@ -39,7 +39,7 @@
             <tbody>
               <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo test --locked</code> on Windows, the Go suite running natively on Windows (job <code>agent-windows</code>: <code>go test -v ./...</code>, a build and a <code>version</code> smoke of the <code>.exe</code>), a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, and an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>). Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>crabbox</strong> (ephemeral Proxmox VMs) &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code>; sign each digest keylessly with cosign (+ SLSA provenance/SBOM)</td></tr>
-              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code> (+ minisign signature), draft release</td></tr>
+              <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code> (+ minisign signature), draft release. Jobs: <code>desktop-linux</code>, <code>agent</code>, <code>agent-windows-smoke</code> (hard &ndash; runs the built <code>.exe</code> once), <code>desktop-windows</code> (best-effort, installs and uninstalls the MSI), <code>release</code>. The assertions are listed below under &ldquo;Release assertions&rdquo;.</td></tr>
               <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
             </tbody>
           </table>
@@ -88,8 +88,24 @@
           (or Docker) for <code>test_auth_token_lifecycle</code>. On a box that genuinely cannot run a test
           it stays a visible SKIP.</p>
           <p>The summary line is therefore
-          <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> is always 0
-          for now; the field exists so flaky detection can fill it later.</p>
+          <code>N passed, M failed, K skipped, J test-skips, R reruns</code>. <code>reruns</code> stays 0 on
+          purpose: the weekly run re-runs a red step itself and classifies it, rather than letting the suites
+          retry quietly (see &ldquo;Weekly run&rdquo;).</p>
+          <p><strong>Go under <code>-race</code>.</strong> The Go step runs <code>go test -race -cover</code>
+          when the box has a C compiler with cgo enabled &ndash; the agent is concurrent (monitor, frpc, config),
+          and a data race is the bug class neither review nor a single-threaded test can see. Without a
+          compiler the suite runs unchanged and the run says so (<code>race: off (no gcc)</code>): a green run
+          that checked less must stay distinguishable. The CI job <code>agent</code> always has cgo and runs
+          <code>-race</code> unconditionally.</p>
+          <p><strong>Upgrade path.</strong> The <code>integration</code> layer includes
+          <code>scripts/tests/upgrade_path_test.sh</code> &ndash; the one suite that does <em>not</em> start from
+          scratch: it brings the stack up from the last published release's images, seeds it through the admin
+          API, switches to the images built from this checkout (both services migrate on startup) and asserts
+          that the seeds are still readable and a fresh agent report still lands (<code>UPGRADE_OK</code>).
+          Then <code>scripts/update.sh --ref &lt;tag&gt;</code> runs for real against a second install directory
+          (<code>UPDATE_SH_OK</code>, or <code>UPDATE_SH_SKIP</code> when that release ships no runtime bundle).
+          Without Docker or network it exits 75.</p>
+
           <p><strong>Evidence.</strong> Every run writes <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
           (default <code>.crabbox-out/</code>, gitignored) holding the layer, the flags, the required set,
           timestamps, every step with its result and duration, the test-skips &ndash; plus <code>head</code>
@@ -97,6 +113,54 @@
           built in a throwaway index, so it sees <em>untracked</em> files while <code>tasks/</code> and the
           output directories stay out. Ticking a ledger box therefore does not invalidate a run&rsquo;s
           evidence; a new, uncommitted source file does.</p>
+
+          <h2>Weekly run (<code>scripts/tests/heavy.sh</code>)</h2>
+          <p>The heavy tier used to run whenever someone remembered, and its results were recorded nowhere.
+          <code>heavy.sh</code> is a <strong>wrapper</strong> around the existing crabbox scripts that adds
+          exactly that: a report, a history, and a mechanical classification of the <code>all</code>
+          layer's red steps. (Retries, quarantine and the second VM belong to that layer; the capstone
+          layer reports its red assertions directly as <code>fail</code>.) <strong>It never
+          starts by itself</strong> &ndash; Kevin starts it, usually in <code>tmux</code>, and reads the report
+          afterwards.</p>
+<pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
+
+bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
+          <p><code>all</code> = warm box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
+          <code>crabbox_multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially. The capstone
+          is skipped <strong>only</strong> when the <code>all</code> layer ended UNVERIFIED (seven VMs must
+          not burn into a broken environment) &ndash; a plain FAIL does not stop it.
+          Beforehand it checks <code>crabbox doctor</code> and <code>crabbox list</code>: a foreign box means
+          the capacity is not there, and the run stops before spending a single VM.</p>
+          <p>The report lands in <code>.crabbox-out/weekly/&lt;yyyy-mm-dd-hhmm&gt;/report.md</code>. Its
+          <strong>first line</strong> is the verdict and is quoted verbatim, never paraphrased; then come the
+          wrappers' summary lines <strong>verbatim</strong>, the step table, the &ldquo;Kevin sichtet&rdquo;
+          section, the notes, the <code>audit.yml</code> verdict and the VM list. Facts, never a judgement. The history is
+          <code>tasks/private/history.csv</code>
+          (<code>datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm</code>), committed in the private
+          repo and never pushed.</p>
+          <table>
+            <thead><tr><th>Result</th><th>How it is reached</th><th>What it means</th></tr></thead>
+            <tbody>
+              <tr><td><code>infra</code></td><td>the box could not be had, or the step could not run: no warm box, warm pond not ready, a failed server lease, <code>strict-failed: no step ran</code>, <code>strict-failed: &hellip; (SKIP)</code>, wrapper exit 74</td><td><strong>Never</strong> a regression; the report header reads <code>UNVERIFIED</code>.</td></tr>
+              <tr><td><code>flaky</code></td><td>green within three retries on the same box (<code>AH_NO_SYNC=1</code>, desktop suites spec-exact)</td><td>Quarantine line in <code>tasks/private/seen.md</code>; the run does not fail because of it.</td></tr>
+              <tr><td><code>unbestaetigt</code></td><td>3&times; red but green on a fresh second VM &ndash; or the counter-check was not possible: no PASS commit in <code>history.csv</code>, <code>--no-second-vm</code>, the worktree could not be created, the second box could not be leased, the base commit could not be checked out</td><td>Kevin looks at it; never a REG row.</td></tr>
+              <tr><td><code>extern</code></td><td>red on the second VM <em>and</em> on the last PASS commit</td><td>Environment, dependency, network &ndash; not the code since the last PASS.</td></tr>
+              <tr><td><code>reg</code></td><td>red on the second VM, green on the last PASS commit</td><td>Roadmap row (class REG, status <code>neu</code>) plus a short ledger <code>tasks/reg-&lt;date&gt;-&lt;step&gt;.md</code>. Releasing it stays Kevin's tick.</td></tr>
+              <tr><td><code>fail</code></td><td>red on all three retries but failing <em>differently</em> each time; every red capstone assertion; the layer row when steps stay red after the retries</td><td>Reproducibly broken without the stable signature a regression claim needs &ndash; no second VM.</td></tr>
+            </tbody>
+          </table>
+          <p>The second VM is a worktree <code>.crabbox-worktrees/w2</code> with its own lane
+          (<code>AH_LANE=w2</code>, pond <code>ah-warm-w2</code>); <code>heavy.sh</code> reaps that pond and
+          removes the worktree itself. Kevin's own warm box (<code>ah-warm</code>) is never touched.
+          <code>--base &lt;sha&gt;</code> sets the comparison commit (default: the newest
+          <code>history.csv</code> <strong>layer</strong> row with
+          <code>ebene=all,schritt=-,ergebnis=pass</code>, not a single step's),
+          <code>--no-second-vm</code> skips the counter-check, and <code>--notify</code> posts the verdict line
+          and the report path to <code>AH_NOTIFY_URL</code> (off by default).</p>
+          <p><strong>Exit codes:</strong> <code>0</code> = PASS, <code>1</code> = FAIL, <code>74</code> =
+          UNVERIFIED, <code>2</code> = usage. UNVERIFIED means the infrastructure did not let the run
+          happen, so nothing is known about the code.
+          That distinction is the whole point: &ldquo;SKIP is not verified&rdquo; applies to a whole run too.</p>
 
           <h2>Verify convention (<code>scripts/dev/verify.sh</code>)</h2>
           <p>A task&rsquo;s <code>Verify:</code> line always calls a component suite in this form:</p>
@@ -136,6 +200,42 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
           </ul>
           <p>The agent version is derived from the tag (<code>${GITHUB_REF_NAME#v}</code>) and injected into the binaries via <code>-ldflags "-X main.version=$VERSION"</code>. The <code>tauri-cli</code> is pinned to an exact version in CI and release (<code>cargo install tauri-cli --locked --version &hellip;</code>) so a new CLI release cannot break a tag build.</p>
 
+          <h2>Release assertions</h2>
+          <p>All six release-blocking defects of the 0.43.x/0.44.0 series came out of <em>execution</em>, none
+          out of static review. <code>release.yml</code> therefore checks the result, not the recipe:</p>
+          <ul>
+            <li><strong>Static agent.</strong> After the build, <code>file</code> must report the binary as
+            <code>statically linked</code> <em>and</em> <code>objdump -T</code> must import no
+            <code>GLIBC_</code> symbol. The Makefile pins <code>CGO_ENABLED=0</code>, but the result was never
+            checked: an inlined <code>go build</code> produced a binary dynamically linked against glibc&nbsp;2.39
+            that would not start on older distributions &ndash; while the crabbox tests, which use
+            <code>make</code>, stayed green.</li>
+            <li><strong>The shipped <code>.deb</code>.</strong> <code>ar t</code> on the artifact that is
+            actually uploaded: no <code>.zst</code> member. <code>build-deb.sh</code> guards its own output;
+            this guards what ends up in the release.</li>
+            <li><strong>Signature against the pinned key.</strong> Right after <code>minisign -S</code>, the
+            fresh signature is verified against the <code>MINISIGN_PUBKEY</code> pinned in
+            <code>scripts/update.sh</code>. A rotated or wrong <code>MINISIGN_SECRET_KEY</code> produces a
+            perfectly valid signature that <code>install.sh</code>/<code>update.sh</code> reject &ndash; which
+            otherwise only shows up on user machines, after publishing.</li>
+            <li><strong>The Windows binary runs.</strong> The hard job <code>agent-windows-smoke</code>
+            (<code>windows-latest</code>, tags only) downloads the agent artifact and runs
+            <code>adminhelper-agent-windows-x86_64.exe version</code>; the output must name the tag version.
+            The draft job gates on it.</li>
+            <li><strong>MSI installed and uninstalled.</strong> <code>desktop-windows</code> installs the MSI
+            silently (<code>msiexec /i &hellip; /qn /norestart /l*v</code>), asserts the success line in the log
+            and the installed <code>adminhelper.exe</code> (whose install path is still unverified &ndash;
+            the job therefore searches <code>ProgramFiles</code>, <code>ProgramFiles(x86)</code> and
+            <code>LOCALAPPDATA\Programs</code>), and uninstalls again; <code>msi.log</code> is
+            uploaded as its own artifact (never as a release asset). The job stays
+            <code>continue-on-error</code> until the Windows VM arrives &ndash; a red MSI is visible but does not
+            block.</li>
+            <li><strong>Version locations.</strong> <code>bash scripts/release/check-versions.sh
+            ${GITHUB_REF_NAME#v}</code> checks all six hand-maintained locations instead of only
+            <code>tauri.conf.json</code>, printing <code>ok</code>/<code>MISSING</code> per location. That same
+            call belongs before the tag &ndash; what is red there aborts the draft here.</li>
+          </ul>
+
           <h2>Release Signing (supply chain)</h2>
           <p>The <code>curl|bash</code> install/update flow should prove <strong>authenticity</strong>, not just transport integrity (otherwise the bundle and <code>SHA256SUMS</code> come from the same origin). Two mechanisms:</p>
           <ul>
@@ -143,7 +243,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
 <pre><code>cosign verify ghcr.io/admincave/adminhelper/server \
   --certificate-identity-regexp 'https://github.com/AdminCave/AdminHelper/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre></li>
-            <li><strong>Release assets:</strong> <code>release.yml</code> signs <code>SHA256SUMS</code> with minisign into <code>SHA256SUMS.minisig</code>. <code>install.sh</code>/<code>update.sh</code> verify that signature against a public key pinned in the script <em>before</em> trusting the checksums (fail closed).</li>
+            <li><strong>Release assets:</strong> <code>release.yml</code> signs <code>SHA256SUMS</code> with minisign into <code>SHA256SUMS.minisig</code> &ndash; and immediately verifies the fresh signature against the same public key <code>scripts/update.sh</code> pins, so a wrong secret aborts the draft instead of the users. <code>install.sh</code>/<code>update.sh</code> verify that signature against a public key pinned in the script <em>before</em> trusting the checksums (fail closed).</li>
           </ul>
           <div class="callout">
             <div><div class="callout-title">Arming (maintainer, one-time)</div>
@@ -201,8 +301,9 @@ gpg --fingerprint &lt;KEYID&gt;</code></pre>
           <h2>Release Checklist</h2>
           <ol>
             <li>Bump the versions in the files listed above to the target value.</li>
-            <li>Update the footer versions in <code>docs/**/*.html</code> (footer span + landing &ldquo;What's new&rdquo; + code samples).</li>
+            <li>Update the footer versions in <code>docs/**/*.html</code> (footer span + landing &ldquo;What's new&rdquo; + code samples). Filter on the <em>class</em> (<code>grep -rl 'class="sidebar-footer"'</code>), not on the one-line markup: the two landing pages write the footer across two lines and therefore hung from 0.43.2 through 0.45.0.</li>
             <li>Update <code>CHANGELOG.md</code> (Keep a Changelog: new section + link ref).</li>
+            <li><code>bash scripts/release/check-versions.sh X.Y.Z</code> &ndash; must report <code>0 missing</code>. The same call runs in the release workflow on the tag.</li>
             <li>Commit &amp; tag: <code>git commit -am "release: v0.24.0" &amp;&amp; git tag v0.24.0</code>.</li>
             <li><code>git push --follow-tags</code>.</li>
             <li>Watch <code>docker.yml</code> + <code>release.yml</code>; after the first image push, switch the ghcr packages to public (once).</li>
