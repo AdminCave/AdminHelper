@@ -16,6 +16,12 @@
 # The WARN lines fire ONLY when Kevin's next move would fail or something
 # irreversible looms. No trigger, no WARN line.
 #
+# Line 4 carries the weekly run's verdict, read verbatim from the newest
+# non-empty $AH_OUT_DIR/weekly/<stamp>/report.md (heavy.sh, stage 3); "kein
+# Report" when none exists yet. The WARN trigger "release without a green weekly
+# run" (CLAUDE.md §3 trigger 2) deliberately waits for stage 13 — a FAIL here
+# without a WARN line does not mean the trigger already fired.
+#
 # Implemented: version bumped without a tag · main ahead of origin · an open draft
 # release · .claude/rules or .claude/agents gitignored · an env block in the public
 # settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing.
@@ -103,12 +109,45 @@ else
   echo "Roadmap: fehlt ($ROADMAP)"
 fi
 
-# ── line 4: ledgers, PRs ──────────────────────────────────────────────────────
+# ── line 4: ledgers, PRs, weekly run ──────────────────────────────────────────
 LEDGERS="$(grep -lE '^Status:[[:space:]]*(aktiv|bereit)\b' tasks/*.md 2>/dev/null \
   | sed 's|.*/||; s|\.md$||' | paste -sd' ' -)"
 [ -n "$LEDGERS" ] || LEDGERS="—"
 PRS="$(gh_json pr list --state open --limit 50 --json number -q 'length')"
-echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: kein Report (ab 3) · Worker: — (ab 7)"
+
+# The newest weekly report's OWN first line (heavy.sh writes exactly one:
+# PASS | FAIL | UNVERIFIED (<reason>)). Nothing is re-derived here — a second
+# place computing the verdict is a second place that can disagree with it.
+weekly_line() {
+  local out f dir="" stamp day head t0 now n
+  out="${AH_OUT_DIR:-$ROOT/.crabbox-out}"
+  # Newest FIRST, and the newest non-empty report.md wins — not the newest
+  # DIRECTORY. heavy.sh creates the run directory before it starts and writes the
+  # report at the very end, so while a run is going (hours), and forever after a
+  # hard abort, the newest directory holds no verdict. Reporting "kein Report"
+  # there would hide last week's result exactly when it is still the truth.
+  # Stamps are jjjj-mm-tt-hhmm, so lexicographic order IS chronological order.
+  # The verdict itself decides, not the file's size: an unreadable report or one
+  # that starts with a blank line must fall through to the previous week just as
+  # an absent one does — otherwise the fallback has a hole of its own.
+  while IFS= read -r f; do
+    head="$(head -1 "$f" 2>/dev/null)"
+    [ -n "$head" ] || continue
+    dir="$(dirname "$f")"; break
+  done < <(ls -1d "$out"/weekly/*/report.md 2>/dev/null | sort -r)
+  [ -n "$dir" ] || { echo "kein Report"; return 0; }
+  stamp="$(basename "$dir")"; day="${stamp%-*}"
+  # Both ends normalised to UTC midnight: a local-time difference is off by one
+  # for an hour around a DST change, and "(3 d)" that flickers is worse than none.
+  if t0="$(date -u -d "$day" +%s 2>/dev/null)" && now="$(date -u -d "$(date +%F)" +%s 2>/dev/null)"; then
+    n=$(( (now - t0) / 86400 ))
+    [ "$n" -lt 0 ] && n=0   # clock skew: a report from the future is 0 days old
+    echo "$day ($n d): $head"
+  else
+    echo "$day: $head"
+  fi
+}
+echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: — (ab 7)"
 
 # ── line 5: warm boxes ────────────────────────────────────────────────────────
 WARM="$(grep -E '^[A-Za-z0-9_-]+=' .crabbox/warm.env 2>/dev/null | paste -sd' ' -)"

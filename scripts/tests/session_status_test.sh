@@ -21,6 +21,11 @@ set -uo pipefail
 # core.excludesFile could make the fixture's .claude/ ignored behind our back.
 export AH_AUTONOMOUS=0
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+# Third leak: run.sh exports AH_OUT_DIR pointing at the REAL checkout, so the
+# weekly line would read that instead of each fixture's own .crabbox-out — the
+# test passed standalone and failed inside the scripts block. A SessionStart hook
+# sees it UNSET, so that is what the fixture reproduces.
+unset AH_OUT_DIR
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$HERE/../.." && pwd)
@@ -96,7 +101,7 @@ echo "── dirty repo: all seven triggers ──"
 DIRTY="$WORK/dirty"
 mk_repo "$DIRTY" "0.46.0" "v0.45.0"
 # .claude/rules gitignored (tracked today — exactly the case --no-index catches)
-printf '.crabbox/\n.claude/\n' > "$DIRTY/.gitignore"
+printf '.crabbox/\n.crabbox-out/\n.claude/\n' > "$DIRTY/.gitignore"
 # env block in a public settings.json
 printf '{\n  "env": { "PVE_TOKEN": "secret" }\n}\n' > "$DIRTY/.claude/settings.json"
 # unpushed commit on main + one dirty worktree file
@@ -111,6 +116,23 @@ git -C "$DIRTY/tasks/private" add -A
 git -C "$DIRTY/tasks/private" commit -qm "roadmap"
 # warm box recorded
 echo "desktop=warmbox-7" > "$DIRTY/.crabbox/warm.env"
+# Two weekly reports: the NEWER one must win. Dates are relative so the "(n d)"
+# age in the line is deterministic whenever this test runs.
+OLD_DAY=$(date -d '10 days ago' +%F); NEW_DAY=$(date -d '3 days ago' +%F)
+mkdir -p "$DIRTY/.crabbox-out/weekly/$OLD_DAY-0900" "$DIRTY/.crabbox-out/weekly/$NEW_DAY-1830"
+printf 'FAIL\n\n# alt\n'                       > "$DIRTY/.crabbox-out/weekly/$OLD_DAY-0900/report.md"
+printf 'UNVERIFIED (doctor red)\n\n# neu\n'    > "$DIRTY/.crabbox-out/weekly/$NEW_DAY-1830/report.md"
+# A run in progress (or one that was killed): heavy.sh creates the directory
+# first and writes report.md last, so the NEWEST directory can be verdict-less.
+# The line must fall back to the newest real report, not to "kein Report".
+mkdir -p "$DIRTY/.crabbox-out/weekly/$(date +%F)-0900"
+: > "$DIRTY/.crabbox-out/weekly/$(date +%F)-0900/doctor.log"
+# Same class, two more holes the fallback has to cover: an empty report.md and
+# one whose first line is blank.
+mkdir -p "$DIRTY/.crabbox-out/weekly/$(date +%F)-1000"
+: > "$DIRTY/.crabbox-out/weekly/$(date +%F)-1000/report.md"
+mkdir -p "$DIRTY/.crabbox-out/weekly/$(date +%F)-1100"
+printf '\n\nPASS\n' > "$DIRTY/.crabbox-out/weekly/$(date +%F)-1100/report.md"
 
 OUT=$(SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY")
 rc=$?
@@ -125,8 +147,13 @@ grep -qF "R-0042 SEC" <<<"$OUT" && ok "roadmap: first entry" || bad "roadmap: fi
 grep -qF "R-0045 REF" <<<"$OUT" && ok "roadmap: fourth entry" || bad "roadmap: fourth entry missing"
 grep -qF "R-0046" <<<"$OUT" && bad "roadmap: fifth entry leaked (only 4 lines)" || ok "roadmap: stops after 4"
 grep -qF "## Danach" <<<"$OUT" && bad "roadmap: next section leaked" || ok "roadmap: stops at next section"
-grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: kein Report (ab 3) · Worker: — (ab 7)" <<<"$OUT" \
-  && ok "line 4: ledgers + PRs" || bad "line 4: $(grep -m1 '^Ledger' <<<"$OUT")"
+grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red) · Worker: — (ab 7)" <<<"$OUT" \
+  && ok "line 4: ledgers + PRs + weekly verdict" || bad "line 4: $(grep -m1 '^Ledger' <<<"$OUT")"
+grep -qF "Wochenlauf: $OLD_DAY" <<<"$OUT" \
+  && bad "line 4: the older report won" || ok "line 4: the newest report wins"
+grep -qF "Wochenlauf: kein Report" <<<"$OUT" \
+  && bad "line 4: a run in progress hid the last verdict" \
+  || ok "line 4: a verdict-less newest directory does not hide the last report"
 grep -qxF "VMs: warm.env desktop=warmbox-7" <<<"$OUT" && ok "line 5: warm.env" || bad "line 5: $(grep -m1 '^VMs:' <<<"$OUT")"
 
 # the seven triggers, one WARN line each
@@ -161,6 +188,30 @@ grep -q '^WARN:' <<<"$OUT" && bad "clean repo warned: $(grep -m1 '^WARN:' <<<"$O
 grep -q 'AH_TEST_DB ok' <<<"$OUT" && ok "AH_TEST_DB read from AH_DEVENV" || bad "AH_TEST_DB not resolved via devenv"
 grep -qF '· 0 dirty · origin +0/-0 ·' <<<"$OUT" && ok "clean counters" || bad "counters: $(grep -m1 AH-STATUS <<<"$OUT")"
 grep -qF 'Draft: nein' <<<"$OUT" && ok "no draft" || bad "draft state wrong"
+grep -qF 'Wochenlauf: kein Report ·' <<<"$OUT" \
+  && ok "no weekly report -> 'kein Report'" || bad "weekly: $(grep -m1 '^Ledger' <<<"$OUT")"
+# A report from the future (clock skew) must not print a negative age.
+mkdir -p "$WORK/skew/weekly/$(date -d '+2 days' +%F)-1200"
+printf 'PASS\n' > "$WORK/skew/weekly/$(date -d '+2 days' +%F)-1200/report.md"
+OUT3=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/skew" run_hook "$CLEAN")
+grep -qF "(0 d): PASS" <<<"$OUT3" \
+  && ok "a report from the future is 0 days old, never negative" \
+  || bad "skew: $(grep -m1 '^Ledger' <<<"$OUT3")"
+
+# An unparseable stamp still yields the verdict, just without an age.
+mkdir -p "$WORK/badstamp/weekly/kaputt"
+printf 'FAIL\n' > "$WORK/badstamp/weekly/kaputt/report.md"
+OUT4=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/badstamp" run_hook "$CLEAN")
+grep -qF "Wochenlauf: kaputt: FAIL" <<<"$OUT4" \
+  && ok "an unparseable stamp drops the age, not the verdict" \
+  || bad "bad stamp: $(grep -m1 '^Ledger' <<<"$OUT4")"
+
+# AH_OUT_DIR is the documented source, so it has to be honoured, not just defaulted.
+mkdir -p "$WORK/anderswo/weekly/$(date +%F)-1200"
+printf 'PASS\n' > "$WORK/anderswo/weekly/$(date +%F)-1200/report.md"
+OUT2=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" AH_OUT_DIR="$WORK/anderswo" run_hook "$CLEAN")
+grep -qF "Wochenlauf: $(date +%F) (0 d): PASS" <<<"$OUT2" \
+  && ok "AH_OUT_DIR points the weekly line elsewhere" || bad "AH_OUT_DIR ignored: $(grep -m1 '^Ledger' <<<"$OUT2")"
 
 # ══ case 3: gh unavailable -> '?', never an error ══════════════════════════════
 echo "── gh failing: '?' instead of a crash ──"

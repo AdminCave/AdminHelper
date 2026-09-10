@@ -112,7 +112,7 @@ Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fall notify
 Doku: DEVELOPMENT.md (T18)
 Abhängt von: T9
 
-### T14 — Hook: Wochenlauf-Zeile aus dem jüngsten Report  [ ]
+### T14 — Hook: Wochenlauf-Zeile aus dem jüngsten Report  [x] (Zeile 4 aus dem jüngsten report.md, sonst `kein Report`; session_status_test 45 passed, 0 failed — Fallback auf den jüngsten Report MIT Urteil, nicht auf das jüngste Verzeichnis)
 Komponente: scripts/dev · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
 Änderung: Zeile 4 `Wochenlauf: <datum> (<n> d): PASS|FAIL|UNVERIFIED` aus dem jüngsten `$AH_OUT_DIR/weekly/*/report.md`, sonst `kein Report`; Test-Fixture mit zwei Reports (jüngster zählt).
 Verify: `bash scripts/tests/session_status_test.sh` → `N passed, 0 failed`; `bash scripts/dev/hooks/session-status.sh | grep -c 'Wochenlauf:'` → 1
