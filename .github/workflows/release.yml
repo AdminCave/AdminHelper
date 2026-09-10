@@ -276,6 +276,69 @@ jobs:
         run: |
           mkdir -p dist
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist/
+      # The MSI was only ever BUILT, never installed: a broken WiX template, a
+      # missing sidecar or a bad install dir ships to the first user who runs it.
+      # Install silently, believe the installer's own verdict, find the installed
+      # exe, then remove it again so the runner is clean.
+      #
+      # AFTER "Collect artifacts" on purpose: a failed step ends the job, and the
+      # job is continue-on-error — a false red here would silently drop the MSI
+      # from the draft instead of merely reporting a problem (spec question 5:
+      # visible WITHOUT blocking the release).
+      - name: Install, verify and uninstall the MSI
+        shell: pwsh
+        # Start-Process -Wait waits for the whole process tree; a hung custom
+        # action would otherwise sit here until the 6 h job default, with the
+        # release job waiting on `needs`.
+        timeout-minutes: 15
+        run: |
+          $msi = Get-ChildItem "dist/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $msi) { Write-Host "::error::the build produced no .msi"; exit 1 }
+          $path = $msi.FullName
+          # Absolute: Start-Process resolves a relative path against the PROCESS
+          # working directory, which is not necessarily PowerShell's $PWD — the log
+          # would land somewhere the assertion and the artifact upload never look.
+          $log = Join-Path (Get-Location).Path 'msi.log'
+          Write-Host "installing $path"
+          $i = Start-Process msiexec.exe -ArgumentList '/i',"`"$path`"",'/qn','/norestart','/l*v',"`"$log`"" -Wait -PassThru
+          Write-Host "msiexec /i exit: $($i.ExitCode)"
+          # 3010 = ERROR_SUCCESS_REBOOT_REQUIRED: installed, just wants a reboot.
+          if ($i.ExitCode -ne 0 -and $i.ExitCode -ne 3010) {
+            Write-Host "::error::msiexec /i failed ($($i.ExitCode)) — see the desktop-windows-msi-log artifact"
+            exit 1
+          }
+          if (-not (Test-Path $log)) { Write-Host "::error::msiexec wrote no log at $log"; exit 1 }
+          if (-not (Select-String -Path $log -Pattern 'Installation success or error status: 0' -SimpleMatch -Quiet)) {
+            Write-Host "::error::the MSI did not report a successful installation (see the desktop-windows-msi-log artifact)"
+            exit 1
+          }
+          # Tauri's WiX template installs to %ProgramFiles%\<productName>\<productName>.exe,
+          # and productName is "adminhelper" (tauri.conf.json). The install SCOPE is
+          # UNVERIFIED — this job has never installed the MSI, and the Tauri docs
+          # only pin NSIS's per-user location — so search the plausible roots
+          # instead of failing on one guessed path.
+          $exe = $null
+          foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, (Join-Path $env:LOCALAPPDATA 'Programs'))) {
+            if (-not $root -or -not (Test-Path $root)) { continue }
+            $hit = Get-ChildItem $root -Filter 'adminhelper.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { $exe = $hit.FullName; break }
+          }
+          if (-not $exe) {
+            Write-Host "::error::no installed adminhelper.exe under ProgramFiles, ProgramFiles(x86) or LOCALAPPDATA\Programs"
+            exit 1
+          }
+          Write-Host "ok: installed at $exe"
+          $u = Start-Process msiexec.exe -ArgumentList '/x',"`"$path`"",'/qn','/norestart' -Wait -PassThru
+          Write-Host "msiexec /x exit: $($u.ExitCode)"
+          if ($u.ExitCode -ne 0 -and $u.ExitCode -ne 3010) { Write-Host "::error::MSI uninstall failed ($($u.ExitCode))"; exit 1 }
+      # always(): the log matters most when the step above just failed.
+      - name: Upload the MSI install log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-windows-msi-log
+          path: msi.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -380,7 +443,15 @@ jobs:
           echo "=== agent repo bundle ==="; tar tzf "release/adminhelper-agent-repo-${TAG}.tar.gz" | sed -n '1,10p'
       - name: Flatten and checksum
         run: |
-          find artifacts -type f -exec cp {} release/ \;
+          # download-artifact above has no `name`, so it pulls EVERY artifact of the
+          # run, one directory each. Only PAYLOAD artifacts belong in release/:
+          # desktop-windows-msi-log is diagnostics (verbose MSI log, runner paths)
+          # and must not end up checksummed, minisign-signed and published.
+          # Two filters on purpose — the directory name couples this line to the
+          # upload step, the *.log name survives a rename or a second diagnostic
+          # artifact. No release asset has ever been a .log.
+          find artifacts -type f -not -path 'artifacts/desktop-windows-msi-log/*' \
+            -not -name '*.log' -exec cp {} release/ \;
           cd release
           sha256sum * > SHA256SUMS
           echo "=== Release assets ==="

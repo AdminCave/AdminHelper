@@ -31,7 +31,7 @@ Komponente: .github · Dateien: .github/workflows/release.yml
 Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));assert 'agent-windows-smoke' in d['jobs'] and 'agent-windows-smoke' in d['jobs']['release']['needs']"`; Probe: `GOOS=windows go build` lokal, `version`-Ausgabeformat aus `apps/agent/cmd` lesen und den Vergleich darauf ausrichten
 Doku: docs/developer/cicd.html DE+EN Workflows-Tabelle (T18)
 
-### T4 — release.yml: MSI installieren, prüfen, deinstallieren  [ ]
+### T4 — release.yml: MSI installieren, prüfen, deinstallieren  [x] (Install/Assert/Uninstall nach „Collect artifacts", msi.log als eigenes Artefakt und aus `release/` ausgeschlossen; auf einem echten Runner unverifiziert — kein Windows/pwsh lokal)
 Komponente: .github · Dateien: .github/workflows/release.yml
 Änderung: Job `desktop-windows` nach „Build MSI": `msiexec /i <msi> /qn /norestart /l*v msi.log`; Assertion `Installation success or error status: 0` im Log und `adminhelper.exe` unter `%ProgramFiles%` (Pfad aus `tauri.conf.json` `productName` ableiten, im Kommentar als unverifiziert markieren); `msiexec /x <msi> /qn`; `msi.log` als Artefakt mit `if: always()`. `continue-on-error: true` bleibt (Spec Frage 5).
 Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));j=d['jobs']['desktop-windows'];assert j.get('continue-on-error') is True and any('msiexec' in str(x.get('run','')) for x in j['steps'])"`
