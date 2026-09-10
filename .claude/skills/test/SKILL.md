@@ -1,18 +1,113 @@
 ---
 name: test
-description: Run AdminHelper's real test suites on crabbox (docker/GUI/multi-host tests the dev box can't run). Use for integration/e2e/heavy tests, verifying on real Linux, or before a release.
+description: Run AdminHelper's real test suites — the quick local one, and the heavy tier on crabbox VMs (docker/GUI/multi-host) including the weekly run heavy.sh. Use for integration/e2e/heavy tests, verifying on real Linux, reading the last weekly report, or before a release.
 ---
 
-# Testing AdminHelper on crabbox
+# Testing AdminHelper
 
 The fast unit/lint suites run anywhere (and in GitHub CI). The **heavy tier** — real
 docker-compose stack, mTLS enrollment, Redis SSE fan-out, agent monitoring, apt/rpm repo
-build, and multi-host scenarios (cross-distro rpm, 3-host FRP tunnel, monitoring
-closed-loop, the real Tauri desktop GUI) — needs real Linux with Docker + a display, which
-the sandboxed dev box lacks. crabbox leases ephemeral Proxmox VMs, rsyncs the tree, runs,
-and tears down. Provider env AND token live only in the gitignored
-`.claude/settings.local.json` (nothing infra-bearing in the public `settings.json`);
-confirm with `crabbox doctor`.
+build, the upgrade path from the last release, and multi-host scenarios (cross-distro rpm,
+3-host FRP tunnel, monitoring closed-loop, the real Tauri desktop GUI) — needs real Linux
+with Docker + a display, which the sandboxed dev box lacks. crabbox leases ephemeral
+Proxmox VMs, rsyncs the tree, runs, and tears down. Provider env AND token live only in the
+gitignored `.claude/settings.local.json` (nothing infra-bearing in the public
+`settings.json`); confirm with `crabbox doctor`.
+
+## The five verbs
+
+| `/test …`  | What happens |
+|---|---|
+| `quick`    | run it here and now: `bash scripts/dev/verify.sh all --strict` |
+| `all`      | PRINT the start command for `heavy.sh all`, then stop |
+| `capstone` | PRINT the start command for `heavy.sh capstone`, then stop |
+| `weekly`   | PRINT the start command for `heavy.sh weekly`, then stop |
+| `status`   | read the newest weekly report and quote its first line |
+
+**`all`, `capstone` and `weekly` are never started from inside a session.** They run for
+hours and burn up to eight VMs; nothing here starts without Kevin (CLAUDE.md §2). Print
+exactly this and end the turn:
+
+```
+tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
+```
+
+(`all` and `capstone` are the same line with the mode swapped, and the session name may be
+anything.) Kevin starts it, closes the terminal, and reads the report afterwards.
+
+**Name these two before ending the turn** — both cost a whole run otherwise:
+`crabbox list` must be empty (a foreign box aborts the run with 74 in its first
+minute, long after the terminal is closed), and for `capstone`/`weekly` the open
+question **T7a** must be decided — the desktop stage logs in over :443 without a
+client cert and is structurally red against the enforced gateway `--capstone`
+now sets, which is ~17 VM-h for a known answer.
+
+## `status` — what the last weekly run said
+
+Newest report first; its FIRST line is the verdict and is quoted verbatim, never
+paraphrased. Glob on `report.md`, not on the directory: heavy.sh creates the run
+directory before it starts and writes the report at the end, so while a run is
+going — and after a hard abort — the newest DIRECTORY holds no verdict, and
+taking it would hide the last real one:
+
+```
+ls -1d .crabbox-out/weekly/*/report.md | sort -r        # newest first
+head -1 <the first one whose first line is not empty>   # PASS | FAIL | UNVERIFIED (<reason>)
+```
+
+The first report with a VERDICT wins, not the newest file: an aborted run leaves an
+empty `report.md`, and taking it would hide the last real one. `session-status.sh`
+does exactly this for line 4 of `AH-STATUS`.
+
+The same line is on the `AH-STATUS` block's fourth line at session start.
+
+## The weekly run — `scripts/tests/heavy.sh`
+
+```
+bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
+```
+
+- `all` = warm box → `run.sh all --strict`; `capstone` = `crabbox_multibox.sh --capstone --strict`;
+  `weekly` = both, serially. The capstone is skipped only when the `all` layer ended
+  UNVERIFIED (seven VMs must not burn into a broken environment) — a plain FAIL does not
+  stop it.
+- It is a **wrapper**: every VM operation goes through the crabbox_*.sh scripts, so stage 2
+  can swap the implementation underneath as long as the summary lines stay the same.
+- Pre-flight: `crabbox doctor`, and `crabbox list` must show no box outside this lane's pond
+  and `warm.env` — a foreign box means the capacity is not there, and the run stops before
+  burning any.
+- Results: `.crabbox-out/weekly/<jjjj-mm-tt-hhmm>/report.md` plus the pulled artifacts. The
+  report's first line is the verdict, then the wrappers' summary lines **verbatim**, then the
+  step table, `Kevin sichtet`, `Notizen`, the audit.yml verdict and the VM list. Facts, never
+  a judgement.
+- History: `tasks/private/history.csv` (one row per step per run plus a layer row), committed
+  in the private repo — never pushed.
+- `--notify` posts the verdict line + report path to `AH_NOTIFY_URL` (from `.devenv.sh`).
+  Default off.
+- Exit: **0 = PASS · 1 = FAIL · 74 = UNVERIFIED** (infrastructure — the run could not happen,
+  so nothing about the code was learned) · `2` = usage.
+
+### How a red step is classified
+
+| Verdict | How it is reached | What it means |
+|---|---|---|
+| `infra` | the box could not be had, or the step could not RUN: no warm box, warm pond not ready, a failed server lease, `strict-failed: no step ran`, `strict-failed: … (SKIP)`, wrapper exit 74 | never a regression, report reads UNVERIFIED |
+| `flaky` | green within 3 retries on the same box (`AH_NO_SYNC=1`) | quarantined in `tasks/private/seen.md`, does not fail the run |
+| `unbestaetigt` | 3× red, but green on a fresh second VM — or no PASS commit to compare against, or `--no-second-vm` | Kevin looks; never a REG |
+| `extern` | red on the second VM AND on the last PASS commit | environment/dependency, not the change |
+| `reg` | red on the second VM, green on the last PASS commit | roadmap row (class REG, `neu`) + `tasks/reg-<datum>-<schritt>.md` |
+| `fail` | red all three times, but failing DIFFERENTLY each time | reproducibly broken without the stable signature a regression claim needs — no second VM |
+
+The second VM is a **worktree** `.crabbox-worktrees/w2` with its own lane (`AH_LANE=w2`,
+pond `ah-warm-w2`); heavy.sh reaps that pond and removes the worktree itself. Kevin's own
+warm box (`ah-warm`) is never touched. `--no-second-vm` skips the check and leaves the
+candidate unconfirmed; `--base <sha>` overrides the comparison commit.
+
+### Rhythm
+
+Friday evening, one `weekly`. The first runs are noisy (the desktop chain flakes) — that is
+what the quarantine is for; `R reruns` in the run.sh summary stays 0 on purpose so the
+quarantine calibrates against un-retried suites.
 
 ## Fast loop — warm once → iterate → reap (the default; do NOT stop after each run)
 
@@ -52,6 +147,10 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
 `crabbox run --id <s> -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/tests/crabbox_bootstrap.sh'` →
 `crabbox run --id <s> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `crabbox stop --id <s>`.
 `run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>]`
+(the `all` layer includes `upgrade_path_test.sh` — last published release → this checkout —
+and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Caveat
+(T15a):** `crabbox_iter.sh` does not forward `AH_REQUIRED`, so on the box the built-in
+default applies and NO heavy step is required — a self-SKIP of any of them stays green.
 prints `N passed, M failed, K skipped, J test-skips, R reruns` and exits non-zero on fail;
 under `--strict` a skipped required step is a failure, and so is a run in which nothing ran.
 integration/e2e/all need `AH_ALLOW_REAL=1`. Bootstrap profiles:
@@ -62,8 +161,13 @@ integration/e2e/all need `AH_ALLOW_REAL=1`. Bootstrap profiles:
 `bash scripts/tests/crabbox_multibox.sh [flags]` leases a server-box + role boxes on the same
 provider bridge,
 prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--keep` to inspect):
-- `--strict`    a guard that could not run (e.g. the debian:9 image would not pull)
-                fails the run instead of passing as a note — use it for a release capstone.
+- `--strict`    a guard that could not run fails the run instead of passing as a note.
+                Since stage 3 the six conditional guards report through `skipped()` (debian:9,
+                agent-repo/CA-flip without `REPO_FP`, desktop lease, moncheck lease,
+                `--enforce`, monitoring hop), so `0 failed, 0 skipped` means "every
+                REQUESTED check ran". A failed lease (agent, tunnel, visitor, rpm, moncheck)
+                still drops its follow-up checks without a SKIP — there the accompanying
+                FAIL is the evidence.
 - `--agents N`  N agent-boxes: real `.deb` install + provision over the hop (cross-host mTLS).
 - `--rpm`       + a cross-distro rpm agent in a `rockylinux:8` container (crabbox_agentbox_rpm.sh).
 - `--tunnel`    + frps + an agent frpc STCP server + a visitor: full 3-host FRP tunnel data path.
@@ -71,7 +175,15 @@ prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--ke
                 `AH_DESKTOP_ID=<slug>` reuses a warm desktop box (skips ~30 min re-bootstrap+build).
 - `--moncheck`  + a mailhog sink box: pull ping-checks + a closed-loop email alert over the hop.
 - `--enforce`   `MTLS_ENFORCE=true`: cert-based admin seed (enroll on :8444) + assert certless :443 → 400.
-- `--capstone`  = `--agents 1 --rpm --tunnel --desktop --moncheck` (everything, one run — 7 boxes).
+- `--capstone`  = `--agents 1 --rpm --tunnel --desktop --moncheck --enforce` (everything,
+                one run — 7 boxes). `--enforce` is included since stage 3: without it the
+                MTLS_ENFORCE guard never ran in a release capstone. `heavy.sh capstone`
+                runs exactly this, with `--strict`. **Partial runs — anything short of the
+                capstone flag set — run WITHOUT `--strict`:** a missing `--enforce` reports
+                SKIP, and a SKIP fails a strict run, so `--agents 1 --desktop --strict` is
+                red before it tests anything. **Open (T7a):** the desktop stage logs in
+                over :443 without a client cert, so it is structurally red against an enforced
+                gateway — decide T7a before spending a capstone run on it.
 Roles: `crabbox_serverbox` / `agentbox` / `agentbox_rpm` / `tunnelbox` / `visitorbox` /
 `desktopbox` / `moncheckbox`. serverbox modes (tunnel/moncheck/enforce) are independent + compose.
 
@@ -120,8 +232,11 @@ a Proxmox template so cold starts skip the ~18 min bootstrap. Provisions → run
   (ttl/idle); sweep with `crabbox_reap.sh`. `crabbox stop` after one run is only for a genuine
   one-off. A box that fails sync sanity is not a debug target — stop it + re-warm.
 - **After ANY workflow / batch of agents, run `crabbox list` and stop strays** — read-only agents
-  have repeatedly leaked provisioned (`keep=true`) boxes. Never leave a VM running.
+  have repeatedly leaked provisioned (`keep=true`) boxes. Never leave a VM running. `heavy.sh`
+  checks the same list BEFORE it starts (a foreign box aborts with 74) and prints it into the
+  report afterwards — a leaked VM is a finding, not a detail.
 - **Never claim green unless it actually passed** — report the `run.sh` / multibox summary line
-  verbatim; SKIP = "not verified", not "ok".
+  verbatim; SKIP = "not verified", not "ok". For a weekly run, quote the report's first line;
+  `UNVERIFIED` is never reported as a pass and never as a regression.
 - Pre-approved (auto): `warmup / run / status / list / connect / ssh / doctor / stop / cleanup /
   artifacts pull`. Provision/cost → ask first: `prewarm / job / checkpoint create / image / bake`.

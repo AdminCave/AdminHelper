@@ -591,6 +591,15 @@ report_of | grep -q 'enforce: certless :443 was not rejected' \
   && ok "the failing assertion is named in the report" || bad "failing assertion not named"
 history_of | grep -q '^[^,]*,[^,]*,[^,]*,capstone,' && ok "history.csv has capstone rows" || bad "no capstone rows"
 
+# ── 7b: a server box that cannot be leased is infra, not a red capstone ──────
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="  FAIL server lease
+  crabbox_multibox: 0 ok, 1 failed, 0 skipped  (server=, agents=none)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "an unleasable server box -> exit 74, not a FAIL" || bad "server lease -> rc=$rc"
+history_of | grep -q ',capstone,-,infra,'   && ok "history.csv: capstone infra" || bad "rows: $(history_of)"
+
 # ── 8: weekly does not burn the capstone on an unverified `all` ──────────────
 mk_case
 export SHIM_ITER_RC=1

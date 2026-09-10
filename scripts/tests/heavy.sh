@@ -174,7 +174,13 @@ capture_summary() {  # capture_summary <logfile> <grep-pattern>
 # matching them is what keeps an unreachable hypervisor from being filed as a
 # regression. (Stage 2 can make the wrappers exit 74 and this list shrinks.)
 infra_marker() {  # infra_marker <logfile> -> prints the line, or nothing
-  grep -aE 'no warm box|warm pond not ready|lease failed|bad "?server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)' \
+  # Matched against what the wrappers PRINT, not against their source: multibox's
+  # bad() emits "  FAIL server lease", so a pattern written from the call site
+  # ("bad \"server lease\"") never fires — and the commonest capstone failure,
+  # a server box that cannot be leased, would be filed as a product FAIL.
+  # Deliberately narrow: only the failures that stop the whole run. A single
+  # agent or desktop lease failing degrades the run, it does not void it.
+  grep -aE 'no warm box|warm pond not ready|lease failed|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)' \
     "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
 }
 
