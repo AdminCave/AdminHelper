@@ -37,7 +37,7 @@ Komponente: .github · Dateien: .github/workflows/release.yml
 Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));j=d['jobs']['desktop-windows'];assert j.get('continue-on-error') is True and any('msiexec' in str(x.get('run','')) for x in j['steps'])"`
 Doku: docs/developer/cicd.html DE+EN (T18)
 
-### T5 — go test -race im CI und in run.sh  [ ]
+### T5 — go test -race im CI und in run.sh  [x] (Log-Zeile `race: on (-race)`/`race: off (no gcc)`; Evidenz: absichtliches Data-Race in internal/logging wird von `-race` als `WARNING: DATA RACE` gemeldet, ohne `-race` `ok` — Probe-Datei nicht committet)
 Komponente: .github, scripts/tests · Dateien: .github/workflows/ci.yml, scripts/tests/run.sh
 Änderung: Job `agent` in `ci.yml`: `go test -race -cover ./...`; `run.sh` Go-Step: `-race`, wenn `gcc` vorhanden (sonst wie heute plus Log-Zeile `race: off (kein gcc)`). Probe auf Wegwerf-Branch: ein absichtliches Data-Race in einem Test-Helfer wird von `-race` gemeldet (nicht committen, im Ledger als Evidenz notieren).
 Verify: `bash scripts/dev/verify.sh agent --strict` grün; Log enthält `-race`; `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert any('-race' in str(x.get('run','')) for x in d['jobs']['agent']['steps'])"`

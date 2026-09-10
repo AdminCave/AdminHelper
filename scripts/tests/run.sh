@@ -499,12 +499,22 @@ layer_unit() {
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Go agent — fmt + vet + test + cross-compile (matches CI).
+  # -race mirrors ci.yml's agent job: the agent is concurrent (monitor, frpc,
+  # config) and a data race is the bug class no review sees. The detector needs
+  # cgo and therefore a C compiler; a box without one — or one with CGO_ENABLED=0
+  # in the environment, where  fails hard — runs the suite
+  # unchanged and SAYS so. The log line is what tells a green run apart from a
+  # green run that checked less.
+  AH_RACE=""
+  if have gcc && [ "$(go env CGO_ENABLED 2>/dev/null)" = 1 ]; then AH_RACE="-race"; fi
+  export AH_RACE
   if ! only agent; then skip go-agent "go agent (vet+test+cross)" "AH_ONLY"
   elif have go; then
     run_step go-agent "go agent (vet+test+cross)" -- bash -c '
       cd apps/agent &&
       go vet ./... &&
-      go test -cover ./... $AH_ARGS &&
+      { [ -n "$AH_RACE" ] && echo "race: on (-race)" || echo "race: off (no gcc)"; } &&
+      go test $AH_RACE -cover ./... $AH_ARGS &&
       GOOS=linux   GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent &&
       GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent'
   else skip go-agent "go agent (vet+test+cross)" "go not installed"; fi

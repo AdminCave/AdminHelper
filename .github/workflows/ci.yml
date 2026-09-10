@@ -191,7 +191,13 @@ jobs:
       - name: go test
         working-directory: apps/agent
         # Coverage is report-only (no threshold) — visibility, not a gate.
-        run: go test -cover ./...
+        # -race because the agent is concurrent (monitor, frpc, config): a data
+        # race is the bug class neither review nor a single-threaded test sees.
+        # It needs cgo, which ubuntu-latest has. Measured on this job, `go test`
+        # takes ~5 s and the whole job ~38 s; the detector costs roughly 4x on
+        # the test step, so the job stays under a minute — far inside
+        # timeout-minutes: 15.
+        run: go test -race -cover ./...
       - name: Cross-compile (linux + windows)
         working-directory: apps/agent
         run: |
