@@ -25,7 +25,7 @@ Komponente: .github · Dateien: .github/workflows/release.yml
 Verify: lokale Probe: Wegwerf-Key, damit signieren, `minisign -V` gegen den Repo-Pubkey ⇒ rot; gegen den passenden Pubkey ⇒ grün; `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/release.yml'))"`
 Doku: docs/developer/cicd.html DE+EN „Release-Signatur" ein Satz (T18)
 
-### T3 — release.yml: Job agent-windows-smoke (Tag-Version aus der .exe)  [ ]
+### T3 — release.yml: Job agent-windows-smoke (Tag-Version aus der .exe)  [x] (harter Job vor `release`; Shim-Probe match/mismatch/fehlende .exe rot-grün, `version`-Format gegen `make build-windows` gelesen)
 Komponente: .github · Dateien: .github/workflows/release.yml
 Änderung: neuer Job `agent-windows-smoke` (`windows-latest`, `needs: agent`, nur auf Tags, `timeout-minutes: 10`): Artefakt `agent` laden, `.\adminhelper-agent-windows-x86_64.exe version` ausführen, Ausgabe muss `${GITHUB_REF_NAME#v}` enthalten; hart; `release` bekommt ihn in `needs` und die `if`-Bedingung wie `agent`.
 Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));assert 'agent-windows-smoke' in d['jobs'] and 'agent-windows-smoke' in d['jobs']['release']['needs']"`; Probe: `GOOS=windows go build` lokal, `version`-Ausgabeformat aus `apps/agent/cmd` lesen und den Vergleich darauf ausrichten

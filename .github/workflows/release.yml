@@ -190,6 +190,46 @@ jobs:
           if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────────────
+  # The Windows agent has never been EXECUTED before shipping — release.yml
+  # cross-compiles it on ubuntu and uploads it unopened. `version` is the
+  # cheapest proof that the .exe starts on Windows at all and carries the tag it
+  # claims (a broken cross-build, a missing runtime, a stale ldflags VERSION).
+  # Hard gate, ~1 min of windows-runner time per release.
+  # ─────────────────────────────────────────────────────────────────────────
+  agent-windows-smoke:
+    name: Go Agent smoke (Windows)
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: agent
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: agent
+          path: dist
+      - name: The .exe runs and reports the tag version
+        # bash, not pwsh: a multi-line `$out` from a pwsh call is a string ARRAY,
+        # and `if ($out -notmatch …)` on an array filters instead of testing —
+        # a subtly wrong assertion. The runners ship Git bash, which the
+        # desktop-windows job already uses.
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          exe="dist/adminhelper-agent-windows-x86_64.exe"
+          # Otherwise the commonest failure — the .exe missing from the artifact —
+          # shows up as a bare exit 127 with no annotation.
+          [ -f "$exe" ] || { echo "::error::$exe is not in the agent artifact"; exit 1; }
+          out="$("./$exe" version)"
+          echo "$exe version -> $out"
+          # Match the whole printed line, not just the digits: a bare *"$VER"*
+          # would also accept a neighbouring version (0.4.6 inside 10.4.62).
+          case "$out" in
+            *"adminhelper-agent $VER"*) echo "ok: the released .exe reports $VER" ;;
+            *) echo "::error::$exe printed '$out' — expected 'adminhelper-agent $VER'"; exit 1 ;;
+          esac
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Desktop client on Windows (MSI). Best-effort: first time this runs on a
   # GitHub Windows runner; failures must not block the release. If it fails,
   # the MSI is simply absent from the draft and can be added in a follow-up.
@@ -249,12 +289,13 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   release:
     name: Draft GitHub Release
-    needs: [desktop-linux, agent, desktop-windows]
-    # Gate on the MANDATORY Linux builds only. desktop-windows is best-effort
+    needs: [desktop-linux, agent, agent-windows-smoke, desktop-windows]
+    # Gate on the MANDATORY builds. desktop-windows is best-effort
     # (continue-on-error), so its failure must not block the draft — but a
-    # failed desktop-linux or agent build must, to avoid a partial-asset draft
-    # that looks complete while missing core assets.
-    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    # failed desktop-linux, agent or agent-windows-smoke must, to avoid a
+    # partial-asset draft that looks complete while missing core assets, or one
+    # whose Windows agent does not start.
+    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.agent-windows-smoke.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
