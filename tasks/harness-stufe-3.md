@@ -136,7 +136,7 @@ Verify: `grep -c 'heavy.sh' .claude/skills/test/SKILL.md` ≥ 3; `grep -n 'tmux 
 Doku: ist der Skill
 Abhängt von: T9
 
-### T17 — CHANGELOG, DEVELOPMENT.md, tasks/README  [ ]
+### T17 — CHANGELOG, DEVELOPMENT.md, tasks/README  [x] (CHANGELOG Unreleased, DEVELOPMENT Wochenlauf + Versions-Check, tasks/README `reg-*`)
 Komponente: Repo-Root · Dateien: CHANGELOG.md, DEVELOPMENT.md, tasks/README.md
 Änderung: CHANGELOG Unreleased „Changed" (Release-Assertionen, `-race`, `check-versions.sh`, Wochenlauf mit Klassifikation, Upgrade-Pfad, fünf Specs); DEVELOPMENT.md Abschnitte „Wochenlauf (heavy.sh)" (Start, Report, history.csv, Exit-Codes, `AH_NOTIFY_URL`), Release-Absatz um `check-versions.sh`; tasks/README „Aktueller Stand" und `reg-*`-Ledger.
 Verify: `grep -c 'heavy.sh' DEVELOPMENT.md` ≥ 2; `grep -c 'check-versions' DEVELOPMENT.md CHANGELOG.md` je ≥ 1
