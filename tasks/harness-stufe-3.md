@@ -43,12 +43,16 @@ Komponente: .github, scripts/tests · Dateien: .github/workflows/ci.yml, scripts
 Verify: `bash scripts/dev/verify.sh agent --strict` grün; Log enthält `-race`; `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert any('-race' in str(x.get('run','')) for x in d['jobs']['agent']['steps'])"`
 Doku: docs/developer/cicd.html DE+EN Test-Aggregator ein Satz (T18)
 
-### T6 — check-versions.sh mit hermetischem Test, im Release-Workflow und in der Release-Rule  [ ]
+### T6 — check-versions.sh mit hermetischem Test, im Release-Workflow und in der Release-Rule  [x] (sechs Stellen, `ok`/`MISSING` — englisch statt `FEHLT`, Memory-Regel; Fund: die zwei mehrzeiligen Footer in docs/index.html + docs/en/index.html hingen seit 0.43.2 → Muster auf die Klasse umgestellt, Floor 38, Footer mitgebumpt, release.md Punkt 5 korrigiert; offene Frage T6a)
 Komponente: scripts/release · Dateien: scripts/release/check-versions.sh (neu), scripts/tests/check_versions_test.sh (neu), .github/workflows/release.yml, .claude/rules/release.md
 Änderung: Skript nach Spec (sechs Stellen, `ok`/`FEHLT` je Zeile, Exit 1); Test mit Fixture-Baum (alles richtig ⇒ 0; ein Footer alt ⇒ 1 mit Dateiname; CHANGELOG-Abschnitt fehlt ⇒ 1); `release.yml` Schritt „Verify the desktop version matches the tag" ruft `bash scripts/release/check-versions.sh "${GITHUB_REF_NAME#v}"`; `.claude/rules/release.md` nennt den Aufruf vor dem Tag; Test in die Liste des `scripts`-Blocks in `run.sh`. SPDX-Header.
 Verify: `bash scripts/tests/check_versions_test.sh` → `N passed, 0 failed`; `bash scripts/release/check-versions.sh 0.45.0` → Exit 0 auf dem heutigen Stand; `bash scripts/release/check-versions.sh 0.46.0` → Exit 1 mit sechs `FEHLT`
 Doku: .claude/rules/release.md (in der Task); DEVELOPMENT.md Release-Absatz (T18)
 Abhängt von: —
+
+### T6a — Prerelease-Tags und die sechs Versions-Stellen  [?]
+Komponente: scripts/release · Dateien: scripts/release/check-versions.sh
+Frage an Kevin: `check-versions.sh` vergleicht **verbatim**, ein Beta-Tag `v0.46.0-beta.1` verlangt diesen String also auch in 38 Doku-Footern, im CHANGELOG-Abschnitt `## [0.46.0-beta.1]` und in beiden News-Callouts. Der alte Inline-Schritt konnte bei einem Prerelease **nie** grün werden (`grep -o '[0-9][0-9.]*'` schnitt das Suffix ab, `$VER` behielt es) — das Gate wird also nicht gelockert, sondern Prereleases erstmals überhaupt möglich. Vorschlag: Stellen 1–3 (tauri/Cargo/Cargo.lock) bleiben verbatim, Stellen 4–6 (CHANGELOG, Footer, News) prüfen gegen `${VER%%-*}`. Vor dem ersten `beta`-Tag zu entscheiden (CLAUDE.md §2 sieht `beta` nach jedem grünen Wochenlauf vor).
 
 ### T7 — crabbox_multibox.sh: --capstone mit enforce, vier stille Skips gezählt, Null-Agents rot  [ ]
 Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh

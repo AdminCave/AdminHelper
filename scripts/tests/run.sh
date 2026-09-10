@@ -414,7 +414,7 @@ layer_lint() {
 
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
-    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh
+    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
@@ -431,7 +431,7 @@ layer_lint() {
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test crabbox_iter_flags_test
-desktop_e2e_skip_test"
+desktop_e2e_skip_test check_versions_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
@@ -440,8 +440,8 @@ AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
 scripts_block() {
   local t rc skipped=0 ran=0
   # Two of the block's tests start run.sh themselves. They pin --step or a layer
-  # that never reaches this block, but a future one might not — and 13 tests per
-  # level is a fork bomb, not a test run.
+  # that never reaches this block, but a future one might not — and the whole
+  # list per level is a fork bomb, not a test run.
   [ -z "${AH_IN_SCRIPTS_BLOCK:-}" ] || { echo "  refusing to nest the scripts block"; return 1; }
   export AH_IN_SCRIPTS_BLOCK=1
   for t in $AH_SCRIPT_TESTS; do
@@ -454,7 +454,7 @@ scripts_block() {
       *)  echo "     $t: FAILED (rc=$rc)"; return "$rc" ;;
     esac
   done
-  # One block, one result for thirteen tests: if even one could not run, PASS
+  # One block, one result for the whole list: if even one could not run, PASS
   # would bury it. Returning 75 hands the verdict to _skip, which owns the strict
   # policy for every other step too — so the block gets the same `strict-failed`
   # wording, obeys AH_REQUIRED like everything else, and every skip stays visible
@@ -542,7 +542,7 @@ layer_unit() {
   # Ops/harness shell tests — hermetic, no docker, no display (see scripts_block).
   # AH_ARGS has no meaning here (the knob is AH_SCRIPT_TESTS), and silently
   # ignoring it would let `verify.sh scripts -- install_test` look narrowed while
-  # all thirteen ran.
+  # the whole list ran.
   if [ -n "$AH_ARGS" ] && only scripts && [ -n "$AH_ONLY" ]; then
     echo "the 'scripts' step takes no -- args (use AH_SCRIPT_TESTS); got: $AH_ARGS"; exit 2
   fi

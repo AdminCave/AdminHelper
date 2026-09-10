@@ -25,13 +25,19 @@ paths:
 
 ## Bump-Commit `chore(release): bump version to X.Y.Z` — synchron ändern
 
+**Vor dem Tag prüfen, nicht durchzählen:** `bash scripts/release/check-versions.sh X.Y.Z` druckt je Stelle
+`ok`/`MISSING` und endet mit 1, wenn eine fehlt. `release.yml` ruft dasselbe Skript auf dem Tag auf — was hier
+rot ist, bricht dort den Draft ab.
+
 1. `apps/desktop/src-tauri/tauri.conf.json` `"version"` — Release-Gate: muss exakt dem Tag entsprechen, sonst bricht
    `release.yml` ab.
 2. `apps/desktop/src-tauri/Cargo.toml` `version`.
 3. `apps/desktop/src-tauri/Cargo.lock` — nach dem Bump `cargo check -q` laufen lassen, sonst wird `--locked` im CI rot.
 4. `CHANGELOG.md` — neuer Abschnitt `## [X.Y.Z] - YYYY-MM-DD`.
-5. Doku-Sidebar-Footer (36 HTML-Dateien, DE + EN):
-   `grep -rl '<div class="sidebar-footer"><span>v' docs --include='*.html' | xargs sed -i 's|<span>vALT</span>|<span>vNEU</span>|'`
+5. Doku-Sidebar-Footer (**38** HTML-Dateien, DE + EN) — auf die Klasse filtern, nicht auf das
+   einzeilige Markup: `docs/index.html` und `docs/en/index.html` schreiben den Footer über zwei
+   Zeilen und hingen deshalb von 0.43.2 bis 0.45.0 fest:
+   `grep -rl 'class="sidebar-footer"' docs --include='*.html' | xargs sed -i 's|<span>vALT</span>|<span>vNEU</span>|'`
 6. News-Callouts in `docs/index.html` + `docs/en/index.html` („Was ist neu in X.Y.Z?" / "What's new in X.Y.Z?").
 
 **Aus dem Tag abgeleitet, nicht anfassen:** Agent (`release.yml` `VERSION=${GITHUB_REF_NAME#v}`; `build-deb.sh` /

@@ -364,16 +364,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # The agent + Docker images derive their version from the tag, but the
-      # desktop version lives in tauri.conf.json and is bumped by hand — assert
-      # it matches the tag so a forgotten bump fails the release, not a user.
-      - name: Verify the desktop version matches the tag
-        run: |
-          set -euo pipefail
-          VER="${GITHUB_REF_NAME#v}"
-          tauri=$(grep -m1 '"version"' apps/desktop/src-tauri/tauri.conf.json | grep -o '[0-9][0-9.]*' | head -1)
-          test "$tauri" = "$VER" || { echo "::error::tauri.conf.json version ($tauri) != tag ($VER)"; exit 1; }
-          echo "version OK: $VER"
+      # The agent + Docker images derive their version from the tag, but six
+      # places are bumped by hand — and this step only ever checked ONE of them
+      # (tauri.conf.json), which is why the doc sidebar footers hung three
+      # releases long. check-versions.sh checks all six and prints them as a
+      # checklist; it is the same command .claude/rules/release.md tells Kevin to
+      # run before tagging, so a red release here is never a surprise.
+      - name: Verify every hand-maintained version matches the tag
+        run: bash scripts/release/check-versions.sh "${GITHUB_REF_NAME#v}"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
