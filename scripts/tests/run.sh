@@ -81,7 +81,7 @@ export AH_ONLY AH_STRICT
 #              ca-issuer-pytest · go-agent · desktop-cargo · desktop-ui-vitest
 #              desktop-e2e-lint · web-vitest · scripts
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build
+#                agent-monitoring · repo-build · upgrade-path
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 AH_REQUIRED_DEFAULT="ruff shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
@@ -574,6 +574,11 @@ layer_integration() {
   run_step sse-push "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
   run_step agent-monitoring "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
   run_step repo-build "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
+  # The only step that starts from a PUBLISHED release rather than from scratch:
+  # both services migrate on startup, so a migration that only works on an empty
+  # database is invisible to every other suite here. Needs the network (ghcr +
+  # the GitHub API) and self-skips with 75 without it.
+  run_step upgrade-path "upgrade_path (last release -> HEAD)" -- bash scripts/tests/upgrade_path_test.sh
   # update_test/agent_install_test/diagnostics_test used to run here too. They are
   # hermetic, so they belong in the unit layer's scripts block — running them in
   # both meant the heavy layer paid for them twice and the unit layer looked

@@ -118,11 +118,16 @@ Komponente: scripts/dev · Dateien: scripts/dev/hooks/session-status.sh, scripts
 Verify: `bash scripts/tests/session_status_test.sh` → `N passed, 0 failed`; `bash scripts/dev/hooks/session-status.sh | grep -c 'Wochenlauf:'` → 1
 Doku: DEVELOPMENT.md Hook-Absatz ein Satz (T18)
 
-### T15 — upgrade_path_test.sh (Integration-Layer)  [ ]
+### T15 — upgrade_path_test.sh (Integration-Layer)  [x] (vier Schritte nach Spec 3c, dep-gated; shellcheck sauber, ohne Docker Exit 75 — der reale Lauf steht im Heavy-`all` aus. Voraussetzungen auf der Box: freie Ports :443/7000/7443 für den zweiten Stack aus Schritt 4, `minisign` und `make` installiert. Der Schritt kann heute **nicht** required werden — siehe T15a)
 Komponente: scripts/tests · Dateien: scripts/tests/upgrade_path_test.sh (neu), scripts/tests/run.sh
 Änderung: nach Spec 3c: Vorgänger-Tag per anonymer API, Stack aus `ghcr.io/admincave/*:<tag>` mit Compose-Override, Seeds über `e2e_api.py`, Wechsel auf Checkout-Images (`adminhelper-test/*`, Bau wie `integration_stack_test.sh`), Assertion Seeds lesbar + neuer Agent-Report; Schritt 4 `scripts/update.sh --ref <tag>` gegen einen zweiten Stack im Vorgänger-Stand (eigene Marker, 75 ohne Runtime-Bundle). Dep-gated (Docker, Netz), Exit 75 ohne Voraussetzung; Aufnahme in `layer_integration`; Required-Menge: nur auf der Box (`AH_REQUIRED_DEFAULT` unverändert, Box-Profil setzt ihn). SPDX-Header.
 Verify: `shellcheck --severity=warning scripts/tests/upgrade_path_test.sh` leer; `PATH=/usr/bin:/bin bash scripts/tests/upgrade_path_test.sh; echo $?` ohne Docker → `75`; realer Lauf im Heavy-`all` mit Marker `UPGRADE_OK` und `UPDATE_SH_OK|UPDATE_SH_SKIP`
 Doku: docs/developer/cicd.html DE+EN Test-Aggregator (T18)
+
+### T15a — `AH_REQUIRED` erreicht die Box nicht  [?]
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_iter.sh
+Befund (im T15-Review aufgedeckt): `crabbox_iter.sh:139-141` reicht nur `AH_ALLOW_REAL`, `AH_CAPTURE`, die Evidence-Envs und `AH_ONLY` an die Box weiter. Auf dem Weg `heavy.sh all` → `crabbox_iter.sh all --strict` → `run.sh all --strict` fällt `AH_REQUIRED` also weg, und auf der Box gilt `AH_REQUIRED_DEFAULT` — das keinen einzigen Integration-/e2e-Schritt enthält. Ein self-SKIP von `upgrade-path` (kein Netz, Images des Vorgänger-Tags weg, `docker manifest inspect` kaputt) ist damit kein `strict-failed`, der Lauf bleibt grün, und `heavy.sh` klassifiziert es nicht einmal als `UNVERIFIED` — der teuerste Schritt der Suite fehlt still. Betrifft heute genauso `integration-stack`, `repo-build`, `sse-push`, `agent-monitoring` und die GUI-Suiten; kein Regress durch T15, aber Stufe 3 lebt von „SKIP heißt nicht verifiziert".
+Frage an Kevin: `AH_REQUIRED` in `crabbox_iter.sh`s `ENVS` durchreichen (eine Zeile, dieselbe Charset-Prüfung wie `AH_ONLY`) — und dann in einem Zug entscheiden, welche schweren Schritte auf der Box wirklich Pflicht sind. Das macht bisher still übersprungene Schritte auf einen Schlag rot, ist also eine bewusste Entscheidung und keine Nebenwirkung dieser Task.
 
 ### T16 — /test-Skill neu geschrieben  [ ]
 Komponente: .claude/skills · Dateien: .claude/skills/test/SKILL.md

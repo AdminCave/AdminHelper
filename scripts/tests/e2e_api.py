@@ -122,6 +122,12 @@ def main(argv):
                 },
             )["id"]
         )
+    elif op == "count-connections":
+        # Read-back for the upgrade path: a migration that drops or duplicates
+        # rows in a NON-EMPTY table is invisible to every suite that starts fresh.
+        (server_id,) = rest
+        conns = _call(base, token, "GET", "/api/connections")
+        print(sum(1 for c in conns if server_id in (c.get("serverId"), c.get("server_id"))))
     elif op == "web-connection":
         name, url = rest
         print(
