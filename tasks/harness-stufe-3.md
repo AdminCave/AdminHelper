@@ -11,6 +11,8 @@ Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Roadmap: R-0003 (schließt R-0021, R-0022 ein) · Hängt ab von: R-0002 (gemergt, PR #11)
+**Abweichung von `Commit-Granularität: pro Task` (T9–T13):** die fünf Tasks ändern dieselben zwei Dateien und sind ein Feature. Das Review von T9 hat den gemeinsamen Kern noch einmal deutlich bewegt (stale `last-all.json`, fail-open `crabbox list`, Infra-Marker der Wrapper, gebundener `doctor`, Artefakt-Sammlung); vier von Hand rekonstruierte Zwischenstände dieser Dateien synchron zu halten wäre danach mehr Fehlerquelle als Recovery-Gewinn — und ein Commit, dessen Suite ich in genau diesem Stand nicht real gefahren habe, wäre ein `[x]` ohne Beweis. Deshalb **ein** Commit für T9–T13. Reviewt wurde der T9-Schnitt; die späteren Anteile gehen in das Abschluss-`/code-review`.
+
 Workflow-Änderungen an `release.yml` sind erst mit dem nächsten Tag real prüfbar; jede solche Task nennt deshalb eine lokale Probe (`act` ist nicht vorhanden) und die Stelle, an der der nächste Release-Lauf die Assertion zeigt.
 
 ### T1 — release.yml: Agent statisch, kein GLIBC-Symbol, .deb ohne zstd  [x] (Assert-Schritt + zstd-Guard in Collect artifacts; lokal grün/rot geprüft)
@@ -75,35 +77,35 @@ Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_misc.sh (neu), s
 Verify: `shellcheck --severity=warning scripts/tests/desktop_e2e_misc.sh` leer; `bash scripts/tests/desktop_e2e_skip_test.sh` zählt jetzt 8 Skripte (Liste aus dem Verzeichnis) → `8 passed`; realer Lauf im Heavy-`all`
 Doku: keine (intern)
 
-### T9 — heavy.sh: all, capstone, weekly, Report, history.csv  [ ]
+### T9 — heavy.sh: all, capstone, weekly, Report, history.csv  [x] (Wrapper mit Vorab-Check, Report, history.csv, privatem Commit; heavy_test 32 passed, 0 failed)
 Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh (neu), scripts/tests/heavy_test.sh (neu)
 Änderung: Entrypoint nach Spec: Vorab-Check (`crabbox doctor`, `crabbox list` ohne fremde Boxen, sonst 74), `all` über `crabbox_warm.sh desktop` + `crabbox_iter.sh all --strict`, `capstone` über `crabbox_multibox.sh --capstone --strict`, `weekly` seriell; `$AH_OUT_DIR/weekly/<stempel>/report.md` mit Kopfzeile `PASS|FAIL|UNVERIFIED (<grund>)`, Summary-Zeilen wörtlich, VM-Liste danach; `history.csv` (Schema aus der Spec) je Schritt aus `last-all.json` plus Ebenen-Zeile; Commit im privaten Repo, falls vorhanden; Exit 0/1/74. Test: Shims für `crabbox`, `crabbox_warm.sh`, `crabbox_iter.sh`, `crabbox_multibox.sh` (Fixtures liefern `last-all.json` und Summary-Zeilen), prüft Report-Kopf, wörtliche Summary, `history.csv`-Zeilen, Exit 74 bei fremder Box. SPDX-Header.
 Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed`; `bash scripts/tests/heavy.sh` ohne Argument → Usage, Exit 2; `shellcheck --severity=warning scripts/tests/heavy.sh` leer
 Doku: DEVELOPMENT.md (T18)
 Abhängt von: T7
 
-### T10 — heavy.sh: Klassifikation INFRA und FLAKY (Wiederholung auf derselben Box)  [ ]
+### T10 — heavy.sh: Klassifikation INFRA und FLAKY (Wiederholung auf derselben Box)  [x] (INFRA endet die Ebene ohne Retry; bis 3 Wiederholungen mit AH_NO_SYNC=1, Desktop-Suiten spec-genau; heavy_test 48 passed, 0 failed — `kandidat` ist hier noch Endzustand, T11 löst ihn auf)
 Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
 Änderung: Exit 74 oder `strict-failed: <step> (SKIP)` ⇒ `infra` + Kopf `UNVERIFIED`; rote Schritte bis 3× per `crabbox_iter.sh all --strict --step <name>` mit `AH_NO_SYNC=1` (Desktop-Suiten spec-genau über `AH_SPEC`); ein grüner Rerun ⇒ `flaky` in `history.csv` + Zeile in `tasks/private/seen.md` (`quarantine · <schritt> · <datum> · <zähler> · Ablauf +30 d`); 3× identisch rot (gleicher erster Fehlermarker) ⇒ `kandidat`. Test: Fixture-Sequenzen rot/grün/…, rot/rot/rot, 74.
 Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fälle infra, flaky, kandidat enthalten)
 Doku: keine (T18)
 Abhängt von: T9
 
-### T11 — heavy.sh: zweite VM und Gegenprobe gegen den letzten PASS  [ ]
+### T11 — heavy.sh: zweite VM und Gegenprobe gegen den letzten PASS  [x] (Worktree w2 in eigener Lane, Gegenprobe gegen den letzten PASS; unbestaetigt/reg/extern; heavy_test 62 passed, 0 failed)
 Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
 Änderung: für `kandidat`: Worktree `.crabbox-worktrees/w2` auf HEAD, `AH_LANE=w2 crabbox_warm.sh desktop`, Schritt dort einmal (`unbestätigt` bei grün); dann `--base <sha>` (Default: jüngste `history.csv`-Zeile `ebene=all,ergebnis=pass`; ohne PASS ⇒ `unbestätigt`) im Worktree auschecken, Schritt erneut: Basis grün ⇒ `reg`, Basis rot ⇒ `extern`; `--no-second-vm` überspringt (Kandidat bleibt `unbestätigt`); Aufräumen `crabbox_reap.sh --pond ah-warm-w2` + `git worktree remove`. Test: Fixtures für unbestätigt/reg/extern, Worktree-Anlage und -Abbau im Fixture-Repo.
 Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fälle unbestätigt, reg, extern, kein-PASS); `git worktree list` nach dem Test ohne `w2`
 Doku: keine (T18)
 Abhängt von: T10
 
-### T12 — heavy.sh: REG-Ausgabe als Roadmap-Zeile und Kurz-Ledger, Dedup  [ ]
+### T12 — heavy.sh: REG-Ausgabe als Roadmap-Zeile und Kurz-Ledger, Dedup  [x] (Roadmap-Zeile + reg-Ledger + Dedup über seen.md, audit.yml-Zeile im Report; heavy_test 81 passed, 0 failed)
 Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
 Änderung: `reg` ⇒ Zeile unter „Neu" in `tasks/private/ROADMAP.md` (nächste freie `R-nnnn`, Klasse REG, Quelle `weekly <datum> · <commit> · Zweit-VM rot · Basis <sha> grün`, Ablauf `nie`; `.bak` vorher) und `tasks/reg-<datum>-<schritt>.md` (`Status: geplant`, `Komponente:`, Verify in Flag-Form, Beweis-Absatz); Dedup gleicher Schritt + gleiche Fehlerzeile in 30 Tagen ⇒ nur `history.csv`; `audit.yml`-Zeile per anonymer GitHub-API in den Report, `failure` ⇒ REL-Zeile `deps-audit` mit Run-Datum als Dedup. Test: Roadmap-Fixture, Zeilenzahl +1, Dedup schreibt nicht doppelt, Ledger-Datei existiert mit `Status: geplant`.
 Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fälle reg-Zeile, dedup, audit-failure)
 Doku: tasks/README.md ein Satz zu `reg-*`-Ledgern
 Abhängt von: T11
 
-### T13 — heavy.sh: --notify (Default aus)  [ ]
+### T13 — heavy.sh: --notify (Default aus)  [x] (--notify an AH_NOTIFY_URL, Default aus, fehlgeschlagener POST ist kein Laufsfehler; heavy_test 89 passed, 0 failed)
 Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
 Änderung: `--notify` postet die Kopfzeile plus Pfad des Reports per `curl -m 10` an `AH_NOTIFY_URL` (aus `.devenv.sh`); ohne URL: Hinweis, kein Fehler. Test mit `curl`-Shim.
 Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fall notify)

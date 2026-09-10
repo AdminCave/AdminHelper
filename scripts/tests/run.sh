@@ -431,7 +431,7 @@ layer_lint() {
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test crabbox_iter_flags_test
-desktop_e2e_skip_test check_versions_test"
+desktop_e2e_skip_test check_versions_test heavy_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
