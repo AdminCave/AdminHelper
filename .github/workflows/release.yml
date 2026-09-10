@@ -113,6 +113,35 @@ jobs:
         # the crabbox tests — which DO use `make` — stayed green. One build
         # definition means the tested binary is the shipped binary.
         run: make build-linux build-windows
+      # The Makefile pins CGO_ENABLED=0, but nothing checked the RESULT. Defect
+      # 4120005 shipped a dynamically linked agent (GLIBC_2.34 not found on older
+      # distros) because the build had been inlined; the tests stayed green
+      # because they build through `make`. Assert the property, not the recipe.
+      - name: Assert static agent binary
+        run: |
+          set -euo pipefail
+          bin=apps/agent/bin/adminhelper-agent
+          # `|| true` below would also swallow a MISSING objdump, turning the
+          # GLIBC_ assertion into a silent no-op — the very failure mode this
+          # step exists against. Demand the tool first.
+          command -v objdump >/dev/null || { echo "::error::objdump missing (binutils)"; exit 1; }
+          ftype="$(file -b "$bin")"
+          # objdump exits 1 with "not a dynamic object" on a static binary — that is
+          # the good case, so don't let `set -e` (or pipefail) turn it into an error.
+          syms="$(objdump -T "$bin" 2>&1 || true)"
+          case "$ftype" in
+            *"statically linked"*) ;;
+            *)
+              echo "::error::agent binary is not statically linked"
+              echo "file: $ftype"; echo "objdump -T:"; echo "$syms"
+              exit 1 ;;
+          esac
+          if printf '%s' "$syms" | grep -q 'GLIBC_'; then
+            echo "::error::agent binary imports GLIBC_ symbols — it will not start on older distros"
+            echo "file: $ftype"; echo "objdump -T:"; echo "$syms"
+            exit 1
+          fi
+          echo "ok: static, no GLIBC_ imports — $ftype"
       - name: Download frpc (bundled into deb/rpm)
         run: |
           curl -fsSL -o frpc.tar.gz \
@@ -136,11 +165,24 @@ jobs:
           VERSION="$VERSION" bash apps/agent/build-rpm.sh
       - name: Collect artifacts
         run: |
+          set -euo pipefail
           mkdir -p dist
           cp adminhelper-agent_*.deb dist/
           cp adminhelper-agent-*.rpm dist/
           cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
           cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
+          # build-deb.sh guards its own output; this guards the artifact that is
+          # actually uploaded. zstd members are unreadable by dpkg on Debian
+          # Stretch/Buster and appliance firmware ("unknown compression for member").
+          for deb in dist/adminhelper-agent_*.deb; do
+            members="$(ar t "$deb")"
+            if printf '%s' "$members" | grep -q '\.zst$'; then
+              echo "::error::$deb uses zstd members — breaks dpkg on older targets"
+              echo "$members"
+              exit 1
+            fi
+            echo "ok: $deb members: $(printf '%s' "$members" | tr '\n' ' ')"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: agent
