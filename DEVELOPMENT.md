@@ -450,6 +450,14 @@ ohne echten Defekt. Der Smoke wie auch die **Desktop-Live-E2E**
 (`desktop_e2e_live.sh` + `desktop_e2e_tunnel.sh`) laufen auf crabbox bzw. lokal
 — vor Releases von Hand ausfuehren.
 
+### Versions-Stellen vor einem Release pruefen
+
+Sechs Stellen werden von Hand gebumpt (`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`,
+`CHANGELOG.md`, 38 Doku-Sidebar-Footer, zwei News-Callouts). `bash
+scripts/release/check-versions.sh X.Y.Z` druckt je Stelle `ok`/`MISSING` und endet mit 1,
+sobald eine fehlt — derselbe Aufruf laeuft im Release-Workflow auf dem Tag. Details und
+die Bump-Reihenfolge: `.claude/rules/release.md`.
+
 ### Schwere Suites auf crabbox (Multi-Host + schneller Loop)
 
 Wer kein lokales Docker/Display hat (z. B. die Agent-Sandbox), faehrt die schweren
@@ -488,6 +496,68 @@ Steps melden SKIP). `crabbox_iter.sh` reicht die Flags an die Box weiter.
   Server- + Agent-Box(en) auf `vmbr1`; mit `--desktop` zusaetzlich eine Box, die die
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/
   Monitoring) — Cross-Host-mTLS, echtes `.deb`, Monitoring ueber den Netz-Hop.
+  `--capstone` ist die Release-Kombination (alle Szenarien plus `--enforce`).
+
+### Wochenlauf (heavy.sh)
+
+Der schwere Tier laeuft nicht mehr „wenn man daran denkt", sondern als ein Lauf mit
+Report und Historie. **Nichts davon startet von selbst** — Kevin startet ihn, ueblicherweise
+in `tmux`, und liest hinterher den Report:
+
+```bash
+tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
+```
+
+```
+bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
+```
+
+- `all` = warme Box → `run.sh all --strict`; `capstone` = `crabbox_multibox.sh --capstone
+  --strict`; `weekly` = beides seriell. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
+  UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL
+  stoppt ihn nicht.
+- **Vorab:** `crabbox doctor`, und `crabbox list` darf keine fremde Box zeigen (nicht im
+  Pond dieser Lane, nicht in `warm.env`) — sonst ist die Kapazitaet nicht da und der Lauf
+  bricht ab, bevor er eine VM verbraucht.
+- **Report:** `.crabbox-out/weekly/<jjjj-mm-tt-hhmm>/report.md`. Erste Zeile ist das Urteil
+  (`PASS` | `FAIL` | `UNVERIFIED (<grund>)`), dann die Summary-Zeilen der Wrapper
+  **woertlich**, die Schritt-Tabelle, „Kevin sichtet", die Notizen, die `audit.yml`-Zeile und
+  die VM-Liste danach. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
+  Session-Start in Zeile 4 des `AH-STATUS`-Blocks.
+- **Historie:** `tasks/private/history.csv`
+  (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
+  Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
+  steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
+  committet im privaten Repo, **nie** gepusht. Ein `skip` faerbt die Ebene heute nicht rot
+  (siehe T15a unten): `ergebnis` ∈ `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg`.
+- **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
+  warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `strict-failed: no step
+  ran`, `strict-failed: … (SKIP)` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report
+  hat dann bewusst keine Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine
+  Regression. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert: bis zu
+  drei Wiederholungen
+  desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
+  (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
+  (Worktree `.crabbox-worktrees/w2`, Lane `w2`, eigener Pond): dort gruen ⇒ `unbestaetigt`,
+  dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile
+  Klasse REG plus `tasks/reg-<datum>-<schritt>.md`), Basis ebenfalls rot ⇒ `extern`.
+  Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die
+  stabile Signatur, die eine Regressions-Behauptung braucht — keine Zweit-VM).
+  `--no-second-vm` ueberspringt die Zweit-VM, `--base <sha>` setzt den Vergleichs-Commit.
+- **Exit-Codes:** `0` = PASS, `1` = FAIL, `74` = UNVERIFIED (Infrastruktur — der Lauf konnte
+  nicht stattfinden, ueber den Code ist damit nichts bekannt), `2` = Usage. Als Infrastruktur
+  zaehlen auch die Faelle, in denen die Wrapper nur `1` liefern: keine warme Box, Warm-Pond
+  nicht bereit, fehlgeschlagenes Server-Lease, `strict-failed: no step ran`.
+- **`--notify`** postet die Urteilszeile und den Report-Pfad an `AH_NOTIFY_URL` (aus
+  `.devenv.sh`, gitignored); Default aus, ein fehlgeschlagener POST ist kein Fehler des Laufs.
+
+**Zwei Vorbehalte** (beide im Ledger `tasks/harness-stufe-3.md`): **T7a** — `--capstone` setzt
+seit Stufe 3 `--enforce`, das Gateway verlangt damit ein Client-Zertifikat auf :443; die
+Desktop-Etappe enrollt deshalb vor jedem Spec eine Geraete-Identitaet ueber die certlose
+Ebene :8444 (ein Einmal-Token je Spec, kurz vor der Etappe gemintet). Umgesetzt, aber erst ein echter Capstone-Lauf beweist es.
+**T15a** — `crabbox_iter.sh` reicht `AH_REQUIRED` nicht an die Box weiter, dort gilt also der
+eingebaute Default ohne einen einzigen schweren Schritt: ein Self-SKIP von `upgrade-path` oder
+`integration-stack` bleibt gruen und wird nicht einmal als UNVERIFIED klassifiziert.
 
 ---
 

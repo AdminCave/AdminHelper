@@ -9,13 +9,15 @@
 # Then asserts each agent enrolled an mTLS identity and pushed a monitoring report.
 #
 #   bash scripts/tests/crabbox_multibox.sh [--agents N] [--rpm] [--tunnel]
-#       [--desktop] [--moncheck] [--capstone] [--keep] [--strict]
+#       [--desktop] [--moncheck] [--enforce] [--capstone] [--keep] [--strict]
 #   --strict   a guard that could not run fails the capstone (release gate)
 #   --rpm      + a cross-distro rpm agent (rockylinux)      (S2)
 #   --tunnel   + frps + agent frpc STCP server + a visitor  (S4, 3-host tunnel)
 #   --desktop  + the real Tauri GUI vs the remote server     (S3)
 #   --moncheck + pull ping-checks + a closed-loop email alert (S5)
-#   --capstone = --agents 1 --rpm --tunnel --desktop --moncheck (S6: all in one run)
+#   --enforce  + MTLS_ENFORCE=true: the certless data plane must be rejected
+#   --capstone = --agents 1 --rpm --tunnel --desktop --moncheck --enforce
+#              (S6: all in one run — the release gate)
 #
 # Validates over the single-host suites: cross-host mTLS with SAN=<server IP> (not
 # localhost), real package install + systemd, and the monitoring pipeline over a real
@@ -34,7 +36,10 @@ SKIPPED=0; MB_DEBIAN9_SKIPPED=0
 while [ $# -gt 0 ]; do case "$1" in
   --agents) AGENTS="${2:?}"; shift ;; --keep) KEEP=1 ;; --desktop) DESKTOP=1 ;; --rpm) RPM=1 ;;
   --tunnel) TUNNEL=1 ;; --moncheck) MONCHECK=1 ;; --enforce) ENFORCE=1 ;;  # D2: MTLS_ENFORCE=true
-  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1 ;;  # S6: everything, one run
+  # S6: everything, one run. --enforce included (R-0022): without it the
+  # MTLS_ENFORCE guard never ran in a release capstone, which is the one place
+  # the cert-gated data plane is supposed to be proven.
+  --capstone) AGENTS=1; RPM=1; TUNNEL=1; DESKTOP=1; MONCHECK=1; ENFORCE=1 ;;
   # A flag, not just the env: AH_STRICT is set by run.sh alone, which never
   # starts this script, and a `AH_STRICT=1 crabbox_multibox.sh` prefix is what
   # .claude/rules/testing.md forbids ("Env-Bedarf loest das Skript auf").
@@ -181,9 +186,13 @@ case "$OLDDPKG" in
   *) MB_DEBIAN9_SKIPPED=1
      skipped "old-Debian check (marker missing: debian:9 not pullable, or the .deb build failed) — the two release-breaking regressions of 0.43.x are unguarded" ;;
 esac
-[ "$ENFORCE" = 1 ] && { printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
-  && ok "MTLS_ENFORCE=true: certless :443 rejected (400) — cert-gated data plane over the hop" \
-  || bad "enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)"; }
+if [ "$ENFORCE" = 1 ]; then
+  printf '%s' "$SRVOUT" | grep -q 'MB_ENFORCE_CERTLESS_REJECTED=1' \
+    && ok "MTLS_ENFORCE=true: certless :443 rejected (400) — cert-gated data plane over the hop" \
+    || bad "enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)"
+else
+  skipped "MTLS_ENFORCE guard (no --enforce; --capstone implies it) — the cert-gated data plane is unverified"
+fi
 
 echo "== provision each agent against https://$SRV_IP =="
 for a in "${AGENT_SLUGS[@]:-}"; do
@@ -196,6 +205,8 @@ for a in "${AGENT_SLUGS[@]:-}"; do
     printf '%s' "$AOUT" | grep -q AGENT_REPO_OK && printf '%s' "$AOUT" | grep -q AGENT_CAFLIP_OK \
       && ok "agent $a: installed from the :8445 repo via agent-install.sh, CA-pinned steady state" \
       || bad "agent $a: user-path markers missing (AGENT_REPO_OK/AGENT_CAFLIP_OK)"
+  else
+    skipped "agent $a: user install path (no MB_REPO_GPG_FP) — the :8445 repo and the CA-pin flip are unverified"
   fi
 done
 
@@ -247,12 +258,63 @@ if [ "$DESKTOP" = 1 ]; then
     ok "desktop-box $DT_SLUG @ $DT_IP"
   else DT_SLUG=""; bad "desktop lease"; fi
   if [ -n "$DT_SLUG" ]; then
-    echo "== drive the real Tauri GUI on $DT_SLUG against https://$SRV_IP =="
-    DTOUT="$(timeout 3000 crabbox run --id "$DT_SLUG" -- bash scripts/tests/crabbox_desktopbox.sh "$SRV_IP" "$ADMIN_PW" "$MONITOR_KEY" 2>&1)"
-    echo "$DTOUT" | grep -vE 'Compiling|Downloaded |npm warn|go: downloading' | tail -40
-    printf '%s' "$DTOUT" | grep -q DESKTOP_ALL_OK \
-      && ok "desktop GUI journeys green against the remote server (login/CRUD/monitoring)" \
-      || bad "desktop GUI journeys (see output above)"
+    # With --enforce the data plane is cert-gated, so the GUI has to enroll a device
+    # identity before it can log in. Two constraints shape this:
+    #   - one token per SPEC, not per run: every spec is its own `wdio run` in its
+    #     own dbus session with an empty keyring, so each starts un-enrolled; and
+    #     an enrollment token is one-time.
+    #   - minted HERE, not on the server box hours ago: the default TTL is 60 min
+    #     and this stage starts after the agent, rpm, tunnel and visitor boxes.
+    # Kept in sync with the default in crabbox_desktopbox.sh — named here because
+    # the number of tokens to mint depends on it.
+    DESK_SPECS="server-crud.live.js monitoring-check.live.js"
+    DESK_ETOKS=""
+    if [ "$ENFORCE" = 1 ]; then
+      # ONE crabbox run for all tokens, not one per spec. Every `crabbox run`
+      # re-syncs the whole repo to the box, so N rounds meant N chances to lose
+      # one — and the first capstone lost exactly one of two that way, with no
+      # diagnosis left because the output had been thrown at /dev/null.
+      # --ttl-minutes 240, not the 60-minute default: the last token is redeemed
+      # after the box bootstrap, the ~20 min Tauri build and every earlier spec.
+      # The stage's own deckel is `timeout 3000` below — the TTL has to outlive it
+      # with room, or raising that timeout breaks this silently.
+      MINTLOG="${AH_OUT_DIR:-$ROOT/.crabbox-out}/mint-desktop-tokens.log"
+      mkdir -p "$(dirname "$MINTLOG")" 2>/dev/null
+      n_want=0; for _ in $DESK_SPECS; do n_want=$((n_want + 1)); done
+      timeout 600 crabbox run --id "$SRV_SLUG" -- bash -c \
+        "for i in \$(seq 1 $n_want); do mb-dc exec -T server python -m app.cli mint-enroll-token --username admin --ttl-minutes 240; done" \
+        >"$MINTLOG" 2>&1
+      # Anchored: the CLI prints each token on a line of its own, so ^…$ cannot
+      # pick up a long word from crabbox's own output.
+      DESK_ETOKS="$(tr -d '\r' < "$MINTLOG" | grep -oE '^[A-Za-z0-9_-]{20,}$' | tail -n "$n_want" | paste -sd' ' -)"
+      [ -n "$DESK_ETOKS" ] || echo "  (mint failed — see $MINTLOG)"
+    fi
+    # Passed through `bash -c` because `crabbox run --` hands its arguments to
+    # exec, not to a shell — a plain VAR=x prefix would be read as the program.
+    # That trades argv's structural safety for single-quote quoting: all four
+    # values are hex/IPv4/token_urlsafe today, none can contain a quote.
+    n_tok=0; for _ in $DESK_ETOKS; do n_tok=$((n_tok + 1)); done
+    n_spec=0; for _ in $DESK_SPECS; do n_spec=$((n_spec + 1)); done
+    if [ "$ENFORCE" = 1 ] && [ "$n_tok" -lt "$n_spec" ]; then
+      # Skip the stage rather than spend up to 50 minutes of VM time on a run that
+      # cannot pass: without a token per spec the enforced gateway rejects the login.
+      bad "desktop: only $n_tok of $n_spec enrollment tokens minted (see ${MINTLOG:-the mint log})"
+      skipped "desktop GUI journeys (not enough enrollment tokens under --enforce) — the S3 scenario is unverified"
+      DTOUT=""
+    else
+      echo "== drive the real Tauri GUI on $DT_SLUG against https://$SRV_IP =="
+      DTOUT="$(timeout 3000 crabbox run --id "$DT_SLUG" -- bash -c \
+        "AH_DESKTOP_ENROLL_TOKENS='$DESK_ETOKS' bash scripts/tests/crabbox_desktopbox.sh '$SRV_IP' '$ADMIN_PW' '$MONITOR_KEY' $DESK_SPECS" 2>&1)"
+      echo "$DTOUT" | grep -vE 'Compiling|Downloaded |npm warn|go: downloading' | tail -40
+      printf '%s' "$DTOUT" | grep -q DESKTOP_ALL_OK \
+        && ok "desktop GUI journeys green against the remote server (login/CRUD/monitoring)" \
+        || bad "desktop GUI journeys (see output above)"
+    fi
+  else
+    # On top of the lease FAIL above, not instead of it: the two facts differ —
+    # the box could not be had, AND the S3 journeys are therefore unverified.
+    # Only the second one is what a reader of "N skipped" is looking for.
+    skipped "desktop GUI journeys (no desktop box) — the S3 scenario is unverified"
   fi
 fi
 
@@ -266,15 +328,26 @@ if [ "$MONCHECK" = 1 ]; then
     printf '%s' "$MCA" | grep -q MC_ALERT_RECEIVED \
       && ok "critical alert email delivered to the mailhog sink over the network (closed loop)" \
       || bad "no alert email reached the sink"
+  else
+    skipped "closed-loop alert delivery (no moncheck box) — S5 mail delivery is unverified"
   fi
 fi
 
 echo "== assert monitoring ingested a report from the remote agent(s) =="
 REPORTS="$(timeout 300 crabbox run --id "$SRV_SLUG" -- bash -c 'mb-dc logs monitoring 2>/dev/null | grep -cE "POST /agent/[^/]+/report HTTP"' 2>/dev/null | grep -oE '^[0-9]+$' | tail -1)"
 EXPECT=$(( ${#AGENT_SLUGS[@]} + RPM_AGENTS ))
-[ -n "${REPORTS:-}" ] && [ "$REPORTS" -ge "$EXPECT" ] 2>/dev/null \
-  && ok "monitoring ingested $REPORTS report(s) from remote agent(s)" \
-  || bad "monitoring saw ${REPORTS:-0} reports (expected >= $EXPECT)"
+if [ $(( AGENTS + RPM )) -ge 1 ]; then
+  # Floor of 1 (R-0021): every agent lease failing left EXPECT=0, and "0 >= 0"
+  # passed a run in which no agent ever reported. Keyed on the agents ASKED FOR,
+  # not on the ones that arrived — `--agents 0 --desktop` (server + GUI, no .deb)
+  # is a real partial run and must not fail for a hop it never requested.
+  [ "$EXPECT" -lt 1 ] && EXPECT=1
+  [ -n "${REPORTS:-}" ] && [ "$REPORTS" -ge "$EXPECT" ] 2>/dev/null \
+    && ok "monitoring ingested $REPORTS report(s) from remote agent(s)" \
+    || bad "monitoring saw ${REPORTS:-0} reports (expected >= $EXPECT)"
+else
+  skipped "monitoring ingest (no agent role requested) — the report hop is unverified"
+fi
 
 echo ""
 echo "──────────────────────────────────────────────"

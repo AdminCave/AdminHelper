@@ -19,8 +19,8 @@ _E2E_COMPOSE=(-f "$E2E_REPO_ROOT/docker-compose.yml" -f "$E2E_REPO_ROOT/docker-c
 _E2E_API="$_E2E_LIB_DIR/e2e_api.py"
 
 # e2e_api <token> <op> [args...] — admin-API seed/query over the test gateway.
-# Ops: server | config | tunnel | count-tunnels | tunnel-conn | provision-token |
-#      connection | web-connection — see e2e_api.py for each op's args (2.122).
+# Ops: server | config | tunnel | count-tunnels | count-connections | tunnel-conn |
+#      provision-token | connection | web-connection — see e2e_api.py for the args (2.122).
 e2e_api() { python3 "$_E2E_API" "$E2E_SERVER_URL" "$@"; }
 
 # Headless WebKit: disable GPU paths xvfb can't provide (else the webview may fail to

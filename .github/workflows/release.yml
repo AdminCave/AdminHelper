@@ -113,6 +113,35 @@ jobs:
         # the crabbox tests — which DO use `make` — stayed green. One build
         # definition means the tested binary is the shipped binary.
         run: make build-linux build-windows
+      # The Makefile pins CGO_ENABLED=0, but nothing checked the RESULT. Defect
+      # 4120005 shipped a dynamically linked agent (GLIBC_2.34 not found on older
+      # distros) because the build had been inlined; the tests stayed green
+      # because they build through `make`. Assert the property, not the recipe.
+      - name: Assert static agent binary
+        run: |
+          set -euo pipefail
+          bin=apps/agent/bin/adminhelper-agent
+          # `|| true` below would also swallow a MISSING objdump, turning the
+          # GLIBC_ assertion into a silent no-op — the very failure mode this
+          # step exists against. Demand the tool first.
+          command -v objdump >/dev/null || { echo "::error::objdump missing (binutils)"; exit 1; }
+          ftype="$(file -b "$bin")"
+          # objdump exits 1 with "not a dynamic object" on a static binary — that is
+          # the good case, so don't let `set -e` (or pipefail) turn it into an error.
+          syms="$(objdump -T "$bin" 2>&1 || true)"
+          case "$ftype" in
+            *"statically linked"*) ;;
+            *)
+              echo "::error::agent binary is not statically linked"
+              echo "file: $ftype"; echo "objdump -T:"; echo "$syms"
+              exit 1 ;;
+          esac
+          if printf '%s' "$syms" | grep -q 'GLIBC_'; then
+            echo "::error::agent binary imports GLIBC_ symbols — it will not start on older distros"
+            echo "file: $ftype"; echo "objdump -T:"; echo "$syms"
+            exit 1
+          fi
+          echo "ok: static, no GLIBC_ imports — $ftype"
       - name: Download frpc (bundled into deb/rpm)
         run: |
           curl -fsSL -o frpc.tar.gz \
@@ -136,16 +165,69 @@ jobs:
           VERSION="$VERSION" bash apps/agent/build-rpm.sh
       - name: Collect artifacts
         run: |
+          set -euo pipefail
           mkdir -p dist
           cp adminhelper-agent_*.deb dist/
           cp adminhelper-agent-*.rpm dist/
           cp apps/agent/bin/adminhelper-agent dist/adminhelper-agent-linux-x86_64
           cp apps/agent/bin/adminhelper-agent.exe dist/adminhelper-agent-windows-x86_64.exe
+          # build-deb.sh guards its own output; this guards the artifact that is
+          # actually uploaded. zstd members are unreadable by dpkg on Debian
+          # Stretch/Buster and appliance firmware ("unknown compression for member").
+          for deb in dist/adminhelper-agent_*.deb; do
+            members="$(ar t "$deb")"
+            if printf '%s' "$members" | grep -q '\.zst$'; then
+              echo "::error::$deb uses zstd members — breaks dpkg on older targets"
+              echo "$members"
+              exit 1
+            fi
+            echo "ok: $deb members: $(printf '%s' "$members" | tr '\n' ' ')"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: agent
           path: dist/
           if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # The Windows agent has never been EXECUTED before shipping — release.yml
+  # cross-compiles it on ubuntu and uploads it unopened. `version` is the
+  # cheapest proof that the .exe starts on Windows at all and carries the tag it
+  # claims (a broken cross-build, a missing runtime, a stale ldflags VERSION).
+  # Hard gate, ~1 min of windows-runner time per release.
+  # ─────────────────────────────────────────────────────────────────────────
+  agent-windows-smoke:
+    name: Go Agent smoke (Windows)
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: agent
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: agent
+          path: dist
+      - name: The .exe runs and reports the tag version
+        # bash, not pwsh: a multi-line `$out` from a pwsh call is a string ARRAY,
+        # and `if ($out -notmatch …)` on an array filters instead of testing —
+        # a subtly wrong assertion. The runners ship Git bash, which the
+        # desktop-windows job already uses.
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          exe="dist/adminhelper-agent-windows-x86_64.exe"
+          # Otherwise the commonest failure — the .exe missing from the artifact —
+          # shows up as a bare exit 127 with no annotation.
+          [ -f "$exe" ] || { echo "::error::$exe is not in the agent artifact"; exit 1; }
+          out="$("./$exe" version)"
+          echo "$exe version -> $out"
+          # Match the whole printed line, not just the digits: a bare *"$VER"*
+          # would also accept a neighbouring version (0.4.6 inside 10.4.62).
+          case "$out" in
+            *"adminhelper-agent $VER"*) echo "ok: the released .exe reports $VER" ;;
+            *) echo "::error::$exe printed '$out' — expected 'adminhelper-agent $VER'"; exit 1 ;;
+          esac
 
   # ─────────────────────────────────────────────────────────────────────────
   # Desktop client on Windows (MSI). Best-effort: first time this runs on a
@@ -194,6 +276,69 @@ jobs:
         run: |
           mkdir -p dist
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist/
+      # The MSI was only ever BUILT, never installed: a broken WiX template, a
+      # missing sidecar or a bad install dir ships to the first user who runs it.
+      # Install silently, believe the installer's own verdict, find the installed
+      # exe, then remove it again so the runner is clean.
+      #
+      # AFTER "Collect artifacts" on purpose: a failed step ends the job, and the
+      # job is continue-on-error — a false red here would silently drop the MSI
+      # from the draft instead of merely reporting a problem (spec question 5:
+      # visible WITHOUT blocking the release).
+      - name: Install, verify and uninstall the MSI
+        shell: pwsh
+        # Start-Process -Wait waits for the whole process tree; a hung custom
+        # action would otherwise sit here until the 6 h job default, with the
+        # release job waiting on `needs`.
+        timeout-minutes: 15
+        run: |
+          $msi = Get-ChildItem "dist/*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $msi) { Write-Host "::error::the build produced no .msi"; exit 1 }
+          $path = $msi.FullName
+          # Absolute: Start-Process resolves a relative path against the PROCESS
+          # working directory, which is not necessarily PowerShell's $PWD — the log
+          # would land somewhere the assertion and the artifact upload never look.
+          $log = Join-Path (Get-Location).Path 'msi.log'
+          Write-Host "installing $path"
+          $i = Start-Process msiexec.exe -ArgumentList '/i',"`"$path`"",'/qn','/norestart','/l*v',"`"$log`"" -Wait -PassThru
+          Write-Host "msiexec /i exit: $($i.ExitCode)"
+          # 3010 = ERROR_SUCCESS_REBOOT_REQUIRED: installed, just wants a reboot.
+          if ($i.ExitCode -ne 0 -and $i.ExitCode -ne 3010) {
+            Write-Host "::error::msiexec /i failed ($($i.ExitCode)) — see the desktop-windows-msi-log artifact"
+            exit 1
+          }
+          if (-not (Test-Path $log)) { Write-Host "::error::msiexec wrote no log at $log"; exit 1 }
+          if (-not (Select-String -Path $log -Pattern 'Installation success or error status: 0' -SimpleMatch -Quiet)) {
+            Write-Host "::error::the MSI did not report a successful installation (see the desktop-windows-msi-log artifact)"
+            exit 1
+          }
+          # Tauri's WiX template installs to %ProgramFiles%\<productName>\<productName>.exe,
+          # and productName is "adminhelper" (tauri.conf.json). The install SCOPE is
+          # UNVERIFIED — this job has never installed the MSI, and the Tauri docs
+          # only pin NSIS's per-user location — so search the plausible roots
+          # instead of failing on one guessed path.
+          $exe = $null
+          foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, (Join-Path $env:LOCALAPPDATA 'Programs'))) {
+            if (-not $root -or -not (Test-Path $root)) { continue }
+            $hit = Get-ChildItem $root -Filter 'adminhelper.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { $exe = $hit.FullName; break }
+          }
+          if (-not $exe) {
+            Write-Host "::error::no installed adminhelper.exe under ProgramFiles, ProgramFiles(x86) or LOCALAPPDATA\Programs"
+            exit 1
+          }
+          Write-Host "ok: installed at $exe"
+          $u = Start-Process msiexec.exe -ArgumentList '/x',"`"$path`"",'/qn','/norestart' -Wait -PassThru
+          Write-Host "msiexec /x exit: $($u.ExitCode)"
+          if ($u.ExitCode -ne 0 -and $u.ExitCode -ne 3010) { Write-Host "::error::MSI uninstall failed ($($u.ExitCode))"; exit 1 }
+      # always(): the log matters most when the step above just failed.
+      - name: Upload the MSI install log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-windows-msi-log
+          path: msi.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -207,27 +352,26 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   release:
     name: Draft GitHub Release
-    needs: [desktop-linux, agent, desktop-windows]
-    # Gate on the MANDATORY Linux builds only. desktop-windows is best-effort
+    needs: [desktop-linux, agent, agent-windows-smoke, desktop-windows]
+    # Gate on the MANDATORY builds. desktop-windows is best-effort
     # (continue-on-error), so its failure must not block the draft — but a
-    # failed desktop-linux or agent build must, to avoid a partial-asset draft
-    # that looks complete while missing core assets.
-    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    # failed desktop-linux, agent or agent-windows-smoke must, to avoid a
+    # partial-asset draft that looks complete while missing core assets, or one
+    # whose Windows agent does not start.
+    if: ${{ !cancelled() && needs.desktop-linux.result == 'success' && needs.agent.result == 'success' && needs.agent-windows-smoke.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      # The agent + Docker images derive their version from the tag, but the
-      # desktop version lives in tauri.conf.json and is bumped by hand — assert
-      # it matches the tag so a forgotten bump fails the release, not a user.
-      - name: Verify the desktop version matches the tag
-        run: |
-          set -euo pipefail
-          VER="${GITHUB_REF_NAME#v}"
-          tauri=$(grep -m1 '"version"' apps/desktop/src-tauri/tauri.conf.json | grep -o '[0-9][0-9.]*' | head -1)
-          test "$tauri" = "$VER" || { echo "::error::tauri.conf.json version ($tauri) != tag ($VER)"; exit 1; }
-          echo "version OK: $VER"
+      # The agent + Docker images derive their version from the tag, but six
+      # places are bumped by hand — and this step only ever checked ONE of them
+      # (tauri.conf.json), which is why the doc sidebar footers hung three
+      # releases long. check-versions.sh checks all six and prints them as a
+      # checklist; it is the same command .claude/rules/release.md tells Kevin to
+      # run before tagging, so a red release here is never a surprise.
+      - name: Verify every hand-maintained version matches the tag
+        run: bash scripts/release/check-versions.sh "${GITHUB_REF_NAME#v}"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
@@ -297,7 +441,15 @@ jobs:
           echo "=== agent repo bundle ==="; tar tzf "release/adminhelper-agent-repo-${TAG}.tar.gz" | sed -n '1,10p'
       - name: Flatten and checksum
         run: |
-          find artifacts -type f -exec cp {} release/ \;
+          # download-artifact above has no `name`, so it pulls EVERY artifact of the
+          # run, one directory each. Only PAYLOAD artifacts belong in release/:
+          # desktop-windows-msi-log is diagnostics (verbose MSI log, runner paths)
+          # and must not end up checksummed, minisign-signed and published.
+          # Two filters on purpose — the directory name couples this line to the
+          # upload step, the *.log name survives a rename or a second diagnostic
+          # artifact. No release asset has ever been a .log.
+          find artifacts -type f -not -path 'artifacts/desktop-windows-msi-log/*' \
+            -not -name '*.log' -exec cp {} release/ \;
           cd release
           sha256sum * > SHA256SUMS
           echo "=== Release assets ==="
@@ -327,7 +479,20 @@ jobs:
             || { echo "::error::MINISIGN_SECRET_KEY must be the base64 of the key file: base64 -w0 minisign.key"; exit 1; }
           minisign -S -s minisign.key -m release/SHA256SUMS -x release/SHA256SUMS.minisig < /dev/null
           rm -f minisign.key
-          echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig"
+          # Verify against the key the FLEET pins, not against the secret we just
+          # signed with: a rotated or wrong MINISIGN_SECRET_KEY produces a
+          # perfectly valid signature that install.sh/update.sh reject — and that
+          # only shows up on user machines, after the draft is published. The
+          # public key lives in scripts/update.sh (kept in sync with install.sh).
+          # Anchored, and tolerant of "no match" so the message below is what a
+          # missing pin produces — an unanchored grep would also match the first
+          # COMMENT mentioning the variable, and under pipefail its failure would
+          # abort the step silently. Same form as ci.yml's lockstep check.
+          PUB="$(grep -m1 '^MINISIGN_PUBKEY=' scripts/update.sh | cut -d'"' -f2 || true)"
+          [ -n "$PUB" ] || { echo "::error::no MINISIGN_PUBKEY pinned in scripts/update.sh — nothing to verify the signature against"; exit 1; }
+          minisign -V -P "$PUB" -m release/SHA256SUMS -x release/SHA256SUMS.minisig \
+            || { echo "::error::SHA256SUMS.minisig does not verify against the public key pinned in scripts/update.sh — MINISIGN_SECRET_KEY is the wrong key; every install/update in the field would reject this release"; exit 1; }
+          echo "Signed release/SHA256SUMS -> release/SHA256SUMS.minisig (verified against the pinned public key)"
       - name: Assert the tag images exist on ghcr
         # release.yml and docker.yml run independently on tag push, but install.sh/
         # update.sh pin ghcr.io/...:X.Y.Z hard. Creating the draft before docker.yml has

@@ -3,12 +3,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# desktop_e2e_skip_test.sh — proves the seven desktop GUI suites report SKIP
+# desktop_e2e_skip_test.sh — proves every desktop GUI suite reports SKIP
 # (exit 75), never a silent green, when the tauri CLI is missing.
 #
 # That branch is the one that fired on every un-hydrated box: `cargo tauri`
 # absent, the suite exited 0, run.sh counted a PASS, and the summary claimed
-# seven green GUI journeys that never started. Here every OTHER precondition is
+# green GUI journeys that never started. Here every OTHER precondition is
 # satisfied by a PATH shim while `cargo` is kept out, so each script must reach
 # exactly that branch — the assertion is the tauri-cli message AND code 75, so a
 # suite skipping for some other reason cannot pass this test.

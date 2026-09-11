@@ -73,6 +73,10 @@ Desktop.ini
 .crabbox/
 # crabbox auto-debug artifacts pulled off the box (screenshots/logs) + desktop XDG
 .crabbox-out/
+# Second-VM worktree of scripts/tests/heavy.sh (created and removed per check).
+# Ignored so a run in progress cannot change tree-hash.sh's answer — it hashes
+# every file `git add -A` would take, and a whole second checkout would.
+.crabbox-worktrees/
 .dt-xdg/
 
 # Agent build output produced at the repo root by apps/agent/build-deb.sh /

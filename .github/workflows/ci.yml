@@ -191,7 +191,12 @@ jobs:
       - name: go test
         working-directory: apps/agent
         # Coverage is report-only (no threshold) — visibility, not a gate.
-        run: go test -cover ./...
+        # -race because the agent is concurrent (monitor, frpc, config): a data
+        # race is the bug class neither review nor a single-threaded test sees.
+        # It needs cgo, which ubuntu-latest has. Measured on this job: ~38 s
+        # before, 75 s with the detector (run 34484154968) — far inside
+        # timeout-minutes: 15.
+        run: go test -race -cover ./...
       - name: Cross-compile (linux + windows)
         working-directory: apps/agent
         run: |
@@ -514,7 +519,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: shellcheck
-        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh apps/*/docker-entrypoint.sh
+        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh apps/*/docker-entrypoint.sh
       # minisign lets the sandbox tests exercise the (armed) release-signature
       # verification path end-to-end with a throwaway key. Without it those tests
       # exit 75 = SKIP, and --strict below turns that into a failure — which is

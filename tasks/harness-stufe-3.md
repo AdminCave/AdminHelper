@@ -1,0 +1,183 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Harness Stufe 3 — Ausführung zuerst — Task-Ledger
+Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind drei `[?]` — T6a, T15a und die Fremdfunde F1/F2 (F3/F4 aus den echten Läufen sind behoben); T7a ist verifiziert; Capstone 2026-09-11-0547 **PASS**, `25 ok, 0 failed, 0 skipped`) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Spec: docs/features/harness-stufe-3.md
+Fast-Suite: lokal · Warm-Profil: desktop
+Heavy — real gefahren und ausgewertet:
+- `all` 2026-09-10-1626 · **29 passed, 0 failed, 0 skipped** (inkl. `upgrade_path` mit `UPGRADE_OK`+`UPDATE_SH_OK` und `desktop_e2e_misc` mit allen fünf Specs)
+- `capstone` 2026-09-10-2018 · **FAIL**, `17 ok, 7 failed, 2 skipped` — zwei Rollen an F2 verloren, Desktop-Etappe mangels Token übersprungen (F5)
+- `capstone` 2026-09-11-0547 · **PASS**, `25 ok, 0 failed, 0 skipped`, null Lease-Fehlversuche, kein VM-Leck. `0 skipped` heißt hier erstmals wörtlich: jede bedingte Prüfung lief — R-0021 und R-0022 damit beide real belegt.
+Ursprüngliche Planung: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt; T7a ist gebaut, aber die Capstone-Ebene beweist sich erst im Lauf
+DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+Roadmap: R-0003 (schließt R-0021, R-0022 ein) · Hängt ab von: R-0002 (gemergt, PR #11)
+**Abweichung von `Commit-Granularität: pro Task` (T9–T13):** die fünf Tasks ändern dieselben zwei Dateien und sind ein Feature. Das Review von T9 hat den gemeinsamen Kern noch einmal deutlich bewegt (stale `last-all.json`, fail-open `crabbox list`, Infra-Marker der Wrapper, gebundener `doctor`, Artefakt-Sammlung); vier von Hand rekonstruierte Zwischenstände dieser Dateien synchron zu halten wäre danach mehr Fehlerquelle als Recovery-Gewinn — und ein Commit, dessen Suite ich in genau diesem Stand nicht real gefahren habe, wäre ein `[x]` ohne Beweis. Deshalb **ein** Commit für T9–T13. Reviewt wurde der T9-Schnitt; die späteren Anteile gehen in das Abschluss-`/code-review`.
+
+Workflow-Änderungen an `release.yml` sind erst mit dem nächsten Tag real prüfbar; jede solche Task nennt deshalb eine lokale Probe (`act` ist nicht vorhanden) und die Stelle, an der der nächste Release-Lauf die Assertion zeigt.
+
+### T1 — release.yml: Agent statisch, kein GLIBC-Symbol, .deb ohne zstd  [x] (Assert-Schritt + zstd-Guard in Collect artifacts; lokal grün/rot geprüft)
+Komponente: .github · Dateien: .github/workflows/release.yml
+Änderung: Job `agent`: Schritt „Assert static agent binary" nach dem Build (`file` enthält `statically linked`; `objdump -T` ohne `GLIBC_`; beide Ausgaben im Fehlerfall); in „Collect artifacts" `ar t dist/adminhelper-agent_*.deb` darf kein `.zst`-Member listen.
+Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));s=[x['name'] for x in d['jobs']['agent']['steps'] if 'name' in x];assert 'Assert static agent binary' in s"`; lokale Probe der Befehle gegen `make -C apps/agent build-linux` (`file`/`objdump`/`ar` auf dem Ergebnis, statisch ⇒ grün; `CGO_ENABLED=1 go build` ⇒ rot)
+Doku: docs/developer/cicd.html DE+EN „Release-Assertionen" (T18)
+
+### T2 — release.yml: Signatur gegen den gepinnten Public Key verifizieren  [x] (minisign -V gegen den Pin aus update.sh; Wegwerf-Key-Probe rot/grün/unarmed)
+Komponente: .github · Dateien: .github/workflows/release.yml
+Änderung: im Job `release` direkt nach `minisign -S`: `PUB=$(grep -m1 -o 'MINISIGN_PUBKEY="[^"]*"' scripts/update.sh | cut -d'"' -f2)`, `minisign -V -P "$PUB" -m release/SHA256SUMS` ⇒ Exit 1 bei Mismatch; Kommentar nennt den Grund (Secret ≠ gepinnter Key würde erst bei Nutzern auffallen).
+Verify: lokale Probe: Wegwerf-Key, damit signieren, `minisign -V` gegen den Repo-Pubkey ⇒ rot; gegen den passenden Pubkey ⇒ grün; `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/release.yml'))"`
+Doku: docs/developer/cicd.html DE+EN „Release-Signatur" ein Satz (T18)
+
+### T3 — release.yml: Job agent-windows-smoke (Tag-Version aus der .exe)  [x] (harter Job vor `release`; Shim-Probe match/mismatch/fehlende .exe rot-grün, `version`-Format gegen `make build-windows` gelesen)
+Komponente: .github · Dateien: .github/workflows/release.yml
+Änderung: neuer Job `agent-windows-smoke` (`windows-latest`, `needs: agent`, nur auf Tags, `timeout-minutes: 10`): Artefakt `agent` laden, `.\adminhelper-agent-windows-x86_64.exe version` ausführen, Ausgabe muss `${GITHUB_REF_NAME#v}` enthalten; hart; `release` bekommt ihn in `needs` und die `if`-Bedingung wie `agent`.
+Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));assert 'agent-windows-smoke' in d['jobs'] and 'agent-windows-smoke' in d['jobs']['release']['needs']"`; Probe: `GOOS=windows go build` lokal, `version`-Ausgabeformat aus `apps/agent/cmd` lesen und den Vergleich darauf ausrichten
+Doku: docs/developer/cicd.html DE+EN Workflows-Tabelle (T18)
+
+### T4 — release.yml: MSI installieren, prüfen, deinstallieren  [x] (Install/Assert/Uninstall nach „Collect artifacts", msi.log als eigenes Artefakt und aus `release/` ausgeschlossen; auf einem echten Runner unverifiziert — kein Windows/pwsh lokal)
+Komponente: .github · Dateien: .github/workflows/release.yml
+Änderung: Job `desktop-windows` nach „Build MSI": `msiexec /i <msi> /qn /norestart /l*v msi.log`; Assertion `Installation success or error status: 0` im Log und `adminhelper.exe` unter `%ProgramFiles%` (Pfad aus `tauri.conf.json` `productName` ableiten, im Kommentar als unverifiziert markieren); `msiexec /x <msi> /qn`; `msi.log` als Artefakt mit `if: always()`. `continue-on-error: true` bleibt (Spec Frage 5).
+Verify: `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/release.yml'));j=d['jobs']['desktop-windows'];assert j.get('continue-on-error') is True and any('msiexec' in str(x.get('run','')) for x in j['steps'])"`
+Doku: docs/developer/cicd.html DE+EN (T18)
+
+### T5 — go test -race im CI und in run.sh  [x] (Log-Zeile `race: on (-race)`/`race: off (no gcc)`; Evidenz: absichtliches Data-Race in internal/logging wird von `-race` als `WARNING: DATA RACE` gemeldet, ohne `-race` `ok` — Probe-Datei nicht committet)
+Komponente: .github, scripts/tests · Dateien: .github/workflows/ci.yml, scripts/tests/run.sh
+Änderung: Job `agent` in `ci.yml`: `go test -race -cover ./...`; `run.sh` Go-Step: `-race`, wenn `gcc` vorhanden (sonst wie heute plus Log-Zeile `race: off (kein gcc)`). Probe auf Wegwerf-Branch: ein absichtliches Data-Race in einem Test-Helfer wird von `-race` gemeldet (nicht committen, im Ledger als Evidenz notieren).
+Verify: `bash scripts/dev/verify.sh agent --strict` grün; Log enthält `-race`; `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));assert any('-race' in str(x.get('run','')) for x in d['jobs']['agent']['steps'])"`
+Doku: docs/developer/cicd.html DE+EN Test-Aggregator ein Satz (T18)
+
+### T6 — check-versions.sh mit hermetischem Test, im Release-Workflow und in der Release-Rule  [x] (sechs Stellen, `ok`/`MISSING` — englisch statt `FEHLT`, Memory-Regel; Fund: die zwei mehrzeiligen Footer in docs/index.html + docs/en/index.html hingen seit 0.43.2 → Muster auf die Klasse umgestellt, Floor 38, Footer mitgebumpt, release.md Punkt 5 korrigiert; offene Frage T6a)
+Komponente: scripts/release · Dateien: scripts/release/check-versions.sh (neu), scripts/tests/check_versions_test.sh (neu), .github/workflows/release.yml, .claude/rules/release.md
+Änderung: Skript nach Spec (sechs Stellen, `ok`/`FEHLT` je Zeile, Exit 1); Test mit Fixture-Baum (alles richtig ⇒ 0; ein Footer alt ⇒ 1 mit Dateiname; CHANGELOG-Abschnitt fehlt ⇒ 1); `release.yml` Schritt „Verify the desktop version matches the tag" ruft `bash scripts/release/check-versions.sh "${GITHUB_REF_NAME#v}"`; `.claude/rules/release.md` nennt den Aufruf vor dem Tag; Test in die Liste des `scripts`-Blocks in `run.sh`. SPDX-Header.
+Verify: `bash scripts/tests/check_versions_test.sh` → `N passed, 0 failed`; `bash scripts/release/check-versions.sh 0.45.0` → Exit 0 auf dem heutigen Stand; `bash scripts/release/check-versions.sh 0.46.0` → Exit 1 mit sechs `FEHLT`
+Doku: .claude/rules/release.md (in der Task); DEVELOPMENT.md Release-Absatz (T18)
+Abhängt von: —
+
+### F3 — heavy.sh meldete PASS ohne jede Evidenz (Fund aus dem zweiten echten Lauf)  [x] (behoben)
+Komponente: scripts/tests · Datei: scripts/tests/heavy.sh
+Der zweite `heavy.sh all` (2026-09-10-1626) endete mit **PASS** — bei leerer Schritt-Tabelle, ohne Summary-Zeile und mit `no readable last-all.json`. Das Urteil hing allein am Exit-Code des Wrappers, also genau an der Behauptung, die diese Stufe abschaffen soll.
+Ursache: `crabbox_iter.sh` lässt die Box-Ausgabe **nicht** durch, sondern schreibt stdout nach `.crabbox/out/last.out.log` und legt die gezogenen Dateien als `…-artifacts.tgz` ab. `heavy.sh`s eigenes Log enthält nur crabbox' Orchestrierungs-Zeilen. Die Evidenz lag die ganze Zeit auf der Platte — an einer anderen Stelle, als das Skript nachsah.
+Behoben, dreifach: (1) die Summary-Zeile wird zusätzlich aus `.crabbox/out/last.out.log` gelesen, (2) `last-all.json` wird aus dem Artefakt-Tarball zurückgeholt (die Screenshots und Step-Logs landen dabei gleich im Lauf-Verzeichnis, das der Report nennt), (3) **ohne Summary-Zeile UND ohne lesbares Artefakt ist ein Exit 0 jetzt `UNVERIFIED`, nicht PASS.** Punkt 3 ist der eigentliche Fix — 1 und 2 machen ihn nur selten nötig.
+Nachträglich gelesen war der Lauf echt grün: `run.sh[all]: 29 passed, 0 failed, 0 skipped`, darin `upgrade_path` (15 passed, `UPGRADE_OK` + `UPDATE_SH_OK`) und `desktop_e2e_misc` (alle fünf Specs).
+
+### F4 — gestoppte `keep=true`-VM blockierte jeden Wochenlauf  [x] (behoben)
+Komponente: scripts/tests · Datei: scripts/tests/heavy.sh
+Auf dem Hypervisor steht eine gestoppte VM (`slug=ah-bake keep=true`, Template-Quelle). `foreign_boxes` zählte sie als fremd ⇒ Exit 74, obwohl eine gestoppte VM keine Kapazität belegt — sie hätte jeden Wochenlauf blockiert, sobald sie zum Pre-flight-Zeitpunkt gelistet ist. Der Guard zählt jetzt nur noch **laufende** Boxen; ein laufender Fremdling bricht weiterhin ab. Beide Fälle im Test.
+
+### F5 — Token-Mintung verlor eines von zwei Tokens, ohne Spur  [x] (behoben)
+Komponente: scripts/tests · Datei: scripts/tests/crabbox_multibox.sh
+Erster echter Capstone (2026-09-10-2018): `FAIL desktop: only 1 of 2 enrollment tokens minted` ⇒ die Desktop-Etappe wurde übersprungen, T7a bleibt damit **unbewiesen**. Der Skip selbst war richtig — er hat 50 Minuten VM-Zeit für einen aussichtslosen Lauf gespart, genau wie gebaut. Nicht richtig war, dass sich der Grund **nicht rekonstruieren ließ**: die Mint-Schleife schickte Ausgabe und Fehler nach `/dev/null`.
+**Verifiziert:** im zweiten Capstone kamen 2 von 2 Tokens in 9,6 s aus einem einzigen Lauf. Behoben: (1) alle Tokens in **einem** `crabbox run` statt einem pro Spec — jeder Lauf synct das ganze Repo zur Box, N Runden waren N Gelegenheiten, eines zu verlieren; (2) die Ausgabe landet in `mint-desktop-tokens.log` und der `bad`-Text nennt den Pfad. Der Reviewer hatte Punkt 1 als Nit vorgeschlagen und ich hatte ihn als kosmetisch abgetan — er hätte diesen Ausfall vermutlich verhindert.
+
+### F2 — crabbox' eigener Provider-Bootstrap verliert das apt-Lock-Rennen gegen cloud-init  [?]
+Komponente: crabbox (extern) · nichts in diesem Repo
+Befund aus dem ersten echten `heavy.sh all` (2026-09-10-1607, Exit 74): `warmup failed/timed out: provisioning provider=proxmox … proxmox guest bootstrap exit=1 … E: Could not get lock /var/lib/apt/lists/lock. It is held by process 1347 (apt-get)`. Das ist **crabbox' eigener Guest-Bootstrap**, der auf der frischen VM `apt-get` fährt, während cloud-init noch installiert — `scripts/tests/crabbox_bootstrap.sh` aus diesem Repo ist gar nicht erst gelaufen, unsere Absicherung (Timer maskieren, `DPkg::Lock::Timeout`, `wait_apt_lock`) greift also erst danach und war nicht die Ursache.
+Der Lauf hat das korrekt als **UNVERIFIED** klassifiziert, keine VM geleakt und die Historie geschrieben — die Klassifikation stimmt, die Box kam nur nicht hoch.
+**Nachtrag aus dem Capstone-Lauf (2026-09-10-2018): systematisch, nicht transient.** Dort scheiterte das Lease der Agent-Box in Folge (`lease attempt 1/3`, `2/3` …), jedes Mal `proxmox guest bootstrap exit=1` mit demselben Rennen — mal `/var/lib/apt/lists/lock`, mal `/var/lib/dpkg/lock-frontend`. Die Server-Box kam durch, die Agent-Box nicht. `.crabbox.yaml` definiert keinen Bootstrap-Hook, es ist also belegbar crabbox' eingebauter Guest-Bootstrap; die apt-Quellen im Log (docker, nodesource) stammen aus dem Fat-Template. Jeder Fehlversuch kostet einen VM-Klon — bei sieben Boxen ist das der dominierende Kostenfaktor des Wochenlaufs.
+Frage an Kevin: Das gehört in crabbox (Guest-Bootstrap sollte `cloud-init status --wait` abwarten oder `-o DPkg::Lock::Timeout` setzen), nicht hierher. Auf unserer Seite umgesetzt: `heavy.sh` versucht ein fehlgeschlagenes Warm-Lease **einmal** erneut, weil dieser Fehler transient ist und sonst einen ganzen Wochenlauf kostet. Ob das reicht, zeigt der nächste Lauf.
+
+### F1 — `test_migrations_smoke` ist flaky (Fund aus dem Abschlusslauf, nicht aus dieser Stufe)  [?]
+Komponente: apps/server · Datei: apps/server/tests/test_migrations_smoke.py
+Befund: Im Abschluss-Gesamtlauf war `server pytest` einmal rot, im Wiederholungslauf grün — also `flaky`, nicht PASS. Ursache steht im Log: der Teardown fährt `DROP DATABASE "alembic_smoke_<hash>" WITH (FORCE)`, und `WITH (FORCE)` verlangt, fremde Backends beenden zu dürfen — die lokale Rolle `adminhelper` hat weder `pg_signal_backend` noch die Rechte der Zielrolle (`psycopg.errors.InsufficientPrivilege`). Der FORCE-Pfad greift nur, wenn zum Wegwerf-Schema noch eine Verbindung offen ist, deshalb schlägt es zeitabhängig zu. `apps/server` ist von diesem Branch **nicht** berührt (0 Dateien im Diff), der Fund gehört also nicht zu Stufe 3.
+Frage an Kevin: Rolle lokal um `pg_signal_backend` erweitern (`GRANT pg_signal_backend TO adminhelper`) oder den Teardown die Verbindung schließen lassen, bevor er droppt (dann braucht es kein FORCE). Zweiteres behebt die Ursache statt der Berechtigung — gehört als eigene Zeile in die Roadmap. Nebenbei die erste echte Bestätigung, dass die Klassifikation aus dieser Stufe gebraucht wird: `heavy.sh` hätte den Schritt als `flaky` quarantänisiert statt ihn als Regression zu melden.
+
+### T6a — Prerelease-Tags und die sechs Versions-Stellen  [?]
+Komponente: scripts/release · Dateien: scripts/release/check-versions.sh
+Frage an Kevin: `check-versions.sh` vergleicht **verbatim**, ein Beta-Tag `v0.46.0-beta.1` verlangt diesen String also auch in 38 Doku-Footern, im CHANGELOG-Abschnitt `## [0.46.0-beta.1]` und in beiden News-Callouts. Der alte Inline-Schritt konnte bei einem Prerelease **nie** grün werden (`grep -o '[0-9][0-9.]*'` schnitt das Suffix ab, `$VER` behielt es) — das Gate wird also nicht gelockert, sondern Prereleases erstmals überhaupt möglich. Vorschlag: Stellen 1–3 (tauri/Cargo/Cargo.lock) bleiben verbatim, Stellen 4–6 (CHANGELOG, Footer, News) prüfen gegen `${VER%%-*}`. Vor dem ersten `beta`-Tag zu entscheiden (CLAUDE.md §2 sieht `beta` nach jedem grünen Wochenlauf vor).
+
+### T7 — crabbox_multibox.sh: --capstone mit enforce, vier stille Skips gezählt, Null-Agents rot  [x] (`--capstone` setzt ENFORCE=1; vier Zweige über `skipped()`; Report-Erwartung mit Floor 1; realer Lauf steht in der Heavy-Zeile aus)
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh, scripts/tests/crabbox_serverbox.sh, .claude/rules/release.md, .claude/rules/testing.md
+Änderung: `--capstone` setzt `ENFORCE=1` (R-0022); die vier stillen Skips (Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop-Lease, moncheck-Lease, `--enforce`-Zweig) laufen über `skipped()` und damit unter `--strict` rot (R-0021); die Monitoring-Assertion verlangt `erreichte Agents ≥ 1`, nicht `≥ 0`. Header und `/test`-Skill-Zeile zu `--capstone` nachziehen.
+Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -c 'skipped ' scripts/tests/crabbox_multibox.sh` ≥ 5; `grep -n 'ENFORCE=1' scripts/tests/crabbox_multibox.sh` zeigt den `--capstone`-Zweig; realer Lauf in der Heavy-Zeile
+Doku: .claude/skills/test/SKILL.md (T16)
+
+### T7a — `--capstone` erzwingt enforce, die Desktop-Etappe kann das nicht  [x] **verifiziert** (Capstone 2026-09-11-0547: `ok desktop GUI journeys green against the remote server` gegen ein Gateway mit `ssl_verify_client on`)
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_serverbox.sh, scripts/tests/crabbox_desktopbox.sh, scripts/tests/crabbox_multibox.sh
+Befund (statisch belegt, kein Lauf nötig): `--capstone` setzt seit T7 `DESKTOP=1` **und** `ENFORCE=1`. `ENFORCE=1` → `crabbox_serverbox.sh:35` `MTLS_ENFORCE=true` → `apps/gateway/docker-entrypoint.sh:39` `ssl_verify_client on` auf :443. `crabbox_desktopbox.sh:16` fährt default `server-crud.live.js` + `monitoring-check.live.js`; beide beginnen mit `login()` über :443, die Box ist frisch (eigenes `XDG_DATA_HOME`, leerer Keyring) und enrollt nirgends — `enrollment::enroll` ist JWT-gated, also erst *nach* dem Login. Die S3-Etappe ist im Capstone damit **strukturell** rot, nicht „beim ersten Lauf vielleicht". Alle Desktop-Suiten laufen bis heute mit `e2e_init false`; Desktop + enforce ist nie gelaufen. Spec-Frage 4 deckt das nicht ab — freigegeben war „der Enforce-Guard kann beim ersten Lauf rot sein", nicht eine dauerhaft rote GUI-Etappe.
+Umgesetzt ist **Option (a)** — die einzige, die S3 *und* den `MTLS_ENFORCE`-Guard behält:
+- `crabbox_multibox.sh` mintet die Tokens **kurz vor** der Desktop-Etappe (`mint-enroll-token --ttl-minutes 240` über `crabbox run` auf der Server-Box) und **eines je Spec**; die TTL muss den `timeout 3000`-Deckel der Etappe überleben, sonst bricht ein späteres Anheben des Deckels sie still. Beides ist nötig: die Default-TTL ist 60 Minuten, die Etappe startet Stunden nach der Server-Box; und jeder Spec ist ein eigener `wdio run` in eigener dbus-Session mit leerem Keyring, startet also un-enrollt — Tokens sind einmalig. Reichen die Tokens nicht, wird die Etappe **übersprungen** (`bad` + `skipped`) statt 50 Minuten VM-Zeit in einen Lauf zu stecken, der nicht bestehen kann.
+- `crabbox_desktopbox.sh` nimmt `AH_DESKTOP_ENROLL_TOKENS` als Liste und setzt je Spec eines als `AH_DESKTOP_ENROLL_TOKEN`.
+- `live.js` bekommt `enrollIfAsked()`, aufgerufen in `login()` **nach** der Env-Validierung: fragt erst `is_device_enrolled` die App selbst (der Modul-Flag kennt nur diesen Node-Prozess), enrollt nur sonst. Bewusst **nicht** `AH_ENROLL_TOKEN` — die zwei Tunnel-Specs enrollen damit inline, ein zweiter Versuch würde ein verbrauchtes Token ausgeben.
+**Verifiziert im zweiten Capstone (2026-09-11-0547):** 2 von 2 Tokens gemintet, GUI-Journeys grün gegen das erzwungene Gateway. Der erste Capstone hatte die Etappe mangels Token übersprungen (F5).
+
+### T8 — desktop_e2e_misc.sh für die fünf verwaisten Specs  [x] (fünf verwaiste Specs, je eine `spec <name>: pass|fail`-Zeile, AH_SPEC wählt eine; run.sh brauchte nichts — layer_e2e globbt `desktop_e2e_*.sh`, desktop_e2e_skip_test zählt jetzt 8)
+Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_misc.sh (neu), scripts/tests/run.sh
+Änderung: Aufbau wie `desktop_e2e_live.sh` (e2e-Stack, `e2e_require`, Exit 75); fährt `login-error`, `logout`, `monitoring-alerts`, `connection-editor`, `theme-toggle` nacheinander (`AH_SPEC` wählt einen), Zeile `spec <name>: pass|fail` je Spec, Exit 1 bei einem Fail; Aufnahme in die e2e-Liste von `run.sh`. Ein Spec, der eine im Stack fehlende Voraussetzung braucht, wird `[?]` im Ledger, nicht verbogen. SPDX-Header.
+Verify: `shellcheck --severity=warning scripts/tests/desktop_e2e_misc.sh` leer; `bash scripts/tests/desktop_e2e_skip_test.sh` zählt jetzt 8 Skripte (Liste aus dem Verzeichnis) → `8 passed`; realer Lauf im Heavy-`all`
+Doku: keine (intern)
+
+### T9 — heavy.sh: all, capstone, weekly, Report, history.csv  [x] (Wrapper mit Vorab-Check, Report, history.csv, privatem Commit; heavy_test 32 passed, 0 failed)
+Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh (neu), scripts/tests/heavy_test.sh (neu)
+Änderung: Entrypoint nach Spec: Vorab-Check (`crabbox doctor`, `crabbox list` ohne fremde Boxen, sonst 74), `all` über `crabbox_warm.sh desktop` + `crabbox_iter.sh all --strict`, `capstone` über `crabbox_multibox.sh --capstone --strict`, `weekly` seriell; `$AH_OUT_DIR/weekly/<stempel>/report.md` mit Kopfzeile `PASS|FAIL|UNVERIFIED (<grund>)`, Summary-Zeilen wörtlich, VM-Liste danach; `history.csv` (Schema aus der Spec) je Schritt aus `last-all.json` plus Ebenen-Zeile; Commit im privaten Repo, falls vorhanden; Exit 0/1/74. Test: Shims für `crabbox`, `crabbox_warm.sh`, `crabbox_iter.sh`, `crabbox_multibox.sh` (Fixtures liefern `last-all.json` und Summary-Zeilen), prüft Report-Kopf, wörtliche Summary, `history.csv`-Zeilen, Exit 74 bei fremder Box. SPDX-Header.
+Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed`; `bash scripts/tests/heavy.sh` ohne Argument → Usage, Exit 2; `shellcheck --severity=warning scripts/tests/heavy.sh` leer
+Doku: DEVELOPMENT.md (T18)
+Abhängt von: T7
+
+### T10 — heavy.sh: Klassifikation INFRA und FLAKY (Wiederholung auf derselben Box)  [x] (INFRA endet die Ebene ohne Retry; bis 3 Wiederholungen mit AH_NO_SYNC=1, Desktop-Suiten spec-genau; heavy_test 48 passed, 0 failed — `kandidat` ist hier noch Endzustand, T11 löst ihn auf)
+Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Änderung: Exit 74 oder `strict-failed: <step> (SKIP)` ⇒ `infra` + Kopf `UNVERIFIED`; rote Schritte bis 3× per `crabbox_iter.sh all --strict --step <name>` mit `AH_NO_SYNC=1` (Desktop-Suiten spec-genau über `AH_SPEC`); ein grüner Rerun ⇒ `flaky` in `history.csv` + Zeile in `tasks/private/seen.md` (`quarantine · <schritt> · <datum> · <zähler> · Ablauf +30 d`); 3× identisch rot (gleicher erster Fehlermarker) ⇒ `kandidat`. Test: Fixture-Sequenzen rot/grün/…, rot/rot/rot, 74.
+Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fälle infra, flaky, kandidat enthalten)
+Doku: keine (T18)
+Abhängt von: T9
+
+### T11 — heavy.sh: zweite VM und Gegenprobe gegen den letzten PASS  [x] (Worktree w2 in eigener Lane, Gegenprobe gegen den letzten PASS; unbestaetigt/reg/extern; heavy_test 62 passed, 0 failed)
+Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Änderung: für `kandidat`: Worktree `.crabbox-worktrees/w2` auf HEAD, `AH_LANE=w2 crabbox_warm.sh desktop`, Schritt dort einmal (`unbestätigt` bei grün); dann `--base <sha>` (Default: jüngste `history.csv`-Zeile `ebene=all,ergebnis=pass`; ohne PASS ⇒ `unbestätigt`) im Worktree auschecken, Schritt erneut: Basis grün ⇒ `reg`, Basis rot ⇒ `extern`; `--no-second-vm` überspringt (Kandidat bleibt `unbestätigt`); Aufräumen `crabbox_reap.sh --pond ah-warm-w2` + `git worktree remove`. Test: Fixtures für unbestätigt/reg/extern, Worktree-Anlage und -Abbau im Fixture-Repo.
+Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fälle unbestätigt, reg, extern, kein-PASS); `git worktree list` nach dem Test ohne `w2`
+Doku: keine (T18)
+Abhängt von: T10
+
+### T12 — heavy.sh: REG-Ausgabe als Roadmap-Zeile und Kurz-Ledger, Dedup  [x] (Roadmap-Zeile + reg-Ledger + Dedup über seen.md, audit.yml-Zeile im Report; heavy_test 81 passed, 0 failed)
+Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Änderung: `reg` ⇒ Zeile unter „Neu" in `tasks/private/ROADMAP.md` (nächste freie `R-nnnn`, Klasse REG, Quelle `weekly <datum> · <commit> · Zweit-VM rot · Basis <sha> grün`, Ablauf `nie`; `.bak` vorher) und `tasks/reg-<datum>-<schritt>.md` (`Status: geplant`, `Komponente:`, Verify in Flag-Form, Beweis-Absatz); Dedup gleicher Schritt + gleiche Fehlerzeile in 30 Tagen ⇒ nur `history.csv`; `audit.yml`-Zeile per anonymer GitHub-API in den Report, `failure` ⇒ REL-Zeile `deps-audit` mit Run-Datum als Dedup. Test: Roadmap-Fixture, Zeilenzahl +1, Dedup schreibt nicht doppelt, Ledger-Datei existiert mit `Status: geplant`.
+Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fälle reg-Zeile, dedup, audit-failure)
+Doku: tasks/README.md ein Satz zu `reg-*`-Ledgern
+Abhängt von: T11
+
+### T13 — heavy.sh: --notify (Default aus)  [x] (--notify an AH_NOTIFY_URL, Default aus, fehlgeschlagener POST ist kein Laufsfehler; heavy_test 89 passed, 0 failed)
+Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Änderung: `--notify` postet die Kopfzeile plus Pfad des Reports per `curl -m 10` an `AH_NOTIFY_URL` (aus `.devenv.sh`); ohne URL: Hinweis, kein Fehler. Test mit `curl`-Shim.
+Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed` (Fall notify)
+Doku: DEVELOPMENT.md (T18)
+Abhängt von: T9
+
+### T14 — Hook: Wochenlauf-Zeile aus dem jüngsten Report  [x] (Zeile 4 aus dem jüngsten report.md, sonst `kein Report`; session_status_test 45 passed, 0 failed — Fallback auf den jüngsten Report MIT Urteil, nicht auf das jüngste Verzeichnis)
+Komponente: scripts/dev · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/session_status_test.sh
+Änderung: Zeile 4 `Wochenlauf: <datum> (<n> d): PASS|FAIL|UNVERIFIED` aus dem jüngsten `$AH_OUT_DIR/weekly/*/report.md`, sonst `kein Report`; Test-Fixture mit zwei Reports (jüngster zählt).
+Verify: `bash scripts/tests/session_status_test.sh` → `N passed, 0 failed`; `bash scripts/dev/hooks/session-status.sh | grep -c 'Wochenlauf:'` → 1
+Doku: DEVELOPMENT.md Hook-Absatz ein Satz (T18)
+
+### T15 — upgrade_path_test.sh (Integration-Layer)  [x] (vier Schritte nach Spec 3c, dep-gated; shellcheck sauber, ohne Docker Exit 75 — der reale Lauf steht im Heavy-`all` aus. Voraussetzungen auf der Box: freie Ports :443/7000/7443 für den zweiten Stack aus Schritt 4, `minisign` und `make` installiert. Der Schritt kann heute **nicht** required werden — siehe T15a)
+Komponente: scripts/tests · Dateien: scripts/tests/upgrade_path_test.sh (neu), scripts/tests/run.sh
+Änderung: nach Spec 3c: Vorgänger-Tag per anonymer API, Stack aus `ghcr.io/admincave/*:<tag>` mit Compose-Override, Seeds über `e2e_api.py`, Wechsel auf Checkout-Images (`adminhelper-test/*`, Bau wie `integration_stack_test.sh`), Assertion Seeds lesbar + neuer Agent-Report; Schritt 4 `scripts/update.sh --ref <tag>` gegen einen zweiten Stack im Vorgänger-Stand (eigene Marker, 75 ohne Runtime-Bundle). Dep-gated (Docker, Netz), Exit 75 ohne Voraussetzung; Aufnahme in `layer_integration`; Required-Menge: nur auf der Box (`AH_REQUIRED_DEFAULT` unverändert, Box-Profil setzt ihn). SPDX-Header.
+Verify: `shellcheck --severity=warning scripts/tests/upgrade_path_test.sh` leer; `PATH=/usr/bin:/bin bash scripts/tests/upgrade_path_test.sh; echo $?` ohne Docker → `75`; realer Lauf im Heavy-`all` mit Marker `UPGRADE_OK` und `UPDATE_SH_OK|UPDATE_SH_SKIP`
+Doku: docs/developer/cicd.html DE+EN Test-Aggregator (T18)
+
+### T15a — `AH_REQUIRED` erreicht die Box nicht  [?]
+Komponente: scripts/tests · Dateien: scripts/tests/crabbox_iter.sh
+Befund (im T15-Review aufgedeckt): `crabbox_iter.sh:139-141` reicht nur `AH_ALLOW_REAL`, `AH_CAPTURE`, die Evidence-Envs und `AH_ONLY` an die Box weiter. Auf dem Weg `heavy.sh all` → `crabbox_iter.sh all --strict` → `run.sh all --strict` fällt `AH_REQUIRED` also weg, und auf der Box gilt `AH_REQUIRED_DEFAULT` — das keinen einzigen Integration-/e2e-Schritt enthält. Ein self-SKIP von `upgrade-path` (kein Netz, Images des Vorgänger-Tags weg, `docker manifest inspect` kaputt) ist damit kein `strict-failed`, der Lauf bleibt grün, und `heavy.sh` klassifiziert es nicht einmal als `UNVERIFIED` — der teuerste Schritt der Suite fehlt still. Betrifft heute genauso `integration-stack`, `repo-build`, `sse-push`, `agent-monitoring` und die GUI-Suiten; kein Regress durch T15, aber Stufe 3 lebt von „SKIP heißt nicht verifiziert".
+Frage an Kevin: `AH_REQUIRED` in `crabbox_iter.sh`s `ENVS` durchreichen (eine Zeile, dieselbe Charset-Prüfung wie `AH_ONLY`) — und dann in einem Zug entscheiden, welche schweren Schritte auf der Box wirklich Pflicht sind. Das macht bisher still übersprungene Schritte auf einen Schlag rot, ist also eine bewusste Entscheidung und keine Nebenwirkung dieser Task.
+
+### T16 — /test-Skill neu geschrieben  [x] (fünf Verben, `all|capstone|weekly` drucken nur den tmux-Befehl, Klassifikationstabelle inkl. `fail`, Leak- und Zweit-VM-Regel, T7a/T15a-Vorbehalte an der Stelle, an der gehandelt wird; jede Behauptung im Review gegen die Skripte gegengelesen)
+Komponente: .claude/skills · Dateien: .claude/skills/test/SKILL.md
+Änderung: Struktur nach Spec: `quick` = `bash scripts/dev/verify.sh all --strict`; `all|capstone|weekly` drucken den `tmux`-Startbefehl (`tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'`) und enden; `status` liest den jüngsten Report; Klassifikations-Tabelle in Kurzform; Leak-Regel (`crabbox list` nach jedem Lauf), Zweit-VM-Regel, Rhythmus-Empfehlung; Warm-Loop und Pitfalls bleiben, `--capstone` inkl. enforce.
+Verify: `grep -c 'heavy.sh' .claude/skills/test/SKILL.md` ≥ 3; `grep -n 'tmux new -d -s ah-weekly' .claude/skills/test/SKILL.md` → 1; keine Zeile empfiehlt `crabbox stop` nach jedem Lauf
+Doku: ist der Skill
+Abhängt von: T9
+
+### T17 — CHANGELOG, DEVELOPMENT.md, tasks/README  [x] (CHANGELOG Unreleased, DEVELOPMENT Wochenlauf + Versions-Check, tasks/README `reg-*`)
+Komponente: Repo-Root · Dateien: CHANGELOG.md, DEVELOPMENT.md, tasks/README.md
+Änderung: CHANGELOG Unreleased „Changed" (Release-Assertionen, `-race`, `check-versions.sh`, Wochenlauf mit Klassifikation, Upgrade-Pfad, fünf Specs); DEVELOPMENT.md Abschnitte „Wochenlauf (heavy.sh)" (Start, Report, history.csv, Exit-Codes, `AH_NOTIFY_URL`), Release-Absatz um `check-versions.sh`; tasks/README „Aktueller Stand" und `reg-*`-Ledger.
+Verify: `grep -c 'heavy.sh' DEVELOPMENT.md` ≥ 2; `grep -c 'check-versions' DEVELOPMENT.md CHANGELOG.md` je ≥ 1
+Doku: ist die Doku
+Abhängt von: T9, T15
+
+### T18 — Doku cicd.html DE+EN  [x] (Release-Assertionen und Wochenlauf DE+EN, Workflows-Tabelle, Test-Aggregator, Release-Checkliste; Struktur-Parität DE/EN 75/75 Tags, jede Behauptung im Review gegen die Skripte gegengelesen)
+Komponente: docs · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Abschnitte „Release-Assertionen" (statisch, zstd, Signatur-Verify, Windows-Smoke, MSI, Versions-Check) und „Wochenlauf (heavy.sh)" mit Klassifikationstabelle (INFRA, FLAKY, unbestätigt, extern, REG), Exit-Codes, `history.csv`, Report-Aufbau; Workflows-Tabelle um `agent-windows-smoke`; Test-Aggregator um `-race` und `upgrade_path_test.sh`; Release-Checkliste um `check-versions.sh`. Beide Sprachen gleichlautend.
+Verify: `grep -c 'heavy.sh' docs/developer/cicd.html docs/en/developer/cicd.html` je ≥ 2; `grep -c 'check-versions' docs/developer/cicd.html docs/en/developer/cicd.html` je ≥ 1
+Doku: ist die Doku
+Abhängt von: T1, T2, T3, T4, T5, T6, T9, T15

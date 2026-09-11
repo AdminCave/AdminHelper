@@ -36,7 +36,16 @@ bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.
 
 ## Aktueller Stand
 
-- **`harness-stufe-1.md`** — `Status: aktiv`. Stufe 1 der Autonomie-Roadmap („Grün heißt
+- **`harness-stufe-3.md`** — `Status: aktiv`. Stufe 3 der Autonomie-Roadmap („Ausführung
+  zuerst"): Artefakt-Assertionen im Release-Workflow, `check-versions.sh`, `-race`, der
+  Wochenlauf `heavy.sh` mit Klassifikation und Historie, der Upgrade-Pfad und die fünf
+  verwaisten Desktop-Specs. Spec: `docs/features/harness-stufe-3.md`.
+- **`reg-<datum>-<schritt>.md`** — von `scripts/tests/heavy.sh` geschrieben, nicht von
+  `/feature-plan`: eine bestätigte Regression aus einem Wochenlauf (Schritt auf zwei
+  Boxen rot, auf dem letzten PASS-Commit grün). `Status: geplant` mit einem Beweis-Absatz
+  über die drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit); die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie
+  jedes andere. Die zugehörige Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
+- **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt
   Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,
   der Session-Status-Hook und der CI-Job `agent-windows`. Spec: `docs/features/harness-stufe-1.md`.
 - **`audit-fixes.md`** — `Status: erledigt`, gitignored (der Report enumeriert ungefixte Funde

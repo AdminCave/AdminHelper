@@ -23,6 +23,45 @@ export const SERVER_URL = process.env.AH_SERVER_URL;
 export const USER = process.env.AH_ADMIN_USER;
 export const PASS = process.env.AH_ADMIN_PASS;
 
+// Device enrollment before the first login, and only when the orchestrator asked
+// for it. With MTLS_ENFORCE=true the gateway sets ssl_verify_client on for :443,
+// so a login WITHOUT an enrolled identity is rejected at the TLS handshake — that
+// is why the capstone's desktop stage could never be green against an enforced
+// stack. A permissive stack leaves the variable unset and this is a no-op.
+//
+// Deliberately NOT AH_ENROLL_TOKEN: the tunnel specs enroll inline with that one,
+// and a second attempt would spend an already-consumed one-time token.
+let enrolled = false;
+export async function enrollIfAsked() {
+  const token = process.env.AH_DESKTOP_ENROLL_TOKEN;
+  if (!token || enrolled) return;
+  await $(".login-card").waitForExist({ timeout: 20000 });
+  // Ask the app, not this module: `enrolled` only remembers THIS node process,
+  // and an enrollment token is one-time — a second redeem of a spent one fails.
+  const already = await browser.executeAsync((done) => {
+    window.__TAURI__.core
+      .invoke("is_device_enrolled")
+      .then((v) => done(v === true))
+      .catch(() => done(false));
+  });
+  if (already) {
+    enrolled = true;
+    return;
+  }
+  const err = await browser.executeAsync(
+    (url, tok, done) => {
+      window.__TAURI__.core
+        .invoke("enroll_with_token", { serverUrl: url, token: tok, allowSelfSigned: true })
+        .then(() => done(null))
+        .catch((e) => done(String((e && e.message) || e)));
+    },
+    SERVER_URL,
+    token,
+  );
+  if (err) throw new Error(`enroll_with_token failed: ${err}`);
+  enrolled = true;
+}
+
 export async function login() {
   // Fail fast with a clear pointer to the wrapper: reading these unset from the env
   // otherwise surfaces as a cryptic setValue(undefined) after the ~20-min build.
@@ -37,6 +76,9 @@ export async function login() {
       );
     }
   }
+  // After the validation above, so a missing AH_SERVER_URL is named rather than
+  // handed to the enroll command as `undefined`.
+  await enrollIfAsked();
   await $(".login-card").waitForExist({ timeout: 20000 });
   const inputs = await $$(".login-card input"); // serverUrl, username, password
   await inputs[0].setValue(SERVER_URL);

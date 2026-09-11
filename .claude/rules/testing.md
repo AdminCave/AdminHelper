@@ -19,8 +19,14 @@ paths:
 2. **Schwer (VM, manuell):** `integration`/`e2e`/`all` fahren den echten docker-compose-Stack, mTLS-Enrollment,
    Redis-SSE-Fan-out, Agent-Monitoring, apt/rpm-Repo-Bau und die Desktop-GUI-E2E (`apps/desktop/e2e/*.live.js` über
    `scripts/tests/desktop_e2e_*.sh`). Sie verweigern ohne `AH_ALLOW_REAL=1` und laufen nur auf einer VM (`/test`).
-3. **Multi-Host (Capstone):** `bash scripts/tests/crabbox_multibox.sh --agents N [--desktop] [--strict]` — echtes `.deb` über
-   einen Netz-Hop, Cross-Host-mTLS, optional die echte Tauri-GUI gegen den entfernten Server.
+3. **Multi-Host (Capstone):** `bash scripts/tests/crabbox_multibox.sh --capstone --strict` — echtes `.deb` über
+   einen Netz-Hop, Cross-Host-mTLS, die echte Tauri-GUI gegen den entfernten Server, der 3-Host-Tunnel, der
+   Mail-Alert und der `MTLS_ENFORCE`-Guard. Teilläufe (`--agents N [--desktop]` …) laufen **ohne** `--strict`:
+   ein Lauf ohne `--enforce` meldet den MTLS_ENFORCE-Guard als SKIP, und unter `--strict` ist ein SKIP ein
+   Fehler — `--strict` verlangt deshalb den vollen Flag-Satz, den `--capstone` setzt. `heavy.sh capstone` fährt
+   genau diese Kombination.
+   Seit T7a enrollt die Desktop-Etappe vor jedem Spec eine Geräte-Identität (ein Einmal-Token je Spec,
+   kurz vorher gemintet), damit sie das cert-gated :443 überhaupt erreicht — bewiesen erst im Capstone-Lauf.
 
 Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungene Ebene heißt: nicht taggen.
 

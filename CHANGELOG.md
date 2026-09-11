@@ -9,6 +9,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Ausfuehrung zuerst (Autonomie-Roadmap, Stufe 3):** Der Release-Workflow prueft jetzt
+  das Ergebnis statt des Rezepts — das Agent-Binary muss statisch sein und darf kein
+  `GLIBC_`-Symbol importieren, das ausgelieferte `.deb` darf keine zstd-Member tragen,
+  die frische `SHA256SUMS.minisig` wird gegen den in `scripts/update.sh` gepinnten
+  Public Key verifiziert, die Windows-`.exe` wird einmal ausgefuehrt und muss die
+  Tag-Version drucken (neuer harter Job `agent-windows-smoke`), und das MSI wird
+  installiert, geprueft und wieder deinstalliert (weiter `continue-on-error`).
+  `scripts/release/check-versions.sh <X.Y.Z>` prueft alle sechs handgepflegten
+  Versions-Stellen statt nur `tauri.conf.json` — dabei kam heraus, dass die
+  Sidebar-Footer der beiden Landing-Pages seit 0.43.2 hingen (mehrzeiliges Markup, vom
+  alten Muster nie erfasst); sie sind mitgezogen. Die Go-Suite laeuft in CI unter `-race`, in
+  `run.sh` dort, wo ein C-Compiler mit cgo vorhanden ist (sonst sagt der Lauf, dass der
+  Detektor aus war).
+  Neu ist der **Wochenlauf** `bash scripts/tests/heavy.sh all|capstone|weekly`: ein
+  Wrapper um die vorhandenen crabbox-Skripte, der einen Report mit den woertlichen
+  Summary-Zeilen schreibt, jeden roten Schritt mechanisch als `infra`, `flaky`,
+  `unbestaetigt`, `extern` oder `reg` klassifiziert (Wiederholung auf derselben Box,
+  dann eine frische zweite VM, dann eine Gegenprobe gegen den letzten PASS-Commit) und
+  aus einer bestaetigten Regression eine Roadmap-Zeile plus Kurz-Ledger macht. Er
+  startet nie von selbst. Zusaetzlich abgedeckt: der Upgrade-Pfad vom letzten
+  veroeffentlichten Release auf den aktuellen Stand (`upgrade_path_test.sh`, inkl.
+  `update.sh` real) und die fuenf Desktop-Specs, die bisher von keinem Skript gefahren
+  wurden (`desktop_e2e_misc.sh`). Der Multibox-Capstone schliesst `--enforce` ein und
+  meldet jede bedingte Pruefung, die nicht lief, als SKIP statt sie zu verschweigen.
+
 - **Test-Infrastruktur (Autonomie-Roadmap, Stufe 1 — „Gruen heisst Beweis"):** Der
   Test-Aggregator `scripts/tests/run.sh` kennt `--strict`, `--only <keys>` und
   `--step <name>`; unter `--strict` ist ein uebersprungener Pflicht-Schritt ein

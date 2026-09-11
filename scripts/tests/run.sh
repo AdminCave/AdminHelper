@@ -81,9 +81,9 @@ export AH_ONLY AH_STRICT
 #              ca-issuer-pytest · go-agent · desktop-cargo · desktop-ui-vitest
 #              desktop-e2e-lint · web-vitest · scripts
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build
+#                agent-monitoring · repo-build · upgrade-path
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
-#        (the seven GUI suites carry their script name as id, underscores and all)
+#        (each GUI suite carries its script name as id, underscores and all)
 AH_REQUIRED_DEFAULT="ruff shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
 AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 
@@ -414,7 +414,7 @@ layer_lint() {
 
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
-    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh
+    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
@@ -431,7 +431,7 @@ layer_lint() {
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test crabbox_iter_flags_test
-desktop_e2e_skip_test"
+desktop_e2e_skip_test check_versions_test heavy_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
@@ -440,8 +440,8 @@ AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
 scripts_block() {
   local t rc skipped=0 ran=0
   # Two of the block's tests start run.sh themselves. They pin --step or a layer
-  # that never reaches this block, but a future one might not — and 13 tests per
-  # level is a fork bomb, not a test run.
+  # that never reaches this block, but a future one might not — and the whole
+  # list per level is a fork bomb, not a test run.
   [ -z "${AH_IN_SCRIPTS_BLOCK:-}" ] || { echo "  refusing to nest the scripts block"; return 1; }
   export AH_IN_SCRIPTS_BLOCK=1
   for t in $AH_SCRIPT_TESTS; do
@@ -454,7 +454,7 @@ scripts_block() {
       *)  echo "     $t: FAILED (rc=$rc)"; return "$rc" ;;
     esac
   done
-  # One block, one result for thirteen tests: if even one could not run, PASS
+  # One block, one result for the whole list: if even one could not run, PASS
   # would bury it. Returning 75 hands the verdict to _skip, which owns the strict
   # policy for every other step too — so the block gets the same `strict-failed`
   # wording, obeys AH_REQUIRED like everything else, and every skip stays visible
@@ -499,12 +499,22 @@ layer_unit() {
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Go agent — fmt + vet + test + cross-compile (matches CI).
+  # -race mirrors ci.yml's agent job: the agent is concurrent (monitor, frpc,
+  # config) and a data race is the bug class no review sees. The detector needs
+  # cgo and therefore a C compiler; a box without one — or one with CGO_ENABLED=0
+  # in the environment, where `go test -race` fails hard — runs the suite
+  # unchanged and SAYS so. The log line is what tells a green run apart from a
+  # green run that checked less.
+  AH_RACE=""
+  if have gcc && [ "$(go env CGO_ENABLED 2>/dev/null)" = 1 ]; then AH_RACE="-race"; fi
+  export AH_RACE
   if ! only agent; then skip go-agent "go agent (vet+test+cross)" "AH_ONLY"
   elif have go; then
     run_step go-agent "go agent (vet+test+cross)" -- bash -c '
       cd apps/agent &&
       go vet ./... &&
-      go test -cover ./... $AH_ARGS &&
+      { [ -n "$AH_RACE" ] && echo "race: on (-race)" || echo "race: off (no gcc or CGO_ENABLED=0)"; } &&
+      go test $AH_RACE -cover ./... $AH_ARGS &&
       GOOS=linux   GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent &&
       GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/adminhelper-agent'
   else skip go-agent "go agent (vet+test+cross)" "go not installed"; fi
@@ -532,7 +542,7 @@ layer_unit() {
   # Ops/harness shell tests — hermetic, no docker, no display (see scripts_block).
   # AH_ARGS has no meaning here (the knob is AH_SCRIPT_TESTS), and silently
   # ignoring it would let `verify.sh scripts -- install_test` look narrowed while
-  # all thirteen ran.
+  # the whole list ran.
   if [ -n "$AH_ARGS" ] && only scripts && [ -n "$AH_ONLY" ]; then
     echo "the 'scripts' step takes no -- args (use AH_SCRIPT_TESTS); got: $AH_ARGS"; exit 2
   fi
@@ -564,6 +574,11 @@ layer_integration() {
   run_step sse-push "sse_push_e2e (Redis fan-out)"     -- bash scripts/tests/sse_push_e2e.sh
   run_step agent-monitoring "agent_monitoring (push pipeline)" -- bash scripts/tests/agent_monitoring_test.sh
   run_step repo-build "repo_build (apt/rpm + sign)"      -- bash scripts/tests/repo_build_test.sh
+  # The only step that starts from a PUBLISHED release rather than from scratch:
+  # both services migrate on startup, so a migration that only works on an empty
+  # database is invisible to every other suite here. Needs the network (ghcr +
+  # the GitHub API) and self-skips with 75 without it.
+  run_step upgrade-path "upgrade_path (last release -> HEAD)" -- bash scripts/tests/upgrade_path_test.sh
   # update_test/agent_install_test/diagnostics_test used to run here too. They are
   # hermetic, so they belong in the unit layer's scripts block — running them in
   # both meant the heavy layer paid for them twice and the unit layer looked

@@ -44,14 +44,21 @@ webview; the Vitest component tests in `../ui` stop at the IPC boundary.
   Settings; the server session ends and the server-only UI (mode badge, the
   Infrastructure nav) changes. Runs last in the `desktop_e2e_crud.sh` boot.
 - **`test/specs/login-error.live.js`** — the negative auth path: a wrong password
-  surfaces the inline error and never reaches the app shell.
+  surfaces the inline error and never reaches the app shell. Orchestrated by
+  **`../../../scripts/tests/desktop_e2e_misc.sh`**.
 - **`test/specs/logout.live.js`** — signing out ends the session and returns to the
-  login screen (the app shell + nav go away).
+  login screen (the app shell + nav go away). Runs in the same
+  `desktop_e2e_misc.sh` boot.
 - **`test/specs/monitoring-alerts.live.js`** — create a webhook alert rule on the
-  Monitoring "alerts" tab; the rule appears in the list after the round-trip.
+  Monitoring "alerts" tab; the rule appears in the list after the round-trip. Runs
+  in the same `desktop_e2e_misc.sh` boot (which brings monitoring up for it).
 - **`test/specs/connection-editor.live.js`** — create a connection through the
   top-level Connections page editor (the standalone `ConnectionEditor`, distinct
-  from the server-detail connections tab that `connection-crud` drives).
+  from the server-detail connections tab that `connection-crud` drives). Runs in
+  the same `desktop_e2e_misc.sh` boot.
+- **`test/specs/theme-toggle.live.js`** — the sidebar-footer theme toggle flips
+  dark↔light and the choice survives a reload (the FOUC inline script re-applies
+  it before the first paint). Runs in the same `desktop_e2e_misc.sh` boot.
 - **`test/specs/monitoring-check.live.js`** — create an `agent_resources`
   monitoring check through the GUI on a server a real agent has pushed metrics
   for; the check appears after a reload from the monitoring service. Orchestrated

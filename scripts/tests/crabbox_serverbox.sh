@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 echo "[serverbox] hydrate (server profile: docker stack, no Tauri)"
 AH_BOOTSTRAP_PROFILE=server bash scripts/tests/crabbox_bootstrap.sh || { echo "[serverbox] bootstrap failed"; exit 1; }
 
-echo "[serverbox] .env: DOMAIN=$SRV_IP (IP-SAN gateway+frps leaf), MTLS_ENFORCE=false, admin pw"
+echo "[serverbox] .env: DOMAIN=$SRV_IP (IP-SAN gateway+frps leaf), MTLS_ENFORCE=$([ "$DO_ENFORCE" = 1 ] && echo true || echo false), admin pw"
 [ -f .env ] || cp .env.example .env
 bash scripts/init-secrets.sh || true
 ADMIN_PW="$(openssl rand -hex 16)"
@@ -90,6 +90,10 @@ PY
   code="$(curl -k -s -o /dev/null -w '%{http_code}' --max-time 5 "https://localhost/api/auth/me" 2>/dev/null || echo 000)"
   [ "$code" = 400 ] && echo "MB_ENFORCE_CERTLESS_REJECTED=1" || echo "MB_ENFORCE_CERTLESS_REJECTED=0 (got $code)"
   export AH_CERT=/tmp/mb-admin-fullchain.pem AH_KEY=/tmp/mb-admin.key
+  # The desktop box needs enrollment tokens too (cert-gated :443), but NOT from
+  # here: they live 60 minutes by default and the desktop stage starts hours
+  # later, after the agent, rpm, tunnel and visitor boxes. The orchestrator mints
+  # them just before that stage instead (crabbox_multibox.sh).
 fi
 
 echo "[serverbox] seed admin JWT -> server record -> provision token"
