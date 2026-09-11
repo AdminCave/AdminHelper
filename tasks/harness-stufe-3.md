@@ -4,10 +4,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 3 — Ausführung zuerst — Task-Ledger
-Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind drei `[?]` — T6a, T15a und die Fremdfunde F1/F2 (F3/F4 aus den echten Läufen sind behoben); T7a ist gebaut, aber im ersten Capstone NICHT zum Zug gekommen — die Etappe wurde mangels Token übersprungen, siehe F5) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (18/18 Tasks, lokal grün, PR #12 als Draft offen, CI grün — Lauf 34484154968, 20 Jobs success, 1 skipped: der From-outside-Stack ist bewusst kein PR-Gate; offen sind drei `[?]` — T6a, T15a und die Fremdfunde F1/F2 (F3/F4 aus den echten Läufen sind behoben); T7a ist verifiziert; Capstone 2026-09-11-0547 **PASS**, `25 ok, 0 failed, 0 skipped`) · Branch: feature/harness-stufe-3 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-3.md
 Fast-Suite: lokal · Warm-Profil: desktop
-Heavy: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt; T7a ist gebaut, aber die Capstone-Ebene beweist sich erst im Lauf
+Heavy — real gefahren und ausgewertet:
+- `all` 2026-09-10-1626 · **29 passed, 0 failed, 0 skipped** (inkl. `upgrade_path` mit `UPGRADE_OK`+`UPDATE_SH_OK` und `desktop_e2e_misc` mit allen fünf Specs)
+- `capstone` 2026-09-10-2018 · **FAIL**, `17 ok, 7 failed, 2 skipped` — zwei Rollen an F2 verloren, Desktop-Etappe mangels Token übersprungen (F5)
+- `capstone` 2026-09-11-0547 · **PASS**, `25 ok, 0 failed, 0 skipped`, null Lease-Fehlversuche, kein VM-Leck. `0 skipped` heißt hier erstmals wörtlich: jede bedingte Prüfung lief — R-0021 und R-0022 damit beide real belegt.
+Ursprüngliche Planung: nach T14 zwei Läufe `tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'` (Session schließen, Report lesen) — ask-first, ≈ 17 VM-h je Lauf, acht VMs in der Spitze; vorher `crabbox list` leer, die Swap-Frage auf dem Proxmox-Host geklärt; T7a ist gebaut, aber die Capstone-Ebene beweist sich erst im Lauf
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Roadmap: R-0003 (schließt R-0021, R-0022 ein) · Hängt ab von: R-0002 (gemergt, PR #11)
@@ -66,7 +70,7 @@ Auf dem Hypervisor steht eine gestoppte VM (`slug=ah-bake keep=true`, Template-Q
 ### F5 — Token-Mintung verlor eines von zwei Tokens, ohne Spur  [x] (behoben)
 Komponente: scripts/tests · Datei: scripts/tests/crabbox_multibox.sh
 Erster echter Capstone (2026-09-10-2018): `FAIL desktop: only 1 of 2 enrollment tokens minted` ⇒ die Desktop-Etappe wurde übersprungen, T7a bleibt damit **unbewiesen**. Der Skip selbst war richtig — er hat 50 Minuten VM-Zeit für einen aussichtslosen Lauf gespart, genau wie gebaut. Nicht richtig war, dass sich der Grund **nicht rekonstruieren ließ**: die Mint-Schleife schickte Ausgabe und Fehler nach `/dev/null`.
-Behoben: (1) alle Tokens in **einem** `crabbox run` statt einem pro Spec — jeder Lauf synct das ganze Repo zur Box, N Runden waren N Gelegenheiten, eines zu verlieren; (2) die Ausgabe landet in `mint-desktop-tokens.log` und der `bad`-Text nennt den Pfad. Der Reviewer hatte Punkt 1 als Nit vorgeschlagen und ich hatte ihn als kosmetisch abgetan — er hätte diesen Ausfall vermutlich verhindert.
+**Verifiziert:** im zweiten Capstone kamen 2 von 2 Tokens in 9,6 s aus einem einzigen Lauf. Behoben: (1) alle Tokens in **einem** `crabbox run` statt einem pro Spec — jeder Lauf synct das ganze Repo zur Box, N Runden waren N Gelegenheiten, eines zu verlieren; (2) die Ausgabe landet in `mint-desktop-tokens.log` und der `bad`-Text nennt den Pfad. Der Reviewer hatte Punkt 1 als Nit vorgeschlagen und ich hatte ihn als kosmetisch abgetan — er hätte diesen Ausfall vermutlich verhindert.
 
 ### F2 — crabbox' eigener Provider-Bootstrap verliert das apt-Lock-Rennen gegen cloud-init  [?]
 Komponente: crabbox (extern) · nichts in diesem Repo
@@ -90,14 +94,14 @@ Komponente: scripts/tests · Dateien: scripts/tests/crabbox_multibox.sh, scripts
 Verify: `shellcheck --severity=warning scripts/tests/crabbox_multibox.sh` leer; `grep -c 'skipped ' scripts/tests/crabbox_multibox.sh` ≥ 5; `grep -n 'ENFORCE=1' scripts/tests/crabbox_multibox.sh` zeigt den `--capstone`-Zweig; realer Lauf in der Heavy-Zeile
 Doku: .claude/skills/test/SKILL.md (T16)
 
-### T7a — `--capstone` erzwingt enforce, die Desktop-Etappe kann das nicht  [x] (Option (a) gebaut: zweites Enroll-Token, `enrollIfAsked()` vor dem Login — auf einer VM noch **unverifiziert**)
+### T7a — `--capstone` erzwingt enforce, die Desktop-Etappe kann das nicht  [x] **verifiziert** (Capstone 2026-09-11-0547: `ok desktop GUI journeys green against the remote server` gegen ein Gateway mit `ssl_verify_client on`)
 Komponente: scripts/tests · Dateien: scripts/tests/crabbox_serverbox.sh, scripts/tests/crabbox_desktopbox.sh, scripts/tests/crabbox_multibox.sh
 Befund (statisch belegt, kein Lauf nötig): `--capstone` setzt seit T7 `DESKTOP=1` **und** `ENFORCE=1`. `ENFORCE=1` → `crabbox_serverbox.sh:35` `MTLS_ENFORCE=true` → `apps/gateway/docker-entrypoint.sh:39` `ssl_verify_client on` auf :443. `crabbox_desktopbox.sh:16` fährt default `server-crud.live.js` + `monitoring-check.live.js`; beide beginnen mit `login()` über :443, die Box ist frisch (eigenes `XDG_DATA_HOME`, leerer Keyring) und enrollt nirgends — `enrollment::enroll` ist JWT-gated, also erst *nach* dem Login. Die S3-Etappe ist im Capstone damit **strukturell** rot, nicht „beim ersten Lauf vielleicht". Alle Desktop-Suiten laufen bis heute mit `e2e_init false`; Desktop + enforce ist nie gelaufen. Spec-Frage 4 deckt das nicht ab — freigegeben war „der Enforce-Guard kann beim ersten Lauf rot sein", nicht eine dauerhaft rote GUI-Etappe.
 Umgesetzt ist **Option (a)** — die einzige, die S3 *und* den `MTLS_ENFORCE`-Guard behält:
 - `crabbox_multibox.sh` mintet die Tokens **kurz vor** der Desktop-Etappe (`mint-enroll-token --ttl-minutes 240` über `crabbox run` auf der Server-Box) und **eines je Spec**; die TTL muss den `timeout 3000`-Deckel der Etappe überleben, sonst bricht ein späteres Anheben des Deckels sie still. Beides ist nötig: die Default-TTL ist 60 Minuten, die Etappe startet Stunden nach der Server-Box; und jeder Spec ist ein eigener `wdio run` in eigener dbus-Session mit leerem Keyring, startet also un-enrollt — Tokens sind einmalig. Reichen die Tokens nicht, wird die Etappe **übersprungen** (`bad` + `skipped`) statt 50 Minuten VM-Zeit in einen Lauf zu stecken, der nicht bestehen kann.
 - `crabbox_desktopbox.sh` nimmt `AH_DESKTOP_ENROLL_TOKENS` als Liste und setzt je Spec eines als `AH_DESKTOP_ENROLL_TOKEN`.
 - `live.js` bekommt `enrollIfAsked()`, aufgerufen in `login()` **nach** der Env-Validierung: fragt erst `is_device_enrolled` die App selbst (der Modul-Flag kennt nur diesen Node-Prozess), enrollt nur sonst. Bewusst **nicht** `AH_ENROLL_TOKEN` — die zwei Tunnel-Specs enrollen damit inline, ein zweiter Versuch würde ein verbrauchtes Token ausgeben.
-**Unverifiziert:** Desktop + enforce ist nie gelaufen. shellcheck, eslint und die Marker-Verkettung sind geprüft; ob die GUI mit enrollter Identität durch das cert-gated :443 kommt, zeigt erst der erste Capstone-Lauf.
+**Verifiziert im zweiten Capstone (2026-09-11-0547):** 2 von 2 Tokens gemintet, GUI-Journeys grün gegen das erzwungene Gateway. Der erste Capstone hatte die Etappe mangels Token übersprungen (F5).
 
 ### T8 — desktop_e2e_misc.sh für die fünf verwaisten Specs  [x] (fünf verwaiste Specs, je eine `spec <name>: pass|fail`-Zeile, AH_SPEC wählt eine; run.sh brauchte nichts — layer_e2e globbt `desktop_e2e_*.sh`, desktop_e2e_skip_test zählt jetzt 8)
 Komponente: scripts/tests · Dateien: scripts/tests/desktop_e2e_misc.sh (neu), scripts/tests/run.sh
