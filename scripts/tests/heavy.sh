@@ -212,7 +212,9 @@ infra_marker() {  # infra_marker <logfile> -> prints the line, or nothing
   # a server box that cannot be leased, would be filed as a product FAIL.
   # Deliberately narrow: only the failures that stop the whole run. A single
   # agent or desktop lease failing degrades the run, it does not void it.
-  grep -aE 'no warm box|warm pond not ready|lease failed|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)' \
+  # \b on 'lease failed': crabbox's warning "workspace owner reLEASE FAILED" is a
+  # per-role setup abort (capstone_scan files it), not the whole run failing.
+  grep -aE 'no warm box|warm pond not ready|\blease failed|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)' \
     "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
 }
 
@@ -673,6 +675,64 @@ quarantine() {  # quarantine <step>
   printf 'quarantine · %s · %s · %s · Ablauf +30 d (%s)\n' "$step" "$DATE" "$n" "$until" >> "$seen"
 }
 
+# capstone_scan <log> -> one line per event, tab-separated:
+#   A<TAB><role>            crabbox cancelled a role's setup command in this section
+#   F<TAB><role><TAB><text> a FAIL assertion, with the role of the section it fell in
+# The role is read from the "== … ==" section headers multibox prints; a failure
+# that follows an aborted setup of the same role is a consequence of the abort,
+# not a product defect, and is filed as infra by run_capstone. On 2026-09-11 all
+# eight capstone failures were such consequences (moncheck and tunnel setups
+# cancelled mid-apt) and the report could not say so.
+capstone_scan() {  # capstone_scan <logfile>
+  awk '
+    function role_of(h) {
+      h = tolower(h)
+      if (h ~ /moncheck/)                  return "moncheck"
+      if (h ~ /tunnel/)                    return "tunnel"
+      if (h ~ /cross-distro|rpm/)          return "rpm"
+      if (h ~ /desktop|gui/)               return "desktop"
+      if (h ~ /provision each agent/)      return "agent"
+      if (h ~ /server|stack/)              return "server"
+      return "other"
+    }
+    # A box is known by its slug, not by the section it was leased in: agent
+    # boxes are leased under the "lease 1 server + N agent" header and the
+    # desktop box before its own header, so a lost lease keyed on the header
+    # would land on the wrong role — and excuse a real failure there.
+    function role_of_slug(sl) {
+      if (sl ~ /^ah-srv/)              return "server"
+      if (sl ~ /^ah-agent-rpm/)        return "rpm"
+      if (sl ~ /^ah-agent/)            return "agent"
+      if (sl ~ /^ah-moncheck/)         return "moncheck"
+      if (sl ~ /^ah-(tunnel|visitor)/) return "tunnel"
+      if (sl ~ /^ah-desktop/)          return "desktop"
+      return ""
+    }
+    function role_of_lease_fail(t) {
+      if (t ~ /^server lease/)        return "server"
+      if (t ~ /^agent[0-9]* lease/)   return "agent"
+      if (t ~ /^moncheck-box lease/)  return "moncheck"
+      if (t ~ /^rpm-agent lease/)     return "rpm"
+      if (t ~ /^(tunnel-agent|visitor) lease/) return "tunnel"
+      if (t ~ /^desktop lease/)       return "desktop"
+      return ""
+    }
+    /^== / { role = role_of($0); next }
+    /lease attempt 3\/3 for [^ ]+ failed/ {
+      sl = $0; sub(/.*lease attempt 3\/3 for /, "", sl); sub(/ failed.*/, "", sl)
+      r = role_of_slug(sl); if (r == "") r = (role == "" ? "other" : role)
+      print "A\t" r; next }
+    # crabbox cancelled the remote command of this section (timeout, workspace
+    # owner lost): anchored on the wording crabbox prints, not on a bare "context
+    # canceled" that a role script might echo from a tool log.
+    /workspace owner release failed|refusing collection and cleanup: context canceled/ {
+      if (role == "") role = "other"; print "A\t" role; next }
+    /^[[:space:]]*FAIL / { t = $0; sub(/^[[:space:]]*FAIL[[:space:]]*/, "", t)
+      r = role_of_lease_fail(t); if (r == "") r = (role == "" ? "other" : role)
+      print "F\t" r "\t" t }
+  ' "$1" 2>/dev/null
+}
+
 run_capstone() {
   echo "== capstone: crabbox_multibox.sh --capstone --strict =="
   local log="$OUT/multibox.log" rc=0 t0=$SECONDS secs_layer
@@ -690,20 +750,42 @@ run_capstone() {
     FINDINGS+=("capstone|-|infra|$secs_layer|multibox|$marker")
     return 0
   fi
-  # Each red assertion by name, so the report says WHICH guard failed.
-  local line
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    # FINDINGS is '|'-separated, and an assertion text may contain one — it would
-    # shift every later column of the CSV and break the report table.
-    FINDINGS+=("capstone|${line//|/ }|fail|0|multibox|assertion")
-  done < <(grep -aE '^[[:space:]]*FAIL ' "$log" | sed 's/^[[:space:]]*FAIL[[:space:]]*//')
+  # Each red assertion by name, so the report says WHICH guard failed — and
+  # whether it failed on its own or because crabbox had cancelled that role's
+  # setup before (then it is infra, filed per role, not a product defect).
+  local kind role line aborted="" infra_n=0 fail_n=0
+  while IFS=$'\t' read -r kind role line; do
+    case "$kind" in
+      A) case " $aborted " in *" $role "*) ;; *) aborted="${aborted:+$aborted }$role" ;; esac ;;
+      F) [ -n "$line" ] || continue
+         # FINDINGS is '|'-separated, and an assertion text may contain one — it
+         # would shift every later column of the CSV and break the report table.
+         case " $aborted " in
+           *" $role "*) FINDINGS+=("capstone|${line//|/ }|infra|0|multibox|setup abort: $role"); infra_n=$((infra_n + 1)) ;;
+           *)           FINDINGS+=("capstone|${line//|/ }|fail|0|multibox|assertion");           fail_n=$((fail_n + 1)) ;;
+         esac ;;
+    esac
+  done < <(capstone_scan "$log")
+  [ -n "$aborted" ] && note "crabbox cancelled the setup of: $aborted ($infra_n failure(s) filed as infra)"
   case "$rc" in
     0)  FINDINGS+=("capstone|-|pass|$secs_layer|multibox|") ;;
     74) set_infra "crabbox_multibox.sh exited 74 (infrastructure)"
         FINDINGS+=("capstone|-|infra|$secs_layer|multibox|wrapper exit 74") ;;
-    *)  set_fail
-        FINDINGS+=("capstone|-|fail|$secs_layer|multibox|wrapper exit $rc") ;;
+    *)  if [ "$fail_n" -eq 0 ] && [ -n "$aborted" ]; then
+          # The run happened (there is a summary line), but every failure follows a
+          # cancelled setup: nothing was learned about the code, so UNVERIFIED — with
+          # the cause named, not "could not run".
+          local roles_n mb_summary
+          roles_n=$(printf '%s\n' "$aborted" | wc -w)
+          # The multibox line from THIS log — SUMMARY_LINES also holds the `all`
+          # layer's line in weekly mode and may be empty in capstone mode.
+          mb_summary="$(grep -a 'crabbox_multibox:' "$log" | tail -1 | sed 's/^[[:space:]]*//')"
+          set_infra "capstone infra: crabbox brach das Setup von $roles_n Rolle(n) ab ($aborted); ${mb_summary:-keine Summary-Zeile} — die $infra_n Fehler folgen dem Abbruch"
+          FINDINGS+=("capstone|-|infra|$secs_layer|multibox|setup aborts: $aborted")
+        else
+          set_fail
+          FINDINGS+=("capstone|-|fail|$secs_layer|multibox|wrapper exit $rc")
+        fi ;;
   esac
 }
 

@@ -680,6 +680,92 @@ out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "an unleasable server box -> exit 74, not a FAIL" || bad "server lease -> rc=$rc"
 history_of | grep -q ',capstone,-,infra,'   && ok "history.csv: capstone infra" || bad "rows: $(history_of)"
 
+# ── 7c: failures that follow a cancelled role setup are infra, named by role ──
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== lease 1 server + 1 agent box(es) on vmbr1 (pond ah-mb-1) ==
+  ok   server-box ah-srv @ 10.0.0.5
+== moncheck (S5): lease the client/sink box + start mailhog (before the seed) ==
+  ok   moncheck-box ah-moncheck @ 10.0.0.6
+warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+  FAIL mailpit did not start
+== provision each agent against https://10.0.0.5 ==
+  ok   agent ah-agent1: provisioned + mTLS-enrolled over the network hop
+== moncheck (S5): pull-check verdicts + closed-loop alert delivery ==
+  FAIL reachable ping check status=? (expected ok)
+  FAIL no alert email reached the sink
+  crabbox_multibox: 18 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "only abort-consequences -> UNVERIFIED (74), not FAIL" || bad "abort-only capstone -> rc=$rc"
+report_of | head -1 | grep -q 'capstone infra: crabbox brach das Setup von 1 Rolle(n) ab (moncheck); crabbox_multibox: 18 ok, 3 failed, 0 skipped' \
+  && ok "the reason names the role and quotes the summary line" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'could not run' && bad "reason still says the capstone could not run" || ok "no 'could not run' for a run that happened"
+[ "$(history_of | grep -v ',capstone,-,' | grep -c ',capstone,.*,infra,0,multibox')" = 3 ] \
+  && ok "the three failures are filed as infra rows" || bad "rows: $(history_of | tr '\n' ' ')"
+history_of | grep -q ',capstone,-,infra,' && ok "the layer row is infra" || bad "layer row: $(history_of | grep ',capstone,-,')"
+report_of | grep -q 'setup abort: moncheck' && ok "the step table names the aborted role" || bad "no 'setup abort' detail in the report"
+
+# ── 7d: an abort in one role does not excuse a failure in another ────────────
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+  FAIL tunnel agent: frpc did not connect (see output above)
+== assert monitoring ingested a report from the remote agent(s) ==
+  FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
+  crabbox_multibox: 20 ok, 2 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "a real failure next to an abort -> FAIL (1)" || bad "mixed capstone -> rc=$rc"
+history_of | grep -q 'tunnel agent: frpc did not connect (see output above),infra,' \
+  && ok "the tunnel failure is infra (its setup was cancelled)" || bad "tunnel row: $(history_of | grep tunnel)"
+history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
+  && ok "the enforce failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
+
+# ── 7e: the crabbox warning is an abort marker, but without a FAIL after it nothing
+#        is filed — and (the \b fix in infra_marker) it no longer voids a green run ──
+mk_case
+export SHIM_MB_RC=0
+export SHIM_MB_OUT="== moncheck (S5): lease the client/sink box + start mailhog (before the seed) ==
+warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+  ok   moncheck-box ah-moncheck @ 10.0.0.6
+  crabbox_multibox: 25 ok, 0 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 0 ] && ok "a release warning without a following FAIL does not void a green capstone" || bad "green capstone with warning -> rc=$rc: $(report_of | head -1)"
+
+# ── 7g: a lost AGENT lease under the shared lease header does not excuse a server failure ──
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== lease 1 server + 1 agent box(es) on vmbr1 (pond ah-mb-1) ==
+lease attempt 1/3 for ah-agent1 failed: provisioning provider=proxmox lease=cbx_1 slug=ah-agent1 node=n template=9402 keep=true
+lease attempt 3/3 for ah-agent1 failed: provisioning provider=proxmox lease=cbx_3 slug=ah-agent1 node=n template=9402 keep=true
+  FAIL agent1 lease
+== bring up the server stack on ah-srv (10.0.0.5) ==
+  FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
+== provision each agent against https://10.0.0.5 ==
+  FAIL agent ah-agent1: provisioned + mTLS-enrolled over the network hop
+  crabbox_multibox: 17 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=none)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "lost agent lease + real server failure -> FAIL (1), not UNVERIFIED" || bad "agent lease + server fail -> rc=$rc: $(report_of | head -1)"
+history_of | grep -q 'agent1 lease,infra,' && ok "the lost agent lease is infra (role from the slug, not the header)" || bad "agent lease row: $(history_of | grep 'agent1 lease')"
+history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
+  && ok "the server-stack failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
+history_of | grep -q 'agent ah-agent1: provisioned + mTLS-enrolled over the network hop,infra,' \
+  && ok "the later agent-role failure is a consequence" || bad "provision row: $(history_of | grep provisioned)"
+
+# ── 7h: a lost DESKTOP lease is filed under desktop although it prints before its header ──
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+  ok   tunnel agent: frpc connected
+lease attempt 3/3 for ah-desktop-9056 failed: provisioning provider=proxmox lease=cbx_9 slug=ah-desktop-9056 node=n template=9402 keep=true
+  FAIL desktop lease
+== drive the real Tauri GUI on  against https://10.0.0.5 ==
+  crabbox_multibox: 24 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a lost desktop lease alone -> UNVERIFIED" || bad "desktop lease -> rc=$rc"
+report_of | head -1 | grep -q 'ab (desktop);' && ok "the reason names desktop, not the tunnel section" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'crabbox_multibox: 24 ok, 1 failed, 0 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
+
 # ── 8: weekly does not burn the capstone on an unverified `all` ──────────────
 mk_case
 export SHIM_ITER_RC=1

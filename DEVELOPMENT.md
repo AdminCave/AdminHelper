@@ -545,9 +545,14 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `strict-failed: no step
   ran`, `strict-failed: … (SKIP)` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report
   hat dann bewusst keine Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine
-  Regression. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert: bis zu
-  drei Wiederholungen
-  desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
+  Regression. **Ausnahme Capstone:** bricht crabbox das Setup einer Rolle ab („workspace
+  owner release failed", „refusing collection and cleanup: context canceled", dritter
+  Lease-Versuch einer Box verloren — die Rolle kommt aus dem Slug), gelten die spaeteren
+  FAILs dieser Rolle als `infra` je Schritt (Detail `setup abort: <rolle>`); bleiben nur
+  solche Folgefehler, endet die Ebene UNVERIFIED mit dem Grund „capstone infra: …" und der
+  Multibox-Summary-Zeile; jeder FAIL, der nicht auf einen Abbruch seiner Rolle folgt, macht
+  die Ebene FAIL. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert:
+  bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
   (Worktree `.crabbox-worktrees/w2`, Lane `w2`, eigener Pond): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile
