@@ -25,6 +25,22 @@ from app.core.database import Base
 SERVER_DIR = Path(__file__).resolve().parents[1]
 
 
+def _drop_database(admin_engine, dbname: str) -> None:
+    """Drop a throwaway database without the FORCE option.
+
+    FORCE terminates every other backend on that database and needs the privilege to
+    do so. An autovacuum worker that happens to be on the freshly migrated database
+    advertises no role at all (its roleId is invalid), so FORCE from a plain test role
+    fails with "permission denied to terminate process" unless the role has
+    pg_signal_backend — the flake seen in the 2026-09-10 weekly run. A plain DROP lets
+    Postgres retire its own autovacuum workers (it signals them and waits up to 5 s).
+    Our own connections are disposed by the caller before this runs, so there is
+    nothing else to wait for.
+    """
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'DROP DATABASE "{dbname}"'))
+
+
 @pytest.fixture()
 def migrated_engine(pg_engine, monkeypatch):
     """A fresh database on the session's Postgres server, schema built by
@@ -49,8 +65,7 @@ def migrated_engine(pg_engine, monkeypatch):
         yield engine
     finally:
         engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        _drop_database(admin_engine, dbname)
         admin_engine.dispose()
 
 
@@ -120,8 +135,7 @@ def test_rename_frp_provision_tokens_preserves_rows(pg_engine, monkeypatch):
         assert row[0] == "s1" and row[1] == "hash"
     finally:
         engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        _drop_database(admin_engine, dbname)
         admin_engine.dispose()
 
 
@@ -169,8 +183,7 @@ def test_uniq_visitor_port_frees_younger_duplicate_instead_of_deleting(pg_engine
         assert rows["t_new"] is None, "der juengere verliert den Port (NULL), bleibt aber erhalten"
     finally:
         engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        _drop_database(admin_engine, dbname)
         admin_engine.dispose()
 
 
@@ -213,6 +226,5 @@ def test_add_server_id_backfill_skips_ambiguous_names(pg_engine, monkeypatch):
         assert rows["agent-dup"] is None, "mehrdeutiger Name bleibt NULL (fail-closed)"
     finally:
         engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        _drop_database(admin_engine, dbname)
         admin_engine.dispose()

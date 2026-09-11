@@ -19,7 +19,7 @@ Komponente: scripts/tests · Dateien: scripts/tests/crabbox_iter.sh, scripts/tes
 Verify: `bash scripts/tests/run_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/crabbox_iter_flags_test.sh` → `N passed, 0 failed`; `bash scripts/tests/run.sh unit --strict --only scripts` → Exit 0
 Doku: DEVELOPMENT.md Absatz „AH_REQUIRED" (Box-Regel), docs/developer/cicd.html DE+EN ein Satz
 
-### T2 — test_migrations_smoke: Teardown ohne FORCE  [ ]
+### T2 — test_migrations_smoke: Teardown ohne FORCE  [x] (Plain-DROP in beiden Smoke-Tests, `engine.dispose()` davor unverändert; Ursache laut Review gegen PG-17-Quellen: Autovacuum-Worker ohne Rolle, FORCE bräuchte pg_signal_backend; Server 3× `3 passed`, Monitoring 2× `3 passed`; zwei Rest-DBs alter FORCE-Abbrüche gedroppt; Review: request_changes → Retry-Schleife gestrichen → approve)
 Komponente: apps/server · Dateien: apps/server/tests/test_migrations_smoke.py (ggf. apps/monitoring/tests/test_migrations_smoke.py, falls gleiches Muster)
 Änderung: alle Verbindungen zur Wegwerf-DB schließen (`engine.dispose()` bzw. Session-Ende) **bevor** `DROP DATABASE` läuft; `WITH (FORCE)` entfernen. Damit braucht die Rolle kein `pg_signal_backend`. Falls monitoring dasselbe Muster hat, dort gleich mit.
 Verify: `bash scripts/dev/verify.sh server --strict -- tests/test_migrations_smoke.py` fünfmal in Folge grün (Schleife im Aufruf des Builders, Ergebnis im Ledger); `grep -c 'WITH (FORCE)' apps/server/tests/test_migrations_smoke.py` → 0

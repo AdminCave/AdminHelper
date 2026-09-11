@@ -26,6 +26,24 @@ pytestmark = pytest.mark.skipif(
 MONITORING_DIR = Path(__file__).resolve().parents[1]
 
 
+def _drop_database(admin_engine, dbname: str) -> None:
+    """Drop a throwaway database without the FORCE option.
+
+    FORCE terminates every other backend on that database and needs the privilege to
+    do so. An autovacuum worker that happens to be on the freshly migrated database
+    advertises no role at all (its roleId is invalid), so FORCE from a plain test role
+    fails with "permission denied to terminate process" unless the role has
+    pg_signal_backend — the flake seen in the 2026-09-10 weekly run. A plain DROP lets
+    Postgres retire its own autovacuum workers (it signals them and waits up to 5 s).
+    Our own connections are disposed by the caller before this runs, so there is
+    nothing else to wait for.
+    """
+    from sqlalchemy import text
+
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'DROP DATABASE "{dbname}"'))
+
+
 def _normalize(url: str) -> str:
     for old in ("postgresql+psycopg2://", "postgresql://"):
         if url.startswith(old):
@@ -66,8 +84,7 @@ def scratch_db(monkeypatch, tag: str):
         yield cfg, engine
     finally:
         engine.dispose()
-        with admin_engine.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{dbname}" WITH (FORCE)'))
+        _drop_database(admin_engine, dbname)
         admin_engine.dispose()
 
 
