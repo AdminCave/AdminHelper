@@ -242,16 +242,39 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',all,web vitest,unbestaetigt,' && ok "history.csv names the red step" || bad "red step not in history: $(history_of)"
 
 # ── 4: strict-failed (SKIP) is INFRA, never FAIL ─────────────────────────────
+# The real wrapper prints the strict-failed line into the box capture, not into
+# all.log — only the artifact carries it (result "strict-failed"). No stdout
+# passthrough here, on purpose.
+mk_case
+export SHIM_ITER_RC=1
+export SHIM_ITER_OUT="  run.sh[all]: 38 passed, 1 failed, 4 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "upgrade-path:strict-failed:0"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a strict-failed step in the artifact -> exit 74" || bad "strict-failed -> rc=$rc"
+report_of | head -1 | grep -q '^UNVERIFIED (required step(s) could not run on the box (strict-failed): upgrade-path)' \
+  && ok "report head UNVERIFIED names the step" || bad "report head '$(report_of | head -1)'"
+history_of | grep -q ',all,-,infra,' && ok "history.csv: layer row infra" || bad "no infra row: $(history_of)"
+history_of | grep -q ',all,upgrade-path,infra,' && ok "the strict-failed step is filed as infra, not strict-failed" || bad "step row: $(history_of | grep upgrade-path)"
+[ "$(cat "$SHIM_STATE/iter.n")" = 1 ] && ok "no retry for a step that could not run" || bad "$(cat "$SHIM_STATE/iter.n") iter calls"
+# strict-failed AND a real red step in one artifact: INFRA wins, no retry, the
+# red step stays a fail row (unclassified) — the policy pinned.
+mk_case
+export SHIM_ITER_RC=1
+export SHIM_ITER_OUT="  run.sh[all]: 37 passed, 2 failed, 4 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "upgrade-path:strict-failed:0" "web vitest:fail:19"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "strict-failed + real fail -> INFRA wins (74)" || bad "combo -> rc=$rc"
+history_of | grep -q ',all,web vitest,fail,' && ok "the real red step stays a fail row" || bad "web vitest row: $(history_of | grep 'web vitest')"
+report_of | grep -q 'not classified (layer infra)' && ok "the fail row says it was not classified" || bad "no 'not classified' detail"
+[ "$(cat "$SHIM_STATE/iter.n")" = 1 ] && ok "no retry when the layer is infra" || bad "$(cat "$SHIM_STATE/iter.n") iter calls"
+# the same line in stdout (as the shim used to fake it) still ends UNVERIFIED
 mk_case
 export SHIM_ITER_RC=1
 export SHIM_ITER_OUT="  strict-failed: desktop-e2e smoke (SKIP)
   run.sh[all]: 38 passed, 1 failed, 4 skipped, 0 test-skips, 0 reruns"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "strict-failed (SKIP) -> exit 74" || bad "strict-failed -> rc=$rc"
-report_of | head -1 | grep -q '^UNVERIFIED (' \
-  && ok "report head UNVERIFIED (<grund>)" || bad "report head '$(report_of | head -1)'"
-history_of | grep -q ',all,-,infra,' && ok "history.csv: layer row infra" || bad "no infra row: $(history_of)"
+[ "$rc" = 74 ] && ok "strict-failed in the log -> exit 74" || bad "strict-failed (log) -> rc=$rc"
 
 # ── 4b: a red step that goes green on a retry is FLAKY, not a failure ────────
 mk_case
@@ -789,16 +812,22 @@ history_of | grep -q 'agent ah-agent1: provisioned + mTLS-enrolled over the netw
 # ── 7h: a lost DESKTOP lease is filed under desktop although it prints before its header ──
 mk_case
 export SHIM_MB_RC=1
+# exactly what multibox prints when the desktop box cannot be had under --strict:
+# the lease FAIL, then the strict follow-up, and NO GUI header (it sits in the
+# success branch).
 export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
   ok   tunnel agent: frpc connected
 lease attempt 3/3 for ah-desktop-9056 failed: provisioning provider=proxmox lease=cbx_9 slug=ah-desktop-9056 node=n template=9402 keep=true
   FAIL desktop lease
-== drive the real Tauri GUI on  against https://10.0.0.5 ==
-  crabbox_multibox: 24 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  SKIP desktop GUI journeys (no desktop box) — the S3 scenario is unverified
+  FAIL strict: desktop GUI journeys (no desktop box) — the S3 scenario is unverified
+  crabbox_multibox: 23 ok, 2 failed, 1 skipped  (server=10.0.0.5, agents=ah-agent1)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a lost desktop lease alone -> UNVERIFIED" || bad "desktop lease -> rc=$rc"
 report_of | head -1 | grep -q 'ab (desktop);' && ok "the reason names desktop, not the tunnel section" || bad "reason: $(report_of | head -1)"
-report_of | head -1 | grep -q 'crabbox_multibox: 24 ok, 1 failed, 0 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'crabbox_multibox: 23 ok, 2 failed, 1 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
+history_of | grep -q 'strict: desktop GUI journeys (no desktop box) — the S3 scenario is unverified,infra,' \
+  && ok "the strict follow-up of the lost desktop box is infra too" || bad "strict row: $(history_of | grep 'strict:')"
 
 # ── 7f: a step name with a comma stays one CSV field ─────────────────────────
 mk_case

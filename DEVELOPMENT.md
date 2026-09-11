@@ -157,7 +157,7 @@ Auf dieser Box deckt sich die Menge mit dem Default; ohne die Zeile gilt er. Die
 Lauf, in dem **kein** Step lief, ist ebenfalls ein Fehler — sonst meldete er
 gruen, ohne etwas geprueft zu haben.
 
-**Auf einer Box gilt die Layer-Regel:** ist `AH_REQUIRED` *nicht* gesetzt und der
+**Auf einer Box gilt die Box-Regel:** ist `AH_REQUIRED` *nicht* gesetzt und der
 Layer `integration`, `e2e` oder `all`, nimmt `run.sh` alle Schritte dieses Layers
 in die Pflicht-Menge auf (inklusive der Layer-Guards `integration` und
 `desktop-e2e-gui`) — auf einer Box mit Docker und Display gibt es keinen Grund,
@@ -542,14 +542,17 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
   committet im privaten Repo, **nie** gepusht; Felder mit Komma oder Anfuehrungszeichen
   sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
-  Layer Pflicht (Layer-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
+  Layer Pflicht (Box-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
   `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
 - **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `strict-failed: no step
-  ran`, `strict-failed: … (SKIP)` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report
-  hat dann bewusst keine Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine
-  Regression. **Ausnahme Capstone:** bricht crabbox das Setup einer Rolle ab („workspace
+  ran` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report hat dann bewusst keine
+  Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine Regression. Meldet das
+  Box-Artefakt einen Pflicht-Schritt als `strict-failed` (SKIP unter `--strict`), ist die Ebene
+  ebenfalls `infra`, die Schritt-Tabelle bleibt aber stehen: gelaufene Schritte `pass`, die
+  nicht gelaufenen `infra`, ein echter roter Schritt daneben `fail` ohne Klassifikation (kein
+  Retry, kein Capstone). **Ausnahme Capstone:** bricht crabbox das Setup einer Rolle ab („workspace
   owner release failed", „refusing collection and cleanup: context canceled", dritter
   Lease-Versuch einer Box verloren — die Rolle kommt aus dem Slug), gelten die spaeteren
   FAILs dieser Rolle als `infra` je Schritt (Detail `setup abort: <rolle>`); bleiben nur
@@ -575,7 +578,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 setzt seit Stufe 3 `--enforce`, das Gateway verlangt damit ein Client-Zertifikat auf :443; die
 Desktop-Etappe enrollt deshalb vor jedem Spec eine Geraete-Identitaet ueber die certlose
 Ebene :8444 (ein Einmal-Token je Spec, kurz vor der Etappe gemintet) — bewiesen im Capstone
-vom 2026-09-11. **T15a** — `AH_REQUIRED` erreichte die Box nicht — ist mit der Layer-Regel
+vom 2026-09-11. **T15a** — `AH_REQUIRED` erreichte die Box nicht — ist mit der Box-Regel
 oben behoben (`harness-stufe-3b` T1).
 
 ---

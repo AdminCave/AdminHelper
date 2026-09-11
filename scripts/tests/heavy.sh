@@ -328,6 +328,28 @@ run_all() {
   if read_steps "$art" > "$OUT/steps-all.tsv"; then
     steps_read=1
     cp "$art" "$OUT/last-all.json" 2>/dev/null || true
+    # A required step the box could not RUN (strict-failed = SKIP under --strict,
+    # since the box rule made every heavy step required) says nothing about the
+    # code: INFRA for the layer, never a red step, no retries — and the weekly
+    # must not burn seven capstone VMs behind it. The box prints the strict-failed
+    # line into its own capture, not into all.log, so the artifact is the only
+    # place this is visible from here.
+    local strict_steps
+    strict_steps="$(awk -F'\t' '$2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$OUT/steps-all.tsv")"
+    if [ -n "$strict_steps" ]; then
+      while IFS="$(printf '\t')" read -r name result secs; do
+        [ -n "$name" ] || continue
+        local detail=""
+        case "$result" in
+          strict-failed) result="infra"; detail="strict-failed on the box (required step could not run)" ;;
+          fail)          detail="not classified (layer infra)" ;;
+        esac
+        FINDINGS+=("all|$name|$result|$secs|$box|$detail")
+      done < "$OUT/steps-all.tsv"
+      set_infra "required step(s) could not run on the box (strict-failed): $strict_steps"
+      FINDINGS+=("all|-|infra|$secs_layer|$box|strict-failed: $strict_steps")
+      return 0
+    fi
     while IFS="$(printf '\t')" read -r name result secs; do
       [ -n "$name" ] || continue
       verdict="$result"; STEP_DETAIL=""
@@ -728,6 +750,10 @@ capstone_scan() {  # capstone_scan <logfile>
       return ""
     }
     function role_of_lease_fail(t) {
+      # multibox prints the strict follow-up of a lost desktop box without a
+      # header of its own (the GUI header sits in the success branch); it
+      # belongs to that box, not to the section it happens to fall in.
+      if (t ~ /^strict: .*\(no desktop box\)/)  return "desktop"
       if (t ~ /^server lease/)        return "server"
       if (t ~ /^agent[0-9]* lease/)   return "agent"
       if (t ~ /^moncheck-box lease/)  return "moncheck"
