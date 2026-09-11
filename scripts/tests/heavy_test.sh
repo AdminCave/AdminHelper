@@ -463,6 +463,40 @@ out=$(bash "$HEAVY" all 2>&1)
 [ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
   && ok "the same red audit run adds no second row" \
   || bad "$(roadmap_of | grep -c '^| R-') R rows"
+# a LATER red run (next Monday) is the same open problem, not a new row
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-14T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
+  && ok "a later red run while the entry is open adds no row" \
+  || bad "later red run: $(roadmap_of | grep -c '^| R-') R rows"
+# a cancelled run says nothing — it neither resolves nor re-opens
+export SHIM_AUDIT_JSON='[{"conclusion": "cancelled", "created_at": "2026-09-17T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+grep -q 'resolved' "$AH_PRIVATE_DIR/seen.md" && bad "a cancelled run resolved the entry" || ok "a cancelled run leaves the entry open"
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-18T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
+  && ok "red after cancelled adds no row (still the same open phase)" \
+  || bad "red after cancelled: $(roadmap_of | grep -c '^| R-') R rows"
+# a green run resolves the entry …
+export SHIM_AUDIT_JSON='[{"conclusion": "success", "created_at": "2026-09-21T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+grep -q '^deps-audit · resolved · ' "$AH_PRIVATE_DIR/seen.md" \
+  && ok "a green audit resolves the seen.md entry" || bad "seen.md: $(cat "$AH_PRIVATE_DIR/seen.md")"
+# … so the NEXT red phase is a new row again
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-28T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 3 ] \
+  && ok "a red run after a green one opens a new row" \
+  || bad "new red phase: $(roadmap_of | grep -c '^| R-') R rows"
+# the pre-3b line format (key = deps-audit) still counts as open
+mk_case
+artifact "ruff check:pass:3"
+printf 'deps-audit · deps-audit · 2026-09-10 · 2026-09-07\n' > "$AH_PRIVATE_DIR/seen.md"
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-14T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 1 ] \
+  && ok "an old-format open entry suppresses the row too" || bad "old format: $(roadmap_of | grep -c '^| R-') R rows"
 
 mk_case
 artifact "ruff check:pass:3"
@@ -765,6 +799,20 @@ out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a lost desktop lease alone -> UNVERIFIED" || bad "desktop lease -> rc=$rc"
 report_of | head -1 | grep -q 'ab (desktop);' && ok "the reason names desktop, not the tunnel section" || bad "reason: $(report_of | head -1)"
 report_of | head -1 | grep -q 'crabbox_multibox: 24 ok, 1 failed, 0 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
+
+# ── 7f: a step name with a comma stays one CSV field ─────────────────────────
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== assert monitoring ingested a report from the remote agent(s) ==
+  FAIL unreachable ping check status=?, expected critical (\"critical\" per docs)
+  crabbox_multibox: 24 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+python3 - "$AH_PRIVATE_DIR/history.csv" <<'PY' && ok "history.csv row with a comma and quotes parses into 8 fields" || bad "history.csv not RFC-4180: $(history_of | tail -2)"
+import csv, sys
+rows = list(csv.reader(open(sys.argv[1], newline="")))
+assert all(len(r) == 8 for r in rows), rows
+assert any(r[4] == 'unreachable ping check status=?, expected critical ("critical" per docs)' and r[5] == "fail" for r in rows), rows
+PY
 
 # ── 8: weekly does not burn the capstone on an unverified `all` ──────────────
 mk_case

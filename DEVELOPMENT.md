@@ -532,12 +532,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   (`PASS` | `FAIL` | `UNVERIFIED (<grund>)`), dann die Summary-Zeilen der Wrapper
   **woertlich**, die Schritt-Tabelle, „Kevin sichtet", die Notizen, die `audit.yml`-Zeile und
   die VM-Liste danach. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
-  Session-Start in Zeile 4 des `AH-STATUS`-Blocks.
+  Session-Start in Zeile 4 des `AH-STATUS`-Blocks. Die `audit.yml`-Zeile erzeugt bei rot genau
+  **eine** REL-Zeile je roter Phase: der Eintrag bleibt in `seen.md` offen (`deps-audit · open`),
+  bis ein Lauf mit `success` ihn schliesst (`resolved`) — abgebrochene oder uebersprungene Laeufe
+  aendern nichts; erst der naechste rote Lauf nach einem gruenen ist wieder eine neue Zeile.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
   steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
-  committet im privaten Repo, **nie** gepusht. Auf der Box sind alle Schritte der schweren
+  committet im privaten Repo, **nie** gepusht; Felder mit Komma oder Anfuehrungszeichen
+  sind RFC-4180-gequotet. Auf der Box sind alle Schritte der schweren
   Layer Pflicht (Layer-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
   `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).

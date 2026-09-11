@@ -648,18 +648,37 @@ check_audit() {
   when="$(printf '%s' "$json" | sed -n 's/.*"created_at"[[:space:]]*:[[:space:]]*"\([^"T]*\)T.*/\1/p' | head -1)"
   [ -n "$concl" ] || { AUDIT_LINE="keine Läufe gefunden"; return 0; }
   AUDIT_LINE="$concl (Lauf $when)"
-  [ "$concl" = "failure" ] || return 0
-  # The run's own date is the dedup key: the same red audit run must not add a
-  # row on every weekly until someone fixes it.
-  if seen_recently deps-audit deps-audit "$when"; then
-    note "audit.yml red, already on the roadmap for run $when"
+  # One roadmap row per red PHASE, not per red run: audit.yml runs weekly, and a
+  # per-run key produced a fresh REL row every Monday until someone fixed the
+  # dependency. The entry stays open in seen.md until a green run resolves it.
+  case "$concl" in
+    success)
+      # Only a GREEN run closes the entry. cancelled / timed_out / skipped say
+      # nothing about the dependencies and must not flip the state either way.
+      if audit_open; then
+        seen_record deps-audit resolved "$when"
+        note "audit.yml green again (run $when) — deps-audit entry resolved"
+      fi
+      return 0 ;;
+    failure) ;;
+    *) return 0 ;;
+  esac
+  if audit_open; then
+    note "audit.yml red (run $when), roadmap row already open — report only"
     return 0
   fi
   local id
   id="$(roadmap_append REL "Dependency Audit rot (audit.yml, Lauf $when)" \
         "audit.yml $when · weekly $DATE" "—")" || return 0
   note "roadmap: $id (audit.yml red)"
-  seen_record deps-audit deps-audit "$when"
+  seen_record deps-audit open "$when"
+}
+# The last deps-audit line decides: `open` (or the pre-3b key `deps-audit`) means
+# the roadmap already carries the red audit; `resolved` means a green run closed it.
+audit_open() {
+  local last
+  last="$(grep -aE '^deps-audit · ' "$PRIVATE_DIR/seen.md" 2>/dev/null | tail -1 | awk -F' · ' '{print $2}')"
+  case "$last" in open|deps-audit) return 0 ;; *) return 1 ;; esac
 }
 
 # seen.md is the quarantine list Kevin reads: one line per quarantined step, with
@@ -790,17 +809,23 @@ run_capstone() {
 }
 
 # ── report + history ──────────────────────────────────────────────────────────
+csv_field() {  # csv_field <value> -> RFC 4180: quoted when it carries , " or a newline
+  case "$1" in
+    *[,\"]*|*$'\n'*) printf '"%s"' "${1//\"/\"\"}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 write_history() {
   mkdir -p "$PRIVATE_DIR" 2>/dev/null || { note "cannot write $HISTORY"; return 0; }
   [ -f "$HISTORY" ] || echo "datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm" > "$HISTORY"
   local e ebene schritt ergebnis secs vm
   for e in ${FINDINGS+"${FINDINGS[@]}"}; do
     IFS='|' read -r ebene schritt ergebnis secs vm _ <<<"$e"
-    # Commas inside a step name would shift every later column.
-    schritt="${schritt//,/;}"
-    ergebnis="${ergebnis//,/;}"
+    # Step names come from assertion texts and may carry commas or quotes; RFC 4180
+    # quoting keeps the row parseable for every CSV reader (and for last_pass_commit,
+    # whose awk only ever looks at rows whose step is "-").
     printf '%s,%s,%s,%s,%s,%s,%s,%s\n' \
-      "$DATE" "$COMMIT" "$TREE" "$ebene" "$schritt" "$ergebnis" "$secs" "$vm" >> "$HISTORY"
+      "$DATE" "$COMMIT" "$TREE" "$ebene" "$(csv_field "$schritt")" "$(csv_field "$ergebnis")" "$secs" "$(csv_field "$vm")" >> "$HISTORY"
   done
   note "history: $HISTORY"
 }
