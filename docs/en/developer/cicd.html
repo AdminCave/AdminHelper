@@ -67,7 +67,7 @@
               <tr><td><code>--strict</code></td><td>A SKIP of a required step is a <strong>failure</strong>, not a pass. So is a strict run in which no step executed at all.</td></tr>
               <tr><td><code>--only &lt;keys&hellip;&gt;</code></td><td>Restricts lint/unit to components (<code>server monitoring ca-issuer agent desktop desktop-rs desktop-ui desktop-e2e web scripts</code>). Under <code>--strict</code> a step asked for this way counts as required. Env form: <code>AH_ONLY</code>.</td></tr>
               <tr><td><code>--step &lt;name&gt;</code></td><td>Exactly one step (a substring of its name). An unknown or ambiguous name is rejected in a dry pass, before any suite starts.</td></tr>
-              <tr><td><code>AH_REQUIRED</code></td><td>This machine&rsquo;s required set (step ids, space-separated); overrides <code>AH_REQUIRED_DEFAULT</code> and belongs in the gitignored <code>.devenv.sh</code>. Under <code>--strict</code> the effective set is printed with the summary.</td></tr>
+              <tr><td><code>AH_REQUIRED</code></td><td>This machine&rsquo;s required set (step ids, space-separated); overrides <code>AH_REQUIRED_DEFAULT</code> and belongs in the gitignored <code>.devenv.sh</code>. Under <code>--strict</code> the effective set is printed with the summary. When the variable is unset and the layer is <code>integration</code>, <code>e2e</code> or <code>all</code>, every step of that layer is required (the box rule; <code>heavy.sh</code> clears the dev box&rsquo;s set before a box run).</td></tr>
               <tr><td><code>AH_ARGS</code></td><td>Extra arguments for the suite itself &ndash; how <code>verify.sh &lt;component&gt; -- &lt;args&gt;</code> forwards them.</td></tr>
             </tbody>
           </table>

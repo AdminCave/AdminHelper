@@ -157,6 +157,15 @@ Auf dieser Box deckt sich die Menge mit dem Default; ohne die Zeile gilt er. Die
 Lauf, in dem **kein** Step lief, ist ebenfalls ein Fehler — sonst meldete er
 gruen, ohne etwas geprueft zu haben.
 
+**Auf einer Box gilt die Layer-Regel:** ist `AH_REQUIRED` *nicht* gesetzt und der
+Layer `integration`, `e2e` oder `all`, nimmt `run.sh` alle Schritte dieses Layers
+in die Pflicht-Menge auf (inklusive der Layer-Guards `integration` und
+`desktop-e2e-gui`) — auf einer Box mit Docker und Display gibt es keinen Grund,
+warum ein schwerer Schritt still uebersprungen werden duerfte. `crabbox_iter.sh`
+reicht ein gesetztes `AH_REQUIRED` an die Box weiter; `heavy.sh` setzt die
+Dev-Box-Menge deshalb vor dem Box-Lauf zurueck (`AH_REQUIRED_BOX` benennt eine
+Box-Menge explizit). Ein gesetztes `AH_REQUIRED` gewinnt immer unveraendert.
+
 ### Session-Status-Hook
 
 `scripts/dev/hooks/session-status.sh` laeuft als `SessionStart`-Hook
@@ -528,8 +537,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
   steht also auch `skip` in der Spalte — eine Zeile je Schritt plus eine Ebenen-Zeile,
-  committet im privaten Repo, **nie** gepusht. Ein `skip` faerbt die Ebene heute nicht rot
-  (siehe T15a unten): `ergebnis` ∈ `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg`.
+  committet im privaten Repo, **nie** gepusht. Auf der Box sind alle Schritte der schweren
+  Layer Pflicht (Layer-Regel, siehe „AH_REQUIRED"): ein `skip` wird dort unter `--strict` zum
+  `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
+  `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
 - **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
   warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `strict-failed: no step
   ran`, `strict-failed: … (SKIP)` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report
@@ -551,13 +562,12 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 - **`--notify`** postet die Urteilszeile und den Report-Pfad an `AH_NOTIFY_URL` (aus
   `.devenv.sh`, gitignored); Default aus, ein fehlgeschlagener POST ist kein Fehler des Laufs.
 
-**Zwei Vorbehalte** (beide im Ledger `tasks/harness-stufe-3.md`): **T7a** — `--capstone` setzt
-seit Stufe 3 `--enforce`, das Gateway verlangt damit ein Client-Zertifikat auf :443; die
+**Keine offenen Vorbehalte mehr** (Ledger `tasks/harness-stufe-3.md`): **T7a** — `--capstone`
+setzt seit Stufe 3 `--enforce`, das Gateway verlangt damit ein Client-Zertifikat auf :443; die
 Desktop-Etappe enrollt deshalb vor jedem Spec eine Geraete-Identitaet ueber die certlose
-Ebene :8444 (ein Einmal-Token je Spec, kurz vor der Etappe gemintet). Umgesetzt, aber erst ein echter Capstone-Lauf beweist es.
-**T15a** — `crabbox_iter.sh` reicht `AH_REQUIRED` nicht an die Box weiter, dort gilt also der
-eingebaute Default ohne einen einzigen schweren Schritt: ein Self-SKIP von `upgrade-path` oder
-`integration-stack` bleibt gruen und wird nicht einmal als UNVERIFIED klassifiziert.
+Ebene :8444 (ein Einmal-Token je Spec, kurz vor der Etappe gemintet) — bewiesen im Capstone
+vom 2026-09-11. **T15a** — `AH_REQUIRED` erreichte die Box nicht — ist mit der Layer-Regel
+oben behoben (`harness-stufe-3b` T1).
 
 ---
 

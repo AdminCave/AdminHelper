@@ -59,7 +59,7 @@ if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -f "$SHIM_STATE/artifact.json
   cp "$SHIM_STATE/artifact.json" "$AH_OUT_DIR/last-all.json"
 fi
 echo "iter shim call $n: $* (AH_NO_SYNC=${AH_NO_SYNC:-unset} AH_SPEC=${AH_SPEC:-unset})"
-printf 'AH_NO_SYNC=%s AH_SPEC=%s ARGS=%s\n' "${AH_NO_SYNC:-unset}" "${AH_SPEC:-unset}" "$*" >> "$SHIM_STATE/iter.args"
+printf 'AH_NO_SYNC=%s AH_SPEC=%s AH_REQUIRED=%s ARGS=%s\n' "${AH_NO_SYNC:-unset}" "${AH_SPEC:-unset}" "${AH_REQUIRED-unset}" "$*" >> "$SHIM_STATE/iter.args"
 eval "out=\${SHIM_ITER_OUT$n:-\${SHIM_ITER_OUT:-}}"
 [ -n "$out" ] && printf '%s\n' "$out"
 if [ -n "${SHIM_ITER_SEQ:-}" ]; then
@@ -212,6 +212,20 @@ history_of | grep -q ',all,-,pass,' \
   && ok "history.csv: the layer row says pass" || bad "no passing layer row: $(history_of)"
 history_of | grep -q ',all,go agent (vet+test+cross),pass,41,' \
   && ok "history.csv: per-step name, result and seconds" || bad "step row wrong: $(history_of)"
+
+# ── 2a: the dev box's AH_REQUIRED never reaches the box ──────────────────────
+mk_case
+artifact "ruff check:pass:3"
+out=$(AH_REQUIRED="ruff go-agent" bash "$HEAVY" all 2>&1)
+grep -q 'AH_REQUIRED=unset' "$SHIM_STATE/iter.args" \
+  && ok "AH_REQUIRED from the client shell is unset for the box (run.sh derives the heavy set)" \
+  || bad "iter env: $(cat "$SHIM_STATE/iter.args")"
+mk_case
+artifact "ruff check:pass:3"
+out=$(AH_REQUIRED="ruff" AH_REQUIRED_BOX="ruff upgrade-path" bash "$HEAVY" all 2>&1)
+grep -q "AH_REQUIRED=ruff upgrade-path" "$SHIM_STATE/iter.args" \
+  && ok "AH_REQUIRED_BOX names the box's set explicitly" \
+  || bad "iter env: $(cat "$SHIM_STATE/iter.args")"
 
 # ── 3: a red step ────────────────────────────────────────────────────────────
 mk_case

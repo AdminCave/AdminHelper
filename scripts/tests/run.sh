@@ -84,8 +84,39 @@ export AH_ONLY AH_STRICT
 #                agent-monitoring · repo-build · upgrade-path
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
+# Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
+# added to the default set (see AH_HEAVY_* below); a host-given AH_REQUIRED wins as is.
 AH_REQUIRED_DEFAULT="ruff shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
+# Named by the host or derived here? Only an unset (or empty — crabbox_iter.sh does
+# not forward an empty value either) AH_REQUIRED gets the heavy step ids added
+# below; a host that names its set keeps exactly that set.
+AH_REQUIRED_GIVEN="${AH_REQUIRED:+x}"
 AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
+# The heavy layers are only ever asked for on a box that has docker and a display,
+# so when nobody named a required set, every step of the requested heavy layer is
+# required — including the whole-layer guards (`integration`, `desktop-e2e-gui`).
+# Without this, `run.sh all --strict` on a box that lacked tauri-cli or the network
+# went green with the heavy steps silently SKIPped: the default set above only
+# names lint/unit ids, and crabbox_iter.sh forwards AH_REQUIRED from the client,
+# where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
+AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path"
+# The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
+# hand-kept list would let a ninth suite run without being required, and its
+# self-SKIP would be green again — the very hole this block closes.
+AH_HEAVY_E2E="web-playwright desktop-e2e-smoke desktop-e2e-gui"
+for _f in "$ROOT"/scripts/tests/desktop_e2e_*.sh; do
+  _s="$(basename "$_f" .sh)"
+  [ "$_s" = "desktop_e2e_skip_test" ] && continue
+  AH_HEAVY_E2E="$AH_HEAVY_E2E $_s"
+done
+unset _f _s
+if [ -z "$AH_REQUIRED_GIVEN" ]; then
+  case "$LAYER" in
+    integration) AH_REQUIRED="$AH_REQUIRED $AH_HEAVY_INTEGRATION" ;;
+    e2e)         AH_REQUIRED="$AH_REQUIRED $AH_HEAVY_E2E" ;;
+    all)         AH_REQUIRED="$AH_REQUIRED $AH_HEAVY_INTEGRATION $AH_HEAVY_E2E" ;;
+  esac
+fi
 
 # Under --strict the python suites must report their own skips; without -rs a
 # skipped test leaves no trace in `pytest -q` output at all. Exported because the

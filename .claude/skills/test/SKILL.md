@@ -147,9 +147,12 @@ incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 
 `crabbox run --id <s> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `crabbox stop --id <s>`.
 `run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>]`
 (the `all` layer includes `upgrade_path_test.sh` — last published release → this checkout —
-and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Caveat
-(T15a):** `crabbox_iter.sh` does not forward `AH_REQUIRED`, so on the box the built-in
-default applies and NO heavy step is required — a self-SKIP of any of them stays green.
+and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Box rule:**
+with `AH_REQUIRED` unset, `run.sh` makes every step of a heavy layer required — a self-SKIP
+on the box is a strict failure. `crabbox_iter.sh` forwards a SET `AH_REQUIRED` verbatim, so a
+direct `crabbox_iter.sh all --strict` from a shell that sourced `.devenv.sh` carries the dev
+box's heavy-free set to the box; `heavy.sh` unsets it first (`AH_REQUIRED_BOX` names a box
+set explicitly) and is the safe entry point for the heavy tier.
 prints `N passed, M failed, K skipped, J test-skips, R reruns` and exits non-zero on fail;
 under `--strict` a skipped required step is a failure, and so is a run in which nothing ran.
 integration/e2e/all need `AH_ALLOW_REAL=1`. Bootstrap profiles:

@@ -62,6 +62,13 @@ while [ $# -gt 0 ]; do
 done
 case "$MODE" in all|capstone|weekly) ;; *) usage ;; esac
 
+# The box decides its own required set. AH_REQUIRED in this shell is the DEV
+# BOX's (from .devenv.sh: no docker, no display, so no heavy ids) and
+# crabbox_iter.sh forwards it verbatim — on the box it would then exempt every
+# heavy step from --strict, and a self-SKIP of upgrade-path would stay green.
+# Unset => run.sh derives the layer's full set; AH_REQUIRED_BOX names one explicitly.
+if [ -n "${AH_REQUIRED_BOX:-}" ]; then export AH_REQUIRED="$AH_REQUIRED_BOX"; else unset AH_REQUIRED; fi
+
 AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.crabbox-out}"; export AH_OUT_DIR
 PRIVATE_DIR="${AH_PRIVATE_DIR:-$ROOT/tasks/private}"
 WRAPPERS="${AH_HEAVY_WRAPPERS:-$DIR}"

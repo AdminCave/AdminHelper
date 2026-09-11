@@ -134,10 +134,17 @@ else
   case "${AH_ONLY:-}" in *[!a-z0-9\ -]*)
     echo "invalid AH_ONLY '${AH_ONLY:-}' (lowercase keys, space-separated)"; exit 2 ;;
   esac
+  # AH_REQUIRED rides along the same way — same charset rule, same reason.
+  case "${AH_REQUIRED:-}" in *[!a-z0-9_\ -]*)
+    echo "invalid AH_REQUIRED '${AH_REQUIRED:-}' (step ids, space-separated)"; exit 2 ;;
+  esac
   # Forward AH_ONLY so a lane's per-task iteration only runs the touched
-  # component's lint/unit steps (run.sh skips the rest).
+  # component's lint/unit steps (run.sh skips the rest). Forward AH_REQUIRED so
+  # a caller can name the box's required set; when it is unset, run.sh derives
+  # the heavy layers' set itself (heavy.sh relies on that and unsets it).
   ENVS="AH_ALLOW_REAL=1 AH_CAPTURE=1$(evidence_envs)"
   [ -n "${AH_ONLY:-}" ] && ENVS="$ENVS AH_ONLY='$AH_ONLY'"
+  [ -n "${AH_REQUIRED:-}" ] && ENVS="$ENVS AH_REQUIRED='$AH_REQUIRED'"
   if [ "${AH_DRY_RUN:-0}" = "1" ]; then
     echo "$ENVS bash scripts/tests/run.sh $LAYER$FLAGS"; exit 0
   fi

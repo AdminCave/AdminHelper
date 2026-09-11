@@ -368,6 +368,36 @@ block_run "blockpass"
 grep -q "not the default list" <<<"$OUT" \
   && ok "block: a narrowed list is announced, not silent" || bad "narrowed list not announced"
 
+# ══ heavy layers derive their own required set ═══════════════════════════════
+echo "── heavy layers ──"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 "$BARE/bash" "$RUN" all --strict 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "strict-failed: integration suite (SKIP)" <<<"$OUT" \
+  && ok "unset AH_REQUIRED + all: the skipped integration layer is strict-failed" \
+  || bad "all --strict without AH_REQUIRED: rc=$rc $(grep -m2 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+grep -q "strict-failed: desktop GUI E2E (SKIP)" <<<"$OUT" \
+  && ok "the skipped GUI layer is strict-failed too" || bad "GUI layer not strict-failed"
+grep -q "required (strict): .*upgrade-path" <<<"$OUT" \
+  && ok "the printed set names the heavy ids" || bad "required line: $(grep -m1 'required (strict)' <<<"$OUT")"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 AH_REQUIRED="ruff" "$BARE/bash" "$RUN" all --strict 2>&1); rc=$?
+grep -q "strict-failed: integration suite" <<<"$OUT" \
+  && bad "a host-given AH_REQUIRED was extended anyway" || ok "a host-given AH_REQUIRED is kept as is"
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" "$BARE/bash" "$RUN" unit --strict --step "go agent" 2>&1); rc=$?
+grep -q "required (strict): .*upgrade-path" <<<"$OUT" \
+  && bad "a lint/unit layer picked up heavy ids" || ok "lint/unit layers keep the default set"
+# Every GUI suite in the directory must be in the derived set — the list is globbed,
+# not hand-kept, so a new desktop_e2e_*.sh can never run without being required.
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 "$BARE/bash" "$RUN" e2e --strict 2>&1); rc=$?
+missing=""
+for f in "$(dirname "$RUN")"/desktop_e2e_*.sh; do
+  s=$(basename "$f" .sh); [ "$s" = desktop_e2e_skip_test ] && continue
+  grep -q "required (strict): .*\b$s\b" <<<"$OUT" || missing="$missing $s"
+done
+[ -z "$missing" ] && ok "every globbed desktop_e2e_* suite is required under e2e --strict" || bad "not required:$missing"
+# An empty AH_REQUIRED counts as unset (crabbox_iter.sh does not forward an empty value either).
+OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 AH_REQUIRED="" "$BARE/bash" "$RUN" integration --strict 2>&1); rc=$?
+grep -q "strict-failed: integration suite (SKIP)" <<<"$OUT" \
+  && ok "an empty AH_REQUIRED is treated as unset" || bad "empty AH_REQUIRED: $(grep -m1 'required (strict)' <<<"$OUT")"
+
 echo ""
 echo "run_flags_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
