@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 3b — Nachträge aus dem ersten Wochenlauf — Task-Ledger (Kurz)
-Status: aktiv · Branch: feature/harness-stufe-3b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (7/7, PR #13) · Branch: feature/harness-stufe-3b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: tasks/harness-stufe-3.md (Abschnitte T15a, F1) und docs/features/harness-stufe-3.md — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine (der nächste Wochenlauf ist der reale Beweis für T1)
@@ -49,3 +49,9 @@ Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heav
 Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed`; `shellcheck --severity=warning scripts/tests/heavy.sh` leer
 Doku: DEVELOPMENT.md (Name, Klassifikations-Absatz), CHANGELOG.md
 Review: request_changes → Klassifikations-Absatz nachgezogen, Kombination strict-failed + echter fail getestet (INFRA gewinnt, kein Retry, Detail „not classified (layer infra)"); Folge-Kandidat für die Roadmap: `strict-failed: no step ran` und test-skip-strict-failed ohne Step-Ergebnis im Artefakt enden für die `all`-Ebene weiterhin als FAIL, weil die Box-Ausgabe nicht in all.log liegt.
+
+### T7 — Sync-Abbruch als Setup-Abbruch (Fund aus dem Capstone-Beweislauf)  [x]
+Komponente: scripts/tests · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, DEVELOPMENT.md
+Änderung: Der Capstone-Beweislauf 2026-09-11-2022 (nach T4) endete 22 ok / 3 failed / 0 skipped: kein Setup lief mehr in die Zeitgrenze, kein Paket-Upgrade, aber crabbox scheiterte beim Sync der Tunnel-Box („rsync failed: finish rsync workspace witness: … ambiguous remote state: exit status 74") — das Rollen-Skript lief nie, die drei Tunnel-Assertionen waren Folgen, heavy.sh führte sie als `fail`. Die crabbox-Zeile ist jetzt Abbruch-Marker in `capstone_scan` (Rolle aus dem Abschnitt) und in `infra_marker` für die `all`-Ebene (die Box hat den Baum nie bekommen; im Capstone bewusst nicht als Ganz-Lauf-Marker). Tests 7i (echte Zeilen) und 4p.
+Verify: `bash scripts/tests/heavy_test.sh` → `N passed, 0 failed`; `shellcheck --severity=warning scripts/tests/heavy.sh` leer
+Doku: DEVELOPMENT.md (Marker-Liste)

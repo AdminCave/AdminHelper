@@ -843,6 +843,39 @@ assert all(len(r) == 8 for r in rows), rows
 assert any(r[4] == 'unreachable ping check status=?, expected critical ("critical" per docs)' and r[5] == "fail" for r in rows), rows
 PY
 
+# ── 7i: a sync that never delivered the tree is a setup abort of that role ──
+# The 2026-09-11 evening capstone: crabbox failed the rsync of the tunnel box
+# ("ambiguous remote state: exit status 74"), the role script never ran, and the
+# three tunnel assertions failed as a consequence — filed as fail before this.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== cross-distro (S2): build the .rpm + provision it in a rockylinux container ==
+  ok   rpm agent: built + installed + mTLS-enrolled in rockylinux over the hop
+== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+  ok   frps up on the server box
+  ok   tunnel-agent-box ah-tunnel @ 10.0.0.8
+syncing /home/kevin/Dev/AdminCave/AdminHelper -> 10.0.0.8:/work/crabbox/cbx_05ba3d42f66c/AdminHelper
+rsync failed: finish rsync workspace witness: confirm remote workspace owner child state: ambiguous remote state: exit status 74
+  FAIL tunnel agent: frpc did not connect (see output above)
+  FAIL frps shows no STCP registration from the agent
+  ok   visitor-box ah-visitor @ 10.0.0.9
+  FAIL visitor could not reach the agent's sshd through the tunnel
+  crabbox_multibox: 22 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a failed sync of the tunnel box -> UNVERIFIED, not a red tunnel" || bad "rsync abort -> rc=$rc: $(report_of | head -1)"
+report_of | head -1 | grep -q 'ab (tunnel); crabbox_multibox: 22 ok, 3 failed, 0 skipped' && ok "the reason names tunnel and quotes the summary" || bad "reason: $(report_of | head -1)"
+[ "$(history_of | grep -v ',capstone,-,' | grep -c ',capstone,.*,infra,0,multibox')" = 3 ] && ok "all three tunnel failures are infra rows" || bad "rows: $(history_of | tr '\n' ' ')"
+
+# ── 4p: the same sync failure on the single-box layer is infra for the layer ──
+mk_case
+export SHIM_ITER_RC=1
+export SHIM_ITER_OUT="syncing /home/kevin/Dev/AdminCave/AdminHelper -> 10.0.0.3:/work/crabbox/cbx_1/AdminHelper
+rsync failed: finish rsync workspace witness: confirm remote workspace owner child state: ambiguous remote state: exit status 74"
+export SHIM_NO_PULL=1
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a failed sync of the warm box -> UNVERIFIED (74)" || bad "rsync on all -> rc=$rc: $(report_of | head -1)"
+report_of | head -1 | grep -q 'rsync failed' && ok "the reason quotes the crabbox line" || bad "reason: $(report_of | head -1)"
+
 # ── 8: weekly does not burn the capstone on an unverified `all` ──────────────
 mk_case
 export SHIM_ITER_RC=1

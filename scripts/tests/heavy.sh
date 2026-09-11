@@ -205,7 +205,7 @@ capture_summary() {  # capture_summary <logfile> <grep-pattern>
 # test failed". These are the lines they print when the run could not HAPPEN —
 # matching them is what keeps an unreachable hypervisor from being filed as a
 # regression. (Stage 2 can make the wrappers exit 74 and this list shrinks.)
-infra_marker() {  # infra_marker <logfile> -> prints the line, or nothing
+infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or nothing
   # Matched against what the wrappers PRINT, not against their source: multibox's
   # bad() emits "  FAIL server lease", so a pattern written from the call site
   # ("bad \"server lease\"") never fires — and the commonest capstone failure,
@@ -214,8 +214,12 @@ infra_marker() {  # infra_marker <logfile> -> prints the line, or nothing
   # agent or desktop lease failing degrades the run, it does not void it.
   # \b on 'lease failed': crabbox's warning "workspace owner reLEASE FAILED" is a
   # per-role setup abort (capstone_scan files it), not the whole run failing.
-  grep -aE 'no warm box|warm pond not ready|\blease failed|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)' \
-    "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
+  # The capstone files a failed sync per role (capstone_scan); only the single-box
+  # `all` layer is void when its one sync failed, so that marker is `all`-only.
+  local base='no warm box|warm pond not ready|\blease failed|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)'
+  local pat="$base|^rsync failed: .*ambiguous remote state"
+  [ "${2:-}" = capstone ] && pat="$base"
+  grep -aE "$pat" "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
 }
 
 # last-all.json is written by run.sh ON THE BOX and pulled back by crabbox_iter.sh.
@@ -770,7 +774,9 @@ capstone_scan() {  # capstone_scan <logfile>
     # crabbox cancelled the remote command of this section (timeout, workspace
     # owner lost): anchored on the wording crabbox prints, not on a bare "context
     # canceled" that a role script might echo from a tool log.
-    /workspace owner release failed|refusing collection and cleanup: context canceled/ {
+    # … and the sync that never delivered the tree (the role script then never
+    # ran): "rsync failed: … ambiguous remote state" from the 2026-09-11 evening run.
+    /workspace owner release failed|refusing collection and cleanup: context canceled|^rsync failed: .*ambiguous remote state/ {
       if (role == "") role = "other"; print "A\t" role; next }
     /^[[:space:]]*FAIL / { t = $0; sub(/^[[:space:]]*FAIL[[:space:]]*/, "", t)
       r = role_of_lease_fail(t); if (r == "") r = (role == "" ? "other" : role)
@@ -788,7 +794,7 @@ run_capstone() {
   # INFRA first, exactly as in run_all: an unleasable server box prints a
   # "FAIL server lease" line and aborts, so scraping the assertions first would
   # file that one failure as several product defects in history.csv.
-  local marker; marker="$(infra_marker "$log")"
+  local marker; marker="$(infra_marker "$log" capstone)"
   if [ -n "$marker" ]; then
     set_infra "the capstone could not run: $marker"
     note "infra marker in multibox.log: $marker"
