@@ -87,7 +87,14 @@ wait_apt_lock
 # apt call dies with "dpkg was interrupted". Cheap insurance, no-op otherwise.
 $SUDO dpkg --configure -a >/dev/null 2>&1 || true
 $SUDO apt-get update -qq
-$SUDO apt-get install -y --no-install-recommends \
+# --no-upgrade: on a box cloned from the fat template every package below is
+# already installed (bar what was added to the list after the bake), and a plain
+# `install -y` would UPGRADE all of them to the
+# newest mirror versions (25 MB of webkit2gtk alone). In the 2026-09-11 weekly
+# that upgrade, stacked on the apt-lock wait, pushed two role setups past their
+# crabbox timeout; every capstone failure that day was a consequence. Install
+# what is missing, leave what is there.
+$SUDO apt-get install -y --no-install-recommends --no-upgrade \
   ca-certificates curl git rsync openssl gnupg jq unzip build-essential pkg-config \
   python3 python3-pip python3-venv shellcheck \
   libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev \

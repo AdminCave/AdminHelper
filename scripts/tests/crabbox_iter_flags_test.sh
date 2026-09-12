@@ -15,7 +15,7 @@
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
-unset AH_ONLY AH_NO_SYNC
+unset AH_ONLY AH_NO_SYNC AH_REQUIRED
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ITER="$HERE/crabbox_iter.sh"
@@ -93,6 +93,17 @@ grep -q 'AH_HEAD=' <<<"$OUT" && bad "AH_NO_SYNC still labelled the run" \
   || ok "AH_NO_SYNC passes no evidence at all"
 grep -q 'run.sh quick --strict' <<<"$OUT" \
   && ok "AH_NO_SYNC leaves the command otherwise intact" || bad "no-sync command: $OUT"
+
+# AH_REQUIRED rides along like AH_ONLY: forwarded when set, rejected when it could
+# break out of the remote command, absent when unset (run.sh then derives the set).
+OUT=$(AH_REQUIRED="ruff go-agent" AH_DRY_RUN=1 bash "$ITER" quick --strict 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "AH_REQUIRED='ruff go-agent' bash scripts/tests/run.sh quick --strict" <<<"$OUT" \
+  && ok "AH_REQUIRED is forwarded to the box" || bad "AH_REQUIRED forwarding: rc=$rc out=$OUT"
+OUT=$(AH_REQUIRED="ruff'; id; echo '" AH_DRY_RUN=1 bash "$ITER" quick --strict 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "invalid AH_REQUIRED" <<<"$OUT" \
+  && ok "an AH_REQUIRED that closes the quote is rejected" || bad "injection via AH_REQUIRED: rc=$rc out=$OUT"
+dry quick --strict
+grep -q "AH_REQUIRED=" <<<"$OUT" && bad "AH_REQUIRED appears although unset" || ok "unset AH_REQUIRED stays absent"
 
 echo ""
 echo "crabbox_iter_flags_test: $PASS passed, $FAIL failed"

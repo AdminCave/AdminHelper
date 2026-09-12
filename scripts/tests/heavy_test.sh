@@ -59,7 +59,7 @@ if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -f "$SHIM_STATE/artifact.json
   cp "$SHIM_STATE/artifact.json" "$AH_OUT_DIR/last-all.json"
 fi
 echo "iter shim call $n: $* (AH_NO_SYNC=${AH_NO_SYNC:-unset} AH_SPEC=${AH_SPEC:-unset})"
-printf 'AH_NO_SYNC=%s AH_SPEC=%s ARGS=%s\n' "${AH_NO_SYNC:-unset}" "${AH_SPEC:-unset}" "$*" >> "$SHIM_STATE/iter.args"
+printf 'AH_NO_SYNC=%s AH_SPEC=%s AH_REQUIRED=%s ARGS=%s\n' "${AH_NO_SYNC:-unset}" "${AH_SPEC:-unset}" "${AH_REQUIRED-unset}" "$*" >> "$SHIM_STATE/iter.args"
 eval "out=\${SHIM_ITER_OUT$n:-\${SHIM_ITER_OUT:-}}"
 [ -n "$out" ] && printf '%s\n' "$out"
 if [ -n "${SHIM_ITER_SEQ:-}" ]; then
@@ -213,6 +213,20 @@ history_of | grep -q ',all,-,pass,' \
 history_of | grep -q ',all,go agent (vet+test+cross),pass,41,' \
   && ok "history.csv: per-step name, result and seconds" || bad "step row wrong: $(history_of)"
 
+# ── 2a: the dev box's AH_REQUIRED never reaches the box ──────────────────────
+mk_case
+artifact "ruff check:pass:3"
+out=$(AH_REQUIRED="ruff go-agent" bash "$HEAVY" all 2>&1)
+grep -q 'AH_REQUIRED=unset' "$SHIM_STATE/iter.args" \
+  && ok "AH_REQUIRED from the client shell is unset for the box (run.sh derives the heavy set)" \
+  || bad "iter env: $(cat "$SHIM_STATE/iter.args")"
+mk_case
+artifact "ruff check:pass:3"
+out=$(AH_REQUIRED="ruff" AH_REQUIRED_BOX="ruff upgrade-path" bash "$HEAVY" all 2>&1)
+grep -q "AH_REQUIRED=ruff upgrade-path" "$SHIM_STATE/iter.args" \
+  && ok "AH_REQUIRED_BOX names the box's set explicitly" \
+  || bad "iter env: $(cat "$SHIM_STATE/iter.args")"
+
 # ── 3: a red step ────────────────────────────────────────────────────────────
 mk_case
 export SHIM_ITER_RC=1
@@ -228,16 +242,39 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',all,web vitest,unbestaetigt,' && ok "history.csv names the red step" || bad "red step not in history: $(history_of)"
 
 # ── 4: strict-failed (SKIP) is INFRA, never FAIL ─────────────────────────────
+# The real wrapper prints the strict-failed line into the box capture, not into
+# all.log — only the artifact carries it (result "strict-failed"). No stdout
+# passthrough here, on purpose.
+mk_case
+export SHIM_ITER_RC=1
+export SHIM_ITER_OUT="  run.sh[all]: 38 passed, 1 failed, 4 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "upgrade-path:strict-failed:0"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a strict-failed step in the artifact -> exit 74" || bad "strict-failed -> rc=$rc"
+report_of | head -1 | grep -q '^UNVERIFIED (required step(s) could not run on the box (strict-failed): upgrade-path)' \
+  && ok "report head UNVERIFIED names the step" || bad "report head '$(report_of | head -1)'"
+history_of | grep -q ',all,-,infra,' && ok "history.csv: layer row infra" || bad "no infra row: $(history_of)"
+history_of | grep -q ',all,upgrade-path,infra,' && ok "the strict-failed step is filed as infra, not strict-failed" || bad "step row: $(history_of | grep upgrade-path)"
+[ "$(cat "$SHIM_STATE/iter.n")" = 1 ] && ok "no retry for a step that could not run" || bad "$(cat "$SHIM_STATE/iter.n") iter calls"
+# strict-failed AND a real red step in one artifact: INFRA wins, no retry, the
+# red step stays a fail row (unclassified) — the policy pinned.
+mk_case
+export SHIM_ITER_RC=1
+export SHIM_ITER_OUT="  run.sh[all]: 37 passed, 2 failed, 4 skipped, 0 test-skips, 0 reruns"
+artifact "ruff check:pass:3" "upgrade-path:strict-failed:0" "web vitest:fail:19"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "strict-failed + real fail -> INFRA wins (74)" || bad "combo -> rc=$rc"
+history_of | grep -q ',all,web vitest,fail,' && ok "the real red step stays a fail row" || bad "web vitest row: $(history_of | grep 'web vitest')"
+report_of | grep -q 'not classified (layer infra)' && ok "the fail row says it was not classified" || bad "no 'not classified' detail"
+[ "$(cat "$SHIM_STATE/iter.n")" = 1 ] && ok "no retry when the layer is infra" || bad "$(cat "$SHIM_STATE/iter.n") iter calls"
+# the same line in stdout (as the shim used to fake it) still ends UNVERIFIED
 mk_case
 export SHIM_ITER_RC=1
 export SHIM_ITER_OUT="  strict-failed: desktop-e2e smoke (SKIP)
   run.sh[all]: 38 passed, 1 failed, 4 skipped, 0 test-skips, 0 reruns"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "strict-failed (SKIP) -> exit 74" || bad "strict-failed -> rc=$rc"
-report_of | head -1 | grep -q '^UNVERIFIED (' \
-  && ok "report head UNVERIFIED (<grund>)" || bad "report head '$(report_of | head -1)'"
-history_of | grep -q ',all,-,infra,' && ok "history.csv: layer row infra" || bad "no infra row: $(history_of)"
+[ "$rc" = 74 ] && ok "strict-failed in the log -> exit 74" || bad "strict-failed (log) -> rc=$rc"
 
 # ── 4b: a red step that goes green on a retry is FLAKY, not a failure ────────
 mk_case
@@ -449,6 +486,40 @@ out=$(bash "$HEAVY" all 2>&1)
 [ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
   && ok "the same red audit run adds no second row" \
   || bad "$(roadmap_of | grep -c '^| R-') R rows"
+# a LATER red run (next Monday) is the same open problem, not a new row
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-14T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
+  && ok "a later red run while the entry is open adds no row" \
+  || bad "later red run: $(roadmap_of | grep -c '^| R-') R rows"
+# a cancelled run says nothing — it neither resolves nor re-opens
+export SHIM_AUDIT_JSON='[{"conclusion": "cancelled", "created_at": "2026-09-17T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+grep -q 'resolved' "$AH_PRIVATE_DIR/seen.md" && bad "a cancelled run resolved the entry" || ok "a cancelled run leaves the entry open"
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-18T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
+  && ok "red after cancelled adds no row (still the same open phase)" \
+  || bad "red after cancelled: $(roadmap_of | grep -c '^| R-') R rows"
+# a green run resolves the entry …
+export SHIM_AUDIT_JSON='[{"conclusion": "success", "created_at": "2026-09-21T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+grep -q '^deps-audit · resolved · ' "$AH_PRIVATE_DIR/seen.md" \
+  && ok "a green audit resolves the seen.md entry" || bad "seen.md: $(cat "$AH_PRIVATE_DIR/seen.md")"
+# … so the NEXT red phase is a new row again
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-28T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 3 ] \
+  && ok "a red run after a green one opens a new row" \
+  || bad "new red phase: $(roadmap_of | grep -c '^| R-') R rows"
+# the pre-3b line format (key = deps-audit) still counts as open
+mk_case
+artifact "ruff check:pass:3"
+printf 'deps-audit · deps-audit · 2026-09-10 · 2026-09-07\n' > "$AH_PRIVATE_DIR/seen.md"
+export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-14T03:00:00Z"}]'
+out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 1 ] \
+  && ok "an old-format open entry suppresses the row too" || bad "old format: $(roadmap_of | grep -c '^| R-') R rows"
 
 mk_case
 artifact "ruff check:pass:3"
@@ -665,6 +736,145 @@ export SHIM_MB_OUT="  FAIL server lease
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "an unleasable server box -> exit 74, not a FAIL" || bad "server lease -> rc=$rc"
 history_of | grep -q ',capstone,-,infra,'   && ok "history.csv: capstone infra" || bad "rows: $(history_of)"
+
+# ── 7c: failures that follow a cancelled role setup are infra, named by role ──
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== lease 1 server + 1 agent box(es) on vmbr1 (pond ah-mb-1) ==
+  ok   server-box ah-srv @ 10.0.0.5
+== moncheck (S5): lease the client/sink box + start mailhog (before the seed) ==
+  ok   moncheck-box ah-moncheck @ 10.0.0.6
+warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+  FAIL mailpit did not start
+== provision each agent against https://10.0.0.5 ==
+  ok   agent ah-agent1: provisioned + mTLS-enrolled over the network hop
+== moncheck (S5): pull-check verdicts + closed-loop alert delivery ==
+  FAIL reachable ping check status=? (expected ok)
+  FAIL no alert email reached the sink
+  crabbox_multibox: 18 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "only abort-consequences -> UNVERIFIED (74), not FAIL" || bad "abort-only capstone -> rc=$rc"
+report_of | head -1 | grep -q 'capstone infra: crabbox brach das Setup von 1 Rolle(n) ab (moncheck); crabbox_multibox: 18 ok, 3 failed, 0 skipped' \
+  && ok "the reason names the role and quotes the summary line" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'could not run' && bad "reason still says the capstone could not run" || ok "no 'could not run' for a run that happened"
+[ "$(history_of | grep -v ',capstone,-,' | grep -c ',capstone,.*,infra,0,multibox')" = 3 ] \
+  && ok "the three failures are filed as infra rows" || bad "rows: $(history_of | tr '\n' ' ')"
+history_of | grep -q ',capstone,-,infra,' && ok "the layer row is infra" || bad "layer row: $(history_of | grep ',capstone,-,')"
+report_of | grep -q 'setup abort: moncheck' && ok "the step table names the aborted role" || bad "no 'setup abort' detail in the report"
+
+# ── 7d: an abort in one role does not excuse a failure in another ────────────
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+  FAIL tunnel agent: frpc did not connect (see output above)
+== assert monitoring ingested a report from the remote agent(s) ==
+  FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
+  crabbox_multibox: 20 ok, 2 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "a real failure next to an abort -> FAIL (1)" || bad "mixed capstone -> rc=$rc"
+history_of | grep -q 'tunnel agent: frpc did not connect (see output above),infra,' \
+  && ok "the tunnel failure is infra (its setup was cancelled)" || bad "tunnel row: $(history_of | grep tunnel)"
+history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
+  && ok "the enforce failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
+
+# ── 7e: the crabbox warning is an abort marker, but without a FAIL after it nothing
+#        is filed — and (the \b fix in infra_marker) it no longer voids a green run ──
+mk_case
+export SHIM_MB_RC=0
+export SHIM_MB_OUT="== moncheck (S5): lease the client/sink box + start mailhog (before the seed) ==
+warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+  ok   moncheck-box ah-moncheck @ 10.0.0.6
+  crabbox_multibox: 25 ok, 0 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 0 ] && ok "a release warning without a following FAIL does not void a green capstone" || bad "green capstone with warning -> rc=$rc: $(report_of | head -1)"
+
+# ── 7g: a lost AGENT lease under the shared lease header does not excuse a server failure ──
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== lease 1 server + 1 agent box(es) on vmbr1 (pond ah-mb-1) ==
+lease attempt 1/3 for ah-agent1 failed: provisioning provider=proxmox lease=cbx_1 slug=ah-agent1 node=n template=9402 keep=true
+lease attempt 3/3 for ah-agent1 failed: provisioning provider=proxmox lease=cbx_3 slug=ah-agent1 node=n template=9402 keep=true
+  FAIL agent1 lease
+== bring up the server stack on ah-srv (10.0.0.5) ==
+  FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
+== provision each agent against https://10.0.0.5 ==
+  FAIL agent ah-agent1: provisioned + mTLS-enrolled over the network hop
+  crabbox_multibox: 17 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=none)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "lost agent lease + real server failure -> FAIL (1), not UNVERIFIED" || bad "agent lease + server fail -> rc=$rc: $(report_of | head -1)"
+history_of | grep -q 'agent1 lease,infra,' && ok "the lost agent lease is infra (role from the slug, not the header)" || bad "agent lease row: $(history_of | grep 'agent1 lease')"
+history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
+  && ok "the server-stack failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
+history_of | grep -q 'agent ah-agent1: provisioned + mTLS-enrolled over the network hop,infra,' \
+  && ok "the later agent-role failure is a consequence" || bad "provision row: $(history_of | grep provisioned)"
+
+# ── 7h: a lost DESKTOP lease is filed under desktop although it prints before its header ──
+mk_case
+export SHIM_MB_RC=1
+# exactly what multibox prints when the desktop box cannot be had under --strict:
+# the lease FAIL, then the strict follow-up, and NO GUI header (it sits in the
+# success branch).
+export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+  ok   tunnel agent: frpc connected
+lease attempt 3/3 for ah-desktop-9056 failed: provisioning provider=proxmox lease=cbx_9 slug=ah-desktop-9056 node=n template=9402 keep=true
+  FAIL desktop lease
+  SKIP desktop GUI journeys (no desktop box) — the S3 scenario is unverified
+  FAIL strict: desktop GUI journeys (no desktop box) — the S3 scenario is unverified
+  crabbox_multibox: 23 ok, 2 failed, 1 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a lost desktop lease alone -> UNVERIFIED" || bad "desktop lease -> rc=$rc"
+report_of | head -1 | grep -q 'ab (desktop);' && ok "the reason names desktop, not the tunnel section" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'crabbox_multibox: 23 ok, 2 failed, 1 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
+history_of | grep -q 'strict: desktop GUI journeys (no desktop box) — the S3 scenario is unverified,infra,' \
+  && ok "the strict follow-up of the lost desktop box is infra too" || bad "strict row: $(history_of | grep 'strict:')"
+
+# ── 7f: a step name with a comma stays one CSV field ─────────────────────────
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== assert monitoring ingested a report from the remote agent(s) ==
+  FAIL unreachable ping check status=?, expected critical (\"critical\" per docs)
+  crabbox_multibox: 24 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+python3 - "$AH_PRIVATE_DIR/history.csv" <<'PY' && ok "history.csv row with a comma and quotes parses into 8 fields" || bad "history.csv not RFC-4180: $(history_of | tail -2)"
+import csv, sys
+rows = list(csv.reader(open(sys.argv[1], newline="")))
+assert all(len(r) == 8 for r in rows), rows
+assert any(r[4] == 'unreachable ping check status=?, expected critical ("critical" per docs)' and r[5] == "fail" for r in rows), rows
+PY
+
+# ── 7i: a sync that never delivered the tree is a setup abort of that role ──
+# The 2026-09-11 evening capstone: crabbox failed the rsync of the tunnel box
+# ("ambiguous remote state: exit status 74"), the role script never ran, and the
+# three tunnel assertions failed as a consequence — filed as fail before this.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== cross-distro (S2): build the .rpm + provision it in a rockylinux container ==
+  ok   rpm agent: built + installed + mTLS-enrolled in rockylinux over the hop
+== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+  ok   frps up on the server box
+  ok   tunnel-agent-box ah-tunnel @ 10.0.0.8
+syncing /home/kevin/Dev/AdminCave/AdminHelper -> 10.0.0.8:/work/crabbox/cbx_05ba3d42f66c/AdminHelper
+rsync failed: finish rsync workspace witness: confirm remote workspace owner child state: ambiguous remote state: exit status 74
+  FAIL tunnel agent: frpc did not connect (see output above)
+  FAIL frps shows no STCP registration from the agent
+  ok   visitor-box ah-visitor @ 10.0.0.9
+  FAIL visitor could not reach the agent's sshd through the tunnel
+  crabbox_multibox: 22 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a failed sync of the tunnel box -> UNVERIFIED, not a red tunnel" || bad "rsync abort -> rc=$rc: $(report_of | head -1)"
+report_of | head -1 | grep -q 'ab (tunnel); crabbox_multibox: 22 ok, 3 failed, 0 skipped' && ok "the reason names tunnel and quotes the summary" || bad "reason: $(report_of | head -1)"
+[ "$(history_of | grep -v ',capstone,-,' | grep -c ',capstone,.*,infra,0,multibox')" = 3 ] && ok "all three tunnel failures are infra rows" || bad "rows: $(history_of | tr '\n' ' ')"
+
+# ── 4p: the same sync failure on the single-box layer is infra for the layer ──
+mk_case
+export SHIM_ITER_RC=1
+export SHIM_ITER_OUT="syncing /home/kevin/Dev/AdminCave/AdminHelper -> 10.0.0.3:/work/crabbox/cbx_1/AdminHelper
+rsync failed: finish rsync workspace witness: confirm remote workspace owner child state: ambiguous remote state: exit status 74"
+export SHIM_NO_PULL=1
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a failed sync of the warm box -> UNVERIFIED (74)" || bad "rsync on all -> rc=$rc: $(report_of | head -1)"
+report_of | head -1 | grep -q 'rsync failed' && ok "the reason quotes the crabbox line" || bad "reason: $(report_of | head -1)"
 
 # ── 8: weekly does not burn the capstone on an unverified `all` ──────────────
 mk_case

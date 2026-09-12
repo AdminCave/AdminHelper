@@ -7,6 +7,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wochenlauf (Harness Stufe 3b):** Auf der Box sind unter `--strict` alle Schritte der
+  schweren Layer Pflicht (`AH_REQUIRED` ungesetzt ⇒ Layer-Menge; `crabbox_iter.sh` reicht ein
+  gesetztes `AH_REQUIRED` durch, `heavy.sh` setzt die Dev-Box-Menge zurueck) — ein Self-SKIP
+  von `upgrade-path` oder einer GUI-Suite ist kein gruener Lauf mehr, sondern UNVERIFIED. Der
+  Capstone-Report nennt die Ursache, wenn crabbox das Setup einer Rolle abgebrochen hat
+  (Folgefehler `infra` je Rolle statt Produktfehler); die Rollen-Setups upgraden die Fat-Box
+  nicht mehr (`--no-upgrade`, Zeitgrenzen 3000 s). Ein roter `audit.yml` erzeugt eine
+  Roadmap-Zeile je roter Phase statt je Lauf; `history.csv` ist RFC-4180-gequotet; der
+  Migrations-Smoke-Teardown droppt ohne `WITH (FORCE)`.
+
 ### Changed
 
 - **Ausfuehrung zuerst (Autonomie-Roadmap, Stufe 3):** Der Release-Workflow prueft jetzt

@@ -131,7 +131,12 @@ if [ "$MONCHECK" = 1 ]; then
   echo "== moncheck (S5): lease the client/sink box + start mailhog (before the seed) =="
   if read -r MC_SLUG MC_IP < <(lease ah-moncheck); then
     ok "moncheck-box $MC_SLUG @ $MC_IP"
-    MCSTART="$(timeout 1500 crabbox run --id "$MC_SLUG" -- bash scripts/tests/crabbox_moncheckbox.sh start "$MC_IP" 2>&1)"
+    # 3000 s for every agent-profile role setup (was 1500/1800; the server box keeps
+    # its own 2700): each one runs the bootstrap, and a bootstrap that waits out the
+    # apt-lock race can take 20+ minutes on its own. The 2026-09-11 weekly lost the
+    # moncheck and tunnel setups to the old bound — crabbox cancelled mid-apt, and
+    # every later failure was a consequence.
+    MCSTART="$(timeout 3000 crabbox run --id "$MC_SLUG" -- bash scripts/tests/crabbox_moncheckbox.sh start "$MC_IP" 2>&1)"
     echo "$MCSTART" | grep -vE 'Compiling|Downloaded ' | tail -20
     printf '%s' "$MCSTART" | grep -q MC_MAILHOG_UP && ok "mailpit sink up on $MC_IP (:1025/:8025, STARTTLS)" || bad "mailpit did not start"
     # The sink's self-signed cert travels to the server box so the monitoring
@@ -197,7 +202,7 @@ fi
 echo "== provision each agent against https://$SRV_IP =="
 for a in "${AGENT_SLUGS[@]:-}"; do
   [ -n "$a" ] || continue
-  AOUT="$(timeout 1800 crabbox run --id "$a" -- bash scripts/tests/crabbox_agentbox.sh "$SRV_IP" "$SID" "$PTOK" "$REPO_FP" "$CAFP" 2>&1)"; echo "$AOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -50
+  AOUT="$(timeout 3000 crabbox run --id "$a" -- bash scripts/tests/crabbox_agentbox.sh "$SRV_IP" "$SID" "$PTOK" "$REPO_FP" "$CAFP" 2>&1)"; echo "$AOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -50
   printf '%s' "$AOUT" | grep -q AGENT_PROVISION_OK && printf '%s' "$AOUT" | grep -q AGENT_CERT_OK \
     && ok "agent $a: provisioned + mTLS-enrolled over the network hop" \
     || bad "agent $a: provision/enroll (see output above; check IP-SAN + vmbr1 firewall)"
@@ -214,7 +219,7 @@ if [ "$RPM" = 1 ]; then
   echo "== cross-distro (S2): build the .rpm + provision it in a rockylinux container =="
   if read -r R_SLUG R_IP < <(lease ah-agent-rpm); then
     ok "rpm-agent-box $R_SLUG @ $R_IP"
-    ROUT="$(timeout 1800 crabbox run --id "$R_SLUG" -- bash scripts/tests/crabbox_agentbox_rpm.sh "$SRV_IP" "$SID2" "$PTOK2" 2>&1)"
+    ROUT="$(timeout 3000 crabbox run --id "$R_SLUG" -- bash scripts/tests/crabbox_agentbox_rpm.sh "$SRV_IP" "$SID2" "$PTOK2" 2>&1)"
     echo "$ROUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -45
     printf '%s' "$ROUT" | grep -q RPM_ALL_OK \
       && { ok "rpm agent: built + installed + mTLS-enrolled in rockylinux over the hop"; RPM_AGENTS=1; } \
@@ -227,7 +232,7 @@ if [ "$TUNNEL" = 1 ]; then
   printf '%s' "$SRVOUT" | grep -q 'MB_FRPS_UP=1' && ok "frps up on the server box" || bad "frps did not start on the server"
   if [ -n "$TUN_SID" ] && [ -n "$TUN_PTOK" ] && read -r T_SLUG T_IP < <(lease ah-tunnel); then
     ok "tunnel-agent-box $T_SLUG @ $T_IP"
-    TOUT="$(timeout 1800 crabbox run --id "$T_SLUG" -- bash scripts/tests/crabbox_tunnelbox.sh "$SRV_IP" "$TUN_SID" "$TUN_PTOK" 2>&1)"
+    TOUT="$(timeout 3000 crabbox run --id "$T_SLUG" -- bash scripts/tests/crabbox_tunnelbox.sh "$SRV_IP" "$TUN_SID" "$TUN_PTOK" 2>&1)"
     echo "$TOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
     printf '%s' "$TOUT" | grep -q TUNNEL_FRPC_CONNECTED \
       && ok "tunnel agent: frpc STCP server connected to the remote frps" \
@@ -241,7 +246,7 @@ if [ "$TUNNEL" = 1 ]; then
     # agent frpc -> the agent's sshd), proving the full cross-host tunnel.
     if [ -n "$VIS_SID" ] && [ -n "$VIS_B64" ] && read -r V_SLUG V_IP < <(lease ah-visitor); then
       ok "visitor-box $V_SLUG @ $V_IP"
-      VOUT="$(timeout 1800 crabbox run --id "$V_SLUG" -- bash scripts/tests/crabbox_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$VIS_B64" 2>&1)"
+      VOUT="$(timeout 3000 crabbox run --id "$V_SLUG" -- bash scripts/tests/crabbox_visitorbox.sh "$SRV_IP" "$VIS_SID" "$VIS_PTOK" "$VIS_B64" 2>&1)"
       echo "$VOUT" | grep -vE 'Compiling|Downloaded |go: downloading' | tail -40
       printf '%s' "$VOUT" | grep -q VIS_TUNNEL_SSH_OK \
         && ok "visitor reached the agent's sshd THROUGH the tunnel (3-host data path)" \

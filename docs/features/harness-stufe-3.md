@@ -112,7 +112,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Fehlt das private Repo, schreibt `heavy.sh` die Dateien trotzdem und meldet es im Report.
 - **`audit.yml`-Zeile:** anonymer Aufruf `https://api.github.com/repos/AdminCave/AdminHelper/actions/workflows/audit.yml/runs?per_page=1`
   (Public-Repo, kein Token, `timeout 10`): `conclusion` + Datum in den Report; `failure` ⇒ REL-Kandidat als
-  Roadmap-Zeile `deps-audit` (Dedup über den Datumsstempel des Runs).
+  Roadmap-Zeile `deps-audit` (Dedup „offen bis grün": `seen.md` `deps-audit · open|resolved`, eine Zeile je roter Phase).
 - **Benachrichtigung:** `--notify` postet die Kopfzeile des Reports an `AH_NOTIFY_URL` (ntfy-/Webhook-URL aus
   `.devenv.sh`), Default aus (Frage 1).
 - **Exit:** 0 = PASS, 1 = FAIL (mindestens ein REG-/unbestätigt-/extern-Befund oder roter Capstone), 74 =
