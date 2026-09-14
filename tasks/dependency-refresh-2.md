@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Dependency-Refresh 2 (audit.yml rot seit 2026-09-07) — Task-Ledger (Kurz)
-Status: aktiv · Branch: feature/dependency-refresh-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/dependency-refresh-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: tasks/dependency-refresh.md (Vorgänger, gleiche Mechanik) — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine; der nächste Wochenlauf und der CI-Lauf `audit.yml` (per `gh workflow run audit.yml --ref <branch>`, Kevin) sind der Beweis
@@ -36,13 +36,13 @@ Ergebnis 2026-09-14: **keine Änderung nötig.** `npm audit --audit-level=high` 
 **Neu und unter der Gate-Schwelle:** `apps/web` (3×) und `apps/desktop/ui` (4×) melden GHSA-82fw-gwwq-j7x9 — `@vitest/mocker ≤ 4.1.10`, Severity **moderate**, Fix `vitest 4.1.11` (liegt in den deklarierten Ranges `^4.1.8`/`^4.1.4`, also ein reiner Patch). `audit.yml` prüft `--audit-level=high` und bleibt davon grün. Der Bump ist hier **nicht** machbar: `npm audit fix`, `npm audit fix --package-lock-only` und `npm install --package-lock-only vitest@4.1.11` brechen alle drei mit `TypeError: Cannot read properties of null (reading 'edgesOut')` in `@npmcli/arborist/build-ideal-tree.js:1289` ab (npm 10.9.8 / node 22.23.1, beim Auflösen des vitest-Peer-Sets). Lockfiles blieben unangetastet. → eigener Roadmap-Eintrag, nicht hier erzwingen.
 Doku: CHANGELOG (in T1 gesammelt)
 
-### T4 — Audit-Workflow als Beweis  [ ] (Lauf `34814783778`: 3 von 4 grün, `govulncheck` rot → T5; der grüne Branch-Lauf steht noch aus)
+### T4 — Audit-Workflow als Beweis  [x] (Lauf `34815847101`: alle vier Jobs `success`)
 Komponente: .github · Dateien: keine Änderung
 Änderung: `gh workflow run audit.yml --ref feature/dependency-refresh-2` (wie geplant — die zwischenzeitliche Überlegung, `--ref main` genüge, ist mit T5 hinfällig: `main` trägt den govulncheck-Pin nicht und bleibt rot); alle vier Jobs grün ⇒ Ledger `[x]` mit Run-Id. Der nächste Wochenlauf schließt den `deps-audit`-Eintrag in `seen.md` (nach harness-stufe-3b T3).
 Verify: `gh run view <id> --json conclusion --jq .conclusion` → `success`
 Doku: keine
 Abhängt von: T1, T2, T3
-Stand 2026-09-14: **der rote Lauf ist ein veraltetes Signal.** Lauf `34121945020` (2026-09-07, schedule) lief gegen `d4562067` — den Stand *vor* PR #8 (`790bf551`, 2026-09-08), der genau diese Funde geschlossen hat. Seither ist `audit.yml` nicht mehr gelaufen (der für heute 06:17 UTC geplante Lauf hatte um 06:45 noch nicht gefeuert — GitHub verzögert Schedules, der 09-07-Lauf startete auch erst 12:27 UTC). Lokal sind alle vier Dimensionen gegen den aktuellen Baum sauber: pip-audit 3×, cargo audit Exit 0, npm audit 3× Exit 0, govulncheck ohne Repo-Fund. Lauf `34814783778` (2026-09-14 06:45 UTC, `workflow_dispatch` gegen `main` @ `0611ec77`) auf Kevins Ansage real ausgelöst und bis zum Ende verfolgt: **3 von 4 grün** — `pip-audit`, `cargo audit`, `npm audit` je `success`, damit ist der Abhängigkeits-Teil dieses Ledgers (T1–T3) auch in CI belegt. `govulncheck` rot, aber **nicht** wegen eines Befunds: der Job baut sein Werkzeug nicht mehr → neue Task T5.
+Stand 2026-09-14: **der rote Lauf ist ein veraltetes Signal.** Lauf `34121945020` (2026-09-07, schedule) lief gegen `d4562067` — den Stand *vor* PR #8 (`790bf551`, 2026-09-08), der genau diese Funde geschlossen hat. Seither ist `audit.yml` nicht mehr gelaufen (der für heute 06:17 UTC geplante Lauf hatte um 06:45 noch nicht gefeuert — GitHub verzögert Schedules, der 09-07-Lauf startete auch erst 12:27 UTC). Lokal sind alle vier Dimensionen gegen den aktuellen Baum sauber: pip-audit 3×, cargo audit Exit 0, npm audit 3× Exit 0, govulncheck ohne Repo-Fund. Lauf `34814783778` (2026-09-14 06:45 UTC, `workflow_dispatch` gegen `main` @ `0611ec77`) auf Kevins Ansage real ausgelöst und bis zum Ende verfolgt: **3 von 4 grün** — `pip-audit`, `cargo audit`, `npm audit` je `success`, damit ist der Abhängigkeits-Teil dieses Ledgers (T1–T3) auch in CI belegt. `govulncheck` rot, aber **nicht** wegen eines Befunds: der Job baut sein Werkzeug nicht mehr → neue Task T5. Nach T5 der Beweislauf `34815847101` (2026-09-14, `workflow_dispatch` gegen `feature/dependency-refresh-2` @ `10cc77ed`): **alle vier Jobs `success`**, `gh run watch --exit-status` Exit 0. Der Schritt *Audit module* ist dabei real gelaufen (`success`, nicht `skipped`) — der Pin repariert den Job, er versteckt ihn nicht.
 Nebenbefund `govulncheck`: lokal 5 „affected" + 4 informational, **alle aus der Standardbibliothek** der lokalen Toolchain `go1.25.11` (GO-2026-6218/6090/5972/5856/5026, Fix `go1.25.13`); kein Repo-Modul betroffen, `go.mod` pinnt nur `go 1.25.0` ohne `toolchain`, und CI zieht über `go-version: "1.25"` den neuesten Patch — der CI-Job war und bleibt davon grün. → Dev-Box: Go auf ≥ 1.25.13 heben.
 
 ## Abschluss-Notiz (2026-09-14)
@@ -77,10 +77,18 @@ Roadmap-Zeilen wert, keiner macht `audit.yml` rot):
    stdlib-Advisories mit Fix `go1.25.13`. CI zieht über `go-version: "1.25"` den
    neuesten Patch und ist davon nicht betroffen.
 
-**Beweis:** `gh workflow run audit.yml --ref feature/dependency-refresh-2` →
-`gh run watch <id> --exit-status`. Gegen `main` genügt es seit T5 nicht mehr — dort fehlt
-der govulncheck-Pin, der Job bliebe rot. Grün auf dem Branch schließt R-0017, sobald der
-PR gemergt ist.
+**Beweis erbracht:** `gh workflow run audit.yml --ref feature/dependency-refresh-2` → Lauf
+`34815847101` gegen `10cc77ed`, **alle vier Jobs `success`**, `gh run watch --exit-status`
+Exit 0. Gegen `main` wäre der Lauf seit T5 nicht aussagekräftig gewesen — dort fehlt der
+govulncheck-Pin. R-0017 ist damit belegt geschlossen, sobald der PR gemergt ist; der
+nächste planmäßige Montagslauf gegen `main` ist die Bestätigung.
+
+**Zwei Roadmap-Kandidaten aus diesem Lauf** (keiner im Scope, beide benannt statt still
+mitgenommen): `pip install pip-audit` und `cargo install cargo-audit --locked` in
+`audit.yml` sind weiterhin unverpinnt — dieselbe Zeitbombe wie `govulncheck@latest`, nur
+träger, weil sie an rollenden Toolchains hängen. Und der Lockstep-Kommentar in T5 („Raise
+this together with go-version") ist nirgends erzwungen; `ci.yml` hat für genau diese
+Sorte Kopplung bereits einen Lockstep-Job.
 
 ### T5 — `audit.yml`: govulncheck-Job baut sein Werkzeug nicht mehr  [x] (auf `@v1.7.0` gepinnt)
 Komponente: .github · Dateien: .github/workflows/audit.yml
