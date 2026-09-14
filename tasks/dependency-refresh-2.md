@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Dependency-Refresh 2 (audit.yml rot seit 2026-09-07) — Task-Ledger (Kurz)
-Status: blockiert (T4 wartet auf Kevins Workflow-Lauf) · Branch: feature/dependency-refresh-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/dependency-refresh-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: tasks/dependency-refresh.md (Vorgänger, gleiche Mechanik) — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine; der nächste Wochenlauf und der CI-Lauf `audit.yml` (per `gh workflow run audit.yml --ref <branch>`, Kevin) sind der Beweis
@@ -36,24 +36,25 @@ Ergebnis 2026-09-14: **keine Änderung nötig.** `npm audit --audit-level=high` 
 **Neu und unter der Gate-Schwelle:** `apps/web` (3×) und `apps/desktop/ui` (4×) melden GHSA-82fw-gwwq-j7x9 — `@vitest/mocker ≤ 4.1.10`, Severity **moderate**, Fix `vitest 4.1.11` (liegt in den deklarierten Ranges `^4.1.8`/`^4.1.4`, also ein reiner Patch). `audit.yml` prüft `--audit-level=high` und bleibt davon grün. Der Bump ist hier **nicht** machbar: `npm audit fix`, `npm audit fix --package-lock-only` und `npm install --package-lock-only vitest@4.1.11` brechen alle drei mit `TypeError: Cannot read properties of null (reading 'edgesOut')` in `@npmcli/arborist/build-ideal-tree.js:1289` ab (npm 10.9.8 / node 22.23.1, beim Auflösen des vitest-Peer-Sets). Lockfiles blieben unangetastet. → eigener Roadmap-Eintrag, nicht hier erzwingen.
 Doku: CHANGELOG (in T1 gesammelt)
 
-### T4 — Audit-Workflow als Beweis  [?] (Kevin löst aus — Befehl unten)
+### T4 — Audit-Workflow als Beweis  [ ] (Lauf `34814783778`: 3 von 4 grün, `govulncheck` rot → T5; der grüne Branch-Lauf steht noch aus)
 Komponente: .github · Dateien: keine Änderung
-Änderung: Kevin startet `gh workflow run audit.yml --ref main` (Planfassung: `--ref feature/dependency-refresh-2`; hinfällig, weil dieser Branch keine Abhängigkeitsänderung trägt — der Builder nennt den Befehl, führt ihn laut dieser Task-Zeile ausdrücklich nicht aus); alle vier Jobs grün ⇒ Ledger `[x]` mit Run-Id. Der nächste Wochenlauf schließt den `deps-audit`-Eintrag in `seen.md` (nach harness-stufe-3b T3).
+Änderung: `gh workflow run audit.yml --ref feature/dependency-refresh-2` (wie geplant — die zwischenzeitliche Überlegung, `--ref main` genüge, ist mit T5 hinfällig: `main` trägt den govulncheck-Pin nicht und bleibt rot); alle vier Jobs grün ⇒ Ledger `[x]` mit Run-Id. Der nächste Wochenlauf schließt den `deps-audit`-Eintrag in `seen.md` (nach harness-stufe-3b T3).
 Verify: `gh run view <id> --json conclusion --jq .conclusion` → `success`
 Doku: keine
 Abhängt von: T1, T2, T3
-Stand 2026-09-14: **der rote Lauf ist ein veraltetes Signal.** Lauf `34121945020` (2026-09-07, schedule) lief gegen `d4562067` — den Stand *vor* PR #8 (`790bf551`, 2026-09-08), der genau diese Funde geschlossen hat. Seither ist `audit.yml` nicht mehr gelaufen; der nächste planmäßige Lauf ist heute Mo 06:17 UTC gegen `main`. Lokal sind alle vier Dimensionen gegen den aktuellen Baum sauber: pip-audit 3×, cargo audit Exit 0, npm audit 3× Exit 0, govulncheck ohne Repo-Fund. Beweis-Befehl (Kevin, `main` reicht — dieser Branch trägt keine Abhängigkeitsänderung): `gh workflow run audit.yml --ref main`, dann `gh run watch <id> --exit-status`.
+Stand 2026-09-14: **der rote Lauf ist ein veraltetes Signal.** Lauf `34121945020` (2026-09-07, schedule) lief gegen `d4562067` — den Stand *vor* PR #8 (`790bf551`, 2026-09-08), der genau diese Funde geschlossen hat. Seither ist `audit.yml` nicht mehr gelaufen (der für heute 06:17 UTC geplante Lauf hatte um 06:45 noch nicht gefeuert — GitHub verzögert Schedules, der 09-07-Lauf startete auch erst 12:27 UTC). Lokal sind alle vier Dimensionen gegen den aktuellen Baum sauber: pip-audit 3×, cargo audit Exit 0, npm audit 3× Exit 0, govulncheck ohne Repo-Fund. Lauf `34814783778` (2026-09-14 06:45 UTC, `workflow_dispatch` gegen `main` @ `0611ec77`) auf Kevins Ansage real ausgelöst und bis zum Ende verfolgt: **3 von 4 grün** — `pip-audit`, `cargo audit`, `npm audit` je `success`, damit ist der Abhängigkeits-Teil dieses Ledgers (T1–T3) auch in CI belegt. `govulncheck` rot, aber **nicht** wegen eines Befunds: der Job baut sein Werkzeug nicht mehr → neue Task T5.
 Nebenbefund `govulncheck`: lokal 5 „affected" + 4 informational, **alle aus der Standardbibliothek** der lokalen Toolchain `go1.25.11` (GO-2026-6218/6090/5972/5856/5026, Fix `go1.25.13`); kein Repo-Modul betroffen, `go.mod` pinnt nur `go 1.25.0` ohne `toolchain`, und CI zieht über `go-version: "1.25"` den neuesten Patch — der CI-Job war und bleibt davon grün. → Dev-Box: Go auf ≥ 1.25.13 heben.
 
 ## Abschluss-Notiz (2026-09-14)
 
-**Ergebnis: nichts zu tun — das Vorhaben war beim Start schon erledigt.** Der Befund
+**Ergebnis: am Abhängigkeitsstand nichts zu tun — der war beim Start schon in Ordnung.** Der Befund
 dieses Ledgers stammt aus Audit-Lauf `34121945020` (2026-09-07), und der lief gegen
 `d4562067` — den `main`-Stand *vor* PR #8 (`790bf551`, 2026-09-08), mit dem der
 Vorgänger `tasks/dependency-refresh.md` genau diese Funde geschlossen hat. Seitdem hat
 `audit.yml` nicht mehr getickt, deshalb steht das rote Signal noch. Kein einziger
-Befund-Eintrag existiert heute noch; keine Lockfile wurde in diesem Lauf angefasst
-(`git diff --stat` gegen `main`: nur diese Ledger-Datei).
+Befund-Eintrag existiert heute noch, und **keine Lockfile wurde angefasst**. Der
+Branch-Diff gegen `main` umfasst zwei Dateien: dieses Ledger und `.github/workflows/audit.yml`
+— letzteres nicht wegen einer Abhängigkeit, sondern wegen T5, das der Beweislauf aufgedeckt hat.
 
 **Gegenprobe gegen den aktuellen Baum, alle vier Dimensionen von `audit.yml`:**
 
@@ -76,5 +77,40 @@ Roadmap-Zeilen wert, keiner macht `audit.yml` rot):
    stdlib-Advisories mit Fix `go1.25.13`. CI zieht über `go-version: "1.25"` den
    neuesten Patch und ist davon nicht betroffen.
 
-**Offen für Kevin:** `gh workflow run audit.yml --ref main` (oder einfach den heutigen
-06:17-UTC-Lauf abwarten) → `gh run watch <id> --exit-status`. Grün schließt R-0017.
+**Beweis:** `gh workflow run audit.yml --ref feature/dependency-refresh-2` →
+`gh run watch <id> --exit-status`. Gegen `main` genügt es seit T5 nicht mehr — dort fehlt
+der govulncheck-Pin, der Job bliebe rot. Grün auf dem Branch schließt R-0017, sobald der
+PR gemergt ist.
+
+### T5 — `audit.yml`: govulncheck-Job baut sein Werkzeug nicht mehr  [x] (auf `@v1.7.0` gepinnt)
+Komponente: .github · Dateien: .github/workflows/audit.yml
+Befund (neu, aus Lauf `34814783778`): Schritt *Install govulncheck* bricht ab mit
+`golang.org/x/vuln@v1.8.0 requires go >= 1.26.0 (running go 1.25.14; GOTOOLCHAIN=local)`.
+`x/vuln v1.8.0` hat die go-Direktive auf `1.26.0` gehoben; `setup-go` läuft mit
+`GOTOOLCHAIN=local`, also darf die Toolchain nicht nachladen. Kein Abhängigkeitsfund —
+ein kaputter Job. Alle Actions hängen an vollen SHAs, die drei Audit-Werkzeuge dagegen
+nicht: neben diesem `@latest` stehen `pip install pip-audit` (Zeile 30) und
+`cargo install cargo-audit --locked` (Zeile 47) ebenso ohne Version da. Rot geworden ist
+zuerst govulncheck, weil nur dieser Bezug an eine **fest gepinnte** Toolchain gekoppelt
+ist (`setup-go` setzt `GOTOOLCHAIN=local`); `cargo-audit` läuft unter rollendem
+`rust-toolchain@stable`, `pip-audit` unter `python-version: "3.13"` — dieselbe Falle, nur
+träger. Die beiden hier **nicht** mitgepinnt (Scope) → Roadmap-Zeile.
+Änderung: `go install golang.org/x/vuln/cmd/govulncheck@v1.7.0` statt `@latest` — `v1.7.0`
+ist die letzte Fassung mit go-Direktive `1.25.0`. **Nicht** stattdessen `go-version` auf
+1.26 gehoben: `apps/agent/go.mod` sagt `go 1.25.0` und `release.yml` baut den Agent mit
+1.25, ein Scan gegen eine 1.26-stdlib würde also über Binaries urteilen, die so nie
+ausgeliefert werden. Die Advisory-DB bleibt davon unberührt (wird zur Laufzeit von
+`vuln.go.dev` geholt) — die **Advisory-Daten** altern durch den Pin also nicht; die
+Scanner-Logik von v1.8.0+ fehlt sehr wohl, was beim nächsten Anheben nachzuholen ist.
+Dritte, verworfene Option: nur für den Install-Schritt `GOTOOLCHAIN=auto` setzen und
+`go-version: "1.25"` behalten. Das ginge fachlich (die Build-Toolchain des Werkzeugs
+bestimmt die gescannte stdlib nicht — ein mit go1.26 gebautes v1.8.0 meldet beim Scan
+weiterhin `Go: go1.25.11`), zieht aber je Lauf eine komplette Toolchain nach und macht
+den Job wieder von einem beweglichen Ziel abhängig.
+Verify: `GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.7.0` unter go1.25.11
+lokal → Exit 0, `Scanner: govulncheck@v1.7.0`, `DB updated: 2026-09-10`; `govulncheck ./...`
+in `apps/agent` liefert **dieselben** 5 Symbol-Treffer wie `@latest` (alle `Standard library`
+@ `go1.25.11`, Fix ≤ `go1.25.13`) — der Pin ändert die Erkennung nicht, nur die Baubarkeit.
+Der eigentliche Beweis ist der Workflow-Lauf auf dem Branch (s. Abschluss-Notiz); CI läuft
+auf go1.25.14 und ist von den stdlib-Treffern nicht betroffen.
+Doku: keine (CI-Reparatur ohne nach außen sichtbare Wirkung; der Warum-Kommentar steht im Workflow)

@@ -59,7 +59,13 @@ jobs:
           go-version: "1.25"
           cache-dependency-path: apps/agent/go.sum
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # Pinned, not @latest: x/vuln v1.8.0 declares `go 1.26.0`, and setup-go
+        # defaults to GOTOOLCHAIN=local, so `@latest` stops building the moment
+        # upstream outruns our toolchain. v1.7.0 is the last release that builds
+        # on Go 1.25 — the version release.yml ships the agent with, so the scan
+        # keeps reporting against the stdlib we actually publish. Raise this
+        # together with go-version, never on its own.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
       - name: Audit module
         working-directory: apps/agent
         run: govulncheck ./...
