@@ -4,13 +4,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Audit-Hygiene — Pins, Lockstep-Check, lokale Audit-Tools — Task-Ledger (Kurz)
-Status: aktiv · Branch: feature/audit-hygiene · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/audit-hygiene · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: tasks/dependency-refresh-2.md (T5, der govulncheck-Pin) und .github/workflows/audit.yml — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine; Beweis für T1/T2 ist `gh workflow run audit.yml --ref feature/audit-hygiene` (Kevin) mit vier grünen Jobs plus der PR-CI-Job `frp-consistency`
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Roadmap: R-0036, R-0037, R-0039 · Hängt ab von: — · Reihenfolge: vor tasks/harness-stufe-8a.md (beide ändern ci.yml und DEVELOPMENT.md)
+Abschluss 2026-09-15: T1–T3 grün; `run.sh quick` 13 passed, 0 failed, 0 skipped. Schwere Suite entfällt (kein heavy-relevanter Pfad im Branch-Diff, deckt sich mit der Heavy-Zeile). Push und Draft-PR stehen aus — Kevins Hand. Der Frischer-Kontext-Review lief nur für T1 (approve nach einer Runde); für T2/T3 brachen die Sub-Agenten dreimal ohne Urteil ab, daher Selbst-Review gegen dieselben 7 Kriterien (T2: vier Punkte eingearbeitet, T3: drei).
 Beabsichtigte Semantik: audit.yml bleibt der wöchentliche CVE-Signalgeber; ein Job darf nie „grün, weil das Werkzeug nicht baute". Versionen: pip-audit 2.10.1, cargo-audit 0.22.2, govulncheck v1.7.0 (Stand 2026-09-14, PyPI/crates.io/Go-Proxy geprüft).
 
 ### T1 — audit.yml: pip-audit und cargo-audit pinnen  [x] (pip-audit==2.10.1, cargo-audit --version 0.22.2, je mit Begründungs-Kommentar)
