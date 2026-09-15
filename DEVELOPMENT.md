@@ -612,8 +612,9 @@ Steps melden SKIP). `crabbox_iter.sh` reicht die Flags an die Box weiter.
 ### Wochenlauf (heavy.sh)
 
 Der schwere Tier laeuft nicht mehr „wenn man daran denkt", sondern als ein Lauf mit
-Report und Historie. **Nichts davon startet von selbst** — Kevin startet ihn, ueblicherweise
-in `tmux`, und liest hinterher den Report:
+Report und Historie. **Nichts davon startet von selbst** — Kevin startet ihn: von Hand in
+`tmux`, oder mit `/test weekly` aus einer Claude-Session, die denselben tmux-Lauf startet, ihn
+bis zum Report ueberwacht und das Ergebnis samt VM-Liste meldet (Regeln im `/test`-Skill):
 
 ```bash
 tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'

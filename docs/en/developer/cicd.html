@@ -120,8 +120,8 @@
           exactly that: a report, a history, and a mechanical classification of the <code>all</code>
           layer's red steps. (Retries, quarantine and the second VM belong to that layer; the capstone
           layer reports its red assertions directly as <code>fail</code>.) <strong>It never
-          starts by itself</strong> &ndash; Kevin starts it, usually in <code>tmux</code>, and reads the report
-          afterwards.</p>
+          starts by itself</strong> &ndash; Kevin starts it, by hand in <code>tmux</code> or with <code>/test weekly</code>
+          from a Claude session that supervises the run to the report and reports the result.</p>
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
