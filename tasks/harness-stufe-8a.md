@@ -22,11 +22,12 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_monitoring_prox
 Doku: keine (intern)
 Ergebnis: Test neu (Routen-Scan == Allowlist, Ausnahmen agent-keys/servers auf Existenz geprüft); `log`/`metrics` aus `_ALLOWED_PATH_PREFIXES` entfernt. Verify-Zeile korrigiert: `tests/test_monitoring_proxy.py` existiert nicht, der reale Proxy-Test ist `tests/test_monitoring_ingest_ratelimit.py`. 3 passed, 0 failed, 10 skipped.
 
-### T2 — Identity-Header-Contract Gateway ↔ Server ↔ CA-Issuer  [ ]
+### T2 — Identity-Header-Contract Gateway ↔ Server ↔ CA-Issuer  [x]
 Komponente: apps/server · Dateien: apps/server/tests/test_identity_header_contract.py (neu, SPDX)
 Änderung: Test liest `apps/gateway/identity-headers.conf` (alle `proxy_set_header X-… $ssl_client_…`-Namen) und die Enroll-Plane-Strips in `apps/gateway/nginx.conf` (`proxy_set_header X-Client-Verify ""` / `X-Client-Cert ""`); assertet: die zwei Client-Cert-Header entsprechen (case-insensitiv) `_H_VERIFY`/`_H_CERT` aus `apps/server/app/core/identity.py` **und** `HEADER_VERIFY`/`HEADER_CERT` aus `apps/ca-issuer/app/config.py` (per Regex aus der Datei, kein Cross-Import); die Enroll-Plane strippt genau diese zwei. Nicht-Leer: genau 2 Client-Header gefunden.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_identity_header_contract.py
 Doku: keine (intern)
+Ergebnis: Test neu (3 Fälle: genau 2 cert-abgeleitete Header; Gleichheit mit `_H_VERIFY`/`_H_CERT` und — per Regex — `HEADER_VERIFY`/`HEADER_CERT`; :8444 strippt genau diese zwei). Der Enroll-Plane-Block wird per Klammer-Matching aus `nginx.conf` geschnitten, damit ein Strip auf :443 den Test nicht fälschlich grün macht. Kein Drift gefunden. Review-Runde 1 fand eine echte Lücke: die Mengen-Gleichheit galt für den ganzen :8444-Block, also hätte ein Strip *nur* in einer `location` gereicht — nginx vererbt `proxy_set_header` aber nicht mehr, sobald eine Location eigene setzt. Behoben: `_server_level()` schneidet die Location-Blöcke weg, die Assertion gilt jetzt auf Server-Ebene (Gegenprobe im Wegwerf-Worktree: Server-Level-Strips entfernt ⇒ rot). Dazu `_BLANKED` auf den `X-Client-`-Namensraum gefiltert, damit ein späteres `Connection ""` keinen Fehlalarm auslöst. Evidenz für diese Einheit: 3 passed, 0 failed (Verify-Zeile).
 
 ### T3 — Enrollment-Hash-Lockstep Server ↔ CA-Issuer  [ ]
 Komponente: apps/server · Dateien: apps/server/tests/test_enrollment_hash_lockstep.py (neu, SPDX)
