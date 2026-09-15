@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8a — Paritäts- und Contract-Gates — Task-Ledger
-Status: aktiv · Branch: feature/harness-stufe-8a · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: blockiert · Branch: feature/harness-stufe-8a · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8a.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine im Abschluss (kein Cross-Host-Pfad); der nächste Wochenlauf nach dem Merge ist der reale Beweis für T4 (agent-monitoring) und T5 (Server-Hooks)
@@ -177,3 +177,37 @@ Abhängt von: T17
 - Gesamt: `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün.
 - Mutations-Proben aus der Spec („Verify-Prinzip") in einem Wegwerf-Worktree: je Guard eine Mutation ⇒ rot; Ergebnisliste in den PR-Body.
 - Roadmap-Zeilen (Kevin, privat): `enroll_device` (REF), Funde aus T6/T14/T17, falls `[?]`.
+
+### Ergebnis des Abschlusses
+- `bash scripts/dev/verify.sh all --strict`: **13 passed, 0 failed, 0 skipped, 5 test-skips, 0 reruns** (die fünf
+  test-skips sind Vorbedingungen dieser Box: Redis auf :6380 nicht erreichbar, Migrations-Smoke ohne `DATABASE_URL`).
+  `bash scripts/tests/run.sh quick --strict` direkt aufgerufen meldet `go agent` als strict-failed, weil `run.sh`
+  ohne Wrapper `.devenv.sh` nicht sourct und `go` dann unsichtbar ist — das ist die Umgebung, nicht der Code;
+  über `verify.sh` läuft der Schritt grün.
+- **Schwere Suite übersprungen, am realen Diff geprüft:** `git diff --name-only main...HEAD` berührt keinen
+  Cross-Host-Pfad (kein `apps/gateway`, `apps/ca-issuer`, `apps/agent`, `docker-compose*`, `Dockerfile`,
+  `scripts/install|update`, kein FRP/PKI). Das deckt sich mit dem Ledger-Kopf. **Eine Einschränkung, die der Kopf
+  nicht kennen konnte:** T7 hat `apps/server/app/modules/monitoring_proxy/router.py` angefasst (eine `api_route`
+  mit vier Methoden wurde zu vier Ein-Methoden-Routen). Das ist Produktivcode auf einem Server-API-Pfad. Abgedeckt
+  ist es durch die volle Server-Suite (510 passed) und `test_monitoring_ingest_ratelimit.py`; der Integrationsstack
+  würde denselben Pfad über das Gateway fahren. **Kevin entscheidet, ob das vor dem Merge einen Single-Box-Lauf
+  wert ist.**
+- **Mutations-Proben** — je Guard mindestens eine Einzelmutation, alle rot (Wegwerf-Worktree bzw. Backup-Kopie):
+  T1 `log` zurück in die Allowlist · `alerts` entfernt · Monitoring-Route umbenannt · leeres `routers/` ·
+  `agent-keys` umbenannt. T2 Header in `identity-headers.conf` umbenannt · `HEADER_CERT` im Issuer · `_H_CERT` im
+  Server · dritter `$ssl_client_*`-Header · Strips von :8444 nach :443 · nur die Server-Level-Strips gelöscht ·
+  `listen 8444` entfernt. T3 Issuer-`_hash` auf sha512 · Server-`hash_api_key` auf sha512 · `hashed_token=raw` ·
+  Issuer sucht ohne `_hash` · Decorator über `_hash` · Docstring (muss grün bleiben, ist es). T4 Pipeline-Token
+  nach `agent.py` kopiert · Log-String kopiert · zweiter `_dispatch_alert_bg` · `apply_result` umbenannt ·
+  `keep_previous_details_when_absent` am Call-Site entfernt · Default gedreht · Flag ignoriert · Zuweisung immer
+  bedingt · aliasierter Import ein- und mehrzeilig. T5 Logikzeile in der Server-`ssrf.py` · dieselbe im Monitoring ·
+  Kommentar/Format/Docstring (grün) · beide Guards auf Stub. T7 `api_route` wiederhergestellt ⇒ vier Schema-Hashes
+  über sieben Seeds. T9 `oasdiff` gegen sich selbst aufgerufen ⇒ Test rot. T12 `tunnelType` wieder entfernt ·
+  `Settings.url` umbenannt. T13 Feld im Fixture umbenannt · Pflichtfeld entfernt. T17 gitignorierte Build-Ausgabe ·
+  `<code class>` · mehrzeiliger Block · sechster Allowlist-Eintrag.
+- **Zwei offene `[?]` für Kevin:** T6 (Env-Parität, 6 Funde) und T14 (`sync-from-web.sh --check`, 22 Funde).
+  Deshalb steht der Kopf auf `blockiert`, nicht auf `erledigt`.
+- **Roadmap-Kandidaten (privat, Klasse REF):** `enroll_device` ohne UI-Aufrufer · sechs Server-Routen ohne
+  `response_model` (`GET/POST /api/users`, `GET/POST/PUT /api/frp/server-config`, `GET /api/frp/status`), die
+  darum nicht pinbar sind · `--env` von doc-smoke (43 Namen triagieren) · `authz.spec.ts:20` beschreibt
+  `auth/me` ein zweites Mal, ungepinnt.
