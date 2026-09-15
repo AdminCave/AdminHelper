@@ -7,6 +7,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Security
+
+- **Desktop-Backend:** `rustls` 0.23.40 → 0.23.45 (RUSTSEC-2026-0285, TLS-1.3-Handshake-
+  Nachrichten wurden ueber Encryption-Level-Grenzen hinweg akzeptiert; medium) samt
+  `rustls-webpki` 0.103.13 → 0.103.15 — nur der Lockfile-Stand, keine Verhaltensaenderung.
+  Gefunden vom gepinnten `cargo audit` des Audit-Sweeps. Cargo 1.96 haengt beim Update
+  zusaetzlich fuenf `windows-sys`-Kanten (errno, os_pipe, rustix, tempfile, winapi-util)
+  auf bereits gelockte Versionen um — Windows-only, vom CI-Job `rust-windows` gebaut.
+
 ### Fixed
 
 - **Wochenlauf (Harness Stufe 3b):** Auf der Box sind unter `--strict` alle Schritte der
