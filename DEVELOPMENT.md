@@ -166,6 +166,39 @@ bash scripts/dev/openapi-breaking.sh server --base origin/main
 bash scripts/dev/openapi-breaking.sh monitoring --base origin/main
 ```
 
+### Geteilte API-Typen (sync-from-web.sh --check)
+
+`apps/web/src/lib/api/types.ts` und `apps/desktop/ui/src/lib/api/types.ts` sind
+**keine** gemeinsame Datei mehr: das Web beschreibt die Admin-Panel-API (25
+Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole —
+`FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server`.
+
+```bash
+bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
+```
+
+Geprueft wird die Schnittmenge, und zwar als **Teilmenge**: jede Zeile des
+Web-Blocks muss im Desktop-Block stehen, das Desktop darf mehr fuehren. Das ist
+kein Kompromiss, sondern die richtige Invariante — `Server` traegt im Desktop
+zusaetzlich `connections?: Connection[]`, weil `to_dict()` das Feld liefert und
+nur das Admin-Panel es ignoriert. Der reale Drift, den die Regel faengt: das Web
+zieht ein neues Server-Feld nach, das Desktop nicht.
+
+Quell-Exporte ohne Gegenstueck im Ziel werden nur berichtet, nicht bemaengelt.
+Die vier erwarteten gemeinsamen Symbole stehen namentlich im Skript
+(`CHECK_SHARED`): verschwindet eines von einer Seite, ist das ein Fehler, keine
+kleinere gruene Menge. Ein blosser Zaehl-Boden haette erst bei zwei gleichzeitigen
+Verlusten gegriffen — der realistische Fall ist der einzelne Refactor.
+
+**Wo der Guard blind ist:** die Loeschrichtung. Entfernt das Web ein Feld, bleibt
+die Teilmenge erfuellt — das Desktop behaelt die Leiche, und niemand meldet es.
+Das ist die einzige der sechs Drift-Formen, die die Regel nicht faengt
+(umbenannt, Typ geaendert, im Ziel entfernt: alle rot).
+
+**`--apply` ist fuer diese Datei tot** und der bestehende Ueberschreib-Schutz
+haelt es so: er bricht ab, sobald das Ziel Exporte hat, die die Quelle nicht
+kennt — und das sind 54.
+
 ### Doku-Smoke (doc-smoke.py)
 
 `scripts/dev/doc-smoke.py` prueft, ob die Dokumentation den Baum noch beschreibt:
@@ -387,7 +420,6 @@ services:
       dockerfile: Dockerfile
     image: adminhelper-server:dev
     environment:
-      - DOMAIN=localhost
       - ADMIN_PASSWORD=dev   # nur fuer lokale Entwicklung; Production: leer lassen + Bootstrap-Token
   monitoring:
     build:

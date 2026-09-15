@@ -24,6 +24,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Gleichheit der beiden SSRF-Guards. Dazu `scripts/dev/doc-smoke.py` (CI-Step im Job `ops-scripts`): jedes `<code>`-Fragment in
   `docs/**/*.html`, das einen Repo-Pfad nennt, muss eine existierende Datei benennen — zwei
   veraltete Pfade in der Entwickler-Doku sind damit schon aufgefallen und korrigiert.
+  Und `sync-from-web.sh --check` (CI-Step im Job `desktop-ui`) haelt die vier API-Typen zusammen,
+  die Web- und Desktop-Frontend doppelt fuehren.
   Details: `docs/developer/cicd.html` (DE + EN), Abschnitt „Paritaets- und Contract-Gates".
 
 ### Security
@@ -36,6 +38,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   auf bereits gelockte Versionen um — Windows-only, vom CI-Job `rust-windows` gebaut.
 
 ### Fixed
+
+- **Konfigurations-Stellhebel, die nichts bewirkt haben (Harness Stufe 8a, T6):** `DB_POOL_SIZE` und
+  `DB_MAX_OVERFLOW` waren in `.env.example` samt Rechenregel dokumentiert, wurden aber von keinem
+  Compose-Dienst durchgereicht — wer sie setzte, aenderte nichts. Sie gehen jetzt an `server` und
+  `scheduler`. `CA_FRPS_EXTRA_SANS` (eigene SANs fuers frps-Leaf) war umgekehrt im Compose vorhanden,
+  aber nirgends dokumentiert. Entfernt wurden drei tote Keys: `DOMAIN` und `EXTRA_SANS` beim Dienst
+  `server` (nichts in `apps/server` liest sie; sie gehoeren dem ca-issuer und dem Gateway) sowie
+  `PGPASSWORD` bei `server` und `scheduler` (deren Entrypoints rufen nur `pg_isready`, das sich nicht
+  authentifiziert — nur das Monitoring nutzt `psql`). Ein neuer Test haelt die drei Beschreibungen
+  ab jetzt zusammen.
 
 - **Wochenlauf (Harness Stufe 3b):** Auf der Box sind unter `--strict` alle Schritte der
   schweren Layer Pflicht (`AH_REQUIRED` ungesetzt ⇒ Layer-Menge; `crabbox_iter.sh` reicht ein
