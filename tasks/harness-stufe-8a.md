@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8a — Paritäts- und Contract-Gates — Task-Ledger
-Status: blockiert · Branch: feature/harness-stufe-8a · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/harness-stufe-8a · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8a.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine im Abschluss (kein Cross-Host-Pfad); der nächste Wochenlauf nach dem Merge ist der reale Beweis für T4 (agent-monitoring) und T5 (Server-Hooks)
@@ -184,7 +184,34 @@ Abhängt von: T17
   `bash scripts/tests/run.sh quick --strict` direkt aufgerufen meldet `go agent` als strict-failed, weil `run.sh`
   ohne Wrapper `.devenv.sh` nicht sourct und `go` dann unsichtbar ist — das ist die Umgebung, nicht der Code;
   über `verify.sh` läuft der Schritt grün.
-- **Schwere Suite übersprungen, am realen Diff geprüft:** `git diff --name-only main...HEAD` berührt keinen
+### Schwere Suite — nachgeholt, weil T6 die Entscheidung umgeworfen hat
+Der Ledger-Kopf sagt „Heavy: keine im Abschluss". Das galt, bis T6 `docker-compose.yml` anfasste — die Datei
+steht ausdrücklich auf der heavy-relevanten Pfadliste, und ein Unit-Test beweist Paritäts-Beschreibungen,
+nicht dass der Stack mit entfernten Env-Keys noch hochkommt. Der T6-Reviewer hat das zu Recht als offen
+markiert; der Lauf ist nachgeholt:
+
+`bash scripts/tests/crabbox_iter.sh integration` auf einer warmen Box (`ah-desktop-acce`, Template 9402):
+```
+run.sh[integration]: 6 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns
+  PASS  integration_stack (mTLS gateway)      integration_stack_test: 19 passed, 0 failed
+  PASS  backup_restore (crown-jewel DR)       backup_restore_test: 8 passed, 0 failed
+  PASS  sse_push_e2e (Redis fan-out)
+  PASS  agent_monitoring (push pipeline)      agent_monitoring: 6 passed, 0 failed
+  PASS  repo_build (apt/rpm + sign)
+  PASS  upgrade_path (last release -> HEAD)   upgrade_path_test: 15 passed, 0 failed
+```
+**0 skipped** ist hier der Punkt: der Stack ist mit der geänderten Compose-Datei real hochgekommen.
+`upgrade_path` fährt zusätzlich das letzte Release hoch und migriert auf diesen Checkout — also genau der
+Pfad, auf dem eine bestehende Installation die Änderung zu sehen bekommt. Danach `crabbox list` leer.
+
+**Grenze, die dazugehört:** `crabbox_serverbox.sh:56-59` fährt bewusst nur `gateway server ca-issuer
+monitoring` hoch, `scheduler` bleibt draußen (er zöge ein noch nicht publiziertes ghcr-Image). Die
+Scheduler-Änderungen aus T6 (`PGPASSWORD` entfernt, Pool-Keys ergänzt) sind damit **nicht live geprüft**.
+Vertretbar, weil der Scheduler dasselbe Image mit demselben Entrypoint fährt und sich nur durch
+`RUN_MODE=scheduler` unterscheidet: `pg_isready` ohne Auth und derselbe `create_engine`-Pfad — was der
+Server-Dienst beweist, überträgt sich per Konstruktion. Aber es ist eine Übertragung, keine Messung.
+
+- **Ursprüngliche Einschätzung (vor T6), am damaligen Diff geprüft:** `git diff --name-only main...HEAD` berührt keinen
   Cross-Host-Pfad (kein `apps/gateway`, `apps/ca-issuer`, `apps/agent`, `docker-compose*`, `Dockerfile`,
   `scripts/install|update`, kein FRP/PKI). Das deckt sich mit dem Ledger-Kopf. **Eine Einschränkung, die der Kopf
   nicht kennen konnte:** T7 hat `apps/server/app/modules/monitoring_proxy/router.py` angefasst (eine `api_route`
@@ -205,8 +232,10 @@ Abhängt von: T17
   über sieben Seeds. T9 `oasdiff` gegen sich selbst aufgerufen ⇒ Test rot. T12 `tunnelType` wieder entfernt ·
   `Settings.url` umbenannt. T13 Feld im Fixture umbenannt · Pflichtfeld entfernt. T17 gitignorierte Build-Ausgabe ·
   `<code class>` · mehrzeiliger Block · sechster Allowlist-Eintrag.
-- **Zwei offene `[?]` für Kevin:** T6 (Env-Parität, 6 Funde) und T14 (`sync-from-web.sh --check`, 22 Funde).
-  Deshalb steht der Kopf auf `blockiert`, nicht auf `erledigt`.
+- **Die beiden `[?]` sind aufgelöst** (Kevin hat nachgefordert: prüfen, entscheiden, machen). T6: alle sechs Funde
+  behoben, Test committet. T14: die Prämisse war falsch — die beiden `types.ts` sind getrennte API-Flächen mit vier
+  gemeinsamen Symbolen; `--check` prüft jetzt die Teilmenge über der Schnittmenge und ist im CI. Details in den
+  jeweiligen `Ergebnis:`-Zeilen. Damit steht der Kopf auf `erledigt`.
 - **Roadmap-Kandidaten (privat, Klasse REF):** `enroll_device` ohne UI-Aufrufer · sechs Server-Routen ohne
   `response_model` (`GET/POST /api/users`, `GET/POST/PUT /api/frp/server-config`, `GET /api/frp/status`), die
   darum nicht pinbar sind · `--env` von doc-smoke (43 Namen triagieren) · `authz.spec.ts:20` beschreibt
