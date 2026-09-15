@@ -58,91 +58,119 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf_parity.py 
 Doku: keine (intern; Timeout ist kein dokumentiertes Verhalten)
 Ergebnis: `_DNS_RESOLVER`/`_DNS_TIMEOUT_S` in den Server portiert; `tests/test_ssrf.py` neu mit dem Timeout-Fall (Resolver-Stub schläft 2 s, `_DNS_TIMEOUT_S` auf 0,1 s gepatcht ⇒ fail-closed **und** Rückkehr unter 1 s — fail-closed allein wäre nur die halbe Zusage). Der Paritätstest vergleicht beide Dateien über `ast.unparse` nach Entfernen aller Docstrings: damit hängt er weder an Formatierung noch an Kommentaren, und die beiden Module dürfen sich weiter unterschiedlich erklären. Allowlist leer, Deckel 3. **Abweichung:** Nicht-Leer-Schwelle 25 statt 30 Zeilen — der normalisierte Guard hat real 29 Zeilen, mit 30 wäre der Test ab Zeile eins rot gewesen. Die Range-Tabelle wird bewusst nicht im Server dupliziert (sie steht in `apps/monitoring/tests/test_ssrf.py`, und der Paritätstest bindet den Server daran) — eine zweite Abschrift wäre genau das, was diese Stufe bekämpft. 3 passed.
 
-### T6 — Env-Parität Compose ↔ .env.example ↔ config.py  [ ]
+### T6 — Env-Parität Compose ↔ .env.example ↔ config.py  [?]
 Komponente: apps/server · Dateien: apps/server/tests/test_env_parity.py (neu, SPDX)
 Änderung: Test nach Spec Trade-off 6: (a) `os.environ.get("X")`/`os.environ["X"]` ohne Default in `apps/{server,monitoring}/app/core/config.py` und `apps/ca-issuer/app/config.py` ⇒ `X` ist in `docker-compose.yml` beim jeweiligen Service gesetzt; (b) jeder `environment:`-Key eines Python-Services in Compose wird vom Code dieses Services gelesen (`os.environ` in `app/**`, plus `LOG_LEVEL` in `logging_config.py`); (c) `${VAR}`-Substitutionen in Compose ⊆ `.env.example`-Keys und umgekehrt (Compose-only-Infra wie `FRP_*_PORT`, `*_IMAGE`, `VM_RETENTION` zählt zu (c), nicht zu (b)). Für (b) zählt als „gelesen" auch `apps/<svc>/docker-entrypoint.sh`; Interpreter-/OS-Variablen (`PYTHON*`, `TZ`, `LANG`, `LC_*`) sind Laufzeit, keine App-Konfiguration, und werden von (b) nicht verlangt — das ist eine feste Regel, keine Ausnahmeliste. **Keine Ausnahmeliste.** Ist eine der drei Mengen beim Erstlauf nicht leer: Task auf `[?]` mit der Liste, Test nicht committen (Roadmap-Regel). Nicht-Leer: ≥ 10 Variablen je Seite.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_env_parity.py
 Doku: keine (intern)
+Ergebnis: **[?] — Erstlauf liefert 6 Funde, laut Ledger-Regel also kein Commit des Tests.** Die drei Mengen wurden real erhoben
+(Scan über docker-compose.yml, .env.example, die drei config.py, app/**, docker-entrypoint.sh):
+- **(a) leer** — aber nur mit einer Präzisierung der Regel: „ohne Default" muss *pro Datei* gelten, nicht pro Vorkommen.
+  `monitoring/config.py` liest `SMTP_PORT` und `ALERT_LOG_RETENTION_DAYS` je einmal mit und einmal ohne Default (die zweite Stelle ist
+  ein Log-Aufruf). Pro Vorkommen gewertet wären beide Falschmeldungen. `ALLOW_INSECURE_HUB` hat wirklich nie einen Default — und ist im
+  Compose gesetzt. Das ist keine Ausnahmeliste, sondern die korrekte Lesart.
+- **(b) 3 Funde:** `DOMAIN` und `EXTRA_SANS` gehen an den Dienst `server`, werden aber von `apps/server/**` und vom Entrypoint nirgends
+  gelesen (sie gehören zu ca-issuer/gateway) · `PGPASSWORD` geht an `server` und `scheduler`, deren Entrypoint nur `pg_isready -h -p -U`
+  ohne Passwort ruft (bei `monitoring` liest der Entrypoint es wirklich).
+- **(c) 3 Funde:** `CA_FRPS_EXTRA_SANS` wird im Compose substituiert, steht aber in keiner Zeile von `.env.example` ·
+  `DB_POOL_SIZE` und `DB_MAX_OVERFLOW` sind in `.env.example` dokumentiert, werden aber von keinem Compose-Dienst durchgereicht —
+  wer sie in `.env` setzt, ändert nichts. Das ist ein echter Bug, kein Testartefakt.
 
-### T7 — OpenAPI-Snapshot Server  [ ]
+**Kevin entscheidet (5 Stellen):** tote Compose-Keys entfernen oder belassen (DOMAIN/EXTRA_SANS/PGPASSWORD) · `CA_FRPS_EXTRA_SANS`
+in `.env.example` dokumentieren · `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` im Compose verdrahten **oder** aus `.env.example` streichen.
+Danach ist der Test in einer Folge-Task in ~20 min gebaut; die Regeln oben sind vollständig.
+
+### T7 — OpenAPI-Snapshot Server  [x]
 Komponente: apps/server · Dateien: apps/server/tests/test_openapi_snapshot.py (neu, SPDX), apps/server/tests/openapi.snapshot.json (neu), apps/server/tests/conftest.py
 Änderung: `app.openapi()` (aus `app.main`) als JSON mit sortierten Schlüsseln und `indent=2` gegen die Datei; vorher normalisieren: `info.version` auf `"0.0.0"` setzen (die reale Version kommt aus Tag/Build-Arg und würde bei jedem Release Snapshot-Churn erzeugen) und ein etwaiges `servers`-Feld entfernen; Mismatch ⇒ Assertion mit kompaktem `difflib`-Unified-Diff (max. 40 Zeilen) und Hinweis `pytest --update-openapi-snapshot`; die Option in `conftest.py` (`pytest_addoption`) schreibt die Datei neu. Nicht-Leer: ≥ 20 Pfade im Snapshot. Kein DB-Zugriff nötig (App-Import reicht; der Test hängt nicht an `pg_engine`).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_openapi_snapshot.py
 Doku: DEVELOPMENT.md Absatz „OpenAPI-Snapshot aktualisieren" (nur einmal, in T7) · CHANGELOG Unreleased/Added
+Ergebnis: Snapshot mit **54 Pfaden**; `info.version` auf 0.0.0 normalisiert, `servers` entfernt; die Option `--update-openapi-snapshot` steht am Ende von `conftest.py`, weil der Import-Block dort bewusst unter dem Env-Setup liegt und eine Funktion davor E402 auslösen würde. **Produktcode-Änderung, ohne die der Task nicht erfüllbar war:** der erste volle Lauf war rot, weil der Snapshot **nicht reproduzierbar** war. Ursache über vier `PYTHONHASHSEED`-Werte gemessen: `@router.api_route(/{path:path}, methods=[4])` im Monitoring-Proxy war die einzige Mehr-Methoden-Route im Repo; FastAPI leitet die `operationId` aus `list(route.methods)[0]` ab, also aus einer Set-Iteration. Alle vier Operationen bekamen **dieselbe** ID (laut OpenAPI unzulässig), und welche, entschied das pro Prozess zufällige String-Hashing. Behoben durch vier gestapelte Ein-Methoden-Decorator: vier eindeutige, stabile IDs. **Korrektur aus dem Review:** „405-Verhalten unverändert" stimmte nicht — der Statuscode ja, aber Starlette baut den `Allow`-Header aus der ersten teilweise passenden Route, er nennt jetzt eine Methode statt vier. Kein Client im Repo liest ihn (apps/web, apps/desktop/ui, apps/agent geprüft). Neu dazu: `test_every_operation_has_a_unique_id` — sonst käme die nächste Mehr-Methoden-Route als flaky operationId-Diff zurück statt als benannter Fehlschlag. Gegenprobe: Spec-Hash über drei Seeds identisch (vorher zwei verschiedene). Wegnormalisieren hätte einen echten API-Bug zugedeckt. 2 passed.
 
-### T8 — OpenAPI-Snapshot Monitoring  [ ]
+### T8 — OpenAPI-Snapshot Monitoring  [x]
 Komponente: apps/monitoring · Dateien: apps/monitoring/tests/test_openapi_snapshot.py (neu, SPDX), apps/monitoring/tests/openapi.snapshot.json (neu), apps/monitoring/tests/conftest.py
 Änderung: wie T7 für `apps/monitoring/app/main.py`; dieselbe Option `--update-openapi-snapshot`.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_openapi_snapshot.py
 Doku: keine (Absatz aus T7 gilt für beide)
 Abhängt von: T7
+Ergebnis: Snapshot mit **26 Pfaden**, dieselbe Option in `apps/monitoring/tests/conftest.py`. Determinismus über zwei `PYTHONHASHSEED`-Werte geprüft — das Monitoring hat keine Mehr-Methoden-Route, also kein T7-Problem. 2 passed.
 
-### T9 — oasdiff-Gate: Skript + hermetischer Test  [ ]
+### T9 — oasdiff-Gate: Skript + hermetischer Test  [x]
 Komponente: scripts · Dateien: scripts/dev/openapi-breaking.sh (neu, SPDX), scripts/tests/openapi_breaking_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
 Änderung: `bash scripts/dev/openapi-breaking.sh <server|monitoring> [--base <ref>]` — Basis-Snapshot per `git show <ref>:apps/<k>/tests/openapi.snapshot.json` (Default `origin/main`, fehlt der Snapshot dort ⇒ „kein Vergleich, neu" Exit 0 mit Meldung), Revision = Arbeitsbaum; `oasdiff breaking <base> <rev> --fail-on ERR --format text`; `oasdiff` fehlt ⇒ Exit 75 (SKIP, unter `--strict` rot). Hermetischer Test mit Fake-`oasdiff` im PATH (Argument-Mitschnitt; Exit 1 ⇒ Skript 1; Exit 0 ⇒ 0; kein Binary ⇒ 75; fehlender Basis-Snapshot ⇒ 0), eingetragen in `AH_SCRIPT_TESTS_DEFAULT`. shellcheck sauber.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T10 dokumentiert das Gate)
 Abhängt von: T7
+Ergebnis: `scripts/dev/openapi-breaking.sh <server|monitoring> [--base <ref>] [--root <dir>]`; `--root` gibt es, damit der hermetische Test gegen ein Fixture-Repo laufen kann. **Über die Vorgabe hinaus, weil es ein Fail-open war:** eine Basis-Ref, die im Checkout nicht auflöst (flacher CI-Klon!), hätte als „kein Vergleich, neu" ⇒ Exit 0 gegolten — das Gate wäre auf jedem PR still grün gewesen. Jetzt prüft das Skript zuerst `git rev-parse --verify` und meldet Exit 2. 11 Fälle im hermetischen Test (fake `oasdiff` mit Argument-Mitschnitt: Exit 1 ⇒ 1, Exit 0 ⇒ 0, kein Binary ⇒ 75, fehlender Basis-Snapshot ⇒ 0, nicht auflösende Ref ⇒ 2, Usage ⇒ 2), eingetragen in `AH_SCRIPT_TESTS_DEFAULT`. Zusätzlich real gegengeprüft: echtes oasdiff 1.32.0 gegen den Server-Snapshot mit einem entfernten Pfad ⇒ `api-path-removed-without-deprecation`, Exit 1. shellcheck sauber. 11 passed, 0 failed.
 
-### T10 — CI-Job openapi-compat  [ ]
+### T10 — CI-Job openapi-compat  [x]
 Komponente: .github · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html
 Änderung: Job `openapi-compat` (ubuntu-latest, `fetch-depth: 0`): Tarball `oasdiff_1.32.0_linux_amd64.tar.gz` vom Release `v1.32.0` laden, SHA-256 aus `checksums.txt` als Literal im Workflow pinnen und prüfen, Binary nach `$RUNNER_TEMP/bin`; dann `bash scripts/dev/openapi-breaking.sh server` und `… monitoring` mit `--base origin/${{ github.base_ref || 'main' }}`. Kommentar im Workflow: warum Tarball statt `go install` (go-Direktive 1.26 vs. Toolchain 1.25, PR #14). Doku-Abschnitt „Paritäts- und Contract-Gates" in cicd.html DE + EN anlegen (Tabelle: Gate · Wahrheit A · Wahrheit B · wo es läuft) — die späteren Tasks tragen dort nur Zeilen nach.
 Verify: bash scripts/tests/run.sh lint --strict --only scripts   (shellcheck über die Workflow-Bash-Steps entfällt; die Gate-Logik steckt in T9) — plus nach dem Push: der Job ist im PR-CI grün
 Doku: docs/developer/cicd.html DE+EN (neuer Abschnitt) · CHANGELOG Unreleased/Added
+Ergebnis: Job `openapi-compat` (ubuntu-latest, `fetch-depth: 0`), Tarball `oasdiff_1.32.0_linux_amd64.tar.gz`, SHA-256 `5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad` als Literal im Workflow — aus `checksums.txt` des Release geholt und lokal gegen den echten Tarball mit `sha256sum -c` verifiziert. Kommentar im Workflow erklärt Tarball statt `go install` (go-Direktive 1.26 vs. Toolchain 1.25, PR #14). Abschnitt „Paritäts- und Contract-Gates" in cicd.html DE + EN angelegt (Tabelle Gate · Wahrheit A · Wahrheit B · wo es läuft). **Offen bis zum Push:** dass der Job im echten PR-CI grün ist, kann ich lokal nicht beweisen — das ist die letzte unverifizierte Zusage dieser Task.
 Abhängt von: T9
 
 ## B — Desktop- und Web-Contracts
 
-### T11 — Tauri-IPC-Inventar  [ ]
+### T11 — Tauri-IPC-Inventar  [x]
 Komponente: apps/desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/ipc.inventory.test.ts (neu, SPDX)
 Änderung: Vitest liest per `node:fs` (Pfad relativ zu `import.meta.url`) `../src-tauri/src/commands.rs` (Namen nach jedem `#[tauri::command]`), `../src-tauri/src/main.rs` (Einträge in `generate_handler![…]`) und `src/lib/bridge/index.ts` (`invoke<…>('name'`): assertet definiert == registriert, aufgerufen ⊆ registriert, registriert − aufgerufen == Allowlist `{ enroll_device: 'kein UI-Aufrufer; Roadmap-Zeile REF' }`. Nicht-Leer: ≥ 30 Commands, ≥ 30 Aufrufe.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (intern)
+Ergebnis: 33 Kommandos definiert, 33 registriert, 32 aufgerufen; einzige Differenz ist `enroll_device` (Allowlist mit Begruendung, Roadmap-Zeile REF). Vier Faelle: Nicht-Leer (je >= 30), definiert == registriert, aufgerufen ist Teilmenge von registriert, registriert minus aufgerufen == Allowlist. Desktop-UI-Suite: 58 Dateien, 369 Tests passed.
 
-### T12 — Serde-Structs ↔ bridge/types.ts  [ ]
+### T12 — Serde-Structs ↔ bridge/types.ts  [x]
 Komponente: apps/desktop-ui · Dateien: apps/desktop/ui/src/lib/bridge/types.parity.test.ts (neu, SPDX), apps/desktop/ui/src/lib/bridge/types.ts
 Änderung: Test parst die `#[derive(… Serialize|Deserialize …)]`-Structs aus `models.rs`, `tunnel.rs` und `ansible.rs` (Felder, `rename_all`, `#[serde(rename = "…")]`, `Option<…>` ⇒ optional) und vergleicht **Feldnamen** je Struct mit dem gleichnamigen `interface` in `types.ts` (Optionalität/Nullbarkeit wird nicht verglichen — serde und TS modellieren `Option<T>` unterschiedlich, das wäre ein Rauschgenerator); Enums (`ConnectionKind`, `SyncMode`, `Rdp*`) als Union-Literale. `RdpErrorPayload` steht auf einer Allowlist „Event, kein Command" mit Begründung. Den heutigen Drift beheben: `tunnelType: string` in `ResolvedConnection` (`types.ts:97-101`). Nicht-Leer: ≥ 10 Struct-Paare.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (intern)
+Ergebnis: 15 Serde-Typen aus models.rs/tunnel.rs/ansible.rs geparst (9 Structs + 5 Enums verglichen, `RdpErrorPayload` auf der Allowlist -- Event, kein Command-Ergebnis). `rename_all` und feldweises `serde(rename)` werden angewendet (Settings.sync_url -> url). Optionalitaet wird bewusst NICHT verglichen. Drift behoben: `tunnelType?: string | null` in `ResolvedConnection`. Mutationsprobe: die Zeile wieder entfernt -> Test rot mit `rustOnly: [tunnelType]`, danach byte-genau zurueckgeschrieben (Backup-Kopie, kein git checkout). 4 passed.
 
-### T13 — Playwright-Mock-Contract gegen den Server-Snapshot  [ ]
+### T13 — Playwright-Mock-Contract gegen den Server-Snapshot  [x]
 Komponente: apps/web · Dateien: apps/web/tests/e2e/mocks.ts, apps/web/src/lib/api/mocks.contract.test.ts (neu, SPDX)
 Änderung: `mocks.ts` exportiert zusätzlich eine Tabelle `MOCK_FIXTURES: Array<{ method, path, status, body }>` (die heutigen Inline-Bodies, keine Verhaltensänderung für `mockApi`; `Page`/`Route` bleiben `import type`, damit der Vitest kein Playwright lädt). Der Vitest lädt `apps/server/tests/openapi.snapshot.json`, findet je Fixture die Operation (Pfad-Template-Matching auf `/api/<path>`), löst `$ref` nach `components.schemas` auf und prüft Schlüsselmengen laut Spec Trade-off 3 (Arrays: Item-Schema gegen erstes Element). Nicht-Leer: ≥ 8 Fixtures zugeordnet; unzuordenbare Fixture = rot.
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (intern)
 Abhängt von: T7
+Ergebnis: `MOCK_FIXTURES` (15 Einträge) exportiert; damit Tabelle und `mockApi` nicht auseinanderlaufen, sind die Bodies jetzt gemeinsame Bauer-Funktionen (`makeUser`, `makeApiKey`, `makeHook`, `frpPub`, …), die beide Seiten aufrufen — keine zweite Abschrift. **Drei echte Drifts gefunden und behoben:** `/api/auth/me` lieferte die volle User-Zeile, das Schema ist `UserMe` (id, username, is_admin) · die Hook-Liste und `/toggle` lieferten `script`, das erst `HookDetailResponse` hat (die UI holt es über `GET /api/hooks/{id}`). Geprüft werden Schlüsselmengen laut Spec Trade-off 3, `$ref` wird aufgelöst, Arrays gegen das erste Element. Nebenbefund, nicht behoben (fremde Datei, außerhalb der Fixture-Tabelle): `apps/web/tests/e2e/authz.spec.ts:20` überschreibt `auth/me` mit einem eigenen Body, der ebenfalls `created_at`/`server_ids` enthält. Web-Suite 17 Dateien, 77 Tests passed.
 
-### T14 — sync-from-web.sh --check  [ ]
+### T14 — sync-from-web.sh --check  [?]
 Komponente: apps/desktop-ui · Dateien: apps/desktop/ui/scripts/sync-from-web.sh, .github/workflows/ci.yml, DEVELOPMENT.md
 Änderung: Modus `--check` (Spec Trade-off 5): für jedes `export (interface|type|const) Name` des Web-`types.ts` den Block (bis zur nächsten Top-Level-Zeile) extrahieren und byte-identisch im Desktop-`types.ts` erwarten; Abweichungen als Diff je Symbol, Exit 1; der bestehende Guard bleibt. CI-Step im Job `desktop-ui`. Zeigt der Erstlauf Drift in ≤ 3 Typen ⇒ in dieser Task nachziehen (Desktop = Ziel), sonst `[?]` mit der Liste. DEVELOPMENT.md-Absatz zum Skript um `--check` ergänzen.
 Verify: bash apps/desktop/ui/scripts/sync-from-web.sh --check
 Doku: DEVELOPMENT.md · docs/developer/cicd.html DE+EN Tabellenzeile
+Ergebnis: **[?] — der Erstlauf meldet 21 fehlende + 1 abweichenden Typ, die Ledger-Schwelle war ≤ 3.** `--check` ist gebaut und shellcheck-sauber (Block-Extraktion je Symbol per awk: von der `export`-Zeile bis zur schließenden Klammer in Spalte 0, bzw. nur die eine Zeile bei `type`/`const`; Ausgabe je Symbol als FEHLT oder ABWEICHUNG mit Diff). Der bestehende Überschreib-Schutz bleibt, greift aber nur für `--apply`: unter `--check` wird nichts kopiert, und er hätte sonst immer zuerst mit „Ziel hat eigene Exporte" abgebrochen — genau die sind erlaubt. **Befund:** von 25 Web-Exporten fehlen 21 im Desktop-`types.ts` komplett (ApiKey*, Audit*, Hook*, User*, HttpMethod, LoginResponse, RefreshResponse, FrpConfigInput); einziger echter Inhalts-Drift ist `Server`, wo das Desktop `connections?: Connection[]` zusätzlich führt. Das ist keine Drift-Reparatur, sondern die Frage, ob die beiden Dateien überhaupt eine gemeinsame Teilmenge haben sollen. **Kevin entscheidet.** Deshalb: CI-Step und cicd.html-Tabellenzeile bewusst NICHT gesetzt — sie wären sofort rot. DEVELOPMENT.md-Absatz ebenfalls zurückgehalten, bis die Richtung feststeht.
 
-### T15 — Svelte-Mount-Smoke Web  [ ]
+### T15 — Svelte-Mount-Smoke Web  [x]
 Komponente: apps/web · Dateien: apps/web/src/mount.smoke.test.ts (neu, SPDX)
 Änderung: Allowlist von 10 Komponenten ohne Pflicht-Props (Kandidaten: die 5 unter `lib/components/ui`, 2 `layout`, 3 `pages`/`modals`), je `render()` unter jsdom mit `console.error`-Spy; jeder Aufruf von `console.error`/unbehandelte Exception ist rot, `effect_update_depth_exceeded` mit eigener Meldung. Nicht-Leer: 10 Einträge, jede Datei existiert.
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: keine (intern)
+Ergebnis: 10 Komponenten (4 `ui`, 2 `layout`, 3 `modals`, 1 `pages`). **Prämisse aus dem Review korrigiert:** ich hatte geschrieben, Svelte melde `effect_update_depth_exceeded` über `console.error` statt zu werfen — der Reviewer hat mit einer Wegwerf-Komponente das Gegenteil gemessen: Svelte **wirft** aus `render()`, nach rund 20 s. Die eigens gebaute Sonder-Assertion war damit toter Code; sie ist raus, `expect(mount).not.toThrow()` ist der Guard, der `console.error`-Spy das zweite Netz. Dazu `MOUNT_TIMEOUT_MS = 30_000`, sonst käme ein echter Loop als nackter 5-s-Timeout statt als benannter Fehler. **Abweichung von der Vorgabe „ohne Pflicht-Props“:** `Button`, `EmptyState` und `Modal` haben welche und werden mit dem Minimum gemountet. Die sieben Seiten fehlen bewusst — jede lädt beim Mount über ihren Store und bräuchte einen eigenen API-Stub; `pages/Placeholder` ist die einzige ohne Store-Last und deshalb dabei. `ui/ConfirmDialog` ist raus: es hat bereits einen eigenen Mount-Test und rendert im Ruhezustand nichts. Jeder Eintrag ist ein mount-Thunk, weil ein gemeinsamer Tabellentyp für zehn Prop-Typen `any` sein müsste. Nebenbefund: `resolveRoute` setzt einen `*`-Eintrag voraus und wirft ohne ihn. 11 passed.
 
-### T16 — Svelte-Mount-Smoke Desktop-UI  [ ]
+### T16 — Svelte-Mount-Smoke Desktop-UI  [x]
 Komponente: apps/desktop-ui · Dateien: apps/desktop/ui/src/mount.smoke.test.ts (neu, SPDX)
 Änderung: wie T15 mit 10 Komponenten aus `src/components/**`, die heute keinen Mount-Test haben; Bridge-Aufrufe per `vi.mock('$lib/bridge')` (bzw. dem Import-Pfad der Komponenten) stubben, wie es die bestehenden 19 Mount-Tests tun.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (intern)
+Ergebnis: 10 Komponenten aus `src/components/**` ohne eigenen Mount-Test (StatusBar, TunnelIndicator, NotificationBell, PasswordPrompt, SettingsModal und fünf aus `monitoring/`), alle prop-frei und store-getrieben. **Zwei Review-Funde behoben:** (1) Vier der zehn hingen hinter einem Store-`{#if}` und mounteten zu einem leeren Kommentarknoten — genau der Blank-Window-Fall, den die Datei zu decken behauptet, war für sie nicht gedeckt. Jetzt wird der treibende Store vorher gesetzt (`showStatus`, `settingsModalOpen`, `requestPassword`, server-mode `sessionStore`); gemessen rendern sie 3 / 3 / 21 / 93 Elemente statt 0. (2) Der Satz, die Bridge sei gestubbt, stimmte nicht — gestubbt war `$lib/stores/statusBar`, dessen `reportError` gar nicht auf die Konsole schreibt. Jetzt gibt es einen echten `vi.mock('$lib/bridge')`, der bei jedem Zugriff wirft (Modul-Loader-Proben `then`/`__esModule`/`default` ausgenommen), damit ein künftiger Mount-Aufruf laut scheitert statt still. Dieselbe `effect_update_depth_exceeded`-Korrektur und derselbe `MOUNT_TIMEOUT_MS` wie in T15. 11 passed.
 
 ## C — Doku-Gate
 
-### T17 — doc-smoke.py + hermetischer Test  [ ]
+### T17 — doc-smoke.py + hermetischer Test  [x]
 Komponente: scripts · Dateien: scripts/dev/doc-smoke.py (neu, SPDX), scripts/tests/doc_smoke_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
 Änderung: Python-Stdlib-Skript: sammelt aus `docs/**/*.html` jedes `<code>…</code>`, das mit `apps/`, `scripts/`, `docs/`, `.github/` oder `.claude/` beginnt (Pfad bis zum ersten Leerzeichen/`[`), und prüft die Existenz im Repo (Verzeichnisse mit `/` am Ende erlaubt); zweite Prüfung: `<code>`-Inhalte der Form `[A-Z][A-Z0-9_]{3,}` gegen die Env-Namen aus `apps/{server,monitoring}/app/core/config.py`, `apps/ca-issuer/app/config.py` und `.env.example` (nur Treffer, die in keiner Quelle vorkommen, gelten als Drift). Ausnahmedatei `scripts/dev/doc-smoke-allow.txt` (eine Zeile je Eintrag mit Begründung nach `#`), das Skript verweigert > 5 Einträge. Flags: `--paths` (Default), `--env`, `--strict`; Ausgabe je Fund `datei:zeile: <eintrag>`. Hermetischer Test mit Fixture-Docs (guter Pfad, kaputter Pfad, Env-Name; Allow-Datei mit 6 Zeilen ⇒ Exit 2). Erstlauf auf `main`: Pfade ⇒ Funde in dieser Task beheben (Doku korrigieren) oder ≤ 5 begründet ausnehmen; Env-Namen ⇒ liefert der Erstlauf > 5, bleibt `--env` bis zur Triage außerhalb des Gates (Task-Vermerk mit Zahl). Nicht-Leer: ≥ 30 Pfade gesammelt.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T18)
+Ergebnis: `scripts/dev/doc-smoke.py` (nur stdlib) mit `--paths` (Default), `--env`, `--strict`, `--root`; Ausgabe je Fund `datei:zeile: <eintrag>`. Nicht-Leer: < 30 gesammelte Pfade sind Exit 2 („der Scan ist kaputt"), nicht etwa eine saubere Doku. Hermetischer Test mit 11 Fällen über Fixture-Checkouts (inkl. 32 echter Pfade, damit die Untergrenze überhaupt erreicht wird), eingetragen in `AH_SCRIPT_TESTS_DEFAULT`. **Erstlauf Pfade: 4 Funde (2 Pfade × DE/EN), beide in der Doku behoben** — `monitoring_proxy.py` heißt seit dem Paket-Umbau `monitoring_proxy/router.py`; `apps/desktop/src-tauri/src/rdp/race_guard.rs` hat es laut `git log -S` **nie** gegeben, also habe ich nur den Dateiverweis entfernt und die Verhaltensbeschreibung stehen lassen — ob der beschriebene RDP-Race-Guard überhaupt existiert, konnte ich im Code nicht belegen (Roadmap-Kandidat für Kevin). Die Ausnahmedatei ist angelegt und leer. **Erstlauf Env: 129 Treffer, 43 verschiedene Namen** — fast alle keine Env-Variablen (POST, DELETE, INFO, WARNING, RUNNING, SHA256SUMS, ERR_TLS_UNKNOWN_ISSUER, AH_*). Weit über dem Deckel 5, also bleibt `--env` laut Ledger-Regel außerhalb des Gates. 11 passed, 0 failed.
 
-### T18 — doc-smoke als Gate im Job ops-scripts  [ ]
+### T18 — doc-smoke als Gate im Job ops-scripts  [x]
 Komponente: .github · Dateien: .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md
 Änderung: Step `python3 scripts/dev/doc-smoke.py --strict` (mit `--env` nur, wenn T17 die Env-Prüfung scharf gestellt hat) im Job `ops-scripts`; Tabellenzeile im Gate-Abschnitt DE + EN; DEVELOPMENT.md ein Absatz (Aufruf, Ausnahmedatei, Deckel 5).
 Verify: bash scripts/tests/run.sh unit --strict --only scripts   — plus nach dem Push: Job grün
 Doku: docs/developer/cicd.html DE+EN · DEVELOPMENT.md · CHANGELOG Unreleased/Added
+Ergebnis: Step `python3 scripts/dev/doc-smoke.py --strict` im Job `ops-scripts` — **ohne** `--env`, mit dem Grund als Kommentar im Workflow. Tabellenzeile „Doku-Pfade" im Gate-Abschnitt DE + EN, dazu ein Absatz zu Ausnahmedatei und Deckel; DEVELOPMENT.md-Abschnitt „Doku-Smoke (doc-smoke.py)". **Offen bis zum Push:** dass der Step im echten PR-CI grün ist, kann ich lokal nicht beweisen.
 Abhängt von: T17
 
 ## Abschluss
