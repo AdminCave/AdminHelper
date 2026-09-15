@@ -500,6 +500,15 @@ jobs:
           tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
             echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
+      - name: Toolchain pins in lockstep (go-version ↔ govulncheck)
+        # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
+        # pin only compiles while x/vuln's own `go` directive stays at or below the
+        # go-version the workflows set — the coupling that made `@latest` stop
+        # building when x/vuln v1.8.0 moved to `go 1.26.0`. The pin's comment says
+        # "raise this together with go-version"; this step is that sentence enforced.
+        # It reaches the module proxy: an outage exits 75 and reddens the job rather
+        # than passing a check that never ran — `gh run rerun --failed`, not a fix.
+        run: bash scripts/dev/toolchain-lockstep.sh
       - name: MINISIGN_PUBKEY in lockstep (install.sh vs update.sh)
         run: |
           ins=$(grep -m1 '^MINISIGN_PUBKEY=' scripts/install.sh | cut -d'"' -f2)

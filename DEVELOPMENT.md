@@ -217,6 +217,54 @@ sudo apt install -y freerdp3-x11
 sudo apt install -y openssh-client
 ```
 
+### Audit-Tools lokal
+
+`audit.yml` faehrt den woechentlichen CVE-Sweep in CI. Lokal — vor einem
+Dependency-Update oder um einen roten Sweep nachzustellen — braucht es dieselben
+drei Werkzeuge in **denselben gepinnten Versionen**; eine andere Version
+vergleicht andere Befunde:
+
+```bash
+# Go: landet in ~/go/bin, das .devenv.sh in den PATH legt.
+# GOTOOLCHAIN=local, weil CI (setup-go) genauso baut — ohne das holt sich go
+# still eine neuere Toolchain und der Pin sagt nichts mehr darueber aus, was in
+# CI ueberhaupt uebersetzt.
+GOTOOLCHAIN=local go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+# Python: Debians pip ist externally-managed (PEP 668), also ein eigenes venv
+# statt --user, plus ein Symlink in den PATH.
+python3 -m venv ~/.local/share/ah-tools/pip-audit-venv
+~/.local/share/ah-tools/pip-audit-venv/bin/pip install -q pip-audit==2.10.1
+ln -sfn ~/.local/share/ah-tools/pip-audit-venv/bin/pip-audit ~/.local/bin/pip-audit
+
+# Rust
+cargo install cargo-audit --locked --version 0.22.2
+```
+
+Aufrufe je Komponente — dieselben wie in `audit.yml`, aus dem Repo-Root
+(Subshells, damit der ganze Block am Stueck kopierbar bleibt):
+
+```bash
+(cd apps/agent             && govulncheck ./...)
+(cd apps/server            && pip-audit -r requirements.txt --disable-pip)
+(cd apps/monitoring        && pip-audit -r requirements.txt --disable-pip)
+(cd apps/ca-issuer         && pip-audit -r requirements.txt --disable-pip)
+(cd apps/desktop/src-tauri && cargo audit)
+```
+
+`--disable-pip` ist kein Detail: `requirements.txt` ist der gehashte Lock, und
+ohne das Flag wuerde pip-audit ihn zum Aufloesen installieren wollen.
+
+`govulncheck` meldet auch stdlib-Funde und bewertet sie gegen die Go-Version,
+mit der es gebaut wurde. Die Dev-Box muss deshalb dieselbe Minor fahren wie
+`go-version` in den Workflows (heute `1.25`), sonst weicht der lokale Befund von
+CI ab. Gewechselt wird per Tarball-Swap unter `~/sdk/go` — `.devenv.sh` legt
+`~/sdk/go/bin` vor das System-Go. Dass der govulncheck-Pin ueberhaupt noch zur
+`go-version` passt, prueft `bash scripts/dev/toolchain-lockstep.sh` (in CI ein
+Step im Job `frp-consistency`): x/vuln v1.8.0 verlangt `go 1.26.0` und liesse
+sich unter `GOTOOLCHAIN=local` auf 1.25 nicht mehr bauen — ein Job, der schon
+beim Installieren scheitert, sagt nichts ueber unsere Dependencies aus.
+
 ---
 
 ## Entwicklung starten
