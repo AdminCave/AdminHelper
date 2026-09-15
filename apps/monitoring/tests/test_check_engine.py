@@ -15,6 +15,7 @@ from app.check_engine import (
     next_fail_count,
     resolve_config_server_id,
 )
+from app.core.time import utcnow_naive
 
 
 class TestNextFailCount:
@@ -117,6 +118,7 @@ def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
     from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
+    import app.core.database as database_mod
     from app.core import victoria as victoria_mod
     from app.models import Base, MonitorCheck, MonitorState
 
@@ -126,6 +128,11 @@ def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(ce, "SessionLocal", factory)
+    # This test lets the alert dispatch really run (it stubs process_alert, not
+    # the pool), and _dispatch_alert_bg opens its own session via
+    # database.SessionLocal — without this the pool thread would reach for the
+    # real DATABASE_URL.
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
     monkeypatch.setattr(ce, "process_alert", lambda *a, **k: None)
 
@@ -297,3 +304,50 @@ def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
     assert submitted == []
     with factory() as db:
         assert db.query(MonitorState).filter_by(check_id="c1").one().notified_status == "ok"
+
+
+class _DummyDb:
+    """apply_result only ever calls db.add() on the create path."""
+
+    def __init__(self):
+        self.added = []
+
+    def add(self, obj):
+        self.added.append(obj)
+
+
+def _details_case(details, *, keep=None):
+    """One apply_result call against a state that already carries details.
+
+    Both halves of keep_previous_details_when_absent need pinning: the push path
+    must keep the stored hysteresis memory when a report arrives without the
+    block (T38), and the scheduler path must clear it when a run produced none —
+    otherwise a check that flipped to 'unknown' on a corrupt config keeps showing
+    its last good details on the dashboard (4.109). Neither is visible in any
+    end-to-end test; both were mutable without a single test going red.
+    """
+    from app.check_engine import apply_result
+    from app.models import MonitorCheck, MonitorState
+
+    check = MonitorCheck(id="c1", name="c1", check_type="ping", config="{}", consecutive_fails=1)
+    state = MonitorState(check_id="c1", status="ok", fail_count=0, details='{"problems": ["cpu"]}')
+    args = (_DummyDb(), check, state, "ok", "fine", details, utcnow_naive())
+    # keep=None reproduces the scheduler's call exactly: it passes no flag at
+    # all, so flipping the default would change its behaviour silently.
+    if keep is None:
+        apply_result(*args)
+    else:
+        apply_result(*args, keep_previous_details_when_absent=keep)
+    return state.details
+
+
+def test_scheduler_clears_details_when_the_result_carries_none():
+    # No keyword — the scheduler passes none, so this also pins the default.
+    assert _details_case(None) is None
+    assert _details_case({}) is None
+
+
+def test_push_keeps_stored_details_only_when_the_block_is_absent():
+    assert _details_case(None, keep=True) == '{"problems": ["cpu"]}'
+    # An empty block is information ("nothing wrong"), not an absent one.
+    assert _details_case({}, keep=True) == "{}"

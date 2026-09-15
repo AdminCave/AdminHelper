@@ -12,10 +12,14 @@ import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+
+from sqlalchemy.orm import Session
 
 from app.alerter import process_alert, resolve_notification
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
+from app.core import database
 from app.core.database import SessionLocal
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
@@ -26,18 +30,25 @@ logger = logging.getLogger("monitor.engine")
 # Alerts are dispatched OFF the APScheduler check-worker thread via this small pool: a slow/hung
 # webhook or SMTP server (up to 10s each, serial) would otherwise tie up the check workers and
 # misfire the next checks — exactly during an incident when many checks transition at once. Same
-# isolation as the agent push path's _dispatch_alert_bg (5.3).
+# isolation the agent push path needs too — since harness 8a T4 both paths share
+# the one _dispatch_alert_bg below, each scheduling it its own way (5.3).
 _alert_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="alert")
 
 
 def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
-    """Dispatch one alert (webhook/SMTP) in the alert pool with its own session.
+    """Dispatch one alert (webhook/SMTP) with its own session.
 
-    The check-worker's session is already closed by the time this runs, so it
+    The single dispatcher for both paths: the scheduler submits it to
+    ``_alert_pool``, the agent push path schedules it via BackgroundTasks. Either
+    way the caller's session is already closed by the time this runs, so it
     reloads the check. Errors are contained — a failed dispatch must never bubble
-    out of the pool thread.
+    out of the pool thread or surface to a reporting agent.
+
+    The factory is reached as ``database.SessionLocal`` (not the name imported
+    above, which ``execute_check`` uses): the endpoint suites patch the module
+    attribute, and this function runs outside the request they patched it for.
     """
-    db = SessionLocal()
+    db = database.SessionLocal()
     try:
         check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
         if check is None:
@@ -106,6 +117,94 @@ def resolve_config_server_id(
     ):
         config["server_id"] = server_id
     return config
+
+
+def apply_result(
+    db: Session,
+    check: MonitorCheck,
+    state: MonitorState | None,
+    result_status: str,
+    message: str,
+    details: dict | None,
+    now: datetime,
+    *,
+    keep_previous_details_when_absent: bool = False,
+) -> tuple[str, str, str]:
+    """Write one check result into its MonitorState and decide on notification.
+
+    The read-modify-write both result paths share: damping (next_fail_count /
+    effective_status), the transition log line and the sent-state decision. It
+    used to exist twice — here for the scheduler and as a hand-kept copy in
+    routers/agent.py — which is exactly the duplicate truth that drifts (B3).
+
+    The caller passes the already-locked `state` (None before the first result),
+    then commits and dispatches: the scheduler off its own alert pool, the push
+    path via BackgroundTasks after the batch commit.
+
+    `keep_previous_details_when_absent` is the one real difference between the
+    paths: the scheduler re-derives details on every run, so an empty result
+    legitimately clears them; an agent report may arrive without the block at
+    all, and nulling the stored details would wipe the per-metric hysteresis
+    memory on one degenerate push (T38).
+
+    Returns (old_status, effective status, notification decision).
+    """
+    old_status = state.status if state else "pending"
+    prev_fail_count = state.fail_count if state else 0
+    new_fail_count = next_fail_count(result_status, prev_fail_count)
+
+    # Effective status, taking consecutive_fails into account.
+    eff_status = effective_status(
+        result_status, new_fail_count, check.consecutive_fails, old_status
+    )
+    if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
+        message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
+
+    has_details = (details is not None) if keep_previous_details_when_absent else bool(details)
+    details_json = json.dumps(details) if has_details else None
+
+    if not state:
+        state = MonitorState(
+            check_id=check.id,
+            status=eff_status,
+            since=now,
+            last_check=now,
+            fail_count=new_fail_count,
+            message=message,
+            details=details_json,
+        )
+        db.add(state)
+    else:
+        if eff_status != state.status:
+            state.since = now
+            # Without this line a transition leaves no trace at all: MonitorAlertLog
+            # only records SENT notifications, so one suppressed by maintenance or
+            # host-down was invisible afterwards.
+            logger.info(
+                "Check '%s': %s -> %s (%s)",
+                check.name,
+                old_status,
+                eff_status,
+                message,
+            )
+        state.status = eff_status
+        state.fail_count = new_fail_count
+        state.last_check = now
+        state.message = message
+        if has_details or not keep_previous_details_when_absent:
+            state.details = details_json
+
+    # Alerting on a DISCREPANCY to the last reported status, not on the raw
+    # transition (sent-state, alert-sent-state T4): once a suppression
+    # (maintenance/host-down) is gone, the next cycle catches the pending
+    # report up even though the status itself did not change. A silent_ack
+    # (an ok that never had a reported problem) is pure bookkeeping and is
+    # recorded inline — no BG task. process_alert re-checks the decision
+    # under FOR UPDATE, so a stale read here only costs a no-op task.
+    decision = resolve_notification(state.notified_status, eff_status)
+    if decision == "silent_ack":
+        state.notified_status = eff_status
+    return old_status, eff_status, decision
 
 
 def execute_check(check_id: str) -> None:
@@ -184,57 +283,9 @@ def execute_check(check_id: str) -> None:
             .with_for_update()
             .first()
         )
-        old_status = state.status if state else "pending"
-
-        prev_fail_count = state.fail_count if state else 0
-        new_fail_count = next_fail_count(result_status, prev_fail_count)
-
-        # Determine effective status (taking consecutive_fails into account)
-        eff_status = effective_status(
-            result_status, new_fail_count, check.consecutive_fails, old_status
+        old_status, eff_status, decision = apply_result(
+            db, check, state, result_status, message, details, now
         )
-        if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
-            message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
-
-        details_json = json.dumps(details) if details else None
-
-        if not state:
-            state = MonitorState(
-                check_id=check.id,
-                status=eff_status,
-                since=now,
-                last_check=now,
-                fail_count=new_fail_count,
-                message=message,
-                details=details_json,
-            )
-            db.add(state)
-        else:
-            if eff_status != state.status:
-                state.since = now
-                logger.info(
-                    "Check '%s': %s -> %s (%s)",
-                    check.name,
-                    old_status,
-                    eff_status,
-                    message,
-                )
-            state.status = eff_status
-            state.fail_count = new_fail_count
-            state.last_check = now
-            state.message = message
-            state.details = details_json
-
-        # Alerting on a DISCREPANCY to the last reported status, not on the raw
-        # transition (sent-state, alert-sent-state T4): once a suppression
-        # (maintenance/host-down) is gone, the next cycle catches the pending
-        # report up even though the status itself did not change. A silent_ack
-        # (an ok that never had a reported problem) is pure bookkeeping and is
-        # recorded inline — no BG task. process_alert re-checks the decision
-        # under FOR UPDATE, so a stale read here only costs a no-op task.
-        decision = resolve_notification(state.notified_status, eff_status)
-        if decision == "silent_ack":
-            state.notified_status = eff_status
         db.commit()
 
         # Dispatch OFF the check-worker thread (see _alert_pool /
