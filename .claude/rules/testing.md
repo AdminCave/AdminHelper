@@ -36,6 +36,9 @@ Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungen
   ein Bug — seit Stufe 1 enden alle mit 75. Auch ein pytest-interner Skip zählt: unter `--strict` ist er ein Fehler,
   sobald seine Vorbedingung erfüllt ist. Ein erst roter, dann grüner Test ist `flaky`, kein PASS.
 - **Nie grün melden ohne bestandene Suite.** Die Summary-Zeile ist die Evidenz und wird zitiert.
+- **Lange Läufe überwacht.** `/test weekly|all|capstone` startet `heavy.sh` in tmux und wacht bis zum Report
+  (Wächter im Hintergrund, kein Hand-Polling); Verdict-Zeile wörtlich, danach VM-Liste, Historie und Roadmap-Zeilen
+  im privaten Repo committen. Start nur auf Kevins Zuruf, Abbruch nur auf Kevins Zuruf.
 - **Verify-Zeilen in Ledgern** nur in Flag-Form: `bash scripts/dev/verify.sh <komponente> [--strict] [-- <args>]`
   oder `bash scripts/tests/run.sh <layer> --strict --only <keys…>`. Nie `FOO=bar cmd` — die Allow-Regel matcht nicht
   über die Zuweisung. Gilt für neue und aktive Ledger; abgeschlossene bleiben Historie und werden nur

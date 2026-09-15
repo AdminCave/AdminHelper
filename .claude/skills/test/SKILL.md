@@ -19,21 +19,38 @@ gitignored `.claude/settings.local.json` (nothing infra-bearing in the public
 | `/test …`  | What happens |
 |---|---|
 | `quick`    | run it here and now: `bash scripts/dev/verify.sh all --strict` |
-| `all`      | PRINT the start command for `heavy.sh all`, then stop |
-| `capstone` | PRINT the start command for `heavy.sh capstone`, then stop |
-| `weekly`   | PRINT the start command for `heavy.sh weekly`, then stop |
+| `all`      | START `heavy.sh all` supervised (below), watch it to the report, quote the verdict |
+| `capstone` | same for `heavy.sh capstone` |
+| `weekly`   | same for `heavy.sh weekly` |
 | `status`   | read the newest weekly report and quote its first line |
 
-**`all`, `capstone` and `weekly` are never started from inside a session.** They run for
-hours and burn up to eight VMs; nothing here starts without Kevin (CLAUDE.md §2). Print
-exactly this and end the turn:
+**`all`, `capstone` and `weekly` start only on Kevin's explicit ask — and then the session
+runs them SUPERVISED, never fire-and-forget (Kevin, 2026-09-15).** Nothing here starts by
+itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin says
+`/test weekly`, the tmux line is not handed back to him — the session does this:
 
-```
-tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
-```
+1. Pre-flight, and stop on any red: `crabbox list` empty (a foreign box aborts the run with
+   74 in its first minute); no `Status: aktiv` build touching `scripts/tests/heavy.sh` or
+   `crabbox_multibox.sh` (a running bash script must never be edited in the same checkout);
+   the checkout is the tree that should be measured (`git status --short --branch`).
+2. Start it detached, so it survives the session:
+   ```
+   tmux new -d -s ah-<mode> 'bash scripts/tests/heavy.sh <mode>'
+   ```
+3. Watch it with a background waiter (a `tmux has-session` poll every 2–5 min, or the
+   Monitor tool on `.crabbox-out/weekly/*/report.md`). Do not poll by hand, do not end the
+   task early, do not start anything else that leases VMs meanwhile. `all` takes ~1.5 h,
+   `capstone` ~3 h, `weekly` both. If the session is compacted or resumed, re-attach the
+   waiter first (`tmux has-session -t ah-<mode>`); the run itself is not affected.
+4. When it ends: quote the report's FIRST line verbatim (the verdict), the two summary
+   lines (`run.sh[all]`, `multibox`), and the classification rows; then `crabbox list`
+   (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
+   `history.csv` and the ROADMAP rows into `tasks/private/` — commit and push that repo.
+5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A
+   rerun is again Kevin's word, never automatic.
 
-(`all` and `capstone` are the same line with the mode swapped, and the session name may be
-anything.) Kevin starts it, closes the terminal, and reads the report afterwards.
+Abort only on Kevin's word: `tmux kill-session -t ah-<mode>`, then `crabbox_reap.sh` and
+`crabbox list`. An aborted run leaves an empty `report.md` — `status` skips it.
 
 **Name these two before ending the turn** — both cost a whole run otherwise:
 `crabbox list` must be empty (a foreign box aborts the run with 74 in its first

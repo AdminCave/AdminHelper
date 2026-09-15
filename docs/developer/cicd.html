@@ -122,7 +122,8 @@
           Klassifikation der roten Schritte der <code>all</code>-Ebene. (Wiederholung, Quarant&auml;ne und
           Zweit-VM h&auml;ngen an dieser Ebene; die Capstone-Ebene meldet ihre roten Assertionen direkt als
           <code>fail</code>.) <strong>Er startet nie von selbst</strong> &ndash; Kevin startet
-          ihn, &uuml;blicherweise in <code>tmux</code>, und liest hinterher den Report.</p>
+          ihn, von Hand in <code>tmux</code> oder per <code>/test weekly</code> aus einer Claude-Session, die den
+          Lauf bis zum Report &uuml;berwacht und das Ergebnis meldet.</p>
 <pre><code>tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
