@@ -19,7 +19,7 @@ Komponente: .github · Dateien: .github/workflows/audit.yml
 Verify: grep -c 'pip-audit==2.10.1' .github/workflows/audit.yml   und   grep -c 'cargo-audit --locked --version 0.22.2' .github/workflows/audit.yml   (je 1) — realer Beweis: Kevins Dispatch (Heavy-Zeile)
 Doku: keine (intern; cicd.html beschreibt audit.yml ohne Versionen)
 
-### T2 — Lockstep-Check: govulncheck-Pin ↔ go-version  [ ]
+### T2 — Lockstep-Check: govulncheck-Pin ↔ go-version  [x] (toolchain-lockstep.sh + hermetischer Test, 18 Fälle, in AH_SCRIPT_TESTS_DEFAULT; Review: Sub-Agent zweimal ohne Urteil abgebrochen → Selbst-Review gegen die 7 Kriterien, vier Punkte eingearbeitet)
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh (neu, SPDX), scripts/tests/toolchain_lockstep_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
 Änderung: Skript liest `go-version` aus `.github/workflows/{ci,release,audit}.yml` (alle drei Vorkommen müssen gleich sein; heute je `"1.25"`) und den `govulncheck@vX.Y.Z`-Pin aus audit.yml, holt `https://proxy.golang.org/golang.org/x/vuln/@v/vX.Y.Z.mod` (curl, 10 s) und prüft, dass die `go`-Direktive (major.minor) ≤ go-version ist; Mismatch ⇒ `::error::`-Zeile + Exit 1; Netz nicht erreichbar ⇒ Exit 75. Hermetischer Test mit Fixture-Workflows und einem Fake-`curl` im PATH (Fälle: gleich ⇒ 0; go-version driftet ⇒ 1; Direktive 1.26 bei go-version 1.25 ⇒ 1; kein Netz ⇒ 75), in `AH_SCRIPT_TESTS_DEFAULT` eingetragen. shellcheck sauber.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
