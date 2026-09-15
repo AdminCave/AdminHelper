@@ -45,8 +45,6 @@ _client = httpx.AsyncClient(timeout=30)
 _ALLOWED_PATH_PREFIXES = (
     "checks",
     "alerts",
-    "log",
-    "metrics",
     "status",
     "templates",
     "maintenance",
