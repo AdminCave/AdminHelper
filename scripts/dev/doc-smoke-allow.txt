@@ -1,0 +1,11 @@
+# Ausnahmen fuer scripts/dev/doc-smoke.py — eine Zeile je Eintrag, Begruendung
+# nach '#'. Das Skript verweigert mehr als FUENF Eintraege: eine Ausnahmeliste
+# ist der Ort, an dem so ein Guard verrottet. Waechst sie ueber eine Handvoll,
+# ist die Antwort, die Doku zu korrigieren, nicht die Liste zu verlaengern.
+#
+# Die Existenz wird gegen `git ls-files` aufgeloest, nicht gegen den Arbeitsbaum:
+# sonst waere der Guard auf einer Entwickler-Box gruen und im CI rot. Damit
+# brauchen genau die Pfade eine Ausnahme, die es im Checkout nie gibt.
+
+apps/desktop/src-tauri/binaries/  # Ablageort der Tauri-Sidecars, per .gitignore ausgeschlossen; entsteht erst beim Build
+apps/web/dist/                    # Vite-Build-Ausgabe des Web-Frontends, per .gitignore ausgeschlossen
