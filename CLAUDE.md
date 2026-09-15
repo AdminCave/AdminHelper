@@ -28,6 +28,9 @@ eigene PKI), VictoriaMetrics (Line-Protocol), Tauri-IPC, Proxmox-API — vor Än
 
 **Nichts läuft ohne Kevins Start.** Kein Timer, kein Cron, keine Routine. Kevin startet jede Session, jeden Testlauf
 und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`.
+**Lange Läufe laufen überwacht:** Wochenlauf, Capstone, Bake, CI-Watch startet Claude auf Kevins Zuruf als
+Hintergrund-Lauf (tmux plus Wächter), bleibt dran bis zum Report und meldet das Ergebnis — nie nackt in einem
+Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKILL.md`).
 
 **Verben, die es heute gibt (Stufe 0):** `/feature-plan` (Spec + Ledger, stoppt am Design-Gate), `/feature-build`
 (Ledger abarbeiten bis zum Draft-PR), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten

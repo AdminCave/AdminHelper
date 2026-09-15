@@ -30,6 +30,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Lange Laeufe ueberwacht:** `/test weekly|all|capstone` startet `heavy.sh` jetzt selbst in
+  `tmux` und wacht mit einem Hintergrund-Waechter bis zum Report, statt Kevin die tmux-Zeile
+  zurueckzugeben; Verdict-Zeile, Summary-Zeilen, VM-Liste und die Roadmap-Zeilen des Laufs
+  kommen als Meldung. Start und Abbruch bleiben Kevins Zuruf, nichts startet von selbst.
+
 - **Audit-Hygiene:** `audit.yml` installiert `pip-audit` und `cargo-audit` jetzt gepinnt
   (2.10.1 bzw. 0.22.2, wie `govulncheck@v1.7.0` seit dem letzten Update-Lauf) — ein Job
   darf nicht rot werden, weil ein Werkzeug ueber das Wochenende seine Exit-Codes oder
