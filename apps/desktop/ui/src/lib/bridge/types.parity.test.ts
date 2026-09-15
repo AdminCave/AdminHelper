@@ -19,13 +19,20 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 // src/lib/bridge -> the desktop component root
 const DESKTOP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const RUST_FILES = ['models.rs', 'tunnel.rs', 'ansible.rs'];
+
+/** serde types in other modules, with the reason each stays out of the scan. */
+const NOT_ON_THE_BRIDGE: Record<string, string> = {
+  EnrollGrant: 'enrollment.rs — wire type of the /enroll HTTP call, never an IPC result',
+  EnrollRequest: 'enrollment.rs — request body sent to the issuer',
+  IssuedIdentity: 'enrollment.rs — issuer response, consumed inside Rust',
+};
 
 /** Rust types with no TypeScript counterpart, and why each one may stay. */
 const RUST_ONLY_ALLOWLIST: Record<string, string> = {
@@ -100,6 +107,24 @@ function tsTypes(): Map<string, string[]> {
 }
 
 describe('serde <-> bridge/types.ts parity', () => {
+  it('scans every serde type under src-tauri, or names why not', () => {
+    // RUST_FILES is hand-kept. Without this, a bridge-crossing struct added to
+    // any other module sits outside the guard — the same drift class the missing
+    // tunnelType was, one file over, and the size floors below cannot see it.
+    const dir = join(DESKTOP, 'src-tauri', 'src');
+    const decl = /#\[derive\(([^)]*)\)\]\s*(?:#\[serde\([^)]*\)\]\s*)*pub (?:struct|enum) (\w+)/g;
+    const unscanned: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith('.rs') || RUST_FILES.includes(entry)) continue;
+      const src = readFileSync(join(dir, entry), 'utf-8');
+      for (const m of src.matchAll(decl)) {
+        if (!/\bSerialize\b|\bDeserialize\b/.test(m[1])) continue;
+        if (!(m[2] in NOT_ON_THE_BRIDGE)) unscanned.push(`${entry}:${m[2]}`);
+      }
+    }
+    expect(unscanned).toEqual([]);
+  });
+
   it('parses both sides (non-empty guard)', () => {
     const rust = rustTypes();
     const ts = tsTypes();

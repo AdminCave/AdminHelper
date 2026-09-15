@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.check_engine as ce
+import app.core.database as database_mod
 from app.models import Base, MonitorCheck, MonitorState
 
 
@@ -53,7 +54,7 @@ def _seed(factory, *, consecutive_fails=1, initial_status=None, since=None):
 
 
 def _wire(monkeypatch, factory, checker_status):
-    monkeypatch.setattr(ce, "SessionLocal", factory)
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(
         ce, "get_checker", lambda t: SimpleNamespace(run=lambda cfg: (checker_status, "msg", None))
     )

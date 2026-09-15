@@ -69,7 +69,10 @@ function shapeOf(schema: Schema): {
   required: Set<string>;
   open: boolean;
 } {
-  const branches = schema.anyOf ?? schema.allOf ?? [schema];
+  // The schema's OWN properties count too: Pydantic emits `properties` alongside
+  // `allOf` for some inherited models, and replacing one with the other dropped
+  // the model's fields and made the fixture skip out of the check silently.
+  const branches = [schema, ...(schema.anyOf ?? []), ...(schema.allOf ?? [])];
   const properties = new Set<string>();
   const required = new Set<string>();
   let open = false;
@@ -136,6 +139,9 @@ describe('playwright mocks vs. the server OpenAPI snapshot', () => {
     // the server route declares no response_model at all (six do). Without this
     // the checked set could drain to zero while the test stayed green, which is
     // exactly the kind of quiet green this whole stage exists to prevent.
-    expect(checked, 'too few fixtures actually reached a key check').toBeGreaterThanOrEqual(8);
+    // 8 of the 15 fixtures reach a key check today; the other 7 answer routes
+    // that declare no response_model at all. Pinned at the real number, so a
+    // fixture quietly dropping out is a failure rather than a smaller green.
+    expect(checked, 'too few fixtures actually reached a key check').toBe(8);
   });
 });

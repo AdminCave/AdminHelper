@@ -59,15 +59,30 @@ exported_symbols() {
 # Deklaration dort schon mit ';' endet (type-Aliase, const). Nur Spalte 0 zaehlt
 # als Ende: ein Feld wie `  id: number;` beendet den Block sonst sofort.
 symbol_block() {
-  awk -v start="^export (interface|type|const) $2([^A-Za-z0-9_]|\$)" '
-    !inblk && $0 ~ start { print; if ($0 ~ /;[ \t]*$/) exit; inblk = 1; next }
-    inblk { print; if ($0 ~ /^}/) exit }
+  awk -v name="$2" '
+    # Ein interface endet an der schliessenden Klammer in Spalte 0. Ein type- oder
+    # const-Alias endet an der ersten Zeile, die auf ";" endet — auch eingerueckt,
+    # denn ein mehrzeiliger Union-Alias schliesst mit "  | \x27b\x27;". Die beiden
+    # Formen duerfen NICHT dieselbe Bedingung teilen: ein Feld wie "  id: number;"
+    # wuerde ein interface sonst nach der ersten Zeile beenden.
+    !inblk && $0 ~ "^export interface " name "([^A-Za-z0-9_]|$)" { print; inblk = "brace"; next }
+    !inblk && $0 ~ "^export (type|const) " name "([^A-Za-z0-9_]|$)" {
+      print; if ($0 ~ /;[ \t]*$/) exit; inblk = "semi"; next
+    }
+    inblk == "brace" { print; if ($0 ~ /^}/) exit; next }
+    inblk == "semi"  { print; if ($0 ~ /;[ \t]*$/) exit; next }
   ' "$1"
 }
 
 # --check: jeder Export der Quelle muss im Ziel byte-identisch stehen.
 check_file() {
   local rel="$1" src="$2" dst="$3" sym missing=0 differing=0
+  # Ohne das meldet eine fehlende Zieldatei jedes einzelne Symbol als FEHLT und
+  # verschuettet die eigentliche Ursache unter 25 awk-Fehlern.
+  if [[ ! -f "${dst}" ]]; then
+    echo "FEHLER: ${rel}: Ziel-Datei fehlt: ${dst}" >&2
+    return 1
+  fi
   for sym in $(exported_symbols "${src}"); do
     local a b
     a="$(symbol_block "${src}" "${sym}")"

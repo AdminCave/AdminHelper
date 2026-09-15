@@ -120,7 +120,7 @@ run_case "untracked build output can be allowlisted" 0 "matches the tree" -- --s
 # ── a thin scan is a broken scan, not a clean documentation ──────────────────
 REPO="$WORK/r6"; mkdir -p "$REPO/docs"
 echo '<p><code>apps/server/app/only.py</code></p>' > "$REPO/docs/thin.html"
-run_case "too few distinct paths -> exit 2" 2 "the scan is broken" -- --strict --root "$REPO"
+run_case "too few distinct paths -> exit 2" 2 "floor is 45" -- --strict --root "$REPO"
 
 # ── a highlighted <code class="…"> must not fall out of the scan ─────────────
 REPO="$WORK/r7"; fixture "$REPO"

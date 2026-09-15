@@ -25,6 +25,11 @@ from app.modules.monitoring_proxy.router import _ALLOWED_PATH_PREFIXES
 _ROUTERS_DIR = Path(__file__).resolve().parents[3] / "apps" / "monitoring" / "app" / "routers"
 # \s* spans newlines, so a decorator broken across lines by ruff format counts too.
 _ROUTE = re.compile(r'@router\.(?:get|post|put|delete|patch)\(\s*"([^"]+)"')
+# Every route decorator, whatever its shape. A route the scan above cannot read —
+# an api_route, a path in a constant — would be missing from BOTH sides of the
+# equality below, so the test would agree on an incomplete set while the route is
+# unreachable through the proxy.
+_ANY_ROUTE_DECORATOR = re.compile(r"@router\.\w+\(")
 
 # Reached directly via X-Internal-Key, not through the browser-facing proxy.
 _INTERNAL_ONLY = {"agent-keys", "servers"}
@@ -52,6 +57,20 @@ def test_allowlist_matches_monitoring_routes():
         f"unreachable routes: {sorted(proxied - set(_ALLOWED_PATH_PREFIXES))}, "
         f"dead allowlist entries: {sorted(set(_ALLOWED_PATH_PREFIXES) - proxied)}"
     )
+
+
+def test_every_route_decorator_is_readable():
+    """A decorator the literal scan misses would make the comparison vacuous for
+    exactly the route that was just added."""
+    for py in sorted(_ROUTERS_DIR.glob("*.py")):
+        text = py.read_text(encoding="utf-8")
+        declared = len(_ANY_ROUTE_DECORATOR.findall(text))
+        read = len(_ROUTE.findall(text))
+        assert declared == read, (
+            f"{py.name}: {declared} route decorators, {read} readable — a route "
+            f"declared some other way (api_route, a path in a constant) is invisible "
+            f"to this guard and would be unreachable through the proxy"
+        )
 
 
 def test_internal_only_exclusions_still_exist():

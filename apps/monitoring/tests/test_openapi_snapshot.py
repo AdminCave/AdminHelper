@@ -62,7 +62,28 @@ def test_openapi_matches_snapshot(pytestconfig):
 
 
 def test_snapshot_covers_the_api():
-    """Non-empty guard: a snapshot taken from an app that failed to mount its
-    routers would compare two empty schemas and pass."""
+    """Non-empty guard: a snapshot of an app that failed to mount its routers
+    would compare two empty schemas and pass."""
+    assert _SNAPSHOT.exists(), f"{_SNAPSHOT.name} is missing — see the test above"
     paths = json.loads(_SNAPSHOT.read_text(encoding="utf-8")).get("paths", {})
     assert len(paths) >= 20, f"snapshot holds only {len(paths)} paths"
+
+
+def test_every_operation_has_a_unique_id():
+    """A route declared with several methods at once gives all its operations one
+    operationId, picked from a set — so the schema differs between processes and
+    the snapshot above cannot be pinned at all. That is how this test first went
+    red; without this assertion the next such route would come back as a flaky
+    operationId diff rather than as a named failure."""
+    paths = json.loads(_SNAPSHOT.read_text(encoding="utf-8")).get("paths", {})
+    ids = [
+        op["operationId"]
+        for item in paths.values()
+        for op in item.values()
+        if isinstance(op, dict) and "operationId" in op
+    ]
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    assert duplicates == [], (
+        f"duplicate operationId(s) {duplicates} — a multi-method route makes the "
+        f"snapshot unpinnable; give each method its own decorator"
+    )

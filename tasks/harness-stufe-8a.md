@@ -211,3 +211,32 @@ Abhängt von: T17
   `response_model` (`GET/POST /api/users`, `GET/POST/PUT /api/frp/server-config`, `GET /api/frp/status`), die
   darum nicht pinbar sind · `--env` von doc-smoke (43 Namen triagieren) · `authz.spec.ts:20` beschreibt
   `auth/me` ein zweites Mal, ungepinnt.
+
+### Gesamt-Review über den Branch-Diff (`/code-review main...HEAD high`)
+13 Befunde, 12 davon behoben; jeder Fix ist unten in der Reihenfolge des Reviews vermerkt.
+
+- **Nicht behoben, Roadmap-Zeile (Klasse SEC/REF) für Kevin:** der geteilte `ThreadPoolExecutor` im SSRF-Guard
+  (4 Worker, `apps/{server,monitoring}/app/core/ssrf.py`) macht aus einem hängenden Resolver eine dienstweite
+  Sperre: vier gleichzeitige Auflösungen gegen einen blackholed Nameserver belegen alle Worker für den OS-Default,
+  jede weitere `is_private_url` läuft in ihren 5-s-Timeout und meldet fail-closed „privat" — also wird **jeder**
+  ausgehende Hook-Aufruf abgewiesen, solange das anhält. Die abgelaufenen Futures werden nicht gecancelt, die
+  Worker bleiben also auch nach dem Angriff belegt; und die Nicht-Daemon-Threads werden beim Interpreter-Exit
+  gejoint, ein SIGTERM hängt entsprechend. **Warum ich das hier nicht anfasse:** der Mechanismus stammt aus dem
+  Monitoring (4.111) und ist seit T5 in beiden Diensten identisch — genau das ist der Auftrag dieser Task. Ein
+  Umbau müsste beide Dienste betreffen (Semaphore pro Host, gecancelte Futures, Daemon-Threads) und ist eine
+  eigene Sicherheits-Task, kein Drive-by in einem Paritäts-Ledger.
+- **Behoben:** eine Session-Bezugsstelle im `check_engine` (`database.SessionLocal` überall, die vier Patch-Stellen
+  in den Engine-Tests nachgezogen) · der Corrupt-Config-Test stubbt jetzt `_alert_pool` wie seine Nachbarn, statt
+  echte Arbeit einzureihen und die Teardown-Race zu gewinnen · der Monitoring-Snapshot-Test hat die
+  operationId-Eindeutigkeit und den `exists()`-Riegel seines Server-Zwillings bekommen · `authz.spec.ts` baut den
+  `auth/me`-Body aus demselben Helfer wie die Fixture-Tabelle, statt ihn ein zweites Mal zu beschreiben ·
+  `types.parity.test.ts` verlangt für jeden serde-Typ ausserhalb der drei gescannten Dateien eine Begründung
+  (drei aus `enrollment.rs`, alle nachweislich nicht bridge-kreuzend) · der Proxy-Allowlist-Test assertiert, dass
+  er jeden Routen-Decorator lesen kann · `symbol_block` in `sync-from-web.sh` trennt jetzt nach Deklarationsart
+  (interface an `^}`, type/const am ersten `;`) — meine erste Fassung des Fixes war selbst falsch und liess den
+  `Server`-Drift verschwinden · `--check` meldet eine fehlende Zieldatei einmal statt 25-mal · `shapeOf` im
+  Mock-Contract behält die eigenen `properties` neben `anyOf`/`allOf` und der Prüf-Boden ist auf die reale Zahl 8
+  gepinnt statt auf ein Minimum · die Boden-Meldung von doc-smoke behauptet nicht mehr „Parser kaputt", wenn
+  einfach weniger dokumentiert wurde · `apply_result` sagt im Docstring, dass ein neu angelegter State nicht
+  zurückgegeben wird · `ipc.inventory.test.ts` assertiert die Konvention, dass jedes `invoke()` in
+  `bridge/index.ts` steht.

@@ -9,6 +9,8 @@ next_fail_count / effective_status / is_suppressed — the consecutive_fails
 damping, without DB, scheduler or VictoriaMetrics.
 """
 
+from types import SimpleNamespace
+
 from app.check_engine import (
     effective_status,
     is_suppressed,
@@ -127,14 +129,12 @@ def test_execute_check_corrupt_config_flips_to_unknown(monkeypatch):
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
-    monkeypatch.setattr(ce, "SessionLocal", factory)
-    # This test lets the alert dispatch really run (it stubs process_alert, not
-    # the pool), and _dispatch_alert_bg opens its own session via
-    # database.SessionLocal — without this the pool thread would reach for the
-    # real DATABASE_URL.
     monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
-    monkeypatch.setattr(ce, "process_alert", lambda *a, **k: None)
+    # Stub the pool like every neighbouring test: execute_check otherwise submits
+    # a real dispatch and returns, so monkeypatch teardown races the pool thread —
+    # green either way, leaked thread, nondeterministic.
+    monkeypatch.setattr(ce, "_alert_pool", SimpleNamespace(submit=lambda *a: None))
 
     with factory() as db:
         db.add(
@@ -167,6 +167,7 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
     from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
+    import app.core.database as database_mod
     from app.core import victoria as victoria_mod
     from app.models import Base, MonitorCheck, MonitorState
 
@@ -175,7 +176,7 @@ def test_execute_check_dispatches_alert_off_the_worker_thread(monkeypatch):
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
-    monkeypatch.setattr(ce, "SessionLocal", factory)
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
 
     class _FakeChecker:
@@ -241,6 +242,7 @@ def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
     from sqlalchemy.pool import StaticPool
 
     import app.check_engine as ce
+    import app.core.database as database_mod
     from app.core import victoria as victoria_mod
     from app.models import Base, MonitorCheck, MonitorState
 
@@ -273,7 +275,7 @@ def test_execute_check_dispatches_on_discrepancy_not_transition(monkeypatch):
             return "critical", "still broken", None
 
     submitted = []
-    monkeypatch.setattr(ce, "SessionLocal", factory)
+    monkeypatch.setattr(database_mod, "SessionLocal", factory)
     monkeypatch.setattr(ce, "get_checker", lambda t: _Checker())
     monkeypatch.setattr(victoria_mod.victoria, "write_check_result", lambda **kw: None)
     monkeypatch.setattr(ce._alert_pool, "submit", lambda fn, *a: submitted.append(a))

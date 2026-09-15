@@ -21,7 +21,8 @@ Two checks over every ``<code>…</code>`` in ``docs/**/*.html``:
                       documented for another is not drift.
 
 Exceptions live in scripts/dev/doc-smoke-allow.txt, one entry per line with a
-reason after '#'. The file is capped at 5 entries on purpose: an exception list
+reason after '#'; the file is shared by both checks, so an entry silences a path
+and an identically spelled env name alike. The file is capped at 5 entries on purpose: an exception list
 is where a check like this goes to rot, so once it grows past a handful the
 answer is to fix the documentation, not to extend the list.
 
@@ -45,6 +46,11 @@ _TAG = re.compile(r"<[^>]+>")
 _PATH_PREFIXES = ("apps/", "scripts/", "docs/", ".github/", ".claude/")
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{3,}$")
 _ALLOW_MAX = 5
+# The floor is a non-empty guard, not a quota: a parser that quietly loses most of
+# its coverage has to be caught too, so it sits near the real number (62 today)
+# rather than near zero. Lower it only after confirming the documentation, not the
+# parser, is what changed.
+_PATH_FLOOR = 45
 
 # Read as environment names from the app configuration, plus .env.example keys
 # (active or commented out — a commented example still documents the name).
@@ -211,9 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         # Counted over DISTINCT paths and set near the real number, so a parser
         # that quietly loses most of its coverage is caught too, not just a total
         # outage.
-        if len(collected) < 45:
+        if len(collected) < _PATH_FLOOR:
             print(
-                f"doc-smoke: only {len(collected)} distinct repo paths collected — the scan is broken",
+                f"doc-smoke: only {len(collected)} distinct repo paths collected, floor is "
+                f"{_PATH_FLOOR} — either the scan broke or the documentation genuinely "
+                f"shrank. Check which before lowering the floor.",
                 file=sys.stderr,
             )
             return 2

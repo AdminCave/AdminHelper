@@ -20,7 +20,6 @@ from app.alerter import process_alert, resolve_notification
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.core import database
-from app.core.database import SessionLocal
 from app.core.time import utcnow_naive
 from app.core.victoria import victoria
 from app.models import MonitorCheck, MonitorState
@@ -44,9 +43,11 @@ def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
     reloads the check. Errors are contained — a failed dispatch must never bubble
     out of the pool thread or surface to a reporting agent.
 
-    The factory is reached as ``database.SessionLocal`` (not the name imported
-    above, which ``execute_check`` uses): the endpoint suites patch the module
-    attribute, and this function runs outside the request they patched it for.
+    The factory is reached as ``database.SessionLocal`` — the module attribute,
+    never a name imported into this one. That is the single patch point for both
+    paths; two idioms in one file would mean a test that patches the wrong one
+    silently opens a connection to the real DATABASE_URL and, because every
+    exception here is swallowed, stays green while the alert path never ran.
     """
     db = database.SessionLocal()
     try:
@@ -139,7 +140,9 @@ def apply_result(
 
     The caller passes the already-locked `state` (None before the first result),
     then commits and dispatches: the scheduler off its own alert pool, the push
-    path via BackgroundTasks after the batch commit.
+    path via BackgroundTasks after the batch commit. Note that a created state is
+    bound to the session here, not handed back — the caller's own variable stays
+    None on the first result of a new check, so do not read it afterwards.
 
     `keep_previous_details_when_absent` is the one real difference between the
     paths: the scheduler re-derives details on every run, so an empty result
@@ -209,7 +212,7 @@ def apply_result(
 
 def execute_check(check_id: str) -> None:
     """Called by the scheduler for each check interval."""
-    db = SessionLocal()
+    db = database.SessionLocal()
     try:
         check = (
             db.query(MonitorCheck)
