@@ -9,7 +9,7 @@
 # Verwendung:
 #   ./scripts/sync-from-web.sh          # zeigt diff vorher
 #   ./scripts/sync-from-web.sh --apply  # kopiert tatsaechlich
-#   ./scripts/sync-from-web.sh --check  # Gate: jeder Web-Export byte-identisch
+#   ./scripts/sync-from-web.sh --check  # Gate: Schnittmenge als Teilmenge
 #
 # Die Dateien, die synchronisiert werden:
 #   src/lib/api/types.ts (Backend-API-Types)
@@ -22,12 +22,30 @@
 # Schutz: Enthaelt die Ziel-Datei exportierte Symbole, die in der Quelle
 # fehlen, bricht das Skript ab statt sie still zu ueberschreiben.
 #
-# --check ist die Gegenrichtung und maschinenlesbar: fuer jedes
-# `export interface|type|const` der QUELLE muss der gleichnamige Block im ZIEL
-# byte-identisch vorhanden sein. Volle Datei-Identitaet ist kein erreichbares
-# Ziel mehr (das Desktop-types.ts hat eigene Exporte, die das Web nicht kennt);
-# die gemeinsame Teilmenge ist das reale Risiko: der Server-Typ aendert sich,
-# das Web zieht nach, das Desktop nicht. Exit 1 bei Abweichung, Ausgabe je Symbol.
+# --check ist die Gegenrichtung und maschinenlesbar. Geprueft wird die SCHNITT-
+# MENGE: fuer jedes Symbol, das BEIDE Dateien exportieren, muss jede Zeile des
+# Quell-Blocks auch im Ziel-Block stehen.
+#
+# Warum nicht byte-identisch, und warum nicht "jeder Quell-Export muss ins Ziel":
+# die beiden Dateien sind laengst keine gemeinsame Datei mehr. Das Web-types.ts
+# beschreibt die Admin-Panel-API (25 Exporte: User, ApiKey, Hook, Audit), das
+# Desktop-types.ts die Client-API (58 Exporte: Connection, Monitoring,
+# Notifications, Playbooks). Gemeinsam sind genau VIER Symbole - FrpConfig,
+# FrpStatus, FrpStatusProxy, Server. Nur die sind doppelt gepflegt, nur die
+# koennen driften.
+#
+# Teilmenge statt Gleichheit, weil dieselbe Server-Antwort links und rechts
+# unterschiedlich weit projiziert wird: `Server` traegt im Desktop zusaetzlich
+# `connections?: Connection[]`, und das ist richtig - `to_dict()` liefert das Feld
+# (zusammen mit `createdAt` und `frpTunnels`, die KEINE der beiden Seiten
+# deklariert), das Admin-Panel ignoriert es nur. Die Regel faengt den realen Fall:
+# das Web zieht ein neues Server-Feld nach, das Desktop nicht.
+#
+# WO DER GUARD BLIND IST: die Loeschrichtung. Entfernt das Web ein Feld, bleibt
+# die Teilmenge erfuellt - das Desktop behaelt die Leiche, und niemand meldet es.
+# Das ist der Preis der Teilmengen-Regel und die einzige der sechs Drift-Formen,
+# die sie nicht faengt (umbenannt, Typ geaendert, im Ziel entfernt: alle rot).
+# Exit 1 bei Abweichung, Ausgabe je Symbol.
 
 set -euo pipefail
 
@@ -61,22 +79,36 @@ exported_symbols() {
 symbol_block() {
   awk -v name="$2" '
     # Ein interface endet an der schliessenden Klammer in Spalte 0. Ein type- oder
-    # const-Alias endet an der ersten Zeile, die auf ";" endet — auch eingerueckt,
-    # denn ein mehrzeiliger Union-Alias schliesst mit "  | \x27b\x27;". Die beiden
-    # Formen duerfen NICHT dieselbe Bedingung teilen: ein Feld wie "  id: number;"
-    # wuerde ein interface sonst nach der ersten Zeile beenden.
+    # const-Alias endet an der ersten Zeile mit ";" - AUSSER die Deklaration
+    # oeffnet einen Objekt- oder Array-Body (`= {`, `= [`), dann gilt wieder die
+    # Klammer-Regel. Ohne diese Unterscheidung wuerde `export type X = {` nach der
+    # ersten Feldzeile abbrechen, und zwar auf BEIDEN Seiten gleich - also nicht
+    # falsch-rot, sondern falsch-gruen.
     !inblk && $0 ~ "^export interface " name "([^A-Za-z0-9_]|$)" { print; inblk = "brace"; next }
     !inblk && $0 ~ "^export (type|const) " name "([^A-Za-z0-9_]|$)" {
-      print; if ($0 ~ /;[ \t]*$/) exit; inblk = "semi"; next
+      print
+      if ($0 ~ /;[ \t]*$/) exit
+      inblk = ($0 ~ /[{[][ \t]*$/) ? "brace" : "semi"
+      next
     }
-    inblk == "brace" { print; if ($0 ~ /^}/) exit; next }
+    inblk == "brace" { print; if ($0 ~ /^[}\]]/) exit; next }
     inblk == "semi"  { print; if ($0 ~ /;[ \t]*$/) exit; next }
   ' "$1"
 }
 
-# --check: jeder Export der Quelle muss im Ziel byte-identisch stehen.
+# --check: jede Zeile eines gemeinsamen Symbols muss auch im Ziel stehen.
+#
+# Die geteilte Menge steht hier NAMENTLICH, nicht als Mindestzahl. Ein blosser
+# Zaehl-Boden greift erst, wenn mehrere Symbole auf einmal verschwinden - genau
+# der unrealistische Fall. Der realistische ist der einzelne Refactor: ein Symbol
+# umbenannt oder geloescht, und der Guard meldet weiter "keine Abweichung" fuer
+# den Rest. Faellt eines dieser vier legitim weg, ist das eine bewusste Aenderung
+# dieser Zeile - kein stilles Schrumpfen.
+CHECK_SHARED=(FrpConfig FrpStatus FrpStatusProxy Server)
+
 check_file() {
-  local rel="$1" src="$2" dst="$3" sym missing=0 differing=0
+  local rel="$1" src="$2" dst="$3" sym shared=0 differing=0
+  local absent=() gone=()
   # Ohne das meldet eine fehlende Zieldatei jedes einzelne Symbol als FEHLT und
   # verschuettet die eigentliche Ursache unter 25 awk-Fehlern.
   if [[ ! -f "${dst}" ]]; then
@@ -84,24 +116,47 @@ check_file() {
     return 1
   fi
   for sym in $(exported_symbols "${src}"); do
-    local a b
-    a="$(symbol_block "${src}" "${sym}")"
+    local a b missing
     b="$(symbol_block "${dst}" "${sym}")"
     if [[ -z "${b}" ]]; then
-      echo "FEHLT:      ${rel}: ${sym}" >&2
-      missing=$((missing + 1))
-    elif [[ "${a}" != "${b}" ]]; then
-      echo "ABWEICHUNG: ${rel}: ${sym}" >&2
-      diff -u <(printf '%s\n' "${b}") <(printf '%s\n' "${a}") \
-        --label "desktop/${sym}" --label "web/${sym}" | sed 's/^/  /' >&2
+      absent+=("${sym}")
+      continue
+    fi
+    shared=$((shared + 1))
+    a="$(symbol_block "${src}" "${sym}")"
+    missing="$(comm -23 <(printf '%s\n' "${a}" | sort) <(printf '%s\n' "${b}" | sort))"
+    if [[ -n "${missing}" ]]; then
+      echo "ABWEICHUNG: ${rel}: ${sym} - im Ziel fehlen Zeilen der Quelle:" >&2
+      printf '%s\n' "${missing}" | sed 's/^/    /' >&2
       differing=$((differing + 1))
     fi
   done
-  if (( missing + differing > 0 )); then
-    echo "${rel}: ${missing} fehlend, ${differing} abweichend" >&2
+
+  # Jedes erwartete gemeinsame Symbol muss auch wirklich gemeinsam sein.
+  local expected
+  for expected in "${CHECK_SHARED[@]}"; do
+    if [[ -z "$(symbol_block "${dst}" "${expected}")" || -z "$(symbol_block "${src}" "${expected}")" ]]; then
+      gone+=("${expected}")
+    fi
+  done
+
+  # Nur eine Information: die beiden Dateien beschreiben verschiedene API-Flaechen,
+  # ein Quell-Export ohne Gegenstueck ist der Normalfall, kein Fehler.
+  if (( ${#absent[@]} > 0 )); then
+    echo "=== ${rel}: ${#absent[@]} Quell-Exporte ohne Gegenstueck im Ziel (ok, getrennte Flaechen)"
+    printf '    %s\n' "${absent[*]}"
+  fi
+
+  if (( ${#gone[@]} > 0 )); then
+    echo "FEHLER: ${rel}: erwartete gemeinsame Symbole fehlen auf einer Seite: ${gone[*]}" >&2
+    echo "  Wenn das Absicht ist, CHECK_SHARED in diesem Skript anpassen." >&2
     return 1
   fi
-  echo "=== ${rel}: alle $(exported_symbols "${src}" | wc -l) Web-Exporte identisch ==="
+  if (( differing > 0 )); then
+    echo "${rel}: ${differing} von ${shared} gemeinsamen Symbolen weichen ab" >&2
+    return 1
+  fi
+  echo "=== ${rel}: ${shared} gemeinsame Symbole, keine Abweichung ==="
 }
 
 CHECK_FAILED=0

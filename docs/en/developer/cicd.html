@@ -192,6 +192,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>OpenAPI snapshot</td><td><code>app.openapi()</code> per service</td><td><code>apps/&lt;service&gt;/tests/openapi.snapshot.json</code></td><td>jobs <code>server</code>, <code>monitoring</code></td></tr>
               <tr><td>OpenAPI compatibility</td><td>base branch's snapshot</td><td>this branch's snapshot</td><td>job <code>openapi-compat</code></td></tr>
               <tr><td>Documentation paths</td><td><code>&lt;code&gt;</code> fragments in <code>docs/**/*.html</code></td><td>the repository tree</td><td>job <code>ops-scripts</code></td></tr>
+              <tr><td>Environment parity</td><td><code>docker-compose.yml</code>, <code>.env.example</code></td><td>the three Python services' <code>config.py</code></td><td>job <code>server</code></td></tr>
+              <tr><td>Shared API types</td><td><code>apps/web/src/lib/api/types.ts</code></td><td><code>apps/desktop/ui/src/lib/api/types.ts</code></td><td>job <code>desktop-ui</code></td></tr>
             </tbody>
           </table>
           <p>The <strong>snapshot</strong> is the contract the web frontend, the desktop UI and the agent rely
@@ -223,6 +225,24 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           second check, <code>--env</code> (ALL_CAPS names against the three <code>config.py</code> files and
           <code>.env.example</code>), is <em>not</em> a gate yet: the heuristic currently reports 43 names that
           are not environment variables at all (HTTP methods, log levels, file names).</p>
+
+          <p><strong>Environment parity</strong> (<code>apps/server/tests/test_env_parity.py</code>) holds three
+          separately maintained descriptions of the same configuration surface together: a variable a service reads
+          with no default has to be set for it in compose (otherwise it arrives as an empty string, which looks like
+          a valid value); an <code>environment:</code> key has to be read by that service's code (otherwise it is a
+          leftover, or a rename that landed on one side only); and every <code>${VAR}</code> substitution has to
+          appear in <code>.env.example</code> and the other way round &ndash; a documented knob compose never passes
+          on does nothing when set. No exception list: where a rule would have needed one, the rule was wrong.</p>
+
+          <p><strong>Shared API types</strong> (<code>sync-from-web.sh --check</code>): the two
+          <code>api/types.ts</code> files stopped being one shared file long ago &ndash; the web one describes the
+          admin panel API (25 exports), the desktop one the client API (58). Four symbols are common to both, and
+          only those can drift. The check therefore covers the intersection, and as a subset rather than equality:
+          every line the web file declares must exist in the desktop one, which may carry more. <code>Server</code>
+          legitimately does &ndash; <code>to_dict()</code> returns <code>connections</code>, the admin panel just
+          ignores it. The rule is blind in one direction: if the web file drops a field, the subset still holds and
+          the desktop keeps the corpse. The four expected shared symbols are named in the script, so a single one
+          going missing is a failure rather than a smaller green set.</p>
 
           <h2>Container Images (ghcr.io)</h2>
           <p>Tagging is driven by <code>docker/metadata-action</code>. <code>:latest</code> is produced only on a (non-prerelease) semver tag &ndash; not on every <code>main</code> push:</p>

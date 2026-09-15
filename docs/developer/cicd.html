@@ -193,6 +193,8 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>OpenAPI-Snapshot</td><td><code>app.openapi()</code> je Dienst</td><td><code>apps/&lt;dienst&gt;/tests/openapi.snapshot.json</code></td><td>Jobs <code>server</code>, <code>monitoring</code></td></tr>
               <tr><td>OpenAPI-Kompatibilit&auml;t</td><td>Snapshot des Basis-Branch</td><td>Snapshot dieses Branch</td><td>Job <code>openapi-compat</code></td></tr>
               <tr><td>Doku-Pfade</td><td><code>&lt;code&gt;</code>-Fragmente in <code>docs/**/*.html</code></td><td>der Repo-Baum</td><td>Job <code>ops-scripts</code></td></tr>
+              <tr><td>Env-Parit&auml;t</td><td><code>docker-compose.yml</code>, <code>.env.example</code></td><td><code>config.py</code> der drei Python-Dienste</td><td>Job <code>server</code></td></tr>
+              <tr><td>Geteilte API-Typen</td><td><code>apps/web/src/lib/api/types.ts</code></td><td><code>apps/desktop/ui/src/lib/api/types.ts</code></td><td>Job <code>desktop-ui</code></td></tr>
             </tbody>
           </table>
           <p>Der <strong>Snapshot</strong> ist der Vertrag, den Web-Frontend, Desktop-UI und Agent benutzen,
@@ -224,6 +226,25 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           Guard verrottet. Die zweite Pr&uuml;fung <code>--env</code> (Namen in Gro&szlig;buchstaben gegen die drei
           <code>config.py</code> und <code>.env.example</code>) ist noch <em>kein</em> Gate: die Heuristik
           meldet derzeit 43 Namen, die gar keine Env-Variablen sind (HTTP-Methoden, Log-Level, Dateinamen).</p>
+
+          <p><strong>Env-Parit&auml;t</strong> (<code>apps/server/tests/test_env_parity.py</code>) h&auml;lt drei
+          getrennt gepflegte Beschreibungen derselben Konfigurationsfl&auml;che zusammen: eine Variable, die ein
+          Dienst ohne Default liest, muss Compose ihm setzen (sonst kommt sie als leerer String an und sieht aus
+          wie ein g&uuml;ltiger Wert); ein <code>environment:</code>-Key muss vom Code dieses Dienstes gelesen
+          werden (sonst ist er ein &Uuml;berbleibsel oder eine halb gelandete Umbenennung); und jede
+          <code>${VAR}</code>-Substitution muss in <code>.env.example</code> stehen und umgekehrt &ndash; ein
+          dokumentierter Stellhebel, den Compose nicht durchreicht, bewirkt beim Setzen nichts. Keine
+          Ausnahmeliste: wo eine Regel eine Ausnahme gebraucht h&auml;tte, war die Regel falsch.</p>
+
+          <p><strong>Geteilte API-Typen</strong> (<code>sync-from-web.sh --check</code>): die beiden
+          <code>api/types.ts</code> sind l&auml;ngst keine gemeinsame Datei mehr &ndash; das Web beschreibt die
+          Admin-Panel-API (25 Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole, und nur die
+          k&ouml;nnen driften. Gepr&uuml;ft wird deshalb die Schnittmenge, und als Teilmenge statt als Gleichheit:
+          jede Zeile der Web-Seite muss im Desktop stehen, das Desktop darf mehr f&uuml;hren. <code>Server</code>
+          tut das auch zu Recht &ndash; <code>to_dict()</code> liefert <code>connections</code>, das Admin-Panel
+          ignoriert es nur. Blind ist die Regel in einer Richtung: entfernt das Web ein Feld, bleibt die Teilmenge
+          erf&uuml;llt und das Desktop beh&auml;lt die Leiche. Die vier erwarteten gemeinsamen Symbole stehen
+          namentlich im Skript, damit ein einzelnes Verschwinden auff&auml;llt.</p>
 
           <h2>Container-Images (ghcr.io)</h2>
           <p>Getaggt wird über <code>docker/metadata-action</code>. <code>:latest</code> entsteht nur auf einem (Nicht-Prerelease-)Semver-Tag &ndash; nicht bei jedem <code>main</code>-Push:</p>
