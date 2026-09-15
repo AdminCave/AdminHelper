@@ -175,6 +175,55 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           pytest</code> cannot be allowlisted. The script resolves what the environment needs; the caller
           writes flags only.</p>
 
+          <h2>Parity and contract gates</h2>
+          <p>Two classes of defect need no VM to be found: &ldquo;the copy drifts&rdquo; (the same truth lives in
+          two places, one of them changes) and &ldquo;the contract breaks silently&rdquo; (a field, a header, a
+          path changes on one side). Every gate below pins two truths to each other and turns red on a single
+          mutation. Each one carries a non-empty assertion with a minimum count &ndash; a guard that reads
+          nothing is green and worthless.</p>
+          <table>
+            <thead><tr><th>Gate</th><th>Truth A</th><th>Truth B</th><th>where it runs</th></tr></thead>
+            <tbody>
+              <tr><td>Monitoring proxy allowlist</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>route decorators in <code>apps/monitoring/app/routers/*.py</code></td><td>job <code>server</code></td></tr>
+              <tr><td>Identity headers</td><td><code>apps/gateway/identity-headers.conf</code> + the enrollment plane's strips</td><td><code>core/identity.py</code>, <code>ca-issuer/app/config.py</code></td><td>job <code>server</code></td></tr>
+              <tr><td>Enrollment hash</td><td><code>core/auth.py</code> <code>hash_api_key</code></td><td><code>ca-issuer/app/db.py</code> <code>_hash</code></td><td>job <code>server</code></td></tr>
+              <tr><td>Transition pipeline</td><td><code>check_engine.apply_result</code></td><td>text scan over <code>apps/monitoring/app/**</code></td><td>job <code>monitoring</code></td></tr>
+              <tr><td>SSRF guard</td><td><code>apps/server/app/core/ssrf.py</code></td><td><code>apps/monitoring/app/core/ssrf.py</code></td><td>job <code>server</code></td></tr>
+              <tr><td>OpenAPI snapshot</td><td><code>app.openapi()</code> per service</td><td><code>apps/&lt;service&gt;/tests/openapi.snapshot.json</code></td><td>jobs <code>server</code>, <code>monitoring</code></td></tr>
+              <tr><td>OpenAPI compatibility</td><td>base branch's snapshot</td><td>this branch's snapshot</td><td>job <code>openapi-compat</code></td></tr>
+              <tr><td>Documentation paths</td><td><code>&lt;code&gt;</code> fragments in <code>docs/**/*.html</code></td><td>the repository tree</td><td>job <code>ops-scripts</code></td></tr>
+            </tbody>
+          </table>
+          <p>The <strong>snapshot</strong> is the contract the web frontend, the desktop UI and the agent rely
+          on without ever being compiled against it. Re-record it <em>in the same commit</em> as the API
+          change &ndash; otherwise the job is red:</p>
+          <div class="code-header"><span>bash</span></div>
+          <pre><code>cd apps/server      &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot
+cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot</code></pre>
+          <p>The <code>openapi-compat</code> job compares the base branch's snapshot with this branch's
+          (<code>scripts/dev/openapi-breaking.sh</code>, <code>oasdiff breaking --fail-on ERR</code>): new
+          paths and fields stay green, a removed path, a removed response field or a newly required request
+          field are red. <code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
+          SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
+          <code>go 1.26</code> while the workflows pin Go 1.25 with <code>GOTOOLCHAIN=local</code>, so building
+          from source fails exactly the way <code>govulncheck</code> did (PR&nbsp;#14). If the binary is missing
+          locally the script exits <code>75</code> (SKIP, red under <code>--strict</code>), never a silent
+          green; a base ref that does not resolve in the checkout is an error (exit&nbsp;2), so a shallow clone
+          cannot defeat the gate.</p>
+
+          <p><strong>doc-smoke</strong> (<code>scripts/dev/doc-smoke.py</code>) reads every
+          <code>&lt;code&gt;</code> in <code>docs/**/*.html</code> and checks that a fragment starting with
+          <code>apps/</code>, <code>scripts/</code>, <code>docs/</code>, <code>.github/</code> or
+          <code>.claude/</code> names a file that exists &ndash; a renamed file with the documentation left
+          behind is the most common way these pages go stale. Existence is resolved through <code>git ls-files</code>, not against the working
+          tree &ndash; otherwise the guard is green locally and red in CI, because build output such as
+          <code>apps/web/dist/</code> only exists on a developer box. Exceptions live in
+          <code>scripts/dev/doc-smoke-allow.txt</code> (reason after <code>#</code>); the script refuses more
+          than <strong>five</strong>, because an exception list is where a guard like this goes to rot. The
+          second check, <code>--env</code> (ALL_CAPS names against the three <code>config.py</code> files and
+          <code>.env.example</code>), is <em>not</em> a gate yet: the heuristic currently reports 43 names that
+          are not environment variables at all (HTTP methods, log levels, file names).</p>
+
           <h2>Container Images (ghcr.io)</h2>
           <p>Tagging is driven by <code>docker/metadata-action</code>. <code>:latest</code> is produced only on a (non-prerelease) semver tag &ndash; not on every <code>main</code> push:</p>
           <div class="code-header"><span>text</span></div>

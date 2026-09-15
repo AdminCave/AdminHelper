@@ -7,6 +7,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Added
+
+- **Paritaets- und Contract-Gates (Harness Stufe 8a):** Die APIs von Server und Monitoring
+  haben jetzt einen eingecheckten OpenAPI-Snapshot (`apps/<dienst>/tests/openapi.snapshot.json`),
+  den ein Test bei jeder Aenderung einfordert — neu aufgezeichnet wird er mit
+  `pytest tests/test_openapi_snapshot.py --update-openapi-snapshot`, im selben Commit wie die
+  API-Aenderung. Der neue CI-Job `openapi-compat` vergleicht den Snapshot des Basis-Branch per
+  `oasdiff breaking --fail-on ERR` mit dem des PR: neue Pfade und Felder sind gruen, ein
+  entfernter Pfad, ein entferntes Response-Feld oder ein neu verpflichtendes Request-Feld
+  sind rot. `oasdiff` kommt als gepinnter Release-Tarball (v1.32.0, SHA-256 im Workflow), nicht
+  per `go install` — jede Version ab v1.24.0 verlangt `go 1.26`, die Workflows pinnen aber Go
+  1.25 mit `GOTOOLCHAIN=local`. Dazu Guards, die zwei getrennt gepflegte Wahrheiten aneinander
+  pinnen: Proxy-Allowlist gegen die Monitoring-Routen, die mTLS-Identity-Header ueber Gateway,
+  Server und CA-Issuer, der Enrollment-Token-Hash zwischen Server und CA-Issuer, und die
+  Gleichheit der beiden SSRF-Guards. Dazu `scripts/dev/doc-smoke.py` (CI-Step im Job `ops-scripts`): jedes `<code>`-Fragment in
+  `docs/**/*.html`, das einen Repo-Pfad nennt, muss eine existierende Datei benennen — zwei
+  veraltete Pfade in der Entwickler-Doku sind damit schon aufgefallen und korrigiert.
+  Details: `docs/developer/cicd.html` (DE + EN), Abschnitt „Paritaets- und Contract-Gates".
+
 ### Security
 
 - **Desktop-Backend:** `rustls` 0.23.40 → 0.23.45 (RUSTSEC-2026-0285, TLS-1.3-Handshake-
