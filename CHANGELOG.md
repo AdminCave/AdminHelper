@@ -21,6 +21,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Audit-Hygiene:** `audit.yml` installiert `pip-audit` und `cargo-audit` jetzt gepinnt
+  (2.10.1 bzw. 0.22.2, wie `govulncheck@v1.7.0` seit dem letzten Update-Lauf) — ein Job
+  darf nicht rot werden, weil ein Werkzeug ueber das Wochenende seine Exit-Codes oder
+  seine Advisory-Quelle geaendert hat. Neu prueft `scripts/dev/toolchain-lockstep.sh`
+  (CI-Step im Job `frp-consistency`), dass alle `go-version`-Stellen in
+  `ci.yml`/`release.yml`/`audit.yml` uebereinstimmen und die `go`-Direktive des gepinnten
+  `x/vuln`-Release nicht darueber liegt — sonst scheitert der Audit-Job unter
+  `GOTOOLCHAIN=local` schon am Installieren von `govulncheck` und meldet nichts ueber
+  unsere Dependencies. Ist der Modul-Proxy nicht erreichbar, endet der Check mit 75
+  (SKIP) und faerbt den Job rot, statt eine Pruefung durchzuwinken, die nie lief. `DEVELOPMENT.md` beschreibt die drei Werkzeuge jetzt auch lokal,
+  in denselben Versionen wie CI.
+
 - **Ausfuehrung zuerst (Autonomie-Roadmap, Stufe 3):** Der Release-Workflow prueft jetzt
   das Ergebnis statt des Rezepts — das Agent-Binary muss statisch sein und darf kein
   `GLIBC_`-Symbol importieren, das ausgelieferte `.deb` darf keine zstd-Member tragen,

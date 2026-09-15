@@ -27,7 +27,11 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install pip-audit
-        run: pip install pip-audit
+        # Pinned, not floating: this job is the CVE signal for our lockfiles, so
+        # a red run must mean a vulnerable dependency — never a tool release that
+        # changed its exit codes or its advisory source over the weekend. Raise it
+        # deliberately, with one run's findings to compare against.
+        run: pip install pip-audit==2.10.1
       - name: Audit server lock
         run: pip-audit -r apps/server/requirements.txt --disable-pip
       - name: Audit monitoring lock
@@ -44,7 +48,16 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        # Pinned for the same reason as pip-audit above: a new release can change
+        # exit codes, advisory source or warning set and redden the job with no
+        # new advisory behind it. Note which half floats, though — here the
+        # TOOLCHAIN does (rust-toolchain@stable) and the tool is frozen, the
+        # mirror image of the govulncheck pin below. So this pin ages: raise it
+        # deliberately, comparing one run's warning set before and after, and
+        # raise it as soon as a future stable stops compiling 0.22.2.
+        # --locked fixes cargo-audit's own dependency tree; a bare --version
+        # (no ^ or ~) installs exactly 0.22.2, not a caret range.
+        run: cargo install cargo-audit --locked --version 0.22.2
       - name: Audit Cargo.lock
         working-directory: apps/desktop/src-tauri
         run: cargo audit
