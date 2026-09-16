@@ -144,6 +144,31 @@ def tagged_resources(extra_templates=(), drop=(), tags=None):
     return reply
 
 
+def current_of(vmid, tags=None, status="stopped", name=None, template=0):
+    """The recorded status/current, re-pointed at another VM.
+
+    `destroy` and `reap` confirm against this endpoint rather than the resource
+    cache, so the fake has to answer it for every VM they might take.
+
+    `template=1` is the one field written here that no recording contains — the
+    pool's templates were never queried while running. It is not invented:
+    PVE's own vmstatus sets it (`QemuServer.pm`: `$d->{template} = 1 if
+    PVE::QemuConfig->is_template($conf)`) and leaves it absent otherwise, which
+    is exactly what the two recorded answers show.
+    """
+    reply = fixture("status_current_%s" % ("running" if status == "running" else "stopped"))
+    data = reply["body"]["data"]
+    data["vmid"] = vmid
+    data["status"] = status
+    if tags is not None:
+        data["tags"] = tags
+    if name is not None:
+        data["name"] = name
+    if template:
+        data["template"] = template
+    return reply
+
+
 class FakeClock:
     """Time that only moves when the code under test sleeps.
 
@@ -184,6 +209,20 @@ def http(monkeypatch) -> FakeHttp:
     fake = FakeHttp()
     monkeypatch.setattr(vm.urllib.request, "urlopen", fake)
     return fake
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """A hermetic suite that quietly reaches the real hypervisor is not hermetic.
+
+    The `http` fixture replaces this with the recorded router; a test that forgot
+    to ask for it gets an assertion instead of a DNS lookup.
+    """
+
+    def refuse(req, timeout=None, context=None):
+        raise AssertionError("the suite tried to reach %s for real" % req.full_url)
+
+    monkeypatch.setattr(vm.urllib.request, "urlopen", refuse)
 
 
 @pytest.fixture(autouse=True)

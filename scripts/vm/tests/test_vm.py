@@ -12,7 +12,7 @@ import time
 
 import pytest
 import vm
-from conftest import fixture, tagged_resources
+from conftest import current_of, fixture, tagged_resources
 
 
 # ── configuration ────────────────────────────────────────────────────────────
@@ -1537,3 +1537,590 @@ def test_options_after_the_vm_are_options_not_command_words(argv, expected):
     assert " ".join(args.cmd) == expected[0]
     assert args.sync is expected[1]
     assert args.timeout == expected[2]
+
+
+# ── snapshots ────────────────────────────────────────────────────────────────
+def test_snap_rollback_and_delsnap_hit_the_right_endpoints(cfg, api, http, clock):
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/qemu/3000/snapshot", "snapshot_post")
+    http.add("GET", "qmsnapshot", "task_ok")
+    assert verb("snap", cfg, api, "3000", "s1") == 0
+    assert http.calls[-2].body == {"snapname": "s1"}
+
+    http.add("POST", "/snapshot/s1/rollback", "rollback_post")
+    http.add("GET", "qmrollback", "task_ok")
+    assert verb("rollback", cfg, api, "3000", "s1", "--start") == 0
+    assert http.calls[-2].body == {"start": "1"}
+
+    http.add("DELETE", "/qemu/3000/snapshot/s1", "delsnap")
+    http.add("GET", "qmdelsnapshot", "task_ok")
+    assert verb("delsnap", cfg, api, "3000", "s1") == 0
+
+
+def test_a_ram_snapshot_asks_for_the_vmstate(cfg, api, http, clock):
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/qemu/3000/snapshot", "snapshot_post")
+    http.add("GET", "qmsnapshot", "task_ok")
+    verb("snap", cfg, api, "3000", "s1", "--ram")
+    assert http.calls[-2].body == {"snapname": "s1", "vmstate": "1"}
+
+
+def test_a_storage_that_cannot_snapshot_says_so_before_trying(cfg, api, http, clock):
+    plain = fixture("storage_status")
+    plain["body"]["data"]["type"] = "lvm"
+    http.add("GET", "/storage/raid5/status", body=plain["body"])
+    with pytest.raises(vm.Infra) as caught:
+        verb("snap", cfg, api, "3000", "s1")
+    assert "storage raid5 is lvm and cannot snapshot" in str(caught.value)
+    assert not [c for c in http.calls if c.method == "POST"]
+
+
+def test_a_rollback_survives_the_lock_the_start_still_holds(cfg, api, http, clock):
+    # The recorded case: rollback --start, then the next task ends with
+    # "can't lock file" although it was accepted with a UPID.
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("DELETE", "/qemu/3000/snapshot/s1", "delsnap")
+    http.add("GET", "qmdelsnapshot", "task_lock_timeout", times=1)
+    http.add("GET", "qmdelsnapshot", "task_ok")
+    assert verb("delsnap", cfg, api, "3000", "s1") == 0
+    assert len([c for c in http.calls if c.method == "DELETE"]) == 2
+
+
+@pytest.mark.parametrize("name", ["snap", "rollback", "delsnap"])
+def test_no_snapshot_verb_touches_a_vm_that_is_not_ours(cfg, api, http, clock, name):
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    with pytest.raises(vm.Usage) as caught:
+        verb(name, cfg, api, "9402", "s1")
+    assert "template" in str(caught.value)
+    assert not [c for c in http.calls if c.method in ("POST", "DELETE")]
+
+
+# ── destroy ──────────────────────────────────────────────────────────────────
+# The recorded pool, as status/current reports each of its VMs.
+POOL_NOW = {
+    3000: ("ah;lane-main;role-probe;sc-none;tpl-linux-full;ttl-1789558820", "ah-probe-main-a1b2"),
+    3001: (
+        "ah;lane-pilot;role-server;sc-capstone;tpl-linux-full;ttl-1789557020",
+        "ah-server-pilot-c3d4",
+    ),
+    9402: ("crabbox", "Copy-of-VM-crabbox-ah-bake-9482bd41"),
+}
+
+
+def purgeable(http, *vmids, now=None):
+    """The pool listing, plus the fresh confirmation and purge of each VM."""
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    for vmid, (tags, name) in (now or POOL_NOW).items():
+        reply = current_of(vmid, tags=tags, name=name, template=1 if vmid >= 9400 else 0)
+        http.add("GET", "/qemu/%d/status/current" % vmid, body=reply["body"])
+    for vmid in vmids:
+        http.add("DELETE", "/qemu/%d" % vmid, "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    return http
+
+
+def test_destroy_takes_named_vms(cfg, api, http, clock, capsys):
+    purgeable(http, 3000)
+    assert verb("destroy", cfg, api, "3000") == 0
+    assert "destroyed 3000" in capsys.readouterr().out
+    assert [c.path for c in http.calls if c.method == "DELETE"] == [
+        "https://pve.example:8006/api2/json/nodes/<node>/qemu/3000"
+    ]
+
+
+def test_destroy_refuses_a_template_and_destroys_nothing(cfg, api, http, clock):
+    purgeable(http, 3000)
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000", "9402")
+    assert "9402 is a template" in str(caught.value)
+    # Checked before the first destruction: 3000 is still standing.
+    assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_destroy_refuses_a_vm_without_our_tag(cfg, api, http, clock):
+    strangers = fixture("cluster_resources")
+    for entry in strangers["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "crabbox"
+    http.add("GET", "/cluster/resources", body=strangers["body"])
+    http.add("GET", "/qemu/3000/status/current", body=current_of(3000, tags="crabbox")["body"])
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "3000")
+    assert "carries no `ah` tag" in str(caught.value)
+
+
+def test_destroy_selects_by_lane_role_and_scenario(cfg, api, http, clock, capsys):
+    purgeable(http, 3001)
+    assert verb("destroy", cfg, api, "--lane", "pilot") == 0
+    out = capsys.readouterr().out
+    assert "destroyed 3001" in out and "3000" not in out
+
+    purgeable(http, 3000)
+    verb("destroy", cfg, api, "--role", "probe")
+    assert "destroyed 3000" in capsys.readouterr().out
+
+    purgeable(http, 3001)
+    verb("destroy", cfg, api, "--scenario", "capstone")
+    assert "destroyed 3001" in capsys.readouterr().out
+
+
+def test_destroy_without_a_selector_is_a_usage_error(cfg, api, http):
+    with pytest.raises(vm.Usage):
+        verb("destroy", cfg, api)
+    assert http.calls == []
+
+
+def test_destroy_of_a_selector_that_matches_nothing_is_not_an_error(cfg, api, http, clock, capsys):
+    purgeable(http)
+    assert verb("destroy", cfg, api, "--lane", "nobody") == 0
+    assert "nothing to destroy" in capsys.readouterr().out
+
+
+# ── reap ─────────────────────────────────────────────────────────────────────
+def leased(http, *entries):
+    """A pool of our own VMs with the given (vmid, lane, ttl-offset, template)."""
+    reply = fixture("cluster_resources")
+    now = int(time.time())
+    data = [v for v in reply["body"]["data"] if v["vmid"] >= 9400]
+    for vmid, lane, offset in entries:
+        data.append(
+            {
+                "vmid": vmid,
+                "name": "ah-probe-%s-%04x" % (lane, vmid),
+                "pool": "adminhelper-ci",
+                "template": 0,
+                "status": "stopped",
+                "maxmem": 0,
+                "mem": 0,
+                "tags": "ah;role-probe;lane-%s;ttl-%d" % (lane, now + offset),
+            }
+        )
+    reply["body"]["data"] = data
+    http.add("GET", "/cluster/resources", body=reply["body"])
+    for vmid, lane, offset in entries:
+        http.add(
+            "GET",
+            "/qemu/%d/status/current" % vmid,
+            body=current_of(
+                vmid,
+                tags="ah;role-probe;lane-%s;ttl-%d" % (lane, now + offset),
+                name="ah-probe-%s-%04x" % (lane, vmid),
+            )["body"],
+        )
+    return http
+
+
+def test_reap_takes_the_expired_of_its_own_lane_only(cfg, api, http, clock, capsys):
+    leased(http, (3000, "main", -60), (3001, "main", 3600), (3002, "pilot", -60))
+    http.add("DELETE", "/qemu/3000", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    assert verb("reap", cfg, api) == 0
+    out = capsys.readouterr().out
+    assert "reaped 3000" in out
+    assert "3001" not in out and "3002" not in out
+
+
+def test_reap_all_crosses_lanes(cfg, api, http, clock, capsys):
+    leased(http, (3000, "main", -60), (3002, "pilot", -60))
+    for vmid in (3000, 3002):
+        http.add("DELETE", "/qemu/%d" % vmid, "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    verb("reap", cfg, api, "--all")
+    out = capsys.readouterr().out
+    assert "reaped 3000" in out and "reaped 3002" in out
+
+
+def test_a_dry_run_destroys_nothing(cfg, api, http, clock, capsys):
+    leased(http, (3000, "main", -60))
+    assert verb("reap", cfg, api, "--dry-run") == 0
+    assert "would reap 3000" in capsys.readouterr().out
+    assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_the_reaper_never_eats_a_template(cfg, api, http, clock, capsys):
+    # A template carries no ttl-, but say it out loud: taking one would take
+    # every linked clone's backing store with it.
+    tagged = fixture("cluster_resources")
+    for entry in tagged["body"]["data"]:
+        if entry["vmid"] == 9402:
+            entry["tags"] = "ah;ttl-1"
+    http.add("GET", "/cluster/resources", body=tagged["body"])
+    verb("reap", cfg, api, "--all", "--dry-run")
+    assert "9402" not in capsys.readouterr().out
+
+
+def test_a_vm_without_a_ttl_is_never_reaped(cfg, api, http, clock, capsys):
+    forever = fixture("cluster_resources")
+    forever["body"]["data"] = [v for v in forever["body"]["data"] if v["vmid"] != 3001]
+    for entry in forever["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "ah;role-probe;lane-main"  # ours, leased forever
+    http.add("GET", "/cluster/resources", body=forever["body"])
+    verb("reap", cfg, api, "--all", "--dry-run")
+    assert "nothing expired" in capsys.readouterr().out
+
+
+# ── list and the leak sweep ──────────────────────────────────────────────────
+def test_list_shows_the_lease_of_every_vm_of_ours(cfg, api, http, clock, capsys, state_dir):
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "warm.env").write_text("desktop=3000\n")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    # 3000 is a warm slot, 3001 belongs to another lane — neither is a leak.
+    assert verb("list", cfg, api) == 0
+    out = capsys.readouterr().out
+    assert "3000  ah-probe-main-a1b2       probe     lane=main" in out
+    assert "sc=capstone" in out and "stopped" in out
+    assert "<ip>" in out  # running: the address is fetched best effort
+    assert "EXPIRED" in out  # both recorded leases are in the past
+    assert "2 ours, 3 not ours" in out  # the three templates are not ours
+
+
+def test_a_vm_nobody_claims_is_a_leak(cfg, api, http, clock, capsys, state_dir):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    with pytest.raises(vm.Infra) as caught:
+        verb("list", cfg, api)
+    # 3000 is lane main and in no warm.env; 3001 is lane pilot, not our problem.
+    assert "leaked on lane main: 3000" in str(caught.value)
+
+
+def test_a_warm_box_is_not_a_leak(cfg, api, http, clock, capsys, state_dir):
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "warm.env").write_text("server_ip=10.0.0.9\ndesktop=3000\nserver=3999\n")
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    assert verb("list", cfg, api) == 0
+
+
+def test_a_vm_of_the_running_scenario_is_not_a_leak(cfg, api, http, clock, monkeypatch, state_dir):
+    scened = fixture("cluster_resources")
+    for entry in scened["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "ah;role-server;lane-main;sc-capstone;ttl-%d" % (int(time.time()) + 60)
+    monkeypatch.setenv("AH_VM_SCENARIO", "capstone")
+    http.add("GET", "/cluster/resources", body=scened["body"])
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    assert verb("list", cfg, api) == 0
+
+
+def test_a_vm_of_a_different_scenario_is_still_a_leak(
+    cfg, api, http, clock, monkeypatch, state_dir
+):
+    scened = fixture("cluster_resources")
+    for entry in scened["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "ah;role-server;lane-main;sc-yesterday;ttl-%d" % (int(time.time()) + 60)
+    monkeypatch.setenv("AH_VM_SCENARIO", "capstone")
+    http.add("GET", "/cluster/resources", body=scened["body"])
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    with pytest.raises(vm.Infra):
+        verb("list", cfg, api)
+
+
+def test_list_json_carries_the_rows_and_the_leaks(cfg, api, http, clock, capsys, state_dir):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    with pytest.raises(vm.Infra):
+        verb("list", cfg, api, "--json")
+    report = json.loads(capsys.readouterr().out)
+    assert report["untagged"] == 3
+    assert [r["vmid"] for r in report["vms"]] == [3000, 3001]
+    assert report["vms"][1]["ttl"] == "EXPIRED"
+    assert report["leaked"] == [3000]
+
+
+def test_list_can_be_narrowed_to_one_lane(cfg, api, http, clock, capsys, state_dir):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    # The filter narrows the display, not the sweep: 3000 leaks on our own lane
+    # and still says so.
+    with pytest.raises(vm.Infra) as caught:
+        verb("list", cfg, api, "--lane", "pilot")
+    out = capsys.readouterr().out
+    assert "3001" in out and "3000" not in out
+    assert "leaked on lane main: 3000" in str(caught.value)
+
+
+def test_an_empty_pool_lists_nothing_and_is_fine(cfg, api, http, clock, capsys, state_dir):
+    bare = fixture("cluster_resources")
+    bare["body"]["data"] = [v for v in bare["body"]["data"] if v["vmid"] >= 9400]
+    http.add("GET", "/cluster/resources", body=bare["body"])
+    assert verb("list", cfg, api) == 0
+    assert "0 ours, 3 not ours" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "offset,shown",
+    [(-1, "EXPIRED"), (0, "0m"), (90, "1m"), (3600 + 12 * 60, "1h12m"), (86400, "24h00m")],
+)
+def test_the_remaining_lease_reads_like_a_clock(offset, shown):
+    now = int(time.time())
+    assert vm.left_of(str(now + offset), now) == shown
+    assert vm.left_of("", now) == "no ttl"
+    assert vm.left_of("soon", now) == "no ttl"
+
+
+# ── auto-reap ────────────────────────────────────────────────────────────────
+def wired(monkeypatch, cfg, api, **verbs):
+    """main() with a stubbed verb table — the wiring around it is what is tested."""
+    monkeypatch.setattr(vm.Config, "load", classmethod(lambda cls, **kw: cfg))
+    monkeypatch.setattr(vm, "Api", lambda c: api)
+    monkeypatch.setattr(vm, "VERB_TABLE", dict(vm.VERB_TABLE, **verbs))
+
+
+def test_every_changing_verb_sweeps_its_own_lane_afterwards(cfg, api, http, monkeypatch):
+    swept = []
+    monkeypatch.setattr(vm, "reap_lane", lambda c, a, lane, dry_run=False: swept.append(lane) or [])
+    wired(monkeypatch, cfg, api, sync=lambda c, a, args: 0)
+    assert vm.main(["sync", "3000"]) == 0
+    assert swept == ["main"]
+
+
+@pytest.mark.parametrize("verb_name", ["list", "doctor"])
+def test_a_report_has_no_side_effects(cfg, api, http, monkeypatch, verb_name):
+    swept = []
+    monkeypatch.setattr(vm, "reap_lane", lambda *a, **k: swept.append(1) or [])
+    wired(monkeypatch, cfg, api, **{verb_name: lambda c, a, args: 0})
+    assert vm.main([verb_name]) == 0
+    assert swept == []
+
+
+def test_the_sweep_can_be_switched_off(cfg, api, http, monkeypatch):
+    swept = []
+    monkeypatch.setenv("AH_VM_NO_AUTOREAP", "1")
+    monkeypatch.setattr(vm, "reap_lane", lambda *a, **k: swept.append(1) or [])
+    wired(monkeypatch, cfg, api, sync=lambda c, a, args: 0)
+    assert vm.main(["sync", "3000"]) == 0
+    assert swept == []
+
+
+def test_a_failed_sweep_does_not_change_the_verbs_answer(cfg, api, http, monkeypatch, capsys):
+    def angry(*a, **k):
+        raise vm.Infra("cluster filesystem not quorate")
+
+    monkeypatch.setattr(vm, "reap_lane", angry)
+    wired(monkeypatch, cfg, api, run=lambda c, a, args: 1)  # a red suite
+    assert vm.main(["run", "3000", "--", "false"]) == 1  # still 1, not 74
+    assert "the lane sweep did not finish" in capsys.readouterr().err
+
+
+# ── fail-closed, pinned ──────────────────────────────────────────────────────
+def test_the_reaper_never_eats_a_vm_that_is_not_ours(cfg, api, http, clock, capsys):
+    # The one path that reaches purge_vm without going through require_ours.
+    foreign = fixture("cluster_resources")
+    for entry in foreign["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "crabbox;lane-main;ttl-1"  # expired, and not ours
+    http.add("GET", "/cluster/resources", body=foreign["body"])
+    verb("reap", cfg, api, "--dry-run")
+    assert "3000" not in capsys.readouterr().out
+
+
+def test_destroy_by_the_default_lane_leaves_the_untagged_templates_alone(
+    cfg, api, http, clock, capsys
+):
+    # 9400/9401 carry no tags at all, so their lane reads as `main` — only the
+    # `ah` guard keeps --lane main from selecting the three templates.
+    purgeable(http, 3000)
+    assert verb("destroy", cfg, api, "--lane", "main") == 0
+    out = capsys.readouterr().out
+    assert "destroyed 3000" in out
+    assert "9400" not in out and "9401" not in out and "9402" not in out
+
+
+def test_a_stranger_on_our_lane_is_neither_destroyed_nor_in_the_way(cfg, api, http, clock, capsys):
+    # A crabbox leftover carries no tags at all, so its lane reads as `main`.
+    # Without the `ah` filter in the selector it would be picked up and then
+    # refused — which would block the destruction of our own VM beside it.
+    shared = fixture("cluster_resources")
+    shared["body"]["data"].append(
+        {
+            "vmid": 3050,
+            "name": "crabbox-ah-warm-1",
+            "pool": "adminhelper-ci",
+            "template": 0,
+            "status": "running",
+            "maxmem": 0,
+            "mem": 0,
+        }
+    )
+    http.add("GET", "/cluster/resources", body=shared["body"])
+    for vmid, (tags, name) in POOL_NOW.items():
+        http.add(
+            "GET",
+            "/qemu/%d/status/current" % vmid,
+            body=current_of(vmid, tags=tags, name=name, template=1 if vmid >= 9400 else 0)["body"],
+        )
+    http.add("DELETE", "/qemu/3000", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    assert verb("destroy", cfg, api, "--lane", "main") == 0
+    out = capsys.readouterr().out
+    assert "destroyed 3000" in out and "3050" not in out
+
+
+def test_a_selector_is_matched_the_way_the_tag_was_written(cfg, api, http, clock, capsys):
+    purgeable(http, 3001)
+    assert verb("destroy", cfg, api, "--lane", "Pilot") == 0
+    assert "destroyed 3001" in capsys.readouterr().out
+
+
+def test_a_lease_renewed_a_second_ago_survives_the_sweep(cfg, api, http, clock, capsys):
+    # The listing still says expired; status/current says the extend landed.
+    # Registered first so it wins over the stale route `leased` adds.
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        body=current_of(
+            3000,
+            tags="ah;role-probe;lane-main;ttl-%d" % (int(time.time()) + 7200),
+            name="ah-probe-main-0bb8",
+        )["body"],
+    )
+    leased(http, (3000, "main", -60))
+    assert verb("reap", cfg, api) == 0
+    assert "nothing expired" in capsys.readouterr().out
+    assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_destroy_confirms_against_fresh_state_not_the_cache(cfg, api, http, clock):
+    # The recording's own trap: /cluster/resources served a previous tenant's
+    # name for 3001 while its tags were already current.
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add(
+        "GET",
+        "/qemu/3001/status/current",
+        body=current_of(3001, tags="crabbox", name="somebody-elses-box")["body"],
+    )
+    # You type the name the listing shows; the VMID behind it is somebody else's.
+    with pytest.raises(vm.Usage) as caught:
+        verb("destroy", cfg, api, "ah-probe-main-c3d4")
+    assert "carries no `ah` tag" in str(caught.value)
+    assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_destroy_finishes_the_rest_of_a_scenario_and_reports_what_failed(
+    cfg, api, http, clock, capsys
+):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    for vmid in (3000, 3001):
+        tags, name = POOL_NOW[vmid]
+        http.add(
+            "GET",
+            "/qemu/%d/status/current" % vmid,
+            body=current_of(vmid, tags=tags, name=name)["body"],
+        )
+    http.add("DELETE", "/qemu/3000", status=500, body='{"message":"storage busy"}')
+    http.add("DELETE", "/qemu/3001", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    with pytest.raises(vm.Infra) as caught:
+        verb("destroy", cfg, api, "3000", "3001")
+    assert "destroyed 3001" in capsys.readouterr().out  # the rest still went
+    assert "could not destroy 3000" in str(caught.value)
+
+
+def test_a_warm_slot_is_read_from_the_role_keys_only(state_dir):
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "warm.env").write_text(
+        "desktop=3000\nserver=3001\nserver_ip=10.0.0.9\nserver_sid=3002\nserver_ptok=3003\n"
+    )
+    # server_sid and server_ptok are session ids that happen to look like VMIDs;
+    # counting them as warm would excuse a genuinely leaked VM.
+    assert vm.warm_vmids() == {3000, 3001}
+
+
+def test_the_sweep_runs_after_a_failed_verb_too(cfg, api, http, monkeypatch):
+    swept = []
+    monkeypatch.setattr(vm, "reap_lane", lambda c, a, lane, dry_run=False: swept.append(lane) or [])
+
+    def refused(c, a, args):
+        raise vm.Infra("capacity: 2048 MiB short")
+
+    wired(monkeypatch, cfg, api, clone=refused)
+    # The expired VMs eating that capacity are exactly what has to go now.
+    assert vm.main(["clone", "--profile", "linux-full", "--role", "probe"]) == 74
+    assert swept == ["main"]
+
+
+def test_a_vm_that_vanished_does_not_stop_the_teardown(cfg, api, http, clock, capsys):
+    # Between listing and confirmation another lane's sweep took 3000. The rest
+    # of the scenario still has to come down.
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        status=500,
+        body='{"message":"Configuration file \'nodes/n/qemu-server/3000.conf\' does not exist"}',
+    )
+    tags, name = POOL_NOW[3001]
+    http.add(
+        "GET", "/qemu/3001/status/current", body=current_of(3001, tags=tags, name=name)["body"]
+    )
+    http.add("DELETE", "/qemu/3001", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    assert verb("destroy", cfg, api, "3000", "3001") == 0
+    out = capsys.readouterr().out
+    assert "already gone 3000" in out and "destroyed 3001" in out
+
+
+def test_a_vanished_vm_does_not_stop_the_sweep(cfg, api, http, clock, capsys):
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        status=500,
+        body='{"message":"Configuration file \'nodes/n/qemu-server/3000.conf\' does not exist"}',
+    )
+    leased(http, (3000, "main", -60), (3001, "main", -60))
+    http.add("DELETE", "/qemu/3001", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    assert verb("reap", cfg, api) == 0
+    assert [c.path.rsplit("/", 1)[-1] for c in http.calls if c.method == "DELETE"] == ["3001"]
+
+
+@pytest.mark.parametrize(
+    "tags,template",
+    [
+        # T7's bake: the clone becomes a template before its lease tags are
+        # replaced, while the resource list still shows it as our tagged VM
+        # whose ttl ran out during the 45 minutes.
+        ("ah;role-bake;lane-main;ttl-1", 1),
+        # Or someone re-tagged it out of our care while it sat there expired.
+        ("crabbox;lane-main;ttl-1", 0),
+    ],
+)
+def test_the_reaper_re_reads_before_it_takes_anything(cfg, api, http, clock, tags, template):
+    http.add(
+        "GET",
+        "/qemu/3000/status/current",
+        body=current_of(3000, tags=tags, name="ah-bake-main-0bb8", template=template)["body"],
+    )
+    leased(http, (3000, "main", -60))
+    assert verb("reap", cfg, api) == 0
+    assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_a_reaped_lane_filter_is_matched_the_way_the_tag_was_written(
+    cfg, api, http, clock, capsys, state_dir
+):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    with pytest.raises(vm.Infra):
+        verb("list", cfg, api, "--lane", "Pilot")
+    assert "3001" in capsys.readouterr().out
+
+
+def test_ctrl_c_does_not_start_a_sweep(cfg, api, http, monkeypatch):
+    swept = []
+    monkeypatch.setattr(vm, "reap_lane", lambda *a, **k: swept.append(1) or [])
+
+    def impatient(c, a, args):
+        raise KeyboardInterrupt
+
+    wired(monkeypatch, cfg, api, sync=impatient)
+    # Someone who pressed Ctrl-C wants out, not another round of API calls.
+    assert vm.main(["sync", "3000"]) == 2
+    assert swept == []

@@ -444,6 +444,13 @@ def parse_duration(text: str) -> int:
     return int(match.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
 
 
+def tag_safe(value: str) -> str:
+    """Tags are a `;`-separated set of lowercase words. Anything that goes into
+    one — or is matched against one — passes through here, so that `--lane Main`
+    finds lane `main` and a stray `;` cannot smuggle in a second tag."""
+    return re.sub(r"[^a-z0-9-]", "-", (value or "").lower()).strip("-")
+
+
 def current_lane(override: str | None = None, environ=None) -> str:
     """--lane, else AH_LANE, else .vm/lane, else `main` (the shared checkout)."""
     environ = os.environ if environ is None else environ
@@ -454,7 +461,7 @@ def current_lane(override: str | None = None, environ=None) -> str:
                 lane = fh.read().strip()
         except OSError:
             lane = ""
-    return re.sub(r"[^a-z0-9-]", "-", (lane or "main").lower()).strip("-") or "main"
+    return tag_safe(lane) or "main"
 
 
 def capacity_report(cfg: Config, api: Api, vms: list, need_mb: int, label: str):
@@ -526,15 +533,47 @@ def guest_user(cfg: Config, api: Api, vmid: int) -> str:
     return str(user)
 
 
-def purge_vm(cfg: Config, api: Api, vmid: int):
+def fresh_entry(cfg: Config, api: Api, vmid: int) -> dict | None:
+    """status/current, shaped like a /cluster/resources entry.
+
+    The resource list lags (scripts/vm/tests/README.md: it served a previous
+    tenant's name for a recycled VMID while the tags were already current).
+    Deciding to destroy something from a cache is how the wrong VM dies, and how
+    a lease renewed a second ago gets reaped anyway. `None` means the VM is
+    already gone.
+    """
+    try:
+        current = api.request(
+            "GET", "/nodes/%s/qemu/%d/status/current" % (cfg["AH_PVE_NODE"], vmid)
+        )
+    except VmError as exc:
+        # Already gone — another lane's sweep, an expired lease, a `qm destroy`
+        # by hand. Not an error, and above all not a reason to abandon the rest
+        # of a teardown: `purge_vm` reads the same wording the same way.
+        if "qemu-server/%d.conf" % vmid in str(exc):
+            return None
+        raise
+    current = current or {}
+    return {
+        "vmid": vmid,
+        "name": current.get("name", ""),
+        "tags": current.get("tags", ""),
+        "status": current.get("status", "?"),
+        "template": current.get("template", 0),
+        "_current": current,
+    }
+
+
+def purge_vm(cfg: Config, api: Api, vmid: int, current: dict | None = None):
     """Stop if need be, then delete with the disks. PVE refuses to delete a
     running VM ("VM 3000 is running - destroy failed"), so the stop is not
     optional. A VM that is already gone is a success, not an error — the clone
     rollback runs on paths where it may never have been created."""
     node = cfg["AH_PVE_NODE"]
     try:
-        current = api.request("GET", "/nodes/%s/qemu/%d/status/current" % (node, vmid))
-        if current.get("status") != "stopped":
+        if current is None:
+            current = api.request("GET", "/nodes/%s/qemu/%d/status/current" % (node, vmid))
+        if (current or {}).get("status") != "stopped":
             api.task("POST", "/nodes/%s/qemu/%d/status/stop" % (node, vmid))
     except VmError:
         pass  # a VM that cannot be read or stopped may still be deletable
@@ -739,7 +778,7 @@ def verb_clone(cfg: Config, api: Api, args) -> int:
     # A tag list is separated by ';' — an unfiltered scenario could smuggle a
     # second ttl- into it, and tags are read as a SET, so which one wins would
     # be luck. The lane is cleaned the same way one function up.
-    scenario = re.sub(r"[^a-z0-9-]", "-", (args.scenario or "").lower()).strip("-")
+    scenario = tag_safe(args.scenario)
     if args.scenario and not scenario:
         raise Usage("--scenario %r has nothing usable in it" % args.scenario)
 
@@ -1107,6 +1146,280 @@ def extend_lease(cfg: Config, api: Api, target: "Target", duration: str) -> None
     )
 
 
+# ── snapshots, destruction, the reaper ───────────────────────────────────────
+def require_ours(entry: dict) -> dict:
+    """Fail closed. A VMID is four digits, a typo is one keystroke, and the pool
+    holds homelab VMs and templates this tool did not build."""
+    vmid = entry["vmid"]
+    if entry.get("template"):
+        raise Usage("%d is a template — those are Kevin's to delete, not ours" % vmid)
+    if OURS not in tags_of(entry):
+        raise Usage(
+            "%d (%s) carries no `%s` tag — it is not ours, refusing"
+            % (vmid, entry.get("name", "?"), OURS)
+        )
+    return entry
+
+
+def snapshots_possible(cfg: Config, api: Api) -> tuple[bool, str]:
+    status = api.request(
+        "GET", "/nodes/%s/storage/%s/status" % (cfg["AH_PVE_NODE"], cfg["AH_PVE_STORAGE"])
+    )
+    kind = status.get("type", "?")
+    return kind in SNAPSHOT_STORAGE, kind
+
+
+def require_snapshots(cfg: Config, api: Api) -> None:
+    possible, kind = snapshots_possible(cfg, api)
+    if not possible:
+        raise Infra(
+            "storage %s is %s and cannot snapshot — `vm.py doctor` says so too"
+            % (cfg["AH_PVE_STORAGE"], kind)
+        )
+
+
+def _snapshot_target(cfg: Config, api: Api, ref: str) -> int:
+    require_snapshots(cfg, api)
+    return require_ours(find_vm(cfg, api, ref))["vmid"]
+
+
+def verb_snap(cfg: Config, api: Api, args) -> int:
+    vmid = _snapshot_target(cfg, api, args.vm)
+    body = {"snapname": args.name}
+    if args.ram:
+        body["vmstate"] = 1
+    api.task("POST", "/nodes/%s/qemu/%d/snapshot" % (cfg["AH_PVE_NODE"], vmid), body=body)
+    return 0
+
+
+def verb_rollback(cfg: Config, api: Api, args) -> int:
+    vmid = _snapshot_target(cfg, api, args.vm)
+    body = {"start": 1} if args.start else None
+    api.task(
+        "POST",
+        "/nodes/%s/qemu/%d/snapshot/%s/rollback" % (cfg["AH_PVE_NODE"], vmid, args.name),
+        body=body,
+    )
+    return 0
+
+
+def verb_delsnap(cfg: Config, api: Api, args) -> int:
+    vmid = _snapshot_target(cfg, api, args.vm)
+    api.task("DELETE", "/nodes/%s/qemu/%d/snapshot/%s" % (cfg["AH_PVE_NODE"], vmid, args.name))
+    return 0
+
+
+def select_vms(cfg: Config, vms: list, args) -> list:
+    """The VMs a `destroy` names, by id/name or by tag."""
+    chosen: dict = {}
+    for ref in args.vm or []:
+        entry = find_vm(cfg, None, ref, vms=vms)
+        chosen[entry["vmid"]] = entry
+    filters = [
+        ("sc-", tag_safe(args.scenario) if args.scenario else None),
+        ("lane-", tag_safe(args.lane) if args.lane else None),
+        ("role-", tag_safe(args.role) if args.role else None),
+    ]
+    if any(value for _, value in filters):
+        for entry in vms:
+            tags = tags_of(entry)
+            if OURS not in tags or entry.get("template"):
+                continue
+            if all(
+                value is None
+                or tag_value(tags, prefix, "main" if prefix == "lane-" else "") == value
+                for prefix, value in filters
+            ):
+                chosen[entry["vmid"]] = entry
+    return [chosen[vmid] for vmid in sorted(chosen)]
+
+
+def verb_destroy(cfg: Config, api: Api, args) -> int:
+    if not (args.vm or args.scenario or args.lane or args.role):
+        raise Usage("destroy needs VMs, or one of --scenario/--lane/--role")
+    vms = pool_vms(cfg, api)
+    chosen = select_vms(cfg, vms, args)
+    # Everything is checked BEFORE the first destruction, and checked against
+    # FRESH state rather than the resource cache that picked it: a refusal
+    # halfway through would leave a scenario partly torn down, and a stale name
+    # would kill the wrong VM.
+    confirmed = []
+    for entry in chosen:
+        current = fresh_entry(cfg, api, entry["vmid"])
+        if current is None:
+            print("already gone %d %s" % (entry["vmid"], entry.get("name", "")))
+            continue
+        require_ours(current)
+        confirmed.append(current)
+    failures = []
+    for entry in confirmed:
+        try:
+            purge_vm(cfg, api, entry["vmid"], current=entry["_current"])
+        except VmError as exc:
+            # Keep going: stopping here would leave the rest of a scenario
+            # standing, which is the state this verb exists to avoid.
+            failures.append("%d: %s" % (entry["vmid"], exc))
+            continue
+        print("destroyed %d %s" % (entry["vmid"], entry["name"]))
+    if not confirmed:
+        print("nothing to destroy")
+    if failures:
+        raise Infra("could not destroy " + "; ".join(failures))
+    return 0
+
+
+def expired(entry: dict, now: int) -> bool:
+    ttl = tag_value(tags_of(entry), "ttl-")
+    return bool(ttl) and ttl.isdigit() and int(ttl) < now
+
+
+def reap_lane(cfg: Config, api: Api, lane: str | None, dry_run: bool = False) -> list:
+    """Destroy our expired VMs. `lane=None` means every lane."""
+    now = int(time.time())
+    doomed = []
+    for entry in pool_vms(cfg, api):
+        tags = tags_of(entry)
+        # Templates never carry `ah`, but say it out loud: a reaper that eats a
+        # template takes every linked clone's backing store with it.
+        if OURS not in tags or entry.get("template"):
+            continue
+        if lane is not None and tag_value(tags, "lane-", "main") != lane:
+            continue
+        if expired(entry, now):
+            doomed.append(entry)
+    if dry_run:
+        return doomed
+    taken = []
+    for entry in doomed:
+        # Re-read: the listing is a cache, and `run --extend` may have renewed
+        # this very lease a second ago — for exactly the reason it was expiring.
+        current = fresh_entry(cfg, api, entry["vmid"])
+        if current is None:
+            continue  # someone else got there first; the sweep goes on
+        tags = tags_of(current)
+        # `ah` and `template` again, not only the ttl: during a bake the fresh
+        # clone becomes a template while the resource list still shows it as a
+        # tagged VM whose lease ran out mid-bake. This line is what keeps the
+        # reaper off a brand new template.
+        if OURS not in tags or current["template"] or not expired(current, int(time.time())):
+            continue
+        purge_vm(cfg, api, entry["vmid"], current=current["_current"])
+        taken.append(entry)
+    return taken
+
+
+def verb_reap(cfg: Config, api: Api, args) -> int:
+    lane = None if args.every_lane else current_lane()
+    doomed = reap_lane(cfg, api, lane, dry_run=args.dry_run)
+    for entry in doomed:
+        print(
+            "%s %d %s (lane %s)"
+            % (
+                "would reap" if args.dry_run else "reaped",
+                entry["vmid"],
+                entry.get("name", ""),
+                tag_value(tags_of(entry), "lane-", "main"),
+            )
+        )
+    if not doomed:
+        print("nothing expired%s" % ("" if lane is None else " on lane " + lane))
+    elif args.dry_run:
+        print("(from the listing, without the fresh re-read the real sweep does)")
+    return 0
+
+
+def warm_vmids(path: str | None = None) -> set:
+    """The VMIDs .vm/warm.env claims as long-lived. Written by the wrappers."""
+    path = path or os.path.join(VM_STATE_DIR, "warm.env")
+    kept = set()
+    try:
+        with open(path) as fh:
+            for line in fh:
+                key, _, value = line.partition("=")
+                # Only the bare role slots hold a VMID. The file also carries
+                # server_sid, server_ptok and friends, and a four-digit one of
+                # those would quietly excuse a genuinely leaked VM.
+                if "_" in key.strip():
+                    continue
+                value = value.strip()
+                if value.isdigit():
+                    kept.add(int(value))
+    except OSError:
+        pass
+    return kept
+
+
+def left_of(ttl: str, now: int) -> str:
+    if not ttl or not ttl.isdigit():
+        return "no ttl"
+    seconds = int(ttl) - now
+    if seconds < 0:
+        return "EXPIRED"
+    hours, rest = divmod(seconds, 3600)
+    return "%dh%02dm" % (hours, rest // 60) if hours else "%dm" % (rest // 60)
+
+
+def verb_list(cfg: Config, api: Api, args) -> int:
+    now = int(time.time())
+    lane_filter = tag_safe(args.lane) if args.lane else ""
+    mine = current_lane()
+    scenario = os.environ.get("AH_VM_SCENARIO", "")
+    warm = warm_vmids()
+
+    rows, strangers, leaks = [], 0, []
+    for entry in sorted(pool_vms(cfg, api), key=lambda v: v["vmid"]):
+        tags = tags_of(entry)
+        if OURS not in tags or entry.get("template"):
+            strangers += 1
+            continue
+        lane = tag_value(tags, "lane-", "main")
+        row = {
+            "vmid": entry["vmid"],
+            "name": entry.get("name", ""),
+            "role": tag_value(tags, "role-"),
+            "lane": lane,
+            "scenario": tag_value(tags, "sc-"),
+            "status": entry.get("status", "?"),
+            "ttl": left_of(tag_value(tags, "ttl-"), now),
+            "ip": "",
+        }
+        if entry.get("status") == "running":
+            try:
+                row["ip"] = vm_ipv4(api, cfg["AH_PVE_NODE"], entry["vmid"])
+            except VmError:
+                pass  # best effort: a booting guest has no agent yet
+        # A VM of our own lane that no warm slot and no running scenario claims
+        # is a leak — the one thing this listing exists to catch. Checked before
+        # --lane narrows the display: a filter is for reading, not for looking
+        # away.
+        claimed = entry["vmid"] in warm or (scenario and row["scenario"] == scenario)
+        if lane == mine and not claimed:
+            leaks.append(row)
+        if lane_filter and lane != lane_filter:
+            continue
+        rows.append(row)
+
+    if args.as_json:
+        print(
+            json.dumps(
+                {"vms": rows, "untagged": strangers, "leaked": [r["vmid"] for r in leaks]}, indent=2
+            )
+        )
+    else:
+        for row in rows:
+            print(
+                "%(vmid)-5d %(name)-24s %(role)-9s lane=%(lane)-8s sc=%(scenario)-10s "
+                "%(status)-8s %(ttl)-8s %(ip)s" % row
+            )
+        print("%d ours, %d not ours" % (len(rows), strangers))
+    if leaks:
+        raise Infra(
+            "leaked on lane %s: %s — neither warm nor part of scenario %r"
+            % (mine, ", ".join(str(r["vmid"]) for r in leaks), scenario)
+        )
+    return 0
+
+
 def _stub(name):
     def verb(cfg, api, args):
         raise Usage("%s is not implemented yet" % name)
@@ -1202,6 +1515,32 @@ VERB_TABLE["ssh"] = verb_ssh
 VERB_TABLE["sync"] = verb_sync
 VERB_TABLE["run"] = verb_run
 VERB_TABLE["pull"] = verb_pull
+VERB_TABLE["snap"] = verb_snap
+VERB_TABLE["rollback"] = verb_rollback
+VERB_TABLE["delsnap"] = verb_delsnap
+VERB_TABLE["destroy"] = verb_destroy
+VERB_TABLE["reap"] = verb_reap
+VERB_TABLE["list"] = verb_list
+
+
+def auto_reap(cfg: Config, api: Api, verb: str) -> None:
+    """Every verb that changes something sweeps its own lane afterwards.
+
+    This is the whole reaper: no timer, no cron on the hypervisor, nothing that
+    runs without someone asking for it — and still no expired VM survives a
+    working day. `list` and `doctor` are exempt because a report must not have
+    side effects. A sweep that fails is reported and swallowed: it is not the
+    caller's result.
+    """
+    if verb in ("list", "doctor") or os.environ.get("AH_VM_NO_AUTOREAP") == "1":
+        return
+    try:
+        for entry in reap_lane(cfg, api, current_lane()):
+            sys.stderr.write(
+                "vm.py: reaped expired %d %s\n" % (entry["vmid"], entry.get("name", ""))
+            )
+    except VmError as exc:
+        sys.stderr.write("vm.py: the lane sweep did not finish: %s\n" % exc)
 
 
 def main(argv=None) -> int:
@@ -1213,7 +1552,18 @@ def main(argv=None) -> int:
     try:
         cfg = Config.load()
         api = Api(cfg)
-        return VERB_TABLE[args.verb](cfg, api, args) or 0
+        interrupted = False
+        try:
+            return VERB_TABLE[args.verb](cfg, api, args) or 0
+        except KeyboardInterrupt:
+            interrupted = True
+            raise
+        finally:
+            # Also after a failure: a `clone` refused for capacity is exactly
+            # the moment the expired VMs eating that capacity must go, or the
+            # next attempt fails the same way.
+            if not interrupted:
+                auto_reap(cfg, api, args.verb)
     except VmError as exc:
         sys.stderr.write("vm.py: %s\n" % exc)
         return exc.code
