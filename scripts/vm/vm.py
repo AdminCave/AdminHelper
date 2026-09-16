@@ -48,7 +48,9 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Everything this tool caches locally. Gitignored, and small on purpose: the
 # hypervisor's tags are the state, this is only what ssh and the wrappers need.
-VM_STATE_DIR = os.path.join(ROOT, ".vm")
+# Overridable by the same name scripts/vm/lib.sh uses, so the shell side and
+# this one can never disagree about whose lane a VM is on.
+VM_STATE_DIR = os.environ.get("AH_VM_STATE_DIR") or os.path.join(ROOT, ".vm")
 
 # Time bounds. Every one of them exists because something hung once: an
 # unbounded HTTP call, a UPID poll that never ended, a lock that never cleared.

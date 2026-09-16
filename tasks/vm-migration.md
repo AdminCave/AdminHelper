@@ -91,3 +91,7 @@ Abhängt von: T9
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; CI grün inkl. `frp-consistency` und `ops-scripts`.
 - Kevin nach dem Merge: `heavy.sh weekly` → Summary-Zeilen wie der letzte crabbox-Lauf; dann `crabbox list` leer → Binary deinstallieren; crabbox-Einträge aus `.claude/settings.local.json` entfernen; Roadmap R-0025/26/27 schließen.
+
+## Aus 2a mitgebracht (T8-Review)
+- `scripts/vm/lib.sh` und `scripts/tests/crabbox_lib.sh` definieren beide `warm_get/set/clear` — gleiche Namen, verschiedene Dateien (`.vm/warm.env` vs. `.crabbox/warm.env`). Heute sourct nichts beide. Beim Umbau von `scripts/dev/lane.sh` (das heute `crabbox_lib.sh` sourct) darauf achten: wer beide sourct, liest still die falsche Datei.
+- `scripts/tests/heavy_test.sh:381` ist ein echter Flake: `git -C "$FIX" worktree list | grep w2` greppt die ganze Zeile, und ein `mktemp`-Suffix wie `tOAiKkw2Uv` enthält `w2` — grob 1 von 40 Läufen wird grundlos rot. Gegen den Pfad ankern (`grep -E '/w2$'`). Vom T8-Reviewer gefunden, gehört als BUG-Zeile in die Roadmap.
