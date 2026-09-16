@@ -9,6 +9,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Ephemere Proxmox-VMs ohne externes Binary (Harness Stufe 2a):** `scripts/vm/vm.py` least,
+  verwaltet und zerstoert die VMs, auf denen die schweren Suites laufen — Python-3-Standard-
+  bibliothek, keine Abhaengigkeit, nur die REST-API. Verben: `doctor clone wait ssh sync run
+  pull snap rollback delsnap destroy reap list bake`. Linked Clones kosten ~2 s statt ~11 min
+  Vollklon, Snapshot und Rollback je ein bis drei Sekunden. Der Zustand liegt als **Tag** auf
+  dem Hypervisor (`ah`, `role-`, `lane-`, `sc-`, `ttl-`, `tpl-`), nicht in einer lokalen Datei:
+  jeder Checkout sieht jede Lease samt Frist, jedes Verb ausser `list`/`doctor` raeumt am Ende
+  die abgelaufenen VMs der eigenen Lane weg (kein Timer, kein Cron), und bei einer VM **ohne**
+  `ah`-Tag verweigert `vm.py` jedes zerstoerende Verb — crabbox und `vm.py` teilen denselben Pool,
+  ohne sich gegenseitig abzuraeumen. Exit-Codes trennen „der Test ist rot" (1) von „die
+  Infrastruktur hat nein gesagt" (74). `bake` baut aus dem Basis-Cloud-Image ein neues
+  Template. Dazu `scripts/vm/lib.sh` als Shell-Seite und zwei hermetische Suiten: `vm.py`
+  gegen aufgezeichnete Proxmox-Antworten (`scripts/vm/tests/`), `lib.sh` gegen einen
+  Temp-Zustand (`scripts/tests/lib_vm_test.sh`); beide haengen an `verify.sh scripts --strict`
+  und an CI. Anleitung: `DEVELOPMENT.md`, Abschnitt „VMs mit vm.py".
+
 - **Paritaets- und Contract-Gates (Harness Stufe 8a):** Die APIs von Server und Monitoring
   haben jetzt einen eingecheckten OpenAPI-Snapshot (`apps/<dienst>/tests/openapi.snapshot.json`),
   den ein Test bei jeder Aenderung einfordert — neu aufgezeichnet wird er mit

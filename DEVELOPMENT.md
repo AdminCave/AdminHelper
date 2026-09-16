@@ -601,6 +601,109 @@ scripts/release/check-versions.sh X.Y.Z` druckt je Stelle `ok`/`MISSING` und end
 sobald eine fehlt — derselbe Aufruf laeuft im Release-Workflow auf dem Tag. Details und
 die Bump-Reihenfolge: `.claude/rules/release.md`.
 
+### VMs mit vm.py (Proxmox, ohne externes Binary)
+
+`scripts/vm/vm.py` least, verwaltet und zerstoert die ephemeren Proxmox-VMs, auf denen die
+schweren Suites laufen — Python-3-Standardbibliothek, keine Abhaengigkeit, nur die REST-API
+(kein `pvesh`, kein `qm`). Es liegt **neben** crabbox: bis der Umzug (Harness Stufe 2b) durch
+ist, aendert sich am crabbox-Weg unten nichts.
+
+**Konfiguration** kommt aus dem gitignoreten `.claude/settings.local.json` (Block `env`); eine
+gleichnamige Umgebungsvariable gewinnt, damit ein Runner sein eigenes Token mitbringen kann,
+ohne eine Datei zu schreiben.
+
+| Schluessel | Bedeutung |
+|---|---|
+| `AH_PVE_URL` | `https://<host>:8006`. Der Name **muss** im SAN des Zertifikats stehen (siehe TLS). |
+| `AH_PVE_NODE` | Der Knoten, auf dem geklont wird. |
+| `AH_PVE_TOKEN` | `<user>@pve!<tokenid>=<secret>`. Wandert nur im `Authorization`-Header, nie in eine URL. |
+| `AH_PVE_CA` | Pfad zur Root-CA des Hypervisors (PEM). |
+| `AH_PVE_STORAGE` · `AH_PVE_BRIDGE` · `AH_PVE_POOL` | Storage, Bridge und Pool der Klone. |
+| `AH_PVE_VMID_RANGE` | `3000-3999`. Klone liegen im **unteren**, Templates im **oberen** Hundert. |
+| `AH_VM_SSH_KEY` | Privater Schluessel; der `.pub` daneben wird per cloud-init in den Klon injiziert. |
+| `AH_VM_MAX` | Deckel fuer gleichzeitige Leases **je Lane** (Default 8 — der Capstone haelt sieben). |
+| `AH_VM_LINKED` | `1` (Default) = Linked Clone in ~2 s statt ~11 min Vollklon. |
+| `AH_VM_REMOTE_DIR` | Wohin `sync` den Checkout schiebt (Default `~/adminhelper`). |
+| `AH_VM_STATE_DIR` | Lokaler Zwischenspeicher (Default `.vm/`): `lane`, `warm.env`, `known_hosts`. |
+
+Den SSH-Schluessel legt man **einmal** selbst an — `doctor` erzeugt ihn bewusst nicht als
+Nebenwirkung:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
+```
+
+**Verben** (`python3 scripts/vm/vm.py <verb>`):
+
+| Verb | Was es tut |
+|---|---|
+| `doctor [--roles a,b] [--json]` | Prueft API, Rechte, Storage, Templates, deren Guest-Agent und Bridge, die VMID-Baender und die Kapazitaet und druckt je Zeile `ok\|FAIL <check>: <detail>`. |
+| `clone --profile p --role r [--lane l] [--scenario id] [--ttl 8h] [--memory MB] [--cores N] [--name n]` | Klont das Profil-Template, taggt die Lease, injiziert den Schluessel und startet die VM. Druckt `VMID NAME`. |
+| `wait <vm> [--timeout 900]` | Wartet auf Guest-Agent, IPv4 und ssh — alle drei an **einer** Frist. Druckt die Adresse. |
+| `ssh <vm> [-- cmd]` | Ohne Kommando eine interaktive Sitzung im Checkout, sonst der Exit-Code des Kommandos. |
+| `sync <vm> [--no-delete]` | `rsync` des Checkouts auf die Box (Ausschlussliste: `scripts/vm/rsync-exclude.txt`). |
+| `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. |
+| `pull <vm> <glob> <dir>` | Holt Dateien von der Box. |
+| `snap <vm> <name> [--ram]` · `rollback <vm> <name> [--start]` · `delsnap <vm> <name>` | Snapshot, Ruecksetzen, Loeschen. `snap` und `rollback` je ~1–3 s auf LVM-thin; `delsnap` direkt nach einem `rollback --start` wartet, bis der Start das Config-Lock wieder freigibt (gemessen 35 s). |
+| `destroy <vm>… \| --scenario id \| --lane l \| --role r` | Stoppt und loescht mit Platte. |
+| `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
+| `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
+| `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). |
+
+**Exit-Codes.** `0` ok · `1` das Ausgefuehrte ist fehlgeschlagen (der Remote-Exit von `run`,
+also ein roter Test) · `2` Aufruffehler, oder die Weigerung, etwas anzufassen, das uns nicht
+gehoert · `74` Infrastruktur (API, Kapazitaet, keine Adresse, fehlendes Privileg). Die Trennung
+1/74 ist der Grund, warum `heavy.sh` ab 2b eine Infra-Stoerung nicht mehr als roten Test
+berichten muss — heute sprechen die crabbox-Wrapper dieses 74 noch nicht.
+
+**Tags sind die Lease-Wahrheit**, nicht eine lokale Datei. Jede VM traegt `ah` plus
+`role-…`, `lane-…`, `sc-…`, `ttl-<epoch>`, `tpl-…`; Templates tragen `ah-tpl-<profil>` und
+`built-<yyyymmdd>`. Daraus folgt dreierlei: jeder Checkout sieht jede Lease samt Frist, der
+Aufraeumer braucht keinen lokalen Zustand — **jedes** Verb ausser `list` und `doctor` kehrt am
+Ende die eigene Lane (`AH_VM_NO_AUTOREAP=1` schaltet das ab) —, und eine VM **ohne** `ah`-Tag
+ist fuer dieses Werkzeug unsichtbar: jedes zerstoerende Verb verweigert sie mit Exit 2. Deshalb
+koennen crabbox und `vm.py` denselben Pool teilen, ohne sich gegenseitig abzuraeumen.
+
+**Probe von Hand** — `doctor` sichert sie vorher ab. `clone` druckt `VMID NAME`; die VMID
+aus dieser Zeile ist in allen folgenden Aufrufen gemeint (unten `3000` als Beispiel):
+
+```bash
+python3 scripts/vm/vm.py doctor --roles probe          # alles ok?
+python3 scripts/vm/vm.py clone --profile linux-full --role probe --ttl 20m
+python3 scripts/vm/vm.py wait 3000                     # Adresse in < 5 min
+python3 scripts/vm/vm.py run 3000 --sync -- 'bash scripts/tests/run.sh lint'
+python3 scripts/vm/vm.py snap 3000 s1
+python3 scripts/vm/vm.py rollback 3000 s1 --start
+python3 scripts/vm/vm.py delsnap 3000 s1
+python3 scripts/vm/vm.py destroy 3000
+python3 scripts/vm/vm.py list                          # leer, Exit 0
+```
+
+`list` endet mit Exit != 0, wenn auf der eigenen Lane eine VM steht, die niemand beansprucht:
+weder als Warm-Slot in `.vm/warm.env`, noch ueber das laufende Szenario (`AH_VM_SCENARIO`),
+noch als laufendes Bake (`role-bake`) — eine geleakte VM ist ein Fehler, kein Detail.
+
+**Die Lane** ist das, was parallele Worktrees auseinanderhaelt: jede VM traegt sie als Tag,
+und `reap` (ohne `--all`) wie der Auto-Reap fassen nur die eigene an. Sie kommt aus `--lane`,
+sonst aus `AH_LANE`, sonst aus `.vm/lane` — die Datei ist heute von Hand zu setzen, meist ist
+`AH_LANE` im Worktree einfacher; ab 2b legt `lane.sh new <slug>` sie an —, sonst ist sie
+`main` — der Hauptcheckout. `vm.py` und `scripts/vm/lib.sh` normalisieren sie identisch;
+`scripts/tests/lib_vm_test.sh` vergleicht beide Seiten zeichenweise, weil eine Uneinigkeit
+darueber, wessen VM eine VM ist, genau eine Lane zu viel abraeumen wuerde.
+
+**TLS.** Die Root-CA des Hypervisors traegt kein `keyUsage`, was Python 3.13 unter
+`VERIFY_X509_STRICT` ablehnt. `vm.py` loescht **genau dieses eine Flag** und verifiziert sonst
+voll gegen `AH_PVE_CA` — Kette und Hostname eingeschlossen. Darum muss `AH_PVE_URL` einen Namen
+aus dem Zertifikats-SAN tragen; eine blosse IP, die nicht im SAN steht, scheitert an der
+Hostname-Pruefung (und nicht etwa an einer abgeschalteten Verifikation).
+
+**Die Shell-Seite.** `scripts/vm/lib.sh` wird gesourct, nicht ausgefuehrt, und haelt, was ein
+Wrapper vor und nach einem `vm.py`-Aufruf braucht: `vm_load_env` (die Variablen oben),
+`vm_lane`, `warm_get/set/clear` auf `.vm/warm.env`, `vm_marker` und `vm_build_agent_deb`.
+Hermetisch geprueft von `scripts/tests/lib_vm_test.sh`; `vm.py` selbst von
+`scripts/vm/tests/` gegen aufgezeichnete API-Antworten (Herkunft und Bereinigungsregel:
+`scripts/vm/tests/README.md`). Beides faehrt `bash scripts/dev/verify.sh scripts --strict` mit.
+
 ### Schwere Suites auf crabbox (Multi-Host + schneller Loop)
 
 Wer kein lokales Docker/Display hat (z. B. die Agent-Sandbox), faehrt die schweren

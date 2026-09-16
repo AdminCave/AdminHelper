@@ -97,7 +97,8 @@ Verify: bash scripts/dev/verify.sh scripts --strict   und   bash scripts/tests/r
 Doku: keine (intern)
 Abhängt von: T2
 
-### T10 — DEVELOPMENT.md „VMs mit vm.py" + CHANGELOG  [ ]
+### T10 — DEVELOPMENT.md „VMs mit vm.py" + CHANGELOG  [x] (`grep -c 'vm.py' DEVELOPMENT.md` → 18; Lint grün, `doc-smoke.py --strict` grün)
+Der Abschnitt steht **vor** „Schwere Suites auf crabbox", der unverändert bleibt — bis 2b durch ist, sind beide Wege gültig. Enthalten: Konfigurationstabelle, `ssh-keygen`-Zeile, Verbtabelle, Exit-Codes 0/1/2/74 mit dem Grund für die Trennung 1/74, Tags als Lease-Wahrheit samt Auto-Reap und Fail-closed, Probe-Ablauf, die Leak-Bedingung von `list`, der TLS-Hinweis (nur `VERIFY_X509_STRICT` fällt, deshalb muss die URL ein SAN-Name sein) und die Shell-Seite. Doku in `docs/**/*.html` bleibt aus: 2a ändert kein Produktverhalten, und der Sweep dort ist ausdrücklich 2b.
 Komponente: docs · Dateien: DEVELOPMENT.md, CHANGELOG.md
 Änderung: Neuer Abschnitt neben „Schwere Suites auf crabbox" (der bleibt bis 2b): Konfiguration (`AH_PVE_*`, `AH_VM_*`, SSH-Schlüssel `ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''`, CA-Datei, URL = SAN-Name), Verben mit je einem Satz, Fehlercodes 0/1/2/74, Tags als Lease-Wahrheit, `doctor`-Ausgabe, Probe-Ablauf aus der Spec, TLS-Hinweis. CHANGELOG Unreleased/Added.
 Verify: grep -c 'vm.py' DEVELOPMENT.md   (≥ 5) — plus `bash scripts/tests/run.sh lint --strict --only scripts`
