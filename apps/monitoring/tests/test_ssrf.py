@@ -75,17 +75,20 @@ def test_allows_public_targets(url):
 def test_dns_resolution_times_out_and_fails_closed(monkeypatch):
     # 4.111: a hung/slow DNS resolution must not block indefinitely — is_private_url caps it with a
     # hard deadline and fails closed (treats the target as private) instead of stalling the worker.
-    def _slow_getaddrinfo(*_a, **_k):
-        time.sleep(2)  # simulate a hung resolver
-        return []
-
-    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _slow_getaddrinfo)
+    release = threading.Event()
+    entered = threading.Semaphore(0)
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _hanging_resolver(release, entered))
     monkeypatch.setattr(ssrf_mod, "_DNS_TIMEOUT_S", 0.1)  # short deadline for the test
 
-    start = time.monotonic()
-    assert ssrf_mod.is_private_url("http://slow-dns.example") is True
-    # Fail-closed is only half the guarantee; returning promptly is the other.
-    assert time.monotonic() - start < 1.0
+    try:
+        start = time.monotonic()
+        assert ssrf_mod.is_private_url("http://hang-forever.example") is True
+        # Fail-closed is only half the guarantee; returning promptly is the other.
+        assert time.monotonic() - start < 1.0
+    finally:
+        # Released here rather than slept out, so no resolver thread outlives the test
+        # holding a permit while a later test rebinds the semaphore.
+        release.set()
 
 
 def test_hung_resolutions_do_not_block_a_healthy_one(monkeypatch):
@@ -207,3 +210,40 @@ def test_an_empty_address_list_fails_closed(monkeypatch):
     monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *_a, **_k: [])
 
     assert ssrf_mod.is_private_url("http://no-addresses.example") is True
+
+
+def test_a_resolution_error_hands_the_permit_back(monkeypatch):
+    # NXDOMAIN and SERVFAIL are the everyday case, not the exception. If the permit came back
+    # only on the success path, 64 bad hostnames would close the guard for good — and every
+    # other test here would still pass, because none of them makes the resolver raise.
+    monkeypatch.setattr(ssrf_mod, "_DNS_INFLIGHT", threading.BoundedSemaphore(2))
+
+    def _failing(*_a, **_k):
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _failing)
+
+    for _ in range(3):  # one more than there are permits: a leak would strand the guard here
+        assert ssrf_mod.is_private_url("http://nxdomain.example") is True
+
+    assert ssrf_mod._DNS_INFLIGHT.acquire(blocking=False) is True
+    assert ssrf_mod._DNS_INFLIGHT.acquire(blocking=False) is True
+
+
+def test_a_thread_constructor_failure_hands_the_permit_back(monkeypatch):
+    # The permit is taken before the thread object even exists. A constructor that raises
+    # something other than RuntimeError must not swallow it — but it must not keep the permit
+    # either: 64 of those and the guard is closed for good.
+    class _Unconstructable:
+        def __init__(self, *_a, **_k):
+            raise MemoryError("out of memory")
+
+    monkeypatch.setattr(ssrf_mod, "_DNS_INFLIGHT", threading.BoundedSemaphore(2))
+    monkeypatch.setattr(ssrf_mod, "threading", types.SimpleNamespace(Thread=_Unconstructable))
+
+    for _ in range(3):  # one more than there are permits: a leak would strand the guard here
+        with pytest.raises(MemoryError):
+            ssrf_mod.is_private_url("http://healthy.example")
+
+    assert ssrf_mod._DNS_INFLIGHT.acquire(blocking=False) is True
+    assert ssrf_mod._DNS_INFLIGHT.acquire(blocking=False) is True

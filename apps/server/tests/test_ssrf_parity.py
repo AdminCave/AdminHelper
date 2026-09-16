@@ -69,8 +69,9 @@ def test_server_and_monitoring_ssrf_guards_are_identical():
     monitoring = _normalized(_MONITORING)
 
     # Non-empty guard: a parse that yields a stub would compare nothing at all.
-    # The normalized guard is 63 lines today; 25 leaves room for a small edit
-    # without leaving room for an empty comparison.
+    # The guard normalizes to dozens of lines; 25 leaves room for a small edit
+    # without leaving room for an empty comparison. Deliberately not the exact
+    # count — a number here goes stale on every edit and says nothing more.
     assert len(server) >= 25, f"server guard normalized to only {len(server)} lines"
     assert len(monitoring) >= 25, f"monitoring guard normalized to only {len(monitoring)} lines"
 
