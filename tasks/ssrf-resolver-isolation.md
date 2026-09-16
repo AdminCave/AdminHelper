@@ -79,14 +79,44 @@ kein Nachtrag zu R-0042 — soll er als eigene Roadmap-Zeile aufgemacht werden?
 korrekt konfiguriertes Ziel. Ein kleiner Grund-Enum (allowed / private / unresolved) würde das diagnostizierbar
 machen, ändert aber die Signatur, drei Aufrufer und nach außen sichtbare Meldungen — nicht im Auftrag von R-0042. Dazu gehört: der `RuntimeError`-Pfad (Thread-Erschöpfung, Subinterpreter) lehnt heute jedes Ziel ohne eine einzige Logzeile ab. Die vorhandene Drossel taugt dafür nicht — sie trägt die Deckel-Meldung —, also gehört auch das in diese Entscheidung.
 
+### T6 — CI rot: alembic schaltet die App-Logger ab  [x]
+Komponente: apps/monitoring · Dateien: apps/monitoring/alembic/env.py, apps/monitoring/tests/test_alembic_logging.py (neu, SPDX)
+Auslöser: PR #19, Job „Monitoring (pytest)" rot — `test_in_flight_cap_...` fand **keine** Warnung
+(`capped == []`), lokal war derselbe Test grün. Kein Timing, kein Flake.
+Ursache: `apps/monitoring/alembic/env.py:26` rief `fileConfig(config.config_file_name)` ohne
+`disable_existing_loggers=False`. Der Default `True` setzt `.disabled = True` auf **jeden** bereits
+existierenden Logger, der nicht in `alembic.ini` steht (dort nur `root`, `sqlalchemy.engine`, `alembic`) —
+also auch auf `app.core.ssrf` und alle `monitor.*`. Lokal lief der Migrations-Smoke mangels `DATABASE_URL`
+nicht, in CI schon; danach war der Logger für den Rest des Prozesses tot. Diagnose belegt:
+`disabled=True level=0 propagate=True caplog.records=[]`.
+**Der Server hat den Fix seit dem Audit** (`apps/server/alembic/env.py:60`), und sein Kommentar beschreibt
+genau diesen Fall („In tests that surfaced as a lost caplog assertion; in a combined 'migrate then serve'
+process it would drop real log lines"). Die Monitoring-Kopie war nie nachgezogen worden — eine Drift, kein
+Testartefakt. Nicht der Test wurde entschärft, sondern die Ursache behoben.
+Änderung: `disable_existing_loggers=False` plus denselben Warum-Kommentar wie im Server; dazu die neue Datei
+`tests/test_alembic_logging.py` mit `test_a_migration_run_leaves_existing_loggers_alive`: legt einen
+Canary-Logger an, fährt `command.upgrade(cfg, "head", sql=True)` und prüft danach, dass er noch lebt.
+**Offline-Modus mit Absicht** (Review-Runde 1): er braucht keine Datenbank, läuft also in der gewöhnlichen
+Schnellsuite statt nur dort, wo zufällig ein Postgres steht — genau die DB-Gatterung hat die Drift zwei Monate
+tragen lassen. Er geht durch dieselbe `fileConfig`-Zeile, und die Assertion auf das gerenderte `CREATE TABLE`
+verhindert, dass er aus dem falschen Grund grün wird. Deshalb liegt er in einer eigenen Datei und nicht im
+`DATABASE_URL`-gegatterten `test_migrations_smoke.py`, wo er bei `verify.sh monitoring` als SKIP durchgelaufen
+wäre — und SKIP ist nicht grün.
+Revert-Probe im eigenen Worktree (alte `env.py`, neue Tests): rot — erst gegen den Migrations-Smoke-Entwurf
+zusammen mit dem ursprünglichen CI-Fehler, danach noch einmal gegen die endgültige Offline-Fassung.
+Ergebnis: `verify.sh monitoring --strict` 463 passed, 3 skipped (der Canary läuft jetzt mit, kein SKIP);
+CI-äquivalent (`-p no:randomly`, `DATABASE_URL` gesetzt) 466 passed.
+Verify: bash scripts/dev/verify.sh monitoring --strict
+Doku: keine (Migrations-Infrastruktur, kein Außenverhalten)
+
 ## Abschluss
-T1–T3 fertig, drei Commits auf `fix/ssrf-resolver-isolation`. `blockiert` statt `erledigt`, weil T4 und T5 als
-`[?]` offen sind — beide sind Entscheidungen, kein Rest der Umsetzung; entscheidet Kevin sie (eigene
+T1–T3 und T6 fertig, fünf Commits auf `fix/ssrf-resolver-isolation` (T6 kam nach dem ersten, roten CI-Lauf
+dazu). `blockiert` statt `erledigt`, weil T4 und T5 als `[?]` offen sind — beide sind Entscheidungen, kein Rest der Umsetzung; entscheidet Kevin sie (eigene
 Roadmap-Zeile oder verworfen), werden daraus `[~]` und der Kopf geht auf `erledigt`.
 
-Evidenz (alle real gefahren, Endstand a452c1cf):
+Evidenz (alle real gefahren; Zahlen für server/ca-issuer/agent/scripts/desktop/web vom Stand a452c1cf, monitoring nach T6):
 - `verify.sh server --strict` → 524 passed, 2 skipped · `run.sh[quick]: 3 passed, 0 failed, 10 skipped, 2 test-skips`
-- `verify.sh monitoring --strict` → 462 passed, 3 skipped · `verify.sh ca-issuer --strict` → 65 passed
+- `verify.sh monitoring --strict` → 463 passed, 3 skipped · `verify.sh ca-issuer --strict` → 65 passed
 - `verify.sh agent --strict` → gofmt + go vet/test/cross PASS · `verify.sh scripts --strict` → shellcheck + 19 Hermetik-Suiten PASS
 - `verify.sh desktop-rs --strict` → 130 passed · `desktop-ui` → 382 passed (59 Dateien) · `desktop-e2e` lint PASS · `web` → 88 passed (18 Dateien)
 - Alle 13 Pflichtschritte des quick-Layers grün, kein übersprungener Pflichtschritt.
@@ -97,5 +127,4 @@ compose/Dockerfile, kein `scripts/install|update`, kein FRP/PKI) — nur zwei in
 CHANGELOG und Ledger. Der Kopf sagt `Heavy: keine`; Hook-Pfad und Monitoring-Checks laufen im `all`-Layer des
 nächsten Wochenlaufs.
 
-Push und Draft-PR sind **nicht** ausgeführt: diese Session läuft im Bypass-Modus, der Permission-Prompt, der
-diesen Schritt sonst zu Kevins Entscheidung macht, käme gar nicht. Die Befehle stehen im Chat.
+Push und Draft-PR auf Kevins ausdrückliche Freigabe ausgeführt: PR #19 (Draft). Der erste CI-Lauf war rot im Job „Monitoring (pytest)“ — Ursache in T6 behoben, kein Flake; alle übrigen 21 Checks grün.
