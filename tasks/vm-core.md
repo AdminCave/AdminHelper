@@ -23,7 +23,7 @@ Komponente: scripts · Dateien: scripts/vm/tests/fixtures/*.json (neu), scripts/
 Verify: python3 -c 'import json,glob; [json.load(open(f)) for f in glob.glob("scripts/vm/tests/fixtures/*.json")]; print("ok")'   und   grep -rEn '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|PVEAPIToken=' scripts/vm/tests/fixtures/ | grep -v '127\.0\.0\.1' (leer — der Loopback bleibt, der IP-Filter in T4 hängt genau daran)
 Doku: keine (intern)
 
-### T2 — `vm.py` Kern: Konfiguration, HTTP, UPID, Fehlerklassen  [ ]
+### T2 — `vm.py` Kern: Konfiguration, HTTP, UPID, Fehlerklassen  [x] (Config/Api/wait_task/Fehlerklassen + Verb-Stubs; 45 Tests)
 Komponente: scripts · Dateien: scripts/vm/vm.py (neu, SPDX), scripts/vm/tests/test_vm.py (neu, SPDX), scripts/vm/tests/conftest.py (neu, SPDX)
 Änderung: Argparse-Skelett mit allen Verben (Stubs), `Config` aus `.claude/settings.local.json` → `env` mit Umgebungsvariablen-Override; `Api` mit `urllib` (`Authorization: PVEAPIToken=…`, 30-s-Timeout, `ssl` mit `cafile=AH_PVE_CA` und gelöschtem `VERIFY_X509_STRICT` — Grund als Kommentar, DELETE-Parameter in der Query, genau **ein** Retry bei 5xx/Verbindungsfehler, `{"data": …}`-Entpacken), `wait_task(upid, limit)` mit Backoff 1→5 s, Lock-Retry (`can't lock file` → bis 60 s), Fehlerklassen als Exceptions → Exit 0/1/2/74 in `main()`, Zeit-Bounds aus §11.2 als Konstanten. Tests: Fake-`urlopen` aus Fixtures (Token-Header, Retry genau 1×, 403 → 74 mit Privileg-Name, DELETE-Query, Lock-Retry, Timeout).
 Verify: bash scripts/dev/verify.sh scripts --strict   (nach T9; bis dahin: python3 -m pytest scripts/vm/tests -q)
