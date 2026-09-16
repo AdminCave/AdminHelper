@@ -10,7 +10,7 @@ import json
 
 import pytest
 import vm
-from conftest import fixture
+from conftest import fixture, tagged_resources
 
 
 # ── configuration ────────────────────────────────────────────────────────────
@@ -345,3 +345,330 @@ def test_a_verb_error_becomes_its_exit_code(monkeypatch, capsys):
     )
     assert vm.main(["list"]) == 74
     assert "capacity: 2 GB short" in capsys.readouterr().err
+
+
+# ── profiles.json ────────────────────────────────────────────────────────────
+def test_every_role_has_a_shape_and_every_profile_a_tag():
+    profiles = vm.load_profiles()
+    for role, shape in profiles["roles"].items():
+        assert shape["memory"] >= 2048 and shape["cores"] >= 1, role
+    for name, meta in profiles["profiles"].items():
+        assert meta["template_tag"] == "ah-tpl-" + name
+
+
+def test_the_roles_the_wrappers_use_all_exist():
+    # heavy.sh's scenarios and bake name these; a rename here would strand them.
+    roles = vm.load_profiles()["roles"]
+    for role in (
+        "server",
+        "desktop",
+        "agent",
+        "tunnel",
+        "visitor",
+        "moncheck",
+        "rpm",
+        "probe",
+        "bake",
+    ):
+        assert role in roles
+
+
+def test_an_unreadable_profiles_file_is_a_usage_error(tmp_path):
+    broken = tmp_path / "profiles.json"
+    broken.write_text("{not json")
+    with pytest.raises(vm.Usage):
+        vm.load_profiles(str(broken))
+
+
+# ── tags ─────────────────────────────────────────────────────────────────────
+def test_tags_are_read_as_a_set():
+    entry = next(v for v in fixture("cluster_resources")["body"]["data"] if v["vmid"] == 3001)
+    tags = vm.tags_of(entry)
+    assert tags == {
+        "ah",
+        "lane-pilot",
+        "role-server",
+        "sc-capstone",
+        "tpl-linux-full",
+        "ttl-1789557020",
+    }
+    assert vm.tag_value(tags, "role-") == "server"
+    assert vm.tag_value(tags, "ttl-") == "1789557020"
+    assert vm.tag_value(tags, "nothing-", "fallback") == "fallback"
+
+
+def test_an_untagged_vm_has_no_tags():
+    entry = next(v for v in fixture("cluster_resources")["body"]["data"] if v["vmid"] == 9400)
+    assert vm.tags_of(entry) == set()
+    assert vm.tags_of({}) == set()
+    assert vm.tags_of({"tags": None}) == set()
+
+
+def test_the_newest_build_of_a_template_wins():
+    vms = [
+        {"vmid": 3901, "template": 1, "tags": "ah-tpl-linux-full;built-20260101"},
+        {"vmid": 3902, "template": 1, "tags": "ah-tpl-linux-full;built-20261231"},
+        {"vmid": 3903, "template": 1, "tags": "ah-tpl-linux-server;built-20270101"},
+        {"vmid": 3904, "template": 0, "tags": "ah-tpl-linux-full;built-20270202"},
+    ]
+    assert vm.newest_template(vms, "ah-tpl-linux-full")["vmid"] == 3902  # not the running clone
+    assert vm.newest_template(vms, "ah-tpl-base-ubuntu") is None
+
+
+# ── doctor ───────────────────────────────────────────────────────────────────
+def green_doctor(http, resources=None, node=None):
+    """Wire every call a green `doctor` makes, in the order it makes them."""
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", "permissions")
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    reply = (
+        resources
+        if resources is not None
+        else tagged_resources(
+            extra_templates=[
+                {
+                    "vmid": 3900,
+                    "name": "ah-tpl-linux-server-20260916",
+                    "tags": "ah-tpl-linux-server;built-20260916",
+                }
+            ]
+        )
+    )
+    http.add("GET", "/cluster/resources", body=reply["body"], status=reply["status"])
+    for vmid in (3900, 9400, 9401, 9402):
+        http.add("GET", "/qemu/%d/config" % vmid, "template_config")
+    http.add("GET", "/nodes/<node>/status", node or "node_status")
+    return http
+
+
+def doctor(cfg, api, *argv):
+    return vm.verb_doctor(cfg, api, vm.build_parser().parse_args(["doctor", *argv]))
+
+
+def test_doctor_is_green_when_everything_is_in_place(cfg, api, http, capsys):
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe") == 0
+    out = capsys.readouterr().out
+    assert "FAIL" not in out
+    for check in (
+        "api",
+        "privileges",
+        "storage",
+        "templates",
+        "template-config",
+        "vmids",
+        "capacity",
+    ):
+        assert check + ":" in out
+
+
+def test_doctor_names_the_missing_privileges(cfg, api, http, capsys):
+    stripped = fixture("permissions")
+    stripped["body"]["data"]["/pool/adminhelper-ci"]["VM.Clone"] = 0
+    del stripped["body"]["data"]["/pool/adminhelper-ci"]["VM.Snapshot.Rollback"]
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", body=stripped["body"])
+    green_doctor(http)  # the overrides above were added first and win
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    out = capsys.readouterr().out
+    assert "FAIL privileges" in out
+    assert "VM.Clone on /pool/adminhelper-ci" in out
+    assert "VM.Snapshot.Rollback on /pool/adminhelper-ci" in out
+
+
+def test_doctor_reports_a_storage_that_cannot_snapshot(cfg, api, http, capsys):
+    plain = fixture("storage_status")
+    plain["body"]["data"]["type"] = "lvm"
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", "permissions")
+    http.add("GET", "/storage/raid5/status", body=plain["body"])
+    green_doctor(http)  # the overrides above were added first and win
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    assert "FAIL storage: raid5 is lvm, linked=no snapshots=no" in capsys.readouterr().out
+
+
+def test_doctor_names_the_profiles_without_a_template(cfg, api, http, capsys):
+    green_doctor(http, resources=tagged_resources())  # no linux-server template baked yet
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    out = capsys.readouterr().out
+    assert "FAIL templates: no template tagged for linux-server" in out
+    assert "linux-full 20260910 (9402)" in out
+    assert "base-ubuntu undated (9400)" in out  # the base images carry no build date
+
+
+def test_doctor_reports_a_template_without_a_guest_agent(cfg, api, http, capsys):
+    blind = fixture("template_config")
+    del blind["body"]["data"]["agent"]
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", "permissions")
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    reply = tagged_resources(drop=(3000, 3001, 9400, 9401))
+    http.add("GET", "/cluster/resources", body=reply["body"])
+    http.add("GET", "/qemu/9402/config", body=blind["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    assert "linux-full: no guest agent" in capsys.readouterr().out
+
+
+def test_doctor_reports_a_template_on_the_wrong_bridge(cfg, api, http, capsys):
+    stray = fixture("template_config")
+    stray["body"]["data"]["net0"] = "virtio=<mac>,bridge=vmbr0"
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", "permissions")
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    reply = tagged_resources(drop=(3000, 3001, 9400, 9401))
+    http.add("GET", "/cluster/resources", body=reply["body"])
+    http.add("GET", "/qemu/9402/config", body=stray["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    assert "linux-full: not on bridge vmbr1" in capsys.readouterr().out
+
+
+def test_capacity_charges_what_our_vms_have_not_taken_yet(cfg, api, http, capsys):
+    # 3000 runs (its RAM is already out of `free`), 3001 is stopped and still owed.
+    # 3050 is a crabbox leftover without the `ah` tag: the pool is shared during
+    # 2a (spec, trade-off 3) and a VM that is not ours is not ours to budget for.
+    crowded = tagged_resources(
+        extra_templates=[
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-linux-server-20260916",
+                "tags": "ah-tpl-linux-server;built-20260916",
+            },
+            {
+                "vmid": 3050,
+                "name": "crabbox-ah-warm-1",
+                "tags": "crabbox",
+                "template": 0,
+                "status": "running",
+                "maxmem": 8589934592,
+                "mem": 1048576,
+            },
+        ]
+    )
+    green_doctor(http, resources=crowded)
+    assert doctor(cfg, api, "--roles", "probe") == 0
+    detail = capsys.readouterr().out
+    # 3001 is stopped: all 2048 MiB still owed. 3000 runs and has touched 28 MiB,
+    # so 2020 of its 2048 are owed — charging 0 would be the dangerous reading.
+    assert "4068 owed by ours" in detail
+    assert "2048 for probe" in detail
+
+
+def test_capacity_refuses_what_the_node_cannot_carry(cfg, api, http, capsys):
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "desktop,server,desktop") == 74
+    out = capsys.readouterr().out
+    assert "FAIL capacity" in out
+    assert "16384 for desktop,server,desktop" in out
+    assert "ours: 3000" in out and "3001" in out
+
+
+def test_an_unknown_role_is_a_usage_error(cfg, api, http):
+    green_doctor(http)
+    with pytest.raises(vm.Usage) as caught:
+        doctor(cfg, api, "--roles", "datenbank")
+    assert "unknown role 'datenbank'" in str(caught.value)
+
+
+def test_doctor_json_carries_every_line(cfg, api, http, capsys):
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe", "--json") == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["ok"] is True
+    assert [line["check"] for line in report["checks"]] == [
+        "api",
+        "privileges",
+        "storage",
+        "templates",
+        "template-config",
+        "vmids",
+        "capacity",
+    ]
+    assert all(line["ok"] for line in report["checks"])
+
+
+def test_a_dead_api_fails_one_check_and_still_reports_the_rest(cfg, api, http, clock, capsys):
+    http.add("GET", "/version", status=500, body='{"message":"pveproxy is down"}')
+    http.add("GET", "/access/permissions", "permissions")
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    reply = tagged_resources()
+    http.add("GET", "/cluster/resources", body=reply["body"])
+    for vmid in (9400, 9401, 9402):
+        http.add("GET", "/qemu/%d/config" % vmid, "template_config")
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    out = capsys.readouterr().out
+    assert "FAIL api" in out and "pveproxy is down" in out
+    assert "ok   privileges" in out  # the examination did not stop at the first FAIL
+
+
+def test_a_full_clone_band_is_reported(cfg, api, http, capsys):
+    crowded = tagged_resources()
+    crowded["body"]["data"] += [
+        {
+            "vmid": v,
+            "name": "ah-probe-main-%04x" % v,
+            "tags": "ah;role-probe",
+            "template": 0,
+            "status": "running",
+            "maxmem": 0,
+            "pool": "adminhelper-ci",
+        }
+        for v in range(3000, 3100)
+    ]
+    green_doctor(http, resources=crowded)
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    assert "FAIL vmids: no free VMID in 3000-3099" in capsys.readouterr().out
+
+
+def test_capacity_keeps_the_node_reserve(cfg, api, http, capsys):
+    # 12826 free - 4068 owed - 8192 for desktop,agent leaves 566 MiB — enough
+    # for the VMs and not enough for the node. Without RESERVE_MB this passes.
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "desktop,agent") == 74
+    assert "4096 reserve" in capsys.readouterr().out
+
+
+def test_a_storage_without_snapshots_only_fails_while_linked_clones_are_on(cfg, api, http, capsys):
+    plain = fixture("storage_status")
+    plain["body"]["data"]["type"] = "lvm"
+    cfg.values["AH_VM_LINKED"] = "0"
+    http.add("GET", "/storage/raid5/status", body=plain["body"])
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe") == 0
+    out = capsys.readouterr().out
+    assert "ok   storage: raid5 is lvm, linked=no snapshots=no" in out
+    assert "AH_VM_LINKED" not in out
+
+
+def test_an_unreachable_pool_fails_every_check_that_needs_it(cfg, api, http, clock, capsys):
+    http.add("GET", "/version", "version")
+    http.add("GET", "/access/permissions", "permissions")
+    http.add("GET", "/storage/raid5/status", "storage_status")
+    http.add("GET", "/cluster/resources", status=500, body='{"message":"not quorate"}')
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    out = capsys.readouterr().out
+    for check in ("templates", "vmids", "capacity"):
+        assert "FAIL %s: cluster resources unavailable" % check in out, out
+    # Fetched once despite three checks needing it (plus the single 5xx retry).
+    assert len(http.paths("GET")) == 6
+
+
+def test_a_template_with_the_boolean_agent_shorthand_is_accepted(cfg, api, http, capsys):
+    short = fixture("template_config")
+    short["body"]["data"]["agent"] = "1"
+    http.add("GET", "/qemu/9402/config", body=short["body"])
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe") == 0
+    assert "FAIL" not in capsys.readouterr().out
+
+
+def test_a_neighbouring_bridge_name_is_not_a_match(cfg, api, http, capsys):
+    stray = fixture("template_config")
+    stray["body"]["data"]["net0"] = "virtio=<mac>,bridge=vmbr10"
+    http.add("GET", "/qemu/9402/config", body=stray["body"])
+    green_doctor(http)
+    assert doctor(cfg, api, "--roles", "probe") == 74
+    assert "linux-full: not on bridge vmbr1" in capsys.readouterr().out

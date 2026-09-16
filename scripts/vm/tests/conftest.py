@@ -7,7 +7,9 @@
 Nothing here invents a Proxmox answer. Every reply either comes from
 fixtures/<name>.json (recorded against PVE 9.2.3, see README.md) or is an
 explicit `status=`/`body=` a test wrote on purpose to describe a case the
-recording could not reach, such as a 500 from a restarting pveproxy.
+recording could not reach, such as a 500 from a restarting pveproxy. The third
+kind is `tagged_resources()`: a recorded reply with a named edit on top, for
+the states that only exist after a later task has run.
 """
 
 from __future__ import annotations
@@ -111,6 +113,35 @@ class FakeHttp:
 
     def paths(self, method: str | None = None) -> list[str]:
         return [c.path for c in self.calls if method is None or c.method == method]
+
+
+# The tag layout T8 gives the three existing templates, plus the linux-server
+# template T12 bakes. Written out here rather than recorded, because the
+# recording predates the tagging — everything else about these entries is the
+# recorded one.
+# The base images get no `built-` tag — they are not ours to date.
+TEMPLATE_TAGS = {
+    9400: "ah-tpl-base-ubuntu",
+    9401: "ah-tpl-base-debian",
+    9402: "crabbox;ah-tpl-linux-full;built-20260910",
+}
+
+
+def tagged_resources(extra_templates=(), drop=(), tags=None):
+    """The recorded /cluster/resources, as it reads once the templates are tagged."""
+    reply = fixture("cluster_resources")
+    entries = [v for v in reply["body"]["data"] if v["vmid"] not in drop]
+    for entry in entries:
+        if entry["vmid"] in TEMPLATE_TAGS:
+            entry["tags"] = TEMPLATE_TAGS[entry["vmid"]]
+        if entry["vmid"] in (tags or {}):
+            entry["tags"] = tags[entry["vmid"]]
+    for template in extra_templates:
+        base = dict(next(v for v in entries if v["vmid"] == 9402))
+        base.update(template)
+        entries.append(base)
+    reply["body"]["data"] = entries
+    return reply
 
 
 class FakeClock:

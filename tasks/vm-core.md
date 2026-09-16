@@ -29,7 +29,8 @@ Komponente: scripts · Dateien: scripts/vm/vm.py (neu, SPDX), scripts/vm/tests/t
 Verify: bash scripts/dev/verify.sh scripts --strict   (nach T9; bis dahin: python3 -m pytest scripts/vm/tests -q)
 Doku: keine (intern)
 
-### T3 — `doctor`  [ ]
+### T3 — `doctor`  [x] (profiles.json + 7 Checks, live gegen den Pool gefahren; 68 Tests)
+Präzisierung der Kapazitätsformel: der Ledger sagt „freies RAM − 4 GB − RAM **aller** `ah`-VMs". Gerechnet wird mit dem **noch nicht bezogenen** RAM (`maxmem − mem`) jeder `ah`-VM. Für gestoppte VMs ist das ihr volles `maxmem` (der Ledger-Wortlaut), für laufende nur der noch offene Rest — ihr angefasstes RAM ist bereits aus `memory.free` heraus und würde sonst doppelt zählen, während „laufende gar nicht zählen" die frisch gebootete 6-GB-Box verschenken würde. Die Detailzeile nennt jeden Summanden einzeln. Im PR-Body erwähnt.
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/tests/test_vm.py, scripts/vm/profiles.json (neu)
 Änderung: `profiles.json`: Profil → Template-Tag, Bootstrap-Profil, Rollen mit RAM/CPU (`server` 4096/2, `desktop` 6144/4, `agent|tunnel|visitor|moncheck|rpm` 2048/2, `probe` 2048/2). `doctor` prüft nacheinander und druckt je Zeile `ok|FAIL <check>: <detail>`: API + Token (`/version`), Rechte je Klasse aus `/access/permissions` gegen die Soll-Privilegien auf `/pool/<pool>`, `/storage/<storage>`, `/nodes/<node>` (fehlende namentlich), Storage-Typ → `linked=yes|no snapshots=yes|no` (lvmthin/zfspool/dir-qcow2 = ja), Templates im Pool je Profil-Tag (neuestes `built-`), `agent` in der Template-Config, Bridge des Templates == `AH_PVE_BRIDGE`, VMID-Bereich frei/belegt, **Kapazität**: freies RAM − 4 GB − RAM aller `ah`-VMs ≥ Bedarf der übergebenen Rollen (`--roles server,agent` … Default: eine `probe`) → sonst `FAIL capacity` mit Liste der belegenden VMs. Exit 74 bei mindestens einem FAIL. `--json` gibt die Zeilen als Objekt aus (für Wrapper).
 Verify: bash scripts/dev/verify.sh scripts --strict

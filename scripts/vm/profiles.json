@@ -1,0 +1,35 @@
+{
+  "profiles": {
+    "linux-full": {
+      "template_tag": "ah-tpl-linux-full",
+      "bootstrap": "full",
+      "base": "base-ubuntu",
+      "note": "the fat template: toolchains, docker, caches — what the heavy tiers run on"
+    },
+    "linux-server": {
+      "template_tag": "ah-tpl-linux-server",
+      "bootstrap": "server",
+      "base": "base-ubuntu",
+      "note": "server/agent roles: no desktop, no display, no browser"
+    },
+    "base-ubuntu": {
+      "template_tag": "ah-tpl-base-ubuntu",
+      "note": "plain cloud image, the source every bake clones from"
+    },
+    "base-debian": {
+      "template_tag": "ah-tpl-base-debian",
+      "note": "plain cloud image for the .deb/apt-repo roles"
+    }
+  },
+  "roles": {
+    "server": {"memory": 4096, "cores": 2},
+    "desktop": {"memory": 6144, "cores": 4},
+    "agent": {"memory": 2048, "cores": 2},
+    "tunnel": {"memory": 2048, "cores": 2},
+    "visitor": {"memory": 2048, "cores": 2},
+    "moncheck": {"memory": 2048, "cores": 2},
+    "rpm": {"memory": 2048, "cores": 2},
+    "probe": {"memory": 2048, "cores": 2},
+    "bake": {"memory": 4096, "cores": 2}
+  }
+}

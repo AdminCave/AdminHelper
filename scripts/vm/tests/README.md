@@ -26,6 +26,13 @@ JSON, wo Proxmox JSON liefert (`{"data": …}`), und ein **String**, wo es keins
 Fehlerkörper kommen als roher Text zurück (`err_delete_body.json` ist nicht einmal JSON) —
 genau der Fall, an dem ein naives `json.loads` in `vm.py` stirbt.
 
+## Wenn ein Test eine Antwort braucht, die es noch nicht gibt
+
+`conftest.tagged_resources()` legt auf die aufgezeichnete `/cluster/resources`-Antwort eine
+benannte Änderung — die Template-Tags, die T8 erst setzt, und das `linux-server`-Template, das
+T12 erst backt. Das ist der einzige erlaubte Weg, eine Zukunft zu testen: die Änderung steht
+sichtbar im `conftest`, nicht in einer Datei, die so tut, als sei sie aufgezeichnet.
+
 ## Bereinigungsregel
 
 Ersetzt wurden Hostname (`<node>`), IPv4/IPv6 (`<ip>`, `<ipv6-ll>`; `127.0.0.1` bleibt, weil

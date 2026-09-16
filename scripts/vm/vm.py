@@ -332,6 +332,82 @@ def _redact(url: str) -> str:
     return url.split("?", 1)[0]
 
 
+# ── the pool's own vocabulary ────────────────────────────────────────────────
+PROFILES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles.json")
+OURS = "ah"  # the tag that separates our VMs from the homelab's
+RESERVE_MB = 4096  # RAM the node keeps for itself, whatever we plan
+# Storage types that can hold a linked clone and a snapshot. File-based stores
+# manage both only with qcow2 images, which the status endpoint does not reveal —
+# they are reported as capable and the first clone would say otherwise.
+SNAPSHOT_STORAGE = {"lvmthin", "zfspool", "rbd", "btrfs", "dir", "nfs", "cifs"}
+# Privileges each verb needs, by the path the ACL hangs on.
+NEEDED_PRIVILEGES = {
+    "pool": (
+        "VM.Allocate",
+        "VM.Audit",
+        "VM.Clone",
+        "VM.Config.CPU",
+        "VM.Config.Cloudinit",
+        "VM.Config.Disk",
+        "VM.Config.Memory",
+        "VM.Config.Network",
+        "VM.Config.Options",
+        "VM.GuestAgent.Audit",
+        "VM.PowerMgmt",
+        "VM.Snapshot",
+        "VM.Snapshot.Rollback",
+    ),
+    "storage": ("Datastore.AllocateSpace", "Datastore.Audit"),
+    "node": ("Sys.Audit", "VM.Audit"),
+}
+
+
+def load_profiles(path: str = PROFILES_FILE) -> dict:
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise Usage("cannot read %s: %s" % (path, exc)) from exc
+
+
+def tags_of(vm_entry: dict) -> set:
+    """Tags are a SET: PVE hands them back sorted alphabetically, never as given."""
+    return {t for t in (vm_entry.get("tags") or "").split(";") if t}
+
+
+def tag_value(tags: set, prefix: str, default: str = "") -> str:
+    for tag in tags:
+        if tag.startswith(prefix):
+            return tag[len(prefix) :]
+    return default
+
+
+def pool_vms(cfg: Config, api: Api) -> list:
+    """Every VM the token can see in our pool, tags included.
+
+    /pools/<pool> would read more naturally, but it answers without tags — and
+    tags are the only state this tool has (see scripts/vm/tests/README.md).
+    """
+    pool = cfg["AH_PVE_POOL"]
+    entries = api.request("GET", "/cluster/resources", params={"type": "vm"}) or []
+    return [v for v in entries if v.get("pool") == pool]
+
+
+def newest_template(vms: list, template_tag: str) -> dict | None:
+    """The template carrying `template_tag`, newest `built-<yyyymmdd>` first."""
+    candidates = [v for v in vms if v.get("template") and template_tag in tags_of(v)]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda v: (tag_value(tags_of(v), "built-"), v["vmid"]))
+
+
+def role_shape(profiles: dict, role: str) -> dict:
+    shape = profiles["roles"].get(role)
+    if not shape:
+        raise Usage("unknown role %r — known: %s" % (role, ", ".join(sorted(profiles["roles"]))))
+    return shape
+
+
 # ── verbs ────────────────────────────────────────────────────────────────────
 VERBS = (
     "doctor",
@@ -349,6 +425,196 @@ VERBS = (
     "list",
     "bake",
 )
+
+
+# ── doctor ───────────────────────────────────────────────────────────────────
+class Checks:
+    """Collects `ok|FAIL <name>: <detail>` lines; one FAIL decides the exit code."""
+
+    def __init__(self):
+        self.lines: list[dict] = []
+
+    def add(self, ok: bool, name: str, detail: str):
+        self.lines.append({"check": name, "ok": bool(ok), "detail": detail})
+        return ok
+
+    def run(self, name: str, probe):
+        """A check that raises is a FAIL, not the end of the examination — the
+        whole point of `doctor` is to say everything that is wrong in one pass."""
+        try:
+            ok, detail = probe()
+        except VmError as exc:
+            return self.add(False, name, str(exc))
+        return self.add(ok, name, detail)
+
+    @property
+    def failed(self) -> bool:
+        return any(not line["ok"] for line in self.lines)
+
+
+def verb_doctor(cfg: Config, api: Api, args) -> int:
+    profiles = load_profiles()
+    roles = [r.strip() for r in (args.roles or "").split(",") if r.strip()]
+    checks = Checks()
+    state: dict = {}
+
+    def api_check():
+        version = api.request("GET", "/version")
+        return True, "PVE %s on node %s" % (version.get("version", "?"), cfg["AH_PVE_NODE"])
+
+    def privilege_check():
+        granted = api.request("GET", "/access/permissions") or {}
+        paths = {
+            "pool": "/pool/" + cfg["AH_PVE_POOL"],
+            "storage": "/storage/" + cfg["AH_PVE_STORAGE"],
+            "node": "/nodes/" + cfg["AH_PVE_NODE"],
+        }
+        missing = []
+        for kind, path in paths.items():
+            have = {name for name, on in (granted.get(path) or {}).items() if on}
+            missing += ["%s on %s" % (n, path) for n in NEEDED_PRIVILEGES[kind] if n not in have]
+        if missing:
+            return False, "missing " + ", ".join(missing)
+        return True, "all privileges on %s" % ", ".join(sorted(paths.values()))
+
+    def storage_check():
+        storage = cfg["AH_PVE_STORAGE"]
+        status = api.request("GET", "/nodes/%s/storage/%s/status" % (cfg["AH_PVE_NODE"], storage))
+        kind = status.get("type", "?")
+        capable = kind in SNAPSHOT_STORAGE
+        free_gb = (status.get("avail") or 0) / 1024**3
+        yes_no = "yes" if capable else "no"
+        detail = "%s is %s, linked=%s snapshots=%s, %.0f GiB free" % (
+            storage,
+            kind,
+            yes_no,
+            yes_no,
+            free_gb,
+        )
+        # A store that cannot do either is a supported way to run (full clones,
+        # no snapshots) — it is only wrong while AH_VM_LINKED asks for the
+        # opposite. T6 refuses the individual snapshot verbs at the time.
+        if not capable and cfg.flag("AH_VM_LINKED", True):
+            return False, detail + " — set AH_VM_LINKED=0 for full clones"
+        return True, detail
+
+    def vms():
+        """The pool, fetched once. A failure is cached too — three checks need
+        this list, and each must say it is missing rather than read `ok` off an
+        empty default."""
+        if "vms" not in state:
+            try:
+                state["vms"] = pool_vms(cfg, api)
+            except VmError as exc:
+                state["vms"] = None
+                state["vms_error"] = str(exc)
+        if state["vms"] is None:
+            raise Infra("cluster resources unavailable: %s" % state["vms_error"])
+        return state["vms"]
+
+    def template_check():
+        found, missing = [], []
+        for profile, meta in sorted(profiles["profiles"].items()):
+            template = newest_template(vms(), meta["template_tag"])
+            if template is None:
+                missing.append(profile)
+                continue
+            state.setdefault("templates", {})[profile] = template
+            built = tag_value(tags_of(template), "built-") or "undated"
+            found.append("%s %s (%d)" % (profile, built, template["vmid"]))
+        if missing:
+            return False, "no template tagged for %s; have %s" % (
+                ", ".join(missing),
+                ", ".join(found) or "none",
+            )
+        return True, ", ".join(found)
+
+    def template_config_check():
+        templates = state.get("templates") or {}
+        if not templates:
+            return False, "no template to inspect"
+        complaints = []
+        for profile, template in sorted(templates.items()):
+            config = api.request(
+                "GET", "/nodes/%s/qemu/%d/config" % (cfg["AH_PVE_NODE"], template["vmid"])
+            )
+            # PVE stores the property string "enabled=1" or the bare boolean "1".
+            agent = str(config.get("agent") or "")
+            if "enabled=1" not in agent and agent.strip() != "1":
+                complaints.append("%s: no guest agent" % profile)
+            bridge = cfg["AH_PVE_BRIDGE"]
+            nets = [str(v) for k, v in config.items() if k.startswith("net")]
+            # Exact, comma-separated: a substring test lets vmbr1 match vmbr10.
+            if not any("bridge=" + bridge in n.split(",") for n in nets):
+                complaints.append("%s: not on bridge %s" % (profile, bridge))
+        if complaints:
+            return False, "; ".join(complaints)
+        return True, "guest agent on, bridge %s, %d template(s)" % (
+            cfg["AH_PVE_BRIDGE"],
+            len(templates),
+        )
+
+    def vmid_check():
+        low, high = cfg.vmid_range()
+        taken = {v["vmid"] for v in vms() if low <= v["vmid"] <= high}
+        free = next((i for i in range(low, low + 100) if i not in taken), None)
+        if free is None:
+            return False, "no free VMID in %d-%d (clone band full)" % (low, low + 99)
+        return True, "%d-%d: %d taken, next clone %d, templates %d-%d" % (
+            low,
+            high,
+            len(taken),
+            free,
+            high - 99,
+            high,
+        )
+
+    def capacity_check():
+        node = api.request("GET", "/nodes/%s/status" % cfg["AH_PVE_NODE"])
+        free_mb = (node.get("memory", {}).get("free") or 0) // 1024**2
+        # What our VMs may still take, not what they were configured for: a
+        # running VM's touched RAM is already out of `free`, so charging its full
+        # maxmem again would refuse clones the node can carry — while charging
+        # nothing would hand out the 5 GB a freshly booted 6 GB box has not
+        # claimed yet. For a stopped VM `mem` is 0 and the term is its maxmem.
+        # `mem` rides the same lagging resource list as the tags do, which is
+        # good enough for a guard rail and not a promise.
+        ours = [v for v in vms() if OURS in tags_of(v) and not v.get("template")]
+        owed = [(v, max(0, (v.get("maxmem") or 0) - (v.get("mem") or 0)) // 1024**2) for v in ours]
+        owed_mb = sum(mb for _, mb in owed)
+        need_mb = sum(role_shape(profiles, r)["memory"] for r in roles)
+        spare = free_mb - RESERVE_MB - owed_mb - need_mb
+        detail = "%d MiB free - %d reserve - %d owed by ours - %d for %s = %d MiB" % (
+            free_mb,
+            RESERVE_MB,
+            owed_mb,
+            need_mb,
+            ",".join(roles) or "nothing",
+            spare,
+        )
+        if spare < 0 and owed_mb:
+            detail += " (ours: %s)" % ", ".join(
+                "%d %s %d MiB" % (v["vmid"], v.get("name", "?"), mb) for v, mb in owed if mb
+            )
+        return spare >= 0, detail
+
+    for role in roles:
+        role_shape(profiles, role)  # a typo in --roles is a usage error, not a FAIL line
+
+    checks.run("api", api_check)
+    checks.run("privileges", privilege_check)
+    checks.run("storage", storage_check)
+    checks.run("templates", template_check)
+    checks.run("template-config", template_config_check)
+    checks.run("vmids", vmid_check)
+    checks.run("capacity", capacity_check)
+
+    if args.as_json:
+        print(json.dumps({"ok": not checks.failed, "checks": checks.lines}, indent=2))
+    else:
+        for line in checks.lines:
+            print("%-4s %s: %s" % ("ok" if line["ok"] else "FAIL", line["check"], line["detail"]))
+    return 74 if checks.failed else 0
 
 
 def _stub(name):
@@ -439,6 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 VERB_TABLE = {name: _stub(name) for name in VERBS}
+VERB_TABLE["doctor"] = verb_doctor
 
 
 def main(argv=None) -> int:
