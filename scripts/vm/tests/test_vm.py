@@ -721,6 +721,11 @@ def test_clone_picks_the_lowest_free_vmid_and_tags_the_lease(keyed, api, http, c
     assert not any(t.startswith("sc-") for t in tags)  # no scenario, no tag
     assert put.body["memory"] == "2048" and put.body["cores"] == "2"
     assert put.body["agent"] == "enabled=1" and put.body["ipconfig0"] == "ip=dhcp"
+    # Never a ciuser: a lease inherits the template's own guest user, and the
+    # fat template's is `crabbox` — whose home holds ~/.cargo and ~/go. Forcing
+    # `adminhelper` here would hand every lease a cold, empty home (spec,
+    # trade-off 5).
+    assert "ciuser" not in put.body
 
 
 def test_the_public_key_is_sent_url_encoded(keyed, api, http, clock):
@@ -2124,3 +2129,213 @@ def test_ctrl_c_does_not_start_a_sweep(cfg, api, http, monkeypatch):
     # Someone who pressed Ctrl-C wants out, not another round of API calls.
     assert vm.main(["sync", "3000"]) == 2
     assert swept == []
+
+
+# ── bake ─────────────────────────────────────────────────────────────────────
+def bakeable(http, template_vmid=9400, tag_put=None):
+    """Every call a successful `bake` makes, in the order it makes them."""
+    # The first listing picks the source and the free template VMID; every
+    # later one has to know about the VM the bake just created.
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"], times=1)
+    baking = tagged_resources(
+        extra_templates=[
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-linux-full-%s" % time.strftime("%Y%m%d"),
+                "template": 0,
+                "status": "running",
+                "maxmem": 4294967296,
+                "mem": 0,
+                "tags": "ah;role-bake;lane-main;ttl-%d" % (int(time.time()) + 4 * 3600),
+            }
+        ]
+    )
+    http.add("GET", "/cluster/resources", body=baking["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/%d/clone" % template_vmid, "clone_post")
+    http.add("GET", "qmclone", "task_ok")
+    if tag_put is None:
+        http.add("PUT", "/qemu/3900/config", "config_put")
+    else:
+        # The first PUT sets the lease, the second replaces it with the
+        # template's tags — only the second one is handed the given reply.
+        http.add("PUT", "/qemu/3900/config", "config_put", times=1)
+        http.add("PUT", "/qemu/3900/config", **tag_put)
+    http.add("POST", "/qemu/3900/status/start", "status_start")
+    http.add("GET", "qmstart", "task_ok")
+    http.add("POST", "/qemu/3900/agent/ping", "agent_ping_ok")
+    http.add("GET", "/qemu/3900/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3900/config", "clone_config")
+    http.add("POST", "/qemu/3900/status/shutdown", "status_stop")
+    http.add("GET", "qmstop", "task_ok")
+    http.add("POST", "/qemu/3900/template", "status_start")
+    http.add("GET", "qmstart", "task_ok")
+    return http
+
+
+def bake_cleanup(http):
+    http.add("GET", "/qemu/3900/status/current", "status_current_running")
+    http.add("POST", "/qemu/3900/status/stop", "status_stop")
+    http.add("GET", "qmstop", "task_ok")
+    http.add("DELETE", "/qemu/3900", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    return http
+
+
+def test_bake_builds_a_template_in_the_template_band(keyed, api, http, clock, shell, capsys):
+    bakeable(http)
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    day = time.strftime("%Y%m%d")
+
+    posted = next(c for c in http.calls if c.method == "POST" and "/clone" in c.path)
+    assert posted.body["newid"] == "3900"  # the upper hundred, not a lease slot
+    puts = [c for c in http.calls if c.method == "PUT"]
+    lease = puts[0].body
+    assert lease["ciuser"] == "adminhelper"  # D20: our own user, not the template's
+    assert set(lease["tags"].split(";")) >= {"ah", "role-bake", "lane-main"}
+    assert vm.tag_value(set(lease["tags"].split(";")), "ttl-")  # a failed bake is reapable
+
+    # The lease tags come off only once the template exists. The other way
+    # round, a failed `template` would leave a running VM with no `ah` tag at
+    # all: reap skips it, destroy refuses it, and it is nobody's any more.
+    assert puts[-1].body == {"tags": "ah-tpl-linux-full;built-%s" % day}
+    shutdown_i = next(i for i, c in enumerate(http.calls) if c.path.endswith("/status/shutdown"))
+    template_i = next(i for i, c in enumerate(http.calls) if c.path.endswith("/template"))
+    tags_i = [i for i, c in enumerate(http.calls) if c.method == "PUT"][-1]
+    assert shutdown_i < template_i < tags_i
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        "3900 ah-tpl-linux-full-%s ah-tpl-linux-full;built-%s" % (day, day)
+    )
+
+
+def test_bake_runs_bootstrap_then_the_warmup_then_the_clean(keyed, api, http, clock, shell):
+    bakeable(http)
+    verb("bake", keyed, api, "--profile", "linux-server")
+    runs = shell.of("ssh")[1:]  # [0] is wait_for's own reachability probe
+    commands = [r["argv"][-1] for r in runs]
+    assert "AH_BOOTSTRAP_PROFILE=server bash scripts/tests/crabbox_bootstrap.sh" in commands[0]
+    assert "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit" in commands[1]
+    assert "truncate -s0 /etc/machine-id" in commands[2]
+    assert "cloud-init clean" in commands[2]
+    # A login shell, or run.sh dep-gates itself into `go=no cargo=no` and warms
+    # nothing: the bootstrap puts go on the PATH through /etc/profile.d.
+    assert all(c.startswith("bash -lc ") and "cd ~/adminhelper && " in c for c in commands)
+    assert [r["timeout"] for r in runs] == [2700, 1800, 600]
+    assert shell.of("rsync")  # the checkout is on the box before any of it runs
+
+
+def test_the_bootstrap_installs_the_guest_agent():
+    # Without it a baked template's clones never get an address, and `wait`
+    # would hang on every lease off it.
+    with open(os.path.join(vm.ROOT, "scripts/tests/crabbox_bootstrap.sh")) as fh:
+        bootstrap = fh.read()
+    assert "qemu-guest-agent" in bootstrap
+    assert "systemctl enable --now qemu-guest-agent" in bootstrap
+
+
+@pytest.mark.parametrize("failing", [0, 2])  # bootstrap and clean; the warm-up is not a gate
+def test_a_failed_step_takes_the_half_baked_vm_with_it(keyed, api, http, clock, shell, failing):
+    bakeable(http)
+    bake_cleanup(http)
+    shell.ssh_codes = [0] + [0] * failing + [1]  # the probe, then the step that fails
+    with pytest.raises(vm.Infra) as caught:
+        verb("bake", keyed, api, "--profile", "linux-full")
+    assert "VM 3900 was removed again" in str(caught.value)
+    assert [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_a_flaky_unit_test_does_not_throw_away_the_bootstrap(
+    keyed, api, http, clock, shell, capsys
+):
+    # crabbox_bake.sh ran the same step with `|| true`. Half an hour of
+    # bootstrap is not worth one red unit test — but it has to be visible.
+    bakeable(http)
+    shell.ssh_codes = [0, 0, 1]  # probe, bootstrap, warm-up
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    out = capsys.readouterr().out
+    assert "warm the caches exited 1" in out
+    assert "the template is just colder" in out
+
+
+def test_a_base_image_is_not_something_to_bake(keyed, api, http):
+    with pytest.raises(vm.Usage) as caught:
+        verb("bake", keyed, api, "--profile", "base-ubuntu")
+    assert "is a base image" in str(caught.value)
+    assert "linux-full" in str(caught.value) and "linux-server" in str(caught.value)
+    assert http.calls == []
+
+
+def test_an_unknown_profile_is_refused_before_anything_is_cloned(keyed, api, http):
+    with pytest.raises(vm.Usage) as caught:
+        verb("bake", keyed, api, "--profile", "windows-11")
+    assert "unknown profile" in str(caught.value)
+    assert http.calls == []
+
+
+def test_bake_clones_the_base_image_by_default(keyed, api, http, clock, shell):
+    bakeable(http, template_vmid=9400)
+    verb("bake", keyed, api, "--profile", "linux-full")
+    assert [c for c in http.calls if "/clone" in c.path][0].path.endswith("/qemu/9400/clone")
+
+
+def test_bake_can_be_pointed_at_another_source(keyed, api, http, clock, shell):
+    bakeable(http, template_vmid=9401)
+    verb("bake", keyed, api, "--profile", "linux-full", "--from", "ah-tpl-base-debian")
+    assert [c for c in http.calls if "/clone" in c.path][0].path.endswith("/qemu/9401/clone")
+
+
+def test_a_missing_source_template_is_infrastructure(keyed, api, http, clock):
+    http.add("GET", "/cluster/resources", body=tagged_resources(drop=(9400,))["body"])
+    with pytest.raises(vm.Infra) as caught:
+        verb("bake", keyed, api, "--profile", "linux-full")
+    assert "no template tagged ah-tpl-base-ubuntu" in str(caught.value)
+
+
+def test_bake_checks_capacity_before_it_clones(keyed, api, http, clock):
+    thin = fixture("node_status")
+    thin["body"]["data"]["memory"]["free"] = 5 * 1024**3  # 5 GiB: reserve plus a little
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", body=thin["body"])
+    with pytest.raises(vm.Infra) as caught:
+        verb("bake", keyed, api, "--profile", "linux-full")
+    assert str(caught.value).startswith("capacity:")
+    assert not [c for c in http.calls if c.method == "POST"]
+
+
+def test_a_failed_tag_put_takes_the_fresh_template_with_it(keyed, api, http, clock, shell):
+    bakeable(http, tag_put={"status": 500, "body": '{"message":"tag access denied"}'})
+    bake_cleanup(http)
+    with pytest.raises(vm.Infra) as caught:
+        verb("bake", keyed, api, "--profile", "linux-full")
+    assert "tag access denied" in str(caught.value)
+    assert "VM 3900 was removed again" in str(caught.value)
+    assert [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_the_bake_lease_is_long_enough_to_survive_a_bake(keyed, api, http, clock, shell):
+    bakeable(http)
+    verb("bake", keyed, api, "--profile", "linux-full")
+    tags = set(next(c for c in http.calls if c.method == "PUT").body["tags"].split(";"))
+    # A full bake measured ~45 minutes; a lease that expires mid-bake would let
+    # another lane's sweep take the VM with it.
+    assert int(vm.tag_value(tags, "ttl-")) - int(time.time()) > 3 * 3600
+
+
+def test_a_running_bake_is_not_reported_as_a_leak(cfg, api, http, clock, capsys, state_dir):
+    baking = fixture("cluster_resources")
+    for entry in baking["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "ah;role-bake;lane-main;ttl-%d" % (int(time.time()) + 3600)
+        if entry["vmid"] == 3001:
+            entry["tags"] = "ah;role-probe;lane-pilot;ttl-1"
+    http.add("GET", "/cluster/resources", body=baking["body"])
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    # 45 minutes of bake in one terminal must not make `list` red in another.
+    assert verb("list", cfg, api) == 0
+
+
+def test_the_template_band_never_reaches_below_the_range(cfg):
+    cfg.values["AH_PVE_VMID_RANGE"] = "3000-3050"
+    assert vm.free_template_vmid(cfg, []) == 3000
+    cfg.values["AH_PVE_VMID_RANGE"] = "3000-3999"
+    assert vm.free_template_vmid(cfg, []) == 3900

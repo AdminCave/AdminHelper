@@ -101,7 +101,15 @@ $SUDO apt-get install -y --no-install-recommends --no-upgrade \
   libayatana-appindicator3-dev libssl-dev patchelf file \
   xvfb webkit2gtk-driver at-spi2-core dbus-x11 gnome-keyring \
   minisign dpkg-dev apt-utils createrepo-c rpm locales \
-  xterm freerdp2-x11
+  xterm freerdp2-x11 qemu-guest-agent
+
+# qemu-guest-agent: vm.py asks the hypervisor for the guest's address instead of
+# parsing it out of a provider's output, so a template without it is a template
+# whose clones never become reachable. Both cloud images already carry it —
+# this line is what keeps a bake from losing it (scripts/vm/vm.py, `wait`).
+# Not silenced: if this fails, the template's clones never get an address, and
+# the next thing anyone sees is `vm.py wait` timing out 900 s later.
+$SUDO systemctl enable --now qemu-guest-agent || echo "WARNUNG: qemu-guest-agent not enabled"
 
 # xterm + freerdp2-x11: the desktop client SPAWNS these to open an SSH terminal
 # (terminal.rs profile list) resp. an RDP session. Without them desktop_e2e_connect

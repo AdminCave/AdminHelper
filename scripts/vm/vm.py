@@ -506,6 +506,21 @@ def free_vmid(cfg: Config, vms: list) -> int:
     raise Infra("no free VMID in %d-%d — the clone band is full" % (low, low + 99))
 
 
+def free_template_vmid(cfg: Config, vms: list) -> int:
+    """The smallest free VMID in the template band — the upper hundred.
+
+    Templates live apart from leases so a bake can never collide with a running
+    box, and so `doctor` can say which hundred is which.
+    """
+    low, high = cfg.vmid_range()
+    first = max(low, high - 99)  # a range narrower than 200 must not reach below it
+    taken = {v["vmid"] for v in vms}
+    for vmid in range(first, high + 1):
+        if vmid not in taken:
+            return vmid
+    raise Infra("no free VMID in %d-%d — the template band is full" % (first, high))
+
+
 def find_vm(cfg: Config, api: Api, ref: str, vms: list | None = None) -> dict:
     """A VMID or a name, resolved inside our pool — and nowhere else."""
     vms = pool_vms(cfg, api) if vms is None else vms
@@ -811,9 +826,50 @@ def verb_clone(cfg: Config, api: Api, args) -> int:
         )
     newid = free_vmid(cfg, vms)
     name = args.name or "ah-%s-%s-%04x" % (args.role, lane, os.getpid() & 0xFFFF)
+    tags = [
+        OURS,
+        "role-" + args.role,
+        "lane-" + lane,
+        "tpl-" + args.profile,
+        "ttl-%d" % (int(time.time()) + ttl_seconds),
+    ]
+    if scenario:
+        tags.append("sc-" + scenario)
+
+    create_vm(
+        cfg,
+        api,
+        template=template["vmid"],
+        newid=newid,
+        name=name,
+        tags=tags,
+        memory=memory,
+        cores=cores,
+        key=key,
+    )
+    print("%d %s" % (newid, name))
+    return 0
+
+
+def create_vm(
+    cfg: Config,
+    api: Api,
+    template: int,
+    newid: int,
+    name: str,
+    tags: list,
+    memory: int,
+    cores: int,
+    key: str,
+    ciuser: str | None = None,
+) -> None:
+    """Clone, tag, key and start one VM — and leave nothing behind if it fails.
+
+    Shared by `clone` and by `bake`, which needs the same rollback for a VM it
+    puts in the template band instead of the lease band.
+    """
     node = cfg["AH_PVE_NODE"]
     linked = cfg.flag("AH_VM_LINKED", True)
-
     body = {"newid": newid, "name": name, "full": 0 if linked else 1, "pool": cfg["AH_PVE_POOL"]}
     if not linked:
         body["storage"] = cfg["AH_PVE_STORAGE"]
@@ -829,41 +885,31 @@ def verb_clone(cfg: Config, api: Api, args) -> int:
         # lane cloning from it (or by T8 tagging it) — and by the argument
         # above, a submit that is refused has created nothing to clean up.
         upid = api.request(
-            "POST",
-            "/nodes/%s/qemu/%d/clone" % (node, template["vmid"]),
-            body=body,
-            lock_retry=True,
+            "POST", "/nodes/%s/qemu/%d/clone" % (node, template), body=body, lock_retry=True
         )
     except VmError as exc:
-        raise Infra("clone of %d into %d failed: %s" % (template["vmid"], newid, exc)) from exc
+        raise Infra("clone of %d into %d failed: %s" % (template, newid, exc)) from exc
 
     try:
         api.wait_task(upid, limit=CLONE_LIMIT_LINKED if linked else CLONE_LIMIT_FULL)
-        tags = [
-            "ah",
-            "role-" + args.role,
-            "lane-" + lane,
-            "tpl-" + args.profile,
-            "ttl-%d" % (int(time.time()) + ttl_seconds),
-        ]
-        if scenario:
-            tags.append("sc-" + scenario)
         config = {
             "tags": ";".join(tags),
             "agent": "enabled=1",
             "memory": memory,
             "cores": cores,
             "ipconfig0": "ip=dhcp",
+            # PVE stores this value url-encoded and decodes it once on the way
+            # into cloud-init; urlencode's own escaping is the second layer.
+            "sshkeys": urllib.parse.quote(key, safe=""),
         }
-        # PVE stores this value url-encoded and decodes it once on the way into
-        # cloud-init; urlencode's own escaping is the second layer.
-        config["sshkeys"] = urllib.parse.quote(key, safe="")
+        if ciuser:
+            config["ciuser"] = ciuser
         api.request("PUT", "/nodes/%s/qemu/%d/config" % (node, newid), body=config, lock_retry=True)
         api.task("POST", "/nodes/%s/qemu/%d/status/start" % (node, newid))
     except BaseException as exc:
         # BaseException, not VmError: a Ctrl-C between the clone and the tags
-        # leaves exactly the same untagged leftover, and so would a bug in the
-        # tag building. The interrupt is re-raised as itself afterwards.
+        # leaves exactly the same untagged leftover as a failed API call would.
+        # The interrupt is re-raised as itself afterwards.
         try:
             purge_vm(cfg, api, newid)
         except VmError as cleanup:
@@ -871,9 +917,6 @@ def verb_clone(cfg: Config, api: Api, args) -> int:
         if isinstance(exc, VmError):
             raise Infra("%s (VM %d was removed again)" % (exc, newid)) from exc
         raise
-
-    print("%d %s" % (newid, name))
-    return 0
 
 
 def public_key(cfg: Config) -> str:
@@ -906,9 +949,14 @@ def vm_ipv4(api: Api, node: str, vmid: int) -> str:
 
 def verb_wait(cfg: Config, api: Api, args) -> int:
     entry = find_vm(cfg, api, args.vm)
-    vmid = entry["vmid"]
+    print(wait_for(cfg, api, entry["vmid"], args.timeout))
+    return 0
+
+
+def wait_for(cfg: Config, api: Api, vmid: int, timeout: int) -> str:
+    """Guest agent, then an address, then ssh — one deadline for all three."""
     node = cfg["AH_PVE_NODE"]
-    deadline = time.monotonic() + args.timeout
+    deadline = time.monotonic() + timeout
 
     last = "no answer yet"
     while True:
@@ -920,9 +968,7 @@ def verb_wait(cfg: Config, api: Api, args) -> int:
             # running" while it boots — both are HTTP 500 and both are normal.
             last = str(exc)
         if time.monotonic() >= deadline:
-            raise Infra(
-                "no ip: guest agent of %d silent after %ds (%s)" % (vmid, args.timeout, last)
-            )
+            raise Infra("no ip: guest agent of %d silent after %ds (%s)" % (vmid, timeout, last))
         time.sleep(AGENT_POLL)
 
     ip = ""
@@ -936,7 +982,7 @@ def verb_wait(cfg: Config, api: Api, args) -> int:
         if ip:
             break
         if time.monotonic() >= deadline:
-            raise Infra("no ip: %d has no IPv4 after %ds (%s)" % (vmid, args.timeout, last))
+            raise Infra("no ip: %d has no IPv4 after %ds (%s)" % (vmid, timeout, last))
         time.sleep(AGENT_POLL)
 
     user = guest_user(cfg, api, vmid)
@@ -949,11 +995,10 @@ def verb_wait(cfg: Config, api: Api, args) -> int:
         if run_ssh(cfg, user, ip, ["true"], timeout=left) == 0:
             break
         if time.monotonic() >= deadline:
-            raise Infra("no ssh: %s@%s refused for %ds" % (user, ip, args.timeout))
+            raise Infra("no ssh: %s@%s refused for %ds" % (user, ip, timeout))
         time.sleep(AGENT_POLL)
 
-    print(ip)
-    return 0
+    return ip
 
 
 def ssh_options(cfg: Config) -> list:
@@ -1392,7 +1437,12 @@ def verb_list(cfg: Config, api: Api, args) -> int:
         # is a leak — the one thing this listing exists to catch. Checked before
         # --lane narrows the display: a filter is for reading, not for looking
         # away.
-        claimed = entry["vmid"] in warm or (scenario and row["scenario"] == scenario)
+        # role-bake is claimed by the bake that is running — for 45 minutes.
+        claimed = (
+            entry["vmid"] in warm
+            or row["role"] == "bake"
+            or (scenario and row["scenario"] == scenario)
+        )
         if lane == mine and not claimed:
             leaks.append(row)
         if lane_filter and lane != lane_filter:
@@ -1417,6 +1467,154 @@ def verb_list(cfg: Config, api: Api, args) -> int:
             "leaked on lane %s: %s — neither warm nor part of scenario %r"
             % (mine, ", ".join(str(r["vmid"]) for r in leaks), scenario)
         )
+    return 0
+
+
+# ── bake ─────────────────────────────────────────────────────────────────────
+BAKE_USER = "adminhelper"  # the guest user every template we build from now on has
+BAKE_TTL = 4 * 3600  # generous: a full bake measured ~45 min, and a reaped bake is a lost hour
+BOOTSTRAP_LIMIT = 2700
+WARMUP_LIMIT = 1800
+CLEAN_LIMIT = 600
+SHUTDOWN_LIMIT = 300
+CLEAN_SCRIPT = (
+    "sudo apt-get clean && "
+    "sudo cloud-init clean --logs && "
+    "(docker system prune -af || true) && "
+    # A cloned machine-id makes two guests answer to the same DHCP lease.
+    "sudo truncate -s0 /etc/machine-id && "
+    "sudo rm -f /etc/ssh/ssh_host_*"
+)
+
+
+def verb_bake(cfg: Config, api: Api, args) -> int:
+    profiles = load_profiles()
+    meta = profiles["profiles"].get(args.profile)
+    if not meta:
+        raise Usage(
+            "unknown profile %r — known: %s"
+            % (args.profile, ", ".join(sorted(profiles["profiles"])))
+        )
+    if not meta.get("bootstrap"):
+        raise Usage(
+            "%s is a base image, not something to bake — try %s"
+            % (
+                args.profile,
+                ", ".join(sorted(p for p, m in profiles["profiles"].items() if m.get("bootstrap"))),
+            )
+        )
+    key = public_key(cfg)
+    shape = role_shape(profiles, "bake")
+    node = cfg["AH_PVE_NODE"]
+    day = time.strftime("%Y%m%d")
+
+    vms = pool_vms(cfg, api)
+    source_tag = args.from_tag or profiles["profiles"][meta["base"]]["template_tag"]
+    source = newest_template(vms, source_tag)
+    if source is None:
+        raise Infra("no template tagged %s in pool %s" % (source_tag, cfg["AH_PVE_POOL"]))
+    spare, detail = capacity_report(cfg, api, vms, shape["memory"], "bake")
+    if spare < 0:
+        raise Infra("capacity: " + detail)
+
+    # In the template band from the start: a bake that succeeds becomes a
+    # template where it stands, and one that fails is cleaned up from there.
+    newid = free_template_vmid(cfg, vms)
+    name = "ah-tpl-%s-%s" % (args.profile, day)
+    create_vm(
+        cfg,
+        api,
+        template=source["vmid"],
+        newid=newid,
+        name=name,
+        tags=[
+            OURS,
+            "role-bake",
+            "lane-" + current_lane(),
+            "ttl-%d" % (int(time.time()) + BAKE_TTL),
+        ],
+        memory=shape["memory"],
+        cores=shape["cores"],
+        key=key,
+        # D20: templates we build carry our own guest user. The fat template
+        # still says `crabbox`, and reading ciuser off the VM (never from a
+        # config value) is what makes that a template swap and not a sweep.
+        ciuser=BAKE_USER,
+    )
+    print("baking %s from %d in VM %d" % (args.profile, source["vmid"], newid))
+
+    try:
+        wait_for(cfg, api, newid, WAIT_TIMEOUT)
+        target = Target(cfg, api, str(newid))
+        _sync(cfg, target, delete=True)
+        steps = [
+            (
+                "bootstrap",
+                "AH_BOOTSTRAP_PROFILE=%s bash scripts/tests/crabbox_bootstrap.sh"
+                % meta["bootstrap"],
+                BOOTSTRAP_LIMIT,
+                True,
+            ),
+            # Not a test run: this is what fills ~/.cargo, ~/go and node_modules,
+            # so the first lease off this template does not spend 20 minutes
+            # building what the template could have carried. Tolerant, the way
+            # crabbox_bake.sh was — one flaky unit test must not throw away the
+            # half hour of bootstrap above it — and its exit code is printed, so
+            # a warm-up that warmed nothing is visible rather than silent.
+            (
+                "warm the caches",
+                "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit",
+                WARMUP_LIMIT,
+                False,
+            ),
+            ("clean", CLEAN_SCRIPT, CLEAN_LIMIT, True),
+        ]
+        for label, command, limit, gate in steps:
+            print("--- %s" % label)
+            # A login shell: the bootstrap puts go on the PATH through
+            # /etc/profile.d and cargo through ~/.cargo/env, and a plain
+            # `ssh host cmd` sources neither. Without it run.sh dep-gates itself
+            # into `go=no cargo=no`, warms nothing, and still exits 0.
+            code = run_ssh(
+                cfg,
+                target.user,
+                target.ip,
+                ["bash -lc %s" % shlex.quote("cd %s && %s" % (remote_dir(cfg), command))],
+                timeout=limit,
+            )
+            if code != 0:
+                if gate:
+                    raise Infra("%s failed on %d (exit %d)" % (label, newid, code))
+                print("    %s exited %d — kept going, the template is just colder" % (label, code))
+
+        api.task(
+            "POST",
+            "/nodes/%s/qemu/%d/status/shutdown" % (node, newid),
+            # forceStop after four minutes: a guest that will not stop (a docker
+            # container holding on) is not worth 45 minutes of bootstrap, and
+            # the disk is already clean either way.
+            body={"forceStop": 1, "timeout": 240},
+            limit=SHUTDOWN_LIMIT,
+        )
+        api.task("POST", "/nodes/%s/qemu/%d/template" % (node, newid))
+        # Only now, and only on the finished template: the lease tags come off
+        # so no reaper will ever look at it again.
+        api.request(
+            "PUT",
+            "/nodes/%s/qemu/%d/config" % (node, newid),
+            body={"tags": "%s;built-%s" % (meta["template_tag"], day)},
+            lock_retry=True,
+        )
+    except BaseException as exc:
+        try:
+            purge_vm(cfg, api, newid)
+        except VmError as cleanup:
+            raise Infra("%s; and the cleanup of %d failed too: %s" % (exc, newid, cleanup)) from exc
+        if isinstance(exc, VmError):
+            raise Infra("%s (VM %d was removed again)" % (exc, newid)) from exc
+        raise
+
+    print("%d %s %s;built-%s" % (newid, name, meta["template_tag"], day))
     return 0
 
 
@@ -1521,6 +1719,7 @@ VERB_TABLE["delsnap"] = verb_delsnap
 VERB_TABLE["destroy"] = verb_destroy
 VERB_TABLE["reap"] = verb_reap
 VERB_TABLE["list"] = verb_list
+VERB_TABLE["bake"] = verb_bake
 
 
 def auto_reap(cfg: Config, api: Api, verb: str) -> None:
