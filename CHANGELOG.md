@@ -30,6 +30,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **SSRF-Guard (Server und Monitoring):** Die DNS-Aufloesung des Guards lief ueber einen
+  geteilten Vier-Worker-Pool. Vier haengende Aufloesungen belegten ihn vollstaendig, jeder
+  weitere `is_private_url`-Aufruf lief in seine 5-Sekunden-Frist und meldete fail-closed
+  „privat". Durch den Guard laufen nur HTTP-Checks und Alert-Webhooks — im Monitoring hiess
+  das also: ein toter Nameserver, und keiner von beiden erreichte mehr ein Ziel. Aufgeloest
+  wird jetzt je Aufruf in einem eigenen Daemon-Thread mit derselben Frist, gedeckelt auf 64
+  gleichzeitige Aufloesungen; ueber dem Deckel wird sofort fail-closed abgelehnt und
+  hoechstens einmal pro Minute gewarnt. Eine leere Adressliste gilt jetzt ebenfalls als
+  „privat". Nach aussen aendert sich nichts, ausser dass haengende Aufloesungen einander
+  nicht mehr blockieren und der Dienst trotz haengender Aufloesung beendet werden kann.
+
 - **Desktop-Backend:** `rustls` 0.23.40 → 0.23.45 (RUSTSEC-2026-0285, TLS-1.3-Handshake-
   Nachrichten wurden ueber Encryption-Level-Grenzen hinweg akzeptiert; medium) samt
   `rustls-webpki` 0.103.13 → 0.103.15 — nur der Lockfile-Stand, keine Verhaltensaenderung.
