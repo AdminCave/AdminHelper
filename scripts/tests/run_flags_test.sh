@@ -89,13 +89,30 @@ echo "── --step ──"
 run_bare lint --step nixda
 [ $rc -eq 2 ] && grep -q "unknown step: 'nixda'" <<<"$OUT" && ok "unknown step -> exit 2" || bad "unknown step: rc=$rc"
 
+# Four candidates since scripts/vm got its own ruff step: check and format
+# check, for apps/ and for the VM harness.
 run_bare lint --step ruff
-[ $rc -eq 2 ] && grep -q "ambiguous step: 'ruff' matches 2 steps" <<<"$OUT" \
-  && grep -q "ruff format check" <<<"$OUT" && ok "ambiguous step -> exit 2, candidates listed" || bad "ambiguous step: rc=$rc"
+[ $rc -eq 2 ] && grep -q "ambiguous step: 'ruff' matches 4 steps" <<<"$OUT" \
+  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts/vm)" <<<"$OUT" \
+  && ok "ambiguous step -> exit 2, candidates listed" || bad "ambiguous step: rc=$rc"
 
 # The dry pass must reject BEFORE running anything: an ambiguous --step may not
 # have executed one of its candidates on the way to the error.
 grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" && bad "ambiguous --step ran a step anyway" || ok "ambiguous --step runs nothing"
+
+# The VM harness has to be reachable as its own step, or `verify.sh scripts`
+# could not lint it without linting apps/ too.
+run_bare lint --step "ruff check (scripts/vm)"
+[ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
+  && ok "the scripts/vm ruff step is addressable on its own" \
+  || bad "--step 'ruff check (scripts/vm)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+
+# Counted, not grepped: the error "unknown step: 'vm.py pytest'" contains the
+# name too, so a grep would pass against a run.sh that has no such step at all.
+run_bare unit --step "vm.py pytest"
+[ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
+  && grep -qE '^  (PASS|SKIP|FAIL)  vm\.py pytest' <<<"$OUT" \
+  && ok "the vm.py suite is a step of its own" || bad "vm-pytest step: $OUT"
 
 run_bare lint --step shellcheck
 [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
@@ -154,9 +171,16 @@ grep -q "strict-failed: integration suite" <<<"$OUT" \
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_REQUIRED="go-agent" "$BARE/bash" "$RUN" lint --strict --only scripts 2>&1); rc=$?
 [ $rc -eq 1 ] && grep -qF "strict-failed: shellcheck (ops scripts) (SKIP)" <<<"$OUT" \
   && ok "--only makes a non-required step required" || bad "--only strictness: rc=$rc"
-# ...while the steps --only filtered away must not fail: they were never asked for.
-grep -q "1 failed" <<<"$OUT" && ok "AH_ONLY-filtered steps do not strict-fail" \
-  || bad "filtered steps failed too: $(grep -m1 'run.sh\[' <<<"$OUT")"
+# ...while the steps --only filtered away must not fail: they were never asked
+# for. Named, not counted: how many of the INCLUDED steps can run depends on
+# what the box has installed (a venv ruff makes the scripts/vm pair pass here
+# and skip in CI), and a count would make this assertion box-dependent.
+FILTERED_FAILED=0
+for step in "ruff check (SKIP)" "ruff format check (SKIP)" "gofmt (agent) (SKIP)"; do
+  grep -qF "strict-failed: $step" <<<"$OUT" && FILTERED_FAILED=1
+done
+[ "$FILTERED_FAILED" -eq 0 ] && ok "AH_ONLY-filtered steps do not strict-fail" \
+  || bad "filtered steps failed too: $(grep -m1 'strict-failed:' <<<"$OUT")"
 
 # ══ pytest-internal skips + the run artifact (T4) ═════════════════════════════
 echo "── test-skips and the run artifact ──"
@@ -253,11 +277,11 @@ fi
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_ARGS="-k lifecycle" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
 grep -q 'ARGV: -m pytest -q -k lifecycle' <<<"$OUT" \
-  && ok "AH_ARGS reaches the suite command" || bad "AH_ARGS: $(grep -m1 ARGV <<<"$OUT")"
+  && ok "AH_ARGS reaches the suite command" || bad "AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
 grep -q 'ARGV: -m pytest -q$' <<<"$OUT" \
-  && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 ARGV <<<"$OUT")"
+  && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 
 # A crabbox box has no .git, so run.sh must take the evidence fields from the
 # client that synced the tree — otherwise last-<layer>.json comes back from every

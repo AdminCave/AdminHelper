@@ -85,8 +85,13 @@ Doku: keine (T10)
 
 ## C — Verdrahtung, Doku, Live-Beweis
 
-### T9 — Lint/Test-Verdrahtung: `vm-pytest`-Schritt, ruff und shellcheck über `scripts/vm`  [ ]
-Komponente: scripts · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml (Job `ops-scripts`: shellcheck-Glob `scripts/vm/*.sh`), scripts/tests/run_flags_test.sh (Schritt-Id in den Erwartungen)
+### T9 — Lint/Test-Verdrahtung: `vm-pytest`-Schritt, ruff und shellcheck über `scripts/vm`  [x] (`run.sh quick --strict --only scripts` → `5 passed, 0 failed, 11 skipped`; `run_flags_test` 66 passed)
+`ruff` über `scripts/vm` bekommt einen **eigenen** Schritt (`ruff-vm`) statt drei weiterer Pfade am bestehenden: der `scripts`-Key muss sein eigenes Python linten können, ohne `apps/` mitzuziehen, und `--only server` hat am VM-Harness nichts zu suchen. Beide neuen Ids stehen in `AH_REQUIRED_DEFAULT`.
+CI hat zwei Lücken mitbekommen, die der Review fand: der `python-lint`-Job lintet jetzt auch `scripts/vm` (vorher wäre ein ruff-Verstoß dort grün durchgemergt — den fing nur `verify.sh scripts --strict` lokal), und `ops-scripts` installiert `pytest`, weil es dort `run.sh unit --strict --only scripts` fährt und der neue `vm-pytest`-Schritt sonst mit „No module named pytest" **rot** statt SKIP gewesen wäre. Der Schritt dep-gated jetzt auf `import pytest` → eine Box ohne pytest bekommt SKIP, und `--strict` macht daraus „nicht verifiziert". Beide Skip-Zweige von `ruff-vm` tragen dieselben zwei Schritt-Namen wie der Run-Zweig — sonst hinge die Schritt-Menge daran, was auf der Box installiert ist, und `run_flags_test` wäre in CI rot geworden.
+[?] **Für Kevin:** Dein gitignoriertes `.devenv.sh` setzt `AH_REQUIRED` von Hand und gewinnt damit über `AH_REQUIRED_DEFAULT` — die beiden neuen Ids fehlen dort, also verlangt ein lokales `verify.sh … --strict` sie nicht. Zeile 15 sollte lauten:
+`export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest"`
+(Belegt: mit `env -u AH_REQUIRED` druckt der Lauf die vollständige Liste und ist grün.)
+Komponente: scripts · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml (Job `ops-scripts`: shellcheck-Glob `scripts/vm/*.sh` + pytest; Job `python-lint`: ruff über `scripts/vm`), scripts/tests/run_flags_test.sh (Schritt-Ids in den Erwartungen), DEVELOPMENT.md (nur die `AH_REQUIRED`-Beispielzeile)
 Änderung: Schritt `vm-pytest` (`python3 -m pytest scripts/vm/tests -q`, dep-gated python3, Key `scripts`, in `AH_REQUIRED_DEFAULT`), `ruff`-Schritt deckt `scripts/vm` ab (prüfen: `ruff.toml` im Root → sonst Pfad ergänzen), shellcheck-Glob um `scripts/vm/*.sh` in `run.sh` und `ci.yml`. `verify.sh scripts --strict` fährt damit Lint + Unit von `scripts/vm`.
 Verify: bash scripts/dev/verify.sh scripts --strict   und   bash scripts/tests/run_flags_test.sh
 Doku: keine (intern)

@@ -98,9 +98,9 @@ jobs:
         # in sync with the ruff floor in apps/server/requirements-dev.txt (4.88).
         run: pip install ruff==0.15.20
       - name: ruff check
-        run: ruff check apps/server apps/monitoring apps/ca-issuer
+        run: ruff check apps/server apps/monitoring apps/ca-issuer scripts/vm
       - name: ruff format --check
-        run: ruff format --check apps/server apps/monitoring apps/ca-issuer
+        run: ruff format --check apps/server apps/monitoring apps/ca-issuer scripts/vm
 
   monitoring:
     name: Monitoring (pytest)
@@ -568,13 +568,20 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: shellcheck
-        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh apps/*/docker-entrypoint.sh
+        run: shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh apps/*/docker-entrypoint.sh
       # minisign lets the sandbox tests exercise the (armed) release-signature
       # verification path end-to-end with a throwaway key. Without it those tests
       # exit 75 = SKIP, and --strict below turns that into a failure — which is
       # the point: this job must not go green on a signature path that never ran.
       - name: Install minisign
         run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+      # The unit layer's `vm-pytest` step runs scripts/vm/tests here. Without
+      # pytest the step SKIPs, and --strict turns that into a failure — which is
+      # the point: this job must not go green on a suite that never ran.
+      # Pinned for the reason ruff is: a new release changes collection or
+      # deprecation behaviour and would red every open PR with no code change.
+      - name: Install pytest
+        run: pip install pytest==9.1.1
       # One aggregator call instead of eight lines: the same block a developer
       # runs locally, so CI and the dev box cannot drift apart. --strict makes a
       # skipped test a failure here, where every precondition is available.

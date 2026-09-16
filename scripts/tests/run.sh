@@ -77,16 +77,17 @@ export AH_ONLY AH_STRICT
 # Steps that MUST really run under --strict. Ids (not display names) so a host can
 # override the set in one space-separated line; the effective set is printed with
 # the summary so it can never silently shrink a run to nothing.
-#   lint/unit: ruff · gofmt · shellcheck · server-pytest · monitoring-pytest
-#              ca-issuer-pytest · go-agent · desktop-cargo · desktop-ui-vitest
-#              desktop-e2e-lint · web-vitest · scripts
+#   lint/unit: ruff · ruff-vm · gofmt · shellcheck · server-pytest
+#              monitoring-pytest · ca-issuer-pytest · go-agent · desktop-cargo
+#              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
+#              vm-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
 #                agent-monitoring · repo-build · upgrade-path
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
 # added to the default set (see AH_HEAVY_* below); a host-given AH_REQUIRED wins as is.
-AH_REQUIRED_DEFAULT="ruff shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts"
+AH_REQUIRED_DEFAULT="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest"
 # Named by the host or derived here? Only an unset (or empty — crabbox_iter.sh does
 # not forward an empty value either) AH_REQUIRED gets the heavy step ids added
 # below; a host that names its set keeps exactly that set.
@@ -295,8 +296,11 @@ scan_test_skips() {
   done < <(grep -aE '^SKIPPED \[[0-9]+\] ' "$log")
 }
 
-# py_step_possible -> 0 unless --step names something no python step matches.
-# The three names must stay in sync with the run_step calls in layer_unit below.
+# py_step_possible -> 0 unless --step names something the shared venv is for.
+# The names must stay in sync with the run_py_step calls in layer_unit below —
+# except `vm.py pytest`, which is deliberately absent: it needs nothing but
+# pytest itself, and creating a venv for it would be a side effect nobody asked
+# for (the step dep-gates on `import pytest` instead).
 py_step_possible() {
   [ -n "$AH_STEP" ] || return 0
   local n; for n in "monitoring pytest" "ca-issuer pytest" "server pytest"; do
@@ -438,6 +442,23 @@ layer_lint() {
     skip ruff "ruff format check" "ruff not installed (not on PATH, no component venv)"
   fi
 
+  # Its own step rather than three more paths on the one above: the `scripts`
+  # key has to be able to lint its own Python without dragging apps/ along, and
+  # `--only server` has no business linting the VM harness.
+  # Two skips for two runs, like the block above: a box without ruff must offer
+  # the same step NAMES as one with it, or `--step` and the candidate count
+  # would depend on what happens to be installed.
+  if ! only scripts; then
+    skip ruff-vm "ruff check (scripts/vm)" "AH_ONLY"
+    skip ruff-vm "ruff format check (scripts/vm)" "AH_ONLY"
+  elif [ -n "$ruff_bin" ]; then
+    run_step ruff-vm "ruff check (scripts/vm)"        -- "$ruff_bin" check scripts/vm
+    run_step ruff-vm "ruff format check (scripts/vm)" -- "$ruff_bin" format --check scripts/vm
+  else
+    skip ruff-vm "ruff check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff format check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
+  fi
+
   if ! only agent; then skip gofmt "gofmt (agent)" "AH_ONLY"
   elif have gofmt; then
     run_step gofmt "gofmt (agent)" -- bash -c 'u=$(cd apps/agent && gofmt -l .); [ -z "$u" ] || { echo "unformatted:"; echo "$u"; exit 1; }'
@@ -445,7 +466,7 @@ layer_lint() {
 
   if ! only scripts; then skip shellcheck "shellcheck (ops scripts)" "AH_ONLY"
   elif have shellcheck; then
-    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh
+    run_step shellcheck "shellcheck (ops scripts)" -- shellcheck --severity=warning scripts/*.sh scripts/tests/*.sh scripts/dev/*.sh scripts/dev/hooks/*.sh scripts/release/*.sh scripts/vm/*.sh
   else skip shellcheck "shellcheck (ops scripts)" "shellcheck not installed"; fi
 }
 
@@ -585,6 +606,21 @@ layer_unit() {
     [ "$AH_SCRIPT_TESTS" = "$AH_SCRIPT_TESTS_DEFAULT" ] \
       || echo "  (scripts block: $(printf '%s\n' $AH_SCRIPT_TESTS | grep -c .) tests, not the default list)"
     run_step scripts "scripts (hermetic)" -- scripts_block
+  fi
+
+  # vm.py against recorded Proxmox answers — hermetic, no network, no VM. It
+  # rides the `scripts` key because that is what owns the ops harness, but it is
+  # its own step: the shell block and this one fail for entirely different
+  # reasons, and one summary line each says which.
+  if ! only scripts; then skip vm-pytest "vm.py pytest" "AH_ONLY"
+  elif have python3 && python3 -c 'import pytest' 2>/dev/null; then
+    run_py_step vm-pytest "vm.py pytest" -- bash -c \
+      'python3 -m pytest scripts/vm/tests -q $AH_PYTEST_RS'
+  else
+    # A missing pytest is a box that cannot run this, not a red suite: SKIP, so
+    # --strict calls it unverified instead of reporting infrastructure as a
+    # test failure.
+    skip vm-pytest "vm.py pytest" "python3 or pytest not installed"
   fi
 
   # Web frontend — check + lint + vitest unit.
