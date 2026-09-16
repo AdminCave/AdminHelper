@@ -37,6 +37,7 @@ import json
 import os
 import re
 import ssl
+import subprocess
 import sys
 import time
 import urllib.error
@@ -44,6 +45,9 @@ import urllib.parse
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Everything this tool caches locally. Gitignored, and small on purpose: the
+# hypervisor's tags are the state, this is only what ssh and the wrappers need.
+VM_STATE_DIR = os.path.join(ROOT, ".vm")
 
 # Time bounds. Every one of them exists because something hung once: an
 # unbounded HTTP call, a UPID poll that never ended, a lock that never cleared.
@@ -52,6 +56,8 @@ TASK_POLL_MIN = 1.0  # UPID poll backoff 1 s -> 5 s
 TASK_POLL_MAX = 5.0
 TASK_LIMIT = 300  # clone/snapshot/destroy tasks; a bake's `run` has its own
 LOCK_RETRY_LIMIT = 60  # window for "can't lock file"; measured collisions clear in ~12 s
+CLONE_LIMIT_LINKED = 300  # measured: 2 s
+CLONE_LIMIT_FULL = 1800  # measured: ~11 min on the thin pool
 WAIT_TIMEOUT = 900  # agent ping -> IP -> ssh
 AGENT_POLL = 5
 SSH_CONNECT_TIMEOUT = 5
@@ -67,7 +73,9 @@ LOCK_MARKERS = ("can't lock file", "VM is locked")
 DEFAULTS = {
     "AH_PVE_VMID_RANGE": "3000-3999",
     "AH_VM_SSH_KEY": "~/.config/adminhelper/vm_ed25519",
-    "AH_VM_MAX": "3",
+    # The capstone holds seven leases at once, so a cap below that would break
+    # the very run it is meant to protect. It is a runaway guard, not a budget.
+    "AH_VM_MAX": "8",
     "AH_VM_LINKED": "1",
     "AH_VM_REMOTE_DIR": "~/adminhelper",
 }
@@ -427,6 +435,122 @@ VERBS = (
 )
 
 
+def parse_duration(text: str) -> int:
+    """`8h`, `20m`, `90s`, `2d` -> seconds. A bare number is seconds."""
+    match = re.fullmatch(r"\s*(\d+)\s*([smhd]?)\s*", text or "")
+    if not match:
+        raise Usage("cannot read a duration from %r (try 8h, 20m, 90s)" % text)
+    return int(match.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
+
+
+def current_lane(override: str | None = None, environ=None) -> str:
+    """--lane, else AH_LANE, else .vm/lane, else `main` (the shared checkout)."""
+    environ = os.environ if environ is None else environ
+    lane = override or environ.get("AH_LANE") or ""
+    if not lane:
+        try:
+            with open(os.path.join(VM_STATE_DIR, "lane")) as fh:
+                lane = fh.read().strip()
+        except OSError:
+            lane = ""
+    return re.sub(r"[^a-z0-9-]", "-", (lane or "main").lower()).strip("-") or "main"
+
+
+def capacity_report(cfg: Config, api: Api, vms: list, need_mb: int, label: str):
+    """(spare_mb, detail) — shared by `doctor` and by every verb that clones."""
+    node = api.request("GET", "/nodes/%s/status" % cfg["AH_PVE_NODE"])
+    free_mb = (node.get("memory", {}).get("free") or 0) // 1024**2
+    # What our VMs may still take, not what they were configured for: a running
+    # VM's touched RAM is already out of `free`, so charging its full maxmem
+    # again would refuse clones the node can carry — while charging nothing
+    # would hand out the 5 GB a freshly booted 6 GB box has not claimed yet. For
+    # a stopped VM `mem` is 0 and the term is its maxmem. `mem` rides the same
+    # lagging resource list as the tags do: a guard rail, not a promise.
+    ours = [v for v in vms if OURS in tags_of(v) and not v.get("template")]
+    owed = [(v, max(0, (v.get("maxmem") or 0) - (v.get("mem") or 0)) // 1024**2) for v in ours]
+    owed_mb = sum(mb for _, mb in owed)
+    spare = free_mb - RESERVE_MB - owed_mb - need_mb
+    detail = "%d MiB free - %d reserve - %d owed by ours - %d for %s = %d MiB" % (
+        free_mb,
+        RESERVE_MB,
+        owed_mb,
+        need_mb,
+        label,
+        spare,
+    )
+    if spare < 0 and owed_mb:
+        detail += " (ours: %s)" % ", ".join(
+            "%d %s %d MiB" % (v["vmid"], v.get("name", "?"), mb) for v, mb in owed if mb
+        )
+    return spare, detail
+
+
+def free_vmid(cfg: Config, vms: list) -> int:
+    """The smallest free VMID in the clone band — the lower hundred of the range.
+
+    Templates live in the upper hundred so a bake never collides with a lease.
+    """
+    low, high = cfg.vmid_range()
+    taken = {v["vmid"] for v in vms}
+    for vmid in range(low, low + 100):
+        if vmid not in taken:
+            return vmid
+    raise Infra("no free VMID in %d-%d — the clone band is full" % (low, low + 99))
+
+
+def find_vm(cfg: Config, api: Api, ref: str, vms: list | None = None) -> dict:
+    """A VMID or a name, resolved inside our pool — and nowhere else."""
+    vms = pool_vms(cfg, api) if vms is None else vms
+    if str(ref).isdigit():
+        matches = [v for v in vms if v["vmid"] == int(ref)]
+    else:
+        matches = [v for v in vms if v.get("name") == ref]
+    if not matches:
+        raise Usage("no VM %r in pool %s" % (ref, cfg["AH_PVE_POOL"]))
+    if len(matches) > 1:
+        raise Usage("%r names %d VMs: %s" % (ref, len(matches), [v["vmid"] for v in matches]))
+    return matches[0]
+
+
+def guest_user(cfg: Config, api: Api, vmid: int) -> str:
+    """The cloud-init user, inherited from the template — not a config value.
+
+    The fat template still says `crabbox`; the first rebake (T7) says
+    `adminhelper`. Reading it off the VM makes that a template swap, not a sweep.
+    """
+    config = api.request("GET", "/nodes/%s/qemu/%d/config" % (cfg["AH_PVE_NODE"], vmid))
+    user = config.get("ciuser")
+    if not user:
+        raise Infra("VM %d has no ciuser — the template is not cloud-init ready" % vmid)
+    return str(user)
+
+
+def purge_vm(cfg: Config, api: Api, vmid: int):
+    """Stop if need be, then delete with the disks. PVE refuses to delete a
+    running VM ("VM 3000 is running - destroy failed"), so the stop is not
+    optional. A VM that is already gone is a success, not an error — the clone
+    rollback runs on paths where it may never have been created."""
+    node = cfg["AH_PVE_NODE"]
+    try:
+        current = api.request("GET", "/nodes/%s/qemu/%d/status/current" % (node, vmid))
+        if current.get("status") != "stopped":
+            api.task("POST", "/nodes/%s/qemu/%d/status/stop" % (node, vmid))
+    except VmError:
+        pass  # a VM that cannot be read or stopped may still be deletable
+    try:
+        api.task(
+            "DELETE",
+            "/nodes/%s/qemu/%d" % (node, vmid),
+            params={"purge": 1, "destroy-unreferenced-disks": 1},
+        )
+    except VmError as exc:
+        # Exactly PVE's own wording for this VM's config file. A looser test
+        # such as "does not exist" also matches "storage 'raid5' does not
+        # exist", and would report a VM as removed while it is still standing.
+        if "qemu-server/%d.conf" % vmid not in str(exc):
+            raise
+
+
 # ── doctor ───────────────────────────────────────────────────────────────────
 class Checks:
     """Collects `ok|FAIL <name>: <detail>` lines; one FAIL decides the exit code."""
@@ -570,32 +694,8 @@ def verb_doctor(cfg: Config, api: Api, args) -> int:
         )
 
     def capacity_check():
-        node = api.request("GET", "/nodes/%s/status" % cfg["AH_PVE_NODE"])
-        free_mb = (node.get("memory", {}).get("free") or 0) // 1024**2
-        # What our VMs may still take, not what they were configured for: a
-        # running VM's touched RAM is already out of `free`, so charging its full
-        # maxmem again would refuse clones the node can carry — while charging
-        # nothing would hand out the 5 GB a freshly booted 6 GB box has not
-        # claimed yet. For a stopped VM `mem` is 0 and the term is its maxmem.
-        # `mem` rides the same lagging resource list as the tags do, which is
-        # good enough for a guard rail and not a promise.
-        ours = [v for v in vms() if OURS in tags_of(v) and not v.get("template")]
-        owed = [(v, max(0, (v.get("maxmem") or 0) - (v.get("mem") or 0)) // 1024**2) for v in ours]
-        owed_mb = sum(mb for _, mb in owed)
         need_mb = sum(role_shape(profiles, r)["memory"] for r in roles)
-        spare = free_mb - RESERVE_MB - owed_mb - need_mb
-        detail = "%d MiB free - %d reserve - %d owed by ours - %d for %s = %d MiB" % (
-            free_mb,
-            RESERVE_MB,
-            owed_mb,
-            need_mb,
-            ",".join(roles) or "nothing",
-            spare,
-        )
-        if spare < 0 and owed_mb:
-            detail += " (ours: %s)" % ", ".join(
-                "%d %s %d MiB" % (v["vmid"], v.get("name", "?"), mb) for v, mb in owed if mb
-            )
+        spare, detail = capacity_report(cfg, api, vms(), need_mb, ",".join(roles) or "nothing")
         return spare >= 0, detail
 
     for role in roles:
@@ -615,6 +715,232 @@ def verb_doctor(cfg: Config, api: Api, args) -> int:
         for line in checks.lines:
             print("%-4s %s: %s" % ("ok" if line["ok"] else "FAIL", line["check"], line["detail"]))
     return 74 if checks.failed else 0
+
+
+# ── clone / wait ─────────────────────────────────────────────────────────────
+def verb_clone(cfg: Config, api: Api, args) -> int:
+    profiles = load_profiles()
+    meta = profiles["profiles"].get(args.profile)
+    if not meta:
+        raise Usage(
+            "unknown profile %r — known: %s"
+            % (args.profile, ", ".join(sorted(profiles["profiles"])))
+        )
+    shape = role_shape(profiles, args.role)
+    memory = args.memory or shape["memory"]
+    cores = args.cores or shape["cores"]
+    lane = current_lane(override=args.lane)
+    ttl_seconds = parse_duration(args.ttl)
+    # Read before anything is created: a VM whose key never made it in is
+    # unreachable, and finding that out after the clone means a purge for
+    # nothing. Everything argparse cannot check is checked here.
+    key = public_key(cfg)
+    # A tag list is separated by ';' — an unfiltered scenario could smuggle a
+    # second ttl- into it, and tags are read as a SET, so which one wins would
+    # be luck. The lane is cleaned the same way one function up.
+    scenario = re.sub(r"[^a-z0-9-]", "-", (args.scenario or "").lower()).strip("-")
+    if args.scenario and not scenario:
+        raise Usage("--scenario %r has nothing usable in it" % args.scenario)
+
+    vms = pool_vms(cfg, api)
+    ours_here = [
+        v
+        for v in vms
+        if OURS in tags_of(v)
+        and not v.get("template")
+        and tag_value(tags_of(v), "lane-", "main") == lane
+    ]
+    raw_cap = cfg.get("AH_VM_MAX", "0") or "0"
+    if not str(raw_cap).strip().isdigit():
+        raise Usage("AH_VM_MAX must be a number, got %r" % raw_cap)
+    cap = int(raw_cap)
+    if cap and len(ours_here) >= cap:
+        raise Infra(
+            "AH_VM_MAX=%d reached on lane %s: %s"
+            % (cap, lane, ", ".join("%d %s" % (v["vmid"], v.get("name", "?")) for v in ours_here))
+        )
+    spare, detail = capacity_report(cfg, api, vms, memory, args.role)
+    if spare < 0:
+        raise Infra("capacity: " + detail)
+
+    template = newest_template(vms, meta["template_tag"])
+    if template is None:
+        raise Infra(
+            "no template tagged %s in pool %s — bake one"
+            % (meta["template_tag"], cfg["AH_PVE_POOL"])
+        )
+    newid = free_vmid(cfg, vms)
+    name = args.name or "ah-%s-%s-%04x" % (args.role, lane, os.getpid() & 0xFFFF)
+    node = cfg["AH_PVE_NODE"]
+    linked = cfg.flag("AH_VM_LINKED", True)
+
+    body = {"newid": newid, "name": name, "full": 0 if linked else 1, "pool": cfg["AH_PVE_POOL"]}
+    if not linked:
+        body["storage"] = cfg["AH_PVE_STORAGE"]
+    # Submit and wait are split on purpose. A rejected submit created nothing —
+    # and "config file already exists" may well mean a parallel lane grabbed the
+    # same free VMID a moment earlier, so purging on that would destroy someone
+    # else's VM. Once the UPID is out, the VM is ours whatever happens next: a
+    # clone task that outruns our patience keeps running on the server and
+    # finishes an UNTAGGED VM, which `destroy` and `reap` would then refuse to
+    # touch forever. That one belongs in the purge.
+    try:
+        # lock_retry, because the source template can be locked by a second
+        # lane cloning from it (or by T8 tagging it) — and by the argument
+        # above, a submit that is refused has created nothing to clean up.
+        upid = api.request(
+            "POST",
+            "/nodes/%s/qemu/%d/clone" % (node, template["vmid"]),
+            body=body,
+            lock_retry=True,
+        )
+    except VmError as exc:
+        raise Infra("clone of %d into %d failed: %s" % (template["vmid"], newid, exc)) from exc
+
+    try:
+        api.wait_task(upid, limit=CLONE_LIMIT_LINKED if linked else CLONE_LIMIT_FULL)
+        tags = [
+            "ah",
+            "role-" + args.role,
+            "lane-" + lane,
+            "tpl-" + args.profile,
+            "ttl-%d" % (int(time.time()) + ttl_seconds),
+        ]
+        if scenario:
+            tags.append("sc-" + scenario)
+        config = {
+            "tags": ";".join(tags),
+            "agent": "enabled=1",
+            "memory": memory,
+            "cores": cores,
+            "ipconfig0": "ip=dhcp",
+        }
+        # PVE stores this value url-encoded and decodes it once on the way into
+        # cloud-init; urlencode's own escaping is the second layer.
+        config["sshkeys"] = urllib.parse.quote(key, safe="")
+        api.request("PUT", "/nodes/%s/qemu/%d/config" % (node, newid), body=config, lock_retry=True)
+        api.task("POST", "/nodes/%s/qemu/%d/status/start" % (node, newid))
+    except BaseException as exc:
+        # BaseException, not VmError: a Ctrl-C between the clone and the tags
+        # leaves exactly the same untagged leftover, and so would a bug in the
+        # tag building. The interrupt is re-raised as itself afterwards.
+        try:
+            purge_vm(cfg, api, newid)
+        except VmError as cleanup:
+            raise Infra("%s; and the cleanup of %d failed too: %s" % (exc, newid, cleanup)) from exc
+        if isinstance(exc, VmError):
+            raise Infra("%s (VM %d was removed again)" % (exc, newid)) from exc
+        raise
+
+    print("%d %s" % (newid, name))
+    return 0
+
+
+def public_key(cfg: Config) -> str:
+    path = cfg.path("AH_VM_SSH_KEY") + ".pub"
+    try:
+        with open(path) as fh:
+            return fh.read().strip()
+    except OSError as exc:
+        raise Usage(
+            "no public key at %s — create the pair with "
+            "`ssh-keygen -t ed25519 -f %s -N ''`" % (path, cfg.path("AH_VM_SSH_KEY"))
+        ) from exc
+
+
+def vm_ipv4(api: Api, node: str, vmid: int) -> str:
+    """The guest's own IPv4, loopback and link-local and IPv6 filtered out."""
+    interfaces = api.request("GET", "/nodes/%s/qemu/%d/agent/network-get-interfaces" % (node, vmid))
+    for iface in (interfaces or {}).get("result", []):
+        if iface.get("name") == "lo":
+            continue
+        for address in iface.get("ip-addresses", []):
+            ip = address.get("ip-address", "")
+            if address.get("ip-address-type") != "ipv4":
+                continue
+            if ip.startswith("127.") or ip.startswith("169.254."):
+                continue
+            return ip
+    return ""
+
+
+def verb_wait(cfg: Config, api: Api, args) -> int:
+    entry = find_vm(cfg, api, args.vm)
+    vmid = entry["vmid"]
+    node = cfg["AH_PVE_NODE"]
+    deadline = time.monotonic() + args.timeout
+
+    last = "no answer yet"
+    while True:
+        try:
+            api.request("POST", "/nodes/%s/qemu/%d/agent/ping" % (node, vmid))
+            break
+        except VmError as exc:
+            # "VM is not running" right after start, "QEMU guest agent is not
+            # running" while it boots — both are HTTP 500 and both are normal.
+            last = str(exc)
+        if time.monotonic() >= deadline:
+            raise Infra(
+                "no ip: guest agent of %d silent after %ds (%s)" % (vmid, args.timeout, last)
+            )
+        time.sleep(AGENT_POLL)
+
+    ip = ""
+    while True:
+        try:
+            ip = vm_ipv4(api, node, vmid)
+        except VmError as exc:
+            # The agent answered the ping a moment ago; a 500 here is the same
+            # kind of hiccup and deserves the same patience, not a hard stop.
+            last = str(exc)
+        if ip:
+            break
+        if time.monotonic() >= deadline:
+            raise Infra("no ip: %d has no IPv4 after %ds (%s)" % (vmid, args.timeout, last))
+        time.sleep(AGENT_POLL)
+
+    user = guest_user(cfg, api, vmid)
+    while True:
+        # Bounded by what is left of our own timeout: ConnectTimeout covers the
+        # TCP handshake, not a host that accepts and then stalls in the key
+        # exchange — and an unbounded ssh would outlive the deadline it is
+        # supposed to honour.
+        left = max(1, int(deadline - time.monotonic()))
+        if run_ssh(cfg, user, ip, ["true"], timeout=left) == 0:
+            break
+        if time.monotonic() >= deadline:
+            raise Infra("no ssh: %s@%s refused for %ds" % (user, ip, args.timeout))
+        time.sleep(AGENT_POLL)
+
+    print(ip)
+    return 0
+
+
+def ssh_options(cfg: Config) -> list:
+    known_hosts = os.path.join(VM_STATE_DIR, "known_hosts")
+    os.makedirs(os.path.dirname(known_hosts), exist_ok=True)
+    return [
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=%d" % SSH_CONNECT_TIMEOUT,
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "UserKnownHostsFile=" + known_hosts,
+        "-i",
+        cfg.path("AH_VM_SSH_KEY"),
+    ]
+
+
+def run_ssh(cfg: Config, user: str, ip: str, command: list, timeout: int | None = None) -> int:
+    argv = ["ssh", *ssh_options(cfg), "%s@%s" % (user, ip), *command]
+    try:
+        return subprocess.call(argv, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 255
+    except OSError as exc:
+        raise Infra("cannot run ssh: %s" % exc) from exc
 
 
 def _stub(name):
@@ -706,6 +1032,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 VERB_TABLE = {name: _stub(name) for name in VERBS}
 VERB_TABLE["doctor"] = verb_doctor
+VERB_TABLE["clone"] = verb_clone
+VERB_TABLE["wait"] = verb_wait
 
 
 def main(argv=None) -> int:

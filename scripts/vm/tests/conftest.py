@@ -145,7 +145,14 @@ def tagged_resources(extra_templates=(), drop=(), tags=None):
 
 
 class FakeClock:
-    """Time that only moves when the code under test sleeps."""
+    """Time that only moves when the code under test sleeps.
+
+    With no real seconds passing, a loop whose deadline is never reached spins
+    forever and the test hangs instead of failing — which is how a broken
+    deadline hides. The budget turns that into a normal red test.
+    """
+
+    BUDGET = 86400.0
 
     def __init__(self):
         self.now = 0.0
@@ -157,6 +164,11 @@ class FakeClock:
     def sleep(self, seconds: float):
         self.slept.append(seconds)
         self.now += seconds
+        if self.now > self.BUDGET:
+            raise AssertionError(
+                "simulated time passed %.0f s in %d sleeps — a deadline is not being honoured"
+                % (self.now, len(self.slept))
+            )
 
 
 @pytest.fixture
@@ -172,6 +184,14 @@ def http(monkeypatch) -> FakeHttp:
     fake = FakeHttp()
     monkeypatch.setattr(vm.urllib.request, "urlopen", fake)
     return fake
+
+
+@pytest.fixture(autouse=True)
+def state_dir(tmp_path, monkeypatch):
+    """Nothing in this suite may write into the checkout's own .vm/."""
+    path = tmp_path / "state"
+    monkeypatch.setattr(vm, "VM_STATE_DIR", str(path))
+    return path
 
 
 @pytest.fixture

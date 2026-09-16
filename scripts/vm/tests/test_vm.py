@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 import vm
@@ -24,7 +25,7 @@ def test_config_reads_settings_local(tmp_path):
     )
     cfg = vm.Config.load(root=str(tmp_path), environ={})
     assert cfg["AH_PVE_URL"] == "https://pve.example:8006"
-    assert cfg["AH_VM_MAX"] == "3"  # default, not in the file
+    assert cfg["AH_VM_MAX"] == vm.DEFAULTS["AH_VM_MAX"]  # default, not in the file
 
 
 def test_environment_wins_over_the_file(tmp_path):
@@ -652,8 +653,10 @@ def test_an_unreachable_pool_fails_every_check_that_needs_it(cfg, api, http, clo
     out = capsys.readouterr().out
     for check in ("templates", "vmids", "capacity"):
         assert "FAIL %s: cluster resources unavailable" % check in out, out
-    # Fetched once despite three checks needing it (plus the single 5xx retry).
-    assert len(http.paths("GET")) == 6
+    # Version, permissions, storage and the pool listing (which costs its one
+    # 5xx retry) — fetched once despite three checks needing it, and the node
+    # status is never asked for because capacity already knows it cannot answer.
+    assert len(http.paths("GET")) == 5
 
 
 def test_a_template_with_the_boolean_agent_shorthand_is_accepted(cfg, api, http, capsys):
@@ -672,3 +675,593 @@ def test_a_neighbouring_bridge_name_is_not_a_match(cfg, api, http, capsys):
     green_doctor(http)
     assert doctor(cfg, api, "--roles", "probe") == 74
     assert "linux-full: not on bridge vmbr1" in capsys.readouterr().out
+
+
+# ── clone ────────────────────────────────────────────────────────────────────
+def clone_ready(http, resources=None, node=None):
+    """Every call a successful `clone` makes, in order."""
+    reply = resources if resources is not None else tagged_resources()
+    http.add("GET", "/cluster/resources", body=reply["body"])
+    http.add("GET", "/nodes/<node>/status", node or "node_status")
+    http.add("POST", "/qemu/9402/clone", "clone_post")
+    http.add("GET", "/tasks/", "task_ok")
+    http.add("PUT", "/qemu/3002/config", "config_put")
+    http.add("POST", "/qemu/3002/status/start", "status_start")
+    return http
+
+
+def clone(cfg, api, *argv):
+    return vm.verb_clone(cfg, api, vm.build_parser().parse_args(["clone", *argv]))
+
+
+@pytest.fixture
+def keyed(cfg, tmp_path):
+    (tmp_path / "id_ed25519.pub").write_text("ssh-ed25519 AAAAC3Nz+key/here== kevin@dev\n")
+    return cfg
+
+
+def test_clone_picks_the_lowest_free_vmid_and_tags_the_lease(keyed, api, http, clock, capsys):
+    # 3000 and 3001 are taken in the recording, so 3002 is next.
+    clone_ready(http)
+    assert clone(keyed, api, "--profile", "linux-full", "--role", "probe", "--ttl", "20m") == 0
+    assert capsys.readouterr().out.split()[0] == "3002"
+
+    posted = next(c for c in http.calls if c.method == "POST" and "/clone" in c.path)
+    assert posted.body["newid"] == "3002"
+    assert posted.body["pool"] == "adminhelper-ci"
+    assert posted.body["full"] == "0"  # AH_VM_LINKED=1: 2 s instead of 11 minutes
+    assert "storage" not in posted.body
+
+    put = next(c for c in http.calls if c.method == "PUT")
+    tags = set(put.body["tags"].split(";"))
+    assert {"ah", "role-probe", "lane-main", "tpl-linux-full"} <= tags
+    ttl = int(vm.tag_value(tags, "ttl-"))
+    assert 1190 <= ttl - int(time.time()) <= 1200
+    assert not any(t.startswith("sc-") for t in tags)  # no scenario, no tag
+    assert put.body["memory"] == "2048" and put.body["cores"] == "2"
+    assert put.body["agent"] == "enabled=1" and put.body["ipconfig0"] == "ip=dhcp"
+
+
+def test_the_public_key_is_sent_url_encoded(keyed, api, http, clock):
+    clone_ready(http)
+    clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    put = next(c for c in http.calls if c.method == "PUT")
+    # PVE decodes once on the way into cloud-init; the recorded clone_config.json
+    # shows the stored value still carrying the %20 separators.
+    assert put.body["sshkeys"] == "ssh-ed25519%20AAAAC3Nz%2Bkey%2Fhere%3D%3D%20kevin%40dev"
+
+
+def test_a_missing_public_key_is_a_usage_error_before_anything_is_cloned(cfg, api, http, clock):
+    clone_ready(http)
+    with pytest.raises(vm.Usage) as caught:
+        clone(cfg, api, "--profile", "linux-full", "--role", "probe")
+    assert "ssh-keygen" in str(caught.value)
+    # Nothing was created, so there is nothing to purge — an unreachable VM is
+    # not worth building just to delete it again.
+    assert http.calls == []
+
+
+def test_a_full_clone_names_the_storage(keyed, api, http, clock):
+    keyed.values["AH_VM_LINKED"] = "0"
+    clone_ready(http)
+    clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    posted = next(c for c in http.calls if c.method == "POST" and "/clone" in c.path)
+    assert posted.body["full"] == "1" and posted.body["storage"] == "raid5"
+
+
+def test_role_and_lane_and_scenario_reach_the_name_and_the_tags(keyed, api, http, clock, capsys):
+    clone_ready(http)
+    clone(
+        keyed,
+        api,
+        "--profile",
+        "linux-full",
+        "--role",
+        "server",
+        "--lane",
+        "Pilot",
+        "--scenario",
+        "capstone",
+    )
+    name = capsys.readouterr().out.split()[1]
+    assert name.startswith("ah-server-pilot-")
+    put = next(c for c in http.calls if c.method == "PUT")
+    tags = set(put.body["tags"].split(";"))
+    assert {"role-server", "lane-pilot", "sc-capstone"} <= tags
+    assert put.body["memory"] == "4096" and put.body["cores"] == "2"  # the role's shape
+
+
+def test_explicit_memory_and_cores_and_name_win(keyed, api, http, clock, capsys):
+    clone_ready(http)
+    clone(
+        keyed,
+        api,
+        "--profile",
+        "linux-full",
+        "--role",
+        "probe",
+        "--memory",
+        "3072",
+        "--cores",
+        "3",
+        "--name",
+        "ah-probe-handmade",
+    )
+    assert capsys.readouterr().out.strip() == "3002 ah-probe-handmade"
+    put = next(c for c in http.calls if c.method == "PUT")
+    assert put.body["memory"] == "3072" and put.body["cores"] == "3"
+
+
+def test_a_failure_after_the_clone_takes_the_vm_with_it(keyed, api, http, clock):
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/9402/clone", "clone_post")
+    http.add("GET", "/tasks/", "task_ok")
+    http.add("PUT", "/qemu/3002/config", status=500, body='{"message":"tag access denied"}')
+    http.add("GET", "/qemu/3002/status/current", "status_current_running")
+    http.add("POST", "/qemu/3002/status/stop", "status_stop")
+    http.add("DELETE", "/qemu/3002", "destroy")
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "tag access denied" in str(caught.value)
+    assert "VM 3002 was removed again" in str(caught.value)
+    deleted = next(c for c in http.calls if c.method == "DELETE")
+    assert deleted.query == {"purge": "1", "destroy-unreferenced-disks": "1"}
+
+
+def test_a_failed_cleanup_is_reported_next_to_the_original_failure(keyed, api, http, clock):
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/9402/clone", "clone_post")
+    http.add("GET", "/tasks/", "task_ok")
+    http.add("POST", "/qemu/3002/status/start", status=500, body='{"message":"no boot disk"}')
+    http.add("PUT", "/qemu/3002/config", "config_put")
+    http.add("GET", "/qemu/3002/status/current", "status_current_stopped")
+    http.add("DELETE", "/qemu/3002", status=500, body='{"message":"storage busy"}')
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    message = str(caught.value)
+    assert "no boot disk" in message and "cleanup of 3002 failed too" in message
+    assert "storage busy" in message
+
+
+def test_capacity_is_checked_before_the_first_clone(keyed, api, http, clock):
+    clone_ready(http)
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "desktop")
+    assert str(caught.value).startswith("capacity:")
+    assert not [c for c in http.calls if c.method == "POST"]
+
+
+def test_the_default_cap_leaves_room_for_the_capstone():
+    # crabbox_multibox.sh --capstone holds seven leases at once on one lane:
+    # server, agent, moncheck, rpm, tunnel, visitor, desktop.
+    assert int(vm.DEFAULTS["AH_VM_MAX"]) >= 7
+
+
+def test_a_cap_that_is_not_a_number_is_a_usage_error(keyed, api, http, clock):
+    keyed.values["AH_VM_MAX"] = "viele"
+    clone_ready(http)
+    with pytest.raises(vm.Usage) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "AH_VM_MAX must be a number" in str(caught.value)
+
+
+def test_the_lane_cap_counts_only_its_own_lane(keyed, api, http, clock):
+    keyed.values["AH_VM_MAX"] = "1"
+    clone_ready(http)  # 3000 is lane-main, 3001 is lane-pilot
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "AH_VM_MAX=1 reached on lane main" in str(caught.value)
+    assert "3000" in str(caught.value) and "3001" not in str(caught.value)
+    clone_ready(http)
+    assert clone(keyed, api, "--profile", "linux-full", "--role", "probe", "--lane", "solo") == 0
+
+
+def test_an_unbaked_profile_is_infrastructure_not_a_crash(keyed, api, http, clock):
+    clone_ready(http)
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-server", "--role", "probe")
+    assert "no template tagged ah-tpl-linux-server" in str(caught.value)
+
+
+def test_an_unknown_profile_is_a_usage_error(keyed, api, http):
+    with pytest.raises(vm.Usage) as caught:
+        clone(keyed, api, "--profile", "windows-11", "--role", "probe")
+    assert "unknown profile 'windows-11'" in str(caught.value)
+    assert http.calls == []
+
+
+def test_a_full_clone_band_stops_the_clone(keyed, api, http, clock):
+    crowded = tagged_resources()
+    crowded["body"]["data"] += [
+        {
+            "vmid": v,
+            "name": "ah-probe-main-%04x" % v,
+            "tags": "ah;role-probe;lane-other",
+            "template": 0,
+            "status": "stopped",
+            "maxmem": 0,
+            "mem": 0,
+            "pool": "adminhelper-ci",
+        }
+        for v in range(3000, 3100)
+    ]
+    clone_ready(http, resources=crowded)
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "no free VMID in 3000-3099" in str(caught.value)
+
+
+# ── durations, lanes, lookup ─────────────────────────────────────────────────
+@pytest.mark.parametrize(
+    "text,seconds",
+    [("8h", 28800), ("20m", 1200), ("90s", 90), ("2d", 172800), ("45", 45), (" 1h ", 3600)],
+)
+def test_durations(text, seconds):
+    assert vm.parse_duration(text) == seconds
+
+
+@pytest.mark.parametrize("text", ["", "soon", "8 hours", "-5m", "h"])
+def test_bad_durations_are_usage_errors(text):
+    with pytest.raises(vm.Usage):
+        vm.parse_duration(text)
+
+
+def test_lane_precedence(state_dir):
+    assert vm.current_lane(environ={}) == "main"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "lane").write_text("worktree-a\n")
+    assert vm.current_lane(environ={}) == "worktree-a"
+    assert vm.current_lane(environ={"AH_LANE": "from-env"}) == "from-env"
+    assert vm.current_lane(override="Flag Lane", environ={"AH_LANE": "from-env"}) == "flag-lane"
+
+
+def test_an_empty_lane_file_still_means_main(state_dir):
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "lane").write_text("\n")
+    assert vm.current_lane(environ={}) == "main"
+
+
+def test_a_vm_is_found_by_id_or_by_name(cfg, api, http):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    assert vm.find_vm(cfg, api, "3001")["vmid"] == 3001
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    assert vm.find_vm(cfg, api, "ah-probe-main-a1b2")["vmid"] == 3000
+
+
+def test_a_vm_outside_the_pool_is_simply_not_found(cfg, api, http):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    with pytest.raises(vm.Usage) as caught:
+        vm.find_vm(cfg, api, "100")
+    assert "no VM '100' in pool adminhelper-ci" in str(caught.value)
+
+
+def test_an_ambiguous_name_is_refused(cfg, api, http):
+    doubled = fixture("cluster_resources")
+    doubled["body"]["data"][1]["name"] = doubled["body"]["data"][0]["name"]
+    http.add("GET", "/cluster/resources", body=doubled["body"])
+    with pytest.raises(vm.Usage) as caught:
+        vm.find_vm(cfg, api, "ah-probe-main-a1b2")
+    assert "names 2 VMs" in str(caught.value)
+
+
+# ── wait ─────────────────────────────────────────────────────────────────────
+def wait(cfg, api, *argv):
+    return vm.verb_wait(cfg, api, vm.build_parser().parse_args(["wait", *argv]))
+
+
+def test_wait_returns_the_guests_own_ipv4(cfg, api, http, clock, monkeypatch, capsys):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_not_running", times=1)
+    http.add("POST", "/agent/ping", "agent_ping_no_agent", times=1)
+    http.add("POST", "/agent/ping", "agent_ping_ok")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    monkeypatch.setattr(vm, "run_ssh", lambda *a, **k: 0)
+    assert wait(cfg, api, "3000") == 0
+    # Not 127.0.0.1 from lo, not the fe80:: address on the same interface.
+    assert capsys.readouterr().out.strip() == "<ip>"
+
+
+def test_wait_skips_loopback_and_link_local_and_ipv6():
+    interfaces = {
+        "result": [
+            {
+                "name": "lo",
+                "ip-addresses": [{"ip-address": "127.0.0.1", "ip-address-type": "ipv4"}],
+            },
+            {
+                "name": "eth0",
+                "ip-addresses": [
+                    {"ip-address": "fe80::1", "ip-address-type": "ipv6"},
+                    {"ip-address": "169.254.3.4", "ip-address-type": "ipv4"},
+                    {"ip-address": "192.0.2.17", "ip-address-type": "ipv4"},
+                ],
+            },
+        ]
+    }
+
+    class Once:
+        def request(self, *a, **k):
+            return interfaces
+
+    assert vm.vm_ipv4(Once(), "<node>", 3000) == "192.0.2.17"
+
+
+def test_an_interface_list_without_an_address_yields_nothing():
+    class Empty:
+        def request(self, *a, **k):
+            return {"result": [{"name": "lo", "ip-addresses": []}]}
+
+    assert vm.vm_ipv4(Empty(), "<node>", 3000) == ""
+
+
+def test_wait_gives_up_on_a_silent_guest_agent(cfg, api, http, clock):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_no_agent")
+    with pytest.raises(vm.Infra) as caught:
+        wait(cfg, api, "3000", "--timeout", "30")
+    message = str(caught.value)
+    assert message.startswith("no ip: guest agent of 3000 silent after 30s")
+    assert "QEMU guest agent is not running" in message
+
+
+def test_wait_gives_up_when_dhcp_never_lands(cfg, api, http, clock):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_ok")
+    http.add("GET", "/agent/network-get-interfaces", body={"data": {"result": []}})
+    with pytest.raises(vm.Infra) as caught:
+        wait(cfg, api, "3000", "--timeout", "30")
+    assert "no ip: 3000 has no IPv4 after 30s" in str(caught.value)
+
+
+def test_wait_gives_up_when_ssh_never_opens(cfg, api, http, clock, monkeypatch):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_ok")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    monkeypatch.setattr(vm, "run_ssh", lambda *a, **k: 255)
+    with pytest.raises(vm.Infra) as caught:
+        wait(cfg, api, "3000", "--timeout", "30")
+    # The recorded clone carries the template's ciuser, not a configured name.
+    assert "no ssh: crabbox@<ip> refused for 30s" in str(caught.value)
+
+
+def test_the_ssh_command_line_carries_the_key_and_the_batch_flags(cfg, monkeypatch, state_dir):
+    seen = {}
+    monkeypatch.setattr(
+        vm.subprocess,
+        "call",
+        lambda argv, timeout=None: seen.update(argv=argv, timeout=timeout) or 0,
+    )
+    assert vm.run_ssh(cfg, "crabbox", "192.0.2.17", ["true"], timeout=60) == 0
+    argv = seen["argv"]
+    assert argv[0] == "ssh" and argv[-2:] == ["crabbox@192.0.2.17", "true"]
+    assert "BatchMode=yes" in argv and "ConnectTimeout=5" in argv
+    assert "StrictHostKeyChecking=accept-new" in argv
+    assert "UserKnownHostsFile=" + str(state_dir / "known_hosts") in argv
+    assert argv[argv.index("-i") + 1] == cfg.path("AH_VM_SSH_KEY")
+    assert seen["timeout"] == 60
+
+
+def test_an_ssh_that_never_returns_counts_as_unreachable(cfg, monkeypatch, state_dir):
+    def hang(argv, timeout=None):
+        raise vm.subprocess.TimeoutExpired(argv, timeout)
+
+    monkeypatch.setattr(vm.subprocess, "call", hang)
+    assert vm.run_ssh(cfg, "crabbox", "192.0.2.17", ["true"], timeout=1) == 255
+
+
+# ── the clone must never leave a VM behind ───────────────────────────────────
+def half_cloned(http, task_reply):
+    """A clone whose task goes wrong — and the purge that has to follow it.
+
+    The task routes are keyed on the UPID's own verb (`qmclone` vs `qmdestroy`),
+    so the failing clone task cannot swallow the polls of the cleanup.
+    """
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/9402/clone", "clone_post")
+    http.add("GET", "qmclone", **task_reply)
+    http.add("GET", "/qemu/3002/status/current", "status_current_stopped")
+    http.add("DELETE", "/qemu/3002", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    return http
+
+
+def test_a_clone_task_that_outruns_us_is_purged_not_orphaned(keyed, api, http, clock):
+    # The task keeps running server-side and finishes an UNTAGGED VM — which
+    # destroy and reap would refuse to touch forever (spec, Verify-Prinzip).
+    half_cloned(http, {"name": "task_running"})
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    message = str(caught.value)
+    assert "did not finish within 300s" in message
+    assert "VM 3002 was removed again" in message
+    assert [c.method for c in http.calls if c.method == "DELETE"] == ["DELETE"]
+
+
+def test_a_clone_task_that_fails_is_purged_too(keyed, api, http, clock):
+    half_cloned(
+        http,
+        {
+            "body": {
+                "data": {
+                    "status": "stopped",
+                    "type": "qmclone",
+                    "exitstatus": "clone failed: no space left",
+                }
+            }
+        },
+    )
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "no space left" in str(caught.value)
+    assert "VM 3002 was removed again" in str(caught.value)
+
+
+def test_an_interrupt_before_the_tags_still_purges(keyed, api, http, clock, monkeypatch):
+    half_cloned(http, {"body": fixture("task_ok")["body"]})
+    real = vm.Api.request
+
+    def interrupted(self, method, path, *a, **k):
+        if method == "PUT":
+            raise KeyboardInterrupt
+        return real(self, method, path, *a, **k)
+
+    monkeypatch.setattr(vm.Api, "request", interrupted)
+    with pytest.raises(KeyboardInterrupt):  # stays an interrupt, does not become Infra
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_a_rejected_clone_purges_nothing_and_names_the_vmid(keyed, api, http, clock):
+    # "config file already exists" can mean a parallel lane took the same free
+    # VMID a moment earlier. Destroying that VM would be destroying theirs.
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/9402/clone", "err_vmid_taken")
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "clone of 9402 into 3002 failed" in str(caught.value)
+    assert "config file already exists" in str(caught.value)
+    assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_a_purge_stops_a_running_vm_before_deleting_it(cfg, api, http, clock):
+    # PVE refuses outright: "VM 3000 is running - destroy failed".
+    http.add("GET", "/qemu/3000/status/current", "status_current_running")
+    http.add("POST", "/qemu/3000/status/stop", "status_stop")
+    http.add("GET", "/tasks/", "task_ok")
+    http.add("DELETE", "/qemu/3000", "destroy")
+    vm.purge_vm(cfg, api, 3000)
+    assert [c.method for c in http.calls] == ["GET", "POST", "GET", "DELETE", "GET"]
+
+
+def test_a_purge_of_a_vm_that_is_already_gone_is_a_success(cfg, api, http, clock):
+    http.add("GET", "/qemu/3000/status/current", "status_current_stopped")
+    http.add(
+        "DELETE",
+        "/qemu/3000",
+        status=500,
+        body='{"message":"Configuration file \'nodes/n/qemu-server/3000.conf\' does not exist"}',
+    )
+    vm.purge_vm(cfg, api, 3000)  # the clone rollback runs where it may never have existed
+
+
+def test_a_purge_that_really_fails_still_raises(cfg, api, http, clock):
+    http.add("GET", "/qemu/3000/status/current", "status_current_stopped")
+    http.add("DELETE", "/qemu/3000", status=500, body='{"message":"storage busy"}')
+    with pytest.raises(vm.Infra):
+        vm.purge_vm(cfg, api, 3000)
+
+
+# ── wait spends one budget, not three ────────────────────────────────────────
+def test_the_three_wait_phases_share_one_deadline(cfg, api, http, clock, monkeypatch):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_no_agent", times=4)  # 4 x 5 s = 20 s
+    http.add("POST", "/agent/ping", "agent_ping_ok")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    monkeypatch.setattr(vm, "run_ssh", lambda *a, **k: 255)
+    with pytest.raises(vm.Infra) as caught:
+        wait(cfg, api, "3000", "--timeout", "30")
+    # The agent alone ate 20 s of the 30 s budget, so ssh gets what is left —
+    # a per-phase deadline would have given it a fresh 30 s.
+    assert "no ssh" in str(caught.value)
+    assert clock.now <= 35
+
+
+def test_the_ssh_attempt_is_bounded_by_what_is_left(cfg, api, http, clock, monkeypatch):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_ok")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    seen = []
+    monkeypatch.setattr(vm, "run_ssh", lambda *a, timeout=None, **k: seen.append(timeout) or 255)
+    with pytest.raises(vm.Infra):
+        wait(cfg, api, "3000", "--timeout", "30")
+    assert seen[0] is not None and seen[0] <= 30
+    assert seen == sorted(seen, reverse=True) and seen[-1] < seen[0]  # shrinks, never resets
+
+
+def test_an_agent_hiccup_between_ping_and_interfaces_is_survivable(
+    cfg, api, http, clock, monkeypatch
+):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("POST", "/agent/ping", "agent_ping_ok")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ping_no_agent", times=2)
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    monkeypatch.setattr(vm, "run_ssh", lambda *a, **k: 0)
+    assert wait(cfg, api, "3000", "--timeout", "300") == 0
+
+
+def test_a_vm_in_another_pool_is_invisible(cfg, api, http):
+    # The pool filter, not just "the VMID is absent": a homelab VM that the
+    # token happens to see must not be addressable by name or by id.
+    foreign = fixture("cluster_resources")
+    foreign["body"]["data"].append(
+        {
+            "vmid": 150,
+            "name": "mail-relay",
+            "pool": "homelab",
+            "template": 0,
+            "status": "running",
+            "maxmem": 0,
+            "mem": 0,
+        }
+    )
+    http.add("GET", "/cluster/resources", body=foreign["body"])
+    with pytest.raises(vm.Usage):
+        vm.find_vm(cfg, api, "150")
+    http.add("GET", "/cluster/resources", body=foreign["body"])
+    with pytest.raises(vm.Usage):
+        vm.find_vm(cfg, api, "mail-relay")
+
+
+@pytest.mark.parametrize("raw", ["x;ttl-9999999999", "CAPSTONE", "a b"])
+def test_a_scenario_cannot_smuggle_a_second_tag(keyed, api, http, clock, raw):
+    clone_ready(http)
+    clone(keyed, api, "--profile", "linux-full", "--role", "probe", "--scenario", raw)
+    tags = next(c for c in http.calls if c.method == "PUT").body["tags"].split(";")
+    assert len([t for t in tags if t.startswith("ttl-")]) == 1
+    assert sum(t.startswith("sc-") for t in tags) == 1
+
+
+def test_a_scenario_of_pure_punctuation_is_refused(keyed, api, http, clock):
+    clone_ready(http)
+    with pytest.raises(vm.Usage) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe", "--scenario", ";;;")
+    assert "nothing usable" in str(caught.value)
+
+
+def test_a_missing_storage_is_not_a_missing_vm(cfg, api, http, clock):
+    # "does not exist" on its own would read this as "already gone" and let the
+    # caller announce a VM as removed while it is still standing.
+    http.add("GET", "/qemu/3000/status/current", "status_current_stopped")
+    http.add(
+        "DELETE",
+        "/qemu/3000",
+        status=500,
+        body='{"message":"could not activate storage \'raid5\': storage does not exist"}',
+    )
+    with pytest.raises(vm.Infra):
+        vm.purge_vm(cfg, api, 3000)
+
+
+def test_a_locked_template_does_not_lose_the_clone(keyed, api, http, clock):
+    # A second lane cloning from the same template holds its config lock. The
+    # submit created nothing, so waiting it out is safe — and losing the clone
+    # to a lock that clears in seconds is not.
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/9402/clone", "err_vm_locked", times=2)
+    http.add("POST", "/qemu/9402/clone", "clone_post")
+    http.add("GET", "qmclone", "task_ok")
+    http.add("PUT", "/qemu/3002/config", "config_put")
+    http.add("POST", "/qemu/3002/status/start", "status_start")
+    http.add("GET", "qmstart", "task_ok")
+    assert clone(keyed, api, "--profile", "linux-full", "--role", "probe") == 0
+    assert len([c for c in http.calls if "/clone" in c.path]) == 3
