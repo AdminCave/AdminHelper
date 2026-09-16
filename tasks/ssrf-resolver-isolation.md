@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard: DNS-Auflösung ohne geteilten Pool — Task-Ledger (Kurz)
-Status: blockiert · Branch: fix/ssrf-resolver-isolation · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: fix/ssrf-resolver-isolation · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: tasks/harness-stufe-8a.md (Gesamt-Review, Befund „geteilter ThreadPoolExecutor") — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine; Hook-Pfad und Monitoring-Checks laufen im `all`-Layer des nächsten Wochenlaufs
@@ -64,7 +64,7 @@ Review-Runde 1 zu T3 behoben: `test_a_thread_constructor_failure_hands_the_permi
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_ssrf.py tests/test_ssrf_parity.py   und   bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (interne Korrekturen; Außenverhalten wie in T2 beschrieben)
 
-### T4 — Deckel-Erschöpfung: globales Budget oder pro Host?  [?]
+### T4 — Deckel-Erschöpfung: globales Budget oder pro Host?  [~] (entschieden 2026-09-16: nicht bauen, bis Evidenz vorliegt)
 **Frage an Kevin.** Der Deckel ist ein globales Budget. Hält ein Nameserver Auflösungen bis ~30 s am Leben
 (glibc-Default, dieselbe Zahl wie im Befund) und starten die 30 Scheduler-Worker plus 5 Alert-Worker alle 5 s neue, können mehr als 64
 gleichzeitig offen sein — dann lehnt der Guard *jedes* Ziel ab, auch gesunde. Das ist der alte Befund bei
@@ -72,7 +72,7 @@ höherer Schwelle (64 statt 4), also kein Rückschritt, aber auch nicht beseitig
 (kurzer Negativ-Cache für den hängenden Namen) statt eines gemeinsamen Budgets. Das ist ein eigener Schnitt,
 kein Nachtrag zu R-0042 — soll er als eigene Roadmap-Zeile aufgemacht werden?
 
-### T5 — Guard-Rückgabewert: `bool` oder Grund?  [?]
+### T5 — Guard-Rückgabewert: `bool` oder Grund?  [~] (entschieden 2026-09-16: eigene Roadmap-Zeile, vor T4)
 **Frage an Kevin.** `is_private_url` fasst „zeigt auf privat", „Auflösung überschritt die Frist" und neu
 „Deckel erschöpft" zu einem `True` zusammen. Der Betreiber liest bei totem Nameserver an drei Stellen
 (`checkers/http.py`, `alerter.py`, `script_worker.py`) „Ziel ist privat/reserviert" über ein öffentliches,
@@ -109,13 +109,43 @@ CI-äquivalent (`-p no:randomly`, `DATABASE_URL` gesetzt) 466 passed.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (Migrations-Infrastruktur, kein Außenverhalten)
 
-## Abschluss
-T1–T3 und T6 fertig, fünf Commits auf `fix/ssrf-resolver-isolation` (T6 kam nach dem ersten, roten CI-Lauf
-dazu). `blockiert` statt `erledigt`, weil T4 und T5 als `[?]` offen sind — beide sind Entscheidungen, kein Rest der Umsetzung; entscheidet Kevin sie (eigene
-Roadmap-Zeile oder verworfen), werden daraus `[~]` und der Kopf geht auf `erledigt`.
+### T7 — Denselben Wächter in die Server-Suite  [x]
+Komponente: apps/server · Dateien: apps/server/tests/test_alembic_logging.py (neu, SPDX), apps/monitoring/tests/test_alembic_logging.py (Form angeglichen)
+Befund aus der T6-Nachbesprechung, am Code geprüft: `git grep -lE "fileConfig|disable_existing" HEAD -- apps/server/tests/`
+findet **nichts**. Der Server trägt den Fix seit `4060e141`, aber kein Test hält ihn fest — nach T6 war die Lage
+also umgekehrt zum Ausgangspunkt: Monitoring gepinnt, Server ungeschützt. Wer dort „aufräumt", bekommt nichts
+angezeigt, und genau so ist die Monitoring-Drift zwei Monate alt geworden.
+Entscheidung gegen einen Text-Paritätstest für die beiden `env.py`: die Dateien unterscheiden sich legitim stark
+(andere Metadata-Importe, andere Advisory-Lock-Keys, andere Kommentare) — ein Textvergleich wäre binnen eines
+Monats mit Ausnahmen durchlöchert. Der Canary prüft stattdessen **Verhalten**: „nach einem Lauf durch `env.py`
+lebt ein vorher angelegter Logger noch."
+Änderung: derselbe Test in beiden Suiten. **Form gegenüber T6 geändert:** statt `command.upgrade(cfg, "head",
+sql=True)` fährt er jetzt `script.run_env()` in einem `EnvironmentContext(..., fn=lambda …: [], as_sql=True)` —
+also `env.py` selbst, mit einem Plan, der keine einzige Migration anwendet. Grund: die Server-Kette ist nicht
+offline renderbar (`c3a7e1f50b2d` fragt beim Upgrade den Bind ab, offline ist der `None`). Der neue Weg braucht
+weder DB noch eine renderbare Kette, läuft in ~0,3 s und trifft genau die `fileConfig`-Zeile, um die es geht.
+Gegen „grün aus dem falschen Grund" sichern zwei Assertionen: `sqlalchemy.url` ist nicht mehr der
+`alembic.ini`-Platzhalter (das belegt, dass `env.py` überhaupt anlief — überschrieben wird die URL nur dort),
+und der `alembic`-Logger steht auf INFO (das belegt, dass auch die `fileConfig`-Zeile lief; den Level setzt nur
+die ini, und der Test räumt ihn vorher ab). Die erste allein reicht nicht — Review-Runde 1 hat gezeigt, dass
+der Test sonst grün bleibt, wenn man `fileConfig` aus dem Modulscope heraus verschiebt.
+Revert-Probe im eigenen Worktree, beide Dienste einzeln auf die kaputte Fassung zurückgedreht: **beide rot**.
+Ergebnis: `verify.sh server --strict` 525 passed, 2 skipped · `verify.sh monitoring --strict` 463 passed, 3 skipped.
+Verify: bash scripts/dev/verify.sh server --strict   und   bash scripts/dev/verify.sh monitoring --strict
+Doku: keine (Test-Infrastruktur, kein Außenverhalten)
 
-Evidenz (alle real gefahren; Zahlen für server/ca-issuer/agent/scripts/desktop/web vom Stand a452c1cf, monitoring nach T6):
-- `verify.sh server --strict` → 524 passed, 2 skipped · `run.sh[quick]: 3 passed, 0 failed, 10 skipped, 2 test-skips`
+## Abschluss
+T1–T3, T6 und T7 gebaut. `erledigt`: Kevin hat T4 und T5 am 2026-09-16 entschieden, damit ist kein `[?]`
+mehr offen.
+- **T5 wird gebaut, als eigene Roadmap-Zeile, und zwar vor T4** — nicht SEC (der Guard entscheidet korrekt und
+  fail-closed), sondern Betreibbarkeit, darf also nicht an SEC-Zeilen vorbeidrängeln.
+- **T4 wird vorerst nicht gebaut.** Die realistische Auslösung ist ein toter Resolver, und in dem Zustand fällt
+  jeder HTTP-Check ohnehin aus — der Schaden ist die falsche Begründung, und die behebt T5. Ein Negativ-Cache
+  pro Host wäre echte Komplexität gegen ein nie gemessenes Szenario. Die Cap-Warnung aus dem Guard ist die
+  Evidenzquelle: greift der Deckel je, wird T4 auf Daten neu aufgemacht.
+
+Evidenz (alle real gefahren; Zahlen für server/ca-issuer/agent/scripts/desktop/web vom Stand a452c1cf, server und monitoring nach T7):
+- `verify.sh server --strict` → 525 passed, 2 skipped · `run.sh[quick]: 3 passed, 0 failed, 10 skipped, 2 test-skips`
 - `verify.sh monitoring --strict` → 463 passed, 3 skipped · `verify.sh ca-issuer --strict` → 65 passed
 - `verify.sh agent --strict` → gofmt + go vet/test/cross PASS · `verify.sh scripts --strict` → shellcheck + 19 Hermetik-Suiten PASS
 - `verify.sh desktop-rs --strict` → 130 passed · `desktop-ui` → 382 passed (59 Dateien) · `desktop-e2e` lint PASS · `web` → 88 passed (18 Dateien)
@@ -127,4 +157,4 @@ compose/Dockerfile, kein `scripts/install|update`, kein FRP/PKI) — nur zwei in
 CHANGELOG und Ledger. Der Kopf sagt `Heavy: keine`; Hook-Pfad und Monitoring-Checks laufen im `all`-Layer des
 nächsten Wochenlaufs.
 
-Push und Draft-PR auf Kevins ausdrückliche Freigabe ausgeführt: PR #19 (Draft), fünf Commits. Der erste CI-Lauf war rot im Job „Monitoring (pytest)“ — Ursache in T6 behoben, kein Flake. Der Lauf nach T6 ist vollständig grün: **21 pass, 1 skipping** (`From-outside stack (mTLS gateway)`, im PR-CI per Gate übersprungen, läuft im Wochenlauf).
+Push und Draft-PR auf Kevins ausdrückliche Freigabe ausgeführt: PR #19 (Draft). Der erste CI-Lauf war rot im Job „Monitoring (pytest)“ — Ursache in T6 behoben, kein Flake. Der Lauf nach T6 ist vollständig grün: **21 pass, 1 skipping** (`From-outside stack (mTLS gateway)`, im PR-CI per Gate übersprungen, läuft im Wochenlauf).

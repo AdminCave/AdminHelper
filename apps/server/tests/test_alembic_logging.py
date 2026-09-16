@@ -2,23 +2,24 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""alembic's env.py must not switch off the app's loggers on its way through (R-0042 T6).
+"""alembic's env.py must not switch off the app's loggers on its way through (R-0042 T7).
 
 `logging.config.fileConfig` defaults to disable_existing_loggers=True, which sets
 `.disabled = True` on every logger that already exists and is not named in alembic.ini —
-`monitor.*` and `app.core.ssrf` included. Nothing fails loudly when that happens: a log line
-simply stops appearing, for the rest of the process. It cost a red CI run on the SSRF
-guard's cap warning, while the server copy had carried the fix since 2026-07-06.
+`adminhelper.*` and `app.core.ssrf` included. Nothing fails loudly when that happens: a log
+line simply stops appearing, for the rest of the process.
 
-No database needed, so this runs in the ordinary fast suite — the check being DB-gated is
-what let the drift live two months. The server suite carries the same test.
+This copy has passed `disable_existing_loggers=False` since 4060e141 (2026-07-06) and says
+why in a comment — but nothing enforced it. The monitoring copy never got the fix, drifted
+for two months, and surfaced only as a red CI job on an unrelated guard (R-0042 T6). A
+comment is not a guard; this test is, and the monitoring suite carries the same one.
 """
 
 import io
 import logging
 from pathlib import Path
 
-_MONITORING_DIR = Path(__file__).resolve().parents[1]
+_SERVER_DIR = Path(__file__).resolve().parents[1]
 
 
 def test_an_env_py_run_leaves_existing_loggers_alive():
@@ -26,14 +27,14 @@ def test_an_env_py_run_leaves_existing_loggers_alive():
     from alembic.runtime.environment import EnvironmentContext
     from alembic.script import ScriptDirectory
 
-    canary = logging.getLogger("monitor.filecfg_canary")
+    canary = logging.getLogger("adminhelper.filecfg_canary")
     assert not canary.disabled, "a freshly created logger starts enabled — guard the guard"
     # Cleared so the level check below proves that THIS run configured logging, rather than
     # inheriting an INFO left behind by an earlier test in the same process.
     logging.getLogger("alembic").setLevel(logging.NOTSET)
 
-    cfg = Config(str(_MONITORING_DIR / "alembic.ini"))
-    cfg.set_main_option("script_location", str(_MONITORING_DIR / "alembic"))
+    cfg = Config(str(_SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_SERVER_DIR / "alembic"))
     ini_url = cfg.get_main_option("sqlalchemy.url")  # the placeholder, until env.py overwrites it
     # Offline mode renders SQL; without a buffer alembic's BEGIN/COMMIT would go to stdout.
     cfg.output_buffer = io.StringIO()
@@ -55,5 +56,5 @@ def test_an_env_py_run_leaves_existing_loggers_alive():
     )
     assert not canary.disabled, (
         "alembic disabled a pre-existing logger — env.py has to pass "
-        "disable_existing_loggers=False to fileConfig, the way the server copy does"
+        "disable_existing_loggers=False to fileConfig (see the comment there)"
     )
