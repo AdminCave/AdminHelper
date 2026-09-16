@@ -52,12 +52,17 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       # Log verbosity for the app + uvicorn loggers (DEBUG/INFO/WARNING/ERROR).
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - DOMAIN=${DOMAIN:-localhost}
-      - EXTRA_SANS=${EXTRA_SANS:-}
+      # No DOMAIN/EXTRA_SANS here: nothing in apps/server reads them. They are
+      # the ca-issuer's and the gateway's knobs and are set on those services.
       # Uvicorn worker count. Default 1 (single-worker). Set >1 to scale across
       # CPU cores; requires the `scheduler` service (below) so APScheduler jobs
       # still run exactly once, and Redis for shared rate-limiting (already set).
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
+      # SQLAlchemy pool PER WORKER. Total connections against Postgres are
+      # WEB_CONCURRENCY x (pool + overflow), so these move together with the
+      # worker count — .env.example carries that arithmetic.
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # mTLS enforcement (per-route cert-scope check). Default true = enforced
@@ -72,10 +77,12 @@ services:
       - FRP_CONFIG_DIR=/app/frp-config
       # Postgres
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
+      # libpq variables for the entrypoint's pg_isready wait. No PGPASSWORD:
+      # pg_isready does not authenticate, and the password already travels in
+      # DATABASE_URL. Only the monitoring entrypoint runs psql and needs it.
       - PGHOST=postgres
       - PGPORT=5432
       - PGUSER=adminhelper
-      - PGPASSWORD=${POSTGRES_PASSWORD}
       # Monitoring-Proxy
       - MONITOR_SERVICE_URL=http://monitoring:8080
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
@@ -129,11 +136,13 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      # Same pool knobs as the web service: the scheduler holds its own engine.
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-20}
       - DATABASE_URL=postgresql+psycopg://adminhelper:${POSTGRES_PASSWORD}@postgres:5432/adminhelper
       - PGHOST=postgres
       - PGPORT=5432
       - PGUSER=adminhelper
-      - PGPASSWORD=${POSTGRES_PASSWORD}
       - MONITOR_API_KEY=${MONITOR_API_KEY:-}
       - REDIS_URL=redis://redis:6379/0
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}

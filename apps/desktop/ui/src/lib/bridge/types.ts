@@ -98,6 +98,7 @@ export interface ResolvedConnection {
   connection: Connection;
   viaTunnel: boolean;
   tunnelName?: string | null;
+  tunnelType?: string | null;
 }
 
 export interface AnsibleTarget {

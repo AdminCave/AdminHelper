@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from urllib.parse import urlparse
 
 # Extra reserved ranges as an explicit backstop to the category checks below
@@ -24,6 +26,16 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("0.0.0.0/8"),
     ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
 ]
+
+# socket.getaddrinfo has no timeout and uses the resolver defaults (up to ~30 s for a hung
+# nameserver). The hook script worker calls this before its own HTTP timeout applies, and the
+# webhook that triggers it is unauthenticated — so an attacker-chosen host pointed at a dead
+# nameserver parks a worker for half a minute per request. Cap resolution with a hard deadline via
+# a dedicated executor; if a worker hangs, result() still returns after the timeout (the blocked
+# getaddrinfo thread is isolated here, not on the worker pool). Same mechanism as the monitoring
+# guard, which this file is required to mirror (4.111, harness 8a T5).
+_DNS_RESOLVER = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ssrf-dns")
+_DNS_TIMEOUT_S = 5
 
 
 def is_private_url(url: str) -> bool:
@@ -39,9 +51,11 @@ def is_private_url(url: str) -> bool:
     if not hostname:
         return True
     try:
-        addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except (socket.gaierror, ValueError, UnicodeError):
-        return True  # cannot resolve -> fail closed, never allow
+        addr_info = _DNS_RESOLVER.submit(
+            socket.getaddrinfo, hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+        ).result(timeout=_DNS_TIMEOUT_S)
+    except (FutureTimeout, socket.gaierror, ValueError, UnicodeError):
+        return True  # cannot resolve (or resolution timed out) -> fail closed, never allow
     for _family, _, _, _, sockaddr in addr_info:
         try:
             ip = ipaddress.ip_address(sockaddr[0])

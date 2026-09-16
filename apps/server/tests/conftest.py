@@ -171,3 +171,15 @@ def test_client(db_session):
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
+
+
+def pytest_addoption(parser):
+    # Re-records tests/openapi.snapshot.json instead of asserting against it.
+    # Opt-in on purpose: the snapshot is the contract, so refreshing it is an
+    # explicit act that belongs in the same commit as the API change.
+    parser.addoption(
+        "--update-openapi-snapshot",
+        action="store_true",
+        default=False,
+        help="rewrite tests/openapi.snapshot.json from the live app schema",
+    )

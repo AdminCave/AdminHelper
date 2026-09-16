@@ -176,6 +176,76 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           &amp;&amp; DATABASE_URL=&hellip; pytest</code> ist also nicht freigebbar. Env-Bedarf l&ouml;st das
           Skript auf, der Aufrufer schreibt Flags.</p>
 
+          <h2>Parit&auml;ts- und Contract-Gates</h2>
+          <p>Zwei Fehlerklassen brauchen keine VM, um gefunden zu werden: &bdquo;Kopie driftet&ldquo; (dieselbe
+          Wahrheit steht an zwei Stellen, eine wird ge&auml;ndert) und &bdquo;Vertrag bricht still&ldquo; (ein Feld,
+          ein Header, ein Pfad &auml;ndert sich auf einer Seite). Jedes Gate hier pinnt zwei Wahrheiten
+          aneinander und wird bei einer Einzelmutation rot. Jedes hat eine Nicht-Leer-Assertion mit
+          Mindestzahl &ndash; ein Guard, der nichts einliest, ist gr&uuml;n und wertlos.</p>
+          <table>
+            <thead><tr><th>Gate</th><th>Wahrheit A</th><th>Wahrheit B</th><th>wo es l&auml;uft</th></tr></thead>
+            <tbody>
+              <tr><td>Monitoring-Proxy-Allowlist</td><td><code>monitoring_proxy/router.py</code> <code>_ALLOWED_PATH_PREFIXES</code></td><td>Routen-Decorators in <code>apps/monitoring/app/routers/*.py</code></td><td>Job <code>server</code></td></tr>
+              <tr><td>Identity-Header</td><td><code>apps/gateway/identity-headers.conf</code> + Strips der Enroll-Plane</td><td><code>core/identity.py</code>, <code>ca-issuer/app/config.py</code></td><td>Job <code>server</code></td></tr>
+              <tr><td>Enrollment-Hash</td><td><code>core/auth.py</code> <code>hash_api_key</code></td><td><code>ca-issuer/app/db.py</code> <code>_hash</code></td><td>Job <code>server</code></td></tr>
+              <tr><td>Transition-Pipeline</td><td><code>check_engine.apply_result</code></td><td>Textscan &uuml;ber <code>apps/monitoring/app/**</code></td><td>Job <code>monitoring</code></td></tr>
+              <tr><td>SSRF-Guard</td><td><code>apps/server/app/core/ssrf.py</code></td><td><code>apps/monitoring/app/core/ssrf.py</code></td><td>Job <code>server</code></td></tr>
+              <tr><td>OpenAPI-Snapshot</td><td><code>app.openapi()</code> je Dienst</td><td><code>apps/&lt;dienst&gt;/tests/openapi.snapshot.json</code></td><td>Jobs <code>server</code>, <code>monitoring</code></td></tr>
+              <tr><td>OpenAPI-Kompatibilit&auml;t</td><td>Snapshot des Basis-Branch</td><td>Snapshot dieses Branch</td><td>Job <code>openapi-compat</code></td></tr>
+              <tr><td>Doku-Pfade</td><td><code>&lt;code&gt;</code>-Fragmente in <code>docs/**/*.html</code></td><td>der Repo-Baum</td><td>Job <code>ops-scripts</code></td></tr>
+              <tr><td>Env-Parit&auml;t</td><td><code>docker-compose.yml</code>, <code>.env.example</code></td><td><code>config.py</code> der drei Python-Dienste</td><td>Job <code>server</code></td></tr>
+              <tr><td>Geteilte API-Typen</td><td><code>apps/web/src/lib/api/types.ts</code></td><td><code>apps/desktop/ui/src/lib/api/types.ts</code></td><td>Job <code>desktop-ui</code></td></tr>
+            </tbody>
+          </table>
+          <p>Der <strong>Snapshot</strong> ist der Vertrag, den Web-Frontend, Desktop-UI und Agent benutzen,
+          ohne gegen ihn kompiliert zu werden. Er wird <em>im selben Commit</em> wie die API-&Auml;nderung neu
+          aufgezeichnet &ndash; sonst ist der Job rot:</p>
+          <div class="code-header"><span>bash</span></div>
+          <pre><code>cd apps/server      &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot
+cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-openapi-snapshot</code></pre>
+          <p>Der Job <code>openapi-compat</code> vergleicht den Snapshot des Basis-Branch mit dem dieses
+          Branch (<code>scripts/dev/openapi-breaking.sh</code>, <code>oasdiff breaking --fail-on ERR</code>):
+          neue Pfade und Felder sind gr&uuml;n, ein entfernter Pfad, ein entferntes Response-Feld oder ein neu
+          verpflichtendes Request-Feld sind rot. <code>oasdiff</code> kommt als <strong>Release-Tarball
+          v1.32.0 mit gepinnter SHA-256</strong>, nicht per <code>go install</code>: jede Version ab v1.24.0
+          verlangt <code>go 1.26</code>, die Workflows pinnen aber Go 1.25 mit <code>GOTOOLCHAIN=local</code>
+          &ndash; der Bau aus Quellen scheitert dann genau wie bei <code>govulncheck</code> (PR&nbsp;#14).
+          Fehlt das Binary lokal, endet das Skript mit <code>75</code> (SKIP, unter <code>--strict</code> rot),
+          nie mit einem stillen Gr&uuml;n; eine Basis-Ref, die im Checkout nicht aufl&ouml;st, ist ein Fehler
+          (Exit&nbsp;2), damit ein flacher Klon das Gate nicht aushebelt.</p>
+
+          <p><strong>doc-smoke</strong> (<code>scripts/dev/doc-smoke.py</code>) liest jedes
+          <code>&lt;code&gt;</code> in <code>docs/**/*.html</code> und pr&uuml;ft, dass ein Fragment, das mit
+          <code>apps/</code>, <code>scripts/</code>, <code>docs/</code>, <code>.github/</code> oder
+          <code>.claude/</code> beginnt, eine existierende Datei benennt &ndash; eine umbenannte Datei und
+          eine zur&uuml;ckgelassene Doku ist die h&auml;ufigste Art, wie diese Dokumentation veraltet. Die Existenz wird gegen <code>git ls-files</code>
+          aufgel&ouml;st, nicht gegen den Arbeitsbaum &ndash; sonst w&auml;re der Guard lokal gr&uuml;n und im CI rot,
+          weil Build-Ausgaben wie <code>apps/web/dist/</code> nur auf der Entwickler-Box liegen. Ausnahmen
+          stehen in <code>scripts/dev/doc-smoke-allow.txt</code> (Begr&uuml;ndung nach <code>#</code>); mehr als
+          <strong>f&uuml;nf</strong> verweigert das Skript, weil eine Ausnahmeliste der Ort ist, an dem so ein
+          Guard verrottet. Die zweite Pr&uuml;fung <code>--env</code> (Namen in Gro&szlig;buchstaben gegen die drei
+          <code>config.py</code> und <code>.env.example</code>) ist noch <em>kein</em> Gate: die Heuristik
+          meldet derzeit 43 Namen, die gar keine Env-Variablen sind (HTTP-Methoden, Log-Level, Dateinamen).</p>
+
+          <p><strong>Env-Parit&auml;t</strong> (<code>apps/server/tests/test_env_parity.py</code>) h&auml;lt drei
+          getrennt gepflegte Beschreibungen derselben Konfigurationsfl&auml;che zusammen: eine Variable, die ein
+          Dienst ohne Default liest, muss Compose ihm setzen (sonst kommt sie als leerer String an und sieht aus
+          wie ein g&uuml;ltiger Wert); ein <code>environment:</code>-Key muss vom Code dieses Dienstes gelesen
+          werden (sonst ist er ein &Uuml;berbleibsel oder eine halb gelandete Umbenennung); und jede
+          <code>${VAR}</code>-Substitution muss in <code>.env.example</code> stehen und umgekehrt &ndash; ein
+          dokumentierter Stellhebel, den Compose nicht durchreicht, bewirkt beim Setzen nichts. Keine
+          Ausnahmeliste: wo eine Regel eine Ausnahme gebraucht h&auml;tte, war die Regel falsch.</p>
+
+          <p><strong>Geteilte API-Typen</strong> (<code>sync-from-web.sh --check</code>): die beiden
+          <code>api/types.ts</code> sind l&auml;ngst keine gemeinsame Datei mehr &ndash; das Web beschreibt die
+          Admin-Panel-API (25 Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole, und nur die
+          k&ouml;nnen driften. Gepr&uuml;ft wird deshalb die Schnittmenge, und als Teilmenge statt als Gleichheit:
+          jede Zeile der Web-Seite muss im Desktop stehen, das Desktop darf mehr f&uuml;hren. <code>Server</code>
+          tut das auch zu Recht &ndash; <code>to_dict()</code> liefert <code>connections</code>, das Admin-Panel
+          ignoriert es nur. Blind ist die Regel in einer Richtung: entfernt das Web ein Feld, bleibt die Teilmenge
+          erf&uuml;llt und das Desktop beh&auml;lt die Leiche. Die vier erwarteten gemeinsamen Symbole stehen
+          namentlich im Skript, damit ein einzelnes Verschwinden auff&auml;llt.</p>
+
           <h2>Container-Images (ghcr.io)</h2>
           <p>Getaggt wird über <code>docker/metadata-action</code>. <code>:latest</code> entsteht nur auf einem (Nicht-Prerelease-)Semver-Tag &ndash; nicht bei jedem <code>main</code>-Push:</p>
           <div class="code-header"><span>text</span></div>

@@ -49,7 +49,7 @@
 [Desktop client] -> /api/monitoring/* (admin) -> AdminHelper server -> /monitor/* (X-Internal-Key) -> Monitoring service</code></pre>
 
           <h2>AdminHelper side: <code>monitoring_proxy</code></h2>
-          <p>There is no dedicated monitoring module on the AdminHelper server anymore; everything goes through <code>apps/server/app/modules/monitoring_proxy.py</code>:</p>
+          <p>There is no dedicated monitoring module on the AdminHelper server anymore; everything goes through <code>apps/server/app/modules/monitoring_proxy/router.py</code>:</p>
           <ul>
             <li><code>POST /api/monitoring/agent/{server_id}/report</code> &ndash; <strong>public</strong> (X-API-Key), forwarded 1:1 to the service</li>
             <li><code>GET/POST/PUT/DELETE /api/monitoring/{path:path}</code> &ndash; admin-only, internally augmented with <code>X-Internal-Key: $MONITOR_API_KEY</code></li>

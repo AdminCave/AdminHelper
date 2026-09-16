@@ -139,6 +139,93 @@ Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
 ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
 nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
 
+### OpenAPI-Snapshot aktualisieren
+
+`apps/server/tests/openapi.snapshot.json` und `apps/monitoring/tests/openapi.snapshot.json`
+sind der eingecheckte Vertrag der beiden APIs. Web-Frontend, Desktop-UI und Agent werden
+**nicht** gegen ihn kompiliert — ein umbenanntes Feld faellt dort erst zur Laufzeit auf.
+Der Snapshot macht jede solche Aenderung zu einem Review-Diff, und der CI-Job
+`openapi-compat` vergleicht ihn per `oasdiff` gegen den Basis-Branch.
+
+Aendert eine Task die API, gehoert die neue Aufzeichnung in **denselben Commit**:
+
+```bash
+cd apps/server     && pytest tests/test_openapi_snapshot.py --update-openapi-snapshot
+cd apps/monitoring && pytest tests/test_openapi_snapshot.py --update-openapi-snapshot
+```
+
+Ohne das Flag vergleicht der Test nur und zeigt bei Abweichung einen gekuerzten
+Unified-Diff. Der Test braucht keine Datenbank (der App-Import reicht), `info.version`
+wird auf `0.0.0` normalisiert und ein `servers`-Feld entfernt — sonst waere jeder Release
+ein Snapshot-Diff ohne Vertragsaenderung.
+
+Lokal gegen den Basis-Branch pruefen (braucht `oasdiff` im PATH, sonst Exit 75 = SKIP):
+
+```bash
+bash scripts/dev/openapi-breaking.sh server --base origin/main
+bash scripts/dev/openapi-breaking.sh monitoring --base origin/main
+```
+
+### Geteilte API-Typen (sync-from-web.sh --check)
+
+`apps/web/src/lib/api/types.ts` und `apps/desktop/ui/src/lib/api/types.ts` sind
+**keine** gemeinsame Datei mehr: das Web beschreibt die Admin-Panel-API (25
+Exporte), das Desktop die Client-API (58). Gemeinsam sind vier Symbole —
+`FrpConfig`, `FrpStatus`, `FrpStatusProxy`, `Server`.
+
+```bash
+bash apps/desktop/ui/scripts/sync-from-web.sh --check   # Gate (CI: desktop-ui)
+```
+
+Geprueft wird die Schnittmenge, und zwar als **Teilmenge**: jede Zeile des
+Web-Blocks muss im Desktop-Block stehen, das Desktop darf mehr fuehren. Das ist
+kein Kompromiss, sondern die richtige Invariante — `Server` traegt im Desktop
+zusaetzlich `connections?: Connection[]`, weil `to_dict()` das Feld liefert und
+nur das Admin-Panel es ignoriert. Der reale Drift, den die Regel faengt: das Web
+zieht ein neues Server-Feld nach, das Desktop nicht.
+
+Quell-Exporte ohne Gegenstueck im Ziel werden nur berichtet, nicht bemaengelt.
+Die vier erwarteten gemeinsamen Symbole stehen namentlich im Skript
+(`CHECK_SHARED`): verschwindet eines von einer Seite, ist das ein Fehler, keine
+kleinere gruene Menge. Ein blosser Zaehl-Boden haette erst bei zwei gleichzeitigen
+Verlusten gegriffen — der realistische Fall ist der einzelne Refactor.
+
+**Wo der Guard blind ist:** die Loeschrichtung. Entfernt das Web ein Feld, bleibt
+die Teilmenge erfuellt — das Desktop behaelt die Leiche, und niemand meldet es.
+Das ist die einzige der sechs Drift-Formen, die die Regel nicht faengt
+(umbenannt, Typ geaendert, im Ziel entfernt: alle rot).
+
+**`--apply` ist fuer diese Datei tot** und der bestehende Ueberschreib-Schutz
+haelt es so: er bricht ab, sobald das Ziel Exporte hat, die die Quelle nicht
+kennt — und das sind 54.
+
+### Doku-Smoke (doc-smoke.py)
+
+`scripts/dev/doc-smoke.py` prueft, ob die Dokumentation den Baum noch beschreibt:
+jedes `<code>`-Fragment in `docs/**/*.html`, das mit `apps/`, `scripts/`, `docs/`,
+`.github/` oder `.claude/` beginnt, muss eine existierende Datei benennen.
+
+```bash
+python3 scripts/dev/doc-smoke.py            # nur berichten (Exit 0)
+python3 scripts/dev/doc-smoke.py --strict   # Gate: Funde = Exit 1 (CI: ops-scripts)
+python3 scripts/dev/doc-smoke.py --paths --env   # beides; --env allein prueft NUR Env-Namen
+```
+
+Die Existenz wird gegen `git ls-files` aufgeloest, nicht gegen den Arbeitsbaum:
+sonst waere der Guard lokal gruen und im CI rot, weil Build-Ausgaben wie
+`apps/web/dist/` nur auf der Entwickler-Box liegen.
+
+Ausnahmen stehen in `scripts/dev/doc-smoke-allow.txt`, eine Zeile je Eintrag mit
+Begruendung nach `#`. Der Deckel liegt bei **fuenf** Eintraegen: darueber
+verweigert das Skript den Dienst (Exit 2). Eine Ausnahmeliste ist der Ort, an dem
+so ein Guard verrottet — waechst sie, ist die Doku zu korrigieren, nicht die Liste.
+
+`--env` vergleicht `<code>`-Fragmente in Grossbuchstaben gegen die Env-Namen der
+drei `config.py` und `.env.example`. Es ist bewusst noch **kein** Gate: die
+Heuristik meldet aktuell 43 Namen, die gar keine Env-Variablen sind (HTTP-Methoden,
+Log-Level, Dateinamen wie `SHA256SUMS`). Erst nach deren Triage wandert `--env` in
+den CI-Step.
+
 ### AH_REQUIRED in .devenv.sh
 
 `--strict` macht aus einem SKIP einen Fehler — aber nur fuer die Steps der
@@ -333,7 +420,6 @@ services:
       dockerfile: Dockerfile
     image: adminhelper-server:dev
     environment:
-      - DOMAIN=localhost
       - ADMIN_PASSWORD=dev   # nur fuer lokale Entwicklung; Production: leer lassen + Bootstrap-Token
   monitoring:
     build:

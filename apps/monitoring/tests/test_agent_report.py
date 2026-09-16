@@ -414,23 +414,26 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     # push path did not. A transition suppressed by maintenance or host-down left
     # no trace anywhere afterwards — MonitorAlertLog only records SENT
     # notifications, and `since` is overwritten by the next change.
+    # Since harness 8a T4 both paths share check_engine.apply_result, so the line
+    # carries the engine's logger name on the push path too — same message, same
+    # one-line-per-transition rule.
     client, factory = client_db
     _add_resources_check(factory, consecutive_fails=1)
 
     # First push creates the state row; neither path logs a transition there
     # (there is no previous status to transition FROM).
-    with caplog.at_level(logging.INFO, logger="app.routers.agent"):
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
         client.post("/agent/srv-1/report", json=_report(cpu=5))
     assert [
-        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+        r for r in caplog.records if r.name == "monitor.engine" and "->" in r.getMessage()
     ] == []
 
     # ok -> critical: exactly one transition line.
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="app.routers.agent"):
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
         client.post("/agent/srv-1/report", json=_report(cpu=99))
     transitions = [
-        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+        r for r in caplog.records if r.name == "monitor.engine" and "->" in r.getMessage()
     ]
     assert len(transitions) == 1, [r.getMessage() for r in caplog.records]
     assert "ok -> critical" in transitions[0].getMessage()
@@ -438,8 +441,8 @@ def test_status_transition_is_logged_on_the_push_path(client_db, caplog):
     # A push without a status change stays silent, otherwise every report of a
     # healthy fleet would spam the log.
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="app.routers.agent"):
+    with caplog.at_level(logging.INFO, logger="monitor.engine"):
         client.post("/agent/srv-1/report", json=_report(cpu=99))
     assert [
-        r for r in caplog.records if r.name == "app.routers.agent" and "->" in r.getMessage()
+        r for r in caplog.records if r.name == "monitor.engine" and "->" in r.getMessage()
     ] == []

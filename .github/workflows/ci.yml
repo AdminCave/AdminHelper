@@ -235,6 +235,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      # The four types both api/types.ts files describe (FrpConfig, FrpStatus,
+      # FrpStatusProxy, Server) are maintained twice. Every line the web file
+      # declares has to exist in the desktop one — the desktop may carry more,
+      # since it projects the same payload further (harness 8a, T14).
+      - name: Shared API types in lockstep with the web frontend
+        run: bash apps/desktop/ui/scripts/sync-from-web.sh --check
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
@@ -517,6 +523,40 @@ jobs:
           test -n "$ins" && test "$ins" = "$upd" || {
             echo "::error::MINISIGN_PUBKEY drift (install=$ins, update=$upd) — a key rotation must touch both, else updates verify against the old key and break on every existing install"; exit 1; }
 
+  openapi-compat:
+    name: OpenAPI breaking changes (oasdiff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OASDIFF_VERSION: "1.32.0"
+      # sha256 of oasdiff_1.32.0_linux_amd64.tar.gz from the release's checksums.txt.
+      OASDIFF_SHA256_LINUX_AMD64: "5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The gate diffs this branch's snapshot against the base branch's, so the
+          # base ref has to exist locally. The default shallow clone has only this
+          # commit — and openapi-breaking.sh refuses an unresolvable ref rather than
+          # reporting "nothing to compare", so a missing one is red, not silently green.
+          fetch-depth: 0
+      - name: Install oasdiff
+        # Release tarball, not `go install`: every oasdiff from v1.24.0 on declares
+        # `go 1.26` in its go.mod, while these workflows pin Go 1.25 with
+        # GOTOOLCHAIN=local — building from source fails exactly the way govulncheck
+        # did (PR #14). A prebuilt tarball needs no toolchain at all; the SHA-256
+        # above is the pin, so a swapped asset is a failure, not a surprise binary.
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          url="https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/oasdiff.tar.gz" "$url"
+          echo "${OASDIFF_SHA256_LINUX_AMD64}  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP/bin" oasdiff
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Server API stays compatible with the base branch
+        run: bash scripts/dev/openapi-breaking.sh server --base "origin/${{ github.base_ref || 'main' }}"
+      - name: Monitoring API stays compatible with the base branch
+        run: bash scripts/dev/openapi-breaking.sh monitoring --base "origin/${{ github.base_ref || 'main' }}"
+
   # Lint the host ops scripts and run the whole hermetic shell-test block through
   # the aggregator (fake releases over file://, stubbed docker — no real stack).
   # --severity=warning so pre-existing info-level notes don't gate; the new
@@ -540,6 +580,13 @@ jobs:
       # skipped test a failure here, where every precondition is available.
       - name: Hermetic shell tests
         run: bash scripts/tests/run.sh unit --strict --only scripts
+      # Does the documentation still describe this tree? Every <code>apps/…</code>
+      # in docs/**/*.html has to name a file that exists. --env stays off: the
+      # ALL_CAPS heuristic still reports 43 names that are not env variables at
+      # all (HTTP methods, log levels, file names), so it is information, not a
+      # gate, until that list is triaged (harness 8a, T17).
+      - name: Documentation smoke test
+        run: python3 scripts/dev/doc-smoke.py --strict
 
   gateway-config:
     name: Gateway (nginx -t)

@@ -45,8 +45,6 @@ _client = httpx.AsyncClient(timeout=30)
 _ALLOWED_PATH_PREFIXES = (
     "checks",
     "alerts",
-    "log",
-    "metrics",
     "status",
     "templates",
     "maintenance",
@@ -82,7 +80,21 @@ async def proxy_agent_report(
     )
 
 
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+# One decorator per method instead of a single api_route(methods=[…]): FastAPI
+# derives an operation's operationId from `list(route.methods)[0]`, so a
+# multi-method route gives all four operations ONE id — picked from a set, i.e.
+# a different one per process (string hashing is randomized), and duplicated
+# across four operations, which OpenAPI forbids. Four routes give four stable,
+# unique ids. Routing is unchanged and so is the 405 status; the one visible
+# difference is that Starlette builds the `Allow` header from the first partially
+# matching route, so it now names one method instead of all four. No client in
+# this repo reads it (checked: apps/web, apps/desktop/ui, apps/agent). Without
+# this the generated schema differs between runs and tests/openapi.snapshot.json
+# could never be pinned (harness 8a, T7).
+@router.get("/{path:path}")
+@router.post("/{path:path}")
+@router.put("/{path:path}")
+@router.delete("/{path:path}")
 async def proxy_to_monitoring(
     path: str,
     request: Request,

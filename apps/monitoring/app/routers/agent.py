@@ -14,12 +14,10 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.alerter import process_alert, resolve_notification
-from app.check_engine import effective_status, is_suppressed, next_fail_count
+from app.check_engine import _dispatch_alert_bg, apply_result
 from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import EXCLUDED_FSTYPES, record_agent_report
-from app.core import database
 from app.core.auth import require_agent
 from app.core.database import get_db
 from app.core.time import utcnow_naive
@@ -29,30 +27,6 @@ from app.models import MonitorAgentLiveness, MonitorCheck, MonitorState
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _dispatch_alert_bg(check_id: str, old_status: str, new_status: str) -> None:
-    """Dispatch one alert (webhook/SMTP) off the agent push request path.
-
-    Scheduled via BackgroundTasks so it runs AFTER the response: a slow or hung
-    webhook/SMTP server can no longer stall the agent's request thread (at
-    250-500 agents that would saturate the pool and slow the push for everyone).
-    Uses its own session — the request session is already closed by the time
-    this runs. Errors are contained: a failed dispatch must never surface to the
-    agent. Referenced via ``database.SessionLocal`` so tests can patch it.
-    """
-    db = database.SessionLocal()
-    try:
-        check = db.query(MonitorCheck).filter(MonitorCheck.id == check_id).first()
-        if check is None:
-            return
-        process_alert(db, check, old_status, new_status)
-        db.commit()
-    except Exception:
-        db.rollback()
-        logger.exception("Alert-Dispatch fuer Check '%s' fehlgeschlagen", check_id)
-    finally:
-        db.close()
 
 
 def _num(v):
@@ -228,8 +202,6 @@ def agent_report(
                 .with_for_update()
                 .first()
             )
-            old_status = state.status if state else "pending"
-            prev_fail_count = state.fail_count if state else 0
 
             if check.check_type == "agent_resources":
                 try:
@@ -261,65 +233,23 @@ def agent_report(
                     )
                 )
 
-            # Update state — same damping logic as the scheduler path; the
-            # check_engine pure functions are the single source (audit: the
-            # previous inline copy could drift from the tested implementation).
-            new_fail_count = next_fail_count(result_status, prev_fail_count)
-            eff_status = effective_status(
-                result_status, new_fail_count, check.consecutive_fails, old_status
+            # Same transition pipeline as the scheduler path — one implementation
+            # in check_engine, not a copy (B3). A report without a 'resources'
+            # block carries no details; keeping the stored ones preserves the
+            # per-metric hysteresis memory ('problems') across one degenerate
+            # push (T38). notify is collected here and dispatched only after the
+            # batch commit: a blocking webhook/SMTP must not stall this request.
+            old_status, eff_status, decision = apply_result(
+                db,
+                check,
+                state,
+                result_status,
+                message,
+                details,
+                now,
+                keep_previous_details_when_absent=True,
             )
-            if is_suppressed(result_status, new_fail_count, check.consecutive_fails):
-                message = f"{message} (Fehler {new_fail_count}/{check.consecutive_fails})"
-
-            details_json = json.dumps(details) if details is not None else None
-
-            if not state:
-                state = MonitorState(
-                    check_id=check.id,
-                    status=eff_status,
-                    since=now,
-                    last_check=now,
-                    fail_count=new_fail_count,
-                    message=message,
-                    details=details_json,
-                )
-                db.add(state)
-            else:
-                if eff_status != state.status:
-                    state.since = now
-                    # Same line the scheduler path writes (check_engine.execute_check).
-                    # Without it a push-evaluated transition leaves no trace at all:
-                    # MonitorAlertLog only records SENT notifications, so a transition
-                    # suppressed by maintenance or host-down was invisible afterwards.
-                    logger.info(
-                        "Check '%s': %s -> %s (%s)",
-                        check.name,
-                        old_status,
-                        eff_status,
-                        message,
-                    )
-                state.status = eff_status
-                state.fail_count = new_fail_count
-                state.last_check = now
-                state.message = message
-                # None details = the checker had nothing to evaluate (e.g. a
-                # report without a 'resources' block -> unknown). Keep the
-                # stored details then: nulling them would wipe the per-metric
-                # hysteresis memory ('problems') one degenerate push (T38).
-                if details is not None:
-                    state.details = details_json
-
-            # Alerting on a DISCREPANCY to the last reported status, not on the
-            # raw transition (sent-state, alert-sent-state T5): the next push
-            # catches suppressed reports up once maintenance/host-down is over.
-            # silent_ack is recorded inline (bookkeeping, no BG task); notify is
-            # collected now and dispatched after the commit in a background task
-            # (blocking webhook/SMTP must not stall this request — see
-            # _dispatch_alert_bg). process_alert re-checks under FOR UPDATE.
-            decision = resolve_notification(state.notified_status, eff_status)
-            if decision == "silent_ack":
-                state.notified_status = eff_status
-            elif decision == "notify":
+            if decision == "notify":
                 pending_alerts.append((check.id, old_status, eff_status))
 
             checks_updated += 1

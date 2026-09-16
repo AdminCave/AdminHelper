@@ -107,7 +107,7 @@ async fn connect_rdp(
 }</code></pre>
 
           <h2>RDP-Race-Guard</h2>
-          <p>Wenn der Nutzer mehrmals kurz hintereinander auf <em>Connect</em> klickt, würden ohne Schutz mehrere RDP-Prozesse starten. Der Desktop-Client vergibt pro Klick eine <strong>monotone UUID</strong>. Läuft der FRP-Tunnel-Aufbau noch, während eine neue Connect-ID reinkommt, wird die alte verworfen. Implementierung in <code>apps/desktop/src-tauri/src/rdp/race_guard.rs</code>.</p>
+          <p>Wenn der Nutzer mehrmals kurz hintereinander auf <em>Connect</em> klickt, laufen mehrere RDP-Versuche nebeneinander &ndash; und ein versp&auml;tetes <code>rdp-error</code>-Event des abgebrochenen Versuchs w&uuml;rde den gerade laufenden als gescheitert markieren. Der Desktop-Client vergibt deshalb pro Versuch eine <strong>Correlation-ID</strong> (<code>crypto.randomUUID()</code>) und ordnet jedes Fehler-Event darüber seinem Versuch zu; ein Event ohne passenden offenen Versuch wird verworfen. Implementierung in <code>apps/desktop/ui/src/lib/stores/connectFlow.ts</code>, Tests in <code>apps/desktop/ui/src/lib/stores/connectFlow.test.ts</code>.</p>
 
           <h2>Keyring-Secrets</h2>
           <p>Passwörter landen nicht in der lokalen Connection-Datei, sondern im OS-Keyring:</p>

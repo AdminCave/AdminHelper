@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test, expect } from '@playwright/test';
-import { api, mockApi } from './mocks';
+import { api, mockApi, userMe } from './mocks';
 
 // Every other suite runs as admin (mockApi serves is_admin: true), so nothing proved
 // what a non-admin sees. The sidebar filter + the routeGuard (1.34) are the only
@@ -13,13 +13,9 @@ test.describe('Authorization', () => {
     page,
   }) => {
     await mockApi(page);
-    const member = {
-      id: 2,
-      username: 'member',
-      is_admin: false,
-      created_at: '2025-01-01T00:00:00Z',
-      server_ids: [],
-    };
+    // Built from the same helper as the fixture table: a hand-written body here
+    // would be a second description of /api/auth/me, outside the contract test.
+    const member = userMe(2, 'member', false);
     await page.route(api('auth/me'), (r) =>
       r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(member) }),
     );
