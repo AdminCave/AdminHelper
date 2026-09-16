@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # SSRF-Guard: DNS-Auflösung ohne geteilten Pool — Task-Ledger (Kurz)
-Status: aktiv · Branch: fix/ssrf-resolver-isolation · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: blockiert · Branch: fix/ssrf-resolver-isolation · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: tasks/harness-stufe-8a.md (Gesamt-Review, Befund „geteilter ThreadPoolExecutor") — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine; Hook-Pfad und Monitoring-Checks laufen im `all`-Layer des nächsten Wochenlaufs
@@ -78,3 +78,24 @@ kein Nachtrag zu R-0042 — soll er als eigene Roadmap-Zeile aufgemacht werden?
 (`checkers/http.py`, `alerter.py`, `script_worker.py`) „Ziel ist privat/reserviert" über ein öffentliches,
 korrekt konfiguriertes Ziel. Ein kleiner Grund-Enum (allowed / private / unresolved) würde das diagnostizierbar
 machen, ändert aber die Signatur, drei Aufrufer und nach außen sichtbare Meldungen — nicht im Auftrag von R-0042. Dazu gehört: der `RuntimeError`-Pfad (Thread-Erschöpfung, Subinterpreter) lehnt heute jedes Ziel ohne eine einzige Logzeile ab. Die vorhandene Drossel taugt dafür nicht — sie trägt die Deckel-Meldung —, also gehört auch das in diese Entscheidung.
+
+## Abschluss
+T1–T3 fertig, drei Commits auf `fix/ssrf-resolver-isolation`. `blockiert` statt `erledigt`, weil T4 und T5 als
+`[?]` offen sind — beide sind Entscheidungen, kein Rest der Umsetzung; entscheidet Kevin sie (eigene
+Roadmap-Zeile oder verworfen), werden daraus `[~]` und der Kopf geht auf `erledigt`.
+
+Evidenz (alle real gefahren, Endstand a452c1cf):
+- `verify.sh server --strict` → 524 passed, 2 skipped · `run.sh[quick]: 3 passed, 0 failed, 10 skipped, 2 test-skips`
+- `verify.sh monitoring --strict` → 462 passed, 3 skipped · `verify.sh ca-issuer --strict` → 65 passed
+- `verify.sh agent --strict` → gofmt + go vet/test/cross PASS · `verify.sh scripts --strict` → shellcheck + 19 Hermetik-Suiten PASS
+- `verify.sh desktop-rs --strict` → 130 passed · `desktop-ui` → 382 passed (59 Dateien) · `desktop-e2e` lint PASS · `web` → 88 passed (18 Dateien)
+- Alle 13 Pflichtschritte des quick-Layers grün, kein übersprungener Pflichtschritt.
+
+Schwere Suite: **begründet übersprungen.** Der Branch-Diff berührt keinen heavy-relevanten Pfad (kein
+`apps/server`-API/Gateway, kein ca-issuer, kein Agent, kein Desktop-Connect/Tunnel/Enrollment, kein
+compose/Dockerfile, kein `scripts/install|update`, kein FRP/PKI) — nur zwei interne Core-Module plus Tests,
+CHANGELOG und Ledger. Der Kopf sagt `Heavy: keine`; Hook-Pfad und Monitoring-Checks laufen im `all`-Layer des
+nächsten Wochenlaufs.
+
+Push und Draft-PR sind **nicht** ausgeführt: diese Session läuft im Bypass-Modus, der Permission-Prompt, der
+diesen Schritt sonst zu Kevins Entscheidung macht, käme gar nicht. Die Befehle stehen im Chat.
