@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 
 import pytest
@@ -1265,3 +1266,274 @@ def test_a_locked_template_does_not_lose_the_clone(keyed, api, http, clock):
     http.add("GET", "qmstart", "task_ok")
     assert clone(keyed, api, "--profile", "linux-full", "--role", "probe") == 0
     assert len([c for c in http.calls if "/clone" in c.path]) == 3
+
+
+# ── ssh / sync / run / pull ──────────────────────────────────────────────────
+@pytest.fixture
+def shell(monkeypatch):
+    """Records every ssh/rsync argv and answers with a settable exit code."""
+
+    class Shell:
+        def __init__(self):
+            self.runs = []
+            self.codes = {}
+            self.ssh_codes = []  # consumed in order; for runs with several ssh calls
+
+        def __call__(self, argv, timeout=None):
+            self.runs.append({"argv": argv, "timeout": timeout})
+            if argv[0] == "ssh" and self.ssh_codes:
+                return self.ssh_codes.pop(0)
+            return self.codes.get(argv[0], 0)
+
+        def of(self, program):
+            return [r for r in self.runs if r["argv"][0] == program]
+
+    fake = Shell()
+    monkeypatch.setattr(vm.subprocess, "call", fake)
+    return fake
+
+
+@pytest.fixture
+def reachable(http):
+    """A VM that resolves to an id, an address and a guest user."""
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    return http
+
+
+def verb(name, cfg, api, *argv):
+    return getattr(vm, "verb_" + name)(cfg, api, vm.build_parser().parse_args([name, *argv]))
+
+
+def test_the_exclude_list_matches_the_one_crabbox_syncs():
+    def entries(lines):
+        return {ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")}
+
+    with open(vm.RSYNC_EXCLUDE) as fh:  # pins the constant at the shipped file too
+        ours = entries(fh)
+    crabbox, seen = set(), False
+    with open(os.path.join(vm.ROOT, ".crabbox.yaml")) as fh:
+        lines = fh.readlines()
+    for line in lines:
+        if line.strip() == "exclude:":
+            seen = True
+            continue
+        if seen:
+            if line.strip().startswith("- "):
+                crabbox.add(line.strip()[2:].strip('"'))
+            elif line.strip() and not line.startswith("    "):
+                break
+    # The two harnesses must ship the same tree while they run side by side; the
+    # only additions are this tool's own local state.
+    assert ours - crabbox == {".vm", ".ah-out"}
+    assert crabbox - ours == set()
+
+
+def test_ssh_without_a_command_opens_a_login_shell(cfg, api, reachable, shell):
+    assert verb("ssh", cfg, api, "3000") == 0
+    argv = shell.of("ssh")[0]["argv"]
+    assert "crabbox@<ip>" in argv
+    assert argv[-1].startswith("cd ~/adminhelper")
+
+
+def test_ssh_with_a_command_hands_back_the_remote_exit_code(cfg, api, reachable, shell):
+    shell.codes["ssh"] = 3
+    assert verb("ssh", cfg, api, "3000", "--", "false") == 3
+    assert shell.of("ssh")[0]["argv"][-1] == "false"
+
+
+def test_sync_pushes_the_checkout_with_the_exclude_list(cfg, api, reachable, shell):
+    assert verb("sync", cfg, api, "3000") == 0
+    argv = shell.of("rsync")[0]["argv"]
+    assert argv[:3] == ["rsync", "-az", "-e"]
+    assert argv[3].startswith("ssh ")  # the same key and host-key policy as ssh itself
+    assert "--delete" in argv
+    assert argv[argv.index("--exclude-from") + 1].endswith("scripts/vm/rsync-exclude.txt")
+    # The checkout, not the current directory: a sync from a subdirectory would
+    # push a partial tree and --delete the rest of the box away.
+    assert argv[-2:] == [vm.ROOT + "/", "crabbox@<ip>:~/adminhelper/"]
+
+
+def test_sync_can_keep_what_the_box_already_has(cfg, api, reachable, shell):
+    verb("sync", cfg, api, "3000", "--no-delete")
+    assert "--delete" not in shell.of("rsync")[0]["argv"]
+
+
+def test_a_failed_sync_is_infrastructure(cfg, api, reachable, shell):
+    shell.codes["rsync"] = 23
+    with pytest.raises(vm.Infra) as caught:
+        verb("sync", cfg, api, "3000")
+    assert "sync failed: rsync exited 23" in str(caught.value)
+
+
+def test_run_executes_in_the_synced_checkout(cfg, api, reachable, shell):
+    assert verb("run", cfg, api, "3000", "--", "bash", "scripts/tests/run.sh", "lint") == 0
+    assert shell.of("ssh")[0]["argv"][-1] == "cd ~/adminhelper && bash scripts/tests/run.sh lint"
+    assert not shell.of("rsync")  # --sync was not asked for
+
+
+def test_run_accepts_the_command_as_one_string(cfg, api, reachable, shell):
+    # Both spellings have to mean the same thing: the guest's shell parses it.
+    verb("run", cfg, api, "3000", "--", "bash scripts/tests/run.sh lint")
+    assert shell.of("ssh")[0]["argv"][-1] == "cd ~/adminhelper && bash scripts/tests/run.sh lint"
+
+
+def test_a_red_suite_stays_red(cfg, api, reachable, shell):
+    shell.codes["ssh"] = 1
+    assert verb("run", cfg, api, "3000", "--", "false") == 1
+
+
+def test_a_broken_connection_is_not_a_test_result(cfg, api, reachable, shell):
+    shell.codes["ssh"] = 255
+    with pytest.raises(vm.Infra) as caught:
+        verb("run", cfg, api, "3000", "--", "bash scripts/tests/run.sh lint")
+    assert "ssh to crabbox@<ip> failed (255)" in str(caught.value)
+
+
+def test_run_syncs_first_when_asked(cfg, api, reachable, shell):
+    verb("run", cfg, api, "3000", "--sync", "--", "true")
+    assert [r["argv"][0] for r in shell.runs] == ["rsync", "ssh"]
+
+
+def test_run_pulls_the_output_directory(cfg, api, reachable, shell, tmp_path):
+    out = tmp_path / "artifacts"
+    verb("run", cfg, api, "3000", "--out", str(out), "--", "true")
+    fetch = shell.of("rsync")[-1]["argv"]
+    assert fetch[-2:] == ["crabbox@<ip>:~/adminhelper/.ah-out/", str(out) + "/"]
+    assert out.is_dir()
+
+
+def test_the_output_is_fetched_even_when_the_suite_failed(cfg, api, reachable, shell, tmp_path):
+    # The artifact of a red run is the one worth having — and collecting it must
+    # not overwrite the suite's own verdict.
+    shell.ssh_codes = [1, 0]  # the suite failed, the mkdir that follows did not
+    assert verb("run", cfg, api, "3000", "--out", str(tmp_path / "o"), "--", "false") == 1
+    assert shell.of("rsync")
+
+
+def test_the_output_directory_is_created_on_the_box_first(cfg, api, reachable, shell, tmp_path):
+    # Nothing creates .ah-out until a suite writes into it, and rsync answers a
+    # missing source with exit 23 — which would bury the suite's own verdict.
+    verb("run", cfg, api, "3000", "--out", str(tmp_path / "o"), "--", "true")
+    assert [r["argv"][-1] for r in shell.of("ssh")] == [
+        "cd ~/adminhelper && true",
+        "mkdir -p ~/adminhelper/.ah-out",
+    ]
+
+
+def test_an_output_directory_that_cannot_be_created_is_infrastructure(
+    cfg, api, reachable, shell, tmp_path
+):
+    shell.ssh_codes = [0, 1]  # the suite passed, the mkdir did not (full disk, rights)
+    with pytest.raises(vm.Infra) as caught:
+        verb("run", cfg, api, "3000", "--out", str(tmp_path / "o"), "--", "true")
+    assert "cannot create ~/adminhelper/.ah-out" in str(caught.value)
+
+
+def test_a_run_that_outlives_its_timeout_says_so(cfg, api, reachable, shell, monkeypatch):
+    shell.codes["ssh"] = 255
+    ticks = iter([0.0, 1000.0])
+    monkeypatch.setattr(vm.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(vm.Infra) as caught:
+        verb("run", cfg, api, "3000", "--timeout", "900", "--", "bash slow.sh")
+    # Not "ssh failed (255)": the weekly triage reads this line.
+    assert "timeout: bash slow.sh exceeded 900s" in str(caught.value)
+
+
+def test_a_non_default_remote_directory_reaches_every_caller(cfg, api, reachable, shell, tmp_path):
+    cfg.values["AH_VM_REMOTE_DIR"] = "/srv/ah"
+    verb("run", cfg, api, "3000", "--sync", "--out", str(tmp_path / "o"), "--", "true")
+    assert shell.of("ssh")[0]["argv"][-1] == "cd /srv/ah && true"
+    pushed, fetched = shell.of("rsync")
+    assert pushed["argv"][-1] == "crabbox@<ip>:/srv/ah/"
+    assert fetched["argv"][-2] == "crabbox@<ip>:/srv/ah/.ah-out/"
+
+
+def test_run_passes_its_timeout_to_ssh(cfg, api, reachable, shell):
+    verb("run", cfg, api, "3000", "--timeout", "2700", "--", "true")
+    assert shell.of("ssh")[0]["timeout"] == 2700
+
+
+def test_run_without_a_command_is_a_usage_error(cfg, api, http, shell):
+    with pytest.raises(vm.Usage):
+        verb("run", cfg, api, "3000")
+    assert http.calls == []  # refused before the VM was even looked up
+
+
+def test_extend_moves_only_the_ttl_tag(cfg, api, reachable, shell, clock):
+    reachable.add("PUT", "/qemu/3000/config", "config_put")
+    verb("run", cfg, api, "3000", "--extend", "4h", "--", "true")
+    tags = next(c for c in reachable.calls if c.method == "PUT").body["tags"].split(";")
+    assert {"ah", "lane-main", "role-probe", "sc-none", "tpl-linux-full"} <= set(tags)
+    assert len([t for t in tags if t.startswith("ttl-")]) == 1
+    assert int(vm.tag_value(set(tags), "ttl-")) - int(time.time()) > 14000
+
+
+def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell):
+    strangers = fixture("cluster_resources")
+    for entry in strangers["body"]["data"]:
+        if entry["vmid"] == 3000:
+            entry["tags"] = "crabbox"
+    http.add("GET", "/cluster/resources", body=strangers["body"])
+    http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    with pytest.raises(vm.Usage) as caught:
+        verb("run", cfg, api, "3000", "--extend", "4h", "--", "true")
+    assert "is not ours" in str(caught.value)
+    assert not [c for c in http.calls if c.method == "PUT"]
+
+
+def test_pull_copies_a_glob_off_the_box(cfg, api, reachable, shell, tmp_path):
+    verb("pull", cfg, api, "3000", "*.log", str(tmp_path / "logs"))
+    argv = shell.of("rsync")[0]["argv"]
+    assert argv[-2:] == ["crabbox@<ip>:~/adminhelper/*.log", str(tmp_path / "logs") + "/"]
+
+
+def test_the_address_and_user_are_resolved_once_per_invocation(
+    cfg, api, reachable, shell, tmp_path
+):
+    verb("run", cfg, api, "3000", "--sync", "--out", str(tmp_path / "o"), "--", "true")
+    # Four shell calls that all need user@ip, one lookup of each.
+    assert len(reachable.paths("GET")) == 3
+    assert len(shell.runs) == 4
+
+
+def test_a_vm_without_an_address_says_what_to_do(cfg, api, http, shell):
+    http.add("GET", "/cluster/resources", "cluster_resources")
+    http.add("GET", "/agent/network-get-interfaces", body={"data": {"result": []}})
+    http.add("GET", "/qemu/3000/config", "clone_config")
+    with pytest.raises(vm.Infra) as caught:
+        verb("sync", cfg, api, "3000")
+    assert "vm.py wait 3000" in str(caught.value)
+
+
+def test_a_missing_rsync_is_infrastructure(cfg, api, reachable, monkeypatch):
+    def missing(argv, timeout=None):
+        raise OSError("No such file or directory: 'rsync'")
+
+    monkeypatch.setattr(vm.subprocess, "call", missing)
+    with pytest.raises(vm.Infra) as caught:
+        verb("sync", cfg, api, "3000")
+    assert "cannot run rsync" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["run", "3000", "--sync", "--", "bash", "x"], ("bash x", True, None)),
+        (["run", "3000", "--", "bash x"], ("bash x", False, None)),
+        (
+            ["run", "3000", "--timeout", "60", "--", "bash", "-c", "echo hi"],
+            ("bash -c echo hi", False, 60),
+        ),
+    ],
+)
+def test_options_after_the_vm_are_options_not_command_words(argv, expected):
+    # argparse.REMAINDER would have swallowed --sync/--timeout into the command,
+    # which is exactly the syntax the ledger specifies for `run`. argparse also
+    # drops the `--` itself, so args.cmd is the command and nothing else.
+    args = vm.build_parser().parse_args(argv)
+    assert " ".join(args.cmd) == expected[0]
+    assert args.sync is expected[1]
+    assert args.timeout == expected[2]

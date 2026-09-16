@@ -1,0 +1,29 @@
+# What `vm.py sync` leaves at home. Taken from .crabbox.yaml so both harnesses
+# ship the same tree, plus this tool's own local state.
+#
+# Never exclude a TRACKED source path here. The box builds its evidence hash
+# from what it received; an exclude over tracked source would make the artifact
+# describe a tree the box never had. apps/server/data is safe — its only
+# tracked entry is an empty .gitkeep. .git stays: run.sh reads head and
+# tree_hash from it.
+.cache
+.turbo
+dist
+node_modules
+target
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+coverage
+apps/web/test-results
+apps/web/playwright-report
+apps/web/playwright/.cache
+apps/server/data
+backups
+.crabbox
+.crabbox-out
+.dt-xdg
+.vm
+.ah-out

@@ -36,6 +36,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import ssl
 import subprocess
 import sys
@@ -943,6 +944,169 @@ def run_ssh(cfg: Config, user: str, ip: str, command: list, timeout: int | None 
         raise Infra("cannot run ssh: %s" % exc) from exc
 
 
+# ── ssh / sync / run / pull ──────────────────────────────────────────────────
+RSYNC_EXCLUDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rsync-exclude.txt")
+
+
+class Target:
+    """A VM resolved once per invocation: id, guest user, address.
+
+    Each of those is an API round trip, and `run --sync --out` needs all three
+    three times over.
+    """
+
+    def __init__(self, cfg: Config, api: Api, ref: str):
+        self.cfg, self.api = cfg, api
+        entry = find_vm(cfg, api, ref)
+        self.vmid = entry["vmid"]
+        self.tags = tags_of(entry)
+        self._ip = ""
+        self._user = ""
+
+    @property
+    def ip(self) -> str:
+        if not self._ip:
+            self._ip = vm_ipv4(self.api, self.cfg["AH_PVE_NODE"], self.vmid)
+            if not self._ip:
+                raise Infra(
+                    "no ip: %d has no IPv4 — is it running? try `vm.py wait %d`"
+                    % (self.vmid, self.vmid)
+                )
+        return self._ip
+
+    @property
+    def user(self) -> str:
+        if not self._user:
+            self._user = guest_user(self.cfg, self.api, self.vmid)
+        return self._user
+
+    @property
+    def at(self) -> str:
+        # Address first: "no ip, run wait" is the more useful of the two
+        # failures, and asking for the guest user of an unreachable VM is noise.
+        ip = self.ip
+        return "%s@%s" % (self.user, ip)
+
+
+def remote_dir(cfg: Config) -> str:
+    """The checkout's path on the guest. Expanded by the guest's own shell, so
+    a `~` works and a path with spaces does not — which is why it is a config
+    value with a sane default and not something a caller passes per run."""
+    return cfg.get("AH_VM_REMOTE_DIR", "~/adminhelper").rstrip("/")
+
+
+def rsync(cfg: Config, args: list, what: str) -> None:
+    ssh_cmd = " ".join(shlex.quote(part) for part in ["ssh", *ssh_options(cfg)])
+    argv = ["rsync", "-az", "-e", ssh_cmd, *args]
+    try:
+        code = subprocess.call(argv)
+    except OSError as exc:
+        raise Infra("cannot run rsync: %s" % exc) from exc
+    if code != 0:
+        raise Infra("%s failed: rsync exited %d" % (what, code))
+
+
+def verb_ssh(cfg: Config, api: Api, args) -> int:
+    target = Target(cfg, api, args.vm)
+    command = list(args.cmd or [])
+    if not command:
+        # No command: hand the terminal over, and hand back whatever the shell
+        # exits with. An interactive session has no timeout worth guessing.
+        return run_ssh(
+            cfg, target.user, target.ip, ["-t", "cd %s || true; exec $SHELL -l" % remote_dir(cfg)]
+        )
+    return run_ssh(cfg, target.user, target.ip, command)
+
+
+def verb_sync(cfg: Config, api: Api, args) -> int:
+    target = Target(cfg, api, args.vm)
+    _sync(cfg, target, delete=not args.no_delete)
+    return 0
+
+
+def _sync(cfg: Config, target: "Target", delete: bool) -> None:
+    argv = ["--exclude-from", RSYNC_EXCLUDE]
+    if delete:
+        argv.append("--delete")
+    # ROOT, not "./": from a subdirectory this would push a partial tree and
+    # --delete the rest away, and every anchored exclude (apps/server/data,
+    # apps/web/test-results) would silently stop matching.
+    argv += [ROOT + "/", "%s:%s/" % (target.at, remote_dir(cfg))]
+    rsync(cfg, argv, "sync")
+
+
+def verb_run(cfg: Config, api: Api, args) -> int:
+    command = list(args.cmd or [])
+    if not command:
+        raise Usage("run needs a command: vm.py run <vm> -- <command>")
+    target = Target(cfg, api, args.vm)
+    if args.extend:
+        extend_lease(cfg, api, target, args.extend)
+    if args.sync:
+        _sync(cfg, target, delete=True)
+
+    # Joined with spaces, exactly as ssh itself would: the guest's shell parses
+    # the result, so `-- 'bash scripts/tests/run.sh lint'` and
+    # `-- bash scripts/tests/run.sh lint` mean the same thing.
+    remote = "cd %s && %s" % (remote_dir(cfg), " ".join(command))
+    started = time.monotonic()
+    code = run_ssh(cfg, target.user, target.ip, [remote], timeout=args.timeout)
+    if code == 255:
+        # ssh's own failure code, which run_ssh also uses for a timeout. Passing
+        # either through would report infrastructure as a test result — and the
+        # weekly triage reads these lines, so they must say which it was.
+        if args.timeout and time.monotonic() - started >= args.timeout:
+            raise Infra(
+                "timeout: %s exceeded %ds on %s" % (" ".join(command), args.timeout, target.at)
+            )
+        raise Infra("ssh to %s failed (255) while running: %s" % (target.at, " ".join(command)))
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+        # Nothing creates .ah-out until a suite writes into it, and rsync
+        # answers a missing source with exit 23 — which would turn "the suite
+        # produced no artifacts" into an infrastructure failure and bury the
+        # remote exit code we are about to return.
+        made = run_ssh(
+            cfg, target.user, target.ip, ["mkdir -p %s/.ah-out" % remote_dir(cfg)], timeout=60
+        )
+        if made != 0:
+            raise Infra("cannot create %s/.ah-out on %s" % (remote_dir(cfg), target.at))
+        rsync(
+            cfg,
+            ["%s:%s/.ah-out/" % (target.at, remote_dir(cfg)), args.out.rstrip("/") + "/"],
+            "out",
+        )
+    # The remote exit code IS the answer: a red suite must stay red here.
+    return code
+
+
+def verb_pull(cfg: Config, api: Api, args) -> int:
+    target = Target(cfg, api, args.vm)
+    os.makedirs(args.dir, exist_ok=True)
+    rsync(
+        cfg,
+        ["%s:%s/%s" % (target.at, remote_dir(cfg), args.glob), args.dir.rstrip("/") + "/"],
+        "pull",
+    )
+    return 0
+
+
+def extend_lease(cfg: Config, api: Api, target: "Target", duration: str) -> None:
+    """Move the ttl- tag, keeping every other tag as it was."""
+    if OURS not in target.tags:
+        raise Usage(
+            "%d is not ours (no `%s` tag) — refusing to touch its lease" % (target.vmid, OURS)
+        )
+    kept = sorted(t for t in target.tags if not t.startswith("ttl-"))
+    kept.append("ttl-%d" % (int(time.time()) + parse_duration(duration)))
+    api.request(
+        "PUT",
+        "/nodes/%s/qemu/%d/config" % (cfg["AH_PVE_NODE"], target.vmid),
+        body={"tags": ";".join(kept)},
+        lock_retry=True,
+    )
+
+
 def _stub(name):
     def verb(cfg, api, args):
         raise Usage("%s is not implemented yet" % name)
@@ -976,7 +1140,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     shell = sub.add_parser("ssh", help="ssh into a VM (interactive without a command)")
     shell.add_argument("vm")
-    shell.add_argument("cmd", nargs=argparse.REMAINDER)
+    shell.add_argument("cmd", nargs="*")
 
     sync = sub.add_parser("sync", help="rsync the checkout onto a VM")
     sync.add_argument("vm")
@@ -988,7 +1152,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout", type=int)
     run.add_argument("--out")
     run.add_argument("--extend")
-    run.add_argument("cmd", nargs=argparse.REMAINDER)
+    run.add_argument("cmd", nargs="*")
 
     pull = sub.add_parser("pull", help="copy files off a VM")
     pull.add_argument("vm")
@@ -1034,6 +1198,10 @@ VERB_TABLE = {name: _stub(name) for name in VERBS}
 VERB_TABLE["doctor"] = verb_doctor
 VERB_TABLE["clone"] = verb_clone
 VERB_TABLE["wait"] = verb_wait
+VERB_TABLE["ssh"] = verb_ssh
+VERB_TABLE["sync"] = verb_sync
+VERB_TABLE["run"] = verb_run
+VERB_TABLE["pull"] = verb_pull
 
 
 def main(argv=None) -> int:
