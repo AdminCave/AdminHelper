@@ -1,0 +1,18 @@
+{
+  "body": {
+    "data": {
+      "exitstatus": "OK",
+      "id": "9402",
+      "node": "<node>",
+      "pid": 2742457,
+      "pstart": 547422522,
+      "starttime": 1789557301,
+      "status": "stopped",
+      "tokenid": "<tokenid>",
+      "type": "qmclone",
+      "upid": "UPID:<node>:0029D8B9:20A1013A:6AAA7A35:qmclone:9402:<user>@pve!<tokenid>:",
+      "user": "<user>@pve"
+    }
+  },
+  "status": 200
+}

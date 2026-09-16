@@ -1,0 +1,4 @@
+{
+  "body": "{\"data\":null,\"message\":\"unable to create VM 3000: config file already exists\\n\"}",
+  "status": 500
+}

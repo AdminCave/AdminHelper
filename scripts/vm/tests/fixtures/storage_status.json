@@ -1,0 +1,15 @@
+{
+  "body": {
+    "data": {
+      "active": 1,
+      "avail": 7568451166431,
+      "content": "rootdir,images",
+      "enabled": 1,
+      "shared": 0,
+      "total": 7965952180224,
+      "type": "lvmthin",
+      "used": 397501013793
+    }
+  },
+  "status": 200
+}

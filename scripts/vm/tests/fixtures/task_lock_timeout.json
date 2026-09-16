@@ -1,0 +1,18 @@
+{
+  "body": {
+    "data": {
+      "exitstatus": "can't lock file '/var/lock/qemu-server/lock-3001.conf' - got timeout",
+      "id": "3001",
+      "node": "<node>",
+      "pid": 2743890,
+      "pstart": 547446626,
+      "starttime": 1789557542,
+      "status": "stopped",
+      "tokenid": "<tokenid>",
+      "type": "qmdelsnapshot",
+      "upid": "UPID:<node>:0029DE52:20A15F62:6AAA7B26:qmdelsnapshot:3001:<user>@pve!<tokenid>:",
+      "user": "<user>@pve"
+    }
+  },
+  "status": 200
+}

@@ -1,0 +1,4 @@
+{
+  "body": "{\"message\":\"Permission check failed (/vms/100, VM.Audit)\\n\",\"data\":null}",
+  "status": 403
+}
