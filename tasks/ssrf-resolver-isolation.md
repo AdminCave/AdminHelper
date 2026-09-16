@@ -127,4 +127,4 @@ compose/Dockerfile, kein `scripts/install|update`, kein FRP/PKI) — nur zwei in
 CHANGELOG und Ledger. Der Kopf sagt `Heavy: keine`; Hook-Pfad und Monitoring-Checks laufen im `all`-Layer des
 nächsten Wochenlaufs.
 
-Push und Draft-PR auf Kevins ausdrückliche Freigabe ausgeführt: PR #19 (Draft). Der erste CI-Lauf war rot im Job „Monitoring (pytest)“ — Ursache in T6 behoben, kein Flake; alle übrigen 21 Checks grün.
+Push und Draft-PR auf Kevins ausdrückliche Freigabe ausgeführt: PR #19 (Draft), fünf Commits. Der erste CI-Lauf war rot im Job „Monitoring (pytest)“ — Ursache in T6 behoben, kein Flake. Der Lauf nach T6 ist vollständig grün: **21 pass, 1 skipping** (`From-outside stack (mTLS gateway)`, im PR-CI per Gate übersprungen, läuft im Wochenlauf).
