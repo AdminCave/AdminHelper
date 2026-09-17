@@ -151,7 +151,10 @@ Tauri- oder VictoriaMetrics-Format berührt.
 - **Rollback**: 2a ist additiv (Verzeichnis `scripts/vm/` + zwei Zeilen in `run.sh`/`ci.yml`) → `git revert`. 2b ist ein
   PR; bis zum Merge läuft crabbox weiter, nach dem Merge ist der Weg zurück `git revert` des Merge-Commits, crabbox-Binary
   bleibt bis dahin installiert (Kevin deinstalliert erst nach leerem `crabbox list`).
-- **Speicher auf dem Host**: `doctor` verweigert bei < Bedarf + 4 GB; Warm-Boxen werden nie automatisch gereapt.
+- **Speicher auf dem Host**: `doctor` verweigert bei < Bedarf + 4 GB; `heavy.sh` reapt eine lebende Warm-Box nie
+  wegen Kapazitätsmangel (Exit 74 mit Liste, Kevin entscheidet). Die TTL gilt aber auch für Warm-Boxen: `iter.sh`
+  verlängert sie bei jedem Lauf, eine vergessene Warm-Box stirbt nach Ablauf beim nächsten `vm.py`-Aufruf
+  (Entscheidung 2026-09-17, deckt sich mit dem 2b-Verify `AH_WARM_TTL=20m` + 25 min → Box weg).
 
 ## Doku-Impact
 
