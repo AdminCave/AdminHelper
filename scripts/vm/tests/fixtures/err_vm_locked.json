@@ -1,0 +1,4 @@
+{
+  "body": "{\"message\":\"VM is locked (rollback)\\n\",\"data\":null}",
+  "status": 500
+}

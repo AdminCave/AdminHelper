@@ -1,0 +1,28 @@
+{
+  "body": {
+    "data": {
+      "agent": 1,
+      "clipboard": null,
+      "cpu": 0,
+      "cpus": 2,
+      "disk": 0,
+      "ha": {
+        "managed": 0
+      },
+      "maxdisk": 34359738368,
+      "maxmem": 2147483648,
+      "mem": 0,
+      "memhost": 0,
+      "name": "ah-server-pilot-c3d4",
+      "netin": 0,
+      "netout": 0,
+      "qmpstatus": "stopped",
+      "serial": 1,
+      "status": "stopped",
+      "tags": "ah;lane-pilot;role-server;sc-capstone;tpl-linux-full;ttl-1789557020",
+      "uptime": 0,
+      "vmid": 3001
+    }
+  },
+  "status": 200
+}

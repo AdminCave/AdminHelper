@@ -1,0 +1,61 @@
+{
+  "body": {
+    "data": {
+      "result": [
+        {
+          "hardware-address": "00:00:00:00:00:00",
+          "ip-addresses": [
+            {
+              "ip-address": "127.0.0.1",
+              "ip-address-type": "ipv4",
+              "prefix": 8
+            },
+            {
+              "ip-address": "::1",
+              "ip-address-type": "ipv6",
+              "prefix": 128
+            }
+          ],
+          "name": "lo",
+          "statistics": {
+            "rx-bytes": 17280,
+            "rx-dropped": 0,
+            "rx-errs": 0,
+            "rx-packets": 240,
+            "tx-bytes": 17280,
+            "tx-dropped": 0,
+            "tx-errs": 0,
+            "tx-packets": 240
+          }
+        },
+        {
+          "hardware-address": "<mac>",
+          "ip-addresses": [
+            {
+              "ip-address": "<ip>",
+              "ip-address-type": "ipv4",
+              "prefix": 24
+            },
+            {
+              "ip-address": "<ipv6-ll>",
+              "ip-address-type": "ipv6",
+              "prefix": 64
+            }
+          ],
+          "name": "eth0",
+          "statistics": {
+            "rx-bytes": 772,
+            "rx-dropped": 0,
+            "rx-errs": 0,
+            "rx-packets": 3,
+            "tx-bytes": 1302,
+            "tx-dropped": 0,
+            "tx-errs": 0,
+            "tx-packets": 9
+          }
+        }
+      ]
+    }
+  },
+  "status": 200
+}

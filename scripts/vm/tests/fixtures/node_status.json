@@ -1,0 +1,60 @@
+{
+  "body": {
+    "data": {
+      "boot-info": {
+        "mode": "efi",
+        "secureboot": 0
+      },
+      "cpu": 0,
+      "cpuinfo": {
+        "cores": 12,
+        "cpus": 12,
+        "family": "6",
+        "flags": "<cpu-flags>",
+        "hvm": "1",
+        "mhz": "<mhz>",
+        "model": "<cpu-model>",
+        "sockets": 2,
+        "user_hz": 100,
+        "vendor": "GenuineIntel"
+      },
+      "current-kernel": {
+        "machine": "x86_64",
+        "release": "7.0.12-1-pve",
+        "sysname": "Linux",
+        "version": "#1 SMP PREEMPT_DYNAMIC PMX 7.0.12-1 (2026-06-09T21:07Z)"
+      },
+      "idle": 0,
+      "ksm": {
+        "shared": 3656249344
+      },
+      "kversion": "Linux 7.0.12-1-pve #1 SMP PREEMPT_DYNAMIC PMX 7.0.12-1 (2026-06-09T21:07Z)",
+      "loadavg": [
+        "4.51",
+        "4.21",
+        "3.85"
+      ],
+      "memory": {
+        "available": 13375139840,
+        "free": 13449256960,
+        "total": 67407331328,
+        "used": 54032191488
+      },
+      "pveversion": "pve-manager/9.2.3/d0fde103346cf89a",
+      "rootfs": {
+        "avail": 25945669632,
+        "free": 29599535104,
+        "total": 71008788480,
+        "used": 41409253376
+      },
+      "swap": {
+        "free": 5079027712,
+        "total": 8589930496,
+        "used": 3510902784
+      },
+      "uptime": 5474571,
+      "wait": 0
+    }
+  },
+  "status": 200
+}
