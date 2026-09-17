@@ -1374,14 +1374,30 @@ def test_a_failed_sync_is_infrastructure(cfg, api, reachable, shell):
 
 def test_run_executes_in_the_synced_checkout(cfg, api, reachable, shell):
     assert verb("run", cfg, api, "3000", "--", "bash", "scripts/tests/run.sh", "lint") == 0
-    assert shell.of("ssh")[0]["argv"][-1] == "cd ~/adminhelper && bash scripts/tests/run.sh lint"
+    # A login shell: go lives in /etc/profile.d/go.sh and cargo in ~/.cargo/env,
+    # and a bare `ssh host cmd` sources neither — run.sh would then dep-gate
+    # itself into `go=no cargo=no` and still exit 0.
+    assert shell.of("ssh")[0]["argv"][-1] == (
+        "bash -lc 'cd ~/adminhelper && bash scripts/tests/run.sh lint'"
+    )
     assert not shell.of("rsync")  # --sync was not asked for
 
 
 def test_run_accepts_the_command_as_one_string(cfg, api, reachable, shell):
     # Both spellings have to mean the same thing: the guest's shell parses it.
     verb("run", cfg, api, "3000", "--", "bash scripts/tests/run.sh lint")
-    assert shell.of("ssh")[0]["argv"][-1] == "cd ~/adminhelper && bash scripts/tests/run.sh lint"
+    assert shell.of("ssh")[0]["argv"][-1] == (
+        "bash -lc 'cd ~/adminhelper && bash scripts/tests/run.sh lint'"
+    )
+
+
+def test_a_command_with_quotes_in_it_arrives_intact(cfg, api, reachable, shell):
+    # The whole inner line is quoted once for the outer shell; a naive f-string
+    # would break here and only ever fail on a real box.
+    verb("run", cfg, api, "3000", "--", "python3 -c 'print(1)'")
+    assert shell.of("ssh")[0]["argv"][-1] == (
+        """bash -lc 'cd ~/adminhelper && python3 -c '"'"'print(1)'"'"''"""
+    )
 
 
 def test_a_red_suite_stays_red(cfg, api, reachable, shell):
@@ -1422,7 +1438,7 @@ def test_the_output_directory_is_created_on_the_box_first(cfg, api, reachable, s
     # missing source with exit 23 — which would bury the suite's own verdict.
     verb("run", cfg, api, "3000", "--out", str(tmp_path / "o"), "--", "true")
     assert [r["argv"][-1] for r in shell.of("ssh")] == [
-        "cd ~/adminhelper && true",
+        "bash -lc 'cd ~/adminhelper && true'",
         "mkdir -p ~/adminhelper/.ah-out",
     ]
 
@@ -1449,7 +1465,7 @@ def test_a_run_that_outlives_its_timeout_says_so(cfg, api, reachable, shell, mon
 def test_a_non_default_remote_directory_reaches_every_caller(cfg, api, reachable, shell, tmp_path):
     cfg.values["AH_VM_REMOTE_DIR"] = "/srv/ah"
     verb("run", cfg, api, "3000", "--sync", "--out", str(tmp_path / "o"), "--", "true")
-    assert shell.of("ssh")[0]["argv"][-1] == "cd /srv/ah && true"
+    assert shell.of("ssh")[0]["argv"][-1] == "bash -lc 'cd /srv/ah && true'"
     pushed, fetched = shell.of("rsync")
     assert pushed["argv"][-1] == "crabbox@<ip>:/srv/ah/"
     assert fetched["argv"][-2] == "crabbox@<ip>:/srv/ah/.ah-out/"

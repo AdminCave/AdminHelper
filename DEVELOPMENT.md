@@ -640,15 +640,21 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `doctor [--roles a,b] [--json]` | Prueft API, Rechte, Storage, Templates, deren Guest-Agent und Bridge, die VMID-Baender und die Kapazitaet und druckt je Zeile `ok\|FAIL <check>: <detail>`. |
 | `clone --profile p --role r [--lane l] [--scenario id] [--ttl 8h] [--memory MB] [--cores N] [--name n]` | Klont das Profil-Template, taggt die Lease, injiziert den Schluessel und startet die VM. Druckt `VMID NAME`. |
 | `wait <vm> [--timeout 900]` | Wartet auf Guest-Agent, IPv4 und ssh — alle drei an **einer** Frist. Druckt die Adresse. |
-| `ssh <vm> [-- cmd]` | Ohne Kommando eine interaktive Sitzung im Checkout, sonst der Exit-Code des Kommandos. |
+| `ssh <vm> [-- cmd]` | Ohne Kommando eine interaktive Sitzung im Checkout, sonst der Exit-Code des Kommandos — roh, ohne Login-Shell (siehe `run`). |
 | `sync <vm> [--no-delete]` | `rsync` des Checkouts auf die Box (Ausschlussliste: `scripts/vm/rsync-exclude.txt`). |
-| `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. |
+| `run <vm> [--sync] [--timeout S] [--out DIR] [--extend <dauer>] -- <cmd>` | Fuehrt das Kommando in einer **Login-Shell** im Checkout aus und reicht dessen Exit-Code **unveraendert** zurueck. `--out` holt `<remote>/.ah-out/`, `--extend 4h` versetzt vorher den `ttl-`Tag. |
 | `pull <vm> <glob> <dir>` | Holt Dateien von der Box. |
 | `snap <vm> <name> [--ram]` · `rollback <vm> <name> [--start]` · `delsnap <vm> <name>` | Snapshot, Ruecksetzen, Loeschen. `snap` und `rollback` je ~1–3 s auf LVM-thin; `delsnap` direkt nach einem `rollback --start` wartet, bis der Start das Config-Lock wieder freigibt (gemessen 35 s). |
 | `destroy <vm>… \| --scenario id \| --lane l \| --role r` | Stoppt und loescht mit Platte. |
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). |
+
+`run` nimmt eine **Login-Shell**, `ssh` nicht. Der Grund ist messbar: `go` steht auf der Box in
+`/etc/profile.d/go.sh`, `cargo` in `~/.cargo/env` ueber `~/.profile` — ein blankes
+`ssh host cmd` liest beides nicht. Ohne Login-Shell meldet `run.sh` dort `go=no cargo=no`,
+ueberspringt die betroffenen Suiten und endet trotzdem mit 0: ein gruener Lauf, der weniger
+geprueft hat. `ssh` bleibt bewusst der rohe Griff auf die Box.
 
 **Exit-Codes.** `0` ok · `1` das Ausgefuehrte ist fehlgeschlagen (der Remote-Exit von `run`,
 also ein roter Test) · `2` Aufruffehler, oder die Weigerung, etwas anzufassen, das uns nicht

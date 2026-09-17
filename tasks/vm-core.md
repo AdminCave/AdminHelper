@@ -50,7 +50,7 @@ Abhängt von: T3
 ### T5 — `ssh`, `sync`, `run`, `pull`  [x] (152 Tests; live: `sync` 5,8 s, `run -- 'bash scripts/tests/run.sh lint'` → `3 passed, 0 failed, 1 skipped` in 33,8 s, Re-Sync 0,9 s, `--extend` versetzt den `ttl-`Tag, VM zerstört)
 Fund beim Bauen: `run <vm> --sync -- <cmd>` war mit `argparse.REMAINDER` nicht baubar — ein REMAINDER **nach** einem Positional schluckt jede spätere Option (`--sync` landete im Kommando). `cmd` nutzt jetzt `nargs="*"` und den `--`-Trenner der Shell; ein Test pinnt beide Schreibweisen.
 Zwei Fehler, die erst der Review fand: `--out` holte aus `<remote>/.ah-out/`, das niemand anlegt — rsync antwortet auf eine fehlende Quelle mit Exit 23, und das hätte den Remote-Exit (also das Testergebnis) durch eine Infra-Störung ersetzt; jetzt wird das Verzeichnis vorher per ssh angelegt. Und `sync` nahm `./` als Quelle: aus einem Unterverzeichnis aufgerufen hätte es einen Teilbaum geschoben und den Rest auf der Box per `--delete` gelöscht — Quelle ist jetzt `ROOT`.
-Fund für T12: auf dem heutigen Fat-Template meldet `run.sh` auf der Box `go=no cargo=no` — die Toolchains liegen im Home des Template-Users und sind unter dem neuen Remote-Pfad nicht im PATH. Das Rebake muss sie für den Gast-User `adminhelper` in den PATH legen, sonst SKIPpt die schwere Suite in 2b lautlos.
+Fund, in T11 behoben: `run.sh` meldete auf der Box `go=no cargo=no`. Ursache war nicht das Template, sondern die fehlende Login-Shell — `run` nutzt jetzt `bash -lc`, danach `go=yes cargo=yes` und `lint` grün ohne Skips.
 Komponente: scripts · Dateien: scripts/vm/vm.py, scripts/vm/rsync-exclude.txt (neu), scripts/vm/tests/test_vm.py
 Änderung: Ziel-VM per VMID oder Name; IP über Agent (gecacht je Aufruf); User aus `ciuser`; Schlüssel `AH_VM_SSH_KEY`; `-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=.vm/known_hosts`. `ssh <vm> [-- cmd]` (interaktiv ohne cmd). `sync <vm> [--no-delete]`: `rsync -az --delete --exclude-from scripts/vm/rsync-exclude.txt ./ <user>@<ip>:<AH_VM_REMOTE_DIR>/` (Excludes = die Liste aus `.crabbox.yaml`, plus `.vm`, `.ah-out`); rsync-Exit ≠ 0 → 74 `sync failed`. `run <vm> [--sync] [--timeout S] [--out DIR] [--extend 8h] -- <cmd>`: `cd <remote>` + Kommando über ssh mit Streaming, Remote-Exit 1:1, ssh 255 → 74, `--out` zieht `<remote>/.ah-out/**` per rsync nach DIR, `--extend` setzt den `ttl-`Tag neu. `pull <vm> <glob> <dir>`. Tests mit Fake-`subprocess` (Argumentaufbau, Exit-Mapping, `--extend`-Tag).
 Verify: bash scripts/dev/verify.sh scripts --strict
@@ -104,9 +104,10 @@ Komponente: docs · Dateien: DEVELOPMENT.md, CHANGELOG.md
 Verify: grep -c 'vm.py' DEVELOPMENT.md   (≥ 5) — plus `bash scripts/tests/run.sh lint --strict --only scripts`
 Doku: DEVELOPMENT.md · CHANGELOG
 
-### T11 — Live-Beweis 2a (Probe-Klon)  [ ]
+### T11 — Live-Beweis 2a (Probe-Klon)  [x] (alles live gefahren; `doctor` 6/7 — `linux-server` fehlt bis T12 —, Pool danach leer)
+Ein Fund, der dabei behoben wurde: `run` fuhr ohne Login-Shell, und damit meldete `run.sh` auf der Box `go=no cargo=no` — `bash scripts/tests/run.sh lint` kam auf `3 passed, 0 failed, 1 skipped` statt der geforderten 0 Skips. Auf der Box liegt `go` in `/etc/profile.d/go.sh` und `cargo` in `~/.cargo/env` über `~/.profile`; ein blankes `ssh host cmd` liest beides nicht. `run` nimmt jetzt `bash -lc` (wie `bake` seit T7), `ssh` bleibt der rohe Griff. Das war der T5-Fund, der laut Notiz für T12 vorgemerkt war — er betraf schon 2a.
 Komponente: scripts · Dateien: tasks/vm-core.md (Ergebnisse als Anhang), keine Codeänderung erwartet
-Änderung: Nacheinander, alle Ausgaben in den Ledger-Anhang: `vm.py doctor --roles probe` → alle `ok`; `vm.py clone --profile linux-full --role probe --ttl 20m` → `VMID NAME`; `vm.py wait <vm>` → IP in < 5 min; `vm.py run <vm> --sync -- 'bash scripts/tests/run.sh lint'` → Summary `N passed, 0 failed, 0 skipped`; `vm.py snap <vm> s1` → `vm.py rollback <vm> s1 --start` → `vm.py delsnap <vm> s1`; `vm.py destroy <vm>` → `vm.py list` leer (Exit 0). Negativ: `AH_PVE_TOKEN=falsch vm.py clone …` → Exit 74, keine VM entstanden; `vm.py destroy <VMID einer VM außerhalb des Pools>` → Exit 2 und 403-frei (die VM ist nicht sichtbar); Klon mit `--ttl 1m`, 2 min warten, `vm.py list` → weg (Auto-Reap). Rote Schritte → Fix im jeweiligen Verb-Task, dann wiederholen.
+Änderung: Nacheinander, alle Ausgaben in den Ledger-Anhang: `vm.py doctor --roles probe` → alle `ok`; `vm.py clone --profile linux-full --role probe --ttl 20m` → `VMID NAME`; `vm.py wait <vm>` → IP in < 5 min; `vm.py run <vm> --sync -- 'bash scripts/tests/run.sh lint'` → Summary `N passed, 0 failed, 0 skipped`; `vm.py snap <vm> s1` → `vm.py rollback <vm> s1 --start` → `vm.py delsnap <vm> s1`; `vm.py destroy <vm>` → `vm.py list` leer (Exit 0). Negativ: `AH_PVE_TOKEN=falsch vm.py clone …` → Exit 74, keine VM entstanden; `vm.py destroy <VMID einer VM außerhalb des Pools>` → Exit 2 und 403-frei (die VM ist nicht sichtbar); Klon mit `--ttl 1m`, 2 min warten, `vm.py list` → weg (Auto-Reap). **Soll-Text überholt:** `list` ist nebenwirkungsfrei (Bericht ohne Reap, siehe T6); gekehrt wird beim nächsten beliebigen anderen Verb — im Anhang so belegt. Rote Schritte → Fix im jeweiligen Verb-Task, dann wiederholen.
 Verify: python3 scripts/vm/vm.py list   → Exit 0, keine `ah`-VM   (nach der Probe)
 Doku: keine
 Abhängt von: T9
@@ -123,3 +124,22 @@ Abhängt von: T11
 - Kein Warm-Profil-Lauf auf crabbox nötig: 2a ändert weder Produktcode noch Wrapper.
 - `python3 scripts/vm/vm.py list` leer; `crabbox list` leer.
 - PR-Body: Probe-Ergebnisse aus T11/T12 (Dauer je Schritt), Fixture-Herkunft, offene Fragen der Spec mit Entscheidung.
+
+
+## Anhang — Live-Beweis T11 (2026-09-16, Pool `adminhelper-ci`)
+
+Alle Läufe mit `vm.py` selbst, jede VM im selben Lauf wieder zerstört; `vm.py list` endete mit `0 ours, 3 not ours`, Exit 0.
+
+| Schritt | Ergebnis |
+|---|---|
+| `doctor --roles probe` | 6 von 7 `ok`, Exit **74**; `FAIL templates: no template tagged for linux-server` — das backt T12, alles andere grün. |
+| `clone --profile linux-full --role probe --ttl 40m` (40 statt 20 min, damit der Lauf nicht unter mir wegreapt) | `3000 ah-probe-main-b9a4` in **6,3 s** (Linked Clone). |
+| `wait 3000` | IPv4 aus dem Pool-Netz nach **32,7 s** (Agent, Adresse, SSH-Login als `crabbox` mit dem injizierten Schlüssel). |
+| `sync 3000` | **25,2 s** für den Erstsync des Checkouts. |
+| `run 3000 --sync -- 'bash scripts/tests/run.sh lint'` | **`6 passed, 0 failed, 0 skipped`** in 28,2 s — inklusive `ruff check (scripts/vm)` und `ruff format check (scripts/vm)` aus T9, `go=yes cargo=yes display=yes`. |
+| `snap 3000 s1` · `rollback 3000 s1 --start` · `delsnap 3000 s1` | **1,3 s** · **1,3 s** · **35,5 s** — die 35 s sind der Lock-Retry, den die T1-Aufzeichnung vorhergesagt hat. |
+| `destroy 3000` | **2,2 s**, danach `list` → `0 ours, 3 not ours`, Exit 0. |
+| **Negativ:** falsches Token | Exit **74** (`HTTP 401`), **keine** VM entstanden — der Pool zeigte danach nur die drei Templates. |
+| **Negativ:** `destroy 100` (VM außerhalb des Pools) | Exit **2**, `no VM '100' in pool adminhelper-ci` — kein 403, die VM ist für das Token nicht einmal sichtbar. |
+| **Negativ:** `destroy 9402` (Template) | Exit **2**, `9402 is a template — those are Kevin's to delete, not ours`. |
+| **Auto-Reap:** `--ttl 1m`, 130 s warten | `list` zeigt die VM weiter als `EXPIRED` und meldet den Leak (Exit ≠ 0) — ein Bericht hat keine Nebenwirkungen. Der nächste beliebige Verb-Aufruf kehrt sie weg, **auch wenn er selbst scheitert**: `snap 9999 s1` → Exit 2 und `vm.py: reaped expired 3000 ah-probe-main-c07a`. |

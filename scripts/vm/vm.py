@@ -1134,7 +1134,13 @@ def verb_run(cfg: Config, api: Api, args) -> int:
     # Joined with spaces, exactly as ssh itself would: the guest's shell parses
     # the result, so `-- 'bash scripts/tests/run.sh lint'` and
     # `-- bash scripts/tests/run.sh lint` mean the same thing.
-    remote = "cd %s && %s" % (remote_dir(cfg), " ".join(command))
+    #
+    # And a LOGIN shell, because the toolchains are not on a bare ssh's PATH:
+    # go comes from /etc/profile.d/go.sh and cargo from ~/.profile sourcing
+    # ~/.cargo/env, and `ssh host cmd` reads neither. Without it run.sh
+    # dep-gates itself into `go=no cargo=no`, skips those suites and still
+    # exits 0 — a green run that checked less. `ssh` stays the raw handle.
+    remote = "bash -lc %s" % shlex.quote("cd %s && %s" % (remote_dir(cfg), " ".join(command)))
     started = time.monotonic()
     code = run_ssh(cfg, target.user, target.ip, [remote], timeout=args.timeout)
     if code == 255:
@@ -1573,10 +1579,8 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         ]
         for label, command, limit, gate in steps:
             print("--- %s" % label)
-            # A login shell: the bootstrap puts go on the PATH through
-            # /etc/profile.d and cargo through ~/.cargo/env, and a plain
-            # `ssh host cmd` sources neither. Without it run.sh dep-gates itself
-            # into `go=no cargo=no`, warms nothing, and still exits 0.
+            # A login shell, for the reason verb_run spells out: without it the
+            # warm-up finds neither go nor cargo, warms nothing and exits 0.
             code = run_ssh(
                 cfg,
                 target.user,
