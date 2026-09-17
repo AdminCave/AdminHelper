@@ -4,19 +4,19 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 2b — vm-migration: Wrapper auf `vm.py`, crabbox-Rückbau — Task-Ledger
-Status: geplant · Branch: feature/vm-migration · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/vm-migration · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-2.md (Abschnitt 2b) und privates Roadmap-Dokument §11.4 (Umzugstabelle)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: die Live-Beweise T10 laufen mit den neuen Wrappern im Pool; der reale Beweis der Migration ist Kevins nächster `heavy.sh weekly` nach dem Merge (gleiche Summary-Zeilen wie der letzte Lauf auf crabbox). Kein crabbox-Lauf mehr.
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
-Roadmap: R-0006 (Teil 2), schließt R-0025, R-0026, R-0027 · Hängt ab von: tasks/vm-core.md (gemergt) · Startbedingung: zwei grüne Wochenlauf-Reports auf crabbox als Vergleichsmaßstab (Spec, offene Frage 5)
+Roadmap: R-0006 (Teil 2), schließt R-0025, R-0026, R-0027 · Hängt ab von: tasks/vm-core.md (gemergt) · Startbedingung aufgehoben (Kevin 2026-09-17: „ignore weekly, ich will weitermachen"); Vergleichsmaßstab für die Migration sind der Wochenlauf 2026-09-11 (`all` PASS 29/0/0) und der Capstone-Beweis 2026-09-11-2022 (22/3/0, drei Folgefehler eines crabbox-Sync-Abbruchs); der erste `heavy.sh weekly` auf `vm.py` nach dem Merge ist der Beweis
 Warnung (CLAUDE.md Trigger 4): dieser Ledger ändert Harness-Dateien (`.claude/settings.json`, Skills, `CLAUDE.md`, `lane.sh`, Session-Hook) — laut Roadmap §11.4 in einem Sweep (Frage 15); am Gate bestätigt.
 Regel: unveränderte Aufruf-Semantik der Wrapper — dieselben Flags, Env-Namen, Ausgabezeilen; `heavy_test.sh` und `iter_flags_test.sh` sind die Sicherung.
 
 ## A — Wrapper
 
-### T1 — `scripts/vm/warm.sh` und `scripts/vm/reap.sh`  [ ]
+### T1 — `scripts/vm/warm.sh` und `scripts/vm/reap.sh`  [x] (warm/reap auf vm.py, hermetischer Recorder-Test; `vm_py()` kam nach `lib.sh` statt viermal kopiert)
 Komponente: scripts · Dateien: scripts/vm/warm.sh (neu, SPDX), scripts/vm/reap.sh (neu, SPDX), scripts/tests/vm_wrappers_test.sh (neu, SPDX; hermetisch mit Fake-`vm.py` im PATH, in `AH_SCRIPT_TESTS_DEFAULT`)
 Änderung: `warm.sh <desktop|server|pond>` mit der Logik von `crabbox_warm.sh` 1:1: Reuse über `warm_get` + `vm.py list --json` (Status running), sonst `vm.py clone --profile linux-full --role desktop --ttl ${AH_WARM_TTL:-8h}` → `wait` → `run --sync -- 'AH_BOOTSTRAP_PROFILE=full bash scripts/vm/bootstrap_linux.sh'`; Server-Rolle: `linux-server`-Profil, `box_serverbox.sh`, Marker `MB_SID/MB_PTOK/MB_ADMIN_PW/MB_MONITOR_KEY` → `.vm/warm.env` (Schlüssel wie heute). `reap.sh [--lane l] [--all]`: `vm.py destroy` der warm.env-Einträge, dann `vm.py reap`, `warm_clear`. Hermetischer Test: Reuse-Pfad, Neu-Lease-Pfad, Marker-Extraktion, reap-Aufrufe (Fake-`vm.py` protokolliert Argumente).
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
