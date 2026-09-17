@@ -7,9 +7,9 @@
 #
 # heavy.sh is a wrapper, so its own logic is exactly the part no VM run exercises
 # cheaply: which verdict a given wrapper outcome produces, whether the summary
-# lines survive VERBATIM, and what lands in history.csv. All four wrappers
-# (crabbox, crabbox_warm.sh, crabbox_iter.sh, crabbox_multibox.sh) are replaced by
-# shims here — no lease, no network, no docker, seconds instead of hours.
+# lines survive VERBATIM, and what lands in history.csv. All four (vm.py itself,
+# warm.sh, iter.sh, multibox.sh) are replaced by shims here — no clone, no
+# network, no docker, seconds instead of hours.
 #
 # The shims are steered by SHIM_* environment variables (see mk_case).
 #
@@ -29,19 +29,26 @@ trap 'rm -rf "$WORK"' EXIT
 
 BIN="$WORK/bin"; WRAP="$WORK/wrappers"; mkdir -p "$BIN" "$WRAP"
 
-# `crabbox doctor` / `crabbox list` — the only direct provider calls heavy.sh makes.
-cat > "$BIN/crabbox" <<'SHIM'
+# `vm.py doctor` / `vm.py list` — the only direct hypervisor calls heavy.sh
+# makes. lib.sh routes every one of them through AH_VM_PY, so this file IS vm.py
+# as far as heavy.sh is concerned.
+export AH_VM_PY="$BIN/vm.py"
+cat > "$AH_VM_PY" <<'SHIM'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "${SHIM_STATE:-/tmp}/vmpy.args"
 case "${1:-}" in
   doctor) echo "doctor: ${SHIM_DOCTOR_RC:-0}"; exit "${SHIM_DOCTOR_RC:-0}" ;;
   list)
-    if [ "${2:-}" = "--pond" ]; then printf '%s\n' "${SHIM_LIST_POND:-}"
-    else printf '%s\n' "${SHIM_LIST:-}"; fi
+    # A listing that could not be produced prints NOTHING — that is what tells
+    # heavy.sh the hypervisor was never asked, as opposed to "asked, nothing there".
+    [ -n "${SHIM_LIST_RC:-}" ] && exit "$SHIM_LIST_RC"
+    if [ "${2:-}" = "--json" ]; then printf '%s\n' "${SHIM_LIST_JSON:-}"
+    else printf '%s\n' "${SHIM_LIST:-0 ours, 0 not ours}"; fi
     exit 0 ;;
   *) exit 0 ;;
 esac
 SHIM
-cat > "$WRAP/crabbox_warm.sh" <<'SHIM'
+cat > "$WRAP/warm.sh" <<'SHIM'
 #!/usr/bin/env bash
 echo "warm shim: $*"
 exit "${SHIM_WARM_RC:-0}"
@@ -50,11 +57,11 @@ SHIM
 # shim must be able to answer differently per call. SHIM_ITER_SEQ is a
 # space-separated list of exit codes ("1 0" = red, then green on the first
 # retry); the last entry repeats. SHIM_ITER_OUT<n> overrides the output of call n.
-cat > "$WRAP/crabbox_iter.sh" <<'SHIM'
+cat > "$WRAP/iter.sh" <<'SHIM'
 #!/usr/bin/env bash
 n=$(cat "$SHIM_STATE/iter.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$SHIM_STATE/iter.n"
-# The real wrapper pulls .crabbox-out/** back from the box, which is how
-# last-all.json appears. SHIM_NO_PULL models a box that died before the pull.
+# The real wrapper pulls the box's .ah-out back, which is how last-all.json
+# appears. SHIM_NO_PULL models a box that died before the pull.
 if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -f "$SHIM_STATE/artifact.json" ]; then
   cp "$SHIM_STATE/artifact.json" "$AH_OUT_DIR/last-all.json"
 fi
@@ -70,7 +77,7 @@ if [ -n "${SHIM_ITER_SEQ:-}" ]; then
 fi
 exit "${SHIM_ITER_RC:-0}"
 SHIM
-cat > "$WRAP/crabbox_multibox.sh" <<'SHIM'
+cat > "$WRAP/multibox.sh" <<'SHIM'
 #!/usr/bin/env bash
 echo "multibox shim: $*"
 [ -n "${SHIM_MB_OUT:-}" ] && printf '%s\n' "$SHIM_MB_OUT"
@@ -88,16 +95,16 @@ case "$*" in
 esac
 exit "${SHIM_NOTIFY_RC:-0}"
 SHIM
-chmod +x "$BIN/crabbox" "$BIN/curl" "$WRAP"/*.sh
+chmod +x "$AH_VM_PY" "$BIN/curl" "$WRAP"/*.sh
 
 # ── fixture checkout for the second-VM check ─────────────────────────────────
 # heavy.sh adds and removes a git worktree for the counter-check. It must never
 # do that in the developer's own tree, so AH_HEAVY_ROOT points it at this
-# throwaway repo. The worktree gets the repo's OWN scripts/tests/*, which is why
+# throwaway repo. The worktree gets the repo's OWN scripts/vm/*, which is why
 # the second-VM shims are COMMITTED here rather than living in $WRAP.
 FIX="$WORK/fixture"
-mkdir -p "$FIX/scripts/tests"
-cat > "$FIX/scripts/tests/crabbox_iter.sh" <<'SHIM'
+mkdir -p "$FIX/scripts/vm"
+cat > "$FIX/scripts/vm/iter.sh" <<'SHIM'
 #!/usr/bin/env bash
 n=$(cat "$SHIM_STATE/w2.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$SHIM_STATE/w2.n"
 printf 'call %s: AH_LANE=%s AH_SPEC=%s ARGS=%s\n' "$n" "${AH_LANE:-unset}" "${AH_SPEC:-unset}" "$*" >> "$SHIM_STATE/w2.args"
@@ -105,17 +112,17 @@ printf 'call %s: AH_LANE=%s AH_SPEC=%s ARGS=%s\n' "$n" "${AH_LANE:-unset}" "${AH
 [ "$n" = 1 ] && exit "${SHIM_W2_HEAD_RC:-1}"
 exit "${SHIM_W2_BASE_RC:-1}"
 SHIM
-cat > "$FIX/scripts/tests/crabbox_warm.sh" <<'SHIM'
+cat > "$FIX/scripts/vm/warm.sh" <<'SHIM'
 #!/usr/bin/env bash
 echo "w2 warm shim: $* (AH_LANE=${AH_LANE:-unset})" >> "$SHIM_STATE/w2.args"
 exit "${SHIM_W2_WARM_RC:-0}"
 SHIM
-cat > "$FIX/scripts/tests/crabbox_reap.sh" <<'SHIM'
+cat > "$FIX/scripts/vm/reap.sh" <<'SHIM'
 #!/usr/bin/env bash
 echo "w2 reap shim: $* (AH_LANE=${AH_LANE:-unset})" >> "$SHIM_STATE/w2.args"
 exit 0
 SHIM
-chmod +x "$FIX/scripts/tests"/*.sh
+chmod +x "$FIX/scripts/vm"/*.sh
 git -C "$FIX" init -q -b main
 git -C "$FIX" config user.email t@example.invalid
 git -C "$FIX" config user.name "heavy fixture"
@@ -125,9 +132,18 @@ echo "later" > "$FIX/CHANGE.md"
 git -C "$FIX" add -A && git -C "$FIX" commit -qm "head"
 export AH_HEAVY_ROOT="$FIX"
 
-# cbx_load_env returns early when this is already set — the real one would read
-# the gitignored provider secret, which a hermetic test must never need.
-export CRABBOX_PROVIDER=shim
+# vm_load_env returns early when this is already set — the real one would read
+# the gitignored provider secret, which a hermetic test must never need. AH_LANE
+# is pinned so foreign_boxes compares against a known lane instead of whatever
+# .vm/lane the developer's checkout happens to hold.
+export AH_PVE_URL="https://heavy-test.invalid"
+export AH_LANE=main
+
+# One running box of our own lane, claimed by nobody else — the healthy default.
+# `vm.py list --json` is what heavy.sh reads; the shape is verb_list's.
+OWN_BOX='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "role": "desktop",
+ "lane": "main", "scenario": "", "status": "running", "ttl": "7h00m", "ip": "10.0.0.9"}],
+ "untagged": 0, "leaked": []}'
 export AH_HEAVY_WRAPPERS="$WRAP"
 export PATH="$BIN:$PATH"
 
@@ -141,8 +157,8 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
   unset SHIM_ITER_SEQ SHIM_ITER_OUT1 SHIM_ITER_OUT2 SHIM_ITER_OUT3 SHIM_ITER_OUT4 SHIM_NO_PULL
   # Defaults: healthy provider, one own box, everything green.
   export SHIM_DOCTOR_RC=0
-  export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm"
-  export SHIM_LIST_POND="$SHIM_LIST"
+  export SHIM_LIST_JSON="$OWN_BOX"
+  unset SHIM_LIST_RC
   export SHIM_WARM_RC=0 SHIM_ITER_RC=0 SHIM_MB_RC=0
   export SHIM_W2_WARM_RC=0 SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=1
   export SHIM_AUDIT_JSON='[{"conclusion": "success", "created_at": "2026-09-09T03:00:00Z"}]'
@@ -165,10 +181,10 @@ RM
   # developer's (AH_HEAVY_ROOT).
   rm -rf "${FIX:-/nonexistent}/tasks"
   export SHIM_ITER_OUT="  run.sh[all]: 41 passed, 0 failed, 3 skipped, 0 test-skips, 0 reruns"
-  export SHIM_MB_OUT="  crabbox_multibox: 18 ok, 0 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  export SHIM_MB_OUT="  multibox: 18 ok, 0 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 }
 
-# The artifact run.sh writes on the box and crabbox_iter.sh pulls back.
+# The artifact run.sh writes on the box and iter.sh pulls back.
 artifact() {  # artifact <name:result:seconds>...
   local steps="" first=1 e n r s
   for e in "$@"; do
@@ -381,10 +397,10 @@ grep -q 'w2 reap shim' "$SHIM_STATE/w2.args" && ok "the second pond was reaped" 
 # The exact path, not `grep w2`: `git worktree list` prints the full path, and
 # $FIX is a mktemp directory whose random suffix contains "w2" roughly once in
 # forty runs — which turned this assertion into a random red (seen 2026-09-17).
-[ -z "$(git -C "$FIX" worktree list | grep -F "$FIX/.crabbox-worktrees/w2")" ] \
+[ -z "$(git -C "$FIX" worktree list | grep -F "$FIX/.ah-worktrees/w2")" ] \
   && ok "the w2 worktree was removed" \
   || bad "worktree left behind: $(git -C "$FIX" worktree list)"
-[ -d "$FIX/.crabbox-worktrees/w2" ] && bad "w2 directory left behind" || ok "no w2 directory left behind"
+[ -d "$FIX/.ah-worktrees/w2" ] && bad "w2 directory left behind" || ok "no w2 directory left behind"
 
 candidate_case
 seed_pass_history
@@ -563,7 +579,7 @@ mk_case
 artifact "ruff check:pass:3" "web vitest:pass:19"
 cp "$SHIM_STATE/artifact.json" "$AH_OUT_DIR/last-all.json"   # left over from a previous run
 export SHIM_NO_PULL=1 SHIM_ITER_RC=1
-export SHIM_ITER_OUT="no warm box (run: crabbox_warm.sh desktop)"
+export SHIM_ITER_OUT="no warm box (run: warm.sh desktop)"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a box that could not be leased is infra, not a failure"   || bad "unleasable box -> rc=$rc; $out"
 history_of | grep -q ',ruff check,'   && bad "steps from a stale artifact were filed under today's run: $(history_of)"   || ok "no step rows from a stale artifact"
@@ -580,59 +596,38 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',ruff check,'   && bad "an artifact describing another tree was counted: $(history_of)"   || ok "an artifact from another tree is ignored"
 printf '%s' "$out" | grep -q 'another tree' && ok "and the run says so" || bad "silently ignored"
 
-# ── 4m: the provider not answering is infra, never 'no foreign boxes' ────────
+# ── 4m: the hypervisor not answering is infra, never 'no foreign boxes' ──────
 mk_case
-cat > "$BIN/crabbox" <<'SHIM'
-#!/usr/bin/env bash
-case "${1:-}" in
-  doctor) exit 0 ;;
-  list) exit 7 ;;
-  *) exit 0 ;;
-esac
-SHIM
-chmod +x "$BIN/crabbox"
+export SHIM_LIST_RC=7
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "crabbox list unavailable -> exit 74" || bad "list unavailable -> rc=$rc"
+[ "$rc" = 74 ] && ok "vm.py list unavailable -> exit 74" || bad "list unavailable -> rc=$rc"
 printf '%s' "$out" | grep -q 'no foreign boxes'   && bad "claimed a clean hypervisor it never saw" || ok "no unfounded 'no foreign boxes'"
-# restore the normal shim for the cases below
-cat > "$BIN/crabbox" <<'SHIM'
-#!/usr/bin/env bash
-case "${1:-}" in
-  doctor) echo "doctor: ${SHIM_DOCTOR_RC:-0}"; exit "${SHIM_DOCTOR_RC:-0}" ;;
-  list)
-    if [ "${2:-}" = "--pond" ]; then printf '%s
-' "${SHIM_LIST_POND:-}"
-    else printf '%s
-' "${SHIM_LIST:-}"; fi
-    exit 0 ;;
-  *) exit 0 ;;
-esac
-SHIM
-chmod +x "$BIN/crabbox"
 
-# A foreign slug must not be excused by a prefix match against one of ours.
+# A VM of OUR OWN lane that nothing claims is foreign too — vm.py calls it a
+# leak, and a run must not start on top of one.
 mk_case
-export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm
-lease=cbx_bb22 slug=ah-desktop2 state=running pond=other"
-export SHIM_LIST_POND="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm"
+export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "lane": "main", "status": "running"},
+ {"vmid": 3007, "name": "ah-probe-main-0007", "lane": "main", "status": "running"}], "untagged": 0, "leaked": [3007]}'
+artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "ah-desktop2 is not excused by ah-desktop" || bad "prefix match -> rc=$rc"
+[ "$rc" = 74 ] && ok "a leaked VM of our own lane aborts the run" || bad "leak -> rc=$rc"
+printf '%s' "$out" | grep -q '3007' && ok "and the report names it" || bad "leak not named: $out"
 
 # ── 5: a foreign box stops the run before any VM burns ───────────────────────
 mk_case
-export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm
-lease=cbx_bb22 slug=someone-elses-box state=running pond=other"
+export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "lane": "main", "status": "running"},
+ {"vmid": 3050, "name": "ah-desktop-someone-else", "lane": "someone-else", "status": "running"}], "untagged": 0, "leaked": []}'
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "foreign box -> exit 74" || bad "foreign box -> rc=$rc"
-printf '%s' "$out" | grep -q 'someone-elses-box' \
+printf '%s' "$out" | grep -q 'ah-desktop-someone-else' \
   && ok "the foreign box is named" || bad "foreign box not named: $out"
 [ ! -f "$AH_OUT_DIR/all.log" ] && [ -z "$(ls "$AH_OUT_DIR"/weekly/*/all.log 2>/dev/null)" ] \
   && ok "no layer ran after the foreign-box abort" || bad "a layer ran despite the abort"
 
 # ── 4n: exit 0 without evidence is UNVERIFIED, never PASS ────────────────────
-# The first real run reported PASS from a wrapper exit code alone: crabbox_iter.sh
-# captures the box's stdout into .crabbox/out/last.out.log and leaves the pulled
+# The first real run reported PASS from a wrapper exit code alone: iter.sh
+# tees the box's stdout into $AH_OUT_DIR/last.out.log and leaves the pulled
 # files as a tarball, so neither the summary line nor last-all.json was where
 # heavy.sh looked — and it called that green.
 mk_case
@@ -656,32 +651,29 @@ mk_case
 export SHIM_NO_PULL=1
 export SHIM_ITER_OUT=""
 artifact "ruff check:pass:3"
-mkdir -p "$AH_HEAVY_ROOT/.crabbox/out"
-printf '  run.sh[all]: 41 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns\n'   > "$AH_HEAVY_ROOT/.crabbox/out/last.out.log"
-touch -d '1 hour ago' "$AH_HEAVY_ROOT/.crabbox/out/last.out.log"
+printf '  run.sh[all]: 41 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns\n'   > "$AH_OUT_DIR/last.out.log"
+touch -d '1 hour ago' "$AH_OUT_DIR/last.out.log"
 out=$(cd "$AH_HEAVY_ROOT" && bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a stale captured summary is not adopted as evidence"   || bad "stale summary -> rc=$rc"
 printf '%s' "$out" | grep -q 'predates this run'   && ok "and the run says why" || bad "no reason given"
-rm -rf "$AH_HEAVY_ROOT/.crabbox"
+rm -f "$AH_OUT_DIR/last.out.log"
 
 # ── 4o: a stopped foreign box does not abort the run ─────────────────────────
 # Seen on the real hypervisor: a kept bake/template VM sits there stopped. It
 # holds disk, not capacity — aborting a 17 VM-h run over it is a false positive.
 mk_case
-export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm
-101  crabbox-ah-bake-1 stopped  template-9400  lease=cbx_bb22 slug=ah-bake keep=true"
-export SHIM_LIST_POND="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm"
+export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "lane": "main", "status": "running"},
+ {"vmid": 3900, "name": "ah-tpl-linux-full-1", "lane": "other", "status": "stopped"}], "untagged": 0, "leaked": []}'
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 0 ] && ok "a stopped foreign box does not abort the run" || bad "stopped box -> rc=$rc; $out"
 # …but a RUNNING one still does.
 mk_case
-export SHIM_LIST="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm
-102  crabbox-other running  template-9400  lease=cbx_cc33 slug=someone-else keep=true"
-export SHIM_LIST_POND="lease=cbx_aa11 slug=ah-desktop state=running pond=ah-warm"
+export SHIM_LIST_JSON='{"vms": [{"vmid": 3001, "name": "ah-desktop-main-0001", "lane": "main", "status": "running"},
+ {"vmid": 3002, "name": "ah-desktop-w2-0002", "lane": "w2", "status": "running"}], "untagged": 0, "leaked": []}'
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "a running foreign box still aborts" || bad "running foreign -> rc=$rc"
+[ "$rc" = 74 ] && ok "a running box of ANOTHER lane still aborts" || bad "running foreign -> rc=$rc"
 
 # ── 5a: a failed lease still leaves a row in the history ─────────────────────
 # Found by the first real run: run_all returned 74 before adding any finding, so
@@ -696,14 +688,43 @@ out=$(bash "$HEAVY" all 2>&1); rc=$?
 history_of | grep -q ',all,-,infra,'   && ok "history.csv records the attempt as infra" || bad "history: $(history_of)"
 report_of | grep -q 'could not be leased'   && ok "the report names the reason" || bad "no reason in the report"
 
-# ── 5b: crabbox missing entirely ─────────────────────────────────────────────
+# ── 5b: vm.py's own infrastructure reasons void the layer ────────────────────
+# There is no binary to be missing any more — vm.py answers 74 and SAYS why, and
+# those lines are what heavy.sh must recognise instead of a red test.
+mk_case
+export SHIM_ITER_RC=74 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: capacity: 8192 MiB free - 4096 reserve - 6144 owed by ours - 6144 for desktop = -8192 MiB"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a capacity refusal is infra, not a failed test" || bad "capacity -> rc=$rc"
+report_of | head -1 | grep -q 'capacity' && ok "and the report names the reason" || bad "reason: $(report_of | head -1)"
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: no ssh: adminhelper@10.0.0.9 refused for 900s"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a box that never answered ssh is infra too" || bad "no ssh -> rc=$rc"
+# The wording matters: vm.py says "clone of 3010 into 3015 failed", never
+# "clone failed" — a marker written from the call site would never fire.
+mk_case
+export SHIM_ITER_RC=1 SHIM_NO_PULL=1
+export SHIM_ITER_OUT="vm.py: clone of 9402 into 3015 failed: 500 internal error"
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a failed clone is infra, in the words vm.py really uses" || bad "clone failed -> rc=$rc"
+
+# ── 5b2: doctor is asked for the roles the mode will actually clone ──────────
+# `all` warms one desktop box; the capstone clones seven. Asking for `probe`
+# would let a run start that the hypervisor cannot carry.
 mk_case
 artifact "ruff check:pass:3"
-# A bare PATH, not "$BIN removed": this developer box has a REAL crabbox on
-# /usr/local/bin, which would answer the `command -v` and defeat the case.
-out=$(PATH=/usr/bin:/bin bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "no crabbox at all -> exit 74" || bad "no crabbox -> rc=$rc"
-printf '%s' "$out" | grep -q 'crabbox not installed'   && ok "and it says which precondition is missing" || bad "silent about the missing tool"
+bash "$HEAVY" all >/dev/null 2>&1
+grep -qx 'doctor --roles desktop' "$SHIM_STATE/vmpy.args" \
+  && ok "the all layer asks doctor for one desktop box" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
+mk_case
+bash "$HEAVY" capstone >/dev/null 2>&1
+grep -qx 'doctor --roles server,agent,moncheck,rpm,tunnel,visitor,desktop' "$SHIM_STATE/vmpy.args" \
+  && ok "the capstone asks doctor for all seven roles" || bad "roles: $(grep '^doctor' "$SHIM_STATE/vmpy.args")"
 
 # ── 5c: pulled artifacts end up where the report points ──────────────────────
 mk_case
@@ -716,16 +737,16 @@ ls "$AH_OUT_DIR"/weekly/*/screenshots/login.png >/dev/null 2>&1   && ok "screens
 mk_case
 export SHIM_DOCTOR_RC=1
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-[ "$rc" = 74 ] && ok "crabbox doctor red -> exit 74" || bad "doctor red -> rc=$rc"
+[ "$rc" = 74 ] && ok "vm.py doctor red -> exit 74" || bad "doctor red -> rc=$rc"
 
 # ── 7: capstone ──────────────────────────────────────────────────────────────
 mk_case
 export SHIM_MB_RC=1
 export SHIM_MB_OUT="  FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
-  crabbox_multibox: 17 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  multibox: 17 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 1 ] && ok "red capstone -> exit 1" || bad "red capstone -> rc=$rc"
-report_of | grep -qF "crabbox_multibox: 17 ok, 1 failed, 0 skipped" \
+report_of | grep -qF "multibox: 17 ok, 1 failed, 0 skipped" \
   && ok "the multibox summary line is in the report verbatim" || bad "multibox summary missing"
 report_of | grep -q 'enforce: certless :443 was not rejected' \
   && ok "the failing assertion is named in the report" || bad "failing assertion not named"
@@ -735,7 +756,7 @@ history_of | grep -q '^[^,]*,[^,]*,[^,]*,capstone,' && ok "history.csv has capst
 mk_case
 export SHIM_MB_RC=1
 export SHIM_MB_OUT="  FAIL server lease
-  crabbox_multibox: 0 ok, 1 failed, 0 skipped  (server=, agents=none)"
+  multibox: 0 ok, 1 failed, 0 skipped  (server=, agents=none)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "an unleasable server box -> exit 74, not a FAIL" || bad "server lease -> rc=$rc"
 history_of | grep -q ',capstone,-,infra,'   && ok "history.csv: capstone infra" || bad "rows: $(history_of)"
@@ -743,21 +764,21 @@ history_of | grep -q ',capstone,-,infra,'   && ok "history.csv: capstone infra" 
 # ── 7c: failures that follow a cancelled role setup are infra, named by role ──
 mk_case
 export SHIM_MB_RC=1
-export SHIM_MB_OUT="== lease 1 server + 1 agent box(es) on vmbr1 (pond ah-mb-1) ==
-  ok   server-box ah-srv @ 10.0.0.5
-== moncheck (S5): lease the client/sink box + start mailhog (before the seed) ==
-  ok   moncheck-box ah-moncheck @ 10.0.0.6
-warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+export SHIM_MB_OUT="== clone 1 server + 1 agent box(es) (scenario mb-4711) ==
+  ok   server-box 3001 @ 10.0.0.5
+== moncheck (S5): clone the client/sink box + start mailhog (before the seed) ==
+  ok   moncheck-box 3003 @ 10.0.0.6
+vm.py: ssh to adminhelper@10.0.0.6 failed (255) while running: bash scripts/tests/box_moncheckbox.sh start
   FAIL mailpit did not start
 == provision each agent against https://10.0.0.5 ==
   ok   agent ah-agent1: provisioned + mTLS-enrolled over the network hop
 == moncheck (S5): pull-check verdicts + closed-loop alert delivery ==
   FAIL reachable ping check status=? (expected ok)
   FAIL no alert email reached the sink
-  crabbox_multibox: 18 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  multibox: 18 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "only abort-consequences -> UNVERIFIED (74), not FAIL" || bad "abort-only capstone -> rc=$rc"
-report_of | head -1 | grep -q 'capstone infra: crabbox brach das Setup von 1 Rolle(n) ab (moncheck); crabbox_multibox: 18 ok, 3 failed, 0 skipped' \
+report_of | head -1 | grep -q 'capstone infra: das Setup von 1 Rolle(n) kam nicht durch (moncheck); multibox: 18 ok, 3 failed, 0 skipped' \
   && ok "the reason names the role and quotes the summary line" || bad "reason: $(report_of | head -1)"
 report_of | head -1 | grep -q 'could not run' && bad "reason still says the capstone could not run" || ok "no 'could not run' for a run that happened"
 [ "$(history_of | grep -v ',capstone,-,' | grep -c ',capstone,.*,infra,0,multibox')" = 3 ] \
@@ -769,11 +790,11 @@ report_of | grep -q 'setup abort: moncheck' && ok "the step table names the abor
 mk_case
 export SHIM_MB_RC=1
 export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
-warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
+vm.py: sync failed: rsync exited 23
   FAIL tunnel agent: frpc did not connect (see output above)
 == assert monitoring ingested a report from the remote agent(s) ==
   FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
-  crabbox_multibox: 20 ok, 2 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  multibox: 20 ok, 2 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 1 ] && ok "a real failure next to an abort -> FAIL (1)" || bad "mixed capstone -> rc=$rc"
 history_of | grep -q 'tunnel agent: frpc did not connect (see output above),infra,' \
@@ -781,63 +802,89 @@ history_of | grep -q 'tunnel agent: frpc did not connect (see output above),infr
 history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
   && ok "the enforce failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
 
-# ── 7e: the crabbox warning is an abort marker, but without a FAIL after it nothing
-#        is filed — and (the \b fix in infra_marker) it no longer voids a green run ──
+# ── 7e: an infrastructure line is an abort marker, but without a FAIL after it
+#        nothing is filed — and it no longer voids an otherwise green run ──
 mk_case
 export SHIM_MB_RC=0
-export SHIM_MB_OUT="== moncheck (S5): lease the client/sink box + start mailhog (before the seed) ==
-warning: workspace owner release failed: release remote workspace owner: ambiguous remote state: exit status 75
-  ok   moncheck-box ah-moncheck @ 10.0.0.6
-  crabbox_multibox: 25 ok, 0 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+export SHIM_MB_OUT="== moncheck (S5): clone the client/sink box + start mailhog (before the seed) ==
+vm.py: ssh to adminhelper@10.0.0.6 failed (255) while running: true
+  ok   moncheck-box 3003 @ 10.0.0.6
+  multibox: 25 ok, 0 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
-[ "$rc" = 0 ] && ok "a release warning without a following FAIL does not void a green capstone" || bad "green capstone with warning -> rc=$rc: $(report_of | head -1)"
+[ "$rc" = 0 ] && ok "an abort marker without a following FAIL does not void a green capstone" || bad "green capstone with marker -> rc=$rc: $(report_of | head -1)"
 
 # ── 7g: a lost AGENT lease under the shared lease header does not excuse a server failure ──
 mk_case
 export SHIM_MB_RC=1
-export SHIM_MB_OUT="== lease 1 server + 1 agent box(es) on vmbr1 (pond ah-mb-1) ==
-lease attempt 1/3 for ah-agent1 failed: provisioning provider=proxmox lease=cbx_1 slug=ah-agent1 node=n template=9402 keep=true
-lease attempt 3/3 for ah-agent1 failed: provisioning provider=proxmox lease=cbx_3 slug=ah-agent1 node=n template=9402 keep=true
+export SHIM_MB_OUT="== clone 1 server + 1 agent box(es) (scenario mb-4711) ==
+clone failed for role agent
   FAIL agent1 lease
-== bring up the server stack on ah-srv (10.0.0.5) ==
+== bring up the server stack on 3001 (10.0.0.5) ==
   FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
 == provision each agent against https://10.0.0.5 ==
-  FAIL agent ah-agent1: provisioned + mTLS-enrolled over the network hop
-  crabbox_multibox: 17 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=none)"
+  FAIL agent 3002: provisioned + mTLS-enrolled over the network hop
+  multibox: 17 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=none)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 1 ] && ok "lost agent lease + real server failure -> FAIL (1), not UNVERIFIED" || bad "agent lease + server fail -> rc=$rc: $(report_of | head -1)"
-history_of | grep -q 'agent1 lease,infra,' && ok "the lost agent lease is infra (role from the slug, not the header)" || bad "agent lease row: $(history_of | grep 'agent1 lease')"
+history_of | grep -q 'agent1 lease,infra,' && ok "the lost agent box is infra (role from the clone line, not the header)" || bad "agent lease row: $(history_of | grep 'agent1 lease')"
 history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
   && ok "the server-stack failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
-history_of | grep -q 'agent ah-agent1: provisioned + mTLS-enrolled over the network hop,infra,' \
+history_of | grep -q 'agent 3002: provisioned + mTLS-enrolled over the network hop,infra,' \
   && ok "the later agent-role failure is a consequence" || bad "provision row: $(history_of | grep provisioned)"
 
 # ── 7h: a lost DESKTOP lease is filed under desktop although it prints before its header ──
 mk_case
 export SHIM_MB_RC=1
 # exactly what multibox prints when the desktop box cannot be had under --strict:
-# the lease FAIL, then the strict follow-up, and NO GUI header (it sits in the
-# success branch).
+# the failed clone, the lease FAIL, then the strict follow-up, and NO GUI header
+# (it sits in the success branch).
 export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
   ok   tunnel agent: frpc connected
-lease attempt 3/3 for ah-desktop-9056 failed: provisioning provider=proxmox lease=cbx_9 slug=ah-desktop-9056 node=n template=9402 keep=true
+desktop box 3005 never came up
   FAIL desktop lease
   SKIP desktop GUI journeys (no desktop box) — the S3 scenario is unverified
   FAIL strict: desktop GUI journeys (no desktop box) — the S3 scenario is unverified
-  crabbox_multibox: 23 ok, 2 failed, 1 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  multibox: 23 ok, 2 failed, 1 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a lost desktop lease alone -> UNVERIFIED" || bad "desktop lease -> rc=$rc"
-report_of | head -1 | grep -q 'ab (desktop);' && ok "the reason names desktop, not the tunnel section" || bad "reason: $(report_of | head -1)"
-report_of | head -1 | grep -q 'crabbox_multibox: 23 ok, 2 failed, 1 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'durch (desktop);' && ok "the reason names desktop, not the tunnel section" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'multibox: 23 ok, 2 failed, 1 skipped' && ok "the reason quotes the multibox line from this log" || bad "reason: $(report_of | head -1)"
 history_of | grep -q 'strict: desktop GUI journeys (no desktop box) — the S3 scenario is unverified,infra,' \
   && ok "the strict follow-up of the lost desktop box is infra too" || bad "strict row: $(history_of | grep 'strict:')"
+
+# ── 7j: ONE role that could not be cloned does not void the whole capstone ───
+# vm.py's stderr travels through multibox, so the log carries both its line and
+# multibox's own. Six other boxes still ran and still reported — filing the run
+# as "could not run" would throw their results away, and a real failure next to
+# the abort must stay a product failure.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== clone 1 server + 1 agent box(es) (scenario mb-4711) ==
+  ok   server-box 3001 @ 10.0.0.5
+== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+vm.py: clone of 9402 into 3004 failed: 500 internal error
+clone failed for role tunnel
+  FAIL tunnel-agent lease or missing tunnel seed
+== assert monitoring ingested a report from the remote agent(s) ==
+  FAIL enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED)
+  multibox: 20 ok, 2 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 1 ] && ok "a lost tunnel box next to a real failure -> FAIL (1), not UNVERIFIED" \
+  || bad "one lost box voided the capstone -> rc=$rc: $(report_of | head -1)"
+report_of | head -1 | grep -q 'could not run' \
+  && bad "the whole capstone was filed as 'could not run': $(report_of | head -1)" \
+  || ok "the run is not filed as 'the capstone could not run'"
+history_of | grep -q 'tunnel-agent lease or missing tunnel seed,infra,' \
+  && ok "the tunnel failure is filed against its own role as infra" || bad "tunnel row: $(history_of | grep tunnel)"
+history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
+  && ok "the unrelated enforce failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
 
 # ── 7f: a step name with a comma stays one CSV field ─────────────────────────
 mk_case
 export SHIM_MB_RC=1
 export SHIM_MB_OUT="== assert monitoring ingested a report from the remote agent(s) ==
   FAIL unreachable ping check status=?, expected critical (\"critical\" per docs)
-  crabbox_multibox: 24 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  multibox: 24 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 python3 - "$AH_PRIVATE_DIR/history.csv" <<'PY' && ok "history.csv row with a comma and quotes parses into 8 fields" || bad "history.csv not RFC-4180: $(history_of | tail -2)"
 import csv, sys
@@ -847,37 +894,35 @@ assert any(r[4] == 'unreachable ping check status=?, expected critical ("critica
 PY
 
 # ── 7i: a sync that never delivered the tree is a setup abort of that role ──
-# The 2026-09-11 evening capstone: crabbox failed the rsync of the tunnel box
-# ("ambiguous remote state: exit status 74"), the role script never ran, and the
-# three tunnel assertions failed as a consequence — filed as fail before this.
+# The 2026-09-11 evening capstone: the rsync of the tunnel box failed, the role
+# script never ran, and the three tunnel assertions failed as a consequence —
+# filed as fail before this. vm.py words the same event as `sync failed`.
 mk_case
 export SHIM_MB_RC=1
 export SHIM_MB_OUT="== cross-distro (S2): build the .rpm + provision it in a rockylinux container ==
   ok   rpm agent: built + installed + mTLS-enrolled in rockylinux over the hop
 == tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
   ok   frps up on the server box
-  ok   tunnel-agent-box ah-tunnel @ 10.0.0.8
-syncing /home/kevin/Dev/AdminCave/AdminHelper -> 10.0.0.8:/work/crabbox/cbx_05ba3d42f66c/AdminHelper
-rsync failed: finish rsync workspace witness: confirm remote workspace owner child state: ambiguous remote state: exit status 74
+  ok   tunnel-agent-box 3004 @ 10.0.0.8
+vm.py: sync failed: rsync exited 23
   FAIL tunnel agent: frpc did not connect (see output above)
   FAIL frps shows no STCP registration from the agent
-  ok   visitor-box ah-visitor @ 10.0.0.9
+  ok   visitor-box 3006 @ 10.0.0.9
   FAIL visitor could not reach the agent's sshd through the tunnel
-  crabbox_multibox: 22 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=ah-agent1)"
+  multibox: 22 ok, 3 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
 out=$(bash "$HEAVY" capstone 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a failed sync of the tunnel box -> UNVERIFIED, not a red tunnel" || bad "rsync abort -> rc=$rc: $(report_of | head -1)"
-report_of | head -1 | grep -q 'ab (tunnel); crabbox_multibox: 22 ok, 3 failed, 0 skipped' && ok "the reason names tunnel and quotes the summary" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'durch (tunnel); multibox: 22 ok, 3 failed, 0 skipped' && ok "the reason names tunnel and quotes the summary" || bad "reason: $(report_of | head -1)"
 [ "$(history_of | grep -v ',capstone,-,' | grep -c ',capstone,.*,infra,0,multibox')" = 3 ] && ok "all three tunnel failures are infra rows" || bad "rows: $(history_of | tr '\n' ' ')"
 
 # ── 4p: the same sync failure on the single-box layer is infra for the layer ──
 mk_case
 export SHIM_ITER_RC=1
-export SHIM_ITER_OUT="syncing /home/kevin/Dev/AdminCave/AdminHelper -> 10.0.0.3:/work/crabbox/cbx_1/AdminHelper
-rsync failed: finish rsync workspace witness: confirm remote workspace owner child state: ambiguous remote state: exit status 74"
+export SHIM_ITER_OUT="vm.py: sync failed: rsync exited 23"
 export SHIM_NO_PULL=1
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 74 ] && ok "a failed sync of the warm box -> UNVERIFIED (74)" || bad "rsync on all -> rc=$rc: $(report_of | head -1)"
-report_of | head -1 | grep -q 'rsync failed' && ok "the reason quotes the crabbox line" || bad "reason: $(report_of | head -1)"
+report_of | head -1 | grep -q 'sync failed' && ok "the reason quotes the vm.py line" || bad "reason: $(report_of | head -1)"
 
 # ── 8: weekly does not burn the capstone on an unverified `all` ──────────────
 mk_case

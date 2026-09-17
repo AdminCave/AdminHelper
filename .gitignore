@@ -76,6 +76,7 @@ Desktop.ini
 # Second-VM worktree of scripts/tests/heavy.sh (created and removed per check).
 # Ignored so a run in progress cannot change tree-hash.sh's answer — it hashes
 # every file `git add -A` would take, and a whole second checkout would.
+.ah-worktrees/
 .crabbox-worktrees/
 .dt-xdg/
 
