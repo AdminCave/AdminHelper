@@ -22,7 +22,7 @@ Komponente: scripts · Dateien: scripts/vm/warm.sh (neu, SPDX), scripts/vm/reap.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T9)
 
-### T2 — `scripts/vm/iter.sh`  [ ]
+### T2 — `scripts/vm/iter.sh`  [x] (iter auf vm.py run; Flags-Test umbenannt + um die vm.py-Argumentliste und den 74-Durchgriff erweitert)
 Komponente: scripts · Dateien: scripts/vm/iter.sh (neu, SPDX), scripts/tests/iter_flags_test.sh (umbenannt aus crabbox_iter_flags_test.sh, Erwartungen angepasst), scripts/tests/run.sh (`AH_SCRIPT_TESTS_DEFAULT`)
 Änderung: Drei Aufrufformen wie heute (`<layer> [--strict] [--only …] [--step …]`, `--cmd '…'`, `--desktop [spec…]`); `AH_NO_SYNC`, `AH_DRY_RUN`, `AH_ONLY`/`AH_REQUIRED`-Charset-Prüfung, `AH_ALLOW_REAL=1 AH_CAPTURE=1`, `AH_HEAD`/`AH_TREE_HASH` aus `evidence_envs`; Ausführung `vm.py run <desktop> [--sync] --timeout <3000|6000> --out .ah-out --extend ${AH_WARM_TTL:-8h} -- "<ENVS> bash scripts/tests/run.sh …"`; Remote-Exit 1:1, 74 durchreichen; Box bleibt bei Fehler; `report_fail` druckt `vm.py ssh <vmid>`-Hinweis. Der Flags-Test läuft weiter über `AH_DRY_RUN=1` (Fake-`vm.py` darf nie gerufen werden).
 Verify: bash scripts/tests/run.sh unit --strict --only scripts

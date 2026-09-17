@@ -3,14 +3,14 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# crabbox_iter_flags_test.sh — the remote command crabbox_iter.sh builds.
+# iter_flags_test.sh — the remote command scripts/vm/iter.sh builds.
 #
 # The failure this guards is the one stage 1 exists to remove: the wrapper used
-# to read only $1, so `crabbox_iter.sh quick --strict` ran the box suite WITHOUT
-# the strict mode and still reported green. AH_DRY_RUN=1 prints the command and
-# exits before any lease, so this runs anywhere — no Proxmox, no network, no VM.
+# to read only $1, so `iter.sh quick --strict` ran the box suite WITHOUT the
+# strict mode and still reported green. AH_DRY_RUN=1 prints the command and exits
+# before any clone, so this runs anywhere — no Proxmox, no network, no VM.
 #
-# Run: bash scripts/tests/crabbox_iter_flags_test.sh
+# Run: bash scripts/tests/iter_flags_test.sh
 
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
@@ -18,15 +18,23 @@ set -uo pipefail
 unset AH_ONLY AH_NO_SYNC AH_REQUIRED
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-ITER="$HERE/crabbox_iter.sh"
+ITER="$HERE/../vm/iter.sh"
 
-# A dry run must not reach the provider — the script skips its crabbox checks for
+# Claude Code exports the `env` block of .claude/settings.local.json into every
+# shell, so the real Proxmox values are already here on the dev box — and that
+# is exactly what would hide the CI case. The second half of this file leaves
+# the dry-run path and calls iter.sh for real, which loads the provider env; a
+# value that goes nowhere makes vm_load_env return before it looks for the
+# gitignored file, so the ops-scripts runner (which has neither) passes too.
+export AH_PVE_URL="https://iter-flags-test.invalid"
+
+# A dry run must not reach the hypervisor — the script skips vm_load_env for
 # AH_DRY_RUN. The stub is the safety net under that: should the dry-run exit ever
-# regress, this test fails loudly with exit 99 instead of leasing a real VM.
+# regress, this test fails loudly with exit 99 instead of cloning a real VM.
 SHIM=$(mktemp -d); trap 'rm -rf "$SHIM"' EXIT
-printf '#!/bin/sh\necho "crabbox must not be called by this test" >&2; exit 99\n' > "$SHIM/crabbox"
-chmod +x "$SHIM/crabbox"
-export PATH="$SHIM:$PATH"
+printf '#!/bin/sh\necho "vm.py must not be called by this test" >&2; exit 99\n' > "$SHIM/vm.py"
+chmod +x "$SHIM/vm.py"
+export AH_VM_PY="$SHIM/vm.py"
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -78,7 +86,7 @@ eval "set -- $rest"
   && ok "a step name with spaces re-parses as one argument" || bad "step quoting: $# args from: $rest"
 
 # ── the evidence fields the box cannot compute itself ────────────────────────
-# A crabbox box has no .git, so head and tree_hash must ride along in the remote
+# A box has no .git, so head and tree_hash must ride along in the remote
 # command; without them every box returns an artifact that proves nothing.
 dry quick --strict
 grep -qE 'AH_HEAD=[0-9a-f]{40} ' <<<"$OUT" \
@@ -105,6 +113,54 @@ OUT=$(AH_REQUIRED="ruff'; id; echo '" AH_DRY_RUN=1 bash "$ITER" quick --strict 2
 dry quick --strict
 grep -q "AH_REQUIRED=" <<<"$OUT" && bad "AH_REQUIRED appears although unset" || ok "unset AH_REQUIRED stays absent"
 
+# ── what actually reaches vm.py ──────────────────────────────────────────────
+# The dry run proves the REMOTE command; these prove the wrapper's own argument
+# list, which the migration to vm.py rewrote from scratch. A missing --extend
+# lets the warm box expire mid-session, a missing --out loses the screenshots of
+# a failed journey, and a wrong --timeout kills a long layer mid-suite and reads
+# exactly like a red test. The recorder replaces vm.py; warm.sh runs for real
+# against it and finds the slot below already warm, so nothing is cloned.
+REC="$SHIM/rec.log"
+export FAKE_LOG="$REC"
+cat > "$SHIM/vm.py" <<'REC_EOF'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "$FAKE_LOG"
+case "${1:-}" in
+  list) [ "${2:-}" = "--json" ] && printf '{"vms": [{"vmid": 3001, "status": "running"}]}\n' \
+                               || echo "1 ours, 0 not ours" ;;
+  run)  exit "${FAKE_RUN_RC:-0}" ;;
+esac
+exit 0
+REC_EOF
+chmod +x "$SHIM/vm.py"
+export AH_VM_STATE_DIR="$SHIM/state"; mkdir -p "$AH_VM_STATE_DIR"
+echo "desktop=3001" > "$AH_VM_STATE_DIR/warm.env"
+export AH_OUT_DIR="$SHIM/out"
+
+: > "$REC"; OUT=$(bash "$ITER" quick --strict 2>&1); rc=$?
+[ $rc -eq 0 ] && ok "a green box run is green here" || bad "layer run: rc=$rc out=$OUT"
+grep -q "^run 3001 --sync --timeout 3000 --out $AH_OUT_DIR --extend 8h -- AH_ALLOW_REAL=1 AH_CAPTURE=1 .*bash scripts/tests/run.sh quick --strict$" "$REC"   && ok "the layer run syncs, extends the lease and pulls the artifacts"   || bad "run args: $(grep '^run' "$REC")"
+[ -f "$AH_OUT_DIR/last.out.log" ] && ok "the box output is kept as a file for heavy.sh"   || bad "no $AH_OUT_DIR/last.out.log"
+
+: > "$REC"; bash "$ITER" all --strict >/dev/null 2>&1
+grep -q -- '--timeout 6000 ' "$REC" && ok "the 'all' layer gets its own headroom"   || bad "all timeout: $(grep '^run' "$REC")"
+
+: > "$REC"; AH_NO_SYNC=1 bash "$ITER" quick >/dev/null 2>&1
+grep -q -- '--sync' "$REC" && bad "AH_NO_SYNC still synced: $(grep '^run' "$REC")"   || ok "AH_NO_SYNC drops the sync"
+
+: > "$REC"; OUT=$(bash "$ITER" --cmd 'echo hi' 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qE "^run 3001 --sync --timeout 3000 .* -- .*echo hi$" "$REC"   && ok "--cmd runs the command with the box venv bridged" || bad "--cmd: rc=$rc $(grep '^run' "$REC")"
+
+# vm.py answers infrastructure with 74, and heavy.sh sorts that away as `infra`
+# instead of reporting a test that never ran — so the wrapper must not flatten
+# every failure to 1 the way the old one did.
+: > "$REC"; OUT=$(FAKE_RUN_RC=74 bash "$ITER" quick 2>&1); rc=$?
+[ $rc -eq 74 ] && ok "exit 74 reaches the caller unchanged" || bad "74 passthrough: rc=$rc"
+: > "$REC"; OUT=$(FAKE_RUN_RC=1 bash "$ITER" quick 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -q "vm.py ssh 3001" <<<"$OUT" \
+  && ok "a red run names the kept box" || bad "red run: rc=$rc out=$OUT"
+
 echo ""
-echo "crabbox_iter_flags_test: $PASS passed, $FAIL failed"
+echo "iter_flags_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
