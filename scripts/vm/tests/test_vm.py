@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 
 import pytest
@@ -858,7 +859,7 @@ def test_capacity_is_checked_before_the_first_clone(keyed, api, http, clock):
 
 
 def test_the_default_cap_leaves_room_for_the_capstone():
-    # crabbox_multibox.sh --capstone holds seven leases at once on one lane:
+    # multibox.sh --capstone holds seven leases at once on one lane:
     # server, agent, moncheck, rpm, tunnel, visitor, desktop.
     assert int(vm.DEFAULTS["AH_VM_MAX"]) >= 7
 
@@ -1359,28 +1360,46 @@ def reachable(http):
     return http
 
 
-def test_the_exclude_list_matches_the_one_crabbox_syncs():
-    def entries(lines):
-        return {ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")}
+def test_the_exclude_list_never_hides_tracked_source():
+    """The invariant the file itself states, checked against the real index.
 
+    The box builds its evidence hash from what it RECEIVED, so an exclude over
+    tracked source would make every artifact describe a tree the box never had —
+    green, and about something else. This used to be checked by comparing the
+    list against crabbox's; with crabbox gone, check the property directly.
+    """
     with open(vm.RSYNC_EXCLUDE) as fh:  # pins the constant at the shipped file too
-        ours = entries(fh)
-    crabbox, seen = set(), False
-    with open(os.path.join(vm.ROOT, ".crabbox.yaml")) as fh:
-        lines = fh.readlines()
-    for line in lines:
-        if line.strip() == "exclude:":
-            seen = True
+        ours = [ln.strip() for ln in fh if ln.strip() and not ln.strip().startswith("#")]
+    try:
+        done = subprocess.run(
+            ["git", "-C", vm.ROOT, "ls-files"], capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        # A tarball checkout has no index to ask. Skipping says that; erroring
+        # would claim the property was violated.
+        pytest.skip("cannot read the index: %s" % exc)
+    tracked = done.stdout.split()
+    # The one documented exception: its only tracked entry is an empty .gitkeep,
+    # and the directory itself is runtime data the box must not inherit.
+    under_data = [t for t in tracked if t.startswith("apps/server/data/")]
+    assert under_data == ["apps/server/data/.gitkeep"], under_data
+    for entry in ours:
+        if entry == "apps/server/data":
             continue
-        if seen:
-            if line.strip().startswith("- "):
-                crabbox.add(line.strip()[2:].strip('"'))
-            elif line.strip() and not line.startswith("    "):
-                break
-    # The two harnesses must ship the same tree while they run side by side; the
-    # only additions are this tool's own local state.
-    assert ours - crabbox == {".vm", ".ah-out"}
-    assert crabbox - ours == set()
+        if "/" in entry:
+            # An anchored pattern only matches from the root.
+            hits = [t for t in tracked if t == entry or t.startswith(entry + "/")]
+        else:
+            # rsync matches a slash-less pattern against EVERY path segment, at
+            # any depth — `dist` hides apps/agent/dist too. Checking only the
+            # prefix would wave exactly that case through.
+            hits = [t for t in tracked if entry in t.split("/")]
+        assert not hits, "%s excludes tracked source: %s" % (entry, hits[:3])
+    # .git stays: run.sh reads head and tree_hash from it, and an artifact
+    # without those fields proves nothing about which tree ran.
+    assert ".git" not in ours
+    # Our own local state never travels — it describes THIS machine's leases.
+    assert {".vm", ".ah-out"} <= set(ours)
 
 
 def test_ssh_without_a_command_opens_a_login_shell(cfg, api, reachable, shell):
@@ -2343,7 +2362,7 @@ def test_a_failed_step_takes_the_half_baked_vm_with_it(keyed, api, http, clock, 
 def test_a_flaky_unit_test_does_not_throw_away_the_bootstrap(
     keyed, api, http, clock, shell, capsys
 ):
-    # crabbox_bake.sh ran the same step with `|| true`. Half an hour of
+    # the old bake ran the same step with `|| true`. Half an hour of
     # bootstrap is not worth one red unit test — but it has to be visible.
     bakeable(http)
     shell.ssh_codes = [0, 0, 1]  # probe, bootstrap, warm-up

@@ -1616,7 +1616,7 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
             # Not a test run: this is what fills ~/.cargo, ~/go and node_modules,
             # so the first lease off this template does not spend 20 minutes
             # building what the template could have carried. Tolerant, the way
-            # crabbox_bake.sh was — one flaky unit test must not throw away the
+            # the old bake was — one flaky unit test must not throw away the
             # half hour of bootstrap above it — and its exit code is printed, so
             # a warm-up that warmed nothing is visible rather than silent.
             (

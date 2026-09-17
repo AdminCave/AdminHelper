@@ -2,12 +2,12 @@
 #
 # run.sh — single-entry test aggregator for AdminHelper.
 #
-# One command that crabbox (or a dev) runs on a real Linux box. It mirrors the
+# One command the VM harness (or a dev) runs on a real Linux box. It mirrors the
 # per-component commands in .github/workflows/ci.yml and delegates the heavy
 # docker/display suites to the existing scripts/tests/*.sh (which self-SKIP when
 # their deps are missing). Every step is dependency-gated, so the SAME command
-# degrades gracefully on a bare box and runs fully on a hydrated crabbox box
-# (see scripts/tests/crabbox_bootstrap.sh).
+# degrades gracefully on a bare box and runs fully on a hydrated one
+# (see scripts/vm/bootstrap_linux.sh).
 #
 # Usage:
 #   bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [flags]
@@ -27,17 +27,17 @@
 #     --step <name>    run exactly one step (substring of its name, unambiguous)
 #
 # The heavy layers (integration|e2e|all) refuse to run unless AH_ALLOW_REAL=1,
-# so they never fire by accident on a dev box. The crabbox /test skill sets it.
+# so they never fire by accident on a dev box. The /test skill sets it.
 #
 # AH_ONLY="server web …" limits the lint/unit steps to the named components —
-# the per-task fast loop of a parallel lane (see crabbox_iter.sh). Filtered
+# the per-task fast loop of a parallel lane (see scripts/vm/iter.sh). Filtered
 # steps report SKIP (reason AH_ONLY). Keys: server monitoring ca-issuer agent
 # desktop (or desktop-rs|desktop-ui|desktop-e2e) web scripts.
 #
 # AH_REQUIRED="<step-ids…>" (space-separated, usually set in .devenv.sh) is the
 # set of steps that MUST really run under --strict; it overrides the built-in
 # AH_REQUIRED_DEFAULT per host, because the dev box has no docker and no display
-# while a crabbox box has both. Step ids are listed next to AH_REQUIRED_DEFAULT.
+# while a VM box has both. Step ids are listed next to AH_REQUIRED_DEFAULT.
 #
 # Exit code: non-zero if any step FAILED. Without --strict a SKIP never fails the
 # run; with --strict a skipped required step does ("SKIP heisst nicht verifiziert").
@@ -88,7 +88,7 @@ export AH_ONLY AH_STRICT
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
 # added to the default set (see AH_HEAVY_* below); a host-given AH_REQUIRED wins as is.
 AH_REQUIRED_DEFAULT="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest"
-# Named by the host or derived here? Only an unset (or empty — crabbox_iter.sh does
+# Named by the host or derived here? Only an unset (or empty — iter.sh does
 # not forward an empty value either) AH_REQUIRED gets the heavy step ids added
 # below; a host that names its set keeps exactly that set.
 AH_REQUIRED_GIVEN="${AH_REQUIRED:+x}"
@@ -98,7 +98,7 @@ AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 # required — including the whole-layer guards (`integration`, `desktop-e2e-gui`).
 # Without this, `run.sh all --strict` on a box that lacked tauri-cli or the network
 # went green with the heavy steps silently SKIPped: the default set above only
-# names lint/unit ids, and crabbox_iter.sh forwards AH_REQUIRED from the client,
+# names lint/unit ids, and iter.sh forwards AH_REQUIRED from the client,
 # where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
 AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path"
 # The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
@@ -145,9 +145,9 @@ ensure_venv() {
 }
 
 # Auto-debug: e2e specs (wdio afterTest) drop screenshots here on failure, and the
-# finalizer below runs the on-box collector when AH_CAPTURE=1. crabbox_iter.sh pulls
+# finalizer below runs the on-box collector when AH_CAPTURE=1. iter.sh pulls
 # this dir back via -artifact-glob. No effect on plain dev/CI runs (AH_CAPTURE unset).
-export AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.crabbox-out}"
+export AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"
 
 PASS=0 FAIL=0 SKIP=0
 # --only is honoured by the lint/unit layers only; integration/e2e always run
@@ -327,15 +327,16 @@ json_list() {  # json_list <item…>
   for i in "$@"; do [ "$first" = 1 ] && first=0 || printf ', '; json_str "$i"; done
   printf ']'
 }
-# A crabbox box gets the worktree WITHOUT .git (the sync carries files, not the
-# repository), so git answers nothing there and the evidence fields would be empty
-# on exactly the machine the heavy runs happen on. The client that synced the tree
-# passes both values in.
+# The evidence fields come from the CLIENT, not from the box. The sync does
+# carry .git along (scripts/vm/rsync-exclude.txt keeps it on purpose), but a box
+# without git installed — or a tree that arrived by any other route — answers
+# nothing, and the fields would then be empty on exactly the machine the heavy
+# runs happen on. The client that synced the tree passes both values in.
 #
 # They describe the CLIENT's tree, which is not byte-for-byte the box's: the sync
-# excludes what .crabbox.yaml lists (today apps/server/data), while the hash
+# excludes what scripts/vm/rsync-exclude.txt lists (today apps/server/data), while the hash
 # excludes tasks/ and the output dirs. The hash therefore only stays truthful as
-# long as no exclude in .crabbox.yaml covers a tracked source path.
+# long as no exclude in rsync-exclude.txt covers a tracked source path.
 #
 # Fall back on an EMPTY answer, not on a non-zero exit: a git that exits 0 without
 # printing (or one answering for a foreign repo the tree happens to sit in) would
@@ -401,7 +402,7 @@ have_display(){ have xvfb-run && have WebKitWebDriver && have tauri-driver; }
 FRPC_SIDECAR="apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 
 # npm ci wipes node_modules every run, defeating warm-box node_modules survival
-# (crabbox_iter excludes it from the delete-sync). Install only when the lockfile is
+# (the sync excludes it from the delete). Install only when the lockfile is
 # newer or node_modules is missing — deterministic when it matters, fast otherwise (5.26).
 npm_ci_if_stale() {
   if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then npm ci --no-audit --no-fund; fi
@@ -411,7 +412,7 @@ export -f npm_ci_if_stale  # the run_step `bash -c` subshells need it in their e
 require_real() {
   if [ "${AH_ALLOW_REAL:-0}" != "1" ]; then
     echo "REFUSED: layer '$LAYER' runs real docker/GUI suites. Set AH_ALLOW_REAL=1 to proceed"
-    echo "         (the crabbox /test skill sets it automatically on the leased box)."
+    echo "         (the /test skill sets it automatically on the leased box)."
     exit 2
   fi
 }
@@ -738,9 +739,9 @@ fi
 run_layer
 
 # On failure, collect on-box debug artifacts (container/agent logs, framebuffer
-# screenshot) so a crabbox_iter run leaves them locally without a re-run. Opt-in.
+# screenshot) so an iter.sh run leaves them locally without a re-run. Opt-in.
 if [ "$FAIL" -gt 0 ] && [ "${AH_CAPTURE:-0}" = 1 ]; then
-  bash "$ROOT/scripts/tests/crabbox_debug.sh" 2>/dev/null || true
+  bash "$ROOT/scripts/tests/box_debug.sh" 2>/dev/null || true
   echo "  auto-debug captured -> $AH_OUT_DIR"
 fi
 

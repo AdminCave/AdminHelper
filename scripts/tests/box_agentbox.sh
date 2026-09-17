@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# crabbox_agentbox.sh — runs ON a crabbox agent-box. Installs + provisions the
+# box_agentbox.sh — runs ON an agent box. Installs + provisions the
 # agent against the remote server box over a real network hop (cross-host mTLS)
 # and prints AGENT_* markers.
 #
@@ -11,16 +11,16 @@
 # REPO_FP, e.g. the server-side repo build failed): build the .deb locally and
 # provision with TOFU, as before.
 #
-# Called by scripts/tests/crabbox_multibox.sh via `crabbox run`.
-#   crabbox_agentbox.sh <SRV_IP> <SID> <PTOK> [REPO_GPG_FP] [CA_FP]
+# Called by scripts/tests/multibox.sh via `vm.py run`.
+#   box_agentbox.sh <SRV_IP> <SID> <PTOK> [REPO_GPG_FP] [CA_FP]
 set -uo pipefail
 SRV_IP="${1:?}"; SID="${2:?}"; PTOK="${3:?}"; REPO_FP="${4:-}"; CA_FP="${5:-}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
-# shellcheck source=scripts/tests/crabbox_lib.sh
-. "$(dirname "$0")/crabbox_lib.sh"
+# shellcheck source=scripts/vm/lib.sh
+. "$(dirname "$0")/../vm/lib.sh"
 
 echo "[agentbox] hydrate (agent profile: Go + packaging, no Tauri)"
-AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[agentbox] bootstrap failed"; exit 1; }
+AH_BOOTSTRAP_PROFILE=agent bash scripts/vm/bootstrap_linux.sh || { echo "[agentbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
 
 if [ -n "$REPO_FP" ]; then
@@ -38,7 +38,7 @@ if [ -n "$REPO_FP" ]; then
 else
   echo "[agentbox] no repo fingerprint from the server box — legacy local .deb path"
   echo "[agentbox] build the Go agent + .deb from the repo root"
-  DEB="$(cbx_build_agent_deb agentbox)" || exit 1
+  DEB="$(vm_build_agent_deb agentbox)" || exit 1
   echo "AGENT_DEB=$DEB"
 
   echo "[agentbox] install + provision against https://$SRV_IP (server $SID)"

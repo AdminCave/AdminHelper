@@ -13,7 +13,7 @@
 // is shown — matching login-error.live.js — since the failure is deterministic
 // either way). The happy path (a consumable one-time token that mints a real cert)
 // belongs to the full enrollment suite. Run by scripts/tests/desktop_e2e_crud.sh
-// (and reachable ad hoc via scripts/tests/crabbox_desktopbox.sh <spec>).
+// (and reachable ad hoc via scripts/tests/box_desktopbox.sh <spec>).
 
 import { SERVER_URL } from '../lib/live.js';
 

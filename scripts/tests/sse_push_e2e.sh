@@ -29,7 +29,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVER="$ROOT/apps/server"
 VENV="${VENV:-/tmp/ah-venv}"
 PY="$VENV/bin"
-# Build the venv on-demand instead of skipping — neither run.sh nor crabbox_bootstrap
+# Build the venv on-demand instead of skipping — neither run.sh nor bootstrap_linux
 # seeds it, so this cross-instance Redis fan-out path (the ONE thing unit tests can't
 # cover) was systematically skipped on hydrated boxes. One-time ~1 min, then cached (6.70).
 if [ ! -x "$PY/uvicorn" ]; then

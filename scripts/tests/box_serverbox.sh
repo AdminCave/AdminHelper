@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# crabbox_serverbox.sh — runs ON the crabbox server-box. Brings up the full stack
+# box_serverbox.sh — runs ON the server box. Brings up the full stack
 # reachable at https://<SRV_IP> on the production ports (443/8444/8445 + frps
 # 7000/7443), seeds an admin, a server record and a provision token, and prints
 #   MB_SID=<server-uuid> MB_PTOK=<provision-token>
 # on stdout for the orchestrator to hand to the agent box.
 #
-# Called by scripts/tests/crabbox_multibox.sh via `crabbox run`.
+# Called by scripts/tests/multibox.sh via `vm.py run`.
 set -uo pipefail
-SRV_IP="${1:?usage: crabbox_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP>]}"; shift || true
+SRV_IP="${1:?usage: box_serverbox.sh <server-ip> [tunnel] [moncheck <SMTP_IP>]}"; shift || true
 # Independent, composable modes (so the S6 capstone can do BOTH at once):
 #   tunnel            S4: seed an STCP tunnel + bring up frps
 #   moncheck <IP>     S5: seed ping checks + an email alert to the mailhog sink <IP>
@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do case "$1" in
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
 echo "[serverbox] hydrate (server profile: docker stack, no Tauri)"
-AH_BOOTSTRAP_PROFILE=server bash scripts/tests/crabbox_bootstrap.sh || { echo "[serverbox] bootstrap failed"; exit 1; }
+AH_BOOTSTRAP_PROFILE=server bash scripts/vm/bootstrap_linux.sh || { echo "[serverbox] bootstrap failed"; exit 1; }
 
 echo "[serverbox] .env: DOMAIN=$SRV_IP (IP-SAN gateway+frps leaf), MTLS_ENFORCE=$([ "$DO_ENFORCE" = 1 ] && echo true || echo false), admin pw"
 [ -f .env ] || cp .env.example .env
@@ -93,7 +93,7 @@ PY
   # The desktop box needs enrollment tokens too (cert-gated :443), but NOT from
   # here: they live 60 minutes by default and the desktop stage starts hours
   # later, after the agent, rpm, tunnel and visitor boxes. The orchestrator mints
-  # them just before that stage instead (crabbox_multibox.sh).
+  # them just before that stage instead (multibox.sh).
 fi
 
 echo "[serverbox] seed admin JWT -> server record -> provision token"
@@ -154,11 +154,11 @@ echo "MB_MONITOR_KEY=$(grep -E '^MONITOR_API_KEY=' .env | head -1 | cut -d= -f2-
 # restart needed). Agent boxes then install through scripts/agent-install.sh
 # over the real repo plane, exactly like a user host (dogfooding).
 echo "[serverbox] build agent packages + signed test repo for :8445"
-# shellcheck source=scripts/tests/crabbox_lib.sh
-. scripts/tests/crabbox_lib.sh
+# shellcheck source=scripts/vm/lib.sh
+. scripts/vm/lib.sh
 export PATH="$PATH:/usr/local/go/bin"
 REPO_FP=""
-if DEB="$(cbx_build_agent_deb serverbox)"; then
+if DEB="$(vm_build_agent_deb serverbox)"; then
   # Old-Debian regression guard on a debian:9 (Stretch) container — the exact
   # dpkg 1.18 + glibc 2.24 environment that failed on UniFi/appliance firmware.
   # Catches TWO distinct breaks that the all-modern build/test fleet hid, both of

@@ -75,7 +75,7 @@ run_bare lint --only nixkey
 [ $rc -eq 2 ] && grep -q "unknown AH_ONLY key: 'nixkey'" <<<"$OUT" && ok "unknown --only key -> exit 2" || bad "unknown key: rc=$rc"
 
 # --only must swallow every following non-flag word instead of reading the second
-# one as a layer — the multi-key form is what crabbox_iter/verify.sh pass.
+# one as a layer — the multi-key form is what iter.sh/verify.sh pass.
 run_bare unit --only web desktop-ui --step "web vitest"
 [ $rc -eq 0 ] && ! grep -q "unexpected argument" <<<"$OUT" \
   && ok "--only takes a multi-key list" || bad "--only list: rc=$rc $(grep -m1 unexpected <<<"$OUT")"
@@ -226,9 +226,9 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" DATABASE_URL
 # The artifact ties the verdict to a tree instead of to a claim.
 ART="$WORK/out/last-unit.json"
 [ -f "$ART" ] && ok "the run writes last-<layer>.json" || bad "no artifact at $ART"
-# Explicit values rather than whatever the surrounding checkout has: on a crabbox
-# box there is no .git, and these two would otherwise pass by inheriting the very
-# variables this file unsets — proving nothing about the code under test.
+# Explicit values rather than whatever the surrounding checkout has: a box may
+# answer nothing at all, and these two would otherwise pass by inheriting the
+# very variables this file unsets — proving nothing about the code under test.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out-ev" \
       AH_HEAD=4444444444444444444444444444444444444444 \
       AH_TREE_HASH=5555555555555555555555555555555555555555 \
@@ -283,10 +283,10 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
 grep -q 'ARGV: -m pytest -q$' <<<"$OUT" \
   && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 
-# A crabbox box has no .git, so run.sh must take the evidence fields from the
-# client that synced the tree — otherwise last-<layer>.json comes back from every
-# box with an empty head and tree_hash, and the artifact proves nothing exactly
-# where the heavy runs happen. Simulated with a git that cannot answer.
+# Where git cannot answer, run.sh must take the evidence fields from the client
+# that synced the tree — otherwise last-<layer>.json comes back with an empty
+# head and tree_hash, and the artifact proves nothing exactly where the heavy
+# runs happen. Simulated with a git that cannot answer.
 NOGIT="$WORK/bin-nogit"; mkdir -p "$NOGIT"
 cp -a "$BARE/." "$NOGIT/"
 # rm first: the copy left a SYMLINK to the real git here, and `>` on a symlink
@@ -303,9 +303,9 @@ grep -q '"tree_hash": "2222222222222222222222222222222222222222"' "$WORK/out4/la
   && ok "no .git: tree_hash comes from the client" || bad "tree_hash: $(grep tree_hash "$WORK/out4/last-lint.json")"
 
 # ...and where git DOES answer, its answer wins over whatever the client claims.
-# Checked with a stub rather than the surrounding checkout: on a crabbox box there
-# is no .git at all, so "a real repo" is not a precondition this test can assume —
-# that is exactly what made the first heavy run red.
+# Checked with a stub rather than the surrounding checkout: "a real repo that
+# answers" is not a precondition this test can assume — that is exactly what made
+# the first heavy run red.
 FAKEGIT="$WORK/bin-fakegit"; mkdir -p "$FAKEGIT"
 cp -a "$BARE/." "$FAKEGIT/"
 rm -f "$FAKEGIT/git"
@@ -417,7 +417,7 @@ for f in "$(dirname "$RUN")"/desktop_e2e_*.sh; do
   grep -q "required (strict): .*\b$s\b" <<<"$OUT" || missing="$missing $s"
 done
 [ -z "$missing" ] && ok "every globbed desktop_e2e_* suite is required under e2e --strict" || bad "not required:$missing"
-# An empty AH_REQUIRED counts as unset (crabbox_iter.sh does not forward an empty value either).
+# An empty AH_REQUIRED counts as unset (iter.sh does not forward an empty value either).
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_ALLOW_REAL=1 AH_REQUIRED="" "$BARE/bash" "$RUN" integration --strict 2>&1); rc=$?
 grep -q "strict-failed: integration suite (SKIP)" <<<"$OUT" \
   && ok "an empty AH_REQUIRED is treated as unset" || bad "empty AH_REQUIRED: $(grep -m1 'required (strict)' <<<"$OUT")"

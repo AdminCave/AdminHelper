@@ -7,7 +7,7 @@
 #
 # Five specs existed in apps/desktop/e2e/test/specs/ without an orchestration
 # script: login-error, logout, monitoring-alerts, connection-editor,
-# theme-toggle. They were linted and reachable ad hoc via `crabbox_iter.sh
+# theme-toggle. They were linted and reachable ad hoc via `iter.sh
 # --desktop <spec>`, but no suite ran them, so nothing in the heavy tier would
 # have noticed them breaking. They share one stack and one seed here.
 #
@@ -85,7 +85,7 @@ export AH_SERVER_URL="$E2E_SERVER_URL" AH_ADMIN_USER="admin" AH_ADMIN_PASS="$E2E
 # single exit code, and the per-spec `pass|fail` line is the point of this
 # script. wdio already isolates per spec FILE, so the only price is five
 # `onPrepare` builds (~5-10 min in the heavy tier). Same shape as
-# crabbox_desktopbox.sh.
+# box_desktopbox.sh.
 for s in $SPECS; do
     echo "[e2e-misc] running $s under xvfb..."
     SPEC="test/specs/$s.live.js"; export SPEC

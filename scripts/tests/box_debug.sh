@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# crabbox_debug.sh — on-box failure collector. Dumps docker container logs, the
+# box_debug.sh — on-box failure collector. Dumps docker container logs, the
 # agent journal, tool versions and (if a display is up) a framebuffer screenshot
-# into .crabbox-out/, which crabbox_iter.sh pulls back via -artifact-glob so a
+# into .ah-out/, which iter.sh pulls back via `vm.py run --out` so a
 # failure is diagnosable WITHOUT a re-run. Invoked by run.sh when a layer FAILS and
 # AH_CAPTURE=1; the wdio afterTest hook writes GUI screenshots into the same tree.
 # Best-effort — never fails the run.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 0
-OUT="${AH_OUT_DIR:-$ROOT/.crabbox-out}"
+OUT="${AH_OUT_DIR:-$ROOT/.ah-out}"
 mkdir -p "$OUT/logs" "$OUT/screenshots" 2>/dev/null || true
 SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
 
@@ -42,4 +42,4 @@ if [ -n "${DISPLAY:-}" ]; then
   elif command -v scrot >/dev/null 2>&1; then scrot "$OUT/screenshots/xvfb-root.png" 2>/dev/null || true; fi
 fi
 
-echo "[crabbox_debug] captured -> $OUT" >&2
+echo "[box_debug] captured -> $OUT" >&2

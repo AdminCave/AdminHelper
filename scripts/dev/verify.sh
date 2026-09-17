@@ -66,14 +66,14 @@ RUN="$TREE/scripts/tests/run.sh"
 # ever means "this run wrote it". The one thing this cannot cover is an argument
 # error: the parser exits before any tree is resolved, and a call that never
 # picked a target has no business deleting that target's evidence.
-OUT_DIR="${AH_OUT_DIR:-$TREE/.crabbox-out}"
+OUT_DIR="${AH_OUT_DIR:-$TREE/.ah-out}"
 LAYER="quick"
 SRC="$OUT_DIR/last-$LAYER.json"
 DST="$OUT_DIR/last-verify.json"
 rm -f "$SRC" "$DST"
 
 # The devenv file is gitignored and per-host; it is what makes AH_TEST_DB and the
-# go/ruff toolchains reachable. Missing is not an error — a crabbox box has the
+# go/ruff toolchains reachable. Missing is not an error — a VM box has the
 # toolchains on PATH and no devenv file at all.
 DEVENV="${AH_DEVENV:-$TREE/.devenv.sh}"
 if [ -f "$DEVENV" ]; then

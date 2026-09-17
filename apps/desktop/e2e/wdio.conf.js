@@ -17,9 +17,9 @@ import net from 'net';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const desktopDir = path.resolve(__dirname, '..');
-// Auto-debug artifacts (screenshot + page source on a failing spec). crabbox_iter.sh
+// Auto-debug artifacts (screenshot + page source on a failing spec). iter.sh
 // pulls this dir back via -artifact-glob; run.sh exports AH_OUT_DIR (repo-root default).
-const ahOutDir = process.env.AH_OUT_DIR || path.resolve(desktopDir, '../../.crabbox-out');
+const ahOutDir = process.env.AH_OUT_DIR || path.resolve(desktopDir, '../../.ah-out');
 // The debug binary tauri-driver launches. Cargo's package name is `adminhelper`.
 const application = path.resolve(desktopDir, 'src-tauri/target/debug/adminhelper');
 

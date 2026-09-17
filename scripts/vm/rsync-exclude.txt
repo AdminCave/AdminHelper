@@ -1,5 +1,5 @@
-# What `vm.py sync` leaves at home. Taken from .crabbox.yaml so both harnesses
-# ship the same tree, plus this tool's own local state.
+# What `vm.py sync` leaves at home: build output, runtime data and this tool's
+# own local state.
 #
 # Never exclude a TRACKED source path here. The box builds its evidence hash
 # from what it received; an exclude over tracked source would make the artifact
@@ -22,8 +22,16 @@ apps/web/playwright-report
 apps/web/playwright/.cache
 apps/server/data
 backups
-.crabbox
-.crabbox-out
 .dt-xdg
 .vm
 .ah-out
+# Per-host, gitignored, and holding the hypervisor token: a throwaway VM has no
+# business carrying the credential that can clone and destroy it, and `bake`
+# would write it into the template. vm.py reads this file on the CLIENT.
+.claude/settings.local.json
+# Leftovers from before the migration. Still excluded for the same reason they
+# are still gitignored: .crabbox/captures holds unredacted failure bundles, and
+# a sync would put them on every box and into the next template. They go when
+# the two directories go.
+.crabbox
+.crabbox-out
