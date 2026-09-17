@@ -766,14 +766,20 @@ capstone_scan() {  # capstone_scan <logfile>
       return ""
     }
     /^== / { role = role_of($0); next }
+    # The visitor box is its own clone but belongs to the tunnel scenario: the
+    # section header and role_of_lease_fail both file it under `tunnel`, and the
+    # two halves have to agree — a role named here that the FAIL lookup spells
+    # differently turns a lost box into a product failure, which is the one
+    # thing this scan exists to prevent.
+    function norm(r) { return (r == "visitor") ? "tunnel" : r }
     # A box that never arrived. multibox names the role it was cloning; vm.py
     # names the box once it has one.
-    /^(clone failed for role|no address for) [a-z]+/ {
-      r = $0; sub(/^(clone failed for role|no address for) /, "", r); sub(/ .*/, "", r)
+    /^(clone failed for role|clone printed no VMID for role|no address for) [a-z]+/ {
+      r = $0; sub(/^(clone failed for role|clone printed no VMID for role|no address for) /, "", r); sub(/ .*/, "", r)
       if (r == "") r = (role == "" ? "other" : role)
-      print "A\t" r; next }
+      print "A\t" norm(r); next }
     /^[a-z]+ box [0-9]+ never came up/ {
-      r = $0; sub(/ box .*/, "", r); print "A\t" r; next }
+      r = $0; sub(/ box .*/, "", r); print "A\t" norm(r); next }
     # vm.py could not carry out the role command at all: the sync that never
     # delivered the tree, the ssh that never answered, the bound that ran out.
     # Anchored on the vm.py prefix, not on a bare phrase a role script might
@@ -790,7 +796,22 @@ capstone_scan() {  # capstone_scan <logfile>
 run_capstone() {
   echo "== capstone: multibox.sh --capstone --strict =="
   local log="$OUT/multibox.log" rc=0 t0=$SECONDS secs_layer
-  bash "$MB_WRAPPERS/multibox.sh" --capstone --strict >"$log" 2>&1 || rc=$?
+  # In `weekly` the `all` layer leaves its 6 GB desktop box running, and the
+  # capstone now checks capacity for all seven roles BEFORE its first clone —
+  # asking for an eighth box can fail a run that would otherwise fit. Handing
+  # the warm one over takes the desktop role out of that sum and skips ~30 min
+  # of re-bootstrap.
+  #
+  # ONLY in `weekly`, where run_all just leased that box and wrote the entry a
+  # minute ago. warm.env outlives a run, so in `capstone` mode the entry is
+  # either stale — multibox trusts AH_DESKTOP_VM unchecked, and `vm.py: no VM
+  # '3001' in pool` matches no abort rule, so a dead id would be filed as a
+  # product failure — or it belongs to Kevin's fast loop, which this run has no
+  # business driving a 50-minute GUI suite over.
+  local warm_desktop=""
+  [ "$MODE" = weekly ] && warm_desktop="$(warm_get desktop)"
+  [ -n "$warm_desktop" ] && note "capstone reuses the warm desktop box $warm_desktop"
+  AH_DESKTOP_VM="$warm_desktop" bash "$MB_WRAPPERS/multibox.sh" --capstone --strict >"$log" 2>&1 || rc=$?
   secs_layer=$((SECONDS - t0))
   tail -25 "$log" | sed 's/^/  /'
   capture_summary "$log" 'multibox:' || note "no multibox summary line in multibox.log"

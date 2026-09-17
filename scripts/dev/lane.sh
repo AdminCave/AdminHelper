@@ -19,6 +19,8 @@ set -euo pipefail
 CMD="${1:-}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# shellcheck source=scripts/vm/lib.sh
+. "$ROOT/scripts/vm/lib.sh"
 # Refuse to run from a linked worktree (its .git is a FILE): `done` would remove
 # the very worktree the session sits in, leaving the caller in a deleted cwd.
 [ -d "$ROOT/.git" ] || { echo "lane.sh must run from the MAIN checkout, not a worktree"; exit 1; }
@@ -74,7 +76,23 @@ lane_done() {
   # the case that silently skips the sweep. Never the MAIN checkout's .vm — that
   # would destroy this session's own warm box.
   local state
-  if [ -d "$wt" ]; then state="$(cd "$wt" && pwd)/.vm"; else state="$ROOT/.vm/absent-$slug"; fi
+  if [ -d "$wt" ]; then
+    state="$(cd "$wt" && pwd)/.vm"
+  else
+    # No worktree, no warm.env — so `reap.sh` would find no VMIDs to destroy and
+    # `vm.py reap` only takes what has already expired. A LIVE box of this lane
+    # would then burn until its ttl while the closing listing correctly calls it
+    # a leak and aborts the removal. Destroy the lane outright: the lane is
+    # being dismantled, and nothing else may carry its tag.
+    state="$ROOT/.vm/absent-$slug"
+    vm_py destroy --lane "$slug" 2>&1 | sed 's/^/  /' \
+      || { echo "  destroy failed — VMs of lane $slug may still run"; exit 1; }
+    # A hand-deleted directory leaves the worktree REGISTERED and prunable, and
+    # git then refuses `branch -d` — even for a fully merged branch — with "is
+    # used by worktree". Without this the run would end on the wrong reason
+    # ("not merged"), and `-D` would fail the same way.
+    git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
+  fi
   AH_VM_STATE_DIR="$state" bash "$ROOT/scripts/vm/reap.sh" --lane "$slug" \
     || { echo "  reap failed — NOT removing the worktree (VMs may still run)"; exit 1; }
   # `reap.sh` ends with a listing that exits non-zero on a leak, so reaching here

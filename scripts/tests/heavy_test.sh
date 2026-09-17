@@ -79,6 +79,7 @@ exit "${SHIM_ITER_RC:-0}"
 SHIM
 cat > "$WRAP/multibox.sh" <<'SHIM'
 #!/usr/bin/env bash
+printf 'AH_DESKTOP_VM=%s\n' "${AH_DESKTOP_VM-<unset>}" > "$SHIM_STATE/mb.env"
 echo "multibox shim: $*"
 [ -n "${SHIM_MB_OUT:-}" ] && printf '%s\n' "$SHIM_MB_OUT"
 exit "${SHIM_MB_RC:-0}"
@@ -138,6 +139,11 @@ export AH_HEAVY_ROOT="$FIX"
 # .vm/lane the developer's checkout happens to hold.
 export AH_PVE_URL="https://heavy-test.invalid"
 export AH_LANE=main
+# The last piece of state that still pointed at the real checkout: heavy.sh
+# sources the real lib.sh, so warm_get would read <repo>/.vm/warm.env. On a box
+# with a warm desktop the suite would then take a different path than here —
+# a test whose result depends on whether somebody left a VM running.
+export AH_VM_STATE_DIR="$WORK/vmstate"
 
 # One running box of our own lane, claimed by nobody else — the healthy default.
 # `vm.py list --json` is what heavy.sh reads; the shape is verb_list's.
@@ -154,6 +160,7 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
   export AH_PRIVATE_DIR="$WORK/private$CASE"
   export SHIM_STATE="$WORK/state$CASE"
   mkdir -p "$AH_OUT_DIR" "$AH_PRIVATE_DIR" "$SHIM_STATE"
+  rm -rf "$AH_VM_STATE_DIR"; mkdir -p "$AH_VM_STATE_DIR"
   unset SHIM_ITER_SEQ SHIM_ITER_OUT1 SHIM_ITER_OUT2 SHIM_ITER_OUT3 SHIM_ITER_OUT4 SHIM_NO_PULL
   # Defaults: healthy provider, one own box, everything green.
   export SHIM_DOCTOR_RC=0
@@ -878,6 +885,48 @@ history_of | grep -q 'tunnel-agent lease or missing tunnel seed,infra,' \
   && ok "the tunnel failure is filed against its own role as infra" || bad "tunnel row: $(history_of | grep tunnel)"
 history_of | grep -q 'enforce: certless :443 was not rejected (check MB_ENFORCE_CERTLESS_REJECTED),fail,' \
   && ok "the unrelated enforce failure stays a product failure" || bad "enforce row: $(history_of | grep enforce)"
+
+# ── 7k: a lost VISITOR box is filed under the role its FAIL line names ───────
+# The visitor is its own clone but belongs to the tunnel scenario: multibox
+# prints `clone failed for role visitor`, and its follow-up FAIL reads
+# "visitor lease or missing visitor config" — which role_of_lease_fail files
+# under `tunnel`. If the abort were recorded as `visitor`, the lookup would miss
+# and a lost box would be reported as a product failure.
+mk_case
+export SHIM_MB_RC=1
+export SHIM_MB_OUT="== tunnel (S4): agent frpc STCP server over the hop to frps on 10.0.0.5 ==
+  ok   tunnel agent: frpc STCP server connected to the remote frps
+clone failed for role visitor
+  FAIL visitor lease or missing visitor config
+  multibox: 21 ok, 1 failed, 0 skipped  (server=10.0.0.5, agents=3002)"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+[ "$rc" = 74 ] && ok "a lost visitor box alone -> UNVERIFIED, not a red tunnel" \
+  || bad "visitor abort -> rc=$rc: $(report_of | head -1)"
+history_of | grep -q 'visitor lease or missing visitor config,infra,' \
+  && ok "the visitor failure is filed as infra, not as an assertion" \
+  || bad "visitor row: $(history_of | grep visitor)"
+
+# ── 8b: the weekly hands its warm desktop box to the capstone, capstone does not ─
+# The `all` layer leaves a 6 GB box running and the capstone checks capacity for
+# seven roles before its first clone — without the handover the run can fail on
+# capacity it already owns. But ONLY in weekly: warm.env outlives a run, and a
+# stale id would be trusted unchecked by multibox.
+mk_case
+artifact "ruff check:pass:3"
+echo "desktop=3001" > "$AH_VM_STATE_DIR/warm.env"
+out=$(bash "$HEAVY" weekly 2>&1); rc=$?
+grep -q 'AH_DESKTOP_VM=3001' "$SHIM_STATE/mb.env" 2>/dev/null \
+  && ok "weekly hands the warm desktop box to the capstone" \
+  || bad "AH_DESKTOP_VM not passed: $(cat "$SHIM_STATE/mb.env" 2>/dev/null)"
+printf '%s' "$out" | grep -q 'capstone reuses the warm desktop box 3001' \
+  && ok "and the report says which box" || bad "no note about the reuse"
+
+mk_case
+echo "desktop=3001" > "$AH_VM_STATE_DIR/warm.env"
+out=$(bash "$HEAVY" capstone 2>&1); rc=$?
+grep -q 'AH_DESKTOP_VM=3001' "$SHIM_STATE/mb.env" 2>/dev/null \
+  && bad "capstone reused a warm.env entry it did not lease" \
+  || ok "a plain capstone never trusts a warm.env entry it did not write"
 
 # ── 7f: a step name with a comma stays one CSV field ─────────────────────────
 mk_case

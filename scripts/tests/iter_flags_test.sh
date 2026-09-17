@@ -127,8 +127,9 @@ cat > "$SHIM/vm.py" <<'REC_EOF'
 set -u
 printf '%s\n' "$*" >> "$FAKE_LOG"
 case "${1:-}" in
-  list) [ "${2:-}" = "--json" ] && printf '{"vms": [{"vmid": 3001, "status": "running"}]}\n' \
-                               || echo "1 ours, 0 not ours" ;;
+  list) [ "${2:-}" = "--json" ] && printf '%s\n' \
+          '{"vms": [{"vmid": 3001, "status": "running"}, {"vmid": 3002, "status": "running"}]}' \
+                               || echo "2 ours, 0 not ours" ;;
   run)  exit "${FAKE_RUN_RC:-0}" ;;
 esac
 exit 0
@@ -160,6 +161,18 @@ grep -q -- '--sync' "$REC" && bad "AH_NO_SYNC still synced: $(grep '^run' "$REC"
 : > "$REC"; OUT=$(FAKE_RUN_RC=1 bash "$ITER" quick 2>&1); rc=$?
 [ $rc -eq 1 ] && grep -q "vm.py ssh 3001" <<<"$OUT" \
   && ok "a red run names the kept box" || bad "red run: rc=$rc out=$OUT"
+
+# ── the desktop stage: an empty credential must not shift the arguments ──────
+# `vm.py run` joins its command with spaces, so passing the four values as
+# separate arguments would drop an empty password and slide the monitor key into
+# its place — the box would authenticate with the wrong secret and the failure
+# would look like a broken login.
+printf 'desktop=3001\nserver=3002\nserver_ip=10.0.0.5\nserver_admin_pw=\nserver_monitor_key=k7\n' \
+  > "$AH_VM_STATE_DIR/warm.env"
+: > "$REC"; bash "$ITER" --desktop >/dev/null 2>&1
+grep -qF "box_desktopbox.sh '10.0.0.5' '' 'k7'" "$REC" \
+  && ok "an empty password keeps its place in the argument list" \
+  || bad "desktop args: $(grep '^run' "$REC")"
 
 echo ""
 echo "iter_flags_test: $PASS passed, $FAIL failed"

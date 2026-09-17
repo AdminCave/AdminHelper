@@ -97,7 +97,15 @@ if [ "${1:-}" = "--desktop" ]; then
   PW="$(warm_get server_admin_pw)"; KEY="$(warm_get server_monitor_key)"
   [ -n "$DT" ] && [ -n "$SRV_IP" ] || { echo "warm pond not ready (run: warm.sh pond)"; exit 1; }
   echo "== desktop GUI on $DT vs https://$SRV_IP (specs: ${*:-default}) =="
-  if box_run "$DT" 3000 bash scripts/tests/box_desktopbox.sh "$SRV_IP" "$PW" "$KEY" "$@"; then
+  # ONE quoted string, not separate arguments: `vm.py run` joins its command with
+  # spaces (verb_run), so an empty $PW would vanish and $KEY would slide into its
+  # place — the box would then be handed a monitor key as the admin password.
+  # The old wrapper handed argv to exec and kept empty elements; this is the
+  # shape that survives the join. The single quotes hold because the values are
+  # an IPv4, a hex password and a urlsafe key — none can contain a quote;
+  # multibox.sh builds the same stage the same way and says the same thing.
+  if box_run "$DT" 3000 \
+       "bash scripts/tests/box_desktopbox.sh '$SRV_IP' '$PW' '$KEY' $*"; then
     echo "  ✓ desktop journeys green"
   else rc=$?; report_fail "$DT"; exit "$rc"; fi
 elif [ "${1:-}" = "--cmd" ]; then

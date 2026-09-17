@@ -79,6 +79,15 @@ Verify: git grep -il crabbox -- ':!CHANGELOG.md' ':!docs/index.html' ':!docs/en/
 Doku: alle genannten
 Abhängt von: T8
 
+## D — Aus dem Branch-Review
+
+### T11 — Fünf Funde des `/code-review` über den Branch-Diff  [x]
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, scripts/dev/lane.sh, scripts/vm/iter.sh, Mode-Bits von multibox.sh + iter_flags_test.sh
+Änderung: (1) `capstone_scan` nannte die Visitor-Rolle `visitor`, `role_of_lease_fail` filet ihren FAIL aber unter `tunnel` — ein verlorener Visitor-Klon wäre als Produktfehler gemeldet worden, genau die Verwechslung, die der Scan verhindern soll. Beide Hälften sagen jetzt `tunnel` (wie vorher `role_of_slug`); Mutations-Probe: ohne den Fix `rc=1` und `…,fail,` statt `…,infra,`. (2) `lane.sh done` konnte eine Lane, deren Worktree von Hand entfernt wurde, nicht mehr aufräumen — ohne warm.env zerstört `reap.sh` nichts, `vm.py reap` nimmt nur Abgelaufenes, und die Schluss-Liste bricht mit 74 ab. DEVELOPMENT.md versprach das Gegenteil; jetzt `vm.py destroy --lane` im Else-Zweig. (3) `vm.py run` fügt sein Kommando mit Leerzeichen zusammen — ein leeres `server_admin_pw` wäre verschwunden und der Monitor-Key in seine Position gerutscht. Die Desktop-Etappe von `iter.sh` übergibt jetzt einen gequoteten String wie `multibox.sh`. (4) Im `weekly` bleibt die 6-GB-Desktop-Box des `all`-Laufs stehen, während der Capstone seit T4 vorab Kapazität für sieben Rollen prüft — `heavy.sh` reicht sie jetzt als `AH_DESKTOP_VM` weiter, das nimmt die Desktop-Rolle aus der Summe und spart den Re-Bootstrap. (5) Zwei Umbenennungen hatten das Exec-Bit verloren.
+Nachtrag aus dem Review dieses Fixes, drei weitere: (6) die Übergabe der Warm-Box hing nicht am Modus — `warm.env` überlebt Läufe, ein `heavy.sh capstone` hätte einen toten oder fremden Eintrag ungeprüft weitergereicht, und `vm.py: no VM … in pool` matcht keine Abbruch-Regel: derselbe Falschbefund wie Fund 1, nur an neuer Stelle. Jetzt `[ "$MODE" = weekly ]`. (7) `lane.sh done` räumte den Branch nicht ab — ein von Hand gelöschtes Verzeichnis lässt den Worktree registriert, `git branch -d` verweigert auch bei gemergtem Branch, und die Meldung log über den Grund; `git worktree prune` dazu. (8) `heavy_test.sh` leitete als einziges `AH_VM_STATE_DIR` nicht ins Fixture um — `warm_get` las das echte `.vm/warm.env` des Repos, der grüne Lauf ging also nur durch den leeren Zweig, und auf einer Box mit warmem Desktop hätte dieselbe Suite einen anderen Pfad genommen. Dazu zwei Nits: die vierte Abbruch-Form `clone printed no VMID for role` und ein Testfall für die Desktop-Argumentliste. Drei Mutations-Proben bestätigt (Visitor-Rolle, weekly-Gate, leeres Credential).
+Verify: bash scripts/tests/run.sh unit --strict --only scripts   (`heavy_test` 166, `iter_flags_test` 24)
+Doku: keine (die DEVELOPMENT.md-Zusage stimmt jetzt wirklich)
+
 ## C — Live-Beweis
 
 ### T10 — Live-Beweis 2b  [ ]
