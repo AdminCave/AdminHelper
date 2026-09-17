@@ -88,6 +88,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Bau- und Review-Tempo (Harness):** Der Frischer-Kontext-Reviewer laeuft jetzt auf Sonnet
+  statt Opus (Opus nur bei einem Risikopfad im Diff: PKI/mTLS, Auth, SSRF, Migrationen,
+  Release-Workflows), hat ein Zeitbudget von zehn Minuten und faehrt die Suiten nicht mehr
+  selbst nach. Ein Kurz-Ledger mit hoechstens drei Tasks bekommt `Review: am Ende` — ein
+  Review ueber den ganzen Branch-Diff statt einem je Task, ohne den abschliessenden
+  `/code-review`. Und pro Task laeuft nur noch das gezielte `Verify:`, die volle
+  Komponenten-Suite einmal vor dem Commit — nie zwei Testlaeufe gleichzeitig, weil die
+  `server`-Suite sich eine Postgres-Test-DB teilt (`DEVELOPMENT.md`, „Python-Tests lokal").
+
 - **Lange Laeufe ueberwacht:** `/test weekly|all|capstone` startet `heavy.sh` jetzt selbst in
   `tmux` und wacht mit einem Hintergrund-Waechter bis zum Report, statt Kevin die tmux-Zeile
   zurueckzugeben; Verdict-Zeile, Summary-Zeilen, VM-Liste und die Roadmap-Zeilen des Laufs

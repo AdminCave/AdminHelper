@@ -53,14 +53,28 @@ nie automatisch gebaut.
    - **Schon erledigt / hinfällig / Falsch-Positiv** → Code NICHT anfassen, `[~]` + ein Satz.
    - **Braucht Entscheidung / destruktiv / mehrdeutig** → NICHT raten, `[?]` + kurze Frage,
      überspringen (das ist ein legitimes Ergebnis, kein Versagen).
-3. Erst das `Verify:` des Eintrags ausführen, dann die **schnelle Suite der berührten
-   Komponente(n)** — in Flag-Form, weil eine Allow-Regel nie über ein Env-Präfix matcht:
-   - `bash scripts/dev/verify.sh <komponente> --strict` — fährt den **quick**-Layer
-     dieser Komponente (Lint *und* Unit: ruff/gofmt/shellcheck plus die Suite),
-     löst `.devenv.sh`/`AH_TEST_DB` selbst auf und schreibt `last-verify.json`;
-     gezielte Args nach `--` (z. B. `… server --strict -- tests/test_auth.py`).
-   - Mehrere Komponenten auf einmal: `bash scripts/tests/run.sh quick --strict --only <komp…>`.
-     Keys: server monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts.
+3. **Testen in zwei Ebenen: gezielt pro Task, voll vor dem Commit.** Befehle in Flag-Form,
+   weil eine Allow-Regel nie über ein Env-Präfix matcht:
+   - **Pro Task nur das `Verify:` des Eintrags, mit gezielten Args** —
+     `bash scripts/dev/verify.sh <komponente> --strict -- <pfad/zum/test>` (z. B.
+     `… server --strict -- tests/test_auth.py`). Die ganze Komponenten-Suite nach jeder
+     einzelnen Task kostet Minuten und beweist nichts, was der Check vor dem Commit nicht
+     auch beweist.
+   - **Einmal unmittelbar vor dem Commit die volle Schnellsuite der berührten
+     Komponente(n):** `bash scripts/dev/verify.sh <komponente> --strict` — fährt den
+     **quick**-Layer dieser Komponente (Lint *und* Unit: ruff/gofmt/shellcheck plus die
+     Suite), löst `.devenv.sh`/`AH_TEST_DB` selbst auf und schreibt `last-verify.json`.
+     Mehrere Komponenten auf einmal: `bash scripts/tests/run.sh quick --strict --only <komp…>`.
+     Keys: server monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts. Deren
+     Summary-Zeile ist die Evidenz, die der Reviewer in Schritt 4 zitiert bekommt.
+   - **Ein Lauf zur Zeit — nie zwei Testläufe gleichzeitig.** Die Server-Suite teilt sich
+     **eine** Postgres-Test-DB (`AH_TEST_DB`), und die Alembic-Smoke legt pro Lauf eine
+     Wegwerf-DB darin an: ein zweiter Lauf daneben ist **verworfen, nicht rot** — er beweist
+     nichts und nimmt dem ersten seine Aussage. Einen Lauf starten, seine Summary abwarten,
+     dann den nächsten.
+   - **Lange Läufe nicht als Hintergrund-Bash**, sondern im tmux mit Wächter (CLAUDE.md § 2
+     „Lange Läufe laufen überwacht"): ein Hintergrund-Task wird gekillt und puffert seine
+     Ausgabe bis zum Ende, im tmux bleibt der Lauf sichtbar und überlebt.
    - `--strict` ist Pflicht: ohne das Flag zählt ein SKIP als Erfolg, und genau daran
      ist die alte Kette grün geworden, ohne dass etwas lief.
    - Bei `Fast-Suite: crabbox`: dieselben Checks remote über `crabbox_iter.sh` (s. „Vor
@@ -77,19 +91,32 @@ nie automatisch gebaut.
      berichten. Nicht auf rotem Fundament weiterbauen.
 4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): erst die berührten Dateien
    gezielt stagen (`git add -- <pfade>`, **kein** `git add -A`), damit ein echter Diff
-   existiert. Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`) mit
-   einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst `.claude/skills/feature-review/
-   SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er lädt den Skill NICHT von selbst);
-   (b) der zu prüfende Diff ist `git diff --staged`; (c) die Soll-Vorgabe ist die Task +
-   die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des Ledger-Kopfs).
-   Er sieht **nur** das — nicht deinen Bau-Verlauf. Urteil:
+   existiert. Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`,
+   `model: sonnet`) mit einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst
+   `.claude/skills/feature-review/SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er
+   lädt den Skill NICHT von selbst); (b) der zu prüfende Diff ist `git diff --staged`; (c) die
+   Soll-Vorgabe ist die Task + die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des
+   Ledger-Kopfs); (d) **die Suiten sind bereits gelaufen** — er fährt sie NICHT nach, sondern
+   prüft die im Auftrag zitierte Summary-Zeile gegen den Diff und macht höchstens gezielte
+   Mutations-Proben (einen einzelnen Test lesen oder ausführen, um zu sehen, ob er ohne den
+   Fix rot würde). Er sieht **nur** das — nicht deinen Bau-Verlauf.
+   - **Modell:** `model: sonnet` ist der Default. `opus` **nur**, wenn der Diff einen
+     **Risikopfad** berührt: PKI/mTLS, Auth/AuthZ, SSRF-Guards, DB-Migrationen (Alembic),
+     Release-Workflows (`.github/workflows/release*`, `scripts/install.sh`/`update.sh`).
+   - **Zeitbudget 10 Minuten.** Liegt nach ~10 Minuten kein Urteil vor: den Agent stoppen
+     (`TaskStop`) und **einmal** einen frischen mit engerem Prompt starten (nur die geänderten
+     Dateien und die Kriterien 1–4 nennen). Bleibt auch der ohne Urteil → selbst gegen dieselben
+     Kriterien reviewen, committen und im Ledger kennzeichnen:
+     `[x] (Review: selbst — Sub-Agent ohne Urteil)`.
+   Urteil:
    - `approve` → weiter zum Commit.
    - `request_changes` mit `blocker`/`wichtig` → Punkte beheben, betroffene Schnelltests
      erneut, **einmal** re-reviewen. Danach gelöst → Commit; braucht Entscheidung → `[?]` in
      den Ledger (nicht raten). Max. 2 Runden, dann Commit des Sauberen oder STOPP.
    - `nit`-Punkte optional miterledigen, nie blockierend.
-   (Review-Granularität = Commit-Granularität. Bei Kostendruck kann der Ledger-Kopf
-   `Review: am Ende` setzen — dann nur ein Gesamt-Review in Schritt „Abschluss".)
+   (Review-Granularität = Commit-Granularität. Ein **Kurz-Ledger** (≤ 3 Tasks) trägt im Kopf
+   `Review: am Ende` — dann entfällt dieser Schritt pro Task und es gibt genau **einen**
+   Gesamt-Review im Abschluss.)
 5. **Committen** nach Granularität: *pro Task* → nach jeder grünen, reviewten Task ein
    `feat|fix|refactor(...): …`; *pro Komponente* → wenn alle Einträge **einer Komponente**
    innerhalb des Abschnitts grün+reviewt sind (Default für Report-Backlogs — hält Commits/
@@ -116,8 +143,14 @@ nie automatisch gebaut.
    und `crabbox stop`/reap. **Nur bei realem Pass weiter — SKIP ≠ grün.** (Nutzt VM-Leases, die
    per `-ttl`/`-idle-timeout` self-reapen — nur der single-box-Warm-Loop, kein `multibox`/`bake`
    ohne Nachfrage.)
-3. `/code-review` über den Branch-Diff. Echte neue Bugs als Tasks in den Ledger, fixen,
-   erneut testen.
+3. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:
+   - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
+     ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4) — und **kein**
+     `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
+     zweite Durchgang kostet nur Zeit.
+   - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
+     aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
+   Echte neue Bugs als Tasks in den Ledger, fixen, erneut testen.
 4. **Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen wirkend):
    `git push -u origin <branch>`, dann `gh pr create --draft --title "<type>: <feature>"
    --body "…"` mit Link auf die **Spec** (Pfad aus dem `Spec:`-Ledgerfeld), Task-Zusammenfassung
