@@ -113,11 +113,11 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
   apps/server/.venv/bin/python -m pytest -q
 ```
 
-**Immer nur ein `server`-Lauf zur Zeit.** Alle Laeufe teilen sich diese eine Test-DB, und die
-Alembic-Smoke legt darin pro Lauf eine Wegwerf-DB an: zwei gleichzeitige Laeufe raeumen
+**Immer nur ein `server`-Lauf zur Zeit.** Alle Läufe teilen sich diese eine Test-DB, und die
+Alembic-Smoke legt darin pro Lauf eine Wegwerf-DB an: zwei gleichzeitige Läufe räumen
 einander die Tabellen weg. Das Ergebnis ist dann **verworfen, nicht rot** — es sagt weder
-„gruen" noch „kaputt", nur „nichts bewiesen". Also einen Lauf starten, seine Summary-Zeile
-abwarten, dann den naechsten.
+„grün" noch „kaputt", nur „nichts bewiesen". Also einen Lauf starten, seine Summary-Zeile
+abwarten, dann den nächsten.
 
 ### Schnelltest einer Komponente: verify.sh
 

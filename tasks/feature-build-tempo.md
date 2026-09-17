@@ -11,7 +11,8 @@ Heavy: keine (nur Skill- und Doku-Text)
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Roadmap: — (Harness-Hygiene, Kevin 2026-09-16) · Hängt ab von: —
-Warnung (CLAUDE.md Trigger 4): dieser Ledger ändert Harness-Dateien unter `.claude/skills/` — von Kevin beauftragt.
+Warnung (CLAUDE.md Trigger 4): dieser Ledger ändert Harness-Dateien unter `.claude/skills/` und `AUTONOMOUS.md` — von Kevin beauftragt.
+Review-Nachtrag (2026-09-17, Gesamt-Review): `AUTONOMOUS.md` beschrieb dieselben zwei Regeln (Reviewer auf Opus; zwei Review-Ebenen immer) und war durch T1/T2 falsch geworden — nachgezogen (`.claude/rules/docs.md`: falsche Doku ist ein Bug). Dazu der neue DEVELOPMENT.md-Absatz an den Umlaut-Stil der Umgebung angeglichen.
 Befund: In audit-hygiene liefen drei Reviewer-Subagenten je 20–35 min ohne Urteil und der abschließende `/code-review` 20 min; in ssrf-resolver-isolation dauerte Review-Runde 2 von T1 14 min, weil der Reviewer die Suiten selbst nachfuhr. Reviewer mit Sonnet liefen in 1–8 min. Dazu wurde einmal die volle Server-Suite parallel zu einem zweiten Lauf gegen dieselbe Test-DB gefahren und verworfen.
 
 ### T1 — Reviewer: Modell, Zeitbudget, Abbruchregel  [x] (Sonnet-Default + Risikopfad-Liste, 10-min-Budget, Abbruchregel)

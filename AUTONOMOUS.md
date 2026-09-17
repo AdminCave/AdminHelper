@@ -36,18 +36,25 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 | **1 · Design** | `/feature-plan <idee>` | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger). **Stoppt am Design-Gate.** |
 | **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → 1 Commit/Task auf `feature/<slug>`. |
-| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere crabbox-Suite → `/code-review` (ganzer Branch) → **Draft-PR**. |
+| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere crabbox-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
 
-Alles läuft auf **Opus** (`/model opus` oder `claude --model opus`). Fable brauchst du hier
-nicht — die Qualität an den Hebelpunkten (Design, Review) trägt Opus für die allermeisten
-Features; für ein besonders kniffliges Design kannst du Phase 1 einmalig mit Fable fahren.
+Die Session läuft auf **Opus** (`/model opus` oder `claude --model opus`). Fable brauchst du
+hier nicht — die Qualität an den Hebelpunkten trägt Opus für die allermeisten Features; für ein
+besonders kniffliges Design kannst du Phase 1 einmalig mit Fable fahren. Der **Reviewer** ist
+die Ausnahme: er läuft auf **Sonnet** und nur bei einem Risikopfad im Diff (PKI/mTLS, Auth,
+SSRF, Migrationen, Release-Workflows) auf Opus — mit Opus lief er regelmäßig eine halbe Stunde
+ohne Urteil, mit Sonnet urteilt er in Minuten (`.claude/skills/feature-build/SKILL.md`,
+Schritt 4).
 
 **Zwei Review-Ebenen (dein Reviewer-„dazwischen").** Der Code wird nie ungeprüft committet:
 (1) **pro Commit-Einheit** ein **frischer Sub-Agent** (`feature-review`), der nur den Diff +
 die Task + feste Kriterien sieht — unvoreingenommen, weil er den Bau-Verlauf nicht kennt;
 (2) am Ende ein `/code-review` über den ganzen Branch-Diff. Ebene 1 fängt den einzelnen
-Fehltritt sofort, Ebene 2 die Wechselwirkungen. `feature-review` läuft auch standalone
-(`/feature-review`, oder `/loop /feature-review` für einen frischen Prüf-Durchlauf).
+Fehltritt sofort, Ebene 2 die Wechselwirkungen. **Ausnahme Kurz-Ledger** (≤ 3 Tasks, Kopf
+`Review: am Ende`): dort fallen beide Ebenen zu **einer** zusammen — ein `feature-review` über
+den ganzen Branch-Diff, kein `/code-review` hinterher, weil der zweite Durchgang denselben Diff
+noch einmal sähe. `feature-review` läuft auch standalone (`/feature-review`, oder
+`/loop /feature-review` für einen frischen Prüf-Durchlauf).
 
 ### So startest du konkret
 
