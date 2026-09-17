@@ -14,7 +14,7 @@ import tempfile
 
 # Force a hermetic environment: the suite must NEVER write into a real PKI dir or use a real passphrase,
 # even on a machine where CA_DATA_DIR/CA_ROOT_PASSPHRASE already point at production material (e.g. a
-# crabbox/CI box with ca-issuer env). Hard-set (not setdefault) so the ambient env can't win, and clean
+# VM/CI box with ca-issuer env). Hard-set (not setdefault) so the ambient env can't win, and clean
 # the tmp dir up at exit rather than leaking it (6.103).
 _ca_data_dir = tempfile.mkdtemp(prefix="ca-issuer-test-")
 os.environ["CA_DATA_DIR"] = _ca_data_dir

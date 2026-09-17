@@ -17,8 +17,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   dem Hypervisor (`ah`, `role-`, `lane-`, `sc-`, `ttl-`, `tpl-`), nicht in einer lokalen Datei:
   jeder Checkout sieht jede Lease samt Frist, jedes Verb ausser `list`/`doctor` raeumt am Ende
   die abgelaufenen VMs der eigenen Lane weg (kein Timer, kein Cron), und bei einer VM **ohne**
-  `ah`-Tag verweigert `vm.py` jedes zerstoerende Verb — crabbox und `vm.py` teilen denselben Pool,
-  ohne sich gegenseitig abzuraeumen. Exit-Codes trennen „der Test ist rot" (1) von „die
+  `ah`-Tag verweigert `vm.py` jedes zerstoerende Verb, damit ein Tippfehler keine Homelab-VM
+  frisst. Exit-Codes trennen „der Test ist rot" (1) von „die
   Infrastruktur hat nein gesagt" (74). `bake` baut aus dem Basis-Cloud-Image ein neues
   Template. Dazu `scripts/vm/lib.sh` als Shell-Seite und zwei hermetische Suiten: `vm.py`
   gegen aufgezeichnete Proxmox-Antworten (`scripts/vm/tests/`), `lib.sh` gegen einen
@@ -86,7 +86,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Roadmap-Zeile je roter Phase statt je Lauf; `history.csv` ist RFC-4180-gequotet; der
   Migrations-Smoke-Teardown droppt ohne `WITH (FORCE)`.
 
+### Removed
+
+- **crabbox (Harness Stufe 2b):** Das externe Binary und alles, was nur fuer es da war —
+  `.crabbox.yaml`, der Workflow `crabbox.yml`, die Agent-Skill `.agents/skills/crabbox/`,
+  `scripts/tests/crabbox_lib.sh` und die Wrapper `crabbox_warm|iter|reap|bake|multibox.sh`.
+  Die beiden lokalen Verzeichnisse `.crabbox/` und `.crabbox-out/` bleiben vorerst
+  gitignoriert und vom Sync ausgenommen: `.crabbox/captures` enthaelt unredigierte
+  Fehler-Bundles, und dieses Repo ist oeffentlich. Loeschen — dann koennen die zwei
+  Eintraege mit.
+
 ### Changed
+
+- **Die schweren Suites laufen ohne externes Binary (Harness Stufe 2b):** Alle Wrapper rufen
+  jetzt `scripts/vm/vm.py` statt des externen `crabbox` auf, bei unveraenderter Aufruf-Semantik.
+  Neu: `scripts/vm/warm.sh`, `iter.sh`, `reap.sh`, `bake.sh` und `scripts/vm/bootstrap_linux.sh`;
+  `scripts/tests/multibox.sh` und die sieben Rollen-Skripte heissen `box_*.sh`. Die
+  Ausgabe-Artefakte liegen unter `.ah-out/`, der Warm-Zustand unter `.vm/warm.env`, die
+  Lane-Kennung explizit in `.vm/lane`. Eine Multi-Host-Szenerie traegt ein gemeinsames
+  `sc-`-Tag: der Teardown ist ein `vm.py destroy --scenario` und erwischt auch die Box, deren
+  Klon zwar kam, aber nie hochfuhr. Vor dem ersten Klon prueft `vm.py doctor --roles` die
+  Kapazitaet fuer die ganze Szenerie — was nicht passt, kostet nichts statt vier gebooteter
+  Boxen. `heavy.sh` trennt jetzt Ganz-Lauf-Abbrueche von Rollen-Abbruechen: ein einzelner
+  verlorener Klon im Capstone wird der Rolle zugeordnet, statt den Lauf als UNVERIFIED zu
+  verwerfen. Die Lease-Wiederholung entfaellt mit dem Rennen, das sie umging.
+  Anleitung: `/vm` (die VMs) und `/test` (die Suiten), Details in `DEVELOPMENT.md`.
 
 - **Bau- und Review-Tempo (Harness):** Der Frischer-Kontext-Reviewer laeuft jetzt auf Sonnet
   statt Opus (Opus nur bei einem Risikopfad im Diff: PKI/mTLS, Auth, SSRF, Migrationen,

@@ -46,7 +46,7 @@ Bestehendes ändert sein Verhalten.
 
 **Ziel (2b).** Die Wrapper wechseln auf `vm.py` bei **unveränderter Aufruf-Semantik**: `scripts/vm/{warm,iter,reap,bake}.sh`,
 `scripts/tests/multibox.sh`, `heavy.sh` ändert nur Pfade und verliert Marker, die crabbox-spezifisch waren.
-Ein Sweep entfernt crabbox aus Repo, Skills, Allowlist und Doku (`git grep -il crabbox` → nur CHANGELOG).
+Ein Sweep entfernt crabbox aus Repo, Skills, Allowlist und Doku (`git grep -il crabbox` — leer bis auf fünf begründete Klassen: die Behandlung der beiden lokalen Altverzeichnisse (`.gitignore`, `tree-hash.sh`, `rsync-exclude.txt`), die aufgezeichneten API-Fixtures unter `scripts/vm/tests/`, die abgeschlossenen Ledger und Specs, dieser Ledger selbst, und der CHANGELOG-Eintrag mit seinen beiden News-Spiegeln `docs/index.html` und `docs/en/index.html` — die Historie eines veröffentlichten Stands).
 Der nächste Wochenlauf liefert dieselben Summary-Zeilen wie der letzte auf crabbox — das ist der Beweis.
 
 **Nicht-Ziele.** Windows-Template, Windows-Rollen, `wdio.windows.conf.js` (Stufe 12; 2a hält nur die
@@ -81,7 +81,8 @@ und `apps/desktop/e2e/wdio.conf.js:22` und `scripts/dev/verify.sh:69` und `scrip
 `apps/desktop/e2e/test/specs/*.live.js`, `scripts/tests/desktop_e2e_misc.sh`, `sse_push_e2e.sh`, `lib_e2e_stack.sh`,
 `apps/agent/build-deb.sh`, `apps/ca-issuer/tests/conftest.py`, `.github/workflows/release.yml:113`,
 `ci.yml` `frp-consistency` (Pfad des Bootstraps). Zählung der Exploration: 382 Fundstellen außerhalb der
-`crabbox_*.sh`-Familie, davon 173 in der Familie selbst; `git grep -il crabbox` ist das Verify.
+`crabbox_*.sh`-Familie, davon 173 in der Familie selbst; `git grep -il crabbox` ist das Verify, mit der
+Ausschlussliste oben.
 
 ## Datenmodell / API / Migrationen
 
@@ -127,9 +128,9 @@ Tauri- oder VictoriaMetrics-Format berührt.
    Trade-off: ein zweiter Rechner mit demselben Token sieht dieselben Leases (gewollt).
 4. **Aufräumer ohne Timer**: jeder `vm.py`-Aufruf reapt am Ende die eigene Lane (ein GET); Wrapper enden mit `list`
    und Exit ≠ 0 bei Leak. Alternative Cron auf dem Host (Frage 12) — offene Frage, Empfehlung nein.
-5. **Gast-User aus `ciuser`** statt Konfigurationswert: das Fat-Template heißt intern noch `crabbox`; erst der Rebake
-   (2a T8) setzt `adminhelper` (D20). So läuft die Warm-Box vom ersten Tag auf dem alten Template, und der Umstieg
-   ist ein Template-Tausch, kein Config-Sweep.
+5. **Gast-User aus `ciuser`** statt Konfigurationswert: das Fat-Template hieß intern `crabbox`; der Rebake
+   (`tasks/vm-core.md` T12, gelaufen) setzt `adminhelper` (D20). So lief die Warm-Box vom ersten Tag auf dem alten
+   Template, und der Umstieg war ein Template-Tausch, kein Config-Sweep.
 6. **Klon-Submits seriell**: parallele Klone erst nach I/O-Messung auf dem Thin-Pool; mit 2-s-Klonen ist der Gewinn ohnehin klein.
 7. **Kapazität nach echtem RAM** (Frage 34): `doctor` rechnet geplante Rollen + bestehende `ah`-VMs gegen freies RAM
    (minus 4 GB Reserve) → Exit 74 `capacity` mit Liste **vor** dem ersten Klon; `AH_VM_MAX` bleibt als Zähl-Deckel je Lane.
@@ -165,9 +166,10 @@ Tauri- oder VictoriaMetrics-Format berührt.
 
 ## Offene Fragen (Design-Gate)
 
-1. **Gast-User neuer Bakes `adminhelper`** (D20-konsistent; das Fat-Template behält `crabbox` bis zum Rebake). Empfehlung ja.
+1. **Gast-User neuer Bakes `adminhelper`** (D20-konsistent; das Fat-Template behielt `crabbox` bis zum Rebake —
+   der ist in `tasks/vm-core.md` T12 gelaufen). Empfehlung ja.
 2. **VM-Namen und Tags behalten das kurze Präfix `ah`** (Tag-Liste, UI-Breite), nur Proxmox-Objekte heißen `adminhelper-*`. Empfehlung ja.
-3. **Rebake des Fat-Templates in 2a** (`bake --profile linux-full`, ~45 min, ohne Prompt laut D17) plus erstes
+3. **Rebake des Fat-Templates in 2a** (`bake --profile linux-full`, ~45 min, ohne Prompt laut D17; erledigt in T12) plus erstes
    `linux-server`-Template — Empfehlung ja, als letzte 2a-Tasks; bis dahin Warm-Box mit Erstbau der Caches.
 4. **Hypervisor-seitiger Reaper** (Cron auf dem Host, Frage 12) — Empfehlung nein: timerloser Reaper + `reap --all` von Hand reichen; ein Cron widerspricht „nichts läuft ohne Kevins Start".
 5. **2a darf vor der Startbedingung „zwei grüne Wochenläufe" gebaut werden** — es berührt den Wochenlauf-Pfad nicht;
@@ -186,5 +188,6 @@ DELETE des `newid`, VM ohne `ah`-Tag → Exit 2, DELETE-Query). Live: `clone --p
 `destroy` → `list` leer; falscher Token → 74 ohne VM; `destroy <fremde VMID>` → Exit 2, VM unberührt.
 2b: `warm.sh desktop` einmal, `iter.sh quick` zweimal (≤ 15 min, dann ≤ 5 min), roter Test → Exit 1 und Box bleibt;
 `AH_WARM_TTL=20m` + 25 min + `vm.py list` → Box weg; `multibox.sh --agents 1` → `5 ok, 0 failed, 0 skipped`;
-`git grep -il crabbox -- ':!CHANGELOG.md'` → leer; `lane.sh new probe` → `warm.sh desktop` → `iter.sh quick` → `lane.sh done probe`;
+`git grep -il crabbox` → leer bis auf die fünf oben genannten Klassen; `lane.sh new probe` → `warm.sh desktop` →
+`iter.sh quick` → `lane.sh done probe`;
 Kevins nächster Wochenlauf: dieselben Summary-Zeilen wie der letzte auf crabbox.

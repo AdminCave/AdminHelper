@@ -117,5 +117,5 @@ where CI only installs + lints this dir, never launches the app). Run the smoke
 locally before a release: `cd apps/desktop/e2e && xvfb-run -a npm test`.
 
 The **live** specs (`*.live.js`, orchestrated by `scripts/tests/desktop_e2e_*.sh`
-/ `run.sh e2e` on crabbox) are likewise never in CI — they boot a full stack + frps
+/ `run.sh e2e` on a VM) are likewise never in CI — they boot a full stack + frps
 and need a secret-service; run them locally/manually (e.g. before a release).

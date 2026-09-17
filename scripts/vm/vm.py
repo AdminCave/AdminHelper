@@ -545,8 +545,9 @@ def find_vm(cfg: Config, api: Api, ref: str, vms: list | None = None) -> dict:
 def guest_user(cfg: Config, api: Api, vmid: int) -> str:
     """The cloud-init user, inherited from the template — not a config value.
 
-    The fat template still says `crabbox`; the first rebake (T7) says
-    `adminhelper`. Reading it off the VM makes that a template swap, not a sweep.
+    Templates we bake carry `adminhelper`; an older one may carry any other name,
+    and a lease has to use whatever ITS template brought. Reading it off the VM
+    is what made the guest-user change a template swap instead of a config sweep.
     """
     config = api.request("GET", "/nodes/%s/qemu/%d/config" % (cfg["AH_PVE_NODE"], vmid))
     user = config.get("ciuser")
@@ -1595,9 +1596,9 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         memory=shape["memory"],
         cores=shape["cores"],
         key=key,
-        # D20: templates we build carry our own guest user. The fat template
-        # still says `crabbox`, and reading ciuser off the VM (never from a
-        # config value) is what makes that a template swap and not a sweep.
+        # D20: templates we build carry our own guest user. Only here — every
+        # other path reads ciuser off the VM (never from a config value), which
+        # is what made the change a template swap and not a config sweep.
         ciuser=BAKE_USER,
     )
     print("baking %s from %d in VM %d" % (args.profile, source["vmid"], newid))

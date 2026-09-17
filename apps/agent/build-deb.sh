@@ -47,7 +47,7 @@ mv "build-deb/${PKG_NAME}_${VERSION}_amd64.deb" .
 
 # Regression guard (the zstd-on-old-dpkg incident): assert the built package uses
 # xz members, so a future dpkg-deb default change or a dropped -Zxz fails the
-# build instead of shipping a package that installs on modern CI/crabbox boxes
+# build instead of shipping a package that installs on modern CI/VM boxes
 # but breaks on older-Debian / appliance targets. `ar t` lists the members.
 members="$(ar t "${PKG_NAME}_${VERSION}_amd64.deb")"
 case "$members" in

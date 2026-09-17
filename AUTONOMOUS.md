@@ -26,7 +26,7 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
    der Planung. Danach läuft Bauen → Testen → PR autonom.
 4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch.
    Geht etwas schief: `git revert <commit>` statt Handarbeit.
-5. **Test-Tiering.** Schnelle Suiten laufen nach jeder Task; die schwere crabbox-Suite erst
+5. **Test-Tiering.** Schnelle Suiten laufen nach jeder Task; die schwere VM-Suite erst
    am Ende, einmal.
 
 ## Der Zyklus
@@ -36,7 +36,7 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 | **1 · Design** | `/feature-plan <idee>` | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger). **Stoppt am Design-Gate.** |
 | **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → 1 Commit/Task auf `feature/<slug>`. |
-| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere crabbox-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
+| **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
 
 Die Session läuft auf **Opus** (`/model opus` oder `claude --model opus`). Fable brauchst du
 hier nicht — die Qualität an den Hebelpunkten trägt Opus für die allermeisten Features; für ein
@@ -99,7 +99,7 @@ startest du es unter `/loop`, damit es batchweise über viele Iterationen läuft
 ## Parallel-Betrieb: mehrere Lanes gleichzeitig
 
 Mehrere Vorhaben laufen parallel, indem jedes Ledger seine eigene **Lane** bekommt: ein
-Git-Worktree + eigene Opus-Session + eigene warme crabbox-Box. Geplant wird weiterhin
+Git-Worktree + eigene Opus-Session + eigene warme VM. Geplant wird weiterhin
 seriell (das Design-Gate braucht dich); gebaut wird parallel. **Nie zwei Builds auf
 demselben Ledger** — der Ledger ist die einzige Fortschritts-Wahrheit, es gibt kein Locking.
 
@@ -118,23 +118,24 @@ bash scripts/dev/lane.sh done <slug>   # reapt die Lane-Boxen, räumt Worktree +
 
 Mechanik dahinter:
 
-- **Eigener Pond pro Lane.** `crabbox_lib.sh` leitet aus dem Checkout-Namen eine
-  Lane-Kennung ab (`AdminHelper-conn-note` → Pond `ah-warm-conn-note`; Haupt-Checkout →
-  historisches `ah-warm`; `AH_LANE` überschreibt). `crabbox_reap.sh` kehrt nur den eigenen
-  Pond — Lanes können sich nicht gegenseitig die Boxen stoppen. Leases sind host-global
-  serialisiert (flock — parallele Warmups hängen den Provider); Bootstrap und Iterationen
-  laufen parallel. crabbox bindet eine Lease zusätzlich an den Checkout-Pfad, der sie
-  geleast hat (fremder Checkout müsste explizit `--reclaim`) — Lanes syncen also auch nie
-  versehentlich in fremde Boxen. Der Sync aus Worktrees ist validiert; er trägt nur den
-  Source-Tree, **auf der Box liegt kein `.git`** — einziger on-box-Nutzer ist das
-  Agent-Makefile (`git describe`), das auf `dev` zurückfällt; `build-deb/rpm` bekommen
-  `VERSION` ohnehin explizit.
-- **`Fast-Suite: crabbox` im Ledger-Kopf.** Eine Lane hat keine lokalen
+- **Eigene Lane-Kennung je Worktree.** `scripts/dev/lane.sh new <slug>` schreibt den Slug
+  nach `.vm/lane`; `vm.py` und `scripts/vm/lib.sh` lesen beide diese Datei (`AH_LANE`
+  überschreibt). Jede VM trägt den Tag `lane-<slug>`, und `reap`, der Auto-Sweep am Ende
+  jedes Verbs und die Leak-Prüfung in `list` arbeiten auf der eigenen Lane — Lanes können
+  sich nicht gegenseitig die Boxen abräumen, und zwar über den Zustand auf dem Hypervisor,
+  nicht über eine lokale Ableitung, die zwei Seiten verschieden raten können. (`destroy`
+  filtert über `--lane/--scenario/--role`; eine ausdrücklich genannte VMID wird zerstört —
+  darauf beruht `reap.sh`, das die VMIDs aus der warm.env der eigenen Lane nimmt.) Klone werden seriell
+  abgeschickt (ein Linked Clone dauert ~2 s); Bootstrap und Iterationen laufen parallel.
+  Der Sync aus Worktrees ist validiert; **`.git` reist mit** (`scripts/vm/rsync-exclude.txt`
+  schließt es bewusst nicht aus), die Evidenzfelder kommen trotzdem vom Client, weil eine
+  Box ohne `git` nichts antworten kann.
+- **`Fast-Suite: vm` im Ledger-Kopf.** Eine Lane hat keine lokalen
   Toolchain-Artefakte (venvs/`node_modules`/`target`), und N parallele lokale Suiten
   würden die Dev-Box überlasten (plus Kollision auf der geteilten Test-DB). Der Build
-  fährt deshalb das Task-`Verify:` via `crabbox_iter.sh --cmd '…'` und die
-  Komponenten-Schnellsuite via `crabbox_iter.sh quick --strict --only <komponenten>` auf der
-  warmen Lane-Box (~1,5–3,5 min pro Iteration).
+  fährt deshalb das Task-`Verify:` via `bash scripts/vm/iter.sh --cmd '…'` und die
+  Komponenten-Schnellsuite via `bash scripts/vm/iter.sh quick --strict --only <komponenten>`
+  auf der warmen Lane-Box (~1,5–3,5 min pro Iteration).
 - **`Warm-Profil:` im Ledger-Kopf.** `desktop` (eine volle Box — Stack, Agent und GUI
   testen dort zusammen) reicht für fast alles; `pond` (2 Boxen) nur für Desktop-Journeys;
   Cross-Host-Pfade bekommen `Abschluss: multibox <flags>` — ein einmaliger, weiterhin
@@ -149,7 +150,7 @@ Regeln:
   Komponenten, geteilte Contracts (API-Schemas, Migrationen, FRP-Format, Tauri-Commands),
   primäre `docs/`-Seiten. Überlappt es → seriell statt parallel.
 - **PRs landen einzeln.** Nach jedem Merge in den verbleibenden Lanes
-  `git rebase origin/main` + einmal `crabbox_iter.sh quick`. Bekannte, triviale
+  `git rebase origin/main` + einmal `bash scripts/vm/iter.sh quick`. Bekannte, triviale
   Rebase-Konflikte: `CHANGELOG.md` (Unreleased) und geteilte docs-Seiten — additiv.
 - **Kosten:** pro Lane eine warme beast-Box (pond: zwei) über Stunden; Tokens ≈ wie
   seriell, nur die Burn-Rate steigt (Rate-Limits drosseln ggf. von selbst). Mehr als
@@ -189,7 +190,7 @@ prüf es am Gate mit:
 > **`.claude/` wird per Whitelist geteilt** (das Repo ist PUBLIC). Versioniert sind die
 > wiederverwendbare Automatisierung: `settings.json` (Permissions + Hook), `skills/`,
 > `rules/` (pfadgebundene Regeln) und `agents/`.
-> **Draußen bleibt nur `settings.local.json`** — sie trägt jetzt sowohl das crabbox-Token
+> **Draußen bleibt nur `settings.local.json`** — sie trägt jetzt sowohl das Proxmox-Token
 > als auch die Proxmox-Infra (`env`, aus `settings.json` dorthin verschoben, damit keine
 > Homelab-Details öffentlich werden). Neue `.claude/`-Dateien sind per Default ignoriert, bis
 > du sie in der `.gitignore`-Whitelist freigibst.
@@ -198,11 +199,15 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
 
 - **`.claude/settings.json` → `permissions.allow`**: schnelle Tests/Linter (`pytest`,
   `ruff`, `go test/vet`, `cargo test/clippy/fmt`, `npm run`), Git-Befehle inkl. Recovery
-  (`switch`, `restore`, `checkout`, `revert`), der Test-Aggregator, der crabbox-Warm-Loop
-  (`crabbox`-Subcommands + `crabbox_warm/iter/reap.sh` + `artifacts pull`) laufen **ohne
-  Nachfrage**. Bewusst _nicht_ freigegeben (prompten weiter — der eine bewusste Endstopp bzw.
-  Kostengate): `git push`, `gh pr create`, alles unter `rm`/`reset --hard`, sowie crabbox
-  `prewarm/job/checkpoint/image/bake` und `crabbox_multibox.sh` (least viele VMs).
+  (`switch`, `restore`, `checkout`, `revert`), der Test-Aggregator und der ganze VM-Weg
+  (`python3 scripts/vm/vm.py <verb>`, `scripts/vm/*.sh`, `scripts/tests/multibox.sh`,
+  `scripts/tests/heavy.sh`) laufen **ohne Nachfrage** — innerhalb des Pools sind Klonen,
+  Baken und Zerstören freigegeben (CLAUDE.md §2, 2026-09-08). Bewusst _nicht_ freigegeben
+  (prompten weiter — der eine bewusste Endstopp): `git push`, `gh pr create`, alles unter
+  `rm`/`reset --hard`, und `scripts/vm/bootstrap_linux.sh` — das einzige Skript, das die
+  Maschine verändert, auf der es läuft, und die Dev-Box hat bewusst kein Docker.
+  **Einen langen Lauf zu STARTEN ist davon unberührt:** das ist eine Frage der Initiative,
+  nicht der Permission, und bleibt bei Kevins Zuruf (CLAUDE.md §2).
 - **Kein Auto-Format-Hook.** (Ein früherer PostToolUse-Formatter wurde entfernt: er
   reformatierte ganze Dateien → gegen die Surgical-Regel und die Doku-Commits, und brach
   iterative `Edit`s. Formatierung fangen ohnehin die `ruff format --check`/`npm run lint`-
@@ -210,7 +215,7 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   format-file.sh <datei>`).
 - **Skills** unter `.claude/skills/`: `feature-plan` (interaktiv), `feature-build`,
   `feature-review` (frischer-Kontext-Reviewer, auch standalone), dazu das bestehende
-  `test` (crabbox-Anleitung).
+  `test` (die Suiten) und `vm` (die VMs darunter).
 
 ### Erweiterungsideen (noch nicht gebaut)
 
@@ -222,9 +227,10 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
 
 ## Grenzen & bewusste Entscheidungen
 
-- **crabbox kostet VM-Leases.** Der Build-Loop fährt die schwere Suite genau einmal am Ende
-  (deine Wahl „Auto-crabbox"). Die Boxen self-reapen; trotzdem prüft der Loop danach
-  `crabbox list` auf Leichen.
+- **VMs kosten.** Der Build-Loop fährt die schwere Suite genau einmal am Ende (deine Wahl
+  „Auto-VM-Suite"). Die Boxen tragen eine Frist und sterben beim nächsten `vm.py`-Aufruf
+  danach; trotzdem prüft der Loop hinterher `python3 scripts/vm/vm.py list` auf Leichen —
+  die Liste endet mit Exit 74, wenn auf dieser Lane etwas läuft, das niemand beansprucht.
 - **Plattform-Code** (Windows-Agent, RDP/SSH pro OS) wird laut CLAUDE.md manuell verifiziert
   — solche Tasks markiert `/feature-plan` als `[?]` bzw. mit manuellem Verify-Schritt.
 - **Kein Ersatz für Review.** Das Design-Gate und der finale PR-Review bleiben deine

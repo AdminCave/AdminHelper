@@ -136,7 +136,7 @@ bash scripts/dev/verify.sh web --tree ../lane-b          # ein anderer Worktree
 
 Komponenten: `server monitoring ca-issuer agent desktop desktop-rs desktop-ui
 desktop-e2e web scripts` und `all`. Ein Lauf, der die Suite erreicht, hinterlaesst
-`.crabbox-out/last-verify.json` (das Artefakt von `run.sh` plus `component`,
+`.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component`,
 `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
 loescht eine aeltere: veraltete Evidenz ist schlechter als fehlende.
@@ -254,7 +254,7 @@ gruen, ohne etwas geprueft zu haben.
 Layer `integration`, `e2e` oder `all`, nimmt `run.sh` alle Schritte dieses Layers
 in die Pflicht-Menge auf (inklusive der Layer-Guards `integration` und
 `desktop-e2e-gui`) — auf einer Box mit Docker und Display gibt es keinen Grund,
-warum ein schwerer Schritt still uebersprungen werden duerfte. `crabbox_iter.sh`
+warum ein schwerer Schritt still uebersprungen werden duerfte. `scripts/vm/iter.sh`
 reicht ein gesetztes `AH_REQUIRED` an die Box weiter; `heavy.sh` setzt die
 Dev-Box-Menge deshalb vor dem Box-Lauf zurueck (`AH_REQUIRED_BOX` benennt eine
 Box-Menge explizit). Ein gesetztes `AH_REQUIRED` gewinnt immer unveraendert.
@@ -596,7 +596,7 @@ In CI laeuft (nur auf `main`-Push/manuell, kein PR-Gate) der From-outside-Test
 (`integration-stack`). Einen CI-Job fuer den Desktop-Smoke-E2E gibt es **nicht**:
 die headless-WebKit-Kette driftet mit dem Runner-Image und faerbte `main` rot
 ohne echten Defekt. Der Smoke wie auch die **Desktop-Live-E2E**
-(`desktop_e2e_live.sh` + `desktop_e2e_tunnel.sh`) laufen auf crabbox bzw. lokal
+(`desktop_e2e_live.sh` + `desktop_e2e_tunnel.sh`) laufen auf einer VM bzw. lokal
 — vor Releases von Hand ausfuehren.
 
 ### Versions-Stellen vor einem Release pruefen
@@ -611,8 +611,8 @@ die Bump-Reihenfolge: `.claude/rules/release.md`.
 
 `scripts/vm/vm.py` least, verwaltet und zerstoert die ephemeren Proxmox-VMs, auf denen die
 schweren Suites laufen — Python-3-Standardbibliothek, keine Abhaengigkeit, nur die REST-API
-(kein `pvesh`, kein `qm`). Es liegt **neben** crabbox: bis der Umzug (Harness Stufe 2b) durch
-ist, aendert sich am crabbox-Weg unten nichts.
+(kein `pvesh`, kein `qm`). Seit Harness-Stufe 2b ist es der einzige Weg zu einer VM — die
+Wrapper darunter rufen nichts anderes mehr auf.
 
 **Konfiguration** kommt aus dem gitignoreten `.claude/settings.local.json` (Block `env`); eine
 gleichnamige Umgebungsvariable gewinnt, damit ein Runner sein eigenes Token mitbringen kann,
@@ -671,16 +671,16 @@ geprueft hat. `ssh` bleibt bewusst der rohe Griff auf die Box.
 **Exit-Codes.** `0` ok · `1` das Ausgefuehrte ist fehlgeschlagen (der Remote-Exit von `run`,
 also ein roter Test) · `2` Aufruffehler, oder die Weigerung, etwas anzufassen, das uns nicht
 gehoert · `74` Infrastruktur (API, Kapazitaet, keine Adresse, fehlendes Privileg). Die Trennung
-1/74 ist der Grund, warum `heavy.sh` ab 2b eine Infra-Stoerung nicht mehr als roten Test
-berichten muss — heute sprechen die crabbox-Wrapper dieses 74 noch nicht.
+1/74 ist der Grund, warum `heavy.sh` eine Infra-Stoerung nicht als roten Test berichten muss:
+die Wrapper reichen den Code unveraendert durch.
 
 **Tags sind die Lease-Wahrheit**, nicht eine lokale Datei. Jede VM traegt `ah` plus
 `role-…`, `lane-…`, `sc-…`, `ttl-<epoch>`, `tpl-…`; Templates tragen `ah-tpl-<profil>` und
 `built-<yyyymmdd>`. Daraus folgt dreierlei: jeder Checkout sieht jede Lease samt Frist, der
 Aufraeumer braucht keinen lokalen Zustand — **jedes** Verb ausser `list` und `doctor` kehrt am
 Ende die eigene Lane (`AH_VM_NO_AUTOREAP=1` schaltet das ab) —, und eine VM **ohne** `ah`-Tag
-ist fuer dieses Werkzeug unsichtbar: jedes zerstoerende Verb verweigert sie mit Exit 2. Deshalb
-koennen crabbox und `vm.py` denselben Pool teilen, ohne sich gegenseitig abzuraeumen.
+ist fuer dieses Werkzeug unsichtbar: jedes zerstoerende Verb verweigert sie mit Exit 2 —
+deshalb kann der Pool auch Homelab-VMs tragen, ohne dass ein Tippfehler eine davon frisst.
 
 **Probe von Hand** — `doctor` sichert sie vorher ab. `clone` druckt `VMID NAME`; die VMID
 aus dieser Zeile ist in allen folgenden Aufrufen gemeint (unten `3000` als Beispiel):
@@ -722,42 +722,44 @@ Hermetisch geprueft von `scripts/tests/lib_vm_test.sh`; `vm.py` selbst von
 `scripts/vm/tests/` gegen aufgezeichnete API-Antworten (Herkunft und Bereinigungsregel:
 `scripts/vm/tests/README.md`). Beides faehrt `bash scripts/dev/verify.sh scripts --strict` mit.
 
-### Schwere Suites auf crabbox (Multi-Host + schneller Loop)
+### Schwere Suites auf VMs (Multi-Host + schneller Loop)
 
 Wer kein lokales Docker/Display hat (z. B. die Agent-Sandbox), faehrt die schweren
-Suites auf **crabbox** (least ephemere Proxmox-VMs; Provider-Env in
-`.claude/settings.json`, Token nur im gitignored `.claude/settings.local.json`).
+Suites auf einer ephemeren Proxmox-VM (Konfiguration und Token nur im gitignoreten
+`.claude/settings.local.json`).
 Ein Sammel-Runner buendelt die Single-Box-Layer:
 `bash scripts/tests/run.sh [lint|unit|quick|integration|e2e|all] [--strict]
 [--only <keys…>] [--step <name>]` (schwere Layer verlangen `AH_ALLOW_REAL=1`;
 `--only server web` begrenzt lint/unit auf die genannten Komponenten — gefilterte
-Steps melden SKIP). `crabbox_iter.sh` reicht die Flags an die Box weiter.
+Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
 
 - **Schneller Loop (warm once → iterieren → reapen).** Eine hydrierte Box ist teuer
   zu bauen (~18 min Bootstrap + ~20 min Tauri-Build), aber billig zu halten:
-  `crabbox_warm.sh <desktop|server|pond>` hydriert **einmal** und merkt den Slug
-  (`.crabbox/warm.env`); danach ist jede Iteration inkrementell (`target/` +
+  `bash scripts/vm/warm.sh <desktop|server|pond>` hydriert **einmal** und merkt die
+  VMID (`.vm/warm.env`); danach ist jede Iteration inkrementell (`target/` +
   `node_modules/` bleiben vom Sync ausgenommen) und dauert Minuten statt ~40:
-  `crabbox_iter.sh <layer>` bzw. `crabbox_iter.sh --desktop`; `crabbox_iter.sh
+  `bash scripts/vm/iter.sh <layer>` bzw. `iter.sh --desktop`; `iter.sh
   --cmd '<befehl>'` faehrt einen beliebigen Einzel-Befehl (z. B. ein Task-`Verify:`)
-  auf der warmen Box. `crabbox_reap.sh` raeumt die Warm-Boxen auf. Bei Fehler bleibt
-  die Box stehen (`crabbox ssh`) und Screenshots/Logs landen automatisch lokal unter
-  `.crabbox-out/`.
+  auf der warmen Box. `bash scripts/vm/reap.sh` raeumt die Warm-Boxen auf. Bei Fehler
+  bleibt die Box stehen (`python3 scripts/vm/vm.py ssh <vmid>`) und Screenshots/Logs
+  landen automatisch lokal unter `.ah-out/`.
 - **Parallele Lanes.** `bash scripts/dev/lane.sh new <slug>` legt fuer ein Vorhaben
   einen Git-Worktree `../AdminHelper-<slug>` an (Branch `feature/<slug>` von `main`;
   `.devenv.sh` als Symlink, `.claude/settings.local.json` als **Kopie** — Claude Code
   schreibt die Datei bei Permission-Grants, ein Symlink waere ein geteiltes
-  Write-Target aller Lanes). Jede Lane
-  bekommt ihren **eigenen Warm-Pond** (`ah-warm-<slug>`, abgeleitet vom
-  Checkout-Namen; `AH_LANE` ueberschreibt) — Reap einer Lane laesst die anderen
-  stehen; Leases sind host-global serialisiert (parallele Warmups haengen den
-  Provider). crabbox bindet Leases an den leasenden Checkout-Pfad (fremder Checkout
-  muesste `--reclaim`); der Sync aus Worktrees ist validiert und traegt nur den
-  Source-Tree — auf der Box liegt kein `.git` (Agent-Makefile faellt auf `VERSION=dev`
-  zurueck). `lane.sh done <slug>` reapt die Boxen und raeumt Worktree + Branch ab.
+  Write-Target aller Lanes). Jede Lane bekommt ihre **eigene Lane-Kennung**: `lane.sh
+  new` schreibt den Slug nach `.vm/lane`, jede VM traegt den Tag `lane-<slug>`, und
+  `reap`, der Auto-Sweep am Ende jedes Verbs und die Leak-Pruefung in `list` arbeiten
+  auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert
+  ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
+  geschuetzt ist dort nur, was kein `ah`-Tag traegt. Klone werden seriell abgeschickt (ein
+  Linked Clone dauert ~2 s). Der Sync aus Worktrees ist validiert; `.git` reist mit,
+  die Evidenzfelder kommen trotzdem vom Client. `lane.sh done <slug>` zerstoert die
+  VMs der Lane und raeumt Worktree + Branch ab — auch dann, wenn der Worktree schon
+  von Hand entfernt wurde.
   Kompletter autonomer Ablauf: `AUTONOMOUS.md` („Parallel-Betrieb").
-- **Verteilt (Multi-Host).** `crabbox_multibox.sh --agents N [--desktop]` least
-  Server- + Agent-Box(en) auf `vmbr1`; mit `--desktop` zusaetzlich eine Box, die die
+- **Verteilt (Multi-Host).** `bash scripts/tests/multibox.sh --agents N [--desktop]`
+  klont Server- + Agent-Box(en); mit `--desktop` zusaetzlich eine Box, die die
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/
   Monitoring) — Cross-Host-mTLS, echtes `.deb`, Monitoring ueber den Netz-Hop.
   `--capstone` ist die Release-Kombination (alle Szenarien plus `--enforce`).
@@ -777,14 +779,14 @@ tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warme Box → `run.sh all --strict`; `capstone` = `crabbox_multibox.sh --capstone
+- `all` = warme Box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone
   --strict`; `weekly` = beides seriell. Der Capstone entfaellt **nur**, wenn die `all`-Ebene
   UNVERIFIED endete (sieben VMs brennen sonst in eine kaputte Umgebung) — ein reines FAIL
   stoppt ihn nicht.
-- **Vorab:** `crabbox doctor`, und `crabbox list` darf keine fremde Box zeigen (nicht im
-  Pond dieser Lane, nicht in `warm.env`) — sonst ist die Kapazitaet nicht da und der Lauf
-  bricht ab, bevor er eine VM verbraucht.
-- **Report:** `.crabbox-out/weekly/<jjjj-mm-tt-hhmm>/report.md`. Erste Zeile ist das Urteil
+- **Vorab:** `vm.py doctor --roles <was der Modus klont>`, und `vm.py list --json` darf keine
+  Box einer fremden Lane und nichts Geleaktes auf der eigenen zeigen — sonst ist die
+  Kapazitaet nicht da und der Lauf bricht ab, bevor er eine VM verbraucht.
+- **Report:** `.ah-out/weekly/<jjjj-mm-tt-hhmm>/report.md`. Erste Zeile ist das Urteil
   (`PASS` | `FAIL` | `UNVERIFIED (<grund>)`), dann die Summary-Zeilen der Wrapper
   **woertlich**, die Schritt-Tabelle, „Kevin sichtet", die Notizen, die `audit.yml`-Zeile und
   die VM-Liste danach. Nie eine Bewertung, nur Fakten. Dieselbe erste Zeile steht beim
@@ -802,25 +804,25 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   `strict-failed`, und die Ebene endet UNVERIFIED — `ergebnis` ∈
   `pass|skip|fail|flaky|infra|unbestaetigt|extern|reg` (`skip` nur ohne `--strict`).
 - **Klassifikation.** `infra` gilt fuer die **ganze Ebene**, nicht fuer einen Schritt: keine
-  warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, fehlgeschlagener Sync der
-  Box (`rsync failed: … ambiguous remote state`), `strict-failed: no step ran` oder
-  Wrapper-Exit 74 beenden die Ebene sofort — der Report hat dann bewusst keine
+  warme Box, Warm-Pond nicht bereit, fehlgeschlagenes Server-Lease, `vm.py: capacity` oder
+  `privilege` (und auf der Ein-Box-Ebene zusaetzlich `vm.py: no ip|no ssh|timeout|sync failed|
+  clone … failed`), `strict-failed: no step ran` oder Wrapper-Exit 74 beenden die Ebene sofort — der Report hat dann bewusst keine
   Schritt-Tabelle, weil nichts gelaufen ist, und es ist nie eine Regression. Meldet das
   Box-Artefakt einen Pflicht-Schritt als `strict-failed` (SKIP unter `--strict`), ist die Ebene
   ebenfalls `infra`, die Schritt-Tabelle bleibt aber stehen: gelaufene Schritte `pass`, die
   nicht gelaufenen `infra`, ein echter roter Schritt daneben `fail` ohne Klassifikation (kein
   Retry, kein Capstone).
-  **Ausnahme Capstone:** bricht crabbox das Setup einer Rolle ab („workspace owner
-  release failed", „refusing collection and cleanup: context canceled", „rsync failed: …
-  ambiguous remote state" (die Box hat den Baum nie bekommen) oder dritter Lease-Versuch
-  einer Box verloren (die Rolle kommt aus dem Slug)), gelten die spaeteren FAILs dieser
+  **Ausnahme Capstone:** kommt das Setup einer Rolle nicht durch (`vm.py: sync/ssh/timeout/
+  no ip/no ssh/clone …` — die Box hat den Baum nie bekommen oder war nie erreichbar — oder
+  der Klon selbst ist gescheitert, dann nennt `multibox.sh` die Rolle in der Zeile),
+  gelten die spaeteren FAILs dieser
   Rolle als `infra` je Schritt (Detail `setup abort: <rolle>`); bleiben nur solche
   Folgefehler, endet die Ebene UNVERIFIED mit dem Grund „capstone infra: …" und der
   Multibox-Summary-Zeile; jeder FAIL, der nicht auf einen Abbruch seiner Rolle folgt,
   macht die Ebene FAIL. Ist die Ebene gelaufen, wird jeder rote Schritt einzeln klassifiziert:
   bis zu drei Wiederholungen desselben Schritts auf derselben Box (`AH_NO_SYNC=1`) — ein gruener Lauf ⇒ `flaky`
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
-  (Worktree `.crabbox-worktrees/w2`, Lane `w2`, eigener Pond): dort gruen ⇒ `unbestaetigt`,
+  (Worktree `.ah-worktrees/w2`, Lane `w2`): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile
   Klasse REG plus `tasks/reg-<datum>-<schritt>.md`), Basis ebenfalls rot ⇒ `extern`.
   Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die

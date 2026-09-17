@@ -740,10 +740,10 @@ def test_clone_picks_the_lowest_free_vmid_and_tags_the_lease(keyed, api, http, c
     assert not any(t.startswith("sc-") for t in tags)  # no scenario, no tag
     assert put.body["memory"] == "2048" and put.body["cores"] == "2"
     assert put.body["agent"] == "enabled=1" and put.body["ipconfig0"] == "ip=dhcp"
-    # Never a ciuser: a lease inherits the template's own guest user, and the
-    # fat template's is `crabbox` — whose home holds ~/.cargo and ~/go. Forcing
-    # `adminhelper` here would hand every lease a cold, empty home (spec,
-    # trade-off 5).
+    # Never a ciuser: a lease inherits the template's own guest user, and its
+    # home is where the warm ~/.cargo and ~/go live. Forcing a name here would
+    # hand every lease off an older template a cold, empty home (spec,
+    # trade-off 5) — `bake` is the one place that sets it.
     assert "ciuser" not in put.body
 
 
