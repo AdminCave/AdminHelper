@@ -1,20 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(crabbox run:*)",
-      "Bash(crabbox warmup:*)",
-      "Bash(crabbox status:*)",
-      "Bash(crabbox list:*)",
-      "Bash(crabbox connect:*)",
-      "Bash(crabbox ssh:*)",
-      "Bash(crabbox doctor:*)",
-      "Bash(crabbox stop:*)",
-      "Bash(crabbox cleanup:*)",
-      "Bash(crabbox artifacts pull:*)",
-      "Bash(bash scripts/tests/crabbox_warm.sh:*)",
-      "Bash(bash scripts/tests/crabbox_iter.sh:*)",
-      "Bash(bash scripts/tests/crabbox_reap.sh:*)",
-
+      "Bash(python3 scripts/vm/vm.py:*)",
+      "Bash(bash scripts/vm/*.sh:*)",
+      "Bash(bash scripts/tests/multibox.sh:*)",
+      "Bash(bash scripts/tests/heavy.sh:*)",
       "Bash(pytest:*)",
       "Bash(ruff:*)",
       "Bash(go test:*)",
@@ -30,7 +20,6 @@
       "Bash(bash scripts/dev/verify.sh:*)",
       "Bash(bash scripts/dev/format-file.sh:*)",
       "Bash(reuse annotate:*)",
-
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git switch:*)",
@@ -45,14 +34,19 @@
       "Bash(git revert:*)",
       "Bash(git rev-parse:*)"
     ],
-    "ask": [],
+    "ask": [
+      "Bash(bash scripts/vm/bootstrap_linux.sh:*)"
+    ],
     "deny": []
   },
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/session-status.sh\"" }
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/session-status.sh\""
+          }
         ]
       }
     ]

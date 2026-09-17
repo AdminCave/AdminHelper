@@ -22,7 +22,7 @@ set -uo pipefail
 export AH_AUTONOMOUS=0
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 # Third leak: run.sh exports AH_OUT_DIR pointing at the REAL checkout, so the
-# weekly line would read that instead of each fixture's own .crabbox-out — the
+# weekly line would read that instead of each fixture's own .ah-out — the
 # test passed standalone and failed inside the scripts block. A SessionStart hook
 # sees it UNSET, so that is what the fixture reproduces.
 unset AH_OUT_DIR
@@ -59,13 +59,13 @@ export PATH="$BIN:$PATH"
 # clone next to it), one commit pushed, and the knobs each case needs.
 mk_repo() {
   local dir="$1" version="$2" tag="$3"; shift 3
-  mkdir -p "$dir/apps/desktop/src-tauri" "$dir/tasks" "$dir/.claude/rules" "$dir/.crabbox"
+  mkdir -p "$dir/apps/desktop/src-tauri" "$dir/tasks" "$dir/.claude/rules" "$dir/.vm"
   git init -q -b main "$dir"
   git -C "$dir" config user.email t@example.invalid
   git -C "$dir" config user.name  Test
   printf '{\n  "version": "%s"\n}\n' "$version" > "$dir/apps/desktop/src-tauri/tauri.conf.json"
   echo "rule" > "$dir/.claude/rules/testing.md"
-  printf '.crabbox/\n' > "$dir/.gitignore"
+  printf '.vm/\n' > "$dir/.gitignore"
   cat > "$dir/tasks/demo-feature.md" <<'LEDGER'
 Status: aktiv · Branch: feature/demo
 LEDGER
@@ -101,7 +101,7 @@ echo "── dirty repo: all seven triggers ──"
 DIRTY="$WORK/dirty"
 mk_repo "$DIRTY" "0.46.0" "v0.45.0"
 # .claude/rules gitignored (tracked today — exactly the case --no-index catches)
-printf '.crabbox/\n.crabbox-out/\n.claude/\n' > "$DIRTY/.gitignore"
+printf '.vm/\n.ah-out/\n.claude/\n' > "$DIRTY/.gitignore"
 # env block in a public settings.json
 printf '{\n  "env": { "PVE_TOKEN": "secret" }\n}\n' > "$DIRTY/.claude/settings.json"
 # unpushed commit on main + one dirty worktree file
@@ -115,24 +115,24 @@ git -C "$DIRTY/tasks/private" config user.name Test
 git -C "$DIRTY/tasks/private" add -A
 git -C "$DIRTY/tasks/private" commit -qm "roadmap"
 # warm box recorded
-echo "desktop=warmbox-7" > "$DIRTY/.crabbox/warm.env"
+echo "desktop=warmbox-7" > "$DIRTY/.vm/warm.env"
 # Two weekly reports: the NEWER one must win. Dates are relative so the "(n d)"
 # age in the line is deterministic whenever this test runs.
 OLD_DAY=$(date -d '10 days ago' +%F); NEW_DAY=$(date -d '3 days ago' +%F)
-mkdir -p "$DIRTY/.crabbox-out/weekly/$OLD_DAY-0900" "$DIRTY/.crabbox-out/weekly/$NEW_DAY-1830"
-printf 'FAIL\n\n# alt\n'                       > "$DIRTY/.crabbox-out/weekly/$OLD_DAY-0900/report.md"
-printf 'UNVERIFIED (doctor red)\n\n# neu\n'    > "$DIRTY/.crabbox-out/weekly/$NEW_DAY-1830/report.md"
+mkdir -p "$DIRTY/.ah-out/weekly/$OLD_DAY-0900" "$DIRTY/.ah-out/weekly/$NEW_DAY-1830"
+printf 'FAIL\n\n# alt\n'                       > "$DIRTY/.ah-out/weekly/$OLD_DAY-0900/report.md"
+printf 'UNVERIFIED (doctor red)\n\n# neu\n'    > "$DIRTY/.ah-out/weekly/$NEW_DAY-1830/report.md"
 # A run in progress (or one that was killed): heavy.sh creates the directory
 # first and writes report.md last, so the NEWEST directory can be verdict-less.
 # The line must fall back to the newest real report, not to "kein Report".
-mkdir -p "$DIRTY/.crabbox-out/weekly/$(date +%F)-0900"
-: > "$DIRTY/.crabbox-out/weekly/$(date +%F)-0900/doctor.log"
+mkdir -p "$DIRTY/.ah-out/weekly/$(date +%F)-0900"
+: > "$DIRTY/.ah-out/weekly/$(date +%F)-0900/doctor.log"
 # Same class, two more holes the fallback has to cover: an empty report.md and
 # one whose first line is blank.
-mkdir -p "$DIRTY/.crabbox-out/weekly/$(date +%F)-1000"
-: > "$DIRTY/.crabbox-out/weekly/$(date +%F)-1000/report.md"
-mkdir -p "$DIRTY/.crabbox-out/weekly/$(date +%F)-1100"
-printf '\n\nPASS\n' > "$DIRTY/.crabbox-out/weekly/$(date +%F)-1100/report.md"
+mkdir -p "$DIRTY/.ah-out/weekly/$(date +%F)-1000"
+: > "$DIRTY/.ah-out/weekly/$(date +%F)-1000/report.md"
+mkdir -p "$DIRTY/.ah-out/weekly/$(date +%F)-1100"
+printf '\n\nPASS\n' > "$DIRTY/.ah-out/weekly/$(date +%F)-1100/report.md"
 
 OUT=$(SHIM_DRAFTS=1 SHIM_PRS=2 AH_DEVENV=/nonexistent AH_TEST_DB='' run_hook "$DIRTY")
 rc=$?

@@ -120,7 +120,7 @@ PRS="$(gh_json pr list --state open --limit 50 --json number -q 'length')"
 # place computing the verdict is a second place that can disagree with it.
 weekly_line() {
   local out f dir="" stamp day head t0 now n
-  out="${AH_OUT_DIR:-$ROOT/.crabbox-out}"
+  out="${AH_OUT_DIR:-$ROOT/.ah-out}"
   # Newest FIRST, and the newest non-empty report.md wins — not the newest
   # DIRECTORY. heavy.sh creates the run directory before it starts and writes the
   # report at the very end, so while a run is going (hours), and forever after a
@@ -150,7 +150,7 @@ weekly_line() {
 echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: — (ab 7)"
 
 # ── line 5: warm boxes ────────────────────────────────────────────────────────
-WARM="$(grep -E '^[A-Za-z0-9_-]+=' .crabbox/warm.env 2>/dev/null | paste -sd' ' -)"
+WARM="$(grep -E '^[A-Za-z0-9_-]+=' .vm/warm.env 2>/dev/null | paste -sd' ' -)"
 [ -n "$WARM" ] || WARM="leer"
 echo "VMs: warm.env $WARM"
 

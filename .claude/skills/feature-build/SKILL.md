@@ -1,6 +1,6 @@
 ---
 name: feature-build
-description: Arbeite ein Task-Ledger aus tasks/ autonom ab (tasks/<slug>.md aus /feature-plan ODER tasks/audit-fixes.md aus einem Fable-Report) — jede kleine Task surgical umsetzen, schnelle Tests, frischer Review, pro Task auf einem Feature-Branch committen, am Ende die schwere crabbox-Suite fahren und einen Draft-PR öffnen. Nutzen nach freigegebenem Design-Gate oder zum Abarbeiten eines Fix-Backlogs. Läuft auf Opus.
+description: Arbeite ein Task-Ledger aus tasks/ autonom ab (tasks/<slug>.md aus /feature-plan ODER tasks/audit-fixes.md aus einem Fable-Report) — jede kleine Task surgical umsetzen, schnelle Tests, frischer Review, pro Task auf einem Feature-Branch committen, am Ende die schwere VM-Suite fahren und einen Draft-PR öffnen. Nutzen nach freigegebenem Design-Gate oder zum Abarbeiten eines Fix-Backlogs. Läuft auf Opus.
 ---
 
 # Feature / Backlog autonom bauen
@@ -18,12 +18,12 @@ nie automatisch gebaut.
 ## Vor dem Start
 - Ledger-Kopf lesen: **Status**, **Branch**, **Spec**, **Commit-Granularität**, **Review**-
   Granularität, **Fast-Suite**, **Warm-Profil**, DoD-Verweis.
-- **`Fast-Suite: crabbox`** (parallele Worktree-Lane, keine lokalen Toolchain-Artefakte —
+- **`Fast-Suite: vm`** (parallele Worktree-Lane, keine lokalen Toolchain-Artefakte —
   AUTONOMOUS.md „Parallel-Betrieb"): ALLE Verify-/Schnellsuite-Schritte laufen auf der
-  warmen Lane-Box statt lokal. Einmalig `bash scripts/tests/crabbox_warm.sh <Warm-Profil>`
+  warmen Lane-Box statt lokal. Einmalig `bash scripts/vm/warm.sh <Warm-Profil>`
   (Default `desktop`; `pond` nur wenn im Kopf). Pro Task: das `Verify:` via
-  `bash scripts/tests/crabbox_iter.sh --cmd '<befehl>'`, die Komponenten-Schnellsuite via
-  `bash scripts/tests/crabbox_iter.sh quick --strict --only <komponenten>` (Keys: server
+  `bash scripts/vm/iter.sh --cmd '<befehl>'`, die Komponenten-Schnellsuite via
+  `bash scripts/vm/iter.sh quick --strict --only <komponenten>` (Keys: server
   monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts). Nichts lokal bauen/testen.
   Fehlt das Feld oder steht `lokal` → unverändert lokale Suiten (Solo-Default).
 - **Status prüfen:** `geplant` → das Starten von `feature-build` IST die Freigabe: Kopf auf
@@ -77,7 +77,7 @@ nie automatisch gebaut.
      Ausgabe bis zum Ende, im tmux bleibt der Lauf sichtbar und überlebt.
    - `--strict` ist Pflicht: ohne das Flag zählt ein SKIP als Erfolg, und genau daran
      ist die alte Kette grün geworden, ohne dass etwas lief.
-   - Bei `Fast-Suite: crabbox`: dieselben Checks remote über `crabbox_iter.sh` (s. „Vor
+   - Bei `Fast-Suite: vm`: dieselben Checks remote über `scripts/vm/iter.sh` (s. „Vor
      dem Start"), nicht lokal.
    - **Grün** → Eintrag `[x]` (+ 1 Stichwort was geändert).
    - **Rot durch deine Änderung** → fixen; nicht in ~2 Versuchen lösbar →
@@ -125,8 +125,8 @@ nie automatisch gebaut.
 
 ## Abschluss (kein `[ ]` mehr offen)
 1. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit); bei
-   `Fast-Suite: crabbox` stattdessen `bash scripts/tests/crabbox_iter.sh quick` (ohne `AH_ONLY`).
-2. **Schwere Suite auf crabbox — nur wenn nötig (path-gated, CLAUDE.md).** Erst den Branch-Diff
+   `Fast-Suite: vm` stattdessen `bash scripts/vm/iter.sh quick` (ohne `AH_ONLY`).
+2. **Schwere Suite auf der VM — nur wenn nötig (path-gated, CLAUDE.md).** Erst den Branch-Diff
    prüfen (`git diff --stat main...`): Berührt er **heavy-relevante** Pfade? (`apps/server`-API/
    Gateway, `apps/ca-issuer`, `apps/gateway`, `apps/agent`, `apps/desktop` Connect/Tunnel/
    Enrollment, `docker-compose*.yml`, `Dockerfile`, `scripts/install|update`, FRP/PKI). **Wenn
@@ -138,11 +138,12 @@ nie automatisch gebaut.
    reicht (zweite Box sparen); steht **`Abschluss: multibox …`** im Kopf ODER berührt der
    Diff Cross-Host-Pfade (FRP-Tunnel-Datenpfad, :8444-Provisioning, `build-deb/rpm`,
    `scripts/install|update`, mTLS/PKI) → den Multibox-Lauf **beim Nutzer anfragen**
-   (ask-first — `crabbox_multibox.sh` bleibt bewusst prompt-pflichtig) und das Ergebnis in
-   den PR-Body aufnehmen. Danach **`crabbox list`** prüfen (keine geleakten Leases)
-   und `crabbox stop`/reap. **Nur bei realem Pass weiter — SKIP ≠ grün.** (Nutzt VM-Leases, die
-   per `-ttl`/`-idle-timeout` self-reapen — nur der single-box-Warm-Loop, kein `multibox`/`bake`
-   ohne Nachfrage.)
+   (fragen, nicht einfach starten — `multibox.sh` ist allowlisted, der Zügel ist deiner) und das Ergebnis in
+   den PR-Body aufnehmen. Danach **`python3 scripts/vm/vm.py list`** prüfen (keine geleakten VMs —
+   die Liste endet mit Exit 74, wenn auf dieser Lane etwas läuft, das niemand beansprucht)
+   und `bash scripts/vm/reap.sh`. **Nur bei realem Pass weiter — SKIP ≠ grün.** (Die VMs tragen
+   eine Frist und sterben beim nächsten `vm.py`-Aufruf danach — nur der single-box-Warm-Loop,
+   kein `multibox`/`bake` ohne Nachfrage.)
 3. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:
    - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
      ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4) — und **kein**
@@ -154,7 +155,7 @@ nie automatisch gebaut.
 4. **Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen wirkend):
    `git push -u origin <branch>`, dann `gh pr create --draft --title "<type>: <feature>"
    --body "…"` mit Link auf die **Spec** (Pfad aus dem `Spec:`-Ledgerfeld), Task-Zusammenfassung
-   (fertig / übersprungen / offene `[?]`) und crabbox-Ergebnis. (Beide prompten, solange nicht
+   (fertig / übersprungen / offene `[?]`) und VM-Ergebnis. (Beide prompten, solange nicht
    allowlisted — das ist Absicht.)
 5. Ledger-Kopf auf `Status: erledigt` setzen (bzw. `blockiert`, wenn `[?]`-Punkte offen
    bleiben). Schluss-Zusammenfassung im Chat; die `[?]`-Punkte klar auflisten — die
@@ -166,8 +167,8 @@ nie automatisch gebaut.
   ODER **STOPP**. Kein vierter Weg.
 
 ## Feste Regeln
-- Während des Loops **nur schnelle Suiten**. Schwere crabbox-Suite **nur im Abschluss**.
-  **Nie** `run.sh integration|e2e|all` mitten im Loop, nie `prewarm/job/checkpoint/image/bake`
+- Während des Loops **nur schnelle Suiten**. Schwere VM-Suite **nur im Abschluss**.
+  **Nie** `run.sh integration|e2e|all` mitten im Loop, nie `bake` und nie `multibox`
   ohne Nachfrage (CLAUDE.md).
 - Ehrlichkeit vor Fortschritt: nichts als `[x]`, dessen Suite nicht real grün lief.
 - Surgical & zurückführbar: jede geänderte Zeile führt auf einen Ledger-Eintrag zurück.
