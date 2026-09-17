@@ -133,6 +133,14 @@ ENVOUT=$(cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env && echo "$AH_PV
 ENVOUT=$(cd "$FAKE" && AH_VM_MAX=99 bash -c '. scripts/vm/lib.sh; vm_load_env && echo "$AH_VM_MAX"')
 [ "$ENVOUT" = "99" ] && ok "the environment wins over the file" || bad "precedence: $ENVOUT"
 
+# A value carrying a quote must arrive verbatim: with Python's %r the shell
+# would have expanded what is inside it.
+printf '%s\n' '{"env": {"AH_PVE_URL": "https://pve.example:8006", "AH_VM_REMOTE_DIR": "/srv/it'"'"'s $HOME `id`"}}' \
+  > "$FAKE/.claude/settings.local.json"
+ENVOUT=$(cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env && printf "%s" "$AH_VM_REMOTE_DIR"')
+[ "$ENVOUT" = '/srv/it'"'"'s $HOME `id`' ] \
+  && ok "a value with a quote is not expanded by the shell" || bad "quoting: $ENVOUT"
+
 echo '{"env": {}}' > "$FAKE/.claude/settings.local.json"
 (cd "$FAKE" && bash -c '. scripts/vm/lib.sh; vm_load_env' 2>/dev/null) \
   && bad "an empty config was accepted" || ok "an empty config fails loudly"

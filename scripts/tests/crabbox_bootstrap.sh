@@ -29,6 +29,11 @@ TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
 # tree is broken" and is really "the box is newer". Keep in sync with
 # .github/workflows/ci.yml and the floor in apps/server/requirements-dev.txt.
 RUFF_VERSION="${AH_RUFF_VERSION:-0.15.20}"
+# pytest for scripts/vm/tests: run.sh's `vm-pytest` step dep-gates on importing
+# it, and only the python components' own steps build the shared venv. Without
+# it here, `run.sh --only scripts` on a box SKIPs the step and --strict calls
+# that a failure — on a box where nothing is wrong. Pinned like ci.yml's.
+PYTEST_VERSION="${AH_PYTEST_VERSION:-9.1.1}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Profile: full (default — everything, for the single-box run.sh incl. desktop GUI
 # E2E) | server (docker stack only) | agent (Go agent + packaging). server/agent
@@ -114,9 +119,10 @@ $SUDO apt-get install -y --no-install-recommends --no-upgrade \
 # parsing it out of a provider's output, so a template without it is a template
 # whose clones never become reachable. Both cloud images already carry it —
 # this line is what keeps a bake from losing it (scripts/vm/vm.py, `wait`).
-# Not silenced: if this fails, the template's clones never get an address, and
-# the next thing anyone sees is `vm.py wait` timing out 900 s later.
-$SUDO systemctl enable --now qemu-guest-agent || echo "WARNUNG: qemu-guest-agent not enabled"
+# Hard, not a warning: without the agent, vm.py never learns a clone's address,
+# so a template baked without it produces boxes nobody can reach — and the next
+# thing anyone sees is `vm.py wait` timing out 900 s later, once per lease.
+$SUDO systemctl enable --now qemu-guest-agent
 
 # xterm + freerdp2-x11: the desktop client SPAWNS these to open an SSH terminal
 # (terminal.rs profile list) resp. an RDP session. Without them desktop_e2e_connect
@@ -130,6 +136,9 @@ $SUDO update-locale LANG=en_US.UTF-8 >/dev/null 2>&1 || true
 log "ruff $RUFF_VERSION (Python lint, used by run.sh lint)"
 $SUDO pip3 install --break-system-packages -q "ruff==$RUFF_VERSION" \
   || pipx install "ruff==$RUFF_VERSION" || true
+log "pytest $PYTEST_VERSION (used by run.sh unit's vm-pytest step)"
+$SUDO pip3 install --break-system-packages -q "pytest==$PYTEST_VERSION" \
+  || pipx install "pytest==$PYTEST_VERSION" || true
 
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then

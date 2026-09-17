@@ -239,6 +239,10 @@ class Api:
                 if attempt == 0 and getattr(exc, "retryable", False):
                     time.sleep(1)
                     continue
+                # `retried` is how the caller tells "the VMID was already taken"
+                # apart from "our own first attempt landed and only its answer
+                # was lost" — the second one leaves a VM behind.
+                exc.retried = attempt > 0
                 raise
 
     def _once(self, method: str, url: str, data: bytes | None):
@@ -501,11 +505,12 @@ def free_vmid(cfg: Config, vms: list) -> int:
     Templates live in the upper hundred so a bake never collides with a lease.
     """
     low, high = cfg.vmid_range()
+    last = min(low + 99, high)  # a range narrower than 100 must not run past it
     taken = {v["vmid"] for v in vms}
-    for vmid in range(low, low + 100):
+    for vmid in range(low, last + 1):
         if vmid not in taken:
             return vmid
-    raise Infra("no free VMID in %d-%d — the clone band is full" % (low, low + 99))
+    raise Infra("no free VMID in %d-%d — the clone band is full" % (low, last))
 
 
 def free_template_vmid(cfg: Config, vms: list) -> int:
@@ -890,6 +895,23 @@ def create_vm(
             "POST", "/nodes/%s/qemu/%d/clone" % (node, template), body=body, lock_retry=True
         )
     except VmError as exc:
+        # "config file already exists" after a RETRY means our own first attempt
+        # landed and only its answer was lost — the VM at newid is ours, carries
+        # no tags yet, and nothing would ever look at it again. Without a retry
+        # the same message means a parallel lane took the VMID, and purging it
+        # would destroy their VM.
+        if getattr(exc, "retried", False) and "already exists" in str(exc):
+            try:
+                purge_vm(cfg, api, newid)
+            except VmError as cleanup:
+                raise Infra(
+                    "clone of %d into %d was retried and may have landed; cleaning %d up "
+                    "failed too: %s" % (template, newid, newid, cleanup)
+                ) from exc
+            raise Infra(
+                "clone of %d into %d failed: %s (the retry's leftover was removed)"
+                % (template, newid, exc)
+            ) from exc
         raise Infra("clone of %d into %d failed: %s" % (template, newid, exc)) from exc
 
     try:
@@ -1004,17 +1026,24 @@ def wait_for(cfg: Config, api: Api, vmid: int, timeout: int) -> str:
 
 
 def ssh_options(cfg: Config) -> list:
-    known_hosts = os.path.join(VM_STATE_DIR, "known_hosts")
-    os.makedirs(os.path.dirname(known_hosts), exist_ok=True)
     return [
         "-o",
         "BatchMode=yes",
         "-o",
         "ConnectTimeout=%d" % SSH_CONNECT_TIMEOUT,
+        # No host-key memory, on purpose. These VMs live for minutes, every bake
+        # wipes /etc/ssh/ssh_host_* so each clone invents new keys, and the pool
+        # hands the same DHCP address out again — a remembered key is therefore
+        # guaranteed to be wrong sooner or later, and then `wait` burns its whole
+        # timeout and `run` dies at 255 until somebody deletes the file by hand.
+        # Pinning bought nothing either: with accept-new we trusted whatever
+        # answered the first time anyway.
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=no",
         "-o",
-        "UserKnownHostsFile=" + known_hosts,
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "LogLevel=ERROR",  # or every single call prints a host-key warning
         "-i",
         cfg.path("AH_VM_SSH_KEY"),
     ]
@@ -1184,12 +1213,22 @@ def verb_pull(cfg: Config, api: Api, args) -> int:
 
 
 def extend_lease(cfg: Config, api: Api, target: "Target", duration: str) -> None:
-    """Move the ttl- tag, keeping every other tag as it was."""
-    if OURS not in target.tags:
+    """Move the ttl- tag, keeping every other tag as it was.
+
+    Read fresh, for the same reason `destroy` and `reap` do: this writes the
+    WHOLE tag set back, and the resource list lags. A tag another run set in the
+    meantime would be undone — and a VMID recycled since would be handed its
+    predecessor's tags, lane included.
+    """
+    current = fresh_entry(cfg, api, target.vmid)
+    if current is None:
+        raise Infra("%d is gone — nothing to extend" % target.vmid)
+    tags = tags_of(current)
+    if OURS not in tags:
         raise Usage(
             "%d is not ours (no `%s` tag) — refusing to touch its lease" % (target.vmid, OURS)
         )
-    kept = sorted(t for t in target.tags if not t.startswith("ttl-"))
+    kept = sorted(t for t in tags if not t.startswith("ttl-"))
     kept.append("ttl-%d" % (int(time.time()) + parse_duration(duration)))
     api.request(
         "PUT",
@@ -1268,11 +1307,22 @@ def select_vms(cfg: Config, vms: list, args) -> list:
     for ref in args.vm or []:
         entry = find_vm(cfg, None, ref, vms=vms)
         chosen[entry["vmid"]] = entry
-    filters = [
-        ("sc-", tag_safe(args.scenario) if args.scenario else None),
-        ("lane-", tag_safe(args.lane) if args.lane else None),
-        ("role-", tag_safe(args.role) if args.role else None),
-    ]
+    filters = []
+    for prefix, flag, raw in (
+        ("sc-", "--scenario", args.scenario),
+        ("lane-", "--lane", args.lane),
+        ("role-", "--role", args.role),
+    ):
+        if raw is None:
+            filters.append((prefix, None))
+            continue
+        clean = tag_safe(raw)
+        # An empty value would compare equal to the default and select every VM
+        # WITHOUT that tag — `destroy --lane main --scenario '+++'` would take
+        # the lane's scenario-less VMs. Refuse instead of guessing.
+        if not clean:
+            raise Usage("%s %r has nothing usable in it" % (flag, raw))
+        filters.append((prefix, clean))
     if any(value for _, value in filters):
         for entry in vms:
             tags = tags_of(entry)

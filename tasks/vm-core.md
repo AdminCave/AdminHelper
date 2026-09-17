@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 2a — vm-core: `scripts/vm/vm.py` neben crabbox — Task-Ledger
-Status: aktiv · Branch: feature/vm-core · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/vm-core · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-2.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine crabbox-Suite; die Live-Proben dieses Ledgers (T11, T12) laufen mit `vm.py` selbst im Pool `adminhelper-ci` (D17: Klonen, Baken, Zerstören im Pool ohne Prompt). Jede Probe endet mit `vm.py list` leer.
@@ -126,6 +126,19 @@ Verify: python3 scripts/vm/vm.py doctor --roles probe   → `ok templates: linux
 Doku: keine
 Abhängt von: T11
 
+## Nachtrag — Befunde aus `/code-review high` über den Branch-Diff (alle behoben)
+
+| Fund | Wirkung | Behebung |
+|---|---|---|
+| `.vm/known_hosts` mit `accept-new`, aber nie aufgeräumt | Der Pool vergibt DHCP-Adressen wieder und jedes Bake löscht `/etc/ssh/ssh_host_*` — beim zweiten Mal auf derselben IP scheitert jeder ssh-Pfad dauerhaft (`wait` 900 s in `no ssh`, `run`/`sync` bei 255), bis jemand die Datei löscht. | Kein Host-Key-Gedächtnis mehr (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`, `LogLevel=ERROR`). Gewonnen war nichts: beim ersten Kontakt wurde ohnehin jeder Schlüssel akzeptiert. |
+| Der eine Retry auf dem `clone`-POST | Landet der erste Versuch und geht nur die Antwort verloren, meldet der zweite „config file already exists" — und der Pfad purgt bewusst **nicht**. Zurück bleibt eine **untaggte** VM, die `destroy` verweigert, `reap` nie sieht und `list` nur zählt. | `Infra.retried` merkt den Wiederholungsfall; nur dann wird bei „already exists" aufgeräumt. Ohne Retry bedeutet dieselbe Meldung „fremde Lane hat die VMID" — die darf nicht zerstört werden. Beide Fälle getestet. |
+| Ein Selektor, der zu `""` gesäubert wird | `destroy --lane main --scenario '+++'` hätte alle Lane-VMs **ohne** `sc-`-Tag zerstört, weil der Leerwert gegen den Default verglich. | `select_vms` verweigert jetzt wie `clone` (Exit 2). |
+| `free_vmid` ignorierte `high` | Bei einem Bereich schmaler als 100 VMIDs hätte es Nummern **außerhalb** des reservierten Bereichs vergeben. | `min(low + 99, high)` — das Gegenstück zu `free_template_vmid`. |
+| `--extend` schrieb die Tag-Menge aus dem hinkenden Cache zurück | Ein Tag, den ein anderer Lauf in diesem Fenster gesetzt hat, wäre rückgängig gemacht worden; eine seither neu vergebene VMID hätte die Tags ihres Vorgängers bekommen, Lane inklusive. | `fresh_entry` vor dem PUT — dieselbe Regel, nach der `destroy` und `reap` schon lesen. |
+| `crabbox_bootstrap.sh`: `systemctl enable qemu-guest-agent \|\| echo WARNUNG` | Der Kommentar sagte „nicht stillgelegt", der Code schluckte den Fehler — und baute damit ein Template, dessen Klone nie eine Adresse bekommen. | Schlägt jetzt hart fehl. |
+| `lib.sh`: `%r` im `eval` | Ein Wert mit einfachem Anführungszeichen kippt Pythons `repr` auf doppelte — und dann expandiert die Shell `$…`, Backticks und `\` im Wert. | `shlex.quote`, mit eigenem Testfall (`/srv/it's $HOME \`id\``). |
+| `vm-pytest` auf einer gebakenen Box | Der Bootstrap installierte kein pytest; bei `--only scripts` baut `run.sh` kein venv, der Schritt SKIPpt und `--strict` macht daraus Rot — auf einer Box, an der nichts falsch ist. | `pytest` gepinnt im Bootstrap, neben ruff. |
+
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün.
 - Kein Warm-Profil-Lauf auf crabbox nötig: 2a ändert weder Produktcode noch Wrapper.
@@ -167,9 +180,23 @@ Zwei Bakes plus je ein Probe-Klon, jede VM im selben Lauf zerstört.
 
 **Der verworfene erste Durchlauf, vollständigkeitshalber:** `bake --profile linux-server` lief in **22,8 min** durch (Template 3900), aber seine Probe war **rot** — `run.sh lint` auf der frischen Box meldete `4 passed, 2 failed, 0 skipped` mit `UP017`, `B008` und `RUF100`, weil das Template die ungepinnte, zu neue ruff trug. Genau dieser rote Lauf ist der Beleg für Fund 3. Der anschließend laufende `linux-full`-Bake wurde abgebrochen (sein Klon hätte dieselbe ruff bekommen), sein Klon von Hand weggeräumt — er trug seinen 4-h-Lease-Tag, wäre also auch vom Reaper erfasst worden. Nach dem Pin wurden beide Profile neu gebacken. `newest_template` wählt bei gleichem `built-`-Datum die höhere VMID, 3901 gewinnt also gegen 3900; 3900 gehört trotzdem von Hand gelöscht.
 
+## Nachtrag — Befunde aus `/code-review high` über den Branch-Diff (alle behoben)
+
+| Fund | Wirkung | Behebung |
+|---|---|---|
+| `.vm/known_hosts` mit `accept-new`, aber nie aufgeräumt | Der Pool vergibt DHCP-Adressen wieder und jedes Bake löscht `/etc/ssh/ssh_host_*` — beim zweiten Mal auf derselben IP scheitert jeder ssh-Pfad dauerhaft (`wait` 900 s in `no ssh`, `run`/`sync` bei 255), bis jemand die Datei löscht. | Kein Host-Key-Gedächtnis mehr (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`, `LogLevel=ERROR`). Gewonnen war nichts: beim ersten Kontakt wurde ohnehin jeder Schlüssel akzeptiert. |
+| Der eine Retry auf dem `clone`-POST | Landet der erste Versuch und geht nur die Antwort verloren, meldet der zweite „config file already exists" — und der Pfad purgt bewusst **nicht**. Zurück bleibt eine **untaggte** VM, die `destroy` verweigert, `reap` nie sieht und `list` nur zählt. | `Infra.retried` merkt den Wiederholungsfall; nur dann wird bei „already exists" aufgeräumt. Ohne Retry bedeutet dieselbe Meldung „fremde Lane hat die VMID" — die darf nicht zerstört werden. Beide Fälle getestet. |
+| Ein Selektor, der zu `""` gesäubert wird | `destroy --lane main --scenario '+++'` hätte alle Lane-VMs **ohne** `sc-`-Tag zerstört, weil der Leerwert gegen den Default verglich. | `select_vms` verweigert jetzt wie `clone` (Exit 2). |
+| `free_vmid` ignorierte `high` | Bei einem Bereich schmaler als 100 VMIDs hätte es Nummern **außerhalb** des reservierten Bereichs vergeben. | `min(low + 99, high)` — das Gegenstück zu `free_template_vmid`. |
+| `--extend` schrieb die Tag-Menge aus dem hinkenden Cache zurück | Ein Tag, den ein anderer Lauf in diesem Fenster gesetzt hat, wäre rückgängig gemacht worden; eine seither neu vergebene VMID hätte die Tags ihres Vorgängers bekommen, Lane inklusive. | `fresh_entry` vor dem PUT — dieselbe Regel, nach der `destroy` und `reap` schon lesen. |
+| `crabbox_bootstrap.sh`: `systemctl enable qemu-guest-agent \|\| echo WARNUNG` | Der Kommentar sagte „nicht stillgelegt", der Code schluckte den Fehler — und baute damit ein Template, dessen Klone nie eine Adresse bekommen. | Schlägt jetzt hart fehl. |
+| `lib.sh`: `%r` im `eval` | Ein Wert mit einfachem Anführungszeichen kippt Pythons `repr` auf doppelte — und dann expandiert die Shell `$…`, Backticks und `\` im Wert. | `shlex.quote`, mit eigenem Testfall (`/srv/it's $HOME \`id\``). |
+| `vm-pytest` auf einer gebakenen Box | Der Bootstrap installierte kein pytest; bei `--only scripts` baut `run.sh` kein venv, der Schritt SKIPpt und `--strict` macht daraus Rot — auf einer Box, an der nichts falsch ist. | `pytest` gepinnt im Bootstrap, neben ruff. |
+
 ## Abschluss
 
-- `bash scripts/dev/verify.sh all --strict` → **16 passed, 0 failed, 0 skipped** (5 pytest-interne test-skips, Bestand).
+- Nach den Review-Fixes live nachgefahren: `clone` → `wait` 40,5 s → `run -- 'echo …; id -un'` → **`adminhelper`** (der Gast-User des neuen Templates, D20) → `run --extend 2h` versetzt den `ttl-`Tag → `destroy` → `list` leer. Kein Host-Key-Gedächtnis mehr nötig, keine Warnung.
+- `bash scripts/dev/verify.sh all --strict` → **16 passed, 0 failed, 0 skipped** (5 pytest-interne test-skips, Bestand); nach jedem Fix erneut gefahren.
 - `bash scripts/tests/run.sh quick` → `14 passed, 0 failed, 2 skipped` ohne gesourctes `.devenv.sh`; mit Toolchain (`verify.sh all`) 0 Skips.
 - Keine crabbox-Schwersuite: der Branch-Diff berührt keinen der path-gated Pfade (`apps/server`-API/Gateway, `ca-issuer`, `gateway`, `agent`, Desktop-Connect/Tunnel/Enrollment, `docker-compose*`, `Dockerfile`, `scripts/install|update`, FRP/PKI). Stattdessen sind **drei echte Bakes und drei Probe-Klone** auf echten VMs gelaufen (der erste Bake verworfen, siehe unten) — der stärkere Beweis für genau diese Änderung.
 - `vm.py list` leer, `crabbox list` unberührt (crabbox wurde in diesem Vorhaben nicht angefasst).

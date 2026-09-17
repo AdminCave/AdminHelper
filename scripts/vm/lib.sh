@@ -25,15 +25,18 @@ AH_VM_STATE_DIR="${AH_VM_STATE_DIR:-$VM_ROOT/.vm}"
 # Idempotent.
 vm_load_env() {
   [ -n "${AH_PVE_URL:-}" ] && return 0
+  # shlex.quote, not %r: a value holding a single quote flips Python's repr to
+  # DOUBLE quotes, and the shell would then expand $…, backticks and backslashes
+  # inside a token this file is supposed to pass through untouched.
   eval "$(cd "$VM_ROOT" && python3 -c '
-import json, os
+import json, os, shlex
 try:
     env = json.load(open(".claude/settings.local.json")).get("env", {})
 except Exception:
     env = {}
 for k, v in env.items():
     if (k.startswith("AH_PVE_") or k.startswith("AH_VM_")) and not os.environ.get(k):
-        print("export %s=%r" % (k, str(v)))')"
+        print("export %s=%s" % (k, shlex.quote(str(v))))')"
   [ -n "${AH_PVE_URL:-}" ] || { echo "vm_lib: AH_PVE_URL unset (.claude/settings.local.json -> env)" >&2; return 1; }
 }
 

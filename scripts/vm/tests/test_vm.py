@@ -1063,8 +1063,13 @@ def test_the_ssh_command_line_carries_the_key_and_the_batch_flags(cfg, monkeypat
     argv = seen["argv"]
     assert argv[0] == "ssh" and argv[-2:] == ["crabbox@192.0.2.17", "true"]
     assert "BatchMode=yes" in argv and "ConnectTimeout=5" in argv
-    assert "StrictHostKeyChecking=accept-new" in argv
-    assert "UserKnownHostsFile=" + str(state_dir / "known_hosts") in argv
+    # No host-key memory: the pool recycles addresses and every bake gives the
+    # clones new host keys, so a remembered one is guaranteed to go stale and
+    # then nothing reaches the box any more.
+    assert "StrictHostKeyChecking=no" in argv
+    assert "UserKnownHostsFile=/dev/null" in argv
+    assert "LogLevel=ERROR" in argv
+    assert not [a for a in argv if "known_hosts" in a]
     assert argv[argv.index("-i") + 1] == cfg.path("AH_VM_SSH_KEY")
     assert seen["timeout"] == 60
 
@@ -1141,16 +1146,45 @@ def test_an_interrupt_before_the_tags_still_purges(keyed, api, http, clock, monk
 
 
 def test_a_rejected_clone_purges_nothing_and_names_the_vmid(keyed, api, http, clock):
-    # "config file already exists" can mean a parallel lane took the same free
-    # VMID a moment earlier. Destroying that VM would be destroying theirs.
+    # "config file already exists" WITHOUT a retry means a parallel lane took the
+    # same free VMID a moment earlier. Destroying that VM would be destroying
+    # theirs. (A 500 is retried once, so this one has to be a 4xx.)
     http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
     http.add("GET", "/nodes/<node>/status", "node_status")
-    http.add("POST", "/qemu/9402/clone", "err_vmid_taken")
+    http.add(
+        "POST",
+        "/qemu/9402/clone",
+        status=400,
+        body='{"message":"unable to create VM 3002: config file already exists"}',
+    )
     with pytest.raises(vm.Infra) as caught:
         clone(keyed, api, "--profile", "linux-full", "--role", "probe")
     assert "clone of 9402 into 3002 failed" in str(caught.value)
     assert "config file already exists" in str(caught.value)
+    assert "removed" not in str(caught.value)
     assert not [c for c in http.calls if c.method == "DELETE"]
+
+
+def test_a_retried_clone_that_landed_anyway_is_cleaned_up(keyed, api, http, clock):
+    # The first submit created the VM and only its answer was lost; the retry
+    # is then told the config exists. That VM is ours, carries no tags, and
+    # nothing would ever look at it again — so it has to go.
+    http.add("GET", "/cluster/resources", body=tagged_resources()["body"])
+    http.add("GET", "/nodes/<node>/status", "node_status")
+    http.add("POST", "/qemu/9402/clone", status=500, body='{"message":"proxy closed"}', times=1)
+    http.add(
+        "POST",
+        "/qemu/9402/clone",
+        status=500,
+        body='{"message":"unable to create VM 3002: config file already exists"}',
+    )
+    http.add("GET", "/qemu/3002/status/current", "status_current_stopped")
+    http.add("DELETE", "/qemu/3002", "destroy")
+    http.add("GET", "qmdestroy", "task_ok")
+    with pytest.raises(vm.Infra) as caught:
+        clone(keyed, api, "--profile", "linux-full", "--role", "probe")
+    assert "the retry's leftover was removed" in str(caught.value)
+    assert [c for c in http.calls if c.method == "DELETE"]
 
 
 def test_a_purge_stops_a_running_vm_before_deleting_it(cfg, api, http, clock):
@@ -1497,6 +1531,11 @@ def test_run_without_a_command_is_a_usage_error(cfg, api, http, shell):
 
 
 def test_extend_moves_only_the_ttl_tag(cfg, api, reachable, shell, clock):
+    # Read fresh before writing the whole tag set back — the listing lags.
+    tags, name = POOL_NOW[3000]
+    reachable.add(
+        "GET", "/qemu/3000/status/current", body=current_of(3000, tags=tags, name=name)["body"]
+    )
     reachable.add("PUT", "/qemu/3000/config", "config_put")
     verb("run", cfg, api, "3000", "--extend", "4h", "--", "true")
     tags = next(c for c in reachable.calls if c.method == "PUT").body["tags"].split(";")
@@ -1513,6 +1552,7 @@ def test_a_vm_that_is_not_ours_keeps_its_lease(cfg, api, http, shell):
     http.add("GET", "/cluster/resources", body=strangers["body"])
     http.add("GET", "/agent/network-get-interfaces", "agent_ifaces")
     http.add("GET", "/qemu/3000/config", "clone_config")
+    http.add("GET", "/qemu/3000/status/current", body=current_of(3000, tags="crabbox")["body"])
     with pytest.raises(vm.Usage) as caught:
         verb("run", cfg, api, "3000", "--extend", "4h", "--", "true")
     assert "is not ours" in str(caught.value)

@@ -624,7 +624,7 @@ ohne eine Datei zu schreiben.
 | `AH_VM_MAX` | Deckel fuer gleichzeitige Leases **je Lane** (Default 8 — der Capstone haelt sieben). |
 | `AH_VM_LINKED` | `1` (Default) = Linked Clone in ~2 s statt ~11 min Vollklon. |
 | `AH_VM_REMOTE_DIR` | Wohin `sync` den Checkout schiebt (Default `~/adminhelper`). |
-| `AH_VM_STATE_DIR` | Lokaler Zwischenspeicher (Default `.vm/`): `lane`, `warm.env`, `known_hosts`. |
+| `AH_VM_STATE_DIR` | Lokaler Zwischenspeicher (Default `.vm/`): `lane` und `warm.env`. |
 
 Den SSH-Schluessel legt man **einmal** selbst an — `doctor` erzeugt ihn bewusst nicht als
 Nebenwirkung:
@@ -649,6 +649,12 @@ ssh-keygen -t ed25519 -f ~/.config/adminhelper/vm_ed25519 -N ''
 | `reap [--all] [--dry-run]` | Raeumt abgelaufene Leases weg — ohne `--all` nur die eigene Lane. |
 | `list [--json] [--lane l]` | Zeigt alle eigenen VMs mit Rolle, Lane, Szenario, Adresse, Status und Rest-Lease. |
 | `bake --profile linux-full\|linux-server [--from <tag>]` | Baut aus dem Basis-Image ein neues Template (~25–45 min). |
+
+SSH merkt sich **keine** Host-Keys (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`):
+diese VMs leben Minuten, jedes Bake loescht `/etc/ssh/ssh_host_*`, und der Pool vergibt dieselbe
+DHCP-Adresse wieder — ein gemerkter Schluessel waere also sicher irgendwann falsch, und dann
+kaeme niemand mehr auf die Box, bis jemand die Datei von Hand loescht. Gewonnen war damit
+ohnehin nichts: beim ersten Kontakt wurde jeder Schluessel akzeptiert.
 
 `run` nimmt eine **Login-Shell**, `ssh` nicht. Der Grund ist messbar: `go` steht auf der Box in
 `/etc/profile.d/go.sh`, `cargo` in `~/.cargo/env` ueber `~/.profile` — ein blankes
