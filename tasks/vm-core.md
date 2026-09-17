@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 2a — vm-core: `scripts/vm/vm.py` neben crabbox — Task-Ledger
-Status: erledigt · Branch: feature/vm-core · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (alle zwölf Tasks `[x]`; die vier `[?]` sind Entscheidungen für Kevin, keine offene Arbeit — sie stehen im PR-Body) · Branch: feature/vm-core · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-2.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine crabbox-Suite; die Live-Proben dieses Ledgers (T11, T12) laufen mit `vm.py` selbst im Pool `adminhelper-ci` (D17: Klonen, Baken, Zerstören im Pool ohne Prompt). Jede Probe endet mit `vm.py list` leer.
