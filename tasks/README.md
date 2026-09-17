@@ -26,7 +26,10 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 nie interaktiv** — findet er ohne Pfad mehrere/keine `aktiv`, bricht er mit klarer Meldung ab.
 
 Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe), `Commit-Granularität:`
-(pro Task | pro Komponente | pro Abschnitt), `Review:`, `Modell:`, `Fast-Suite:`
+(pro Task | pro Komponente | pro Abschnitt), `Review:` (**pro Task** | **am Ende** — wann der
+Frischer-Kontext-Review läuft: je Commit-Einheit, oder einmal über den ganzen Branch-Diff.
+`am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks; dann entfällt auch der abschließende
+`/code-review`, weil derselbe Diff sonst zweimal geprüft würde), `Modell:`, `Fast-Suite:`
 (lokal | crabbox — wo Verify + Schnellsuite laufen; `crabbox` in Worktree-Lanes),
 `Warm-Profil:` (desktop | pond — Box-Bedarf; optional `Abschluss: multibox <flags>`,
 bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.

@@ -67,6 +67,11 @@ nutzen; bei einem Report-Backlog zeigt das Feld auf den Report statt auf eine Sp
 (`Status:` = Ledger-Zustand `geplant|aktiv|erledigt|blockiert`. `feature-plan` schreibt
 `geplant` — die menschliche Freigabe bzw. der Start von `/feature-build` macht daraus `aktiv`.
 Nicht mit dem Task-Status `[ ]`/`[x]` verwechseln.)
+(`Review:` = wann der Frischer-Kontext-Review läuft. `pro Task (feature-review)` ist der
+Default. Ein **Kurz-Ledger** mit **≤ 3 Tasks** bekommt stattdessen `Review: am Ende` —
+`feature-build` fährt dann genau **einen** Review über den ganzen Branch-Diff und lässt den
+abschließenden `/code-review` weg; bei drei kleinen Tasks sähe der zweite Durchgang nur
+denselben Diff noch einmal.)
 (`Fast-Suite:` = wo Verify + Schnellsuite laufen: `lokal` (Solo-Session im Haupt-Checkout,
 Default) oder `crabbox` (parallele Worktree-Lane ohne lokale Toolchain-Artefakte — siehe
 AUTONOMOUS.md „Parallel-Betrieb"). Wird das Vorhaben als Lane gebaut → `crabbox` setzen.)

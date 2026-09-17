@@ -100,8 +100,9 @@ nie automatisch gebaut.
      erneut, **einmal** re-reviewen. Danach gelöst → Commit; braucht Entscheidung → `[?]` in
      den Ledger (nicht raten). Max. 2 Runden, dann Commit des Sauberen oder STOPP.
    - `nit`-Punkte optional miterledigen, nie blockierend.
-   (Review-Granularität = Commit-Granularität. Bei Kostendruck kann der Ledger-Kopf
-   `Review: am Ende` setzen — dann nur ein Gesamt-Review in Schritt „Abschluss".)
+   (Review-Granularität = Commit-Granularität. Ein **Kurz-Ledger** (≤ 3 Tasks) trägt im Kopf
+   `Review: am Ende` — dann entfällt dieser Schritt pro Task und es gibt genau **einen**
+   Gesamt-Review im Abschluss.)
 5. **Committen** nach Granularität: *pro Task* → nach jeder grünen, reviewten Task ein
    `feat|fix|refactor(...): …`; *pro Komponente* → wenn alle Einträge **einer Komponente**
    innerhalb des Abschnitts grün+reviewt sind (Default für Report-Backlogs — hält Commits/
@@ -128,8 +129,14 @@ nie automatisch gebaut.
    und `crabbox stop`/reap. **Nur bei realem Pass weiter — SKIP ≠ grün.** (Nutzt VM-Leases, die
    per `-ttl`/`-idle-timeout` self-reapen — nur der single-box-Warm-Loop, kein `multibox`/`bake`
    ohne Nachfrage.)
-3. `/code-review` über den Branch-Diff. Echte neue Bugs als Tasks in den Ledger, fixen,
-   erneut testen.
+3. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:
+   - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
+     ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4) — und **kein**
+     `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
+     zweite Durchgang kostet nur Zeit.
+   - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
+     aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
+   Echte neue Bugs als Tasks in den Ledger, fixen, erneut testen.
 4. **Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen wirkend):
    `git push -u origin <branch>`, dann `gh pr create --draft --title "<type>: <feature>"
    --body "…"` mit Link auf die **Spec** (Pfad aus dem `Spec:`-Ledgerfeld), Task-Zusammenfassung

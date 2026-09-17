@@ -20,7 +20,7 @@ Komponente: .claude · Dateien: .claude/skills/feature-build/SKILL.md, .claude/s
 Verify: grep -c 'model: sonnet' .claude/skills/feature-build/SKILL.md   (≥ 1)   und   grep -c '10 Minuten' .claude/skills/feature-build/SKILL.md .claude/skills/feature-review/SKILL.md   (je ≥ 1)
 Doku: keine (die Skills sind die Doku)
 
-### T2 — Kurz-Ledger: Review am Ende, kein zweiter Gesamt-Review  [ ]
+### T2 — Kurz-Ledger: Review am Ende, kein zweiter Gesamt-Review  [x] (Kopf-Feld `Review:` in plan/build/README, `/code-review` entfällt bei `am Ende`)
 Komponente: .claude · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, tasks/README.md
 Änderung: Ein Ledger mit ≤ 3 Tasks (Kurz-Ledger) bekommt von `feature-plan` den Kopf `Review: am Ende`; `feature-build` fährt dann genau **einen** Frischer-Kontext-Review über den Branch-Diff und lässt den abschließenden `/code-review` weg (der eine Reviewer sieht denselben Diff). Große Ledger bleiben bei Review pro Task plus `/code-review`. `tasks/README.md`: Kopf-Konvention `Review: pro Task | am Ende` erklärt.
 Verify: grep -n 'am Ende' .claude/skills/feature-build/SKILL.md .claude/skills/feature-plan/SKILL.md tasks/README.md   (je ≥ 1 Treffer)
