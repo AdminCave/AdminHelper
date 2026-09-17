@@ -77,12 +77,24 @@ nie automatisch gebaut.
      berichten. Nicht auf rotem Fundament weiterbauen.
 4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): erst die berührten Dateien
    gezielt stagen (`git add -- <pfade>`, **kein** `git add -A`), damit ein echter Diff
-   existiert. Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`) mit
-   einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst `.claude/skills/feature-review/
-   SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er lädt den Skill NICHT von selbst);
-   (b) der zu prüfende Diff ist `git diff --staged`; (c) die Soll-Vorgabe ist die Task +
-   die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des Ledger-Kopfs).
-   Er sieht **nur** das — nicht deinen Bau-Verlauf. Urteil:
+   existiert. Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`,
+   `model: sonnet`) mit einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst
+   `.claude/skills/feature-review/SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er
+   lädt den Skill NICHT von selbst); (b) der zu prüfende Diff ist `git diff --staged`; (c) die
+   Soll-Vorgabe ist die Task + die Spec/Report-Stelle (Pfad aus dem `Spec:`-Feld des
+   Ledger-Kopfs); (d) **die Suiten sind bereits gelaufen** — er fährt sie NICHT nach, sondern
+   prüft die im Auftrag zitierte Summary-Zeile gegen den Diff und macht höchstens gezielte
+   Mutations-Proben (einen einzelnen Test lesen oder ausführen, um zu sehen, ob er ohne den
+   Fix rot würde). Er sieht **nur** das — nicht deinen Bau-Verlauf.
+   - **Modell:** `model: sonnet` ist der Default. `opus` **nur**, wenn der Diff einen
+     **Risikopfad** berührt: PKI/mTLS, Auth/AuthZ, SSRF-Guards, DB-Migrationen (Alembic),
+     Release-Workflows (`.github/workflows/release*`, `scripts/install.sh`/`update.sh`).
+   - **Zeitbudget 10 Minuten.** Liegt nach ~10 Minuten kein Urteil vor: den Agent stoppen
+     (`TaskStop`) und **einmal** einen frischen mit engerem Prompt starten (nur die geänderten
+     Dateien und die Kriterien 1–4 nennen). Bleibt auch der ohne Urteil → selbst gegen dieselben
+     Kriterien reviewen, committen und im Ledger kennzeichnen:
+     `[x] (Review: selbst — Sub-Agent ohne Urteil)`.
+   Urteil:
    - `approve` → weiter zum Commit.
    - `request_changes` mit `blocker`/`wichtig` → Punkte beheben, betroffene Schnelltests
      erneut, **einmal** re-reviewen. Danach gelöst → Commit; braucht Entscheidung → `[?]` in

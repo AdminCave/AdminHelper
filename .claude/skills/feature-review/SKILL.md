@@ -7,7 +7,8 @@ description: Frischer-Kontext-Reviewer für einen Task-/Commit-Diff — prüft A
 
 Zweck: eine **zweite, unvoreingenommene Instanz** prüft den Code, den ein anderer Kontext
 geschrieben hat. Der Wert liegt genau im **frischen Kontext** — der Reviewer kennt die
-Implementierungs-Ausreden nicht und sieht nur das Ergebnis. Läuft auf Opus.
+Implementierungs-Ausreden nicht und sieht nur das Ergebnis. Läuft auf **Sonnet** — Opus
+nur bei einem Risikopfad im Diff (`feature-build`, Schritt 4).
 
 **Wichtig:** Diesen Review IMMER in frischem Kontext fahren — als eigenständigen Aufruf,
 unter `/loop`, oder (aus `feature-build` heraus) als **frischer Sub-Agent** (Agent-Tool,
@@ -17,6 +18,23 @@ unter `/loop`, oder (aus `feature-build` heraus) als **frischer Sub-Agent** (Age
 - Der zu prüfende **Diff** (`git diff` gegen den Merge-Base von `main`, oder der staged Diff
   einer Commit-Einheit) plus die zugehörige **Task/Spec** als Soll-Vorgabe: der
   `tasks/<slug>.md`-Eintrag und die Stelle, auf die das `Spec:`-Feld des Ledger-Kopfs zeigt.
+
+## Zeitbudget: 10 Minuten, keine vollen Suiten
+
+Der Review ist eine **Lese-Prüfung**, kein zweiter Testlauf. Die Schnellsuite der berührten
+Komponente ist vor dem Review real gelaufen; ihre Summary-Zeile (`N passed, M failed,
+K skipped`) steht im Auftrag.
+
+- **Keine vollen Suiten nachfahren** (`run.sh`, `verify.sh`, `pytest` über eine Komponente) —
+  das kostet Minuten und wiederholt nur, was schon bewiesen ist. Stattdessen die zitierte
+  Summary gegen den Diff halten; fehlt sie, oder passt sie nicht zum Diff, ist genau **das**
+  der Befund.
+- Erlaubt sind **gezielte Proben**: einen einzelnen Test lesen oder laufen lassen, um zu
+  prüfen, ob er ohne den Fix rot würde (Kriterium 3).
+- **Nach ~10 Minuten steht ein Urteil.** Reicht die Zeit nicht für alle 7 Kriterien, urteile
+  über die geprüften und schreibe dazu, welche offen blieben — ein `approve` mit benannter
+  Lücke ist ehrlicher als kein Urteil. Der Aufrufer stoppt einen Reviewer ohne Urteil und
+  startet einen engeren.
 
 ## Prüf-Kriterien (jede Änderung gegen ALLE durchgehen)
 1. **Auftragstreue.** Setzt der Diff **genau** die Task um — nicht weniger (fehlende Teile
