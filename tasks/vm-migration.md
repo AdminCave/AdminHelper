@@ -94,4 +94,4 @@ Abhängt von: T9
 
 ## Aus 2a mitgebracht (T8-Review)
 - `scripts/vm/lib.sh` und `scripts/tests/crabbox_lib.sh` definieren beide `warm_get/set/clear` — gleiche Namen, verschiedene Dateien (`.vm/warm.env` vs. `.crabbox/warm.env`). Heute sourct nichts beide. Beim Umbau von `scripts/dev/lane.sh` (das heute `crabbox_lib.sh` sourct) darauf achten: wer beide sourct, liest still die falsche Datei.
-- `scripts/tests/heavy_test.sh:381` ist ein echter Flake: `git -C "$FIX" worktree list | grep w2` greppt die ganze Zeile, und ein `mktemp`-Suffix wie `tOAiKkw2Uv` enthält `w2` — grob 1 von 40 Läufen wird grundlos rot. Gegen den Pfad ankern (`grep -E '/w2$'`). Vom T8-Reviewer gefunden, gehört als BUG-Zeile in die Roadmap.
+- ~~`scripts/tests/heavy_test.sh:381` Flake~~ — **in 2a behoben** (Commit zu T12): der Teilstring-Vergleich ist durch den exakten Pfad ersetzt, nachdem der Flake einen `verify.sh`-Lauf dieses Vorhabens rot gemacht hatte. Keine Roadmap-Zeile mehr nötig.

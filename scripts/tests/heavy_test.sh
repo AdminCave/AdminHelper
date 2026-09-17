@@ -378,7 +378,10 @@ grep -q 'AH_LANE=w2' "$SHIM_STATE/w2.args" \
   && ok "the second box ran in lane w2 (its own pond)" \
   || bad "w2 args: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
 grep -q 'w2 reap shim' "$SHIM_STATE/w2.args" && ok "the second pond was reaped" || bad "no reap"
-[ -z "$(git -C "$FIX" worktree list | grep w2)" ] \
+# The exact path, not `grep w2`: `git worktree list` prints the full path, and
+# $FIX is a mktemp directory whose random suffix contains "w2" roughly once in
+# forty runs — which turned this assertion into a random red (seen 2026-09-17).
+[ -z "$(git -C "$FIX" worktree list | grep -F "$FIX/.crabbox-worktrees/w2")" ] \
   && ok "the w2 worktree was removed" \
   || bad "worktree left behind: $(git -C "$FIX" worktree list)"
 [ -d "$FIX/.crabbox-worktrees/w2" ] && bad "w2 directory left behind" || ok "no w2 directory left behind"
