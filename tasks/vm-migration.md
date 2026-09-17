@@ -29,7 +29,7 @@ Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T9)
 Abhängt von: T1
 
-### T3 — `scripts/vm/bake.sh` und `scripts/vm/bootstrap_linux.sh`  [ ]
+### T3 — `scripts/vm/bake.sh` und `scripts/vm/bootstrap_linux.sh`  [x] (Bootstrap umgezogen + sieben `|| true` hart (locale-gen, update-locale, ruff, pytest, docker enable, usermod, rustup component), bake.sh als dünner vm.py-Aufruf; `crabbox_bake.sh` gelöscht statt bis T6 mit totem Bootstrap-Pfad liegen zu lassen)
 Komponente: scripts · Dateien: scripts/vm/bake.sh (neu, SPDX), scripts/vm/bootstrap_linux.sh (git mv aus scripts/tests/crabbox_bootstrap.sh; `|| true`-Stellen hart), .github/workflows/ci.yml (Job `frp-consistency`: Pfad des Bootstraps)
 Änderung: `bake.sh <linux-full|linux-server>` = dünner Aufruf von `vm.py bake --profile …` mit Ergebniszeile (VMID, Tag, Dauer). Bootstrap-Umzug ohne Logikänderung außer den harten Fehlern; `vm.py bake` und `warm.sh` zeigen auf den neuen Pfad. `frp-consistency` greppt `FRP_VERSION`/SHA aus `scripts/vm/bootstrap_linux.sh`.
 Verify: bash scripts/tests/run.sh lint --strict --only scripts   — plus nach dem Push: Job `frp-consistency` grün

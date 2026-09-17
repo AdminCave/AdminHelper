@@ -2309,7 +2309,7 @@ def test_bake_runs_bootstrap_then_the_warmup_then_the_clean(keyed, api, http, cl
     verb("bake", keyed, api, "--profile", "linux-server")
     runs = shell.of("ssh")[1:]  # [0] is wait_for's own reachability probe
     commands = [r["argv"][-1] for r in runs]
-    assert "AH_BOOTSTRAP_PROFILE=server bash scripts/tests/crabbox_bootstrap.sh" in commands[0]
+    assert "AH_BOOTSTRAP_PROFILE=server bash scripts/vm/bootstrap_linux.sh" in commands[0]
     assert "AH_ALLOW_REAL=1 bash scripts/tests/run.sh unit" in commands[1]
     assert "truncate -s0 /etc/machine-id" in commands[2]
     assert "cloud-init clean" in commands[2]
@@ -2323,7 +2323,7 @@ def test_bake_runs_bootstrap_then_the_warmup_then_the_clean(keyed, api, http, cl
 def test_the_bootstrap_installs_the_guest_agent():
     # Without it a baked template's clones never get an address, and `wait`
     # would hang on every lease off it.
-    with open(os.path.join(vm.ROOT, "scripts/tests/crabbox_bootstrap.sh")) as fh:
+    with open(os.path.join(vm.ROOT, "scripts/vm/bootstrap_linux.sh")) as fh:
         bootstrap = fh.read()
     assert "qemu-guest-agent" in bootstrap
     assert "systemctl enable --now qemu-guest-agent" in bootstrap

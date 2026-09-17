@@ -1609,8 +1609,7 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
         steps = [
             (
                 "bootstrap",
-                "AH_BOOTSTRAP_PROFILE=%s bash scripts/tests/crabbox_bootstrap.sh"
-                % meta["bootstrap"],
+                "AH_BOOTSTRAP_PROFILE=%s bash scripts/vm/bootstrap_linux.sh" % meta["bootstrap"],
                 BOOTSTRAP_LIMIT,
                 True,
             ),
