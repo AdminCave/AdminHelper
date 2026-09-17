@@ -53,14 +53,28 @@ nie automatisch gebaut.
    - **Schon erledigt / hinfällig / Falsch-Positiv** → Code NICHT anfassen, `[~]` + ein Satz.
    - **Braucht Entscheidung / destruktiv / mehrdeutig** → NICHT raten, `[?]` + kurze Frage,
      überspringen (das ist ein legitimes Ergebnis, kein Versagen).
-3. Erst das `Verify:` des Eintrags ausführen, dann die **schnelle Suite der berührten
-   Komponente(n)** — in Flag-Form, weil eine Allow-Regel nie über ein Env-Präfix matcht:
-   - `bash scripts/dev/verify.sh <komponente> --strict` — fährt den **quick**-Layer
-     dieser Komponente (Lint *und* Unit: ruff/gofmt/shellcheck plus die Suite),
-     löst `.devenv.sh`/`AH_TEST_DB` selbst auf und schreibt `last-verify.json`;
-     gezielte Args nach `--` (z. B. `… server --strict -- tests/test_auth.py`).
-   - Mehrere Komponenten auf einmal: `bash scripts/tests/run.sh quick --strict --only <komp…>`.
-     Keys: server monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts.
+3. **Testen in zwei Ebenen: gezielt pro Task, voll vor dem Commit.** Befehle in Flag-Form,
+   weil eine Allow-Regel nie über ein Env-Präfix matcht:
+   - **Pro Task nur das `Verify:` des Eintrags, mit gezielten Args** —
+     `bash scripts/dev/verify.sh <komponente> --strict -- <pfad/zum/test>` (z. B.
+     `… server --strict -- tests/test_auth.py`). Die ganze Komponenten-Suite nach jeder
+     einzelnen Task kostet Minuten und beweist nichts, was der Check vor dem Commit nicht
+     auch beweist.
+   - **Einmal unmittelbar vor dem Commit die volle Schnellsuite der berührten
+     Komponente(n):** `bash scripts/dev/verify.sh <komponente> --strict` — fährt den
+     **quick**-Layer dieser Komponente (Lint *und* Unit: ruff/gofmt/shellcheck plus die
+     Suite), löst `.devenv.sh`/`AH_TEST_DB` selbst auf und schreibt `last-verify.json`.
+     Mehrere Komponenten auf einmal: `bash scripts/tests/run.sh quick --strict --only <komp…>`.
+     Keys: server monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts. Deren
+     Summary-Zeile ist die Evidenz, die der Reviewer in Schritt 4 zitiert bekommt.
+   - **Ein Lauf zur Zeit — nie zwei Testläufe gleichzeitig.** Die Server-Suite teilt sich
+     **eine** Postgres-Test-DB (`AH_TEST_DB`), und die Alembic-Smoke legt pro Lauf eine
+     Wegwerf-DB darin an: ein zweiter Lauf daneben ist **verworfen, nicht rot** — er beweist
+     nichts und nimmt dem ersten seine Aussage. Einen Lauf starten, seine Summary abwarten,
+     dann den nächsten.
+   - **Lange Läufe nicht als Hintergrund-Bash**, sondern im tmux mit Wächter (CLAUDE.md § 2
+     „Lange Läufe laufen überwacht"): ein Hintergrund-Task wird gekillt und puffert seine
+     Ausgabe bis zum Ende, im tmux bleibt der Lauf sichtbar und überlebt.
    - `--strict` ist Pflicht: ohne das Flag zählt ein SKIP als Erfolg, und genau daran
      ist die alte Kette grün geworden, ohne dass etwas lief.
    - Bei `Fast-Suite: crabbox`: dieselben Checks remote über `crabbox_iter.sh` (s. „Vor

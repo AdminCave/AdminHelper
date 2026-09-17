@@ -113,6 +113,12 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
   apps/server/.venv/bin/python -m pytest -q
 ```
 
+**Immer nur ein `server`-Lauf zur Zeit.** Alle Laeufe teilen sich diese eine Test-DB, und die
+Alembic-Smoke legt darin pro Lauf eine Wegwerf-DB an: zwei gleichzeitige Laeufe raeumen
+einander die Tabellen weg. Das Ergebnis ist dann **verworfen, nicht rot** — es sagt weder
+„gruen" noch „kaputt", nur „nichts bewiesen". Also einen Lauf starten, seine Summary-Zeile
+abwarten, dann den naechsten.
+
 ### Schnelltest einer Komponente: verify.sh
 
 `scripts/dev/verify.sh` ist die eine Form, in der eine Task-`Verify:`-Zeile eine

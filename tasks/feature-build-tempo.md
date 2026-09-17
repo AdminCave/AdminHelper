@@ -26,7 +26,7 @@ Komponente: .claude · Dateien: .claude/skills/feature-build/SKILL.md, .claude/s
 Verify: grep -n 'am Ende' .claude/skills/feature-build/SKILL.md .claude/skills/feature-plan/SKILL.md tasks/README.md   (je ≥ 1 Treffer)
 Doku: tasks/README.md
 
-### T3 — Testläufe: gezielt pro Task, voll vor dem Commit, nie parallel  [ ]
+### T3 — Testläufe: gezielt pro Task, voll vor dem Commit, nie parallel  [x] (zwei Test-Ebenen in Schritt 3, Ein-Lauf-Regel, tmux; DEVELOPMENT.md + CHANGELOG)
 Komponente: .claude · Dateien: .claude/skills/feature-build/SKILL.md, DEVELOPMENT.md
 Änderung: Schritt 3 des Build-Skills: pro Task nur das `Verify:` mit gezielten Args; die volle Komponenten-Suite einmal unmittelbar vor dem Commit; **nie zwei Testläufe gleichzeitig** (die Server-Suite teilt sich eine Postgres-Datenbank; ein paralleler Lauf ist verworfen, nicht rot); lange Läufe nicht als Hintergrund-Bash, sondern per tmux (D21). DEVELOPMENT.md „Python-Tests lokal": ein Satz zur geteilten Test-DB.
 Verify: bash scripts/tests/run.sh lint --strict --only scripts   (Doku/Skill-Text; shellcheck unberührt) und   grep -c 'nie zwei' .claude/skills/feature-build/SKILL.md   (≥ 1)
