@@ -35,7 +35,7 @@ Komponente: scripts · Dateien: scripts/vm/bake.sh (neu, SPDX), scripts/vm/boots
 Verify: bash scripts/tests/run.sh lint --strict --only scripts   — plus nach dem Push: Job `frp-consistency` grün
 Doku: keine (T9)
 
-### T4 — `scripts/tests/multibox.sh` aus `crabbox_multibox.sh`  [ ]
+### T4 — `scripts/tests/multibox.sh` aus `crabbox_multibox.sh`  [x] (Szenario-Tag statt Pond, Teardown per `destroy --scenario`, `doctor` vor dem ersten Klon, kein Lease-Retry; hermetischer Test fand den `if ! cmd; then rc=$?`-Fehler, der eine abgelehnte Kapazitätsprüfung als Exit 0 durchgehen ließ. `heavy.sh` zieht komplett in T5 um statt hier nur den Wrapper-Namen zu tauschen — eine Datei, ein Commit)
 Komponente: scripts · Dateien: scripts/tests/multibox.sh (git mv + Umbau), scripts/tests/multibox_test.sh (neu, SPDX; hermetisch mit Fake-`vm.py`, in `AH_SCRIPT_TESTS_DEFAULT`), scripts/tests/heavy.sh (nur Wrapper-Name)
 Änderung: `lease()` = `vm.py clone --profile <linux-server|linux-full> --role <r> --scenario $sc --ttl 90m` + `vm.py wait`; Rollen-RAM aus `profiles.json`; vor dem ersten Klon `vm.py doctor --roles <alle geplanten>` → Exit 74 `capacity` mit Liste; Klone seriell; Teardown per `trap`: `vm.py destroy --scenario $sc` (`--keep` lässt stehen); `AH_DESKTOP_VM` (Alias `AH_DESKTOP_ID` ein Release lang) statt Slug; Summary `multibox: N ok, M failed, K skipped  (server=<ip>, agents=…)`; Flags `--agents --rpm --tunnel --desktop --moncheck --enforce --capstone --keep --strict` unverändert; kein Lease-Retry mehr (crabbox-Rennen entfällt; ein Klon-Fehler ist Exit 74 aus `vm.py`). Hermetischer Test: Reihenfolge der `vm.py`-Aufrufe, Teardown bei Fehler, `--keep`, Summary-Format.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
