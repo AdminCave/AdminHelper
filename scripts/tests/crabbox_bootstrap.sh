@@ -22,6 +22,13 @@ GO_VERSION="${AH_GO_VERSION:-1.25.0}"
 GO_SHA256_LINUX_AMD64="${AH_GO_SHA256:-2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613}"
 NODE_MAJOR="${AH_NODE_MAJOR:-22}"
 TAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"
+# Pinned, and to the same version ci.yml installs: a bake picks up whatever pip
+# offers that day, and a newer ruff enables rules this repo never opted into.
+# The 2026-09-17 bake proved it — a fresh template's `run.sh lint` went red with
+# UP017/B008/RUF100 while the dev box and CI were green, which reads as "the
+# tree is broken" and is really "the box is newer". Keep in sync with
+# .github/workflows/ci.yml and the floor in apps/server/requirements-dev.txt.
+RUFF_VERSION="${AH_RUFF_VERSION:-0.15.20}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # Profile: full (default — everything, for the single-box run.sh incl. desktop GUI
 # E2E) | server (docker stack only) | agent (Go agent + packaging). server/agent
@@ -120,8 +127,9 @@ log "generate a valid UTF-8 locale (headless boxes default to C — breaks Intl.
 $SUDO locale-gen en_US.UTF-8 >/dev/null 2>&1 || true
 $SUDO update-locale LANG=en_US.UTF-8 >/dev/null 2>&1 || true
 
-log "ruff (Python lint, used by run.sh lint)"
-$SUDO pip3 install --break-system-packages -q ruff || pipx install ruff || true
+log "ruff $RUFF_VERSION (Python lint, used by run.sh lint)"
+$SUDO pip3 install --break-system-packages -q "ruff==$RUFF_VERSION" \
+  || pipx install "ruff==$RUFF_VERSION" || true
 
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then

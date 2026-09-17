@@ -112,8 +112,15 @@ Verify: python3 scripts/vm/vm.py list   → Exit 0, keine `ah`-VM   (nach der Pr
 Doku: keine
 Abhängt von: T9
 
-### T12 — Live-Beweis Bake: `linux-server` und Rebake `linux-full`  [ ]
-Komponente: scripts · Dateien: tasks/vm-core.md (Anhang), scripts/vm/profiles.json (falls Tag/Namen nachjustiert)
+### T12 — Live-Beweis Bake: `linux-server` und Rebake `linux-full`  [x] (beide Bakes grün, `doctor --roles probe` danach **vollständig ok**)
+Drei Funde, die erst der echte Bake zutage gefördert hat — zwei davon hätten auch CI rot gemacht:
+1. **`vm.py run … -- <cmd>` war auf Python 3.12 kaputt.** argparse lernt erst in 3.13, das `--` vor einem `nargs="*"`-Positional zu entfernen; auf der Box (Ubuntu 24.04, Python 3.12) starb genau die Syntax, die der Ledger vorschreibt, mit `unrecognized arguments: -- true`. `main()` schneidet das `--` jetzt selbst ab (`split_command`), die Testhelfer ebenso. **Der CI-Job `ops-scripts` läuft auf demselben Python** — der `vm-pytest`-Schritt aus T9 wäre dort rot geworden.
+2. **Der TLS-Test setzte 3.13 voraus.** `VERIFY_X509_STRICT` ist erst ab 3.13 per Default gesetzt; die Vorab-Assertion („das Flag ist im Default an") wurde auf 3.12 zum Testfehler. Sie ist durch die portable Fassung ersetzt: gleich dem Default **minus** dem Flag — das pinnt auf beiden Pythons „strict ist aus und sonst wurde nichts angefasst".
+3. **`crabbox_bootstrap.sh` installierte `ruff` ungepinnt** (Zeile 124). Das frisch gebackene Template bekam heute eine neuere ruff mit Default-Regeln, die dieses Repo nie aktiviert hat (`UP017`, `B008`, `RUF100`) — `run.sh lint` auf der Box ging rot, während Dev-Box und CI grün waren. **Das hätte jedes künftige Rebake getroffen**, nicht nur diesen Lauf. Jetzt auf `0.15.20` gepinnt, dieselbe Version, die `ci.yml` installiert, mit Kommentar auf die Kopplung (`ci.yml` ↔ `apps/server/requirements-dev.txt` ↔ Bootstrap). **Über den Ledger-Text hinaus** (T7 erlaubte an dieser Datei nur die `qemu-guest-agent`-Zeile) — ohne den Pin ist das `Verify` dieser Task aber nicht erreichbar, und die Ursache liegt genau dort.
+Dazu eine Ergänzung an `bake` selbst: es meldete fertig, **bevor** sein Template in `/cluster/resources` sichtbar war, und der unmittelbar folgende `clone --profile linux-server` bekam „no template tagged" für ein Template, das es gab — der Cache-Verzug aus der T1-Aufzeichnung. `bake` wartet jetzt begrenzt (60 s) auf die eigene Sichtbarkeit und sagt es, wenn der Cache nicht nachkommt.
+[?] **Für Kevin:** Das erste, mit ungepinnter ruff gebackene `linux-server`-Template **3900** bleibt stehen — `destroy` verweigert Templates bewusst. Das neue gewinnt automatisch (gleiches `built-`-Datum, höhere VMID), aber 3900 gehört von Hand gelöscht.
+Nachfolge-Vorschlag für die Roadmap: ein Lockstep-Guard für den ruff-Pin (wie `toolchain-lockstep.sh` für die Go-Module), damit die drei Stellen nicht wieder auseinanderlaufen.
+Komponente: scripts · Dateien: tasks/vm-core.md (Anhang), scripts/vm/vm.py (`split_command`, Sichtbarkeits-Warten), scripts/vm/tests/test_vm.py, scripts/tests/crabbox_bootstrap.sh (ruff-Pin) — `profiles.json` blieb unverändert
 Änderung: `vm.py bake --profile linux-server` (~25 min) und `vm.py bake --profile linux-full` (~45 min), jeweils gefolgt von Probe-Klon → `wait` → `run -- 'bash scripts/tests/run.sh lint'` → `N passed, 0 failed, 0 skipped` → `destroy`. `doctor` zeigt danach je Profil das neue `built-<datum>` als Auswahl. Alte Templates bleiben (Kevin löscht von Hand). Ergebnis (Dauer, VMIDs, Tags) in den Anhang.
 Verify: python3 scripts/vm/vm.py doctor --roles probe   → `ok templates: linux-full built-<datum>, linux-server built-<datum>, …`
 Doku: keine
@@ -143,3 +150,26 @@ Alle Läufe mit `vm.py` selbst, jede VM im selben Lauf wieder zerstört; `vm.py 
 | **Negativ:** `destroy 100` (VM außerhalb des Pools) | Exit **2**, `no VM '100' in pool adminhelper-ci` — kein 403, die VM ist für das Token nicht einmal sichtbar. |
 | **Negativ:** `destroy 9402` (Template) | Exit **2**, `9402 is a template — those are Kevin's to delete, not ours`. |
 | **Auto-Reap:** `--ttl 1m`, 130 s warten | `list` zeigt die VM weiter als `EXPIRED` und meldet den Leak (Exit ≠ 0) — ein Bericht hat keine Nebenwirkungen. Der nächste beliebige Verb-Aufruf kehrt sie weg, **auch wenn er selbst scheitert**: `snap 9999 s1` → Exit 2 und `vm.py: reaped expired 3000 ah-probe-main-c07a`. |
+
+
+## Anhang — Live-Beweis T12 (2026-09-17, Pool `adminhelper-ci`)
+
+Zwei Bakes plus je ein Probe-Klon, jede VM im selben Lauf zerstört.
+
+| Schritt | Ergebnis |
+|---|---|
+| `bake --profile linux-server` | **22,5 min** → Template **3901** `ah-tpl-linux-server;built-20260917`, `ciuser=adminhelper`. Warmup auf der Box: `run.sh unit` → `9 passed, 0 failed, 1 skipped` (der Skip ist die Desktop-GUI, die es auf dem Server-Profil nicht gibt). |
+| Probe `linux-server` | Klon 6,3 s · `wait` 41,4 s · `run.sh lint` **`6 passed, 0 failed, 0 skipped`** in 33,3 s · zerstört; 83 s im Ganzen. |
+| `bake --profile linux-full` | **56,4 min** → Template **3902** `ah-tpl-linux-full;built-20260917`. Warmup: `run.sh unit` → **`10 passed, 0 failed, 0 skipped`** — ein vollständig warmes Template, alle Toolchains da. |
+| Probe `linux-full` | Klon 6,3 s · `wait` 46,8 s · `run.sh lint` **`6 passed, 0 failed, 0 skipped`** in 46,1 s · zerstört; 104 s im Ganzen. |
+| `doctor --roles probe` | **alle sieben `ok`**, u. a. `templates: base-debian undated (9401), base-ubuntu undated (9400), linux-full 20260917 (3902), linux-server 20260917 (3901)` und `template-config: guest agent on, bridge vmbr1, 4 template(s)`. |
+| `list` | keine eigene VM; Pool trägt nur Templates. |
+
+**Der verworfene erste Durchlauf, vollständigkeitshalber:** `bake --profile linux-server` lief in **22,8 min** durch (Template 3900), aber seine Probe war **rot** — `run.sh lint` auf der frischen Box meldete `4 passed, 2 failed, 0 skipped` mit `UP017`, `B008` und `RUF100`, weil das Template die ungepinnte, zu neue ruff trug. Genau dieser rote Lauf ist der Beleg für Fund 3. Der anschließend laufende `linux-full`-Bake wurde abgebrochen (sein Klon hätte dieselbe ruff bekommen), sein Klon von Hand weggeräumt — er trug seinen 4-h-Lease-Tag, wäre also auch vom Reaper erfasst worden. Nach dem Pin wurden beide Profile neu gebacken. `newest_template` wählt bei gleichem `built-`-Datum die höhere VMID, 3901 gewinnt also gegen 3900; 3900 gehört trotzdem von Hand gelöscht.
+
+## Abschluss
+
+- `bash scripts/dev/verify.sh all --strict` → **16 passed, 0 failed, 0 skipped** (5 pytest-interne test-skips, Bestand).
+- `bash scripts/tests/run.sh quick` → `14 passed, 0 failed, 2 skipped` ohne gesourctes `.devenv.sh`; mit Toolchain (`verify.sh all`) 0 Skips.
+- Keine crabbox-Schwersuite: der Branch-Diff berührt keinen der path-gated Pfade (`apps/server`-API/Gateway, `ca-issuer`, `gateway`, `agent`, Desktop-Connect/Tunnel/Enrollment, `docker-compose*`, `Dockerfile`, `scripts/install|update`, FRP/PKI). Stattdessen sind **drei echte Bakes und drei Probe-Klone** auf echten VMs gelaufen (der erste Bake verworfen, siehe unten) — der stärkere Beweis für genau diese Änderung.
+- `vm.py list` leer, `crabbox list` unberührt (crabbox wurde in diesem Vorhaben nicht angefasst).

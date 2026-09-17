@@ -1485,6 +1485,7 @@ BOOTSTRAP_LIMIT = 2700
 WARMUP_LIMIT = 1800
 CLEAN_LIMIT = 600
 SHUTDOWN_LIMIT = 300
+TEMPLATE_VISIBLE_LIMIT = 60  # how long to wait for the resource cache to show our own template
 CLEAN_SCRIPT = (
     "sudo apt-get clean && "
     "sudo cloud-init clean --logs && "
@@ -1620,6 +1621,50 @@ def verb_bake(cfg: Config, api: Api, args) -> int:
             raise Infra("%s (VM %d was removed again)" % (exc, newid)) from exc
         raise
 
+    # The resource list is a cache, and it lagged behind the fresh template by
+    # seconds in the T12 run: `bake` said done and the very next `clone
+    # --profile <what was just baked>` answered "no template tagged …". Waiting
+    # for our own result to become visible is what makes the two commands
+    # composable.
+    deadline = time.monotonic() + TEMPLATE_VISIBLE_LIMIT
+    while True:
+        try:
+            # One snapshot per round, and inside the guard: the template is
+            # built, tagged and ours by now, so a listing that cannot be read
+            # must not throw that away — nor eat the result line below.
+            vms = pool_vms(cfg, api)
+        except VmError as exc:
+            print(
+                "note: %d is built and tagged; the resource list could not be read (%s)"
+                % (newid, exc)
+            )
+            break
+        seen = newest_template(vms, meta["template_tag"])
+        if seen is not None and seen["vmid"] == newid:
+            break
+        # "Visible" has to mean what `clone` means by it — a template carrying
+        # our tag. During the lag the entry IS in the list, with its old fields
+        # (still a running VM, still wearing its lease tags), and a bare VMID
+        # test would end the wait on exactly the case it exists for.
+        mine = any(
+            v["vmid"] == newid and v.get("template") and meta["template_tag"] in tags_of(v)
+            for v in vms
+        )
+        if mine and seen is not None:
+            print(
+                "note: %d is built, but %d wins the tie-break for %s — "
+                "`clone --profile %s` would take %d"
+                % (newid, seen["vmid"], meta["template_tag"], args.profile, seen["vmid"])
+            )
+            break
+        if time.monotonic() >= deadline:
+            print(
+                "note: %d is built and tagged, but the cluster resource list still does not "
+                "show it — give it a moment before cloning from it" % newid
+            )
+            break
+        time.sleep(2)
+
     print("%d %s %s;built-%s" % (newid, name, meta["template_tag"], day))
     return 0
 
@@ -1748,9 +1793,31 @@ def auto_reap(cfg: Config, api: Api, verb: str) -> None:
         sys.stderr.write("vm.py: the lane sweep did not finish: %s\n" % exc)
 
 
+def split_command(argv: list) -> tuple:
+    """Cut the argument list at the first `--`; everything after it is a command.
+
+    Not argparse's job, on purpose: only Python 3.13 learned to drop that `--`
+    before a `nargs="*"` positional, and on 3.12 — the box, and the CI runner —
+    the very syntax the ledger specifies (`run <vm> --sync -- <cmd>`) died with
+    "unrecognized arguments". Doing it here makes the CLI behave the same on
+    both, and `argparse.REMAINDER` is no alternative: after a positional it
+    swallows every later option.
+    """
+    if "--" not in argv:
+        return argv, []
+    cut = argv.index("--")
+    return argv[:cut], argv[cut + 1 :]
+
+
 def main(argv=None) -> int:
     parser = build_parser()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    argv, command = split_command(argv)
     args = parser.parse_args(argv)
+    if command:
+        if not hasattr(args, "cmd"):
+            parser.error("%s takes no command after `--`" % (args.verb or "vm.py"))
+        args.cmd = list(args.cmd or []) + command
     if not args.verb:
         parser.print_help()
         return 2

@@ -15,6 +15,20 @@ import vm
 from conftest import current_of, fixture, tagged_resources
 
 
+def parse(*argv):
+    """Parse the way main() does — `--` is cut out before argparse sees it,
+    because only Python 3.13 drops it on its own and the box runs 3.12."""
+    head, command = vm.split_command(list(argv))
+    args = vm.build_parser().parse_args(head)
+    if command:
+        args.cmd = list(getattr(args, "cmd", None) or []) + command
+    return args
+
+
+def verb(name, cfg, api, *argv):
+    return getattr(vm, "verb_" + name)(cfg, api, parse(name, *argv))
+
+
 # ── configuration ────────────────────────────────────────────────────────────
 def test_config_reads_settings_local(tmp_path):
     claude = tmp_path / ".claude"
@@ -75,7 +89,11 @@ def test_falsy_flag_spellings(cfg, raw):
 # ── TLS ──────────────────────────────────────────────────────────────────────
 def test_the_context_verifies_everything_but_the_strict_flag(cfg, monkeypatch):
     real = vm.ssl.create_default_context
-    assert real().verify_flags & vm.ssl.VERIFY_X509_STRICT, "the flag we clear is on by default"
+    # Python 3.13 sets VERIFY_X509_STRICT by default and 3.12 does not, so the
+    # equality below is the portable assertion: it pins "the strict flag is off
+    # and nothing else was touched" on either. On 3.13 it also catches the
+    # clearing being removed, which is the mutation that matters.
+    default_flags = real().verify_flags
     seen = {}
 
     def fake(cafile=None):
@@ -89,7 +107,7 @@ def test_the_context_verifies_everything_but_the_strict_flag(cfg, monkeypatch):
     assert ctx.verify_mode == vm.ssl.CERT_REQUIRED
     # Equality, not a bit test: "everything but the strict flag" has to mean
     # that nothing else was cleared on the way past.
-    assert ctx.verify_flags == real().verify_flags & ~vm.ssl.VERIFY_X509_STRICT
+    assert ctx.verify_flags == default_flags & ~vm.ssl.VERIFY_X509_STRICT
 
 
 def test_the_context_is_built_once(cfg, monkeypatch):
@@ -444,7 +462,7 @@ def green_doctor(http, resources=None, node=None):
 
 
 def doctor(cfg, api, *argv):
-    return vm.verb_doctor(cfg, api, vm.build_parser().parse_args(["doctor", *argv]))
+    return vm.verb_doctor(cfg, api, parse("doctor", *argv))
 
 
 def test_doctor_is_green_when_everything_is_in_place(cfg, api, http, capsys):
@@ -692,7 +710,7 @@ def clone_ready(http, resources=None, node=None):
 
 
 def clone(cfg, api, *argv):
-    return vm.verb_clone(cfg, api, vm.build_parser().parse_args(["clone", *argv]))
+    return vm.verb_clone(cfg, api, parse("clone", *argv))
 
 
 @pytest.fixture
@@ -954,7 +972,7 @@ def test_an_ambiguous_name_is_refused(cfg, api, http):
 
 # ── wait ─────────────────────────────────────────────────────────────────────
 def wait(cfg, api, *argv):
-    return vm.verb_wait(cfg, api, vm.build_parser().parse_args(["wait", *argv]))
+    return vm.verb_wait(cfg, api, parse("wait", *argv))
 
 
 def test_wait_returns_the_guests_own_ipv4(cfg, api, http, clock, monkeypatch, capsys):
@@ -1307,10 +1325,6 @@ def reachable(http):
     return http
 
 
-def verb(name, cfg, api, *argv):
-    return getattr(vm, "verb_" + name)(cfg, api, vm.build_parser().parse_args([name, *argv]))
-
-
 def test_the_exclude_list_matches_the_one_crabbox_syncs():
     def entries(lines):
         return {ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")}
@@ -1552,9 +1566,11 @@ def test_a_missing_rsync_is_infrastructure(cfg, api, reachable, monkeypatch):
 )
 def test_options_after_the_vm_are_options_not_command_words(argv, expected):
     # argparse.REMAINDER would have swallowed --sync/--timeout into the command,
-    # which is exactly the syntax the ledger specifies for `run`. argparse also
-    # drops the `--` itself, so args.cmd is the command and nothing else.
-    args = vm.build_parser().parse_args(argv)
+    # which is exactly the syntax the ledger specifies for `run`. The `--` is cut
+    # out before argparse sees it, because only 3.13 drops it on its own.
+    head, command = vm.split_command(argv)
+    args = vm.build_parser().parse_args(head)
+    args.cmd = list(args.cmd or []) + command
     assert " ".join(args.cmd) == expected[0]
     assert args.sync is expected[1]
     assert args.timeout == expected[2]
@@ -2148,7 +2164,7 @@ def test_ctrl_c_does_not_start_a_sweep(cfg, api, http, monkeypatch):
 
 
 # ── bake ─────────────────────────────────────────────────────────────────────
-def bakeable(http, template_vmid=9400, tag_put=None):
+def bakeable(http, template_vmid=9400, tag_put=None, lag=0, never_visible=False, final=None):
     """Every call a successful `bake` makes, in the order it makes them."""
     # The first listing picks the source and the free template VMID; every
     # later one has to know about the VM the bake just created.
@@ -2166,7 +2182,7 @@ def bakeable(http, template_vmid=9400, tag_put=None):
             }
         ]
     )
-    http.add("GET", "/cluster/resources", body=baking["body"])
+    http.add("GET", "/cluster/resources", body=baking["body"], times=1)
     http.add("GET", "/nodes/<node>/status", "node_status")
     http.add("POST", "/qemu/%d/clone" % template_vmid, "clone_post")
     http.add("GET", "qmclone", "task_ok")
@@ -2186,6 +2202,30 @@ def bakeable(http, template_vmid=9400, tag_put=None):
     http.add("GET", "qmstop", "task_ok")
     http.add("POST", "/qemu/3900/template", "status_start")
     http.add("GET", "qmstart", "task_ok")
+    # What `bake` sees while it waits for its own template to appear, and then
+    # the listing that finally shows it.
+    if lag or never_visible:
+        http.add(
+            "GET",
+            "/cluster/resources",
+            body=tagged_resources()["body"],
+            times=None if never_visible else lag,
+        )
+    done = tagged_resources(
+        extra_templates=[
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-linux-full-%s" % time.strftime("%Y%m%d"),
+                "template": 1,
+                "status": "stopped",
+                "maxmem": 4294967296,
+                "mem": 0,
+                "tags": "ah-tpl-linux-full;built-%s" % time.strftime("%Y%m%d"),
+            }
+        ]
+    )
+    # `final` replaces the listing bake reads while waiting for its own result.
+    http.add("GET", "/cluster/resources", **(final or {"body": done["body"]}))
     return http
 
 
@@ -2355,3 +2395,120 @@ def test_the_template_band_never_reaches_below_the_range(cfg):
     assert vm.free_template_vmid(cfg, []) == 3000
     cfg.values["AH_PVE_VMID_RANGE"] = "3000-3999"
     assert vm.free_template_vmid(cfg, []) == 3900
+
+
+def test_bake_waits_until_its_own_template_is_visible(keyed, api, http, clock, shell, capsys):
+    # The resource list is a cache: in the T12 run it still showed the old view
+    # when bake returned, and the next `clone --profile linux-server` answered
+    # "no template tagged" for a template that existed.
+    bakeable(http, lag=3)
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    assert "still does not show it" not in capsys.readouterr().out
+    assert clock.slept  # it waited rather than returning into a failing clone
+
+
+def test_bake_says_so_when_the_cache_never_catches_up(keyed, api, http, clock, shell, capsys):
+    bakeable(http, never_visible=True)
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0  # the template exists
+    out = capsys.readouterr().out
+    assert "still does not show it" in out
+    assert clock.now >= vm.TEMPLATE_VISIBLE_LIMIT
+
+
+def test_a_bake_whose_listing_cannot_be_read_still_reports_its_template(
+    keyed, api, http, clock, shell, capsys
+):
+    # The template is built, tagged and ours by then. Failing over a listing
+    # that could not be read would throw an hour of work away.
+    bakeable(http, final={"status": 500, "body": '{"message":"not quorate"}'})
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    out = capsys.readouterr().out
+    assert "could not be read" in out
+    assert out.splitlines()[-1].startswith("3900 ah-tpl-linux-full-")
+
+
+def test_a_bake_says_when_another_template_wins_the_tie_break(
+    keyed, api, http, clock, shell, capsys
+):
+    # Same tag, same build date, higher VMID: `clone` would take that one.
+    day = time.strftime("%Y%m%d")
+    rival = tagged_resources(
+        extra_templates=[
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-linux-full-%s" % day,
+                "template": 1,
+                "status": "stopped",
+                "maxmem": 0,
+                "mem": 0,
+                "tags": "ah-tpl-linux-full;built-%s" % day,
+            },
+            {
+                "vmid": 3950,
+                "name": "ah-tpl-linux-full-rival",
+                "template": 1,
+                "status": "stopped",
+                "maxmem": 0,
+                "mem": 0,
+                "tags": "ah-tpl-linux-full;built-%s" % day,
+            },
+        ]
+    )
+    bakeable(http, final={"body": rival["body"]})
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    out = capsys.readouterr().out
+    assert "3900 is built, but 3950 wins the tie-break for ah-tpl-linux-full" in out
+
+
+@pytest.mark.parametrize("argv", [["destroy", "3000", "--", "foo"], ["list", "--", "x"]])
+def test_a_verb_without_a_command_refuses_one(argv, capsys):
+    # `--` is cut out before argparse sees it, so a verb that has no `cmd` has
+    # to say so rather than silently dropping what followed.
+    with pytest.raises(SystemExit) as caught:
+        vm.main(argv)
+    assert caught.value.code == 2
+    assert "takes no command after" in capsys.readouterr().err
+
+
+def test_only_the_first_separator_is_eaten():
+    head, command = vm.split_command(["run", "3000", "--", "sh", "-c", "--", "x"])
+    assert head == ["run", "3000"]
+    assert command == ["sh", "-c", "--", "x"]
+
+
+def test_the_wait_does_not_end_on_the_stale_entry(keyed, api, http, clock, shell, capsys):
+    # This is the shape the cache really has during the lag: the VM IS listed,
+    # with its old fields — still a running VM, still wearing its lease tags.
+    # A bare "is the VMID in the list" test would end the wait on exactly the
+    # case it exists for, and then announce a tie-break that is not one.
+    stale = tagged_resources(
+        extra_templates=[
+            {
+                "vmid": 3900,
+                "name": "ah-tpl-linux-full-%s" % time.strftime("%Y%m%d"),
+                "template": 0,
+                "status": "running",
+                "maxmem": 4294967296,
+                "mem": 0,
+                "tags": "ah;role-bake;lane-main;ttl-%d" % (int(time.time()) + 4 * 3600),
+            }
+        ]
+    )
+    bakeable(http, final={"body": stale["body"]})
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    out = capsys.readouterr().out
+    assert "wins the tie-break" not in out  # 9402 is older, and 3900 is not visible yet
+    assert "still does not show it" in out  # it waited the whole window
+    assert clock.now >= vm.TEMPLATE_VISIBLE_LIMIT
+
+
+def test_a_listing_that_fails_only_later_still_keeps_the_template(
+    keyed, api, http, clock, shell, capsys
+):
+    # The 500 arrives after a round has already been read, so it lands on the
+    # second pool_vms() call — the one that used to sit outside the guard.
+    bakeable(http, lag=1, final={"status": 500, "body": '{"message":"not quorate"}'})
+    assert verb("bake", keyed, api, "--profile", "linux-full") == 0
+    out = capsys.readouterr().out
+    assert "could not be read" in out
+    assert out.splitlines()[-1].startswith("3900 ah-tpl-linux-full-")
