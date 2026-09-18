@@ -36,6 +36,7 @@ from app.modules.frp.config_generator import (
 )
 from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import _TOML_BREAKERS, FrpServerConfigCreate
+from app.modules.users.schemas import UserCreate
 
 # What the validator lets through: no quote, no backslash, no control character.
 # Everything else — spaces, '=', '[', '#', unicode — is fair game and must survive.
@@ -50,10 +51,11 @@ SAFE_TEXT = st.text(
     min_size=1,
     max_size=40,
 )
-# Keys are emitted unquoted, so the schema demands TOML bare keys. A dot would
-# nest the key ({"a": {"b": …}}) and a name the generator itself writes (auth,
-# webServer, transport) would collide with that fixed line — both are about the
-# generator's own layout, not about the round trip this test is for.
+# Keys are emitted unquoted, so the schema demands TOML bare keys. Two shapes are
+# kept out of the round-trip property on purpose: a dot nests the key
+# ({"a": {"b": …}}), and a name the generator also writes itself collides with that
+# fixed line — the collision is a finding in its own right and has its own pinned
+# test below, rather than being re-derived as a random failure here.
 _RESERVED = {"auth", "webServer", "transport", "bindPort", "serverAddr", "serverPort", "user"}
 EXTRA_KEY = st.text(
     alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="_-"),
@@ -156,9 +158,12 @@ def test_frps_toml_round_trips(server_addr, auth_token, bind_port, subdomain_hos
 
 
 def _tunnel(**kw) -> FrpTunnel:
+    # stcp, not tcp: the schema allows exactly Literal["stcp", "https"], and a type
+    # outside it would send every test down the plain branch — past secretKey,
+    # allowUsers and customDomains, which are the interpolations that matter here.
     defaults = dict(
         name="tunnel",
-        tunnel_type="tcp",
+        tunnel_type="stcp",
         local_ip="127.0.0.1",
         local_port=22,
         secret_key="0123456789abcdef",
@@ -171,23 +176,38 @@ def _tunnel(**kw) -> FrpTunnel:
     return FrpTunnel(**defaults)
 
 
+# allowUsers is filled from User.username (frp/_helpers.py::get_allow_users), and
+# those names pass through the users schema, not through the FRP one — so the
+# strategy generates what that pattern allows, not arbitrary text.
+USERNAME = st.text(
+    alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="._-"),
+    min_size=3,
+    max_size=20,
+)
+
+
 @given(
     name=SAFE_TEXT,
     local_ip=SAFE_TEXT,
     local_port=PORT,
     frpc_user=SAFE_TEXT,
     secret=SECRET,
+    allow_users=st.lists(USERNAME, min_size=1, max_size=3),
 )
-@example(name="p", local_ip="127.0.0.1", local_port=22, frpc_user="u", secret="0123456789abcdef")
+@example(
+    name="p",
+    local_ip="127.0.0.1",
+    local_port=22,
+    frpc_user="u",
+    secret="0123456789abcdef",
+    allow_users=["ops-admin"],
+)
 @settings(max_examples=100, deadline=None)
-def test_frpc_toml_round_trips(name, local_ip, local_port, frpc_user, secret):
-    # No breaker case here: SAFE_TEXT cannot produce one, and what the schema
-    # rejects is the subject of test_every_breaker_is_rejected below.
+def test_frpc_stcp_round_trips(name, local_ip, local_port, frpc_user, secret, allow_users):
+    """The stcp branch, where the shared secret and the visitor allowlist land."""
     cfg = _config(auth_token=secret)
-    toml = generate_frpc_toml(
-        cfg, [_tunnel(name=name, local_ip=local_ip, local_port=local_port)], frpc_user
-    )
-    parsed = tomllib.loads(toml)
+    tunnel = _tunnel(name=name, local_ip=local_ip, local_port=local_port, secret_key=secret)
+    parsed = tomllib.loads(generate_frpc_toml(cfg, [tunnel], frpc_user, allow_users))
 
     assert parsed["user"] == frpc_user
     assert parsed["auth"]["token"] == secret
@@ -196,6 +216,35 @@ def test_frpc_toml_round_trips(name, local_ip, local_port, frpc_user, secret):
     assert proxy["name"] == name
     assert proxy["localIP"] == local_ip
     assert proxy["localPort"] == local_port
+    assert proxy["secretKey"] == secret
+    assert proxy["allowUsers"] == allow_users
+
+
+@given(
+    name=SAFE_TEXT,
+    domains=st.lists(
+        st.text(
+            alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters=".-"),
+            min_size=1,
+            max_size=20,
+        ),
+        min_size=1,
+        max_size=3,
+    ),
+    secret=SECRET,
+)
+@example(name="web", domains=["example.test"], secret="0123456789abcdef")
+@settings(max_examples=100, deadline=None)
+def test_frpc_https_round_trips(name, domains, secret):
+    """The https branch: custom_domains is one comma-separated string in the DB and
+    becomes a TOML array — the split is the generator's, so the round trip has to
+    put the same list back."""
+    tunnel = _tunnel(name=name, tunnel_type="https", custom_domains=",".join(domains))
+    parsed = tomllib.loads(generate_frpc_toml(_config(auth_token=secret), [tunnel], "u"))
+
+    proxy = parsed["proxies"][0]
+    assert proxy["name"] == name
+    assert proxy["customDomains"] == domains
 
 
 @given(name=SAFE_TEXT, visitor_port=PORT, secret=SECRET)
@@ -216,6 +265,11 @@ def test_visitor_toml_round_trips(name, visitor_port, secret):
 
 @pytest.mark.xfail(
     strict=True,
+    # raises= is what makes the reminder work: without it ANY exception counts as
+    # the expected failure, so once the validator learns about U+007F the
+    # ValidationError from the line above would keep this test quietly xfailing
+    # forever instead of turning XPASS and asking to be deleted.
+    raises=tomllib.TOMLDecodeError,
     reason="_reject_toml_breakers rejects ord(c) < 0x20 but not U+007F, which TOML "
     "forbids in a basic string just the same — the generated file then does not parse",
 )
@@ -237,6 +291,55 @@ def test_del_character_breaks_the_generated_toml():
 
     toml = generate_frps_toml(_config(auth_token=accepted.auth_token))
     tomllib.loads(toml)  # raises TOMLDecodeError -> the xfail
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=tomllib.TOMLDecodeError,
+    reason="an extra_config key that the generator also writes itself (auth, webServer, "
+    "transport) is emitted a second time and TOML refuses the duplicate — the schema "
+    "accepts the key, so the generated frps.toml simply does not parse",
+)
+def test_extra_config_may_collide_with_the_generators_own_keys():
+    """extra_config lets an operator add frps.toml fields verbatim.
+
+    _check_extra_config validates the key as a TOML bare key and the value as a
+    scalar, but knows nothing about the lines config_generator writes itself. "auth"
+    is one of them (auth.method / auth.token), so the file ends up defining `auth`
+    twice: once as a table, once as a string. Availability, not injection — but the
+    server then ships a config frps cannot read.
+    """
+    accepted = FrpServerConfigCreate(
+        name="frps",
+        server_addr="frps.example.test",
+        auth_token="0123456789abcdef",
+        extra_config={"auth": "hijack"},
+    )
+    assert accepted.extra_config == {"auth": "hijack"}  # the schema let it through
+
+    toml = generate_frps_toml(_config(extra_config=json.dumps(accepted.extra_config)))
+    tomllib.loads(toml)  # raises TOMLDecodeError -> the xfail
+
+
+def test_allow_users_is_only_safe_because_usernames_are_validated():
+    """allowUsers decides who may open an STCP tunnel — and the generator writes it
+    without escaping.
+
+    Nothing in the FRP layer stops a name from closing that quote; what stops it is
+    _USERNAME_PATTERN in the users schema, two modules away. This test states that
+    dependency out loud, so loosening the pattern (an e-mail login, a display name)
+    fails here instead of quietly growing a tunnel's allow-list.
+    """
+    forged = 'mallory", "admin'
+    with pytest.raises(ValidationError):
+        UserCreate(username=forged, password="correct horse battery")
+
+    # ...and this is what it would do if it ever got through:
+    tunnel = _tunnel(name="t", secret_key="0123456789abcdef")
+    parsed = tomllib.loads(generate_frpc_toml(_config(), [tunnel], "u", [forged]))
+    assert parsed["proxies"][0]["allowUsers"] == ["mallory", "admin"], (
+        "one name became two — the generator interpolates allowUsers verbatim"
+    )
 
 
 @given(
