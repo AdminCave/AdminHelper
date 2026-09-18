@@ -44,8 +44,10 @@ Review: approve nach Runde 1 (opus); 6 Punkte behoben
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: tasks/README.md Abschnitt „ledger.sh"
 
-### T4 — review.sh: diff-scan, scope, sec  [ ]
+### T4 — review.sh: diff-scan, scope, sec  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh (neu, SPDX), scripts/tests/review_scripts_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @cbb1702a 2026-09-18T14:58:55+02:00
+Review: approve nach Runde 1 (opus); Blocker + 3 wichtig behoben
 Änderung: `diff-scan [--staged]` findet in gestagten Hunks: `@pytest.mark.skip`, `pytest.skip(`, `it.skip(`, `test.skip(`, `xit(`, `#[ignore]`, `t.Skip(`, `|| true`, `--no-verify`, `set +e`, entfernte `assert`/`expect(`-Zeilen ⇒ Exit 3 mit Liste (Ausnahme: Zeile trägt `# review: ok <grund>`). `scope <ledger> <id> [--staged]`: gestagte Pfade ⊆ `Dateien:` der Task ∪ Tests der Komponente ∪ `docs/**` ∪ `CHANGELOG.md` ∪ der Ledger ⇒ sonst Exit 3 mit den Fremd-Pfaden. `sec [--staged]`: `tasks/private/**`, `tasks/sec-*.md`, `docs/features/sec-*.md` gestaged oder `Dedup-Key: sec:` im Diff ⇒ Exit 4. Hermetischer Test mit Fixture-Repo (git init im Temp).
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
