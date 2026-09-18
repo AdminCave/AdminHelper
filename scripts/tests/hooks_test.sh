@@ -436,6 +436,119 @@ runner_env "$H"
   && ok "a missing pve.env is not an error (no VM needed for the scripts suites), and leaves no AH_PVE_*" \
   || bad "missing pve.env: rc=$(val RC) url=$(val AH_PVE_URL)"
 
+# ══ runner-settings.json — the runner's permission boundary ══════════════════
+echo "── runner-settings.json ──"
+
+RS="$REPO_ROOT/scripts/dev/runner-settings.json"
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RS" 2>/dev/null \
+  && ok "runner-settings.json is valid JSON" || bad "runner-settings.json does not parse"
+
+# dontAsk auto-denies everything that would otherwise prompt, so the deny list is
+# the boundary and the allow list is the whole working surface.
+[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["permissions"]["defaultMode"])' "$RS")" = "dontAsk" ] \
+  && ok "defaultMode is dontAsk" || bad "defaultMode is not dontAsk"
+
+# The rules that make this user harmless: it cannot write history, cannot reach
+# GitHub, cannot become root, cannot change the harness, cannot close its own
+# tasks, and cannot read its own token file back out.
+for rule in 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(git checkout:*)' \
+            'Bash(git restore:*)' 'Bash(git stash:*)' 'Bash(gh:*)' 'Bash(sudo:*)' \
+            'Bash(python3 scripts/vm/vm.py bake:*)' 'Bash(bash scripts/dev/task-close.sh:*)' \
+            'Bash(bash scripts/dev/ledger.sh mark-done:*)' 'Edit(./.claude/**)' 'Edit(./CLAUDE.md)' \
+            'Edit(./scripts/dev/**)' 'Edit(./scripts/tests/run.sh)' 'Edit(./scripts/tests/heavy.sh)' \
+            'Edit(./scripts/vm/vm.py)' 'Edit(./tasks/private/**)' 'Read(~/.config/adminhelper/**)' \
+            'Bash(git switch:*)' 'Bash(git revert:*)' 'Bash(git branch:*)' \
+            'Bash(bash scripts/tests/heavy.sh:*)' 'Bash(bash scripts/tests/multibox.sh:*)' \
+            'Edit(~/.claude/**)'; do
+  python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["deny"] else 1)' "$RS" "$rule" \
+    && ok "deny: $rule" || bad "missing deny rule: $rule"
+done
+
+for rule in 'Bash(bash scripts/dev/verify.sh:*)' 'Bash(bash scripts/dev/ledger.sh start:*)' \
+            'Bash(python3 scripts/vm/vm.py clone:*)' 'Bash(python3 scripts/vm/vm.py destroy:*)' \
+            'Edit(./apps/**)' 'Edit(./tasks/**)'; do
+  python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["allow"] else 1)' "$RS" "$rule" \
+    && ok "allow: $rule" || bad "missing allow rule: $rule"
+done
+
+# House style, not semantics: `Bash(ls:*)` and `Bash(ls *)` mean the same thing
+# to Claude Code, and this repo writes the colon form everywhere. One form per
+# file is what makes a deny list readable — and a wildcard written as `git push*`
+# is a typo either way.
+python3 - "$RS" <<'PY' && ok "every Bash wildcard rule is written as (…:*), the form this repo uses" \
+  || bad "a Bash rule mixes the wildcard form — keep one style in a deny list"
+import json, re, sys
+d = json.load(open(sys.argv[1]))["permissions"]
+offenders = [r for r in d["deny"] + d["allow"]
+             if r.startswith("Bash(") and not re.match(r"^Bash\([^()*]+(:\*)?\)$", r)]
+sys.exit(1 if offenders else 0)
+PY
+
+# The one verb the pool rules forbid: no allow rule may reach it, in any spelling.
+python3 - "$RS" <<'PY' && ok "vm.py bake is denied and no allow rule reaches it" \
+  || bad "an allow rule covers vm.py bake"
+import json, sys
+d = json.load(open(sys.argv[1]))["permissions"]
+if not any("vm.py bake" in r for r in d["deny"]):
+    sys.exit(1)
+# A broad `vm.py:*` allow would cover `vm.py  bake` (two spaces), which the deny
+# prefix no longer matches — so the allow list names the verbs instead.
+sys.exit(1 if any(r.startswith("Bash(python3 scripts/vm/vm.py:") for r in d["allow"]) else 0)
+PY
+
+# What must NOT be reachable. A deny list is only as good as its allow list: an
+# allow entry that starts where a deny entry starts would be the hole (deny wins,
+# but a BROADER allow around a narrow deny is how `vm.py bake` nearly slipped
+# through), and the four verbs below must appear in no allow rule at all.
+python3 - "$RS" <<'PY' && ok "no allow rule reaches past a deny rule, and push/gh/sudo/bash -c are nowhere allowed" \
+  || bad "an allow rule undercuts the deny list"
+import json, sys
+d = json.load(open(sys.argv[1]))["permissions"]
+allow, deny = d["allow"], d["deny"]
+def body(rule):
+    return rule[rule.index("(") + 1:rule.rindex(")")].rstrip(":*")
+problems = []
+for a in allow:
+    if not a.startswith("Bash("):
+        continue
+    for x in deny:
+        if not x.startswith("Bash("):
+            continue
+        # A deny whose command is an extension of an allowed prefix: the allow is
+        # broader than the thing being denied.
+        if body(x).startswith(body(a)) and body(x) != body(a):
+            problems.append((a, x))
+for forbidden in ("git push", "gh ", "sudo", "bash -c"):
+    problems += [a for a in allow if forbidden in a]
+sys.exit(1 if problems else 0)
+PY
+
+# This file is versioned in a PUBLIC repo: it carries rules, never values.
+python3 - "$RS" <<'PY' && ok "no env block, no token, no host or address" \
+  || bad "runner-settings.json carries a value it must not"
+import json, re, sys
+raw = open(sys.argv[1]).read()
+d = json.loads(raw)
+problems = []
+if "env" in d:
+    problems.append("env block")
+for pat in (r"sk-[A-Za-z0-9-]{8,}", r"\b\d{1,3}(\.\d{1,3}){3}\b", r"[A-Za-z0-9_-]{24,}="):
+    if re.search(pat, raw):
+        problems.append(pat)
+sys.exit(1 if problems else 0)
+PY
+
+# The guard has to fire for the runner too, and for every writing tool.
+python3 - "$RS" <<'PY' && ok "the PreToolUse guard is wired up for Edit|Write|MultiEdit|Bash" \
+  || bad "the runner settings do not run harness-guard.sh for all writing tools"
+import json, sys
+pre = json.load(open(sys.argv[1])).get("hooks", {}).get("PreToolUse", [])
+for e in pre:
+    if any("harness-guard.sh" in h.get("command", "") for h in e.get("hooks", [])):
+        sys.exit(0 if {"Edit", "Write", "MultiEdit", "Bash"} <= set(e.get("matcher", "").split("|")) else 1)
+sys.exit(1)
+PY
+
 # ══ .gitattributes ═══════════════════════════════════════════════════════════
 echo "── .gitattributes ──"
 # Every lane appends to the same CHANGELOG section; union merge is what keeps

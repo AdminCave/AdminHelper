@@ -71,8 +71,10 @@ Doku: keine (T12)
 
 ## C — Runner-User
 
-### T7 — runner-settings.json  [ ]
+### T7 — runner-settings.json  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json (neu), scripts/tests/hooks_test.sh (Fall: JSON valide, deny/allow-Listen enthalten die Spec-Einträge, keine Werte/Secrets)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @fac3559e 2026-09-18T15:35:36+02:00
+Review: approve nach Runde 1 (opus); Blocker + W1/W3/W4 + N1/N2 behoben, W2/W5 gehen als Restrisiko in T12
 Änderung: Die Runner-`settings.json` aus der Spec (Modus `dontAsk`, deny/allow/hooks). Kommentare sind in JSON nicht möglich — die Begründungen stehen in DEVELOPMENT.md (T12).
 Verify: python3 -c 'import json; d=json.load(open("scripts/dev/runner-settings.json")); assert d["permissions"]["defaultMode"]=="dontAsk"; print("ok")'   und   bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
