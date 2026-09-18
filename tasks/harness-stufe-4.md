@@ -61,8 +61,10 @@ Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
 Abhängt von: T3, T4
 
-### T6 — .gitattributes und runner-env.sh  [ ]
+### T6 — .gitattributes und runner-env.sh  [x]
 Komponente: scripts · Dateien: .gitattributes (neu), scripts/dev/runner-env.sh (neu, SPDX), scripts/tests/hooks_test.sh (Fälle für runner-env)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @e0cbcf48 2026-09-18T15:22:29+02:00
+Review: approve nach Runde 1 (opus); Blocker + 4 wichtig + nits behoben
 Änderung: `.gitattributes`: `CHANGELOG.md merge=union`. `runner-env.sh` (zum Sourcen): sourct `~/.devenv.sh`, setzt `GH_TOKEN=`, `GH_CONFIG_DIR=$(mktemp -d)`, liest `CLAUDE_CODE_OAUTH_TOKEN` aus `~/.config/adminhelper/oauth.env` (Datei muss `0600` sein, sonst Abbruch), `unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN`, `AH_AUTONOMOUS=1`, `AH_VM_MAX=8`, exportiert `AH_PVE_*` aus `~/.config/adminhelper/pve.env`. Test mit Fake-Home (Rechte-Check, Präzedenz-Unset).
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)

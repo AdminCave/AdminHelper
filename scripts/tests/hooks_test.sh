@@ -316,6 +316,135 @@ mv "$WORK/paths.bak" "$TREE/scripts/dev/harness-paths.txt"
 
 fi   # GUARD_SKIPPED
 
+# ══ runner-env.sh — the shell the runner user works in ═══════════════════════
+echo "── runner-env.sh ──"
+
+RUNNER_ENV="$REPO_ROOT/scripts/dev/runner-env.sh"
+# A fake HOME per case: the file is about $HOME/.devenv.sh and
+# $HOME/.config/adminhelper, and a test that reads the developer's own would be
+# reading his real token.
+mk_home() {
+  local h="$WORK/home-$1"
+  mkdir -p "$h/.config/adminhelper"
+  printf 'export AH_TEST_DB=postgresql://ah_runner@localhost/ah_runner_test\n' > "$h/.devenv.sh"
+  printf 'CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat-fixture"\n' > "$h/.config/adminhelper/oauth.env"
+  # The real key names vm.py reads (AH_PVE_URL/NODE/TOKEN/…) — a fixture with an
+  # invented key would make every assertion below pass for the wrong reason.
+  printf 'AH_PVE_URL=https://pve.invalid:8006\nexport AH_PVE_NODE="node9"' \
+    > "$h/.config/adminhelper/pve.env"   # deliberately without a trailing newline
+  chmod 700 "$h/.config/adminhelper"   # as runner-setup.sh creates it
+  chmod 600 "$h/.config/adminhelper/oauth.env" "$h/.config/adminhelper/pve.env"
+  printf '%s\n' "$h"
+}
+# Sources the file in a child shell and reports both: the resulting environment
+# and what it said while refusing.
+runner_env() {
+  rm -f "$WORK/env.out"   # never read a previous case's values
+  ERR=$(HOME="$1" TMPDIR="$WORK" ANTHROPIC_API_KEY=leftover ANTHROPIC_AUTH_TOKEN=leftover \
+    CLAUDE_CODE_OAUTH_TOKEN=leftover-oauth AH_PVE_TOKEN=leftover-pve AH_PVE_URL=leftover-url \
+    AH_VM_MAX=99 GITHUB_TOKEN=leftover-gh \
+    bash -c '
+      . "$1"; rc=$?
+      { echo "RC=$rc"
+        for v in AH_AUTONOMOUS AH_VM_MAX CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
+                 ANTHROPIC_AUTH_TOKEN GH_TOKEN GITHUB_TOKEN GH_CONFIG_DIR AH_TEST_DB \
+                 AH_PVE_URL AH_PVE_NODE AH_PVE_TOKEN; do
+          eval "echo \"$v=\${$v-<unset>}\""
+        done; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
+  OUT=$(cat "$WORK/env.out")
+}
+val() { sed -n "s/^$1=//p" <<<"$OUT"; }
+
+H=$(mk_home ok)
+runner_env "$H"
+[ "$(val RC)" = 0 ] && ok "a provisioned home sources cleanly" || bad "rc=$(val RC) err=$ERR"
+[ "$(val AH_AUTONOMOUS)" = 1 ] && ok "AH_AUTONOMOUS=1 (the guard denies, the status hook stays quiet)" \
+  || bad "AH_AUTONOMOUS=$(val AH_AUTONOMOUS)"
+[ "$(val AH_VM_MAX)" = 8 ] && ok "AH_VM_MAX=8, even with 99 in the environment" || bad "AH_VM_MAX=$(val AH_VM_MAX)"
+[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "sk-ant-oat-fixture" ] \
+  && ok "the subscription token comes out of oauth.env" || bad "token: $(val CLAUDE_CODE_OAUTH_TOKEN)"
+# Both of these take PRECEDENCE over the OAuth token — an inherited one would
+# silently move the run onto an API account (roadmap D18).
+[ "$(val ANTHROPIC_API_KEY)" = "<unset>" ] && [ "$(val ANTHROPIC_AUTH_TOKEN)" = "<unset>" ] \
+  && ok "an inherited ANTHROPIC_API_KEY/AUTH_TOKEN is unset" \
+  || bad "api key survived: $(val ANTHROPIC_API_KEY)/$(val ANTHROPIC_AUTH_TOKEN)"
+[ -z "$(val GH_TOKEN)" ] && [ -z "$(val GITHUB_TOKEN)" ] \
+  && ok "GH_TOKEN and GITHUB_TOKEN are empty (gh reads both, there is no credential here)" \
+  || bad "GH_TOKEN=$(val GH_TOKEN) GITHUB_TOKEN=$(val GITHUB_TOKEN)"
+[ -d "$(val GH_CONFIG_DIR)" ] && [ -z "$(ls -A "$(val GH_CONFIG_DIR)" 2>/dev/null)" ] \
+  && ok "GH_CONFIG_DIR points at an empty throwaway dir (no inherited gh login)" \
+  || bad "GH_CONFIG_DIR=$(val GH_CONFIG_DIR)"
+[ "$(val AH_TEST_DB)" = "postgresql://ah_runner@localhost/ah_runner_test" ] \
+  && ok "the runner's own .devenv.sh is sourced (its own test DB)" || bad "AH_TEST_DB=$(val AH_TEST_DB)"
+[ "$(val AH_PVE_URL)" = "https://pve.invalid:8006" ] && [ "$(val AH_PVE_NODE)" = "node9" ] \
+  && ok "AH_PVE_* come from pve.env (with and without 'export', last line without newline)" \
+  || bad "pve: $(val AH_PVE_URL)/$(val AH_PVE_NODE)"
+# The one that matters: vm.py lets the environment win over its config, so an
+# inherited token would silently keep this user on somebody else's hypervisor.
+[ "$(val AH_PVE_TOKEN)" = "<unset>" ] \
+  && ok "an inherited AH_PVE_TOKEN is gone, not merely overwritten" || bad "AH_PVE_TOKEN survived"
+[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" != "leftover-oauth" ] \
+  && ok "an inherited CLAUDE_CODE_OAUTH_TOKEN never survives" || bad "the foreign oauth token survived"
+
+# A token file the group can read is a finding, not a detail.
+H=$(mk_home perm); chmod 644 "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && grep -q "must be 600" <<<"$ERR" \
+  && ok "oauth.env with mode 644 aborts" || bad "perm check: rc=$(val RC) err=$ERR"
+H=$(mk_home pveperm); chmod 644 "$H/.config/adminhelper/pve.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && ok "pve.env with mode 644 aborts too" || bad "pve perm: rc=$(val RC)"
+
+H=$(mk_home notoken); printf '# put the token here\n' > "$H/.config/adminhelper/oauth.env"
+chmod 600 "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && grep -q "setup-token" <<<"$ERR" \
+  && ok "an empty template aborts and names the fix" || bad "empty token: rc=$(val RC) err=$ERR"
+
+H=$(mk_home nofile); rm -f "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && ok "a missing oauth.env aborts" || bad "missing token file: rc=$(val RC)"
+# An abort is the state in which a foreign credential must be gone, not kept:
+# the file is sourced from a profile, where the return code is often ignored.
+[ "$(val CLAUDE_CODE_OAUTH_TOKEN)" = "<unset>" ] && [ "$(val AH_PVE_TOKEN)" = "<unset>" ] \
+  && ok "and even then no foreign token is left standing" || bad "a foreign token survived the abort"
+
+# "READ, not sourced": a command substitution in the token file must stay text.
+H=$(mk_home notsourced)
+printf 'CLAUDE_CODE_OAUTH_TOKEN="$(touch %s/pwned)x"\n' "$WORK" > "$H/.config/adminhelper/oauth.env"
+chmod 600 "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ ! -e "$WORK/pwned" ] && ok "the token file is read, never executed" || bad "the token file was sourced"
+
+H=$(mk_home symlink)
+mv "$H/.config/adminhelper/oauth.env" "$H/.config/adminhelper/oauth.real"
+ln -s "$H/.config/adminhelper/oauth.real" "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && grep -q "symlink" <<<"$ERR" \
+  && ok "a symlinked token file is refused (its mode says nothing)" || bad "symlink: rc=$(val RC) err=$ERR"
+
+H=$(mk_home dirperm); chmod 777 "$H/.config/adminhelper"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && grep -q "must not write" <<<"$ERR" \
+  && ok "a world-writable config dir is refused (a 0600 file there can be replaced)" \
+  || bad "dir perm: rc=$(val RC) err=$ERR"
+
+# No hypervisor token is not fatal: python/shell work needs no VM.
+H=$(mk_home nopve); rm -f "$H/.config/adminhelper/pve.env"
+runner_env "$H"
+[ "$(val RC)" = 0 ] && [ "$(val AH_PVE_URL)" = "<unset>" ] \
+  && ok "a missing pve.env is not an error (no VM needed for the scripts suites), and leaves no AH_PVE_*" \
+  || bad "missing pve.env: rc=$(val RC) url=$(val AH_PVE_URL)"
+
+# ══ .gitattributes ═══════════════════════════════════════════════════════════
+echo "── .gitattributes ──"
+# Every lane appends to the same CHANGELOG section; union merge is what keeps
+# that from being a conflict per PR.
+grep -qE '^/?CHANGELOG\.md[[:space:]]+merge=union$' "$REPO_ROOT/.gitattributes" \
+  && ok "CHANGELOG.md is merged with merge=union" || bad "no union merge for CHANGELOG.md"
+[ "$(git -C "$REPO_ROOT" check-attr merge -- CHANGELOG.md 2>/dev/null)" = "CHANGELOG.md: merge: union" ] \
+  && ok "and git actually resolves that attribute" || bad "git does not see the union attribute"
+
 # ══ the real repo: the marker must never be committable ═══════════════════════
 echo "── repo wiring ──"
 
