@@ -104,6 +104,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **VM-Rollen bekommen mehr vCPUs:** `scripts/vm/profiles.json` gibt der Desktop-Rolle und dem Bake
+  6 statt 4 bzw. 2 Kerne und der Server-Rolle 4 statt 2 — der Host lief waehrend eines Capstones
+  bei 10 % CPU, waehrend Tauri-, npm- und Go-Builds in den VMs auf 2 Kernen warteten (Bake
+  `linux-full` 56 min). Agent-, Tunnel-, Visitor-, Moncheck-, RPM- und Probe-Rolle bleiben bei 2.
+
 - **Die schweren Suites laufen ohne externes Binary (Harness Stufe 2b):** Alle Wrapper rufen
   jetzt `scripts/vm/vm.py` statt des externen `crabbox` auf, bei unveraenderter Aufruf-Semantik.
   Neu: `scripts/vm/warm.sh`, `iter.sh`, `reap.sh`, `bake.sh` und `scripts/vm/bootstrap_linux.sh`;
