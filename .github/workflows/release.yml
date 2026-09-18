@@ -110,7 +110,7 @@ jobs:
         # runner's default CGO_ENABLED=1 (gcc present) and dynamically links the
         # host glibc (2.39) — the released agent then won't start on older distros
         # (GLIBC_2.34 not found on Debian Stretch / RHEL 8 / UniFi firmware), while
-        # the crabbox tests — which DO use `make` — stayed green. One build
+        # the VM tests — which DO use `make` — stayed green. One build
         # definition means the tested binary is the shipped binary.
         run: make build-linux build-windows
       # The Makefile pins CGO_ENABLED=0, but nothing checked the RESULT. Defect

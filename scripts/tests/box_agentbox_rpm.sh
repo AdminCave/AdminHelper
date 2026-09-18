@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# crabbox_agentbox_rpm.sh — cross-distro coverage (scenario S2). All crabbox templates
+# box_agentbox_rpm.sh — cross-distro coverage (scenario S2). All our templates
 # are apt (Ubuntu/Debian); to prove the .rpm path this builds the real package on the
 # Ubuntu box, then installs + provisions it INSIDE a rockylinux container (--network
 # host) against the remote server box over a real network hop. Prints RPM_* markers.
 #
-# Called by scripts/tests/crabbox_multibox.sh --rpm via `crabbox run`.
-#   crabbox_agentbox_rpm.sh <SRV_IP> <SID> <PTOK>
+# Called by scripts/tests/multibox.sh --rpm via `vm.py run`.
+#   box_agentbox_rpm.sh <SRV_IP> <SID> <PTOK>
 set -uo pipefail
 SRV_IP="${1:?}"; SID="${2:?}"; PTOK="${3:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
 echo "[rpmbox] hydrate (agent profile: Go + packaging + docker)"
-AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[rpmbox] bootstrap failed"; exit 1; }
+AH_BOOTSTRAP_PROFILE=agent bash scripts/vm/bootstrap_linux.sh || { echo "[rpmbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
 
 echo "[rpmbox] build the Go agent + .rpm from the repo root"

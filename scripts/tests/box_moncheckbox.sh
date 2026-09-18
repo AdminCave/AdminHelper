@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# crabbox_moncheckbox.sh — S5 monitoring-check client + alert sink. Two modes:
+# box_moncheckbox.sh — S5 monitoring-check client + alert sink. Two modes:
 #   start <ip>  run a mailpit SMTP catcher (SMTP :1025, HTTP :8025) — the alert sink.
 #           The box is also the reachable ping target for the monitoring "ok" check.
 #   assert  verify the sink caught the critical-alert email (closes the loop).
@@ -11,16 +11,16 @@
 # cert + hostname (audit 3.24), so a plaintext catcher like mailhog can never
 # receive an alert — the closed loop silently proved nothing until v0.44.0.
 #
-# Called by scripts/tests/crabbox_multibox.sh --moncheck via `crabbox run`.
-#   crabbox_moncheckbox.sh <start <ip>|assert>
+# Called by scripts/tests/multibox.sh --moncheck via `vm.py run`.
+#   box_moncheckbox.sh <start <ip>|assert>
 set -uo pipefail
-MODE="${1:?usage: crabbox_moncheckbox.sh <start <ip>|assert>}"
+MODE="${1:?usage: box_moncheckbox.sh <start <ip>|assert>}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 
 if [ "$MODE" = start ]; then
-  MC_IP="${2:?usage: crabbox_moncheckbox.sh start <ip>}"
+  MC_IP="${2:?usage: box_moncheckbox.sh start <ip>}"
   echo "[moncheckbox] hydrate (agent profile: docker) + run mailpit (STARTTLS)"
-  AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[moncheckbox] bootstrap failed"; exit 1; }
+  AH_BOOTSTRAP_PROFILE=agent bash scripts/vm/bootstrap_linux.sh || { echo "[moncheckbox] bootstrap failed"; exit 1; }
 
   # Self-signed cert with an IP SAN for this box: the alerter verifies cert AND
   # hostname, and smtp_host is the box IP — a CN-only or hostname-SAN cert would

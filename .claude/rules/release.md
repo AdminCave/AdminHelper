@@ -20,7 +20,7 @@ paths:
 ## Vor dem Tag: drei Ebenen real grün
 
 `bash scripts/tests/run.sh quick` auf der Dev-Box · `run.sh all` auf einer VM · Multibox-Capstone
-(`crabbox_multibox.sh --capstone --strict`; `--strict` verlangt den vollen Flag-Satz, den `--capstone` setzt).
+(`scripts/tests/multibox.sh --capstone --strict`; `--strict` verlangt den vollen Flag-Satz, den `--capstone` setzt).
 Rot oder übersprungen heißt: nicht taggen. Seit Stufe 3 melden die sechs bedingten Guards (debian:9,
 Agent-Repo/CA-Flip ohne `REPO_FP`, Desktop-Lease, moncheck-Lease, `--enforce`, Monitoring-Hop) über
 `skipped()`; **`0 failed, 0 skipped`** heißt damit „jede angeforderte Prüfung lief". Ein fehlgeschlagenes Lease
@@ -55,7 +55,7 @@ rot ist, bricht dort den Draft ab.
 `main/scripts/install.sh` (löst `releases/latest` selbst auf, minisign-verifiziert, fail-closed); `apps/desktop/ui/package.json`
 bleibt auf 0.38.0.
 **Separat gepinnt:** `FRP_VERSION` an vier Stellen (`ci.yml`, `release.yml`, `docker-compose.yml`,
-`scripts/tests/crabbox_bootstrap.sh`) — der CI-Job `frp-consistency` prüft Gleichstand.
+`scripts/vm/bootstrap_linux.sh`) — der CI-Job `frp-consistency` prüft Gleichstand.
 
 ## Signatur
 

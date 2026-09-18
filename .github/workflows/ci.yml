@@ -469,8 +469,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   # Audit C7: FRP_VERSION (+ artifact SHAs) is pinned in four places that must move
-  # in lockstep — drift breaks the tunnel at runtime, not in CI. The crabbox heavy-
-  # test bootstrap (scripts/tests/crabbox_bootstrap.sh) stages the same frpc sidecar
+  # in lockstep — drift breaks the tunnel at runtime, not in CI. The heavy-tier VM
+  # bootstrap (scripts/vm/bootstrap_linux.sh) stages the same frpc sidecar
   # and is the 4th pin.
   frp-consistency:
     name: Pinned versions + signing key in lockstep
@@ -485,15 +485,15 @@ jobs:
           # Extract only the version tag; the image may carry a trailing
           # @sha256:<digest> pin whose hex would otherwise leak into the match.
           compose=$(grep -m1 'snowdreamtech/frps:' docker-compose.yml | sed -E 's#.*snowdreamtech/frps:([0-9][0-9.]*).*#\1#')
-          boot=$(grep -m1 'FRP_VERSION=' scripts/tests/crabbox_bootstrap.sh | grep -o '[0-9][0-9.]*' | head -1)
+          boot=$(grep -m1 'FRP_VERSION=' scripts/vm/bootstrap_linux.sh | grep -o '[0-9][0-9.]*' | head -1)
           sha_ci=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/ci.yml | grep -o '[0-9a-f]\{64\}')
           sha_rel=$(grep -m1 'FRP_SHA256_LINUX_AMD64:' .github/workflows/release.yml | grep -o '[0-9a-f]\{64\}')
-          sha_boot=$(grep -m1 'FRP_SHA256_LINUX_AMD64=' scripts/tests/crabbox_bootstrap.sh | grep -o '[0-9a-f]\{64\}')
-          echo "ci.yml=$ci release.yml=$rel docker-compose.yml=$compose crabbox_bootstrap=$boot"
+          sha_boot=$(grep -m1 'FRP_SHA256_LINUX_AMD64=' scripts/vm/bootstrap_linux.sh | grep -o '[0-9a-f]\{64\}')
+          echo "ci.yml=$ci release.yml=$rel docker-compose.yml=$compose bootstrap_linux=$boot"
           test -n "$ci" && test "$ci" = "$rel" && test "$ci" = "$compose" && test "$ci" = "$boot" || {
             echo "::error::FRP_VERSION drift (ci=$ci, release=$rel, compose=$compose, bootstrap=$boot)"; exit 1; }
           test "$sha_ci" = "$sha_rel" && test "$sha_ci" = "$sha_boot" || {
-            echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/crabbox_bootstrap.sh"; exit 1; }
+            echo "::error::FRP_SHA256_LINUX_AMD64 differs across ci.yml/release.yml/bootstrap_linux.sh"; exit 1; }
           # Windows SHA (ci vs release): a FRP_VERSION bump that updates only the ci copy
           # makes release.yml's desktop-windows `sha256sum -c` fail, and since that build
           # is continue-on-error the MSI silently drops from the release (4.22).

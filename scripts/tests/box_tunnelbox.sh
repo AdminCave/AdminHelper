@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 #
-# crabbox_tunnelbox.sh — S4 tunnel-agent role. Installs the agent, provisions it
+# box_tunnelbox.sh — S4 tunnel-agent role. Installs the agent, provisions it
 # (which fetches + writes /etc/frp/frpc.toml for the seeded STCP tunnel plus the
 # mTLS identity), and runs frpc as the STCP SERVER, exposing this box's own sshd
 # (:22) through the REMOTE frps on the server box. The cross-host half of the
 # tunnel (visitor is added separately). Prints TUNNEL_* markers.
 #
-# Called by scripts/tests/crabbox_multibox.sh --tunnel via `crabbox run`.
-#   crabbox_tunnelbox.sh <SRV_IP> <TUN_SID> <TUN_PTOK>
+# Called by scripts/tests/multibox.sh --tunnel via `vm.py run`.
+#   box_tunnelbox.sh <SRV_IP> <TUN_SID> <TUN_PTOK>
 set -uo pipefail
 SRV_IP="${1:?}"; SID="${2:?}"; PTOK="${3:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
-# shellcheck source=scripts/tests/crabbox_lib.sh
-. "$(dirname "$0")/crabbox_lib.sh"
+# shellcheck source=scripts/vm/lib.sh
+. "$(dirname "$0")/../vm/lib.sh"
 
 echo "[tunnelbox] hydrate (agent profile: Go + packaging)"
-AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[tunnelbox] bootstrap failed"; exit 1; }
+AH_BOOTSTRAP_PROFILE=agent bash scripts/vm/bootstrap_linux.sh || { echo "[tunnelbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
 
 echo "[tunnelbox] build + install the .deb"
-DEB="$(cbx_build_agent_deb tunnelbox)" || exit 1
+DEB="$(vm_build_agent_deb tunnelbox)" || exit 1
 sudo apt-get install -y -o DPkg::Lock::Timeout=300 "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[tunnelbox] install failed"; exit 1; }
 
 echo "[tunnelbox] ensure sshd is listening on :22 (the STCP target)"

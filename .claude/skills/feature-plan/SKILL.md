@@ -73,9 +73,9 @@ Default. Ein **Kurz-Ledger** mit **≤ 3 Tasks** bekommt stattdessen `Review: am
 abschließenden `/code-review` weg; bei drei kleinen Tasks sähe der zweite Durchgang nur
 denselben Diff noch einmal.)
 (`Fast-Suite:` = wo Verify + Schnellsuite laufen: `lokal` (Solo-Session im Haupt-Checkout,
-Default) oder `crabbox` (parallele Worktree-Lane ohne lokale Toolchain-Artefakte — siehe
-AUTONOMOUS.md „Parallel-Betrieb"). Wird das Vorhaben als Lane gebaut → `crabbox` setzen.)
-(`Warm-Profil:` = crabbox-Box-Bedarf, aus „Betroffene Komponenten" der Spec ableiten:
+Default) oder `vm` (parallele Worktree-Lane ohne lokale Toolchain-Artefakte — siehe
+AUTONOMOUS.md „Parallel-Betrieb"). Wird das Vorhaben als Lane gebaut → `vm` setzen.)
+(`Warm-Profil:` = Box-Bedarf, aus „Betroffene Komponenten" der Spec ableiten:
 `desktop` = eine volle Box, der Default — Stack, Agent und GUI testen dort zusammen;
 `pond` = Server- + Desktop-Box, NUR wenn Desktop-**Journeys** berührt sind (Connect/
 Tunnel/Enrollment-UI, `apps/desktop/e2e/*.live.js`). Berührt die Spec **Cross-Host-Pfade**

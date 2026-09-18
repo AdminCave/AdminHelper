@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# crabbox_desktopbox.sh — runs ON a crabbox desktop-client box (full bootstrap
+# box_desktopbox.sh — runs ON a desktop-client box (full bootstrap
 # profile: Tauri + xvfb + WebKitWebDriver + tauri-driver + frpc + gnome-keyring).
 # Drives the REAL Tauri desktop GUI headless against the REMOTE server-box — the
 # operator seat on its own machine (scenario S3), the dimension single-host
 # desktop_e2e (localhost) can't reach.
 #
-#   crabbox_desktopbox.sh <SRV_IP> <ADMIN_PW> <MONITOR_KEY> [spec ...]
+#   box_desktopbox.sh <SRV_IP> <ADMIN_PW> <MONITOR_KEY> [spec ...]
 #
 # AH_DESKTOP_ENROLL_TOKENS="<tok> <tok> …" makes each spec enroll a device
 # identity before its first login (live.js enrollIfAsked). Required when the
@@ -18,17 +18,17 @@
 #
 # Points the app at https://<SRV_IP> (server mode, self-signed/IP-SAN trusted),
 # logs in as admin, and runs the requested *.live.js wdio specs. Prints markers.
-# Called by scripts/tests/crabbox_multibox.sh --desktop via `crabbox run`.
+# Called by scripts/tests/multibox.sh --desktop via `vm.py run`.
 set -uo pipefail
 SRV_IP="${1:?}"; ADMIN_PW="${2:?}"; MONITOR_KEY="${3:-}"; shift $(( $# < 3 ? $# : 3 ))
-# Default kept in sync with DESK_SPECS in crabbox_multibox.sh, which mints one
+# Default kept in sync with DESK_SPECS in multibox.sh, which mints one
 # enrollment token per spec and therefore has to know the count.
 SPECS=("$@"); [ "${#SPECS[@]}" -gt 0 ] || SPECS=(server-crud.live.js monitoring-check.live.js)
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
 E2E_DIR="$ROOT/apps/desktop/e2e"
 
 echo "[desktopbox] hydrate (full profile: Tauri + xvfb + tauri-driver)"
-AH_BOOTSTRAP_PROFILE=full bash scripts/tests/crabbox_bootstrap.sh || { echo "[desktopbox] bootstrap failed"; exit 1; }
+AH_BOOTSTRAP_PROFILE=full bash scripts/vm/bootstrap_linux.sh || { echo "[desktopbox] bootstrap failed"; exit 1; }
 # shellcheck disable=SC1091
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export PATH="$PATH:$HOME/.cargo/bin:/usr/local/go/bin"
@@ -54,7 +54,7 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
 # Headless boxes default to LANG=C; the webview then feeds "C" to Intl.NumberFormat
 # -> RangeError at module init -> Svelte never mounts (blank #app). Force a valid tag.
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US:en
-export AH_OUT_DIR="$ROOT/.crabbox-out"   # wdio afterTest drops screenshots here on failure
+export AH_OUT_DIR="$ROOT/.ah-out"   # wdio afterTest drops screenshots here on failure
 
 fails=0
 idx=0

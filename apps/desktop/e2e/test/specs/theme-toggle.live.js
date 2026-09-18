@@ -5,7 +5,7 @@
 // Live: the sidebar-footer theme toggle flips dark<->light (data-theme + the app
 // background) and the choice survives a reload — the FOUC inline <head> script
 // re-applies the persisted theme before the first paint. Orchestrated by
-// scripts/tests/desktop_e2e_*.sh (crabbox_iter.sh --desktop theme-toggle.live.js).
+// scripts/tests/desktop_e2e_*.sh (iter.sh --desktop theme-toggle.live.js).
 
 import { login } from '../lib/live.js';
 

@@ -30,7 +30,7 @@ Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe), `Commit-Granular
 Frischer-Kontext-Review läuft: je Commit-Einheit, oder einmal über den ganzen Branch-Diff.
 `am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks; dann entfällt auch der abschließende
 `/code-review`, weil derselbe Diff sonst zweimal geprüft würde), `Modell:`, `Fast-Suite:`
-(lokal | crabbox — wo Verify + Schnellsuite laufen; `crabbox` in Worktree-Lanes),
+(lokal | vm — wo Verify + Schnellsuite laufen; `vm` in Worktree-Lanes),
 `Warm-Profil:` (desktop | pond — Box-Bedarf; optional `Abschluss: multibox <flags>`,
 bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.
 

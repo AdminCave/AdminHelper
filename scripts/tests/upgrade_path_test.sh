@@ -24,7 +24,7 @@
 # Dependency-gated (docker + compose v2, network to api.github.com and ghcr.io,
 # go + make for the agent build, minisign for the update signature): exits 75 when
 # anything is missing, so it is a SKIP on the dev box and a required step only on
-# the hydrated crabbox box — where it belongs in AH_REQUIRED, or a permanently
+# the hydrated test VM — where it belongs in AH_REQUIRED, or a permanently
 # skipping step is invisible.
 #
 # Step 4 brings a SECOND stack up from the UNCHANGED docker-compose.yml, whose

@@ -48,11 +48,11 @@ Fortschritts-Wahrheit (`[ ]`/`[x]`/`[~]`/`[?]`, Konventionen in `tasks/README.md
 sucht sich Arbeit außerhalb dieser beiden Dateien.
 
 **Claude tut nie von sich aus:** pushen · PR öffnen oder mergen · taggen oder publizieren · `main` direkt ändern ·
-Freigaben setzen oder Gates überspringen · einen zweiten Bau-Lauf starten · VMs außerhalb des Proxmox-Pools `ah-ci`
-anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte Dateien schreiben.
-Wo ein Skill heute am Ende pushen oder einen PR öffnen will, ist der Permission-Prompt Kevins Entscheidung.
-Innerhalb des Pools `ah-ci` darf Claude VMs klonen, baken und zerstören (Freigabe 2026-09-08). Committen auf einem
-Feature-Branch ist erlaubt, bis `task-close.sh` es übernimmt (Stufe 4).
+Freigaben setzen oder Gates überspringen · einen zweiten Bau-Lauf starten · VMs außerhalb des Proxmox-Pools
+`adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
+Dateien schreiben. Wo ein Skill heute am Ende pushen oder einen PR öffnen will, ist der Permission-Prompt Kevins
+Entscheidung. Innerhalb des Pools `adminhelper-ci` darf Claude VMs klonen, baken und zerstören (Freigabe
+2026-09-08). Committen auf einem Feature-Branch ist erlaubt, bis `task-close.sh` es übernimmt (Stufe 4).
 
 **Release-Kanäle (ab Stufe 13 per Skript, bis dahin von Hand):** `beta` fortlaufend nach jedem grünen Wochenlauf;
 `rc` schneidet Kevin; `stable` frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung; `hotfix` ist der einzige
@@ -158,10 +158,11 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
 
 <!-- Stufe 0 · Quelle §3.1 /test · Stufe 2 -->
 
-Die Dev-Box hat kein Docker und kein Display. Schwere Suiten laufen auf ephemeren Proxmox-VMs: heute über die
-crabbox-Wrapper `scripts/tests/crabbox_*.sh` (Ablauf und Regeln in `.claude/skills/test/SKILL.md`), ab Stufe 2 über
-`scripts/vm/vm.py` und `/vm`. Provider-Env und Token liegen **nur** in `.claude/settings.local.json` (gitignored),
-nie in `settings.json`. Nach jedem Lauf die VM-Liste prüfen; eine geleakte VM ist ein Fehler, kein Detail.
+Die Dev-Box hat kein Docker und kein Display. Schwere Suiten laufen auf ephemeren Proxmox-VMs, geklont von
+`scripts/vm/vm.py` (Verben und Regeln in `/vm`), gefahren über `scripts/vm/warm.sh`, `iter.sh`, `reap.sh` und
+`scripts/tests/multibox.sh` (Ablauf in `/test`). Provider-Env und Token liegen **nur** in
+`.claude/settings.local.json` (gitignored), nie in `settings.json`. Nach jedem Lauf
+`python3 scripts/vm/vm.py list`; eine geleakte VM ist ein Fehler, kein Detail.
 
 ## 9. Wo steht was
 

@@ -5,9 +5,9 @@
 #
 # lib.sh — the shell side of scripts/vm/vm.py. SOURCE this, don't execute it.
 #
-# Provides: the Proxmox/VM environment (vm_load_env), warm-slot persistence in
-# .vm/warm.env, the lane identity, and the two helpers the role scripts share
-# (vm_marker, vm_build_agent_deb).
+# Provides: the Proxmox/VM environment (vm_load_env), the one call into vm.py
+# (vm_py), warm-slot persistence in .vm/warm.env, the lane identity, and the two
+# helpers the role scripts share (vm_marker, vm_build_agent_deb).
 #
 # The division of labour: everything that talks to the hypervisor lives in
 # vm.py — UPID polling, TLS, tags, the reaper. This file holds only what a
@@ -38,6 +38,17 @@ for k, v in env.items():
     if (k.startswith("AH_PVE_") or k.startswith("AH_VM_")) and not os.environ.get(k):
         print("export %s=%s" % (k, shlex.quote(str(v))))')"
   [ -n "${AH_PVE_URL:-}" ] || { echo "vm_lib: AH_PVE_URL unset (.claude/settings.local.json -> env)" >&2; return 1; }
+}
+
+# --- calling vm.py -----------------------------------------------------------
+# The single entry point every wrapper uses. AH_VM_PY points it at something
+# else — a hermetic test's recorder (scripts/tests/vm_wrappers_test.sh), never a
+# second implementation — so the wrappers can be tested without a hypervisor.
+# Without the override it is `python3 <file>`, not the executable bit: a checkout
+# from a tarball or a Windows-side clone loses the mode, and a wrapper that then
+# says "vm.py: Permission denied" is a riddle, not an error.
+vm_py() {
+  if [ -n "${AH_VM_PY:-}" ]; then "$AH_VM_PY" "$@"; else python3 "$VM_ROOT/scripts/vm/vm.py" "$@"; fi
 }
 
 # --- lane identity -----------------------------------------------------------

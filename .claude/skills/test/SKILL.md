@@ -1,6 +1,6 @@
 ---
 name: test
-description: Run AdminHelper's real test suites — the quick local one, and the heavy tier on crabbox VMs (docker/GUI/multi-host) including the weekly run heavy.sh. Use for integration/e2e/heavy tests, verifying on real Linux, reading the last weekly report, or before a release.
+description: Run AdminHelper's real test suites — the quick local one, and the heavy tier on ephemeral Proxmox VMs (docker/GUI/multi-host) including the weekly run heavy.sh. Use for integration/e2e/heavy tests, verifying on real Linux, reading the last weekly report, or before a release.
 ---
 
 # Testing AdminHelper
@@ -9,10 +9,11 @@ The fast unit/lint suites run anywhere (and in GitHub CI). The **heavy tier** �
 docker-compose stack, mTLS enrollment, Redis SSE fan-out, agent monitoring, apt/rpm repo
 build, the upgrade path from the last release, and multi-host scenarios (cross-distro rpm,
 3-host FRP tunnel, monitoring closed-loop, the real Tauri desktop GUI) — needs real Linux
-with Docker + a display, which the sandboxed dev box lacks. crabbox leases ephemeral
-Proxmox VMs, rsyncs the tree, runs, and tears down. Provider env AND token live only in the
-gitignored `.claude/settings.local.json` (nothing infra-bearing in the public
-`settings.json`); confirm with `crabbox doctor`.
+with Docker + a display, which the sandboxed dev box lacks. `scripts/vm/vm.py` clones
+ephemeral Proxmox VMs, rsyncs the tree, runs, and destroys them. Provider env AND token live
+only in the gitignored `.claude/settings.local.json` (nothing infra-bearing in the public
+`settings.json`); confirm with `python3 scripts/vm/vm.py doctor`. Driving a VM by hand is the
+`/vm` skill; this one is about the suites.
 
 ## The five verbs
 
@@ -29,31 +30,32 @@ runs them SUPERVISED, never fire-and-forget (Kevin, 2026-09-15).** Nothing here 
 itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin says
 `/test weekly`, the tmux line is not handed back to him — the session does this:
 
-1. Pre-flight, and stop on any red: `crabbox list` empty (a foreign box aborts the run with
-   74 in its first minute); no `Status: aktiv` build touching `scripts/tests/heavy.sh` or
-   `crabbox_multibox.sh` (a running bash script must never be edited in the same checkout);
-   the checkout is the tree that should be measured (`git status --short --branch`).
+1. Pre-flight, and stop on any red: `python3 scripts/vm/vm.py list` shows nothing of another
+   lane and nothing leaked on ours (a foreign box aborts the run with 74 in its first
+   minute); no `Status: aktiv` build touching `scripts/tests/heavy.sh` or
+   `scripts/tests/multibox.sh` (a running bash script must never be edited in the same
+   checkout); the checkout is the tree that should be measured (`git status --short --branch`).
 2. Start it detached, so it survives the session:
    ```
    tmux new -d -s ah-<mode> 'bash scripts/tests/heavy.sh <mode>'
    ```
 3. Watch it with a background waiter (a `tmux has-session` poll every 2–5 min, or the
-   Monitor tool on `.crabbox-out/weekly/*/report.md`). Do not poll by hand, do not end the
+   Monitor tool on `.ah-out/weekly/*/report.md`). Do not poll by hand, do not end the
    task early, do not start anything else that leases VMs meanwhile. `all` takes ~1.5 h,
    `capstone` ~3 h, `weekly` both. If the session is compacted or resumed, re-attach the
    waiter first (`tmux has-session -t ah-<mode>`); the run itself is not affected.
 4. When it ends: quote the report's FIRST line verbatim (the verdict), the two summary
-   lines (`run.sh[all]`, `multibox`), and the classification rows; then `crabbox list`
+   lines (`run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
    (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
    `history.csv` and the ROADMAP rows into `tasks/private/` — commit and push that repo.
 5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A
    rerun is again Kevin's word, never automatic.
 
-Abort only on Kevin's word: `tmux kill-session -t ah-<mode>`, then `crabbox_reap.sh` and
-`crabbox list`. An aborted run leaves an empty `report.md` — `status` skips it.
+Abort only on Kevin's word: `tmux kill-session -t ah-<mode>`, then `bash scripts/vm/reap.sh`
+and `vm.py list`. An aborted run leaves an empty `report.md` — `status` skips it.
 
 **Name these two before ending the turn** — both cost a whole run otherwise:
-`crabbox list` must be empty (a foreign box aborts the run with 74 in its first
+`vm.py list` must be clean (a foreign box aborts the run with 74 in its first
 minute, long after the terminal is closed), and `capstone`/`weekly` have never
 run against the enforced gateway `--capstone` now sets — the desktop stage
 enrolls a device identity first (T7a), but only a real run proves it.
@@ -67,7 +69,7 @@ going — and after a hard abort — the newest DIRECTORY holds no verdict, and
 taking it would hide the last real one:
 
 ```
-ls -1d .crabbox-out/weekly/*/report.md | sort -r        # newest first
+ls -1d .ah-out/weekly/*/report.md | sort -r             # newest first
 head -1 <the first one whose first line is not empty>   # PASS | FAIL | UNVERIFIED (<reason>)
 ```
 
@@ -83,16 +85,16 @@ The same line is on the `AH-STATUS` block's fourth line at session start.
 bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] [--notify]
 ```
 
-- `all` = warm box → `run.sh all --strict`; `capstone` = `crabbox_multibox.sh --capstone --strict`;
+- `all` = warm box → `run.sh all --strict`; `capstone` = `multibox.sh --capstone --strict`;
   `weekly` = both, serially. The capstone is skipped only when the `all` layer ended
   UNVERIFIED (seven VMs must not burn into a broken environment) — a plain FAIL does not
   stop it.
-- It is a **wrapper**: every VM operation goes through the crabbox_*.sh scripts, so stage 2
-  can swap the implementation underneath as long as the summary lines stay the same.
-- Pre-flight: `crabbox doctor`, and `crabbox list` must show no box outside this lane's pond
-  and `warm.env` — a foreign box means the capacity is not there, and the run stops before
-  burning any.
-- Results: `.crabbox-out/weekly/<jjjj-mm-tt-hhmm>/report.md` plus the pulled artifacts. The
+- It is a **wrapper**: every VM operation goes through warm.sh / iter.sh / multibox.sh, which
+  is what let stage 2b swap the VM tool underneath while the summary lines stayed.
+- Pre-flight: `vm.py doctor --roles <what this mode will clone>`, and `vm.py list --json` must
+  show no box of another lane and nothing leaked on ours — a foreign box means the capacity is
+  not there, and the run stops before burning any.
+- Results: `.ah-out/weekly/<jjjj-mm-tt-hhmm>/report.md` plus the pulled artifacts. The
   report's first line is the verdict, then the wrappers' summary lines **verbatim**, then the
   step table, `Kevin sichtet`, `Notizen`, the audit.yml verdict and the VM list. Facts, never
   a judgement.
@@ -107,16 +109,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
 
 | Verdict | How it is reached | What it means |
 |---|---|---|
-| `infra` | the box could not be had, or the step could not RUN: no warm box, warm pond not ready, a failed server lease, `strict-failed: no step ran`, `strict-failed: … (SKIP)`, wrapper exit 74 | never a regression, report reads UNVERIFIED |
+| `infra` | the box could not be had, or the step could not RUN: no warm box, a failed server lease, `vm.py: capacity/privilege`, on the one-box layer also `vm.py: no ip/no ssh/timeout/sync failed/clone … failed`, `strict-failed: no step ran`, `strict-failed: … (SKIP)`, wrapper exit 74 | never a regression, report reads UNVERIFIED |
 | `flaky` | green within 3 retries on the same box (`AH_NO_SYNC=1`) | quarantined in `tasks/private/seen.md`, does not fail the run |
 | `unbestaetigt` | 3× red, but green on a fresh second VM — or no PASS commit to compare against, or `--no-second-vm` | Kevin looks; never a REG |
 | `extern` | red on the second VM AND on the last PASS commit | environment/dependency, not the change |
 | `reg` | red on the second VM, green on the last PASS commit | roadmap row (class REG, `neu`) + `tasks/reg-<datum>-<schritt>.md` |
 | `fail` | red all three times, but failing DIFFERENTLY each time | reproducibly broken without the stable signature a regression claim needs — no second VM |
 
-The second VM is a **worktree** `.crabbox-worktrees/w2` with its own lane (`AH_LANE=w2`,
-pond `ah-warm-w2`); heavy.sh reaps that pond and removes the worktree itself. Kevin's own
-warm box (`ah-warm`) is never touched. `--no-second-vm` skips the check and leaves the
+The second VM is a **worktree** `.ah-worktrees/w2` with its own lane (`AH_LANE=w2`);
+heavy.sh reaps that lane and removes the worktree itself. Kevin's own warm box (lane `main`)
+is never touched. `--no-second-vm` skips the check and leaves the
 candidate unconfirmed; `--base <sha>` overrides the comparison commit.
 
 ### Rhythm
@@ -128,46 +130,46 @@ quarantine calibrates against un-retried suites.
 ## Fast loop — warm once → iterate → reap (the default; do NOT stop after each run)
 
 A hydrated box is expensive to build (~18 min bootstrap + ~20 min Tauri build) but cheap to
-keep. Reuse it: `.crabbox.yaml` excludes `target/`/`node_modules/`/`.venv/` from the
-`delete`-sync, so on a REUSED box those build trees survive → cargo/npm rebuild
+keep. Reuse it: `scripts/vm/rsync-exclude.txt` keeps `target/`/`node_modules/`/`.venv/` out of
+the `--delete` sync, so on a REUSED box those build trees survive → cargo/npm rebuild
 incrementally (minutes, not ~40). Validated: iter #1 ~12 min (cold) → #2 ~3.5 min (3.4×).
 
-1. **Warm once** (idempotent — reuses `.crabbox/warm.env` if the slug is still ready):
-   `bash scripts/tests/crabbox_warm.sh <desktop|server|pond>`
+1. **Warm once** (idempotent — reuses `.vm/warm.env` if the VM is still running):
+   `bash scripts/vm/warm.sh <desktop|server|pond>`
    - `desktop` = full box (docker+go+node+rust+tauri) — the general workhorse for `run.sh`.
    - `server`  = server box with the stack UP + admin/monitor creds stashed.
    - `pond`    = server (stack up) + desktop, for the distributed desktop loop.
 2. **Iterate** after each change:
-   - `bash scripts/tests/crabbox_iter.sh <lint|unit|quick|integration|e2e|all>` — run.sh on the warm box.
-   - `bash scripts/tests/crabbox_iter.sh --desktop [spec…]` — GUI on the warm desktop box vs the warm server.
-   Under the hood: `crabbox run --id <slug> -no-hydrate -keep-on-failure -capture-stdout/-stderr
-   -artifact-glob '.crabbox-out/**' -- 'AH_ALLOW_REAL=1 AH_CAPTURE=1 bash scripts/tests/run.sh <layer>'`.
+   - `bash scripts/vm/iter.sh <lint|unit|quick|integration|e2e|all>` — run.sh on the warm box.
+   - `bash scripts/vm/iter.sh --desktop [spec…]` — GUI on the warm desktop box vs the warm server.
+   Under the hood: `vm.py run <vmid> --sync --timeout <3000|6000> --out .ah-out --extend 8h
+   -- 'AH_ALLOW_REAL=1 AH_CAPTURE=1 bash scripts/tests/run.sh <layer>'`.
    `AH_NO_SYNC=1` re-runs the already-synced tree (flaky retry, no rsync).
-3. **Reap** at branch-switch / EOD: `bash scripts/tests/crabbox_reap.sh` (stops THIS lane's
-   pond — `ah-warm`, or `ah-warm-<lane>` in a worktree-lane (see cbx_lane in crabbox_lib.sh) —
-   + clears warm.env; other lanes' boxes stay). Warm boxes also self-reap via
-   `-ttl 8h -idle-timeout 4h`.
+3. **Reap** at branch-switch / EOD: `bash scripts/vm/reap.sh` (destroys THIS lane's warm VMs,
+   sweeps what expired on it and clears warm.env; other lanes' boxes stay). Warm boxes also
+   carry a ttl (`AH_WARM_TTL`, default 8h) that `iter.sh` extends on every run — a forgotten
+   one dies at the next `vm.py` call after it runs out.
 
 ## Auto-debug on failure (no re-run needed)
 
-`crabbox_iter.sh` (and `run.sh` with `AH_CAPTURE=1`) leave, on ANY failure:
-- `.crabbox/out/last.err.log` — full untruncated stderr (read first).
-- `.crabbox-out/screenshots/*.png` + `.html` — the GUI at failure (wdio `afterTest` hook).
-- `.crabbox-out/logs/*` — docker container logs, agent journal, tool versions (crabbox_debug.sh).
-- newest `.crabbox/captures/*.tar.gz` — crabbox's own failure bundle.
-- the box stays up (`-keep-on-failure`): `crabbox ssh --id <slug>` to reproduce interactively.
+`iter.sh` (and `run.sh` with `AH_CAPTURE=1`) leave, on ANY failure:
+- `.ah-out/last.out.log` — the box's full output, untruncated (read first).
+- `.ah-out/screenshots/*.png` + `.html` — the GUI at failure (wdio `afterTest` hook).
+- `.ah-out/logs/*` — docker container logs, agent journal, tool versions (box_debug.sh).
+- the box stays up: `python3 scripts/vm/vm.py ssh <vmid>` to reproduce interactively.
 
 ## Manual primitives (what the loop wraps)
 
-`crabbox warmup -slug <s> -pond <p> -proxmox-bridge <bridge> -ttl 8h -idle-timeout 4h` →
-`crabbox run --id <s> -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/tests/crabbox_bootstrap.sh'` →
-`crabbox run --id <s> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `crabbox stop --id <s>`.
+`vm.py clone --profile <linux-full|linux-server> --role <r> --ttl 8h` → `vm.py wait <vmid>` →
+`vm.py run <vmid> --sync -- 'AH_BOOTSTRAP_PROFILE=<full|server|agent> bash scripts/vm/bootstrap_linux.sh'` →
+`vm.py run <vmid> -- 'AH_ALLOW_REAL=1 bash scripts/tests/run.sh <layer>'` → `vm.py destroy <vmid>`.
+The full verb list, the exit codes and the rules are in the `/vm` skill.
 `run.sh [lint|unit|quick|integration|e2e|all] [--strict] [--only <keys…>] [--step <name>]`
 (the `all` layer includes `upgrade_path_test.sh` — last published release → this checkout —
 and the eight `desktop_e2e_*.sh` GUI suites, `desktop_e2e_misc.sh` among them). **Box rule:**
 with `AH_REQUIRED` unset, `run.sh` makes every step of a heavy layer required — a self-SKIP
-on the box is a strict failure. `crabbox_iter.sh` forwards a SET `AH_REQUIRED` verbatim, so a
-direct `crabbox_iter.sh all --strict` from a shell that sourced `.devenv.sh` carries the dev
+on the box is a strict failure. `iter.sh` forwards a SET `AH_REQUIRED` verbatim, so a
+direct `iter.sh all --strict` from a shell that sourced `.devenv.sh` carries the dev
 box's heavy-free set to the box; `heavy.sh` unsets it first (`AH_REQUIRED_BOX` names a box
 set explicitly) and is the safe entry point for the heavy tier.
 prints `N passed, M failed, K skipped, J test-skips, R reruns` and exits non-zero on fail;
@@ -175,11 +177,12 @@ under `--strict` a skipped required step is a failure, and so is a run in which 
 integration/e2e/all need `AH_ALLOW_REAL=1`. Bootstrap profiles:
 `server`/`agent` skip Rust/Tauri (~18 min faster); `full` (desktop + single-box) keeps it.
 
-## Multi-host scenarios — `crabbox_multibox.sh` (composable flags)
+## Multi-host scenarios — `multibox.sh` (composable flags)
 
-`bash scripts/tests/crabbox_multibox.sh [flags]` leases a server-box + role boxes on the same
-provider bridge,
-prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--keep` to inspect):
+`bash scripts/tests/multibox.sh [flags]` clones a server box + role boxes under one scenario
+tag, prints one `N ok, M failed, K skipped` summary, and destroys the whole scenario on exit
+(`--keep` to inspect). It runs `vm.py doctor` over all planned roles BEFORE the first clone,
+so a scenario the hypervisor cannot carry costs nothing:
 - `--strict`    a guard that could not run fails the run instead of passing as a note.
                 Since stage 3 the six conditional guards report through `skipped()` (debian:9,
                 agent-repo/CA-flip without `REPO_FP`, desktop lease, moncheck lease,
@@ -188,10 +191,10 @@ prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--ke
                 still drops its follow-up checks without a SKIP — there the accompanying
                 FAIL is the evidence.
 - `--agents N`  N agent-boxes: real `.deb` install + provision over the hop (cross-host mTLS).
-- `--rpm`       + a cross-distro rpm agent in a `rockylinux:8` container (crabbox_agentbox_rpm.sh).
+- `--rpm`       + a cross-distro rpm agent in a `rockylinux:8` container (box_agentbox_rpm.sh).
 - `--tunnel`    + frps + an agent frpc STCP server + a visitor: full 3-host FRP tunnel data path.
 - `--desktop`   + the real Tauri GUI headless vs the remote server (login/CRUD/monitoring).
-                `AH_DESKTOP_ID=<slug>` reuses a warm desktop box (skips ~30 min re-bootstrap+build).
+                `AH_DESKTOP_VM=<vmid>` reuses a warm desktop box (skips ~30 min re-bootstrap+build).
 - `--moncheck`  + a mailhog sink box: pull ping-checks + a closed-loop email alert over the hop.
 - `--enforce`   `MTLS_ENFORCE=true`: cert-based admin seed (enroll on :8444) + assert certless :443 → 400.
 - `--capstone`  = `--agents 1 --rpm --tunnel --desktop --moncheck --enforce` (everything,
@@ -204,23 +207,27 @@ prints one `N ok, M failed, K skipped` summary, tears leases down on exit (`--ke
                 a client cert on :443, the desktop stage enrolls a device identity over the
                 certless :8444 plane before EACH spec (one one-time token per spec, minted
                 just before the stage). Implemented, but only a real capstone proves it.
-Roles: `crabbox_serverbox` / `agentbox` / `agentbox_rpm` / `tunnelbox` / `visitorbox` /
-`desktopbox` / `moncheckbox`. serverbox modes (tunnel/moncheck/enforce) are independent + compose.
+Roles: `box_serverbox` / `box_agentbox` / `box_agentbox_rpm` / `box_tunnelbox` /
+`box_visitorbox` / `box_desktopbox` / `box_moncheckbox`. serverbox modes
+(tunnel/moncheck/enforce) are independent + compose.
 
-## Bake a fat template (ask-first — provisions)
+## Bake a template (provisions — run deliberately)
 
-`bash scripts/tests/crabbox_bake.sh <desktop|server>` hydrates a box + guides converting it to
-a Proxmox template so cold starts skip the ~18 min bootstrap. Provisions → run deliberately.
+`bash scripts/vm/bake.sh <linux-full|linux-server>` clones the base image, bootstraps it, warms
+the caches, cleans it and converts it to a Proxmox template, so cold starts skip the ~18 min
+bootstrap. Provisions a VM and runs ~45 min → run deliberately; inside the pool nothing
+prompts for it (D17), so the restraint is yours.
 
 ## Pitfalls (learned the hard way — keep them true)
 
-- **Proxmox template = DHCP + cloud-init + a cloud-init user** (template ID(s) + bridge come
-  from the provider env in `.claude/settings.local.json`; keep an ubuntu one, add others as
-  needed). Static IP → clones collide; no cloud-init → warmup hangs. `crabbox doctor` doesn't
-  prove this. RHEL-family containers need a v8 base (v9 wants x86-64-v2 the default vCPU lacks).
-- **Lease SEQUENTIALLY into a `-pond`** — concurrent `warmup &` on this proxmox provider
-  (ssh-lease, coordinator:never) hangs (once ran ~7 h). Every crabbox call is `timeout`-bounded.
-  Boxes reach each other over the shared bridge; resolve peer IPs via `crabbox ssh --id`, not the warmup line.
+- **Proxmox template = DHCP + cloud-init + a cloud-init user + qemu-guest-agent** (templates
+  are resolved by TAG, see `scripts/vm/profiles.json`). Static IP → clones collide; no
+  cloud-init → the key never lands; no guest agent → `vm.py wait` never learns the address.
+  `vm.py doctor` checks the templates and the config, not the guest. RHEL-family containers
+  need a v8 base (v9 wants x86-64-v2 the default vCPU lacks).
+- **Clones are submitted SEQUENTIALLY** — a linked clone takes ~2 s, so the gain from
+  parallelism is small and unmeasured on the thin pool. Boxes reach each other over the shared
+  bridge; peer addresses come from `vm.py wait`, which asks the hypervisor's guest agent.
 - **Bring up ONLY `gateway server ca-issuer monitoring`** — `scheduler` pulls the not-yet-
   published `ghcr.io/admincave/*` tag → `unauthorized`; first-party images build from checkout
   as `adminhelper-test/*`. frps is public (snowdreamtech) and is brought up by `--tunnel`.
@@ -248,15 +255,21 @@ a Proxmox template so cold starts skip the ~18 min bootstrap. Provisions → run
 
 ## Rules
 
-- **Warm boxes persist across iterations — do NOT `crabbox stop` after each run.** They self-reap
-  (ttl/idle); sweep with `crabbox_reap.sh`. `crabbox stop` after one run is only for a genuine
-  one-off. A box that fails sync sanity is not a debug target — stop it + re-warm.
-- **After ANY workflow / batch of agents, run `crabbox list` and stop strays** — read-only agents
-  have repeatedly leaked provisioned (`keep=true`) boxes. Never leave a VM running. `heavy.sh`
-  checks the same list BEFORE it starts (a foreign box aborts with 74) and prints it into the
-  report afterwards — a leaked VM is a finding, not a detail.
+- **Warm boxes persist across iterations — do NOT destroy after each run.** They carry a ttl
+  that `iter.sh` extends; sweep with `scripts/vm/reap.sh`. Destroying after one run is only for
+  a genuine one-off. A box that fails sync sanity is not a debug target — destroy it + re-warm.
+- **After ANY workflow / batch of agents, run `python3 scripts/vm/vm.py list`** — it exits 74
+  when this lane holds a VM nothing claims, which is exactly the leak read-only agents have
+  produced before. Never leave a VM running. `heavy.sh` reads the same listing BEFORE it starts
+  (a foreign box aborts with 74) and prints it into the report afterwards — a leaked VM is a
+  finding, not a detail.
 - **Never claim green unless it actually passed** — report the `run.sh` / multibox summary line
   verbatim; SKIP = "not verified", not "ok". For a weekly run, quote the report's first line;
   `UNVERIFIED` is never reported as a pass and never as a regression.
-- Pre-approved (auto): `warmup / run / status / list / connect / ssh / doctor / stop / cleanup /
-  artifacts pull`. Provision/cost → ask first: `prewarm / job / checkpoint create / image / bake`.
+- Pre-approved (auto, D17): every `vm.py` verb, every `scripts/vm/*.sh` wrapper, `multibox.sh`
+  and `heavy.sh`. Inside the pool, cloning, baking and destroying need no prompt (CLAUDE.md §2,
+  2026-09-08) — what prompts is what reaches outside it: push, PR, merge, publish, deleting a
+  template. The one exception in `permissions.ask` is `bootstrap_linux.sh`: it is the only
+  script here that mutates the machine it runs ON, and this dev box deliberately has no docker.
+- Starting a long run is a question of INITIATIVE, not of permissions: `all`/`capstone`/`weekly`
+  begin on Kevin's word only, and no allowlist entry changes that.

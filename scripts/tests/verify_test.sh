@@ -35,7 +35,7 @@ trap 'rm -rf "$WORK"' EXIT
 # mk_tree <dir> <marker> — a checkout whose run.sh only records how it was called
 mk_tree() {
   local dir="$1" marker="$2"
-  mkdir -p "$dir/scripts/tests" "$dir/.crabbox-out"
+  mkdir -p "$dir/scripts/tests" "$dir/.ah-out"
   cat > "$dir/scripts/tests/run.sh" <<EOF
 #!/usr/bin/env bash
 {
@@ -45,7 +45,7 @@ mk_tree() {
   echo "devenv_marker=\${FIXTURE_DEVENV-<unset>}"
   echo "cwd=\$PWD"
 } > "$dir/called.txt"
-out="\${AH_OUT_DIR:-$dir/.crabbox-out}"
+out="\${AH_OUT_DIR:-$dir/.ah-out}"
 mkdir -p "\$out"
 if [ -n "\${FIXTURE_TRUNCATE:-}" ]; then
   printf '{\n  "layer": "%s"' "\$1" > "\$out/last-\$1.json"
@@ -108,7 +108,7 @@ run_v scripts --tree "$A"
 [ "$(called cwd)" = "$A" ] && ok "the suite runs with the tree as cwd" || bad "cwd=$(called cwd)"
 [ "$(called devenv_marker)" = "sourced" ] && ok "the tree's .devenv.sh is sourced" || bad "devenv: $(called devenv_marker)"
 
-# A checkout without a .devenv.sh is normal (a crabbox box has none) and must not
+# A checkout without a .devenv.sh is normal (a VM box has none) and must not
 # be an error — treeB deliberately has no devenv file.
 run_v scripts --tree "$B"
 [ $rc -eq 0 ] && grep -q "^marker=B" "$B/called.txt" \
@@ -122,7 +122,7 @@ run_v all --tree "$A"
 [ "$(called args)" = "quick" ] && ok "'all' means the whole quick layer" || bad "args=$(called args)"
 python3 -c "
 import json
-d=json.load(open('$A/.crabbox-out/last-verify.json'))
+d=json.load(open('$A/.ah-out/last-verify.json'))
 assert d['layer']=='quick' and d['component']=='all', d
 " 2>/dev/null && ok "'all' reads the quick-layer artifact too" || bad "all-layer artifact"
 
@@ -144,7 +144,7 @@ OUT=$(FIXTURE_RC=3 bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
 [ $rc -eq 3 ] && ok "the suite's exit code is passed through" || bad "rc=$rc (expected 3)"
 
 run_v scripts --tree "$A" -- tests/x.py
-ART="$A/.crabbox-out/last-verify.json"
+ART="$A/.ah-out/last-verify.json"
 [ -f "$ART" ] && ok "last-verify.json is written next to the run artifact" || bad "no $ART"
 python3 -c "
 import json
@@ -198,7 +198,7 @@ python3 -c "import json;json.load(open('$ART'))" 2>/dev/null \
   && ok "a tab in the args keeps the artifact valid JSON" || bad "invalid JSON from a tab in args"
 
 # A run that never produced an artifact must not fabricate one.
-rm -f "$A/.crabbox-out/last-quick.json" "$ART"
+rm -f "$A/.ah-out/last-quick.json" "$ART"
 cat > "$A/scripts/tests/run.sh" <<'EOF'
 #!/usr/bin/env bash
 exit 2

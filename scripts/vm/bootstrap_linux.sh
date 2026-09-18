@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# crabbox_bootstrap.sh — hydrate a fresh crabbox box (Ubuntu 24.04) with every
+# bootstrap_linux.sh — hydrate a fresh Linux box (Ubuntu 24.04) with every
 # toolchain the heavy AdminHelper suites need, then it can run
 # `bash scripts/tests/run.sh all`. Idempotent-ish: safe to re-run.
 #
 # Runs ON THE BOX, e.g.:
-#   crabbox run --id <slug> -- 'bash scripts/tests/crabbox_bootstrap.sh'
-# Run as the (non-root) crabbox user: apt/docker steps use `sudo` internally,
+#   python3 scripts/vm/vm.py run <vmid> --sync -- 'bash scripts/vm/bootstrap_linux.sh'
+# Run as the (non-root) guest user: apt/docker steps use `sudo` internally,
 # while rustup/cargo install run as the user so cargo lands in ~/.cargo (not
-# root's). The crabbox user needs passwordless sudo (crabbox templates provide it).
+# root's). The guest user needs passwordless sudo (our templates provide it).
 #
 # Mirrors the dependency setup in .github/workflows/ci.yml so the box matches CI.
 
@@ -104,7 +104,7 @@ $SUDO apt-get update -qq
 # `install -y` would UPGRADE all of them to the
 # newest mirror versions (25 MB of webkit2gtk alone). In the 2026-09-11 weekly
 # that upgrade, stacked on the apt-lock wait, pushed two role setups past their
-# crabbox timeout; every capstone failure that day was a consequence. Install
+# role timeout; every capstone failure that day was a consequence. Install
 # what is missing, leave what is there.
 $SUDO apt-get install -y --no-install-recommends --no-upgrade \
   ca-certificates curl git rsync openssl gnupg jq unzip build-essential pkg-config \
@@ -129,16 +129,24 @@ $SUDO systemctl enable --now qemu-guest-agent
 # fails with "sshd/xrdp saw no connection" — the launch silently has nothing to
 # exec, while web-connect still passes (xdg-open/webview). Cost: ~30 MB.
 
+# Hard, not best-effort: without en_US.UTF-8 the headless webview dies in
+# Intl.NumberFormat and every desktop journey sees a blank #app — a box that
+# looks bootstrapped and fails seven GUI suites for a reason nobody reads out of
+# a screenshot (.claude/rules/testing.md).
 log "generate a valid UTF-8 locale (headless boxes default to C — breaks Intl.NumberFormat in the desktop webview -> blank app)"
-$SUDO locale-gen en_US.UTF-8 >/dev/null 2>&1 || true
-$SUDO update-locale LANG=en_US.UTF-8 >/dev/null 2>&1 || true
+$SUDO locale-gen en_US.UTF-8 >/dev/null
+$SUDO update-locale LANG=en_US.UTF-8 >/dev/null
 
+# The pipx fallback stays, the `|| true` behind it does not: run.sh dep-gates
+# both of these, so a failed install does not go red — it SKIPs, and under
+# --strict the box is then reported as unverified for a reason that has nothing
+# to do with the tree. A bootstrap that could not install them must say so here.
 log "ruff $RUFF_VERSION (Python lint, used by run.sh lint)"
 $SUDO pip3 install --break-system-packages -q "ruff==$RUFF_VERSION" \
-  || pipx install "ruff==$RUFF_VERSION" || true
+  || pipx install "ruff==$RUFF_VERSION"
 log "pytest $PYTEST_VERSION (used by run.sh unit's vm-pytest step)"
 $SUDO pip3 install --break-system-packages -q "pytest==$PYTEST_VERSION" \
-  || pipx install "pytest==$PYTEST_VERSION" || true
+  || pipx install "pytest==$PYTEST_VERSION"
 
 log "docker engine + compose v2 plugin"
 if ! command -v docker >/dev/null 2>&1; then
@@ -152,8 +160,11 @@ if ! command -v docker >/dev/null 2>&1; then
   $SUDO apt-get update -qq
   $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
-$SUDO systemctl enable --now docker 2>/dev/null || true
-$SUDO usermod -aG docker "${SUDO_USER:-$USER}" || true   # effective on next login/session
+# Both hard: a box whose docker never came up, or whose user is not in the
+# docker group, brings the whole integration tier down with permission errors
+# forty minutes later instead of failing here in a second.
+$SUDO systemctl enable --now docker
+$SUDO usermod -aG docker "${SUDO_USER:-$USER}"   # effective on next login/session
 
 log "Go ${GO_VERSION}"
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -q "$GO_VERSION"; then
@@ -178,7 +189,9 @@ if [ "$PROFILE" = full ]; then
   fi
   # shellcheck disable=SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-  rustup component add rustfmt clippy 2>/dev/null || true
+  # Hard: `cargo fmt`/`clippy -D warnings` are gates (CLAUDE.md §7), and without
+  # the components run.sh's desktop-cargo step fails on the box, not here.
+  rustup component add rustfmt clippy
 
   # No `|| true` here: a failed install used to leave the box looking bootstrapped
   # while all seven desktop_e2e_*.sh suites then skipped on the missing tauri-cli.
@@ -202,5 +215,5 @@ cp "/tmp/frp_${FRP_VERSION}_linux_amd64/frpc" "$ROOT/apps/desktop/src-tauri/bina
 chmod +x "$ROOT/apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu"
 
 log "done — verify with: bash scripts/tests/run.sh lint"
-echo "NOTE: 'docker' group membership takes effect on a new session — a subsequent"
-echo "      'crabbox run' invocation will already have it (fresh SSH session)."
+echo "NOTE: 'docker' group membership takes effect on a new session — the next"
+echo "      'vm.py run' will already have it (fresh SSH session)."

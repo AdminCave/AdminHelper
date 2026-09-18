@@ -68,7 +68,7 @@ K skipped`) steht im Auftrag.
    Konkret als `blocker` melden, wenn eine berührt, aber die Partnerstelle nicht mitgezogen ist:
    `MINISIGN_PUBKEY` in `scripts/install.sh` **und** `scripts/update.sh` (müssen gleich sein);
    das Versions-Pin-Trio `tauri.conf.json` ↔ Agent-Tag/`build-deb.sh`/`build-rpm.sh` ↔
-   `FRP_VERSION` in `.github/workflows/` (+ `crabbox_bootstrap.sh`).
+   `FRP_VERSION` in `.github/workflows/` (+ `scripts/vm/bootstrap_linux.sh`).
 
 ## Urteil
 Gib strukturiert zurück:

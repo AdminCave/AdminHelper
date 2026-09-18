@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# crabbox_visitorbox.sh — S4 phase 2. The STCP VISITOR that completes the tunnel
+# box_visitorbox.sh — S4 phase 2. The STCP VISITOR that completes the tunnel
 # data path across three hosts: it connects through the REMOTE frps to the
 # tunnel-agent's frpc STCP server and reaches that agent's sshd — proving data
 # flows visitor-host → frps-host → agent-host with none of them co-located.
@@ -9,18 +9,18 @@
 # here the box provisions (a tunnel-scoped, CA-signed identity frps also trusts) and
 # the fetched visitor.toml is rewired to point at it. Prints VIS_* markers.
 #
-# Called by scripts/tests/crabbox_multibox.sh --tunnel via `crabbox run`.
-#   crabbox_visitorbox.sh <SRV_IP> <VIS_SID> <VIS_PTOK> <VISITOR_TOML_B64>
+# Called by scripts/tests/multibox.sh --tunnel via `vm.py run`.
+#   box_visitorbox.sh <SRV_IP> <VIS_SID> <VIS_PTOK> <VISITOR_TOML_B64>
 set -uo pipefail
 SRV_IP="${1:?}"; VSID="${2:?}"; VPTOK="${3:?}"; VB64="${4:?}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT" || exit 1
-# shellcheck source=scripts/tests/crabbox_lib.sh
-. "$(dirname "$0")/crabbox_lib.sh"
+# shellcheck source=scripts/vm/lib.sh
+. "$(dirname "$0")/../vm/lib.sh"
 
 echo "[visitorbox] hydrate + build/install the agent (for the binary + frpc sidecar)"
-AH_BOOTSTRAP_PROFILE=agent bash scripts/tests/crabbox_bootstrap.sh || { echo "[visitorbox] bootstrap failed"; exit 1; }
+AH_BOOTSTRAP_PROFILE=agent bash scripts/vm/bootstrap_linux.sh || { echo "[visitorbox] bootstrap failed"; exit 1; }
 export PATH="$PATH:/usr/local/go/bin"
-DEB="$(cbx_build_agent_deb visitorbox)" || exit 1
+DEB="$(vm_build_agent_deb visitorbox)" || exit 1
 sudo apt-get install -y -o DPkg::Lock::Timeout=300 "$DEB" 2>/dev/null || sudo dpkg -i "$DEB" || { echo "[visitorbox] install failed"; exit 1; }
 
 echo "[visitorbox] provision -> CA-signed mTLS identity for the visitor's TLS to frps"

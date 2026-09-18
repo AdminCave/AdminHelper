@@ -69,18 +69,24 @@ Desktop.ini
 /tasks/audit-fixes.md
 /tasks/test-infra-capstone-release.md
 
-# crabbox local failure-capture bundles (0700, not fully redacted — never commit)
+# Leftovers from before the vm.py migration: a local failure-capture bundle
+# (0700, NOT fully redacted) and the artifacts pulled off a crabbox box. Still
+# ignored on purpose — this repo is public, and un-ignoring them would let one
+# `git add -A` stage an unredacted bundle, and would put every un-cleaned box's
+# leftovers into tree-hash.sh's answer. Delete the two directories and this
+# block goes with them.
 .crabbox/
-# crabbox auto-debug artifacts pulled off the box (screenshots/logs) + desktop XDG
 .crabbox-out/
+
 # Second-VM worktree of scripts/tests/heavy.sh (created and removed per check).
 # Ignored so a run in progress cannot change tree-hash.sh's answer — it hashes
 # every file `git add -A` would take, and a whole second checkout would.
-.crabbox-worktrees/
+.ah-worktrees/
+# Desktop XDG runtime dir of the GUI E2E suites
 .dt-xdg/
 
 # Agent build output produced at the repo root by apps/agent/build-deb.sh /
-# build-rpm.sh (and the frpc binary staged there by the crabbox agent role).
+# build-rpm.sh (and the frpc binary staged there by the agent role).
 /frpc
 /build-deb/
 /build-rpm/

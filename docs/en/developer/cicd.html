@@ -37,7 +37,7 @@
           <table>
             <thead><tr><th>Workflow</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo test --locked</code> on Windows, the Go suite running natively on Windows (job <code>agent-windows</code>: <code>go test -v ./...</code>, a build and a <code>version</code> smoke of the <code>.exe</code>), a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>crabbox_bootstrap.sh</code>), and &ndash; in the same job &ndash; the toolchain lockstep check (<code>scripts/dev/toolchain-lockstep.sh</code>): every <code>go-version</code> in <code>ci.yml</code>/<code>release.yml</code>/<code>audit.yml</code> must be the same one, and the <code>go</code> directive of the <code>govulncheck</code> release pinned in <code>audit.yml</code> must not exceed it &ndash; otherwise the audit job fails while installing the tool under <code>GOTOOLCHAIN=local</code> and reports nothing about our dependencies (if the module proxy is unreachable the check ends in 75/SKIP and reddens the job rather than waving through a check that never ran &ndash; that one is a re-run, not a fix). Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>crabbox</strong> (ephemeral Proxmox VMs) &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; tests for every component: server <code>pytest</code> (Postgres service, Python&nbsp;3.12/3.13), monitoring <code>pytest</code> (Postgres service for the migration smoke test), Go agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), desktop UI &amp; web panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Additional PR gates against &ldquo;green but broken&rdquo;: <code>cargo test --locked</code> on Windows, the Go suite running natively on Windows (job <code>agent-windows</code>: <code>go test -v ./...</code>, a build and a <code>version</code> smoke of the <code>.exe</code>), a <code>cargo tauri build</code> smoke on Linux (debug, deb only), Docker builds of both images without push, an FRP pin consistency check (<code>FRP_VERSION</code> + SHA-256 across <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>bootstrap_linux.sh</code>), and &ndash; in the same job &ndash; the toolchain lockstep check (<code>scripts/dev/toolchain-lockstep.sh</code>): every <code>go-version</code> in <code>ci.yml</code>/<code>release.yml</code>/<code>audit.yml</code> must be the same one, and the <code>go</code> directive of the <code>govulncheck</code> release pinned in <code>audit.yml</code> must not exceed it &ndash; otherwise the audit job fails while installing the tool under <code>GOTOOLCHAIN=local</code> and reports nothing about our dependencies (if the module proxy is unreachable the check ends in 75/SKIP and reddens the job rather than waving through a check that never ran &ndash; that one is a re-run, not a fix). Coverage runs report-only in the test jobs (no gate). On <code>main</code> pushes + manual dispatch (deliberately not a per-PR gate yet, since it builds the server image and boots a five-container stack): a from-outside integration test (<code>scripts/tests/integration_stack_test.sh</code>) that boots the real stack with mTLS enforced and drives the full path through the nginx gateway only &ndash; enrollment token, CSR&nbsp;&rarr;&nbsp;enroll plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;client cert, certless&nbsp;&rarr;&nbsp;rejected, cert+JWT&nbsp;&rarr;&nbsp;200. The desktop E2E (WebdriverIO + <code>tauri-driver</code> under <code>xvfb</code>, <code>apps/desktop/e2e/</code>) <strong>deliberately does not run in CI</strong>; it runs locally/manually (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): the headless WebKit chain (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) drifts with the runner image + ungated upstream tools and reddened <code>main</code> without signalling a real defect. The heavy tier (multi-host stack, mTLS over a real network hop, desktop GUI) instead runs on <strong>ephemeral Proxmox VMs</strong> &ndash; see <code>DEVELOPMENT.md</code> and the <code>/test</code> skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Build &amp; push the server + monitoring images to <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code>; sign each digest keylessly with cosign (+ SLSA provenance/SBOM)</td></tr>
               <tr><td><code>release.yml</code></td><td>Desktop DEB/RPM/binary, Go-agent DEB/RPM + Linux/Windows binaries, Windows MSI (best-effort), <code>SHA256SUMS</code> (+ minisign signature), draft release. Jobs: <code>desktop-linux</code>, <code>agent</code>, <code>agent-windows-smoke</code> (hard &ndash; runs the built <code>.exe</code> once), <code>desktop-windows</code> (best-effort, installs and uninstalls the MSI), <code>release</code>. The assertions are listed below under &ldquo;Release assertions&rdquo;.</td></tr>
               <tr><td><code>audit.yml</code></td><td>Weekly dependency audit (Monday morning, also manually via <code>workflow_dispatch</code>): <code>pip-audit</code> (server + monitoring locks), <code>cargo audit</code> (desktop), <code>govulncheck</code> (agent), <code>npm audit</code> (web + desktop UI)</td></tr>
@@ -56,7 +56,7 @@
           </table>
 
           <h2>Test aggregator (<code>scripts/tests/run.sh</code>)</h2>
-          <p>One entry point for every suite &ndash; locally, on a crabbox VM and in the CI job
+          <p>One entry point for every suite &ndash; locally, on a test VM and in the CI job
           <code>ops-scripts</code>. The call is <code>bash scripts/tests/run.sh [layer] [flags]</code>;
           layers are <code>lint</code>, <code>unit</code>, <code>quick</code> (default),
           <code>integration</code>, <code>e2e</code>, <code>all</code>. The heavy layers refuse to run
@@ -107,7 +107,7 @@
           Without Docker or network it exits 75.</p>
 
           <p><strong>Evidence.</strong> Every run writes <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
-          (default <code>.crabbox-out/</code>, gitignored) holding the layer, the flags, the required set,
+          (default <code>.ah-out/</code>, gitignored) holding the layer, the flags, the required set,
           timestamps, every step with its result and duration, the test-skips &ndash; plus <code>head</code>
           and <code>tree_hash</code>. The tree hash comes from <code>scripts/dev/tree-hash.sh</code>: it is
           built in a throwaway index, so it sees <em>untracked</em> files while <code>tasks/</code> and the
@@ -116,7 +116,7 @@
 
           <h2>Weekly run (<code>scripts/tests/heavy.sh</code>)</h2>
           <p>The heavy tier used to run whenever someone remembered, and its results were recorded nowhere.
-          <code>heavy.sh</code> is a <strong>wrapper</strong> around the existing crabbox scripts that adds
+          <code>heavy.sh</code> is a <strong>wrapper</strong> around the existing VM scripts that adds
           exactly that: a report, a history, and a mechanical classification of the <code>all</code>
           layer's red steps. (Retries, quarantine and the second VM belong to that layer; the capstone
           layer reports its red assertions directly as <code>fail</code>.) <strong>It never
@@ -126,12 +126,12 @@
 
 bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-second-vm] [--notify]</code></pre>
           <p><code>all</code> = warm box &rarr; <code>run.sh all --strict</code>; <code>capstone</code> =
-          <code>crabbox_multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially. The capstone
+          <code>multibox.sh --capstone --strict</code>; <code>weekly</code> = both, serially. The capstone
           is skipped <strong>only</strong> when the <code>all</code> layer ended UNVERIFIED (seven VMs must
           not burn into a broken environment) &ndash; a plain FAIL does not stop it.
-          Beforehand it checks <code>crabbox doctor</code> and <code>crabbox list</code>: a foreign box means
+          Beforehand it checks <code>vm.py doctor</code> and <code>vm.py list</code>: a foreign box means
           the capacity is not there, and the run stops before spending a single VM.</p>
-          <p>The report lands in <code>.crabbox-out/weekly/&lt;yyyy-mm-dd-hhmm&gt;/report.md</code>. Its
+          <p>The report lands in <code>.ah-out/weekly/&lt;yyyy-mm-dd-hhmm&gt;/report.md</code>. Its
           <strong>first line</strong> is the verdict and is quoted verbatim, never paraphrased; then come the
           wrappers' summary lines <strong>verbatim</strong>, the step table, the &ldquo;Kevin sichtet&rdquo;
           section, the notes, the <code>audit.yml</code> verdict and the VM list. Facts, never a judgement. The history is
@@ -141,7 +141,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           <table>
             <thead><tr><th>Result</th><th>How it is reached</th><th>What it means</th></tr></thead>
             <tbody>
-              <tr><td><code>infra</code></td><td>the box could not be had, or the step could not run: no warm box, warm pond not ready, a failed server lease; in the capstone every assertion of a role whose setup crabbox cancelled (detail <code>setup abort: &lt;role&gt;</code>), <code>strict-failed: no step ran</code>, <code>strict-failed: &hellip; (SKIP)</code>, wrapper exit 74</td><td><strong>Never</strong> a regression; the report header reads <code>UNVERIFIED</code>.</td></tr>
+              <tr><td><code>infra</code></td><td>the box could not be had, or the step could not run: no warm box, warm pond not ready, a failed server lease; in the capstone every assertion of a role whose setup did not get through (detail <code>setup abort: &lt;role&gt;</code>), <code>strict-failed: no step ran</code>, <code>strict-failed: &hellip; (SKIP)</code>, wrapper exit 74</td><td><strong>Never</strong> a regression; the report header reads <code>UNVERIFIED</code>.</td></tr>
               <tr><td><code>flaky</code></td><td>green within three retries on the same box (<code>AH_NO_SYNC=1</code>, desktop suites spec-exact)</td><td>Quarantine line in <code>tasks/private/seen.md</code>; the run does not fail because of it.</td></tr>
               <tr><td><code>unbestaetigt</code></td><td>3&times; red but green on a fresh second VM &ndash; or the counter-check was not possible: no PASS commit in <code>history.csv</code>, <code>--no-second-vm</code>, the worktree could not be created, the second box could not be leased, the base commit could not be checked out</td><td>Kevin looks at it; never a REG row.</td></tr>
               <tr><td><code>extern</code></td><td>red on the second VM <em>and</em> on the last PASS commit</td><td>Environment, dependency, network &ndash; not the code since the last PASS.</td></tr>
@@ -149,9 +149,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td><code>fail</code></td><td>red on all three retries but failing <em>differently</em> each time; every red capstone assertion of a role whose setup was <em>not</em> cancelled; the layer row when steps stay red after the retries</td><td>Reproducibly broken without the stable signature a regression claim needs &ndash; no second VM.</td></tr>
             </tbody>
           </table>
-          <p>The second VM is a worktree <code>.crabbox-worktrees/w2</code> with its own lane
-          (<code>AH_LANE=w2</code>, pond <code>ah-warm-w2</code>); <code>heavy.sh</code> reaps that pond and
-          removes the worktree itself. Kevin's own warm box (<code>ah-warm</code>) is never touched.
+          <p>The second VM is a worktree <code>.ah-worktrees/w2</code> with its own lane
+          (<code>AH_LANE=w2</code>); <code>heavy.sh</code> destroys that lane's VMs and
+          removes the worktree itself. The boxes of lane <code>main</code> are never touched.
           <code>--base &lt;sha&gt;</code> sets the comparison commit (default: the newest
           <code>history.csv</code> <strong>layer</strong> row with
           <code>ebene=all,schritt=-,ergebnis=pass</code>, not a single step's),
@@ -277,7 +277,7 @@ ghcr.io/admincave/adminhelper/server:sha-abc1234 # per commit
             <code>statically linked</code> <em>and</em> <code>objdump -T</code> must import no
             <code>GLIBC_</code> symbol. The Makefile pins <code>CGO_ENABLED=0</code>, but the result was never
             checked: an inlined <code>go build</code> produced a binary dynamically linked against glibc&nbsp;2.39
-            that would not start on older distributions &ndash; while the crabbox tests, which use
+            that would not start on older distributions &ndash; while the VM tests, which use
             <code>make</code>, stayed green.</li>
             <li><strong>The shipped <code>.deb</code>.</strong> <code>ar t</code> on the artifact that is
             actually uploaded: no <code>.zst</code> member. <code>build-deb.sh</code> guards its own output;

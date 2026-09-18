@@ -6,7 +6,7 @@ paths:
 
 # Testregeln
 
-<!-- Stufe 0 · Quelle: bisherige CLAUDE.md „Testing auf crabbox" · Roadmap Leitprinzip 3 · Stufe 1 -->
+<!-- Stufe 0 · Quelle: bisherige CLAUDE.md „Testen auf VMs" · Roadmap Leitprinzip 3 · Stufe 1 -->
 
 ## Drei Ebenen
 
@@ -15,11 +15,11 @@ paths:
    Default `quick`; dep-gated, Exit 75 = SKIP, am Ende
    `N passed, M failed, K skipped, J test-skips, R reruns` (Exit ≠ 0 bei Fail). Unter `--strict` ist ein
    übersprungener Pflicht-Schritt ein Fehler, ebenso ein strenger Lauf, in dem gar nichts lief; jeder Lauf
-   schreibt `.crabbox-out/last-<layer>.json` mit Tree-Hash als Evidenz.
+   schreibt `.ah-out/last-<layer>.json` mit Tree-Hash als Evidenz.
 2. **Schwer (VM, manuell):** `integration`/`e2e`/`all` fahren den echten docker-compose-Stack, mTLS-Enrollment,
    Redis-SSE-Fan-out, Agent-Monitoring, apt/rpm-Repo-Bau und die Desktop-GUI-E2E (`apps/desktop/e2e/*.live.js` über
    `scripts/tests/desktop_e2e_*.sh`). Sie verweigern ohne `AH_ALLOW_REAL=1` und laufen nur auf einer VM (`/test`).
-3. **Multi-Host (Capstone):** `bash scripts/tests/crabbox_multibox.sh --capstone --strict` — echtes `.deb` über
+3. **Multi-Host (Capstone):** `bash scripts/tests/multibox.sh --capstone --strict` — echtes `.deb` über
    einen Netz-Hop, Cross-Host-mTLS, die echte Tauri-GUI gegen den entfernten Server, der 3-Host-Tunnel, der
    Mail-Alert und der `MTLS_ENFORCE`-Guard. Teilläufe (`--agents N [--desktop]` …) laufen **ohne** `--strict`:
    ein Lauf ohne `--enforce` meldet den MTLS_ENFORCE-Guard als SKIP, und unter `--strict` ist ein SKIP ein
@@ -55,7 +55,8 @@ Vor jedem Release sind alle drei Ebenen real grün; eine rote oder übersprungen
 - **Desktop-GUI headless:** `LANG=C` lässt die Webview an `Intl.NumberFormat` scheitern (leeres `#app`). VMs brauchen
   `en_US.UTF-8`; der Bootstrap generiert es, die Desktop-Box setzt es.
 - **Warm-Loop, nicht stop-after-run:** eine hydrierte VM ist teuer zu bauen (~40 min), billig zu halten. Einmal warm
-  machen, iterieren, am Ende reapen. Bei Fehler bleibt die VM stehen; Debug-Artefakte mit `AH_CAPTURE=1` nach
-  `.crabbox-out/` (ab Stufe 2 `.ah-out/`), gitignored.
-- **Nach jedem Lauf VM-Liste prüfen** (`crabbox list`, ab Stufe 2 `python3 scripts/vm/vm.py list`); geleakte VMs sind
-  ein Fehler. Provisionieren (`bake`, `image`, neue Templates) nur im Pool `ah-ci`.
+  machen (`scripts/vm/warm.sh`), iterieren (`scripts/vm/iter.sh`), am Ende reapen (`scripts/vm/reap.sh`). Bei Fehler
+  bleibt die VM stehen; Debug-Artefakte mit `AH_CAPTURE=1` nach `.ah-out/`, gitignored.
+- **Nach jedem Lauf VM-Liste prüfen** (`python3 scripts/vm/vm.py list` — Exit 74, wenn auf dieser Lane etwas läuft,
+  das niemand beansprucht); geleakte VMs sind ein Fehler. Provisionieren (`bake`, neue Templates) nur im Pool
+  `adminhelper-ci`, und nur auf Zuruf.

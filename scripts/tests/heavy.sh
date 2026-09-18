@@ -8,8 +8,8 @@
 #   bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm]
 #                                 [--notify]
 #
-#     all       crabbox_warm.sh desktop  ->  crabbox_iter.sh all --strict
-#     capstone  crabbox_multibox.sh --capstone --strict
+#     all       scripts/vm/warm.sh desktop  ->  scripts/vm/iter.sh all --strict
+#     capstone  scripts/tests/multibox.sh --capstone --strict
 #     weekly    all, then capstone — serially, capstone only after `all` has a
 #               verdict (seven VMs must not burn into an already-known failure)
 #
@@ -17,10 +17,10 @@
 #   tmux new -d -s ah-weekly 'bash scripts/tests/heavy.sh weekly'
 # — and reads the report afterwards.
 #
-# A WRAPPER, on purpose. Every VM operation goes through the existing crabbox_*.sh
-# scripts so stage 2 can swap the implementation underneath and only has to keep
-# producing the same summary lines. heavy.sh owns the bookkeeping: what ran, what
-# it said VERBATIM, and where the evidence is.
+# A WRAPPER, on purpose. Every VM operation goes through the warm/iter/multibox
+# scripts — that is what let stage 2b swap the VM tool underneath while this
+# file kept reading the same summary lines. heavy.sh owns the bookkeeping:
+# what ran, what it said VERBATIM, and where the evidence is.
 #
 # Results land in $AH_OUT_DIR/weekly/<jjjj-mm-tt-hhmm>/ (report.md + the pulled
 # artifacts), the history in tasks/private/history.csv — a report never contains a
@@ -31,18 +31,19 @@
 # whole point — "SKIP heisst nicht verifiziert" (CLAUDE.md).
 #
 # Overrides for the hermetic test (heavy_test.sh), never for real runs:
-#   AH_HEAVY_WRAPPERS  directory holding crabbox_warm.sh / _iter.sh / _multibox.sh
+#   AH_HEAVY_WRAPPERS  one directory holding warm.sh / iter.sh / multibox.sh
+#                      (really scripts/vm and scripts/tests)
 #   AH_PRIVATE_DIR     the private repo (default tasks/private)
-#   AH_OUT_DIR         output root (default .crabbox-out)
+#   AH_OUT_DIR         output root (default .ah-out)
 #   AH_HEAVY_ROOT      the checkout to worktree from (default: this repo) — the
 #                      second-VM check adds and removes a git worktree, which a
 #                      test must never do in the developer's own tree
 
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=scripts/tests/crabbox_lib.sh
-. "$DIR/crabbox_lib.sh"
-ROOT="${AH_HEAVY_ROOT:-$CBX_ROOT}"; cd "$ROOT" || exit 1
+# shellcheck source=scripts/vm/lib.sh
+. "$DIR/../vm/lib.sh"
+ROOT="${AH_HEAVY_ROOT:-$VM_ROOT}"; cd "$ROOT" || exit 1
 
 MODE=""; BASE=""; SECOND_VM=1; NOTIFY=0
 usage() {
@@ -64,14 +65,18 @@ case "$MODE" in all|capstone|weekly) ;; *) usage ;; esac
 
 # The box decides its own required set. AH_REQUIRED in this shell is the DEV
 # BOX's (from .devenv.sh: no docker, no display, so no heavy ids) and
-# crabbox_iter.sh forwards it verbatim — on the box it would then exempt every
+# iter.sh forwards it verbatim — on the box it would then exempt every
 # heavy step from --strict, and a self-SKIP of upgrade-path would stay green.
 # Unset => run.sh derives the layer's full set; AH_REQUIRED_BOX names one explicitly.
 if [ -n "${AH_REQUIRED_BOX:-}" ]; then export AH_REQUIRED="$AH_REQUIRED_BOX"; else unset AH_REQUIRED; fi
 
-AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.crabbox-out}"; export AH_OUT_DIR
+AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"; export AH_OUT_DIR
 PRIVATE_DIR="${AH_PRIVATE_DIR:-$ROOT/tasks/private}"
-WRAPPERS="${AH_HEAVY_WRAPPERS:-$DIR}"
+# Two homes, one override: warm.sh and iter.sh live next to vm.py, multibox.sh
+# next to the role scripts it drives. AH_HEAVY_WRAPPERS points both at one
+# directory of shims for heavy_test.sh.
+WRAPPERS="${AH_HEAVY_WRAPPERS:-$ROOT/scripts/vm}"
+MB_WRAPPERS="${AH_HEAVY_WRAPPERS:-$DIR}"
 STAMP="$(date +%Y-%m-%d-%H%M)"
 DATE="${STAMP%%-[0-9][0-9][0-9][0-9]}"
 OUT="$AH_OUT_DIR/weekly/$STAMP"
@@ -109,48 +114,59 @@ note()      { NOTES+=("$1"); echo "  $1"; }
 # must never look the same: the second one would let the run claim a clean
 # hypervisor it never saw and then lease eight boxes on top of whatever is there.
 foreign_boxes() {
-  local all own slug
-  all="$(cbx list 2>/dev/null)" || return 2
-  own="$(cbx list --pond "$(cbx_pond)" 2>/dev/null | grep -oE 'slug=[a-z0-9-]+' | cut -d= -f2 | sort -u)"
-  # warm.env carries this lane's slugs even when the pond query hiccups.
-  own="$own
-$(grep -E '^[A-Za-z0-9_-]+=' "$(cbx_warm_file)" 2>/dev/null | cut -d= -f2-)"
-  # Whole-line compare, not substring: 'ah-srv' must not make a foreign 'ah-srv2'
-  # look like ours — that would be fail-open in the one guard that exists to be
-  # fail-closed. (warm.env also holds credentials; a substring grep reads those.)
-  # Only RUNNING boxes: a stopped one (a kept bake/template source, for instance)
-  # holds disk, not capacity, and aborting a 17 VM-h run over it would be a false
-  # positive. Seen on the real hypervisor: a stopped `keep=true` bake VM.
-  # -w, not a space-anchored pattern: the provider prints the state as a bare
-  # column ("… stopped  template-9400 …"), other callers as `state=running`.
-  printf '%s\n' "$all" | grep -iwE 'running|ready' \
-    | grep -oE 'slug=[a-z0-9-]+' | cut -d= -f2 | sort -u | while read -r slug; do
-    [ -n "$slug" ] || continue
-    printf '%s\n' "$own" | grep -qxF "$slug" || printf '%s\n' "$slug"
-  done
+  local json
+  # The exit code is not the question: `list` answers 74 when it FINDS something
+  # (a VM of our lane nobody claims), and that JSON is exactly what this guard
+  # wants to read. Emptiness is the failure — then the hypervisor was not asked.
+  json="$(vm_py list --json 2>/dev/null)"
+  [ -n "$json" ] || return 2
+  printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except ValueError:
+    sys.exit(2)
+mine = sys.argv[1]
+leaked = set(data.get("leaked", []))
+for vm in data.get("vms", []):
+    # Only RUNNING boxes: a stopped one holds disk, not capacity, and aborting a
+    # 17 VM-h run over it would be a false positive (seen on the real
+    # hypervisor: a stopped bake VM kept on purpose).
+    if vm.get("status") != "running":
+        continue
+    # Another lane means somebody else is working; our own lane is foreign only
+    # when nothing claims it — vm.py already worked that out and calls it a leak.
+    if vm.get("lane") != mine or vm.get("vmid") in leaked:
+        print("%s %s (lane %s)" % (vm.get("vmid"), vm.get("name", "?"), vm.get("lane", "?")))
+' "$(vm_lane)"
 }
 
 preflight() {
   echo "== pre-flight =="
-  command -v crabbox >/dev/null || { set_infra "crabbox not installed"; return 74; }
-  cbx_load_env || { set_infra "crabbox provider env not loaded"; return 74; }
-  # cbx, not crabbox: every provider call in this repo is timeout-bounded (a stuck
-  # one once ran ~7 h), and this runs unattended in tmux.
-  if ! cbx doctor >"$OUT/doctor.log" 2>&1; then
-    set_infra "crabbox doctor red (see doctor.log)"
+  vm_load_env || { set_infra "vm.py env not loaded (.claude/settings.local.json)"; return 74; }
+  # --roles: doctor's capacity check needs to know what the run is about to ask
+  # for, or it reports "fits" against a single probe box. `all` warms one desktop
+  # box, `capstone` clones the seven of the multibox scenario.
+  # weekly starts with `all`, so one desktop box is what it needs HERE; the
+  # capstone that follows runs its own doctor over its seven roles before it
+  # clones anything (multibox.sh).
+  local roles="desktop"
+  [ "$MODE" = capstone ] && roles="server,agent,moncheck,rpm,tunnel,visitor,desktop"
+  if ! vm_py doctor --roles "$roles" >"$OUT/doctor.log" 2>&1; then
+    set_infra "vm.py doctor red (see doctor.log)"
     tail -5 "$OUT/doctor.log" | sed 's/^/  /'
     return 74
   fi
-  note "crabbox doctor ok"
-  local strays rc=0; strays="$(foreign_boxes | paste -sd' ' -)" || rc=$?
-  if [ "$rc" = 2 ]; then
-    set_infra "crabbox list unavailable — cannot rule out foreign boxes"
-    note "crabbox list did not answer — not starting a run on an unknown hypervisor"
+  note "vm.py doctor ok"
+  local strays rc=0; strays="$(foreign_boxes | paste -sd'; ' -)" || rc=$?
+  if [ "$rc" != 0 ]; then
+    set_infra "vm.py list unavailable — cannot rule out foreign boxes"
+    note "vm.py list did not answer — not starting a run on an unknown hypervisor"
     return 74
   fi
   if [ -n "$strays" ]; then
     set_infra "foreign boxes running: $strays"
-    note "foreign boxes (not this lane's pond, not in warm.env): $strays"
+    note "foreign boxes (another lane, or unclaimed on ours): $strays"
     return 74
   fi
   note "no foreign boxes"
@@ -161,10 +177,10 @@ preflight() {
 # The wrappers print their result; heavy.sh copies the line VERBATIM instead of
 # re-deriving it. A re-derived number is a second source of truth, and the point
 # of the report is that it can be checked against the run.
-# crabbox_iter.sh pulls the box's .crabbox-out/** back into $AH_OUT_DIR, where the
-# NEXT run overwrites it. The report points at $OUT, so what it points at has to
-# be there — copied, not moved, so a following `crabbox_iter.sh` on the same box
-# still finds what it expects.
+# iter.sh pulls the box's .ah-out back into $AH_OUT_DIR, where the NEXT run
+# overwrites it. The report points at $OUT, so what it points at has to be there
+# — copied, not moved, so a following `iter.sh` on the same box still finds what
+# it expects.
 collect_artifacts() {
   local d
   for d in screenshots logs; do
@@ -173,24 +189,11 @@ collect_artifacts() {
   done
 }
 
-# crabbox_iter.sh does NOT let the box's output through: it captures stdout into
-# .crabbox/out/last.out.log and leaves the pulled files as a tarball, so heavy.sh's
-# own log holds nothing but crabbox's orchestration chatter. The first real run
-# reported PASS from an exit code alone because of that — the summary line and
+# iter.sh tees the box's stdout into this file as well as showing it, so the
+# summary line survives a wrapper that died before printing one itself. The first
+# real run reported PASS from an exit code alone for want of it — the summary and
 # last-all.json were on disk the whole time, just not where this script looked.
-BOX_OUT=".crabbox/out/last.out.log"
-
-recover_artifacts() {  # recover_artifacts <crabbox-run-log>
-  local tgz
-  tgz="$(grep -aoE 'path=[^ ]+-artifacts\.tgz' "$1" 2>/dev/null | tail -1 | sed 's/^path=//')"
-  [ -n "$tgz" ] && [ -f "$tgz" ] || return 1
-  tar xzf "$tgz" -C "$OUT" 2>/dev/null || return 1
-  # The tarball keeps the box-side layout (.crabbox-out/…); put the artifact where
-  # read_steps looks, and leave the screenshots and step logs in the run dir.
-  [ -f "$OUT/.crabbox-out/last-all.json" ] || return 1
-  cp "$OUT/.crabbox-out/last-all.json" "$AH_OUT_DIR/last-all.json" 2>/dev/null || return 1
-  note "artifacts recovered from $(basename "$tgz")"
-}
+BOX_OUT="$AH_OUT_DIR/last.out.log"
 
 capture_summary() {  # capture_summary <logfile> <grep-pattern>
   local line
@@ -200,11 +203,10 @@ capture_summary() {  # capture_summary <logfile> <grep-pattern>
   SUMMARY_LINES+=("$(printf '%s' "$line" | sed 's/^[[:space:]]*//')")
 }
 
-# The wrappers do not (yet) speak exit 74: crabbox_iter.sh and crabbox_multibox.sh
-# answer 0/1/2, so "the box could not be leased" arrives looking exactly like "a
-# test failed". These are the lines they print when the run could not HAPPEN —
-# matching them is what keeps an unreachable hypervisor from being filed as a
-# regression. (Stage 2 can make the wrappers exit 74 and this list shrinks.)
+# Since 2b the wrappers DO speak 74 — vm.py answers infrastructure with it and
+# iter.sh passes it through — so this list is only what arrives as text: the
+# wrapper's own refusals, and vm.py's reasons when they reach the log without the
+# exit code (the capstone runs seven boxes and reports per role).
 infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or nothing
   # Matched against what the wrappers PRINT, not against their source: multibox's
   # bad() emits "  FAIL server lease", so a pattern written from the call site
@@ -212,19 +214,25 @@ infra_marker() {  # infra_marker <logfile> [capstone] -> prints the line, or not
   # a server box that cannot be leased, would be filed as a product FAIL.
   # Deliberately narrow: only the failures that stop the whole run. A single
   # agent or desktop lease failing degrades the run, it does not void it.
-  # \b on 'lease failed': crabbox's warning "workspace owner reLEASE FAILED" is a
-  # per-role setup abort (capstone_scan files it), not the whole run failing.
-  # The capstone files a failed sync per role (capstone_scan); only the single-box
-  # `all` layer is void when its one sync failed, so that marker is `all`-only.
-  local base='no warm box|warm pond not ready|\blease failed|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)'
-  local pat="$base|^rsync failed: .*ambiguous remote state"
+  # vm.py's own reasons, anchored on the prefix it writes them with, so a test
+  # that merely PRINTS the words "no ssh" cannot void a run.
+  #
+  # `base` is only what stops the WHOLE run: no capacity for the scenario, a
+  # missing privilege, a server box that never came. The capstone runs seven
+  # boxes, and a single one that could not be cloned, reached or synced is a
+  # per-role abort — capstone_scan files it against that role and leaves the
+  # other six reporting real results. On the single-box `all` layer those same
+  # reasons ARE the whole run, so they ride that layer's own pattern.
+  local base='no warm box|warm pond not ready|FAIL server lease|strict-failed: no step ran|strict-failed: .*\(SKIP\)'
+  base="$base"'|^vm\.py: (capacity|privilege)'
+  local pat="$base"'|^vm\.py: (no ip|no ssh|timeout|sync failed|clone .*failed)'
   [ "${2:-}" = capstone ] && pat="$base"
   grep -aE "$pat" "$1" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//'
 }
 
-# last-all.json is written by run.sh ON THE BOX and pulled back by crabbox_iter.sh.
-# python3 (not jq): the client side already depends on it (crabbox_lib.sh), jq is
-# not a documented prerequisite anywhere in this repo.
+# last-all.json is written by run.sh ON THE BOX and pulled back by iter.sh.
+# python3 (not jq): the client side already depends on it (scripts/vm/lib.sh), jq
+# is not a documented prerequisite anywhere in this repo.
 # run.sh stamps every artifact with the head and tree_hash the client passed in.
 # An artifact from another tree is a leftover, not evidence of this run.
 artifact_is_ours() {  # artifact_is_ours <artifact>
@@ -265,11 +273,11 @@ run_all() {
   # whether THIS call succeeded, and a stale entry would read as success.
   local warm_rc=0 t_wall0
   t_wall0="$(date +%s)"
-  bash "$WRAPPERS/crabbox_warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
+  bash "$WRAPPERS/warm.sh" desktop >"$OUT/warm.log" 2>&1 || warm_rc=$?
   if [ "$warm_rc" != 0 ]; then
-    note "warm lease failed — retrying once (the provider bootstrap is racy on a fresh VM)"
+    note "warm lease failed — retrying once (the guest bootstrap is racy on a fresh VM)"
     warm_rc=0
-    bash "$WRAPPERS/crabbox_warm.sh" desktop >>"$OUT/warm.log" 2>&1 || warm_rc=$?
+    bash "$WRAPPERS/warm.sh" desktop >>"$OUT/warm.log" 2>&1 || warm_rc=$?
   fi
   if [ "$warm_rc" != 0 ]; then
     set_infra "warm box could not be leased after a retry (see warm.log)"
@@ -288,15 +296,15 @@ run_all() {
   # own artifact for the same reason: missing evidence is honest, stale is not.
   rm -f "$AH_OUT_DIR/last-all.json"
   local t0=$SECONDS
-  bash "$WRAPPERS/crabbox_iter.sh" all --strict >"$log" 2>&1 || rc=$?
+  bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
   local secs_layer=$((SECONDS - t0))
   tail -25 "$log" | sed 's/^/  /'
-  # $log first (a future wrapper may pass the output through), then where
-  # crabbox_iter.sh actually captured it — but only if that file belongs to THIS
-  # run. $BOX_OUT is a fixed path crabbox overwrites per run: if the wrapper died
-  # before writing it, the previous run's summary is still sitting there, and
-  # adopting it is the same lie as a stale artifact. The artifact carries a tree
-  # hash to check; a log does not, so its mtime is the only honest stamp.
+  # $log first — iter.sh passes the box's output through — then where it also
+  # captured it, but only if that file belongs to THIS run. $BOX_OUT is a fixed
+  # path each run overwrites: if the wrapper died before writing it, the previous
+  # run's summary is still sitting there, and adopting it is the same lie as a
+  # stale artifact. The artifact carries a tree hash to check; a log does not, so
+  # its mtime is the only honest stamp.
   if ! capture_summary "$log" 'run\.sh\[all\]:'; then
     if [ -f "$BOX_OUT" ] && [ "$(stat -c %Y "$BOX_OUT" 2>/dev/null || echo 0)" -ge "$t_wall0" ]; then
       capture_summary "$BOX_OUT" 'run\.sh\[all\]:' || note "no run.sh[all] summary line in $log or $BOX_OUT"
@@ -304,7 +312,6 @@ run_all() {
       note "no summary line: $log has none and $BOX_OUT predates this run"
     fi
   fi
-  recover_artifacts "$log" || true
   collect_artifacts
 
   # INFRA first, and it ends the layer: a step that could not RUN says nothing
@@ -318,7 +325,7 @@ run_all() {
     return 0
   fi
   if [ "$rc" = 74 ]; then
-    set_infra "crabbox_iter.sh all exited 74 (infrastructure)"
+    set_infra "iter.sh all exited 74 (infrastructure)"
     FINDINGS+=("all|-|infra|$secs_layer|$box|wrapper exit 74")
     return 0
   fi
@@ -423,13 +430,13 @@ failing_spec() {  # failing_spec <step> <log>
 }
 
 # </dev/null on every remote call: the step loop reads from steps-all.tsv, and an
-# ssh-backed `crabbox run` that drains stdin would swallow the rest of the file —
+# ssh-backed `vm.py run` that drains stdin would swallow the rest of the file —
 # the run would classify one red step and silently drop every later one.
 rerun_step() {  # rerun_step <step> <spec-or-empty> <logfile> -> rc
   if [ -n "$2" ]; then
-    AH_NO_SYNC=1 bash "$WRAPPERS/crabbox_iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
+    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
   else
-    AH_NO_SYNC=1 bash "$WRAPPERS/crabbox_iter.sh" all --strict --step "$1" >"$3" 2>&1 </dev/null
+    AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" all --strict --step "$1" >"$3" 2>&1 </dev/null
   fi
 }
 
@@ -475,8 +482,8 @@ classify_red_step() {  # classify_red_step <step> <all-log> <box>; sets CLASS_VE
 #   base green, HEAD red -> reg          (the code since the base did it)
 #   base red too         -> extern       (environment/dependency, not our change)
 #
-# The worktree and its pond belong to this function; Kevin's own warm box
-# (pond ah-warm) is never touched.
+# The worktree and its lane belong to this function; Kevin's own warm box
+# (lane `main`) is never touched.
 W2_DIR=""
 last_pass_commit() {
   [ -f "$HISTORY" ] || return 0
@@ -484,20 +491,20 @@ last_pass_commit() {
 }
 
 w2_run() {  # w2_run <step> <spec> <logfile> -> rc
-  # The worktree's OWN wrappers: crabbox_iter.sh syncs the tree it lives in, so
-  # calling the main checkout's copy would ship the wrong tree to the box.
+  # The worktree's OWN wrappers: iter.sh syncs the tree it lives in, so calling
+  # the main checkout's copy would ship the wrong tree to the box.
   if [ -n "$2" ]; then
-    AH_LANE=w2 AH_NO_SYNC=0 bash "$W2_DIR/scripts/tests/crabbox_iter.sh" \
+    AH_LANE=w2 AH_NO_SYNC=0 bash "$W2_DIR/scripts/vm/iter.sh" \
       --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
   else
-    AH_LANE=w2 AH_NO_SYNC=0 bash "$W2_DIR/scripts/tests/crabbox_iter.sh" \
+    AH_LANE=w2 AH_NO_SYNC=0 bash "$W2_DIR/scripts/vm/iter.sh" \
       all --strict --step "$1" >"$3" 2>&1 </dev/null
   fi
 }
 
 w2_teardown() {
   [ -n "$W2_DIR" ] || return 0
-  AH_LANE=w2 bash "$W2_DIR/scripts/tests/crabbox_reap.sh" --pond ah-warm-w2 >>"$OUT/w2.log" 2>&1 || true
+  AH_LANE=w2 bash "$W2_DIR/scripts/vm/reap.sh" --lane w2 >>"$OUT/w2.log" 2>&1 || true
   git -C "$ROOT" worktree remove --force "$W2_DIR" >>"$OUT/w2.log" 2>&1 || true
   git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
   W2_DIR=""
@@ -511,7 +518,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  --no-second-vm: candidate stays unconfirmed"
     return 0
   fi
-  W2_DIR="$ROOT/.crabbox-worktrees/w2"
+  W2_DIR="$ROOT/.ah-worktrees/w2"
   # A leftover from a killed run is still REGISTERED, and `worktree add` refuses
   # a registered path however empty the directory is.
   git -C "$ROOT" worktree remove --force "$W2_DIR" >>"$OUT/w2.log" 2>&1 || true
@@ -523,7 +530,7 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
     note "  could not create the w2 worktree — candidate stays unconfirmed"
     return 0
   fi
-  if ! AH_LANE=w2 bash "$W2_DIR/scripts/tests/crabbox_warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
+  if ! AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1; then
     CLASS_VERDICT="unbestaetigt"; STEP_DETAIL="3x red ($marker); second box could not be leased"
     note "  second box could not be leased — candidate stays unconfirmed"
     w2_teardown; return 0
@@ -721,7 +728,7 @@ quarantine() {  # quarantine <step>
 }
 
 # capstone_scan <log> -> one line per event, tab-separated:
-#   A<TAB><role>            crabbox cancelled a role's setup command in this section
+#   A<TAB><role>            a role's setup could not run / was cut short
 #   F<TAB><role><TAB><text> a FAIL assertion, with the role of the section it fell in
 # The role is read from the "== … ==" section headers multibox prints; a failure
 # that follows an aborted setup of the same role is a consequence of the abort,
@@ -740,19 +747,11 @@ capstone_scan() {  # capstone_scan <logfile>
       if (h ~ /server|stack/)              return "server"
       return "other"
     }
-    # A box is known by its slug, not by the section it was leased in: agent
-    # boxes are leased under the "lease 1 server + N agent" header and the
-    # desktop box before its own header, so a lost lease keyed on the header
-    # would land on the wrong role — and excuse a real failure there.
-    function role_of_slug(sl) {
-      if (sl ~ /^ah-srv/)              return "server"
-      if (sl ~ /^ah-agent-rpm/)        return "rpm"
-      if (sl ~ /^ah-agent/)            return "agent"
-      if (sl ~ /^ah-moncheck/)         return "moncheck"
-      if (sl ~ /^ah-(tunnel|visitor)/) return "tunnel"
-      if (sl ~ /^ah-desktop/)          return "desktop"
-      return ""
-    }
+    # A box that never arrived is known by the ROLE the wrapper names in the
+    # line, not by the section it was cloned in: agent boxes are cloned under
+    # the "clone 1 server + N agent" header and the desktop box before its own
+    # header, so keying on the header would land on the wrong role — and excuse
+    # a real failure there.
     function role_of_lease_fail(t) {
       # multibox prints the strict follow-up of a lost desktop box without a
       # header of its own (the GUI header sits in the success branch); it
@@ -767,16 +766,26 @@ capstone_scan() {  # capstone_scan <logfile>
       return ""
     }
     /^== / { role = role_of($0); next }
-    /lease attempt 3\/3 for [^ ]+ failed/ {
-      sl = $0; sub(/.*lease attempt 3\/3 for /, "", sl); sub(/ failed.*/, "", sl)
-      r = role_of_slug(sl); if (r == "") r = (role == "" ? "other" : role)
-      print "A\t" r; next }
-    # crabbox cancelled the remote command of this section (timeout, workspace
-    # owner lost): anchored on the wording crabbox prints, not on a bare "context
-    # canceled" that a role script might echo from a tool log.
-    # … and the sync that never delivered the tree (the role script then never
-    # ran): "rsync failed: … ambiguous remote state" from the 2026-09-11 evening run.
-    /workspace owner release failed|refusing collection and cleanup: context canceled|^rsync failed: .*ambiguous remote state/ {
+    # The visitor box is its own clone but belongs to the tunnel scenario: the
+    # section header and role_of_lease_fail both file it under `tunnel`, and the
+    # two halves have to agree — a role named here that the FAIL lookup spells
+    # differently turns a lost box into a product failure, which is the one
+    # thing this scan exists to prevent.
+    function norm(r) { return (r == "visitor") ? "tunnel" : r }
+    # A box that never arrived. multibox names the role it was cloning; vm.py
+    # names the box once it has one.
+    /^(clone failed for role|clone printed no VMID for role|no address for) [a-z]+/ {
+      r = $0; sub(/^(clone failed for role|clone printed no VMID for role|no address for) /, "", r); sub(/ .*/, "", r)
+      if (r == "") r = (role == "" ? "other" : role)
+      print "A\t" norm(r); next }
+    /^[a-z]+ box [0-9]+ never came up/ {
+      r = $0; sub(/ box .*/, "", r); print "A\t" norm(r); next }
+    # vm.py could not carry out the role command at all: the sync that never
+    # delivered the tree, the ssh that never answered, the bound that ran out.
+    # Anchored on the vm.py prefix, not on a bare phrase a role script might
+    # echo from a tool log. NO APOSTROPHES in here — this awk program lives in a
+    # single-quoted shell string, and one would end it.
+    /^vm\.py: (sync|ssh|timeout|no ssh|no ip|clone)/ {
       if (role == "") role = "other"; print "A\t" role; next }
     /^[[:space:]]*FAIL / { t = $0; sub(/^[[:space:]]*FAIL[[:space:]]*/, "", t)
       r = role_of_lease_fail(t); if (r == "") r = (role == "" ? "other" : role)
@@ -785,12 +794,27 @@ capstone_scan() {  # capstone_scan <logfile>
 }
 
 run_capstone() {
-  echo "== capstone: crabbox_multibox.sh --capstone --strict =="
+  echo "== capstone: multibox.sh --capstone --strict =="
   local log="$OUT/multibox.log" rc=0 t0=$SECONDS secs_layer
-  bash "$WRAPPERS/crabbox_multibox.sh" --capstone --strict >"$log" 2>&1 || rc=$?
+  # In `weekly` the `all` layer leaves its 6 GB desktop box running, and the
+  # capstone now checks capacity for all seven roles BEFORE its first clone —
+  # asking for an eighth box can fail a run that would otherwise fit. Handing
+  # the warm one over takes the desktop role out of that sum and skips ~30 min
+  # of re-bootstrap.
+  #
+  # ONLY in `weekly`, where run_all just leased that box and wrote the entry a
+  # minute ago. warm.env outlives a run, so in `capstone` mode the entry is
+  # either stale — multibox trusts AH_DESKTOP_VM unchecked, and `vm.py: no VM
+  # '3001' in pool` matches no abort rule, so a dead id would be filed as a
+  # product failure — or it belongs to Kevin's fast loop, which this run has no
+  # business driving a 50-minute GUI suite over.
+  local warm_desktop=""
+  [ "$MODE" = weekly ] && warm_desktop="$(warm_get desktop)"
+  [ -n "$warm_desktop" ] && note "capstone reuses the warm desktop box $warm_desktop"
+  AH_DESKTOP_VM="$warm_desktop" bash "$MB_WRAPPERS/multibox.sh" --capstone --strict >"$log" 2>&1 || rc=$?
   secs_layer=$((SECONDS - t0))
   tail -25 "$log" | sed 's/^/  /'
-  capture_summary "$log" 'crabbox_multibox:' || note "no crabbox_multibox summary line in multibox.log"
+  capture_summary "$log" 'multibox:' || note "no multibox summary line in multibox.log"
   # INFRA first, exactly as in run_all: an unleasable server box prints a
   # "FAIL server lease" line and aborts, so scraping the assertions first would
   # file that one failure as several product defects in history.csv.
@@ -802,8 +826,8 @@ run_capstone() {
     return 0
   fi
   # Each red assertion by name, so the report says WHICH guard failed — and
-  # whether it failed on its own or because crabbox had cancelled that role's
-  # setup before (then it is infra, filed per role, not a product defect).
+  # whether it failed on its own or because that role never got its setup (then
+  # it is infra, filed per role, not a product defect).
   local kind role line aborted="" infra_n=0 fail_n=0
   while IFS=$'\t' read -r kind role line; do
     case "$kind" in
@@ -817,10 +841,10 @@ run_capstone() {
          esac ;;
     esac
   done < <(capstone_scan "$log")
-  [ -n "$aborted" ] && note "crabbox cancelled the setup of: $aborted ($infra_n failure(s) filed as infra)"
+  [ -n "$aborted" ] && note "setup could not run for: $aborted ($infra_n failure(s) filed as infra)"
   case "$rc" in
     0)  FINDINGS+=("capstone|-|pass|$secs_layer|multibox|") ;;
-    74) set_infra "crabbox_multibox.sh exited 74 (infrastructure)"
+    74) set_infra "multibox.sh exited 74 (infrastructure)"
         FINDINGS+=("capstone|-|infra|$secs_layer|multibox|wrapper exit 74") ;;
     *)  if [ "$fail_n" -eq 0 ] && [ -n "$aborted" ]; then
           # The run happened (there is a summary line), but every failure follows a
@@ -830,8 +854,8 @@ run_capstone() {
           roles_n=$(printf '%s\n' "$aborted" | wc -w)
           # The multibox line from THIS log — SUMMARY_LINES also holds the `all`
           # layer's line in weekly mode and may be empty in capstone mode.
-          mb_summary="$(grep -a 'crabbox_multibox:' "$log" | tail -1 | sed 's/^[[:space:]]*//')"
-          set_infra "capstone infra: crabbox brach das Setup von $roles_n Rolle(n) ab ($aborted); ${mb_summary:-keine Summary-Zeile} — die $infra_n Fehler folgen dem Abbruch"
+          mb_summary="$(grep -a 'multibox:' "$log" | tail -1 | sed 's/^[[:space:]]*//')"
+          set_infra "capstone infra: das Setup von $roles_n Rolle(n) kam nicht durch ($aborted); ${mb_summary:-keine Summary-Zeile} — die $infra_n Fehler folgen dem Abbruch"
           FINDINGS+=("capstone|-|infra|$secs_layer|multibox|setup aborts: $aborted")
         else
           set_fail
@@ -863,7 +887,7 @@ write_history() {
 }
 
 write_report() {
-  local e ebene schritt ergebnis secs vm detail
+  local e ebene schritt ergebnis secs vm detail vms_now
   {
     # EXACTLY one line, and it is the first: the hook and `/test status` read it.
     if [ "$VERDICT" = "UNVERIFIED" ]; then echo "UNVERIFIED ($REASON)"; else echo "$VERDICT"; fi
@@ -913,7 +937,9 @@ write_report() {
     echo "## VMs nach dem Lauf"
     echo ""
     echo '```'
-    cbx list 2>/dev/null || echo "(crabbox list unavailable)"
+    # `list` exits 74 when it FINDS something (a leak), and prints the table
+    # anyway — so the fallback is keyed on there being no output at all.
+    vms_now="$(vm_py list 2>&1)"; printf '%s\n' "${vms_now:-(vm.py list unavailable)}"
     echo '```'
   } > "$REPORT"
   echo "  report: $REPORT"
