@@ -38,9 +38,9 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → 1 Commit/Task auf `feature/<slug>`. |
 | **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
 
-Die Session läuft auf **Opus** (`/model opus` oder `claude --model opus`). Fable brauchst du
-hier nicht — die Qualität an den Hebelpunkten trägt Opus für die allermeisten Features; für ein
-besonders kniffliges Design kannst du Phase 1 einmalig mit Fable fahren. Der **Reviewer** ist
+Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
+ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
+Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer** ist
 die Ausnahme: er läuft auf **Sonnet** und nur bei einem Risikopfad im Diff (PKI/mTLS, Auth,
 SSRF, Migrationen, Release-Workflows) auf Opus — mit Opus lief er regelmäßig eine halbe Stunde
 ohne Urteil, mit Sonnet urteilt er in Minuten (`.claude/skills/feature-build/SKILL.md`,
