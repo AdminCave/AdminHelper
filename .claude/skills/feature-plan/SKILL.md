@@ -124,6 +124,20 @@ Abhängt von: T<k>   (nur falls nötig)
   DB-Migrationen, FRP-Config-Format, Tauri-Commands), primäre `docs/`-Seiten. Ergebnis am
   Gate mit ausgeben: „parallel-tauglich zu <lane>: ja/nein — <Grund>". Überlappt es →
   seriell empfehlen, nicht parallel.
+- **Lanes aktiv vorschlagen (Kevin, 2026-09-18).** Ist das Vorhaben disjunkt zu einem anderen
+  `geplant`- oder `aktiv`-Ledger (Komponenten, Contracts, `run.sh`/`ci.yml`-Stellen, primäre
+  Doku-Seiten) **und** braucht höchstens eines der beiden VMs **und** teilen sie sich keine
+  Test-Datenbank (zwei Server-Suiten gleichzeitig zerstören sich das Ergebnis), dann steht am
+  Gate nicht nur „parallel-tauglich: ja", sondern der fertige Lane-Start:
+  ```
+  bash scripts/dev/lane.sh new <slug>
+  cp tasks/<slug>.md ../AdminHelper-<slug>/tasks/ && cp docs/features/<slug>.md ../AdminHelper-<slug>/docs/features/
+  cd ../AdminHelper-<slug> && claude          # dort: /feature-build tasks/<slug>.md
+  ```
+  Dazu ein Satz zu den Grenzen: beide Opus-Bauten teilen sich Kevins Nutzungsfenster, der
+  zweite PR muss rebasen (CHANGELOG, DEVELOPMENT.md), und Kevins Review-Zeit bleibt der
+  Engpass. Die Lane ist die Ausnahme vom Deckel „genau ein Bau aktiv" (CLAUDE.md §2) — nicht
+  der Default, sondern ein Vorschlag, den Kevin annimmt oder nicht.
 - Sage explizit: „Bitte `docs/features/<slug>.md` und `tasks/<slug>.md` prüfen/anpassen.
   Zum autonomen Bauen: **`/feature-build tasks/<slug>.md`** in einer Opus-Session — oder
   als parallele Lane: nach der Freigabe committe ich Spec + Ledger auf `main`, dann
