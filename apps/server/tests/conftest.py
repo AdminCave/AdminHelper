@@ -173,6 +173,15 @@ def test_client(db_session):
     app.dependency_overrides.clear()
 
 
+def pytest_configure(config):
+    # Registered so `-m schemathesis` is a selector rather than an unknown-mark
+    # warning: run.sh has its own `schemathesis` step and reaches these tests
+    # through this marker alone (harness 8b).
+    config.addinivalue_line(
+        "markers", "schemathesis: schema-driven API fuzzing, run as its own run.sh step"
+    )
+
+
 def pytest_addoption(parser):
     # Re-records tests/openapi.snapshot.json instead of asserting against it.
     # Opt-in on purpose: the snapshot is the contract, so refreshing it is an
