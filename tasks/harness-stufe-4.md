@@ -36,8 +36,10 @@ Offen (Review-Nit, Kevins Entscheidung): die stderr-Warnung des Hooks ist bei Ex
 
 ## B — Ledger- und Close-Mechanik
 
-### T3 — ledger.sh und Task-Vorlage  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger.sh (neu, SPDX), tasks/templates/task.md (neu, SPDX-Kommentar), scripts/tests/ledger_test.sh (neu, SPDX)
+### T3 — ledger.sh und Task-Vorlage  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger.sh (neu, SPDX), tasks/templates/task.md (neu, SPDX-Kommentar), scripts/tests/ledger_test.sh (neu, SPDX), scripts/tests/run.sh, tasks/README.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @bc4f9682 2026-09-18T14:53:10+02:00
+Review: approve nach Runde 1 (opus); 6 Punkte behoben
 Änderung: Verben `start <ledger> <id>` (schreibt `.vm/active-task`: Ledger, ID, `Komponente:`, `Dateien:`), `mark-done <ledger> <id> [--note "…"] [--evidence "…"] [--review "…"]` (setzt `[x]`, hängt `Evidenz:`/`Review:`-Zeilen an; verweigert ohne `--evidence`), `mark-skip <ledger> <id> "<grund>"`, `mark-question <ledger> <id> "<frage>"`, `set-files <ledger> <id> <pfad…>` (erweitert `Dateien:`), `status <ledger> <geplant|freigegeben|aktiv|bereit|erledigt|blockiert>` und `status` (Übersicht aller Ledger), `new-task <ledger> --title "…"` aus der Vorlage, `lint <ledger>` (`Verify:` mit Env-Präfix ⇒ Fehler; `[x]` ohne `Evidenz:` ⇒ Warnung; `Status: aktiv` ohne offenes `[ ]` ⇒ Fehler). Reine grep/sed/awk, keine Python-Abhängigkeit. Hermetischer Test gegen Fixture-Ledger.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: tasks/README.md Abschnitt „ledger.sh"
