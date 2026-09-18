@@ -174,6 +174,14 @@ else
   ENVS="AH_ALLOW_REAL=1 AH_CAPTURE=1$(evidence_envs)"
   [ -n "${AH_ONLY:-}" ] && ENVS="$ENVS AH_ONLY='$AH_ONLY'"
   [ -n "${AH_REQUIRED:-}" ] && ENVS="$ENVS AH_REQUIRED='$AH_REQUIRED'"
+  # Forward the schemathesis budget for the same reason: heavy.sh sets 100 for the
+  # weekly box run, and a variable that stays in this shell would leave the box
+  # fuzzing with the local default of 5 while the report claims a deep run.
+  case "${AH_SCHEMATHESIS_EXAMPLES:-}" in
+    *[!0-9]*) echo "invalid AH_SCHEMATHESIS_EXAMPLES '${AH_SCHEMATHESIS_EXAMPLES:-}' (a number)"; exit 2 ;;
+  esac
+  [ -n "${AH_SCHEMATHESIS_EXAMPLES:-}" ] \
+    && ENVS="$ENVS AH_SCHEMATHESIS_EXAMPLES='$AH_SCHEMATHESIS_EXAMPLES'"
   if [ "${AH_DRY_RUN:-0}" = "1" ]; then
     echo "$ENVS bash scripts/tests/run.sh $LAYER$FLAGS"; exit 0
   fi

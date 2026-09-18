@@ -114,6 +114,13 @@ run_bare unit --step "vm.py pytest"
   && grep -qE '^  (PASS|SKIP|FAIL)  vm\.py pytest' <<<"$OUT" \
   && ok "the vm.py suite is a step of its own" || bad "vm-pytest step: $OUT"
 
+# Schemathesis is its own step for the same reason: an own verdict and an own
+# budget only exist if --step can reach it without dragging a pytest step along.
+run_bare unit --step "schemathesis"
+[ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
+  && grep -qE '^  (PASS|SKIP|FAIL)  schemathesis' <<<"$OUT" \
+  && ok "the schemathesis suite is a step of its own" || bad "schemathesis step: $OUT"
+
 run_bare lint --step shellcheck
 [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
   && ok "--step runs exactly one step" || bad "--step ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
@@ -195,6 +202,9 @@ cat > "$PYSHIM/python3" <<'EOF'
 # short summary. The SHIM_* knobs reproduce the shapes real suites produce.
 case "$*" in
   *pip*|*venv*) exit 0 ;;
+  # The schemathesis step probes for its package before running anything;
+  # SHIM_NO_SCHEMATHESIS stands in for a box where it is not installed.
+  *"import schemathesis"*) [ -n "${SHIM_NO_SCHEMATHESIS:-}" ] && exit 1; exit 0 ;;
 esac
 [ -n "${SHIM_ECHO_ARGV:-}" ] && echo "ARGV: $*"
 [ -n "${SHIM_NUL:-}" ] && printf 'a binary blob: \000 \001\n'
@@ -202,7 +212,17 @@ esac
 echo "1 passed, 1 skipped in 0.01s"
 echo "=========================== short test summary info ============================"
 [ -n "${SHIM_SKIP-unset}" ] && [ -n "${SHIM_SKIP:-}" ] && echo "SKIPPED [1] $SHIM_SKIP"
-exit 0
+# The schemathesis step loops over the three service directories, so its exit
+# code is an accumulation. SHIM_RC_<SERVICE> gives each `cd` its own result and
+# is the only way to reach the mixed cases (one service red, another with no
+# tests collected) from here; unset means 0, so every other case is unaffected.
+rc=0
+case "$PWD" in
+  */apps/server)     rc="${SHIM_RC_SERVER:-0}" ;;
+  */apps/monitoring) rc="${SHIM_RC_MONITORING:-0}" ;;
+  */apps/ca-issuer)  rc="${SHIM_RC_CA_ISSUER:-0}" ;;
+esac
+exit "$rc"
 EOF
 chmod +x "$PYSHIM/python3"
 
@@ -258,6 +278,52 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
       "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
 [ $rc -eq 0 ] && grep -q "0 test-skips" <<<"$OUT" \
   && ok "printed output cannot forge a test-skip" || bad "forged skip: rc=$rc $(grep -m1 'run.sh\[' <<<"$OUT")"
+
+# The package is the schemathesis step's only precondition. Without it the step
+# self-SKIPs, and a required SKIP under --strict is a failure, not a note: a run
+# that never fuzzed an API may not read as one that did.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \
+      SHIM_NO_SCHEMATHESIS=1 SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -qF "strict-failed: schemathesis (SKIP)" <<<"$OUT" \
+  && ok "a missing schemathesis package strict-fails the step" \
+  || bad "schemathesis dep-gate: rc=$rc $(grep -m1 -E 'SKIP|strict-failed' <<<"$OUT")"
+
+# With the package present the step runs — otherwise the check above would pass
+# against a run.sh whose step can never do anything at all.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \
+      SHIM_SKIP="" "$PYSHIM/bash" "$RUN" unit --strict --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -qE '^  PASS  schemathesis' <<<"$OUT" \
+  && ok "with the package installed the step really runs" \
+  || bad "schemathesis with package: rc=$rc $(grep -m1 -E 'SKIP|FAIL' <<<"$OUT")"
+
+# pytest's exit 5 means "no tests collected" — a service whose suite is not there
+# yet. Alone that is a self-SKIP, and required under --strict it is a failure: a
+# run that fuzzed nothing may not read like one that did.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \
+      SHIM_SKIP="" SHIM_RC_SERVER=5 \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -qF "strict-failed: schemathesis (SKIP)" <<<"$OUT" \
+  && grep -q "no schemathesis tests collected" <<<"$OUT" \
+  && ok "a service without collected tests self-SKIPs the step" \
+  || bad "empty collection: rc=$rc $(grep -m1 -E 'SKIP|FAIL' <<<"$OUT")"
+
+# ...but a real failure in ANY service outranks that self-SKIP, in both orders —
+# the accumulation must neither let a later error hide behind an earlier skip nor
+# let a later skip overwrite an error that already happened.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \
+      SHIM_SKIP="" SHIM_RC_SERVER=5 SHIM_RC_MONITORING=1 \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -qE '^  FAIL  schemathesis' <<<"$OUT" \
+  && ok "a real failure after a self-SKIP is a FAIL, not a SKIP" \
+  || bad "skip-then-fail: rc=$rc $(grep -m1 -E '^  (SKIP|FAIL)' <<<"$OUT")"
+
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="schemathesis" \
+      SHIM_SKIP="" SHIM_RC_SERVER=1 SHIM_RC_MONITORING=5 \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 1 ] && grep -qE '^  FAIL  schemathesis' <<<"$OUT" \
+  && ok "a later self-SKIP does not bury an earlier failure" \
+  || bad "fail-then-skip: rc=$rc $(grep -m1 -E '^  (SKIP|FAIL)' <<<"$OUT")"
 
 # The counter prefix pytest writes belongs to pytest, not to the test's name.
 grep -q "strict-failed: \[1\]" <<<"$OUT" && bad "the pytest counter prefix leaked into the name" \

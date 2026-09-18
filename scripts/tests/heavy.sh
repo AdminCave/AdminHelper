@@ -70,6 +70,11 @@ case "$MODE" in all|capstone|weekly) ;; *) usage ;; esac
 # Unset => run.sh derives the layer's full set; AH_REQUIRED_BOX names one explicitly.
 if [ -n "${AH_REQUIRED_BOX:-}" ]; then export AH_REQUIRED="$AH_REQUIRED_BOX"; else unset AH_REQUIRED; fi
 
+# The weekly run is the one that may search deep: 100 examples per operation
+# instead of the 5 a local `run.sh quick` uses (20 in the PR CI). iter.sh
+# forwards the variable to the box.
+export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-100}"
+
 AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"; export AH_OUT_DIR
 PRIVATE_DIR="${AH_PRIVATE_DIR:-$ROOT/tasks/private}"
 # Two homes, one override: warm.sh and iter.sh live next to vm.py, multibox.sh

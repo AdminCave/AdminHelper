@@ -23,13 +23,16 @@ Verify: bash scripts/tests/run.sh unit --strict --only server monitoring ca-issu
 Doku: DEVELOPMENT.md „Python-Dependencies & Lockfiles" (ein Satz: Dev-Deps je Dienst)
 Ergebnis: Dev-Deps je Dienst; run.sh/ci.yml installieren nur noch `-r requirements-dev.txt`. hypothesis 6.168.0, schemathesis 4.27.3, pytest-alembic 0.12.1 installiert. quick --strict grün: monitoring/ca-issuer/server je `3 passed, 0 failed`, scripts `5 passed, 0 failed`.
 
-### T2 — run.sh-Schritt `schemathesis`, Beispielzahl, heavy.sh-Zeile  [ ]
+### T2 — run.sh-Schritt `schemathesis`, Beispielzahl, heavy.sh-Zeile  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/heavy.sh (eine Env-Zeile), .github/workflows/ci.yml (Env `AH_SCHEMATHESIS_EXAMPLES=20`), scripts/tests/run_flags_test.sh
 Änderung: Schritt `schemathesis` im `unit`-Layer, Key `server monitoring ca-issuer` (läuft, wenn einer der Keys gewählt ist), dep-gated auf `python3 -c "import schemathesis"` im jeweiligen Venv, in `AH_REQUIRED_DEFAULT`; führt `pytest -q -m schemathesis` je Dienst aus (Marker aus T3–T5), `AH_SCHEMATHESIS_EXAMPLES` Default 5; `heavy.sh` exportiert `AH_SCHEMATHESIS_EXAMPLES=100` für den Box-Lauf; `ci.yml` setzt 20 in den drei Python-Jobs. `run_flags_test`: Schritt-Id in den Erwartungen, Self-SKIP ohne Paket ⇒ `strict-failed: schemathesis (SKIP)`.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T11)
 Abhängt von: T1
 Review-Notiz aus T1 (nit): der `||`-Fallback des ca-issuer-Zweigs in run.sh installiert nur `pytest cryptography` — ohne fastapi/sqlalchemy/httpx. Schon vor 8b unzureichend; wenn der Schemathesis-Schritt dort greift, hier mitprüfen.
+Ergebnis: Schritt `schemathesis` im unit-Layer (Name = Id, damit die Zeile `strict-failed: schemathesis (SKIP)` lautet), dep-gated auf `import schemathesis`, fährt nur die per `--only` gewählten Dienste; pytest-Exit 5 („no tests collected") wird 75 = self-SKIP, nie PASS. `AH_SCHEMATHESIS_EXAMPLES` 5/20/100. run_flags_test: 6 neue Fälle (Schritt-Id, dep-Gate, und die rc-Akkumulation über mehrere Dienste in beiden Richtungen), `72 passed, 0 failed`; iter_flags_test: 3 neue Fälle für Forward/Validierung, `27 passed, 0 failed`. verify.sh scripts --strict: `5 passed, 0 failed, 12 skipped`.
+Zusatz gegenüber der Dateiliste: **scripts/vm/iter.sh** musste mit — es reicht nur eine Allowlist von AH_*-Variablen an die Box weiter, ohne den Forward bliebe heavy.sh' 100 auf der Dev-Box hängen und der Wochenlauf fuzzte mit 5, während der Report „tief" behauptet.
+[?] Offen für den Abschluss: `AH_REQUIRED` aus Kevins `.devenv.sh` überschreibt `AH_REQUIRED_DEFAULT` und kennt `schemathesis` nicht — der Schritt ist auf der Dev-Box daher **nicht** Pflicht (auf Box und in CI schon, dort ist AH_REQUIRED ungesetzt). Nach T5 einmal mit erweitertem Satz gegenfahren; Kevins Datei ist per-Host und gitignored, das ist seine Zeile.
 
 ## B — Schemathesis
 

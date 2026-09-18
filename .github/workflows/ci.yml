@@ -66,6 +66,9 @@ jobs:
       DATA_DIR: /tmp/adminhelper-test-data
       SECRET_KEY: ci-test-secret-key
       ADMIN_PASSWORD: ciadmin
+      # Schemathesis budget per operation: more than the 5 a local `run.sh quick`
+      # spends, far less than the 100 of the weekly box run (scripts/tests/heavy.sh).
+      AH_SCHEMATHESIS_EXAMPLES: "20"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -124,6 +127,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
+      AH_SCHEMATHESIS_EXAMPLES: "20"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -145,6 +149,8 @@ jobs:
     name: CA-Issuer (pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      AH_SCHEMATHESIS_EXAMPLES: "20"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6

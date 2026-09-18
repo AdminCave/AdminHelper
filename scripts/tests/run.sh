@@ -87,7 +87,7 @@ export AH_ONLY AH_STRICT
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
 # added to the default set (see AH_HEAVY_* below); a host-given AH_REQUIRED wins as is.
-AH_REQUIRED_DEFAULT="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest"
+AH_REQUIRED_DEFAULT="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest schemathesis go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest"
 # Named by the host or derived here? Only an unset (or empty — iter.sh does
 # not forward an empty value either) AH_REQUIRED gets the heavy step ids added
 # below; a host that names its set keeps exactly that set.
@@ -303,7 +303,7 @@ scan_test_skips() {
 # for (the step dep-gates on `import pytest` instead).
 py_step_possible() {
   [ -n "$AH_STEP" ] || return 0
-  local n; for n in "monitoring pytest" "ca-issuer pytest" "server pytest"; do
+  local n; for n in "monitoring pytest" "ca-issuer pytest" "server pytest" "schemathesis"; do
     case "$n" in *"$AH_STEP"*) return 0 ;; esac
   done
   return 1
@@ -552,6 +552,43 @@ layer_unit() {
   elif have python3 && { [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker; }; then
     run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
+
+  # Schemathesis — each service's API fuzzed against its OWN OpenAPI schema. A step
+  # of its own rather than part of the pytest ones: its own SKIP/FAIL verdict, its
+  # own budget (AH_SCHEMATHESIS_EXAMPLES: 5 here, 20 in the PR CI, 100 on the weekly
+  # box), and under --strict it is mandatory like every other suite.
+  # Only the services --only asked for: the three suites land one task at a time, and
+  # a run for one service must not fail over another's file that does not exist yet.
+  # pytest's exit 5 ("no tests collected") is turned into 75 = self-SKIP, never into a
+  # pass: a service whose marker file is missing has NOT been verified, and --strict
+  # has to say exactly that.
+  local sth=()
+  only server     && sth+=("apps/server")
+  only monitoring && sth+=("apps/monitoring")
+  only ca-issuer  && sth+=("apps/ca-issuer")
+  if [ ${#sth[@]} -eq 0 ]; then skip schemathesis "schemathesis" "AH_ONLY"
+  elif have python3 && python3 -c 'import schemathesis' 2>/dev/null; then
+    run_py_step schemathesis "schemathesis" -- bash -c '
+      export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-5}"
+      rc=0
+      for d in "$@"; do
+        (
+          cd "$d" || exit 2
+          # Only the server suite needs a Postgres; exporting DATABASE_URL globally
+          # would arm the monitoring migration smoke against the wrong database.
+          [ "$d" = apps/server ] && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"
+          python3 -m pytest -q -m schemathesis $AH_PYTEST_RS $AH_ARGS
+        ); c=$?
+        # Captured first: inside the case, $? would already be the status of case.
+        case "$c" in
+          0) ;;
+          5) echo "  ($d: no schemathesis tests collected)"; [ "$rc" = 0 ] && rc=75 ;;
+          *) rc=$c ;;
+        esac
+      done
+      exit "$rc"
+    ' _ "${sth[@]}"
+  else skip schemathesis "schemathesis" "schemathesis not installed"; fi
 
   # Go agent — fmt + vet + test + cross-compile (matches CI).
   # -race mirrors ci.yml's agent job: the agent is concurrent (monitor, frpc,
