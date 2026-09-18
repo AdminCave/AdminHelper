@@ -33,7 +33,7 @@ REVIEW="$FIX/scripts/dev/review.sh"
 
 # git tracks files, not directories, so `git clean -fd` removes every empty one:
 # the skeleton is rebuilt after each reset instead of being assumed.
-SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs docs/features tasks/private)
+SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs docs/features tasks/private .claude)
 mkskel() { local d; for d in "${SKELETON[@]}"; do mkdir -p "$FIX/$d"; done; }
 mkskel
 cp "$REPO_ROOT/scripts/dev/review.sh" "$REVIEW"
@@ -280,6 +280,22 @@ stage docs/big.md
 r sec --staged
 [ $rc -eq 4 ] && ok "the Dedup-Key is still caught in a diff far beyond the pipe buffer ($(wc -c < "$FIX/docs/big.md") bytes)" \
   || bad "big diff: rc=$rc out=$OUT"
+reset_index
+
+# The two gitignored files that really carry credentials on this box.
+reset_index
+printf 'export AH_TEST_DB=postgresql://u:secret@localhost/db\n' > "$FIX/.devenv.sh"
+git -C "$FIX" add -f -- .devenv.sh
+r sec --staged
+[ $rc -eq 4 ] && grep -q "carries credentials" <<<"$OUT" \
+  && ok ".devenv.sh staged -> exit 4 (it carries the database password)" || bad "devenv: rc=$rc out=$OUT"
+reset_index
+mkdir -p "$FIX/.claude"
+printf '{"env":{"AH_PVE_TOKEN":"secret"}}\n' > "$FIX/.claude/settings.local.json"
+git -C "$FIX" add -f -- .claude/settings.local.json
+r sec --staged
+[ $rc -eq 4 ] && ok ".claude/settings.local.json staged -> exit 4 (it carries the Proxmox token)" \
+  || bad "settings.local: rc=$rc out=$OUT"
 reset_index
 
 printf 'ordinary docs\n' >> "$FIX/CHANGELOG.md"

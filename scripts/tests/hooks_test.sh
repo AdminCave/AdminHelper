@@ -342,7 +342,7 @@ runner_env() {
   rm -f "$WORK/env.out"   # never read a previous case's values
   ERR=$(HOME="$1" TMPDIR="$WORK" ANTHROPIC_API_KEY=leftover ANTHROPIC_AUTH_TOKEN=leftover \
     CLAUDE_CODE_OAUTH_TOKEN=leftover-oauth AH_PVE_TOKEN=leftover-pve AH_PVE_URL=leftover-url \
-    AH_VM_MAX=99 GITHUB_TOKEN=leftover-gh \
+    AH_VM_MAX=99 GITHUB_TOKEN=leftover-gh GH_CONFIG_DIR="${OUTER_GH:-}" \
     bash -c '
       . "$1"; rc=$?
       { echo "RC=$rc"
@@ -374,6 +374,13 @@ runner_env "$H"
 [ -d "$(val GH_CONFIG_DIR)" ] && [ -z "$(ls -A "$(val GH_CONFIG_DIR)" 2>/dev/null)" ] \
   && ok "GH_CONFIG_DIR points at an empty throwaway dir (no inherited gh login)" \
   || bad "GH_CONFIG_DIR=$(val GH_CONFIG_DIR)"
+# An inherited GH_CONFIG_DIR that happens to exist is somebody's real gh config,
+# and keeping it would hand this user a working login.
+FAKE_GH="$WORK/foreign-gh"; mkdir -p "$FAKE_GH"; printf 'github.com:\n  oauth_token: x\n' > "$FAKE_GH/hosts.yml"
+OUTER_GH="$FAKE_GH" runner_env "$H"
+[ "$(val GH_CONFIG_DIR)" != "$FAKE_GH" ] && [ -z "$(ls -A "$(val GH_CONFIG_DIR)" 2>/dev/null)" ] \
+  && ok "an inherited GH_CONFIG_DIR with a real login is replaced, not reused" \
+  || bad "the foreign gh config survived: $(val GH_CONFIG_DIR)"
 [ "$(val AH_TEST_DB)" = "postgresql://ah_runner@localhost/ah_runner_test" ] \
   && ok "the runner's own .devenv.sh is sourced (its own test DB)" || bad "AH_TEST_DB=$(val AH_TEST_DB)"
 [ "$(val AH_PVE_URL)" = "https://pve.invalid:8006" ] && [ "$(val AH_PVE_NODE)" = "node9" ] \
@@ -459,7 +466,8 @@ for rule in 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(git 
             'Edit(./scripts/vm/vm.py)' 'Edit(./tasks/private/**)' 'Read(~/.config/adminhelper/**)' \
             'Bash(git switch:*)' 'Bash(git revert:*)' 'Bash(git branch:*)' \
             'Bash(bash scripts/tests/heavy.sh:*)' 'Bash(bash scripts/tests/multibox.sh:*)' \
-            'Edit(~/.claude/**)'; do
+            'Edit(~/.claude/**)' 'Edit(//srv/ah/**/CLAUDE.md)' 'Edit(//srv/ah/**/.claude/**)' \
+            'Edit(//srv/ah/**/scripts/dev/**)'; do
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["deny"] else 1)' "$RS" "$rule" \
     && ok "deny: $rule" || bad "missing deny rule: $rule"
 done

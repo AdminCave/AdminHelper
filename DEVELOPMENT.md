@@ -282,7 +282,8 @@ bash scripts/dev/ledger.sh start tasks/<slug>.md T7      # .vm/active-task: Komp
 bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage --review-note "approve (sonnet)" -m "feat(...): ..."
 ```
 
-`--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`).
+`--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`;
+Verzeichnisse werden abgelehnt, Loeschungen mitgenommen).
 Das ist kein Komfort, sondern die Folge derselben Stufe: `git add` steht seit Stufe 4 unter
 `ask`, ein Lauf, der von Hand stagen will, bleibt im Permission-Prompt stehen.
 
@@ -297,6 +298,10 @@ mit Code und Ledger. Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
 Eingabefehler, `3` Suite rot oder Diff-Scan-Fund, `4` blockiert (Scope/Sec),
 `74` die Suite konnte gar nicht laufen.
 
+`ledger.sh start` schreibt dabei `.vm/active-task` — heute reine **Anzeige** (wer arbeitet
+gerade woran); geprueft wird spaeter die `Dateien:`-Zeile der Task selbst, gelesen wird die
+Datei erst vom Worker-Preflight der Stufe 7.
+
 `ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`,
 `mark-skip`, `mark-question`, `set-files`, `status`, `new-task`, `lint`) — Details
 in [`tasks/README.md`](tasks/README.md). Braucht eine Task eine Datei, die nicht in
@@ -308,6 +313,12 @@ nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 `git add`, `git commit`, `git checkout`, `git restore` und `git stash` stehen in
 `.claude/settings.json` seit Stufe 4 unter `ask`: der Weg zum Commit fuehrt ueber
 `task-close.sh`, und die drei Recovery-Verben loeschen im Zweifel ungestagte Arbeit.
+
+**`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
+`## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
+Seiten. Das dedupliziert aber nichts: legen beide dieselbe Versions-Ueberschrift an, steht
+sie hinterher doppelt im File, ohne Konflikt-Marker. Vor einem Release lohnt der Blick in
+den `Unreleased`-Block (`.claude/rules/release.md`).
 
 ### Harness-Schutz und Kill-Switch
 
@@ -380,7 +391,8 @@ alle `AH_PVE_*` (`vm.py` laesst die Umgebung ueber seine Konfiguration gewinnen)
 | `vm.py bake`, `bake.sh`, `heavy.sh`, `multibox.sh`, `run.sh all/e2e/integration` | Teure oder VM-fressende Laeufe startet ein Mensch. `vm.py` ist Verb fuer Verb freigegeben, damit kein breites Praefix `bake` mit abdeckt. |
 | `task-close.sh`, `ledger.sh mark-done` | Der Runner schliesst in Stufe 4 keine Task — das tut die interaktive Session. In Stufe 7 aendert sich genau diese Zeile. |
 | `Edit(./.claude/**)`, `Edit(~/.claude/**)`, `CLAUDE.md`, `AUTONOMOUS.md`, `scripts/dev/**`, `run.sh`, `heavy.sh`, `vm.py` | Der Harness ist nicht sein Arbeitsmaterial. `~/.claude` steht mit drin, weil Claude Code Settings **live** nachlaedt. |
-| `Edit(./tasks/private/**)`, `Read(~/.config/adminhelper/**)` | Privates Repo und die eigenen Token-Dateien. |
+| `Edit(./tasks/private/**)`, `Read(~/.config/adminhelper/**)` | Privates Repo und die eigenen Token-Dateien. Der `Read`-Deny ist Hygiene, **keine Grenze**: die Token stehen nach `runner-env.sh` ohnehin in der Prozess-Umgebung des Runners, und ein erlaubtes `cat` liest die Datei am `Read`-Tool vorbei. Was wirklich schuetzt, ist `0600` plus die Tatsache, dass es seine **eigenen** Token sind (Pool-gescopt, eigenes Abo). |
+| `Edit(//srv/ah/**/…)` (dieselben Harness-Pfade absolut) | Eine `./`-Regel loest gegen das **Arbeitsverzeichnis** der Session auf: startet ein Lauf in einem Unterverzeichnis des Klons, meint `Edit(./CLAUDE.md)` eine ganz andere Datei. Die absoluten Zwillinge halten ueberall. |
 
 **Was die Regeln nicht koennen** — ehrlich, weil es den Beweis veraendert: der
 Runner darf `Edit(./scripts/**)` (ausser den gesperrten Pfaden) und `bash

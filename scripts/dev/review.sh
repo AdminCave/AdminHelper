@@ -21,7 +21,8 @@
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
-#              private roadmap, a security ledger, a finding's dedup key.
+#              private roadmap, a security ledger, a finding's dedup key, or one
+#              of the two gitignored files that carry credentials.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
 # the working tree is compared against HEAD. Neither form sees UNTRACKED files —
@@ -204,7 +205,13 @@ $LEDGER"
     BLOCKED=()
     while IFS= read -r p; do
       case "$p" in
+        # The private roadmap and the security ledgers — and the two files that
+        # actually carry credentials on this box: the Proxmox token lives in
+        # .claude/settings.local.json (CLAUDE.md §8) and the database password
+        # in .devenv.sh. Both are gitignored, and both would be taken by an
+        # `git add -f` or a helpful editor.
         tasks/private/*|tasks/sec-*.md|docs/features/sec-*.md) BLOCKED+=("$p") ;;
+        .claude/settings.local.json|.devenv.sh|*/.devenv.sh) BLOCKED+=("$p (carries credentials)") ;;
       esac
     done <<< "$(changed_paths)"
     # awk, not `grep -q`: grep leaves the pipeline the moment it matches, git

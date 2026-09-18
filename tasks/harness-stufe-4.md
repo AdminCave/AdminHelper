@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 4 — Runner-Isolation und deterministische Gates — Task-Ledger
-Status: aktiv · Branch: feature/harness-stufe-4 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Risikopfad Harness ⇒ Reviewer Opus) · Modell: Opus
+Status: blockiert · Branch: feature/harness-stufe-4 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Risikopfad Harness ⇒ Reviewer Opus) · Modell: Opus
 Spec: docs/features/harness-stufe-4.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: keine; die Beweise sind die hermetischen Tests plus Kevins Red-Team-Lauf als adminhelper-runner (T10, Ergebnis in den Anhang)
@@ -129,6 +129,26 @@ Review: approve nach Runde 1 (opus); Blocker + 3 wichtig + nits behoben
 Änderung: Im Betrieb entdeckt (Aufsichts-Session, 2026-09-18): T9 hat `git add` nach `ask` verschoben, `task-close.sh` verlangt aber gestagte Dateien — der Bau blockiert also an genau dem Schritt, den er noch selbst tun muss (45 min Prompt-Hänger). `task-close.sh --stage` stagt die Pfade aus `Dateien:` der Task selbst (nur die; `git add -A` bleibt ausgeschlossen), danach laufen die bisherigen Prüfungen unverändert — inklusive der Frage, ob noch etwas Unstaged aus der Task übrig ist. Build-Skill und DEVELOPMENT.md nennen den Flag.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: Build-Skill (hier); DEVELOPMENT.md zieht T12 mit, damit der Doku-Sweep in einem Commit bleibt
+
+### T14 — Wächter: mehrzeilige Kommandos, rm, und die fehlenden Harness-Pfade  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh
+Änderung: Aus dem Branch-Review (drei Funde empirisch reproduziert): (1) `tokenize()` nutzt `whitespace_split=True`, damit ist der Zeilenumbruch Whitespace und wird nie zum Token — ein mehrzeiliges Bash-Kommando ist EIN Segment, und jeder Schreibvorgang ab Zeile 2 kommt am Wächter vorbei (Bash-Aufrufe sind meist mehrzeilig, also der Normalfall). Vor dem Tokenisieren an Zeilenenden segmentieren. (2) `rm`, `truncate`, `ln -sf` und `dd` fehlen unter den Schreib-Verben — ein autonomer Lauf kann `task-close.sh` schlicht löschen. (3) `scripts/dev/runner-redteam.sh` und die fünf Gate-Tests fehlen in `harness-paths.txt`: wer den Test eines Gates umschreibt, bekommt ein Grün, das nichts beweist.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Kopfkommentar des Hooks)
+
+### T15 — task-close: Verify-Args, main-Sperre, Ledger-Scan, leerer Tree-Hash  [ ]
+Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh
+Änderung: Aus dem Branch-Review: (1) `VERIFY_ARGS` greift gierig und verschluckt Prosa — an `tasks/dependency-refresh.md` und `tasks/code-review-fixes.md` reproduziert: die halbe Änderungsbeschreibung landet als Argument in der Suite, die Task ist grün und lässt sich trotzdem nicht schließen. Argumente nur aus einer `Verify:`-Zeile in `verify.sh`-Form übernehmen. (2) Der Ledger wird NACH `diff-scan`/`scope`/`sec` gestaged — sein Inhalt geht ungeprüft in den Commit, obwohl der Runner `Edit(./tasks/**)` darf; nach dem Stagen erneut prüfen. (3) `task-close.sh` committet ohne ein Wort auf `main` (CLAUDE.md §3 Trigger 2 griff bisher über `git commit` in der Session) — auf `main`/`master` verweigern. (4) Fehlt dem Artefakt der `tree_hash`, wird die Gegenprobe still übersprungen: das ist Infrastruktur (74), kein Grün.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Kopfkommentar)
+
+### T16 — Runner-Grenze: sec-Pfade, GH_CONFIG_DIR, absolute Regeln, Doku-Korrekturen  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/runner-env.sh, scripts/dev/runner-settings.json, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @d17feda4 2026-09-18T22:33:55+02:00
+Review: approve (sonnet, enger Zweitlauf nach Timeout des ersten)
+Änderung: Aus dem Branch-Review: (1) `review.sh sec` sperrt `tasks/private/**`, aber nicht `.claude/settings.local.json` und `/.devenv.sh` — genau die zwei Dateien, die Proxmox-Token und DB-Passwort tragen; `git add -f` genügt. (2) `runner-env.sh` behält ein geerbtes `GH_CONFIG_DIR`, wenn es ein existierendes Verzeichnis ist — ein echtes gh-Login überlebt damit; immer ein frisches Temp-Verzeichnis. (3) Die `./`-Regeln der Runner-Settings lösen gegen das Arbeitsverzeichnis auf: eine Session, die in einem Unterverzeichnis startet, verliert die Harness-Deny-Liste — absolute Regeln daneben. (4) Doku-Korrekturen: der `Read`-Deny auf die Token-Dateien ist keine Grenze (die Token stehen ohnehin in der Prozess-Umgebung), `.vm/active-task` ist heute Anzeige und kein Preflight, und `merge=union` dedupliziert nicht.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (drei Korrekturen)
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; `hooks_test`, `ledger_test`, `review_scripts_test`, `task_close_test`, `runner_setup_test` im Scripts-Block.

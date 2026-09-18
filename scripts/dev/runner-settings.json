@@ -31,7 +31,15 @@
       "Bash(bash scripts/tests/run.sh e2e:*)",
       "Bash(bash scripts/tests/run.sh integration:*)",
       "Edit(~/.claude/**)",
-      "Read(~/.config/adminhelper/**)"
+      "Read(~/.config/adminhelper/**)",
+      "Edit(//srv/ah/**/CLAUDE.md)",
+      "Edit(//srv/ah/**/AUTONOMOUS.md)",
+      "Edit(//srv/ah/**/.claude/**)",
+      "Edit(//srv/ah/**/scripts/dev/**)",
+      "Edit(//srv/ah/**/scripts/tests/run.sh)",
+      "Edit(//srv/ah/**/scripts/tests/heavy.sh)",
+      "Edit(//srv/ah/**/scripts/vm/vm.py)",
+      "Edit(//srv/ah/**/tasks/private/**)"
     ],
     "allow": [
       "Bash(bash scripts/dev/verify.sh:*)",

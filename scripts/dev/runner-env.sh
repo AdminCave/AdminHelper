@@ -50,11 +50,12 @@ ah_runner_env() {
   [ -f "$devenv" ] && . "$devenv"
 
   export GH_TOKEN="" GITHUB_TOKEN="" GH_ENTERPRISE_TOKEN="" GITHUB_ENTERPRISE_TOKEN=""
-  # Reused when it is already a directory: sourcing this file once per login
-  # otherwise leaves an empty directory in TMPDIR forever.
-  if [ ! -d "${GH_CONFIG_DIR:-}" ]; then
-    GH_CONFIG_DIR="$(mktemp -d)" || { echo "runner-env: mktemp failed — gh would fall back to ~/.config/gh" >&2; return 1; }
-  fi
+  # Always a fresh directory, never an inherited one: a GH_CONFIG_DIR that
+  # happens to point at somebody's real gh config would pass an "is it a
+  # directory" test and hand this user a working login — the exact opposite of
+  # what the line is for. The cost is an empty directory per login.
+  GH_CONFIG_DIR="$(mktemp -d)" \
+    || { echo "runner-env: mktemp failed — gh would fall back to ~/.config/gh" >&2; return 1; }
   export GH_CONFIG_DIR
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   unset "${!AH_PVE_@}"
