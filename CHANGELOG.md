@@ -66,6 +66,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Capstone, Visitor-Rolle:** der frpc-Visitor startete mit `sudo sh -c … &` und hielt damit stdout/stderr
+  der ssh-Sitzung — `vm.py run` (ohne pty) sah nie EOF und lief 50 Minuten in den Timeout, obwohl die
+  Pruefung acht Sekunden braucht. Jetzt per `setsid` mit `</dev/null` gestartet und am Ende beendet; ein
+  hermetischer Guard (`box_scripts_guard_test.sh`) verbietet solche Hintergrundstarts in allen Box-Skripten.
+
 - **VM-Hygiene (R-0048/R-0049):** `.devenv.sh` reist nicht mehr per `vm.py sync` auf die Box
   und damit auch nicht mehr in ein Template — auf der Box bleibt `AH_REQUIRED` ungesetzt und die
   Box-Regel macht alle Schritte eines schweren Layers zur Pflicht. `iter.sh` verlaengert die

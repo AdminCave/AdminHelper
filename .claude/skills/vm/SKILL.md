@@ -73,3 +73,5 @@ Die Wrapper reichen den Code unverändert durch.
 - **Parallele Lanes teilen nichts.** `lane.sh new <slug>` schreibt `.vm/lane`; `reap` und
   `destroy` arbeiten auf der eigenen Lane, `--all` erweitert nur den Ablauf-Sweep.
 - **Suiten fährt `/test`, nicht dieser Skill.** Hier steht, wie man an eine Box kommt.
+
+**Hintergrundprozesse auf der Box:** `vm.py run` hat kein pty. Ein Daemon, der im Box-Skript mit `cmd … &` startet und dabei stdout/stderr der ssh-Sitzung erbt (auch über `sudo sh -c`), hält den Kanal offen — der Lauf endet erst am Timeout. Daemons mit `setsid … </dev/null >log 2>&1 &` starten oder systemd übergeben; `scripts/tests/box_scripts_guard_test.sh` prüft das.

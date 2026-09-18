@@ -45,7 +45,14 @@ VPORT="$(sudo grep -E '^bindPort' /etc/frp/visitor.toml | head -1 | grep -oE '[0
 [ -n "$VPORT" ] && echo "VIS_BIND_PORT=$VPORT" || { echo "VIS_NO_BIND_PORT"; sudo cat /etc/frp/visitor.toml; exit 1; }
 
 echo "[visitorbox] run frpc visitor -> bind 127.0.0.1:$VPORT (through frps to the agent's sshd)"
-sudo sh -c '/usr/bin/frpc -c /etc/frp/visitor.toml >/tmp/frpc-vis.log 2>&1' &
+# Detached on purpose (setsid, stdin from /dev/null, both outputs to the log):
+# `sudo sh -c '…' &` left sudo and sh holding the ssh session's stdout/stderr, so
+# `vm.py run` — no pty — never saw EOF and sat there until its 3000 s timeout
+# (capstone 2026-09-18). The tunnel box has the same daemon under systemd; this
+# one is a per-run helper and is stopped again below.
+# shellcheck disable=SC2024  # the log is opened by THIS user on purpose: the poll
+# loop below reads it without sudo, and a root-owned file would make it unreadable.
+sudo setsid /usr/bin/frpc -c /etc/frp/visitor.toml </dev/null >/tmp/frpc-vis.log 2>&1 &
 # Poll for the visitor registration instead of a fixed sleep — it can lag on a loaded box (6.137).
 vis_ok=0
 for _ in $(seq 1 20); do grep -qiE 'start.*visitor.*success|login to server success|start proxy success' /tmp/frpc-vis.log 2>/dev/null && { vis_ok=1; break; }; sleep 1; done
@@ -59,4 +66,5 @@ echo "[visitorbox] pull the SSH banner through the tunnel (proves the cross-host
 BANNER="$(timeout 8 bash -c "exec 3<>/dev/tcp/127.0.0.1/$VPORT; head -c 40 <&3" 2>/dev/null || true)"
 echo "    banner: ${BANNER%%$'\n'*}"
 printf '%s' "$BANNER" | grep -q 'SSH-' && echo "VIS_TUNNEL_SSH_OK" || { echo "VIS_TUNNEL_SSH_FAIL"; sed 's/^/    frpc: /' /tmp/frpc-vis.log; }
+sudo pkill -f "frpc -c /etc/frp/visitor.toml" 2>/dev/null || true
 echo "VIS_DONE"
