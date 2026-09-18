@@ -130,8 +130,10 @@ Review: approve nach Runde 1 (opus); Blocker + 3 wichtig + nits behoben
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: Build-Skill (hier); DEVELOPMENT.md zieht T12 mit, damit der Doku-Sweep in einem Commit bleibt
 
-### T14 — Wächter: mehrzeilige Kommandos, rm, und die fehlenden Harness-Pfade  [ ]
+### T14 — Wächter: mehrzeilige Kommandos, rm, und die fehlenden Harness-Pfade  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @67f907cb 2026-09-18T22:45:02+02:00
+Review: approve nach 2 Runden (sonnet); Falsch-Positiv bei Heredoc/mehrzeiligen Strings behoben
 Änderung: Aus dem Branch-Review (drei Funde empirisch reproduziert): (1) `tokenize()` nutzt `whitespace_split=True`, damit ist der Zeilenumbruch Whitespace und wird nie zum Token — ein mehrzeiliges Bash-Kommando ist EIN Segment, und jeder Schreibvorgang ab Zeile 2 kommt am Wächter vorbei (Bash-Aufrufe sind meist mehrzeilig, also der Normalfall). Vor dem Tokenisieren an Zeilenenden segmentieren. (2) `rm`, `truncate`, `ln -sf` und `dd` fehlen unter den Schreib-Verben — ein autonomer Lauf kann `task-close.sh` schlicht löschen. (3) `scripts/dev/runner-redteam.sh` und die fünf Gate-Tests fehlen in `harness-paths.txt`: wer den Test eines Gates umschreibt, bekommt ein Grün, das nichts beweist.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kopfkommentar des Hooks)

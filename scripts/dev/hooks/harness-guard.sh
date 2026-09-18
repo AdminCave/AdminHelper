@@ -19,11 +19,15 @@
 # document, which is the documented way for a hook to deny a call.
 #
 # Bash commands are BEST EFFORT and deliberately narrow: only the shapes that
-# actually write — a `>`/`>>` redirection, `sed -i`, `tee`, `cp`/`mv`/`install` —
-# are inspected, and only when they are the segment's COMMAND, so reading a
+# actually write — a `>`/`>>` redirection, `sed -i`, `tee`, `cp`/`mv`/`install`,
+# and the ones that take a file away entirely (`rm`, `truncate`, `ln -sf`, `dd
+# of=`) — are inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
 # The command is tokenized before it is split into segments, so a `|` or `&&`
-# inside a quoted string (a commit message, say) is text and not a pipeline.
+# inside a quoted string (a commit message, say) is text and not a pipeline; a
+# newline only ends a command when it is neither inside a quote nor inside a
+# here-doc body, for the same reason. The flip side of skipping here-doc bodies
+# is a known gap: `bash <<EOF … EOF` hides its commands from this guard.
 # `cd` is followed within a command, and `bash -c "…"` is scanned recursively,
 # because Claude Code does not strip it before matching its own rules either.
 #
@@ -74,7 +78,7 @@ root = os.path.realpath(sys.argv[1])
 WRAPPERS = {"sudo", "env", "timeout", "nice", "nohup", "stdbuf", "command", "xargs", "(", ")", "{", "}"}
 # Wrapper flags that eat the next word (`sudo -u root tee …`, `timeout -k 5 …`).
 VALUE_FLAGS = {"-u", "-g", "-k", "-s", "-n", "-p", "-C", "-D", "--user", "--group", "--signal"}
-SEPARATORS = {"|", "||", "&&", ";", "&", ";;", "\n"}
+SEPARATORS = {"|", "||", "&&", ";", "&", ";;"}
 
 out = []
 
@@ -105,17 +109,72 @@ def is_redirect(tok):
     return ">" in tok and all(c in "<>|&" for c in tok)
 
 
+def logical_lines(cmd):
+    """Split on newlines that really end a command — not on the ones inside a
+    quoted string or a here-doc body. shlex is told to split on whitespace, and
+    a newline IS whitespace, so it never becomes a token of its own: without
+    this, a multi-line command arrived as ONE segment and everything below its
+    first line was invisible. Splitting on every newline instead would convict a
+    commit message written as a here-doc (CLAUDE.md asks for exactly that),
+    because its prose lines would each look like a command."""
+    out, buf = [], []
+    quote = None
+    esc = False
+    heredocs = []        # delimiters whose bodies are still to come
+    skip_to = None       # delimiter of the body currently being skipped
+    for line in cmd.split("\n"):
+        if skip_to is not None:
+            if line.strip() == skip_to:
+                skip_to = heredocs.pop(0) if heredocs else None
+                if skip_to is not None:
+                    heredocs.insert(0, skip_to)
+                    skip_to = heredocs.pop(0)
+            continue
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if esc:
+                esc = False
+            elif ch == "\\" and quote != "'":
+                esc = True
+            elif quote:
+                if ch == quote:
+                    quote = None
+            elif ch in "\"'":
+                quote = ch
+            elif ch == "<" and line[i:i + 2] == "<<":
+                # `<<EOF`, `<<-'EOF'`, `<< "EOF"` — the body is data, not commands.
+                rest = line[i + 2:].lstrip("-").lstrip()
+                delim = rest.split()[0] if rest.split() else ""
+                delim = delim.strip("\"'")
+                if delim:
+                    heredocs.append(delim)
+                i += 2
+                continue
+            i += 1
+        buf.append(line)
+        if quote is None and not esc:
+            out.append("\n".join(buf) if len(buf) > 1 else buf[0])
+            buf = []
+            if heredocs:
+                skip_to = heredocs.pop(0)
+    if buf:
+        out.append("\n".join(buf))
+    return out
+
+
 def scan(cmd, base, depth=0):
     if depth > 2:
         return
     cur = base
-    segment = []
-    for tok in tokenize(cmd) + [";"]:
-        if tok in SEPARATORS:
-            cur = run_segment(segment, cur, depth)
-            segment = []
-        else:
-            segment.append(tok)
+    for line in logical_lines(cmd):
+        segment = []
+        for tok in tokenize(line) + [";"]:
+            if tok in SEPARATORS:
+                cur = run_segment(segment, cur, depth)
+                segment = []
+            else:
+                segment.append(tok)
 
 
 def run_segment(tok, cwd, depth):
@@ -174,6 +233,16 @@ def run_segment(tok, cwd, depth):
         out.extend(rel(w, cwd) for w in words[1:])   # words[0] is sed's script
     elif verb == "tee":
         out.extend(rel(w, cwd) for w in words)
+    elif verb in ("rm", "shred", "truncate", "unlink"):
+        # Taking a harness file away is the most complete edit there is.
+        out.extend(rel(w, cwd) for w in words)
+    elif verb == "ln":
+        # `ln -sf x CLAUDE.md` replaces the file with a link to something else.
+        out.extend(rel(w, cwd) for w in words[1:] if len(words) > 1)
+    elif verb == "dd":
+        for a in args:
+            if a.startswith("of="):
+                out.append(rel(a[3:], cwd))
     elif verb in ("cp", "mv", "install"):
         # An explicit -t/--target-directory, or the last word, is the target.
         target = None

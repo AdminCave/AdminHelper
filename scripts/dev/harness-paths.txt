@@ -23,9 +23,19 @@ scripts/dev/review.sh
 scripts/dev/runner-env.sh
 scripts/dev/runner-settings.json
 scripts/dev/runner-setup.sh
+scripts/dev/runner-redteam.sh
 scripts/dev/task-close.sh
 scripts/dev/tree-hash.sh
 scripts/dev/verify.sh
 scripts/tests/run.sh
 scripts/tests/heavy.sh
 scripts/vm/vm.py
+
+# The tests OF the gates: a run that rewrites a gate's test and then makes the
+# gate agree with it produces a green that proves nothing.
+scripts/tests/hooks_test.sh
+scripts/tests/ledger_test.sh
+scripts/tests/review_scripts_test.sh
+scripts/tests/task_close_test.sh
+scripts/tests/runner_setup_test.sh
+scripts/tests/verify_test.sh

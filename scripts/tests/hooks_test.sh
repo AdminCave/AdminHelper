@@ -125,7 +125,11 @@ done
 
 # The four that define what the harness IS. A list that lost one of them would
 # still look plausible and would guard nothing that matters.
-for want in 'CLAUDE.md' '.claude/**' 'scripts/tests/run.sh' 'scripts/vm/vm.py'; do
+# The gates' own tests belong on the list for the same reason run.sh does: a run
+# that rewrites a test and then makes the gate agree with it proves nothing.
+for want in 'CLAUDE.md' '.claude/**' 'scripts/tests/run.sh' 'scripts/vm/vm.py' \
+            'scripts/dev/runner-redteam.sh' 'scripts/tests/hooks_test.sh' \
+            'scripts/tests/task_close_test.sh' 'scripts/tests/review_scripts_test.sh'; do
   grep -qxF "$want" "$PATHS" && ok "listed: $want" || bad "missing from harness-paths.txt: $want"
 done
 
@@ -261,6 +265,38 @@ for cmd in 'cat CLAUDE.md' 'grep -n foo scripts/tests/run.sh' 'git diff scripts/
   guard auto Bash "$(printf '{"command":"%s"}' "$cmd")"
   [ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: $cmd" || bad "denied a read: $cmd -> $OUT$ERR"
 done
+
+# A multi-line command is the normal shape of a Bash tool call — and shlex is
+# told to split on whitespace, so a newline never becomes a separator token by
+# itself. Everything below line 1 used to be invisible to the guard.
+guard auto Bash "$(python3 -c 'import json; print(json.dumps({"command": "echo hi\nsed -i s/a/b/ CLAUDE.md"})[1:-1])' | sed 's/^/{/; s/$/}/')"
+denied "$OUT" && ok "a write on the SECOND line of a command is denied" || bad "multi-line: $OUT"
+guard auto Bash "$(python3 -c 'import json; print(json.dumps({"command": "cd .claude\necho x > settings.json"})[1:-1])' | sed 's/^/{/; s/$/}/')"
+denied "$OUT" && ok "and a cd on line 1 still applies to line 2" || bad "multi-line cd: $OUT"
+guard auto Bash "$(python3 -c 'import json; print(json.dumps({"command": "echo one\necho two"})[1:-1])' | sed 's/^/{/; s/$/}/')"
+[ -z "$OUT" ] && ok "an ordinary multi-line command stays free" || bad "multi-line false positive: $OUT"
+
+# ... but only newlines that really end a command count. A multi-line STRING and
+# a here-doc body are data — and CLAUDE.md asks for commit messages written as
+# here-docs, so convicting their prose would block the daily work.
+guard auto Bash "$(python3 -c 'import json; print(json.dumps({"command": "echo \"line one\nsed -i s/a/b/ CLAUDE.md\nline three\""})[1:-1])' | sed 's/^/{/; s/$/}/')"
+[ -z "$OUT" ] && ok "a newline inside a quoted string is not a command boundary" || bad "quoted newline: $OUT"
+guard auto Bash "$(python3 -c 'import json; print(json.dumps({"command": "git commit -m \"$(cat <<EOF\nfix: the guard\n\nit also sees tee CLAUDE.md in prose\nEOF\n)\""})[1:-1])' | sed 's/^/{/; s/$/}/')"
+[ -z "$OUT" ] && ok "a here-doc body is data, not commands" || bad "heredoc: $OUT"
+guard auto Bash "$(python3 -c 'import json; print(json.dumps({"command": "cd apps/server\nsource .venv/bin/activate\npytest -q"})[1:-1])' | sed 's/^/{/; s/$/}/')"
+[ -z "$OUT" ] && ok "an everyday three-line command stays free" || bad "three-liner: $OUT"
+
+# Taking a file away is the most complete edit there is.
+guard auto Bash '{"command":"rm -f CLAUDE.md"}'
+denied "$OUT" && ok "rm of a harness path is denied" || bad "rm: $OUT"
+guard auto Bash '{"command":"ln -sf /tmp/x scripts/tests/run.sh"}'
+denied "$OUT" && ok "ln -sf over a harness path is denied" || bad "ln: $OUT"
+guard auto Bash '{"command":"dd if=/dev/zero of=scripts/dev/verify.sh"}'
+denied "$OUT" && ok "dd of= onto a harness path is denied" || bad "dd: $OUT"
+guard auto Bash '{"command":"truncate -s 0 scripts/tests/hooks_test.sh"}'
+denied "$OUT" && ok "truncate of a gate's test is denied" || bad "truncate: $OUT"
+guard auto Bash '{"command":"rm -rf /tmp/scratch"}'
+[ -z "$OUT" ] && ok "rm outside the list stays free" || bad "rm false positive: $OUT"
 
 # A quoted shell operator is text, not a pipeline: the commit messages of this
 # very ledger contain `| tee CLAUDE.md`, and denying those would be a guard that
