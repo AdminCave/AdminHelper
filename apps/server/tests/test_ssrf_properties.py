@@ -24,6 +24,7 @@ import socket
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
+import httpx
 from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
@@ -92,24 +93,45 @@ def test_ipv4_mapped_ipv6_is_judged_as_the_embedded_ipv4(ip):
     assert mapped_verdict == plain_verdict
 
 
-@given(
-    host=st.from_regex(r"\A[a-z][a-z0-9-]{0,20}(\.[a-z][a-z0-9-]{0,20}){0,3}\Z", fullmatch=True),
-    scheme=st.sampled_from(["http", "https"]),
-    port=st.one_of(st.none(), st.integers(min_value=1, max_value=65535)),
-    path=st.sampled_from(["", "/", "/a/b", "/x?y=1", "/#frag"]),
+# The shapes where two URL parsers are known to disagree: userinfo before the host,
+# a second @, bracketed IPv6, a backslash where a slash is expected, percent-encoding,
+# an empty port. A plain hostname would never separate them.
+CONFUSING_URL = st.one_of(
+    st.builds(
+        lambda scheme, userinfo, host, port, path: f"{scheme}://{userinfo}{host}{port}{path}",
+        scheme=st.sampled_from(["http", "https"]),
+        userinfo=st.sampled_from(["", "user@", "user:pw@", "a@b@", "@", "user%40evil@"]),
+        host=st.sampled_from(
+            ["example.test", "127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", "localhost", "0x7f.1"]
+        ),
+        port=st.sampled_from(["", ":80", ":", ":0"]),
+        path=st.sampled_from(["", "/", "/a", "\\evil.test", "/?x=1", "/#f", "/..%2f"]),
+    ),
 )
-@example(host="example.test", scheme="http", port=None, path="/")
-@example(host="a.b.c.d", scheme="https", port=8443, path="/x?y=1")
-@settings(max_examples=200, deadline=None)
-def test_the_guard_resolves_the_same_host_the_url_parser_sees(host, scheme, port, path):
-    """Differential against urlsplit: whatever the guard hands to DNS must be the
-    host the standard parser reads out of the same URL.
 
-    A guard that resolved a different host than the request later connects to
-    would be checking one address and fetching another — the parser-confusion
-    shape of an SSRF bypass, invisible to any test that only feeds it addresses.
+
+@given(url=CONFUSING_URL)
+@example(url="http://example.test/")
+@example(url="http://user@example.test/")
+@example(url="http://a@b@example.test/")
+@example(url="http://[::1]/")
+@example(url="http://example.test\\evil.test/")
+@settings(max_examples=300, deadline=None)
+def test_the_guard_checks_the_host_that_httpx_will_actually_fetch(url):
+    """Differential against the parser the REQUEST uses, not the one next door.
+
+    is_private_url parses with urlparse; the fetch that follows it runs through
+    httpx (script_worker.py::_safe_http_get -> httpx.stream). If those two read a
+    different host out of the same string, the guard clears one address and the
+    client connects to another — the parser-confusion shape of an SSRF bypass, and
+    the reason comparing urlparse against urlsplit proves nothing (urlparse calls
+    urlsplit internally, so they cannot disagree by construction).
     """
-    url = f"{scheme}://{host}{f':{port}' if port else ''}{path}"
+    try:
+        fetched_host = httpx.URL(url).host
+    except httpx.InvalidURL:
+        return  # httpx refuses to fetch it at all, so there is nothing to bypass
+
     seen: list[str] = []
 
     def _record(hostname, timeout):
@@ -117,9 +139,19 @@ def test_the_guard_resolves_the_same_host_the_url_parser_sees(host, scheme, port
         return _addr_info("8.8.8.8")
 
     with patch.object(ssrf, "_resolve", _record):
-        is_private_url(url)
+        verdict = is_private_url(url)
 
-    assert seen == [urlsplit(url).hostname]
+    if not seen:
+        # The guard never resolved: it failed closed on a URL it could not read.
+        assert verdict is True
+        return
+
+    # httpx lowercases and IDNA-encodes; compare on that footing, and strip the
+    # brackets urlparse leaves off an IPv6 literal.
+    guard_host = seen[0].lower().strip("[]")
+    assert guard_host == fetched_host.lower().strip("[]"), (
+        f"guard checked {seen[0]!r}, httpx would fetch {fetched_host!r} — from {url!r}"
+    )
 
 
 @given(
@@ -149,13 +181,23 @@ def test_a_resolver_that_gives_up_fails_closed():
         assert is_private_url("http://target.example/") is True
 
 
-@given(public=st.ip_addresses(v=4), private=st.ip_addresses(v=4))
+# Drawn from fixed networks rather than filtered out of the whole space: almost
+# every random v4 address is public, so `assume(is_private(...))` threw away most
+# of what it generated and Hypothesis rightly complained.
+@given(
+    public=st.ip_addresses(v=4, network="8.8.0.0/16"),
+    private=st.one_of(
+        st.ip_addresses(v=4, network="10.0.0.0/8"),
+        st.ip_addresses(v=4, network="127.0.0.0/8"),
+        st.ip_addresses(v=4, network="169.254.0.0/16"),
+        st.ip_addresses(v=4, network="100.64.0.0/10"),
+    ),
+)
 @settings(max_examples=100, deadline=None)
 def test_one_private_address_among_many_is_enough(public, private):
     """A host with several A records is private if ANY of them is — checking only
     the first answer is how a round-robin record slips an internal target past."""
-    assume(not _oracle_is_private(public))
-    assume(_oracle_is_private(private))
+    assert not _oracle_is_private(public) and _oracle_is_private(private)
 
     with _resolving_to(str(public), str(private)):
         assert is_private_url("http://target.example/") is True
