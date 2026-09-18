@@ -114,11 +114,19 @@ Verify: keines (Handarbeit); die Task bleibt `[ ]`, bis Kevins Anhang steht — 
 Doku: keine
 
 ### T12 — Doku-Sweep  [ ]
-Komponente: docs · Dateien: DEVELOPMENT.md, CLAUDE.md, CHANGELOG.md, docs/developer/cicd.html + docs/en/developer/cicd.html (ein Satz Ruleset)
+Komponente: scripts · Dateien: DEVELOPMENT.md, CLAUDE.md, CHANGELOG.md, docs/developer/cicd.html, docs/en/developer/cicd.html (ein Satz Ruleset)
 Änderung: DEVELOPMENT.md „Runner-User `adminhelper-runner`" (Setup, Token-Dateien, Settings-Begründung je Deny-Regel, Red-Team, Kill-Switch) und „Task schließen" (`ledger.sh start` → Bau → Review → `task-close.sh`); CLAUDE.md §2: der Klammersatz zu `task-close.sh` wird Gegenwart, Harness-Schutz und Kill-Switch je ein Satz; CHANGELOG Added; cicd.html DE+EN ein Satz zum Ruleset.
-Verify: python3 scripts/dev/doc-smoke.py --strict   und   bash scripts/tests/run.sh lint --strict --only scripts
+Verify: bash scripts/dev/verify.sh scripts --strict   (enthält doc_smoke_test und den Lint-Block; `verify.sh` kennt keinen Schlüssel `docs`)
 Doku: alle genannten
 Abhängt von: T9
+
+### T13 — task-close.sh stagt die Dateien der Task selbst  [x]
+Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, .claude/skills/feature-build/SKILL.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @97174e23 2026-09-18T17:22:41+02:00
+Review: approve nach Runde 1 (opus); Blocker + 3 wichtig + nits behoben
+Änderung: Im Betrieb entdeckt (Aufsichts-Session, 2026-09-18): T9 hat `git add` nach `ask` verschoben, `task-close.sh` verlangt aber gestagte Dateien — der Bau blockiert also an genau dem Schritt, den er noch selbst tun muss (45 min Prompt-Hänger). `task-close.sh --stage` stagt die Pfade aus `Dateien:` der Task selbst (nur die; `git add -A` bleibt ausgeschlossen), danach laufen die bisherigen Prüfungen unverändert — inklusive der Frage, ob noch etwas Unstaged aus der Task übrig ist. Build-Skill und DEVELOPMENT.md nennen den Flag.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: Build-Skill (hier); DEVELOPMENT.md zieht T12 mit, damit der Doku-Sweep in einem Commit bleibt
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; `hooks_test`, `ledger_test`, `review_scripts_test`, `task_close_test`, `runner_setup_test` im Scripts-Block.

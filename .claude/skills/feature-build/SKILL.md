@@ -97,9 +97,12 @@ nie automatisch gebaut.
      an anderen Tasks.
    - **Rot strukturell / unabhängig von dir** → **STOPP**: im Ledger vermerken, Lauf beenden,
      berichten. Nicht auf rotem Fundament weiterbauen.
-4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): erst die berührten Dateien
-   gezielt stagen (`git add -- <pfade>`, **kein** `git add -A`), damit ein echter Diff
-   existiert. Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`,
+4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): der Reviewer braucht einen
+   Diff. Seit Stufe 4 stagt nicht mehr die Session, sondern `task-close.sh --stage` in
+   Schritt 5 (`git add` prompt) — gib dem Reviewer deshalb `git diff HEAD -- <pfade>` als
+   Diff-Quelle **und** nenne ihm die neuen Dateien ausdrücklich: untrackte Dateien stehen in
+   keinem `git diff`, er muss sie direkt lesen (`git status --porcelain -uall -- <pfade>`
+   zeigt sie). Dann einen **frischen Sub-Agent** starten (Agent-Tool, `general-purpose`,
    `model: sonnet`) mit einem Prompt, der ihm explizit mitgibt: (a) **lies zuerst
    `.claude/skills/feature-review/SKILL.md`** und prüfe streng gegen dessen 7 Kriterien (er
    lädt den Skill NICHT von selbst); (b) der zu prüfende Diff ist `git diff --staged`; (c) die
@@ -132,8 +135,11 @@ nie automatisch gebaut.
    Commit — außerhalb dieser Session, damit keine der drei Behauptungen („grün", „fertig",
    „committet") von der Session selbst stammt:
    ```bash
-   bash scripts/dev/task-close.sh <ledger> <id> --review-note "approve (sonnet)" -m "<msg>"
+   bash scripts/dev/task-close.sh <ledger> <id> --stage --review-note "approve (sonnet)" -m "<msg>"
    ```
+   `--stage` stagt die Pfade aus `Dateien:` der Task (nur die, keine Verzeichnisse, auch
+   Löschungen) — **nutze es**: `git add` prompt seit Stufe 4, ein Bau, der von Hand stagen
+   will, bleibt im Prompt stehen.
    `git add`, `git commit`, `git checkout`, `git restore` und `git stash` prompten seit
    Stufe 4 (Kevins `settings.json`) — das ist Absicht, nicht ein fehlendes Recht; auch der
    Rot-Pfad oben (`git restore …`) fragt also einmal nach.

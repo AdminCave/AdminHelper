@@ -7,7 +7,12 @@
 #
 #   bash scripts/dev/task-close.sh <ledger> <id> -m "<message>"
 #   bash scripts/dev/task-close.sh <ledger> <id> --message-file <file>
-#     [--review none|verdict:<json>] [--review-note "<text>"]
+#     [--stage] [--review none|verdict:<json>] [--review-note "<text>"]
+#
+# --stage stages exactly the paths the task declares in its `Dateien:` line —
+# nothing else, and never `git add -A`. From stage 4 on `git add` prompts in an
+# interactive session (the way to a commit goes through this script), so the one
+# step the session still had to do by hand was the one that blocked it.
 #
 # Until this stage the model ran the suite, ticked the box and wrote the commit —
 # three claims in a row that nobody checked. This script makes them one
@@ -45,9 +50,10 @@ usage() { sed -n '/^#   bash scripts\/dev\/task-close.sh/,/^# Until this stage/p
 die()   { echo "task-close: $*" >&2; exit 2; }
 infra() { echo "task-close: $*" >&2; exit 74; }
 
-LEDGER="" ID="" MSG="" MSGFILE="" REVIEW="none" REVIEW_NOTE=""
+LEDGER="" ID="" MSG="" MSGFILE="" REVIEW="none" REVIEW_NOTE="" STAGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --stage)        STAGE=1 ;;
     -m)             shift; MSG="${1-}" ;;
     --message-file) shift; MSGFILE="${1-}" ;;
     --review)       shift; REVIEW="${1-}" ;;
@@ -76,8 +82,37 @@ COMPONENT="$(sed -n 's/^Komponente:[[:space:]]*\([^·]*\).*/\1/p' <<<"$TASK" | h
 VERIFY_LINE="$(sed -n 's/^Verify:[[:space:]]*//p' <<<"$TASK" | head -n1)"
 
 # ── 1. only staged work ──────────────────────────────────────────────────────
+# The files the task declares, without the notes in parentheses. This list now
+# decides what a commit CONTAINS, so a line it cannot read fully has to stop the
+# run: older ledgers separate the paths with " · " or " + ", and silently taking
+# only the first of them would commit half a task as if it were whole.
+FILES_RAW="$(sed -n 's/.*Dateien:[[:space:]]*//p' <<<"$TASK" | head -n1 | sed 's/([^)]*)//g')"
+case "$FILES_RAW" in
+  *" · "*|*" + "*) die "the Dateien: line of $ID separates paths with '·' or '+' — use commas" ;;
+esac
+TASK_FILES="$(printf '%s' "$FILES_RAW" \
+  | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]].*//' | grep -v '^$')"
+
+if [ "$STAGE" = 1 ]; then
+  [ -n "$TASK_FILES" ] || die "--stage needs a Dateien: line on task $ID"
+  echo "── staging the task's files"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    # A directory would sweep in whatever else lies under it — including
+    # untracked scratch files. The task names files.
+    [ -d "$f" ] && die "$f is a directory; --stage takes files (bash scripts/dev/ledger.sh set-files $LEDGER $ID <files>)"
+    # Gone from the worktree AND unknown to git: nothing to do. Gone but tracked
+    # is a DELETION, and -A is what stages that.
+    if [ ! -e "$f" ] && ! git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then
+      echo "   (gone: $f)"; continue
+    fi
+    printf '   + %s\n' "$f"
+    git add -A -- "$f" || die "could not stage $f"
+  done <<< "$TASK_FILES"
+fi
+
 mapfile -d '' -t STAGED < <(git diff --staged --name-only -z)
-[ "${#STAGED[@]}" -gt 0 ] || die "nothing staged — stage the task's files first (git add -- <paths>)"
+[ "${#STAGED[@]}" -gt 0 ] || die "nothing staged — pass --stage, or stage the task's files first"
 mapfile -d '' -t UNSTAGED < <(git diff --name-only -z)
 HALF=()
 for f in "${STAGED[@]}"; do
@@ -95,9 +130,8 @@ fi
 # DECLARES that never reached the index at all. The suite ran against it, the
 # commit would not contain it, and review.sh cannot see it either — git diff does
 # not report untracked files. Only the task's own paths are checked, so a shared
-# checkout with other work in it stays usable.
-TASK_FILES="$(sed -n 's/.*Dateien:[[:space:]]*//p' <<<"$TASK" | head -n1 \
-  | sed 's/([^)]*)//g' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]].*//' | grep -v '^$')"
+# checkout with other work in it stays usable. With --stage this is a tautology
+# by construction; without it, it is the check that catches the forgotten add.
 if [ -n "$TASK_FILES" ]; then
   # shellcheck disable=SC2086  # the ledger's file list is a word list on purpose
   LEFT="$(git status --porcelain=v1 -uall -- $TASK_FILES 2>/dev/null \

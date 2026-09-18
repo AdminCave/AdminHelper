@@ -163,6 +163,113 @@ c fix T1 -m "feat: something"
   && ok "an UNTRACKED file from the task's Dateien: -> exit 2" || bad "untracked task file: rc=$rc out=$OUT"
 reset_repo
 
+# ══ --stage ══════════════════════════════════════════════════════════════════
+echo "── --stage ──"
+# From stage 4 on `git add` prompts, so the session cannot stage by hand any
+# more — the closer stages what the task declared, and nothing else.
+reset_repo
+printf 'echo staged by the closer\n' >> "$FIX/scripts/dev/tool.sh"
+printf 'unrelated\n' > "$FIX/docs/unrelated.md"
+c fix T1 --stage -m "feat: staged by the closer"
+[ $rc -eq 0 ] && ok "--stage stages the task's files and closes" || bad "stage: rc=$rc out=$OUT"
+git -C "$FIX" log -1 --stat | grep -q 'scripts/dev/tool.sh' \
+  && ok "the declared file is in the commit" || bad "declared file missing from the commit"
+git -C "$FIX" log -1 --stat | grep -q 'docs/unrelated.md' \
+  && bad "--stage swept up an undeclared file" || ok "an undeclared file stays out (no git add -A)"
+reset_repo
+
+# A declared path that no longer exists is not an error: a task may have removed
+# a file, and the run must not stop on it.
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("Dateien: scripts/dev/tool.sh",
+                           "Dateien: scripts/dev/tool.sh, scripts/dev/never_existed.sh", 1)
+open(p, "w").write(s)
+PY
+printf 'echo again\n' >> "$FIX/scripts/dev/tool.sh"
+c fix T1 --stage -m "feat: with a missing declared path"
+[ $rc -eq 0 ] && grep -q "gone: scripts/dev/never_existed.sh" <<<"$OUT" \
+  && ok "a declared path that does not exist is reported, not fatal" || bad "missing path: rc=$rc out=$OUT"
+reset_repo
+
+# A task that DELETES a file is the case the first version got wrong: it skipped
+# the path as "gone" and then refused the close because it was not staged.
+reset_repo
+git -C "$FIX" rm -q -- scripts/dev/tool.sh
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Dateien: scripts/dev/tool.sh",
+                                          "Dateien: scripts/dev/tool.sh, docs/successor.md", 1))
+PY
+printf 'the successor\n' > "$FIX/docs/successor.md"
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Dateien: scripts/dev/tool.sh",
+                                          "Dateien: scripts/dev/tool.sh, docs/successor.md", 1))
+PY
+c fix T1 --stage -m "refactor: replace tool.sh"
+[ $rc -eq 0 ] && ok "a task that DELETES a declared file closes (the deletion is staged)" \
+  || bad "deletion: rc=$rc out=$OUT"
+git -C "$FIX" log -1 --stat | grep -q 'scripts/dev/tool.sh' \
+  && ok "and the deletion is in the commit" || bad "deletion missing from the commit"
+reset_repo
+
+# A directory would sweep in whatever lies under it, untracked scratch included.
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Dateien: scripts/dev/tool.sh",
+                                          "Dateien: scripts/dev/", 1))
+PY
+printf 'echo x\n' >> "$FIX/scripts/dev/tool.sh"
+c fix T1 --stage -m "feat: directory"
+[ $rc -eq 2 ] && grep -q "is a directory" <<<"$OUT" \
+  && ok "a directory in Dateien: is refused, not swept up" || bad "directory: rc=$rc out=$OUT"
+reset_repo
+
+# Older ledgers separate paths with · or +; taking only the first would commit
+# half a task as if it were whole.
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Dateien: scripts/dev/tool.sh",
+                                          "Dateien: scripts/dev/tool.sh · scripts/dev/other.sh", 1))
+PY
+printf 'echo x\n' >> "$FIX/scripts/dev/tool.sh"
+c fix T1 --stage -m "feat: two files"
+[ $rc -eq 2 ] && grep -q "separates paths" <<<"$OUT" \
+  && ok "a Dateien: line with '·' stops the close instead of committing half a task" \
+  || bad "separator: rc=$rc out=$OUT"
+reset_repo
+
+# Everything T5 checks still has to bite with --stage.
+printf 'echo x\n' >> "$FIX/scripts/dev/tool.sh"
+FIXTURE_VRC=1 c fix T1 --stage -m "feat: red suite"
+[ $rc -eq 3 ] && ok "--stage does not weaken the red-suite gate" || bad "stage + red: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit on red with --stage"
+reset_repo
+
+# A TRACKED foreign file must stay out too — an implementation using `git add -u`
+# over the whole tree would pass the untracked case above but fail this one.
+printf 'echo x\n' >> "$FIX/scripts/dev/tool.sh"
+printf 'entry\n' >> "$FIX/CHANGELOG.md"
+c fix T1 --stage -m "feat: only the declared file"
+[ $rc -eq 0 ] && ! git -C "$FIX" log -1 --stat | grep -q 'CHANGELOG.md' \
+  && ok "a tracked but undeclared file stays out of the commit" || bad "CHANGELOG.md was swept in"
+reset_repo
+
+c fix T4 --stage -m "feat: no files declared"
+[ $rc -eq 2 ] && grep -q "needs a Dateien" <<<"$OUT" \
+  && ok "--stage on a task without Dateien: -> exit 2" || bad "no-dateien stage: rc=$rc out=$OUT"
+reset_repo
+
 # ══ the suite ═════════════════════════════════════════════════════════════════
 echo "── verify ──"
 touch_tool
