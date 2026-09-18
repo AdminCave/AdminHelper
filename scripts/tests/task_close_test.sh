@@ -57,12 +57,17 @@ echo "$*" > "$root/.ah-out/verify-called.txt"
 # stale file from an earlier run can never be read as this run's evidence.
 rm -f "$root/.ah-out/last-verify.json"
 if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
+  # The real run.sh records the tree it measured; the closer checks that against
+  # its own reading, so the fake has to answer that question too.
+  th="$(bash "$root/scripts/dev/tree-hash.sh" 2>/dev/null)"
+  [ "${FIXTURE_NO_TREE_HASH:-0}" = 1 ] && th=""
   cat > "$root/.ah-out/last-verify.json" <<JSON
 {
   "layer": "quick",
   "passed": ${FIXTURE_PASSED:-7},
   "failed": 0,
   "skipped": 2,
+  "tree_hash": "$th",
   "component": "scripts"
 }
 JSON
@@ -98,6 +103,9 @@ git -C "$FIX" config user.email test@example.invalid
 git -C "$FIX" config user.name "Fixture"
 git -C "$FIX" add -A
 git -C "$FIX" commit -qm "fixture"
+# Not master/main: the closer refuses the default branch on purpose, and every
+# other case here needs a feature branch to run on.
+git -C "$FIX" branch -m fixture-branch
 
 BASE=$(git -C "$FIX" rev-parse HEAD)
 c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
@@ -105,7 +113,7 @@ c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
 # move HEAD, and the next case has to start from the same state as the first.
 reset_repo() {
   git -C "$FIX" reset -q --hard "$BASE"; git -C "$FIX" clean -qfd; mkskel
-  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED
+  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH
 }
 head_count() { git -C "$FIX" rev-list --count HEAD; }
 touch_tool() { printf 'echo more\n' >> "$FIX/scripts/dev/tool.sh"; git -C "$FIX" add -- scripts/dev/tool.sh; }
@@ -311,6 +319,49 @@ c fix T2 -m "feat: server thing"
   && ok "a narrowed Verify: line is forwarded verbatim" || bad "args: $(cat "$FIX/.ah-out/verify-called.txt") rc=$rc"
 reset_repo
 
+# An artifact that cannot be tied to a tree is missing evidence, not a pass.
+touch_tool
+FIXTURE_NO_TREE_HASH=1 c fix T1 -m "feat: something"
+[ $rc -eq 74 ] && grep -q "no tree_hash" <<<"$OUT" \
+  && ok "an artifact without a tree_hash -> 74, not a silent pass" || bad "no tree hash: rc=$rc out=$OUT"
+reset_repo
+
+# Only a Verify: line that really is a verify.sh call carries arguments. A greedy
+# match used to turn the ' -- ' inside a sentence into the suite's arguments.
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Verify: bash scripts/dev/verify.sh scripts --strict",
+                             "Verify: ruff check -- und cargo clippy -- -D warnings, dann gruen.", 1))
+PY
+touch_tool
+c fix T1 -m "feat: prose in the verify line"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "scripts --strict" ] \
+  && ok "prose in the Verify: line reaches the suite as no arguments at all" \
+  || bad "verify args from prose: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt")"
+grep -q "not a verify.sh call" <<<"$OUT" && ok "and the closer says which check it ran instead" || bad "no note about the verify form"
+reset_repo
+
+# A Verify: line may name a SECOND command after the first — real ledgers do
+# ("… -- tests/x.py   und   bash … monitoring --strict"). Only the first call's
+# arguments belong to the run.
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace(
+    "Verify: bash scripts/dev/verify.sh server --strict -- tests/test_thing.py",
+    "Verify: bash scripts/dev/verify.sh server --strict -- tests/test_thing.py   und   bash scripts/dev/verify.sh scripts --strict", 1))
+PY
+printf 'x = 2\n' > "$FIX/apps/server/app/thing.py"
+git -C "$FIX" add -- apps/server/app/thing.py
+c fix T2 -m "feat: two verify calls in one line"
+[ "$(cat "$FIX/.ah-out/verify-called.txt")" = "server --strict -- tests/test_thing.py" ] \
+  && ok "a second command on the Verify: line does not leak into the arguments" \
+  || bad "two-command verify line: $(cat "$FIX/.ah-out/verify-called.txt")"
+reset_repo
+
 # ══ the deterministic reviews ═════════════════════════════════════════════════
 echo "── review.sh gates ──"
 printf 'flaky || true\n' >> "$FIX/scripts/dev/tool.sh"  # review: ok fixture pattern
@@ -342,6 +393,47 @@ c fix T4 -m "feat: something"
 [ $rc -eq 2 ] || [ $rc -eq 74 ] && ok "a task the closer cannot verify never commits (rc=$rc)" \
   || bad "no-component task: rc=$rc out=$OUT"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit without a verify"
+reset_repo
+
+# The ledger goes through the same gates as the code — it is staged last, and
+# `Edit(./tasks/**)` is allowed even where committing is not.
+touch_tool
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Änderung: irgendwas",
+                             "Änderung: irgendwas\nDedup-%s: sec:ssrf-resolver" % "Key", 1))
+PY
+c fix T1 -m "feat: with a finding in the ledger"
+[ $rc -eq 4 ] && ok "a security finding written into the LEDGER is caught after it is staged" \
+  || bad "ledger scan: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit with an unscanned ledger"
+reset_repo
+
+# ... but a task DESCRIPTION quotes those patterns as text, and a ledger cannot
+# switch off a test: re-scanning it for skips would block honest closes.
+touch_tool
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Änderung: irgendwas",
+                             "Änderung: der Test hing an einem `|| true`, das raus muss", 1))  # review: ok fixture prose
+PY
+c fix T1 -m "feat: a ledger that quotes a pattern"
+[ $rc -eq 0 ] && ok "a task description quoting a skip pattern does not block the close" \
+  || bad "ledger prose blocked the close: rc=$rc out=$OUT"
+reset_repo
+
+# The one branch a task is never closed on.
+git -C "$FIX" branch -m master
+touch_tool
+c fix T1 -m "feat: on master"
+[ $rc -eq 2 ] && grep -q "refusing to commit on master" <<<"$OUT" \
+  && ok "task-close refuses on master/main (CLAUDE.md trigger 2)" || bad "branch guard: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed there" || bad "commit on master"
+git -C "$FIX" branch -m fixture-branch
 reset_repo
 
 # ══ the verdict interface (stage 6) ═══════════════════════════════════════════

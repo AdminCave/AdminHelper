@@ -138,8 +138,10 @@ Review: approve nach 2 Runden (sonnet); Falsch-Positiv bei Heredoc/mehrzeiligen 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kopfkommentar des Hooks)
 
-### T15 — task-close: Verify-Args, main-Sperre, Ledger-Scan, leerer Tree-Hash  [ ]
+### T15 — task-close: Verify-Args, main-Sperre, Ledger-Scan, leerer Tree-Hash  [x]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @96045801 2026-09-18T23:01:05+02:00
+Review: selbst — zwei Sub-Agenten ohne Urteil (Timeout); dabei noch die Zwei-Kommando-Zeile gefunden
 Änderung: Aus dem Branch-Review: (1) `VERIFY_ARGS` greift gierig und verschluckt Prosa — an `tasks/dependency-refresh.md` und `tasks/code-review-fixes.md` reproduziert: die halbe Änderungsbeschreibung landet als Argument in der Suite, die Task ist grün und lässt sich trotzdem nicht schließen. Argumente nur aus einer `Verify:`-Zeile in `verify.sh`-Form übernehmen. (2) Der Ledger wird NACH `diff-scan`/`scope`/`sec` gestaged — sein Inhalt geht ungeprüft in den Commit, obwohl der Runner `Edit(./tasks/**)` darf; nach dem Stagen erneut prüfen. (3) `task-close.sh` committet ohne ein Wort auf `main` (CLAUDE.md §3 Trigger 2 griff bisher über `git commit` in der Session) — auf `main`/`master` verweigern. (4) Fehlt dem Artefakt der `tree_hash`, wird die Gegenprobe still übersprungen: das ist Infrastruktur (74), kein Grün.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kopfkommentar)

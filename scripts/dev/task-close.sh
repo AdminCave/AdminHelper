@@ -37,8 +37,9 @@
 #   5. ledger + commit         ledger.sh mark-done with the run's summary line as
 #                              evidence, then one commit carrying code and ledger.
 #
-# Exit: 0 committed · 2 usage or nothing staged · 3 verify red or diff-scan
-#       finding · 4 blocked (sec or scope) · 74 the suite could not run at all.
+# Exit: 0 committed · 2 usage, nothing staged, or the tree changed under the run
+#       · 3 verify red or a diff-scan finding · 4 blocked (sec or scope) · 74 the
+#       suite could not run at all, or its result cannot be tied to this tree.
 
 set -uo pipefail
 
@@ -72,6 +73,15 @@ case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
 [ -f "$LEDGER" ] || die "no such ledger: $LEDGER"
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"
+
+# CLAUDE.md §3 trigger 2: a commit on main is one of the five things that must
+# not happen quietly. Until stage 4 that protection was `git commit` going
+# through the session; this script is now the only way to a commit, so the
+# refusal belongs here.
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+case "$BRANCH" in
+  main|master) die "refusing to commit on $BRANCH — a task is closed on its feature branch" ;;
+esac
 
 TASK="$(awk -v id="$ID" '
   $0 ~ "^###[ \t]+" id "([ \t]|$)" { insec = 1 }
@@ -148,9 +158,23 @@ TREE_HASH="$(bash scripts/dev/tree-hash.sh)" || infra "tree-hash.sh failed"
 # ── 2. the task's own suite ──────────────────────────────────────────────────
 [ -n "$COMPONENT" ] && [ "$COMPONENT" != "—" ] \
   || infra "task $ID has no component — nothing to verify (a manual task is closed by hand)"
-# Extra arguments, if the task's Verify: line narrows the suite to a file:
-# "… verify.sh server --strict -- tests/test_auth.py" -> tests/test_auth.py
-VERIFY_ARGS="$(sed -n 's/.*[[:space:]]--[[:space:]]\(.*\)$/\1/p' <<<"$VERIFY_LINE")"
+# Extra arguments, but ONLY from a Verify: line that really is a verify.sh call:
+# "… verify.sh server --strict -- tests/test_auth.py" -> tests/test_auth.py. A
+# greedy match here used to swallow prose — `cargo clippy -- -D warnings` in a
+# sentence turned into the suite's arguments and the task could not be closed.
+case "$VERIFY_LINE" in
+  "bash scripts/dev/verify.sh "*)
+    VERIFY_ARGS="$(sed -n 's|^bash scripts/dev/verify\.sh [^ ]\{1,\}[^-]*--strict[[:space:]]\{1,\}--[[:space:]]\{1,\}\(.*\)$|\1|p' <<<"$VERIFY_LINE")"
+    # A Verify: line may carry a SECOND command ("… --strict -- tests/x.py   und
+    # bash …"). The ledgers separate those with a run of spaces, so the args end
+    # at the first one; a real argument list uses single spaces.
+    VERIFY_ARGS="${VERIFY_ARGS%%  *}"
+    ;;
+  *)
+    VERIFY_ARGS=""
+    [ -n "$VERIFY_LINE" ] && echo "   (the task's Verify: line is not a verify.sh call — running the component's suite instead)"
+    ;;
+esac
 echo "── verify.sh $COMPONENT --strict ${VERIFY_ARGS:+-- $VERIFY_ARGS}"
 if [ -n "$VERIFY_ARGS" ]; then
   # A word list, not a shell line: `set -f` keeps a `*` in the ledger from being
@@ -175,7 +199,10 @@ esac
 # the run, something wrote into the checkout while the suite ran, and the green
 # belongs to a state nobody is about to commit.
 ART_TREE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("tree_hash",""))' "$ARTIFACT" 2>/dev/null)"
-if [ -n "$ART_TREE" ] && [ "$ART_TREE" != "$TREE_HASH" ]; then
+# An artifact without a tree hash cannot be tied to this tree at all — that is
+# missing evidence, not a pass.
+[ -n "$ART_TREE" ] || infra "the run artifact carries no tree_hash — the green cannot be tied to this tree"
+if [ "$ART_TREE" != "$TREE_HASH" ]; then
   echo "task-close: the tree changed while the suite ran ($TREE_HASH -> $ART_TREE) — run it again" >&2
   exit 2
 fi
@@ -240,6 +267,15 @@ REVIEW_TEXT="$(oneline "$REVIEW_TEXT")"
 bash scripts/dev/ledger.sh mark-done "$LEDGER" "$ID" \
   --evidence "$EVIDENCE" --review "$REVIEW_TEXT" || infra "ledger.sh mark-done failed"
 git add -- "$LEDGER" || infra "could not stage the ledger"
+
+# The ledger is staged last, and `Edit(./tasks/**)` is allowed even where
+# committing is not — so the sec gate runs once more over it: a security
+# finding's dedup key (the line review.sh sec looks for) written into a task
+# would otherwise reach this public repo unscanned. Only sec.
+# diff-scan is deliberately NOT repeated here: a task DESCRIPTION quotes patterns
+# ("der Test hing an einem `|| true`"), and a ledger cannot switch off a test —
+# re-scanning it would block honest closes and protect nothing.
+bash scripts/dev/review.sh sec --staged || exit 4
 
 COMMIT_HELP="git commit failed — the box is ticked and the ledger is staged; fix the cause and run task-close again (it is idempotent)"
 if [ -n "$MSGFILE" ]; then
