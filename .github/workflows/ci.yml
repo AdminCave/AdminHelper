@@ -84,7 +84,9 @@ jobs:
       - name: Run pytest
         working-directory: apps/server
         # Coverage is report-only (no threshold) — visibility, not a gate.
-        run: pytest -q --cov=app --cov-report=term
+        # -m "not schemathesis": the fuzz suite has its own budget and its own
+        # run.sh step; collected here it would run a second time inside this job.
+        run: pytest -q -m "not schemathesis" --cov=app --cov-report=term
 
   python-lint:
     name: Python (ruff check + format)
@@ -143,7 +145,7 @@ jobs:
       - name: Run pytest
         working-directory: apps/monitoring
         # Coverage is report-only (no threshold) — visibility, not a gate.
-        run: python -m pytest -q --cov=app --cov-report=term
+        run: python -m pytest -q -m "not schemathesis" --cov=app --cov-report=term
 
   ca-issuer:
     name: CA-Issuer (pytest)
@@ -167,7 +169,7 @@ jobs:
       - name: Run pytest
         working-directory: apps/ca-issuer
         # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
-        run: python -m pytest -q
+        run: python -m pytest -q -m "not schemathesis"
 
   agent:
     name: Go Agent (gofmt + vet + test)

@@ -536,13 +536,13 @@ layer_unit() {
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if ! only monitoring; then skip monitoring-pytest "monitoring pytest" "AH_ONLY"
   elif have python3; then
-    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
+    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
   else skip monitoring-pytest "monitoring pytest" "python3 not installed"; fi
 
   # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
   if ! only ca-issuer; then skip ca-issuer-pytest "ca-issuer pytest" "AH_ONLY"
   elif have python3 && [ -d apps/ca-issuer/tests ]; then
-    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
+    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
   else skip ca-issuer-pytest "ca-issuer pytest" "python3 missing or no tests"; fi
 
   # Server pytest — needs a Postgres: testcontainers (docker) or an injected
@@ -550,11 +550,13 @@ layer_unit() {
   # without the fallback the step skipped there silently, every single run.
   if ! only server; then skip server-pytest "server pytest" "AH_ONLY"
   elif have python3 && { [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker; }; then
-    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q $AH_PYTEST_RS $AH_ARGS'
+    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Schemathesis — each service's API fuzzed against its OWN OpenAPI schema. A step
   # of its own rather than part of the pytest ones: its own SKIP/FAIL verdict, its
+  # own budget, and the three pytest steps deselect the marker — without that the
+  # fuzz suite runs twice per layer, once at each step's example count.
   # own budget (AH_SCHEMATHESIS_EXAMPLES: 5 here, 20 in the PR CI, 100 on the weekly
   # box), and under --strict it is mandatory like every other suite.
   # Only the services --only asked for: the three suites land one task at a time, and
@@ -577,7 +579,10 @@ layer_unit() {
           # Only the server suite needs a Postgres; exporting DATABASE_URL globally
           # would arm the monitoring migration smoke against the wrong database.
           [ "$d" = apps/server ] && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"
-          python3 -m pytest -q -m schemathesis $AH_PYTEST_RS $AH_ARGS
+          # No $AH_ARGS: this step selects by marker, and a caller asking for one
+          # file (verify.sh … -- tests/x.py) would leave it with nothing to collect
+          # — an honest SKIP that under --strict reads as a hole in an unrelated run.
+          python3 -m pytest -q -m schemathesis $AH_PYTEST_RS
         ); c=$?
         # Captured first: inside the case, $? would already be the status of case.
         case "$c" in
