@@ -74,7 +74,11 @@ rm -f "$SRC" "$DST"
 
 # The devenv file is gitignored and per-host; it is what makes AH_TEST_DB and the
 # go/ruff toolchains reachable. Missing is not an error — a VM box has the
-# toolchains on PATH and no devenv file at all.
+# toolchains on PATH (bootstrap_linux.sh, /etc/profile.d) and no devenv file at
+# all. That absence is deliberate: vm.py sync excludes the file, so AH_REQUIRED
+# stays unset on the box and run.sh's box rule makes every step of a heavy layer
+# mandatory — a synced devenv would smuggle the dev box's heavy-free set onto
+# the box and let --strict pass while the heavy steps were skipped (R-0048).
 DEVENV="${AH_DEVENV:-$TREE/.devenv.sh}"
 if [ -f "$DEVENV" ]; then
   # The trap catches a devenv that calls `exit`: without it, `exit 0` there would

@@ -43,6 +43,7 @@ mk_tree() {
   echo "args=\$*"
   echo "ah_args=\${AH_ARGS-<unset>}"
   echo "devenv_marker=\${FIXTURE_DEVENV-<unset>}"
+  echo "required=\${AH_REQUIRED-<unset>}"
   echo "cwd=\$PWD"
 } > "$dir/called.txt"
 out="\${AH_OUT_DIR:-$dir/.ah-out}"
@@ -59,7 +60,7 @@ EOF
 
 A="$WORK/treeA"; mk_tree "$A" "A"
 B="$WORK/treeB"; mk_tree "$B" "B"
-printf 'export FIXTURE_DEVENV=sourced\n' > "$A/.devenv.sh"
+printf 'export FIXTURE_DEVENV=sourced\nexport AH_REQUIRED=fixture-set\n' > "$A/.devenv.sh"
 
 run_v() { OUT=$(bash "$VERIFY" "$@" 2>&1); rc=$?; }
 called() { grep -m1 "^$1=" "$A/called.txt" 2>/dev/null | cut -d= -f2-; }
@@ -114,6 +115,17 @@ run_v scripts --tree "$B"
 [ $rc -eq 0 ] && grep -q "^marker=B" "$B/called.txt" \
   && ok "a tree without .devenv.sh is not an error" || bad "no-devenv tree: rc=$rc out=$OUT"
 grep -q "warning" <<<"$OUT" && bad "a missing devenv file warned" || ok "a missing devenv file is silent"
+# The box rule (run.sh: unset AH_REQUIRED + heavy layer => every layer step is
+# required) only works if nothing sets AH_REQUIRED on the box. The devenv file is
+# the one place that does, and vm.py sync leaves it at home (R-0048): a tree
+# with a devenv sets it, a tree without one must leave it unset — even when the
+# developer's own shell has it exported.
+run_v scripts --tree "$A"
+[ "$(called required)" = "fixture-set" ] && ok "a tree with .devenv.sh gets its AH_REQUIRED" || bad "required=$(called required)"
+OUT=$(env -u AH_REQUIRED bash "$VERIFY" scripts --tree "$B" 2>&1); rc=$?
+[ "$(grep -m1 '^required=' "$B/called.txt" | cut -d= -f2-)" = "<unset>" ] \
+  && ok "a tree without .devenv.sh leaves AH_REQUIRED unset (box rule applies)" \
+  || bad "required on the devenv-less tree: $(grep -m1 '^required=' "$B/called.txt")"
 
 run_v scripts --strict --tree "$A"
 [ "$(called args)" = "quick --only scripts --strict" ] && ok "--strict is forwarded" || bad "args=$(called args)"
