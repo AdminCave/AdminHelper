@@ -1,0 +1,20 @@
+# Dev-Dependencies fuer lokale Tests + CI. NICHT im Production-Container
+# noetig (Dockerfile installiert die gehashte requirements.txt-Lockfile).
+#
+# Verweist auf requirements.in (lose, ungehasht), NICHT auf die gehashte
+# requirements.txt: sobald eine Zeile einen Hash traegt, verlangt pip Hashes
+# fuer ALLE Pakete — das wuerde die ungehashten Dev-Deps unten brechen.
+#
+# httpx ist test-only: starlette.testclient braucht es, die App selbst nicht
+# (server/monitoring tragen es in den Runtime-Deps, ca-issuer nur hier).
+#
+# Lokal:  pip install -r requirements-dev.txt
+# CI:     dieselbe Zeile im ca-issuer-Job
+
+-r requirements.in
+
+pytest
+httpx
+
+# Generatoren (Harness 8b): schema-getriebene API-Tests gegen die eigene OpenAPI.
+schemathesis>=4.27

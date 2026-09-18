@@ -66,6 +66,11 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 Tests/CI installieren `requirements.in` (lose, ungehasht) — `--require-hashes`
 verträgt keine Mischung aus gehashten und ungehashten Zeilen.
 
+- `requirements-dev.txt` — die **Test-Dependencies** je Dienst (`-r requirements.in`
+  plus pytest & Generatoren). Eine Wahrheit pro Dienst: `scripts/tests/run.sh` und
+  `.github/workflows/ci.yml` installieren beide genau diese Datei, nie eine
+  Paketliste im Skript.
+
 **Dependency-Updates laufen agent-getrieben** (kein Dependabot mehr): Versionen
 in der `.in` anheben bzw. `pip-compile --upgrade` fahren, Lock regenerieren,
 Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Befehle.
@@ -88,12 +93,14 @@ nicht im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job
 ### Python-Tests lokal (ohne Docker)
 
 `monitoring` und `ca-issuer` sind reine Logik-Suiten und brauchen **kein** Postgres.
-`ca-issuer` benötigt allerdings `httpx` (nur der starlette-`TestClient` der Tests, nicht
-die App selbst — steht daher nicht in `requirements.in`):
+Ihre Test-Deps stehen in der jeweiligen `requirements-dev.txt` — bei `ca-issuer` auch
+`httpx`, das nur der starlette-`TestClient` der Tests braucht, nicht die App selbst
+(deshalb steht es dort und nicht in `requirements.in`):
 
 ```bash
+apps/monitoring/.venv/bin/pip install -r apps/monitoring/requirements-dev.txt   # einmalig
 apps/monitoring/.venv/bin/python -m pytest -q
-apps/ca-issuer/.venv/bin/pip install httpx      # einmalig
+apps/ca-issuer/.venv/bin/pip install -r apps/ca-issuer/requirements-dev.txt     # einmalig
 apps/ca-issuer/.venv/bin/python -m pytest -q
 ```
 

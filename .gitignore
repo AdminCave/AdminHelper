@@ -139,6 +139,9 @@ build-deb/
 # pytest cache (lokal)
 .pytest_cache/
 
+# Hypothesis-Beispieldatenbank (lokal; die gepinnten Faelle stehen als @example im Test)
+.hypothesis/
+
 # Lokale Dev-Env-Helferdatei (Toolchain-PATH + Test-DB-URL)
 /.devenv.sh
 

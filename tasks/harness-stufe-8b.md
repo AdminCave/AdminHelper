@@ -16,11 +16,12 @@ Regel: Erstlauf-Funde von Schemathesis werden triagiert, nicht ausgeschlossen �
 
 ## A — Abhängigkeiten und Schritt
 
-### T1 — requirements-dev.txt für alle drei Python-Dienste  [ ]
+### T1 — requirements-dev.txt für alle drei Python-Dienste  [x]
 Komponente: apps/server, apps/monitoring, apps/ca-issuer · Dateien: apps/server/requirements-dev.txt, apps/monitoring/requirements-dev.txt (neu), apps/ca-issuer/requirements-dev.txt (neu), scripts/tests/run.sh (Install-Zeilen), .github/workflows/ci.yml (Install-Zeilen), .gitignore
 Änderung: `hypothesis>=6.168`, `schemathesis>=4.27`, `pytest-alembic>=0.12` in `apps/server/requirements-dev.txt`; neue Dev-Dateien für Monitoring (`-r requirements.in`, `pytest`, `pytest-cov`, `hypothesis`, `schemathesis`, `pytest-alembic`) und CA-Issuer (`-r requirements.in`, `pytest`, `httpx`, `schemathesis`); `run.sh` und `ci.yml` installieren je Dienst `-r requirements-dev.txt`; `.hypothesis/` in `.gitignore`.
 Verify: bash scripts/tests/run.sh unit --strict --only server monitoring ca-issuer
 Doku: DEVELOPMENT.md „Python-Dependencies & Lockfiles" (ein Satz: Dev-Deps je Dienst)
+Ergebnis: Dev-Deps je Dienst; run.sh/ci.yml installieren nur noch `-r requirements-dev.txt`. hypothesis 6.168.0, schemathesis 4.27.3, pytest-alembic 0.12.1 installiert. quick --strict grün: monitoring/ca-issuer/server je `3 passed, 0 failed`, scripts `5 passed, 0 failed`.
 
 ### T2 — run.sh-Schritt `schemathesis`, Beispielzahl, heavy.sh-Zeile  [ ]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/heavy.sh (eine Env-Zeile), .github/workflows/ci.yml (Env `AH_SCHEMATHESIS_EXAMPLES=20`), scripts/tests/run_flags_test.sh
@@ -28,6 +29,7 @@ Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/heavy.sh (ei
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T11)
 Abhängt von: T1
+Review-Notiz aus T1 (nit): der `||`-Fallback des ca-issuer-Zweigs in run.sh installiert nur `pytest cryptography` — ohne fastapi/sqlalchemy/httpx. Schon vor 8b unzureichend; wenn der Schemathesis-Schritt dort greift, hier mitprüfen.
 
 ## B — Schemathesis
 
