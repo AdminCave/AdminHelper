@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# task_close_test.sh — hermetic test for scripts/dev/task-close.sh.
+#
+# task-close.sh is the gate between "the model says it works" and a commit, so
+# it is exercised in a real git repository in a temp dir: the real ledger.sh,
+# review.sh and tree-hash.sh, but a FAKE verify.sh whose exit code and artifact
+# the test dictates. Nothing here runs a suite, and the developer's checkout is
+# never the target — this script commits, and a test that commits into the tree
+# it was started from would be its own worst finding.
+#
+# Run: bash scripts/tests/task_close_test.sh
+
+# ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
+# shellcheck disable=SC2015
+set -uo pipefail
+# The suite runs this file from inside run.sh, which exports AH_OUT_DIR for the
+# REAL checkout. task-close.sh honours that variable (verify.sh does too), so
+# without this the closer would read the developer's artifact as the evidence of
+# the fixture's run — green standalone, red in the block, for the right reason.
+unset AH_OUT_DIR AH_ARGS AH_ONLY AH_STRICT AH_REQUIRED AH_DEVENV AH_TEST_DB
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO_ROOT=$(cd "$HERE/../.." && pwd)
+
+PASS=0; FAIL=0
+ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
+bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
+
+command -v git >/dev/null 2>&1 || { echo "SKIP: git not available"; exit 75; }
+command -v python3 >/dev/null 2>&1 \
+  || { echo "SKIP: python3 not available — task-close reads its artifacts with it"; exit 75; }
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+FIX="$WORK/repo"
+CLOSE="$FIX/scripts/dev/task-close.sh"
+
+SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs tasks/private .ah-out)
+mkskel() { local d; for d in "${SKELETON[@]}"; do mkdir -p "$FIX/$d"; done; }
+mkskel
+for f in task-close.sh ledger.sh review.sh tree-hash.sh; do
+  cp "$REPO_ROOT/scripts/dev/$f" "$FIX/scripts/dev/$f"
+done
+
+# The fake suite: it records how it was called and writes the artifact the closer
+# reads its evidence out of. FIXTURE_VRC decides whether the run was green.
+cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
+#!/usr/bin/env bash
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+mkdir -p "$root/.ah-out"
+echo "$*" > "$root/.ah-out/verify-called.txt"
+# Like the real one: a run that does not finish leaves NO artifact behind, so a
+# stale file from an earlier run can never be read as this run's evidence.
+rm -f "$root/.ah-out/last-verify.json"
+if [ -z "${FIXTURE_NO_ARTIFACT:-}" ]; then
+  cat > "$root/.ah-out/last-verify.json" <<JSON
+{
+  "layer": "quick",
+  "passed": ${FIXTURE_PASSED:-7},
+  "failed": 0,
+  "skipped": 2,
+  "component": "scripts"
+}
+JSON
+fi
+exit "${FIXTURE_VRC:-0}"
+FAKE
+chmod +x "$FIX/scripts/dev/verify.sh"
+
+cat > "$FIX/tasks/fix.md" <<'MD'
+# Fixture — Task-Ledger
+Status: aktiv · Branch: feature/fixture
+
+### T1 — eine Aufgabe  [ ]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Änderung: irgendwas
+Verify: bash scripts/dev/verify.sh scripts --strict
+
+### T4 — eine ohne Komponente  [ ]
+Änderung: Handarbeit
+Verify: keines
+
+### T2 — eine mit engem Verify  [ ]
+Komponente: server · Dateien: apps/server/app/thing.py
+Änderung: irgendwas
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_thing.py
+MD
+printf 'tasks/private/\n.ah-out/\n' > "$FIX/.gitignore"
+printf '#!/usr/bin/env bash\necho hello\n' > "$FIX/scripts/dev/tool.sh"
+printf '# changelog\n' > "$FIX/CHANGELOG.md"
+
+git -C "$FIX" init -q
+git -C "$FIX" config user.email test@example.invalid
+git -C "$FIX" config user.name "Fixture"
+git -C "$FIX" add -A
+git -C "$FIX" commit -qm "fixture"
+
+BASE=$(git -C "$FIX" rev-parse HEAD)
+c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
+# Back to the fixture commit, not merely to HEAD — the cases that SHOULD commit
+# move HEAD, and the next case has to start from the same state as the first.
+reset_repo() {
+  git -C "$FIX" reset -q --hard "$BASE"; git -C "$FIX" clean -qfd; mkskel
+  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED
+}
+head_count() { git -C "$FIX" rev-list --count HEAD; }
+touch_tool() { printf 'echo more\n' >> "$FIX/scripts/dev/tool.sh"; git -C "$FIX" add -- scripts/dev/tool.sh; }
+
+BEFORE=$(head_count)   # the fixture commit; reset_repo returns to exactly this
+
+# ══ arguments ═════════════════════════════════════════════════════════════════
+echo "── arguments ──"
+c
+[ $rc -eq 2 ] && ok "no arguments -> exit 2" || bad "bare: rc=$rc"
+c fix T1
+[ $rc -eq 2 ] && grep -q "needs a message" <<<"$OUT" && ok "no commit message -> exit 2" || bad "no message: rc=$rc"
+c fix T99 -m "x"
+[ $rc -eq 2 ] && grep -q "no task T99" <<<"$OUT" && ok "unknown task -> exit 2" || bad "unknown task: rc=$rc"
+c nowhere T1 -m "x"
+[ $rc -eq 2 ] && grep -q "no such ledger" <<<"$OUT" && ok "unknown ledger -> exit 2" || bad "unknown ledger: rc=$rc"
+
+# ══ what may be committed at all ══════════════════════════════════════════════
+echo "── the staged state ──"
+c fix T1 -m "nothing to do"
+[ $rc -eq 2 ] && grep -q "nothing staged" <<<"$OUT" \
+  && ok "nothing staged -> exit 2" || bad "empty index: rc=$rc out=$OUT"
+
+touch_tool
+printf 'echo even more\n' >> "$FIX/scripts/dev/tool.sh"   # staged AND changed again
+c fix T1 -m "half staged"
+[ $rc -eq 2 ] && grep -q "half staged" <<<"$OUT" \
+  && ok "a half-staged file -> exit 2 (the commit would not be what ran)" || bad "half staged: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "a commit happened anyway"
+reset_repo
+
+# The likelier mistake than a half-staged file: a file the task declares that
+# never reached the index. The suite ran against it, the commit would not carry
+# it, and review.sh cannot see it — git diff does not report untracked files.
+reset_repo
+printf 'echo worktree only\n' >> "$FIX/scripts/dev/tool.sh"     # changed, never staged
+printf 'doc\n' > "$FIX/docs/note.md"; git -C "$FIX" add -- docs/note.md
+c fix T1 -m "feat: something"
+[ $rc -eq 2 ] && grep -q "scripts/dev/tool.sh" <<<"$OUT" \
+  && ok "a task file changed but not staged -> exit 2" || bad "unstaged task file: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit with an unstaged task file"
+reset_repo
+
+printf 'echo new\n' > "$FIX/scripts/dev/tool2.sh"               # untracked, in Dateien:
+git -C "$FIX" tag -f untracked-probe >/dev/null 2>&1
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("Dateien: scripts/dev/tool.sh", "Dateien: scripts/dev/tool.sh, scripts/dev/tool2.sh", 1)
+open(p, "w").write(s)
+PY
+git -C "$FIX" add -- tasks/fix.md
+c fix T1 -m "feat: something"
+[ $rc -eq 2 ] && grep -q "tool2.sh" <<<"$OUT" \
+  && ok "an UNTRACKED file from the task's Dateien: -> exit 2" || bad "untracked task file: rc=$rc out=$OUT"
+reset_repo
+
+# ══ the suite ═════════════════════════════════════════════════════════════════
+echo "── verify ──"
+touch_tool
+c fix T1 -m "feat: something"
+[ $rc -eq 0 ] && ok "a green run commits" || bad "green: rc=$rc out=$OUT"
+[ "$(cat "$FIX/.ah-out/verify-called.txt")" = "scripts --strict" ] \
+  && ok "the task's component is verified with --strict" || bad "call: $(cat "$FIX/.ah-out/verify-called.txt")"
+git -C "$FIX" log -1 --stat | grep -q 'scripts/dev/tool.sh' \
+  && git -C "$FIX" log -1 --stat | grep -q 'tasks/fix.md' \
+  && ok "the commit carries code AND ledger" || bad "commit content: $(git -C "$FIX" log -1 --stat)"
+grep -q '^### T1 .*\[x\]' "$FIX/tasks/fix.md" && ok "the box is ticked" || bad "box: $(grep '^### T1' "$FIX/tasks/fix.md")"
+grep -q '^Evidenz: run.sh\[quick\]: 7 passed, 0 failed, 2 skipped @' "$FIX/tasks/fix.md" \
+  && ok "the evidence line carries the run's own summary" || bad "evidence: $(grep '^Evidenz:' "$FIX/tasks/fix.md")"
+grep -q '^Review: in-session' "$FIX/tasks/fix.md" && ok "the review line defaults to in-session" || bad "review line"
+reset_repo
+
+touch_tool
+FIXTURE_VRC=1 c fix T1 -m "feat: something"
+[ $rc -eq 3 ] && grep -q "verify-red" <<<"$OUT" && ok "a red suite -> exit 3" || bad "red: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit on red"
+reset_repo
+
+touch_tool
+FIXTURE_VRC=74 c fix T1 -m "feat: something"
+[ $rc -eq 74 ] && ok "infrastructure (74) stays infrastructure, it is not a red test" || bad "infra: rc=$rc out=$OUT"
+reset_repo
+
+touch_tool
+FIXTURE_NO_ARTIFACT=1 c fix T1 -m "feat: something"
+[ $rc -eq 74 ] && grep -q "no run artifact" <<<"$OUT" \
+  && ok "a green without an artifact is not evidence -> 74" || bad "no artifact: rc=$rc out=$OUT"
+reset_repo
+
+# The ledger may narrow the suite to one file; those arguments have to arrive.
+printf 'x = 1\n' > "$FIX/apps/server/app/thing.py"
+git -C "$FIX" add -- apps/server/app/thing.py
+c fix T2 -m "feat: server thing"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "server --strict -- tests/test_thing.py" ] \
+  && ok "a narrowed Verify: line is forwarded verbatim" || bad "args: $(cat "$FIX/.ah-out/verify-called.txt") rc=$rc"
+reset_repo
+
+# ══ the deterministic reviews ═════════════════════════════════════════════════
+echo "── review.sh gates ──"
+printf 'flaky || true\n' >> "$FIX/scripts/dev/tool.sh"  # review: ok fixture pattern
+git -C "$FIX" add -- scripts/dev/tool.sh
+c fix T1 -m "feat: something"
+[ $rc -eq 3 ] && grep -q "diff-scan" <<<"$OUT" && ok "a skip pattern in the diff -> exit 3" || bad "diff-scan: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite diff-scan"
+reset_repo
+
+touch_tool
+printf 'internal\n' > "$FIX/tasks/private/roadmap.md"
+git -C "$FIX" add -f -- tasks/private/roadmap.md
+c fix T1 -m "feat: something"
+[ $rc -eq 4 ] && ok "a private file in the index -> exit 4 (blocked)" || bad "sec: rc=$rc out=$OUT"
+reset_repo
+
+touch_tool
+printf 'y = 2\n' > "$FIX/apps/server/app/elsewhere.py"
+git -C "$FIX" add -- apps/server/app/elsewhere.py
+c fix T1 -m "feat: something"
+[ $rc -eq 4 ] && grep -q "scope" <<<"$OUT" && ok "a path outside the task -> exit 4 (blocked)" || bad "scope: rc=$rc out=$OUT"
+grep -q "set-files" <<<"$OUT" && ok "and it names the way out (ledger.sh set-files)" || bad "no hint: $OUT"
+reset_repo
+
+# A task without a component cannot be verified — that is infrastructure, not a
+# red suite, and certainly not a commit.
+touch_tool
+c fix T4 -m "feat: something"
+[ $rc -eq 2 ] || [ $rc -eq 74 ] && ok "a task the closer cannot verify never commits (rc=$rc)" \
+  || bad "no-component task: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit without a verify"
+reset_repo
+
+# ══ the verdict interface (stage 6) ═══════════════════════════════════════════
+echo "── --review verdict ──"
+touch_tool
+TREE="$(cd "$FIX" && bash scripts/dev/tree-hash.sh)"
+printf '{"verdict":"approve","tree_hash":"%s","reviewer":"sonnet"}\n' "$TREE" > "$WORK/verdict.json"
+c fix T1 -m "feat: something" --review "verdict:$WORK/verdict.json"
+[ $rc -eq 0 ] && grep -q '^Review: approve (sonnet)' "$FIX/tasks/fix.md" \
+  && ok "an approve verdict for THIS tree closes the task" || bad "verdict ok: rc=$rc out=$OUT"
+reset_repo
+
+touch_tool
+printf '{"verdict":"approve","tree_hash":"0000000000000000000000000000000000000000"}\n' > "$WORK/stale.json"
+c fix T1 -m "feat: something" --review "verdict:$WORK/stale.json"
+[ $rc -eq 4 ] && ok "a verdict for another tree -> exit 4 (it is not about this diff)" || bad "stale verdict: rc=$rc out=$OUT"
+reset_repo
+
+touch_tool
+printf '{"verdict":"request_changes","tree_hash":"%s"}\n' "$(cd "$FIX" && bash scripts/dev/tree-hash.sh)" > "$WORK/no.json"
+c fix T1 -m "feat: something" --review "verdict:$WORK/no.json"
+[ $rc -eq 3 ] && ok "a request_changes verdict -> exit 3" || bad "negative verdict: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite request_changes"
+reset_repo
+
+touch_tool
+c fix T1 -m "feat: something" --review "verdict:$WORK/nosuch.json"
+[ $rc -eq 2 ] && ok "a missing verdict file -> exit 2" || bad "missing verdict: rc=$rc"
+reset_repo
+
+# The review text lands in a LINE of the ledger. A newline in it would write free
+# text — a forged heading, a forged evidence line — into the file that is the
+# progress truth.
+touch_tool
+c fix T1 -m "feat: something" --review-note "$(printf 'approve (sonnet)\n### T1 — injected  [x]\nEvidenz: run.sh[quick]: 999 passed, 0 failed, 0 skipped')"
+[ $rc -eq 0 ] && ok "a multi-line review note still closes the task" || bad "multiline note: rc=$rc out=$OUT"
+[ "$(grep -c '^### T1 ' "$FIX/tasks/fix.md")" = 1 ] \
+  && ok "and writes no second heading into the ledger" || bad "the note forged a heading"
+[ "$(grep -c '^Evidenz:' "$FIX/tasks/fix.md")" = 1 ] \
+  && ok "and no second evidence line" || bad "the note forged an evidence line"
+reset_repo
+
+# ══ the message file ══════════════════════════════════════════════════════════
+echo "── the commit message ──"
+touch_tool
+printf 'feat(scripts): from a file\n\nT1: body line\n' > "$WORK/msg.txt"
+c fix T1 --message-file "$WORK/msg.txt"
+[ $rc -eq 0 ] && [ "$(git -C "$FIX" log -1 --format=%s)" = "feat(scripts): from a file" ] \
+  && ok "--message-file writes subject and body" || bad "message file: rc=$rc out=$OUT"
+git -C "$FIX" log -1 --format=%b | grep -q "T1: body line" && ok "the body survives" || bad "body lost"
+reset_repo
+
+# ══ repo wiring ═══════════════════════════════════════════════════════════════
+echo "── repo wiring ──"
+sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'task_close_test' \
+  && ok "task_close_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
+
+echo ""
+echo "task_close_test: $PASS passed, $FAIL failed"
+[ "$FAIL" -eq 0 ] || exit 1

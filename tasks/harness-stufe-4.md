@@ -52,8 +52,10 @@ Review: approve nach Runde 1 (opus); Blocker + 3 wichtig behoben
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
 
-### T5 — task-close.sh  [ ]
+### T5 — task-close.sh  [x]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh (neu, SPDX), scripts/tests/task_close_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @02a96886 2026-09-18T15:19:34+02:00
+Review: approve nach Runde 1 (opus); Blocker + 3 wichtig + 5 nits behoben
 Änderung: `task-close.sh <ledger> <id> [--message-file <f> | -m "<msg>"] [--review none|verdict:<json>]`: (1) nur gestagte Änderungen (unstaged in Dateien der Task ⇒ Abbruch 2); `tree-hash.sh` ⇒ H; (2) Komponente und `Verify:` aus der Task lesen, `verify.sh <komp> --strict [-- args]` ausführen; rot ⇒ Exit 3 `verify-red`; (3) `review.sh diff-scan --staged`, `review.sh scope`, `review.sh sec` ⇒ 3/4; (4) `--review none` (Default bis Stufe 6): Review-Zeile `Review: <aus --review-note oder "in-session">`; `--review verdict:<json>` prüft `verdict == approve` und `tree_hash == H` (Stufe-6-Schnittstelle, jetzt nur validiert); (5) `ledger.sh mark-done` mit `Evidenz: <Summary-Zeile aus last-verify.json> @<head> <ts>`, `git add tasks/<ledger>`, `git commit -F <msg>`; Exit 0 committed · 3 request_changes/verify-red · 4 blocked (sec/scope-Verstoß) · 74 infra (verify konnte nicht laufen). Läuft ohne Modell-Session; unter `AH_AUTONOMOUS=1` verweigert es `--review none` nicht (Stufe 6 ändert das). Hermetischer Test: Fixture-Repo mit Fake-`verify.sh`, Fälle aus der Spec (nichts gestaged, Skip-Muster, sec gestaged, grün ⇒ Commit mit Code+Ledger, falscher Verdict-Hash ⇒ 4).
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
