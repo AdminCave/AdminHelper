@@ -10,7 +10,10 @@ aus so kleinen, unabhängig verifizierbaren Aufgaben, dass die Build-Phase sie o
 Rückfragen abarbeiten kann. **Am Ende: Design-Gate — stoppen, auf Freigabe warten.
 In dieser Phase entsteht KEIN Produktivcode und KEIN Branch.**
 
-Modell: Opus (wie alles hier). Sprache: Deutsch, Bezeichner im Original (CLAUDE.md).
+Modell: **mindestens Opus** — die Planung selbst läuft auf Opus oder Fable, und auch die Explorer-
+und Verifikations-Subagenten dieser Phase werden mit `model: opus` gestartet (Kevin, 2026-09-18: eine
+falsche Annahme in der Spec kostet mehr als ein teurer Explorer). Sonnet ist nur für die schnellen
+Task-Reviewer in `feature-build` vorgesehen. Sprache: Deutsch, Bezeichner im Original (CLAUDE.md).
 
 ## 0. Interaktiv arbeiten (diese Phase ist ein Dialog, kein Alleingang)
 Planen ist **interaktiv**. Sobald eine echte Mehrdeutigkeit auftaucht, die die Spec

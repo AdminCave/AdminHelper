@@ -32,6 +32,9 @@ und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **
 Hintergrund-Lauf (tmux plus Wächter), bleibt dran bis zum Report und meldet das Ergebnis — nie nackt in einem
 Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKILL.md`).
 
+**Modelle:** Planen (`/feature-plan`) und Bauen laufen auf mindestens Opus (Opus oder Fable), Planungs-Helfer
+ebenfalls; Sonnet nur für die schnellen Task-Reviewer im Bau (Regeln in den Skills).
+
 **Verben, die es heute gibt (Stufe 0):** `/feature-plan` (Spec + Ledger, stoppt am Design-Gate), `/feature-build`
 (Ledger abarbeiten bis zum Draft-PR), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten
 auf VMs). Die Zielverben der Roadmap (`/roadmap /spec /build /audit /test /vm /find /hunt /release`) entstehen
