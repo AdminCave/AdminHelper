@@ -79,8 +79,10 @@ Review: approve nach Runde 1 (opus); Blocker + W1/W3/W4 + N1/N2 behoben, W2/W5 g
 Verify: python3 -c 'import json; d=json.load(open("scripts/dev/runner-settings.json")); assert d["permissions"]["defaultMode"]=="dontAsk"; print("ok")'   und   bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
 
-### T8 — runner-setup.sh (Kevin führt aus)  [ ]
+### T8 — runner-setup.sh (Kevin führt aus)  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh (neu, SPDX), scripts/tests/runner_setup_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @82f6919c 2026-09-18T16:16:17+02:00
+Review: approve nach 2 Runden (opus); 4 Blocker + 6 wichtig + nits behoben
 Änderung: idempotent, `sudo`-pflichtig, mit `--dry-run` (druckt jeden Schritt, führt nichts aus) und `--remove`. Schritte: `useradd -m -s /bin/bash adminhelper-runner` (keine sudo-Gruppe); `/srv/ah/repo` als Klon von Kevins Checkout mit `remote.origin.url` = GitHub (fetch) und `remote.origin.pushurl=/dev/null`, Besitzer Runner; `/srv/ah/lanes/`; `~adminhelper-runner/.devenv.sh` (PATH auf `~/.local/bin`, `AH_TEST_DB=postgresql://ah_runner:<pw>@localhost/ah_runner_test`, `AH_REQUIRED` = die Python-/Scripts-Schritte); Postgres-Rolle `ah_runner` mit `CREATEDB` und DB `ah_runner_test` (Passwort generiert, nur in der devenv des Runners); Python-Venv `~/.local/share/ah-tools/venv` mit `ruff pytest pytest-cov pytest-httpx` und Symlinks nach `~/.local/bin`; `~/.claude/settings.json` ← `scripts/dev/runner-settings.json`; `~/.config/adminhelper/{oauth.env,pve.env}` als leere `0600`-Vorlagen mit Anleitung; kein `~/.ssh`, kein `gh`. Am Ende druckt es die drei Handgriffe für Kevin: `sudo -u adminhelper-runner claude setup-token` (Token in `oauth.env`), Proxmox-Token in `pve.env`, `git -C /srv/ah/repo fetch`. Test: `--dry-run` listet genau diese Schritte und ruft nie `useradd`/`sudo`.
 Verify: bash scripts/dev/runner-setup.sh --dry-run   und   bash scripts/tests/run.sh unit --strict --only scripts
 Doku: DEVELOPMENT.md (T12)
