@@ -22,14 +22,14 @@
     }
   },
   "roles": {
-    "server": {"memory": 4096, "cores": 2},
-    "desktop": {"memory": 6144, "cores": 4},
+    "server": {"memory": 4096, "cores": 4},
+    "desktop": {"memory": 6144, "cores": 6},
     "agent": {"memory": 2048, "cores": 2},
     "tunnel": {"memory": 2048, "cores": 2},
     "visitor": {"memory": 2048, "cores": 2},
     "moncheck": {"memory": 2048, "cores": 2},
     "rpm": {"memory": 2048, "cores": 2},
     "probe": {"memory": 2048, "cores": 2},
-    "bake": {"memory": 4096, "cores": 2}
+    "bake": {"memory": 4096, "cores": 6}
   }
 }

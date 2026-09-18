@@ -793,7 +793,7 @@ def test_role_and_lane_and_scenario_reach_the_name_and_the_tags(keyed, api, http
     put = next(c for c in http.calls if c.method == "PUT")
     tags = set(put.body["tags"].split(";"))
     assert {"role-server", "lane-pilot", "sc-capstone"} <= tags
-    assert put.body["memory"] == "4096" and put.body["cores"] == "2"  # the role's shape
+    assert put.body["memory"] == "4096" and put.body["cores"] == "4"  # the role's shape
 
 
 def test_explicit_memory_and_cores_and_name_win(keyed, api, http, clock, capsys):
