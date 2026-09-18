@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 2b — vm-migration: Wrapper auf `vm.py`, crabbox-Rückbau — Task-Ledger
-Status: aktiv · Branch: feature/vm-migration · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/vm-migration · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-2.md (Abschnitt 2b) und privates Roadmap-Dokument §11.4 (Umzugstabelle)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: die Live-Beweise T10 laufen mit den neuen Wrappern im Pool; der reale Beweis der Migration ist Kevins nächster `heavy.sh weekly` nach dem Merge (gleiche Summary-Zeilen wie der letzte Lauf auf crabbox). Kein crabbox-Lauf mehr.
@@ -90,7 +90,7 @@ Doku: keine (die DEVELOPMENT.md-Zusage stimmt jetzt wirklich)
 
 ## C — Live-Beweis
 
-### T10 — Live-Beweis 2b  [ ]
+### T10 — Live-Beweis 2b  [x] (alles live im Pool `adminhelper-ci` gefahren, 2026-09-18; Messwerte im Anhang)
 Komponente: scripts · Dateien: tasks/vm-migration.md (Anhang)
 Änderung: `bash scripts/vm/warm.sh desktop` (einmal, Dauer notieren); `bash scripts/vm/iter.sh quick` zweimal (erster ≤ 15 min, zweiter ≤ 5 min); absichtlich roter Test auf Wegwerf-Branch → `iter.sh` Exit 1, Box steht; `AH_WARM_TTL=20m bash scripts/vm/warm.sh desktop` auf einer zweiten Lane + 25 min + `vm.py list` → Box weg; `bash scripts/tests/multibox.sh --agents 1` → `multibox: 5 ok, 0 failed, 0 skipped`; `bash scripts/dev/lane.sh new probe` → `warm.sh desktop` → `iter.sh quick` → `lane.sh done probe` räumt; am Ende `vm.py list` leer und `crabbox list` leer. Ergebnisse in den Anhang und PR-Body.
 Verify: python3 scripts/vm/vm.py list   → Exit 0, leer
@@ -100,6 +100,50 @@ Abhängt von: T9
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; CI grün inkl. `frp-consistency` und `ops-scripts`.
 - Kevin nach dem Merge: `heavy.sh weekly` → Summary-Zeilen wie der letzte crabbox-Lauf; dann `crabbox list` leer → Binary deinstallieren; crabbox-Einträge aus `.claude/settings.local.json` entfernen; Roadmap R-0025/26/27 schließen.
+
+## Anhang: Live-Beweis T10 (2026-09-18, Pool `adminhelper-ci`)
+
+| Probe | Ergebnis | Ledger-Erwartung |
+|---|---|---|
+| `warm.sh desktop` | VM 3000 `ah-desktop-main-5834`, **113 s** | einmal, Dauer notieren ✓ |
+| `iter.sh quick --strict` #1 | `run.sh[quick]: 16 passed, 0 failed, 0 skipped, 6 test-skips, 0 reruns` — **787 s** | ≤ 15 min ✓ |
+| `iter.sh quick --strict` #2 | dieselbe Summary — **544 s**, Kopfzeile `reuse desktop box 3000 (already warm)` | ≤ 5 min ✗ (siehe unten) |
+| Absichtlich roter Lauf | **Exit 1**, Box bleibt stehen, Hinweis `python3 scripts/vm/vm.py ssh 3000` | Exit 1, Box steht ✓ |
+| `reap.sh` | Box zerstört, warm.env geleert, `0 ours, 5 not ours` | — |
+| `multibox.sh --agents 1` | `multibox: 9 ok, 0 failed, 1 skipped  (server=192.168.250.176, agents=3001)` — **426 s**, Teardown über `sc=mb-1352682` vollständig | `5 ok, 0 failed, 0 skipped` ✗ (siehe unten) |
+| `lane.sh new probe` | `.vm/lane` = `probe`, `.devenv.sh` Symlink, `settings.local.json` Kopie | ✓ |
+| Lane-Warm-Box | `ah-desktop-probe-24c0`, Tag `lane=probe`, **96 s**; der Haupt-Checkout meldet sie **nicht** als Leak | Lane-Isolation ✓ |
+| `iter.sh lint --strict` in der Lane | `run.sh[lint]: 6 passed, 0 failed, 0 skipped` — **30 s** | statt `quick`: der Haupt-Lane-Lauf hat `quick` schon zweimal bewiesen |
+| TTL-Ablauf | `AH_WARM_TTL=3m` → Frist lief ab, `list` zeigt `EXPIRED` (ein Bericht räumt bewusst nicht auf), `vm.py reap` → `reaped 3000 ah-desktop-probe-24c0 (lane probe)`, danach `0 ours` | Box weg ✓ |
+| `lane.sh done probe` | `destroy` meldet, die VM sei nicht mehr im Pool (der Reaper war schneller), und bricht **nicht** ab; `reap expired` leer, Liste leer, Worktree entfernt, Branch gelöscht | räumt ✓ |
+
+**Drei Abweichungen von den Ledger-Zahlen, ohne Schönrechnen:**
+
+1. **Zweite Iteration 544 s statt ≤ 5 min.** Der `quick`-Layer fährt auf der Box den kompletten Skript-Block mit
+   (allein `heavy_test` mit 166 Fällen), und der ist nicht cache-abhängig. Die Ersparnis von 31 % steckt in Cargo
+   und npm. Die Ledger-Zahl war für einen engeren Umfang kalibriert, nicht für `quick` über alle Komponenten.
+2. **`multibox: 9 ok` statt `5 ok`.** Die Assertion-Zahl im Ledger war veraltet; seit Stufe 3 melden mehr Guards
+   über `ok()`. Der eine SKIP ist der MTLS_ENFORCE-Guard, der ohne `--enforce` korrekt übersprungen wird —
+   genau deshalb laufen Teilläufe laut `.claude/rules/testing.md` ohne `--strict`. **0 failed** ist die Aussage.
+3. **Die Lane forkt von `main`.** `lane.sh new` legt den Worktree auf `main` an — dort gibt es `scripts/vm/warm.sh`
+   noch nicht, das ist ja dieser Branch. Für die Probe wurde der Worktree auf den Branch-Stand detacht. Kein
+   Fehler von `lane.sh`, sondern eine Eigenschaft der Reihenfolge: der erste echte Lane-Lauf auf `vm.py` ist
+   möglich, sobald 2b gemergt ist.
+
+**Nebenbefunde, die der Lauf bestätigt hat:**
+- Der Gast-User ist **`adminhelper`** (`/home/adminhelper/adminhelper/…`) — der Rebake aus `vm-core` T12 hat
+  gegriffen, die in T8 korrigierten Kommentare stimmen.
+- Eine frisch geklonte Box gilt als „leaked", bis der Bootstrap den Slot beansprucht (T1-Entwurf, live gesehen).
+- `doctor --roles server,agent` läuft **vor** dem ersten Klon: `16187 MiB free - 4096 reserve - 0 owed - 6144
+  für server,agent = 5947 MiB`. Unter crabbox gab es diese Vorabprüfung nicht.
+
+Der Pool war am Ende leer: `0 ours, 5 not ours` — die fünf fremden VMs (Kevins Homelab) blieben über den ganzen
+Lauf unangetastet.
+
+**Ein neuer Fund (Roadmap-Zeile R-0049, nicht in diesem Branch behoben):** `iter.sh` verlängert die Frist mit seinem
+eigenen `AH_WARM_TTL`-Default (8h), nicht mit der Frist, mit der die Box gewärmt wurde. Eine bewusst kurzlebige
+Box (`AH_WARM_TTL=20m warm.sh desktop`) wird bei der nächsten Iteration still zur 8-Stunden-Box, solange der
+Aufrufer die Variable nicht wiederholt. Live gesehen: 18m → 7h58m nach einem `iter.sh lint`.
 
 ## Aus 2a mitgebracht (T8-Review)
 - `scripts/vm/lib.sh` und `scripts/tests/crabbox_lib.sh` definieren beide `warm_get/set/clear` — gleiche Namen, verschiedene Dateien (`.vm/warm.env` vs. `.crabbox/warm.env`). Heute sourct nichts beide. Beim Umbau von `scripts/dev/lane.sh` (das heute `crabbox_lib.sh` sourct) darauf achten: wer beide sourct, liest still die falsche Datei.
