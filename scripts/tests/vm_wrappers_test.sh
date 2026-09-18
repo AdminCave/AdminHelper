@@ -204,6 +204,30 @@ reset_state
 OUT=$(bash "$REAP" --bogus 2>&1); rc=$?
 [ $rc -eq 2 ] && ok "an unknown flag is rejected" || bad "unknown flag: rc=$rc out=$OUT"
 
+# ══ iter.sh renews with the box's own frist (R-0049) ══════════════════════════
+# A box warmed for 20 minutes must not become an 8-hour box because a lint ran
+# on it. warm.sh records the frist as desktop_ttl; iter.sh renews with that,
+# AH_WARM_TTL still wins, and a warm.env from before the key keeps 8h.
+ITER="$REPO_ROOT/scripts/vm/iter.sh"
+RUNNING='{"vms": [{"vmid": 3001, "status": "running"}]}'
+echo "── iter.sh: --extend uses the frist the box was warmed with ──"
+reset_state
+AH_WARM_TTL=20m bash "$WARM" desktop >/dev/null 2>&1
+[ "$(slot desktop_ttl)" = "20m" ] && ok "warm.sh records the frist as desktop_ttl" || bad "desktop_ttl: $(slot desktop_ttl)"
+: > "$FAKE_LOG"
+FAKE_LIST_JSON="$RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" lint >/dev/null 2>&1 || true
+grep -q -- '--extend 20m ' "$FAKE_LOG" && ok "iter.sh renews with the recorded 20m, not its default" \
+  || bad "extend args: $(grep '^run' "$FAKE_LOG")"
+: > "$FAKE_LOG"
+FAKE_LIST_JSON="$RUNNING" AH_OUT_DIR="$WORK/out" AH_WARM_TTL=8h bash "$ITER" lint >/dev/null 2>&1 || true
+grep -q -- '--extend 8h ' "$FAKE_LOG" && ok "an explicit AH_WARM_TTL still wins" \
+  || bad "extend args: $(grep '^run' "$FAKE_LOG")"
+reset_state
+echo "desktop=3001" > "$AH_VM_STATE_DIR/warm.env"
+FAKE_LIST_JSON="$RUNNING" AH_OUT_DIR="$WORK/out" bash "$ITER" lint >/dev/null 2>&1 || true
+grep -q -- '--extend 8h ' "$FAKE_LOG" && ok "a warm.env without desktop_ttl keeps the 8h renewal" \
+  || bad "extend args: $(grep '^run' "$FAKE_LOG")"
+
 echo ""
 echo "vm_wrappers_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

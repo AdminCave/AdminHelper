@@ -29,6 +29,12 @@ backups
 # business carrying the credential that can clone and destroy it, and `bake`
 # would write it into the template. vm.py reads this file on the CLIENT.
 .claude/settings.local.json
+# Same class: per-host and gitignored. It carries AH_TEST_DB and the dev box's
+# heavy-free AH_REQUIRED — and verify.sh sources it wherever it finds it, so a
+# box that received it inherits a required set without the heavy steps and can
+# pass --strict while skipping them. Without the file AH_REQUIRED stays unset
+# and run.sh's box rule makes every step of a heavy layer mandatory (R-0048).
+.devenv.sh
 # Leftovers from before the migration. Still excluded for the same reason they
 # are still gitignored: .crabbox/captures holds unredacted failure bundles, and
 # a sync would put them on every box and into the next template. They go when

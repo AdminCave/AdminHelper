@@ -81,7 +81,9 @@ warm_role() {
   vm_py run "$vmid" --sync --timeout "$HYDRATE_TIMEOUT" -- \
     "AH_BOOTSTRAP_PROFILE=$boot bash scripts/vm/bootstrap_linux.sh" >&2 \
     || { kept "$vmid" "bootstrap failed"; return 1; }
-  warm_set "$role" "$vmid"; echo "$vmid"
+  # The frist the box was warmed with, so iter.sh can renew with THAT instead of
+  # its own default (R-0049).
+  warm_set "$role" "$vmid"; warm_set "${role}_ttl" "$TTL"; echo "$vmid"
 }
 
 # warm_server: warm a server box AND bring the stack up (leaving it up), stashing
