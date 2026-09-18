@@ -41,7 +41,12 @@ OUT_DIR="${AH_OUT_DIR:-.ah-out}"
 # summary line out of it when a wrapper died before printing one, and a human
 # watching a 40-minute layer should not have to guess whether it is alive.
 BOX_LOG="$OUT_DIR/last.out.log"
-TTL="${AH_WARM_TTL:-8h}"
+# --extend renews with the frist the box was WARMED with (warm.sh records it as
+# desktop_ttl), not with this script's own default: a box warmed for 20 minutes
+# must not turn into an 8-hour box because someone ran a lint on it (R-0049).
+# An explicit AH_WARM_TTL still wins; a warm.env from before the key existed
+# keeps the old 8h renewal.
+TTL="${AH_WARM_TTL:-$(warm_get desktop_ttl)}"; TTL="${TTL:-8h}"
 
 # The box has no .git (the sync carries files, not the repository), so it cannot
 # compute the evidence fields of last-<layer>.json itself — without these, every

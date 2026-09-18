@@ -239,7 +239,9 @@ den CI-Step.
 `run.sh e2e --strict` waere hier also dauerhaft rot), deshalb steht sie in der
 gitignoreten `.devenv.sh` und ueberschreibt `AH_REQUIRED_DEFAULT` aus `run.sh`.
 Die gueltigen Step-Ids stehen im Kopf von `scripts/tests/run.sh`. Beispiel fuer
-eine Box ohne frpc-Sidecar (also ohne `cargo test (desktop)`):
+eine Box ohne frpc-Sidecar (also ohne `cargo test (desktop)`): Die Datei bleibt auf der
+Dev-Box: `vm.py sync` schliesst sie aus, damit auf einer Box `AH_REQUIRED` ungesetzt bleibt
+und die Box-Regel aus `run.sh` greift (alle Schritte eines schweren Layers Pflicht).
 
 ```bash
 export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-ui-vitest web-vitest scripts vm-pytest"
@@ -763,6 +765,9 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   echte Tauri-GUI headless gegen den **entfernten** Server faehrt (Login/CRUD/
   Monitoring) — Cross-Host-mTLS, echtes `.deb`, Monitoring ueber den Netz-Hop.
   `--capstone` ist die Release-Kombination (alle Szenarien plus `--enforce`).
+  Die Frist der Warm-Box kommt aus `AH_WARM_TTL` (Default 8h); `iter.sh` verlaengert bei
+  jedem Lauf um genau diese Frist (warm.sh merkt sie als `desktop_ttl` in `.vm/warm.env`),
+  eine bewusst kurze Box bleibt also kurz.
 
 ### Wochenlauf (heavy.sh)
 

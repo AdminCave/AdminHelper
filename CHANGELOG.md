@@ -66,6 +66,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **VM-Hygiene (R-0048/R-0049):** `.devenv.sh` reist nicht mehr per `vm.py sync` auf die Box
+  und damit auch nicht mehr in ein Template — auf der Box bleibt `AH_REQUIRED` ungesetzt und die
+  Box-Regel macht alle Schritte eines schweren Layers zur Pflicht. `iter.sh` verlaengert die
+  Warm-Box mit der Frist, mit der sie gewaermt wurde (`desktop_ttl` in `.vm/warm.env`), statt
+  mit dem eigenen 8h-Default: eine 20-Minuten-Box wurde bisher beim ersten Lauf still zur Nacht-Box.
+
 - **Konfigurations-Stellhebel, die nichts bewirkt haben (Harness Stufe 8a, T6):** `DB_POOL_SIZE` und
   `DB_MAX_OVERFLOW` waren in `.env.example` samt Rechenregel dokumentiert, wurden aber von keinem
   Compose-Dienst durchgereicht — wer sie setzte, aenderte nichts. Sie gehen jetzt an `server` und
