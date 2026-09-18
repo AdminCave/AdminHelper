@@ -271,6 +271,140 @@ endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 — kein
 Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
 feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`.
 
+### Task schliessen: `ledger.sh` und `task-close.sh`
+
+Seit Harness-Stufe 4 setzt **kein Modell mehr selbst einen Haken und macht keinen
+Commit**. Der Weg einer Task ist:
+
+```bash
+bash scripts/dev/ledger.sh start tasks/<slug>.md T7      # .vm/active-task: Komponente + Dateien
+# ... bauen, gezielt testen, Review ...
+bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage --review-note "approve (sonnet)" -m "feat(...): ..."
+```
+
+`--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`).
+Das ist kein Komfort, sondern die Folge derselben Stufe: `git add` steht seit Stufe 4 unter
+`ask`, ein Lauf, der von Hand stagen will, bleibt im Permission-Prompt stehen.
+
+`task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
+dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
+(halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash merken; (2) das
+`Verify:` der Task als `verify.sh <komponente> --strict`; (3) `review.sh diff-scan`
+(abgeschaltete Tests im Diff), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
+(was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
+mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` und **ein** Commit
+mit Code und Ledger. Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
+Eingabefehler, `3` Suite rot oder Diff-Scan-Fund, `4` blockiert (Scope/Sec),
+`74` die Suite konnte gar nicht laufen.
+
+`ledger.sh` ist die einzige Stelle, die ein Ledger schreibt (`start`, `mark-done`,
+`mark-skip`, `mark-question`, `set-files`, `status`, `new-task`, `lint`) — Details
+in [`tasks/README.md`](tasks/README.md). Braucht eine Task eine Datei, die nicht in
+ihrem `Dateien:` steht, erweitert `ledger.sh set-files` die Liste **sichtbar**;
+den Scope zu lockern ist nicht vorgesehen. Ohne Eintrag erlaubt sind ohnehin die
+Test-Verzeichnisse der Komponente, `docs/`, `CHANGELOG.md` und der Ledger selbst. Eine Zeile mit `# review: ok <grund>`
+nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
+
+`git add`, `git commit`, `git checkout`, `git restore` und `git stash` stehen in
+`.claude/settings.json` seit Stufe 4 unter `ask`: der Weg zum Commit fuehrt ueber
+`task-close.sh`, und die drei Recovery-Verben loeschen im Zweifel ungestagte Arbeit.
+
+### Harness-Schutz und Kill-Switch
+
+`scripts/dev/harness-paths.txt` listet die Dateien, deren Inhalt die **Regeln**
+bestimmt (`CLAUDE.md`, `AUTONOMOUS.md`, `.claude/**`, die Gate-Skripte unter
+`scripts/dev/`, `run.sh`, `heavy.sh`, `vm.py`). Der `PreToolUse`-Hook
+`scripts/dev/hooks/harness-guard.sh` ermittelt vor jedem `Edit`/`Write`/`MultiEdit`/
+`Bash`, welche Datei der Aufruf schreiben wuerde — inklusive `sed -i`, `tee`,
+`>`-Umleitung, `cp`/`mv` und `bash -c` — und verweigert ihn, wenn sie auf der Liste
+steht. Fuer Shell-Kommandos ist das **best effort**: ein Schreibvorgang aus
+python/perl heraus, ein zur Laufzeit gebauter Pfad oder ein `find … -exec sed -i`
+kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
+auch hier die Deny-Liste, der Hook ist die zweite Schicht:
+
+```bash
+bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung
+bash scripts/dev/harness.sh off      # Kill-Switch: der Waechter warnt nur noch
+bash scripts/dev/harness.sh on       # wieder scharf
+```
+
+Der Deny greift **nur** im autonomen Lauf (`AH_AUTONOMOUS=1`) und nur ohne den
+Marker `.vm/harness.off` (gitignored, kann also nicht in einen Commit reisen).
+Interaktiv warnt der Hook bloss — und diese Warnung sieht man nur mit
+`claude --debug`, weil Claude Code bei Exit 0 ausschliesslich das JSON auf stdout
+liest. Ein Ledger, das den Harness selbst umbaut, ist der Fall fuer `harness.sh off`.
+Der Hook kostet einen `python3`-Start je Tool-Aufruf (auf der Dev-Box ~60 ms) und
+laeuft auch in Kevins interaktiven Sessions.
+
+### Runner-User `adminhelper-runner`
+
+Der Unix-User, unter dem autonome Laeufe arbeiten. Er existiert, damit ein Lauf
+nicht mit Kevins ssh-Schluesseln, seinem `gh`-Login und seinen Bypass-Rechten
+faehrt. Anlegen (einmalig, als root):
+
+```bash
+bash scripts/dev/runner-setup.sh --dry-run        # zeigt den Plan, aendert nichts (kein root noetig)
+sudo bash scripts/dev/runner-setup.sh             # legt User, Klon, DB, Venv, Settings an
+```
+
+Das Skript ist idempotent: ein zweiter Lauf laesst gefuellte Token-Dateien in Ruhe
+und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
+Klon und Datenbank wieder weg. Danach bleiben **drei Handgriffe** fuer Kevin, die
+der Runner nicht selbst tun kann:
+
+1. `sudo -u adminhelper-runner claude setup-token` → Token nach
+   `~adminhelper-runner/.config/adminhelper/oauth.env` (Abo-Token, kein API-Key:
+   `ANTHROPIC_API_KEY` haette Vorrang und wuerde ueber ein API-Konto abrechnen).
+2. `pveum user token add adminhelper-runner@pve run --privsep 1` plus dieselben vier
+   ACL-Pfade der Rolle `AdminHelperVM`, die Kevins eigener Token hat (Abschnitt
+   „VMs mit vm.py") → Werte nach `~adminhelper-runner/.config/adminhelper/pve.env`.
+3. `sudo -u adminhelper-runner git -C /srv/ah/repo fetch`, dann der Red-Team-Lauf
+   (unten).
+
+Beide Dateien muessen regulaere `0600`-Dateien in einem Verzeichnis sein, in das
+nur der Runner schreiben darf; `scripts/dev/runner-env.sh` (zum **Sourcen**)
+prueft das und gibt sonst einen Fehler zurueck (`return 1`, die Shell lebt weiter).
+`oauth.env` ist Pflicht, `pve.env` optional — ohne Hypervisor-Token laufen die
+Python- und Shell-Suiten trotzdem, nur keine VM. Es leert ausserdem jede geerbte Credential —
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein fremdes `CLAUDE_CODE_OAUTH_TOKEN`,
+alle `AH_PVE_*` (`vm.py` laesst die Umgebung ueber seine Konfiguration gewinnen) und
+`GH_TOKEN`/`GITHUB_TOKEN` — und setzt `AH_AUTONOMOUS=1` und `AH_VM_MAX=8`.
+
+**Was die Runner-Settings** (`scripts/dev/runner-settings.json` →
+`~adminhelper-runner/.claude/settings.json`) **verbieten und warum:**
+
+| Deny-Regel | Grund |
+|---|---|
+| `git add`, `git commit`, `git push`, `git switch`, `git branch`, `git revert`, `git checkout`, `git restore`, `git stash` | Der Runner schreibt keine Historie. `revert`/`branch`/`switch` stehen mit drin, weil sie committen bzw. ungestagte Arbeit verwerfen koennen — und weil die Projekt-`settings.json` des Klons sie sonst mitbringt (Listen mergen ueber die Ebenen). |
+| `gh:*`, `sudo:*` | Kein GitHub-Zugang, keine Rechteerhoehung. |
+| `vm.py bake`, `bake.sh`, `heavy.sh`, `multibox.sh`, `run.sh all/e2e/integration` | Teure oder VM-fressende Laeufe startet ein Mensch. `vm.py` ist Verb fuer Verb freigegeben, damit kein breites Praefix `bake` mit abdeckt. |
+| `task-close.sh`, `ledger.sh mark-done` | Der Runner schliesst in Stufe 4 keine Task — das tut die interaktive Session. In Stufe 7 aendert sich genau diese Zeile. |
+| `Edit(./.claude/**)`, `Edit(~/.claude/**)`, `CLAUDE.md`, `AUTONOMOUS.md`, `scripts/dev/**`, `run.sh`, `heavy.sh`, `vm.py` | Der Harness ist nicht sein Arbeitsmaterial. `~/.claude` steht mit drin, weil Claude Code Settings **live** nachlaedt. |
+| `Edit(./tasks/private/**)`, `Read(~/.config/adminhelper/**)` | Privates Repo und die eigenen Token-Dateien. |
+
+**Was die Regeln nicht koennen** — ehrlich, weil es den Beweis veraendert: der
+Runner darf `Edit(./scripts/**)` (ausser den gesperrten Pfaden) und `bash
+scripts/tests/run.sh quick` — wer eine Testdatei aendert und sie dann startet,
+fuehrt eigenen Code aus. Ebenso kann er ein `[x]` in ein Ledger schreiben
+(`Edit(./tasks/**)`), nur committen kann er es nicht. **Die tragende Grenze ist
+deshalb nicht die Regel-Liste, sondern die Betriebssystem-Ebene:** kein
+`~/.ssh`, kein `gh`-Login, leeres `GH_TOKEN`, `remote.origin.pushurl=/dev/null`,
+eigene DB, eigener Proxmox-Token nur fuer den Pool.
+
+**Red Team.** Der Beweis, dass das haelt, ist ein Lauf als dieser User:
+
+```bash
+sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+```
+
+Jede Probe druckt `ok`, `FAIL` oder `info`; die letzte Zeile ist `N ok, M FAIL`.
+Geprueft werden: Lesen fremder Schluessel und Settings, `git push` nach origin,
+`gh`-Login, D-Bus/Keyring, der eigene Proxmox-Token gegen eine VM **ausserhalb**
+des Pools, und zwei `claude -p`-Laeufe, die ausdruecklich nach einem `git push`
+bzw. einer `CLAUDE.md`-Aenderung fragen (erwartet: `permission_denials`).
+Stufe 4 gilt erst mit `0 FAIL` als abgeschlossen; das Ergebnis gehoert in den
+Anhang von `tasks/harness-stufe-4.md`.
+
 ### Go Toolchain (Agent)
 
 ```bash

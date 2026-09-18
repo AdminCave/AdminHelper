@@ -44,6 +44,12 @@
             </tbody>
           </table>
 
+          <p><strong>Branch protection.</strong> From autonomy stage&nbsp;4 on, <code>main</code> is
+          governed by a GitHub ruleset the repository owner sets in the web UI: every change goes through
+          a pull request, <code>CI</code> has to be green, no force-push, no bypass actor &ndash; not even
+          for the owner. It is the outer boundary of the stage: the runner user cannot push anyway, and a
+          release is cut on a release branch rather than around the rule.</p>
+
           <h2>Trigger Matrix</h2>
           <table>
             <thead><tr><th>Event</th><th>What runs</th></tr></thead>

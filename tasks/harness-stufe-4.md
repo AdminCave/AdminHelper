@@ -113,8 +113,10 @@ Komponente: — · Dateien: tasks/harness-stufe-4.md (Anhang)
 Verify: keines (Handarbeit); die Task bleibt `[ ]`, bis Kevins Anhang steht — der Ledger wird `blockiert`, nicht `erledigt`, falls der PR vorher gemergt wird
 Doku: keine
 
-### T12 — Doku-Sweep  [ ]
+### T12 — Doku-Sweep  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, CLAUDE.md, CHANGELOG.md, docs/developer/cicd.html, docs/en/developer/cicd.html (ein Satz Ruleset)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @6df4745c 2026-09-18T17:25:28+02:00
+Review: approve nach Runde 1 (opus); 3 wichtig + 5 nits behoben
 Änderung: DEVELOPMENT.md „Runner-User `adminhelper-runner`" (Setup, Token-Dateien, Settings-Begründung je Deny-Regel, Red-Team, Kill-Switch) und „Task schließen" (`ledger.sh start` → Bau → Review → `task-close.sh`); CLAUDE.md §2: der Klammersatz zu `task-close.sh` wird Gegenwart, Harness-Schutz und Kill-Switch je ein Satz; CHANGELOG Added; cicd.html DE+EN ein Satz zum Ruleset.
 Verify: bash scripts/dev/verify.sh scripts --strict   (enthält doc_smoke_test und den Lint-Block; `verify.sh` kennt keinen Schlüssel `docs`)
 Doku: alle genannten

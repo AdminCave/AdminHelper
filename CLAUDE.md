@@ -55,7 +55,14 @@ Freigaben setzen oder Gates überspringen · einen zweiten Bau-Lauf starten · V
 `adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
 Dateien schreiben. Wo ein Skill heute am Ende pushen oder einen PR öffnen will, ist der Permission-Prompt Kevins
 Entscheidung. Innerhalb des Pools `adminhelper-ci` darf Claude VMs klonen, baken und zerstören (Freigabe
-2026-09-08). Committen auf einem Feature-Branch ist erlaubt, bis `task-close.sh` es übernimmt (Stufe 4).
+2026-09-08). **Committen tut seit Stufe 4 `scripts/dev/task-close.sh`, nicht die Session:** es fährt das
+`Verify:` der Task, prüft Diff-Scan, Scope und Sec-Sperre, setzt den Haken mit der Summary-Zeile als
+Evidenz und committet Code + Ledger; `git add|commit|checkout|restore|stash` prompten seitdem.
+**Harness-Schutz:** ein PreToolUse-Hook verweigert im autonomen Lauf Änderungen an den Dateien aus
+`scripts/dev/harness-paths.txt` (Regeln, Skills, Gates) — bei Shell-Kommandos best effort, interaktiv
+warnt er nur.
+**Kill-Switch:** `bash scripts/dev/harness.sh off|on|status` (Marker `.vm/harness.off`) ist Kevins
+Handgriff für ein Vorhaben, das den Harness selbst umbaut.
 
 **Release-Kanäle (ab Stufe 13 per Skript, bis dahin von Hand):** `beta` fortlaufend nach jedem grünen Wochenlauf;
 `rc` schneidet Kevin; `stable` frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung; `hotfix` ist der einzige
