@@ -16,8 +16,10 @@ Regeln: Homelab-Namen, Tokens, Passwörter nie in versionierte Dateien (Runner-S
 
 ## A — Harness-Schutz und Kill-Switch
 
-### T1 — harness-paths.txt und harness.sh  [ ]
-Komponente: scripts · Dateien: scripts/dev/harness-paths.txt (neu), scripts/dev/harness.sh (neu, SPDX), scripts/tests/hooks_test.sh (neu, SPDX; Anfang: nur harness.sh-Fälle)
+### T1 — harness-paths.txt und harness.sh  [x] (Pfadliste, Kill-Switch, hooks_test)
+Komponente: scripts · Dateien: scripts/dev/harness-paths.txt (neu), scripts/dev/harness.sh (neu, SPDX), scripts/tests/hooks_test.sh (neu, SPDX; Anfang: nur harness.sh-Fälle), scripts/tests/run.sh (Registrierung)
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @86128f52 2026-09-18T14:09:27+02:00
+Review: approve (opus)
 Änderung: Pfadliste laut Spec (eine Glob-Zeile je Pfad, `#`-Kommentare). `harness.sh off|on|status`: Marker `.vm/harness.off` anlegen/entfernen; `status` druckt Marker-Zustand, `AH_AUTONOMOUS`, und ob die Hooks in `.claude/settings.json` eingetragen sind; Exit 0/2. `hooks_test.sh` startet mit Fällen für `harness.sh` (Marker an/aus/status) und der Registrierung in `AH_SCRIPT_TESTS_DEFAULT`.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)

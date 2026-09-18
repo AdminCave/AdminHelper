@@ -483,7 +483,7 @@ layer_lint() {
 # list is a mistake worth reporting, not a silent full run.
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
-session_status_test run_flags_test verify_test iter_flags_test
+session_status_test run_flags_test verify_test iter_flags_test hooks_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test vm_wrappers_test
 multibox_test"

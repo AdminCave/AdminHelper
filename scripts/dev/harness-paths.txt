@@ -1,0 +1,31 @@
+# harness-paths.txt — the files that make the harness what it is.
+#
+# Consumers: scripts/dev/hooks/harness-guard.sh (PreToolUse) refuses edits to
+# these paths in an autonomous run; later stages reuse the list in their
+# preflight. One glob per line, repo-relative, `#` starts a comment.
+#
+# Matching is shell `case` matching, where `*` also crosses `/`: a line ending
+# in `/**` therefore covers the whole subtree, every other line is the file
+# itself. Add a path here when changing it would change the RULES a run obeys —
+# not merely because it is important.
+
+# The rules themselves
+CLAUDE.md
+AUTONOMOUS.md
+.claude/**
+
+# The gates: what may run, what counts as green, what closes a task
+scripts/dev/hooks/**
+scripts/dev/harness.sh
+scripts/dev/harness-paths.txt
+scripts/dev/ledger.sh
+scripts/dev/review.sh
+scripts/dev/runner-env.sh
+scripts/dev/runner-settings.json
+scripts/dev/runner-setup.sh
+scripts/dev/task-close.sh
+scripts/dev/tree-hash.sh
+scripts/dev/verify.sh
+scripts/tests/run.sh
+scripts/tests/heavy.sh
+scripts/vm/vm.py
