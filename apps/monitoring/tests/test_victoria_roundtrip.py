@@ -82,7 +82,6 @@ def _unescape(text: str) -> str:
 
 def parse_line(line: str) -> tuple[str, dict[str, str], str, int]:
     """measurement,tag=value[,…] value=X timestamp -> its four parts."""
-    head, field, timestamp = _split_unescaped(line, " ")[0], None, None
     fields = _split_unescaped(line, " ")
     assert len(fields) == 3, f"expected 3 space-separated parts, got {len(fields)}: {line!r}"
     head, field, timestamp = fields
@@ -101,7 +100,11 @@ def parse_line(line: str) -> tuple[str, dict[str, str], str, int]:
 # in on purpose — they are the whole point of the escaping under test.
 TEXT = st.text(
     alphabet=st.characters(min_codepoint=0x20, max_codepoint=0x2FFF)
-    | st.sampled_from("\n\r\t ,=\\"),
+    # The separators and the three control chars the writer neutralises — they are
+    # the whole point of the escaping under test. NUL and the rest of C0 ride along
+    # because they pass through untouched: they carry no meaning in line protocol,
+    # so a round trip has to return them unchanged rather than swallow them.
+    | st.sampled_from("\n\r\t ,=\\\x00\x01\x1f\x7f"),
     min_size=1,
     max_size=30,
 )
