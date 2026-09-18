@@ -24,8 +24,9 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
    mit einem konkreten `Verify:`. Nur so kann sie ohne Rückfrage abgearbeitet werden.
 3. **Ein Gate.** Der einzige feste menschliche Kontrollpunkt ist das **Design-Gate** nach
    der Planung. Danach läuft Bauen → Testen → PR autonom.
-4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch.
-   Geht etwas schief: `git revert <commit>` statt Handarbeit.
+4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch,
+   geschrieben von [`scripts/dev/task-close.sh`](scripts/dev/task-close.sh) — nicht von der
+   Session. Geht etwas schief: `git revert <commit>` statt Handarbeit.
 5. **Test-Tiering.** Schnelle Suiten laufen nach jeder Task; die schwere VM-Suite erst
    am Ende, einmal.
 
@@ -35,7 +36,7 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 |---|---|---|
 | **1 · Design** | `/feature-plan <idee>` | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger). **Stoppt am Design-Gate.** |
 | **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. |
-| **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → 1 Commit/Task auf `feature/<slug>`. |
+| **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
 | **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
 
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
@@ -198,16 +199,32 @@ prüf es am Gate mit:
 Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerichtet:
 
 - **`.claude/settings.json` → `permissions.allow`**: schnelle Tests/Linter (`pytest`,
-  `ruff`, `go test/vet`, `cargo test/clippy/fmt`, `npm run`), Git-Befehle inkl. Recovery
-  (`switch`, `restore`, `checkout`, `revert`), der Test-Aggregator und der ganze VM-Weg
-  (`python3 scripts/vm/vm.py <verb>`, `scripts/vm/*.sh`, `scripts/tests/multibox.sh`,
-  `scripts/tests/heavy.sh`) laufen **ohne Nachfrage** — innerhalb des Pools sind Klonen,
-  Baken und Zerstören freigegeben (CLAUDE.md §2, 2026-09-08). Bewusst _nicht_ freigegeben
-  (prompten weiter — der eine bewusste Endstopp): `git push`, `gh pr create`, alles unter
-  `rm`/`reset --hard`, und `scripts/vm/bootstrap_linux.sh` — das einzige Skript, das die
-  Maschine verändert, auf der es läuft, und die Dev-Box hat bewusst kein Docker.
+  `ruff`, `go test/vet`, `cargo test/clippy/fmt`, `npm run`), die nicht-destruktiven
+  Git-Befehle (`switch`, `branch`, `status`, `diff`, `log`, `show` — dazu `revert`, das zwar
+  einen Commit schreibt, aber genau die Recovery ist, auf der dieser Ablauf beruht), die
+  Harness-Skripte (`task-close.sh`, `ledger.sh` ohne `mark-done`, `review.sh`,
+  `harness.sh status|on`), der Test-Aggregator
+  und der ganze VM-Weg (`python3 scripts/vm/vm.py <verb>`, `scripts/vm/*.sh`,
+  `scripts/tests/multibox.sh`, `scripts/tests/heavy.sh`) laufen **ohne Nachfrage** —
+  innerhalb des Pools sind Klonen, Baken und Zerstören freigegeben (CLAUDE.md §2,
+  2026-09-08). Seit Stufe 4 in `permissions.ask`: **`git add`, `git commit`, `git checkout`,
+  `git restore`, `git stash`** — der Weg zum Commit führt über `task-close.sh`, und die drei
+  Recovery-Verben löschen im Zweifel ungestagte Arbeit. Ebenfalls nicht freigegeben
+  (der eine bewusste Endstopp): `git push`, `gh pr create`, alles unter `rm`/`reset --hard`,
+  `harness.sh off` und `ledger.sh mark-done` (der Kill-Switch des Wächters und der Haken
+  ohne Lauf sind Kevins Handgriffe, nicht die des Modells) und `scripts/vm/bootstrap_linux.sh` — das einzige Skript, das die Maschine
+  verändert, auf der es läuft, und die Dev-Box hat bewusst kein Docker.
   **Einen langen Lauf zu STARTEN ist davon unberührt:** das ist eine Frage der Initiative,
   nicht der Permission, und bleibt bei Kevins Zuruf (CLAUDE.md §2).
+- **Ein `PreToolUse`-Hook: der Harness-Wächter.** `scripts/dev/hooks/harness-guard.sh` liest
+  vor jedem `Edit`/`Write`/`MultiEdit`/`Bash`, welche Datei der Aufruf schreiben würde, und
+  verweigert ihn, wenn sie in [`scripts/dev/harness-paths.txt`](scripts/dev/harness-paths.txt)
+  steht — aber **nur im autonomen Lauf** (`AH_AUTONOMOUS=1`) und nur, solange der Kill-Switch
+  `bash scripts/dev/harness.sh off` nicht gesetzt ist. Interaktiv warnt er bloß; die Warnung
+  sieht man erst mit `claude --debug`, weil Claude Code bei Exit 0 nur das JSON auf stdout
+  liest. Ein Ledger, das den Harness selbst ändert (wie Stufe 4), ist genau der Fall für
+  `harness.sh off` — den **Kevin** setzt: ein Modell, das seinen eigenen Wächter abschalten
+  darf, hat keinen.
 - **Kein Auto-Format-Hook.** (Ein früherer PostToolUse-Formatter wurde entfernt: er
   reformatierte ganze Dateien → gegen die Surgical-Regel und die Doku-Commits, und brach
   iterative `Edit`s. Formatierung fangen ohnehin die `ruff format --check`/`npm run lint`-

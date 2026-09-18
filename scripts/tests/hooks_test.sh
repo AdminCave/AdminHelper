@@ -558,6 +558,28 @@ grep -qE '^/?CHANGELOG\.md[[:space:]]+merge=union$' "$REPO_ROOT/.gitattributes" 
 [ "$(git -C "$REPO_ROOT" check-attr merge -- CHANGELOG.md 2>/dev/null)" = "CHANGELOG.md: merge: union" ] \
   && ok "and git actually resolves that attribute" || bad "git does not see the union attribute"
 
+# ══ the project's own permission lists ═══════════════════════════════════════
+echo "── .claude/settings.json ──"
+
+# Nothing pinned these before: the settings are the one place where a later
+# "cleanup" can hand back a right that stage 4 deliberately took away.
+python3 - "$REPO_ROOT/.claude/settings.json" <<'PY' && ok "git add/commit/checkout/restore/stash ask, the harness scripts are free, off and mark-done are not" \
+  || bad ".claude/settings.json no longer matches the stage-4 boundary"
+import json, sys
+p = json.load(open(sys.argv[1]))["permissions"]
+allow, ask = set(p["allow"]), set(p["ask"])
+must_ask = {"Bash(git add:*)", "Bash(git commit:*)", "Bash(git checkout:*)",
+            "Bash(git restore:*)", "Bash(git stash:*)",
+            "Bash(bash scripts/dev/harness.sh off:*)",
+            "Bash(bash scripts/dev/ledger.sh mark-done:*)"}
+must_allow = {"Bash(bash scripts/dev/task-close.sh:*)", "Bash(bash scripts/dev/review.sh:*)",
+              "Bash(bash scripts/dev/ledger.sh start:*)",
+              "Bash(bash scripts/dev/harness.sh status:*)"}
+never_allow = {"Bash(bash scripts/dev/harness.sh:*)", "Bash(bash scripts/dev/ledger.sh:*)",
+               "Bash(git push:*)", "Bash(gh:*)"}
+sys.exit(0 if must_ask <= ask and must_allow <= allow and not (never_allow & allow) else 1)
+PY
+
 # ══ the real repo: the marker must never be committable ═══════════════════════
 echo "── repo wiring ──"
 

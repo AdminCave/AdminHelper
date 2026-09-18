@@ -85,8 +85,10 @@ Komponente: scripts · Dateien: scripts/dev/runner-setup.sh (neu, SPDX), scripts
 Verify: bash scripts/dev/runner-setup.sh --dry-run   und   bash scripts/tests/run.sh unit --strict --only scripts
 Doku: DEVELOPMENT.md (T12)
 
-### T9 — Build-Skill und Kevins Settings auf task-close.sh  [ ]
-Komponente: .claude · Dateien: .claude/skills/feature-build/SKILL.md, .claude/settings.json, AUTONOMOUS.md
+### T9 — Build-Skill und Kevins Settings auf task-close.sh  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/settings.json, AUTONOMOUS.md, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @3a098b5f 2026-09-18T16:10:26+02:00
+Review: approve nach Runde 1 (opus); 4 wichtig + nits behoben
 Änderung: Schritt 5 des Build-Skills: nicht mehr `git commit`, sondern `bash scripts/dev/ledger.sh start …` zu Beginn der Task und `bash scripts/dev/task-close.sh <ledger> <id> -m "<msg>"` am Ende (nach dem In-Session-Review; `--review none --review-note "approve (sonnet)"`); die Exit-Codes 3/4 als Anweisung („Punkte beheben, erneut"). `.claude/settings.json`: `git add|commit|checkout|stash|restore` von `allow` nach `ask`, `Bash(bash scripts/dev/task-close.sh:*)`, `Bash(bash scripts/dev/ledger.sh:*)`, `Bash(bash scripts/dev/review.sh:*)`, `Bash(bash scripts/dev/harness.sh:*)` nach `allow`. AUTONOMOUS.md: Zyklus-Tabelle und Permissions-Absatz.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts   (session_status_test liest settings.json) und   python3 -c 'import json; json.load(open(".claude/settings.json")); print("ok")'
 Doku: AUTONOMOUS.md · CLAUDE.md §2 (T12)
@@ -118,3 +120,38 @@ Abhängt von: T9
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; `hooks_test`, `ledger_test`, `review_scripts_test`, `task_close_test`, `runner_setup_test` im Scripts-Block.
 - Der erste Commit **dieses** Branches, der nach T5 entsteht, läuft bereits über `task-close.sh` (Beweis im PR-Body: `git log --stat` zeigt Code + Ledger je Task).
 - Ledger-Status nach dem Merge: `blockiert`, bis Kevins T11-Anhang `0 FAIL` zeigt; dann `erledigt`.
+
+## Anhang — Kevins Handgriffe (T11)
+
+Alles hier braucht `sudo` oder einen Browser; der Bau kann es nicht tun. Erst wenn (5)
+`0 FAIL` zeigt, ist Stufe 4 abgeschlossen — bis dahin steht der Ledger auf `blockiert`,
+auch wenn der PR gemergt ist.
+
+- [ ] **(1) Runner anlegen.** `sudo bash scripts/dev/runner-setup.sh --dry-run` lesen, dann
+      `sudo bash scripts/dev/runner-setup.sh`. Idempotent: ein zweiter Lauf lässt gefüllte
+      Token-Dateien in Ruhe. Rückweg: `sudo bash scripts/dev/runner-setup.sh --remove --yes`.
+- [ ] **(2) Abo-Token.** `sudo -u adminhelper-runner claude setup-token`, den Token als
+      `CLAUDE_CODE_OAUTH_TOKEN=…` in `~adminhelper-runner/.config/adminhelper/oauth.env`
+      (bleibt `0600`). Kein API-Key: `ANTHROPIC_API_KEY` hätte Vorrang und würde über ein
+      API-Konto abrechnen (Roadmap D18).
+- [ ] **(3) Proxmox-Token.** `pveum user token add adminhelper-runner@pve run --privsep 1`
+      plus die vier ACL-Pfade der Rolle `AdminHelperVM`; Werte als `AH_PVE_URL`, `AH_PVE_NODE`,
+      `AH_PVE_TOKEN` (und was sonst nötig ist) in `~adminhelper-runner/.config/adminhelper/pve.env`.
+      Probe: `sudo -u adminhelper-runner bash -c '. /srv/ah/repo/scripts/dev/runner-env.sh && python3 /srv/ah/repo/scripts/vm/vm.py doctor --roles probe'`.
+- [ ] **(4) GitHub-Ruleset auf `main`.** PR-Pflicht, Status-Check `CI`, kein Force-Push, kein
+      Bypass-Akteur (auch nicht für dich). Ab dann wird ein Release über einen Release-Branch
+      geschnitten, nicht an der Regel vorbei.
+- [ ] **(5) Red Team.**
+      `sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh`
+      — Ausgabe hierher kopieren:
+
+```
+(noch nicht gelaufen)
+```
+
+**Restrisiken, die die Proben nicht schließen** (aus den Reviews, bewusst offen):
+`Edit(./scripts/**)` plus ein erlaubter Test-Start heißt: wer eine Testdatei ändert und
+sie startet, führt eigenen Code aus; und ein `[x]` kann der Runner in ein Ledger schreiben,
+nur committen kann er es nicht. Die tragende Grenze ist deshalb die OS-Ebene (kein
+`~/.ssh`, kein `gh`, `pushurl=/dev/null`, eigene DB, eigener Pool-Token), nicht die
+Regel-Liste — so steht es auch in `DEVELOPMENT.md`.

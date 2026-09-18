@@ -37,6 +37,11 @@ nie automatisch gebaut.
   Iteration lesen, laufend aktualisieren.
 
 ## Pro Iteration (nächste ~1–8 offene Einträge, in Ledger-Reihenfolge)
+0. **Task anmelden:** `bash scripts/dev/ledger.sh start <ledger> <id>` — schreibt Ledger, ID,
+   Komponente und `Dateien:` nach `.vm/active-task` (Anzeige und Preflight). Geprüft wird
+   später die `Dateien:`-Zeile **der Task im Ledger**: braucht die Task eine Datei, die nicht
+   drinsteht, wird die Liste sichtbar erweitert (`ledger.sh set-files`), nicht der Scope
+   gelockert.
 1. Eintrag lesen; die zugehörige Stelle in Spec/Report + **echten Code + Kontext**
    (Aufrufer, Tests, Config) lesen. Zeilennummern können durch frühere Tasks verschoben
    sein → an **Symbol/Titel** orientieren, nicht blind an der Zeile.
@@ -50,9 +55,11 @@ nie automatisch gebaut.
      DE+EN, ggf. `README.md`/`CHANGELOG.md`). **Bugfixes, Kleinkram und internes Refactoring
      brauchen keine Doku — nicht künstlich erzeugen.** Das `Doku:`-Feld der Task ist die
      Vorgabe; weicht die Realität ab, kurz begründen.
-   - **Schon erledigt / hinfällig / Falsch-Positiv** → Code NICHT anfassen, `[~]` + ein Satz.
-   - **Braucht Entscheidung / destruktiv / mehrdeutig** → NICHT raten, `[?]` + kurze Frage,
-     überspringen (das ist ein legitimes Ergebnis, kein Versagen).
+   - **Schon erledigt / hinfällig / Falsch-Positiv** → Code NICHT anfassen,
+     `bash scripts/dev/ledger.sh mark-skip <ledger> <id> "<ein Satz>"`.
+   - **Braucht Entscheidung / destruktiv / mehrdeutig** → NICHT raten:
+     `bash scripts/dev/ledger.sh mark-question <ledger> <id> "<frage>"`, überspringen
+     (das ist ein legitimes Ergebnis, kein Versagen).
 3. **Testen in zwei Ebenen: gezielt pro Task, voll vor dem Commit.** Befehle in Flag-Form,
    weil eine Allow-Regel nie über ein Env-Präfix matcht:
    - **Pro Task nur das `Verify:` des Eintrags, mit gezielten Args** —
@@ -79,10 +86,11 @@ nie automatisch gebaut.
      ist die alte Kette grün geworden, ohne dass etwas lief.
    - Bei `Fast-Suite: vm`: dieselben Checks remote über `scripts/vm/iter.sh` (s. „Vor
      dem Start"), nicht lokal.
-   - **Grün** → Eintrag `[x]` (+ 1 Stichwort was geändert).
+   - **Grün** → weiter zum Review. Den Haken setzt **nicht mehr die Session**, sondern
+     `task-close.sh` in Schritt 5 — zusammen mit der Summary-Zeile, die ihn trägt.
    - **Rot durch deine Änderung** → fixen; nicht in ~2 Versuchen lösbar →
      `git restore --source=HEAD --staged --worktree -- <datei>` (Änderung zurücknehmen),
-     `[~] (verworfen: Test rot: <kurz>)`, weiter. Diese Rücknahme passiert **im**
+     `ledger.sh mark-skip <ledger> <id> "verworfen: Test rot: <kurz>"`, weiter. Diese Rücknahme passiert **im**
      Builder-Tree — Verwerfen ist hier der Zweck. Eine *Revert-Probe* dagegen
      (einen fertigen Fix testweise entfernen, um den Test rot zu sehen) läuft nie
      hier, sondern in einem eigenen Worktree: sonst löscht sie ungestagte Arbeit
@@ -106,22 +114,51 @@ nie automatisch gebaut.
    - **Zeitbudget 10 Minuten.** Liegt nach ~10 Minuten kein Urteil vor: den Agent stoppen
      (`TaskStop`) und **einmal** einen frischen mit engerem Prompt starten (nur die geänderten
      Dateien und die Kriterien 1–4 nennen). Bleibt auch der ohne Urteil → selbst gegen dieselben
-     Kriterien reviewen, committen und im Ledger kennzeichnen:
-     `[x] (Review: selbst — Sub-Agent ohne Urteil)`.
+     Kriterien reviewen und mit dem Urteil schließen:
+     `bash scripts/dev/task-close.sh <ledger> <id> --review-note "selbst — Sub-Agent ohne Urteil" -m "…"`.
    Urteil:
    - `approve` → weiter zum Commit.
    - `request_changes` mit `blocker`/`wichtig` → Punkte beheben, betroffene Schnelltests
-     erneut, **einmal** re-reviewen. Danach gelöst → Commit; braucht Entscheidung → `[?]` in
-     den Ledger (nicht raten). Max. 2 Runden, dann Commit des Sauberen oder STOPP.
+     erneut, **einmal** re-reviewen. Danach gelöst → schließen; braucht Entscheidung →
+     `bash scripts/dev/ledger.sh mark-question <ledger> <id> "<frage>"` (nicht raten).
+     Max. 2 Runden, dann Commit des Sauberen oder STOPP.
    - `nit`-Punkte optional miterledigen, nie blockierend.
    (Review-Granularität = Commit-Granularität. Ein **Kurz-Ledger** (≤ 3 Tasks) trägt im Kopf
    `Review: am Ende` — dann entfällt dieser Schritt pro Task und es gibt genau **einen**
    Gesamt-Review im Abschluss.)
-5. **Committen** nach Granularität: *pro Task* → nach jeder grünen, reviewten Task ein
-   `feat|fix|refactor(...): …`; *pro Komponente* → wenn alle Einträge **einer Komponente**
-   innerhalb des Abschnitts grün+reviewt sind (Default für Report-Backlogs — hält Commits/
-   Reviews klein); *pro Abschnitt* → wenn ein ganzer `##`-Abschnitt komplett und grün+reviewt
-   ist. **Nie einen roten oder ungereviewten Stand committen.** Commit-Body: Task-IDs + Stichwort.
+5. **Schließen — nicht mehr `git commit`, sondern `task-close.sh`.** Es fährt das `Verify:`
+   der Task selbst noch einmal, prüft Diff-Scan, Scope und Sec-Sperre, setzt den Haken mit
+   der Summary-Zeile dieses Laufs als Evidenz und committet Code **und** Ledger in einem
+   Commit — außerhalb dieser Session, damit keine der drei Behauptungen („grün", „fertig",
+   „committet") von der Session selbst stammt:
+   ```bash
+   bash scripts/dev/task-close.sh <ledger> <id> --review-note "approve (sonnet)" -m "<msg>"
+   ```
+   `git add`, `git commit`, `git checkout`, `git restore` und `git stash` prompten seit
+   Stufe 4 (Kevins `settings.json`) — das ist Absicht, nicht ein fehlendes Recht; auch der
+   Rot-Pfad oben (`git restore …`) fragt also einmal nach.
+   **Die Exit-Codes sind Anweisungen, keine Meldungen:**
+   - **0** — committet, weiter zur nächsten Task.
+   - **2** — nicht (voll) gestagt, unbekannte Task, kaputte Eingabe: die genannten Dateien
+     stagen (`git add -- <pfade>`) und erneut schließen.
+   - **3** — die Suite ist rot, oder der Diff-Scan hat einen stummgeschalteten Test gefunden
+     (`|| true`, `set +e`, `skip`, gelöschte Assertion): beheben, erneut schließen. Ist die <!-- review: ok Musterliste in der Anleitung -->
+     Zeile bewusst so, trägt sie `# review: ok <grund>`.
+   - **4** — blockiert: ein Pfad außerhalb der Task (`ledger.sh set-files` oder Datei aus dem
+     Commit nehmen) oder etwas, das nie in dieses öffentliche Repo darf.
+   - **74** — Infrastruktur: die Suite konnte gar nicht laufen → **STOPP** und berichten. Zwei
+     Sonderfälle sind kein Stopp: eine Task **ohne `Komponente:`** (Handarbeit, z. B. „Kevins
+     Handgriffe") wird gar nicht über `task-close.sh` geschlossen — offen lassen und im
+     Abschluss berichten; und ein gescheitertes `git commit` (Recovery unten: einfach erneut
+     schließen, der Aufruf ist wiederholbar).
+
+   **Granularität:** `task-close.sh` schließt **eine** Task und macht **einen** Commit. Damit
+   wandert auch der Review auf **pro Task** — ein Commit, der vor seinem Review fällt, ist
+   genau das, was Schritt 4 verhindern soll; `Commit-Granularität: pro Komponente|pro
+   Abschnitt` in einem älteren Ledger ist ab Stufe 4 gegenstandslos. Einzige Ausnahme bleibt
+   das **Kurz-Ledger** (`Review: am Ende`, ≤ 3 Tasks): dort fallen die Commits bewusst vor dem
+   einen Gesamt-Review über den Branch-Diff. **Nie einen roten Stand committen.**
+   Commit-Body: Task-IDs + Stichwort.
 
 ## Abschluss (kein `[ ]` mehr offen)
 1. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit); bei
@@ -163,6 +200,8 @@ nie automatisch gebaut.
 
 ## Recovery
 - Granulare Commits ⇒ ein Fehlgriff = `git revert <commit>`, keine Handarbeit.
+- `task-close.sh` ist wiederholbar: bricht es nach dem Haken ab (etwa weil `git commit`
+  scheitert), setzt ein zweiter Lauf dieselbe Zeile neu und stapelt nichts.
 - Der Loop begräbt nie einen roten Stand: **grün + committen**, ODER **zurücknehmen + `[~]`**,
   ODER **STOPP**. Kein vierter Weg.
 
