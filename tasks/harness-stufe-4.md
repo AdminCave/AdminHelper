@@ -24,12 +24,15 @@ Review: approve (opus)
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
 
-### T2 — PreToolUse-Hook harness-guard.sh  [ ]
+### T2 — PreToolUse-Hook harness-guard.sh  [x] (PreToolUse-Guard, Token-Parser, registriert)
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh (neu, SPDX), .claude/settings.json, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @409ee11a 2026-09-18T14:37:58+02:00 (hooks_test: 78 passed)
+Review: approve nach 2 Runden (opus); W1-W3 + N2-N6 behoben
 Änderung: Hook liest das PreToolUse-JSON von stdin (`tool_name`, `tool_input.file_path` bzw. `tool_input.command`). Edit/Write/MultiEdit auf einen Pfad aus `harness-paths.txt` (Globs via `case`/`fnmatch`, relativ zum Projekt) ⇒ unter `AH_AUTONOMOUS=1` ohne Marker `.vm/harness.off`: JSON `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"harness path: <pfad>"}}`; sonst Warnung auf stderr, Exit 0. Bash-Kommandos: best effort — `sed -i`, `tee`, `>`/`>>`-Umleitung, `cp`/`mv` mit Ziel auf einem Harness-Pfad ⇒ gleiche Entscheidung. Registrierung in `.claude/settings.json` unter `hooks.PreToolUse` mit `matcher: "Edit|Write|MultiEdit|Bash"`. Tests: deny/warn je Modus, Marker, Bash-Muster, Nicht-Harness-Pfad ⇒ kein Output.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: keine (T12)
 Abhängt von: T1
+Offen (Review-Nit, Kevins Entscheidung): die stderr-Warnung des Hooks ist bei Exit 0 faktisch unsichtbar (Claude Code zeigt stderr nur mit `--debug`); im autonomen Lauf greift der Deny, interaktiv ist der Hook damit stumm. Alternative wäre `permissionDecision: "ask"` oder ein `systemMessage`-Feld — beides ändert Kevins Alltag und stand nicht im Auftrag.
 
 ## B — Ledger- und Close-Mechanik
 
