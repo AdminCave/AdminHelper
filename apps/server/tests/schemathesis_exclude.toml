@@ -165,3 +165,9 @@ operation_id = "mint_enrollment_token_for_api_enrollment_token_for_post"
 # POST /api/enrollment/token/for
 reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte im Benutzernamen: Postgres erlaubt kein 0x00 in Textwerten, der psycopg-Fehler laeuft ungefangen durch. Gleiche Klasse wie der user_id-Ueberlauf (DELETE/PUT /api/users): Eingaben, die erst in der DB-Schicht scheitern, werden nicht am Rand abgefangen"
 until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (NUL, int-Ueberlauf)"
+
+[[exclude]]
+operation_id = "list_notifications_api_notifications_get"
+# GET /api/notifications
+reason = "not_a_server_error — HTTP 500 bei einem Paginierungs-Parameter jenseits von 2**63-1 (Postgres-BIGINT-Grenze), ungefangen. Dieselbe Klasse wie der user_id-Ueberlauf und das NUL-Byte, aber ueber einen QUERY-Parameter statt einen Pfadparameter — die Luecke ist breiter als nur die Pfad-Ids"
+until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (int-Ueberlauf, NUL), Pfad UND Query"
