@@ -39,7 +39,11 @@
       "Edit(//srv/ah/**/scripts/tests/run.sh)",
       "Edit(//srv/ah/**/scripts/tests/heavy.sh)",
       "Edit(//srv/ah/**/scripts/vm/vm.py)",
-      "Edit(//srv/ah/**/tasks/private/**)"
+      "Edit(//srv/ah/**/tasks/private/**)",
+      "Edit(./scripts/vm/**)",
+      "Edit(./scripts/tests/multibox.sh)",
+      "Edit(//srv/ah/**/scripts/vm/**)",
+      "Edit(//srv/ah/**/scripts/tests/multibox.sh)"
     ],
     "allow": [
       "Bash(bash scripts/dev/verify.sh:*)",

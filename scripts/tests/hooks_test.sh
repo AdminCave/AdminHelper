@@ -129,7 +129,9 @@ done
 # that rewrites a test and then makes the gate agree with it proves nothing.
 for want in 'CLAUDE.md' '.claude/**' 'scripts/tests/run.sh' 'scripts/vm/vm.py' \
             'scripts/dev/runner-redteam.sh' 'scripts/tests/hooks_test.sh' \
-            'scripts/tests/task_close_test.sh' 'scripts/tests/review_scripts_test.sh'; do
+            'scripts/tests/task_close_test.sh' 'scripts/tests/review_scripts_test.sh' \
+            'scripts/vm/warm.sh' 'scripts/vm/iter.sh' 'scripts/vm/reap.sh' 'scripts/vm/lib.sh' \
+            'scripts/vm/bake.sh' 'scripts/tests/multibox.sh'; do
   grep -qxF "$want" "$PATHS" && ok "listed: $want" || bad "missing from harness-paths.txt: $want"
 done
 
@@ -379,12 +381,16 @@ runner_env() {
   ERR=$(HOME="$1" TMPDIR="$WORK" ANTHROPIC_API_KEY=leftover ANTHROPIC_AUTH_TOKEN=leftover \
     CLAUDE_CODE_OAUTH_TOKEN=leftover-oauth AH_PVE_TOKEN=leftover-pve AH_PVE_URL=leftover-url \
     AH_VM_MAX=99 GITHUB_TOKEN=leftover-gh GH_CONFIG_DIR="${OUTER_GH:-}" \
+    SSH_AUTH_SOCK=/tmp/leftover.sock DATABASE_URL=postgresql://foreign/db \
+    PGPASSWORD=leftover-pg AWS_ACCESS_KEY_ID=leftover-aws \
+    PGPORT=6543 PGSSLMODE=disable \
     bash -c '
       . "$1"; rc=$?
       { echo "RC=$rc"
         for v in AH_AUTONOMOUS AH_VM_MAX CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
                  ANTHROPIC_AUTH_TOKEN GH_TOKEN GITHUB_TOKEN GH_CONFIG_DIR AH_TEST_DB \
-                 AH_PVE_URL AH_PVE_NODE AH_PVE_TOKEN; do
+                 AH_PVE_URL AH_PVE_NODE AH_PVE_TOKEN SSH_AUTH_SOCK DATABASE_URL \
+                 PGPASSWORD AWS_ACCESS_KEY_ID PGPORT PGSSLMODE; do
           eval "echo \"$v=\${$v-<unset>}\""
         done; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
   OUT=$(cat "$WORK/env.out")
@@ -428,6 +434,18 @@ OUTER_GH="$FAKE_GH" runner_env "$H"
   && ok "an inherited AH_PVE_TOKEN is gone, not merely overwritten" || bad "AH_PVE_TOKEN survived"
 [ "$(val CLAUDE_CODE_OAUTH_TOKEN)" != "leftover-oauth" ] \
   && ok "an inherited CLAUDE_CODE_OAUTH_TOKEN never survives" || bad "the foreign oauth token survived"
+# Somebody else's access in its other shapes. DATABASE_URL is the sharp one:
+# run.sh prefers it over AH_TEST_DB and the server suite drops tables on it.
+[ "$(val DATABASE_URL)" = "<unset>" ] \
+  && ok "an inherited DATABASE_URL is gone (the server suite would DROP on it)" || bad "DATABASE_URL survived"
+[ "$(val SSH_AUTH_SOCK)" = "<unset>" ] \
+  && ok "an inherited ssh agent socket is gone (a key without a key file)" || bad "SSH_AUTH_SOCK survived"
+[ "$(val PGPASSWORD)" = "<unset>" ] && [ "$(val AWS_ACCESS_KEY_ID)" = "<unset>" ] \
+  && ok "PG* and AWS_* are gone too" || bad "PG/AWS credentials survived"
+# PG* means PG*, not a hand-written list: PGPORT and PGSSLMODE redirect a
+# connection just as well as PGHOST does.
+[ "$(val PGPORT)" = "<unset>" ] && [ "$(val PGSSLMODE)" = "<unset>" ] \
+  && ok "and the PG variables nobody thought of (PGPORT, PGSSLMODE) as well" || bad "a PG* variable survived"
 
 # A token file the group can read is a finding, not a detail.
 H=$(mk_home perm); chmod 644 "$H/.config/adminhelper/oauth.env"
@@ -479,6 +497,13 @@ runner_env "$H"
   && ok "a missing pve.env is not an error (no VM needed for the scripts suites), and leaves no AH_PVE_*" \
   || bad "missing pve.env: rc=$(val RC) url=$(val AH_PVE_URL)"
 
+# The file is SOURCED, and a caller usually ignores the return code — so even a
+# run that gives up early must not leave inherited access standing.
+H=$(mk_home earlyfail); rm -f "$H/.config/adminhelper/oauth.env"
+runner_env "$H"
+[ "$(val RC)" != 0 ] && [ "$(val DATABASE_URL)" = "<unset>" ] && [ "$(val ANTHROPIC_API_KEY)" = "<unset>" ] \
+  && ok "an aborted run still leaves no inherited credential behind" || bad "abort kept credentials"
+
 # ══ runner-settings.json — the runner's permission boundary ══════════════════
 echo "── runner-settings.json ──"
 
@@ -503,7 +528,8 @@ for rule in 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git push:*)' 'Bash(git 
             'Bash(git switch:*)' 'Bash(git revert:*)' 'Bash(git branch:*)' \
             'Bash(bash scripts/tests/heavy.sh:*)' 'Bash(bash scripts/tests/multibox.sh:*)' \
             'Edit(~/.claude/**)' 'Edit(//srv/ah/**/CLAUDE.md)' 'Edit(//srv/ah/**/.claude/**)' \
-            'Edit(//srv/ah/**/scripts/dev/**)'; do
+            'Edit(//srv/ah/**/scripts/dev/**)' 'Edit(./scripts/vm/**)' \
+            'Edit(./scripts/tests/multibox.sh)'; do
   python3 -c 'import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))["permissions"]["deny"] else 1)' "$RS" "$rule" \
     && ok "deny: $rule" || bad "missing deny rule: $rule"
 done

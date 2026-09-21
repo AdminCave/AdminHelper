@@ -17,6 +17,11 @@
 #   GH_CONFIG_DIR=…     somehow reachable finds no login instead of inheriting
 #                       one. Both names, because gh reads GH_TOKEN and falls
 #                       through to GITHUB_TOKEN.
+#   SSH_AUTH_SOCK       unset, with DATABASE_URL, PG*, AWS_*: an agent socket is
+#   DATABASE_URL        a key without a key file, and an inherited DATABASE_URL
+#   PG*, AWS_*          wins over this user's AH_TEST_DB in run.sh — the server
+#                       suite would then create and DROP tables in a database
+#                       that belongs to somebody else.
 #   ANTHROPIC_API_KEY   unset, with ANTHROPIC_AUTH_TOKEN: both take PRECEDENCE
 #                       over CLAUDE_CODE_OAUTH_TOKEN, and everything here runs on
 #                       the subscription token (roadmap D18), never on an API key.
@@ -49,7 +54,23 @@ ah_runner_env() {
   # shellcheck disable=SC1090  # per-host file, gitignored by design
   [ -f "$devenv" ] && . "$devenv"
 
+  # The unsets come FIRST, before anything that can fail: this file is sourced,
+  # a caller usually ignores its return code, and an early `return 1` used to
+  # leave an inherited API key standing.
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
+  unset "${!AH_PVE_@}"
+  # Somebody else's access, in the four shapes this box can hand over:
+  #   SSH_AUTH_SOCK  an agent socket is a usable key without a key file
+  #   DATABASE_URL   run.sh prefers it over AH_TEST_DB, and the server suite
+  #                  runs create_all/drop_all on whatever it names — an inherited
+  #                  value would drop tables in somebody else's database
+  #   PG*            the same for psql/alembic
+  #   AWS_*          no cloud credential has business in this shell
+  unset SSH_AUTH_SOCK SSH_AGENT_PID DATABASE_URL
+  unset "${!PG@}" "${!AWS_@}"
   export GH_TOKEN="" GITHUB_TOKEN="" GH_ENTERPRISE_TOKEN="" GITHUB_ENTERPRISE_TOKEN=""
+  export AH_AUTONOMOUS=1
+  export AH_VM_MAX=8
   # Always a fresh directory, never an inherited one: a GH_CONFIG_DIR that
   # happens to point at somebody's real gh config would pass an "is it a
   # directory" test and hand this user a working login — the exact opposite of
@@ -57,10 +78,6 @@ ah_runner_env() {
   GH_CONFIG_DIR="$(mktemp -d)" \
     || { echo "runner-env: mktemp failed — gh would fall back to ~/.config/gh" >&2; return 1; }
   export GH_CONFIG_DIR
-  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
-  unset "${!AH_PVE_@}"
-  export AH_AUTONOMOUS=1
-  export AH_VM_MAX=8
 
   ah_secure_file() {  # ah_secure_file <path> -> 0 if it is a regular 0600 file of ours
     local f="$1" p

@@ -29,7 +29,15 @@ scripts/dev/tree-hash.sh
 scripts/dev/verify.sh
 scripts/tests/run.sh
 scripts/tests/heavy.sh
+scripts/tests/multibox.sh
 scripts/vm/vm.py
+# The wrappers run vm.py with the hypervisor token, and the runner is allowed to
+# START them: editing one is arbitrary code execution with that token.
+scripts/vm/lib.sh
+scripts/vm/warm.sh
+scripts/vm/iter.sh
+scripts/vm/reap.sh
+scripts/vm/bake.sh
 
 # The tests OF the gates: a run that rewrites a gate's test and then makes the
 # gate agree with it produces a green that proves nothing.

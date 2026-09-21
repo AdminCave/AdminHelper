@@ -162,8 +162,10 @@ Review: approve nach 2 Runden (sonnet); Klon-Pfad nachgezogen
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kopfkommentar)
 
-### T18 — Runner-Grenze: geerbte Variablen, Reihenfolge, VM-Wrapper  [ ]
+### T18 — Runner-Grenze: geerbte Variablen, Reihenfolge, VM-Wrapper  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/dev/runner-settings.json, scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @c86643e8 2026-09-21T12:33:54+02:00
+Review: approve nach 2 Runden (sonnet); PG*-Wildcard und Testabdeckung nachgezogen
 Änderung: Aus dem PR-Review, alles selbst reproduziert: (1) `runner-env.sh` leert `ANTHROPIC_*`, `CLAUDE_CODE_OAUTH_TOKEN`, `AH_PVE_*` und die gh-Token — aber nicht `SSH_AUTH_SOCK`, `DATABASE_URL`, `PGPASSWORD`, `AWS_*`. `DATABASE_URL` ist der schädliche Fall: `run.sh` nimmt `${DATABASE_URL:-${AH_TEST_DB:-}}`, der geerbte Wert gewinnt also über die Runner-DB, und `apps/server/tests/conftest.py` fährt darauf `create_all`/`drop_all` — ein Drop auf einer fremden Datenbank. (2) Scheitert `mktemp -d`, kehrt die Funktion **vor** den `unset`-Zeilen zurück, ein geerbter API-Key überlebt. (3) `Edit(./scripts/**)` plus die erlaubten `scripts/vm/warm.sh|iter.sh|reap.sh` sind beliebige Code-Ausführung mit dem Proxmox-Token: die Wrapper und `lib.sh` gehören auf die Harness-Pfade und in den Edit-Deny. Doku: die Behauptung „jede geerbte Credential" wird präzise.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Runner-Abschnitt)

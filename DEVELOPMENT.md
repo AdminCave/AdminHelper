@@ -376,10 +376,15 @@ Beide Dateien muessen regulaere `0600`-Dateien in einem Verzeichnis sein, in das
 nur der Runner schreiben darf; `scripts/dev/runner-env.sh` (zum **Sourcen**)
 prueft das und gibt sonst einen Fehler zurueck (`return 1`, die Shell lebt weiter).
 `oauth.env` ist Pflicht, `pve.env` optional — ohne Hypervisor-Token laufen die
-Python- und Shell-Suiten trotzdem, nur keine VM. Es leert ausserdem jede geerbte Credential —
-`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein fremdes `CLAUDE_CODE_OAUTH_TOKEN`,
-alle `AH_PVE_*` (`vm.py` laesst die Umgebung ueber seine Konfiguration gewinnen) und
-`GH_TOKEN`/`GITHUB_TOKEN` — und setzt `AH_AUTONOMOUS=1` und `AH_VM_MAX=8`.
+Python- und Shell-Suiten trotzdem, nur keine VM. Es leert ausserdem die geerbten Credentials, die auf dieser Box
+ueberhaupt vorkommen — `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, ein fremdes
+`CLAUDE_CODE_OAUTH_TOKEN`, alle `AH_PVE_*` (`vm.py` laesst die Umgebung ueber seine
+Konfiguration gewinnen), `GH_TOKEN`/`GITHUB_TOKEN`, `SSH_AUTH_SOCK` (ein Agent-Socket ist ein
+Schluessel ohne Schluesseldatei), `DATABASE_URL` sowie **alle** `PG*` und `AWS_*` (als Wildcard, nicht als Handliste — `PGPORT` lenkt eine Verbindung so gut um wie `PGHOST`) — und setzt
+`AH_AUTONOMOUS=1` und `AH_VM_MAX=8`. Die Unsets stehen **vor** allem, was scheitern kann: die
+Datei wird gesourct, ihr Rueckgabewert meist ignoriert. `DATABASE_URL` ist dabei der scharfe
+Fall: `run.sh` bevorzugt sie gegenueber `AH_TEST_DB`, und die Server-Suite legt darauf Tabellen
+an und **loescht sie wieder** — ein geerbter Wert waere ein Drop in einer fremden Datenbank.
 
 **Was die Runner-Settings** (`scripts/dev/runner-settings.json` →
 `~adminhelper-runner/.claude/settings.json`) **verbieten und warum:**
@@ -397,7 +402,10 @@ alle `AH_PVE_*` (`vm.py` laesst die Umgebung ueber seine Konfiguration gewinnen)
 **Was die Regeln nicht koennen** — ehrlich, weil es den Beweis veraendert: der
 Runner darf `Edit(./scripts/**)` (ausser den gesperrten Pfaden) und `bash
 scripts/tests/run.sh quick` — wer eine Testdatei aendert und sie dann startet,
-fuehrt eigenen Code aus. Ebenso kann er ein `[x]` in ein Ledger schreiben
+fuehrt eigenen Code aus. Die gefaehrlichste Form davon ist zu: `scripts/vm/**`
+(die Wrapper laufen mit dem Hypervisor-Token) und `scripts/tests/multibox.sh`
+stehen im Deny **und** auf den Harness-Pfaden; was bleibt, sind die uebrigen
+Test-Dateien, die keinen Token in der Hand haben. Ebenso kann er ein `[x]` in ein Ledger schreiben
 (`Edit(./tasks/**)`), nur committen kann er es nicht. **Die tragende Grenze ist
 deshalb nicht die Regel-Liste, sondern die Betriebssystem-Ebene:** kein
 `~/.ssh`, kein `gh`-Login, leeres `GH_TOKEN`, `remote.origin.pushurl=/dev/null`,
