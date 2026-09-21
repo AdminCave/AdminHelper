@@ -4,186 +4,229 @@
 # im Skript: ein Fund, der hier steht, ist einer, den niemand mehr ansieht. Echte
 # Funde gehoeren als eigene Zeile in die Roadmap, nicht in diese Datei.
 #
-# HERKUNFT: Lauf 2026-09-18 gegen die Lane-eigene DB, AH_SCHEMATHESIS_EXAMPLES=5
-# (die ausgelieferte Zahl, nicht 1), alle fuenf Auth-Kontexte, ohne Ausschluesse:
-# 35 failed / 355 passed ueber 23 Operationen. Klassen: 14x negative_data_rejection,
-# 7x ignored_auth, 4x response_schema_conformance, dazu die 500er unten.
+# HERKUNFT: Laeufe vom 2026-09-18 und 2026-09-21 gegen die Lane-eigene DB, mit der
+# ausgelieferten Beispielzahl (AH_SCHEMATHESIS_EXAMPLES=5) und vier Auth-Kontexten.
+# Jeder Grund hier stammt aus einem Lauf, nicht aus einer Vermutung — eine geborgte
+# Begruendung war schon zweimal ein Review-Blocker.
 #
-# Die Liste ist weit ueber der Ledger-Grenze von fuenf Ausschluessen je Dienst
-# -> Task T3 steht auf [?]. Zwei Hebel wuerden sie kurz machen, beide brauchen
-# Kevins Entscheidung (Details im Ledger):
-#   1. `negative_data_rejection` fuer die Python-Dienste abschalten (14 Treffer)
-#   2. `ignored_auth` fuer die Nicht-JWT-Kontexte per excluded_checks abwaehlen,
-#      statt ganze Operationen zu streichen (7 Treffer) — der Check wertet nur
-#      schema-deklarierte Security-Parameter und ist fuer X-API-Key blind
+# Bis zum 2026-09-21 nahm diese Datei OPERATIONEN aus dem Lauf, nicht Checks. Das
+# war der schwerere Fehler: 17 Eintraege standen nur wegen negative_data_rejection
+# da und haben damit auch not_a_server_error stummgeschaltet — ausgerechnet auf den
+# Schreibrouten. Nach der Umstellung auf Check-Granularitaet kamen 19 Treffer zum
+# Vorschein, darunter zwei bis dahin unbekannte Produktfehler (der Tag-Validator
+# unten, und ForeignKeyViolation auf POST /api/connections).
 #
 #   operation_id  die Id aus dem OpenAPI-Schema (die App setzt auf jeder Route eine)
-#   reason        warum diese Operation heute nicht gefuzzt wird
+#   checks        welche Checks fuer diese Operation abgewaehlt werden. Die Route
+#                 ANTWORTET, ein Check hat an der Antwort etwas auszusetzen. Die Operation
+#                 bleibt im Lauf: alle nicht genannten Checks greifen weiter. Ein
+#                 Ausschluss der GANZEN Operation (kein checks-Feld) nimmt ihr auch
+#                 not_a_server_error — und damit die Klasse Fehler, um die es hier
+#                 am meisten geht.
+#   raises        statt checks: der Aufruf selbst stirbt an einer ungefangenen
+#                 Exception, bevor eine Response entsteht. Dann kann kein Check
+#                 greifen, und nur hier ist ein Ausschluss der GANZEN Operation
+#                 ehrlich — jeder dieser Eintraege ist ein echter Produktfehler.
+#   reason        warum diese Checks hier heute nichts beitragen
 #   until         woran die Wiedervorlage haengt
 
 [[exclude]]
 operation_id = "delete_api_key_api_api_keys__key_id__delete"
+raises = true
 # DELETE /api/api-keys/{key_id}
 reason = "not_a_server_error — key_id ist ein unbegrenzter int, derselbe NumericValueOutOfRange-Pfad wie DELETE/PUT /api/users. Der Treffer erschien im Lauf als Schema-Abweichung, weil der abgebrochene Transaktionszustand das Replay stoerte — die Ursache ist der Ueberlauf. Beleg, dass die Klasse ueber /api/users hinausgeht"
 until = "Roadmap: int-Pfadparameter begrenzen"
+# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (key_id > 2**31)), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
 
 [[exclude]]
 operation_id = "delete_user_api_users__user_id__delete"
+raises = true
 # DELETE /api/users/{user_id}
 reason = "not_a_server_error — HTTP 500: user_id ist ein unbegrenzter int, ab 2**31 laeuft die Postgres-Abfrage in NumericValueOutOfRange, ungefangen. ECHTER PRODUKTFEHLER, unabhaengig reproduziert (2147483647 -> 404, 2147483648 -> 500)"
 until = "Roadmap: int-Pfadparameter begrenzen"
+# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (user_id > 2**31)), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
 
 [[exclude]]
 operation_id = "list_api_keys_api_api_keys_get"
+checks = ["response_schema_conformance"]
 # GET /api/api-keys
 reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
 operation_id = "list_audit_api_audit_get"
+checks = ["negative_data_rejection"]
 # GET /api/audit
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
-
 [[exclude]]
 operation_id = "list_tunnels_api_frp_tunnels_get"
+checks = ["negative_data_rejection"]
 # GET /api/frp/tunnels
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "create_playbook_api_ansible_playbooks_post"
+raises = true
 # POST /api/ansible/playbooks
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
+until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "create_api_key_api_api_keys_post"
+checks = ["response_schema_conformance"]
 # POST /api/api-keys
 reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
 operation_id = "logout_api_auth_logout_post"
+checks = ["ignored_auth", "negative_data_rejection"]
 # POST /api/auth/logout
-reason = "ignored_auth — Route antwortet ohne Token mit 200. Nachgeprueft: sie blacklistet dann nichts, loescht nur das Cookie und schreibt einen Audit-Eintrag. Schema deklariert Auth, Route verlangt keine — Mismatch, kein Loch"
+reason = "zwei Checks, beide gemessen: ignored_auth — die Route antwortet ohne Token mit 200; negative_data_rejection — sie nimmt auch einen schema-widrigen Body an. Beides dieselbe Ursache: die Route verlangt gar nichts. Nachgeprueft: sie blacklistet dann nichts, loescht nur das Cookie und schreibt einen Audit-Eintrag. Schema deklariert Auth, Route verlangt keine — Mismatch, kein Loch"
 until = "Roadmap: Schema und Route in Einklang bringen"
-
 
 [[exclude]]
 operation_id = "import_connections_api_connections_import_post"
+checks = ["response_schema_conformance"]
 # POST /api/connections/import
 reason = "response_schema_conformance — die Route antwortet im Fehlerfall mit einem EIGENEN Body (Felder message + rejected), waehrend das Schema fuer 422 FastAPIs HTTPValidationError mit detail:array deklariert. Echter Vertragsbruch (ein Client, der dem Schema folgt, parst falsch)"
 until = "Roadmap: 422-Vertrag der Import-Route"
 
 [[exclude]]
 operation_id = "mint_self_enrollment_token_api_enrollment_token_post"
+checks = ["negative_data_rejection"]
 # POST /api/enrollment/token
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "create_server_config_api_frp_server_config_post"
+checks = ["negative_data_rejection"]
 # POST /api/frp/server-config
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "create_tunnel_api_frp_tunnels_post"
+raises = true
 # POST /api/frp/tunnels
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
+until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "create_hook_api_hooks_post"
+checks = ["response_schema_conformance"]
 # POST /api/hooks
 reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
 operation_id = "proxy_agent_report_api_monitoring_agent__server_id__report_post"
+raises = true
 # POST /api/monitoring/agent/{server_id}/report
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "Proxy-Route: leitet an den Monitoring-Dienst weiter, ueber einen prozessweiten httpx-Client, den der Lifespan-Shutdown schliesst (main.py: _client.aclose()). Sobald ein Lauf den Lifespan beendet hat, stirbt jeder weitere Aufruf im Transport mit `Cannot send a request, as the client has been closed` — kein Check kommt an eine Antwort. In-process nicht fuzzbar, wie /templates/tag-sync auf der Monitoring-Seite"
+until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
 
 [[exclude]]
 operation_id = "mark_read_api_notifications_read_post"
+checks = ["negative_data_rejection"]
 # POST /api/notifications/read
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "create_server_api_servers_post"
+raises = true
 # POST /api/servers
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
+until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "create_user_api_users_post"
+checks = ["negative_data_rejection"]
 # POST /api/users
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "update_playbook_api_ansible_playbooks__playbook_id__put"
+raises = true
 # PUT /api/ansible/playbooks/{playbook_id}
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
+until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "update_tunnel_api_frp_tunnels__tunnel_id__put"
+raises = true
 # PUT /api/frp/tunnels/{tunnel_id}
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
+until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "update_server_api_servers__server_id__put"
+raises = true
 # PUT /api/servers/{server_id}
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
+until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "update_user_api_users__user_id__put"
+raises = true
 # PUT /api/users/{user_id}
 reason = "not_a_server_error — HTTP 500: user_id ist ein unbegrenzter int, ab 2**31 laeuft die Postgres-Abfrage in NumericValueOutOfRange, ungefangen. ECHTER PRODUKTFEHLER, unabhaengig reproduziert (2147483647 -> 404, 2147483648 -> 500)"
 until = "Roadmap: int-Pfadparameter begrenzen"
-
+# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (user_id > 2**31)), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
 
 [[exclude]]
 operation_id = "mint_enrollment_token_for_api_enrollment_token_for_post"
+raises = true
 # POST /api/enrollment/token/for
 reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte im Benutzernamen: Postgres erlaubt kein 0x00 in Textwerten, der psycopg-Fehler laeuft ungefangen durch. Gleiche Klasse wie der user_id-Ueberlauf (DELETE/PUT /api/users): Eingaben, die erst in der DB-Schicht scheitern, werden nicht am Rand abgefangen"
 until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (NUL, int-Ueberlauf)"
+# Der Aufruf stirbt an einer ungefangenen Exception (NUL-Byte im Benutzernamen), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
 
 [[exclude]]
 operation_id = "list_notifications_api_notifications_get"
+raises = true
 # GET /api/notifications
 reason = "not_a_server_error — HTTP 500 bei einem Paginierungs-Parameter jenseits von 2**63-1 (Postgres-BIGINT-Grenze), ungefangen. Dieselbe Klasse wie der user_id-Ueberlauf und das NUL-Byte, aber ueber einen QUERY-Parameter statt einen Pfadparameter — die Luecke ist breiter als nur die Pfad-Ids"
 until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (int-Ueberlauf, NUL), Pfad UND Query"
-
-
+# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (Paginierung > 2**63)), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
 
 [[exclude]]
 operation_id = "list_hooks_api_hooks_get"
+checks = ["negative_data_rejection"]
 # GET /api/hooks
 reason = "negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
 until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "list_servers_api_servers_get"
+checks = ["negative_data_rejection"]
 # GET /api/servers
 reason = "negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
 until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "get_connections_api_connections_get"
+checks = ["negative_data_rejection"]
 # GET /api/connections
 reason = "negative_data_rejection — der Treffer betrifft die HEADER-Mutation: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen Header ueber die mutierten (prepare_headers) — der Request geht also authentifiziert raus und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Gleiche blinde Stelle wie bei ignored_auth. Einzeln nachgefahren 2026-09-21: `Invalid component: Missing Authorization at header`, sonst nichts"
 until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "create_connection_api_connections_post"
+raises = true
 # POST /api/connections
 reason = "negative_data_rejection — zwei Ursachen in einer Operation, einzeln nachgefahren 2026-09-21: (a) die HEADER-Blindstelle wie bei GET /api/connections, und (b) echt gemessen `in body - trustCert: Incorrect type` — Pydantic v2 koerziert im lax mode einen schema-widrigen Typ auf bool. Nur (b) ist eine Aussage ueber die Route, und auch die ist Framework-Verhalten"
 until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
+# Der Aufruf stirbt an einer ungefangenen Exception (ForeignKeyViolation (server_id ohne Server)), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
