@@ -92,10 +92,39 @@ done
 # its AH_REQUIRED declares mandatory.
 grep -q 'AH_VENV=' <<<"$OUT" && ok "plans: its own AH_VENV, not the shared /tmp one" \
   || bad "the devenv does not set AH_VENV"
-# install -d applies owner and mode to a symlink's TARGET — a refusal, not a chown.
-grep -q 'refusing to chown its target' "$SETUP" \
-  && ok "a directory that is a symlink stops the script (no chown of its target)" \
-  || bad "install -d would follow a symlink"
+# install -d applies owner and mode to a symlink's TARGET — and it follows a
+# symlinked PARENT just as happily, existing directories included. Checked for
+# real against the function itself, not by grepping for a message.
+SYM=$(mktemp -d); mkdir -p "$SYM/real/deep"; ln -s "$SYM/real" "$SYM/link"
+probe_no_symlink() {  # probe_no_symlink <path> -> rc
+  ( set +e   # review: ok the probe must survive a refusal, that is what it measures
+    eval "$(sed -n '/^no_symlink_in()/,/^}/p' "$SETUP")"
+    no_symlink_in "$1" >/dev/null 2>&1 )
+}
+probe_no_symlink "$SYM/real/deep/x" \
+  && ok "a path of real directories passes" || bad "a real path was refused"
+probe_no_symlink "$SYM/link/deep/x" \
+  && bad "a symlinked PARENT was not caught" || ok "a symlinked parent component is refused"
+probe_no_symlink "$SYM/link" \
+  && bad "a symlinked leaf was not caught" || ok "a symlinked leaf is refused"
+probe_no_symlink "relative/path" \
+  && bad "a relative path was accepted" || ok "a relative path is refused"
+# The everyday case: on the first run almost nothing exists yet. A check that
+# stops there would block the setup it is supposed to protect.
+probe_no_symlink "$SYM/real/does/not/exist/yet" \
+  && ok "components that do not exist yet pass (the first run)" || bad "a fresh path was refused"
+probe_no_symlink "$SYM/real/deep/with space/x" \
+  && ok "a path with a space passes" || bad "a path with a space was refused"
+rm -rf "$SYM"
+# Both writers use it — a check only one of them runs is not a check. And the
+# clone path too: the runner owns /srv/ah after the first run, so on every later
+# run root would follow a symlink it put there.
+grep -q 'no_symlink_in "\$1"' "$SETUP" && grep -q 'no_symlink_in "\$path"' "$SETUP" \
+  && ok "safe_dir and write_file both refuse to write through a symlink" \
+  || bad "one of the two writers skips the symlink check"
+grep -q 'no_symlink_in "\$SRV/repo"' "$SETUP" \
+  && ok "the clone path is checked too (the runner owns /srv/ah after the first run)" \
+  || bad "git clone/config/chown run without the symlink check"
 
 # The three things this user must not have.
 grep -q 'no ssh key, no gh, not in a sudo group' <<<"$OUT" \

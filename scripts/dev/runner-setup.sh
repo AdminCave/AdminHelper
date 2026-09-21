@@ -21,8 +21,10 @@
 # holds; from stage 7 (workers in tmux, unattended) it does not. This user has
 #
 #   * no ssh key, no gh, no sudo group, no d-bus session
-#   * a clone at /srv/ah/repo that FETCHES from GitHub and cannot push
-#     (remote.origin.pushurl=/dev/null)
+#   * a clone at /srv/ah/repo whose origin cannot be pushed to
+#     (remote.origin.pushurl=/dev/null). That alone is not the boundary — a push
+#     to an explicit URL would bypass it; what carries is that this user has no
+#     credential anywhere and its settings deny `git push` outright.
 #   * its own Postgres role and test database
 #   * its own subscription token and its own Proxmox token, both 0600 and read
 #     by scripts/dev/runner-env.sh
@@ -97,22 +99,38 @@ as_pg_sql() {  # as_pg_sql <label> <sql>
 as_pg_query() {  # as_pg_query <sql> -> stdout (no secrets in these)
   su - postgres -c "psql -tAc $(printf '%q' "$1")" 2>/dev/null
 }
-# install -d follows a symlink and applies owner and mode to its TARGET: a runner
-# that has been talked into creating `~/.claude -> /etc` would get /etc handed to
-# it on Kevin's next, deliberately idempotent run. So a directory that is a
-# symlink stops this script instead.
+# install -d follows a symlink — the last component AND every parent — and applies
+# owner and mode to whatever it lands on, existing directories included. A runner
+# that has been talked into replacing `~/.config` with a link to somebody else's
+# would get that directory handed to it on Kevin's next, deliberately idempotent
+# run. So every component of a path this script writes to is checked, not just
+# its tail.
+no_symlink_in() {  # no_symlink_in <absolute path> — refuse if any component is a link
+  local p="$1" walk="" part
+  case "$p" in
+    /*) ;;
+    *) echo "runner-setup: refusing a relative path: $p" >&2; exit 1 ;;
+  esac
+  local IFS='/'
+  for part in ${p#/}; do
+    walk="$walk/$part"
+    if [ -L "$walk" ]; then
+      echo "runner-setup: $walk is a symlink — refusing to write through it" >&2
+      echo "  (remove it as root and run again: the runner's own home must be real directories)" >&2
+      exit 1
+    fi
+  done
+}
 safe_dir() {  # safe_dir <path> — create it, but never through a symlink
-  local p="$1"
-  if [ -L "$p" ]; then
-    echo "runner-setup: $p is a symlink — refusing to chown its target" >&2
-    exit 1
-  fi
-  run_sh "install -d -o $RUNNER -g $RUNNER -m 700 $(printf '%q' "$p")"
+  no_symlink_in "$1"
+  run_sh "install -d -o $RUNNER -g $RUNNER -m 700 $(printf '%q' "$1")"
 }
 # A file written from a variable: the content never appears in argv either. The
 # printed plan is redacted, because a plan gets pasted into terminals and PRs.
 write_file() {  # write_file <path> <mode> <content> [redacted-preview]
   local path="$1" mode="$2" content="$3" preview="${4:-$3}"
+  # Same reason as safe_dir: `install` and `>` both follow a symlinked parent.
+  no_symlink_in "$path"
   printf '   $ install -o %s -g %s -m %s /dev/null %s   (content on stdin)\n' \
     "$RUNNER" "$RUNNER" "$mode" "$path"
   printf '%s\n' "$preview" | sed 's/^/       | /'
@@ -187,6 +205,12 @@ case "$ORIGIN" in
   git@*|ssh://*) echo "   WARNING: $ORIGIN is an SSH remote — this user has no key and could not fetch" >&2 ;;
 esac
 step "clone $SRV/repo from $ROOT, fetching from $ORIGIN, unable to push"
+# The runner OWNS $SRV after the first run (chown -R below), so on every later
+# run these paths are attacker-controlled: a $SRV/repo replaced by a symlink
+# would make root's `git -C` write into whatever it points at.
+no_symlink_in "$SRV"
+no_symlink_in "$SRV/repo"
+no_symlink_in "$SRV/lanes"
 run mkdir -p "$SRV" "$SRV/lanes"
 if [ -d "$SRV/repo/.git" ]; then
   note "exists — git clone would be skipped"

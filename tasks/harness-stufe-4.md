@@ -154,6 +154,20 @@ Review: approve (sonnet, enger Zweitlauf nach Timeout des ersten)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (drei Korrekturen)
 
+### T17 — runner-setup: symlink-sichere Pfade unter dem Runner-Home  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @98d188fe 2026-09-21T12:31:06+02:00
+Review: approve nach 2 Runden (sonnet); Klon-Pfad nachgezogen
+Änderung: Aus dem PR-Review (Aufsichts-Session, selbst reproduziert): `safe_dir` prüft nur die LETZTE Pfadkomponente auf `-L`. `install -d` folgt aber symlinkten **Eltern** und setzt `-o/-g/-m` auch auf ein bereits existierendes Ziel — belegt: `ln -s /tmp/target cfg; install -d -m 700 cfg/adminhelper` legt `/tmp/target/adminhelper` an, und `install -d -m 700` auf ein existierendes 775-Verzeichnis setzt es auf 700. Wirkung: der Runner besitzt sein Home, ersetzt `~/.config` durch einen Symlink auf Kevins `~/.config`, und Kevins nächster idempotenter Lauf chownt dessen Inhalt an den Runner. Fix: jede Komponente unterhalb von `$HOME_DIR` auf `-L` prüfen, für `safe_dir` **und** `write_file`. Dazu der Kopf-Satz „cannot push even if it finds a token" (pushurl deckt kein `git push <URL>`; tragend sind fehlende Credentials plus Deny).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Kopfkommentar)
+
+### T18 — Runner-Grenze: geerbte Variablen, Reihenfolge, VM-Wrapper  [ ]
+Komponente: scripts · Dateien: scripts/dev/runner-env.sh, scripts/dev/runner-settings.json, scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Änderung: Aus dem PR-Review, alles selbst reproduziert: (1) `runner-env.sh` leert `ANTHROPIC_*`, `CLAUDE_CODE_OAUTH_TOKEN`, `AH_PVE_*` und die gh-Token — aber nicht `SSH_AUTH_SOCK`, `DATABASE_URL`, `PGPASSWORD`, `AWS_*`. `DATABASE_URL` ist der schädliche Fall: `run.sh` nimmt `${DATABASE_URL:-${AH_TEST_DB:-}}`, der geerbte Wert gewinnt also über die Runner-DB, und `apps/server/tests/conftest.py` fährt darauf `create_all`/`drop_all` — ein Drop auf einer fremden Datenbank. (2) Scheitert `mktemp -d`, kehrt die Funktion **vor** den `unset`-Zeilen zurück, ein geerbter API-Key überlebt. (3) `Edit(./scripts/**)` plus die erlaubten `scripts/vm/warm.sh|iter.sh|reap.sh` sind beliebige Code-Ausführung mit dem Proxmox-Token: die Wrapper und `lib.sh` gehören auf die Harness-Pfade und in den Edit-Deny. Doku: die Behauptung „jede geerbte Credential" wird präzise.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Runner-Abschnitt)
+
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; `hooks_test`, `ledger_test`, `review_scripts_test`, `task_close_test`, `runner_setup_test` im Scripts-Block.
 - Der erste Commit **dieses** Branches, der nach T5 entsteht, läuft bereits über `task-close.sh` (Beweis im PR-Body: `git log --stat` zeigt Code + Ledger je Task).
