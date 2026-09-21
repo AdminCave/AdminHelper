@@ -116,10 +116,15 @@ def auth_headers():
     """A fresh in-memory token store per test, plus the three header shapes.
 
     The TestClient context manager is what builds app.state.issuer — the lifespan
-    creates it, and without entering it here the state would not exist yet
-    (schemathesis starts the lifespan only on its first request). The store is
-    then swapped rather than cleared: no coupling to its internals, and nothing a
-    generated /enroll call writes can leak into the next test.
+    creates it, and without entering it here the state would not exist yet. The
+    store is then swapped rather than cleared: no coupling to its internals, and
+    nothing a generated /enroll call writes leaks into the next test.
+
+    One wrinkle: schemathesis keeps its own lifespan cache, so the very first
+    call in a process runs the lifespan a second time and replaces the objects
+    this fixture just set. Harmless — that path lands on a fresh empty in-memory
+    store as well — but it means the swap below is what holds for every test
+    after the first, not for all of them.
     """
     from fastapi.testclient import TestClient
 
