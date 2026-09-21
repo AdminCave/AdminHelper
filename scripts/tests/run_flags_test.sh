@@ -339,14 +339,16 @@ if command -v python3 >/dev/null 2>&1; then
 fi
 
 # AH_ARGS is what verify.sh forwards `-- <args>` through; it must arrive at the
-# suite and must be a true no-op when empty.
+# suite and must be a true no-op when empty. The `-m "not schemathesis"` in
+# between is the pytest steps' own marker filter — the fuzz suite has its own
+# step with its own example budget and may not be collected twice.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_ARGS="-k lifecycle" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
-grep -q 'ARGV: -m pytest -q -k lifecycle' <<<"$OUT" \
+grep -q 'ARGV: -m pytest -q -m not schemathesis -k lifecycle' <<<"$OUT" \
   && ok "AH_ARGS reaches the suite command" || bad "AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
-grep -q 'ARGV: -m pytest -q$' <<<"$OUT" \
+grep -q 'ARGV: -m pytest -q -m not schemathesis$' <<<"$OUT" \
   && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 
 # Where git cannot answer, run.sh must take the evidence fields from the client
