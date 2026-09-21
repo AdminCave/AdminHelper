@@ -91,8 +91,9 @@ Betroffene Operationen (17): GET/POST `/api/api-keys` · GET/POST `/api/connecti
 | `DELETE`/`PUT /api/users/{user_id}` → **HTTP 500** ab `user_id ≥ 2**31` | unabhängig per TestClient reproduziert: `2147483647 → 404`, `2147483648 → 500`, `2**53 → 500` | `user_id: int` unbegrenzt, Postgres-`INTEGER` läuft in `NumericValueOutOfRange`, ungefangen |
 | `POST /api/enrollment/token/for` → **HTTP 500** bei NUL-Byte im Benutzernamen | `parameters = [{'username_1': '\x00', …}]` im Lauf-Log | Postgres erlaubt kein `0x00` in Textwerten, der psycopg-Fehler läuft ungefangen durch |
 | `POST /api/connections/import` → **Vertragsbruch** | Antwort-Body `message` + `rejected` bei HTTP 422, Schema deklariert dort FastAPIs `HTTPValidationError` mit `detail: array` | ein Client, der dem Schema folgt, parst die Fehlermeldung falsch |
+| `GET /api/notifications` → **HTTP 500** bei einem Paginierungs-Parameter ≥ 2**63 | im Lauf vom 2026-09-21 aufgetaucht | dieselbe Klasse, aber ueber einen **Query**-Parameter statt einen Pfadparameter — die Luecke ist breiter als nur die Pfad-Ids |
 
-**Das ist ein Befund, nicht drei:** Eingaben, die erst in der DB-Schicht scheitern (Integer-Überlauf, NUL-Byte), werden nicht am Rand abgefangen. Solange diese Klasse offen ist, kann jede neue Testreihenfolge ein weiteres Symptom zutage fördern — der zweite 500er tauchte erst auf, als `pytest-randomly` die Reihenfolge änderte. **Roadmap-Zeile: Randvalidierung für DB-feindliche Eingaben.** (Korrektur zur ersten Fassung dieses Ledgers: die vier `response_schema_conformance`-Treffer sind **nicht** R-0043 — alle betroffenen Routen haben ein `response_model`; die Ursache ist bei `connections/import` belegt, bei `api-keys`/`hooks` noch offen und im TOML als solche markiert.)
+**Das ist ein Befund, nicht vier:** Eingaben, die erst in der DB-Schicht scheitern (Integer-Überlauf, NUL-Byte), werden nicht am Rand abgefangen. Solange diese Klasse offen ist, kann jede neue Testreihenfolge ein weiteres Symptom zutage fördern — der zweite 500er tauchte erst auf, als `pytest-randomly` die Reihenfolge änderte, der dritte zwei Tage später bei ganz normaler Weiterarbeit. Pfad-Ids, Textfelder und Paginierungs-Parameter sind betroffen — die Randvalidierung fehlt an allen drei Stellen. **Roadmap-Zeile: Randvalidierung für DB-feindliche Eingaben.** (Korrektur zur ersten Fassung dieses Ledgers: die vier `response_schema_conformance`-Treffer sind **nicht** R-0043 — alle betroffenen Routen haben ein `response_model`; die Ursache ist bei `connections/import` belegt, bei `api-keys`/`hooks` noch offen und im TOML als solche markiert.)
 
 **Zweiter `[?]`-Punkt — Laufzeit:** 78 Operationen × 5 Kontexte × **1** Beispiel = **5:44 min**. Der lokale Default ist 5 Beispiele. Die Spec-Zusage „quick bleibt unter einer Minute" ist mit der vollen Auth-Matrix nicht haltbar: entweder läuft `schemathesis` nur in CI/weekly (nicht im lokalen `quick`), oder die Matrix wird lokal auf einen Kontext gekürzt und die volle Matrix bleibt dem Wochenlauf.
 
@@ -144,28 +145,47 @@ Ergebnis: `7 passed`. Kein Fund — der Guard stimmt für alle generierten v4/v6
 
 ## D — Concurrency und Alembic
 
-### T9 — Postgres-Concurrency für execute_check  [ ]
+### T9 — Postgres-Concurrency für execute_check  [x]
 Komponente: apps/monitoring · Dateien: apps/monitoring/tests/test_check_engine_concurrency.py (neu, SPDX), scripts/tests/run.sh (`test_skip_is_required`-Eintrag)
 Änderung: `DATABASE_URL`-gegattert wie `test_migrations_smoke.py`; eigene Engine, Schema per `Base.metadata.create_all` in einer Wegwerf-DB (`CREATEDB`-Rolle wie beim Server); ein Check mit `fail_count` = 2 und zwei Threads mit `threading.Barrier`, die `execute_check` gleichzeitig mit einem roten Ergebnis ausführen (Checker per `monkeypatch` gestubbt); Erwartung: `fail_count` == 4 und genau **ein** Alert-Dispatch (Dispatcher gestubbt und gezählt). Gegenprobe: `.with_for_update()` entfernen ⇒ rot (Lost Update: 3 oder Doppel-Alert). `run.sh`: unter `--strict` ist der Skip nur ohne `DATABASE_URL` erlaubt.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- tests/test_check_engine_concurrency.py
 Doku: keine (intern)
 Abhängt von: T1
+Ergebnis: `2 passed`, **beide Locks per Mutation belegt** (je im Wegwerf-Worktree, nie im Builder-Tree):
+- `.with_for_update()` aus `check_engine.execute_check` entfernt ⇒ `fail_count is 3, expected 4`
+- `.with_for_update()` aus dem Claim in `alerter.process_alert` entfernt ⇒ `2 notifications sent, expected exactly 1`
 
-### T10 — pytest-alembic für Server und Monitoring  [ ]
+**Korrektur nach dem Review:** Die erste Fassung behauptete, *ein* Test belege beide Locks. Das war falsch, und der Reviewer hat es mit einer eigenen Mutationsprobe widerlegt: Die Verzoegerung sitzt in `execute_check`, also sind die beiden Writer dort bereits serialisiert, wenn sie `process_alert` erreichen — deren Claims ueberlappen nie, und der Test blieb ohne den alerter-Lock gruen. Der zweite Lock hat jetzt seinen eigenen Test, der zwei Dispatches direkt in das Claim-Fenster fuehrt (Verzoegerung in `resolve_notification`, zwischen dem sperrenden SELECT und dem Commit). Das ist auch die realistischere Form: Scheduler und Agent-Push dispatchen aus eigenen Sessions, ohne gemeinsamen Row-Lock davor.
+
+Zwei Dinge, die die Task-Vorlage so nicht vorsah:
+1. **Die Barriere am Start reicht nicht.** Erste Fassung: beide Threads treffen sich vor `execute_check`. Der Mutant **ueberlebte** — bis zur Lock-Stelle liegt genug Arbeit (Query, Checker, Metrik-Schreiben), dass die Threads sich von selbst serialisieren. Die Ueberlappung muss IM kritischen Abschnitt erzwungen werden: `apply_result` ist fuer den Test um 0,5 s verzoegert, damit beide SELECTs offen sind, bevor der erste committet. Ohne diese Zeile beweist der Test nichts — und sah trotzdem gruen aus.
+2. **„Genau ein Alert-Dispatch" misst die falsche Stelle.** Beide Writer *submitten* legitim einen Dispatch; `execute_check` sagt das selbst („a stale read here only costs a no-op task"). At-most-once entsteht erst im Claim unter `FOR UPDATE` in `alerter.process_alert` — der auf SQLite ebenfalls ein No-op ist. Der Test faehrt deshalb den **echten** Dispatch-Pfad und stubbt nur den Kanal-Versand; gezaehlt werden gesendete Benachrichtigungen, nicht Submissions. Damit deckt er zwei Locks ab statt einem.
+
+`run.sh`: Eintrag in `test_skip_is_required` — der Skip ist nur ohne `DATABASE_URL` erlaubt, sonst waere der einzige Test dieses Locks in CI stumm uebersprungen.
+
+### T10 — pytest-alembic für Server und Monitoring  [x]
 Komponente: apps/server, apps/monitoring · Dateien: apps/server/tests/test_alembic_builtin.py (neu, SPDX), apps/server/tests/conftest.py (Fixtures `alembic_config`, `alembic_engine`), apps/monitoring/tests/test_alembic_builtin.py (neu, SPDX), apps/monitoring/tests/conftest.py
 Änderung: Fixtures zeigen auf `alembic.ini`/`script_location` der App und auf eine Wegwerf-DB (Server: `pg_engine`-Mechanik; Monitoring: `DATABASE_URL`-gegattert); die vier eingebauten Tests werden importiert (`from pytest_alembic.tests import test_single_head_revision, test_upgrade, test_model_definitions_match_ddl, test_up_down_consistency`); je ein Seed-Test mit `alembic_runner.migrate_up_before(<rev>)` + `insert_into` + `migrate_up_one` für `f1a2b3c4d5e6_uniq_frp_tunnel_visitor_port` (Server) und `b1a2c3d4e5f6_uniq_template_assignment` (Monitoring) — die bestehenden Smoke-Tests bleiben; doppelte Aussagen werden nicht entfernt (Historie), aber der neue Test ist der, der `insert_into` nutzt.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_alembic_builtin.py   und   bash scripts/dev/verify.sh monitoring --strict -- tests/test_alembic_builtin.py
 Doku: keine (intern)
 Abhängt von: T1
+Ergebnis: **je `5 passed`** (Server und Monitoring, mit gesetztem `DATABASE_URL` gegen die Lane-DB) — die vier eingebauten Tests plus je ein Seed-Test. Ohne `DATABASE_URL` skippen sie; `run.sh` traegt den Skip jetzt in `test_skip_is_required`, damit CI sie nicht stumm ueberspringt.
+
+**Die Fixtures liegen in den Testdateien, nicht in conftest.py** (Abweichung von der Vorlage): `alembic_engine` muss auf eine **leere** Datenbank zeigen, waehrend die vorhandene `pg_engine`-Fixture des Servers alle Tabellen vorab anlegt. Zwei Fixtures dieses Namens in einem Paket waeren eine Falle fuer den Test, der die falsche erwischt.
+
+**Gefundene Falle (kostete zwei Anlaeufe):** Eine Engine zu uebergeben genuegt nicht — `alembic/env.py` liest `app.core.config.DATABASE_URL` zur Ausfuehrungszeit und oeffnet seine EIGENE Verbindung. Ohne Patch dieses Attributs migriert die Kette in die konfigurierte Datenbank, waehrend die Testengine auf eine leere schaut (`NoSuchTableError: servers`). Der Migrations-Smoke dokumentiert genau das, in einem Kommentar, den ich erst nach dem Fehlschlag gelesen habe.
+
+Die Seed-Tests pruefen, was auf einer leeren Tabelle unsichtbar bleibt: bei `f1a2b3c4d5e6` behaelt der **aeltere** Tunnel seinen `visitor_port` (der juengere verliert ihn), bei `b1a2c3d4e5f6` ueberlebt die **lexikografisch kleinere** Assignment-Id — beides Entscheidungen der Daten-Migrationen, und beide Migrationen existieren, weil ihr Fehlschlag den Container in eine Crash-Schleife schickt.
 
 ## E — Doku
 
-### T11 — Doku  [ ]
+### T11 — Doku  [x]
 Komponente: docs · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
 Änderung: DEVELOPMENT.md Absatz „Generatoren" (Schritt `schemathesis`, `AH_SCHEMATHESIS_EXAMPLES`, Ausschlussliste, Hypothesis-Pins und `.hypothesis/`, Concurrency-Gatter); cicd.html DE+EN eine Tabellenzeile im Gate-Abschnitt; CHANGELOG Unreleased/Added.
 Verify: python3 scripts/dev/doc-smoke.py --strict   und   bash scripts/tests/run.sh lint --strict --only scripts
 Doku: alle genannten
 Abhängt von: T2
+Ergebnis: `doc-smoke: documentation matches the tree`. DEVELOPMENT.md bekommt einen eigenen Abschnitt „Generatoren" (Schritt, Beispielzahlen 5/20/100, Ausschlussliste samt Id-Pruefung, `.hypothesis/`, `derandomize`, die Postgres-Gatter); `cicd.html` DE+EN je eine Zeile in der Gate-Tabelle; CHANGELOG unter Unreleased/Added.
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün (mit dem neuen Schritt); `bash scripts/dev/verify.sh all --strict` grün.
