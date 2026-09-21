@@ -32,8 +32,13 @@
 # because Claude Code does not strip it before matching its own rules either.
 #
 # Known gaps, checked and accepted: a file written from inside python/perl or an
-# interactive editor, a path built at runtime (`$VAR/CLAUDE.md`), and
-# `find … -exec sed -i`. The real boundary for the runner is the deny list in its
+# interactive editor, a path built at runtime (`$VAR/CLAUDE.md`),
+# `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), and the
+# three git ways of restoring content over a file — `git apply <patch>`,
+# `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
+# runner the settings cover those (checkout/restore/stash are denied outright,
+# and anything not allowed is denied under dontAsk); in an interactive session
+# they are the reason the deny list exists next to this hook. The real boundary for the runner is the deny list in its
 # settings.json (Edit(./.claude/**) and friends); this hook is the second layer.
 #
 # The WARNING path is nearly silent by design of the hook API: at exit 0 Claude

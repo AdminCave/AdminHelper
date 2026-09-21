@@ -164,30 +164,50 @@ case "$VERB" in
     KOMP="$(sed -n 's/^Komponente:[[:space:]]*\([^·]*\).*/\1/p' <<<"$LINE" | tr -d ' ')"
     # "scripts/dev/x.sh (neu, SPDX), scripts/tests/y.sh" -> the bare paths. The
     # notes in parentheses go FIRST: they carry commas of their own.
-    ALLOW="$(sed -n 's/.*Dateien:[[:space:]]*//p' <<<"$LINE" \
+    DECLARED="$(sed -n 's/.*Dateien:[[:space:]]*//p' <<<"$LINE" \
       | sed 's/([^)]*)//g' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]].*//' | grep -v '^$')"
-    ALLOW="$ALLOW
-$(component_tests "$KOMP" | tr ' ' '\n')
+    # What a task may touch without saying so. Kept apart from DECLARED on
+    # purpose: a harness path passes only through the declared list, never
+    # through this one — `scripts/tests/` as "the component's tests" used to
+    # wave through run.sh and the gates' own test files.
+    IMPLICIT="$(component_tests "$KOMP" | tr ' ' '\n')
 docs/
 CHANGELOG.md
 $LEDGER"
+    ALLOW="$DECLARED
+$IMPLICIT"
+
+    # The harness list, if it is there: these paths change the RULES a run obeys,
+    # so they need naming, not a category. A checkout without the file (another
+    # repo, an old worktree) falls back to the plain scope check rather than
+    # refusing everything — the same fail-open the guard hook uses for it.
+    HARNESS=""
+    [ -f "$ROOT/scripts/dev/harness-paths.txt" ] \
+      && HARNESS="$(grep -v '^[[:space:]]*#' "$ROOT/scripts/dev/harness-paths.txt" | grep -v '^[[:space:]]*$')"
+    matches_any() {  # matches_any <path> <newline-separated patterns>
+      local p="$1" a
+      while IFS= read -r a; do
+        [ -n "$a" ] || continue
+        case "$a" in
+          */) case "$p" in "$a"*) return 0 ;; esac ;;
+          *\**)
+            # shellcheck disable=SC2254  # an entry with * IS a pattern
+            case "$p" in $a) return 0 ;; esac ;;
+          *) [ "$p" = "$a" ] && return 0 ;;
+        esac
+      done <<< "$2"
+      return 1
+    }
 
     FOREIGN=()
     while IFS= read -r p; do
       [ -n "$p" ] || continue
-      hit=0
-      while IFS= read -r a; do
-        [ -n "$a" ] || continue
-        case "$a" in
-          */) case "$p" in "$a"*) hit=1 ;; esac ;;
-          *\**)
-            # shellcheck disable=SC2254  # an entry with * IS a pattern
-            case "$p" in $a) hit=1 ;; esac ;;
-          *) [ "$p" = "$a" ] && hit=1 ;;
-        esac
-        [ "$hit" = 1 ] && break
-      done <<< "$ALLOW"
-      [ "$hit" = 1 ] || FOREIGN+=("$p")
+      # A harness path is in scope only when the task declares it by name.
+      if [ -n "$HARNESS" ] && matches_any "$p" "$HARNESS" && ! matches_any "$p" "$DECLARED"; then
+        FOREIGN+=("$p (harness path — name it in Dateien:)")
+      elif ! matches_any "$p" "$ALLOW"; then
+        FOREIGN+=("$p")
+      fi
     done <<< "$(changed_paths)"
 
     if [ "${#FOREIGN[@]}" -gt 0 ]; then

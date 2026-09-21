@@ -37,6 +37,8 @@ SKELETON=(scripts/dev scripts/tests apps/server/app apps/server/tests docs docs/
 mkskel() { local d; for d in "${SKELETON[@]}"; do mkdir -p "$FIX/$d"; done; }
 mkskel
 cp "$REPO_ROOT/scripts/dev/review.sh" "$REVIEW"
+# The real harness list: scope reads it to decide which paths need naming.
+cp "$REPO_ROOT/scripts/dev/harness-paths.txt" "$FIX/scripts/dev/harness-paths.txt"
 cat > "$FIX/tasks/fix.md" <<'MD'
 # Fixture — Task-Ledger
 Status: aktiv · Branch: feature/fixture
@@ -218,6 +220,29 @@ printf 'echo x\n' > "$FIX/scripts/tests/foreign_test.sh"
 stage scripts/tests/foreign_test.sh
 r scope fix T2 --staged
 [ $rc -eq 3 ] && ok "but not the shell suite of another component" || bad "cross-component: rc=$rc out=$OUT"
+reset_index
+
+# A harness path is never waved through by the component allowance: "the
+# component's tests" used to include scripts/tests/run.sh and the gates' own test
+# files, so a task about something else could carry them along unnoticed.
+reset_index
+printf 'echo x\n' >> "$FIX/scripts/tests/run.sh" 2>/dev/null || printf 'echo x\n' > "$FIX/scripts/tests/run.sh"
+printf 'echo x\n' > "$FIX/scripts/tests/hooks_test.sh"
+stage scripts/tests/run.sh scripts/tests/hooks_test.sh
+r scope fix T1 --staged
+[ $rc -eq 3 ] && grep -q "harness path" <<<"$OUT" \
+  && ok "an undeclared harness path is a finding, even as a 'component test'" \
+  || bad "harness path waved through: rc=$rc out=$OUT"
+# Declared by name, it is in scope again — that is the whole point of naming it.
+python3 - "$FIX/tasks/fix.md" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(s.replace("Dateien: scripts/dev/tool.sh (neu, SPDX), scripts/dev/other.sh",
+                             "Dateien: scripts/dev/tool.sh (neu, SPDX), scripts/dev/other.sh, scripts/tests/run.sh, scripts/tests/hooks_test.sh", 1))
+PY
+r scope fix T1 --staged
+[ $rc -eq 0 ] && ok "declared in Dateien:, the same paths are in scope" || bad "declared harness path: rc=$rc out=$OUT"
 reset_index
 
 # For a component whose tests live NEXT TO the code (Go), the allowance is a

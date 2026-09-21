@@ -307,7 +307,14 @@ Datei erst vom Worker-Preflight der Stufe 7.
 in [`tasks/README.md`](tasks/README.md). Braucht eine Task eine Datei, die nicht in
 ihrem `Dateien:` steht, erweitert `ledger.sh set-files` die Liste **sichtbar**;
 den Scope zu lockern ist nicht vorgesehen. Ohne Eintrag erlaubt sind ohnehin die
-Test-Verzeichnisse der Komponente, `docs/`, `CHANGELOG.md` und der Ledger selbst. Eine Zeile mit `# review: ok <grund>`
+Test-Verzeichnisse der Komponente, `docs/`, `CHANGELOG.md` und der Ledger selbst —
+**ausser** den Dateien aus `scripts/dev/harness-paths.txt`: die muessen benannt werden,
+sonst waere `scripts/tests/run.sh` als „Test der Komponente scripts" eine offene Tuer.
+
+**`--evidence` ist ein Feld, kein Beweis.** `ledger.sh mark-done` nimmt jede Zeichenkette
+entgegen; was die Zeile wahr macht, ist ausschliesslich, dass `task-close.sh` sie aus dem
+Artefakt des Laufs erzeugt, den es selbst gefahren hat. Deshalb steht `mark-done` in Kevins
+Settings unter `ask` und beim Runner im Deny. Eine Zeile mit `# review: ok <grund>`
 nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 
 `git add`, `git commit`, `git checkout`, `git restore` und `git stash` stehen in

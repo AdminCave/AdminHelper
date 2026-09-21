@@ -170,6 +170,14 @@ Review: approve nach 2 Runden (sonnet); PG*-Wildcard und Testabdeckung nachgezog
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Runner-Abschnitt)
 
+### T19 — scope: Harness-Pfade nur noch deklariert, nicht als Komponenten-Test  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/hooks/harness-guard.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 11 skipped @7826007d 2026-09-21T13:55:32+02:00
+Review: approve (sonnet); beide Nits miterledigt
+Änderung: Aus dem PR-Review Teil 2 (selbst reproduziert): `component_tests scripts` erlaubt ganz `scripts/tests/` — darunter `run.sh` und die fünf Harness-Tests, die auf `harness-paths.txt` stehen. Eine Task mit `Dateien: scripts/dev/foo.sh` durfte damit still `run.sh` und `hooks_test.sh` mitcommitten (`scope: clean`, rc 0). Beim Runner fängt das der Edit-Deny ab, in einer interaktiven Bau-Session nicht. Fix: ein Pfad, der auf `harness-paths.txt` steht, ist nur noch erlaubt, wenn die Task ihn in `Dateien:` **deklariert** — die Komponenten-Erlaubnis waescht ihn nicht mehr durch. Dazu zwei Nits: die „Known gaps"-Liste des Wächters nennt `git apply`, `git checkout <rev> -- <pfad>` und `git restore --source=…` nicht, und DEVELOPMENT.md sagt nirgends, dass `--evidence` ein Feld ist und nicht der Beweis (der ist `task-close.sh`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (zwei Sätze)
+
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün; `bash scripts/dev/verify.sh all --strict` grün; `hooks_test`, `ledger_test`, `review_scripts_test`, `task_close_test`, `runner_setup_test` im Scripts-Block.
 - Der erste Commit **dieses** Branches, der nach T5 entsteht, läuft bereits über `task-close.sh` (Beweis im PR-Body: `git log --stat` zeigt Code + Ledger je Task).
