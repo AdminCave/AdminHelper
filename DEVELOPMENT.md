@@ -71,6 +71,33 @@ verträgt keine Mischung aus gehashten und ungehashten Zeilen.
   `.github/workflows/ci.yml` installieren beide genau diese Datei, nie eine
   Paketliste im Skript.
 
+### Generatoren (Schemathesis, Hypothesis, pytest-alembic)
+
+Drei Fehlerklassen findet niemand von Hand: eine Eingabe, an die keiner gedacht
+hat, ein Vertrag, der still bricht, und ein Lock, das nur unter echter
+Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
+
+- **Schemathesis** fuzzt jeden Dienst gegen seine *eigene* OpenAPI, einmal je
+  Authentifizierungs-Kontext. Eigener `run.sh`-Schritt `schemathesis` (nicht Teil
+  der pytest-Schritte — die wählen den Marker mit `-m "not schemathesis"` ab,
+  sonst liefe die Suite zweimal). Beispiele je Operation über
+  `AH_SCHEMATHESIS_EXAMPLES`: **5** lokal, **20** im PR-CI, **100** im Wochenlauf
+  (`heavy.sh` setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter).
+- **Ausschlüsse** stehen als Eintrag mit Grund und Wiedervorlage in
+  `apps/<dienst>/tests/schemathesis_exclude.toml` — nie als Flag im Skript. Der
+  Test prüft jede `operation_id` gegen das Schema: ein Tippfehler dort schließt
+  nichts aus und sagt nichts, also ist er ein Fehler.
+- **Hypothesis** deckt drei Ziele ab: den FRP-TOML-Round-Trip, das
+  VictoriaMetrics-Line-Protocol und den SSRF-Guard. Gepinnte Fälle stehen als
+  `@example` im Test und werden mitcommittet; die Beispieldatenbank `.hypothesis/`
+  ist lokaler Cache und gitignored. Die Suiten laufen `derandomize` — ein Gate,
+  das je Lauf andere Daten zieht, ist grün oder rot nach Glück.
+- **Postgres-gegattert:** Der Concurrency-Test (`with_for_update` in
+  `check_engine`) und die pytest-alembic-Ketten brauchen ein echtes Postgres und
+  skippen ohne `DATABASE_URL` — auf der Dev-Box ist das der Normalfall, CI stellt
+  einen Service. `run.sh` kennt diese Skips: sobald `DATABASE_URL` gesetzt ist,
+  ist ein Skip dort ein Fehler, kein Hinweis.
+
 **Dependency-Updates laufen agent-getrieben** (kein Dependabot mehr): Versionen
 in der `.in` anheben bzw. `pip-compile --upgrade` fahren, Lock regenerieren,
 Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Befehle.
