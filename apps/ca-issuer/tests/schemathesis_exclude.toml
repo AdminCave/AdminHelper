@@ -1,0 +1,8 @@
+# Operationen, die der schema-getriebene Fuzzer NICHT anfasst (tests/test_schemathesis.py).
+#
+# Ein Eintrag ist eine Entscheidung mit Grund und Wiedervorlage, nie ein stilles "-x".
+# Leer heisst: der Erstlauf hat nichts gefunden, das ausgeschlossen werden musste.
+#
+#   operation_id  die Id aus dem OpenAPI-Schema
+#   reason        warum diese Operation heute nicht gefuzzt wird
+#   until         woran die Wiedervorlage haengt

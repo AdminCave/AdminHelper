@@ -22,3 +22,11 @@ os.environ["CA_ROOT_PASSPHRASE"] = "test-passphrase-not-for-production"
 atexit.register(lambda: shutil.rmtree(_ca_data_dir, ignore_errors=True))
 # Tests run without a DATABASE_URL — opt into the in-memory token store (4.17).
 os.environ.setdefault("CA_ALLOW_MEMORY_STORE", "1")
+
+
+def pytest_configure(config):
+    # Registered so `-m schemathesis` selects instead of warning about an unknown
+    # mark: run.sh reaches these tests through this marker alone (harness 8b).
+    config.addinivalue_line(
+        "markers", "schemathesis: schema-driven API fuzzing, run as its own run.sh step"
+    )

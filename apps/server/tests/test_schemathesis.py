@@ -5,9 +5,17 @@
 """Schema-driven fuzzing of the whole API, once per authentication context.
 
 Every route is called with inputs generated from its own OpenAPI schema, under
-each of the five ways a caller can present itself: an admin JWT, a read key, a
-read-write key, a key bound to a *different* server, and the internal
-service-to-service key. Two bug classes come out of this that no hand-written
+each of the four ways a caller can present itself: an admin JWT, a read key, a
+read-write key, and the internal service-to-service key.
+
+A fifth context — a key bound to a DIFFERENT server — was dropped after it turned
+out to prove nothing: schemathesis generates random server_id path parameters and
+never hits an existing one, so that context answered 403 exactly like the others.
+The property it was meant to cover (a bound key may not reach another server's
+data) is enforced in two places, and each has its own hand-written test with the
+ids actually seeded: frp/provision_router.py::_require_server_scope in
+tests/test_frp_provision_authz.py, and the scope filter in connections/router.py
+in tests/test_connections_isolation.py. Two bug classes come out of this that no hand-written
 test finds: a shape the route never considered (a 500 where the schema promises
 a 4xx), and a route that answers a caller it should have rejected — that is what
 `ignored_auth` looks for, by repeating each call with the credentials stripped.
@@ -41,12 +49,8 @@ from app.core.auth import hash_api_key
 from app.core.database import get_db
 from app.main import app
 from app.modules.api_keys.models import ApiKey
-from app.modules.servers.models import Server
 
 _EXCLUDE_FILE = Path(__file__).parent / "schemathesis_exclude.toml"
-# The other server in the matrix: the bound key belongs to this one, so every
-# request it makes against any other server's route is an IDOR attempt.
-_FOREIGN_SERVER_ID = "srv-schemathesis-foreign"
 
 
 def _excluded_operation_ids(known: set[str]) -> list[str]:
@@ -107,6 +111,20 @@ CHECKS = [
 # heavy.sh set the budget, the suite only reads it.
 MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5"))
 
+# ignored_auth repeats each call with the credentials stripped and expects a
+# rejection — but it only counts security parameters the SCHEMA declares, and this
+# app declares HTTPBearer alone (core/auth.py reads X-API-Key and X-Internal-Key
+# straight from the headers). For every context that does not send a bearer token
+# the check finds nothing to strip and falls through to "any 2xx is a failure",
+# which is not an auth verdict at all. It stays on for the JWT, where it works,
+# and is excluded elsewhere rather than papered over by excluding whole
+# operations — those would lose the other five checks too.
+_BEARER_CONTEXTS = {"admin_jwt"}
+
+
+def _excluded_checks_for(context: str) -> list:
+    return [] if context in _BEARER_CONTEXTS else [ignored_auth]
+
 
 @pytest.fixture()
 def api_db(db_session, monkeypatch):
@@ -163,15 +181,6 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
 
     token = create_access_token({"sub": admin_user.username})
 
-    api_db.add(
-        Server(
-            id=_FOREIGN_SERVER_ID,
-            name="schemathesis-foreign",
-            hostname="foreign.schemathesis.test",
-        )
-    )
-    api_db.commit()
-
     # The internal key is read once at import into the router's own namespace, so
     # the value has to be patched there, not in the config module.
     internal = "schemathesis-internal-key"
@@ -183,14 +192,6 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
         "read_write_key": {
             "X-API-Key": _api_key(api_db, permission="read_write", server_id=None, name="rw")
         },
-        "foreign_bound_key": {
-            "X-API-Key": _api_key(
-                api_db,
-                permission="read_write",
-                server_id=_FOREIGN_SERVER_ID,
-                name="bound-elsewhere",
-            )
-        },
         "internal_key": {"X-Internal-Key": internal},
     }
 
@@ -198,7 +199,7 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
 @pytest.mark.schemathesis
 @pytest.mark.parametrize(
     "context",
-    ["admin_jwt", "read_key", "read_write_key", "foreign_bound_key", "internal_key"],
+    ["admin_jwt", "read_key", "read_write_key", "internal_key"],
 )
 @schema.parametrize()
 @settings(
@@ -219,7 +220,15 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
 )
 def test_api_under_every_auth_context(case, context, auth_headers, api_db):
     try:
-        case.call_and_validate(headers=auth_headers[context], checks=CHECKS)
+        case.call_and_validate(
+            # A copy per example: the transport writes its own defaults (user-agent,
+            # Accept, …) into the dict it is handed, and this one is shared by every
+            # example of the test — without the copy the header set grows as the run
+            # goes on and later examples are sent something the earlier ones were not.
+            headers=dict(auth_headers[context]),
+            checks=CHECKS,
+            excluded_checks=_excluded_checks_for(context),
+        )
     finally:
         # One db_session serves every example of this test, and a statement that
         # Postgres rejects (an integer too large for the column, a NUL byte in a

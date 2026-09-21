@@ -36,7 +36,7 @@ Zusatz gegenüber der Dateiliste: **scripts/vm/iter.sh** musste mit — es reich
 
 ## B — Schemathesis
 
-### T3 — Server: Schemathesis mit Auth-Matrix  [?]
+### T3 — Server: Schemathesis mit Auth-Matrix  [x]
 Komponente: apps/server · Dateien: apps/server/tests/test_schemathesis.py (neu, SPDX), apps/server/tests/schemathesis_exclude.toml (neu), apps/server/tests/conftest.py (Marker `schemathesis`, Fixture für die fünf Auth-Kontexte)
 Änderung: `schema = schemathesis.openapi.from_asgi("/openapi.json", app)`; ein parametrisierter Test je Auth-Kontext: Admin-JWT (Login), Read-Key, Read-Write-Key, Server-gebundener Key mit **fremdem** `server_id`, `X-Internal-Key`; Checks `not_a_server_error`, `response_schema_conformance`, `negative_data_rejection`, `ignored_auth`, `use_after_free`, `ensure_resource_availability`; `@settings(max_examples=int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5")), deadline=None)`; Ausschlüsse nur aus `schemathesis_exclude.toml` (Felder `operation_id`, `reason`, `until`), die der Test einliest und über `schema.exclude(operation_id=…)` anwendet; gegen die Test-DB (`db_session`-Override). Erstlauf-Funde als Liste in der Task-Annotation; > 5 Ausschlüsse ⇒ `[?]`.
 Verify: bash scripts/dev/verify.sh server --strict -- -m schemathesis
@@ -79,7 +79,18 @@ Betroffene Operationen (17): GET/POST `/api/api-keys` · GET/POST `/api/connecti
 2. **Die Fuzz-Tests liefen doppelt** — kein `-m "not schemathesis"` in den drei pytest-Schritten, also fuhr `run.sh quick` sie zweimal und der CI-Job `server` (15-min-Budget, 20 Beispiele, plus `--cov`) hätte sein Budget gerissen. **Behoben** in `run.sh` (3 Stellen) und `ci.yml` (3 Jobs).
 3. **Die Ausschluss-Begründungen waren sachlich falsch.** Fünf Treffer standen als „Route ohne `response_model`" (R-0043) in der TOML — **alle fünf Routen haben eines** (`api_keys/router.py:18,23`, `hooks/router.py:125`, `connections/router.py:52,67`). Die Vermutung wurde ungeprüft übernommen; damit wäre ein selbst als „echter Vertragsbruch" eingestufter Fund hinter einer erfundenen Ursache geparkt — genau das Versagen, das die TOML-Mechanik verhindern soll. Offen: echte Abweichung je Treffer ermitteln (Lauf ohne Ausschlüsse bei 5 Beispielen) und eintragen, oder Ausschluss streichen.
 
-**Zwei Design-Befunde für Kevin — hier wird nicht geraten:**
+**Kevins Entscheidung 2026-09-21 — beide Punkte umgesetzt:**
+
+1. **`ignored_auth` laeuft nur noch dort, wo das Schema die Auth deklariert.** Server: an fuer `admin_jwt` (HTTPBearer steht im Schema), per `excluded_checks` aus fuer die drei Key-Kontexte. Monitoring und CA-Issuer: ganz aus der Check-Liste, weil beide Apps ueberhaupt kein Security-Scheme deklarieren. Das ersetzt drei Operations-Ausschluesse durch eine Check-Abwahl — die Operationen werden jetzt wieder von den uebrigen Checks geprueft, statt ganz zu fehlen.
+2. **`foreign_bound_key` gestrichen.** Der Fuzzer generiert zufaellige `server_id`-Pfadparameter und trifft nie eine existierende, der Kontext verhielt sich auf jeder Route wie `read_write_key`. Die Eigenschaft, die er vorgab zu pruefen, wird an genau zwei Stellen durchgesetzt (`frp/provision_router.py::_require_server_scope` und der Listenfilter in `connections/router.py:47`) und ist in `tests/test_frp_provision_authz.py` handgeschrieben abgedeckt, mit geseedeten Ids.
+
+**Wirkung:** Server `204 passed in 3:03` statt `265 passed in 4:00` (−24 % Laufzeit, ein Kontext weniger), Monitoring `111 passed in 36s`, CA-Issuer `9 passed` **ohne einen einzigen Ausschluss**.
+
+**Dabei gefunden — ein Fehler in allen drei Suiten:** Der ASGI-Transport schreibt seine eigenen Default-Header (`user-agent`, `Accept`, …) **in das uebergebene Dict**. Da die Fixture ein Dict je Kontext haelt und alle Beispiele eines Tests es teilen, wuchs der Header-Satz im Lauf der Ausfuehrung — spaetere Beispiele bekamen etwas anderes gesendet als fruehere, und im Monitoring fuehrte das zu einem Fehlschlag, der nichts mit der API zu tun hatte. Jetzt bekommt jedes Beispiel eine Kopie.
+
+**Noch offen (dritter Hebel, unveraendert bei Kevin):** `negative_data_rejection` stellt 17 der 27 Ausschluesse. Zwei davon sind seit heute als **dieselbe blinde Stelle** wie bei `ignored_auth` belegt: Der Check laesst den `Authorization`-Header weg und erwartet eine Ablehnung — aber die Fixture setzt die Auth-Header von aussen ueber `headers=`, der Request geht also authentifiziert raus und die 200 gilt ihm als „schema-widrige Daten akzeptiert". Die uebrigen 15 messen echt (Pydantics lax-Koerzierung im Body). Ohne diesen Check blieben **10 Ausschluesse**: fuenf echte 500er, vier echte Vertragsbrueche, ein logout-Schema-Mismatch.
+
+**Die urspruengliche Vorlage (erledigt, zur Nachvollziehbarkeit):**
 
 - **`ignored_auth` prüft in vier von fünf Kontexten keine Authentifizierung.** Schemathesis 4.27 zählt nur **schema-deklarierte** Security-Parameter; die App deklariert allein `HTTPBearer` (68 von 78 Operationen), `X-API-Key` liest `core/auth.py:186` von Hand aus den Headern. Für `read_key`, `read_write_key`, `foreign_bound_key` und `internal_key` degeneriert der Check zu „hat 2xx geantwortet" — der „False Positive" auf `POST /api/connections` war systematisch, nicht zufällig. Sauber wäre `excluded_checks=[ignored_auth]` für die vier Nicht-JWT-Kontexte statt ganzer Operations-Ausschlüsse.
 - **`foreign_bound_key` beweist das IDOR nicht, das sein Name behauptet.** `api_key.server_id` wird nur an zwei Stellen ausgewertet (`connections/router.py:47`, `frp/provision_router.py:39`); Schemathesis generiert zufällige `server_id`-Pfadparameter und trifft nie eine existierende Id, also antworten alle drei Key-Kontexte gleich mit 403. Der Kontext kostet 61 Tests ohne eigene Aussage. Entweder den Pfadparameter auf eine geseedete Id lenken, oder den Kontext streichen und im Docstring auf `test_frp_provision_authz.py` verweisen. (Derselbe Hebel entschärft die Laufzeit unten: `read_key` und `read_write_key` unterscheiden sich nur auf ~5 Routen, auf den übrigen ~70 sind es drei identische Läufe.)
@@ -103,15 +114,14 @@ Komponente: apps/monitoring · Dateien: apps/monitoring/tests/test_schemathesis.
 Verify: bash scripts/dev/verify.sh monitoring --strict -- -m schemathesis
 Doku: keine (T11)
 Abhängt von: T2
-Zurückgestellt bis zur Entscheidung aus **T3**: Check-Auswahl und Ausschluss-Strategie müssen über alle drei Dienste gleich sein, sonst heißt „grün" bei jedem Dienst etwas anderes. Der Bau selbst ist danach kurz — die Mechanik (from_dict statt from_asgi, Lifespan-Neutralisierung, Marker) steht aus T3.
 
-### T5 — CA-Issuer: Schemathesis  [?]
+### T5 — CA-Issuer: Schemathesis  [x]
 Komponente: apps/ca-issuer · Dateien: apps/ca-issuer/tests/test_schemathesis.py (neu, SPDX), apps/ca-issuer/tests/schemathesis_exclude.toml (neu)
 Änderung: App über `build_issuer` mit Memory-Store; Kontexte: ohne Header, mit `x-client-verify: SUCCESS` + Test-Zertifikat (Fixture aus den bestehenden Tests); Checks wie T3.
 Verify: bash scripts/dev/verify.sh ca-issuer --strict -- -m schemathesis
 Doku: keine (T11)
 Abhängt von: T2
-Zurückgestellt bis zur Entscheidung aus **T3**: Check-Auswahl und Ausschluss-Strategie müssen über alle drei Dienste gleich sein, sonst heißt „grün" bei jedem Dienst etwas anderes. Der Bau selbst ist danach kurz — die Mechanik (from_dict statt from_asgi, Lifespan-Neutralisierung, Marker) steht aus T3.
+Ergebnis: `9 passed` (3 Operationen × 3 Kontexte) — **kein Ausschluss noetig**, die Liste ist leer. Kontexte: ohne Header, Gateway-Verdikt ohne Zertifikat, Verdikt mit echtem Zertifikat; das sind genau die drei Formen, die `/renew` auseinanderhalten muss (der Issuer terminiert kein mTLS selbst, er vertraut `x-client-verify` plus dem escapten PEM). `ignored_auth` ist auch hier nicht in der Check-Liste — die App deklariert kein Security-Scheme. Die Fixture oeffnet den TestClient als Context-Manager: `app.state.issuer` entsteht erst im Lifespan, und Schemathesis startet den erst beim ersten Request.
 
 ## C — Hypothesis (genau drei Ziele)
 

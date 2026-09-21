@@ -13,14 +13,10 @@ and require_internal with lambdas, which is right for endpoint tests but would
 make an auth matrix meaningless — every context would be the same context. Here
 the real dependencies run and the keys are real.
 
-What the matrix does NOT buy here: `ignored_auth` never fires. That check only
-looks at security parameters the SCHEMA declares, and this app declares none at
-all (no `securitySchemes`, no `security` on any operation) — X-API-Key and
-X-Internal-Key are read straight out of the headers in core/auth.py. So for all
-three contexts it returns without a verdict. The value of running every operation
-three times lies in the other five checks plus the different status each context
-gets; enforcement itself is pinned by the hand-written auth tests, not by this
-suite.
+What the matrix does NOT buy here: `ignored_auth`, which is therefore left out of
+the check list below (see the comment there). The value of running every
+operation three times lies in the remaining five checks plus the different status
+each context gets; auth enforcement itself is pinned by the hand-written tests.
 """
 
 from __future__ import annotations
@@ -35,7 +31,6 @@ from hypothesis import HealthCheck, settings
 from schemathesis.checks import not_a_server_error
 from schemathesis.specs.openapi.checks import (
     ensure_resource_availability,
-    ignored_auth,
     negative_data_rejection,
     response_schema_conformance,
     use_after_free,
@@ -74,11 +69,18 @@ _EXCLUDED = _excluded_operation_ids()
 if _EXCLUDED:
     schema = schema.exclude(operation_id=_EXCLUDED)
 
+# ignored_auth is NOT in this list. It repeats each call without credentials and
+# expects a rejection, but counts only security parameters the SCHEMA declares —
+# and this app declares none at all (no securitySchemes, no security on any
+# operation); core/auth.py reads X-API-Key and X-Internal-Key from the headers
+# directly. With nothing to strip the check falls through to "any 2xx is a
+# failure", which is not an auth verdict. Enforcement is pinned by the
+# hand-written auth tests; running a check that cannot see the credentials would
+# only produce findings about itself.
 CHECKS = [
     not_a_server_error,
     response_schema_conformance,
     negative_data_rejection,
-    ignored_auth,
     use_after_free,
     ensure_resource_availability,
 ]
@@ -153,4 +155,10 @@ def auth_headers(monkeypatch) -> dict[str, dict[str, str]]:
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 def test_api_under_every_auth_context(case, context, auth_headers):
-    case.call_and_validate(headers=auth_headers[context], checks=CHECKS)
+    case.call_and_validate(  # A copy per example: the transport writes its own defaults (user-agent,
+        # Accept, …) into the dict it is handed, and this one is shared by every
+        # example of the test — without the copy the header set grows as the run
+        # goes on and later examples are sent something the earlier ones were not.
+        headers=dict(auth_headers[context]),
+        checks=CHECKS,
+    )
