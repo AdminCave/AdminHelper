@@ -44,6 +44,13 @@
             </tbody>
           </table>
 
+          <p><strong>Branch-Schutz.</strong> Ab Autonomie-Stufe&nbsp;4 gilt f&uuml;r <code>main</code> ein
+          GitHub-Ruleset, das der Repo-Eigent&uuml;mer im Web-UI setzt: jede &Auml;nderung geht &uuml;ber
+          einen Pull Request, <code>CI</code> muss gr&uuml;n sein, kein Force-Push, kein Bypass-Akteur
+          &ndash; auch nicht f&uuml;r ihn selbst. Das ist die Aussen-Grenze der Stufe: der Runner-User kann
+          ohnehin nicht pushen, und ein Release wird &uuml;ber einen Release-Branch geschnitten statt an
+          der Regel vorbei.</p>
+
           <h2>Trigger-Matrix</h2>
           <table>
             <thead><tr><th>Event</th><th>Was läuft</th></tr></thead>

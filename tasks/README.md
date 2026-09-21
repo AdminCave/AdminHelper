@@ -37,6 +37,35 @@ bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
 `[?]` braucht menschliche Entscheidung.
 
+## `ledger.sh` — wer den Ledger schreibt
+
+Seit Stufe 4 ändert **`scripts/dev/ledger.sh`** den Status einer Task, nicht mehr der Editor
+der Session. Der Grund steht in der Invariante oben: ein `[x]` ohne den Lauf, der es grün
+gemacht hat, ist eine Behauptung. `mark-done` verweigert deshalb den Haken ohne `--evidence`
+— und die Evidenz-Zeile kommt ab Stufe 4 von [`task-close.sh`](../scripts/dev/task-close.sh),
+das die Suite selbst fährt.
+
+```bash
+bash scripts/dev/ledger.sh start <ledger> <id>        # .vm/active-task: Ledger, ID, Komponente, Dateien
+bash scripts/dev/ledger.sh mark-done <ledger> <id> --evidence "<summary>" [--note "…"] [--review "…"]
+bash scripts/dev/ledger.sh mark-skip <ledger> <id> "<grund>"      # [~]
+bash scripts/dev/ledger.sh mark-question <ledger> <id> "<frage>"  # [?]
+bash scripts/dev/ledger.sh set-files <ledger> <id> <pfad…>        # Dateien: erweitern
+bash scripts/dev/ledger.sh status                                  # Übersicht aller Ledger
+bash scripts/dev/ledger.sh status <ledger> <wert>                  # Kopf-Status setzen
+bash scripts/dev/ledger.sh new-task <ledger> --title "…"           # aus tasks/templates/task.md
+bash scripts/dev/ledger.sh lint <ledger>                           # Verify-Präfix, [x] ohne Evidenz, Invariante
+```
+
+`<ledger>` ist der Pfad oder der reine Slug (`harness-stufe-4`), `<id>` die Task-Kennung aus
+der Überschrift (`### T3 — …` ⇒ `T3`). Neue Tasks entstehen aus
+[`templates/task.md`](templates/task.md); die Vorlage trägt nur die Pflichtfelder — was eine
+Task „autonomietauglich" macht, steht in [`../AUTONOMOUS.md`](../AUTONOMOUS.md).
+
+**`set-files` statt Scope lockern:** braucht eine Task eine Datei, die nicht in ihrem
+`Dateien:` steht, wird die Liste **sichtbar** erweitert — `task-close.sh` prüft die gestagten
+Pfade dagegen.
+
 ## Aktueller Stand
 
 - **`harness-stufe-3.md`** — `Status: aktiv`. Stufe 3 der Autonomie-Roadmap („Ausführung

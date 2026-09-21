@@ -9,6 +9,25 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Runner-Isolation und deterministische Gates (Harness Stufe 4):** Ein `[x]` und ein Commit
+  entstehen nur noch in `scripts/dev/task-close.sh` — ausserhalb der Modell-Session: es verlangt,
+  dass jede Datei der Task vollstaendig gestaged ist, faehrt das `Verify:` der Task als
+  `verify.sh <komponente> --strict`, prueft mit `scripts/dev/review.sh` den Diff auf
+  stummgeschaltete Tests (`diff-scan`), auf Pfade ausserhalb der Task (`scope`) und auf das, was
+  nie ins oeffentliche Repo darf (`sec`), und schreibt die Summary-Zeile des Laufs als `Evidenz:`
+  in den Ledger. Geschrieben wird der Ledger von `scripts/dev/ledger.sh` (`start`, `mark-done`,
+  `mark-skip`, `mark-question`, `set-files`, `status`, `new-task`, `lint`) aus einer Vorlage
+  `tasks/templates/task.md`. Dazu der Harness-Schutz: `scripts/dev/harness-paths.txt` nennt die
+  Dateien, die die Regeln bestimmen, ein PreToolUse-Hook verweigert im autonomen Lauf jede
+  Aenderung daran (auch ueber `sed -i`, `tee`, Umleitung, `cp`/`mv`, `bash -c`), und
+  `scripts/dev/harness.sh off|on|status` ist der Kill-Switch. Neu ausserdem der Unix-User
+  `adminhelper-runner` (`scripts/dev/runner-setup.sh`, `runner-env.sh`, `runner-settings.json`,
+  `runner-redteam.sh`): eigener Klon ohne Push-Recht, eigene Test-Datenbank, eigenes Abo- und
+  Proxmox-Token, `dontAsk` mit Deny-Liste — und ein Red-Team-Skript, das das beweist. Anleitung:
+  `DEVELOPMENT.md`, Abschnitte „Task schliessen: `ledger.sh` und `task-close.sh`",
+  „Harness-Schutz und Kill-Switch" und
+  „Runner-User `adminhelper-runner`".
+
 - **Ephemere Proxmox-VMs ohne externes Binary (Harness Stufe 2a):** `scripts/vm/vm.py` least,
   verwaltet und zerstoert die VMs, auf denen die schweren Suites laufen — Python-3-Standard-
   bibliothek, keine Abhaengigkeit, nur die REST-API. Verben: `doctor clone wait ssh sync run
