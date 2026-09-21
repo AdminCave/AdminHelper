@@ -27,7 +27,9 @@ eigene PKI), VictoriaMetrics (Line-Protocol), Tauri-IPC, Proxmox-API — vor Än
 <!-- Stufe 0 · Quelle §3.1, §3.2, §5 Leitprinzipien 4/5/7/10, Stufe 13 -->
 
 **Nichts läuft ohne Kevins Start.** Kein Timer, kein Cron, keine Routine. Kevin startet jede Session, jeden Testlauf
-und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`.
+und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`;
+eine zweite **Lane** ist die Ausnahme, die `/feature-plan` am Gate vorschlägt, wenn zwei Ledger disjunkt sind
+und höchstens eines VMs braucht (AUTONOMOUS.md „Parallel-Betrieb").
 **Lange Läufe laufen überwacht:** Wochenlauf, Capstone, Bake, CI-Watch startet Claude auf Kevins Zuruf als
 Hintergrund-Lauf (tmux plus Wächter), bleibt dran bis zum Report und meldet das Ergebnis — nie nackt in einem
 Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKILL.md`).
@@ -82,7 +84,8 @@ beginnt die Antwort mit einer Zeile `Warnung:` — einmal, vor der Arbeit; danac
    höherer Klasse würde übersprungen.
 2. Commit, Push, Tag, Merge oder Publish direkt auf `main`; ein Release ohne grünen Wochenlauf (ab Stufe 3); ein
    `stable` früher als 7 Tage nach dem RC; ein halb geschnittenes Release (Bump ohne Tag, Draft ohne Publish).
-3. Ein Deckel ist erreicht (`aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20) oder ein zweiter Bau-Lauf würde starten.
+3. Ein Deckel ist erreicht (`aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20) oder ein zweiter Bau-Lauf würde starten —
+   außer als Lane, die das Gate als disjunkt vorgeschlagen hat.
 4. Harness-Dateien (`CLAUDE.md`, `.claude/`, `scripts/dev/`, `AUTONOMOUS.md`) würden in einem Feature-Branch
    mitgeändert, oder ein Verb wird verlangt, das laut Fahrplan noch nicht existiert.
 5. Kevin will planen, mergen oder rebasen, und der Haupt-Checkout ist nicht auf `main` oder nicht sauber.

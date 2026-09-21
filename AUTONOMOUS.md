@@ -149,7 +149,10 @@ Regeln:
   ausschließlich in Lanes.
 - **Lanes komponenten-disjunkt schneiden.** Das Gate prüft gegen aktive Lanes:
   Komponenten, geteilte Contracts (API-Schemas, Migrationen, FRP-Format, Tauri-Commands),
-  primäre `docs/`-Seiten. Überlappt es → seriell statt parallel.
+  primäre `docs/`-Seiten. Überlappt es → seriell statt parallel. Ist es disjunkt und braucht
+  höchstens eines der Vorhaben VMs, **schlägt das Gate die Lane von sich aus vor** und gibt
+  die Startbefehle mit (Kevin, 2026-09-18) — die Server-Suite teilt sich eine Test-DB, zwei
+  Python-Bauten gleichzeitig brauchen deshalb erst die Lane-Isolation (eigene DB je Lane).
 - **PRs landen einzeln.** Nach jedem Merge in den verbleibenden Lanes
   `git rebase origin/main` + einmal `bash scripts/vm/iter.sh quick`. Bekannte, triviale
   Rebase-Konflikte: `CHANGELOG.md` (Unreleased) und geteilte docs-Seiten — additiv.
