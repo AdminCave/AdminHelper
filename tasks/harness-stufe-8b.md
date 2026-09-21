@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8b — Generatoren — Task-Ledger
-Status: erledigt (11/11 Tasks; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (11/11 Tasks + T12 aus dem PR-Review; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8b.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Lane: Worktree `../AdminHelper-harness-stufe-8b`, parallel zu `feature/harness-stufe-4` — die `.devenv.sh` dieser Lane setzt `AH_VENV=/tmp/ah-venv-8b` (eigener Dev-venv, damit T1 nicht in den venv der anderen Lane installiert); vor jedem Lauf `source .devenv.sh`. Die Lane hat seit 2026-09-18 auch eine **eigene Test-DB** (`adminhelper_lane8b`): die geteilte `adminhelper_test` hat zweimal einen Lauf entwertet, weil die `pg_engine`-Fixture der anderen Lane am Ende per `drop_all` abräumt — mitten im fremden Lauf heisst das `Relation users existiert nicht`, also verworfen, nicht rot.
@@ -196,6 +196,26 @@ Verify: python3 scripts/dev/doc-smoke.py --strict   und   bash scripts/tests/run
 Doku: alle genannten
 Abhängt von: T2
 Ergebnis: `doc-smoke: documentation matches the tree`. DEVELOPMENT.md bekommt einen eigenen Abschnitt „Generatoren" (Schritt, Beispielzahlen 5/20/100, Ausschlussliste samt Id-Pruefung, `.hypothesis/`, `derandomize`, die Postgres-Gatter); `cicd.html` DE+EN je eine Zeile in der Gate-Tabelle; CHANGELOG unter Unreleased/Added.
+
+### T12 — Nachbesserung aus dem PR-Review (#29)  [x]
+Komponente: apps/server · Dateien: apps/server/tests/test_schemathesis.py, apps/server/tests/schemathesis_exclude.toml
+Verify: bash scripts/dev/verify.sh server --strict
+Doku: T11-Stellen mitgezogen
+
+**Blocker: Die Ausschluesse waren operations-, nicht check-granular.** `schema.exclude(operation_id=…)` nimmt eine Operation aus **allen sechs** Checks. 17 der 27 Eintraege standen nur wegen `negative_data_rejection` da — und haben damit `not_a_server_error` auf `POST /api/users`, `POST`/`PUT /api/servers`, den Tunnel- und Connection-Routen stummgeschaltet. Genau die Schreibrouten, auf denen die 500er-Klasse sitzt. Ein frueherer Review hatte das angemerkt; ich hatte es als Entscheidungsvorlage abgelegt statt es zu beheben.
+
+**Umbau:** Jeder Eintrag traegt jetzt entweder `checks = [...]` (die Route antwortet, ein Check hat an der Antwort etwas auszusetzen — nur dieser wird gewaehrt, die Operation bleibt im Lauf) oder `raises = true` (der Aufruf stirbt an einer ungefangenen Exception, bevor eine Response entsteht — dann kann kein Check greifen, und nur hier ist der Ausschluss der ganzen Operation ehrlich). Der Loader wirft bei einem Eintrag ohne beides, bei einem unbekannten Check-Namen und bei einer `operation_id`, die das Schema nicht kennt.
+
+**Was der Umbau freigelegt hat** — 19 Treffer, die vorher unsichtbar waren, darunter **zwei neue Produktfehler**:
+
+| Fund | Beleg |
+|---|---|
+| `_validate_tags` (frp/schemas.py:65) laeuft als `field_validator(mode="before")` und sieht **rohe** Werte: `t.strip()` auf dict/int/None wirft `AttributeError`, `for t in tags` auf einem bool wirft `TypeError` — ungefangen, also **HTTP 500 statt 422** | unabhaengig reproduziert: `[{"a":1}]`, `[1]`, `[None]`, `True` je ungefangen. **EIN Bug, sechs Routen** — derselbe Validator ist in `ansible`-, `frp`- und `servers`-Schemas je zweimal registriert |
+| `POST /api/connections` mit einer `server_id`, zu der es keinen Server gibt ⇒ `ForeignKeyViolation`, ungefangen ⇒ **HTTP 500** | aus dem Lauf vom 2026-09-21 |
+
+Dazu ein Testinfrastruktur-Befund ohne Produktbezug: `POST /api/monitoring/agent/{server_id}/report` laeuft ueber einen prozessweiten `httpx`-Client, den der Lifespan-Shutdown schliesst — danach stirbt jeder weitere Aufruf im Transport. In-process nicht fuzzbar, wie `/templates/tag-sync` auf der Monitoring-Seite.
+
+**Stand:** `260 passed in 4:12`, 27 Eintraege (13 `raises`, 14 check-granular). `verify.sh server --strict` gruen.
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün (mit dem neuen Schritt); `bash scripts/dev/verify.sh all --strict` grün.
