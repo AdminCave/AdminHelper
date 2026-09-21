@@ -260,6 +260,12 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #   test_stream_redis         needs a reachable Redis on the port it names.
 #   test_db_token_store       needs AH_TEST_DB to point at a real Postgres; the
 #     TOCTOU test needs true concurrency, so SQLite is not a substitute.
+#   test_alembic_builtin      pytest-alembic builds the chain in a throwaway database
+#     of its own; without DATABASE_URL there is no server to create it on.
+#   test_check_engine_concurrency  same shape on the monitoring side: FOR UPDATE is
+#     a no-op on SQLite, so the row lock it covers is only ever executed where
+#     DATABASE_URL points at a Postgres. Skipping it there would leave the one
+#     test of that lock silently unrun.
 # Port from test_stream_redis.py's REDIS_URL (redis://localhost:6380/0).
 redis_reachable() { (exec 3<>/dev/tcp/localhost/6380) >/dev/null 2>&1; }
 
@@ -269,6 +275,8 @@ test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must n
     *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
     *test_stream_redis*)         redis_reachable ;;
     *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_check_engine_concurrency*) [ -n "${DATABASE_URL:-}" ] ;;
+    *test_alembic_builtin*)      [ -n "${DATABASE_URL:-}" ] ;;
     *) return 1 ;;
   esac
 }
