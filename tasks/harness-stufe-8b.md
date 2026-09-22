@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8b — Generatoren — Task-Ledger
-Status: erledigt (11/11 Tasks + T12 aus dem PR-Review; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (11/11 Tasks + T12–T16 aus PR-Review und Aufsicht; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8b.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Lane: Worktree `../AdminHelper-harness-stufe-8b`, parallel zu `feature/harness-stufe-4` — die `.devenv.sh` dieser Lane setzt `AH_VENV=/tmp/ah-venv-8b` (eigener Dev-venv, damit T1 nicht in den venv der anderen Lane installiert); vor jedem Lauf `source .devenv.sh`. Die Lane hat seit 2026-09-18 auch eine **eigene Test-DB** (`adminhelper_lane8b`): die geteilte `adminhelper_test` hat zweimal einen Lauf entwertet, weil die `pg_engine`-Fixture der anderen Lane am Ende per `drop_all` abräumt — mitten im fremden Lauf heisst das `Relation users existiert nicht`, also verworfen, nicht rot.
@@ -43,9 +43,9 @@ Verify: bash scripts/dev/verify.sh server --strict -- -m schemathesis
 Doku: keine (T11)
 Abhängt von: T2
 
-**Stand:** Test gebaut, committet und **grün bei der ausgelieferten Beispielzahl**: `275 passed in 4:04` (`AH_SCHEMATHESIS_EXAMPLES=5`, 55 von 78 Operationen × 5 Kontexte), und `bash scripts/dev/verify.sh server --strict` → `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns`. `[?]` bleibt: 24 Ausschlüsse sind weit über der Ledger-Grenze von fünf je Dienst, und die zwei Hebel, die die Liste kurz machen würden, sind Kevins Entscheidung (unten).
+**Stand:** Test gebaut, committet und **grün bei der ausgelieferten Beispielzahl**: `275 passed in 4:04` (`AH_SCHEMATHESIS_EXAMPLES=5`, 55 von 78 Operationen × 5 Kontexte), und `bash scripts/dev/verify.sh server --strict` → `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns`. **Diese Zahlen sind der Stand von T3 und seit T12/T13 überholt** — dort steht die aktuelle Evidenz (vier Kontexte statt fünf, check-granulare Ausschlüsse, 252 statt 275 Tests). `[?]` bleibt: 24 Ausschlüsse sind weit über der Ledger-Grenze von fünf je Dienst, und die zwei Hebel, die die Liste kurz machen würden, sind Kevins Entscheidung (unten).
 
-**Nachtrag `derandomize=True`:** Ohne das war die Suite pro Lauf eine andere — `pytest-randomly` reseedet Hypothesis, ein Lauf war grün, der nächste rot auf einer Operation, die niemand angefasst hatte (real beobachtet: `6 failed, 299 passed` direkt nach einem `305 passed`). Die Spec hatte das als CI-Profil vorgesehen; hier gilt es für jeden Lauf, die Tiefe kommt über `AH_SCHEMATHESIS_EXAMPLES`, nicht über Zufall.
+**Nachtrag `derandomize=True`:** Ohne das war die Suite pro Lauf eine andere — **Hypothesis zieht ohne diese Einstellung bei jedem Lauf einen neuen Seed**, ein Lauf war grün, der nächste rot auf einer Operation, die niemand angefasst hatte (real beobachtet: `6 failed, 299 passed` direkt nach einem `305 passed`). Die Spec hatte das als CI-Profil vorgesehen; hier gilt es für jeden Lauf, die Tiefe kommt über `AH_SCHEMATHESIS_EXAMPLES`, nicht über Zufall.
 
 **Nachtrag zu T2:** Der `schemathesis`-Schritt reicht `$AH_ARGS` nicht mehr durch. Er selektiert über seinen Marker; ein `verify.sh server --strict -- tests/eine_datei.py` hätte ihm sonst genau diese eine Datei vorgesetzt, in der kein Schemathesis-Test steht ⇒ „nichts gesammelt" ⇒ SKIP ⇒ unter `--strict` ein Loch in einem Lauf, der damit nichts zu tun hat.
 
@@ -104,7 +104,7 @@ Betroffene Operationen (17): GET/POST `/api/api-keys` · GET/POST `/api/connecti
 | `POST /api/connections/import` → **Vertragsbruch** | Antwort-Body `message` + `rejected` bei HTTP 422, Schema deklariert dort FastAPIs `HTTPValidationError` mit `detail: array` | ein Client, der dem Schema folgt, parst die Fehlermeldung falsch |
 | `GET /api/notifications` → **HTTP 500** bei einem Paginierungs-Parameter ≥ 2**63 | im Lauf vom 2026-09-21 aufgetaucht | dieselbe Klasse, aber ueber einen **Query**-Parameter statt einen Pfadparameter — die Luecke ist breiter als nur die Pfad-Ids |
 
-**Das ist ein Befund, nicht vier:** Eingaben, die erst in der DB-Schicht scheitern (Integer-Überlauf, NUL-Byte), werden nicht am Rand abgefangen. Solange diese Klasse offen ist, kann jede neue Testreihenfolge ein weiteres Symptom zutage fördern — der zweite 500er tauchte erst auf, als `pytest-randomly` die Reihenfolge änderte, der dritte zwei Tage später bei ganz normaler Weiterarbeit. Pfad-Ids, Textfelder und Paginierungs-Parameter sind betroffen — die Randvalidierung fehlt an allen drei Stellen. **Roadmap-Zeile: Randvalidierung für DB-feindliche Eingaben.** (Korrektur zur ersten Fassung dieses Ledgers: die vier `response_schema_conformance`-Treffer sind **nicht** R-0043 — alle betroffenen Routen haben ein `response_model`; die Ursache ist bei `connections/import` belegt, bei `api-keys`/`hooks` noch offen und im TOML als solche markiert.)
+**Das ist ein Befund, nicht vier:** Eingaben, die erst in der DB-Schicht scheitern (Integer-Überlauf, NUL-Byte), werden nicht am Rand abgefangen. Solange diese Klasse offen ist, fördert jede Änderung an Lauf-Bedingungen ein weiteres Symptom zutage — der zweite 500er tauchte bei einem Lauf mit anderer Beispielzahl auf, der dritte zwei Tage später bei normaler Weiterarbeit, der vierte und fünfte erst, als die Ausschlüsse check-granular wurden (T12). Pfad-Ids, Textfelder und Paginierungs-Parameter sind betroffen — die Randvalidierung fehlt an allen drei Stellen. **Roadmap-Zeile: Randvalidierung für DB-feindliche Eingaben.** (Korrektur zur ersten Fassung dieses Ledgers: die vier `response_schema_conformance`-Treffer sind **nicht** R-0043 — alle betroffenen Routen haben ein `response_model`; die Ursache ist bei `connections/import` belegt, bei `api-keys`/`hooks` noch offen und im TOML als solche markiert.)
 
 **Zweiter `[?]`-Punkt — Laufzeit:** 78 Operationen × 5 Kontexte × **1** Beispiel = **5:44 min**. Der lokale Default ist 5 Beispiele. Die Spec-Zusage „quick bleibt unter einer Minute" ist mit der vollen Auth-Matrix nicht haltbar: entweder läuft `schemathesis` nur in CI/weekly (nicht im lokalen `quick`), oder die Matrix wird lokal auf einen Kontext gekürzt und die volle Matrix bleibt dem Wochenlauf.
 
@@ -198,6 +198,8 @@ Abhängt von: T2
 Ergebnis: `doc-smoke: documentation matches the tree`. DEVELOPMENT.md bekommt einen eigenen Abschnitt „Generatoren" (Schritt, Beispielzahlen 5/20/100, Ausschlussliste samt Id-Pruefung, `.hypothesis/`, `derandomize`, die Postgres-Gatter); `cicd.html` DE+EN je eine Zeile in der Gate-Tabelle; CHANGELOG unter Unreleased/Added.
 
 ### T12 — Nachbesserung aus dem PR-Review (#29)  [x]
+**Korrektur einer Begruendung, die mehrfach falsch im Ledger stand:** `pytest-randomly` ist in diesem Repo **nirgends installiert** (weder in einer `requirements-dev.txt` noch im Lane-venv). `-p no:randomly` war in allen Laeufen wirkungslos — pytest ignoriert das Flag fuer ein Plugin, das es nicht gibt. Die beobachtete Flakiness kam von **Hypothesis' eigenem Seed**, und genau den fixiert `derandomize=True`. Aufgefallen beim Nachdenken ueber den CI-Job: die geplante Absicherung `-p no:randomly` dort waere eine Zeile gegen ein Problem gewesen, das es nicht gibt.
+
 Komponente: apps/server · Dateien: apps/server/tests/test_schemathesis.py, apps/server/tests/schemathesis_exclude.toml
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: T11-Stellen mitgezogen
@@ -216,6 +218,77 @@ Doku: T11-Stellen mitgezogen
 Dazu ein Testinfrastruktur-Befund ohne Produktbezug: `POST /api/monitoring/agent/{server_id}/report` laeuft ueber einen prozessweiten `httpx`-Client, den der Lifespan-Shutdown schliesst — danach stirbt jeder weitere Aufruf im Transport. In-process nicht fuzzbar, wie `/templates/tag-sync` auf der Monitoring-Seite.
 
 **Stand:** `260 passed in 4:12`, 27 Eintraege (13 `raises`, 14 check-granular). `verify.sh server --strict` gruen.
+
+### T13 — Der Schritt lief nirgends in CI  [x]
+Komponente: .github/workflows, scripts/tests, apps/server · Dateien: .github/workflows/ci.yml, scripts/tests/run.sh, apps/server/tests/schemathesis_exclude.toml, DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Verify: bash scripts/dev/verify.sh server --strict
+Doku: die vier Stellen, die „20 im PR-CI" behaupteten
+
+**Blocker, den ich selbst verursacht hatte:** Ich hatte hier und im PR geschrieben, der CI fahre die Suite mit 20 Beispielen. Das war **falsch**. Die drei pytest-Jobs setzten zwar `AH_SCHEMATHESIS_EXAMPLES: "20"`, wählen den Marker aber mit `-m "not schemathesis"` ab — die Variable stand in Jobs, die die Suite nie ausführen. Der Schritt lief in **keinem** CI-Lauf. Die Doku beschrieb an vier Stellen einen Zustand, den es nicht gab.
+
+**Entscheidung (Kevin, Option A):** ein **eigener Job** statt der Suite in den drei bestehenden. Begründung: eigenes Budget (20 min, ein Postgres-Service für alle drei Dienste), eigenes Verdikt — ein rotes „Schema fuzzing" sagt „eine Route antwortet etwas, das ihr Schema nicht beschreibt", statt in einer fremden Suite unterzugehen; und ein Job, der alle drei Dienste in **einem** `run.sh`-Aufruf fährt, kann nicht auseinanderdriften. Der Preis ist ein vierter Postgres-Service im PR-CI.
+
+**Beispielzahl 5, nicht 20.** Ursprünglich waren 20 geplant. Dagegen spricht: eine andere Beispielzahl durchsucht eine **andere** Datenmenge — ein CI, das rot wird, wo lokal alles grün ist, und dessen Fund niemand ohne Env-Variable nachstellt. Tiefe ist die Aufgabe des Wochenlaufs (100, `heavy.sh`). Der PR-CI prüft dasselbe wie die Entwicklerin.
+
+**Die CI-Simulation war beim ersten Anlauf rot und hat zwei echte Probleme gefunden:**
+
+| Problem | Ursache | Fix |
+|---|---|---|
+| `GET /api/audit` mit NUL-Byte im Query-Parameter ⇒ **HTTP 500** | `psycopg.DataError` aus dem Treiber, ungefangen — dieselbe Klasse wie auf `/api/enrollment/token/for`, andere Route | Eintrag mit `raises = true`; Produktfehler als Roadmap-Kandidat im PR |
+| `DATABASE_URL` erreichte die Monitoring-Suite | Der CI-Job exportiert es global (der Server braucht es); `run.sh` ließ es für die anderen Dienste nur *ungesetzt*, statt es zu **entfernen** | `unset DATABASE_URL` je Dienst außer `apps/server` |
+
+Der zweite Punkt ist der wichtigere: Monitoring ist per Design eine SQLite-Suite, und ein geerbtes `DATABASE_URL` hätte sie still gegen ein Postgres gefahren, für das sie nicht geschrieben ist.
+
+**Siebter Produktfund, beim Gate-Lauf dieser Task:** `POST /api/notifications/read` mit einer Id jenseits von BIGINT im **Request-Body** ⇒ HTTP 500. `notifications/router.py:90` reicht `data.ids` ungeprüft in `Notification.id.in_()`, Postgres lehnt den Parameter ab (`NumericValueOutOfRange`), ungefangen. Unabhängig reproduziert ohne Testfixtures: `2**63-1` wird akzeptiert, `2**63` und `-(2**63)-1` nicht. Damit ist die Randvalidierungs-Lücke auf **allen drei** Eingangswegen belegt — Pfadparameter (`user_id`), Query (`skip`/`limit`), Body (`ids`). Eintrag mit `raises = true`.
+
+**Korrektur zweier Begründungen, die falsch im Ledger standen:**
+1. `pytest-randomly` ist in diesem Repo **nirgends installiert**. `-p no:randomly` war in allen Läufen wirkungslos — pytest ignoriert das Flag für ein Plugin, das es nicht gibt.
+2. „`derandomize=True` macht jeden Lauf zum selben Lauf" ist **zu stark**. Belegt ist: derselbe Baum und dieselbe Auswahl liefern dieselben Daten (zwei Läufe hintereinander, `252 passed` in 238 s und 234 s). Aber Hypothesis 6.168 speist zusätzlich die **Literale der geladenen Quelldateien** in die Generierung ein (Cache je Datei unter `.hypothesis/constants/`, nachgesehen: er enthält die Strings der jeweiligen Modul-Quelle). Deshalb fand derselbe Testsatz den `2**63`-Fall im vollen Lauf und nicht bei einem `-k`-Lauf derselben Operation. **Ein Lauf auf einem geänderten Baum ist eine neue Suche, kein Nachlauf der alten** — das erklärt die „spontanen" Funde besser als jede Seed-Erzählung. Welcher Anteil daran genau welchen Wert erzeugt hat, ist nicht nachgemessen.
+
+**Stand:** `bash scripts/dev/verify.sh server --strict` → `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns` (server pytest `543 passed, 2 skipped, 2 xfailed`, schemathesis `252 passed`). Der exakte CI-Befehl zuvor lokal simuliert: `256 passed` (server, vor dem siebten Fund) · `111 passed` (monitoring) · `9 passed` (ca-issuer), zusammen 4:46 — im 20-Minuten-Budget.
+
+### T14 — Die Hypothesis-Ziele hingen nicht am Seed  [x]
+Komponente: apps/server, apps/monitoring · Dateien: apps/server/tests/conftest.py, apps/monitoring/tests/conftest.py, DEVELOPMENT.md, docs/features/harness-stufe-8b.md
+Verify: bash scripts/tests/run.sh quick --strict --only monitoring ca-issuer scripts
+Doku: DEVELOPMENT.md nennt das Profil; zwei „Beim Bau abgewichen"-Zeilen in der Spec
+
+DEVELOPMENT.md behauptete „Die Suiten laufen `derandomize`" — das galt nur für die drei **Schemathesis**-Suiten, die es je Test setzen. Die drei **Hypothesis**-Ziele (FRP-TOML, Line-Protocol, SSRF) zogen bei jedem Lauf einen neuen Seed. Aus der Aufsicht als WICHTIG gemeldet; ich mache die Doku-Aussage wahr, statt sie abzuschwächen.
+
+Umsetzung als **Profil** (`register_profile("gate", derandomize=True)` + `load_profile`) in der jeweiligen `conftest.py`, nicht als 17 einzelne Decorator-Argumente: die Test-eigenen `@settings` setzen nur `max_examples`/`deadline` und erben den Rest vom geladenen Profil. Nachgewiesen: alle sechs SSRF-Tests melden `derandomize=True` bei unverändertem `max_examples` (10/100/200/300).
+
+Der Block steht **hinter** den Imports. Davor kostete er 20 × E402: Ruff duldet vor den Imports nur `os.environ`-Mutationen, und ein `register_profile()` dort färbt jeden folgenden Import rot.
+
+**Abweichungen zur Spec** (dort als „Beim Bau abgewichen" vermerkt, statt den Plan still umzuschreiben): das Profil heißt `gate` statt `ci` und ist **immer** aktiv, nicht nur in CI — ein Profil, das nur in CI derandomisiert, erzeugt genau den Fund, den lokal niemand nachstellt. Und die geplante `deadline` von 200 ms je Beispiel gibt es nicht: eine Deadline macht aus einem *langsamen* Beispiel ein *fehlgeschlagenes* und misst auf einer Box mit paralleler Lane die Last statt den Code; begrenzt wird über `max_examples`.
+
+### T15 — Derselbe Fund in Monitoring, und eine Zusage, die dort nicht galt  [x]
+Komponente: apps/monitoring · Dateien: apps/monitoring/tests/schemathesis_exclude.toml, apps/monitoring/tests/test_schemathesis.py
+Verify: bash scripts/dev/verify.sh monitoring --strict
+Doku: keine — DEVELOPMENT.md beschrieb bereits den Zustand, den diese Task herstellt
+
+**Achter Fund, dieselbe Klasse, anderer Dienst:** `GET /checks?offset=9223372036854775808` ⇒ HTTP 500. `routers/checks.py:112` deklariert `offset: int = Query(0, ge=0)` — eine **untere** Schranke ohne obere; der Wert geht ungeprüft in LIMIT/OFFSET. Unter SQLite (Testumgebung) `OverflowError: Python int too large to convert to SQLite INTEGER`, unter Postgres (Produktion) `NumericValueOutOfRange` — beides ungefangen. Dieselbe Deklaration steht an drei Stellen (`checks.py:112`, `checks.py:325`, `alerts.py:29`). Eintrag mit `raises = true`.
+
+**Die Doku versprach für alle Dienste etwas, das nur zwei taten.** DEVELOPMENT.md: „Der Test prüft jede `operation_id` gegen das Schema: ein Tippfehler dort schließt nichts aus und sagt nichts, also ist er ein Fehler." Server und CA-Issuer taten das, **Monitoring nicht** — dort war die Liste ungeprüft, ein Tippfehler hätte still nichts ausgeschlossen. Nachgezogen (`_KNOWN_IDS` aus demselben `_RAW_SCHEMA`, das die Suite fuzzt; eine unbekannte Id ist ein `ValueError` beim Import). Gegenprobe gefahren: die zwei echten Ids treffen beide etwas, der Mutant `list_checks_checks_gett` wird als unbekannt gemeldet.
+
+Das ist dieselbe Sorte Fund wie T14 — nicht der Code war falsch, sondern die Zusage über ihn. Beide standen seit T11 in der Doku.
+
+**Stand:** `bash scripts/dev/verify.sh monitoring --strict` → `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 10 test-skips, 0 reruns`; `… ca-issuer --strict` → `4 passed, 0 failed, 13 skipped, 0 test-skips, 0 reruns`.
+
+### T16 — Das SSRF-Orakel holte seine Antwort aus dem Geprüften  [x]
+Komponente: apps/server, apps/monitoring · Dateien: apps/server/tests/test_ssrf_properties.py, apps/server/tests/test_schemathesis.py, apps/monitoring/tests/test_schemathesis.py, apps/server/tests/test_alembic_builtin.py, apps/monitoring/tests/test_alembic_builtin.py, apps/monitoring/tests/test_check_engine_concurrency.py
+Verify: bash scripts/dev/verify.sh server --strict · bash scripts/dev/verify.sh monitoring --strict
+Doku: keine (Testinterna)
+
+**WICHTIG 6:** `_oracle_is_private` importierte `_BLOCKED_NETWORKS` aus `app.core.ssrf` — also aus genau dem Code, den es prüfen soll. Ein Orakel, das seine Antwort vom Prüfling bezieht, stimmt mit ihm **konstruktionsbedingt** überein, auch wenn der Prüfling falsch ist: hätte jemand `100.64.0.0/10` aus der Sperrliste genommen, wäre die Suite grün geblieben. Die beiden Netze stehen jetzt als Literale im Test (`0.0.0.0/8`, CGNAT) — sie sind das, was der Guard über die `ipaddress`-Kategorien hinaus sperrt, und diese Politik ist das, was der Test festnagelt.
+
+**Gegenprobe gefahren** (Mutation an der Implementierung, per Text zurückgesetzt, kein `git checkout`): CGNAT aus `_BLOCKED_NETWORKS` entfernt ⇒ `2 failed, 5 passed` (`test_verdict_matches_the_ipaddress_categories`, `test_one_private_address_among_many_is_enough`); zurückgesetzt ⇒ `7 passed`. Vorher hätte dieselbe Mutation **nichts** ausgelöst.
+
+**NIT 8:** Drei Postgres-gegatterte Suiten sprangen nur ab, wenn `DATABASE_URL` *leer* war. Ein `DATABASE_URL` auf SQLite hätte sie **laufen** lassen — und `FOR UPDATE` ist dort ein No-op, der Concurrency-Test hätte grün gemeldet, ohne je ein Lock geprüft zu haben. Das ist genau die Lücke, wegen der es den Test gibt. Gate jetzt `not DB_URL.startswith("postgres")` in beiden `test_alembic_builtin.py` und in `test_check_engine_concurrency.py`.
+
+**NIT 9:** `app.dependency_overrides.clear()` in den Schemathesis-Fixtures räumt **jeden** Override der App weg, auch den einer Nachbar-Fixture. Jetzt `pop(get_db, None)` — zurückgenommen wird nur, was diese Fixture gesetzt hat.
+
+**Stand:** `verify.sh server --strict` → `4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns` (`543 passed, 2 skipped, 2 xfailed` + `252 passed` schemathesis); `verify.sh monitoring --strict` → `4 passed, 0 failed, 13 skipped, 10 test-skips, 0 reruns` (`468 passed, 10 skipped` + `108 passed`); `verify.sh ca-issuer --strict` → `4 passed, 0 failed`; `verify.sh scripts --strict` → `5 passed, 0 failed, 12 skipped`.
+
+**Offen aus der Aufsicht:** WICHTIG 5 — adminhelper-04 schlägt einen Test `exclusions_still_hold` vor, der je `raises`-Eintrag prüft, ob der Ausschluss noch nötig ist. In der vorgeschlagenen Form (ein beliebiges Beispiel, das sterben soll) wäre er sofort rot: ein `raises`-Eintrag heisst „stirbt bei **bestimmten** Eingaben", nicht „stirbt immer". Tragfähig wäre eine gespeicherte Probe je Eintrag (Schemathesis druckt sie als `Reproduce with: curl …`), dann meldet sich ein obsolet gewordener Ausschluss von selbst. Das ist eine eigene Task — Vorschlag für die Roadmap, nicht für diesen PR.
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün (mit dem neuen Schritt); `bash scripts/dev/verify.sh all --strict` grün.

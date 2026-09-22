@@ -48,9 +48,12 @@ import pytest
 
 DB_URL = os.environ.get("DATABASE_URL", "").strip()
 
+# Nicht nur "gesetzt", sondern "zeigt auf ein Postgres": FOR UPDATE ist auf SQLite ein
+# No-op, der Test wuerde gruen melden, ohne je ein Lock geprueft zu haben — genau die
+# Luecke, wegen der es diesen Test gibt.
 pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="DATABASE_URL nicht gesetzt — Concurrency-Test laeuft in CI (Postgres-Service)",
+    not DB_URL.startswith("postgres"),
+    reason="kein Postgres in DATABASE_URL — FOR UPDATE ist sonst ein No-op",
 )
 
 

@@ -92,8 +92,9 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
 - **Hypothesis** deckt drei Ziele ab: den FRP-TOML-Round-Trip, das
   VictoriaMetrics-Line-Protocol und den SSRF-Guard. Gepinnte Fälle stehen als
   `@example` im Test und werden mitcommittet; die Beispieldatenbank `.hypothesis/`
-  ist lokaler Cache und gitignored. Die Suiten laufen `derandomize` — ein Gate,
-  das je Lauf andere Daten zieht, ist grün oder rot nach Glück.
+  ist lokaler Cache und gitignored. Die Suiten laufen `derandomize` (Profil `gate`
+  in der jeweiligen `conftest.py`) — ein Gate, das je Lauf andere Daten zieht, ist
+  grün oder rot nach Glück.
 - **Postgres-gegattert:** Der Concurrency-Test (`with_for_update` in
   `check_engine`) und die pytest-alembic-Ketten brauchen ein echtes Postgres und
   skippen ohne `DATABASE_URL` — auf der Dev-Box ist das der Normalfall, CI stellt

@@ -29,7 +29,18 @@ from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from app.core import ssrf
-from app.core.ssrf import _BLOCKED_NETWORKS, is_private_url
+from app.core.ssrf import is_private_url
+
+# Spelled out, NOT imported from app.core.ssrf: an oracle that takes its answer
+# from the code under test agrees with that code by construction, including when
+# the code is wrong. These two are what the guard adds on top of the categories
+# the ipaddress module already knows — 0.0.0.0/8 ("this network", which resolves
+# to localhost on Linux) and the CGNAT range. Change the guard's list and this
+# test goes red on purpose: the policy is the thing being pinned here.
+_EXTRA_BLOCKED = [
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+]
 
 
 def _addr_info(address: str) -> list:
@@ -59,7 +70,7 @@ def _oracle_is_private(ip) -> bool:
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
-        or any(ip in net for net in _BLOCKED_NETWORKS)
+        or any(ip in net for net in _EXTRA_BLOCKED)
     )
 
 
@@ -67,7 +78,7 @@ def _oracle_is_private(ip) -> bool:
 @example(ip=ipaddress.ip_address("127.0.0.1"))
 @example(ip=ipaddress.ip_address("169.254.169.254"))  # cloud metadata
 @example(ip=ipaddress.ip_address("10.0.0.1"))
-@example(ip=ipaddress.ip_address("100.64.0.1"))  # CGNAT, only via _BLOCKED_NETWORKS
+@example(ip=ipaddress.ip_address("100.64.0.1"))  # CGNAT: no ipaddress category covers it
 @example(ip=ipaddress.ip_address("0.0.0.0"))  # "this network" -> localhost on Linux
 @example(ip=ipaddress.ip_address("8.8.8.8"))  # public, must be allowed
 @example(ip=ipaddress.ip_address("::1"))

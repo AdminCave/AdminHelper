@@ -36,9 +36,11 @@ from sqlalchemy import create_engine, text
 MONITORING_DIR = Path(__file__).resolve().parents[1]
 DB_URL = (os.environ.get("DATABASE_URL") or "").strip()
 
+# Nicht nur "gesetzt", sondern "zeigt auf ein Postgres": ein DATABASE_URL auf SQLite
+# wuerde die Kette laufen lassen und etwas anderes pruefen, als der Test behauptet.
 pytestmark = pytest.mark.skipif(
-    not DB_URL,
-    reason="DATABASE_URL nicht gesetzt — die Migrationskette braucht ein echtes Postgres",
+    not DB_URL.startswith("postgres"),
+    reason="kein Postgres in DATABASE_URL — die Migrationskette braucht ein echtes Postgres",
 )
 
 

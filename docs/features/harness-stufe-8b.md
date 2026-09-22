@@ -96,8 +96,13 @@ genannt, die Signatur wird beim Bau gegen die Strategie-Referenz geprüft (unver
   wird `[?]`, wenn mehr als fünf Operationen ausgeschlossen werden müssten.
 - **Laufzeit:** Hypothesis-`deadline` 200 ms je Beispiel; der Concurrency-Test braucht einen zweiten DB-Zugriff parallel
   zur Session-Fixture — eigene Engine, kein Anteil an `db_session`.
+  **Beim Bau abgewichen:** alle Ziele laufen `deadline=None`. Eine Deadline macht aus einem *langsamen* Beispiel einen
+  *fehlgeschlagenen* — auf einer Box mit paralleler Lane misst sie die Last, nicht den Code. Die Laufzeit wird über
+  `max_examples` begrenzt, nicht über eine Zeitgrenze je Beispiel.
 - **Flakiness:** Hypothesis-Fehlschläge sind reproduzierbar (Datenbank/`@example`-Pins); im CI Profil `ci` mit
   `derandomize=True`.
+  **Beim Bau abgewichen:** das Profil heißt `gate` und ist **immer** aktiv, nicht nur in CI (T14). Ein Profil, das nur
+  in CI derandomisiert, erzeugt genau den Fund, den lokal niemand nachstellen kann.
 - **Rollback:** additiv (Tests, Dev-Deps, ein Schritt), `git revert`.
 
 ## Doku-Impact

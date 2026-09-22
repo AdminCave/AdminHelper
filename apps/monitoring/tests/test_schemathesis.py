@@ -63,9 +63,24 @@ def _excluded_operation_ids() -> list[str]:
 
 # from_dict + .app rather than from_asgi, for the reason spelled out in the
 # server's suite: from_asgi runs the application lifespan at import time.
-schema = schemathesis.openapi.from_dict(app.openapi())
+_RAW_SCHEMA = app.openapi()
+schema = schemathesis.openapi.from_dict(_RAW_SCHEMA)
 schema.app = app
 _EXCLUDED = _excluded_operation_ids()
+# An operation_id the schema does not know excludes NOTHING and says nothing about
+# it — the entry looks like a decision and is a typo. Check it against the schema
+# the suite actually runs, the same way the server's suite does.
+_KNOWN_IDS = {
+    op.get("operationId")
+    for methods in _RAW_SCHEMA["paths"].values()
+    for op in methods.values()
+    if isinstance(op, dict)
+}
+_UNKNOWN = sorted(set(_EXCLUDED) - _KNOWN_IDS)
+if _UNKNOWN:
+    raise ValueError(
+        f"{_EXCLUDE_FILE.name}: unknown operation_id(s) {_UNKNOWN} — they exclude nothing"
+    )
 if _EXCLUDED:
     schema = schema.exclude(operation_id=_EXCLUDED)
 
@@ -142,7 +157,9 @@ def auth_headers(monkeypatch) -> dict[str, dict[str, str]]:
         "anonymous": {},
     }
 
-    app.dependency_overrides.clear()
+    # pop, not clear(): clear() removes EVERY override on the app, including
+    # ones a neighbouring fixture installed. Take back only what this fixture set.
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.schemathesis

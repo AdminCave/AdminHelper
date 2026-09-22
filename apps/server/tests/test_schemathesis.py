@@ -179,7 +179,9 @@ def api_db(db_session, monkeypatch):
 
     app.dependency_overrides[get_db] = _override_db
     yield db_session
-    app.dependency_overrides.clear()
+    # pop, not clear(): clear() removes EVERY override on the app, including
+    # ones a neighbouring fixture installed. Take back only what this fixture set.
+    app.dependency_overrides.pop(get_db, None)
 
 
 def _api_key(db, *, permission: str, server_id: str | None, name: str) -> str:
@@ -233,10 +235,16 @@ def auth_headers(api_db, admin_user, monkeypatch) -> dict[str, dict[str, str]]:
 @settings(
     max_examples=MAX_EXAMPLES,
     deadline=None,
-    # Without this the suite is a different suite on every run: pytest-randomly
-    # reseeds Hypothesis per run, so one run is green and the next one red on an
-    # operation nobody touched — a gate that flickers proves nothing. The weekly
-    # box run searches deeper through AH_SCHEMATHESIS_EXAMPLES, not through luck.
+    # Without this the suite is a different suite on every run: Hypothesis draws a
+    # fresh seed each time, so one run is green and the next red on an operation
+    # nobody touched (observed: `6 failed, 299 passed` right after a `305 passed`)
+    # — a gate that flickers proves nothing. Depth comes from
+    # AH_SCHEMATHESIS_EXAMPLES in the weekly run, not from luck.
+    # The determinism reaches as far as the tree, not further: Hypothesis also feeds
+    # the literals of every loaded source file into generation (its per-file cache
+    # under .hypothesis/constants/), so an edited tree searches new ground rather
+    # than replaying the old run. A finding that appears "out of nowhere" after an
+    # unrelated edit is that, not flakiness.
     derandomize=True,
     # The database fixture is function-scoped and shared by every example of one
     # test, which is exactly what this health check exists to warn about. The
@@ -264,7 +272,7 @@ def test_api_under_every_auth_context(case, context, auth_headers, api_db):
         # Postgres rejects (an integer too large for the column, a NUL byte in a
         # text value) aborts the transaction for all of them: the next example
         # then fails on "current transaction is aborted" instead of on its own
-        # merits, and whether a run is green depends on the order pytest-randomly
-        # picked. Rolling back to the savepoint after each example is what makes
-        # the examples independent — derandomize only fixes the DATA, not the state.
+        # merits, and whether a run is green then depends on which example ran
+        # first. Rolling back to the savepoint after each example is what makes
+        # them independent — derandomize fixes the DATA, not the database state.
         api_db.rollback()
