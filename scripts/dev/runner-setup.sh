@@ -51,17 +51,29 @@ DB_NAME="ah_runner_test"
 VENV_PKGS="ruff pytest pytest-cov pytest-httpx"
 
 DB_PW=""   # set in step 3; referenced by the redaction in as_pg_sql before that
-DRY=0 REMOVE=0 YES=0
+DRY=0 REMOVE=0 YES=0 TRUST=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;
     --remove)  REMOVE=1 ;;
     --yes)     YES=1 ;;
+    --trust)   TRUST=1 ;;
     -h|--help) sed -n '/^#   sudo bash/,/^# `sudo bash …`/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+# Two names the TEST has to be able to move, honoured ONLY under --dry-run: the
+# plan legitimately omits `useradd` once the user exists and `git clone` once the
+# clone is there, so runner_setup_test cannot assert either against a box that has
+# already been provisioned — from 2026-09-21 on it was red for exactly that reason
+# (found 2026-09-22), and a permanently red test hides the next real regression.
+# A real run ignores both variables, so they cannot misdirect a provisioning.
+if [ "$DRY" = 1 ]; then
+  RUNNER="${AH_RUNNER_DRY_USER:-$RUNNER}"
+  SRV="${AH_RUNNER_DRY_SRV:-$SRV}"
+fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 # The real home if the user exists, the default before that.
@@ -274,6 +286,29 @@ step "$HOME_DIR/.claude/settings.json from scripts/dev/runner-settings.json"
 safe_dir "$HOME_DIR/.claude"
 run_sh "install -o $RUNNER -g $RUNNER -m 600 $(printf '%q' "$ROOT/scripts/dev/runner-settings.json") $(printf '%q' "$HOME_DIR/.claude/settings.json")"
 
+# Claude Code ignores a project's allow list until the workspace is trusted — as
+# adminhelper-runner it says so out loud: "Ignoring 38 permissions.allow entries
+# … this workspace has not been trusted" (seen 2026-09-22). That direction is
+# fail-safe, the DENY list keeps working, so this stays OFF unless it is asked
+# for: accepting the trust is what arms those 38 allow rules, and that is Kevin's
+# call, not a side effect of provisioning. From stage 7 on the runner needs it.
+step "trusted workspace for $SRV/repo (only with --trust)"
+if [ "$TRUST" = 1 ]; then
+  run_sh "$(printf '%q' "$(command -v python3)") - $(printf '%q' "$HOME_DIR/.claude.json") $(printf '%q' "$SRV/repo") <<'PY'
+import json, os, sys
+path, project = sys.argv[1], sys.argv[2]
+data = json.load(open(path)) if os.path.exists(path) else {}
+data.setdefault('projects', {}).setdefault(project, {})['hasTrustDialogAccepted'] = True
+tmp = path + '.new'
+with open(tmp, 'w') as fh:
+    json.dump(data, fh, indent=2)
+os.replace(tmp, path)
+PY"
+  run_sh "chown $RUNNER:$RUNNER $(printf '%q' "$HOME_DIR/.claude.json")"
+else
+  note "not done — run again with --trust when the runner's allow rules should apply (DEVELOPMENT.md)"
+fi
+
 # ── 6. the two token files ───────────────────────────────────────────────────
 # Written ONLY while they are still empty: after Kevin has put the tokens in,
 # a second run of this script must not take them away again.
@@ -284,7 +319,7 @@ if [ -s "$HOME_DIR/.config/adminhelper/oauth.env" ]; then
 else
   write_file "$HOME_DIR/.config/adminhelper/oauth.env" 600 "# The subscription token of this user (roadmap D18: everything runs on the
 # subscription, never on an API key). Create it with:
-#   sudo -u $RUNNER claude setup-token
+#   sudo -iu $RUNNER claude setup-token
 # then put it here as one line:
 # CLAUDE_CODE_OAUTH_TOKEN=...
 "
@@ -311,7 +346,7 @@ cat <<HANDOVER
 
 ── done. Three steps are yours, $RUNNER cannot do them itself:
 
-  1. sudo -u $RUNNER claude setup-token
+  1. sudo -iu $RUNNER claude setup-token
      put the token into $HOME_DIR/.config/adminhelper/oauth.env
 
   2. pveum user token add $RUNNER@pve run --privsep 1   (plus the four ACL paths)

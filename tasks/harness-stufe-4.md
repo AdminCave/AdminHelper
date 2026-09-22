@@ -195,9 +195,10 @@ dahin steht der Ledger auf `blockiert`, auch wenn der PR gemergt ist.
 - [ ] **(2) Claude-CLI für den Runner.** `runner-setup.sh` installiert sie nicht, und deine
       liegt in `~/.local/bin` (für den Runner unerreichbar). Entweder systemweit installieren
       oder als Runner: `sudo -u adminhelper-runner bash -lc 'curl -fsSL https://claude.ai/install.sh | bash'`
-      — danach `sudo -u adminhelper-runner bash -lc 'command -v claude'` prüfen. Ohne CLI
+      — danach `sudo -iu adminhelper-runner command -v claude` prüfen. Ohne CLI
       können die beiden Modell-Proben in (6) nicht laufen (sie melden dann `info`, nicht `ok`).
-- [ ] **(3) Abo-Token.** `sudo -u adminhelper-runner claude setup-token`, den Token als
+- [ ] **(3) Abo-Token.** `sudo -iu adminhelper-runner claude setup-token` (mit `-i`: ohne
+      Login-Shell behaelt sudo deinen PATH und findet die CLI des Runners nicht), den Token als
       `CLAUDE_CODE_OAUTH_TOKEN=…` in `~adminhelper-runner/.config/adminhelper/oauth.env`
       (bleibt `0600`). Kein API-Key: `ANTHROPIC_API_KEY` hätte Vorrang und würde über ein
       API-Konto abrechnen (Roadmap D18).
