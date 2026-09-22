@@ -83,8 +83,9 @@ bash "$RT" --verdict </dev/null >/dev/null 2>&1
   || bad "--verdict without a needle did not exit 2"
 
 echo "── the probe really passes --verbose (the defect of 2026-09-22)"
-grep -q -- '--output-format stream-json --verbose' "$RT" \
-  && ok "claude_probe passes --verbose next to stream-json" \
+# Order-independent: what matters is that the invocation carries both flags.
+awk '/timeout [0-9]+ claude -p/{f=1} f{print} f&&/2>&1\)"/{exit}' "$RT" | grep -q -- '--verbose' \
+  && ok "the probe invocation carries --verbose" \
   || bad "stream-json without --verbose — the probe cannot start"
 
 echo ""

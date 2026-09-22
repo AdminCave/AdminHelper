@@ -110,12 +110,20 @@ grep -q 'exists — git clone would be skipped' <<<"$PLAN" \
 grep -qF -- 'useradd -m -s /bin/bash' <<<"$PLAN" \
   && bad "existing user: useradd is still in the plan" || ok "existing user: useradd appears nowhere in the plan"
 
-# The overrides are a test hook and must stay one: outside --dry-run they are
-# ignored, or a stray variable in somebody's shell could provision the wrong user.
+# The overrides are a test hook and must stay one: outside --dry-run they have to
+# be ignored, or a stray variable in somebody's shell could provision the wrong
+# user. A behaviour test cannot show this — between argument parsing and the root
+# check the script prints nothing, so "the name does not appear" is true with the
+# guard and without it. So check the anchoring in the source, the way the
+# no_symlink_in assertion below does, and keep the behaviour check as a second line.
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_USER' \
+  && ok "the overrides sit inside the --dry-run guard" || bad "AH_RUNNER_DRY_USER is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_SRV' \
+  && ok "the SRV override sits inside the same guard" || bad "AH_RUNNER_DRY_SRV is not guarded by DRY=1"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
 [ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
-  && ok "without --dry-run the overrides are ignored (and it still demands root)" \
-  || bad "the dry-run overrides leaked into a real run: rc=$prc out=$PLAN"
+  && ok "a real run without --dry-run still demands root and names no override" \
+  || bad "a real run reacted to the override: rc=$prc out=$PLAN"
 
 # The runner's own venv path: run.sh's default (/tmp/ah-venv) belongs to whoever
 # created it first, and pip then fails for this user in exactly the three suites
@@ -243,8 +251,8 @@ echo "── the trusted workspace is opt-in ──"
 PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && bad "the default plan already trusts the workspace" || ok "the default plan does not trust the workspace"
-grep -q -- '--trust' <<<"$PLAN" \
-  && ok "the plan names --trust as the way to ask for it" || bad "the plan never mentions --trust"
+grep -q 'run again with --trust' <<<"$PLAN" \
+  && ok "the plan says how to ask for it" || bad "the plan does not say how to ask for trust"
 PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run --trust 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && ok "--trust plans the flag in the runner's .claude.json" || bad "--trust does not plan the trust flag"

@@ -294,17 +294,32 @@ run_sh "install -o $RUNNER -g $RUNNER -m 600 $(printf '%q' "$ROOT/scripts/dev/ru
 # call, not a side effect of provisioning. From stage 7 on the runner needs it.
 step "trusted workspace for $SRV/repo (only with --trust)"
 if [ "$TRUST" = 1 ]; then
+  # Same reason as everywhere else in this script: the runner OWNS its home, so
+  # root writing into it must not follow a link the runner put there. O_NOFOLLOW
+  # and O_EXCL cover the two files this step touches, no_symlink_in the path to
+  # them; without that, a `.claude.json.new -> /etc/passwd` would be written as root.
+  no_symlink_in "$HOME_DIR/.claude.json"
+  no_symlink_in "$HOME_DIR/.claude.json.new"
   run_sh "$(printf '%q' "$(command -v python3)") - $(printf '%q' "$HOME_DIR/.claude.json") $(printf '%q' "$SRV/repo") <<'PY'
 import json, os, sys
 path, project = sys.argv[1], sys.argv[2]
-data = json.load(open(path)) if os.path.exists(path) else {}
+data = {}
+if os.path.exists(path):
+    # O_NOFOLLOW: the file belongs to the runner, this process is root.
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd) as fh:
+        data = json.load(fh)
 data.setdefault('projects', {}).setdefault(project, {})['hasTrustDialogAccepted'] = True
 tmp = path + '.new'
-with open(tmp, 'w') as fh:
+# O_EXCL: a pre-placed .new is a reason to stop, not something to write through.
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, 'w') as fh:
     json.dump(data, fh, indent=2)
+os.chmod(tmp, 0o600)   # Claude Code keeps this file at 0600; it carries the account.
 os.replace(tmp, path)
 PY"
   run_sh "chown $RUNNER:$RUNNER $(printf '%q' "$HOME_DIR/.claude.json")"
+  run_sh "chmod 600 $(printf '%q' "$HOME_DIR/.claude.json")"
 else
   note "not done — run again with --trust when the runner's allow rules should apply (DEVELOPMENT.md)"
 fi

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 4 — Nacharbeit aus der T11-Verifikation — Task-Ledger
-Status: geplant · Branch: harness/stufe-4-nacharbeit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/stufe-4-nacharbeit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: tasks/harness-stufe-4.md (Anhang T11) — kein eigenes Spec-Dokument, das Vorhaben behebt Befunde an bestehendem Code
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt nur `scripts/dev/` und `scripts/tests/`, keinen heavy-relevanten Pfad.
@@ -37,3 +37,28 @@ Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped (scripts) · redteam_test
 Änderung: `runner_setup_test` erwartet `useradd` und `git clone` im `--dry-run`-Plan, den `runner-setup.sh` weglässt, sobald der Runner-User existiert — seit der Provisionierung meldet der `scripts`-Gate auf der Dev-Box dauerhaft zwei Fehler und maskiert damit echte Regressionen. Der Test fährt den Dry-Run künftig gegen einen garantiert abwesenden Benutzernamen und prüft den idempotenten Pfad als eigenen Fall. Im Anhang von `harness-stufe-4.md` wird außerdem die Befehlszeile korrigiert: `sudo -iu adminhelper-runner claude setup-token` — ohne `-i` behält sudo den PATH des Aufrufers und findet die CLI des Runners nicht (2026-09-22 verifiziert). Der Trust-Schalter (`projects[…].hasTrustDialogAccepted`) kommt als ausdrücklich abgeschalteter Schritt in `runner-setup.sh` samt Begründung in `DEVELOPMENT.md`, weil er die 38 Allow-Regeln des Runners erst scharf macht — gesetzt wird er von Kevin, nicht vom Skript.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (Trust-Schritt, Warum abgeschaltet) · tasks/harness-stufe-4.md (Anhang)
+
+## Abschluss-Review (Opus, frischer Kontext, 2026-09-22)
+
+`request_changes` mit einem Blocker und zwei wichtigen Punkten — alle drei behoben, plus drei Nits:
+
+- **Blocker:** der `--trust`-Schritt schrieb als root in das Home des Runners **ohne** `no_symlink_in`;
+  ein vom Runner vorgelegtes `.claude.json.new → /etc/passwd` wäre als root beschrieben worden.
+  Jetzt `no_symlink_in` auf beide Dateien plus `O_NOFOLLOW`/`O_EXCL` beim Lesen und Schreiben.
+- **wichtig:** die Zusicherung „ohne `--dry-run` werden die Überschreibungen ignoriert" war ein
+  Scheintest — der Reviewer hat den Schutz im Produktivcode entfernt und der Test blieb grün, weil
+  zwischen Argument-Parsing und root-Check nichts ausgegeben wird. Jetzt wird die Verankerung im
+  Quelltext geprüft; Gegenprobe gefahren: ohne den Schutz meldet der Test zwei Fehler.
+- **wichtig:** `json.dump` legte die Datei mit root-umask an (0644) — eine Datei mit Kontodaten.
+  Jetzt 0600 beim Anlegen, beim Ersetzen und per `chmod` danach.
+- Nits: `--trust`-Zusicherung auf die Notiz festgenagelt statt auf die Überschrift, `--verbose`-Prüfung
+  unabhängig von der Flag-Reihenfolge, und der T11-Anhang nennt den Trust-Schritt jetzt selbst (6b).
+
+Nicht geändert, mit Grund: eine kaputte `~/.claude.json` lässt `--trust` laut abbrechen statt sie
+stillschweigend zu überschreiben. Der Needle-Vergleich bleibt ein Teilstring-Treffer; die theoretische
+Falsch-Grün-Richtung (Verweigerung für `git push-notes` neben einem erfolgreichen `git push` im selben
+Protokoll) ist im Skript als bekannte Grenze vermerkt.
+
+**Evidenz am Ende:** `run.sh[quick]: 5 passed, 0 failed, 12 skipped` · `redteam_test: 10 passed, 0 failed`
+· `runner_setup_test: 60 passed, 0 failed` (vor diesem Vorhaben: 49 passed, 2 failed) · shellcheck ohne
+Warnung oder Fehler.
