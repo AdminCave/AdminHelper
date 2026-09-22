@@ -76,8 +76,10 @@ Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 Abhängt von: T1
 
-### T6 — `_validate_tags` lehnt ab statt zu werfen  [ ]
+### T6 — `_validate_tags` lehnt ab statt zu werfen  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_input_hardening.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @bd992d66 2026-09-22T20:28:47+02:00
+Review: approve (sonnet, 2 Runden, Mutationsprobe)
 Änderung: `_validate_tags` (Zeile 65) prüft als Erstes den Typ — kein `list` bzw. ein Element ohne `str` ergibt `ValueError` mit Feldbezug statt `AttributeError`/`TypeError`. `mode="before"` bleibt (die Normalisierung soll rohe Werte sehen), die sechs Registrierungen in `frp/`, `ansible/`, `servers/schemas.py` bleiben unberührt. Test mit dict, int, None und bool als `tags`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py
 Doku: keine (intern)

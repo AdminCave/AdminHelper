@@ -65,11 +65,26 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
 
 
 def _validate_tags(tags: list[str] | None) -> list[str] | None:
+    """Normalize a tag list: strip, cap at 50 chars, drop empties, deduplicate.
+
+    Registered as field_validator(mode="before") in six places (frp, ansible,
+    servers) so it sees the RAW value — the normalization has to run before
+    Pydantic coerces. That also means the type check is this function's job: a
+    dict, an int, None inside the list or a bool used to reach .strip() or the
+    for loop and raise AttributeError/TypeError, which is not a ValidationError
+    and left the route with an uncaught 500 instead of a 422. A bare string is
+    rejected for the same reason it must not be accepted: iterating it would
+    silently turn "ops" into three one-character tags.
+    """
     if tags is None:
         return None
+    if not isinstance(tags, list):
+        raise ValueError("must be a list of strings")
     seen = set()
     result = []
     for t in tags:
+        if not isinstance(t, str):
+            raise ValueError("must be a list of strings")
         t = t.strip()[:50]
         if t and t not in seen:
             seen.add(t)

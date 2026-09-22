@@ -196,3 +196,51 @@ def test_integer_body_fields_hold_at_both_edges(model, field):
     for past in (INT_COLUMN_MIN - 1, INT_COLUMN_MAX + 1):
         with pytest.raises(ValidationError):
             _build(model, **{field: past})
+
+
+# The raw values a mode="before" validator can be handed. Each one used to reach
+# .strip() or the for loop and raise AttributeError/TypeError — not a
+# ValidationError, so the six routes that register _validate_tags answered 500.
+BAD_TAGS = [
+    {"a": 1},  # dict with a str key: the old code iterated it into ["a"], silently
+    {1: "a"},  # dict with a non-str key: the key reached .strip() -> AttributeError
+    7,  # not iterable at all
+    True,  # bool: not iterable either
+    "ops",  # a bare string would silently become three one-character tags
+    [None],
+    [1],
+    [["nested"]],
+]
+
+
+@pytest.mark.parametrize("bad", BAD_TAGS)
+@pytest.mark.parametrize("model", [FrpTunnelCreate, ServerCreate, ServerUpdate])
+def test_tags_rejects_non_string_lists(model, bad):
+    build = _tunnel if model is FrpTunnelCreate else lambda **o: model(name="s", hostname="h", **o)
+    with pytest.raises(ValidationError):
+        build(tags=bad)
+
+
+def test_tags_still_normalizes_a_real_list():
+    """The type check must not cost the normalization the validator exists for."""
+    assert _tunnel(tags=["  b  ", "a", "b", "", "x" * 60]).tags == ["b", "a", "x" * 50]
+
+
+@pytest.mark.parametrize("tags", [True, [{"a": 1}]])
+def test_server_route_answers_422_not_500(tags, test_client, db_session, admin_user):
+    """The symptom that was measured on six routes: the validator died before a
+    response existed.
+
+    Both payloads verified against the unfixed validator: a bool is not iterable
+    (TypeError), a dict INSIDE the list reaches .strip() (AttributeError). A dict
+    as the whole value does not belong here — JSON object keys are always
+    strings, so it arrived as an iterable of strings and answered 201."""
+    login = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    r = test_client.post(
+        "/api/servers",
+        json={"name": "s1", "hostname": "h1", "tags": tags},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "tags"
