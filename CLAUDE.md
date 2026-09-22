@@ -27,7 +27,9 @@ eigene PKI), VictoriaMetrics (Line-Protocol), Tauri-IPC, Proxmox-API — vor Än
 <!-- Stufe 0 · Quelle §3.1, §3.2, §5 Leitprinzipien 4/5/7/10, Stufe 13 -->
 
 **Nichts läuft ohne Kevins Start.** Kein Timer, kein Cron, keine Routine. Kevin startet jede Session, jeden Testlauf
-und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`.
+und jeden Bau; er gibt frei, pusht, merged und publiziert. Zur Zeit ist genau **ein** Bau-Vorhaben `aktiv`;
+eine zweite **Lane** ist die Ausnahme, die `/feature-plan` am Gate vorschlägt, wenn zwei Ledger disjunkt sind
+und höchstens eines VMs braucht (AUTONOMOUS.md „Parallel-Betrieb").
 **Lange Läufe laufen überwacht:** Wochenlauf, Capstone, Bake, CI-Watch startet Claude auf Kevins Zuruf als
 Hintergrund-Lauf (tmux plus Wächter), bleibt dran bis zum Report und meldet das Ergebnis — nie nackt in einem
 Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKILL.md`).
@@ -55,7 +57,14 @@ Freigaben setzen oder Gates überspringen · einen zweiten Bau-Lauf starten · V
 `adminhelper-ci` anfassen oder Templates löschen · Homelab-Namen, Tokens oder Sicherheitsfunde in versionierte
 Dateien schreiben. Wo ein Skill heute am Ende pushen oder einen PR öffnen will, ist der Permission-Prompt Kevins
 Entscheidung. Innerhalb des Pools `adminhelper-ci` darf Claude VMs klonen, baken und zerstören (Freigabe
-2026-09-08). Committen auf einem Feature-Branch ist erlaubt, bis `task-close.sh` es übernimmt (Stufe 4).
+2026-09-08). **Committen tut seit Stufe 4 `scripts/dev/task-close.sh`, nicht die Session:** es fährt das
+`Verify:` der Task, prüft Diff-Scan, Scope und Sec-Sperre, setzt den Haken mit der Summary-Zeile als
+Evidenz und committet Code + Ledger; `git add|commit|checkout|restore|stash` prompten seitdem.
+**Harness-Schutz:** ein PreToolUse-Hook verweigert im autonomen Lauf Änderungen an den Dateien aus
+`scripts/dev/harness-paths.txt` (Regeln, Skills, Gates) — bei Shell-Kommandos best effort, interaktiv
+warnt er nur.
+**Kill-Switch:** `bash scripts/dev/harness.sh off|on|status` (Marker `.vm/harness.off`) ist Kevins
+Handgriff für ein Vorhaben, das den Harness selbst umbaut.
 
 **Release-Kanäle (ab Stufe 13 per Skript, bis dahin von Hand):** `beta` fortlaufend nach jedem grünen Wochenlauf;
 `rc` schneidet Kevin; `stable` frühestens 7 Tage nach dem RC ohne Fix und ohne Rückmeldung; `hotfix` ist der einzige
@@ -75,7 +84,8 @@ beginnt die Antwort mit einer Zeile `Warnung:` — einmal, vor der Arbeit; danac
    höherer Klasse würde übersprungen.
 2. Commit, Push, Tag, Merge oder Publish direkt auf `main`; ein Release ohne grünen Wochenlauf (ab Stufe 3); ein
    `stable` früher als 7 Tage nach dem RC; ein halb geschnittenes Release (Bump ohne Tag, Draft ohne Publish).
-3. Ein Deckel ist erreicht (`aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20) oder ein zweiter Bau-Lauf würde starten.
+3. Ein Deckel ist erreicht (`aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20) oder ein zweiter Bau-Lauf würde starten —
+   außer als Lane, die das Gate als disjunkt vorgeschlagen hat.
 4. Harness-Dateien (`CLAUDE.md`, `.claude/`, `scripts/dev/`, `AUTONOMOUS.md`) würden in einem Feature-Branch
    mitgeändert, oder ein Verb wird verlangt, das laut Fahrplan noch nicht existiert.
 5. Kevin will planen, mergen oder rebasen, und der Haupt-Checkout ist nicht auf `main` oder nicht sauber.

@@ -1,0 +1,123 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "deny": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(gh:*)",
+      "Bash(sudo:*)",
+      "Bash(python3 scripts/vm/vm.py bake:*)",
+      "Bash(bash scripts/vm/bake.sh:*)",
+      "Bash(bash scripts/dev/task-close.sh:*)",
+      "Bash(bash scripts/dev/ledger.sh mark-done:*)",
+      "Edit(./.claude/**)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./AUTONOMOUS.md)",
+      "Edit(./scripts/dev/**)",
+      "Edit(./scripts/tests/run.sh)",
+      "Edit(./scripts/tests/heavy.sh)",
+      "Edit(./scripts/vm/vm.py)",
+      "Edit(./tasks/private/**)",
+      "Bash(git switch:*)",
+      "Bash(git branch:*)",
+      "Bash(git revert:*)",
+      "Bash(bash scripts/tests/heavy.sh:*)",
+      "Bash(bash scripts/tests/multibox.sh:*)",
+      "Bash(bash scripts/tests/run.sh all:*)",
+      "Bash(bash scripts/tests/run.sh e2e:*)",
+      "Bash(bash scripts/tests/run.sh integration:*)",
+      "Edit(~/.claude/**)",
+      "Read(~/.config/adminhelper/**)",
+      "Edit(//srv/ah/**/CLAUDE.md)",
+      "Edit(//srv/ah/**/AUTONOMOUS.md)",
+      "Edit(//srv/ah/**/.claude/**)",
+      "Edit(//srv/ah/**/scripts/dev/**)",
+      "Edit(//srv/ah/**/scripts/tests/run.sh)",
+      "Edit(//srv/ah/**/scripts/tests/heavy.sh)",
+      "Edit(//srv/ah/**/scripts/vm/vm.py)",
+      "Edit(//srv/ah/**/tasks/private/**)",
+      "Edit(./scripts/vm/**)",
+      "Edit(./scripts/tests/multibox.sh)",
+      "Edit(//srv/ah/**/scripts/vm/**)",
+      "Edit(//srv/ah/**/scripts/tests/multibox.sh)"
+    ],
+    "allow": [
+      "Bash(bash scripts/dev/verify.sh:*)",
+      "Bash(bash scripts/tests/run.sh quick:*)",
+      "Bash(bash scripts/tests/run.sh lint:*)",
+      "Bash(bash scripts/tests/run.sh unit:*)",
+      "Bash(bash scripts/dev/ledger.sh start:*)",
+      "Bash(bash scripts/dev/ledger.sh mark-skip:*)",
+      "Bash(bash scripts/dev/ledger.sh mark-question:*)",
+      "Bash(bash scripts/dev/ledger.sh set-files:*)",
+      "Bash(bash scripts/dev/ledger.sh status:*)",
+      "Bash(bash scripts/dev/ledger.sh lint:*)",
+      "Bash(bash scripts/dev/review.sh:*)",
+      "Bash(bash scripts/vm/warm.sh:*)",
+      "Bash(bash scripts/vm/iter.sh:*)",
+      "Bash(bash scripts/vm/reap.sh:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git status:*)",
+      "Bash(git grep:*)",
+      "Bash(rg:*)",
+      "Bash(sed -n:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(go test:*)",
+      "Bash(cargo test:*)",
+      "Bash(npm run:*)",
+      "Edit(./apps/**)",
+      "Edit(./docs/**)",
+      "Edit(./scripts/**)",
+      "Edit(./tasks/**)",
+      "Edit(./CHANGELOG.md)",
+      "Edit(./README.md)",
+      "Edit(./DEVELOPMENT.md)",
+      "Bash(python3 scripts/vm/vm.py doctor:*)",
+      "Bash(python3 scripts/vm/vm.py clone:*)",
+      "Bash(python3 scripts/vm/vm.py wait:*)",
+      "Bash(python3 scripts/vm/vm.py ssh:*)",
+      "Bash(python3 scripts/vm/vm.py sync:*)",
+      "Bash(python3 scripts/vm/vm.py run:*)",
+      "Bash(python3 scripts/vm/vm.py pull:*)",
+      "Bash(python3 scripts/vm/vm.py snap:*)",
+      "Bash(python3 scripts/vm/vm.py rollback:*)",
+      "Bash(python3 scripts/vm/vm.py delsnap:*)",
+      "Bash(python3 scripts/vm/vm.py destroy:*)",
+      "Bash(python3 scripts/vm/vm.py reap:*)",
+      "Bash(python3 scripts/vm/vm.py list:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/harness-guard.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/dev/hooks/session-status.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
