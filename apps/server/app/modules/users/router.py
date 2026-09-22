@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user, hash_password
+from app.core.bounds import IntPk
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.identity import SCOPE_ACCESS
@@ -94,7 +95,7 @@ def create_user(
 
 @router.put("/{user_id}")
 def update_user(
-    user_id: int,
+    user_id: IntPk,
     data: UserUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -152,7 +153,7 @@ def update_user(
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
-    user_id: int,
+    user_id: IntPk,
     request: Request,
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
+from app.core.bounds import IntPk
 from app.core.database import get_db
 from app.core.request_context import actor_from_request
 from app.modules.api_keys.models import ApiKey
@@ -55,7 +56,7 @@ def create_api_key(
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_api_key(
-    key_id: int,
+    key_id: IntPk,
     request: Request,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),

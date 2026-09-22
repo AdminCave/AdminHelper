@@ -57,8 +57,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_pagination.py
 Doku: keine (intern)
 Abhängt von: T1
 
-### T4 — Server: int-Pfadparameter begrenzen  [ ]
-Komponente: server · Dateien: apps/server/app/modules/users/router.py, apps/server/app/modules/api_keys/router.py, apps/server/app/modules/frp/generate_router.py
+### T4 — Server: int-Pfadparameter begrenzen  [x]
+Komponente: server · Dateien: apps/server/app/modules/users/router.py, apps/server/app/modules/api_keys/router.py, apps/server/app/modules/frp/generate_router.py, apps/server/tests/test_id_bounds.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @8604bf11 2026-09-22T19:38:16+02:00
+Review: approve (sonnet, Mutationsprobe)
 Änderung: die Pfadparameter `*_id: int` auf `IntPk`/`BigIntPk` umstellen — je Route am Spaltentyp des adressierten Modells geprüft. Das ist die Route, auf der `user_id ≥ 2**31` heute 500 liefert.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)

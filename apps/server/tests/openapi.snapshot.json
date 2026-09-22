@@ -2501,6 +2501,8 @@
             "name": "key_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Key Id",
               "type": "integer"
             }
@@ -3558,6 +3560,8 @@
             "schema": {
               "anyOf": [
                 {
+                  "maximum": 2147483647,
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -5645,6 +5649,8 @@
             "name": "user_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "User Id",
               "type": "integer"
             }
@@ -5683,6 +5689,8 @@
             "name": "user_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "User Id",
               "type": "integer"
             }
