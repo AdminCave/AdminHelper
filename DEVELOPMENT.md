@@ -101,9 +101,11 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   Suche — keine Flakiness.
 - **Postgres-gegattert:** Der Concurrency-Test (`with_for_update` in
   `check_engine`) und die pytest-alembic-Ketten brauchen ein echtes Postgres und
-  skippen ohne `DATABASE_URL` — auf der Dev-Box ist das der Normalfall, CI stellt
-  einen Service. `run.sh` kennt diese Skips: sobald `DATABASE_URL` gesetzt ist,
-  ist ein Skip dort ein Fehler, kein Hinweis.
+  skippen, solange `DATABASE_URL` nicht auf ein Postgres zeigt — auf der Dev-Box
+  ist das der Normalfall, CI stellt einen Service. Nicht nur „gesetzt": eine
+  SQLite-URL macht `FOR UPDATE` zum No-op, der Test liefe dann grün, ohne je ein
+  Lock geprüft zu haben. `run.sh` kennt diese Skips und gattert sie auf dasselbe
+  Merkmal: zeigt `DATABASE_URL` auf ein Postgres, ist ein Skip dort ein Fehler.
 
 **Dependency-Updates laufen agent-getrieben** (kein Dependabot mehr): Versionen
 in der `.in` anheben bzw. `pip-compile --upgrade` fahren, Lock regenerieren,

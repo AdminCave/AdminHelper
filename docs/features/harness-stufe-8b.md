@@ -24,7 +24,7 @@ Monitoring-Tests laufen komplett auf SQLite, nur `test_migrations_smoke.py` ist 
 ## Ziel & Nicht-Ziele
 
 **Ziel.** Ein dep-gated `run.sh`-Schritt `schemathesis` (Server, Monitoring, CA-Issuer; Beispiele: 5 im `quick`-Layer,
-20 im PR-CI, 100 im Wochenlauf) mit Auth-Matrix und begründeter Ausschlussliste; Hypothesis mit **genau drei** Zielen
+20 im PR-CI [beim Bau auf 5 geändert, siehe Risiken], 100 im Wochenlauf) mit Auth-Matrix und begründeter Ausschlussliste; Hypothesis mit **genau drei** Zielen
 (FRP-TOML-Round-Trip über `tomllib`, Line-Protocol-Round-Trip über einen Test-Parser, `is_private_url` mit injiziertem
 Resolver plus URL-Parser-Differential); ein Postgres-Concurrency-Test für `execute_check`, der den `with_for_update`-
 Mutanten tötet; pytest-alembic mit den vier eingebauten Tests je Dienst plus einem `insert_into`-Seed je Daten-Migration.
@@ -81,6 +81,7 @@ genannt, die Signatur wird beim Bau gegen die Strategie-Referenz geprüft (unver
    eigene Beispielzahl, unter `--strict` Pflicht. Trade-off: ein Schritt mehr in der Summary. Empfehlung ja.
 3. **Beispielzahlen 5 / 20 / 100** (quick / PR-CI / Wochenlauf auf der Box) über `AH_SCHEMATHESIS_EXAMPLES`: quick bleibt
    unter einer Minute, der Wochenlauf sucht tief. `heavy.sh` setzt die Variable für den Box-Lauf (eine Zeile).
+   **Beim Bau abgewichen:** 5 auch im PR-CI (Begründung unter „Risiken").
 4. **Ausschlussliste mit Begründung** (`schemathesis_exclude.toml`: `operation_id`, `reason`, `until`): Erstläufe rauschen
    (500 vs. Schema); jeder Ausschluss ist ein Eintrag mit Grund, kein `--exclude`-Flag im Skript. Beim Erstlauf werden
    echte Funde als Roadmap-Zeilen triagiert, nicht ausgeschlossen (Roadmap: „Einträge in `seen.md`, Task nur mit Beweis").
@@ -103,6 +104,9 @@ genannt, die Signatur wird beim Bau gegen die Strategie-Referenz geprüft (unver
   `derandomize=True`.
   **Beim Bau abgewichen:** das Profil heißt `gate` und ist **immer** aktiv, nicht nur in CI (T14). Ein Profil, das nur
   in CI derandomisiert, erzeugt genau den Fund, den lokal niemand nachstellen kann.
+- **Beispielzahl beim Bau von 20 auf 5 im PR-CI geändert:** eine andere Beispielzahl durchsucht eine andere
+  Datenmenge. 20 in CI und 5 lokal hätte Funde erzeugt, die auf der Entwickler-Box nicht auftreten — und mit
+  `derandomize` auch nicht durch Wiederholen. Tiefe bleibt beim Wochenlauf (100).
 - **Rollback:** additiv (Tests, Dev-Deps, ein Schritt), `git revert`.
 
 ## Doku-Impact

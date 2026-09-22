@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8b — Generatoren — Task-Ledger
-Status: erledigt (11/11 Tasks + T12–T16 aus PR-Review und Aufsicht; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (11/11 Tasks + T12–T18 aus PR-Review und Aufsicht; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8b.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Lane: Worktree `../AdminHelper-harness-stufe-8b`, parallel zu `feature/harness-stufe-4` — die `.devenv.sh` dieser Lane setzt `AH_VENV=/tmp/ah-venv-8b` (eigener Dev-venv, damit T1 nicht in den venv der anderen Lane installiert); vor jedem Lauf `source .devenv.sh`. Die Lane hat seit 2026-09-18 auch eine **eigene Test-DB** (`adminhelper_lane8b`): die geteilte `adminhelper_test` hat zweimal einen Lauf entwertet, weil die `pg_engine`-Fixture der anderen Lane am Ende per `drop_all` abräumt — mitten im fremden Lauf heisst das `Relation users existiert nicht`, also verworfen, nicht rot.
@@ -289,6 +289,55 @@ Doku: keine (Testinterna)
 **Stand:** `verify.sh server --strict` → `4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns` (`543 passed, 2 skipped, 2 xfailed` + `252 passed` schemathesis); `verify.sh monitoring --strict` → `4 passed, 0 failed, 13 skipped, 10 test-skips, 0 reruns` (`468 passed, 10 skipped` + `108 passed`); `verify.sh ca-issuer --strict` → `4 passed, 0 failed`; `verify.sh scripts --strict` → `5 passed, 0 failed, 12 skipped`.
 
 **Offen aus der Aufsicht:** WICHTIG 5 — adminhelper-04 schlägt einen Test `exclusions_still_hold` vor, der je `raises`-Eintrag prüft, ob der Ausschluss noch nötig ist. In der vorgeschlagenen Form (ein beliebiges Beispiel, das sterben soll) wäre er sofort rot: ein `raises`-Eintrag heisst „stirbt bei **bestimmten** Eingaben", nicht „stirbt immer". Tragfähig wäre eine gespeicherte Probe je Eintrag (Schemathesis druckt sie als `Reproduce with: curl …`), dann meldet sich ein obsolet gewordener Ausschluss von selbst. Das ist eine eigene Task — Vorschlag für die Roadmap, nicht für diesen PR.
+
+### T17 — Blocker 2 galt nur für den Server  [x]
+Komponente: apps/monitoring, apps/ca-issuer · Dateien: apps/monitoring/tests/test_schemathesis.py, apps/monitoring/tests/schemathesis_exclude.toml, apps/ca-issuer/tests/test_schemathesis.py, apps/server/tests/test_schemathesis.py, scripts/tests/run.sh, scripts/tests/heavy.sh, docs/features/harness-stufe-8b.md
+Verify: bash scripts/dev/verify.sh monitoring --strict · bash scripts/dev/verify.sh ca-issuer --strict
+Doku: Kopf der Monitoring-Ausschlussliste beschreibt jetzt beide Arten
+
+Aus der Aufsicht (adminhelper-04): T12 hat die Zwei-Arten-Ausschlüsse nur im **Server** gebaut. Monitoring und CA-Issuer nahmen weiter ganze Operationen aus dem Lauf — also auch dort `not_a_server_error` mit. Das ist kein neuer Punkt, sondern der Rest desselben Blockers.
+
+**Loader portiert** (Pflichtfeld `checks` XOR `raises`, unbekannter Check-Name, unbekannte `operation_id` — je ein harter Fehler beim Import). Die drei Dienste teilen kein Test-Paket, deshalb steht die Regel je Suite, statt quer importiert zu werden; das steht als Begründung im Docstring.
+
+**Einordnung aus dem Lauf, nicht geraten** — Ausschlussliste temporär geleert und die Suite gefahren:
+
+| Eintrag | Beleg | Art |
+|---|---|---|
+| `trigger_tag_sync_templates_tag_sync_post` | einziger Fehlschlag der Suite ohne Ausschlüsse: `[502] Bad Gateway: {"detail":"Server inventory unavailable"}` — eine **Antwort**, an der `not_a_server_error` Anstoß nimmt | `checks = ["not_a_server_error"]` |
+| `list_checks_checks_get` | deterministisch nachgestellt statt per Zufallsfund: `offset=2**63-1` → HTTP 200, `offset=2**63` → HTTP 500; mit `raise_server_exceptions=True` (so ruft Schemathesis auf) propagiert `OverflowError`, es entsteht **keine** Antwort | `raises = true` |
+
+**Der portierte Loader hat sofort meine eigene Auslassung gefangen:** der `list_checks`-Eintrag trug seit Commit 85620d67 den Kommentar „stirbt vor der Antwort", aber nie das Feld `raises`. Unter dem alten Loader war das folgenlos, unter dem neuen ist es ein Importfehler. Genau dafür ist er da.
+
+**Wirkung:** Monitoring-Schemathesis läuft jetzt `111 passed` statt `108` — die drei tag-sync-Tests sind zurück im Lauf, weil nur noch der eine Check gewährt wird statt der ganzen Operation.
+
+CA-Issuer hat null Einträge; der Loader steht trotzdem in derselben Form, damit der **erste** Eintrag, den jemand hinzufügt, nicht stillschweigend `not_a_server_error` mitnimmt.
+
+Dazu drei letzte „20 im PR-CI"-Stellen korrigiert, die beim ersten Durchgang übersehen wurden (`test_schemathesis.py`, `heavy.sh`, `run.sh`); die Spec behält den Plan und trägt die Abweichung als solche.
+
+**Stand:** `verify.sh monitoring --strict` → `4 passed, 0 failed, 13 skipped, 10 test-skips, 0 reruns` (`468 passed, 10 skipped` + `111 passed`); `verify.sh ca-issuer --strict` → `4 passed, 0 failed, 13 skipped, 0 test-skips, 0 reruns` (`65 passed` + `9 passed`).
+
+### T18 — Delta-Review: ein falsches Rot, das mein eigener Fix erzeugt hat  [x]
+Komponente: scripts/tests, apps/*, Doku · Dateien: scripts/tests/run.sh, .github/workflows/ci.yml, DEVELOPMENT.md, docs/features/harness-stufe-8b.md, apps/{server,monitoring,ca-issuer}/tests/test_schemathesis.py
+Verify: Funktions-Probe auf `test_skip_is_required` · bash scripts/dev/verify.sh server|monitoring|ca-issuer --strict
+Doku: DEVELOPMENT.md „Postgres-gegattert", Spec-Notiz zur Beispielzahl
+
+**WICHTIG A — Folgefehler von NIT 8.** Seit T16 gattern die drei Postgres-Suiten auf `DB_URL.startswith("postgres")`. `run.sh:278` gatterte weiter auf `[ -n "${DATABASE_URL:-}" ]`. Bei einer **SQLite**-URL springt der Test also ehrlich ab, `run.sh` hätte das `strict-failed` genannt — ein Rot ohne Sachverhalt, und zwar genau auf der Ebene, die es abschaffen soll. Jetzt dasselbe `*postgres*`-Muster wie eine Zeile darüber bei `test_db_token_store`. Direkt nachgewiesen (Funktion aus `run.sh` herausgeschnitten, drei URL-Arten):
+
+| DATABASE_URL | `test_check_engine_concurrency` | `test_alembic_builtin` |
+|---|---|---|
+| nicht gesetzt | Skip in Ordnung | Skip in Ordnung |
+| `sqlite:///…` | Skip in Ordnung (**vorher: Fehler**) | Skip in Ordnung (**vorher: Fehler**) |
+| `postgresql+psycopg://…` | Skip = Fehler | Skip = Fehler |
+
+**WICHTIG B** war zum Zeitpunkt des Reviews (gegen 96996a0d) bereits in drei von vier Stellen behoben; die vierte (Spec-Zeile 82) trägt jetzt wie die anderen eine „Beim Bau abgewichen"-Notiz.
+
+**NIT `raises` + `checks`:** der Loader ließ `raises` still gewinnen, das Ledger sagt „entweder/oder". Jetzt ein `ValueError` in allen drei Suiten. Gegenprobe: ein Eintrag mit beiden Feldern stoppt den Import mit `… has both raises and checks — they mean different things …`.
+
+**NIT `AH_REQUIRED` im Fuzz-Job:** meine Begründung war falsch — `skip()` filtert über `want_step`, bevor ein SKIP überhaupt gezählt wird (`run.sh:179`), `AH_REQUIRED_DEFAULT` reißt bei `--step` keine Löcher. Abweichend vom Vorschlag habe ich nicht den Kommentar korrigiert, sondern **Variable und Kommentar entfernt**: `schemathesis` steht ohnehin in `AH_REQUIRED_DEFAULT`, und eine überflüssige Zeile mit erklärendem Kommentar ist schlechter als keine Zeile.
+
+**NIT DEVELOPMENT.md:** „skippen ohne `DATABASE_URL`" war nach T16 unvollständig — eine Nicht-Postgres-URL skippt ebenfalls. Der Absatz nennt jetzt das Merkmal, auf das Test und `run.sh` tatsächlich gattern, samt Grund (SQLite macht `FOR UPDATE` zum No-op).
+
+**Offen:** Der `scripts`-Gate ließ sich auf diesem Rechner nicht zu Ende fahren — vier Anläufe, jedes Mal vom OOM-Killer beendet, weil parallel die Verifikation der Aufsicht lief. Verifiziert sind einzeln: `heavy_test` `166 passed, 0 failed`, `toolchain_lockstep_test` `18 passed, 0 failed` (prüft `ci.yml`), `shellcheck` sauber, plus die Funktions-Probe oben. **`run_flags_test` steht aus** — das ist „nicht verifiziert", nicht „grün".
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün (mit dem neuen Schritt); `bash scripts/dev/verify.sh all --strict` grün.

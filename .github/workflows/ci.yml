@@ -195,9 +195,6 @@ jobs:
       # The same number a developer runs locally, so "green here" and "green on my
       # machine" mean the same thing. Depth is the weekly run's job, which sets 100.
       AH_SCHEMATHESIS_EXAMPLES: "5"
-      # Only this step is asked for, so only this step is mandatory — without it
-      # the default set would mark every step this job does not run as a hole.
-      AH_REQUIRED: schemathesis
       # run.sh installs into this venv; it is filled below so the step's
       # `import schemathesis` gate finds the package.
       AH_VENV: /tmp/ci-venv

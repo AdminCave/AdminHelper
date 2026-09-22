@@ -75,6 +75,12 @@ def _read_exclusions(known: set[str], by_name: dict) -> tuple[dict[str, list], l
         if not operation_id or not reason:
             raise ValueError(f"{_EXCLUDE_FILE.name}: every entry needs operation_id and reason")
         if entry.get("raises"):
+            if entry.get("checks"):
+                raise ValueError(
+                    f"{_EXCLUDE_FILE.name}: {operation_id} has both `raises` and `checks` — "
+                    "they mean different things (no response at all vs. a response one check "
+                    "objects to), so one of them is wrong"
+                )
             # The call dies on an uncaught exception before a response exists, so
             # no check can look at anything. Only here is dropping the whole
             # operation honest — and every one of these is a real product fault.
@@ -126,8 +132,9 @@ CHECKS = [
     ensure_resource_availability,
 ]
 
-# 5 locally, 20 in the PR CI, 100 on the weekly box — scripts/tests/run.sh and
-# heavy.sh set the budget, the suite only reads it.
+# 5 locally and in the PR CI — a different budget searches different data, so a
+# CI failure would be one nobody can reproduce on their box. 100 on the weekly
+# run; scripts/tests/run.sh and heavy.sh set it, the suite only reads it.
 MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5"))
 
 # ignored_auth repeats each call with the credentials stripped and expects a

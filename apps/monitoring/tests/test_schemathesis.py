@@ -48,17 +48,60 @@ _AGENT_KEY = "schemathesis-agent-key"
 _AGENT_SERVER_ID = "srv-schemathesis"
 
 
-def _excluded_operation_ids() -> list[str]:
-    """Reads the exclusion list; a malformed entry is an error, not a silent skip."""
+def _read_exclusions(known: set[str], by_name: dict) -> tuple[dict[str, list], list[str]]:
+    """Reads the exclusion list. Returns (waived checks per operation, dropped operations).
+
+    Per check, not per operation — the same two kinds the server's suite uses (the
+    three services share no test package, so the rule is spelled out per suite
+    rather than imported across them). Taking an operation out wholesale waives
+    not_a_server_error along with everything else, and that is the check that
+    finds the 500s.
+
+    Missing file -> nothing waived. A malformed entry, an id the schema does not
+    know, or a check this suite does not run -> hard error: a typo waives nothing
+    and says nothing, so the file would claim a handling that does not exist.
+    """
     if not _EXCLUDE_FILE.exists():
-        return []
+        return {}, []
     data = tomllib.loads(_EXCLUDE_FILE.read_text(encoding="utf-8"))
-    ids = []
+    waived: dict[str, list] = {}
+    dropped: list[str] = []
     for entry in data.get("exclude", []):
-        if not entry.get("operation_id") or not entry.get("reason"):
+        operation_id, reason = entry.get("operation_id"), entry.get("reason")
+        if not operation_id or not reason:
             raise ValueError(f"{_EXCLUDE_FILE.name}: every entry needs operation_id and reason")
-        ids.append(entry["operation_id"])
-    return ids
+        if entry.get("raises"):
+            if entry.get("checks"):
+                raise ValueError(
+                    f"{_EXCLUDE_FILE.name}: {operation_id} has both `raises` and `checks` — "
+                    "they mean different things (no response at all vs. a response one check "
+                    "objects to), so one of them is wrong"
+                )
+            # The call dies on an uncaught exception before a response exists, so
+            # no check can look at anything. Only here is dropping the whole
+            # operation honest.
+            dropped.append(operation_id)
+            continue
+        names = entry.get("checks")
+        if not names:
+            raise ValueError(
+                f"{_EXCLUDE_FILE.name}: {operation_id} needs a non-empty `checks` list, or "
+                "`raises = true` if the call itself throws — waiving a whole operation "
+                "otherwise would silence not_a_server_error with it"
+            )
+        unknown_checks = sorted(set(names) - set(by_name))
+        if unknown_checks:
+            raise ValueError(
+                f"{_EXCLUDE_FILE.name}: {operation_id} names checks this suite does not run: "
+                f"{', '.join(unknown_checks)}"
+            )
+        waived.setdefault(operation_id, []).extend(by_name[n] for n in names)
+    unknown = sorted((set(waived) | set(dropped)) - known)
+    if unknown:
+        raise ValueError(
+            f"{_EXCLUDE_FILE.name}: no such operation_id in the schema: {', '.join(unknown)}"
+        )
+    return waived, dropped
 
 
 # from_dict + .app rather than from_asgi, for the reason spelled out in the
@@ -66,23 +109,6 @@ def _excluded_operation_ids() -> list[str]:
 _RAW_SCHEMA = app.openapi()
 schema = schemathesis.openapi.from_dict(_RAW_SCHEMA)
 schema.app = app
-_EXCLUDED = _excluded_operation_ids()
-# An operation_id the schema does not know excludes NOTHING and says nothing about
-# it — the entry looks like a decision and is a typo. Check it against the schema
-# the suite actually runs, the same way the server's suite does.
-_KNOWN_IDS = {
-    op.get("operationId")
-    for methods in _RAW_SCHEMA["paths"].values()
-    for op in methods.values()
-    if isinstance(op, dict)
-}
-_UNKNOWN = sorted(set(_EXCLUDED) - _KNOWN_IDS)
-if _UNKNOWN:
-    raise ValueError(
-        f"{_EXCLUDE_FILE.name}: unknown operation_id(s) {_UNKNOWN} — they exclude nothing"
-    )
-if _EXCLUDED:
-    schema = schema.exclude(operation_id=_EXCLUDED)
 
 # ignored_auth is NOT in this list. It repeats each call without credentials and
 # expects a rejection, but counts only security parameters the SCHEMA declares —
@@ -99,6 +125,17 @@ CHECKS = [
     use_after_free,
     ensure_resource_availability,
 ]
+_KNOWN_OPERATION_IDS = {
+    operation["operationId"]
+    for path in _RAW_SCHEMA["paths"].values()
+    for method, operation in path.items()
+    if method in ("get", "post", "put", "patch", "delete") and "operationId" in operation
+}
+_WAIVED_BY_OPERATION, _DROPPED_OPERATIONS = _read_exclusions(
+    _KNOWN_OPERATION_IDS, {check.__name__: check for check in CHECKS}
+)
+if _DROPPED_OPERATIONS:
+    schema = schema.exclude(operation_id=_DROPPED_OPERATIONS)
 
 MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5"))
 
@@ -178,4 +215,7 @@ def test_api_under_every_auth_context(case, context, auth_headers):
         # goes on and later examples are sent something the earlier ones were not.
         headers=dict(auth_headers[context]),
         checks=CHECKS,
+        excluded_checks=_WAIVED_BY_OPERATION.get(
+            case.operation.definition.raw.get("operationId") or "", []
+        ),
     )

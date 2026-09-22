@@ -261,11 +261,16 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #   test_db_token_store       needs AH_TEST_DB to point at a real Postgres; the
 #     TOCTOU test needs true concurrency, so SQLite is not a substitute.
 #   test_alembic_builtin      pytest-alembic builds the chain in a throwaway database
-#     of its own; without DATABASE_URL there is no server to create it on.
+#     of its own; without a Postgres in DATABASE_URL there is no server to create
+#     it on.
 #   test_check_engine_concurrency  same shape on the monitoring side: FOR UPDATE is
 #     a no-op on SQLite, so the row lock it covers is only ever executed where
 #     DATABASE_URL points at a Postgres. Skipping it there would leave the one
 #     test of that lock silently unrun.
+# The last two match on *postgres* rather than on "is set": the tests themselves
+# gate on the URL naming a Postgres (a SQLite URL makes FOR UPDATE a no-op), so a
+# run with such a URL skips honestly — and calling that strict-failed would be a
+# red with nothing behind it.
 # Port from test_stream_redis.py's REDIS_URL (redis://localhost:6380/0).
 redis_reachable() { (exec 3<>/dev/tcp/localhost/6380) >/dev/null 2>&1; }
 
@@ -275,8 +280,8 @@ test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must n
     *test_auth_token_lifecycle*) [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker ;;
     *test_stream_redis*)         redis_reachable ;;
     *test_db_token_store*)       case "${AH_TEST_DB:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
-    *test_check_engine_concurrency*) [ -n "${DATABASE_URL:-}" ] ;;
-    *test_alembic_builtin*)      [ -n "${DATABASE_URL:-}" ] ;;
+    *test_check_engine_concurrency*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
+    *test_alembic_builtin*) case "${DATABASE_URL:-}" in *postgres*) return 0 ;; *) return 1 ;; esac ;;
     *) return 1 ;;
   esac
 }
@@ -565,7 +570,7 @@ layer_unit() {
   # of its own rather than part of the pytest ones: its own SKIP/FAIL verdict, its
   # own budget, and the three pytest steps deselect the marker — without that the
   # fuzz suite runs twice per layer, once at each step's example count.
-  # own budget (AH_SCHEMATHESIS_EXAMPLES: 5 here, 20 in the PR CI, 100 on the weekly
+  # own budget (AH_SCHEMATHESIS_EXAMPLES: 5 here and in the PR CI, 100 on the weekly
   # box), and under --strict it is mandatory like every other suite.
   # Only the services --only asked for: the three suites land one task at a time, and
   # a run for one service must not fail over another's file that does not exist yet.

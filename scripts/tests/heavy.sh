@@ -71,7 +71,7 @@ case "$MODE" in all|capstone|weekly) ;; *) usage ;; esac
 if [ -n "${AH_REQUIRED_BOX:-}" ]; then export AH_REQUIRED="$AH_REQUIRED_BOX"; else unset AH_REQUIRED; fi
 
 # The weekly run is the one that may search deep: 100 examples per operation
-# instead of the 5 a local `run.sh quick` uses (20 in the PR CI). iter.sh
+# instead of the 5 a local `run.sh quick` and the PR CI use. iter.sh
 # forwards the variable to the box.
 export AH_SCHEMATHESIS_EXAMPLES="${AH_SCHEMATHESIS_EXAMPLES:-100}"
 
