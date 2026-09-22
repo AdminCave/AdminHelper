@@ -94,7 +94,11 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   `@example` im Test und werden mitcommittet; die Beispieldatenbank `.hypothesis/`
   ist lokaler Cache und gitignored. Die Suiten laufen `derandomize` (Profil `gate`
   in der jeweiligen `conftest.py`) — ein Gate, das je Lauf andere Daten zieht, ist
-  grün oder rot nach Glück.
+  grün oder rot nach Glück. Das heißt **reproduzierbar bei gleichem Baum**, nicht
+  „jeder Lauf gleich": Hypothesis speist zusätzlich die Literale der geladenen
+  Quelldateien in die Generierung ein (Cache je Datei unter `.hypothesis/constants/`).
+  Ein Fund, der nach einer unbeteiligten Änderung auftaucht, ist deshalb eine neue
+  Suche — keine Flakiness.
 - **Postgres-gegattert:** Der Concurrency-Test (`with_for_update` in
   `check_engine`) und die pytest-alembic-Ketten brauchen ein echtes Postgres und
   skippen ohne `DATABASE_URL` — auf der Dev-Box ist das der Normalfall, CI stellt
