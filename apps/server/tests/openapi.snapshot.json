@@ -482,6 +482,8 @@
           },
           "bind_port": {
             "default": 7000,
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Bind Port",
             "type": "integer"
           },
@@ -499,6 +501,8 @@
           "dashboard_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -533,6 +537,8 @@
           "max_ports_per_client": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -563,6 +569,8 @@
           "vhost_https_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -595,6 +603,8 @@
           "bind_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -617,6 +627,8 @@
           "dashboard_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -651,6 +663,8 @@
           "max_ports_per_client": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -695,6 +709,8 @@
           "vhost_https_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -774,6 +790,8 @@
             "type": "string"
           },
           "local_port": {
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Local Port",
             "type": "integer"
           },
@@ -819,6 +837,8 @@
           "visitor_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -916,6 +936,8 @@
           "local_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -989,6 +1011,8 @@
           "visitor_port": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": -2147483648.0,
                 "type": "integer"
               },
               {
@@ -1633,6 +1657,8 @@
             "anyOf": [
               {
                 "items": {
+                  "maximum": 9.223372036854776e+18,
+                  "minimum": 1.0,
                   "type": "integer"
                 },
                 "type": "array"

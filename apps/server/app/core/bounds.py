@@ -26,7 +26,19 @@ from pydantic import Field
 IntPk = Annotated[int, Field(ge=1, le=2147483647)]
 
 # Primary key of a table declared as Column(BigInteger) — Postgres BIGINT.
+# Careful when reading the generated schema: FastAPI types `maximum` as a float
+# (fastapi.openapi.models.Schema), so in a REQUEST BODY this bound is published
+# as 9.223372036854776e+18 — one more than it is. Validation is unaffected
+# (pydantic keeps the int), the published contract is off by one at the very top
+# of the range. Path and query parameters take a different code path and stay
+# exact.
 BigIntPk = Annotated[int, Field(ge=1, le=9223372036854775807)]
+
+# A value stored in a plain Column(Integer) that is not a key — the signed
+# INTEGER range, and nothing narrower. A port is 1-65535 and a limit is rarely
+# negative, but tightening beyond the column is a product decision this feature
+# did not make; it only moves the rejection from the driver to the edge.
+IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
 
 # Rows a list endpoint skips. Not a column width — SQL OFFSET takes a bigint —
 # but capped at INTEGER per the design gate: past the last row every offset

@@ -17,6 +17,7 @@ import pytest
 from app.modules.frp.models import FrpServerConfig
 
 INT_PK_MAX = 2147483647  # app.core.bounds.IntPk — users.id and api_keys.id are Column(Integer)
+BIGINT_PK_MAX = 9223372036854775807  # app.core.bounds.BigIntPk — notification.id is BigInteger
 
 
 def _login(test_client) -> dict:
@@ -81,3 +82,22 @@ def test_zero_and_negative_ids_are_rejected(test_client, db_session, admin_user)
     for path in ("/api/users/0", "/api/users/-1", "/api/api-keys/0", "/api/api-keys/-1"):
         r = test_client.delete(path, headers=headers)
         assert r.status_code == 422, f"{path}: {r.status_code} {r.text}"
+
+
+def test_mark_read_ids_hold_at_both_edges(test_client, db_session, admin_user):
+    """The id list in the body is the third way in (T5), and the only one of the
+    three the fuzzer reached on its own: router.py passed data.ids straight into
+    Notification.id.in_(), so Postgres rejected the parameter and the
+    DataError ran uncaught. Measured 2026-09-22: 2**63-1 answered 200, 2**63 and
+    -(2**63)-1 died before a response existed."""
+    headers = _login(test_client)
+
+    highest = test_client.post(
+        "/api/notifications/read", json={"ids": [BIGINT_PK_MAX]}, headers=headers
+    )
+    assert highest.status_code == 200, highest.text
+    assert highest.json() == {"updated": 0}  # no such row, but the query ran
+
+    for past in (BIGINT_PK_MAX + 1, -(2**63) - 1, 0):
+        r = test_client.post("/api/notifications/read", json={"ids": [past]}, headers=headers)
+        assert r.status_code == 422, f"{past}: {r.status_code} {r.text}"

@@ -10,7 +10,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.frp._helpers import get_allow_users
-from app.modules.frp.schemas import FrpServerConfigCreate, FrpTunnelCreate
+from app.modules.frp.schemas import (
+    FrpServerConfigCreate,
+    FrpServerConfigUpdate,
+    FrpTunnelCreate,
+    FrpTunnelUpdate,
+)
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
 
@@ -139,3 +144,55 @@ def test_server_name_accepts_normal_names():
 def test_get_allow_users_fails_closed_to_empty(db_session):
     # No assigned users and no admins -> empty allow-list (deny), NOT ["*"].
     assert get_allow_users(db_session, "no-such-server") == []
+
+
+# app.core.bounds.IntColumn — every one of these is a Column(Integer).
+INT_COLUMN_MAX = 2147483647
+INT_COLUMN_MIN = -2147483648
+
+
+def _config(**over):
+    base = dict(name="c", server_addr="frps.example")
+    base.update(over)
+    return FrpServerConfigCreate(**base)
+
+
+def _build(model, **over):
+    """The Create models need their required fields; the Update models are
+    all-optional, so the field under test is the whole payload."""
+    if model is FrpServerConfigCreate:
+        return _config(**over)
+    if model is FrpTunnelCreate:
+        return _tunnel(**over)
+    return model(**over)
+
+
+@pytest.mark.parametrize(
+    "model,field",
+    [
+        (FrpServerConfigCreate, "bind_port"),
+        (FrpServerConfigCreate, "vhost_https_port"),
+        (FrpServerConfigCreate, "dashboard_port"),
+        (FrpServerConfigCreate, "max_ports_per_client"),
+        (FrpServerConfigUpdate, "bind_port"),
+        (FrpServerConfigUpdate, "vhost_https_port"),
+        (FrpServerConfigUpdate, "dashboard_port"),
+        (FrpServerConfigUpdate, "max_ports_per_client"),
+        (FrpTunnelCreate, "local_port"),
+        (FrpTunnelCreate, "visitor_port"),
+        (FrpTunnelUpdate, "local_port"),
+        (FrpTunnelUpdate, "visitor_port"),
+    ],
+)
+def test_integer_body_fields_hold_at_both_edges(model, field):
+    """Both edges of the INTEGER column each of these lands in (T5).
+
+    Unbounded they reached the INSERT and Postgres answered NumericValueOutOfRange,
+    uncaught — HTTP 500 instead of 422. Reproduced per field 2026-09-22 against
+    POST /api/frp/server-config and POST /api/frp/tunnels."""
+    for edge in (INT_COLUMN_MIN, INT_COLUMN_MAX):
+        assert getattr(_build(model, **{field: edge}), field) == edge
+
+    for past in (INT_COLUMN_MIN - 1, INT_COLUMN_MAX + 1):
+        with pytest.raises(ValidationError):
+            _build(model, **{field: past})

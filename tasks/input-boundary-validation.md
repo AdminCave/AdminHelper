@@ -66,9 +66,12 @@ Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 Abhängt von: T1
 
-### T5 — Server: Integer-Felder und Id-Listen im Body begrenzen  [ ]
-Komponente: server · Dateien: apps/server/app/modules/notifications/router.py, apps/server/app/modules/users/router.py, apps/server/app/modules/frp/generate_router.py
+### T5 — Server: Integer-Felder und Id-Listen im Body begrenzen  [x]
+Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/app/modules/notifications/schemas.py, apps/server/app/modules/frp/schemas.py, apps/server/tests/test_id_bounds.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @2d915289 2026-09-22T20:08:47+02:00
+Review: approve (sonnet, Mutationsprobe)
 Änderung: zuerst dieselbe Schema-Suche wie für die Parameter, aber über die **Request-Bodies** (Integer-Felder ohne `maximum`) — das ist die von Worker2 benannte Lücke. Dann `data.ids` (`notifications`) und `server_ids` (`users` zwei Stellen, `frp`) sowie die dabei gefundenen Felder im Schema auf `list[IntPk]` bzw. `list[BigIntPk]`; die Prüfung gehört ins Schema, nicht vor den `in_()`-Aufruf. Test für den belegten Fall (`ids` jenseits von BIGINT ⇒ 422).
+Beim Bau korrigiert (2026-09-22): Die Schema-Suche über die Request-Bodies findet 13 Integer-Felder ohne `maximum`. Zwölf davon sind die FRP-Ports und -Zähler (`bind_port`, `vhost_https_port`, `dashboard_port`, `max_ports_per_client`, `local_port`, `visitor_port`, je in der Create- und der Update-Klasse) — alle `Column(Integer)`, alle einzeln nachgestellt: `2**63` ⇒ `NumericValueOutOfRange`, ungefangen. Das dreizehnte ist `MarkReadRequest.ids` (`Column(BigInteger)`, `2**63-1` ⇒ 200, `2**63` und `-(2**63)-1` ⇒ Überlauf). **`server_ids` ist kein Integer-Feld:** `users/schemas.py:60,66` deklariert `list[str]`, weil `servers.id` eine `String`-Spalte ist — hier gibt es keine Zahlschranke abzuleiten, und die Stelle in `frp/generate_router.py:56` ist überhaupt keine Eingabe, sondern wird aus `user.servers` gebildet. Die drei Router aus der ursprünglichen `Dateien:`-Liste entfallen damit; die Prüfung sitzt wie verlangt im Schema. Für Kevin notiert (Review-Fund, hier bewusst nicht geändert): `connections/schemas.py:16,44` begrenzt seinen `port` bereits fachlich auf `ge=1, le=65535`, ebenfalls auf einer `Column(Integer)`. Die FRP-Ports bekommen hier nur die Spaltenbreite, weil eine Portrange eine Produktentscheidung wäre, die das Gate nicht getroffen hat — die Inkonsistenz bleibt damit bestehen und gehört als eigene Zeile in die Roadmap, nicht in diesen Bugfix.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 Abhängt von: T1

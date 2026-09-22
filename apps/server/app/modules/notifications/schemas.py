@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.bounds import BigIntPk
+
 Severity = Literal["info", "warning", "critical"]
 ScopeType = Literal["all", "tag", "server"]
 
@@ -35,7 +37,9 @@ class IncomingEvent(BaseModel):
 class MarkReadRequest(BaseModel):
     """Mark feed rows as read. ids = None means "all of the caller's unread"."""
 
-    ids: Optional[list[int]] = None
+    # notification.id is Column(BigInteger): unbounded, an id past BIGINT reached
+    # Notification.id.in_() and Postgres rejected the parameter, uncaught.
+    ids: Optional[list[BigIntPk]] = None
 
 
 class SubscriptionInput(BaseModel):
