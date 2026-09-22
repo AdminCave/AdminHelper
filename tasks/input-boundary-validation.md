@@ -94,9 +94,12 @@ Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 Abhängt von: T1
 
-### T8 — Server: Fremdschlüssel-Verletzung am Rand fangen  [ ]
+### T8 — Server: Fremdschlüssel-Verletzung am Rand fangen  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_isolation.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @a1a9e519 2026-09-22T21:09:22+02:00
+Review: approve (sonnet, Mutationsprobe)
 Änderung: beim Anlegen einer Verbindung mit `server_id` die Existenz prüfen und mit 422 plus Feldbezug antworten, statt die `ForeignKeyViolation` durchlaufen zu lassen. Keine neue Fehlerform, dasselbe Format wie die übrigen 422.
+Beim Bau erweitert (2026-09-22), mit Beleg: derselbe Fehler steht auf drei Routen desselben Routers, nicht nur auf dem Anlegen. Einzeln nachgestellt, alle drei mit ungefangener `psycopg.errors.ForeignKeyViolation`: `POST /api/connections`, `PUT /api/connections/{conn_id}` und `POST /api/connections/import` (mit `mode`, sonst scheitert schon das Schema). Nur die erste zu fixen hieße, eine von drei gekoppelten Stellen zu ziehen. Die ersten beiden werfen `RequestValidationError`, damit der Body die im Schema deklarierte `HTTPValidationError`-Form behält; die Import-Route meldet in ihrer eigenen `rejected`-Liste weiter, statt eine zweite Fehlerform zu erfinden.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_isolation.py
 Doku: keine (intern)
 

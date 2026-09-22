@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -21,6 +22,7 @@ from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.connections.models import Connection
 from app.modules.connections.schemas import ConnectionCreate, ConnectionUpdate, ImportRequest
+from app.modules.servers.models import Server
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
@@ -50,6 +52,34 @@ def _scope_connections(query, auth):
     return query
 
 
+def _reject_unknown_server(db: Session, server_id: str | None) -> None:
+    """A serverId no row matches used to reach the INSERT and come back as an
+    uncaught ForeignKeyViolation — HTTP 500 before any response existed.
+
+    Checked here rather than in the schema because a Pydantic validator has no
+    session. RequestValidationError (not HTTPException) so the body stays the
+    HTTPValidationError shape the OpenAPI schema declares for 422; the import
+    route has its own per-entry shape and reports it there instead.
+
+    A server deleted between this check and the commit still violates the
+    constraint. That race is the old behaviour, not a new one, and closing it
+    would mean holding a lock on the servers row for every write.
+    """
+    if server_id is None:
+        return
+    if db.query(Server.id).filter(Server.id == server_id).first() is None:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "serverId"),
+                    "msg": "server not found",
+                    "input": server_id,
+                }
+            ]
+        )
+
+
 @router.get("", response_model=list[dict[str, Any]])
 def get_connections(
     response: Response,
@@ -72,6 +102,7 @@ def create_connection(
     db: Session = Depends(get_db),
     _auth=Depends(write_dep),
 ):
+    _reject_unknown_server(db, connection.serverId)
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
     conn = Connection.from_dict(data)
@@ -107,6 +138,7 @@ def update_connection(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden"
         )
+    _reject_unknown_server(db, connection.serverId)
     conn.update_from_dict(connection.model_dump(exclude_unset=True))
     db.commit()
     db.refresh(conn)
@@ -210,6 +242,24 @@ def import_connections(
                     "index": idx,
                     "name": conn_data.get("name") if isinstance(conn_data, dict) else None,
                     "errors": exc.errors(include_url=False),
+                }
+            )
+            continue
+        if payload.get("serverId") is not None and (
+            db.query(Server.id).filter(Server.id == payload["serverId"]).first() is None
+        ):
+            errors.append(
+                {
+                    "index": idx,
+                    "name": payload.get("name"),
+                    "errors": [
+                        {
+                            "type": "value_error",
+                            "loc": ["serverId"],
+                            "msg": "server not found",
+                            "input": payload["serverId"],
+                        }
+                    ],
                 }
             )
             continue
