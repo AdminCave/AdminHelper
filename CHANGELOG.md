@@ -97,6 +97,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **422 statt 500 an den Rändern der API (Server und Monitoring):** Eingaben, die erst in der
+  Datenbankschicht scheiterten, werden jetzt am Rand geprüft. Betroffen waren alle drei
+  Eingangswege: die int-Pfad- und Query-Parameter (`user_id`, `key_id`, `offset`), die
+  Integer-Felder und die Id-Liste im Request-Body (FRP-Ports, `ids` von
+  `POST /api/notifications/read`) und Textfelder, in denen ein NUL-Byte stand
+  (`POST /api/enrollment/token/for`, die Filter von `GET /api/audit`, die Skript- und
+  Namensfelder von `/api/hooks`) — jeder davon lief bis hierher als ungefangener
+  `NumericValueOutOfRange` bzw. `DataError` durch und kam als HTTP 500 zurück. Dazu zwei
+  Nachbarn derselben Wurzel: der Tag-Validator antwortet auf einen falschen Typ (dict, int,
+  bool, Liste mit Nicht-Strings) mit einer Validierungsmeldung statt mit `AttributeError`
+  bzw. `TypeError` — das betraf sechs Routen —, und eine unbekannte `serverId` beim Anlegen,
+  Ändern oder Importieren einer Verbindung ergibt 422 mit Feldbezug statt einer
+  durchlaufenden `ForeignKeyViolation`. Die Schranken stehen als `minimum`/`maximum` im
+  OpenAPI-Schema und stammen je Feld aus dem Spaltentyp des Modells; für Clients, die
+  gültige Werte senden, ändert sich nichts. Zwölf Schemathesis-Ausschlüsse im Server und drei
+  im Monitoring sind damit hinfällig und entfernt; fünf weitere gelten nur noch für einen
+  einzelnen Check statt für die ganze Route, sodass dort die 500er-Prüfung wieder mitläuft.
+
 - **Capstone, Visitor-Rolle:** der frpc-Visitor startete mit `sudo sh -c … &` und hielt damit stdout/stderr
   der ssh-Sitzung — `vm.py run` (ohne pty) sah nie EOF und lief 50 Minuten in den Timeout, obwohl die
   Pruefung acht Sekunden braucht. Jetzt per `setsid` mit `</dev/null` gestartet und am Ende beendet; ein

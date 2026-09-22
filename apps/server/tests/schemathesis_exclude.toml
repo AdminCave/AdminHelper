@@ -31,33 +31,33 @@
 #   until         woran die Wiedervorlage haengt
 
 #
-# VOLLSTAENDIGKEIT DER PAGINIERUNGS-KLASSE (2026-09-22): Das OpenAPI-Schema wurde einmal
-# statisch nach allen Integer-Parametern OHNE `maximum` durchsucht — das ist genau die Menge,
-# die der Fuzzer bis 2**63 und darueber treiben kann. Neun Treffer im Server; acht stehen
-# unten (`user_id`/`key_id` als Pfadparameter, `offset` auf audit, connections, hooks,
-# notifications, servers). Der neunte, `gen_visitor_toml_api_frp_generate_visitor_toml_get`
-# (`user_id` als Query), steht bewusst NICHT hier: nachgestellt antwortet er bei 2**31-1 und
-# bei 2**63 gleichermassen mit 404, der Wert erreicht keinen ueberlaufenden Vergleich.
-# Die Suche deckt Query- und Pfadparameter ab, NICHT Integer-Felder in Request-Bodies —
-# fuer die steht bisher nur der belegte Fall `mark_read_api_notifications_read_post`.
+# RANDVALIDIERUNG (2026-09-22, Vorhaben input-boundary-validation): zwoelf Eintraege sind
+# weggefallen, weil der Fehler behoben ist statt stummgeschaltet — die Ueberlaeufe auf den
+# int-Pfadparametern (user_id, key_id), die Paginierung auf audit, connections, hooks,
+# notifications und servers, die Id-Liste im Body von mark_read, das NUL-Byte auf
+# /api/enrollment/token/for, und die sechs Routen des Tag-Validators.
+# Fuenf weitere standen nur wegen eines behobenen Fehlers auf der GANZEN
+# Operation und sind jetzt check-granular (list_audit, list_hooks, list_servers,
+# get_connections, create_connection): dort laeuft not_a_server_error wieder mit.
+#
+# Die Laeufe nach dem Fix haben dafuer zwei neue Produktfehler derselben Klasse gezeigt, die
+# vorher unter einem Ausschluss lagen: ein NUL-Byte im `script` von POST /api/hooks und eines
+# in `server_ids` von POST /api/users. Beide sind behoben (SafeText), nicht ausgeschlossen.
+#
+# HINZUGEKOMMEN sind nur die vier Catch-all-Routen des Monitoring-Proxys. Das ist kein
+# Produktfehler auf diesen Routen, sondern eine Eigenschaft der Fixture: ein Client, ein
+# Lifespan, und wer nach dem Shutdown drankommt, bekommt keine Response mehr. Damit stehen
+# hier 19 statt 27 Eintraege.
+#
+# Jeder Eintrag, der unten geblieben ist, wurde im Lauf vom 2026-09-22 nach dem Fix erneut
+# gesehen; keiner steht mit einer geborgten Begruendung da.
 
 [[exclude]]
-operation_id = "delete_api_key_api_api_keys__key_id__delete"
-raises = true
-# DELETE /api/api-keys/{key_id}
-reason = "not_a_server_error — key_id ist ein unbegrenzter int, derselbe NumericValueOutOfRange-Pfad wie DELETE/PUT /api/users. Der Treffer erschien im Lauf als Schema-Abweichung, weil der abgebrochene Transaktionszustand das Replay stoerte — die Ursache ist der Ueberlauf. Beleg, dass die Klasse ueber /api/users hinausgeht"
-until = "Roadmap: int-Pfadparameter begrenzen"
-# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (key_id > 2**31)), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
-
-[[exclude]]
-operation_id = "delete_user_api_users__user_id__delete"
-raises = true
-# DELETE /api/users/{user_id}
-reason = "not_a_server_error — HTTP 500: user_id ist ein unbegrenzter int, ab 2**31 laeuft die Postgres-Abfrage in NumericValueOutOfRange, ungefangen. ECHTER PRODUKTFEHLER, unabhaengig reproduziert (2147483647 -> 404, 2147483648 -> 500)"
-until = "Roadmap: int-Pfadparameter begrenzen"
-# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (user_id > 2**31)), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
+operation_id = "list_audit_api_audit_get"
+checks = ["negative_data_rejection"]
+# GET /api/audit
+reason = "negative_data_rejection — gemessen im Lauf vom 2026-09-22 nach dem Fix, `curl 'http://testserver/api/audit?q=null&actor_type=true'` -> 200: zwei Ursachen in einem Treffer, beide Framework-Verhalten. Pydantic v2 koerziert im lax mode `actor_type=true` auf einen String, und der Check laesst den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt (prepare_headers merged sie ueber die mutierten). Der NUL-Byte-Fehler, wegen dem hier bis 2026-09-22 die GANZE Operation stand, ist behoben: alle sechs Textfilter tragen jetzt SafeText, `not_a_server_error` laeuft hier also wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
 operation_id = "list_api_keys_api_api_keys_get"
@@ -67,25 +67,11 @@ reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
-operation_id = "list_audit_api_audit_get"
-raises = true
-# GET /api/audit
-reason = "not_a_server_error — ein NUL-Byte in einem Query-Parameter erreicht die DB: `psycopg.DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`, ungefangen ⇒ HTTP 500. Dieselbe Klasse wie der user_id-Ueberlauf und /api/enrollment/token/for, hier ueber einen Filter-Parameter"
-until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (NUL, int-Ueberlauf), Pfad UND Query"
-
-[[exclude]]
 operation_id = "list_tunnels_api_frp_tunnels_get"
 checks = ["negative_data_rejection"]
 # GET /api/frp/tunnels
 reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
-
-[[exclude]]
-operation_id = "create_playbook_api_ansible_playbooks_post"
-raises = true
-# POST /api/ansible/playbooks
-reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
-until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
 
 [[exclude]]
 operation_id = "create_api_key_api_api_keys_post"
@@ -123,18 +109,39 @@ reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bo
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
-operation_id = "create_tunnel_api_frp_tunnels_post"
-raises = true
-# POST /api/frp/tunnels
-reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
-until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
-
-[[exclude]]
 operation_id = "create_hook_api_hooks_post"
 checks = ["response_schema_conformance"]
 # POST /api/hooks
 reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
+
+[[exclude]]
+operation_id = "proxy_to_monitoring_api_monitoring__path__get"
+raises = true
+# GET /api/monitoring/{path}
+reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
+until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
+
+[[exclude]]
+operation_id = "proxy_to_monitoring_api_monitoring__path__put"
+raises = true
+# PUT /api/monitoring/{path}
+reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
+until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
+
+[[exclude]]
+operation_id = "proxy_to_monitoring_api_monitoring__path__post"
+raises = true
+# POST /api/monitoring/{path}
+reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
+until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
+
+[[exclude]]
+operation_id = "proxy_to_monitoring_api_monitoring__path__delete"
+raises = true
+# DELETE /api/monitoring/{path}
+reason = "Catch-all des Monitoring-Proxys. Alle vier teilen sich EINEN prozessweiten httpx-Client (monitoring_proxy/router.py:42), den der Lifespan-Shutdown schliesst; der schemathesis-Transport faehrt den Lifespan pro Prozess einmal hoch und wieder herunter, und wer danach drankommt, stirbt im Transport mit `RuntimeError: Cannot send a request, as the client has been closed` — ungefangen, vor jeder Response. Gemessen 2026-09-22, nachdem die behobenen Ausschluesse gefallen waren: alle vier Methoden sind in demselben Lauf einzeln mit genau diesem RuntimeError gefallen. Es ist trotzdem EINE Ursache, ein Client und ein Lifespan — nicht vier Routen. In drei Laeufen davor kamen dieselben Operationen vor dem Shutdown dran und waren gruen: das ist eine Aussage ueber die Sammelreihenfolge, nicht ueber die Route"
+until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
 
 [[exclude]]
 operation_id = "proxy_agent_report_api_monitoring_agent__server_id__report_post"
@@ -144,22 +151,6 @@ reason = "Proxy-Route: leitet an den Monitoring-Dienst weiter, ueber einen proze
 until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
 
 [[exclude]]
-operation_id = "mark_read_api_notifications_read_post"
-raises = true
-# POST /api/notifications/read
-reason = "not_a_server_error — HTTP 500 bei einer Id jenseits von BIGINT im REQUEST-BODY: router.py:90 reicht data.ids ungeprueft in Notification.id.in_(), Postgres lehnt den Parameter ab (NumericValueOutOfRange), ungefangen. Unabhaengig reproduziert 2026-09-22: 2**63-1 wird akzeptiert, 2**63 und -(2**63)-1 nicht. Dieselbe Klasse wie der user_id-Ueberlauf (Pfad) und die Paginierung (Query) — der Body ist der dritte Weg hinein. Ausserdem negative_data_rejection: Pydantic v2 koerziert im lax mode, die Route nimmt einen schema-widrigen Typ an und normalisiert ihn (Framework-Verhalten, kein Defekt)"
-until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (int-Ueberlauf, NUL) — Pfad, Query UND Body"
-# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
-
-[[exclude]]
-operation_id = "create_server_api_servers_post"
-raises = true
-# POST /api/servers
-reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
-until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
-
-[[exclude]]
 operation_id = "create_user_api_users_post"
 checks = ["negative_data_rejection"]
 # POST /api/users
@@ -167,79 +158,29 @@ reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bo
 until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
-operation_id = "update_playbook_api_ansible_playbooks__playbook_id__put"
-raises = true
-# PUT /api/ansible/playbooks/{playbook_id}
-reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
-until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
-
-[[exclude]]
-operation_id = "update_tunnel_api_frp_tunnels__tunnel_id__put"
-raises = true
-# PUT /api/frp/tunnels/{tunnel_id}
-reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
-until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
-
-[[exclude]]
-operation_id = "update_server_api_servers__server_id__put"
-raises = true
-# PUT /api/servers/{server_id}
-reason = "not_a_server_error — `_validate_tags` (frp/schemas.py:65) laeuft als field_validator(mode='before') und sieht damit ROHE Werte vor der Typpruefung: `t.strip()` auf einem dict/int/None wirft AttributeError, `for t in tags` auf einem bool wirft TypeError — beides ungefangen, also HTTP 500 statt 422. Unabhaengig reproduziert 2026-09-21. EIN Bug, sechs Routen: derselbe Validator ist in ansible-, frp- und servers-schemas je zweimal registriert"
-until = "Roadmap: _validate_tags auf mode='after' oder Typpruefung vor .strip()"
-
-[[exclude]]
-operation_id = "update_user_api_users__user_id__put"
-raises = true
-# PUT /api/users/{user_id}
-reason = "not_a_server_error — HTTP 500: user_id ist ein unbegrenzter int, ab 2**31 laeuft die Postgres-Abfrage in NumericValueOutOfRange, ungefangen. ECHTER PRODUKTFEHLER, unabhaengig reproduziert (2147483647 -> 404, 2147483648 -> 500)"
-until = "Roadmap: int-Pfadparameter begrenzen"
-# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (user_id > 2**31)), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
-
-[[exclude]]
-operation_id = "mint_enrollment_token_for_api_enrollment_token_for_post"
-raises = true
-# POST /api/enrollment/token/for
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte im Benutzernamen: Postgres erlaubt kein 0x00 in Textwerten, der psycopg-Fehler laeuft ungefangen durch. Gleiche Klasse wie der user_id-Ueberlauf (DELETE/PUT /api/users): Eingaben, die erst in der DB-Schicht scheitern, werden nicht am Rand abgefangen"
-until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (NUL, int-Ueberlauf)"
-# Der Aufruf stirbt an einer ungefangenen Exception (NUL-Byte im Benutzernamen), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
-
-[[exclude]]
-operation_id = "list_notifications_api_notifications_get"
-raises = true
-# GET /api/notifications
-reason = "not_a_server_error — HTTP 500 bei einem Paginierungs-Parameter jenseits von 2**63-1 (Postgres-BIGINT-Grenze), ungefangen. Dieselbe Klasse wie der user_id-Ueberlauf und das NUL-Byte, aber ueber einen QUERY-Parameter statt einen Pfadparameter — die Luecke ist breiter als nur die Pfad-Ids"
-until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (int-Ueberlauf, NUL), Pfad UND Query"
-# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange (Paginierung > 2**63)), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
-
-[[exclude]]
 operation_id = "list_hooks_api_hooks_get"
-raises = true
+checks = ["negative_data_rejection"]
 # GET /api/hooks
-reason = "HTTP 500 bei `offset` jenseits von 2**63-1: der Parameter ist als `Query(0, ge=0)` deklariert — untere Schranke ohne obere — und geht ungeprueft in LIMIT/OFFSET. Der Treiber lehnt ihn ab (NumericValueOutOfRange), ungefangen, es entsteht keine Response. Statisch ueber das OpenAPI-Schema gefunden (alle Integer-Parameter ohne `maximum`) und je Route nachgestellt: offset=2**63-1 -> HTTP 200, offset=2**63 -> DataError vor der Antwort. Nicht einzeln erfuzzt, sondern vorsorglich gelistet: derselbe Fehler, denselben Weg hinein. Zusaetzlich, aus dem Erstlauf: negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
-until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
+reason = "negative_data_rejection — die HEADER-Blindstelle: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen ueber die mutierten (prepare_headers) — der Request geht authentifiziert raus, und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Dazu ignoriert FastAPI unbekannte Query-Parameter. Der bis 2026-09-22 mitgelistete offset-Ueberlauf ist weg: die Route traegt jetzt eine obere Schranke, not_a_server_error laeuft hier also wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
 operation_id = "list_servers_api_servers_get"
-raises = true
+checks = ["negative_data_rejection"]
 # GET /api/servers
-reason = "HTTP 500 bei `offset` jenseits von 2**63-1: der Parameter ist als `Query(0, ge=0)` deklariert — untere Schranke ohne obere — und geht ungeprueft in LIMIT/OFFSET. Der Treiber lehnt ihn ab (NumericValueOutOfRange), ungefangen, es entsteht keine Response. Statisch ueber das OpenAPI-Schema gefunden (alle Integer-Parameter ohne `maximum`) und je Route nachgestellt: offset=2**63-1 -> HTTP 200, offset=2**63 -> DataError vor der Antwort. Nicht einzeln erfuzzt, sondern vorsorglich gelistet: derselbe Fehler, denselben Weg hinein. Zusaetzlich, aus dem Erstlauf: negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
-until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
+reason = "negative_data_rejection — die HEADER-Blindstelle: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen ueber die mutierten (prepare_headers) — der Request geht authentifiziert raus, und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Dazu ignoriert FastAPI unbekannte Query-Parameter. Der bis 2026-09-22 mitgelistete offset-Ueberlauf ist weg: die Route traegt jetzt eine obere Schranke, not_a_server_error laeuft hier also wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
 operation_id = "get_connections_api_connections_get"
-raises = true
+checks = ["negative_data_rejection"]
 # GET /api/connections
-reason = "HTTP 500 bei `offset` jenseits von 2**63-1: der Parameter ist als `Query(0, ge=0)` deklariert — untere Schranke ohne obere — und geht ungeprueft in LIMIT/OFFSET. Der Treiber lehnt ihn ab (NumericValueOutOfRange), ungefangen, es entsteht keine Response. Statisch ueber das OpenAPI-Schema gefunden (alle Integer-Parameter ohne `maximum`) und je Route nachgestellt: offset=2**63-1 -> HTTP 200, offset=2**63 -> DataError vor der Antwort. Nicht einzeln erfuzzt, sondern vorsorglich gelistet: derselbe Fehler, denselben Weg hinein. Zusaetzlich, aus dem Erstlauf: negative_data_rejection — der Treffer betrifft die HEADER-Mutation: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen Header ueber die mutierten (prepare_headers) — der Request geht also authentifiziert raus und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Gleiche blinde Stelle wie bei ignored_auth. Einzeln nachgefahren 2026-09-21: `Invalid component: Missing Authorization at header`, sonst nichts"
-until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
+reason = "negative_data_rejection — die HEADER-Blindstelle: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen ueber die mutierten (prepare_headers) — der Request geht authentifiziert raus, und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Dazu ignoriert FastAPI unbekannte Query-Parameter. Der bis 2026-09-22 mitgelistete offset-Ueberlauf ist weg: die Route traegt jetzt eine obere Schranke, not_a_server_error laeuft hier also wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
 operation_id = "create_connection_api_connections_post"
-raises = true
+checks = ["negative_data_rejection"]
 # POST /api/connections
-reason = "negative_data_rejection — zwei Ursachen in einer Operation, einzeln nachgefahren 2026-09-21: (a) die HEADER-Blindstelle wie bei GET /api/connections, und (b) echt gemessen `in body - trustCert: Incorrect type` — Pydantic v2 koerziert im lax mode einen schema-widrigen Typ auf bool. Nur (b) ist eine Aussage ueber die Route, und auch die ist Framework-Verhalten"
-until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
-# Der Aufruf stirbt an einer ungefangenen Exception (ForeignKeyViolation (server_id ohne Server)), bevor eine
-# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
+reason = "negative_data_rejection — zwei Ursachen, beide gemessen: die HEADER-Blindstelle wie bei GET /api/connections, und `in body - trustCert: Incorrect type`, wo Pydantic v2 im lax mode einen schema-widrigen Typ auf bool koerziert. Framework-Verhalten, kein Defekt. Die ForeignKeyViolation, wegen der hier bis 2026-09-22 die GANZE Operation stand, ist gefangen: eine unbekannte serverId antwortet mit 422 statt 500, not_a_server_error laeuft hier also wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"

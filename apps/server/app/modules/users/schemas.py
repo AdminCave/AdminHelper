@@ -6,6 +6,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.core.bounds import SafeText
+
 # Usernames are interpolated into FRP TOML and used as PKI/cert file stems,
 # so restrict them to a safe charset (see frp/config_generator + pki.py).
 _USERNAME_PATTERN = r"^[a-zA-Z0-9._-]+$"
@@ -57,10 +59,12 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=_USERNAME_PATTERN)
     password: str = Field(min_length=8, max_length=128)
     is_admin: bool = False
-    server_ids: list[str] = []
+    # A NUL byte in one of these reached Server.id.in_() and died in the driver
+    # (fuzz run 2026-09-22). No numeric bound applies — servers.id is a String column.
+    server_ids: list[SafeText] = []
 
 
 class UserUpdate(BaseModel):
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     is_admin: Optional[bool] = None
-    server_ids: Optional[list[str]] = None
+    server_ids: Optional[list[SafeText]] = None
