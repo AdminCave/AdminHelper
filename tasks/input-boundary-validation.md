@@ -84,9 +84,12 @@ Review: approve (sonnet, 2 Runden, Mutationsprobe)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_input_hardening.py
 Doku: keine (intern)
 
-### T7 — Server: NUL-Byte in Textfeldern ablehnen  [ ]
-Komponente: server · Dateien: apps/server/app/core/bounds.py, das Schema hinter `POST /api/enrollment/token/for`, der zugehörige Test
+### T7 — Server: NUL-Byte in Textfeldern ablehnen  [x]
+Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/app/modules/enrollment/router.py, apps/server/app/modules/audit/router.py, apps/server/tests/test_text_bounds.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @290b31bc 2026-09-22T20:53:13+02:00
+Review: approve (sonnet, Mutationsprobe)
 Änderung: ein `SafeText`-Typ in `bounds.py`, der `\x00` ablehnt (Postgres nimmt kein NUL in Textwerten), und sein Einsatz im Benutzernamen-Feld dieser Route. Bewusst nur dort, wo der Fuzz-Lauf es belegt hat — kein Flächen-Refactor aller Textfelder (YAGNI).
+Beim Bau erweitert (2026-09-22), mit Beleg: der Ausschluss `list_audit_api_audit_get` in `tests/schemathesis_exclude.toml` steht seit dem Lauf vom 2026-09-21 wegen genau derselben Klasse über einen QUERY-Parameter. Alle sechs Textfilter von `GET /api/audit` einzeln nachgestellt: jeder endet in `psycopg.DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`, ungefangen. Ohne diese sechs könnte T10 den Audit-Ausschluss nicht entfernen. Das Schema hinter `POST /api/enrollment/token/for` ist die Inline-Klasse `EnrollmentTokenForRequest` in `enrollment/router.py`, keine eigene `schemas.py`. `SafeText` ist ein `AfterValidator`, kein `Field`-Constraint — er taucht deshalb nicht im OpenAPI-Schema auf, der Snapshot bleibt unverändert und das oasdiff-Gate (T11) sieht diese Task nicht.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 Abhängt von: T1

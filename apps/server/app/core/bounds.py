@@ -20,7 +20,7 @@ into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
 
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
 # Primary key of a table declared as Column(Integer) — Postgres INTEGER.
 IntPk = Annotated[int, Field(ge=1, le=2147483647)]
@@ -44,3 +44,19 @@ IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
 # but capped at INTEGER per the design gate: past the last row every offset
 # returns the same empty page, so a wider one buys nothing.
 Offset = Annotated[int, Field(ge=0, le=2147483647)]
+
+
+def _reject_nul(value: str) -> str:
+    # Postgres stores no 0x00 in a text value: psycopg raises DataError while
+    # binding the parameter, before the query runs, so the route never produced a
+    # response at all. Rejecting at the edge turns that 500 into a 422.
+    if "\x00" in value:
+        raise ValueError("must not contain a NUL byte")
+    return value
+
+
+# A text value that travels into a Postgres text column or a comparison against
+# one. Deliberately narrow: this rejects the one byte the database refuses, not
+# control characters in general — the TOML guards in frp/schemas.py are a
+# separate concern with their own reason.
+SafeText = Annotated[str, AfterValidator(_reject_nul)]
