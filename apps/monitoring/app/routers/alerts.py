@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_internal
+from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.models import MonitorAlertLog, MonitorAlertRule
@@ -26,7 +28,7 @@ def list_alert_rules(
     response: Response,
     db: Session = Depends(get_db),
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
 ):
     """Lists all alert rules."""
     query = db.query(MonitorAlertRule).order_by(MonitorAlertRule.name, MonitorAlertRule.id)

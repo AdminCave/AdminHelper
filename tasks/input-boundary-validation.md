@@ -103,9 +103,12 @@ Beim Bau erweitert (2026-09-22), mit Beleg: derselbe Fehler steht auf drei Route
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_isolation.py
 Doku: keine (intern)
 
-### T9 — Monitoring: Paginierung und Id-Listen begrenzen  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/routers/alerts.py, apps/monitoring/app/routers/checks.py, apps/monitoring/app/routers/templates.py
+### T9 — Monitoring: Paginierung und Id-Listen begrenzen  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/bounds.py, apps/monitoring/app/routers/alerts.py, apps/monitoring/app/routers/checks.py, apps/monitoring/tests/test_pagination.py, apps/monitoring/tests/openapi.snapshot.json
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @27b453ae 2026-09-22T21:17:29+02:00
+Review: approve (sonnet, Mutationsprobe)
 Änderung: dieselben Grenzen wie im Server, hier lokal deklariert (Monitoring ist ein eigener Dienst und teilt keinen Code mit dem Server): die drei `Query(0, ge=0)` in `alerts.py` und `checks.py` (zwei Stellen) und die `template_ids`-Liste. Das sind die zwei Routen, an denen der erste echte CI-Lauf des Fuzz-Jobs gefallen ist.
+Beim Bau korrigiert (2026-09-22): **`template_ids` ist keine Eingabe.** `routers/templates.py:55` und `:88` bilden die Liste serverseitig aus bereits geladenen Zeilen (`[t.id for t in templates]` bzw. `[a.template_id for a in assignments]`), sie kommt nie aus einem Request — es gibt dort keine Schranke abzuleiten. Dieselbe Schema-Suche wie im Server bestätigt das: die drei Treffer des Monitorings sind genau die drei `offset` (`/checks`, `/status`, `/alerts`), kein vierter. `templates.py` entfällt damit aus der Dateiliste. Die Grenze steht wie verlangt lokal in `apps/monitoring/app/core/bounds.py`, nicht als Import aus dem Server.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (intern)
 
