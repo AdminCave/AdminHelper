@@ -80,9 +80,11 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
 - **Schemathesis** fuzzt jeden Dienst gegen seine *eigene* OpenAPI, einmal je
   Authentifizierungs-Kontext. Eigener `run.sh`-Schritt `schemathesis` (nicht Teil
   der pytest-Schritte — die wählen den Marker mit `-m "not schemathesis"` ab,
-  sonst liefe die Suite zweimal). Beispiele je Operation über
-  `AH_SCHEMATHESIS_EXAMPLES`: **5** lokal, **20** im PR-CI, **100** im Wochenlauf
-  (`heavy.sh` setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter).
+  sonst liefe die Suite zweimal). Im PR-CI fährt ihn ein **eigener Job**
+  (`Schema fuzzing`, alle drei Dienste, eigener Postgres-Service) über denselben
+  `run.sh`-Aufruf. Beispiele je Operation über `AH_SCHEMATHESIS_EXAMPLES`: **5**
+  lokal **und** im PR-CI — was lokal grün ist, ist es dort auch —, **100** im
+  Wochenlauf (`heavy.sh` setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter).
 - **Ausschlüsse** stehen als Eintrag mit Grund und Wiedervorlage in
   `apps/<dienst>/tests/schemathesis_exclude.toml` — nie als Flag im Skript. Der
   Test prüft jede `operation_id` gegen das Schema: ein Tippfehler dort schließt

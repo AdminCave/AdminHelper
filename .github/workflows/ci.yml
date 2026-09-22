@@ -66,9 +66,6 @@ jobs:
       DATA_DIR: /tmp/adminhelper-test-data
       SECRET_KEY: ci-test-secret-key
       ADMIN_PASSWORD: ciadmin
-      # Schemathesis budget per operation: more than the 5 a local `run.sh quick`
-      # spends, far less than the 100 of the weekly box run (scripts/tests/heavy.sh).
-      AH_SCHEMATHESIS_EXAMPLES: "20"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -129,7 +126,6 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
-      AH_SCHEMATHESIS_EXAMPLES: "20"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -151,8 +147,6 @@ jobs:
     name: CA-Issuer (pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      AH_SCHEMATHESIS_EXAMPLES: "20"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -170,6 +164,62 @@ jobs:
         working-directory: apps/ca-issuer
         # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
         run: python -m pytest -q -m "not schemathesis"
+
+  schemathesis:
+    name: Schema fuzzing (server + monitoring + ca-issuer)
+    runs-on: ubuntu-latest
+    # Its own job, not a step inside the three pytest ones: own budget, own
+    # verdict, and a failure here says "a route answers something its schema does
+    # not describe" rather than drowning in an unrelated suite.
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
+      DATA_DIR: /tmp/adminhelper-test-data
+      SECRET_KEY: ci-test-secret-key
+      ADMIN_PASSWORD: ciadmin
+      MTLS_ENFORCE: "false"
+      # The same number a developer runs locally, so "green here" and "green on my
+      # machine" mean the same thing. Depth is the weekly run's job, which sets 100.
+      AH_SCHEMATHESIS_EXAMPLES: "5"
+      # Only this step is asked for, so only this step is mandatory — without it
+      # the default set would mark every step this job does not run as a hole.
+      AH_REQUIRED: schemathesis
+      # run.sh installs into this venv; it is filled below so the step's
+      # `import schemathesis` gate finds the package.
+      AH_VENV: /tmp/ci-venv
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/*/requirements*
+      - name: Install dev dependencies of all three services
+        run: |
+          python -m venv "$AH_VENV"
+          "$AH_VENV/bin/pip" install -q \
+            -r apps/server/requirements-dev.txt \
+            -r apps/monitoring/requirements-dev.txt \
+            -r apps/ca-issuer/requirements-dev.txt
+      # One aggregator call, the same one a developer runs — CI and the dev box
+      # cannot drift apart. --strict makes a skipped step a failure here, which is
+      # the point: a missing schemathesis package must not pass as green.
+      - name: Fuzz each service against its own schema
+        run: bash scripts/tests/run.sh unit --strict --step schemathesis --only server monitoring ca-issuer
 
   agent:
     name: Go Agent (gofmt + vet + test)

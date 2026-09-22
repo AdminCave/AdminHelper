@@ -584,9 +584,16 @@ layer_unit() {
       for d in "$@"; do
         (
           cd "$d" || exit 2
-          # Only the server suite needs a Postgres; exporting DATABASE_URL globally
-          # would arm the monitoring migration smoke against the wrong database.
-          [ "$d" = apps/server ] && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"
+          # Only the server suite gets a Postgres. For the others DATABASE_URL is
+          # actively REMOVED, not merely left unset: a caller that exports it — the
+          # CI job does, because the server needs it — would otherwise point
+          # monitoring at a Postgres it is not written for. Its suite is SQLite by
+          # design, and the value silently changes what its app connects to.
+          if [ "$d" = apps/server ]; then
+            export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}"
+          else
+            unset DATABASE_URL
+          fi
           # No $AH_ARGS: this step selects by marker, and a caller asking for one
           # file (verify.sh … -- tests/x.py) would leave it with nothing to collect
           # — an honest SKIP that under --strict reads as a hole in an unrelated run.

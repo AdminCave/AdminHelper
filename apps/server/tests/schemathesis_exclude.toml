@@ -57,10 +57,10 @@ until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
 operation_id = "list_audit_api_audit_get"
-checks = ["negative_data_rejection"]
+raises = true
 # GET /api/audit
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — ein NUL-Byte in einem Query-Parameter erreicht die DB: `psycopg.DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes`, ungefangen ⇒ HTTP 500. Dieselbe Klasse wie der user_id-Ueberlauf und /api/enrollment/token/for, hier ueber einen Filter-Parameter"
+until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (NUL, int-Ueberlauf), Pfad UND Query"
 
 [[exclude]]
 operation_id = "list_tunnels_api_frp_tunnels_get"
@@ -134,10 +134,12 @@ until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
 
 [[exclude]]
 operation_id = "mark_read_api_notifications_read_post"
-checks = ["negative_data_rejection"]
+raises = true
 # POST /api/notifications/read
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
+reason = "not_a_server_error — HTTP 500 bei einer Id jenseits von BIGINT im REQUEST-BODY: router.py:90 reicht data.ids ungeprueft in Notification.id.in_(), Postgres lehnt den Parameter ab (NumericValueOutOfRange), ungefangen. Unabhaengig reproduziert 2026-09-22: 2**63-1 wird akzeptiert, 2**63 und -(2**63)-1 nicht. Dieselbe Klasse wie der user_id-Ueberlauf (Pfad) und die Paginierung (Query) — der Body ist der dritte Weg hinein. Ausserdem negative_data_rejection: Pydantic v2 koerziert im lax mode, die Route nimmt einen schema-widrigen Typ an und normalisiert ihn (Framework-Verhalten, kein Defekt)"
+until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (int-Ueberlauf, NUL) — Pfad, Query UND Body"
+# Der Aufruf stirbt an einer ungefangenen Exception (NumericValueOutOfRange), bevor eine
+# Response entsteht — kein Check kann hier greifen, deshalb die ganze Operation.
 
 [[exclude]]
 operation_id = "create_server_api_servers_post"

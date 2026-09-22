@@ -11,8 +11,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Generatoren statt Beispiele in den Testsuiten (Harness Stufe 8b):** Jeder Python-Dienst
   wird gegen seine eigene OpenAPI gefuzzt (Schemathesis, eigener `run.sh`-Schritt
-  `schemathesis`, Beispielzahl 5 lokal / 20 im PR-CI / 100 im Wochenlauf ueber
-  `AH_SCHEMATHESIS_EXAMPLES`), einmal je Authentifizierungs-Kontext. Dazu drei
+  `schemathesis` und einem eigenen CI-Job ueber alle drei Dienste, Beispielzahl
+  5 lokal und im PR-CI, 100 im Wochenlauf ueber `AH_SCHEMATHESIS_EXAMPLES`),
+  einmal je Authentifizierungs-Kontext. Dazu drei
   Hypothesis-Ziele — FRP-TOML-Round-Trip, VictoriaMetrics-Line-Protocol und der
   SSRF-Guard gegen ein Orakel aus dem `ipaddress`-Modul —, ein Postgres-Concurrency-
   Test fuer `execute_check` (der `with_for_update` ist auf SQLite ein No-op und war

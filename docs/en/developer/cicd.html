@@ -189,7 +189,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>Enrollment hash</td><td><code>core/auth.py</code> <code>hash_api_key</code></td><td><code>ca-issuer/app/db.py</code> <code>_hash</code></td><td>job <code>server</code></td></tr>
               <tr><td>Transition pipeline</td><td><code>check_engine.apply_result</code></td><td>text scan over <code>apps/monitoring/app/**</code></td><td>job <code>monitoring</code></td></tr>
               <tr><td>SSRF guard</td><td><code>apps/server/app/core/ssrf.py</code></td><td><code>apps/monitoring/app/core/ssrf.py</code></td><td>job <code>server</code></td></tr>
-              <tr><td>Schema fuzzing</td><td><code>app.openapi()</code> per service</td><td>what its own routes answer under each auth context</td><td>step <code>schemathesis</code> (jobs <code>server</code>, <code>monitoring</code>, <code>ca-issuer</code>)</td></tr>
+              <tr><td>Schema fuzzing</td><td><code>app.openapi()</code> per service</td><td>what its own routes answer under each auth context</td><td>its own job <code>schemathesis</code> (all three services)</td></tr>
               <tr><td>OpenAPI snapshot</td><td><code>app.openapi()</code> per service</td><td><code>apps/&lt;service&gt;/tests/openapi.snapshot.json</code></td><td>jobs <code>server</code>, <code>monitoring</code></td></tr>
               <tr><td>OpenAPI compatibility</td><td>base branch's snapshot</td><td>this branch's snapshot</td><td>job <code>openapi-compat</code></td></tr>
               <tr><td>Documentation paths</td><td><code>&lt;code&gt;</code> fragments in <code>docs/**/*.html</code></td><td>the repository tree</td><td>job <code>ops-scripts</code></td></tr>

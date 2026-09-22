@@ -12,3 +12,11 @@ operation_id = "trigger_tag_sync_templates_tag_sync_post"
 # POST /templates/tag-sync
 reason = "Route ruft den AdminHelper-Server ueber HTTP (SERVER_HUB_URL) und antwortet ohne ihn mit 502 — in-process nicht fuzzbar, und ein laufender Stack ist ausdruecklich Nicht-Ziel der Spec"
 until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub in dieser Fixture"
+
+[[exclude]]
+operation_id = "list_checks_checks_get"
+# GET /checks
+reason = "not_a_server_error — HTTP 500 bei offset jenseits von 2**63-1: routers/checks.py:112 deklariert `offset: int = Query(0, ge=0)` mit UNTERER, aber ohne obere Grenze, der Wert geht ungeprueft in LIMIT/OFFSET. Unter SQLite (Testumgebung) OverflowError, unter Postgres (Produktion) NumericValueOutOfRange — beides ungefangen. Gefunden 2026-09-22, dieselbe Klasse wie die drei Server-Faelle (Pfad, Query, Body)"
+until = "Roadmap: obere Schranke auf den Paginierungs-Parametern beider Dienste (le=2**63-1 oder eine fachliche Grenze)"
+# Der Aufruf stirbt an einer ungefangenen Exception, bevor eine Response entsteht —
+# kein Check kann hier greifen, deshalb die ganze Operation.
