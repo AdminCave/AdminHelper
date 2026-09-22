@@ -30,6 +30,17 @@
 #   reason        warum diese Checks hier heute nichts beitragen
 #   until         woran die Wiedervorlage haengt
 
+#
+# VOLLSTAENDIGKEIT DER PAGINIERUNGS-KLASSE (2026-09-22): Das OpenAPI-Schema wurde einmal
+# statisch nach allen Integer-Parametern OHNE `maximum` durchsucht — das ist genau die Menge,
+# die der Fuzzer bis 2**63 und darueber treiben kann. Neun Treffer im Server; acht stehen
+# unten (`user_id`/`key_id` als Pfadparameter, `offset` auf audit, connections, hooks,
+# notifications, servers). Der neunte, `gen_visitor_toml_api_frp_generate_visitor_toml_get`
+# (`user_id` als Query), steht bewusst NICHT hier: nachgestellt antwortet er bei 2**31-1 und
+# bei 2**63 gleichermassen mit 404, der Wert erreicht keinen ueberlaufenden Vergleich.
+# Die Suche deckt Query- und Pfadparameter ab, NICHT Integer-Felder in Request-Bodies —
+# fuer die steht bisher nur der belegte Fall `mark_read_api_notifications_read_post`.
+
 [[exclude]]
 operation_id = "delete_api_key_api_api_keys__key_id__delete"
 raises = true
@@ -205,24 +216,24 @@ until = "Roadmap: Randvalidierung fuer DB-feindliche Eingaben (int-Ueberlauf, NU
 
 [[exclude]]
 operation_id = "list_hooks_api_hooks_get"
-checks = ["negative_data_rejection"]
+raises = true
 # GET /api/hooks
-reason = "negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
-until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
+reason = "HTTP 500 bei `offset` jenseits von 2**63-1: der Parameter ist als `Query(0, ge=0)` deklariert — untere Schranke ohne obere — und geht ungeprueft in LIMIT/OFFSET. Der Treiber lehnt ihn ab (NumericValueOutOfRange), ungefangen, es entsteht keine Response. Statisch ueber das OpenAPI-Schema gefunden (alle Integer-Parameter ohne `maximum`) und je Route nachgestellt: offset=2**63-1 -> HTTP 200, offset=2**63 -> DataError vor der Antwort. Nicht einzeln erfuzzt, sondern vorsorglich gelistet: derselbe Fehler, denselben Weg hinein. Zusaetzlich, aus dem Erstlauf: negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
+until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
 
 [[exclude]]
 operation_id = "list_servers_api_servers_get"
-checks = ["negative_data_rejection"]
+raises = true
 # GET /api/servers
-reason = "negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
-until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
+reason = "HTTP 500 bei `offset` jenseits von 2**63-1: der Parameter ist als `Query(0, ge=0)` deklariert — untere Schranke ohne obere — und geht ungeprueft in LIMIT/OFFSET. Der Treiber lehnt ihn ab (NumericValueOutOfRange), ungefangen, es entsteht keine Response. Statisch ueber das OpenAPI-Schema gefunden (alle Integer-Parameter ohne `maximum`) und je Route nachgestellt: offset=2**63-1 -> HTTP 200, offset=2**63 -> DataError vor der Antwort. Nicht einzeln erfuzzt, sondern vorsorglich gelistet: derselbe Fehler, denselben Weg hinein. Zusaetzlich, aus dem Erstlauf: negative_data_rejection — der Treffer betrifft die HEADER- und QUERY-Mutation, nicht den Body: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Auth-Header setzt die Fixture von aussen ueber headers=, der Request geht also authentifiziert raus. Dazu ignoriert FastAPI unbekannte Query-Parameter. Gleiche blinde Stelle wie bei ignored_auth: der Check kann die von aussen gesetzten Credentials nicht sehen"
+until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
 
 [[exclude]]
 operation_id = "get_connections_api_connections_get"
-checks = ["negative_data_rejection"]
+raises = true
 # GET /api/connections
-reason = "negative_data_rejection — der Treffer betrifft die HEADER-Mutation: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen Header ueber die mutierten (prepare_headers) — der Request geht also authentifiziert raus und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Gleiche blinde Stelle wie bei ignored_auth. Einzeln nachgefahren 2026-09-21: `Invalid component: Missing Authorization at header`, sonst nichts"
-until = "Entscheidung T3: Check abschaltbar statt Operationen ausschliessen"
+reason = "HTTP 500 bei `offset` jenseits von 2**63-1: der Parameter ist als `Query(0, ge=0)` deklariert — untere Schranke ohne obere — und geht ungeprueft in LIMIT/OFFSET. Der Treiber lehnt ihn ab (NumericValueOutOfRange), ungefangen, es entsteht keine Response. Statisch ueber das OpenAPI-Schema gefunden (alle Integer-Parameter ohne `maximum`) und je Route nachgestellt: offset=2**63-1 -> HTTP 200, offset=2**63 -> DataError vor der Antwort. Nicht einzeln erfuzzt, sondern vorsorglich gelistet: derselbe Fehler, denselben Weg hinein. Zusaetzlich, aus dem Erstlauf: negative_data_rejection — der Treffer betrifft die HEADER-Mutation: der Check laesst den Authorization-Header weg und erwartet eine Ablehnung, aber die Fixture setzt die Auth-Header von aussen ueber headers=, und schemathesis merged die mitgegebenen Header ueber die mutierten (prepare_headers) — der Request geht also authentifiziert raus und die 200 gilt dem Check als akzeptierte schema-widrige Daten. Gleiche blinde Stelle wie bei ignored_auth. Einzeln nachgefahren 2026-09-21: `Invalid component: Missing Authorization at header`, sonst nichts"
+until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
 
 [[exclude]]
 operation_id = "create_connection_api_connections_post"

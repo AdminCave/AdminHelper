@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8b — Generatoren — Task-Ledger
-Status: erledigt (11/11 Tasks + T12–T19 aus PR-Review und Aufsicht; der offene T3-Punkt zur `negative_data_rejection`-Strategie ist mit T12 erledigt — check-granulare Ausschlüsse statt eines globalen Schalters, kein `[?]` mehr offen) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (11/11 Tasks + T12–T20 aus PR-Review, Aufsicht und CI; der offene T3-Punkt zur `negative_data_rejection`-Strategie ist mit T12 erledigt — check-granulare Ausschlüsse statt eines globalen Schalters, kein `[?]` mehr offen) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8b.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Lane: Worktree `../AdminHelper-harness-stufe-8b`, parallel zu `feature/harness-stufe-4` — die `.devenv.sh` dieser Lane setzt `AH_VENV=/tmp/ah-venv-8b` (eigener Dev-venv, damit T1 nicht in den venv der anderen Lane installiert); vor jedem Lauf `source .devenv.sh`. Die Lane hat seit 2026-09-18 auch eine **eigene Test-DB** (`adminhelper_lane8b`): die geteilte `adminhelper_test` hat zweimal einen Lauf entwertet, weil die `pg_engine`-Fixture der anderen Lane am Ende per `drop_all` abräumt — mitten im fremden Lauf heisst das `Relation users existiert nicht`, also verworfen, nicht rot.
@@ -359,6 +359,28 @@ Der Test war dabei nie **rot** — er prüfte nur etwas anderes, als er behaupte
 - `verify.sh monitoring --strict` → `4 passed, 0 failed, 13 skipped, 10 test-skips, 0 reruns` (`468 passed, 10 skipped`; schemathesis `111 passed`)
 - `verify.sh ca-issuer --strict` → `4 passed, 0 failed, 13 skipped, 0 test-skips, 0 reruns` (`65 passed`; schemathesis `9 passed`)
 - `verify.sh scripts --strict` → `4 passed, 1 failed, 12 skipped` — der eine Fehlschlag ist `runner_setup_test` oben, auf `main` identisch. Alle anderen Blöcke grün, darunter `run_flags_test 72 passed`, `ledger_test 52 passed`, `review_scripts_test 48 passed`, `task_close_test 60 passed`, `heavy_test 166 passed`, `toolchain_lockstep_test 18 passed`.
+
+### T20 — CI lieferte die Klasse in Raten nach  [x]
+Komponente: apps/server, apps/monitoring · Dateien: apps/server/tests/schemathesis_exclude.toml, apps/monitoring/tests/schemathesis_exclude.toml
+Verify: bash scripts/dev/verify.sh server --strict · bash scripts/dev/verify.sh monitoring --strict
+Doku: Kopf beider Ausschlusslisten hält die Vollständigkeitsprüfung fest
+
+**Der erste echte CI-Lauf des Fuzz-Jobs** (Run 35725949370) war rot: Monitoring `2 failed, 109 passed`, Server und CA-Issuer grün. Die zwei Fehler sind `GET /alerts?offset=2**63` und `GET /status?offset=2**63` — dieselbe Klasse wie `/checks`, zwei Routen weiter. Lokal hatte die Generierung sie nie erwischt, in CI sofort. Das ist exakt der Effekt aus T13: gleicher Baum, andere Auswahl, andere Daten.
+
+**Konsequenz: nicht den nächsten Zufallstreffer abwarten, sondern die Klasse einmal ganz aufnehmen.** Statt zu greppen, das OpenAPI-Schema selbst befragt — alle Integer-Parameter **ohne `maximum`**, denn genau die kann der Fuzzer bis 2**63 treiben:
+
+| Dienst | Treffer | Stand |
+|---|---|---|
+| Monitoring | 3 (`offset` auf `/checks`, `/alerts`, `/status`) | alle drei gelistet, `raises = true` |
+| Server | 9 | 8 gelistet; der neunte geprüft und bewusst nicht |
+
+Im Server waren **drei davon nur check-granular** gelistet (`/api/connections`, `/api/hooks`, `/api/servers`, je wegen `negative_data_rejection`) — `not_a_server_error` lief dort also weiter, und CI hätte sie als Nächstes gemeldet. Je Route nachgestellt: `offset=2**63-1` → HTTP 200, `offset=2**63` → `DataError` **vor** der Antwort. Damit `raises = true`; die alte Begründung bleibt als zweiter Satz stehen, sie war richtig, sie reicht nur nicht mehr.
+
+**Ausdrücklich nicht gelistet:** `gen_visitor_toml_api_frp_generate_visitor_toml_get` (`user_id` als Query ohne obere Schranke). Nachgestellt antwortet die Route bei `2**31-1` und bei `2**63` gleichermaßen mit 404 — der Wert erreicht keinen überlaufenden Vergleich. Ein Eintrag „vorsorglich" wäre hier eine Behauptung ohne Befund.
+
+**Grenze der Suche, im Dateikopf vermerkt:** sie deckt Query- und Pfadparameter ab, **nicht** Integer-Felder in Request-Bodies. Für die steht bisher nur der belegte Fall `mark_read_api_notifications_read_post`.
+
+**Stand:** Server 27 Einträge (18 `raises`, 9 check-granular), Monitoring 4 (3/1), CA-Issuer 0. `verify.sh server --strict` → `4 passed, 0 failed, 13 skipped, 2 test-skips` (`543 passed, 2 skipped, 2 xfailed`; schemathesis `240 passed`); `verify.sh monitoring --strict` → `4 passed, 0 failed, 13 skipped, 10 test-skips` (`468 passed, 10 skipped`; schemathesis `105 passed`).
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün (mit dem neuen Schritt); `bash scripts/dev/verify.sh all --strict` grün.
