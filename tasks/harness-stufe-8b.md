@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 8b — Generatoren — Task-Ledger
-Status: erledigt (11/11 Tasks + T12–T18 aus PR-Review und Aufsicht; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt (11/11 Tasks + T12–T19 aus PR-Review und Aufsicht; die Ausschluss-Strategie fuer `negative_data_rejection` ist als eigener Punkt offen, siehe T3 — sie blockiert nichts) · Branch: feature/harness-stufe-8b · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/harness-stufe-8b.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Lane: Worktree `../AdminHelper-harness-stufe-8b`, parallel zu `feature/harness-stufe-4` — die `.devenv.sh` dieser Lane setzt `AH_VENV=/tmp/ah-venv-8b` (eigener Dev-venv, damit T1 nicht in den venv der anderen Lane installiert); vor jedem Lauf `source .devenv.sh`. Die Lane hat seit 2026-09-18 auch eine **eigene Test-DB** (`adminhelper_lane8b`): die geteilte `adminhelper_test` hat zweimal einen Lauf entwertet, weil die `pg_engine`-Fixture der anderen Lane am Ende per `drop_all` abräumt — mitten im fremden Lauf heisst das `Relation users existiert nicht`, also verworfen, nicht rot.
@@ -337,7 +337,28 @@ Doku: DEVELOPMENT.md „Postgres-gegattert", Spec-Notiz zur Beispielzahl
 
 **NIT DEVELOPMENT.md:** „skippen ohne `DATABASE_URL`" war nach T16 unvollständig — eine Nicht-Postgres-URL skippt ebenfalls. Der Absatz nennt jetzt das Merkmal, auf das Test und `run.sh` tatsächlich gattern, samt Grund (SQLite macht `FOR UPDATE` zum No-op).
 
-**Offen:** Der `scripts`-Gate ließ sich auf diesem Rechner nicht zu Ende fahren — vier Anläufe, jedes Mal vom OOM-Killer beendet, weil parallel die Verifikation der Aufsicht lief. Verifiziert sind einzeln: `heavy_test` `166 passed, 0 failed`, `toolchain_lockstep_test` `18 passed, 0 failed` (prüft `ci.yml`), `shellcheck` sauber, plus die Funktions-Probe oben. **`run_flags_test` steht aus** — das ist „nicht verifiziert", nicht „grün".
+Der `scripts`-Gate stand danach noch aus; warum, steht in T19.
+
+### T19 — Der hermetische Test war nicht hermetisch  [x]
+Komponente: scripts/tests · Dateien: scripts/tests/run_flags_test.sh
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Testinterna)
+
+`run_flags_test.sh` sagt über sich: „Runs the real aggregator against a PATH that contains coreutils and nothing else … the whole file runs in seconds without a suite ever firing." Auf dieser Box lief es **über zehn Minuten** und ließ sich deshalb nicht zu Ende fahren.
+
+**Ursache:** Von 34 `run.sh`-Aufrufen setzten nur vier ein eigenes `AH_VENV`. Die übrigen erben das des Aufrufers — und `verify.sh` setzt eins. `ensure_venv` **aktiviert** das venv, auf das `AH_VENV` zeigt, und legt dessen `bin/` auf `PATH`: damit greift das venv an dem bewusst leeren `$BARE` vorbei und gibt den dependency-gegatterten Schritten ein `python3` **mit** den Paketen. `run_bare unit --step schemathesis` (Zeile 119) und `all --strict` (471/479) haben also die echten Fuzz-Suiten aller drei Dienste gefahren, statt zu SKIPpen. Im Prozessbaum nachgesehen: `bash -c … python3 -m pytest -q -m schemathesis … apps/server apps/monitoring apps/ca-issuer`.
+
+Der Test war dabei nie **rot** — er prüfte nur etwas anderes, als er behauptet: „ein Lauf, in dem nichts lief, darf nicht grün aussehen" wurde mit einem Lauf geprüft, in dem sehr wohl etwas lief.
+
+**Fix an der Wurzel statt an 30 Stellen:** ein `export AH_VENV="$WORK/no-venv"` neben der `$BARE`-Zeile; einzelne Aufrufe dürfen weiter überschreiben (vier tun das bereits, mit demselben Wert). Danach `run_flags_test: 72 passed, 0 failed` in Minuten statt in zehn.
+
+**Ein roter Fall im `scripts`-Gate bleibt, und er gehört nicht hierher:** `runner_setup_test` (aus `main`, Stufe 4) meldet `49 passed, 2 failed`, weil es die Zeilen `useradd -m -s /bin/bash adminhelper-runner` und `git clone --no-hardlinks -b main` im Plan erwartet — `runner-setup.sh:190` lässt sie aber weg, wenn der User schon existiert, und auf dieser Box existiert er (uid 1001). Der Test hängt also an lokalem Zustand. **Gegenprobe in einem eigenen Worktree auf unverändertem `origin/main`: identisch `49 passed, 2 failed`.** Nicht von diesem Branch verursacht, nicht hier gefixt (fremde Task) — an die Aufsicht gemeldet.
+
+**Stand auf dem Merge-Stand (1508dae0 + dieser Fix):**
+- `verify.sh server --strict` → `4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns` (`543 passed, 2 skipped, 2 xfailed`; schemathesis `252 passed`)
+- `verify.sh monitoring --strict` → `4 passed, 0 failed, 13 skipped, 10 test-skips, 0 reruns` (`468 passed, 10 skipped`; schemathesis `111 passed`)
+- `verify.sh ca-issuer --strict` → `4 passed, 0 failed, 13 skipped, 0 test-skips, 0 reruns` (`65 passed`; schemathesis `9 passed`)
+- `verify.sh scripts --strict` → `4 passed, 1 failed, 12 skipped` — der eine Fehlschlag ist `runner_setup_test` oben, auf `main` identisch. Alle anderen Blöcke grün, darunter `run_flags_test 72 passed`, `ledger_test 52 passed`, `review_scripts_test 48 passed`, `task_close_test 60 passed`, `heavy_test 166 passed`, `toolchain_lockstep_test 18 passed`.
 
 ## Abschluss
 - `bash scripts/tests/run.sh quick --strict` grün (mit dem neuen Schritt); `bash scripts/dev/verify.sh all --strict` grün.

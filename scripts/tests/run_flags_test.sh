@@ -36,6 +36,16 @@ trap 'rm -rf "$WORK"' EXIT
 
 # ── a PATH with the plumbing but none of the toolchains ───────────────────────
 BARE="$WORK/bin"; mkdir -p "$BARE"
+
+# Ein venv, das es nicht gibt — fuer JEDEN Aufruf hier, nicht nur die, die es
+# einzeln setzen. ensure_venv AKTIVIERT das venv, auf das AH_VENV zeigt, und legt
+# dessen bin/ auf PATH: ein gesetztes AH_VENV des Aufrufers (verify.sh setzt eins)
+# greift damit an "$BARE" vorbei und gibt den dependency-gegatterten Schritten ein
+# python MIT den Paketen. `--step schemathesis` und `all --strict` fuzzen dann
+# wirklich alle drei Dienste, statt zu SKIPpen — die Datei lief zehn Minuten statt
+# der Sekunden, die sie oben verspricht, und pruefte dabei etwas anderes als sie
+# behauptet. Einzelne Aufrufe duerfen weiter ueberschreiben.
+export AH_VENV="$WORK/no-venv"
 for t in bash sh git mktemp sed grep awk cat tee date rm mv cp ls wc head tail tr cut sort paste env dirname basename find touch mkdir printf; do
   src=$(command -v "$t" 2>/dev/null) && ln -sf "$src" "$BARE/$t"
 done
