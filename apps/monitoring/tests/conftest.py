@@ -14,6 +14,7 @@ import.
 import os
 import tempfile
 
+import hypothesis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -24,6 +25,15 @@ os.environ.setdefault("DATA_DIR", os.path.join(tempfile.gettempdir(), "adminhelp
 # Disable the notification-hub push by default — these are pure-logic tests with
 # no server to reach; the hub-emit tests set the URL explicitly.
 os.environ.setdefault("SERVER_HUB_URL", "")
+
+# One seed, not a new one per run. A property suite that draws different data every
+# time is a gate that goes red on a commit which touched nothing, and whose failure
+# nobody can reproduce locally -- the same reason the Schemathesis suites pin it.
+# Per-test @settings only set max_examples/deadline, so they inherit this. Runs at
+# conftest import, which is before any test module is imported and its decorators
+# are evaluated.
+hypothesis.settings.register_profile("gate", derandomize=True)
+hypothesis.settings.load_profile("gate")
 
 
 @pytest.fixture()
@@ -65,6 +75,14 @@ def client_db(monkeypatch):
     yield TestClient(app), factory
 
     app.dependency_overrides.clear()
+
+
+def pytest_configure(config):
+    # Registered so `-m schemathesis` selects instead of warning about an unknown
+    # mark: run.sh reaches these tests through this marker alone (harness 8b).
+    config.addinivalue_line(
+        "markers", "schemathesis: schema-driven API fuzzing, run as its own run.sh step"
+    )
 
 
 def pytest_addoption(parser):

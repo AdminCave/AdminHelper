@@ -16,6 +16,7 @@ os.environ.setdefault("ADMIN_PASSWORD", "testadmin")
 # =True explicitly (see test_mtls_scope).
 os.environ.setdefault("MTLS_ENFORCE", "false")
 
+import hypothesis
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -34,6 +35,15 @@ import app.modules.servers.models  # noqa: F401
 from app.core.auth import hash_password
 from app.core.database import Base, get_db
 from app.modules.users.models import User
+
+# One seed, not a new one per run. A property suite that draws different data every
+# time is a gate that goes red on a commit which touched nothing, and whose failure
+# nobody can reproduce locally -- the same reason the Schemathesis suites pin it.
+# Per-test @settings only set max_examples/deadline, so they inherit this. Runs at
+# conftest import, which is before any test module is imported and its decorators
+# are evaluated.
+hypothesis.settings.register_profile("gate", derandomize=True)
+hypothesis.settings.load_profile("gate")
 
 
 def _normalize_postgres_url(raw_url: str) -> str:
@@ -171,6 +181,15 @@ def test_client(db_session):
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
+
+
+def pytest_configure(config):
+    # Registered so `-m schemathesis` is a selector rather than an unknown-mark
+    # warning: run.sh has its own `schemathesis` step and reaches these tests
+    # through this marker alone (harness 8b).
+    config.addinivalue_line(
+        "markers", "schemathesis: schema-driven API fuzzing, run as its own run.sh step"
+    )
 
 
 def pytest_addoption(parser):

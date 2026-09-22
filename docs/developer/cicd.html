@@ -197,6 +197,7 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
               <tr><td>Enrollment-Hash</td><td><code>core/auth.py</code> <code>hash_api_key</code></td><td><code>ca-issuer/app/db.py</code> <code>_hash</code></td><td>Job <code>server</code></td></tr>
               <tr><td>Transition-Pipeline</td><td><code>check_engine.apply_result</code></td><td>Textscan &uuml;ber <code>apps/monitoring/app/**</code></td><td>Job <code>monitoring</code></td></tr>
               <tr><td>SSRF-Guard</td><td><code>apps/server/app/core/ssrf.py</code></td><td><code>apps/monitoring/app/core/ssrf.py</code></td><td>Job <code>server</code></td></tr>
+              <tr><td>Schema-Fuzzing</td><td><code>app.openapi()</code> je Dienst</td><td>die Antworten der eigenen Routen unter jedem Auth-Kontext</td><td>eigener Job <code>schemathesis</code> (alle drei Dienste)</td></tr>
               <tr><td>OpenAPI-Snapshot</td><td><code>app.openapi()</code> je Dienst</td><td><code>apps/&lt;dienst&gt;/tests/openapi.snapshot.json</code></td><td>Jobs <code>server</code>, <code>monitoring</code></td></tr>
               <tr><td>OpenAPI-Kompatibilit&auml;t</td><td>Snapshot des Basis-Branch</td><td>Snapshot dieses Branch</td><td>Job <code>openapi-compat</code></td></tr>
               <tr><td>Doku-Pfade</td><td><code>&lt;code&gt;</code>-Fragmente in <code>docs/**/*.html</code></td><td>der Repo-Baum</td><td>Job <code>ops-scripts</code></td></tr>

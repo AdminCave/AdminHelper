@@ -27,7 +27,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `DEVELOPMENT.md`, Abschnitte „Task schliessen: `ledger.sh` und `task-close.sh`",
   „Harness-Schutz und Kill-Switch" und
   „Runner-User `adminhelper-runner`".
-
+- **Generatoren statt Beispiele in den Testsuiten (Harness Stufe 8b):** Jeder Python-Dienst
+  wird gegen seine eigene OpenAPI gefuzzt (Schemathesis, eigener `run.sh`-Schritt
+  `schemathesis` und einem eigenen CI-Job ueber alle drei Dienste, Beispielzahl
+  5 lokal und im PR-CI, 100 im Wochenlauf ueber `AH_SCHEMATHESIS_EXAMPLES`),
+  einmal je Authentifizierungs-Kontext. Dazu drei
+  Hypothesis-Ziele — FRP-TOML-Round-Trip, VictoriaMetrics-Line-Protocol und der
+  SSRF-Guard gegen ein Orakel aus dem `ipaddress`-Modul —, ein Postgres-Concurrency-
+  Test fuer `execute_check` (der `with_for_update` ist auf SQLite ein No-op und war
+  damit nie ausgefuehrt) und pytest-alembic fuer beide Migrationsketten, je mit einem
+  Seed-Test, der die Daten-Migration mit Daten prueft statt auf einer leeren Tabelle.
+  Ausschluesse stehen mit Grund und Wiedervorlage in `schemathesis_exclude.toml`, und
+  eine `operation_id`, die das Schema nicht kennt, ist ein Fehler statt eines stillen
+  No-ops. Neu: `requirements-dev.txt` je Dienst als einzige Wahrheit fuer Test-Deps.
 - **Ephemere Proxmox-VMs ohne externes Binary (Harness Stufe 2a):** `scripts/vm/vm.py` least,
   verwaltet und zerstoert die VMs, auf denen die schweren Suites laufen — Python-3-Standard-
   bibliothek, keine Abhaengigkeit, nur die REST-API. Verben: `doctor clone wait ssh sync run

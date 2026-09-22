@@ -113,6 +113,22 @@ OUT=$(AH_REQUIRED="ruff'; id; echo '" AH_DRY_RUN=1 bash "$ITER" quick --strict 2
 dry quick --strict
 grep -q "AH_REQUIRED=" <<<"$OUT" && bad "AH_REQUIRED appears although unset" || ok "unset AH_REQUIRED stays absent"
 
+# The schemathesis budget rides along for the same reason: heavy.sh sets 100 for
+# the weekly box run, and a variable that never leaves this shell would let the
+# box fuzz with the local default of 5 under a report that claims a deep run.
+OUT=$(AH_SCHEMATHESIS_EXAMPLES=100 AH_DRY_RUN=1 bash "$ITER" quick --strict 2>&1); rc=$?
+[ $rc -eq 0 ] && grep -q "AH_SCHEMATHESIS_EXAMPLES='100'" <<<"$OUT" \
+  && ok "the schemathesis budget is forwarded to the box" \
+  || bad "AH_SCHEMATHESIS_EXAMPLES forwarding: rc=$rc out=$OUT"
+OUT=$(AH_SCHEMATHESIS_EXAMPLES="20abc" AH_DRY_RUN=1 bash "$ITER" quick --strict 2>&1); rc=$?
+[ $rc -eq 2 ] && grep -q "invalid AH_SCHEMATHESIS_EXAMPLES" <<<"$OUT" \
+  && ok "a non-numeric schemathesis budget is rejected" \
+  || bad "AH_SCHEMATHESIS_EXAMPLES validation: rc=$rc out=$OUT"
+dry quick --strict
+grep -q "AH_SCHEMATHESIS_EXAMPLES=" <<<"$OUT" \
+  && bad "AH_SCHEMATHESIS_EXAMPLES appears although unset" \
+  || ok "unset schemathesis budget stays absent"
+
 # ── what actually reaches vm.py ──────────────────────────────────────────────
 # The dry run proves the REMOTE command; these prove the wrapper's own argument
 # list, which the migration to vm.py rewrote from scratch. A missing --extend

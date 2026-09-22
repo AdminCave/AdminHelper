@@ -66,6 +66,47 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 Tests/CI installieren `requirements.in` (lose, ungehasht) — `--require-hashes`
 verträgt keine Mischung aus gehashten und ungehashten Zeilen.
 
+- `requirements-dev.txt` — die **Test-Dependencies** je Dienst (`-r requirements.in`
+  plus pytest & Generatoren). Eine Wahrheit pro Dienst: `scripts/tests/run.sh` und
+  `.github/workflows/ci.yml` installieren beide genau diese Datei, nie eine
+  Paketliste im Skript.
+
+### Generatoren (Schemathesis, Hypothesis, pytest-alembic)
+
+Drei Fehlerklassen findet niemand von Hand: eine Eingabe, an die keiner gedacht
+hat, ein Vertrag, der still bricht, und ein Lock, das nur unter echter
+Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
+
+- **Schemathesis** fuzzt jeden Dienst gegen seine *eigene* OpenAPI, einmal je
+  Authentifizierungs-Kontext. Eigener `run.sh`-Schritt `schemathesis` (nicht Teil
+  der pytest-Schritte — die wählen den Marker mit `-m "not schemathesis"` ab,
+  sonst liefe die Suite zweimal). Im PR-CI fährt ihn ein **eigener Job**
+  (`Schema fuzzing`, alle drei Dienste, eigener Postgres-Service) über denselben
+  `run.sh`-Aufruf. Beispiele je Operation über `AH_SCHEMATHESIS_EXAMPLES`: **5**
+  lokal **und** im PR-CI — was lokal grün ist, ist es dort auch —, **100** im
+  Wochenlauf (`heavy.sh` setzt es, `scripts/vm/iter.sh` reicht es an die Box weiter).
+- **Ausschlüsse** stehen als Eintrag mit Grund und Wiedervorlage in
+  `apps/<dienst>/tests/schemathesis_exclude.toml` — nie als Flag im Skript. Der
+  Test prüft jede `operation_id` gegen das Schema: ein Tippfehler dort schließt
+  nichts aus und sagt nichts, also ist er ein Fehler.
+- **Hypothesis** deckt drei Ziele ab: den FRP-TOML-Round-Trip, das
+  VictoriaMetrics-Line-Protocol und den SSRF-Guard. Gepinnte Fälle stehen als
+  `@example` im Test und werden mitcommittet; die Beispieldatenbank `.hypothesis/`
+  ist lokaler Cache und gitignored. Die Suiten laufen `derandomize` (Profil `gate`
+  in der jeweiligen `conftest.py`) — ein Gate, das je Lauf andere Daten zieht, ist
+  grün oder rot nach Glück. Das heißt **reproduzierbar bei gleichem Baum**, nicht
+  „jeder Lauf gleich": Hypothesis speist zusätzlich die Literale der geladenen
+  Quelldateien in die Generierung ein (Cache je Datei unter `.hypothesis/constants/`).
+  Ein Fund, der nach einer unbeteiligten Änderung auftaucht, ist deshalb eine neue
+  Suche — keine Flakiness.
+- **Postgres-gegattert:** Der Concurrency-Test (`with_for_update` in
+  `check_engine`) und die pytest-alembic-Ketten brauchen ein echtes Postgres und
+  skippen, solange `DATABASE_URL` nicht auf ein Postgres zeigt — auf der Dev-Box
+  ist das der Normalfall, CI stellt einen Service. Nicht nur „gesetzt": eine
+  SQLite-URL macht `FOR UPDATE` zum No-op, der Test liefe dann grün, ohne je ein
+  Lock geprüft zu haben. `run.sh` kennt diese Skips und gattert sie auf dasselbe
+  Merkmal: zeigt `DATABASE_URL` auf ein Postgres, ist ein Skip dort ein Fehler.
+
 **Dependency-Updates laufen agent-getrieben** (kein Dependabot mehr): Versionen
 in der `.in` anheben bzw. `pip-compile --upgrade` fahren, Lock regenerieren,
 Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Befehle.
@@ -88,12 +129,14 @@ nicht im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job
 ### Python-Tests lokal (ohne Docker)
 
 `monitoring` und `ca-issuer` sind reine Logik-Suiten und brauchen **kein** Postgres.
-`ca-issuer` benötigt allerdings `httpx` (nur der starlette-`TestClient` der Tests, nicht
-die App selbst — steht daher nicht in `requirements.in`):
+Ihre Test-Deps stehen in der jeweiligen `requirements-dev.txt` — bei `ca-issuer` auch
+`httpx`, das nur der starlette-`TestClient` der Tests braucht, nicht die App selbst
+(deshalb steht es dort und nicht in `requirements.in`):
 
 ```bash
+apps/monitoring/.venv/bin/pip install -r apps/monitoring/requirements-dev.txt   # einmalig
 apps/monitoring/.venv/bin/python -m pytest -q
-apps/ca-issuer/.venv/bin/pip install httpx      # einmalig
+apps/ca-issuer/.venv/bin/pip install -r apps/ca-issuer/requirements-dev.txt     # einmalig
 apps/ca-issuer/.venv/bin/python -m pytest -q
 ```
 
