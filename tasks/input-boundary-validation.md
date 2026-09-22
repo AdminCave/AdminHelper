@@ -39,8 +39,10 @@ Review: approve (sonnet, 2 Runden)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py
 Doku: keine (intern)
 
-### T2 — Server: Paginierung begrenzen  [ ]
-Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/connections/router.py, apps/server/app/modules/audit/router.py
+### T2 — Server: Paginierung begrenzen  [x]
+Komponente: server · Dateien: apps/server/app/modules/hooks/router.py, apps/server/app/modules/connections/router.py, apps/server/app/modules/audit/router.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @6936bff4 2026-09-22T18:56:09+02:00
+Review: approve (sonnet)
 Änderung: die drei `Query(0, ge=0)` auf `Offset` aus T1 umstellen. Nur der Typ, keine Logik.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)

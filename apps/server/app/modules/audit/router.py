@@ -6,13 +6,14 @@
 deliberately no write/delete endpoints here; rows are written by
 app.modules.audit.service.record() and pruned only by the retention job."""
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
+from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.modules.audit.models import AuditLog
@@ -35,7 +36,7 @@ def list_audit(
     # grows for AUDIT_RETENTION_DAYS (365), so an unlimited fetch would materialize hundreds of
     # thousands of rows. Callers paginate with offset for more (5.28).
     limit: int = Query(200, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
 ):
     """List audit entries, newest first, with optional filters."""
     query = db.query(AuditLog)

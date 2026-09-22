@@ -5,7 +5,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.auth import ApiKeyOrUser, get_current_admin
+from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.events import fire_event
 from app.core.pagination import paginate
@@ -55,7 +56,7 @@ def get_connections(
     db: Session = Depends(get_db),
     auth=Depends(read_dep),
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
 ):
     # Pagination strictly AFTER the per-user/key scoping: LIMIT/OFFSET and
     # X-Total-Count must apply to the visible subset, not the full table.
