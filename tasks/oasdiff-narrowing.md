@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # oasdiff: eine engere Eingabemenge ist kein Bruch — Task-Ledger
-Status: geplant · Branch: harness/oasdiff-narrowing · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/oasdiff-narrowing · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Fix an bestehendem Gate, kein eigenes Spec-Dokument)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/`, `scripts/tests/` und zwei Doku-Seiten.
@@ -43,14 +43,16 @@ Eingabe meinen. Alles andere bleibt `ERR`: entfernte Endpunkte, entfernte oder u
 Antwortfelder, neue Pflichtfelder im Request, verschärfte Typen, geänderte Statuscodes. Ein Gate,
 das nichts mehr fängt, wäre keins — deshalb keine pauschale Absenkung und kein `--fail-on WARN`.
 
-### T1 — Die zwölf Narrowing-Regeln als WARN, mit Beleg daneben  [ ]
+### T1 — Die zwölf Narrowing-Regeln als WARN, mit Beleg daneben  [x]
 Komponente: scripts · Dateien: scripts/dev/oasdiff-severity.levels (neu), scripts/dev/openapi-breaking.sh, scripts/tests/openapi_breaking_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed (scripts) · openapi_breaking_test 18/0 (vorher 14) · doc_smoke_test 15/0 · Gegenproben: Flag entfernt ⇒ 1 failed, Kommentarzeile in der Datei ⇒ 3 failed
 Änderung: Neue Datei mit genau zwölf Zeilen `<rule-id> warn` — `request-parameter-max-set`, `request-parameter-min-set`, `request-parameter-exclusive-max-set`, `request-parameter-exclusive-min-set`, `request-body-max-set`, `request-body-min-set`, `request-body-exclusive-max-set`, `request-body-exclusive-min-set`, `request-property-max-set`, `request-property-min-set`, `request-property-exclusive-max-set`, `request-property-exclusive-min-set`. Kein Kommentar in der Datei (der Parser verbietet es); die Begründung steht im Kopf von `openapi-breaking.sh` und in der Doku. Das Skript gibt `--severity-levels <datei>` mit, **wenn die Datei existiert** — fehlt sie, läuft das Gate unverändert streng weiter, statt still zu lockern. Test: die Argumentprüfung des bestehenden Falls erwartet das Flag zusätzlich; dazu ein eigener Fall, der die Datei selbst prüft (genau zwei Felder je Zeile, keine Leerzeile, Stufe immer `warn`, keine doppelte Id, genau die zwölf erwarteten Ids).
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T2)
 
-### T2 — Doku: was das Gate erlaubt und warum  [ ]
+### T2 — Doku: was das Gate erlaubt und warum  [x]
 Komponente: scripts · Dateien: docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick]: 5 passed, 0 failed (scripts) · openapi_breaking_test 18/0 (vorher 14) · doc_smoke_test 15/0 · Gegenproben: Flag entfernt ⇒ 1 failed, Kommentarzeile in der Datei ⇒ 3 failed
 Änderung: Im Abschnitt zum oasdiff-Gate zwei bis drei Sätze DE und EN: dass eine neu gesetzte Ober- oder Untergrenze auf einer Eingabe als `WARN` läuft, warum (die betroffenen Werte liefern heute 500, kein Client lebt davon), dass die Absenkung auf zwölf namentlich genannte Regeln begrenzt ist und alles andere `ERR` bleibt, und wo die Datei liegt. Kein `CHANGELOG`-Eintrag: das ist Gate-Verhalten im Bau, nichts am Produkt nach außen.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: docs/developer/cicd.html + docs/en/developer/cicd.html (DE+EN im selben Commit)

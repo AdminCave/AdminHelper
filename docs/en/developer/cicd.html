@@ -212,7 +212,17 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <p>The <code>openapi-compat</code> job compares the base branch's snapshot with this branch's
           (<code>scripts/dev/openapi-breaking.sh</code>, <code>oasdiff breaking --fail-on ERR</code>): new
           paths and fields stay green, a removed path, a removed response field or a newly required request
-          field are red. <code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
+          field are red.
+          <strong>One exception, and a named one:</strong> a newly set bound on an input
+          (<code>minimum</code>/<code>maximum</code> on a request parameter or body field) would be an
+          <code>ERR</code> for <code>oasdiff</code>, because it narrows the accepted set. Here it is the
+          opposite of a break: the values that become invalid answer with <code>HTTP&nbsp;500</code> today, so
+          no client lives off them, and one that sends valid values notices nothing. The twelve rules that
+          mean exactly that run as <code>WARN</code> &ndash; listed in
+          <code>scripts/dev/oasdiff-severity.levels</code>, which <code>openapi-breaking.sh</code> hands over
+          with <code>--severity-levels</code>. Everything else stays <code>ERR</code>, and if the file is
+          missing the gate stays strict instead of quietly loosening. The file carries no reasons of its own:
+          <code>oasdiff</code> wants exactly two fields per line and rejects comments and blank lines. <code>oasdiff</code> is installed as a <strong>v1.32.0 release tarball with a pinned
           SHA-256</strong>, not via <code>go install</code>: every release from v1.24.0 on requires
           <code>go 1.26</code> while the workflows pin Go 1.25 with <code>GOTOOLCHAIN=local</code>, so building
           from source fails exactly the way <code>govulncheck</code> did (PR&nbsp;#14). If the binary is missing
