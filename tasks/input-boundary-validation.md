@@ -48,8 +48,10 @@ Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 Abhängt von: T1
 
-### T3 — Server: Paginierung begrenzen, zweiter Teil  [ ]
-Komponente: server · Dateien: apps/server/app/modules/servers/router.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_pagination.py
+### T3 — Server: Paginierung begrenzen, zweiter Teil  [x]
+Komponente: server · Dateien: apps/server/app/modules/servers/router.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_pagination.py, apps/server/tests/openapi.snapshot.json
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @f666ca22 2026-09-22T19:14:53+02:00
+Review: approve (sonnet, 2 Runden)
 Änderung: dieselbe Umstellung für die restlichen zwei Router; im bestehenden `test_pagination.py` ein Grenzfall-Test je Richtung (höchster erlaubter Offset ⇒ 200, erster unerlaubter ⇒ 422).
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_pagination.py
 Doku: keine (intern)
@@ -100,3 +102,9 @@ Komponente: server · Dateien: apps/server/tests/schemathesis_exclude.toml, apps
 Verify: bash scripts/tests/run.sh unit --strict --step schemathesis --only server monitoring ca-issuer
 Doku: CHANGELOG
 Abhängt von: T2, T3, T4, T5, T6, T7, T8, T9
+
+### T11 — oasdiff-Gate: maximum/minimum am Request-Rand ist ERR  [?] (Gate-Anpassung (oasdiff --severity-levels: die vier request-parameter- und acht request-body/property-Ids auf WARN) als eigenes Harness-Vorhaben vor diesem PR mergen — oder diesen PR anders schneiden? Ohne sie ist er nicht mergebar.)
+Dateien: keine in diesem Branch (Harness-Vorhaben, `scripts/dev/openapi-breaking.sh`)
+Änderung: keine hier. Befund aus dem Bau, belegt gegen die in CI gepinnte oasdiff-Version v1.32.0: eine neu gesetzte Schranke auf einer Request-Eingabe ist dort ERR, nicht WARN — `checker/rules.go` Z. 272 (`request-parameter-max-set`, `EffectNarrows` + `DirectionRequest` ⇒ ERR), Z. 288 (`request-parameter-min-set`), Z. 381/408 (`request-property-max-set`/`-min-set`). `.github/workflows/ci.yml:611/613` fährt `openapi-breaking.sh`, und das ruft `oasdiff breaking … --fail-on ERR` ohne Severity-Datei (`scripts/dev/openapi-breaking.sh:98`). Damit setzt **jede** Task dieses Vorhabens das Gate rot: T2/T3/T4 über Parameter, T5 über Body-Felder, T9 über die Monitoring-Parameter. Der Check ist Pflicht im Ruleset 23772038 ohne Bypass-Akteure (nachgeprüft von adminhelper-04) — der PR ist damit nicht rot, sondern **nicht mergebar**, bis die Gate-Anpassung auf `main` liegt. Lokal nicht nachfahrbar: `bash scripts/dev/openapi-breaking.sh server --base main` → „oasdiff not installed (75)".
+Verify: keine (kein Code in diesem Branch)
+Doku: keine (Befund, gehört als eigene Roadmap-Zeile)
