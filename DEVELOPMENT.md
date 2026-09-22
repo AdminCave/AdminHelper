@@ -413,7 +413,7 @@ und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
 Klon und Datenbank wieder weg. Danach bleiben **drei Handgriffe** fuer Kevin, die
 der Runner nicht selbst tun kann:
 
-1. `sudo -u adminhelper-runner claude setup-token` → Token nach
+1. `sudo -iu adminhelper-runner claude setup-token` → Token nach
    `~adminhelper-runner/.config/adminhelper/oauth.env` (Abo-Token, kein API-Key:
    `ANTHROPIC_API_KEY` haette Vorrang und wuerde ueber ein API-Konto abrechnen).
 2. `pveum user token add adminhelper-runner@pve run --privsep 1` plus dieselben vier
@@ -421,6 +421,25 @@ der Runner nicht selbst tun kann:
    „VMs mit vm.py") → Werte nach `~adminhelper-runner/.config/adminhelper/pve.env`.
 3. `sudo -u adminhelper-runner git -C /srv/ah/repo fetch`, dann der Red-Team-Lauf
    (unten).
+
+**`-iu`, nicht `-u`, bei allem, was die CLI des Runners braucht:** ohne `-i` behaelt
+sudo den PATH des Aufrufers, und die CLI in `~adminhelper-runner/.local/bin` ist dann
+unsichtbar (`sudo: claude: Befehl nicht gefunden`, 2026-09-22 verifiziert).
+
+**Getrusteter Workspace — bewusst abgeschaltet.** Claude Code ignoriert die
+Allow-Liste eines Projekts, solange der Workspace nicht getrustet ist, und sagt das
+auch: „Ignoring 38 permissions.allow entries … this workspace has not been trusted".
+Die Richtung ist fail-safe (die **Deny**-Liste gilt weiter), deshalb setzt
+`runner-setup.sh` das Flag nur auf ausdrueckliche Anforderung:
+
+```
+sudo bash scripts/dev/runner-setup.sh --trust
+```
+
+Das schreibt `projects["/srv/ah/repo"].hasTrustDialogAccepted` in
+`~adminhelper-runner/.claude.json` — und erst damit gelten die 38 Allow-Regeln des
+Runners. Ab Stufe 7 braucht er das, vorher nicht: solange jeder Lauf von Hand
+gestartet wird, ist der engere Zustand der bessere.
 
 Beide Dateien muessen regulaere `0600`-Dateien in einem Verzeichnis sein, in das
 nur der Runner schreiben darf; `scripts/dev/runner-env.sh` (zum **Sourcen**)

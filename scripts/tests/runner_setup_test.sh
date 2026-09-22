@@ -68,8 +68,6 @@ dry
 
 # Every step the ledger asks for, in the order the script performs it.
 for want in 'preflight: what this box has to provide' \
-            'useradd -m -s /bin/bash adminhelper-runner' \
-            'git clone --no-hardlinks -b main' \
             'remote.origin.pushurl /dev/null' \
             '/srv/ah/lanes' \
             'chown -R adminhelper-runner:adminhelper-runner /srv/ah' \
@@ -86,6 +84,46 @@ for want in 'preflight: what this box has to provide' \
             '.config/adminhelper/pve.env'; do
   grep -qF -- "$want" <<<"$OUT" && ok "plans: $want" || bad "missing from the plan: $want"
 done
+
+# ── the two steps that depend on what this box already has ──────────────────
+# `useradd` and `git clone` drop out of the plan the moment the user and the clone
+# exist — and on a box that has been provisioned they do. Asserting them against
+# the real names made this test report 49/2 for the rest of that machine's life
+# (found 2026-09-22, one day after the runner was created), and a permanently red
+# test hides the next real regression. --dry-run therefore accepts a different
+# name and a different target, and both branches are checked here.
+echo "── the plan follows what exists, in both directions ──"
+ABSENT="ah-runner-probe-$$"
+FRESH="$WORK/srv-fresh"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$ABSENT" AH_RUNNER_DRY_SRV="$FRESH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "useradd -m -s /bin/bash $ABSENT" <<<"$PLAN" \
+  && ok "absent user: the plan creates it" || bad "absent user: no useradd in the plan"
+grep -qF -- 'git clone --no-hardlinks -b main' <<<"$PLAN" \
+  && ok "empty target: the plan clones into it" || bad "empty target: no git clone in the plan"
+
+PRESENT="$WORK/srv-present"; mkdir -p "$PRESENT/repo/.git"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$PRESENT" bash "$SETUP" --dry-run 2>&1)
+grep -q 'exists — useradd would be skipped' <<<"$PLAN" \
+  && ok "existing user: the plan says useradd is skipped" || bad "existing user: the plan is silent about skipping useradd"
+grep -q 'exists — git clone would be skipped' <<<"$PLAN" \
+  && ok "existing clone: the plan says the clone is skipped" || bad "existing clone: the plan is silent about skipping it"
+grep -qF -- 'useradd -m -s /bin/bash' <<<"$PLAN" \
+  && bad "existing user: useradd is still in the plan" || ok "existing user: useradd appears nowhere in the plan"
+
+# The overrides are a test hook and must stay one: outside --dry-run they have to
+# be ignored, or a stray variable in somebody's shell could provision the wrong
+# user. A behaviour test cannot show this — between argument parsing and the root
+# check the script prints nothing, so "the name does not appear" is true with the
+# guard and without it. So check the anchoring in the source, the way the
+# no_symlink_in assertion below does, and keep the behaviour check as a second line.
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_USER' \
+  && ok "the overrides sit inside the --dry-run guard" || bad "AH_RUNNER_DRY_USER is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_SRV' \
+  && ok "the SRV override sits inside the same guard" || bad "AH_RUNNER_DRY_SRV is not guarded by DRY=1"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
+[ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
+  && ok "a real run without --dry-run still demands root and names no override" \
+  || bad "a real run reacted to the override: rc=$prc out=$PLAN"
 
 # The runner's own venv path: run.sh's default (/tmp/ah-venv) belongs to whoever
 # created it first, and pip then fails for this user in exactly the three suites
@@ -207,6 +245,18 @@ OUT=$(PATH="$SHIM:$PATH" bash "$SETUP" --wat 2>&1); rc=$?
 [ ! -s "$CALLED" ] && ok "none of the refusals executed anything either" || bad "executed: $(cat "$CALLED")"
 
 # ══ what it installs ══════════════════════════════════════════════════════════
+echo "── the trusted workspace is opt-in ──"
+# Trust arms the runner's 38 allow rules. Provisioning must not do that as a side
+# effect, so the default plan says what it did NOT do, and --trust is what asks.
+PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run 2>&1)
+grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
+  && bad "the default plan already trusts the workspace" || ok "the default plan does not trust the workspace"
+grep -q 'run again with --trust' <<<"$PLAN" \
+  && ok "the plan says how to ask for it" || bad "the plan does not say how to ask for trust"
+PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run --trust 2>&1)
+grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
+  && ok "--trust plans the flag in the runner's .claude.json" || bad "--trust does not plan the trust flag"
+
 echo "── the settings it installs ──"
 [ -f "$REPO_ROOT/scripts/dev/runner-settings.json" ] \
   && ok "the settings file it copies exists in the repo" || bad "scripts/dev/runner-settings.json is missing"
