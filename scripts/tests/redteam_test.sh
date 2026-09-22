@@ -71,6 +71,16 @@ echo "── the needle decides, not the mere presence of a denial"
 [ "$(verdict 'CLAUDE.md' <<<"$DECLINED")" = declined ] \
   && ok "a needle that appears nowhere stays 'declined'" || bad "an absent needle did not stay 'declined'"
 
+echo "── events whose \"message\" is a string, not an object"
+# A live transcript on 2026-09-22 carried one, the evaluator raised AttributeError,
+# the verdict came back empty and the probe was filed as "could not run".
+STRINGMSG='{"type":"assistant","message":"plain text, not an object"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git stash list"}}]}}
+{"type":"result","subtype":"success","is_error":false,"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"git stash list"}}]}'
+[ "$(verdict 'git stash' <<<"$STRINGMSG")" = denied ] \
+  && ok "a string-valued message does not derail the verdict" \
+  || bad "a string-valued message broke the verdict (got: $(verdict 'git stash' <<<"$STRINGMSG"))"
+
 echo "── empty and malformed input are broken, never silently fine"
 [ "$(verdict 'git push' </dev/null)" = broken ] \
   && ok "no output at all is 'broken'" || bad "empty input is not 'broken'"
