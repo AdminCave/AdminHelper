@@ -107,14 +107,15 @@ demselben Ledger** — der Ledger ist die einzige Fortschritts-Wahrheit, es gibt
 ```bash
 # 1. Planen wie gehabt (/feature-plan → Gate → Freigabe). Danach committet die
 #    Plan-Session Spec + Ledger auf main — Worktrees sehen nur Committetes.
-# 2. Lane aufmachen (Worktree ../AdminHelper-<slug>; .devenv.sh als Symlink,
-#    settings.local.json als Kopie — Claude Code schreibt sie bei Grants):
+# 2. Lane aufmachen (Worktree ../AdminHelper-<slug>; eine eigene .devenv.sh mit
+#    eigener Test-DB adminhelper_test_<slug> und eigenem Venv, settings.local.json
+#    als Kopie — Claude Code schreibt sie bei Grants):
 bash scripts/dev/lane.sh new <slug>
 # 3. Lane starten (eigenes Terminal/tmux-Pane):
 cd ../AdminHelper-<slug> && claude --model opus --permission-mode acceptEdits
 #    → /feature-build tasks/<slug>.md
 # 4. Lane gemergt / Feierabend:
-bash scripts/dev/lane.sh done <slug>   # reapt die Lane-Boxen, räumt Worktree + Branch
+bash scripts/dev/lane.sh done <slug>   # reapt die Lane-Boxen, räumt Worktree, Branch, DB, Venv
 ```
 
 Mechanik dahinter:
@@ -133,7 +134,8 @@ Mechanik dahinter:
   Box ohne `git` nichts antworten kann.
 - **`Fast-Suite: vm` im Ledger-Kopf.** Eine Lane hat keine lokalen
   Toolchain-Artefakte (venvs/`node_modules`/`target`), und N parallele lokale Suiten
-  würden die Dev-Box überlasten (plus Kollision auf der geteilten Test-DB). Der Build
+  würden die Dev-Box überlasten. Die Test-DB ist es nicht mehr: jede Lane hat ihre eigene
+  (`adminhelper_test_<slug>`, angelegt von `lane.sh new`). Der Build
   fährt deshalb das Task-`Verify:` via `bash scripts/vm/iter.sh --cmd '…'` und die
   Komponenten-Schnellsuite via `bash scripts/vm/iter.sh quick --strict --only <komponenten>`
   auf der warmen Lane-Box (~1,5–3,5 min pro Iteration).
@@ -151,8 +153,8 @@ Regeln:
   Komponenten, geteilte Contracts (API-Schemas, Migrationen, FRP-Format, Tauri-Commands),
   primäre `docs/`-Seiten. Überlappt es → seriell statt parallel. Ist es disjunkt und braucht
   höchstens eines der Vorhaben VMs, **schlägt das Gate die Lane von sich aus vor** und gibt
-  die Startbefehle mit (Kevin, 2026-09-18) — die Server-Suite teilt sich eine Test-DB, zwei
-  Python-Bauten gleichzeitig brauchen deshalb erst die Lane-Isolation (eigene DB je Lane).
+  die Startbefehle mit (Kevin, 2026-09-18). Zwei Python-Bauten kollidieren nicht mehr auf
+  der Test-DB: jede Lane hat ihre eigene.
 - **PRs landen einzeln.** Nach jedem Merge in den verbleibenden Lanes
   `git rebase origin/main` + einmal `bash scripts/vm/iter.sh quick`. Bekannte, triviale
   Rebase-Konflikte: `CHANGELOG.md` (Unreleased) und geteilte docs-Seiten — additiv.

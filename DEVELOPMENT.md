@@ -156,7 +156,13 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
   apps/server/.venv/bin/python -m pytest -q
 ```
 
-**Immer nur ein `server`-Lauf zur Zeit.** Alle Läufe teilen sich diese eine Test-DB, und die
+**Eine Lane hat ihre eigene Test-DB.** `bash scripts/dev/lane.sh new <slug>` legt auf demselben
+Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt der Lane eine eigene
+`.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB` auf diese DB und
+`AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
+braucht dafür `CREATEDB`, die sie oben ohnehin hat.
+
+**Immer nur ein `server`-Lauf zur Zeit** je Checkout. Alle Läufe eines Checkouts teilen sich diese eine Test-DB, und die
 Alembic-Smoke legt darin pro Lauf eine Wegwerf-DB an: zwei gleichzeitige Läufe räumen
 einander die Tabellen weg. Das Ergebnis ist dann **verworfen, nicht rot** — es sagt weder
 „grün" noch „kaputt", nur „nichts bewiesen". Also einen Lauf starten, seine Summary-Zeile

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: geplant · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
@@ -30,8 +30,10 @@ Roadmap: Als Nächstes Nr. 2 (Voraussetzung für zwei parallele Python-Bauten) �
 
 Spec und Ledger sind der **erste Commit des Feature-Branches**, gesetzt am Gate. Eine Lane checkt diesen Branch aus und sieht den Plan damit von selbst. Das Kopieren nicht eingecheckter Plan-Dateien, wie es die alte Fassung von T2 vorsah, entfällt deshalb. Die Anpassung von `feature-plan/SKILL.md` und `AUTONOMOUS.md` an R-0065 bleibt ein eigenes Vorhaben. Hier wird nur `lane.sh` passend gemacht.
 
-### T1 — Test-DB und Python-Venv je Lane  [ ]
-Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`)
+### T1 — Test-DB und Python-Venv je Lane  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`), DEVELOPMENT.md, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @f3bec736 2026-09-23T13:54:07+02:00
+Review: approve (sonnet, 2. Runde); danach Diff-Scan-Nachbesserung: review-ok am set +eu, done-Exit im Test geprüft
 Änderung: `lane.sh new <slug>` legt statt des Symlinks eine eigene `.devenv.sh` in die Lane. Sie sourct Kevins Datei und überschreibt danach zwei Werte: `AH_TEST_DB` auf die Datenbank `adminhelper_test_<slug>` (Bindestriche werden zu `_`) und `AH_VENV` auf `~/.cache/ah-venv-<slug>`, nie `/tmp`. `new` legt die DB mit der bestehenden Rolle an (`createdb`, die Rolle hat `CREATEDB`, geprüft am 2026-09-23). `lane.sh done` löscht die DB (`dropdb --if-exists`) und das Lane-Venv. Test: Er läuft hermetisch mit Fake-`createdb`/`dropdb` im PATH, die ihre Aufrufe protokollieren, und einem Wegwerf-Git-Repo als Haupt-Checkout. Geprüft wird: Die Lane-`.devenv.sh` ergibt eine andere `AH_TEST_DB` als der Haupt-Checkout, `done` löscht genau diese DB, und ein Slug mit Sonderzeichen erreicht nie `createdb`. Gegenprobe: Mit dem alten Symlink wird der Test rot.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md „Python-Tests lokal“ (eine DB je Lane) · AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 2)

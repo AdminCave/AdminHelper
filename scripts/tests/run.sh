@@ -499,7 +499,7 @@ restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test task_close_test runner_setup_test redteam_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test vm_wrappers_test
-multibox_test"
+multibox_test lane_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
