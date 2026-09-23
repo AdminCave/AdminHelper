@@ -20,6 +20,12 @@ Roadmap: Als Nächstes Nr. 2 (Voraussetzung für zwei parallele Python-Bauten) �
 4. **2026-09-22, Session im gelöschten Verzeichnis:** `lane.sh done` hat die 8b-Lane entfernt, während eine Worker-Session mit Arbeitsverzeichnis darin noch lief. Die Session hing danach in einem gelöschten cwd und war nicht mehr arbeitsfähig.
 5. **2026-09-23, Verifikation im Worktree:** Für die PR-Prüfung von #38 musste ich eine eigene Test-DB, ein eigenes Venv und das CI-`ruff` von Hand in einen Worktree legen. Ohne `.devenv.sh` findet `run.sh` kein `ruff`, und der Lauf endet `strict-failed`. Die lokalen Cache-Venvs haben außerdem ein neueres `ruff` (0.16.8) als CI (0.15.20). Die Komponenten-Venvs des Haupt-Checkouts tragen das CI-`ruff` (R-0074).
 
+## Entschieden am Gate (Kevin, 2026-09-23)
+
+1. **Umfang der Sperre (T2):** nur `server-pytest` und `schemathesis`, also genau die zwei Schritte, die real kollidiert sind. Monitoring- und ca-issuer-pytest bleiben parallel.
+2. **Belegte Sperre:** warten und das sichtbar melden; erst nach `AH_PY_LOCK_WAIT` (3600 s) als Selbst-Skip mit Grund aufgeben.
+3. **Freigabe:** erteilt. Worker 2 baut im Haupt-Checkout, die Aufsichts-Session verifiziert.
+
 ## Ablauf der Plan-Dateien (Kevins Entscheidung vom 2026-09-22, Roadmap R-0065)
 
 Spec und Ledger sind der **erste Commit des Feature-Branches**, gesetzt am Gate. Eine Lane checkt diesen Branch aus und sieht den Plan damit von selbst. Das Kopieren nicht eingecheckter Plan-Dateien, wie es die alte Fassung von T2 vorsah, entfällt deshalb. Die Anpassung von `feature-plan/SKILL.md` und `AUTONOMOUS.md` an R-0065 bleibt ein eigenes Vorhaben. Hier wird nur `lane.sh` passend gemacht.
