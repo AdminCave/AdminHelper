@@ -15,12 +15,13 @@ Three surfaces:
 import json
 import secrets
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.bounds import Offset
 from app.core.config import MONITOR_API_KEY
 from app.core.database import get_db
 from app.core.events import fire_event
@@ -49,7 +50,7 @@ def list_notifications(
     current_user: User = Depends(get_current_user),
     unread_only: bool = Query(False),
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
 ):
     """The caller's notifications, newest first."""
     query = db.query(Notification).filter(Notification.user_id == current_user.id)
