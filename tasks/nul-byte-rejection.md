@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- -m schemathesis
 Doku: keine (T6)
 Abhängt von: T1, T2, T3, T4
 
-### T6 — CHANGELOG und die Köpfe der Ausschlussdateien  [ ]
-Komponente: server · Dateien: CHANGELOG.md, apps/server/tests/schemathesis_exclude.toml, apps/monitoring/tests/schemathesis_exclude.toml
+### T6 — CHANGELOG und die Köpfe der Ausschlussdateien  [x]
+Komponente: server · Dateien: CHANGELOG.md, apps/server/tests/schemathesis_exclude.toml, apps/monitoring/tests/schemathesis_exclude.toml, docs/features/nul-byte-rejection.md, docs/developer/server.html, docs/en/developer/server.html
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @9d2d2210 2026-09-23T12:06:50+02:00
+Review: approve (sonnet, 2. Runde)
 Änderung: Unter Unreleased: 422 statt 500, wenn eine Eingabe ein NUL-Byte enthält, gleich auf welchem Weg. Umlautfrei, Gedankenstrich „—". In den Dateiköpfen die Bilanz und der Hinweis, dass NUL jetzt flächig am Rand abgelehnt wird, ein Ausschluss dafür also nicht mehr nötig ist.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: CHANGELOG

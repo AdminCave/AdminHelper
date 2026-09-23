@@ -42,7 +42,8 @@
               <tr><td><code>apps/server/app/core/auth.py</code></td><td>JWT encode/decode, bcrypt hashing with SHA-256 prehash, refresh rotation, token blacklist, API-key auth.</td></tr>
               <tr><td><code>apps/server/app/core/database.py</code></td><td>SQLAlchemy engine + <code>SessionLocal</code>; PostgreSQL via psycopg3, pool config (size=10, overflow=20, pre-ping, recycle=3600).</td></tr>
               <tr><td><code>apps/server/app/core/rate_limit.py</code></td><td>Redis-based fixed-window limiter with in-memory fallback.</td></tr>
-              <tr><td><code>apps/server/app/core/middleware.py</code></td><td>IP filter (<code>ALLOWED_IPS</code>) and proxy trust (<code>TRUSTED_PROXIES</code>).</td></tr>
+              <tr><td><code>apps/server/app/core/middleware.py</code></td><td>IP filter (<code>ALLOWED_IPS</code>), proxy trust (<code>TRUSTED_PROXIES</code>) and the NUL guard: a NUL byte in the path or query string yields 422 before routing.</td></tr>
+              <tr><td><code>apps/server/app/core/bounds.py</code></td><td>Bounds taken from the column types (<code>IntPk</code>, <code>BigIntPk</code>, <code>IntColumn</code>, <code>Offset</code>) and <code>RequestModel</code>, the base class of every request schema: it rejects a NUL byte in any string of the body with 422. A new request schema inherits <code>RequestModel</code>, not <code>BaseModel</code> — <code>tests/test_nul_schemas.py</code> checks that.</td></tr>
               <tr><td><code>apps/server/app/core/events.py</code></td><td>Async event bus for hooks (ThreadPoolExecutor with 4 workers, fire-and-forget).</td></tr>
             </tbody>
           </table>

@@ -119,13 +119,26 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zwei Eintraege hinfaellig und entfernt, acht gelten nur noch fuer einen einzelnen Check statt
   fuer die ganze Route — dort laeuft die 500er-Pruefung wieder mit, genau die Pruefung, die
   diese Klasse gefunden hat. Einer (`GET /api/frp/tunnels`) ist umgekehrt verbreitert worden,
-  weil dort ein NUL-Pfad zum bestehenden Grund dazukam. Vier sind neu, alle vier fuer die
-  Catch-all-Routen des Monitoring-Proxys, und das ist kein Produktfehler, sondern eine
-  Eigenschaft der Testfixture. Im Monitoring fallen die drei `offset`-Eintraege weg.
-  Nicht abgedeckt bleibt die NUL-Klasse in der Flaeche: dass ein NUL-Byte in *jedem* Textfeld
-  und in jedem String-Pfad- und -Query-Parameter denselben 500er erzeugt, ist belegt, aber nur
-  dort behoben, wo ein Lauf es gezeigt hat — die uebrigen Routen behalten ihren Ausschluss mit
-  einer Begruendung aus genau diesem Lauf.
+  weil dort ein NUL-Pfad zum bestehenden Grund dazukam (im naechsten Punkt wieder verengt).
+  Vier sind neu, alle vier fuer die Catch-all-Routen des Monitoring-Proxys, und das ist kein
+  Produktfehler, sondern eine Eigenschaft der Testfixture. Im Monitoring fallen die drei
+  `offset`-Eintraege weg.
+  Die NUL-Klasse, die dieser Lauf nur dort behoben hatte, wo er sie zeigte, ist inzwischen
+  flaechig geschlossen (naechster Punkt).
+- **NUL-Byte am Rand, flaechig (Server und Monitoring):** ein NUL-Byte (`U+0000`) in einer Eingabe
+  ergibt jetzt 422 mit Feldbezug statt HTTP 500 — gleich auf welchem Weg es kommt. Im Pfad und im
+  Query-String prueft eine Middleware vor dem Routing (`loc` `["path"]` bzw. `["query", <name>]`),
+  in einem Request-Body jedes Request-Schema ueber eine gemeinsame Basisklasse bis in
+  verschachtelte Listen und Objekte (`loc` ist der Weg bis zum Wert), und im Monitoring ebenso
+  der Agent-Report, dessen Body kein Modell ist. Postgres speichert kein `0x00` in einem Textwert;
+  bisher starb jede solche Eingabe im Treiber, ausser an den Feldern, die ein Fuzz-Lauf gezeigt
+  hatte. Die Regel ist bewusst flaechig: auch dort, wo ein NUL nie eine Textspalte erreichte —
+  Passwoerter, Tokens, Tags und Zusatzfelder einer Verbindung, unbekannte Felder und Query-Namen —
+  antwortet die API jetzt 422 statt 200, 201 oder 401. Das OpenAPI-Schema aendert sich nicht.
+  Schemathesis-Ausschluesse, gegen den vorigen Stand ausgezaehlt: Server 29 -> 23 — sechs
+  NUL-Ausschluesse entfernt, zwei von der ganzen Route auf einen Check verengt
+  (`GET /api/frp/tunnels`, dessen Verbreiterung aus dem vorigen Punkt damit zurueckgenommen ist,
+  und `POST /api/connections`); Monitoring unveraendert 1.
 
 - **Capstone, Visitor-Rolle:** der frpc-Visitor startete mit `sudo sh -c … &` und hielt damit stdout/stderr
   der ssh-Sitzung — `vm.py run` (ohne pty) sah nie EOF und lief 50 Minuten in den Timeout, obwohl die
