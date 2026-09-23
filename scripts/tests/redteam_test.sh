@@ -115,7 +115,20 @@ FALLBACK='{"type":"system","subtype":"init","model":"claude-opus-5-5[1m]","claud
   || bad "a fallback answer slipped through (got: $(pin "$M" "$V" <<<"$FALLBACK"))"
 [ "$(pin "$M" "$V" <<<"$BROKEN")" = noinit ] \
   && ok "no init event is noinit, never ok" || bad "a transcript without init did not read as noinit"
-bash "$RT" --pin "$M" </dev/null >/dev/null 2>&1
+# A probe killed by its timeout started on the pin and never finished: the answering
+# model was not measured, so that must not read as ok.
+INITONLY='{"type":"system","subtype":"init","model":"claude-opus-5-5[1m]","claude_code_version":"2.1.280"}'
+NOUSAGE="$INITONLY"'
+{"type":"result","subtype":"success"}'
+EMPTYUSAGE="$INITONLY"'
+{"type":"result","subtype":"success","modelUsage":{}}'
+[ "$(pin "$M" "$V" <<<"$INITONLY")" = noresult ] \
+  && ok "a session that never finished is noresult, never ok" \
+  || bad "an init without result read as $(pin "$M" "$V" <<<"$INITONLY")"
+[ "$(pin "$M" "$V" <<<"$NOUSAGE")" = noresult ] && [ "$(pin "$M" "$V" <<<"$EMPTYUSAGE")" = noresult ] \
+  && ok "a result without model usage is noresult, never ok" \
+  || bad "a result without model usage read as $(pin "$M" "$V" <<<"$NOUSAGE")/$(pin "$M" "$V" <<<"$EMPTYUSAGE")"
+bash "$RT" --pin "$M"</dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--pin without a version is a usage error (exit 2)" || bad "--pin without a version did not exit 2"
 
 echo "── the probe really passes --verbose (the defect of 2026-09-22)"

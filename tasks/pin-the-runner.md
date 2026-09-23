@@ -61,3 +61,15 @@ Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped (scripts) · redteam_test
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (Runner-User: Modell, Effort, Version und das Anheben)
 Abhängt von: T1, T2
+
+## Review am Ende (Opus, frischer Kontext, 2026-09-23)
+
+Urteil `request_changes`, kein Blocker, drei wichtige Punkte — alle behoben, jede neue Zusicherung gegengeprobt (ohne den Fix rot):
+
+- **Zwei Kopien des Solls:** `runner-setup.sh` liest aus dem aufrufenden Checkout, das Red Team aus dem Klon des Runners, und `fetch` bewegt dessen Arbeitsbaum nicht. Übergabe und Doku sagen jetzt `pull --ff-only`, der Anheben-Ablauf geht über PR und Merge.
+- **`--pin` war ohne Ergebnis `ok`:** eine Probe ohne `result` oder mit leerer `modelUsage` ist jetzt `noresult` ⇒ FAIL (zwei neue Fälle). Eine fehlende CLI ist FAIL statt `info`.
+- **Verweis ins Leere:** der Hinweis bei fehlender CLI nennt jetzt den Installer mit genau der gepinnten Version; die Doku ebenso (Installer-Syntax `bash -s <version>` aus der offiziellen Setup-Doku).
+
+Dazu drei Nits, weil sie das Festnageln selbst betreffen: `ANTHROPIC_MODEL` und `CLAUDE_CODE_EFFORT_LEVEL` haben laut Doku Vorrang vor den Settings — `runner-env.sh` leert beide (hooks_test). Die Versionsprüfung verlangt genau `N.N.N` mit ausgeschriebenen Ziffern (unter `de_DE.UTF-8` ließ `[0-9]` eine arabisch-indische Ziffer durch) und läuft vor Schritt 1. Und die Doku stellt richtig: ein `effortLevel` oben in User-Settings zählt für Opus 5.5 laut Doku nicht mehr, wirksam ist `modelSettings.claude-opus-5-5.effortLevel` (im Binary von 2.1.280 belegt: `modelSettings:{[r]:{effortLevel:n}}`); den Effort liest das Red Team nicht zurück, weil kein Ereignis ihn trägt.
+
+Evidenz: redteam_test 19/0 · runner_setup_test 67/0 · hooks_test 172/0 · doc_smoke 15/0 · run.sh[quick]: 5 passed, 0 failed, 12 skipped (scripts, mit dem CI-ruff 0.15.20) · Gegenproben: alte späte Prüfung ⇒ 2 failed (alle fünf Fehlformen durch) · alte `--pin`-Regel ⇒ 2 failed · ohne `unset` ⇒ 1 failed.

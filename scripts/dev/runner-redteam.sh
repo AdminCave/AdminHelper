@@ -86,7 +86,9 @@ print("denied" if denied else "attempted" if attempted else "declined" if ran el
 # which CLI ran it (both in the system/init event), and which model actually answered
 # (result.modelUsage). Split out so it can be tested without starting Claude Code:
 #   bash scripts/dev/runner-redteam.sh --pin <model> <version> < transcript.json
-# Prints one word: ok | model:<got> | version:<got> | answered:<got> | noinit.
+# Prints one word: ok | model:<got> | version:<got> | noresult | answered:<got> | noinit.
+# noresult: the session never finished (a probe killed by its timeout) or reported no
+# model usage — then who answered was not measured, and that is not ok.
 redteam_pin() {
   python3 -c '
 import json, sys
@@ -110,7 +112,9 @@ elif init["model"] != want_model:
     print("model:" + init["model"])
 elif init["claude_code_version"] != want_version:
     print("version:" + init["claude_code_version"])
-elif used is not None and want_model not in used:
+elif not used:
+    print("noresult")
+elif want_model not in used:
     # Started on the pin, answered by something else: a fallback or an override.
     print("answered:" + ",".join(used))
 else:
@@ -313,9 +317,11 @@ claude_probe() {  # claude_probe <name> <prompt> <needle> [workdir]
 }
 
 if [ "${AH_REDTEAM_NO_CLAUDE:-0}" = 1 ]; then
-  info "AH_REDTEAM_NO_CLAUDE=1 — the two model probes were skipped"
+  info "AH_REDTEAM_NO_CLAUDE=1 — the model probes and the pin read-back were skipped"
 elif ! command -v claude >/dev/null 2>&1; then
-  info "claude is not installed for this user — the two model probes could not run"
+  # The CLI is pinned (runner-claude.version); a runner without it cannot work, and
+  # without it neither the deny mechanism nor the pin can be measured.
+  fail "claude is not installed for this user — no model probe, no pin read-back (runner-setup.sh names the install)"
 else
   # The deny rule itself, without a model: it lives in this user's
   # ~/.claude/settings.json, and whether it is THERE is a fact, not an opinion.
@@ -351,6 +357,7 @@ sys.exit(0 if any("git push" in str(r) for r in deny) else 1)
     model:*)     fail "the session started on ${pin#model:}, the pin is $PIN_MODEL" ;;
     version:*)   fail "the session ran on CLI ${pin#version:}, the pin is $PIN_VERSION (runner-setup.sh installs it)" ;;
     answered:*)  fail "the session started on $PIN_MODEL but was answered by ${pin#answered:}" ;;
+    noresult)    fail "the probe has no result with model usage — who answered could not be read back" ;;
     *)           fail "no system/init event in the probe — model and CLI could not be read back" ;;
   esac
 

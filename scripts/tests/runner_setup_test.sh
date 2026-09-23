@@ -260,10 +260,11 @@ grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
 echo "── the CLI version is pinned from one file ──"
 VFILE="$REPO_ROOT/scripts/dev/runner-claude.version"
 PINNED="$(tr -d '[:space:]' < "$VFILE" 2>/dev/null)"
-case "$PINNED" in
-  ""|*[!0-9.]*) bad "scripts/dev/runner-claude.version does not hold a plain version (got '$PINNED')" ;;
-  *) ok "runner-claude.version holds a plain version ($PINNED)" ;;
-esac
+if [[ "$PINNED" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]]; then
+  ok "runner-claude.version holds a plain version ($PINNED)"
+else
+  bad "scripts/dev/runner-claude.version does not hold a plain version (got '$PINNED')"
+fi
 PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run 2>&1)
 grep -qF -- "claude install $PINNED" <<<"$PLAN" \
   && ok "the plan installs exactly the pinned version" \
@@ -278,6 +279,22 @@ BPLAN=$(PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run
 [ $brc -ne 0 ] && grep -q 'must hold a version' <<<"$BPLAN" && ! grep -q 'pwned' <<<"$(grep 'claude install' <<<"$BPLAN")" \
   && ok "a version with shell in it stops the script before su -c" \
   || bad "a malformed version reached the plan: rc=$brc"
+# ...and before step 1: a stop halfway through would leave a half-provisioned user.
+! grep -q 'no sudo group, no ssh key' <<<"$BPLAN" \
+  && ok "the version is checked before anything is changed" \
+  || bad "the version check runs after the user step"
+# Exactly N.N.N — also no empty segments and no digits of another script (an
+# Arabic-Indic three passes a [0-9] range under de_DE.UTF-8, not under C.UTF-8, so
+# that locale is used where the box has it).
+LOC="$(locale -a 2>/dev/null | grep -im1 '^de_DE\.utf-\?8$')"
+LOOSE=""
+for v in '...' '2.1' '2.1.280.1' '2..280' "2.1.2$(printf '\xd9\xa3')0"; do
+  printf '%s\n' "$v" > "$BADTREE/scripts/dev/runner-claude.version"
+  LC_ALL="${LOC:-C.UTF-8}" PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run >/dev/null 2>&1 \
+    && LOOSE="$LOOSE '$v'"
+done
+[ -z "$LOOSE" ] && ok "only N.N.N passes (empty segments, 2 or 4 parts, foreign digits refused)" \
+  || bad "the version check let through:$LOOSE"
 
 grep -qE '^[[:space:]]*export DISABLE_AUTOUPDATER=1' "$REPO_ROOT/scripts/dev/runner-env.sh" \
   && ok "runner-env.sh switches the CLI updater off" || bad "runner-env.sh does not export DISABLE_AUTOUPDATER=1"

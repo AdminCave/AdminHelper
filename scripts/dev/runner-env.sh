@@ -59,6 +59,10 @@ ah_runner_env() {
   # leave an inherited API key standing.
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   unset "${!AH_PVE_@}"
+  # The pin in runner-settings.json loses against both of these (Claude Code docs,
+  # model-config: ANTHROPIC_MODEL outranks the settings `model`, CLAUDE_CODE_EFFORT_LEVEL
+  # outranks every saved effort) — an inherited value would move the runner off it.
+  unset ANTHROPIC_MODEL CLAUDE_CODE_EFFORT_LEVEL
   # Somebody else's access, in the four shapes this box can hand over:
   #   SSH_AUTH_SOCK  an agent socket is a usable key without a key file
   #   DATABASE_URL   run.sh prefers it over AH_TEST_DB, and the server suite
