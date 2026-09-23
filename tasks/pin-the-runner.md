@@ -45,8 +45,9 @@ Evidenz: runner_setup_test 61/0 · Gegenprobe: Alias opus[1m] statt fester Kennu
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T3)
 
-### T2 — Eine Quelle für die CLI-Version, und `runner-setup.sh` setzt sie durch  [ ]
+### T2 — Eine Quelle für die CLI-Version, und `runner-setup.sh` setzt sie durch  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-claude.version (neu), scripts/dev/runner-setup.sh, scripts/dev/harness-paths.txt, scripts/tests/runner_setup_test.sh
+Evidenz: runner_setup_test 64/0 · Gegenprobe: Versionsprüfung entfernt ⇒ ein Wert mit Shell-Code erreicht su -c (1 failed) · Katalog belegt: 2.1.278 kennt claude-opus-5-5 nicht (0 Treffer im Binary, 2.1.280: 15)
 Änderung: Die gepinnte Version steht in **einer** Datei (`2.1.280`, die Fassung, die Opus 5.5 kennt — 2.1.278 lehnt das Modell ab). `runner-setup.sh` liest sie und installiert genau diese Fassung für den Runner (`claude install <version>`); fehlt dem Runner die CLI noch, sagt der Schritt das und nennt den dokumentierten Weg, statt still zu übergehen. Die Versionsdatei kommt auf die Harness-Pfade, weil sie bestimmt, womit der Runner arbeitet. Test: der Trockenlauf-Plan enthält den Installationsschritt mit genau der Version aus der Datei.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T3)

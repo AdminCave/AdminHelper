@@ -257,6 +257,28 @@ PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run --trust 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && ok "--trust plans the flag in the runner's .claude.json" || bad "--trust does not plan the trust flag"
 
+echo "── the CLI version is pinned from one file ──"
+VFILE="$REPO_ROOT/scripts/dev/runner-claude.version"
+PINNED="$(tr -d '[:space:]' < "$VFILE" 2>/dev/null)"
+case "$PINNED" in
+  ""|*[!0-9.]*) bad "scripts/dev/runner-claude.version does not hold a plain version (got '$PINNED')" ;;
+  *) ok "runner-claude.version holds a plain version ($PINNED)" ;;
+esac
+PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "claude install $PINNED" <<<"$PLAN" \
+  && ok "the plan installs exactly the pinned version" \
+  || bad "the plan does not install claude $PINNED"
+# The version reaches a string root runs through su -c; anything but digits and dots
+# must stop the script before that. Checked against a copy, never the real file.
+BADTREE="$WORK/badver"; mkdir -p "$BADTREE/scripts/dev"
+cp "$SETUP" "$BADTREE/scripts/dev/runner-setup.sh"
+cp "$REPO_ROOT/scripts/dev/runner-settings.json" "$BADTREE/scripts/dev/" 2>/dev/null
+printf '2.1.280; touch /tmp/pwned\n' > "$BADTREE/scripts/dev/runner-claude.version"
+BPLAN=$(PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run 2>&1); brc=$?
+[ $brc -ne 0 ] && grep -q 'must hold a version' <<<"$BPLAN" && ! grep -q 'pwned' <<<"$(grep 'claude install' <<<"$BPLAN")" \
+  && ok "a version with shell in it stops the script before su -c" \
+  || bad "a malformed version reached the plan: rc=$brc"
+
 echo "── the settings it installs ──"
 [ -f "$REPO_ROOT/scripts/dev/runner-settings.json" ] \
   && ok "the settings file it copies exists in the repo" || bad "scripts/dev/runner-settings.json is missing"
