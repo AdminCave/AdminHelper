@@ -20,10 +20,10 @@
 #              pattern that only appears behind a comment marker, because a
 #              comment switches nothing off. With --task, a third: an assertion
 #              that goes with its WHOLE test — the test's head deleted in the
-#              same block — when the task declares that test in a
-#              `Test-Löschung: <file>::<test> — <reason>` line. Dead code and its
-#              test can leave together; an assertion out of a test that stays
-#              is still a finding, declared or not.
+#              same block and not added back — when the task declares that test
+#              in a `Test-Löschung: <file>::<test> — <reason>` line. Dead code and
+#              its test can leave together; an assertion out of a test that
+#              stays is still a finding, declared or not.
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
@@ -113,7 +113,9 @@ case "$VERB" in
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
-      DECL="$(task_field "$TASK_LEDGER" "$TASK_ID" "Test-Löschung" | tr ';' '\n' \
+      # Entries split at a ; before the next <file>:: only: a reason may have one.
+      DECL="$(task_field "$TASK_LEDGER" "$TASK_ID" "Test-Löschung" \
+        | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
         | sed 's/[[:space:]]*—.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')"
     fi
     # -U0: only what this diff actually adds or removes. Context lines would
@@ -122,14 +124,18 @@ case "$VERB" in
     # carry an array, and each of them is a fixed string, not a regex.
     # A run of deleted lines is one block; the test head last deleted in it
     # (pytest def test_…, Go func Test…, it(/test( in vitest/jest, a Rust fn
-    # after a deleted #[test]) is what an assertion further down belongs to.
+    # after a deleted #[test]) is what an assertion further down belongs to,
+    # until a deleted line no deeper than the head (the next def or fn, the
+    # closing }) ends that test. A declared deletion only counts at the end:
+    # a head of the same name added anywhere in the file means the test stays.
     FOUND="$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | DECL="$DECL" awk -v PAT="$SKIP_PATTERNS" '
       BEGIN {
         n = split(ENVIRON["DECL"], d, "\n")
         for (i = 1; i <= n; i++) if (d[i] != "") declared[d[i]] = 1
       }
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-      function test_head(s,   q, rest, k) {
+      # anyfn: every Rust fn counts, for heads the diff adds back.
+      function test_head(s, anyfn,   q, rest, k) {
         if (match(s, /^[ \t]*(async[ \t]+)?def[ \t]+test[A-Za-z0-9_]*/)) {
           s = substr(s, RSTART, RLENGTH); sub(/^.*def[ \t]+/, "", s); return s
         }
@@ -140,7 +146,7 @@ case "$VERB" in
           q = substr(s, RSTART + RLENGTH - 1, 1); rest = substr(s, RSTART + RLENGTH)
           k = index(rest, q); if (k > 0) return substr(rest, 1, k - 1)
         }
-        if (rust_test && match(s, /^[ \t]*(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+/)) {
+        if ((rust_test || anyfn) && match(s, /^[ \t]*(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+/)) {
           s = substr(s, RSTART, RLENGTH); sub(/^.*fn[ \t]+/, "", s); return s
         }
         return ""
@@ -171,18 +177,27 @@ case "$VERB" in
       /^-/ && !/^---/ {
                         line = substr($0, 2)
                         if (!inblock) { inblock = 1; head = ""; rust_test = 0 }
+                        # -1 for a blank line. Only the ) that closes a
+                        # multi-line signature stands as deep as the head
+                        # and still belongs to it.
+                        ind = match(line, /[^ \t]/) - 1
+                        if (head != "" && ind >= 0 && ind <= headind && line !~ /^[ \t]*\)/) head = ""
                         if (match(line, /^[ \t]*#\[([a-z_]+::)?test\]/)) rust_test = 1
-                        h = test_head(line)
-                        if (h != "") { head = h; rust_test = 0 }
+                        h = test_head(line, 0)
+                        if (h != "") { head = h; headind = ind; rust_test = 0 }
                         if (line !~ /review: ok/ &&
                             (line ~ /(^|[^A-Za-z_.])assert([^A-Za-z_]|$)/ || line ~ /expect\(/))
-                          if (head != "" && ((file "::" head) in declared)) gone[file "::" head] = 1
-                          else printf "%s:%d  removed assertion: %s\n", file, oldno, trim(line)
+                          if (head != "" && ((file "::" head) in declared)) {
+                            np++; pkey[np] = file "::" head
+                            pmsg[np] = sprintf("%s:%d  removed assertion: %s", file, oldno, trim(line))
+                          } else printf "%s:%d  removed assertion: %s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {
                         inblock = 0
                         line = substr($0, 2)
+                        h = test_head(line, 1)
+                        if (h != "") added[file "::" h] = 1
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
                           cnt = split(PAT, pat, "\x1f")
@@ -202,7 +217,12 @@ case "$VERB" in
                         newno++; next
                       }
                       { inblock = 0; oldno++; newno++ }
-      END { for (k in gone) printf "DECLARED\t%s\n", k }
+      END {
+        for (i = 1; i <= np; i++)
+          if (pkey[i] in added) printf "%s  (declared, but the diff adds its head again)\n", pmsg[i]
+          else gone[pkey[i]] = 1
+        for (k in gone) printf "DECLARED\t%s\n", k
+      }
     ')" || die "could not read the diff"
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
     FOUND="$(printf '%s\n' "$FOUND" | grep -v '^DECLARED' | grep -v '^$')"

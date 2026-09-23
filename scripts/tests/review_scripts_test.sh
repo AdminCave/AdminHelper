@@ -471,6 +471,60 @@ stage apps/desktop/src-tauri/tests/x.rs
 r diff-scan --staged --task tasks/del.md T4
 [ $rc -eq 3 ] && grep -q "assert!(true)" <<<"$OUT" \
   && ok "Rust: a plain fn is no test, declared or not — its assertion is a finding" || bad "rust helper: rc=$rc out=$OUT"
+
+# A declared head covers its own test only: a deleted line no deeper than the
+# head ends it, and a head the diff adds again means the test stays.
+PY_HELPER="$PY
+
+def check_helper():
+    assert helper() is not None
+"
+base apps/server/tests/test_del.py "$PY_HELPER"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert helper() is not None" <<<"$OUT" && ! grep -q "assert helper() == 2" <<<"$OUT" \
+  && ok "a function deleted after the declared test ends it: its assertion is a finding" \
+  || bad "helper after test: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs "$RS"
+printf '#[test]\nfn alive() {\n    assert_eq!(1, 1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 3 ] && grep -q "assert!(true)" <<<"$OUT" && ! grep -q "assert!(2 == 2)" <<<"$OUT" \
+  && ok "Rust: the plain fn deleted after the declared test is no part of it" || bad "rust after test: rc=$rc out=$OUT"
+PY_MULTILINE='def test_alive():
+    assert 1 == 1
+
+
+def test_dead(
+    monkeypatch,
+):
+    assert helper() == 2
+'
+base apps/server/tests/test_del.py "$PY_MULTILINE"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "clean (1 declared test deletion(s): apps/server/tests/test_del.py::test_dead)" <<<"$OUT" \
+  && ok "the ) closing a multi-line signature does not end the test" || bad "multi-line signature: rc=$rc out=$OUT"
+PY_DEAD_REWRITTEN='def test_alive():
+    assert 1 == 1
+
+
+def test_dead(monkeypatch):
+    pass
+'
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_DEAD_REWRITTEN" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert helper() == 2.*adds its head again" <<<"$OUT" \
+  && ok "a declared head the diff adds again: the test stays, its assertion is a finding" \
+  || bad "head added again: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs "$RS"
+printf '#[test]\nfn alive() {\n    assert_eq!(1, 1);\n}\n\n#[tokio::test]\nasync fn dead() {\n    run().await;\n}\n\nfn helper() {\n    assert!(true);\n}\n' \
+  > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 3 ] && grep -q "assert!(2 == 2).*adds its head again" <<<"$OUT" \
+  && ok "Rust: a declared test that comes back as #[tokio::test] stays" || bad "rust head added again: rc=$rc out=$OUT"
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
   || bad "unknown task: rc=$rc out=$OUT"

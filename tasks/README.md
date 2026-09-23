@@ -76,13 +76,17 @@ zu Recht verschwindet, kündigt die Task an:
 Test-Löschung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
 ```
 
+Ein `;` trennt nur vor dem nächsten `<datei>::`, im Grund darf es also stehen.
 `<test>` ist der Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die
 Beschreibung aus `it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[test]` (Rust).
 Übergangen wird eine gelöschte Assertion nur, wenn **beides** gilt: Der Kopf des Tests steht
 im selben zusammenhängenden Block gelöschter Zeilen, der ganze Test geht also mit. Und
 `<datei>::<test>` ist angekündigt. Eine Assertion aus einem Test, der stehen bleibt, bleibt ein
-Fund, angekündigt oder nicht. Der Lauf nennt, was er übergangen hat
-(`diff-scan: clean (1 declared test deletion(s): …)`).
+Fund, angekündigt oder nicht. Stehen bleibt ein Test auch, wenn der Diff einen Kopf gleichen
+Namens in derselben Datei wieder hinzufügt; ein Ersatztest trägt deshalb einen eigenen Namen.
+Zum Test gehört nur, was unter seinem Kopf tiefer eingerückt ist: Die nächste gelöschte Zeile,
+die nicht tiefer steht (die nächste Funktion, das schließende `}`), beendet ihn. Der Lauf nennt,
+was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`).
 
 **Passt:** toter Code geht samt seinem Test; ein Test wird durch einen genaueren ersetzt, der
 im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das ist ein Befund

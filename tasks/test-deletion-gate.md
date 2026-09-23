@@ -69,6 +69,15 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md · AUTONOMOUS.md
 Abhängt von: T1
 
+### T3 — Review-Befunde: ein angekündigter Kopf deckt nur seinen eigenen Test  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @dac361de 2026-09-23T20:08:05+02:00
+Review: approve (sonnet, Re-Review der Gesamt-Review-Befunde)
+Änderung: Aus dem Gesamt-Review (Sonnet, `request_changes`). (1) Blocker: `head` blieb bis zum Blockende stehen, eine gelöschte Assertion aus einer Funktion hinter dem angekündigten Test (Helfer, Produktionscode) erbte ihn. Neu beendet eine gelöschte, nicht leere Zeile, die höchstens so tief eingerückt ist wie der Kopf, den Test (die nächste Funktion, das schließende `}`); nur die `)`, die eine mehrzeilige Signatur schließt, gehört noch dazu. (2) Blocker: ein Kopf, der gelöscht und im selben Diff wieder hinzugefügt wird (etwa mit geänderter Signatur), galt als ganzer Test weg. Neu macht ein hinzugefügter Kopf gleichen Namens in derselben Datei die Löschung zum Fund. (3) wichtig: ein `;` im Grund zerriss im Lint eine gültige Zeile. Neu trennt `;` nur vor dem nächsten `<datei>::`, gleich in `ledger.sh lint` und `diff-scan`. Tests: je Befund ein Fall (Python und Rust), rot gegen den Stand von T2; dazu die mehrzeilige Signatur, die sauber bleibt.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: tasks/README.md (die Regel genauer)
+Abhängt von: T2
+
 ## Danach, als eigenes Kurz-Ledger (nicht in diesem Branch)
 
 `SafeText` löschen, eine Task auf `fix/safetext-delete`. Sie wendet den gesicherten Patch an und trägt

@@ -312,7 +312,8 @@ case "$CMD" in
     while IFS= read -r entry; do
       echo "ERROR  Test-Löschung: '$entry' is not <file>::<test> — <reason>" >&2
       RC=1
-    done < <(sed -n 's/^Test-Löschung:[[:space:]]*//p' "$LEDGER" | tr ';' '\n' \
+    done < <(sed -n 's/^Test-Löschung:[[:space:]]*//p' "$LEDGER" \
+      | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
       | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
       | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
 

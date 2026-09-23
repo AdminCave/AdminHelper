@@ -261,6 +261,9 @@ l lint fixture
 with_deletion "apps/server/tests/test_x.py test_dead — der Code hat keinen Nutzer mehr"
 l lint fixture
 [ $rc -eq 1 ] && ok "a deletion without :: is an error" || bad "no ::: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead — kein Aufrufer mehr; siehe Ticket #12; apps/web/src/x.test.ts::adds up — ersetzt"
+l lint fixture
+[ $rc -eq 0 ] && ok "a ; inside a reason does not split the entry" || bad "; in the reason: rc=$rc out=$OUT"
 
 # ══ the real ledgers ══════════════════════════════════════════════════════════
 echo "── the real ledgers ──"
