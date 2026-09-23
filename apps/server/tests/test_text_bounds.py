@@ -138,3 +138,22 @@ def test_internal_event_fields_reject_a_nul_byte(test_client, db_session, admin_
         )
         assert r.status_code == 422, f"{field}: {r.status_code} {r.text}"
         assert r.json()["detail"][0]["loc"][-1] == field
+
+
+def test_api_key_name_rejects_a_nul_byte(test_client, db_session, admin_user):
+    """Found by the fuzzer while verifying an unrelated task (2026-09-23):
+    ApiKeyCreate.name went into Column(String) unguarded, so a NUL died in the
+    INSERT. The route was never under an exclusion — it only fails when
+    Hypothesis happens to draw a NUL for the name."""
+    headers = _login(test_client)
+
+    ok = test_client.post(
+        "/api/api-keys", json={"name": "k1", "permission": "read"}, headers=headers
+    )
+    assert ok.status_code == 201, ok.text
+
+    nul = test_client.post(
+        "/api/api-keys", json={"name": NUL, "permission": "read"}, headers=headers
+    )
+    assert nul.status_code == 422, nul.text
+    assert nul.json()["detail"][0]["loc"][-1] == "name"
