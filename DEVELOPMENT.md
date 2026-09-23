@@ -208,6 +208,35 @@ Unified-Diff. Der Test braucht keine Datenbank (der App-Import reicht), `info.ve
 wird auf `0.0.0` normalisiert und ein `servers`-Feld entfernt — sonst waere jeder Release
 ein Snapshot-Diff ohne Vertragsaenderung.
 
+`oasdiff` gehoert zu keiner Pflicht-Suite — fehlt das Binary, meldet der Check Exit 75 (SKIP)
+statt rot zu werden. Wer das Gate vor dem Push selbst sehen will, holt sich das fertige
+Release-Binary:
+
+```bash
+# Stand 2026-09-23. Massgeblich ist .github/workflows/ci.yml (Job openapi-compat,
+# OASDIFF_VERSION und OASDIFF_SHA256_LINUX_AMD64) — von dort uebernehmen, damit
+# lokal und CI dieselbe Fassung messen.
+V=1.32.0
+S=5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad
+curl -sSfL -o /tmp/oasdiff.tgz \
+  "https://github.com/oasdiff/oasdiff/releases/download/v${V}/oasdiff_${V}_linux_amd64.tar.gz" &&
+  echo "${S}  /tmp/oasdiff.tgz" | sha256sum -c - &&
+  mkdir -p ~/.local/bin &&
+  tar xzf /tmp/oasdiff.tgz -C ~/.local/bin oasdiff
+```
+
+Die Schritte haengen mit `&&` zusammen, damit ein Pruefsummen-Fehlschlag das Entpacken
+wirklich verhindert: `sha256sum -c -` meldet den Fehler, stoppt aber von sich aus nichts, und
+ein gueltiges Archiv mit falschem Inhalt landete sonst trotzdem in `~/.local/bin`. In CI
+uebernimmt das `bash -e`, mit dem GitHub jeden `run:`-Schritt faehrt; beim Einfuegen in eine
+normale Shell gibt es das nicht.
+
+Das Release-Binary statt `go install`: jede oasdiff-Fassung ab v1.24.0 verlangt `go 1.26` in
+ihrer go.mod, waehrend die Workflows Go 1.25 mit `GOTOOLCHAIN=local` pinnen — aus der Quelle
+bauen scheitert dort genauso wie seinerzeit `govulncheck` (PR #14). Ein Tarball braucht gar
+keine Toolchain, und die Pruefsumme macht ein ausgetauschtes Asset zum Fehler statt zur
+Ueberraschung.
+
 Lokal gegen den Basis-Branch pruefen (braucht `oasdiff` im PATH, sonst Exit 75 = SKIP):
 
 ```bash
