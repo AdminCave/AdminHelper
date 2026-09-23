@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `runner-setup.sh` ein zweites Mal fahren können — Task-Ledger
-Status: aktiv · Branch: harness/runner-setup-rerun · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/runner-setup-rerun · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Bugfix, gefunden beim Anwenden von R-0072; Roadmap R-0076)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt nur `scripts/dev/runner-setup.sh` und `scripts/tests/runner_setup_test.sh`.
@@ -40,3 +40,7 @@ Review: am Ende (Kurz-Ledger)
 Änderung: Das `chown -R` rückt vor die beiden `git config`, und beide laufen als Runner (`su - <runner> -c 'git -C … config …'`) — beim ersten Lauf wie bei jedem weiteren, sodass root nie in einem Runner-eigenen Repository Git fährt. `ORIGIN` kommt aus Kevins Checkout und wird mit `printf %q` in den Befehl gesetzt. Test: der Trockenlauf-Plan enthält beide `git config` als Runner und **keine** Zeile, in der root `git -C /srv/ah/repo` fährt; die Gegenprobe (alte Reihenfolge) wird rot.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (Bugfix; DEVELOPMENT.md beschreibt den zweiten Lauf bereits als idempotent)
+
+## Review am Ende (Opus, frischer Kontext, 2026-09-23)
+
+`approve`, kein Blocker, kein wichtiger Fund; Gegenprobe vom Reviewer selbst wiederholt (altes Skript + neuer Test ⇒ 68/3). Zwei Nits miterledigt: der Kommentar zum Symlink-Schutz und die Fehlermeldung des Tests nennen nicht mehr root's `git -C`, und die Config-Zusicherung prüft `url` und `pushurl` einzeln. Nicht übernommen, weil außerhalb dieses Fixes: `run()` druckt `$*` ohne Argumentgrenzen (kosmetisch, betrifft den ganzen Plan) und ein theoretisches Rennen, falls der Runner `$SRV/repo` leert und root dann hineinklont — als eigene Roadmap-Zeile aufgenommen.

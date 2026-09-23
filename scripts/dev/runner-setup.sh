@@ -228,7 +228,7 @@ esac
 step "clone $SRV/repo from $ROOT, fetching from $ORIGIN, unable to push"
 # The runner OWNS $SRV after the first run (chown -R below), so on every later
 # run these paths are attacker-controlled: a $SRV/repo replaced by a symlink
-# would make root's `git -C` write into whatever it points at.
+# would make root's mkdir, `git clone` or `chown -R` act on whatever it points at.
 no_symlink_in "$SRV"
 no_symlink_in "$SRV/repo"
 no_symlink_in "$SRV/lanes"

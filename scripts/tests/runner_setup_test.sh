@@ -92,7 +92,9 @@ done
 CFG="$(grep -F 'config remote.origin.' <<<"$OUT")"
 [ "$(grep -c . <<<"$CFG")" = 2 ] \
   && ! grep -vqF -- '$ su - adminhelper-runner -c git -C /srv/ah/repo config remote.origin.' <<<"$CFG" \
-  && ok "the clone's config is written as the runner, never by root" \
+  && grep -qF -- '-c git -C /srv/ah/repo config remote.origin.url ' <<<"$CFG" \
+  && grep -qF -- '-c git -C /srv/ah/repo config remote.origin.pushurl /dev/null' <<<"$CFG" \
+  && ok "the clone's url and pushurl are written as the runner, never by root" \
   || bad "the clone's config is not (only) written as the runner: $CFG"
 ! grep -qE '^[[:space:]]*\$ git -C /srv/ah/repo' <<<"$OUT" \
   && ok "root runs no git inside the runner's clone" || bad "root runs git inside /srv/ah/repo"
@@ -179,7 +181,7 @@ grep -q 'no_symlink_in "\$1"' "$SETUP" && grep -q 'no_symlink_in "\$path"' "$SET
   || bad "one of the two writers skips the symlink check"
 grep -q 'no_symlink_in "\$SRV/repo"' "$SETUP" \
   && ok "the clone path is checked too (the runner owns /srv/ah after the first run)" \
-  || bad "git clone/config/chown run without the symlink check"
+  || bad "mkdir/git clone/chown run without the symlink check"
 
 # The three things this user must not have.
 grep -q 'no ssh key, no gh, not in a sudo group' <<<"$OUT" \
