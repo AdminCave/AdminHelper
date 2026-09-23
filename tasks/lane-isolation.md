@@ -38,8 +38,10 @@ Review: approve (sonnet, 2. Runde); danach Diff-Scan-Nachbesserung: review-ok am
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md „Python-Tests lokal“ (eine DB je Lane) · AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 2)
 
-### T2 — Host-weite Lauf-Sperre für die schweren Python-Schritte  [ ]
-Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh
+### T2 — Host-weite Lauf-Sperre für die schweren Python-Schritte  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @bb7152be 2026-09-23T14:02:51+02:00
+Review: approve (sonnet); Nit held-by-Meldung übernommen
 Änderung: `run_py_step` ist die einzige Stelle, durch die jeder Python-Schritt läuft. Dort holen die schweren Schritte (`server-pytest`, `schemathesis`) vorher ein `flock` auf eine host-weite Sperrdatei unter `${XDG_RUNTIME_DIR:-$HOME/.cache}`. Ist die Sperre belegt, **wartet** der Schritt und meldet einmal sichtbar, dass und worauf er wartet; er schlägt nicht fehl. Nach `AH_PY_LOCK_WAIT` Sekunden (Default 3600) gibt er auf. Das Aufgeben ist ein Selbst-Skip mit Grund (Exit 75, der Weg, den `run_py_step` schon kennt), kein FAIL. Unter `--strict` wird der Lauf damit rot, bleibt aber als „nicht gelaufen“ erkennbar, nicht als Befund über den Code. Die übrigen Schritte bleiben parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für VMs, auf denen nur ein Lauf existiert. Test: Zwei gleichzeitige Aufrufe mit einem Stub-Schritt laufen nacheinander statt überlappend (Zeitstempel-Protokoll). Eine belegte Sperre mit kurzer Wartezeit endet als SKIP mit Grund, unter `--strict` als `strict-failed`.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md „Python-Tests lokal“ (Sperre, Wartezeit, Abschalter) · AUTONOMOUS.md „Parallel-Betrieb“ (ersetzt „nur ein server-Lauf zur Zeit“ als Absprache)

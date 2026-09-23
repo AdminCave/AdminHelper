@@ -162,11 +162,20 @@ Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt de
 `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
 braucht dafür `CREATEDB`, die sie oben ohnehin hat.
 
-**Immer nur ein `server`-Lauf zur Zeit** je Checkout. Alle Läufe eines Checkouts teilen sich diese eine Test-DB, und die
-Alembic-Smoke legt darin pro Lauf eine Wegwerf-DB an: zwei gleichzeitige Läufe räumen
-einander die Tabellen weg. Das Ergebnis ist dann **verworfen, nicht rot** — es sagt weder
-„grün" noch „kaputt", nur „nichts bewiesen". Also einen Lauf starten, seine Summary-Zeile
-abwarten, dann den nächsten.
+**Die schweren Python-Schritte laufen host-weit nacheinander.** `server-pytest` und
+`schemathesis` holen in `run.sh` vor dem Start eine Sperre (`flock` auf
+`${XDG_RUNTIME_DIR:-~/.cache}/adminhelper-py.lock`), gleich aus welchem Checkout: zwei
+Server-Suiten auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum
+OOM-Killer. Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält, und **wartet** — bis
+`AH_PY_LOCK_WAIT` Sekunden (Default 3600). Danach gibt er als SKIP mit Grund auf, unter
+`--strict` also `strict-failed`: nicht gelaufen, kein Befund über den Code. Alle anderen Schritte
+laufen weiter parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für eine Box, auf der
+ohnehin nur ein Lauf existiert.
+
+Wer `pytest` von Hand startet statt über `run.sh`/`verify.sh`, läuft an der Sperre vorbei. Dann
+gilt weiter: **ein `server`-Lauf zur Zeit** je Test-DB. Zwei gleichzeitige Läufe räumen einander
+die Tabellen weg (die Alembic-Smoke legt pro Lauf eine Wegwerf-DB an), und das Ergebnis ist
+**verworfen, nicht rot** — es sagt weder „grün" noch „kaputt", nur „nichts bewiesen".
 
 ### Schnelltest einer Komponente: verify.sh
 

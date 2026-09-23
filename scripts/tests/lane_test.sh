@@ -133,6 +133,80 @@ grep -q "adminhelper_test_gamma is NOT dropped" "$WORK/out.log" \
   && ok "and says that adminhelper_test_gamma is left, and how to drop it" || bad "silent leak: $(cat "$WORK/out.log")"
 mv "$WORK/devenv.saved" "$MAIN/.devenv.sh"
 
+# ── run.sh: the host-wide lock for the heavy python steps (T2) ──────────────
+# The real run.sh, one step at a time (--step), against a venv whose python is a
+# stub: pip succeeds, pytest writes when it starts and ends and sleeps between.
+# XDG_RUNTIME_DIR puts the lock file in the temp dir — a real server run on this
+# box must neither block this test nor be blocked by it.
+RUN="$REPO_ROOT/scripts/tests/run.sh"
+VENV="$WORK/venv"; mkdir -p "$VENV/bin" "$WORK/run"
+export STEP_LOG="$WORK/steps.log"
+cat > "$VENV/bin/python3" <<'STUB'
+#!/usr/bin/env bash
+case "${2:-}" in
+  pip) exit 0 ;;
+  pytest)
+    echo "start $(date +%s.%N) ${STUB_TAG:-?}" >> "$STEP_LOG"
+    sleep "${STUB_SLEEP:-1}"
+    echo "end $(date +%s.%N) ${STUB_TAG:-?}" >> "$STEP_LOG"
+    echo "1 passed" ;;
+esac
+STUB
+chmod +x "$VENV/bin/python3"; ln -sf python3 "$VENV/bin/python"
+printf 'export PATH="%s/bin:$PATH"\n' "$VENV" > "$VENV/bin/activate"
+LOCKF="$WORK/run/adminhelper-py.lock"
+
+# run_step_alone <tag> <step name> [run.sh args…] — one run.sh with a clean env.
+run_step_alone() {
+  local tag="$1" step="$2"; shift 2
+  env -u AH_ONLY -u AH_STRICT -u AH_STEP -u AH_REQUIRED -u AH_SCRIPT_TESTS \
+      -u AH_IN_SCRIPTS_BLOCK -u DATABASE_URL \
+      AH_VENV="$VENV" XDG_RUNTIME_DIR="$WORK/run" AH_OUT_DIR="$WORK/out-$tag" \
+      AH_PY_LOCK="${AH_PY_LOCK:-1}" AH_PY_LOCK_WAIT="${AH_PY_LOCK_WAIT:-3600}" \
+      AH_TEST_DB="postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test" \
+      STUB_TAG="$tag" bash "$RUN" quick "$@" --step "$step" > "$WORK/run-$tag.log" 2>&1
+}
+
+echo "── run.sh: two server suites at once run one after the other ──"
+: > "$STEP_LOG"
+run_step_alone one "server pytest" --only server & p1=$!
+run_step_alone two "server pytest" --only server & p2=$!
+wait "$p1"; rc1=$?; wait "$p2"; rc2=$?
+[ "$rc1" = 0 ] && [ "$rc2" = 0 ] && ok "both runs pass" \
+  || bad "rc $rc1/$rc2: $(cat "$WORK/run-one.log" "$WORK/run-two.log" | tail -20)"
+# Sorted by time, the log must read start/end/start/end — never two starts in a row.
+order=$(sort -k2 -n "$STEP_LOG" | awk '{printf "%s ", $1}')
+[ "$order" = "start end start end " ] && ok "the two server steps did not overlap" \
+  || bad "the steps overlapped: $(sort -k2 -n "$STEP_LOG" | tr '\n' ';')"
+cat "$WORK/run-one.log" "$WORK/run-two.log" | grep -q "waiting for the host-wide python lock" \
+  && ok "the second one said it was waiting, and for what" || bad "no waiting notice in either run"
+
+# A holder that keeps the lock until it is killed: the subshell BECOMES sleep,
+# so killing it closes fd 9 and nothing else holds the lock afterwards.
+( exec 9>>"$LOCKF"; flock 9; exec sleep 60 ) & holder=$!
+for _ in $(seq 1 50); do flock -n "$LOCKF" true 2>/dev/null || break; sleep 0.1; done
+
+echo "── run.sh: a lock held too long is a SKIP with its reason, never a FAIL ──"
+AH_PY_LOCK_WAIT=1 run_step_alone held "server pytest" --only server; rc=$?
+grep -q "gave up after 1s waiting for the host-wide python lock" "$WORK/run-held.log" \
+  && ok "it gives up after AH_PY_LOCK_WAIT and says why" || bad "no give-up notice: $(tail -15 "$WORK/run-held.log")"
+grep -q "SKIP  server pytest" "$WORK/run-held.log" && ! grep -q "FAIL  server pytest" "$WORK/run-held.log" \
+  && ok "the step reads SKIP, not FAIL" || bad "not a SKIP: $(tail -15 "$WORK/run-held.log")"
+AH_PY_LOCK_WAIT=1 run_step_alone held-strict "server pytest" --only server --strict; rc=$?
+[ "$rc" != 0 ] && grep -q "strict-failed: server pytest" "$WORK/run-held-strict.log" \
+  && ok "under --strict it is strict-failed: not run, and the run is red" \
+  || bad "strict: rc=$rc $(tail -15 "$WORK/run-held-strict.log")"
+
+echo "── run.sh: what the lock leaves alone ──"
+AH_PY_LOCK_WAIT=1 run_step_alone mon "monitoring pytest" --only monitoring \
+  && grep -q "PASS  monitoring pytest" "$WORK/run-mon.log" \
+  && ok "monitoring pytest runs while the lock is held" || bad "monitoring: $(tail -15 "$WORK/run-mon.log")"
+AH_PY_LOCK=0 AH_PY_LOCK_WAIT=1 run_step_alone off "server pytest" --only server \
+  && grep -q "PASS  server pytest" "$WORK/run-off.log" \
+  && ok "AH_PY_LOCK=0 runs the server step despite the held lock" || bad "AH_PY_LOCK=0: $(tail -15 "$WORK/run-off.log")"
+
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
 echo
 echo "lane_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
