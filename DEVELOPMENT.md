@@ -161,6 +161,12 @@ Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt de
 `.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB` auf diese DB und
 `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
 braucht dafür `CREATEDB`, die sie oben ohnehin hat.
+Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
+und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
+angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
+weil `dropdb` scheitert), bleibt die Marke, und `new <slug>` verweigert den Slug als „never closed".
+Ausweg: `done <slug>` erneut aufrufen, sobald die Ursache weg ist, oder die DB von Hand löschen und
+die Marke entfernen.
 
 **Die schweren Python-Schritte laufen je Nutzer nacheinander.** `server-pytest` und
 `schemathesis` holen in `run.sh` vor dem Start eine Sperre (`flock` auf

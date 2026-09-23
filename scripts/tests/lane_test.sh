@@ -45,8 +45,13 @@ mkdir -p "$WORK/bin"
 for tool in createdb dropdb; do
   printf '#!/usr/bin/env bash\nprintf "%%s pw=%%s %%s\\n" "%s" "${PGPASSWORD-<unset>}" "$*" >> "$PG_LOG"\n' "$tool" > "$WORK/bin/$tool"
 done
-# createdb fails on demand, as it does when the name is taken.
+# createdb fails on demand, as it does when the name is taken; dropdb too.
 printf 'if [ -n "${FAKE_CREATEDB_FAIL:-}" ]; then echo "database exists" >&2; exit 1; fi\n' >> "$WORK/bin/createdb"
+printf 'if [ -n "${FAKE_DROPDB_FAIL:-}" ]; then echo "cannot drop" >&2; exit 1; fi\n' >> "$WORK/bin/dropdb"
+# Whatever runs `env` from PATH leaves its arguments here: a password must never
+# be one of them (T7).
+export ENV_LOG="$WORK/env.log"; : > "$ENV_LOG"
+printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> "$ENV_LOG"\nexec /usr/bin/env "$@"\n' > "$WORK/bin/env"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$VM_LOG"\nexit 0\n' > "$WORK/bin/vm.py"
 chmod +x "$WORK/bin/"*
 export PATH="$WORK/bin:$PATH" AH_VM_PY="$WORK/bin/vm.py"
@@ -69,7 +74,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -103,6 +108,9 @@ grep -qx "createdb pw=secret --maintenance-db=postgresql://ah@localhost:5432/adm
   && ok "createdb makes exactly that database, over a libpq URL, the password in PGPASSWORD" || bad "createdb calls: $(cat "$PG_LOG")"
 [ -f "$MAIN/.vm/lanes/alpha" ] && ok "and new leaves the lane's ownership mark in the main checkout" \
   || bad "no mark at $MAIN/.vm/lanes/alpha"
+[ "$(grep -E '^(db|venv)=' "$MAIN/.vm/lanes/alpha" 2>/dev/null)" = "db=adminhelper_test_alpha
+venv=$HOME/.cache/ah-venv-alpha" ] && ok "the mark names the database and the venv new made" \
+  || bad "mark alpha: $(cat "$MAIN/.vm/lanes/alpha" 2>&1)"
 
 echo "── new: a dash in the slug becomes an underscore in the database ──"
 : > "$PG_LOG"
@@ -146,7 +154,16 @@ lane "done" gamma && ok "done gamma still takes worktree and venv" || bad "done 
 [ ! -s "$PG_LOG" ] && ok "no dropdb against a server nobody named" || bad "database calls: $(cat "$PG_LOG")"
 grep -q "adminhelper_test_gamma is NOT dropped" "$WORK/out.log" \
   && ok "and says that adminhelper_test_gamma is left, and how to drop it" || bad "silent leak: $(cat "$WORK/out.log")"
+[ "$(grep -E '^(db|venv)=' "$MAIN/.vm/lanes/gamma" 2>/dev/null)" = "db=adminhelper_test_gamma" ] \
+  && ok "the mark keeps the database, and only it" || bad "mark gamma: $(cat "$MAIN/.vm/lanes/gamma" 2>&1)"
 mv "$WORK/devenv.saved" "$MAIN/.devenv.sh"
+lane new gamma; rc=$?
+[ "$rc" = 1 ] && grep -q "never closed" "$WORK/out.log" && grep -q "db=adminhelper_test_gamma" "$WORK/out.log" \
+  && grep -q "drop it by hand and remove the mark" "$WORK/out.log" \
+  && ok "new refuses the slug, names what is left and the way out" || bad "new gamma rc=$rc: $(cat "$WORK/out.log")"
+: > "$PG_LOG"
+lane "done" gamma && grep -q "^dropdb .* adminhelper_test_gamma$" "$PG_LOG" && [ ! -e "$MAIN/.vm/lanes/gamma" ] \
+  && ok "done with the file back drops it and takes the mark" || bad "done gamma again: $(cat "$WORK/out.log")"
 
 echo "── new: the plan has to be committed where the build will look ──"
 g() { git -C "$MAIN" -c user.name=t -c user.email=t@t "$@"; }
@@ -203,8 +220,8 @@ mkdir -p "$HOME/.cache/ah-venv-lambda/bin"
 : > "$PG_LOG"
 lane "done" lambda; rc=$?
 [ "$rc" = 0 ] && [ -d "$HOME/.cache/ah-venv-lambda/bin" ] && ! grep -q "^dropdb" "$PG_LOG" \
-  && grep -q "not this lane's" "$WORK/out.log" \
-  && ok "done without a mark leaves a same-named database and venv alone, and says so" \
+  && grep -q "owner unknown" "$WORK/out.log" && grep -q "dropdb adminhelper_test_lambda" "$WORK/out.log" \
+  && ok "done without a mark leaves a same-named database and venv alone: owner unknown, the manual way" \
   || bad "done lambda rc=$rc pg=$(cat "$PG_LOG"): $(cat "$WORK/out.log")"
 lane new lambda; rc=$?
 [ "$rc" = 1 ] && grep -q "belongs to no lane" "$WORK/out.log" && [ ! -s "$PG_LOG" ] \
@@ -220,6 +237,41 @@ lane new mu; rc=$?
   && ok "a failing worktree takes back the database and the mark" \
   || bad "mu rc=$rc pg=$(cat "$PG_LOG"): $(cat "$WORK/out.log")"
 git -C "$MAIN" worktree remove "$WORK/elsewhere-mu"
+
+echo "── the mark records what new made, and done takes only that (T7) ──"
+# nu: dropdb fails — the database is still there, and so is the mark.
+lane new nu || bad "new nu failed: $(cat "$WORK/out.log")"
+export FAKE_DROPDB_FAIL=1
+lane "done" nu; rc=$?
+unset FAKE_DROPDB_FAIL
+[ "$rc" != 0 ] && grep -q "^db=adminhelper_test_nu$" "$MAIN/.vm/lanes/nu" 2>/dev/null \
+  && ok "a failing dropdb leaves the mark with its db line" || bad "done nu rc=$rc: $(cat "$MAIN/.vm/lanes/nu" 2>&1)"
+lane "done" nu && [ ! -e "$MAIN/.vm/lanes/nu" ] && ok "and the next done finishes it" \
+  || bad "done nu again: $(cat "$WORK/out.log")"
+# xi: no .devenv.sh at new — no database, so nothing for done to drop, and a
+# later hand-made adminhelper_test_xi is not the lane's.
+mv "$MAIN/.devenv.sh" "$WORK/devenv.saved"
+: > "$PG_LOG"
+lane new xi || bad "new xi without .devenv.sh failed: $(cat "$WORK/out.log")"
+! grep -qE '^(db|venv)=' "$MAIN/.vm/lanes/xi" 2>/dev/null && [ ! -s "$PG_LOG" ] \
+  && ok "new without .devenv.sh: no database, and the mark names none" || bad "mark xi: $(cat "$MAIN/.vm/lanes/xi" 2>&1)"
+mv "$WORK/devenv.saved" "$MAIN/.devenv.sh"
+lane "done" xi; rc=$?
+[ "$rc" = 0 ] && [ ! -s "$PG_LOG" ] && [ ! -e "$MAIN/.vm/lanes/xi" ] \
+  && ok "done drops nothing it did not make, and the mark goes" || bad "done xi rc=$rc pg=$(cat "$PG_LOG")"
+lane new xi && ok "so the slug is free again" || bad "new xi again: $(cat "$WORK/out.log")"
+lane "done" xi || bad "done xi (second): $(cat "$WORK/out.log")"
+# omicron: a percent-encoded password reaches PGPASSWORD decoded.
+cp "$MAIN/.devenv.sh" "$WORK/devenv.saved"
+printf 'export AH_TEST_DB="postgresql+psycopg://ah:p%%40ss%%25w@localhost:5432/adminhelper_test"\n' > "$MAIN/.devenv.sh"
+: > "$PG_LOG"
+lane new omicron || bad "new omicron: $(cat "$WORK/out.log")"
+grep -qx "createdb pw=p@ss%w --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_omicron" "$PG_LOG" \
+  && ok "%40 and %25 in the password arrive as @ and %" || bad "omicron: $(cat "$PG_LOG")"
+lane "done" omicron || bad "done omicron: $(cat "$WORK/out.log")"
+mv "$WORK/devenv.saved" "$MAIN/.devenv.sh"
+! grep -q "PGPASSWORD" "$ENV_LOG" && ok "and no env on the PATH ever saw PGPASSWORD in its arguments" \
+  || bad "env saw: $(grep PGPASSWORD "$ENV_LOG")"
 
 echo "── done: refuses while something still works in the lane ──"
 lane new theta || bad "new theta failed: $(cat "$WORK/out.log")"

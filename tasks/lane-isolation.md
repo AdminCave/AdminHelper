@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: bereit · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
@@ -81,6 +81,18 @@ Review: approve (sonnet, 2. Runde)
 Änderung: Befund aus dem Opus-Review der Aufsicht: `${XDG_RUNTIME_DIR:-$HOME/.cache}` ist je Nutzer. Die Doku verspricht „alle Checkouts dieser Box“, aber der Runner-Nutzer hätte seine eigene Datei; zwei Läufe desselben Nutzers mit und ohne `XDG_RUNTIME_DIR` sperren sogar zwei verschiedene Dateien. Fix: fester Pfad `$HOME/.cache/adminhelper-py.lock`. Die Doku sagt dann ehrlich „je Nutzer, über alle seine Checkouts“, mit dem Satz, dass Runner-Läufe ab Stufe 7 eine nutzerübergreifende Sperre brauchen. Die trägt die Aufsicht als Roadmap-Zeile ein; hier wird sie nicht gebaut. Mitnehmen: AUTONOMOUS.md „Fast-Suite: vm“ behauptet, die Lane habe keine lokalen Toolchain-Artefakte (venvs …), obwohl sie jetzt verlinkte Venvs hat. Nicht anfassen: `feature-build/SKILL.md` und `feature-plan/SKILL.md`, die gehören zu R-0065. Test: zwei gleichzeitige Läufe mit verschiedenem `XDG_RUNTIME_DIR` laufen trotzdem nacheinander.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md „Python-Tests lokal“ · AUTONOMOUS.md „Parallel-Betrieb“ · CHANGELOG
+
+### T7 — Die Marke hält fest, was new wirklich angelegt hat (Re-Review)  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @b7361b80 2026-09-23T15:48:13+02:00
+Review: approve (sonnet)
+Änderung: Drei kleine Defekte aus dem Re-Review der Aufsicht über T5/T6.
+(1) Mittel, reproduziert: Die Marke entsteht auch ohne `.devenv.sh`, also ohne DB. `done` warnt dann „NOT dropped“ und lässt die Marke stehen, `new` verweigert „never closed“, und das dreht sich im Kreis. Legt später jemand die DB von Hand an, löscht `done` sie. Fix: Die Marke nennt, was `new` angelegt hat, als Zeilen `db=<name>` (nur nach erfolgreichem `createdb`) und `venv=<pfad>`. `done` löscht nur, was dort steht, warnt nur dafür und entfernt die Marke, sobald nichts mehr drinsteht.
+(2) Niedrig: `env "${envp[@]}" createdb` legt `PGPASSWORD=<klartext>` kurz in das argv von `env`. Fix: in einer Subshell `export`, dann `exec createdb`/`dropdb`.
+(3) Niedrig: Eine Lane ohne Marke (vor T5) bekam „not this lane's“. Fix: ehrlich „Eigentümer unbekannt“ mit dem Weg von Hand.
+Tests, die bei Rücknahme rot werden: `dropdb` scheitert ⇒ die Marke bleibt; `new` ohne `.devenv.sh` ⇒ keine DB-Zeile, `done` löscht nichts, ein erneutes `new` geht; Prozent-Dekodierung im Passwort (`%40`, `%25`); ein `env`-Wrapper im PATH sieht `PGPASSWORD` nie.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md (Marke, „never closed“, Ausweg) · Kopf von lane.sh
 
 ## Abschluss-Beweis (nach T4, vor dem PR)
 

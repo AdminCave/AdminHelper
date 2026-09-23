@@ -16,8 +16,12 @@
 #                                         committed on feature/<slug> (else on main)
 #   bash scripts/dev/lane.sh done <slug>  destroy the lane's VMs, then remove
 #                                         worktree + branch (branch only if merged),
-#                                         the lane's test database and its venv;
-#                                         refuses while a process works in the lane
+#                                         and what the lane's mark .vm/lanes/<slug>
+#                                         records (test database, venv); refuses while
+#                                         a process works in the lane
+#   A mark that outlives `done` (no .devenv.sh, dropdb failed) makes `new <slug>`
+#   refuse as "never closed": run `done <slug>` again, or drop the database by
+#   hand and remove the mark.
 #   bash scripts/dev/lane.sh list         worktrees + their warm boxes
 set -euo pipefail
 
@@ -58,28 +62,32 @@ EOF
 # plain postgresql://, and --maintenance-db takes a whole connection string.
 # The file is sourced with -e/-u off: it is written for an interactive shell,
 # and nvm.sh in it does not survive `set -u`.
-lane_db() {  # lane_db create|drop <slug>
+lane_db_url() {  # the main checkout's AH_TEST_DB as a libpq URL, or nothing
+  [ -f "$ROOT/.devenv.sh" ] || return 0
   local url
   url="$(set +eu; . "$ROOT/.devenv.sh" >/dev/null 2>&1; printf '%s' "${AH_TEST_DB:-}")"  # review: ok sources an interactive-shell file, silences no test
-  if [ -z "$url" ]; then
-    echo "  no AH_TEST_DB in .devenv.sh — no database of the lane's own"
-    return 0
-  fi
-  url="$(printf '%s' "$url" | sed -E 's#^postgresql\+[a-z0-9]+://#postgresql://#')"
-  # The password travels in the environment, not on the command line: every local
-  # user can read a process's arguments (/proc/<pid>/cmdline), only its owner its
-  # environment. The URL percent-encodes the password; PGPASSWORD takes it raw.
-  local pass="" envp=()
+  [ -n "$url" ] || return 0
+  printf '%s' "$url" | sed -E 's#^postgresql\+[a-z0-9]+://#postgresql://#'
+}
+
+lane_db() {  # lane_db create|drop <slug> — on the server lane_db_url names
+  local url pass=""
+  url="$(lane_db_url)"
+  # The password travels in the environment, and not through `env`'s arguments
+  # either: every local user can read a process's arguments (/proc/<pid>/cmdline),
+  # only its owner its environment. The URL percent-encodes the password;
+  # PGPASSWORD takes it raw.
   if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
     pass="${BASH_REMATCH[2]}"
     url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
     pass="${pass//\\/\\\\}"
     pass="$(printf '%b' "${pass//%/\\x}")"
   fi
-  [ -n "$pass" ] && envp=(PGPASSWORD="$pass")
   case "$1" in
-    create) env "${envp[@]}" createdb --maintenance-db="$url" "$(lane_db_name "$2")" ;;
-    drop)   env "${envp[@]}" dropdb --if-exists --maintenance-db="$url" "$(lane_db_name "$2")" ;;
+    create) ( [ -z "$pass" ] || export PGPASSWORD="$pass"
+              exec createdb --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;
+    drop)   ( [ -z "$pass" ] || export PGPASSWORD="$pass"
+              exec dropdb --if-exists --maintenance-db="$url" "$(lane_db_name "$2")" ) ;;
   esac
 }
 
@@ -87,7 +95,10 @@ lane_db() {  # lane_db create|drop <slug>
 # outlives a worktree somebody removed by hand. `done` takes a slug's database
 # and venv only when the mark says `new` made them: the names are guessable,
 # and without it `done fable` dropped a hand-made adminhelper_test_fable and
-# ~/.cache/ah-venv-fable (review, 2026-09-23).
+# ~/.cache/ah-venv-fable (review, 2026-09-23). It names what `new` really made,
+# one `db=`/`venv=` line each, and `done` takes exactly that: a mark without a db
+# line (no .devenv.sh at `new`) must not let a later, hand-made database of the
+# lane's name go down with the lane.
 lane_mark() { printf '%s/.vm/lanes/%s' "$ROOT" "$1"; }
 
 # lane_link_dir <worktree> <dir> — link every entry of the main checkout's <dir>
@@ -131,7 +142,10 @@ lane_new() {
   # without a mark is somebody's handwork. Adopting either would make `done`
   # take it later.
   if [ -e "$(lane_mark "$slug")" ]; then
-    echo "lane $slug was never closed ($(lane_mark "$slug")) — run: bash scripts/dev/lane.sh done $slug"
+    echo "lane $slug was never closed — $(lane_mark "$slug") still names:"
+    grep -E '^(db|venv)=' "$(lane_mark "$slug")" | sed 's/^/  /'
+    echo "Run: bash scripts/dev/lane.sh done $slug (it needs the main checkout's .devenv.sh"
+    echo "to drop the database), or drop it by hand and remove the mark."
     exit 1
   fi
   if [ -e "$(lane_venv "$slug")" ]; then
@@ -142,16 +156,24 @@ lane_new() {
   # (the name is taken) must leave nothing behind, and every step after it takes
   # back what came before. The mark's directory is made before anything else.
   mkdir -p "$ROOT/.vm/lanes"
-  if [ -f .devenv.sh ]; then
+  local made_db=0
+  if [ -n "$(lane_db_url)" ]; then
     lane_db create "$slug" || {
       echo "  createdb $(lane_db_name "$slug") failed — nothing of lane $slug was created."
       echo "  If that database exists and belongs to no lane, pick another slug."
       exit 1
     }
+    made_db=1
+  elif [ -f .devenv.sh ]; then
+    echo "  no AH_TEST_DB in .devenv.sh — no database of the lane's own"
   fi
-  if ! printf 'lane %s, created %s\n' "$slug" "$(date -Is)" > "$(lane_mark "$slug")"; then
+  if ! {
+    printf 'lane %s, created %s\n' "$slug" "$(date -Is)"
+    [ "$made_db" = 0 ] || printf 'db=%s\n' "$(lane_db_name "$slug")"
+    [ ! -f .devenv.sh ] || printf 'venv=%s\n' "$(lane_venv "$slug")"
+  } > "$(lane_mark "$slug")"; then
     echo "  could not write the mark $(lane_mark "$slug") — taking the database back"
-    [ ! -f .devenv.sh ] || lane_db drop "$slug" \
+    [ "$made_db" = 0 ] || lane_db drop "$slug" \
       || echo "  dropdb failed too — $(lane_db_name "$slug") is left behind, drop it by hand"
     exit 1
   fi
@@ -163,7 +185,7 @@ lane_new() {
   fi
   if [ "$added" = 0 ]; then
     echo "  git worktree add failed — taking back the database and the mark"
-    if [ -f .devenv.sh ] && ! lane_db drop "$slug"; then
+    if [ "$made_db" = 1 ] && ! lane_db drop "$slug"; then
       # The mark stays: it is what lets a later `done` drop this database.
       echo "  dropdb failed too — run: bash scripts/dev/lane.sh done $slug"
       exit 1
@@ -269,23 +291,45 @@ lane_done() {
       || { echo "worktree not clean — inspect it, then: git worktree remove --force $wt"; exit 1; }
   fi
   # The lane's database and venv go with it, only after the worktree (when that
-  # refused to go, nothing of the lane has been taken yet), and only when the
-  # mark says they are the lane's.
-  if [ ! -e "$(lane_mark "$slug")" ]; then
-    echo "  no ownership mark for lane $slug — database $(lane_db_name "$slug") and"
-    echo "  $(lane_venv "$slug") are not this lane's, if they exist at all; left alone"
-  elif [ -f "$ROOT/.devenv.sh" ]; then
-    lane_db drop "$slug" \
-      || { echo "  dropdb failed — database $(lane_db_name "$slug") is left behind"; exit 1; }
-    rm -rf "$(lane_venv "$slug")"
-    rm -f "$(lane_mark "$slug")"
+  # refused to go, nothing of the lane has been taken yet), and only what the
+  # mark names. Each entry leaves the mark once it is gone; the mark goes when
+  # it names nothing any more.
+  local mark db venv
+  mark="$(lane_mark "$slug")"
+  if [ ! -e "$mark" ]; then
+    echo "  no ownership mark for lane $slug: owner unknown, nothing dropped or removed."
+    echo "  If this was a lane from before the marks, remove its leftovers by hand:"
+    echo "    dropdb $(lane_db_name "$slug");  rm -rf $(lane_venv "$slug")"
   else
-    # Without the file there is no telling which server holds the database, and a
-    # database left behind silently is the leak this command exists to prevent.
-    # The mark stays, so a later `done` still knows the database is the lane's.
-    echo "  WARN: no .devenv.sh in the main checkout — database $(lane_db_name "$slug") is NOT dropped;"
-    echo "        drop it by hand on the server AH_TEST_DB named (dropdb $(lane_db_name "$slug"))"
-    rm -rf "$(lane_venv "$slug")"
+    db="$(sed -n 's/^db=//p' "$mark")"
+    venv="$(sed -n 's/^venv=//p' "$mark")"
+    if [ -n "$db" ]; then
+      if [ -z "$(lane_db_url)" ]; then
+        # Without the file there is no telling which server holds the database,
+        # and a database left behind silently is the leak this command exists to
+        # prevent. The db line stays, so a later `done` still knows it.
+        echo "  WARN: no AH_TEST_DB in the main checkout's .devenv.sh — database $db is NOT dropped;"
+        echo "        drop it by hand on the server AH_TEST_DB named (dropdb $db), or run done again"
+      else
+        lane_db drop "$slug" \
+          || { echo "  dropdb failed — database $db is left behind, and so is the mark"; exit 1; }
+        sed -i '/^db=/d' "$mark"
+      fi
+    fi
+    if [ -n "$venv" ]; then
+      # Only the path new would have written — the mark is a file anybody can edit.
+      if [ "$venv" = "$(lane_venv "$slug")" ]; then
+        rm -rf "$venv"
+        sed -i '/^venv=/d' "$mark"
+      else
+        echo "  WARN: the mark names venv $venv, not $(lane_venv "$slug") — left alone"
+      fi
+    fi
+    if grep -qE '^(db|venv)=' "$mark"; then
+      echo "  mark kept ($mark): it still names what is left"
+    else
+      rm -f "$mark"
+    fi
   fi
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git branch -d "$branch" 2>/dev/null && echo "  branch $branch deleted (was merged)" \
