@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: aktiv · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
@@ -157,3 +157,10 @@ danach von Hand gelöscht (`git branch -D feature/probe-lane`). Nachkontrolle:
 | server pytest | 5:08 | 6:16, davon rund 50 s Venv-Installation ohne DB-Sitzung |
 | Schemathesis | 6:42 | 6:34 |
 | Warten auf die Sperre | 6:16 (vor Schemathesis) | 5:01 (vor pytest) und 6:42 (vor Schemathesis) |
+
+**Nach dem Beweis (T5, T6 aus dem Opus-Review der Aufsicht):** Eigentumsmarke für DB und Venv,
+`createdb` vor dem Worktree, `PGPASSWORD` und die Längengrenze (T5); dazu der feste Sperrpfad
+`~/.cache/adminhelper-py.lock` statt `$XDG_RUNTIME_DIR` (T6). Der Beweis oben lief noch mit dem
+alten Pfad (`/run/user/1000/…`). Die Reihenfolge der Sperre ist davon unberührt, und laut der
+Aufsicht ist kein neuer Lane-Durchlauf nötig. Der Überlappungstest in `lane_test.sh` ist seit T6
+deterministisch: Er war seit T2 zeitabhängig und auf der belasteten Box einmal rot.
