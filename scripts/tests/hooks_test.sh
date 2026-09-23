@@ -638,16 +638,22 @@ python3 - "$REPO_ROOT/.claude/settings.json" <<'PY' && ok "git add/commit/checko
 import json, sys
 p = json.load(open(sys.argv[1]))["permissions"]
 allow, ask = set(p["allow"]), set(p["ask"])
-must_ask = {"Bash(git add:*)", "Bash(git commit:*)", "Bash(git checkout:*)",
-            "Bash(git restore:*)", "Bash(git stash:*)",
-            "Bash(bash scripts/dev/harness.sh off:*)",
+# The five git commands used to sit here. They were moved to where their
+# addressee is — the runner's own settings deny them outright. In THIS file they
+# would stop every supervised build on a prompt that is always confirmed (two
+# workers lost 45 minutes each to it on 2026-09-22), and an allow exception is
+# not expressible because ask beats allow. never_ask keeps them from returning.
+must_ask = {"Bash(bash scripts/dev/harness.sh off:*)",
             "Bash(bash scripts/dev/ledger.sh mark-done:*)"}
+never_ask = {"Bash(git add:*)", "Bash(git commit:*)", "Bash(git checkout:*)",
+             "Bash(git restore:*)", "Bash(git stash:*)"}
 must_allow = {"Bash(bash scripts/dev/task-close.sh:*)", "Bash(bash scripts/dev/review.sh:*)",
               "Bash(bash scripts/dev/ledger.sh start:*)",
               "Bash(bash scripts/dev/harness.sh status:*)"}
 never_allow = {"Bash(bash scripts/dev/harness.sh:*)", "Bash(bash scripts/dev/ledger.sh:*)",
                "Bash(git push:*)", "Bash(gh:*)"}
-sys.exit(0 if must_ask <= ask and must_allow <= allow and not (never_allow & allow) else 1)
+sys.exit(0 if must_ask <= ask and must_allow <= allow
+         and not (never_allow & allow) and not (never_ask & ask) else 1)
 PY
 
 # ══ the real repo: the marker must never be committable ═══════════════════════

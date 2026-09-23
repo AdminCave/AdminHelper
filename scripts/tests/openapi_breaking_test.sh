@@ -92,6 +92,10 @@ case "$LAST" in
   *) bad "unexpected oasdiff arguments: $LAST" ;;
 esac
 case "$LAST" in
+  *"--severity-levels"*oasdiff-severity.levels*) ok "the narrowing exception is handed to oasdiff" ;;
+  *) bad "no --severity-levels in the call: $LAST" ;;
+esac
+case "$LAST" in
   "breaking "*" $REL "*|"breaking "*" $REL") ok "second operand is the working-tree snapshot" ;;
   *) bad "working-tree snapshot is not the second operand: $LAST" ;;
 esac
@@ -143,6 +147,29 @@ run_case "unresolvable base ref -> exit 2" 2 "does not resolve" -- server --base
 # would let a deleted snapshot pass the gate as "not verified" rather than red.
 REPO="$WORK/r6"; fixture "$REPO" yes; rm -f "$REPO/$REL"
 run_case "missing working-tree snapshot -> exit 2" 2 "--update-openapi-snapshot" -- server --base HEAD --root "$REPO"
+
+# ── the severity file itself ─────────────────────────────────
+# oasdiff rejects the whole file over one bad line, and it does so at gate time —
+# on a box without oasdiff nobody would notice until CI. Its parser takes exactly
+# two whitespace-separated fields per line and allows neither comments nor blank
+# lines (checker/level.go:42 @v1.32.0), so the format is checked here.
+LEVELS="$HERE/../dev/oasdiff-severity.levels"
+if [ -r "$LEVELS" ]; then
+  awk 'NF!=2 { bad=1; print "  line " NR ": " $0 } END { exit bad?1:0 }' "$LEVELS" >/dev/null \
+    && ok "every line has exactly two fields" || bad "a line is not two fields — oasdiff would refuse the file"
+  [ -z "$(awk '$2 != "warn"' "$LEVELS")" ] \
+    && ok "every rule is lowered to warn, none to none/info" || bad "a rule is set to something other than warn"
+  [ "$(cut -d' ' -f1 "$LEVELS" | sort | uniq -d | wc -l)" -eq 0 ] \
+    && ok "no rule id appears twice" || bad "a rule id appears twice"
+  # The list is deliberately closed: only "a bound was added" is lowered, so a rule
+  # that creeps in here later has to be argued for in the ledger, not just added.
+  EXPECTED="request-body-exclusive-max-set request-body-exclusive-min-set request-body-max-set request-body-min-set request-parameter-exclusive-max-set request-parameter-exclusive-min-set request-parameter-max-set request-parameter-min-set request-property-exclusive-max-set request-property-exclusive-min-set request-property-max-set request-property-min-set"
+  [ "$(cut -d' ' -f1 "$LEVELS" | sort | tr '\n' ' ')" = "$EXPECTED " ] \
+    && ok "exactly the twelve narrowing rules, nothing else" \
+    || bad "the rule list drifted: $(cut -d' ' -f1 "$LEVELS" | sort | tr '\n' ' ')"
+else
+  bad "scripts/dev/oasdiff-severity.levels is missing"
+fi
 
 echo "openapi_breaking_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

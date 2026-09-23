@@ -94,8 +94,31 @@ grep -q '"openapi"' "$BASE_FILE" || {
   exit 2
 }
 
+# A newly set `minimum`/`maximum` on an input is ERR for oasdiff: it narrows the
+# accepted set, and narrowing is a breaking change in the general case. Here it is
+# the opposite of one — the values that become invalid answer with HTTP 500 today
+# (autonomy roadmap R-0052), so no client lives off them: one that sends valid
+# values notices nothing, one that sends invalid values gets a validation error
+# instead of a server error. oasdiff cannot tell those two cases apart, so the
+# twelve rules that mean exactly "a bound was added" run as WARN.
+#
+# Everything else stays ERR — removed endpoints, removed or renamed response
+# fields, new required request fields, tightened types, changed status codes. That
+# is why this is a named list and not `--fail-on WARN`.
+#
+# The file carries no reasons of its own: oasdiff's parser wants exactly two fields
+# per line and rejects comments and blank lines (checker/level.go:42 @v1.32.0).
+# If it is missing, the gate stays strict rather than quietly loosening.
+SEVERITY="$(dirname "$0")/oasdiff-severity.levels"
+SEV_ARGS=()
+if [ -r "$SEVERITY" ]; then
+  SEV_ARGS=(--severity-levels "$SEVERITY")
+else
+  echo "note: $SEVERITY is missing — running without the narrowing exception" >&2
+fi
+
 echo "oasdiff breaking $BASE:$REL -> working tree"
-oasdiff breaking "$BASE_FILE" "$REL" --fail-on ERR --format text
+oasdiff breaking "$BASE_FILE" "$REL" --fail-on ERR --format text ${SEV_ARGS[@]+"${SEV_ARGS[@]}"}
 rc=$?
 case "$rc" in
   0) echo "$COMPONENT: no breaking changes against $BASE" ;;

@@ -59,7 +59,9 @@ Dateien schreiben. Wo ein Skill heute am Ende pushen oder einen PR öffnen will,
 Entscheidung. Innerhalb des Pools `adminhelper-ci` darf Claude VMs klonen, baken und zerstören (Freigabe
 2026-09-08). **Committen tut seit Stufe 4 `scripts/dev/task-close.sh`, nicht die Session:** es fährt das
 `Verify:` der Task, prüft Diff-Scan, Scope und Sec-Sperre, setzt den Haken mit der Summary-Zeile als
-Evidenz und committet Code + Ledger; `git add|commit|checkout|restore|stash` prompten seitdem.
+Evidenz und committet Code + Ledger. Für den **Runner** sind `git add|commit|checkout|restore|stash`
+in seinen Settings hart verboten; in Kevins Sessions prompten sie nicht — eine Abfrage, die immer
+bestätigt wird, hält nur den Bau auf (zwei Worker verloren daran je 45 Minuten).
 **Harness-Schutz:** ein PreToolUse-Hook verweigert im autonomen Lauf Änderungen an den Dateien aus
 `scripts/dev/harness-paths.txt` (Regeln, Skills, Gates) — bei Shell-Kommandos best effort, interaktiv
 warnt er nur.
