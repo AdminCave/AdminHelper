@@ -156,11 +156,34 @@ DATABASE_URL="postgresql+psycopg://adminhelper:adminhelper@localhost:5432/adminh
   apps/server/.venv/bin/python -m pytest -q
 ```
 
-**Immer nur ein `server`-Lauf zur Zeit.** Alle Läufe teilen sich diese eine Test-DB, und die
-Alembic-Smoke legt darin pro Lauf eine Wegwerf-DB an: zwei gleichzeitige Läufe räumen
-einander die Tabellen weg. Das Ergebnis ist dann **verworfen, nicht rot** — es sagt weder
-„grün" noch „kaputt", nur „nichts bewiesen". Also einen Lauf starten, seine Summary-Zeile
-abwarten, dann den nächsten.
+**Eine Lane hat ihre eigene Test-DB.** `bash scripts/dev/lane.sh new <slug>` legt auf demselben
+Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt der Lane eine eigene
+`.devenv.sh`: Sie sourct die des Haupt-Checkouts und biegt danach `AH_TEST_DB` auf diese DB und
+`AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
+braucht dafür `CREATEDB`, die sie oben ohnehin hat.
+Was `new` angelegt hat, steht in der Marke `.vm/lanes/<slug>` des Haupt-Checkouts (`db=`, `venv=`),
+und `done` löscht genau das, nichts sonst; eine DB oder ein Venv gleichen Namens, das keine Lane
+angelegt hat, bleibt stehen. Kann `done` einen Eintrag nicht entfernen (etwa ohne `.devenv.sh` oder
+weil `dropdb` scheitert), bleibt die Marke, und `new <slug>` verweigert den Slug als „never closed".
+Ausweg: `done <slug>` erneut aufrufen, sobald die Ursache weg ist, oder die DB von Hand löschen und
+die Marke entfernen.
+
+**Die schweren Python-Schritte laufen je Nutzer nacheinander.** `server-pytest` und
+`schemathesis` holen in `run.sh` vor dem Start eine Sperre (`flock` auf
+`~/.cache/adminhelper-py.lock`), gleich aus welchem seiner Checkouts: zwei Server-Suiten auf
+einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM-Killer. Die
+Sperre gilt **je Unix-Nutzer**, über alle seine Checkouts; Läufe eines anderen Nutzers — ab
+Stufe 7 der Runner — teilen sie nicht, dafür braucht es noch eine nutzerübergreifende Sperre.
+Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält, und **wartet** — bis
+`AH_PY_LOCK_WAIT` Sekunden (Default 3600). Danach gibt er als SKIP mit Grund auf, unter
+`--strict` also `strict-failed`: nicht gelaufen, kein Befund über den Code. Alle anderen Schritte
+laufen weiter parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für eine Box, auf der
+ohnehin nur ein Lauf existiert.
+
+Wer `pytest` von Hand startet statt über `run.sh`/`verify.sh`, läuft an der Sperre vorbei. Dann
+gilt weiter: **ein `server`-Lauf zur Zeit** je Test-DB. Zwei gleichzeitige Läufe räumen einander
+die Tabellen weg (die Alembic-Smoke legt pro Lauf eine Wegwerf-DB an), und das Ergebnis ist
+**verworfen, nicht rot** — es sagt weder „grün" noch „kaputt", nur „nichts bewiesen".
 
 ### Schnelltest einer Komponente: verify.sh
 

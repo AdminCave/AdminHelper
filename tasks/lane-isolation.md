@@ -1,0 +1,185 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
+Status: erledigt · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
+Fast-Suite: lokal · Warm-Profil: desktop
+Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
+DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+Roadmap: Als Nächstes Nr. 2 (Voraussetzung für zwei parallele Python-Bauten) · Hängt ab von: —
+
+## Warum — fünf Belege, alle aus echten Läufen
+
+1. **2026-09-18, geteilte Test-DB:** `lane.sh new` verlinkt `.devenv.sh` in die Lane, beide Checkouts zeigen auf dieselbe `AH_TEST_DB`. Die `pg_engine`-Fixture des Stufe-4-Laufs räumte per `drop_all` ab, im parallelen 8b-Lauf hieß es dann „Relation users existiert nicht“, und zwei Läufe waren entwertet.
+2. **2026-09-21, OOM:** Zwei Schemathesis-Läufe gleichzeitig, einer in der Lane und einer im Haupt-Checkout. Die Dev-Box (32 GB) hat den OOM-Killer ausgelöst.
+3. **2026-09-22, parallele pytest-Sitzungen** auf derselben DB, wieder ein entwerteter Lauf.
+4. **2026-09-22, Session im gelöschten Verzeichnis:** `lane.sh done` hat die 8b-Lane entfernt, während eine Worker-Session mit Arbeitsverzeichnis darin noch lief. Die Session hing danach in einem gelöschten cwd und war nicht mehr arbeitsfähig.
+5. **2026-09-23, Verifikation im Worktree:** Für die PR-Prüfung von #38 musste ich eine eigene Test-DB, ein eigenes Venv und das CI-`ruff` von Hand in einen Worktree legen. Ohne `.devenv.sh` findet `run.sh` kein `ruff`, und der Lauf endet `strict-failed`. Die lokalen Cache-Venvs haben außerdem ein neueres `ruff` (0.16.8) als CI (0.15.20). Die Komponenten-Venvs des Haupt-Checkouts tragen das CI-`ruff` (R-0074).
+
+## Entschieden am Gate (Kevin, 2026-09-23)
+
+1. **Umfang der Sperre (T2):** nur `server-pytest` und `schemathesis`, also genau die zwei Schritte, die real kollidiert sind. Monitoring- und ca-issuer-pytest bleiben parallel.
+2. **Belegte Sperre:** warten und das sichtbar melden; erst nach `AH_PY_LOCK_WAIT` (3600 s) als Selbst-Skip mit Grund aufgeben.
+3. **Freigabe:** erteilt. Worker 2 baut im Haupt-Checkout, die Aufsichts-Session verifiziert.
+
+## Ablauf der Plan-Dateien (Kevins Entscheidung vom 2026-09-22, Roadmap R-0065)
+
+Spec und Ledger sind der **erste Commit des Feature-Branches**, gesetzt am Gate. Eine Lane checkt diesen Branch aus und sieht den Plan damit von selbst. Das Kopieren nicht eingecheckter Plan-Dateien, wie es die alte Fassung von T2 vorsah, entfällt deshalb. Die Anpassung von `feature-plan/SKILL.md` und `AUTONOMOUS.md` an R-0065 bleibt ein eigenes Vorhaben. Hier wird nur `lane.sh` passend gemacht.
+
+### T1 — Test-DB und Python-Venv je Lane  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh (neu, SPDX), scripts/tests/run.sh (nur `AH_SCRIPT_TESTS_DEFAULT`), DEVELOPMENT.md, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @f3bec736 2026-09-23T13:54:07+02:00
+Review: approve (sonnet, 2. Runde); danach Diff-Scan-Nachbesserung: review-ok am set +eu, done-Exit im Test geprüft
+Änderung: `lane.sh new <slug>` legt statt des Symlinks eine eigene `.devenv.sh` in die Lane. Sie sourct Kevins Datei und überschreibt danach zwei Werte: `AH_TEST_DB` auf die Datenbank `adminhelper_test_<slug>` (Bindestriche werden zu `_`) und `AH_VENV` auf `~/.cache/ah-venv-<slug>`, nie `/tmp`. `new` legt die DB mit der bestehenden Rolle an (`createdb`, die Rolle hat `CREATEDB`, geprüft am 2026-09-23). `lane.sh done` löscht die DB (`dropdb --if-exists`) und das Lane-Venv. Test: Er läuft hermetisch mit Fake-`createdb`/`dropdb` im PATH, die ihre Aufrufe protokollieren, und einem Wegwerf-Git-Repo als Haupt-Checkout. Geprüft wird: Die Lane-`.devenv.sh` ergibt eine andere `AH_TEST_DB` als der Haupt-Checkout, `done` löscht genau diese DB, und ein Slug mit Sonderzeichen erreicht nie `createdb`. Gegenprobe: Mit dem alten Symlink wird der Test rot.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md „Python-Tests lokal“ (eine DB je Lane) · AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 2)
+
+### T2 — Host-weite Lauf-Sperre für die schweren Python-Schritte  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @bb7152be 2026-09-23T14:02:51+02:00
+Review: approve (sonnet); Nit held-by-Meldung übernommen
+Änderung: `run_py_step` ist die einzige Stelle, durch die jeder Python-Schritt läuft. Dort holen die schweren Schritte (`server-pytest`, `schemathesis`) vorher ein `flock` auf eine host-weite Sperrdatei unter `${XDG_RUNTIME_DIR:-$HOME/.cache}`. Ist die Sperre belegt, **wartet** der Schritt und meldet einmal sichtbar, dass und worauf er wartet; er schlägt nicht fehl. Nach `AH_PY_LOCK_WAIT` Sekunden (Default 3600) gibt er auf. Das Aufgeben ist ein Selbst-Skip mit Grund (Exit 75, der Weg, den `run_py_step` schon kennt), kein FAIL. Unter `--strict` wird der Lauf damit rot, bleibt aber als „nicht gelaufen“ erkennbar, nicht als Befund über den Code. Die übrigen Schritte bleiben parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für VMs, auf denen nur ein Lauf existiert. Test: Zwei gleichzeitige Aufrufe mit einem Stub-Schritt laufen nacheinander statt überlappend (Zeitstempel-Protokoll). Eine belegte Sperre mit kurzer Wartezeit endet als SKIP mit Grund, unter `--strict` als `strict-failed`.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md „Python-Tests lokal“ (Sperre, Wartezeit, Abschalter) · AUTONOMOUS.md „Parallel-Betrieb“ (ersetzt „nur ein server-Lauf zur Zeit“ als Absprache)
+Abhängt von: T1 (gemeinsames Testskript)
+
+### T3 — Die Lane hat, was sie zum Bauen braucht  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @4769330d 2026-09-23T14:12:55+02:00
+Review: approve (sonnet, 2. Runde)
+Änderung: `lane.sh new` prüft den Plan dort, wo er nach R-0065 liegt. Existiert `feature/<slug>`, muss `tasks/<slug>.md` **auf diesem Branch** stehen, sonst auf `main`. Fehlt er an beiden Stellen, bricht `new` mit einer klaren Meldung ab, statt wie heute nur zu warnen. Dazu legt `new` zwei Symlinks in die Lane. Das frpc-Sidecar `apps/desktop/src-tauri/binaries/frpc-*` ist gitignored, `cargo test` braucht es aber. Die Komponenten-Venvs `apps/{server,monitoring,ca-issuer}/.venv` des Haupt-Checkouts werden nur gelesen, damit `run.sh` das CI-gepinnte `ruff` findet statt keins. Test: Ein Plan nur auf dem Branch wird gefunden. Ein fehlender Plan bricht `new` ab, bevor ein Worktree entsteht. Die Symlinks zeigen in den Haupt-Checkout.
+Im Bau präzisiert: kein Symlink **an der Stelle** von `binaries/` bzw. `.venv`, sondern ein echtes Verzeichnis mit einem Link je Eintrag (`lane_link_dir`). .gitignore matcht beide mit Schrägstrich nur als Verzeichnis; ein Symlink dort wäre eine untrackte Datei — laut in `git status`, einen `git add -A` vom Commit entfernt, und `git worktree remove` in `done` hielte die Lane für unsauber. „Nur lesend“ ist die Nutzung, keine Sperre: installiert wird in `AH_VENV`, dem Venv der Lane.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 1 und 2: der Plan liegt auf dem Branch, `lane.sh new` reicht)
+Abhängt von: T1
+
+### T4 — `lane.sh done` räumt keine Lane ab, in der noch etwas läuft  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, AUTONOMOUS.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @6a4ad1f8 2026-09-23T14:19:28+02:00
+Review: approve (sonnet); Nit /proc-Kommentar übernommen
+Änderung: Bevor `done` VMs oder Worktree anfasst, sucht es Prozesse, deren Arbeitsverzeichnis im Worktree der Lane liegt (`/proc/<pid>/cwd`, eigene Prozesse des Nutzers). Findet es welche, bricht es ab, nennt PID und Kommando und sagt, was zu tun ist: die Session in der Lane beenden und dann `done` erneut aufrufen. Einen Force-Schalter gibt es nicht; das wäre genau der Handgriff, der am 2026-09-22 die Session zerstört hat. Test: Ein Hintergrundprozess mit cwd in einer Fake-Lane lässt `done` mit Exit ≠ 0 abbrechen, VMs und Worktree bleiben unangetastet (Fake-`vm.py`/`reap.sh` protokollieren nichts). Ohne diesen Prozess läuft `done` durch.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 4)
+Abhängt von: T1
+
+### T5 — Lane-Ressourcen gehören der Lane (Opus-Review)  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @fb2d98d8 2026-09-23T15:12:13+02:00
+Review: approve (sonnet, 2. Runde)
+Änderung: Befund aus dem Opus-Review der Aufsicht über den Branch-Diff, nachgestellt: Das Namensschema kollidiert mit Handarbeit. Auf der Box liegen `adminhelper_test_fable` und `~/.cache/ah-venv-fable`, eine Verifikations-DB der Aufsicht. `lane.sh new fable` legt erst den Worktree an, scheitert dann an `createdb` und empfiehlt `done && new`. `done fable` löscht die fremde DB und das fremde Venv, sogar ohne Lane und mit Exit 0. Fix: `createdb` vor `git worktree add`; ein Fehlschlag lässt nichts zurück und empfiehlt kein `done`. `new` legt eine Eigentumsmarke `.vm/lanes/<slug>` im Haupt-Checkout an, die einen von Hand gelöschten Worktree übersteht; `done` löscht DB und Venv nur mit dieser Marke. Nits: Das DB-Passwort geht per `PGPASSWORD` statt in der `--maintenance-db`-URL, die in `/proc/<pid>/cmdline` für andere lokale Nutzer lesbar ist. `check_slug` bekommt eine Längengrenze (40), weil Postgres Bezeichner bei 63 Bytes kürzt. Tests: `createdb` schlägt fehl ⇒ kein Worktree, keine Marke; `done` ohne Marke rührt eine gleichnamige DB und ein gleichnamiges Venv nicht an; Gegenprobe gegen den Stand davor.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (Verhalten an den Rändern; AUTONOMOUS.md/DEVELOPMENT.md beschreiben DB und Venv je Lane schon)
+
+### T6 — Ehrlicher Sperr-Umfang: je Nutzer, fester Pfad (Opus-Review)  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md, scripts/dev/lane.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @1875dec9 2026-09-23T15:28:12+02:00
+Review: approve (sonnet, 2. Runde)
+Änderung: Befund aus dem Opus-Review der Aufsicht: `${XDG_RUNTIME_DIR:-$HOME/.cache}` ist je Nutzer. Die Doku verspricht „alle Checkouts dieser Box“, aber der Runner-Nutzer hätte seine eigene Datei; zwei Läufe desselben Nutzers mit und ohne `XDG_RUNTIME_DIR` sperren sogar zwei verschiedene Dateien. Fix: fester Pfad `$HOME/.cache/adminhelper-py.lock`. Die Doku sagt dann ehrlich „je Nutzer, über alle seine Checkouts“, mit dem Satz, dass Runner-Läufe ab Stufe 7 eine nutzerübergreifende Sperre brauchen. Die trägt die Aufsicht als Roadmap-Zeile ein; hier wird sie nicht gebaut. Mitnehmen: AUTONOMOUS.md „Fast-Suite: vm“ behauptet, die Lane habe keine lokalen Toolchain-Artefakte (venvs …), obwohl sie jetzt verlinkte Venvs hat. Nicht anfassen: `feature-build/SKILL.md` und `feature-plan/SKILL.md`, die gehören zu R-0065. Test: zwei gleichzeitige Läufe mit verschiedenem `XDG_RUNTIME_DIR` laufen trotzdem nacheinander.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md „Python-Tests lokal“ · AUTONOMOUS.md „Parallel-Betrieb“ · CHANGELOG
+
+### T7 — Die Marke hält fest, was new wirklich angelegt hat (Re-Review)  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @b7361b80 2026-09-23T15:48:13+02:00
+Review: approve (sonnet)
+Änderung: Drei kleine Defekte aus dem Re-Review der Aufsicht über T5/T6.
+(1) Mittel, reproduziert: Die Marke entsteht auch ohne `.devenv.sh`, also ohne DB. `done` warnt dann „NOT dropped“ und lässt die Marke stehen, `new` verweigert „never closed“, und das dreht sich im Kreis. Legt später jemand die DB von Hand an, löscht `done` sie. Fix: Die Marke nennt, was `new` angelegt hat, als Zeilen `db=<name>` (nur nach erfolgreichem `createdb`) und `venv=<pfad>`. `done` löscht nur, was dort steht, warnt nur dafür und entfernt die Marke, sobald nichts mehr drinsteht.
+(2) Niedrig: `env "${envp[@]}" createdb` legt `PGPASSWORD=<klartext>` kurz in das argv von `env`. Fix: in einer Subshell `export`, dann `exec createdb`/`dropdb`.
+(3) Niedrig: Eine Lane ohne Marke (vor T5) bekam „not this lane's“. Fix: ehrlich „Eigentümer unbekannt“ mit dem Weg von Hand.
+Tests, die bei Rücknahme rot werden: `dropdb` scheitert ⇒ die Marke bleibt; `new` ohne `.devenv.sh` ⇒ keine DB-Zeile, `done` löscht nichts, ein erneutes `new` geht; Prozent-Dekodierung im Passwort (`%40`, `%25`); ein `env`-Wrapper im PATH sieht `PGPASSWORD` nie.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md (Marke, „never closed“, Ausweg) · Kopf von lane.sh
+
+## Abschluss-Beweis (nach T4, vor dem PR)
+
+Ein echter Lane-Durchlauf auf der Dev-Box:
+1. `lane.sh new probe-lane` mit einem Plan nur auf `feature/probe-lane`.
+2. In der Lane und im Haupt-Checkout gleichzeitig `verify.sh server --strict`. Beide müssen grün sein, auf zwei verschiedenen DBs, und die Sperre muss die beiden Server-Läufe sichtbar nacheinander fahren.
+3. `lane.sh done probe-lane`, einmal mit laufender Shell in der Lane (muss abbrechen) und einmal ohne (muss abräumen, einschließlich DB und Venv).
+
+Ergebnis und Laufzeiten gehören in dieses Ledger.
+
+### Ergebnis (2026-09-23, Worker 2, abgestimmt mit der Aufsicht) — bestanden
+
+**Aufbau.** `feature/probe-lane` per Plumbing auf `harness/lane-isolation` (bd363471), mit einem
+Wegwerf-Plan nur auf dem Branch (21c413a0). Auf `main` hätte die Lane das `run.sh` ohne Sperre
+gehabt. `lane.sh new probe-lane` endete mit Exit 0: Worktree, eigene `.devenv.sh`, die DB
+`adminhelper_test_probe_lane` (in `pg_database` gemessen), Venv- und Sidecar-Links; `git status`
+der Lane war leer. Beide `verify.sh server --strict` starteten um 14:21:42 gleichzeitig, jeder in
+eigenem tmux mit eigenem `AH_OUT_DIR`, die Ausgabe vollständig und mit Zeitstempel je Zeile in
+eine Datei.
+Last auf der Box: Parallel liefen zwei `golden/run.sh` (je 6 Worker) eines anderen Projekts.
+Die Laufzeiten sind entsprechend länger, die Reihenfolge berührt das nicht.
+
+**(a) Summary-Zeilen**
+- Haupt-Checkout: `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns`, fertig
+  14:39:50 nach 18:08 min.
+- Lane: `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns`, fertig 14:46:25
+  nach 24:43 min.
+- In beiden: server pytest `652 passed, 2 skipped, 2 xfailed`, Schemathesis `292 passed`. Die zwei
+  Test-Skips sind `test_stream_redis.py` (Redis auf :6380 nicht erreichbar), in beiden gleich.
+
+**(b) Sperre: nacheinander, nicht überlappend.** Belege: die Sperrdatei (der Halter schreibt sich
+beim Erwerb hinein), `lslocks` (Halter und wartende `flock`-Anfragen) und die Warte-Meldungen der
+Läufe.
+
+| Zeitraum | hält die Sperre | wartet (Meldung im Lauf) |
+|---|---|---|
+| 14:21:44–14:26:52 | Haupt `server pytest` | Lane `server pytest` ab 14:21:51, „held by: server pytest … in …/AdminHelper" |
+| 14:26:52–14:33:08 | Lane `server pytest` (mit Erstinstallation des Lane-Venvs) | Haupt `schemathesis` ab 14:26:52, „held by: server pytest … in …/AdminHelper-probe-lane" |
+| 14:33:08–14:39:50 | Haupt `schemathesis` | Lane `schemathesis` ab 14:33:08, „held by: schemathesis … in …/AdminHelper" |
+| 14:39:51–14:46:25 | Lane `schemathesis` | — |
+
+**(c) Welche DB jeder Lauf benutzt hat, gemessen.** `pg_stat_activity` alle 3 s, Sitzungen der
+Rolle `adminhelper` nach `datname`, ohne die eigene Abfrage:
+- 14:21:59–14:26:48 nur `adminhelper_test`.
+- 14:27:47–14:33:05 nur `adminhelper_test_probe_lane`.
+- 14:33:18–14:39:47 nur `adminhelper_test`.
+- 14:40:02–14:46:22 nur `adminhelper_test_probe_lane`.
+
+Dazu kommen kurz die Wegwerf-DBs der Alembic-Smoke (`alembic_builtin_*`, `alembic_smoke_*`). In
+keiner Probe waren beide Test-DBs zugleich aktiv.
+
+**(d) Abbruch von `done`.** Eine Shell in der Lane (tmux, `bash`, pid 1875081, cwd
+`…/AdminHelper-probe-lane`), dann `lane.sh done probe-lane` → Exit 1:
+```
+lane probe-lane is still in use — these processes work in ../AdminHelper-probe-lane:
+  1875081 bash
+End the session(s) in the lane, then run again: bash scripts/dev/lane.sh done probe-lane
+```
+Worktree und DB standen danach noch.
+
+**(e) Nach dem zweiten `done`.** Die Shell ist beendet, `done` endet mit Exit 0. Reap: keine
+Warm-Slots, nichts abgelaufen, `0 ours` auf der Lane. Der Branch blieb als ungemergt stehen und ist
+danach von Hand gelöscht (`git branch -D feature/probe-lane`). Nachkontrolle:
+- `psql -l` zeigt nur noch `adminhelper_test` und `adminhelper_test_fable`, die nicht aus diesem
+  Beweis stammt. `adminhelper_test_probe_lane` ist weg.
+- `~/.cache/ah-venv-probe-lane` fehlt.
+- Der Worktree fehlt; `git worktree list` zeigt nur den Haupt-Checkout.
+- `vm.py list`: `0 ours, 4 not ours`, Exit 0.
+
+**Laufzeiten.**
+
+| Schritt | Haupt-Checkout | Lane |
+|---|---|---|
+| server pytest | 5:08 | 6:16, davon rund 50 s Venv-Installation ohne DB-Sitzung |
+| Schemathesis | 6:42 | 6:34 |
+| Warten auf die Sperre | 6:16 (vor Schemathesis) | 5:01 (vor pytest) und 6:42 (vor Schemathesis) |
+
+**Nach dem Beweis (T5, T6 aus dem Opus-Review der Aufsicht):** Eigentumsmarke für DB und Venv,
+`createdb` vor dem Worktree, `PGPASSWORD` und die Längengrenze (T5); dazu der feste Sperrpfad
+`~/.cache/adminhelper-py.lock` statt `$XDG_RUNTIME_DIR` (T6). Der Beweis oben lief noch mit dem
+alten Pfad (`/run/user/1000/…`). Die Reihenfolge der Sperre ist davon unberührt, und laut der
+Aufsicht ist kein neuer Lane-Durchlauf nötig. Der Überlappungstest in `lane_test.sh` ist seit T6
+deterministisch: Er war seit T2 zeitabhängig und auf der belasteten Box einmal rot.
+
+## PR-Verifikation (2026-09-23, Aufsichts-Session, eigener Worktree)
+
+- Abschluss-Beweis gegen die Rohdaten in `.ah-out/lane-isolation-proof/` geprüft: `pg.log` hat 478 Stichproben, in keiner sind beide Test-DBs zugleich aktiv; `lock.log` zeigt den Halter im Wechsel Haupt → Lane → Haupt → Lane. Das Aufräumen habe ich selbst nachgeprüft: keine Probe-DB, kein Lane-Venv, kein Worktree, `vm.py list` 0 ours.
+- Opus-Review (T1–T4): `request_changes`, zwei wichtige Funde → T5/T6. Opus-Re-Review (T5/T6): `request_changes`, ein mittlerer und zwei niedrige Funde → T7. Für T7 gab es keine dritte Review-Runde, sondern drei eigene Mutanten in einem Wegwerf-Worktree, jeder vom Test gefangen: db-Zeile vor `dropdb` entfernt ⇒ 1 failed; Passwort über `env` ⇒ 1 failed; db-Zeile ohne `createdb` ⇒ 2 failed.
+- Gate auf 6376dacb: `run.sh[quick]: 5 passed, 0 failed, 12 skipped` (`--only scripts`, CI-ruff 0.15.20), `lane_test` 59/0, `ledger_test` 52/0. Die Commits T6 und T7 sind je für sich im `ledger_test` rot, weil der Kopf dort noch „aktiv“ ohne offene Task steht; der jeweils folgende Ledger-Commit behebt das.
+- Folgepunkt außerhalb dieses Vorhabens: Die Sperre gilt je Nutzer; der Runner braucht ab Stufe 7 eine nutzerübergreifende (Roadmap R-0080).

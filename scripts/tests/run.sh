@@ -225,6 +225,45 @@ run_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
   record_step "$name" "$result" "$((SECONDS - t0))"
 }
 
+# The two python steps that have collided for real when two checkouts ran at
+# once: two server suites on one box took each other's tables and memory
+# (2026-09-18, -21, -22), and two Schemathesis runs set off the OOM killer. They
+# take a lock that all of this user's checkouts share, so a lane and the main
+# checkout queue up instead; every other step stays parallel (Kevin, gate
+# 2026-09-23). A fixed path under $HOME: XDG_RUNTIME_DIR is set in one shell and
+# not in the next, and two runs must never lock two different files. Another
+# Unix user — the runner, from stage 7 — has a lock of its own; one across users
+# is still to come. AH_PY_LOCK=0 switches it off for a box that only ever runs
+# one suite. Without HOME (an `env -i` shell) the home comes from passwd — the
+# same directory, so still the same lock, and no `set -u` abort for every run.
+AH_PY_LOCK="${AH_PY_LOCK:-1}"
+AH_PY_LOCK_WAIT="${AH_PY_LOCK_WAIT:-3600}"
+AH_PY_LOCK_FILE="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/adminhelper-py.lock"
+py_step_locked() { case "$1" in server-pytest|schemathesis) [ "$AH_PY_LOCK" != 0 ] ;; *) return 1 ;; esac; }
+
+# py_lock <name> — take the lock on fd 9 of the CALLING subshell, so it is held
+# for exactly as long as the step's processes live. A busy lock is waited for and
+# said so once, naming who holds it; giving up after AH_PY_LOCK_WAIT is a self-SKIP
+# (75) — "not run", which --strict turns red, never a verdict on the code.
+py_lock() {
+  mkdir -p "$(dirname "$AH_PY_LOCK_FILE")" 2>/dev/null
+  if ! have flock; then
+    echo "  (flock not installed — $1 runs WITHOUT the shared python lock)"
+    return 0
+  fi
+  # Append, never truncate: the file names the holder, and a waiter reads it.
+  exec 9>>"$AH_PY_LOCK_FILE" || return 75
+  if ! flock -n 9; then
+    local holder; holder="$(cat "$AH_PY_LOCK_FILE" 2>/dev/null)"
+    echo "  waiting for the shared python lock ($AH_PY_LOCK_FILE), up to ${AH_PY_LOCK_WAIT}s — held by: ${holder:-unknown}"
+    flock -w "$AH_PY_LOCK_WAIT" 9 || {
+      echo "  gave up after ${AH_PY_LOCK_WAIT}s waiting for the shared python lock — $1 NOT run"
+      return 75
+    }
+  fi
+  printf '%s pid %s in %s\n' "$1" "$$" "$PWD" > "$AH_PY_LOCK_FILE"
+}
+
 # run_py_step — run_step for the python suites, keeping the output so pytest's
 # OWN skips can be judged. A test that skipped inside a passing suite is
 # invisible in "N passed": test_migrations_smoke and test_stream_redis have been
@@ -235,7 +274,8 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
   mkdir -p "$AH_OUT_DIR" 2>/dev/null
   local log="$AH_OUT_DIR/step-$id.log"
   hdr "$name"; local rc=0 t0=$SECONDS result=""
-  ( "$@" ) 2>&1 | tee "$log"; rc=${PIPESTATUS[0]}
+  ( if py_step_locked "$id"; then py_lock "$name" || exit $?; fi
+    "$@" ) 2>&1 | tee "$log"; rc=${PIPESTATUS[0]}
   case "$rc" in
     0)  pass "$name"; result="pass" ;;
     75) _skip "$id" "$name" "self-skipped"; result="$SKIP_VERDICT" ;;
@@ -499,7 +539,7 @@ restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test task_close_test runner_setup_test redteam_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test
 openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test vm_wrappers_test
-multibox_test"
+multibox_test lane_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would

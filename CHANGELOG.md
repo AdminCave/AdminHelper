@@ -9,6 +9,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Lane-Isolation (Harness):** eine Lane (`scripts/dev/lane.sh new <slug>`) hat jetzt, was sie
+  zum Bauen braucht, und teilt mit dem Haupt-Checkout nichts mehr, woran zwei Laeufe einander
+  stoeren: eine eigene `.devenv.sh` mit eigener Test-Datenbank `adminhelper_test_<slug>` und
+  eigenem Venv `~/.cache/ah-venv-<slug>`, Links auf das frpc-Sidecar und auf die
+  Komponenten-Venvs mit dem CI-`ruff`. `new` bricht ab, wenn der Plan nicht committet ist (auf
+  `feature/<slug>`, sonst auf `main`). In `scripts/tests/run.sh` stehen `server-pytest` und
+  `schemathesis` je Nutzer ueber alle seine Checkouts Schlange (`flock` auf
+  `~/.cache/adminhelper-py.lock`; `AH_PY_LOCK_WAIT`, Default 3600 s, danach SKIP mit Grund;
+  `AH_PY_LOCK=0` schaltet ab) — zwei Server-Suiten auf einer Box hatten einander Tabellen und
+  Speicher genommen, bis zum OOM-Killer. `lane.sh done` loescht Datenbank und Venv mit und
+  verweigert, solange noch ein Prozess in der Lane arbeitet. Hermetisch getestet in
+  `scripts/tests/lane_test.sh`. Anleitung: `AUTONOMOUS.md` „Parallel-Betrieb",
+  `DEVELOPMENT.md` „Python-Tests lokal".
 - **Runner-Isolation und deterministische Gates (Harness Stufe 4):** Ein `[x]` und ein Commit
   entstehen nur noch in `scripts/dev/task-close.sh` — ausserhalb der Modell-Session: es verlangt,
   dass jede Datei der Task vollstaendig gestaged ist, faehrt das `Verify:` der Task als
