@@ -257,9 +257,81 @@ PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run --trust 2>&1)
 grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
   && ok "--trust plans the flag in the runner's .claude.json" || bad "--trust does not plan the trust flag"
 
+echo "── the CLI version is pinned from one file ──"
+VFILE="$REPO_ROOT/scripts/dev/runner-claude.version"
+PINNED="$(tr -d '[:space:]' < "$VFILE" 2>/dev/null)"
+if [[ "$PINNED" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]]; then
+  ok "runner-claude.version holds a plain version ($PINNED)"
+else
+  bad "scripts/dev/runner-claude.version does not hold a plain version (got '$PINNED')"
+fi
+PLAN=$(PATH="$SHIM:$PATH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "claude install $PINNED" <<<"$PLAN" \
+  && ok "the plan installs exactly the pinned version" \
+  || bad "the plan does not install claude $PINNED"
+# The version reaches a string root runs through su -c; anything but digits and dots
+# must stop the script before that. Checked against a copy, never the real file.
+BADTREE="$WORK/badver"; mkdir -p "$BADTREE/scripts/dev"
+cp "$SETUP" "$BADTREE/scripts/dev/runner-setup.sh"
+cp "$REPO_ROOT/scripts/dev/runner-settings.json" "$BADTREE/scripts/dev/" 2>/dev/null
+printf '2.1.280; touch /tmp/pwned\n' > "$BADTREE/scripts/dev/runner-claude.version"
+BPLAN=$(PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run 2>&1); brc=$?
+[ $brc -ne 0 ] && grep -q 'must hold a version' <<<"$BPLAN" && ! grep -q 'pwned' <<<"$(grep 'claude install' <<<"$BPLAN")" \
+  && ok "a version with shell in it stops the script before su -c" \
+  || bad "a malformed version reached the plan: rc=$brc"
+# ...and before step 1: a stop halfway through would leave a half-provisioned user.
+! grep -q 'no sudo group, no ssh key' <<<"$BPLAN" \
+  && ok "the version is checked before anything is changed" \
+  || bad "the version check runs after the user step"
+# Exactly N.N.N — also no empty segments and no digits of another script (an
+# Arabic-Indic three passes a [0-9] range under de_DE.UTF-8, not under C.UTF-8, so
+# that locale is used where the box has it).
+LOC="$(locale -a 2>/dev/null | grep -im1 '^de_DE\.utf-\?8$')"
+LOOSE=""
+for v in '...' '2.1' '2.1.280.1' '2..280' "2.1.2$(printf '\xd9\xa3')0"; do
+  printf '%s\n' "$v" > "$BADTREE/scripts/dev/runner-claude.version"
+  LC_ALL="${LOC:-C.UTF-8}" PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run >/dev/null 2>&1 \
+    && LOOSE="$LOOSE '$v'"
+done
+# The same tree and locale with a good version must pass, or the loop proves nothing.
+printf '2.1.280\n' > "$BADTREE/scripts/dev/runner-claude.version"
+LC_ALL="${LOC:-C.UTF-8}" PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run >/dev/null 2>&1 \
+  || LOOSE="$LOOSE (and a good version was refused too — the probe is broken)"
+[ -z "$LOOSE" ] && ok "only N.N.N passes (empty segments, 2 or 4 parts, foreign digits refused)" \
+  || bad "the version check let through:$LOOSE"
+
+# The branch for a runner without any CLI is never reached under --dry-run; what it
+# prints has to install exactly the pinned version.
+grep -qF "install.sh | bash -s \$CLAUDE_VERSION" "$SETUP" \
+  && ok "without a CLI the setup names the installer with the pinned version" \
+  || bad "the missing-CLI hint does not install \$CLAUDE_VERSION"
+
+grep -qE '^[[:space:]]*export DISABLE_AUTOUPDATER=1' "$REPO_ROOT/scripts/dev/runner-env.sh" \
+  && ok "runner-env.sh switches the CLI updater off" || bad "runner-env.sh does not export DISABLE_AUTOUPDATER=1"
+
 echo "── the settings it installs ──"
 [ -f "$REPO_ROOT/scripts/dev/runner-settings.json" ] \
   && ok "the settings file it copies exists in the repo" || bad "scripts/dev/runner-settings.json is missing"
+# What the runner works with is pinned, not inherited from a default: the "at least
+# Opus" rule of CLAUDE.md §2 would otherwise rest on whatever the CLI ships with.
+# Measured 2026-09-23: Opus 5.5 defaults to effort medium, and /effort stores the
+# level per model under modelSettings — so both places are checked.
+python3 - "$REPO_ROOT/scripts/dev/runner-settings.json" <<'PY' \
+  && ok "the runner's model and effort are pinned, with no env block" \
+  || bad "runner-settings.json does not pin model and effort (or carries an env block)"
+import json, re, sys
+d = json.load(open(sys.argv[1]))
+model = d.get("model", "")
+# An alias (opus, sonnet, opus[1m], ...) moves with every release; a pin is a full id.
+is_alias = re.fullmatch(r"(opus|sonnet|haiku|fable|best|default)(\[1m\])?", model) is not None
+base = re.sub(r"\[1m\]$", "", model)
+ok = (model.startswith("claude-") and not is_alias
+      and d.get("effortLevel") == "xhigh"
+      and (d.get("modelSettings") or {}).get(base, {}).get("effortLevel") == "xhigh"
+      and "env" not in d          # public file: rules only, never an env block
+      and "permissions" in d and "hooks" in d)
+sys.exit(0 if ok else 1)
+PY
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'runner_setup_test' \
   && ok "runner_setup_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 

@@ -384,13 +384,15 @@ runner_env() {
     SSH_AUTH_SOCK=/tmp/leftover.sock DATABASE_URL=postgresql://foreign/db \
     PGPASSWORD=leftover-pg AWS_ACCESS_KEY_ID=leftover-aws \
     PGPORT=6543 PGSSLMODE=disable \
+    ANTHROPIC_MODEL=opus CLAUDE_CODE_EFFORT_LEVEL=low \
     bash -c '
       . "$1"; rc=$?
       { echo "RC=$rc"
         for v in AH_AUTONOMOUS AH_VM_MAX CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY \
                  ANTHROPIC_AUTH_TOKEN GH_TOKEN GITHUB_TOKEN GH_CONFIG_DIR AH_TEST_DB \
                  AH_PVE_URL AH_PVE_NODE AH_PVE_TOKEN SSH_AUTH_SOCK DATABASE_URL \
-                 PGPASSWORD AWS_ACCESS_KEY_ID PGPORT PGSSLMODE; do
+                 PGPASSWORD AWS_ACCESS_KEY_ID PGPORT PGSSLMODE \
+                 ANTHROPIC_MODEL CLAUDE_CODE_EFFORT_LEVEL; do
           eval "echo \"$v=\${$v-<unset>}\""
         done; } > "$2"' _ "$RUNNER_ENV" "$WORK/env.out" 2>&1)
   OUT=$(cat "$WORK/env.out")
@@ -410,6 +412,10 @@ runner_env "$H"
 [ "$(val ANTHROPIC_API_KEY)" = "<unset>" ] && [ "$(val ANTHROPIC_AUTH_TOKEN)" = "<unset>" ] \
   && ok "an inherited ANTHROPIC_API_KEY/AUTH_TOKEN is unset" \
   || bad "api key survived: $(val ANTHROPIC_API_KEY)/$(val ANTHROPIC_AUTH_TOKEN)"
+# Both outrank the model and effort pinned in runner-settings.json.
+[ "$(val ANTHROPIC_MODEL)" = "<unset>" ] && [ "$(val CLAUDE_CODE_EFFORT_LEVEL)" = "<unset>" ] \
+  && ok "an inherited ANTHROPIC_MODEL/CLAUDE_CODE_EFFORT_LEVEL is unset (they outrank the pin)" \
+  || bad "the pin can be overridden: ANTHROPIC_MODEL=$(val ANTHROPIC_MODEL) CLAUDE_CODE_EFFORT_LEVEL=$(val CLAUDE_CODE_EFFORT_LEVEL)"
 [ -z "$(val GH_TOKEN)" ] && [ -z "$(val GITHUB_TOKEN)" ] \
   && ok "GH_TOKEN and GITHUB_TOKEN are empty (gh reads both, there is no credential here)" \
   || bad "GH_TOKEN=$(val GH_TOKEN) GITHUB_TOKEN=$(val GITHUB_TOKEN)"

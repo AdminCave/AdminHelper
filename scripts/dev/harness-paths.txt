@@ -47,3 +47,4 @@ scripts/tests/review_scripts_test.sh
 scripts/tests/task_close_test.sh
 scripts/tests/runner_setup_test.sh
 scripts/tests/verify_test.sh
+scripts/dev/runner-claude.version

@@ -59,6 +59,10 @@ ah_runner_env() {
   # leave an inherited API key standing.
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   unset "${!AH_PVE_@}"
+  # The pin in runner-settings.json loses against both of these (Claude Code docs,
+  # model-config: ANTHROPIC_MODEL outranks the settings `model`, CLAUDE_CODE_EFFORT_LEVEL
+  # outranks every saved effort) — an inherited value would move the runner off it.
+  unset ANTHROPIC_MODEL CLAUDE_CODE_EFFORT_LEVEL
   # Somebody else's access, in the four shapes this box can hand over:
   #   SSH_AUTH_SOCK  an agent socket is a usable key without a key file
   #   DATABASE_URL   run.sh prefers it over AH_TEST_DB, and the server suite
@@ -71,6 +75,12 @@ ah_runner_env() {
   export GH_TOKEN="" GITHUB_TOKEN="" GH_ENTERPRISE_TOKEN="" GITHUB_ENTERPRISE_TOKEN=""
   export AH_AUTONOMOUS=1
   export AH_VM_MAX=8
+  # The CLI version is pinned (scripts/dev/runner-claude.version); an updater that
+  # runs on the next session start would move it under an unattended run. This lives
+  # here and not in runner-settings.json on purpose: that file is public and carries
+  # rules, never an env block. Every working runner session sources this file anyway —
+  # it is the only place the subscription token comes from.
+  export DISABLE_AUTOUPDATER=1
   # Always a fresh directory, never an inherited one: a GH_CONFIG_DIR that
   # happens to point at somebody's real gh config would pass an "is it a
   # directory" test and hand this user a working login — the exact opposite of

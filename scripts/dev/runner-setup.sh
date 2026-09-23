@@ -191,6 +191,15 @@ command -v git >/dev/null 2>&1 || MISSING="$MISSING git"
 command -v psql >/dev/null 2>&1 || MISSING="$MISSING postgresql-client(psql)"
 getent passwd postgres >/dev/null 2>&1 || MISSING="$MISSING the-postgres-account"
 python3 -c 'import ensurepip' >/dev/null 2>&1 || MISSING="$MISSING python3-venv"
+# The pinned CLI version goes into a string root hands to `su -c` (step 5), so it is
+# checked here, before step 1 changes anything: exactly N.N.N, and the digits are
+# spelled out because a [0-9] range can match other scripts' digits under a UTF-8
+# locale.
+CLAUDE_VERSION="$(tr -d '[:space:]' < "$ROOT/scripts/dev/runner-claude.version" 2>/dev/null)"
+if ! [[ "$CLAUDE_VERSION" =~ ^[0123456789]+\.[0123456789]+\.[0123456789]+$ ]]; then
+  echo "runner-setup: scripts/dev/runner-claude.version must hold a version like 2.1.280" >&2
+  exit 1
+fi
 if [ -n "$MISSING" ]; then
   echo "   missing:$MISSING" >&2
   [ "$DRY" = 1 ] || { echo "runner-setup: install the above first" >&2; exit 1; }
@@ -324,6 +333,24 @@ else
   note "not done — run again with --trust when the runner's allow rules should apply (DEVELOPMENT.md)"
 fi
 
+# The CLI is pinned like every other toolchain in this repo (frp, oasdiff, Go, ruff):
+# an unattended run must not change its substrate because an updater ran overnight.
+# The version lives in ONE file, scripts/dev/runner-claude.version (read and checked in
+# the preflight). This script reads it from THIS checkout, runner-redteam.sh reads it
+# back from the runner's clone — both have to stand on the same main, or the red team
+# reports a version the setup never installed (DEVELOPMENT.md, Anheben). 2.1.280
+# is the first version whose model catalog knows claude-opus-5-5 — the 2.1.278 binary
+# has no entry for it (measured 2026-09-23: 0 hits in the binary, 15 in 2.1.280).
+# The auto-updater is off through runner-env.sh (DISABLE_AUTOUPDATER) — not through
+# runner-settings.json, which is public and carries no env block.
+step "Claude Code $CLAUDE_VERSION for $RUNNER (pinned; runner-env.sh switches the updater off)"
+if [ "$DRY" = 1 ] || su - "$RUNNER" -c 'command -v claude' >/dev/null 2>&1; then
+  run_sh "su - $RUNNER -c 'claude install $CLAUDE_VERSION'"
+else
+  note "no claude CLI for $RUNNER yet — install exactly this version, then run this again:"
+  printf '     %s\n' "sudo -iu $RUNNER bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s $CLAUDE_VERSION'"
+fi
+
 # ── 6. the two token files ───────────────────────────────────────────────────
 # Written ONLY while they are still empty: after Kevin has put the tokens in,
 # a second run of this script must not take them away again.
@@ -334,7 +361,7 @@ if [ -s "$HOME_DIR/.config/adminhelper/oauth.env" ]; then
 else
   write_file "$HOME_DIR/.config/adminhelper/oauth.env" 600 "# The subscription token of this user (roadmap D18: everything runs on the
 # subscription, never on an API key). Create it with:
-#   sudo -iu $RUNNER claude setup-token
+#   sudo -iu $RUNNER env DISABLE_AUTOUPDATER=1 claude setup-token
 # then put it here as one line:
 # CLAUDE_CODE_OAUTH_TOKEN=...
 "
@@ -361,13 +388,14 @@ cat <<HANDOVER
 
 ── done. Three steps are yours, $RUNNER cannot do them itself:
 
-  1. sudo -iu $RUNNER claude setup-token
+  1. sudo -iu $RUNNER env DISABLE_AUTOUPDATER=1 claude setup-token
      put the token into $HOME_DIR/.config/adminhelper/oauth.env
 
   2. pveum user token add $RUNNER@pve run --privsep 1   (plus the four ACL paths)
      put host, node, token id and secret into $HOME_DIR/.config/adminhelper/pve.env
 
-  3. sudo -u $RUNNER git -C $SRV/repo fetch
+  3. sudo -u $RUNNER git -C $SRV/repo pull --ff-only
+     (not just fetch: the red team runs from that worktree and reads the pin there)
      then prove the boundary holds:
      sudo -u $RUNNER bash $SRV/repo/scripts/dev/runner-redteam.sh
 HANDOVER
