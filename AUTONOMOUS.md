@@ -119,6 +119,8 @@ cd ../AdminHelper-<slug> && claude --model opus --permission-mode acceptEdits
 #    → /feature-build tasks/<slug>.md
 # 4. Lane gemergt / Feierabend:
 bash scripts/dev/lane.sh done <slug>   # reapt die Lane-Boxen, räumt Worktree, Branch, DB, Venv
+#    — verweigert, solange noch ein Prozess in der Lane arbeitet (etwa ihre Session):
+#    erst die Session dort beenden, dann erneut done
 ```
 
 Mechanik dahinter:

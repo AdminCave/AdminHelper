@@ -57,8 +57,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 1 und 2: der Plan liegt auf dem Branch, `lane.sh new` reicht)
 Abhängt von: T1
 
-### T4 — `lane.sh done` räumt keine Lane ab, in der noch etwas läuft  [ ]
-Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+### T4 — `lane.sh done` räumt keine Lane ab, in der noch etwas läuft  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, AUTONOMOUS.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @6a4ad1f8 2026-09-23T14:19:28+02:00
+Review: approve (sonnet); Nit /proc-Kommentar übernommen
 Änderung: Bevor `done` VMs oder Worktree anfasst, sucht es Prozesse, deren Arbeitsverzeichnis im Worktree der Lane liegt (`/proc/<pid>/cwd`, eigene Prozesse des Nutzers). Findet es welche, bricht es ab, nennt PID und Kommando und sagt, was zu tun ist: die Session in der Lane beenden und dann `done` erneut aufrufen. Einen Force-Schalter gibt es nicht; das wäre genau der Handgriff, der am 2026-09-22 die Session zerstört hat. Test: Ein Hintergrundprozess mit cwd in einer Fake-Lane lässt `done` mit Exit ≠ 0 abbrechen, VMs und Worktree bleiben unangetastet (Fake-`vm.py`/`reap.sh` protokollieren nichts). Ohne diesen Prozess läuft `done` durch.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 4)

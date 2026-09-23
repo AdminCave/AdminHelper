@@ -16,7 +16,8 @@
 #                                         committed on feature/<slug> (else on main)
 #   bash scripts/dev/lane.sh done <slug>  destroy the lane's VMs, then remove
 #                                         worktree + branch (branch only if merged),
-#                                         the lane's test database and its venv
+#                                         the lane's test database and its venv;
+#                                         refuses while a process works in the lane
 #   bash scripts/dev/lane.sh list         worktrees + their warm boxes
 set -euo pipefail
 
@@ -146,9 +147,39 @@ lane_new() {
   echo "   own test DB, linked venvs, and the host-wide python lock queues the heavy steps)"
 }
 
+# lane_busy <worktree> — "pid command" for every process of this user whose
+# working directory lies in the lane. A session left in a lane that `done`
+# removes sits in a deleted cwd and cannot work any more (2026-09-22). Linux
+# only: without /proc this finds nothing and would let `done` go ahead.
+lane_busy() {
+  local wt me proc pid cwd
+  wt="$(cd "$1" && pwd -P)" || return 0
+  me="$(id -u)"
+  for proc in /proc/[0-9]*; do
+    pid="${proc#/proc/}"
+    [ "$(stat -c %u "$proc" 2>/dev/null)" = "$me" ] || continue
+    cwd="$(readlink "$proc/cwd" 2>/dev/null)" || continue
+    case "$cwd" in
+      "$wt"|"$wt"/*) printf '%s %s\n' "$pid" "$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null | cut -c1-120)" ;;
+    esac
+  done
+}
+
 lane_done() {
   local slug="${1:?usage: lane.sh done <slug>}"
   local wt="../AdminHelper-$slug" branch="feature/$slug"
+  # Before anything of the lane is touched, VMs included. No force switch: that
+  # would be exactly the move that stranded a session on 2026-09-22.
+  if [ -d "$wt" ]; then
+    local busy
+    busy="$(lane_busy "$wt")"
+    if [ -n "$busy" ]; then
+      echo "lane $slug is still in use — these processes work in $wt:"
+      printf '%s\n' "$busy" | sed 's/^/  /'
+      echo "End the session(s) in the lane, then run again: bash scripts/dev/lane.sh done $slug"
+      exit 1
+    fi
+  fi
   # Reap with the MAIN checkout's (current) scripts, but against the LANE's own
   # state: the lane's copies fork from main and may predate a change here, while
   # the VMIDs that have to go are recorded in the lane's .vm/warm.env. Abort

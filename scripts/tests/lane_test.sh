@@ -67,7 +67,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -181,6 +181,22 @@ lane "done" delta && [ ! -e "$WTD" ] && ok "done removes the lane with its links
   || bad "done delta: $(cat "$WORK/out.log")"
 [ -x "$MAIN/apps/server/.venv/bin/ruff" ] && [ -f "$MAIN/apps/server/.venv/pyvenv.cfg" ] && [ -f "$MAIN/$SIDECAR" ] \
   && ok "and leaves what they pointed at alone" || bad "done removed the main checkout's venv or sidecar"
+
+echo "── done: refuses while something still works in the lane ──"
+lane new theta || bad "new theta failed: $(cat "$WORK/out.log")"
+# A stand-in for a session: a process whose working directory is the lane.
+( cd "$WORK/AdminHelper-theta" && exec sleep 60 ) & busy=$!
+for _ in $(seq 1 50); do [ "$(readlink "/proc/$busy/cwd" 2>/dev/null)" = "$(cd "$WORK/AdminHelper-theta" && pwd -P)" ] && break; sleep 0.1; done
+: > "$VM_LOG"; : > "$PG_LOG"
+lane "done" theta; rc=$?
+[ "$rc" != 0 ] && grep -q "^  $busy " "$WORK/out.log" && grep -q "End the session" "$WORK/out.log" \
+  && ok "done refuses, names the process and says what to do" || bad "done theta rc=$rc: $(cat "$WORK/out.log")"
+[ -d "$WORK/AdminHelper-theta" ] && [ ! -s "$VM_LOG" ] && [ ! -s "$PG_LOG" ] \
+  && ok "and has touched neither worktree, VMs nor database" \
+  || bad "done went ahead: vm=$(cat "$VM_LOG") pg=$(cat "$PG_LOG")"
+kill "$busy" 2>/dev/null; wait "$busy" 2>/dev/null
+lane "done" theta && [ ! -e "$WORK/AdminHelper-theta" ] && ok "once it has ended, done goes through" \
+  || bad "done theta after the process ended: $(cat "$WORK/out.log")"
 
 # ── run.sh: the host-wide lock for the heavy python steps (T2) ──────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a
