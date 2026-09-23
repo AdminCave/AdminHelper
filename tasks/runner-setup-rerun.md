@@ -33,8 +33,10 @@ Runner kontrolliert, und eine `.git/config` kann Programme nennen (`core.fsmonit
 `core.hooksPath`), die root's Git dann ausführen würde. Ein `safe.directory`-Override wäre
 genau die Lücke, gegen die der Schutz existiert.
 
-### T1 — Die Git-Konfiguration des Klons schreibt der Runner, nicht root  [ ]
+### T1 — Die Git-Konfiguration des Klons schreibt der Runner, nicht root  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @599a0d2a 2026-09-23T12:22:32+02:00
+Review: am Ende (Kurz-Ledger)
 Änderung: Das `chown -R` rückt vor die beiden `git config`, und beide laufen als Runner (`su - <runner> -c 'git -C … config …'`) — beim ersten Lauf wie bei jedem weiteren, sodass root nie in einem Runner-eigenen Repository Git fährt. `ORIGIN` kommt aus Kevins Checkout und wird mit `printf %q` in den Befehl gesetzt. Test: der Trockenlauf-Plan enthält beide `git config` als Runner und **keine** Zeile, in der root `git -C /srv/ah/repo` fährt; die Gegenprobe (alte Reihenfolge) wird rot.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (Bugfix; DEVELOPMENT.md beschreibt den zweiten Lauf bereits als idempotent)

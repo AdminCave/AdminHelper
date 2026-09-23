@@ -85,6 +85,23 @@ for want in 'preflight: what this box has to provide' \
   grep -qF -- "$want" <<<"$OUT" && ok "plans: $want" || bad "missing from the plan: $want"
 done
 
+# On every run after the first the clone belongs to the runner, and root's git
+# refuses a repository owned by somebody else (safe.directory) — a second real run
+# died on exactly this on 2026-09-23. So the clone's config is written as the
+# runner, after the chown, and root never runs git inside /srv/ah/repo.
+CFG="$(grep -F 'config remote.origin.' <<<"$OUT")"
+[ "$(grep -c . <<<"$CFG")" = 2 ] \
+  && ! grep -vqF -- '$ su - adminhelper-runner -c git -C /srv/ah/repo config remote.origin.' <<<"$CFG" \
+  && ok "the clone's config is written as the runner, never by root" \
+  || bad "the clone's config is not (only) written as the runner: $CFG"
+! grep -qE '^[[:space:]]*\$ git -C /srv/ah/repo' <<<"$OUT" \
+  && ok "root runs no git inside the runner's clone" || bad "root runs git inside /srv/ah/repo"
+CHOWN_AT="$(grep -nF 'chown -R adminhelper-runner:adminhelper-runner /srv/ah' <<<"$OUT" | head -1 | cut -d: -f1)"
+CFG_AT="$(grep -nF 'config remote.origin.' <<<"$OUT" | head -1 | cut -d: -f1)"
+[ -n "$CHOWN_AT" ] && [ -n "$CFG_AT" ] && [ "$CHOWN_AT" -lt "$CFG_AT" ] \
+  && ok "the chown comes before the config, so the first run takes the same path" \
+  || bad "the config is written before the clone belongs to the runner (chown line ${CHOWN_AT:-?}, config line ${CFG_AT:-?})"
+
 # ── the two steps that depend on what this box already has ──────────────────
 # `useradd` and `git clone` drop out of the plan the moment the user and the clone
 # exist — and on a box that has been provisioned they do. Asserting them against
