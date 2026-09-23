@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: aktiv · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
