@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # oasdiff lokal installieren — Doku-Ergaenzung (Kurz-Ledger)
-Status: aktiv · Branch: docs/oasdiff-install · Commit-Granularität: pro Task · Review: am Ende (feature-review) · Modell: Opus
+Status: erledigt · Branch: docs/oasdiff-install · Commit-Granularität: pro Task · Review: am Ende (feature-review) · Modell: Opus
 Spec: DEVELOPMENT.md „OpenAPI-Snapshot aktualisieren", .github/workflows/ci.yml Job `openapi-compat` — Kurz-Ledger, keine eigene Spec
 Fast-Suite: lokal · Warm-Profil: —
 Heavy: keine (reine Doku, kein Code, kein Wire-Format)
