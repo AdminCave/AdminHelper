@@ -60,8 +60,10 @@ Review: Review am Ende (Kurz-Ledger)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T2)
 
-### T2 — Das Feld ist dokumentiert und wird gelintet  [ ]
-Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md, AUTONOMOUS.md
+### T2 — Das Feld ist dokumentiert und wird gelintet  [x]
+Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md, AUTONOMOUS.md, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @abd08cb3 2026-09-23T19:37:47+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `tasks/README.md` beschreibt `Test-Löschung:`. Dazu gehört, wann das Feld passt: toter Code samt Test, oder ein Test, der durch einen genaueren ersetzt wird. Und wann es nicht passt: ein roter Test, der „weg soll“. `ledger.sh lint` prüft die Form (`<pfad>::<name> — <Grund>`, der Grund ist Pflicht). Ein fehlender Grund ist ein Fehler, denn eine Löschung ohne Begründung ist genau das, was das Gate verhindern soll. `AUTONOMOUS.md` nennt den Weg dort, wo `diff-scan` beschrieben ist. Tests: gültige Zeile ⇒ lint ok; ohne Grund ⇒ Fehler; ohne `::` ⇒ Fehler.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md · AUTONOMOUS.md

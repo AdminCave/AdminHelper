@@ -305,6 +305,17 @@ case "$CMD" in
       /^## / { flush(); open = 0 }
       END { flush() }' "$LEDGER")
 
+    # A declared test deletion (review.sh diff-scan --task) needs the test and a
+    # reason: the gate passes an assertion over only for the <file>::<test>
+    # named here, and a deletion nobody can explain is the one thing it exists
+    # to stop.
+    while IFS= read -r entry; do
+      echo "ERROR  Test-Löschung: '$entry' is not <file>::<test> — <reason>" >&2
+      RC=1
+    done < <(sed -n 's/^Test-Löschung:[[:space:]]*//p' "$LEDGER" | tr ';' '\n' \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
+      | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
+
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
       echo "ERROR  Status: aktiv, but no open [ ] task left (tasks/README.md: the invariant)" >&2
       RC=1
