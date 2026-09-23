@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # NUL-Byte am Rand ablehnen — Task-Ledger
-Status: aktiv · Branch: feature/nul-byte-rejection · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: blockiert · Branch: feature/nul-byte-rejection · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/nul-byte-rejection.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — reine Eingangsprüfung, kein Datenfluss, kein Wire-Format, keine Migration. Am Abschluss am realen Diff gegenprüfen.
@@ -115,7 +115,7 @@ Review: approve (sonnet)
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (Fehlerdetail, kein Verhalten)
 
-### T10 — SafeText löschen (Entscheidung (b), Kevin 2026-09-23)  [ ]
+### T10 — SafeText löschen (Entscheidung (b), Kevin 2026-09-23)  [?] (Gebaut und grün (server pytest 647 passed, Schemathesis 292 passed, Review approve), aber task-close verweigert den Commit: der Diff-Scan wertet die gelöschte Assertion des SafeText-Typ-Tests als stummgeschalteten Test, und eine GELÖSCHTE Zeile kann kein '# review: ok' tragen — für eine bewusste Test-Löschung hat das Gate keinen Weg. Patch liegt in .ah-out/nul-byte-rejection-T10.patch (Nachricht: .ah-out/nul-byte-rejection-T10.msg). Kevin: von Hand committen (git apply --index, dann git commit -F), oder erst den Harness nachziehen (review.sh: Ausnahme für gelöschte Assertionen, eigenes Vorhaben, nicht in diesem Branch)?)
 Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/tests/test_text_bounds.py
 Änderung: `SafeText` und `_reject_nul` aus `app/core/bounds.py` löschen: nach T3 hat der Typ keinen Nutzer mehr, er war nur noch am Leben durch seinen eigenen Unit-Test. Die Begründung aus `_reject_nul` (warum dieses eine Byte) wandert in den Docstring von `RequestModel`, der bisher darauf verwies. In `tests/test_text_bounds.py` fällt der Typ-Test mit Import weg; die Routentests bleiben, sie prüfen jetzt Middleware und Basisklasse. Nachweis, dass nichts mehr darauf zeigt: grep über `apps/` plus die volle Suite.
 Verify: bash scripts/dev/verify.sh server --strict
