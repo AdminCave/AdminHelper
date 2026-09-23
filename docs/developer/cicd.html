@@ -214,7 +214,18 @@ cd apps/monitoring  &amp;&amp; pytest tests/test_openapi_snapshot.py --update-op
           <p>Der Job <code>openapi-compat</code> vergleicht den Snapshot des Basis-Branch mit dem dieses
           Branch (<code>scripts/dev/openapi-breaking.sh</code>, <code>oasdiff breaking --fail-on ERR</code>):
           neue Pfade und Felder sind gr&uuml;n, ein entfernter Pfad, ein entferntes Response-Feld oder ein neu
-          verpflichtendes Request-Feld sind rot. <code>oasdiff</code> kommt als <strong>Release-Tarball
+          verpflichtendes Request-Feld sind rot.
+          <strong>Eine Ausnahme, namentlich begrenzt:</strong> eine neu gesetzte Ober- oder Untergrenze auf
+          einer Eingabe (<code>minimum</code>/<code>maximum</code> an einem Request-Parameter oder
+          Body-Feld) w&auml;re f&uuml;r <code>oasdiff</code> ein <code>ERR</code>, weil sie die erlaubte
+          Eingabemenge verengt. Hier ist sie das Gegenteil: die Werte, die dadurch ungültig werden, liefern
+          heute <code>HTTP&nbsp;500</code>: kein Client lebt davon, und wer g&uuml;ltige Werte schickt, merkt
+          nichts. Die zw&ouml;lf Regeln, die genau das meinen, laufen deshalb als <code>WARN</code> &ndash;
+          gelistet in <code>scripts/dev/oasdiff-severity.levels</code>, das
+          <code>openapi-breaking.sh</code> per <code>--severity-levels</code> mitgibt. Alles andere bleibt
+          <code>ERR</code>, und fehlt die Datei, bleibt das Gate streng, statt still zu lockern. Die Datei
+          selbst tr&auml;gt keine Begr&uuml;ndung: <code>oasdiff</code> verlangt genau zwei Felder je Zeile
+          und lehnt Kommentare und Leerzeilen ab. <code>oasdiff</code> kommt als <strong>Release-Tarball
           v1.32.0 mit gepinnter SHA-256</strong>, nicht per <code>go install</code>: jede Version ab v1.24.0
           verlangt <code>go 1.26</code>, die Workflows pinnen aber Go 1.25 mit <code>GOTOOLCHAIN=local</code>
           &ndash; der Bau aus Quellen scheitert dann genau wie bei <code>govulncheck</code> (PR&nbsp;#14).

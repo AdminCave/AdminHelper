@@ -1,0 +1,12 @@
+request-parameter-max-set warn
+request-parameter-min-set warn
+request-parameter-exclusive-max-set warn
+request-parameter-exclusive-min-set warn
+request-body-max-set warn
+request-body-min-set warn
+request-body-exclusive-max-set warn
+request-body-exclusive-min-set warn
+request-property-max-set warn
+request-property-min-set warn
+request-property-exclusive-max-set warn
+request-property-exclusive-min-set warn
