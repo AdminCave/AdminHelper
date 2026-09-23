@@ -16,7 +16,7 @@ from app.core.auth import hash_api_key, hash_password
 from app.core.config import ADMIN_PASSWORD, BOOTSTRAP_SETUP_FILE, BOOTSTRAP_TOKEN_FILE
 from app.core.database import SessionLocal
 from app.core.identity import SCOPE_ACCESS, require_scope
-from app.core.middleware import IPFilterMiddleware
+from app.core.middleware import IPFilterMiddleware, NulByteMiddleware
 from app.modules.ansible.models import Playbook  # noqa: F401
 from app.modules.ansible.router import router as ansible_router
 from app.modules.api_keys.models import ApiKey  # noqa: F401
@@ -232,7 +232,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AdminHelper Server", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 
-# Middleware
+# Middleware — the one added last runs first. IPFilterMiddleware stays outside
+# the NUL guard, so a refused IP gets its 403 whatever its path carries.
+app.add_middleware(NulByteMiddleware)
 app.add_middleware(IPFilterMiddleware)
 
 

@@ -13,7 +13,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
-from app.core.bounds import Offset, SafeText
+from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.modules.audit.models import AuditLog
@@ -26,12 +26,12 @@ def list_audit(
     response: Response,
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
-    action: SafeText | None = Query(None),
-    actor_type: SafeText | None = Query(None),
-    object_type: SafeText | None = Query(None),
-    object_id: SafeText | None = Query(None),
-    status_filter: SafeText | None = Query(None, alias="status"),
-    q: SafeText | None = Query(None, description="Free-text match on actor/object label"),
+    action: str | None = Query(None),
+    actor_type: str | None = Query(None),
+    object_type: str | None = Query(None),
+    object_id: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    q: str | None = Query(None, description="Free-text match on actor/object label"),
     # Default cap (unlike the legacy None default on the small servers/hooks lists): the audit log
     # grows for AUDIT_RETENTION_DAYS (365), so an unlimited fetch would materialize hundreds of
     # thousands of rows. Callers paginate with offset for more (5.28).

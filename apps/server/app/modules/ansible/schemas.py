@@ -5,12 +5,13 @@
 import re
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
+from app.core.bounds import RequestModel
 from app.modules.frp.schemas import _validate_tags
 
 
-class PlaybookCreate(BaseModel):
+class PlaybookCreate(RequestModel):
     name: str
     filename: str
     description: Optional[str] = ""
@@ -30,7 +31,7 @@ class PlaybookCreate(BaseModel):
         return v
 
 
-class PlaybookUpdate(BaseModel):
+class PlaybookUpdate(RequestModel):
     name: Optional[str] = None
     filename: Optional[str] = None
     description: Optional[str] = None

@@ -1,0 +1,138 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# NUL-Byte am Rand ablehnen, flächig statt Feld für Feld — Spec
+
+## Problem / Motivation
+
+Postgres speichert `0x00` in **keiner** Textspalte. Jedes NUL-Byte, das von außen bis zu einem
+`str` durchkommt, das in eine Textspalte fließt, stirbt also im Treiber und kommt als
+**HTTP 500** zurück — nicht als Validierungsfehler.
+
+Die Randvalidierung (`docs/features/input-boundary-validation.md`) hat diese Klasse bewusst
+**nicht** flächig behandelt: der Typ `SafeText` sitzt nur an den Stellen, die ein Fuzz-Lauf
+belegt hatte. Das war die YAGNI-Entscheidung der damaligen Spec, und sie hat sich als falsch
+erwiesen. Der Beweis steht im Bau selbst: nach der ersten Härtung fand derselbe Fuzz-Lauf
+**sofort drei weitere Stellen** (`script` in `POST /api/hooks`, `server_ids` in
+`POST /api/users`, alle sieben Textfelder von `POST /api/internal/events`), und die Nachsuche
+danach lieferte eine Belegliste von rund **zwanzig String-Pfadparametern**, bei denen ein
+prozentkodiertes `%00` durchschlägt, plus Textfelder in `servers`, `ansible`, `connections` und
+String-Query-Parametern in den beiden FRP-Routern.
+
+**Das ist ein Laufband, kein Restposten.** Jeder Fuzz-Lauf liefert die nächste Stelle, jede
+Stelle kostet einen Fix, einen Test und einen Ausschluss, der später wieder entfernt werden
+muss. Genau dieses Muster haben wir bei den Zahlen verlassen, indem die Grenze aus dem
+Spaltentyp kommt statt aus dem letzten Fund.
+
+## Ziel & Nicht-Ziele
+
+**Ziel:** Ein NUL-Byte erreicht die Datenbankschicht nicht mehr, unabhängig davon, über welchen
+Weg es hereinkommt. Wer eines schickt, bekommt **422** mit Feldbezug. Danach fallen die
+NUL-begründeten Schemathesis-Ausschlüsse weg, und `SafeText` wird dort entfernt, wo es nur noch
+das Gleiche zweimal sagt.
+
+**Nicht-Ziele:**
+- Keine weiteren Zeichenklassen. Nur `U+0000`. Steuerzeichen, die Postgres akzeptiert, sind
+  ein anderes Thema (der TOML-Fund aus Stufe 8b hat seine eigene Zeile).
+- Keine Änderung an Antworten, Fehlerformaten oder Statuscodes außer dem einen: 422 statt 500.
+- Keine Migration, keine Änderung an Spaltentypen.
+- Kein Umbau der Validierungsarchitektur. Zwei kleine Mechanismen, kein Framework.
+
+## Warum zwei Mechanismen, nicht einer
+
+Das ist der Kern der Spec, und er folgt aus dem Transportweg:
+
+1. **Pfad und Query-String** sind keine Pydantic-Modelle, sondern Funktionsparameter. Ein
+   `Annotated`-Typ müsste an jeden einzelnen von rund dreißig Parametern geschrieben werden —
+   dasselbe Laufband. Hier greift nur eine **Middleware**, die den rohen Pfad und den rohen
+   Query-String prüft, bevor geroutet wird. Ein Substring-Test je Anfrage, messbar nichts.
+2. **Request-Bodies** kommen als JSON, und dort steht ein NUL als `\u0000` — in den rohen Bytes
+   ist also **kein** NUL zu finden. Eine Middleware kann diesen Fall nicht sehen, ohne das Parsen
+   zu wiederholen. Hier greift eine **gemeinsame Basisklasse** mit einem
+   `model_validator(mode="before")`, der die Eingabe rekursiv durchgeht. Der Server hat 28
+   Request-Schemas, das Monitoring 12; sie erben künftig von dieser Klasse statt direkt von
+   `BaseModel`.
+
+Ein einziger Mechanismus für beides gibt es nicht. Wer es trotzdem versucht, prüft entweder den
+Body zweimal oder den Pfad nie.
+
+## Betroffene Komponenten & Dateien
+
+**Server** (`apps/server/`):
+- neu: der NUL-Wächter als Middleware, neben `app/core/middleware.py` (dort sitzt schon
+  `IPFilterMiddleware`, die Einreihung in `app/main.py:236` ist das Muster).
+- neu oder erweitert: die gemeinsame Request-Basisklasse, sinnvoll in `app/core/bounds.py`
+  (dort steht bereits `SafeText`, und die Klasse gehört zur selben Sache).
+- die 28 Request-Schemas unter `app/modules/*/schemas.py` erben von ihr.
+- `app/core/bounds.py`: `SafeText` bleibt als Typ erhalten, wird aber dort aus den Feldern
+  entfernt, wo es nach der Flächenregel nur noch dasselbe sagt.
+
+**Monitoring** (`apps/monitoring/`): dieselben zwei Mechanismen, eigene Kopie. Die Dienste
+teilen keinen Code (CLAUDE.md §1), und das ist hier auch richtig: 40 Zeilen doppelt sind besser
+als eine geteilte Bibliothek zwischen zwei eigenständigen Diensten.
+
+**Tests:** je Mechanismus ein Test mit beiden Richtungen, plus die Stellen aus der Belegliste
+als konkrete Fälle. `apps/server/tests/schemathesis_exclude.toml` und das Monitoring-Pendant
+verlieren die NUL-begründeten Einträge.
+
+## Datenmodell / API / Migrationen
+
+Keine Migration, kein neues Feld, kein neuer Endpunkt. Die einzige nach außen sichtbare Änderung
+ist der Statuscode für eine Eingabe, die heute einen Serverfehler auslöst. Am OpenAPI-Schema
+ändert sich **nichts** — ein NUL-Verbot ist in JSON Schema nicht ausdrückbar, und das ist gut:
+damit trifft dieses Vorhaben das oasdiff-Gate nicht (siehe `scripts/dev/oasdiff-severity.levels`
+für den Fall, in dem es anders war).
+
+## Externe Integrationen
+
+Keine.
+
+## Trade-offs & Alternativen
+
+1. **Middleware plus Basisklasse** (Empfehlung). Deckt alle drei Wege ab, zwei kleine Stellen,
+   jede für sich lesbar und testbar.
+2. Weiter Feld für Feld mit `SafeText`. Verworfen: im Bau der Randvalidierung nachweislich ein
+   Laufband, und jeder nicht getroffene Pfad bleibt ein 500er.
+3. Ein globaler Exception-Handler, der den Treiberfehler in 422 übersetzt. Verworfen aus demselben
+   Grund wie bei den Zahlen: er behandelt das Symptom, verdeckt echte Datenbankfehler und lässt
+   die Eingabe weiter durch die halbe Anwendung laufen.
+4. Nur die Middleware, ohne Basisklasse. Verworfen: der Body-Fall, also die Mehrheit der
+   belegten Stellen, bliebe offen.
+
+## Risiken & Rollback
+
+- **Die Middleware muss vor dem Routing greifen**, sonst schlägt ein NUL im Pfad schon in der
+  Pfadauflösung durch. Gegenmittel: Test mit `%00` im Pfad **und** in einem Query-Wert.
+- **Die Basisklasse darf bestehende Validatoren nicht verdrängen.** `mode="before"` läuft vor
+  der Typprüfung und muss Nicht-Dict-Eingaben unbeschadet weitergeben — genau der Fehler, der
+  bei `_validate_tags` zu 500 statt 422 geführt hat. Gegenmittel: derselbe Test, der dort
+  entstanden ist, als Vorlage.
+- **Doppelte Ablehnung** durch Basisklasse und `SafeText` am selben Feld ist harmlos, aber
+  verwirrend. Deshalb T3 im Ledger.
+- **Ein Ausschluss könnte mehr verdecken als NUL.** Genau dieser Fehler ist beim Vorgänger
+  passiert: entfernt wurde nach *dokumentierter Begründung* statt nach Verhalten. Deshalb wird
+  jeder Eintrag vor dem Entfernen an der Route nachgestellt, nicht am Text geglaubt.
+- Rollback: je Mechanismus ein Commit, `git revert` einzeln möglich.
+
+## Doku-Impact
+
+`CHANGELOG.md` (422 statt 500 bei NUL in jeder Eingabe). Kein neuer Betriebsschritt, kein Flag,
+keine Env-Variable, also keine Änderung an `docs/` oder `DEVELOPMENT.md`.
+
+## Abhängigkeit
+
+**Baubar erst nach dem Merge von `feature/input-boundary-validation`.** Dieses Vorhaben setzt
+`app/core/bounds.py` und die dort eingeführten Typen voraus und berührt dieselben
+Ausschlussdateien. Vorher gebaut, kollidiert es mit jedem Task des Vorgängers.
+
+## Offene Fragen
+
+1. **Statuscode bei NUL im Pfad:** 422 wie bei jeder anderen Validierung, oder 400, weil ein
+   NUL im Pfad eher eine kaputte Anfrage als ein ungültiger Wert ist? *Empfehlung: 422* —
+   FastAPI antwortet auf einen ungültigen Pfadparameter ohnehin mit 422, und zwei Codes für
+   dieselbe Klasse wären eine Inkonsistenz für jeden Client.
+2. **Bleibt `SafeText` an den Feldern, wo es heute steht?** *Empfehlung: entfernen, wo es nur
+   „kein NUL" bedeutet*, und den Typ für Felder behalten, die mehr brauchen. Zwei Mechanismen,
+   die dasselbe behaupten, veralten unterschiedlich.

@@ -18,9 +18,10 @@ into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
 0``) or leave the default a plain value.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, BaseModel, Field, ValidationError, model_validator
+from pydantic_core import InitErrorDetails
 
 # Primary key of a table declared as Column(Integer) — Postgres INTEGER.
 IntPk = Annotated[int, Field(ge=1, le=2147483647)]
@@ -60,3 +61,61 @@ def _reject_nul(value: str) -> str:
 # control characters in general — the TOML guards in frp/schemas.py are a
 # separate concern with their own reason.
 SafeText = Annotated[str, AfterValidator(_reject_nul)]
+
+
+def _find_nul(data: dict) -> tuple[tuple, str] | None:
+    """Location and value of a string in `data` that carries a NUL, if any.
+
+    Walks with an explicit stack rather than recursion: the body is whatever the
+    client nested, and a RecursionError here would be the 500 this exists to
+    prevent."""
+    stack: list[tuple[tuple, Any]] = [((), data)]
+    while stack:
+        loc, value = stack.pop()
+        if isinstance(value, str):
+            if "\x00" in value:
+                return loc, value
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str) and "\x00" in key:
+                    return (*loc, key), key
+                stack.append(((*loc, key), item))
+        elif isinstance(value, list):
+            stack.extend(((*loc, i), item) for i, item in enumerate(value))
+    return None
+
+
+class RequestModel(BaseModel):
+    """Base of every schema that describes a request body: no string anywhere in
+    it may carry a NUL byte (see _reject_nul for why that byte, and only it).
+
+    A model_validator, not a per-field type: the rule is a property of the input
+    as a whole, and a subclass cannot forget it on a new field. mode="before"
+    sees the raw input, so anything that is not a dict passes through untouched
+    and meets the model's own type check — the uncaught TypeError that
+    _validate_tags once raised on a raw bool is the failure this avoids.
+
+    The rejection is raised as a ValidationError carrying the NUL's own
+    location, which pydantic merges into the field path: the client sees
+    loc ["body", "server_ids", 1], not just ["body"]."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_nul_anywhere(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        found = _find_nul(data)
+        if found is None:
+            return data
+        loc, value = found
+        raise ValidationError.from_exception_data(
+            cls.__name__,
+            [
+                InitErrorDetails(
+                    type="value_error",
+                    loc=loc,
+                    input=value,
+                    ctx={"error": ValueError("must not contain a NUL byte")},
+                )
+            ],
+        )

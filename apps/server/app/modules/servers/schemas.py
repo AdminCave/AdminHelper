@@ -4,8 +4,9 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
+from app.core.bounds import RequestModel
 from app.modules.frp.schemas import _reject_toml_breakers, _validate_tags
 
 
@@ -27,7 +28,7 @@ def _validate_server_name(v: Optional[str]) -> Optional[str]:
     return v
 
 
-class ServerCreate(BaseModel):
+class ServerCreate(RequestModel):
     name: str
     hostname: str
     os_type: Optional[str] = None
@@ -38,7 +39,7 @@ class ServerCreate(BaseModel):
     _clean_tags = field_validator("tags", mode="before")(_validate_tags)
 
 
-class ServerUpdate(BaseModel):
+class ServerUpdate(RequestModel):
     name: Optional[str] = None
     hostname: Optional[str] = None
     os_type: Optional[str] = None

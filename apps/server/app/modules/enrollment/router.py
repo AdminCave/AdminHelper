@@ -14,11 +14,10 @@ cert-gated: the client has no cert yet — this is its bootstrap door.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin, get_current_user
-from app.core.bounds import SafeText
+from app.core.bounds import RequestModel
 from app.core.config import ENROLL_PORT
 from app.core.database import get_db
 from app.core.identity import SCOPE_ACCESS
@@ -72,8 +71,8 @@ def mint_self_enrollment_token(
     return res
 
 
-class EnrollmentTokenForRequest(BaseModel):
-    username: SafeText
+class EnrollmentTokenForRequest(RequestModel):
+    username: str
     browser: bool = False
 
 

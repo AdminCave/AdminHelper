@@ -4,10 +4,12 @@
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from app.core.bounds import RequestModel
 
 
-class ConnectionCreate(BaseModel):
+class ConnectionCreate(RequestModel):
     name: str = Field(..., min_length=1, max_length=255)
     # The desktop/web clients only render ssh/rdp/web; reject anything else at
     # the boundary instead of persisting a kind no consumer can handle.
@@ -34,7 +36,7 @@ class ConnectionCreate(BaseModel):
         return v.strip()
 
 
-class ConnectionUpdate(BaseModel):
+class ConnectionUpdate(RequestModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     # Same gate as ConnectionCreate: no client renders anything but ssh/rdp/web,
     # so reject others here too — otherwise PUT could persist a kind that Create
@@ -62,6 +64,6 @@ class ConnectionUpdate(BaseModel):
         return v.strip() if v else v
 
 
-class ImportRequest(BaseModel):
+class ImportRequest(RequestModel):
     connections: list[dict[str, Any]]
     mode: Literal["merge", "replace"]
