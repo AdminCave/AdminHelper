@@ -348,7 +348,7 @@ if [ "$DRY" = 1 ] || su - "$RUNNER" -c 'command -v claude' >/dev/null 2>&1; then
   run_sh "su - $RUNNER -c 'claude install $CLAUDE_VERSION'"
 else
   note "no claude CLI for $RUNNER yet — install exactly this version, then run this again:"
-  note "  sudo -iu $RUNNER bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s $CLAUDE_VERSION'"
+  printf '     %s\n' "sudo -iu $RUNNER bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s $CLAUDE_VERSION'"
 fi
 
 # ── 6. the two token files ───────────────────────────────────────────────────
@@ -361,7 +361,7 @@ if [ -s "$HOME_DIR/.config/adminhelper/oauth.env" ]; then
 else
   write_file "$HOME_DIR/.config/adminhelper/oauth.env" 600 "# The subscription token of this user (roadmap D18: everything runs on the
 # subscription, never on an API key). Create it with:
-#   sudo -iu $RUNNER claude setup-token
+#   sudo -iu $RUNNER env DISABLE_AUTOUPDATER=1 claude setup-token
 # then put it here as one line:
 # CLAUDE_CODE_OAUTH_TOKEN=...
 "
@@ -388,7 +388,7 @@ cat <<HANDOVER
 
 ── done. Three steps are yours, $RUNNER cannot do them itself:
 
-  1. sudo -iu $RUNNER claude setup-token
+  1. sudo -iu $RUNNER env DISABLE_AUTOUPDATER=1 claude setup-token
      put the token into $HOME_DIR/.config/adminhelper/oauth.env
 
   2. pveum user token add $RUNNER@pve run --privsep 1   (plus the four ACL paths)

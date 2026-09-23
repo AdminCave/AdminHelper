@@ -128,7 +128,7 @@ EMPTYUSAGE="$INITONLY"'
 [ "$(pin "$M" "$V" <<<"$NOUSAGE")" = noresult ] && [ "$(pin "$M" "$V" <<<"$EMPTYUSAGE")" = noresult ] \
   && ok "a result without model usage is noresult, never ok" \
   || bad "a result without model usage read as $(pin "$M" "$V" <<<"$NOUSAGE")/$(pin "$M" "$V" <<<"$EMPTYUSAGE")"
-bash "$RT" --pin "$M"</dev/null >/dev/null 2>&1
+bash "$RT" --pin "$M" </dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--pin without a version is a usage error (exit 2)" || bad "--pin without a version did not exit 2"
 
 echo "── the probe really passes --verbose (the defect of 2026-09-22)"

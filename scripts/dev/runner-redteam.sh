@@ -17,19 +17,21 @@
 #         all three so that cannot hide.
 #
 # Stage 4 counts as finished at `0 FAIL` **and** no `info` on the mandatory
-# probes (other people's secrets, pushing, gh, the pool, the two model probes).
+# probes (other people's secrets, pushing, gh, the pool, the model probes and the
+# pin read-back).
 # The output belongs in the appendix of tasks/harness-stufe-4.md.
 #
 # The probes read and try; they do not change the system. `AH_VM_NO_AUTOREAP=1`
 # is set for the VM probes because every vm.py verb except list/doctor sweeps
 # expired leases of its own lane on the way out — a proof run must not destroy
-# somebody's box. The two `claude -p` probes cost a little subscription budget
+# somebody's box. The `claude -p` probes cost a little subscription budget
 # and are capped and time-boxed.
 #
 #   AH_OWNER_HOME           the home this user must not be able to read
 #                           (default: the home of uid 1000)
 #   AH_REDTEAM_FOREIGN_VMID a VMID OUTSIDE the adminhelper-ci pool (default 100)
-#   AH_REDTEAM_NO_CLAUDE=1  skip the two `claude -p` probes (offline, no budget)
+#   AH_REDTEAM_NO_CLAUDE=1  skip the `claude -p` probes and the pin read-back
+#                           (offline, no budget)
 
 set -uo pipefail
 

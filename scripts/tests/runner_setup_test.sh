@@ -293,8 +293,18 @@ for v in '...' '2.1' '2.1.280.1' '2..280' "2.1.2$(printf '\xd9\xa3')0"; do
   LC_ALL="${LOC:-C.UTF-8}" PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run >/dev/null 2>&1 \
     && LOOSE="$LOOSE '$v'"
 done
+# The same tree and locale with a good version must pass, or the loop proves nothing.
+printf '2.1.280\n' > "$BADTREE/scripts/dev/runner-claude.version"
+LC_ALL="${LOC:-C.UTF-8}" PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run >/dev/null 2>&1 \
+  || LOOSE="$LOOSE (and a good version was refused too — the probe is broken)"
 [ -z "$LOOSE" ] && ok "only N.N.N passes (empty segments, 2 or 4 parts, foreign digits refused)" \
   || bad "the version check let through:$LOOSE"
+
+# The branch for a runner without any CLI is never reached under --dry-run; what it
+# prints has to install exactly the pinned version.
+grep -qF "install.sh | bash -s \$CLAUDE_VERSION" "$SETUP" \
+  && ok "without a CLI the setup names the installer with the pinned version" \
+  || bad "the missing-CLI hint does not install \$CLAUDE_VERSION"
 
 grep -qE '^[[:space:]]*export DISABLE_AUTOUPDATER=1' "$REPO_ROOT/scripts/dev/runner-env.sh" \
   && ok "runner-env.sh switches the CLI updater off" || bad "runner-env.sh does not export DISABLE_AUTOUPDATER=1"

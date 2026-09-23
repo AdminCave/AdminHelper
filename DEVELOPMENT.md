@@ -442,7 +442,7 @@ und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
 Klon und Datenbank wieder weg. Danach bleiben **drei Handgriffe** fuer Kevin, die
 der Runner nicht selbst tun kann:
 
-1. `sudo -iu adminhelper-runner claude setup-token` → Token nach
+1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
    `~adminhelper-runner/.config/adminhelper/oauth.env` (Abo-Token, kein API-Key:
    `ANTHROPIC_API_KEY` haette Vorrang und wuerde ueber ein API-Konto abrechnen).
 2. `pveum user token add adminhelper-runner@pve run --privsep 1` plus dieselben vier
@@ -476,10 +476,11 @@ darf nicht davon abhaengen, was die CLI gerade als Standard mitbringt:
   Settings-Datei: die ist oeffentlich und traegt Regeln, nie einen `env`-Block. Aeltere Fassungen kennen neuere
   Modelle nicht: das Binary von 2.1.278 enthaelt `claude-opus-5-5` nicht in seinem Katalog.
   Hat der Runner noch gar keine CLI, installiert der offizielle Installer genau diese
-  Fassung: `sudo -iu adminhelper-runner bash -c 'curl -fsSL https://claude.ai/install.sh | bash -s 2.1.280'`
-  (Version aus der Datei), danach `runner-setup.sh` erneut. Ein Handgriff als Runner ohne
-  `runner-env.sh` — etwa `claude setup-token` — laeuft mit Updater; wandert die Version
-  dabei, meldet das Red Team es, und `runner-setup.sh` setzt sie zurueck.
+  Fassung (aus dem Repo-Root:
+  `sudo -iu adminhelper-runner bash -c "curl -fsSL https://claude.ai/install.sh | bash -s $(cat scripts/dev/runner-claude.version)"`),
+  danach `runner-setup.sh` erneut. Ein Handgriff als Runner ohne `runner-env.sh` setzt den
+  Schalter selbst (`env DISABLE_AUTOUPDATER=1`, wie bei `setup-token`); wandert die Version
+  trotzdem, meldet das Red Team es, und `runner-setup.sh` setzt sie zurueck.
 
 **Das Red Team liest zurueck, was wirklich lief.** Aus dem `system/init`-Ereignis einer
 Modellprobe nimmt es das tatsaechliche Modell und die tatsaechliche CLI-Version, aus
