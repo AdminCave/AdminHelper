@@ -62,8 +62,11 @@ Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (T6)
 Abhängt von: T2
 
-### T4 — Dasselbe im Monitoring  [ ]
-Komponente: monitoring · Dateien: apps/monitoring/app/ (Middleware + Basisklasse), apps/monitoring/app/routers/*.py bzw. die Schemas, apps/monitoring/tests/test_nul.py (neu, SPDX)
+### T4 — Dasselbe im Monitoring  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/middleware.py (neu, SPDX), apps/monitoring/app/core/bounds.py, apps/monitoring/app/main.py, apps/monitoring/app/schemas.py, apps/monitoring/app/routers/agent.py, apps/monitoring/tests/test_nul.py (neu, SPDX)
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @c55a252b 2026-09-23T11:22:08+02:00
+Review: approve (sonnet, 2. Runde)
+Dateiliste im Bau präzisiert: statt des Verzeichnisses `apps/monitoring/app/` die konkreten Dateien (`task-close --stage` nimmt keine Verzeichnisse); `routers/agent.py`, weil der Agent-Report ein rohes `dict` als Body nimmt und damit an der Basisklasse vorbeigeht.
 Änderung: Beide Mechanismen als eigene Kopie, dazu die 12 Request-Schemas. Die Dienste teilen bewusst keinen Code (CLAUDE.md §1); 40 doppelte Zeilen sind hier billiger als eine geteilte Bibliothek zwischen zwei eigenständigen Diensten.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (T6)

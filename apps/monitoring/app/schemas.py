@@ -8,13 +8,14 @@ import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
+from app.core.bounds import RequestModel
 
 
-class CheckCreate(BaseModel):
+class CheckCreate(RequestModel):
     server_id: str | None = None
     name: str
     description: str | None = None
@@ -34,7 +35,7 @@ class CheckCreate(BaseModel):
         return self
 
 
-class CheckUpdate(BaseModel):
+class CheckUpdate(RequestModel):
     server_id: str | None = None
     name: str | None = None
     description: str | None = None
@@ -46,7 +47,7 @@ class CheckUpdate(BaseModel):
     consecutive_fails: int | None = None
 
 
-class AlertRuleCreate(BaseModel):
+class AlertRuleCreate(RequestModel):
     name: str
     match_severity: str | None = None
     match_server_id: str | None = None
@@ -56,7 +57,7 @@ class AlertRuleCreate(BaseModel):
     enabled: bool = True
 
 
-class AlertRuleUpdate(BaseModel):
+class AlertRuleUpdate(RequestModel):
     name: str | None = None
     match_severity: str | None = None
     match_server_id: str | None = None
@@ -66,7 +67,7 @@ class AlertRuleUpdate(BaseModel):
     enabled: bool | None = None
 
 
-class TemplateCheckDef(BaseModel):
+class TemplateCheckDef(RequestModel):
     def_id: str | None = None  # auto-generated if not set
     name: str
     check_type: str
@@ -110,7 +111,7 @@ class TemplateCheckDef(BaseModel):
         return self
 
 
-class TemplateAlertDef(BaseModel):
+class TemplateAlertDef(RequestModel):
     def_id: str | None = None
     name: str
     match_severity: str | None = None
@@ -130,27 +131,27 @@ class TemplateAlertDef(BaseModel):
         return v
 
 
-class TemplateCreate(BaseModel):
+class TemplateCreate(RequestModel):
     name: str
     description: str | None = None
     check_definitions: list[TemplateCheckDef] = []
     alert_definitions: list[TemplateAlertDef] = []
 
 
-class TemplateUpdate(BaseModel):
+class TemplateUpdate(RequestModel):
     name: str | None = None
     description: str | None = None
     check_definitions: list[TemplateCheckDef] | None = None
     alert_definitions: list[TemplateAlertDef] | None = None
 
 
-class TemplateAssign(BaseModel):
+class TemplateAssign(RequestModel):
     server_id: str
     hostname: str
     server_name: str
 
 
-class TemplateTagAssign(BaseModel):
+class TemplateTagAssign(RequestModel):
     tag: str
 
     @field_validator("tag")
@@ -169,7 +170,7 @@ class TemplateTagAssign(BaseModel):
         return v
 
 
-class MaintenanceInput(BaseModel):
+class MaintenanceInput(RequestModel):
     """Create/full-update payload for a maintenance window. kind-dependent
     required fields are enforced in the model validator; aware datetimes are
     normalized to the service's naive-UTC convention."""

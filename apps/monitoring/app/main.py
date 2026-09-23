@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.core.middleware import NulByteMiddleware
 from app.models import (  # noqa: F401
     MonitorAgentKey,
     MonitorAgentLiveness,
@@ -90,6 +91,7 @@ app = FastAPI(
     openapi_url="/openapi.json" if _DOCS_ENABLED else None,
     lifespan=lifespan,
 )
+app.add_middleware(NulByteMiddleware)
 
 from app.routers import all_routers  # noqa: E402
 

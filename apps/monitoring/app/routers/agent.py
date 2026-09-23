@@ -19,6 +19,7 @@ from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import EXCLUDED_FSTYPES, record_agent_report
 from app.core.auth import require_agent
+from app.core.bounds import RequestDict
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, safe_metric_part, victoria
@@ -66,7 +67,7 @@ def _capped(value: object) -> list:
 @router.post("/agent/{server_id}/report")
 def agent_report(
     server_id: str,
-    report: dict,
+    report: RequestDict,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     auth_server_id: str = Depends(require_agent),
