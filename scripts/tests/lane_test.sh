@@ -43,8 +43,10 @@ export PG_LOG="$WORK/pg.log" VM_LOG="$WORK/vm.log"
 # success, so `done` gets as far as the parts under test.
 mkdir -p "$WORK/bin"
 for tool in createdb dropdb; do
-  printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "%s" "$*" >> "$PG_LOG"\n' "$tool" > "$WORK/bin/$tool"
+  printf '#!/usr/bin/env bash\nprintf "%%s pw=%%s %%s\\n" "%s" "${PGPASSWORD-<unset>}" "$*" >> "$PG_LOG"\n' "$tool" > "$WORK/bin/$tool"
 done
+# createdb fails on demand, as it does when the name is taken.
+printf 'if [ -n "${FAKE_CREATEDB_FAIL:-}" ]; then echo "database exists" >&2; exit 1; fi\n' >> "$WORK/bin/createdb"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$VM_LOG"\nexit 0\n' > "$WORK/bin/vm.py"
 chmod +x "$WORK/bin/"*
 export PATH="$WORK/bin:$PATH" AH_VM_PY="$WORK/bin/vm.py"
@@ -67,7 +69,7 @@ for c in server monitoring; do
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -97,8 +99,10 @@ lane_db=$(env_in "$WT" AH_TEST_DB); main_db=$(env_in "$MAIN" AH_TEST_DB)
   && ok "the lane's venv is ~/.cache/ah-venv-alpha" || bad "lane AH_VENV: $(env_in "$WT" AH_VENV)"
 [ "$(env_in "$MAIN" AH_VENV)" = "$HOME/.cache/ah-venv" ] \
   && ok "the main checkout keeps ~/.cache/ah-venv" || bad "main AH_VENV: $(env_in "$MAIN" AH_VENV)"
-grep -qx "createdb --maintenance-db=postgresql://ah:secret@localhost:5432/adminhelper_test adminhelper_test_alpha" "$PG_LOG" \
-  && ok "createdb makes exactly that database, over a libpq URL" || bad "createdb calls: $(cat "$PG_LOG")"
+grep -qx "createdb pw=secret --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_alpha" "$PG_LOG" \
+  && ok "createdb makes exactly that database, over a libpq URL, the password in PGPASSWORD" || bad "createdb calls: $(cat "$PG_LOG")"
+[ -f "$MAIN/.vm/lanes/alpha" ] && ok "and new leaves the lane's ownership mark in the main checkout" \
+  || bad "no mark at $MAIN/.vm/lanes/alpha"
 
 echo "── new: a dash in the slug becomes an underscore in the database ──"
 : > "$PG_LOG"
@@ -110,13 +114,13 @@ grep -q " adminhelper_test_beta_two$" "$PG_LOG" && ok "beta-two -> adminhelper_t
 
 echo "── a slug outside [a-z0-9-] never reaches createdb or dropdb ──"
 : > "$PG_LOG"
-for evil in 'x;y' 'a b' 'A' '../up' '$(id)'; do
+for evil in 'x;y' 'a b' 'A' '../up' '$(id)' "$(printf 'a%.0s' $(seq 1 41))"; do
   lane new "$evil"; rc=$?
   [ "$rc" = 2 ] || bad "new '$evil' exited $rc, not 2"
   lane "done" "$evil"; rc=$?
   [ "$rc" = 2 ] || bad "done '$evil' exited $rc, not 2"
 done
-[ ! -s "$PG_LOG" ] && ok "five hostile slugs refused by new and done before any database call" \
+[ ! -s "$PG_LOG" ] && ok "six hostile slugs (one 41 long) refused by new and done before any database call" \
   || bad "a hostile slug reached the database tools: $(cat "$PG_LOG")"
 
 echo "── done: takes the lane's database and venv, nothing else ──"
@@ -124,8 +128,9 @@ mkdir -p "$HOME/.cache/ah-venv-alpha/bin" "$HOME/.cache/ah-venv/bin" "$HOME/.cac
 : > "$PG_LOG"
 lane "done" alpha && ok "done alpha exits 0" || bad "done alpha failed: $(cat "$WORK/out.log")"
 [ ! -e "$WT" ] && ok "the worktree is gone" || bad "worktree still there"
-grep -qx "dropdb --if-exists --maintenance-db=postgresql://ah:secret@localhost:5432/adminhelper_test adminhelper_test_alpha" "$PG_LOG" \
+grep -qx "dropdb pw=secret --if-exists --maintenance-db=postgresql://ah@localhost:5432/adminhelper_test adminhelper_test_alpha" "$PG_LOG" \
   && ok "dropdb removes exactly adminhelper_test_alpha" || bad "dropdb calls: $(cat "$PG_LOG")"
+[ ! -e "$MAIN/.vm/lanes/alpha" ] && ok "and the mark goes with it" || bad "mark alpha still there"
 [ "$(wc -l < "$PG_LOG")" -eq 1 ] && ok "and no other database call" || bad "database calls: $(cat "$PG_LOG")"
 [ ! -e "$HOME/.cache/ah-venv-alpha" ] && ok "the lane's venv is gone" || bad "ah-venv-alpha still there"
 [ -d "$HOME/.cache/ah-venv/bin" ] && [ -d "$HOME/.cache/ah-venv-beta-two/bin" ] \
@@ -181,6 +186,40 @@ lane "done" delta && [ ! -e "$WTD" ] && ok "done removes the lane with its links
   || bad "done delta: $(cat "$WORK/out.log")"
 [ -x "$MAIN/apps/server/.venv/bin/ruff" ] && [ -f "$MAIN/apps/server/.venv/pyvenv.cfg" ] && [ -f "$MAIN/$SIDECAR" ] \
   && ok "and leaves what they pointed at alone" || bad "done removed the main checkout's venv or sidecar"
+
+echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
+: > "$PG_LOG"
+export FAKE_CREATEDB_FAIL=1
+lane new kappa; rc=$?
+unset FAKE_CREATEDB_FAIL
+[ "$rc" = 1 ] && [ ! -e "$WORK/AdminHelper-kappa" ] && [ ! -e "$MAIN/.vm/lanes/kappa" ] \
+  && ! git -C "$MAIN" show-ref --verify --quiet refs/heads/feature/kappa \
+  && ok "a failing createdb leaves no worktree, no branch and no mark" \
+  || bad "kappa rc=$rc: $(cat "$WORK/out.log")"
+! grep -q "lane.sh done" "$WORK/out.log" && ok "and sends nobody to done" \
+  || bad "the failure message still suggests done: $(cat "$WORK/out.log")"
+# lambda: a venv and a database of the lane's name that no lane made.
+mkdir -p "$HOME/.cache/ah-venv-lambda/bin"
+: > "$PG_LOG"
+lane "done" lambda; rc=$?
+[ "$rc" = 0 ] && [ -d "$HOME/.cache/ah-venv-lambda/bin" ] && ! grep -q "^dropdb" "$PG_LOG" \
+  && grep -q "not this lane's" "$WORK/out.log" \
+  && ok "done without a mark leaves a same-named database and venv alone, and says so" \
+  || bad "done lambda rc=$rc pg=$(cat "$PG_LOG"): $(cat "$WORK/out.log")"
+lane new lambda; rc=$?
+[ "$rc" = 1 ] && grep -q "belongs to no lane" "$WORK/out.log" && [ ! -s "$PG_LOG" ] \
+  && [ ! -e "$WORK/AdminHelper-lambda" ] \
+  && ok "new refuses to adopt a venv no lane made" || bad "new lambda rc=$rc: $(cat "$WORK/out.log")"
+# mu: the worktree cannot be added (the branch is checked out elsewhere) after
+# the database was created — both come back.
+g branch feature/mu && git -C "$MAIN" worktree add -q "$WORK/elsewhere-mu" feature/mu
+: > "$PG_LOG"
+lane new mu; rc=$?
+[ "$rc" = 1 ] && grep -q "^createdb .* adminhelper_test_mu$" "$PG_LOG" && grep -q "^dropdb .* adminhelper_test_mu$" "$PG_LOG" \
+  && [ ! -e "$MAIN/.vm/lanes/mu" ] && [ ! -e "$WORK/AdminHelper-mu" ] \
+  && ok "a failing worktree takes back the database and the mark" \
+  || bad "mu rc=$rc pg=$(cat "$PG_LOG"): $(cat "$WORK/out.log")"
+git -C "$MAIN" worktree remove "$WORK/elsewhere-mu"
 
 echo "── done: refuses while something still works in the lane ──"
 lane new theta || bad "new theta failed: $(cat "$WORK/out.log")"

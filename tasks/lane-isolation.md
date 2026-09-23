@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: bereit · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
@@ -65,6 +65,20 @@ Review: approve (sonnet); Nit /proc-Kommentar übernommen
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 4)
 Abhängt von: T1
+
+### T5 — Lane-Ressourcen gehören der Lane (Opus-Review)  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @fb2d98d8 2026-09-23T15:12:13+02:00
+Review: approve (sonnet, 2. Runde)
+Änderung: Befund aus dem Opus-Review der Aufsicht über den Branch-Diff, nachgestellt: Das Namensschema kollidiert mit Handarbeit. Auf der Box liegen `adminhelper_test_fable` und `~/.cache/ah-venv-fable`, eine Verifikations-DB der Aufsicht. `lane.sh new fable` legt erst den Worktree an, scheitert dann an `createdb` und empfiehlt `done && new`. `done fable` löscht die fremde DB und das fremde Venv, sogar ohne Lane und mit Exit 0. Fix: `createdb` vor `git worktree add`; ein Fehlschlag lässt nichts zurück und empfiehlt kein `done`. `new` legt eine Eigentumsmarke `.vm/lanes/<slug>` im Haupt-Checkout an, die einen von Hand gelöschten Worktree übersteht; `done` löscht DB und Venv nur mit dieser Marke. Nits: Das DB-Passwort geht per `PGPASSWORD` statt in der `--maintenance-db`-URL, die in `/proc/<pid>/cmdline` für andere lokale Nutzer lesbar ist. `check_slug` bekommt eine Längengrenze (40), weil Postgres Bezeichner bei 63 Bytes kürzt. Tests: `createdb` schlägt fehl ⇒ kein Worktree, keine Marke; `done` ohne Marke rührt eine gleichnamige DB und ein gleichnamiges Venv nicht an; Gegenprobe gegen den Stand davor.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (Verhalten an den Rändern; AUTONOMOUS.md/DEVELOPMENT.md beschreiben DB und Venv je Lane schon)
+
+### T6 — Ehrlicher Sperr-Umfang: je Nutzer, fester Pfad (Opus-Review)  [ ]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+Änderung: Befund aus dem Opus-Review der Aufsicht: `${XDG_RUNTIME_DIR:-$HOME/.cache}` ist je Nutzer. Die Doku verspricht „alle Checkouts dieser Box“, aber der Runner-Nutzer hätte seine eigene Datei; zwei Läufe desselben Nutzers mit und ohne `XDG_RUNTIME_DIR` sperren sogar zwei verschiedene Dateien. Fix: fester Pfad `$HOME/.cache/adminhelper-py.lock`. Die Doku sagt dann ehrlich „je Nutzer, über alle seine Checkouts“, mit dem Satz, dass Runner-Läufe ab Stufe 7 eine nutzerübergreifende Sperre brauchen. Die trägt die Aufsicht als Roadmap-Zeile ein; hier wird sie nicht gebaut. Mitnehmen: AUTONOMOUS.md „Fast-Suite: vm“ behauptet, die Lane habe keine lokalen Toolchain-Artefakte (venvs …), obwohl sie jetzt verlinkte Venvs hat. Nicht anfassen: `feature-build/SKILL.md` und `feature-plan/SKILL.md`, die gehören zu R-0065. Test: zwei gleichzeitige Läufe mit verschiedenem `XDG_RUNTIME_DIR` laufen trotzdem nacheinander.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md „Python-Tests lokal“ · AUTONOMOUS.md „Parallel-Betrieb“ · CHANGELOG
 
 ## Abschluss-Beweis (nach T4, vor dem PR)
 

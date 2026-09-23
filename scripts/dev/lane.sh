@@ -66,11 +66,29 @@ lane_db() {  # lane_db create|drop <slug>
     return 0
   fi
   url="$(printf '%s' "$url" | sed -E 's#^postgresql\+[a-z0-9]+://#postgresql://#')"
+  # The password travels in the environment, not on the command line: every local
+  # user can read a process's arguments (/proc/<pid>/cmdline), only its owner its
+  # environment. The URL percent-encodes the password; PGPASSWORD takes it raw.
+  local pass="" envp=()
+  if [[ "$url" =~ ^(postgresql://[^:@/]+):([^@]*)@(.*)$ ]]; then
+    pass="${BASH_REMATCH[2]}"
+    url="${BASH_REMATCH[1]}@${BASH_REMATCH[3]}"
+    pass="${pass//\\/\\\\}"
+    pass="$(printf '%b' "${pass//%/\\x}")"
+  fi
+  [ -n "$pass" ] && envp=(PGPASSWORD="$pass")
   case "$1" in
-    create) createdb --maintenance-db="$url" "$(lane_db_name "$2")" ;;
-    drop)   dropdb --if-exists --maintenance-db="$url" "$(lane_db_name "$2")" ;;
+    create) env "${envp[@]}" createdb --maintenance-db="$url" "$(lane_db_name "$2")" ;;
+    drop)   env "${envp[@]}" dropdb --if-exists --maintenance-db="$url" "$(lane_db_name "$2")" ;;
   esac
 }
+
+# The lane's ownership mark, in the MAIN checkout's .vm (gitignored), so it
+# outlives a worktree somebody removed by hand. `done` takes a slug's database
+# and venv only when the mark says `new` made them: the names are guessable,
+# and without it `done fable` dropped a hand-made adminhelper_test_fable and
+# ~/.cache/ah-venv-fable (review, 2026-09-23).
+lane_mark() { printf '%s/.vm/lanes/%s' "$ROOT" "$1"; }
 
 # lane_link_dir <worktree> <dir> — link every entry of the main checkout's <dir>
 # into a REAL <dir> in the lane. .gitignore matches these as directories
@@ -109,10 +127,49 @@ lane_new() {
     echo "  Commit the plan there first (chore(plan): add spec + ledger for $slug)."
     exit 1
   fi
+  # A mark without a worktree is a lane nobody closed; a venv of this name
+  # without a mark is somebody's handwork. Adopting either would make `done`
+  # take it later.
+  if [ -e "$(lane_mark "$slug")" ]; then
+    echo "lane $slug was never closed ($(lane_mark "$slug")) — run: bash scripts/dev/lane.sh done $slug"
+    exit 1
+  fi
+  if [ -e "$(lane_venv "$slug")" ]; then
+    echo "$(lane_venv "$slug") exists and belongs to no lane — pick another slug, or remove it yourself"
+    exit 1
+  fi
+  # The database first, then the mark, then the worktree: a createdb that fails
+  # (the name is taken) must leave nothing behind, and every step after it takes
+  # back what came before. The mark's directory is made before anything else.
+  mkdir -p "$ROOT/.vm/lanes"
+  if [ -f .devenv.sh ]; then
+    lane_db create "$slug" || {
+      echo "  createdb $(lane_db_name "$slug") failed — nothing of lane $slug was created."
+      echo "  If that database exists and belongs to no lane, pick another slug."
+      exit 1
+    }
+  fi
+  if ! printf 'lane %s, created %s\n' "$slug" "$(date -Is)" > "$(lane_mark "$slug")"; then
+    echo "  could not write the mark $(lane_mark "$slug") — taking the database back"
+    [ ! -f .devenv.sh ] || lane_db drop "$slug" \
+      || echo "  dropdb failed too — $(lane_db_name "$slug") is left behind, drop it by hand"
+    exit 1
+  fi
+  local added=1
   if git show-ref --verify --quiet "refs/heads/$branch"; then
-    git worktree add "$wt" "$branch"
+    git worktree add "$wt" "$branch" || added=0
   else
-    git worktree add -b "$branch" "$wt" main
+    git worktree add -b "$branch" "$wt" main || added=0
+  fi
+  if [ "$added" = 0 ]; then
+    echo "  git worktree add failed — taking back the database and the mark"
+    if [ -f .devenv.sh ] && ! lane_db drop "$slug"; then
+      # The mark stays: it is what lets a later `done` drop this database.
+      echo "  dropdb failed too — run: bash scripts/dev/lane.sh done $slug"
+      exit 1
+    fi
+    rm -f "$(lane_mark "$slug")"
+    exit 1
   fi
   # The lane identity, explicitly: vm.py and lib.sh both read .vm/lane, so every
   # VM this worktree clones carries `lane-<slug>` and no other lane's reap can
@@ -125,14 +182,7 @@ lane_new() {
   # own (lane_devenv above), and so is the database it points at.
   [ -f .claude/settings.local.json ] \
     && cp .claude/settings.local.json "$wt/.claude/settings.local.json"
-  if [ -f .devenv.sh ]; then
-    lane_devenv "$slug" > "$wt/.devenv.sh"
-    lane_db create "$slug" || {
-      echo "  createdb $(lane_db_name "$slug") failed — the lane has no database yet."
-      echo "  Fix the cause, then: bash scripts/dev/lane.sh done $slug && bash scripts/dev/lane.sh new $slug"
-      exit 1
-    }
-  fi
+  [ ! -f .devenv.sh ] || lane_devenv "$slug" > "$wt/.devenv.sh"
   # Gitignored parts of the main checkout that a build needs, linked for
   # reading: the frpc sidecar cargo test wants, and the component venvs that
   # carry the ruff CI pins (without them run.sh finds no ruff at all).
@@ -218,18 +268,25 @@ lane_done() {
     git worktree remove "$wt" \
       || { echo "worktree not clean — inspect it, then: git worktree remove --force $wt"; exit 1; }
   fi
-  # The lane's database and venv go with it, and only after the worktree: when
-  # that refused to go, nothing of the lane has been taken yet.
-  if [ -f "$ROOT/.devenv.sh" ]; then
+  # The lane's database and venv go with it, only after the worktree (when that
+  # refused to go, nothing of the lane has been taken yet), and only when the
+  # mark says they are the lane's.
+  if [ ! -e "$(lane_mark "$slug")" ]; then
+    echo "  no ownership mark for lane $slug — database $(lane_db_name "$slug") and"
+    echo "  $(lane_venv "$slug") are not this lane's, if they exist at all; left alone"
+  elif [ -f "$ROOT/.devenv.sh" ]; then
     lane_db drop "$slug" \
       || { echo "  dropdb failed — database $(lane_db_name "$slug") is left behind"; exit 1; }
+    rm -rf "$(lane_venv "$slug")"
+    rm -f "$(lane_mark "$slug")"
   else
     # Without the file there is no telling which server holds the database, and a
     # database left behind silently is the leak this command exists to prevent.
+    # The mark stays, so a later `done` still knows the database is the lane's.
     echo "  WARN: no .devenv.sh in the main checkout — database $(lane_db_name "$slug") is NOT dropped;"
     echo "        drop it by hand on the server AH_TEST_DB named (dropdb $(lane_db_name "$slug"))"
+    rm -rf "$(lane_venv "$slug")"
   fi
-  rm -rf "$(lane_venv "$slug")"
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git branch -d "$branch" 2>/dev/null && echo "  branch $branch deleted (was merged)" \
       || echo "  branch $branch kept (not merged — git branch -D $branch if you mean it)"
@@ -257,6 +314,8 @@ check_slug() {
     main|-*|*-) echo "slug must not be 'main' and must not start or end with '-'"; exit 2 ;;
     *[!a-z0-9-]*) echo "slug must be lowercase [a-z0-9-] only (the slug is the lane id)"; exit 2 ;;
   esac
+  # adminhelper_test_ + 40 stays under the 63 bytes Postgres keeps of a name.
+  [ "${#1}" -le 40 ] || { echo "slug must be at most 40 characters"; exit 2; }
 }
 
 case "$CMD" in
