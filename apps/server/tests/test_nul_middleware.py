@@ -61,7 +61,9 @@ def test_a_nul_in_a_query_name_is_422(test_client, db_session, admin_user):
     headers = _login(test_client)
     r = test_client.get("/api/frp/tunnels", params={"a" + NUL: "1"}, headers=headers)
     assert r.status_code == 422, r.text
+    # The name is the input at fault here, not the value that follows it.
     assert r.json()["detail"][0]["loc"] == ["query", "a" + NUL]
+    assert r.json()["detail"][0]["input"] == "a" + NUL
 
 
 def test_the_guard_answers_before_routing(test_client):

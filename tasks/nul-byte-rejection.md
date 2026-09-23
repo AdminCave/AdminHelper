@@ -21,13 +21,13 @@ Fehler ist beim Vorgänger passiert (dort T14/T15) und hat zwölf Einträge zu U
 lassen. Zweitens: Kein Test darf grün sein, wenn der Fix fehlt; je Task wird genannt, welche
 Produktivzeile man zurücknehmen müsste, damit er rot wird.
 
-**Defaults für die offenen Fragen — (a) und (b) aus der Spec, (c) aus dem Bau; gebaut nach
-Empfehlung, von Kevin noch nicht bestätigt (bestätigen oder ändern):** (a) Ein NUL im Pfad oder Query-String antwortet mit
-**422**, nicht 400 (T1). (b) `SafeText` wird aus den Feldern **entfernt**, an denen es nach der
-Flächenregel nur noch „kein NUL" bedeutet; der Typ bleibt für Felder, die mehr prüfen (T3).
-Folge von (b): `SafeText` prüft nur NUL, also fällt es überall weg und hat danach **keinen Nutzer**
-mehr. Der Typ bleibt trotzdem stehen, weil die Spec das so sagt; entfernen wäre ein Folgeschritt.
-(c) **Die Flächenregel ändert mehr als 500 → 422** (Befund aus dem T3-Review, nachgeprüft): auch
+**Entschieden (Kevin, 2026-09-23, über die Aufsicht) — (a) und (b) aus der Spec, (c) aus dem
+Bau; zuerst als Default nach Empfehlung gebaut:** (a) Ein NUL im Pfad oder Query-String antwortet mit
+**422**, nicht 400 (T1) — bestätigt. (b) `SafeText` wird aus den Feldern **entfernt**, an denen es
+nach der Flächenregel nur noch „kein NUL" bedeutet (T3). Da es nur NUL prüft, fiel es überall weg
+und hatte danach keinen Nutzer mehr; entgegen der Spec („bleibt als Typ erhalten") wird der Typ
+**gelöscht**, als eigener Orphan (T10).
+(c) **Die Flächenregel ändert mehr als 500 → 422** — bestätigt (Befund aus dem T3-Review, nachgeprüft): auch
 Felder, deren NUL nie eine Textspalte erreicht hat, antworten jetzt 422 statt 200/201/401 —
 Passwörter (gehasht), Bootstrap-/Refresh-/Logout-Token (gehasht bzw. vorher am JWT gescheitert),
 Connection-`tags` und -Extras (per `json.dumps` als `\u0000` gespeichert) und ein NUL in einem
@@ -89,3 +89,30 @@ Review: approve (sonnet, 2. Runde)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: CHANGELOG
 Abhängt von: T5
+
+### T7 — NUL im Query-Namen: input nennt den Namen, nicht den Wert (Branch-Review)  [x]
+Komponente: server · Dateien: apps/server/app/core/middleware.py, apps/server/tests/test_nul_middleware.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @340a7eff 2026-09-23T12:32:35+02:00
+Review: approve (sonnet)
+Änderung: Befund aus `/code-review` über den Branch-Diff. Steht das NUL im **Namen** eines Query-Parameters, meldet die 422 der Middleware heute den Wert als `input` (`?a%00=1` → `"input": "1"`), obwohl der Fehler im Namen liegt. Dann gehört der Name in `input`. Der Test prüft `input` mit.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_nul_middleware.py
+Doku: keine (Fehlerdetail, kein Verhalten)
+
+### T8 — Agent-Report: NUL-Ablehnung nach der Liveness (Branch-Review)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/core/bounds.py, apps/monitoring/tests/test_nul.py, apps/monitoring/tests/schemathesis_exclude.toml
+Änderung: Befund aus `/code-review` über den Branch-Diff, nachgeprüft. `RequestDict` (T4) lehnt einen Agent-Report mit NUL **vor** dem Handler ab. Damit laufen weder `record_agent_report` noch der Liveness-Commit, und `agent_ping` fiele auf DOWN — ein Fehlalarm „Server down“ für einen Server, der meldet. Vorher kam die Liveness durch, und nur der Commit der Check-Auswertung starb (eigener 500er der Route, auf Postgres nachgestellt). Ob der Go-Agent je ein NUL sendet (Sensor-Namen aus sysfs, Volume-Labels), ist nicht verifiziert und unwahrscheinlich. Das war eine Entwurfsfrage (vorher `[?]`, drei Optionen).
+**Entscheidung (Kevin, 2026-09-23): Option (2).** Die Route nimmt wieder ein rohes `dict`; die NUL-Prüfung mit demselben Walk (`_find_nul`) läuft **nach** dem Liveness-Commit und antwortet 422, dazu ein `logger.warning` mit `server_id` und Fundstelle (sonst sieht niemand, warum die Checks eines Servers stehen bleiben). `RequestDict` entfällt. Test: NUL im Report ⇒ 422 **und** Liveness geschrieben (agent_ping bleibt oben).
+Verify: bash scripts/dev/verify.sh monitoring --strict
+Doku: keine
+
+### T9 — NUL im Query-Namen, Monitoring-Kopie: input nennt den Namen (Branch-Review)  [ ]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/middleware.py, apps/monitoring/tests/test_nul.py
+Änderung: Dasselbe wie T7 in der Monitoring-Kopie der Middleware: bei einem NUL im Query-Namen gehört der Name in `input`, nicht der Wert.
+Verify: bash scripts/dev/verify.sh monitoring --strict
+Doku: keine (Fehlerdetail, kein Verhalten)
+
+### T10 — SafeText löschen (Entscheidung (b), Kevin 2026-09-23)  [ ]
+Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/tests/test_text_bounds.py
+Änderung: `SafeText` und `_reject_nul` aus `app/core/bounds.py` löschen: nach T3 hat der Typ keinen Nutzer mehr, er war nur noch am Leben durch seinen eigenen Unit-Test. Die Begründung aus `_reject_nul` (warum dieses eine Byte) wandert in den Docstring von `RequestModel`, der bisher darauf verwies. In `tests/test_text_bounds.py` fällt der Typ-Test mit Import weg; die Routentests bleiben, sie prüfen jetzt Middleware und Basisklasse. Nachweis, dass nichts mehr darauf zeigt: grep über `apps/` plus die volle Suite.
+Verify: bash scripts/dev/verify.sh server --strict
+Doku: keine (interner Typ; CHANGELOG und Entwickler-Doku nennen ihn nicht mehr)

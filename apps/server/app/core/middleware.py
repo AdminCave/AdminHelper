@@ -146,6 +146,8 @@ class NulByteMiddleware(BaseHTTPMiddleware):
         if "\x00" in path:
             return _nul_rejected(["path"], path)
         for name, value in request.query_params.multi_items():
-            if "\x00" in name or "\x00" in value:
+            if "\x00" in name:
+                return _nul_rejected(["query", name], name)
+            if "\x00" in value:
                 return _nul_rejected(["query", name], value)
         return await call_next(request)
