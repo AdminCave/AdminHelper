@@ -162,11 +162,13 @@ Server `adminhelper_test_<slug>` an (Bindestriche werden zu `_`) und schreibt de
 `AH_VENV` auf `~/.cache/ah-venv-<slug>` um. `lane.sh done <slug>` löscht beides wieder. Die Rolle
 braucht dafür `CREATEDB`, die sie oben ohnehin hat.
 
-**Die schweren Python-Schritte laufen host-weit nacheinander.** `server-pytest` und
+**Die schweren Python-Schritte laufen je Nutzer nacheinander.** `server-pytest` und
 `schemathesis` holen in `run.sh` vor dem Start eine Sperre (`flock` auf
-`${XDG_RUNTIME_DIR:-~/.cache}/adminhelper-py.lock`), gleich aus welchem Checkout: zwei
-Server-Suiten auf einer Box haben einander die Tabellen und den Speicher genommen, bis zum
-OOM-Killer. Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält, und **wartet** — bis
+`~/.cache/adminhelper-py.lock`), gleich aus welchem seiner Checkouts: zwei Server-Suiten auf
+einer Box haben einander die Tabellen und den Speicher genommen, bis zum OOM-Killer. Die
+Sperre gilt **je Unix-Nutzer**, über alle seine Checkouts; Läufe eines anderen Nutzers — ab
+Stufe 7 der Runner — teilen sie nicht, dafür braucht es noch eine nutzerübergreifende Sperre.
+Ist die Sperre belegt, sagt der Schritt einmal, wer sie hält, und **wartet** — bis
 `AH_PY_LOCK_WAIT` Sekunden (Default 3600). Danach gibt er als SKIP mit Grund auf, unter
 `--strict` also `strict-failed`: nicht gelaufen, kein Befund über den Code. Alle anderen Schritte
 laufen weiter parallel. `AH_PY_LOCK=0` schaltet die Sperre ab, gedacht für eine Box, auf der

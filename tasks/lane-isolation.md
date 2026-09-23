@@ -74,8 +74,10 @@ Review: approve (sonnet, 2. Runde)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (Verhalten an den Rändern; AUTONOMOUS.md/DEVELOPMENT.md beschreiben DB und Venv je Lane schon)
 
-### T6 — Ehrlicher Sperr-Umfang: je Nutzer, fester Pfad (Opus-Review)  [ ]
-Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+### T6 — Ehrlicher Sperr-Umfang: je Nutzer, fester Pfad (Opus-Review)  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md, scripts/dev/lane.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @1875dec9 2026-09-23T15:28:12+02:00
+Review: approve (sonnet, 2. Runde)
 Änderung: Befund aus dem Opus-Review der Aufsicht: `${XDG_RUNTIME_DIR:-$HOME/.cache}` ist je Nutzer. Die Doku verspricht „alle Checkouts dieser Box“, aber der Runner-Nutzer hätte seine eigene Datei; zwei Läufe desselben Nutzers mit und ohne `XDG_RUNTIME_DIR` sperren sogar zwei verschiedene Dateien. Fix: fester Pfad `$HOME/.cache/adminhelper-py.lock`. Die Doku sagt dann ehrlich „je Nutzer, über alle seine Checkouts“, mit dem Satz, dass Runner-Läufe ab Stufe 7 eine nutzerübergreifende Sperre brauchen. Die trägt die Aufsicht als Roadmap-Zeile ein; hier wird sie nicht gebaut. Mitnehmen: AUTONOMOUS.md „Fast-Suite: vm“ behauptet, die Lane habe keine lokalen Toolchain-Artefakte (venvs …), obwohl sie jetzt verlinkte Venvs hat. Nicht anfassen: `feature-build/SKILL.md` und `feature-plan/SKILL.md`, die gehören zu R-0065. Test: zwei gleichzeitige Läufe mit verschiedenem `XDG_RUNTIME_DIR` laufen trotzdem nacheinander.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md „Python-Tests lokal“ · AUTONOMOUS.md „Parallel-Betrieb“ · CHANGELOG

@@ -137,16 +137,18 @@ Mechanik dahinter:
   Der Sync aus Worktrees ist validiert; **`.git` reist mit** (`scripts/vm/rsync-exclude.txt`
   schließt es bewusst nicht aus), die Evidenzfelder kommen trotzdem vom Client, weil eine
   Box ohne `git` nichts antworten kann.
-- **Die schweren Python-Schritte stehen host-weit Schlange.** `server-pytest` und
-  `schemathesis` holen in `run.sh` eine Sperre, die alle Checkouts dieser Box teilen: laufen
-  eine Lane und der Haupt-Checkout gleichzeitig, fährt der zweite Server-Lauf sichtbar nach dem
-  ersten, statt ihm Speicher und Tabellen zu nehmen. Das ersetzt die Absprache „nur ein
-  server-Lauf zur Zeit"; Wartezeit und Abschalter stehen in `DEVELOPMENT.md` („Python-Tests
-  lokal").
-- **`Fast-Suite: vm` im Ledger-Kopf.** Eine Lane hat keine lokalen
-  Toolchain-Artefakte (venvs/`node_modules`/`target`), und N parallele lokale Suiten
-  würden die Dev-Box überlasten. Die Test-DB ist es nicht mehr: jede Lane hat ihre eigene
-  (`adminhelper_test_<slug>`, angelegt von `lane.sh new`). Der Build
+- **Die schweren Python-Schritte stehen je Nutzer Schlange.** `server-pytest` und
+  `schemathesis` holen in `run.sh` eine Sperre, die alle Checkouts desselben Unix-Nutzers
+  teilen: laufen eine Lane und der Haupt-Checkout gleichzeitig, fährt der zweite Server-Lauf
+  sichtbar nach dem ersten, statt ihm Speicher und Tabellen zu nehmen. Der Runner-Nutzer (ab
+  Stufe 7) hat seine eigene Sperre; eine nutzerübergreifende steht noch aus. Das ersetzt die
+  Absprache „nur ein server-Lauf zur Zeit"; Wartezeit und Abschalter stehen in
+  `DEVELOPMENT.md` („Python-Tests lokal").
+- **`Fast-Suite: vm` im Ledger-Kopf.** Eine Lane hat keine `node_modules` und kein
+  `target`; ihr Python-Testvenv (`AH_VENV`, `~/.cache/ah-venv-<slug>`) hat sie eigens, die
+  Komponenten-Venvs mit dem CI-`ruff` sind nur Links in den Haupt-Checkout. N parallele lokale
+  Suiten würden die Dev-Box überlasten. Die Test-DB ist es nicht mehr: jede Lane hat ihre
+  eigene (`adminhelper_test_<slug>`, angelegt von `lane.sh new`). Der Build
   fährt deshalb das Task-`Verify:` via `bash scripts/vm/iter.sh --cmd '…'` und die
   Komponenten-Schnellsuite via `bash scripts/vm/iter.sh quick --strict --only <komponenten>`
   auf der warmen Lane-Box (~1,5–3,5 min pro Iteration).

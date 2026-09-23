@@ -15,9 +15,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   eigenem Venv `~/.cache/ah-venv-<slug>`, Links auf das frpc-Sidecar und auf die
   Komponenten-Venvs mit dem CI-`ruff`. `new` bricht ab, wenn der Plan nicht committet ist (auf
   `feature/<slug>`, sonst auf `main`). In `scripts/tests/run.sh` stehen `server-pytest` und
-  `schemathesis` host-weit Schlange (`flock`; `AH_PY_LOCK_WAIT`, Default 3600 s, danach SKIP mit
-  Grund; `AH_PY_LOCK=0` schaltet ab) — zwei Server-Suiten auf einer Box hatten einander Tabellen
-  und Speicher genommen, bis zum OOM-Killer. `lane.sh done` loescht Datenbank und Venv mit und
+  `schemathesis` je Nutzer ueber alle seine Checkouts Schlange (`flock` auf
+  `~/.cache/adminhelper-py.lock`; `AH_PY_LOCK_WAIT`, Default 3600 s, danach SKIP mit Grund;
+  `AH_PY_LOCK=0` schaltet ab) — zwei Server-Suiten auf einer Box hatten einander Tabellen und
+  Speicher genommen, bis zum OOM-Killer. `lane.sh done` loescht Datenbank und Venv mit und
   verweigert, solange noch ein Prozess in der Lane arbeitet. Hermetisch getestet in
   `scripts/tests/lane_test.sh`. Anleitung: `AUTONOMOUS.md` „Parallel-Betrieb",
   `DEVELOPMENT.md` „Python-Tests lokal".

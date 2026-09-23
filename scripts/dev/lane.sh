@@ -194,7 +194,7 @@ lane_new() {
   echo "  start:  cd $wt && claude --model opus --permission-mode acceptEdits"
   echo "  then:   /feature-build tasks/$slug.md"
   echo "  (ledger head: 'Fast-Suite: vm' keeps the dev box free; local runs work too —"
-  echo "   own test DB, linked venvs, and the host-wide python lock queues the heavy steps)"
+  echo "   own test DB, linked venvs, and the shared python lock queues the heavy steps)"
 }
 
 # lane_busy <worktree> — "pid command" for every process of this user whose
