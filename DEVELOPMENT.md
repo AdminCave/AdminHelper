@@ -442,18 +442,68 @@ und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
 Klon und Datenbank wieder weg. Danach bleiben **drei Handgriffe** fuer Kevin, die
 der Runner nicht selbst tun kann:
 
-1. `sudo -iu adminhelper-runner claude setup-token` → Token nach
+1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
    `~adminhelper-runner/.config/adminhelper/oauth.env` (Abo-Token, kein API-Key:
    `ANTHROPIC_API_KEY` haette Vorrang und wuerde ueber ein API-Konto abrechnen).
 2. `pveum user token add adminhelper-runner@pve run --privsep 1` plus dieselben vier
    ACL-Pfade der Rolle `AdminHelperVM`, die Kevins eigener Token hat (Abschnitt
    „VMs mit vm.py") → Werte nach `~adminhelper-runner/.config/adminhelper/pve.env`.
-3. `sudo -u adminhelper-runner git -C /srv/ah/repo fetch`, dann der Red-Team-Lauf
-   (unten).
+3. `sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only`, dann der
+   Red-Team-Lauf (unten). `pull`, nicht nur `fetch`: das Red Team laeuft aus diesem
+   Arbeitsbaum und liest das Soll von dort.
 
 **`-iu`, nicht `-u`, bei allem, was die CLI des Runners braucht:** ohne `-i` behaelt
 sudo den PATH des Aufrufers, und die CLI in `~adminhelper-runner/.local/bin` ist dann
 unsichtbar (`sudo: claude: Befehl nicht gefunden`, 2026-09-22 verifiziert).
+
+**Modell, Effort und CLI-Version sind festgenagelt, nicht geerbt.** Ein unbeaufsichtigter Lauf
+darf nicht davon abhaengen, was die CLI gerade als Standard mitbringt:
+
+- **Modell:** `scripts/dev/runner-settings.json` nennt `claude-opus-5-5[1m]` — eine volle
+  Kennung, **kein** Alias. Ein Alias wie `opus[1m]` zeigt immer auf das neueste Modell und
+  wechselte beim naechsten Release ohne Review; fuer interaktive Sessions ist das richtig,
+  fuer den Runner nicht.
+- **Effort:** `xhigh`. Wirksam ist der Eintrag unter `modelSettings.claude-opus-5-5`
+  (`effortLevel`, so wie `/effort` ihn schreibt): ein `effortLevel` oben in den
+  User-Settings zaehlt laut Claude-Code-Doku fuer Opus 5.5 **nicht** mehr, nur noch fuer
+  aeltere Modelle — es bleibt stehen, damit ein Rueckfall auf ein aelteres Modell nicht
+  auf dessen Standard faellt. Opus 5.5 hat von sich aus `medium`.
+- **Nichts darf das ueberstimmen:** `ANTHROPIC_MODEL` und `CLAUDE_CODE_EFFORT_LEVEL`
+  haben Vorrang vor den Settings; `runner-env.sh` leert beide, wie schon den API-Key.
+- **CLI-Version:** steht in **einer** Datei, `scripts/dev/runner-claude.version`.
+  `runner-setup.sh` installiert genau diese Fassung (`claude install <version>`),
+  `runner-env.sh` schaltet den Auto-Updater ab (`DISABLE_AUTOUPDATER`) — bewusst nicht die
+  Settings-Datei: die ist oeffentlich und traegt Regeln, nie einen `env`-Block. Aeltere Fassungen kennen neuere
+  Modelle nicht: das Binary von 2.1.278 enthaelt `claude-opus-5-5` nicht in seinem Katalog.
+  Hat der Runner noch gar keine CLI, installiert der offizielle Installer genau diese
+  Fassung (aus dem Repo-Root:
+  `sudo -iu adminhelper-runner bash -c "curl -fsSL https://claude.ai/install.sh | bash -s $(cat scripts/dev/runner-claude.version)"`),
+  danach `runner-setup.sh` erneut. Ein Handgriff als Runner ohne `runner-env.sh` setzt den
+  Schalter selbst (`env DISABLE_AUTOUPDATER=1`, wie bei `setup-token`); wandert die Version
+  trotzdem, meldet das Red Team es, und `runner-setup.sh` setzt sie zurueck.
+
+**Das Red Team liest zurueck, was wirklich lief.** Aus dem `system/init`-Ereignis einer
+Modellprobe nimmt es das tatsaechliche Modell und die tatsaechliche CLI-Version, aus
+`result.modelUsage` das Modell, das wirklich geantwortet hat, und vergleicht alles mit dem
+Soll aus seinem Klon. Abweichung, fehlendes Ereignis, eine Probe ohne Ergebnis oder eine
+fehlende CLI ist ein `FAIL`, kein Hinweis — ein Messgeraet, das nichts misst, darf nicht
+wie ein Ergebnis aussehen. Den Effort liest es **nicht** zurueck: kein Ereignis des
+Protokolls traegt ihn; ihn sichern die Settings und das Leeren von
+`CLAUDE_CODE_EFFORT_LEVEL`.
+
+**Anheben** ist ein bewusster Schritt, kein Nebeneffekt. Das Soll steht an zwei Orten:
+`runner-setup.sh` liest es aus dem Checkout, aus dem es laeuft, das Red Team aus dem Klon
+des Runners. Beide muessen auf demselben `main` stehen:
+
+```
+# 1. auf einem Branch: neue Version eintragen und pruefen, dass sie das Modell kennt
+echo 2.1.XXX > scripts/dev/runner-claude.version
+# 2. bei einem Modellwechsel: model und modelSettings in scripts/dev/runner-settings.json
+# 3. PR, Merge; dann aus einem Checkout auf dem neuen main einrichten und beweisen
+sudo bash scripts/dev/runner-setup.sh
+sudo -u adminhelper-runner git -C /srv/ah/repo pull --ff-only
+sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+```
 
 **Getrusteter Workspace — bewusst abgeschaltet.** Claude Code ignoriert die
 Allow-Liste eines Projekts, solange der Workspace nicht getrustet ist, und sagt das
