@@ -92,6 +92,32 @@ bash "$RT" --verdict </dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "--verdict without a needle is a usage error (exit 2)" \
   || bad "--verdict without a needle did not exit 2"
 
+echo "── the pin read back: model, CLI, and who answered"
+# Shapes from a real run on 2026-09-23 with --model 'claude-opus-5-5[1m]': the
+# system/init event carries model and claude_code_version, result.modelUsage names
+# the model that actually answered.
+pin() { bash "$RT" --pin "$1" "$2"; }
+M='claude-opus-5-5[1m]'; V='2.1.280'
+GOOD='{"type":"system","subtype":"init","model":"claude-opus-5-5[1m]","claude_code_version":"2.1.280"}
+{"type":"result","subtype":"success","modelUsage":{"claude-opus-5-5[1m]":{}}}'
+WRONGMODEL='{"type":"system","subtype":"init","model":"claude-opus-5[1m]","claude_code_version":"2.1.280"}'
+WRONGVER='{"type":"system","subtype":"init","model":"claude-opus-5-5[1m]","claude_code_version":"2.1.278"}'
+FALLBACK='{"type":"system","subtype":"init","model":"claude-opus-5-5[1m]","claude_code_version":"2.1.280"}
+{"type":"result","subtype":"success","modelUsage":{"claude-opus-5[1m]":{}}}'
+[ "$(pin "$M" "$V" <<<"$GOOD")" = ok ] \
+  && ok "pinned model and CLI, answered by the pin: ok" || bad "a matching transcript is not ok (got: $(pin "$M" "$V" <<<"$GOOD"))"
+[ "$(pin "$M" "$V" <<<"$WRONGMODEL")" = "model:claude-opus-5[1m]" ] \
+  && ok "a session on another model is named" || bad "a wrong model is not reported (got: $(pin "$M" "$V" <<<"$WRONGMODEL"))"
+[ "$(pin "$M" "$V" <<<"$WRONGVER")" = "version:2.1.278" ] \
+  && ok "a session on another CLI is named" || bad "a wrong CLI is not reported (got: $(pin "$M" "$V" <<<"$WRONGVER"))"
+[ "$(pin "$M" "$V" <<<"$FALLBACK")" = "answered:claude-opus-5[1m]" ] \
+  && ok "started on the pin but answered by another model is caught" \
+  || bad "a fallback answer slipped through (got: $(pin "$M" "$V" <<<"$FALLBACK"))"
+[ "$(pin "$M" "$V" <<<"$BROKEN")" = noinit ] \
+  && ok "no init event is noinit, never ok" || bad "a transcript without init did not read as noinit"
+bash "$RT" --pin "$M" </dev/null >/dev/null 2>&1
+[ $? -eq 2 ] && ok "--pin without a version is a usage error (exit 2)" || bad "--pin without a version did not exit 2"
+
 echo "── the probe really passes --verbose (the defect of 2026-09-22)"
 # Order-independent: what matters is that the invocation carries both flags.
 awk '/timeout [0-9]+ claude -p/{f=1} f{print} f&&/2>&1\)"/{exit}' "$RT" | grep -q -- '--verbose' \

@@ -329,13 +329,14 @@ fi
 # The version lives in ONE file, read here and read back by runner-redteam.sh. 2.1.280
 # is the first version whose model catalog knows claude-opus-5-5 — the 2.1.278 binary
 # has no entry for it (measured 2026-09-23: 0 hits in the binary, 15 in 2.1.280).
-# The auto-updater is off through runner-settings.json (DISABLE_AUTOUPDATER).
+# The auto-updater is off through runner-env.sh (DISABLE_AUTOUPDATER) — not through
+# runner-settings.json, which is public and carries no env block.
 CLAUDE_VERSION="$(tr -d '[:space:]' < "$ROOT/scripts/dev/runner-claude.version" 2>/dev/null)"
 # It goes into a string root hands to su -c: only digits and dots get that far.
 case "$CLAUDE_VERSION" in
   ""|*[!0-9.]*) echo "runner-setup: scripts/dev/runner-claude.version must hold a version like 2.1.280" >&2; exit 1 ;;
 esac
-step "Claude Code $CLAUDE_VERSION for $RUNNER (pinned; its settings switch the updater off)"
+step "Claude Code $CLAUDE_VERSION for $RUNNER (pinned; runner-env.sh switches the updater off)"
 if [ "$DRY" = 1 ] || su - "$RUNNER" -c 'command -v claude' >/dev/null 2>&1; then
   run_sh "su - $RUNNER -c 'claude install $CLAUDE_VERSION'"
 else

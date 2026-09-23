@@ -455,6 +455,39 @@ der Runner nicht selbst tun kann:
 sudo den PATH des Aufrufers, und die CLI in `~adminhelper-runner/.local/bin` ist dann
 unsichtbar (`sudo: claude: Befehl nicht gefunden`, 2026-09-22 verifiziert).
 
+**Modell, Effort und CLI-Version sind festgenagelt, nicht geerbt.** Ein unbeaufsichtigter Lauf
+darf nicht davon abhaengen, was die CLI gerade als Standard mitbringt:
+
+- **Modell:** `scripts/dev/runner-settings.json` nennt `claude-opus-5-5[1m]` — eine volle
+  Kennung, **kein** Alias. Ein Alias wie `opus[1m]` zeigt immer auf das neueste Modell und
+  wechselte beim naechsten Release ohne Review; fuer interaktive Sessions ist das richtig,
+  fuer den Runner nicht.
+- **Effort:** `xhigh`, einmal als `effortLevel` und einmal unter
+  `modelSettings.claude-opus-5-5`, weil `/effort` den Wert pro Modell ablegt. Opus 5.5 hat
+  von sich aus `medium` — eine Stufe unter Opus 5.
+- **CLI-Version:** steht in **einer** Datei, `scripts/dev/runner-claude.version`.
+  `runner-setup.sh` installiert genau diese Fassung (`claude install <version>`),
+  `runner-env.sh` schaltet den Auto-Updater ab (`DISABLE_AUTOUPDATER`) — bewusst nicht die
+  Settings-Datei: die ist oeffentlich und traegt Regeln, nie einen `env`-Block. Aeltere Fassungen kennen neuere
+  Modelle nicht: das Binary von 2.1.278 enthaelt `claude-opus-5-5` nicht in seinem Katalog.
+
+**Das Red Team liest zurueck, was wirklich lief.** Aus dem `system/init`-Ereignis einer
+Modellprobe nimmt es das tatsaechliche Modell und die tatsaechliche CLI-Version, aus
+`result.modelUsage` das Modell, das wirklich geantwortet hat, und vergleicht alles mit dem
+Soll aus dem Repo. Abweichung oder fehlendes Ereignis ist ein `FAIL`, kein Hinweis — ein
+Messgeraet, das nichts misst, darf nicht wie ein Ergebnis aussehen.
+
+**Anheben** ist ein bewusster Schritt, kein Nebeneffekt:
+
+```
+# 1. neue Version eintragen und pruefen, dass sie das Modell kennt
+echo 2.1.XXX > scripts/dev/runner-claude.version
+# 2. bei einem Modellwechsel: model und modelSettings in scripts/dev/runner-settings.json
+# 3. einrichten und beweisen
+sudo bash scripts/dev/runner-setup.sh
+sudo -u adminhelper-runner bash /srv/ah/repo/scripts/dev/runner-redteam.sh
+```
+
 **Getrusteter Workspace — bewusst abgeschaltet.** Claude Code ignoriert die
 Allow-Liste eines Projekts, solange der Workspace nicht getrustet ist, und sagt das
 auch: „Ignoring 38 permissions.allow entries … this workspace has not been trusted".

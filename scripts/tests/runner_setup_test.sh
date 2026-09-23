@@ -279,6 +279,9 @@ BPLAN=$(PATH="$SHIM:$PATH" bash "$BADTREE/scripts/dev/runner-setup.sh" --dry-run
   && ok "a version with shell in it stops the script before su -c" \
   || bad "a malformed version reached the plan: rc=$brc"
 
+grep -qE '^[[:space:]]*export DISABLE_AUTOUPDATER=1' "$REPO_ROOT/scripts/dev/runner-env.sh" \
+  && ok "runner-env.sh switches the CLI updater off" || bad "runner-env.sh does not export DISABLE_AUTOUPDATER=1"
+
 echo "── the settings it installs ──"
 [ -f "$REPO_ROOT/scripts/dev/runner-settings.json" ] \
   && ok "the settings file it copies exists in the repo" || bad "scripts/dev/runner-settings.json is missing"
@@ -287,8 +290,8 @@ echo "── the settings it installs ──"
 # Measured 2026-09-23: Opus 5.5 defaults to effort medium, and /effort stores the
 # level per model under modelSettings — so both places are checked.
 python3 - "$REPO_ROOT/scripts/dev/runner-settings.json" <<'PY' \
-  && ok "the runner's model, effort and updater are pinned" \
-  || bad "runner-settings.json does not pin model, effort and the updater"
+  && ok "the runner's model and effort are pinned, with no env block" \
+  || bad "runner-settings.json does not pin model and effort (or carries an env block)"
 import json, re, sys
 d = json.load(open(sys.argv[1]))
 model = d.get("model", "")
@@ -298,7 +301,7 @@ base = re.sub(r"\[1m\]$", "", model)
 ok = (model.startswith("claude-") and not is_alias
       and d.get("effortLevel") == "xhigh"
       and (d.get("modelSettings") or {}).get(base, {}).get("effortLevel") == "xhigh"
-      and (d.get("env") or {}).get("DISABLE_AUTOUPDATER") == "1"
+      and "env" not in d          # public file: rules only, never an env block
       and "permissions" in d and "hooks" in d)
 sys.exit(0 if ok else 1)
 PY

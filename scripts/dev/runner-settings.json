@@ -6,9 +6,6 @@
       "effortLevel": "xhigh"
     }
   },
-  "env": {
-    "DISABLE_AUTOUPDATER": "1"
-  },
   "permissions": {
     "defaultMode": "dontAsk",
     "deny": [

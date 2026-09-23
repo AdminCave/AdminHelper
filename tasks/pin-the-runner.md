@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Den Runner festnageln: Modell, Effort, CLI-Version — Task-Ledger
-Status: geplant · Branch: harness/pin-the-runner · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/pin-the-runner · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Nacharbeit zu Stufe 4, Roadmap R-0072)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt nur `scripts/dev/`, `scripts/tests/` und `DEVELOPMENT.md`.
@@ -42,6 +42,7 @@ die Nutzungszählung belegt, welches Modell tatsächlich geantwortet hat. Genau 
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/tests/runner_setup_test.sh
 Evidenz: runner_setup_test 61/0 · Gegenprobe: Alias opus[1m] statt fester Kennung ⇒ 1 failed
 Änderung: `runner-settings.json` bekommt `"model": "claude-opus-5-5[1m]"` (feste Kennung, **kein** Alias), `"effortLevel": "xhigh"`, dazu `"modelSettings": {"claude-opus-5-5": {"effortLevel": "xhigh"}}` — das ist der Ort, den `/effort` selbst beschreibt, also der, den die CLI liest —, und `"env": {"DISABLE_AUTOUPDATER": "1"}`, damit die Version nicht unter der Hand wandert. Test: die Datei trägt genau diese Werte, das Modell ist keine Alias-Form (`opus`, `sonnet`, `opus[1m]` …), und die bestehenden `hooks`/`permissions` bleiben unverändert.
+Beim Bau korrigiert (T3): Der Updater-Schalter stand zuerst als `env`-Block in `runner-settings.json`. `hooks_test` hat das zu Recht abgewiesen — die Datei ist öffentlich und trägt Regeln, **nie** einen `env`-Block, weil dort sonst Tokens und Hosts landen. Der Schalter liegt jetzt in `scripts/dev/runner-env.sh`, das jede arbeitsfähige Runner-Session ohnehin sourct, denn nur von dort kommt das Abo-Token. `runner_setup_test` prüft beides: kein `env`-Block in den Settings, `DISABLE_AUTOUPDATER=1` in `runner-env.sh`.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T3)
 
@@ -53,8 +54,9 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T3)
 Abhängt von: T1
 
-### T3 — Das Red Team liest zurück, was wirklich lief  [ ]
-Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh, DEVELOPMENT.md
+### T3 — Das Red Team liest zurück, was wirklich lief  [x]
+Komponente: scripts · Dateien: scripts/dev/runner-redteam.sh, scripts/tests/redteam_test.sh, DEVELOPMENT.md, scripts/dev/runner-env.sh, scripts/dev/runner-settings.json, scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped (scripts) · redteam_test 17/0 · runner_setup_test 65/0 · hooks_test 171/0 · gegen das echte Protokoll vom 2026-09-23: ok / version:2.1.280 bei falscher Pin-Version / model:… bei einem Alias als Soll
 Änderung: Eine Probe liest aus dem `system/init`-Ereignis einer Modellprobe das tatsächliche Modell und die tatsächliche CLI-Version und vergleicht beides mit dem Soll (`model` aus `runner-settings.json`, Version aus `runner-claude.version`). Abweichung ⇒ **FAIL**, fehlendes Ereignis ⇒ **FAIL** — ein Messgerät, das nichts misst, darf nicht wie ein Ergebnis aussehen. Die Auswertung ist wie das Urteil der Modellproben ein eigener, aufrufbarer Schritt, den ein Test gegen gespeicherte Ereignisse fährt (passt, falsches Modell, falsche Version, kein Init-Ereignis), ohne Claude Code zu starten. In `DEVELOPMENT.md` beim Runner-User: was festgenagelt ist, warum kein Alias, und wie man anhebt (Versionsdatei und Settings ändern, `runner-setup.sh`, Red Team).
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (Runner-User: Modell, Effort, Version und das Anheben)
