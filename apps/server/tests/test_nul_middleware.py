@@ -82,3 +82,15 @@ def test_an_encoded_percent_sign_is_not_a_nul(test_client, db_session, admin_use
     headers = _login(test_client)
     r = test_client.get("/api/frp/tunnels?server_id=a%2500b", headers=headers)
     assert r.status_code == 200, r.text
+
+
+# The fuzz gate found these on main on 2026-09-23 (CI of PR #37): a NUL in the
+# config_id query of the FRP generate routes reached the config lookup and
+# answered 500. The guard above covers them in general; the fuzzer only hits them
+# on some seeds, so they are pinned here by name.
+@pytest.mark.parametrize("route", ("frps-toml", "visitor-toml", "visitor-bundle", "bulk-zip"))
+def test_a_nul_in_config_id_of_a_generate_route_is_422(route, test_client, db_session, admin_user):
+    headers = _login(test_client)
+    r = test_client.get(f"/api/frp/generate/{route}", params={"config_id": NUL}, headers=headers)
+    assert r.status_code == 422, f"{route}: {r.status_code} {r.text}"
+    assert r.json()["detail"][0]["loc"] == ["query", "config_id"]

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # NUL-Byte am Rand ablehnen — Task-Ledger
-Status: bereit · Branch: feature/nul-byte-rejection · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/nul-byte-rejection · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/nul-byte-rejection.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — reine Eingangsprüfung, kein Datenfluss, kein Wire-Format, keine Migration. Am Abschluss am realen Diff gegenprüfen.
@@ -120,3 +120,11 @@ Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/tests
 Änderung: `SafeText` und `_reject_nul` aus `app/core/bounds.py` löschen: nach T3 hat der Typ keinen Nutzer mehr, er war nur noch am Leben durch seinen eigenen Unit-Test. Die Begründung aus `_reject_nul` (warum dieses eine Byte) wandert in den Docstring von `RequestModel`, der bisher darauf verwies. In `tests/test_text_bounds.py` fällt der Typ-Test mit Import weg; die Routentests bleiben, sie prüfen jetzt Middleware und Basisklasse. Nachweis, dass nichts mehr darauf zeigt: grep über `apps/` plus die volle Suite.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (interner Typ; CHANGELOG und Entwickler-Doku nennen ihn nicht mehr)
+
+### T11 — Regressionsanker für den Fuzz-Fund auf main (PR-Verifikation)  [x]
+Komponente: server · Dateien: apps/server/tests/test_nul_middleware.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @7c433a84 2026-09-23T13:23:59+02:00
+Review: Opus-Branch-Review 2026-09-23 (nit: Regressionsanker), Gegenprobe gegen main 4/4 rot
+Änderung: Der Fuzz-Gate fand am 2026-09-23 auf `main` (CI von PR #37) `GET /api/frp/generate/{frps-toml,visitor-bundle,bulk-zip}?config_id=%00` ⇒ 500 (Roadmap R-0078). Die Middleware aus T1 deckt das allgemein ab, aber der Fuzzer trifft es nur bei manchen Seeds — ein parametrisierter Test pinnt die vier `config_id`-Routen (dazu `visitor-toml`, gleicher Pfad in `_resolve_config`) mit Login auf 422 und `loc == ["query", "config_id"]`. Gegenprobe: derselbe Test gegen `main` ⇒ 500.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_nul_middleware.py
+Doku: keine (Test)
