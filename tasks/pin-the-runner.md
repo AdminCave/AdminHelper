@@ -38,8 +38,9 @@ Antwort meldet `message.model = claude-opus-5-5`; `result.modelUsage` nennt
 `claude-opus-5-5[1m]`. Eine einzige Probe kann also Modell und Version zugleich zurücklesen, und
 die Nutzungszählung belegt, welches Modell tatsächlich geantwortet hat. Genau darauf baut T3.
 
-### T1 — Modell, Effort und Auto-Updater in die Runner-Settings  [ ]
+### T1 — Modell, Effort und Auto-Updater in die Runner-Settings  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-settings.json, scripts/tests/runner_setup_test.sh
+Evidenz: runner_setup_test 61/0 · Gegenprobe: Alias opus[1m] statt fester Kennung ⇒ 1 failed
 Änderung: `runner-settings.json` bekommt `"model": "claude-opus-5-5[1m]"` (feste Kennung, **kein** Alias), `"effortLevel": "xhigh"`, dazu `"modelSettings": {"claude-opus-5-5": {"effortLevel": "xhigh"}}` — das ist der Ort, den `/effort` selbst beschreibt, also der, den die CLI liest —, und `"env": {"DISABLE_AUTOUPDATER": "1"}`, damit die Version nicht unter der Hand wandert. Test: die Datei trägt genau diese Werte, das Modell ist keine Alias-Form (`opus`, `sonnet`, `opus[1m]` …), und die bestehenden `hooks`/`permissions` bleiben unverändert.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T3)

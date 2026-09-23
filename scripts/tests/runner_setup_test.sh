@@ -260,6 +260,26 @@ grep -q 'hasTrustDialogAccepted' <<<"$PLAN" \
 echo "── the settings it installs ──"
 [ -f "$REPO_ROOT/scripts/dev/runner-settings.json" ] \
   && ok "the settings file it copies exists in the repo" || bad "scripts/dev/runner-settings.json is missing"
+# What the runner works with is pinned, not inherited from a default: the "at least
+# Opus" rule of CLAUDE.md §2 would otherwise rest on whatever the CLI ships with.
+# Measured 2026-09-23: Opus 5.5 defaults to effort medium, and /effort stores the
+# level per model under modelSettings — so both places are checked.
+python3 - "$REPO_ROOT/scripts/dev/runner-settings.json" <<'PY' \
+  && ok "the runner's model, effort and updater are pinned" \
+  || bad "runner-settings.json does not pin model, effort and the updater"
+import json, re, sys
+d = json.load(open(sys.argv[1]))
+model = d.get("model", "")
+# An alias (opus, sonnet, opus[1m], ...) moves with every release; a pin is a full id.
+is_alias = re.fullmatch(r"(opus|sonnet|haiku|fable|best|default)(\[1m\])?", model) is not None
+base = re.sub(r"\[1m\]$", "", model)
+ok = (model.startswith("claude-") and not is_alias
+      and d.get("effortLevel") == "xhigh"
+      and (d.get("modelSettings") or {}).get(base, {}).get("effortLevel") == "xhigh"
+      and (d.get("env") or {}).get("DISABLE_AUTOUPDATER") == "1"
+      and "permissions" in d and "hooks" in d)
+sys.exit(0 if ok else 1)
+PY
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'runner_setup_test' \
   && ok "runner_setup_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 
