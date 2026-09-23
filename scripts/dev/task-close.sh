@@ -208,7 +208,13 @@ if [ "$ART_TREE" != "$TREE_HASH" ]; then
 fi
 
 # ── 3. the deterministic reviews ─────────────────────────────────────────────
-bash scripts/dev/review.sh diff-scan --staged || exit 3
+# --task: a test the task declares as deleted (Test-Löschung:) may take its
+# assertions with it; anything else that silences a test is still a finding.
+bash scripts/dev/review.sh diff-scan --staged --task "$LEDGER" "$ID" || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh diff-scan could not run"
+  exit 3
+}
 bash scripts/dev/review.sh scope "$LEDGER" "$ID" --staged || {
   rc=$?
   # A usage error is not a blocked commit; only a real scope violation is.

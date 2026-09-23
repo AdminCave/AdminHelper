@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Bewusst gelöschte Tests: ein erlaubter Weg durch `diff-scan` — Task-Ledger (Kurz)
-Status: geplant · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben, Roadmap R-0079)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/review.sh`, `scripts/dev/task-close.sh`, `scripts/tests/review_scripts_test.sh` und die Ledger-Doku.
@@ -46,8 +46,10 @@ Eine gelöschte Assertion ist **kein** Fund, wenn beide Bedingungen gelten:
 Das Ergebnis steht sichtbar im Lauf, etwa `diff-scan: clean (1 declared test deletion:
 apps/server/tests/test_text_bounds.py::test_safetext_passes_everything_but_nul)`.
 
-### T1 — `diff-scan` kennt angekündigte Test-Löschungen  [ ]
+### T1 — `diff-scan` kennt angekündigte Test-Löschungen  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @28a266e8 2026-09-23T19:30:18+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `review.sh diff-scan` nimmt optional `--task <ledger> <id>` an und liest aus der Task die `Test-Löschung:`-Zeile. Im awk-Lauf merkt sich jeder zusammenhängende Block gelöschter Zeilen den zuletzt gelöschten Test-Kopf, also Dateiname plus Testname. Eine gelöschte Assertion wird nur übergangen, wenn dieser Kopf existiert und `<datei>::<test>` angekündigt ist. Übergangene Löschungen werden gezählt und in der Erfolgszeile genannt. `task-close.sh` ruft `diff-scan --staged --task "$LEDGER" "$ID"`. Tests mit Fixture-Repos, jeder muss bei Rücknahme rot werden:
 - ganzer Test gelöscht und angekündigt ⇒ clean, mit Nennung;
 - ganzer Test gelöscht, aber nicht angekündigt ⇒ Fund;

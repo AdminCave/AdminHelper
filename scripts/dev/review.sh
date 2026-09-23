@@ -5,7 +5,8 @@
 #
 # review.sh — the checks a diff has to pass before it becomes a commit.
 #
-#   bash scripts/dev/review.sh diff-scan [--staged]     ways to make a suite lie
+#   bash scripts/dev/review.sh diff-scan [--staged] [--task <ledger> <id>]
+#                                                       ways to make a suite lie
 #   bash scripts/dev/review.sh scope <ledger> <id> [--staged]   paths vs. the task
 #   bash scripts/dev/review.sh sec [--staged]           what must never be committed
 #
@@ -17,7 +18,12 @@
 #              what "passed" means. Two things are deliberately not findings: a
 #              line that carries `# review: ok <reason>` (and says why), and a
 #              pattern that only appears behind a comment marker, because a
-#              comment switches nothing off.
+#              comment switches nothing off. With --task, a third: an assertion
+#              that goes with its WHOLE test — the test's head deleted in the
+#              same block — when the task declares that test in a
+#              `Test-Löschung: <file>::<test> — <reason>` line. Dead code and its
+#              test can leave together; an assertion out of a test that stays
+#              is still a finding, declared or not.
 #   scope      does the diff stay inside the files the task declared? Everything
 #              else is either a forgotten `ledger.sh set-files` or a drive-by.
 #   sec        is something staged that this public repo must never hold — the
@@ -68,14 +74,28 @@ component_tests() {
 VERB="${1-}"; [ $# -gt 0 ] && shift
 STAGED=0
 ARGS=()
-for a in "$@"; do
-  case "$a" in
+TASK_LEDGER="" TASK_ID=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --staged) STAGED=1 ;;
+    --task)
+      [ $# -ge 3 ] || die "--task needs <ledger> <id>"
+      TASK_LEDGER="$2"; TASK_ID="$3"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
-    --*) die "unknown flag: $a" ;;
-    *) ARGS+=("$a") ;;
+    --*) die "unknown flag: $1" ;;
+    *) ARGS+=("$1") ;;
   esac
+  shift
 done
+
+# task_field <ledger> <id> <field> — the value of the task's `<field>:` line.
+task_field() {
+  L_ID="$2" L_FIELD="$3" awk '
+    BEGIN { id = ENVIRON["L_ID"]; f = ENVIRON["L_FIELD"] ":" }
+    $0 ~ "^###[ \t]+" id "([ \t]|$)" { insec = 1; next }
+    insec && (/^###[ \t]/ || /^## /) { exit }
+    insec && index($0, f) == 1 { print substr($0, length(f) + 1); exit }' "$1"
+}
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
 
@@ -83,12 +103,48 @@ changed_paths() { git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only; }
 
 case "$VERB" in
   diff-scan)
+    # The tests the task declares as deleted, one <file>::<test> per line. Only
+    # with --task: a call by hand has no task to speak for it and stays strict.
+    DECL=""
+    if [ -n "$TASK_LEDGER" ]; then
+      case "$TASK_ID" in ""|*[!A-Za-z0-9._-]*) die "not a task id: $TASK_ID" ;; esac
+      case "$TASK_LEDGER" in */*) ;; *) TASK_LEDGER="tasks/$TASK_LEDGER" ;; esac
+      case "$TASK_LEDGER" in *.md) ;; *) TASK_LEDGER="$TASK_LEDGER.md" ;; esac
+      [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
+      grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
+        || die "no task $TASK_ID in $TASK_LEDGER"
+      DECL="$(task_field "$TASK_LEDGER" "$TASK_ID" "Test-Löschung" | tr ';' '\n' \
+        | sed 's/[[:space:]]*—.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')"
+    fi
     # -U0: only what this diff actually adds or removes. Context lines would
     # convict a `|| true` that has been standing there for two years.
     # The patterns arrive as one \x1f-separated string: an awk -v value cannot
     # carry an array, and each of them is a fixed string, not a regex.
-    FOUND="$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | awk -v PAT="$SKIP_PATTERNS" '
+    # A run of deleted lines is one block; the test head last deleted in it
+    # (pytest def test_…, Go func Test…, it(/test( in vitest/jest, a Rust fn
+    # after a deleted #[test]) is what an assertion further down belongs to.
+    FOUND="$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | DECL="$DECL" awk -v PAT="$SKIP_PATTERNS" '
+      BEGIN {
+        n = split(ENVIRON["DECL"], d, "\n")
+        for (i = 1; i <= n; i++) if (d[i] != "") declared[d[i]] = 1
+      }
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+      function test_head(s,   q, rest, k) {
+        if (match(s, /^[ \t]*(async[ \t]+)?def[ \t]+test[A-Za-z0-9_]*/)) {
+          s = substr(s, RSTART, RLENGTH); sub(/^.*def[ \t]+/, "", s); return s
+        }
+        if (match(s, /^func[ \t]+Test[A-Za-z0-9_]*/)) {
+          s = substr(s, RSTART, RLENGTH); sub(/^func[ \t]+/, "", s); return s
+        }
+        if (match(s, /^[ \t]*(it|test)[ \t]*\([ \t]*["\047`]/)) {
+          q = substr(s, RSTART + RLENGTH - 1, 1); rest = substr(s, RSTART + RLENGTH)
+          k = index(rest, q); if (k > 0) return substr(rest, 1, k - 1)
+        }
+        if (rust_test && match(s, /^[ \t]*(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+/)) {
+          s = substr(s, RSTART, RLENGTH); sub(/^.*fn[ \t]+/, "", s); return s
+        }
+        return ""
+      }
       # Where a comment starts, or 0. Only a marker at the start of the line or
       # after whitespace counts, so the // in an https:// URL is not a comment.
       function comment_at(s,   c, c2) {
@@ -97,14 +153,16 @@ case "$VERB" in
         if (match(s, /(^|[ \t])\/\//)) { c2 = RSTART + RLENGTH - 2; if (!c || c2 < c) c = c2 }
         return c
       }
-      /^--- /         { oldfile = substr($0, 5); sub(/^a\//, "", oldfile); next }
+      /^--- /         { inblock = 0; oldfile = substr($0, 5); sub(/^a\//, "", oldfile); next }
       /^\+\+\+ /      {
+                        inblock = 0
                         file = substr($0, 5)
                         # A deletion has +++ /dev/null; the path is on the --- side.
                         if (file == "/dev/null") file = oldfile; else sub(/^b\//, "", file)
                         next
                       }
       /^@@/           {
+                        inblock = 0
                         split($2, o, ","); split($3, nw, ",")
                         oldno = o[1]; sub(/^-/, "", oldno); oldno += 0
                         newno = nw[1]; sub(/^\+/, "", newno); newno += 0
@@ -112,12 +170,18 @@ case "$VERB" in
                       }
       /^-/ && !/^---/ {
                         line = substr($0, 2)
+                        if (!inblock) { inblock = 1; head = ""; rust_test = 0 }
+                        if (match(line, /^[ \t]*#\[([a-z_]+::)?test\]/)) rust_test = 1
+                        h = test_head(line)
+                        if (h != "") { head = h; rust_test = 0 }
                         if (line !~ /review: ok/ &&
                             (line ~ /(^|[^A-Za-z_.])assert([^A-Za-z_]|$)/ || line ~ /expect\(/))
-                          printf "%s:%d  removed assertion: %s\n", file, oldno, trim(line)
+                          if (head != "" && ((file "::" head) in declared)) gone[file "::" head] = 1
+                          else printf "%s:%d  removed assertion: %s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {
+                        inblock = 0
                         line = substr($0, 2)
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
@@ -137,15 +201,23 @@ case "$VERB" in
                         }
                         newno++; next
                       }
-                      { oldno++; newno++ }
+                      { inblock = 0; oldno++; newno++ }
+      END { for (k in gone) printf "DECLARED\t%s\n", k }
     ')" || die "could not read the diff"
+    GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
+    FOUND="$(printf '%s\n' "$FOUND" | grep -v '^DECLARED' | grep -v '^$')"
     if [ -n "$FOUND" ]; then
       echo "review.sh diff-scan: the diff changes what a green run means" >&2
       printf '%s\n' "$FOUND" >&2
-      echo "  (deliberate? append '# review: ok <reason>' to the line)" >&2
+      echo "  (deliberate? append '# review: ok <reason>' to the line; a whole test that" >&2
+      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task)" >&2
       exit 3
     fi
-    echo "diff-scan: clean"
+    if [ -n "$GONE" ]; then
+      echo "diff-scan: clean ($(grep -c . <<<"$GONE") declared test deletion(s): $(paste -sd, - <<<"$GONE" | sed 's/,/, /g'))"
+    else
+      echo "diff-scan: clean"
+    fi
     ;;
 
   scope)
