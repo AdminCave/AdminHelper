@@ -5,9 +5,9 @@
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
-from app.core.bounds import IntColumn
+from app.core.bounds import IntColumn, RequestModel
 
 # These string fields are interpolated verbatim into the generated frps/frpc/
 # visitor TOML (config_generator.py). Reject the characters that could break out
@@ -95,7 +95,7 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
 # --- FRP Server Config ---
 
 
-class FrpServerConfigCreate(BaseModel):
+class FrpServerConfigCreate(RequestModel):
     name: str
     server_addr: str  # e.g. "frps.example.net"
     bind_port: IntColumn = 7000
@@ -118,7 +118,7 @@ class FrpServerConfigCreate(BaseModel):
     _v_extra = field_validator("extra_config")(_check_extra_config)
 
 
-class FrpServerConfigUpdate(BaseModel):
+class FrpServerConfigUpdate(RequestModel):
     name: Optional[str] = None
     server_addr: Optional[str] = None
     bind_port: Optional[IntColumn] = None
@@ -144,7 +144,7 @@ class FrpServerConfigUpdate(BaseModel):
 # --- FRP Tunnel ---
 
 
-class FrpTunnelCreate(BaseModel):
+class FrpTunnelCreate(RequestModel):
     server_id: str
     frp_config_id: str
     name: str  # proxy name, e.g. "k01-lnx1-ssh"
@@ -170,7 +170,7 @@ class FrpTunnelCreate(BaseModel):
     _v_extra = field_validator("extra_config")(_check_extra_config)
 
 
-class FrpTunnelUpdate(BaseModel):
+class FrpTunnelUpdate(RequestModel):
     name: Optional[str] = None
     tunnel_type: Optional[Literal["stcp", "https"]] = None
     protocol: Optional[str] = None

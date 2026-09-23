@@ -7,13 +7,11 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from app.core.bounds import SafeText
+from app.core.bounds import RequestModel
 
 
-class ApiKeyCreate(BaseModel):
-    # name lands verbatim in Column(String); a NUL byte died in the driver
-    # (HTTP 500), found by the fuzzer on 2026-09-23.
-    name: SafeText
+class ApiKeyCreate(RequestModel):
+    name: str
     permission: Literal["read", "read_write"]
 
 
