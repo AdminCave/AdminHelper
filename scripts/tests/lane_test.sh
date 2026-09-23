@@ -56,7 +56,17 @@ MAIN_DB="postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test"
 mkdir -p "$MAIN/scripts/dev" "$MAIN/scripts/vm" "$MAIN/tasks" "$MAIN/.claude"
 cp "$REPO_ROOT/scripts/dev/lane.sh" "$MAIN/scripts/dev/"
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$MAIN/scripts/vm/"
-printf '/.devenv.sh\n.vm/\n.claude/settings.local.json\n' > "$MAIN/.gitignore"
+printf '/.devenv.sh\n.vm/\n.claude/settings.local.json\n/apps/desktop/src-tauri/binaries/\n.venv/\n' > "$MAIN/.gitignore"
+# Gitignored parts of the main checkout a lane links to (T3): the frpc sidecar
+# and two of the three component venvs, each with something to recognise.
+SIDECAR=apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
+mkdir -p "$MAIN/${SIDECAR%/*}" "$MAIN/apps/server/.venv/bin" "$MAIN/apps/monitoring/.venv/bin"
+echo "frpc" > "$MAIN/$SIDECAR"
+for c in server monitoring; do
+  printf '#!/bin/sh\necho ruff-%s\n' "$c" > "$MAIN/apps/$c/.venv/bin/ruff"
+  chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
+  echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
+done
 for slug in alpha beta-two gamma; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
@@ -132,6 +142,45 @@ lane "done" gamma && ok "done gamma still takes worktree and venv" || bad "done 
 grep -q "adminhelper_test_gamma is NOT dropped" "$WORK/out.log" \
   && ok "and says that adminhelper_test_gamma is left, and how to drop it" || bad "silent leak: $(cat "$WORK/out.log")"
 mv "$WORK/devenv.saved" "$MAIN/.devenv.sh"
+
+echo "── new: the plan has to be committed where the build will look ──"
+g() { git -C "$MAIN" -c user.name=t -c user.email=t@t "$@"; }
+# delta: the plan only on its branch, as the gate commits it (R-0065).
+g checkout -q -b feature/delta && echo "# plan delta" > "$MAIN/tasks/delta.md" \
+  && g add tasks/delta.md && g commit -qm "plan delta" && g checkout -q main
+lane new delta && ok "a plan only on feature/delta is found" || bad "new delta: $(cat "$WORK/out.log")"
+# epsilon: no plan anywhere.
+: > "$PG_LOG"
+lane new epsilon; rc=$?
+[ "$rc" = 1 ] && grep -q "tasks/epsilon.md is not committed on main" "$WORK/out.log" \
+  && ok "no plan anywhere: new refuses and says where it looked" || bad "new epsilon rc=$rc: $(cat "$WORK/out.log")"
+[ ! -e "$WORK/AdminHelper-epsilon" ] && [ ! -s "$PG_LOG" ] \
+  && ok "and refuses before a worktree or a database exists" || bad "epsilon left a worktree or a database call"
+# zeta: the branch exists, the plan is only on main — the lane checks out the branch.
+g branch feature/zeta && echo "# plan zeta" > "$MAIN/tasks/zeta.md" \
+  && g add tasks/zeta.md && g commit -qm "plan zeta on main"
+lane new zeta; rc=$?
+[ "$rc" = 1 ] && grep -q "tasks/zeta.md is not committed on feature/zeta" "$WORK/out.log" \
+  && ok "with feature/zeta present, the plan on main does not count" || bad "new zeta rc=$rc: $(cat "$WORK/out.log")"
+
+echo "── new: the lane links what it needs from the main checkout ──"
+WTD="$WORK/AdminHelper-delta"
+[ -d "$WTD/apps/server/.venv" ] && [ ! -L "$WTD/apps/server/.venv" ] \
+  && [ "$(readlink "$WTD/apps/server/.venv/bin")" = "$MAIN/apps/server/.venv/bin" ] \
+  && [ "$(readlink "$WTD/apps/server/.venv/pyvenv.cfg")" = "$MAIN/apps/server/.venv/pyvenv.cfg" ] \
+  && ok "the server venv is a real directory of links into the main one" || bad "server venv: $(ls -la "$WTD/apps/server/.venv" 2>&1)"
+[ "$("$WTD/apps/monitoring/.venv/bin/ruff")" = "ruff-monitoring" ] \
+  && ok "the monitoring venv's ruff runs through the link" || bad "monitoring ruff not reachable"
+[ ! -e "$WTD/apps/ca-issuer/.venv" ] && ok "a venv the main checkout lacks is not invented" \
+  || bad "ca-issuer venv appeared from nowhere"
+[ "$(readlink "$WTD/$SIDECAR")" = "$MAIN/$SIDECAR" ] && ok "the frpc sidecar is linked" \
+  || bad "sidecar: $(ls -la "$WTD/${SIDECAR%/*}" 2>&1)"
+[ -z "$(git -C "$WTD" status --porcelain)" ] && ok "and git status in the lane stays clean" \
+  || bad "git status: $(git -C "$WTD" status --porcelain)"
+lane "done" delta && [ ! -e "$WTD" ] && ok "done removes the lane with its links" \
+  || bad "done delta: $(cat "$WORK/out.log")"
+[ -x "$MAIN/apps/server/.venv/bin/ruff" ] && [ -f "$MAIN/apps/server/.venv/pyvenv.cfg" ] && [ -f "$MAIN/$SIDECAR" ] \
+  && ok "and leaves what they pointed at alone" || bad "done removed the main checkout's venv or sidecar"
 
 # ── run.sh: the host-wide lock for the heavy python steps (T2) ──────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a

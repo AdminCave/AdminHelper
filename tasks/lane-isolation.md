@@ -47,9 +47,12 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md „Python-Tests lokal“ (Sperre, Wartezeit, Abschalter) · AUTONOMOUS.md „Parallel-Betrieb“ (ersetzt „nur ein server-Lauf zur Zeit“ als Absprache)
 Abhängt von: T1 (gemeinsames Testskript)
 
-### T3 — Die Lane hat, was sie zum Bauen braucht  [ ]
-Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh
+### T3 — Die Lane hat, was sie zum Bauen braucht  [x]
+Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @4769330d 2026-09-23T14:12:55+02:00
+Review: approve (sonnet, 2. Runde)
 Änderung: `lane.sh new` prüft den Plan dort, wo er nach R-0065 liegt. Existiert `feature/<slug>`, muss `tasks/<slug>.md` **auf diesem Branch** stehen, sonst auf `main`. Fehlt er an beiden Stellen, bricht `new` mit einer klaren Meldung ab, statt wie heute nur zu warnen. Dazu legt `new` zwei Symlinks in die Lane. Das frpc-Sidecar `apps/desktop/src-tauri/binaries/frpc-*` ist gitignored, `cargo test` braucht es aber. Die Komponenten-Venvs `apps/{server,monitoring,ca-issuer}/.venv` des Haupt-Checkouts werden nur gelesen, damit `run.sh` das CI-gepinnte `ruff` findet statt keins. Test: Ein Plan nur auf dem Branch wird gefunden. Ein fehlender Plan bricht `new` ab, bevor ein Worktree entsteht. Die Symlinks zeigen in den Haupt-Checkout.
+Im Bau präzisiert: kein Symlink **an der Stelle** von `binaries/` bzw. `.venv`, sondern ein echtes Verzeichnis mit einem Link je Eintrag (`lane_link_dir`). .gitignore matcht beide mit Schrägstrich nur als Verzeichnis; ein Symlink dort wäre eine untrackte Datei — laut in `git status`, einen `git add -A` vom Commit entfernt, und `git worktree remove` in `done` hielte die Lane für unsauber. „Nur lesend“ ist die Nutzung, keine Sperre: installiert wird in `AH_VENV`, dem Venv der Lane.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: AUTONOMOUS.md „Parallel-Betrieb“ (Schritt 1 und 2: der Plan liegt auf dem Branch, `lane.sh new` reicht)
 Abhängt von: T1

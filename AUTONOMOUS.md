@@ -105,11 +105,14 @@ seriell (das Design-Gate braucht dich); gebaut wird parallel. **Nie zwei Builds 
 demselben Ledger** — der Ledger ist die einzige Fortschritts-Wahrheit, es gibt kein Locking.
 
 ```bash
-# 1. Planen wie gehabt (/feature-plan → Gate → Freigabe). Danach committet die
-#    Plan-Session Spec + Ledger auf main — Worktrees sehen nur Committetes.
-# 2. Lane aufmachen (Worktree ../AdminHelper-<slug>; eine eigene .devenv.sh mit
-#    eigener Test-DB adminhelper_test_<slug> und eigenem Venv, settings.local.json
-#    als Kopie — Claude Code schreibt sie bei Grants):
+# 1. Planen wie gehabt (/feature-plan → Gate → Freigabe). Spec + Ledger sind der
+#    erste Commit von feature/<slug> (R-0065) — Worktrees sehen nur Committetes.
+#    lane.sh new sucht den Plan dort (ohne den Branch: auf main) und bricht ohne ihn ab.
+# 2. Lane aufmachen — mehr braucht es nicht (Worktree ../AdminHelper-<slug>; eine
+#    eigene .devenv.sh mit eigener Test-DB adminhelper_test_<slug> und eigenem Venv,
+#    settings.local.json als Kopie — Claude Code schreibt sie bei Grants; frpc-Sidecar
+#    und Komponenten-Venvs mit dem CI-ruff als Links in den Haupt-Checkout, nur zum
+#    Lesen — die Links sperren nichts, installiert wird ins eigene Venv der Lane):
 bash scripts/dev/lane.sh new <slug>
 # 3. Lane starten (eigenes Terminal/tmux-Pane):
 cd ../AdminHelper-<slug> && claude --model opus --permission-mode acceptEdits

@@ -11,7 +11,9 @@
 #                                         feature/<slug> (forked from main); writes
 #                                         .vm/lane, copies .claude/settings.local.json,
 #                                         writes the lane's own .devenv.sh and creates
-#                                         its test database
+#                                         its test database, links the frpc sidecar and
+#                                         the component venvs; refuses without the plan
+#                                         committed on feature/<slug> (else on main)
 #   bash scripts/dev/lane.sh done <slug>  destroy the lane's VMs, then remove
 #                                         worktree + branch (branch only if merged),
 #                                         the lane's test database and its venv
@@ -69,6 +71,25 @@ lane_db() {  # lane_db create|drop <slug>
   esac
 }
 
+# lane_link_dir <worktree> <dir> — link every entry of the main checkout's <dir>
+# into a REAL <dir> in the lane. .gitignore matches these as directories
+# (`.venv/`, `binaries/`); a symlink in their place is no directory to it, so it
+# would be an untracked file — noise in every git status of the lane, one
+# `git add -A` away from a commit, and a worktree `done` calls unclean. A venv
+# still works through the links: python finds pyvenv.cfg next to bin/.
+# "For reading" is how the lane uses them, not a lock: they are ordinary links,
+# and a `pip install` through apps/<c>/.venv would change the main checkout's
+# venv. run.sh installs into AH_VENV, which is the lane's own.
+lane_link_dir() {
+  local wt="$1" dir="$2" entry
+  [ -d "$ROOT/$dir" ] || return 0
+  mkdir -p "$wt/$dir"
+  for entry in "$ROOT/$dir"/* "$ROOT/$dir"/.[!.]* "$ROOT/$dir"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    ln -sfn "$entry" "$wt/$dir/${entry##*/}"
+  done
+}
+
 lane_new() {
   local slug="${1:?usage: lane.sh new <slug>}"
   # The slug IS the lane id, written to .vm/lane below (vm_lane normalizes
@@ -76,11 +97,16 @@ lane_new() {
   # VMs) — so only allow the charset that survives normalization unchanged.
   local wt="../AdminHelper-$slug" branch="feature/$slug"
   [ -e "$wt" ] && { echo "lane dir $wt already exists"; exit 1; }
-  # A worktree only sees COMMITTED state — an uncommitted plan (spec + ledger)
-  # from /feature-plan would be invisible to the lane.
-  if ! git cat-file -e "main:tasks/$slug.md" 2>/dev/null; then
-    echo "  WARN: tasks/$slug.md is not committed on main — commit the plan first"
-    echo "        (chore(plan): add spec + ledger for $slug), or the lane won't see it."
+  # The plan lies where the build will see it (R-0065): the gate commits spec and
+  # ledger as the first commit of feature/<slug>, so on that branch when it
+  # exists, else on main. A worktree only sees COMMITTED state, and a lane
+  # without its plan cannot build — so this refuses before a worktree exists.
+  local where=main
+  git show-ref --verify --quiet "refs/heads/$branch" && where="$branch"
+  if ! git cat-file -e "$where:tasks/$slug.md" 2>/dev/null; then
+    echo "tasks/$slug.md is not committed on $where — a lane only sees committed state."
+    echo "  Commit the plan there first (chore(plan): add spec + ledger for $slug)."
+    exit 1
   fi
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git worktree add "$wt" "$branch"
@@ -106,11 +132,18 @@ lane_new() {
       exit 1
     }
   fi
+  # Gitignored parts of the main checkout that a build needs, linked for
+  # reading: the frpc sidecar cargo test wants, and the component venvs that
+  # carry the ruff CI pins (without them run.sh finds no ruff at all).
+  lane_link_dir "$wt" apps/desktop/src-tauri/binaries
+  local c
+  for c in server monitoring ca-issuer; do lane_link_dir "$wt" "apps/$c/.venv"; done
   echo ""
   echo "── lane $slug ready ──"
   echo "  start:  cd $wt && claude --model opus --permission-mode acceptEdits"
   echo "  then:   /feature-build tasks/$slug.md"
-  echo "  (ledger head should say 'Fast-Suite: vm' — the lane has no local toolchain artifacts)"
+  echo "  (ledger head: 'Fast-Suite: vm' keeps the dev box free; local runs work too —"
+  echo "   own test DB, linked venvs, and the host-wide python lock queues the heavy steps)"
 }
 
 lane_done() {
