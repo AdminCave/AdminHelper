@@ -63,16 +63,32 @@ def test_a_nul_in_a_body_field_is_422(field, client_db):
     assert r.json()["detail"][0]["loc"] == ["body", field]
 
 
-def test_a_nul_in_the_agent_report_is_422(client_db):
-    """The report is a plain dict, not a model — its shape belongs to the agent —
-    so it carries the same rule as RequestDict rather than as a base class."""
-    client, _ = client_db
+def test_a_nul_in_the_agent_report_is_422_but_liveness_counts(client_db, monkeypatch, caplog):
+    """The report is a plain dict, not a model — its shape belongs to the agent — so
+    the handler checks it, after recording liveness: a refused report must not
+    turn into a "server down" alarm from agent_ping (Kevin, 2026-09-23)."""
+    from app.checkers import agent as agent_checker
+    from app.models import MonitorAgentLiveness
+
+    client, factory = client_db
     report = {"systemd": {"failed": ["sshd.service"]}}
     assert client.post("/agent/srv-1/report", json=report).status_code == 200
+
+    monkeypatch.setattr(agent_checker, "_last_report", {})
+    with factory() as db:
+        db.query(MonitorAgentLiveness).delete()
+        db.commit()
     bad = {"systemd": {"failed": ["a" + NUL + ".service"]}}
-    r = client.post("/agent/srv-1/report", json=bad)
+    with caplog.at_level("WARNING"):
+        r = client.post("/agent/srv-1/report", json=bad)
     assert r.status_code == 422, r.text
     assert r.json()["detail"][0]["loc"] == ["body", "systemd", "failed", 0]
+    # Liveness was recorded all the same, in memory and in its table.
+    assert "srv-1" in agent_checker._last_report
+    with factory() as db:
+        assert db.get(MonitorAgentLiveness, "srv-1") is not None
+    # And someone can see why this server's checks stand still.
+    assert any("srv-1" in m and "systemd" in m for m in caplog.messages), caplog.messages
 
 
 def _refs(node) -> set[str]:
@@ -86,8 +102,9 @@ def _refs(node) -> set[str]:
     return set()
 
 
-# Bodies that are deliberately not a model and carry RequestDict instead. Any
-# other body without a $ref would pass the check below unseen.
+# Bodies that are deliberately not a model; the handler checks them instead
+# (routers/agent.py). Any other body without a $ref would pass the check below
+# unseen.
 _DICT_BODIES = {("post", "/agent/{server_id}/report")}
 
 

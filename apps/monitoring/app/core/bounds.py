@@ -17,7 +17,7 @@ into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
 
 from typing import Annotated, Any
 
-from pydantic import BaseModel, BeforeValidator, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic_core import InitErrorDetails
 
 # Rows a list endpoint skips. Not a column width — SQL OFFSET takes a bigint,
@@ -84,9 +84,3 @@ class RequestModel(BaseModel):
     @classmethod
     def _reject_nul_anywhere(cls, data: Any) -> Any:
         return _refuse_nul(data, cls.__name__)
-
-
-# A request body taken as a plain dict rather than a model — the agent report,
-# whose shape belongs to the agent. Same rule, same walk; the published schema
-# stays `object`.
-RequestDict = Annotated[dict, BeforeValidator(lambda data: _refuse_nul(data, "dict"))]

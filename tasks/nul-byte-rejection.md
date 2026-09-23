@@ -98,8 +98,10 @@ Review: approve (sonnet)
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_nul_middleware.py
 Doku: keine (Fehlerdetail, kein Verhalten)
 
-### T8 — Agent-Report: NUL-Ablehnung nach der Liveness (Branch-Review)  [ ]
+### T8 — Agent-Report: NUL-Ablehnung nach der Liveness (Branch-Review)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/monitoring/app/core/bounds.py, apps/monitoring/tests/test_nul.py, apps/monitoring/tests/schemathesis_exclude.toml
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @dbe0e6c3 2026-09-23T12:40:51+02:00
+Review: approve (sonnet)
 Änderung: Befund aus `/code-review` über den Branch-Diff, nachgeprüft. `RequestDict` (T4) lehnt einen Agent-Report mit NUL **vor** dem Handler ab. Damit laufen weder `record_agent_report` noch der Liveness-Commit, und `agent_ping` fiele auf DOWN — ein Fehlalarm „Server down“ für einen Server, der meldet. Vorher kam die Liveness durch, und nur der Commit der Check-Auswertung starb (eigener 500er der Route, auf Postgres nachgestellt). Ob der Go-Agent je ein NUL sendet (Sensor-Namen aus sysfs, Volume-Labels), ist nicht verifiziert und unwahrscheinlich. Das war eine Entwurfsfrage (vorher `[?]`, drei Optionen).
 **Entscheidung (Kevin, 2026-09-23): Option (2).** Die Route nimmt wieder ein rohes `dict`; die NUL-Prüfung mit demselben Walk (`_find_nul`) läuft **nach** dem Liveness-Commit und antwortet 422, dazu ein `logger.warning` mit `server_id` und Fundstelle (sonst sieht niemand, warum die Checks eines Servers stehen bleiben). `RequestDict` entfällt. Test: NUL im Report ⇒ 422 **und** Liveness geschrieben (agent_ping bleibt oben).
 Verify: bash scripts/dev/verify.sh monitoring --strict

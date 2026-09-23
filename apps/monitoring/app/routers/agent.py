@@ -12,6 +12,7 @@ import math
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
 from app.check_engine import _dispatch_alert_bg, apply_result
@@ -19,7 +20,7 @@ from app.check_types import PUSH_ONLY_TYPES
 from app.checkers import get_checker
 from app.checkers.agent import EXCLUDED_FSTYPES, record_agent_report
 from app.core.auth import require_agent
-from app.core.bounds import RequestDict
+from app.core.bounds import _find_nul
 from app.core.database import get_db
 from app.core.time import utcnow_naive
 from app.core.victoria import format_line, safe_metric_part, victoria
@@ -67,7 +68,7 @@ def _capped(value: object) -> list:
 @router.post("/agent/{server_id}/report")
 def agent_report(
     server_id: str,
-    report: RequestDict,
+    report: dict,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     auth_server_id: str = Depends(require_agent),
@@ -88,6 +89,24 @@ def agent_report(
     except Exception:
         db.rollback()
         logger.exception("Persistieren der Agent-Liveness fehlgeschlagen (%s)", server_id)
+
+    # A NUL anywhere in the report would die in a text column further down. Refused
+    # here, AFTER the liveness above and not on the parameter: liveness is not report
+    # content, and a refused report must not turn into a "server down" alarm.
+    found = _find_nul(report)
+    if found is not None:
+        loc, value = found
+        logger.warning("Agent report from %s refused: NUL byte at %s", server_id, list(loc))
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", *loc),
+                    "msg": "Value error, must not contain a NUL byte",
+                    "input": value,
+                }
+            ]
+        )
 
     ts = int(time.time())
     base_tags = {"server_id": server_id}
