@@ -76,14 +76,14 @@
 operation_id = "list_audit_api_audit_get"
 checks = ["negative_data_rejection"]
 # GET /api/audit
-reason = "negative_data_rejection — gemessen im Lauf vom 2026-09-22 nach dem Fix, `curl 'http://testserver/api/audit?q=null&actor_type=true'` -> 200: zwei Ursachen in einem Treffer, beide Framework-Verhalten. Pydantic v2 koerziert im lax mode `actor_type=true` auf einen String, und der Check laesst den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt (prepare_headers merged sie ueber die mutierten). Der NUL-Byte-Fehler, wegen dem hier bis 2026-09-22 die GANZE Operation stand, ist behoben: alle sechs Textfilter tragen jetzt SafeText, `not_a_server_error` laeuft hier also wieder"
+reason = "negative_data_rejection — `?q=null&actor_type=true` -> 200, gemessen im Lauf vom 2026-09-22 und erneut nachgestellt 2026-09-23: zwei Ursachen in einem Treffer, beide Framework-Verhalten. Pydantic v2 koerziert im lax mode `actor_type=true` auf einen String, und der Check laesst den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt (prepare_headers merged sie ueber die mutierten). Ein NUL-Byte in einem der sechs Textfilter lehnt seit 2026-09-23 die NUL-Middleware vor dem Routing ab (422, nachgestellt mit `?q=%00`), `not_a_server_error` laeuft hier also mit"
 until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
 operation_id = "list_notifications_api_notifications_get"
 checks = ["negative_data_rejection"]
 # GET /api/notifications
-reason = "negative_data_rejection — derselbe zweite Grund wie bei list_hooks, list_servers und get_connections: FastAPI ignoriert unbekannte Query-Parameter, und der Check laesst zusaetzlich den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt. Die Route antwortet mit 200, der Check liest das als akzeptierte schema-widrige Daten. Gemessen 2026-09-23 im Abschlusslauf (`?%13%C3%B6=…` plus ein NUL-Parametername), nachgestellt mit `GET /api/notifications?unknown_param=1` -> 200. Der offset-Ueberlauf, wegen dem hier bis zum 2026-09-22 die GANZE Operation stand, ist behoben — deshalb nur noch dieser eine Check statt der Operation"
+reason = "negative_data_rejection — derselbe zweite Grund wie bei list_hooks, list_servers und get_connections: FastAPI ignoriert unbekannte Query-Parameter, und der Check laesst zusaetzlich den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt. Die Route antwortet mit 200, der Check liest das als akzeptierte schema-widrige Daten. Nachgestellt 2026-09-23 mit `GET /api/notifications?unknown_param=1` -> 200. Der NUL-Parametername aus dem Abschlusslauf vom 2026-09-23 antwortet inzwischen 422 (NUL-Middleware, nachgestellt), traegt den Eintrag also nicht mehr; der offset-Ueberlauf ist seit 2026-09-22 behoben"
 until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
@@ -104,7 +104,7 @@ until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 operation_id = "mint_enrollment_token_for_api_enrollment_token_for_post"
 checks = ["negative_data_rejection"]
 # POST /api/enrollment/token/for
-reason = "negative_data_rejection — dasselbe Muster wie beim Self-Service-Pendant mint_self_enrollment_token, das den Eintrag unveraendert traegt: `browser` ist ein bool und wird im lax mode aus 1 koerziert, unbekannte Body-Felder verschluckt FastAPI. Nachgestellt 2026-09-23 gegen einen EXISTIERENDEN Benutzer: `{\"username\": \"target\", \"browser\": 1}` und `{\"username\": \"target\", \"unknown_field\": 1}` jeweils -> 200. Das NUL-Byte im Benutzernamen, wegen dem hier bis zum 2026-09-22 die GANZE Operation stand, ist behoben (SafeText) — deshalb nur noch dieser eine Check"
+reason = "negative_data_rejection — dasselbe Muster wie beim Self-Service-Pendant mint_self_enrollment_token, das den Eintrag unveraendert traegt: `browser` ist ein bool und wird im lax mode aus 1 koerziert, unbekannte Body-Felder verschluckt FastAPI. Nachgestellt 2026-09-23 gegen einen EXISTIERENDEN Benutzer: `{\"username\": \"target\", \"browser\": 1}` und `{\"username\": \"target\", \"unknown_field\": 1}` jeweils -> 200. Ein NUL-Byte im Benutzernamen lehnt die gemeinsame Request-Basisklasse ab (422 mit loc body.username, nachgestellt 2026-09-23) — deshalb nur dieser eine Check"
 until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
@@ -220,57 +220,15 @@ reason = "negative_data_rejection — die HEADER-Blindstelle: der Check laesst d
 until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
-operation_id = "create_server_api_servers_post"
-raises = true
-# POST /api/servers
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: `hostname` und `notes`. NICHT `name` — das traegt ueber `_validate_server_name` -> `_reject_toml_breakers` schon eine Pruefung auf Steuerzeichen und antwortet mit 422; nachgestellt 2026-09-23"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
-
-[[exclude]]
-operation_id = "update_server_api_servers__server_id__put"
-raises = true
-# PUT /api/servers/{server_id}
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: der Pfadparameter `server_id`, der in `Server.id ==` laeuft (a%00b genuegt)"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
-
-[[exclude]]
-operation_id = "update_tunnel_api_frp_tunnels__tunnel_id__put"
-raises = true
-# PUT /api/frp/tunnels/{tunnel_id}
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: der Pfadparameter `tunnel_id`, der in `FrpTunnel.id ==` laeuft"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
-
-[[exclude]]
-operation_id = "create_playbook_api_ansible_playbooks_post"
-raises = true
-# POST /api/ansible/playbooks
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: `name` und `description`"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
-
-[[exclude]]
-operation_id = "update_playbook_api_ansible_playbooks__playbook_id__put"
-raises = true
-# PUT /api/ansible/playbooks/{playbook_id}
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: der Pfadparameter `playbook_id`"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
-
-[[exclude]]
 operation_id = "create_connection_api_connections_post"
-raises = true
+checks = ["negative_data_rejection"]
 # POST /api/connections
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (eine ForeignKeyViolation auf `serverId`); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: `host` und `notes`"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
-
-[[exclude]]
-operation_id = "create_tunnel_api_frp_tunnels_post"
-raises = true
-# POST /api/frp/tunnels
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Review zu T14 hat das gefunden, nachdem der Abschluss-Review die fuenf Geschwister gezeigt hatte. Betroffen: `server_id` und `frp_config_id` (beide laufen roh aus dem BODY in einen Vergleich, tunnel_router.py:59/63) sowie `protocol`, das roh in Column(String) geschrieben wird. `_v_str` in FrpTunnelCreate deckt nur name, custom_domains, local_ip und auto_connection_username ab"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+reason = "negative_data_rejection — zwei Treffer im dienstuebergreifenden Fuzz-Lauf vom 2026-09-23, dem ersten ohne den NUL-Ausschluss, beide Framework-Verhalten: Pydantic v2 koerziert im lax mode `trustCert: 0` auf false (Kontext admin_jwt -> 201), und der Check laesst den Authorization-Header weg, waehrend der Kontext read_write_key ueber X-API-Key authentifiziert (-> 201, die bekannte HEADER-Blindstelle). Beide einzeln nachgestellt 2026-09-23. Das NUL-Byte in `host`/`notes`, wegen dem hier bis 2026-09-23 die GANZE Operation stand (raises), ist behoben: die gemeinsame Request-Basisklasse antwortet 422 mit loc body.host, nachgestellt. Deshalb nur noch dieser eine Check, not_a_server_error laeuft wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
 operation_id = "list_tunnels_api_frp_tunnels_get"
-raises = true
+checks = ["negative_data_rejection"]
 # GET /api/frp/tunnels
-reason = "ZWEI Gruende, und anders als bei den uebrigen Eintraegen dieses Vorhabens ist hier keiner von beiden behoben. (1) not_a_server_error — HTTP 500 bei einem NUL-Byte in den Query-Parametern `server_id` oder `frp_config_id`: beide laufen roh in einen Vergleich, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. (2) negative_data_rejection — Pydantic v2 koerziert im lax mode, dazu die bekannte HEADER-Blindstelle; mit diesem Grund stand der Eintrag schon vor diesem Vorhaben check-granular hier, und er gilt unveraendert weiter: `frp/tunnel_router.py` ist in diesem Branch NICHT angefasst worden. Der Eintrag ist deshalb von `checks` auf `raises` VERBREITERT, nicht zurueckgeholt — der Preis ist, dass not_a_server_error hier bis zum NUL-Fix nicht mitlaeuft. Wer Grund (1) schliesst, nimmt den Eintrag auf checks zurueck und loescht ihn NICHT, sonst faellt Grund (2) unbemerkt mit weg"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel; danach zurueck auf checks = [negative_data_rejection], nicht loeschen"
+reason = "negative_data_rejection — FastAPI ignoriert unbekannte Query-Parameter, Pydantic v2 koerziert im lax mode, dazu die bekannte HEADER-Blindstelle (die Fixture setzt die Auth-Header von aussen ueber headers=). Nachgestellt 2026-09-23 nach dem NUL-Fix: `?unknown_param=1` -> 200 und `?server_id=true` -> 200. Framework-Verhalten, kein Defekt. Der NUL-Pfad ueber `server_id`/`frp_config_id`, wegen dem hier die GANZE Operation stand (raises), ist behoben: die NUL-Middleware lehnt ihn vor dem Routing mit 422 ab, nachgestellt 2026-09-23 fuer beide Parameter. Deshalb zurueck auf diesen einen Check, not_a_server_error laeuft wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"

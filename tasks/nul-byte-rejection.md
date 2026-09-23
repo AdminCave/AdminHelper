@@ -72,8 +72,10 @@ Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (T6)
 Abhängt von: T1, T2
 
-### T5 — Die NUL-Ausschlüsse fallen weg  [ ]
+### T5 — Die NUL-Ausschlüsse fallen weg  [x]
 Komponente: server · Dateien: apps/server/tests/schemathesis_exclude.toml, apps/monitoring/tests/schemathesis_exclude.toml
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @ef74ac6d 2026-09-23T11:50:50+02:00
+Review: approve (sonnet)
 Änderung: Jeden Eintrag, dessen Begründung ein NUL-Byte nennt, **an der Route nachstellen** und erst dann entfernen. Stirbt die Route weiter an etwas anderem, bleibt der Eintrag mit **neuer** Begründung aus diesem Lauf stehen — kein Eintrag bleibt mit alter Begründung. Danach den dienstübergreifenden Fuzz-Lauf fahren und die Bilanz aus einer Auszählung gegen `git show main:` bilden, nicht aus dem Gedächtnis.
 Verify: bash scripts/dev/verify.sh server --strict -- -m schemathesis
 Doku: keine (T6)
