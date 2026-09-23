@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: aktiv · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
@@ -74,3 +74,70 @@ Ein echter Lane-Durchlauf auf der Dev-Box:
 3. `lane.sh done probe-lane`, einmal mit laufender Shell in der Lane (muss abbrechen) und einmal ohne (muss abräumen, einschließlich DB und Venv).
 
 Ergebnis und Laufzeiten gehören in dieses Ledger.
+
+### Ergebnis (2026-09-23, Worker 2, abgestimmt mit der Aufsicht) — bestanden
+
+**Aufbau.** `feature/probe-lane` per Plumbing auf `harness/lane-isolation` (bd363471), mit einem
+Wegwerf-Plan nur auf dem Branch (21c413a0). Auf `main` hätte die Lane das `run.sh` ohne Sperre
+gehabt. `lane.sh new probe-lane` endete mit Exit 0: Worktree, eigene `.devenv.sh`, die DB
+`adminhelper_test_probe_lane` (in `pg_database` gemessen), Venv- und Sidecar-Links; `git status`
+der Lane war leer. Beide `verify.sh server --strict` starteten um 14:21:42 gleichzeitig, jeder in
+eigenem tmux mit eigenem `AH_OUT_DIR`, die Ausgabe vollständig und mit Zeitstempel je Zeile in
+eine Datei.
+Last auf der Box: Parallel liefen zwei `golden/run.sh` (je 6 Worker) eines anderen Projekts.
+Die Laufzeiten sind entsprechend länger, die Reihenfolge berührt das nicht.
+
+**(a) Summary-Zeilen**
+- Haupt-Checkout: `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns`, fertig
+  14:39:50 nach 18:08 min.
+- Lane: `run.sh[quick]: 4 passed, 0 failed, 13 skipped, 2 test-skips, 0 reruns`, fertig 14:46:25
+  nach 24:43 min.
+- In beiden: server pytest `652 passed, 2 skipped, 2 xfailed`, Schemathesis `292 passed`. Die zwei
+  Test-Skips sind `test_stream_redis.py` (Redis auf :6380 nicht erreichbar), in beiden gleich.
+
+**(b) Sperre: nacheinander, nicht überlappend.** Belege: die Sperrdatei (der Halter schreibt sich
+beim Erwerb hinein), `lslocks` (Halter und wartende `flock`-Anfragen) und die Warte-Meldungen der
+Läufe.
+
+| Zeitraum | hält die Sperre | wartet (Meldung im Lauf) |
+|---|---|---|
+| 14:21:44–14:26:52 | Haupt `server pytest` | Lane `server pytest` ab 14:21:51, „held by: server pytest … in …/AdminHelper" |
+| 14:26:52–14:33:08 | Lane `server pytest` (mit Erstinstallation des Lane-Venvs) | Haupt `schemathesis` ab 14:26:52, „held by: server pytest … in …/AdminHelper-probe-lane" |
+| 14:33:08–14:39:50 | Haupt `schemathesis` | Lane `schemathesis` ab 14:33:08, „held by: schemathesis … in …/AdminHelper" |
+| 14:39:51–14:46:25 | Lane `schemathesis` | — |
+
+**(c) Welche DB jeder Lauf benutzt hat, gemessen.** `pg_stat_activity` alle 3 s, Sitzungen der
+Rolle `adminhelper` nach `datname`, ohne die eigene Abfrage:
+- 14:21:59–14:26:48 nur `adminhelper_test`.
+- 14:27:47–14:33:05 nur `adminhelper_test_probe_lane`.
+- 14:33:18–14:39:47 nur `adminhelper_test`.
+- 14:40:02–14:46:22 nur `adminhelper_test_probe_lane`.
+
+Dazu kommen kurz die Wegwerf-DBs der Alembic-Smoke (`alembic_builtin_*`, `alembic_smoke_*`). In
+keiner Probe waren beide Test-DBs zugleich aktiv.
+
+**(d) Abbruch von `done`.** Eine Shell in der Lane (tmux, `bash`, pid 1875081, cwd
+`…/AdminHelper-probe-lane`), dann `lane.sh done probe-lane` → Exit 1:
+```
+lane probe-lane is still in use — these processes work in ../AdminHelper-probe-lane:
+  1875081 bash
+End the session(s) in the lane, then run again: bash scripts/dev/lane.sh done probe-lane
+```
+Worktree und DB standen danach noch.
+
+**(e) Nach dem zweiten `done`.** Die Shell ist beendet, `done` endet mit Exit 0. Reap: keine
+Warm-Slots, nichts abgelaufen, `0 ours` auf der Lane. Der Branch blieb als ungemergt stehen und ist
+danach von Hand gelöscht (`git branch -D feature/probe-lane`). Nachkontrolle:
+- `psql -l` zeigt nur noch `adminhelper_test` und `adminhelper_test_fable`, die nicht aus diesem
+  Beweis stammt. `adminhelper_test_probe_lane` ist weg.
+- `~/.cache/ah-venv-probe-lane` fehlt.
+- Der Worktree fehlt; `git worktree list` zeigt nur den Haupt-Checkout.
+- `vm.py list`: `0 ours, 4 not ours`, Exit 0.
+
+**Laufzeiten.**
+
+| Schritt | Haupt-Checkout | Lane |
+|---|---|---|
+| server pytest | 5:08 | 6:16, davon rund 50 s Venv-Installation ohne DB-Sitzung |
+| Schemathesis | 6:42 | 6:34 |
+| Warten auf die Sperre | 6:16 (vor Schemathesis) | 5:01 (vor pytest) und 6:42 (vor Schemathesis) |
