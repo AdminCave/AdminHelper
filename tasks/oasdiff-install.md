@@ -45,3 +45,11 @@ Review: Review am Ende (Kurz-Ledger)
 Beweis: Die `scripts`-Suite sieht `DEVELOPMENT.md` gar nicht an — `doc-smoke.py` prüft nur `docs/**/*.html`. Der Verify-Lauf zeigt hier also nur, dass nichts kaputtgegangen ist. Der eigentliche Beleg ist, die dokumentierten Befehle auszuführen: am 2026-09-23 in ein Wegwerf-Verzeichnis gefahren (Download, `sha256sum -c -` → OK, entpackt, `oasdiff version 1.32.0`), und `V`/`S` gegen `ci.yml` gegengeprüft — beide byte-gleich mit `OASDIFF_VERSION` und `OASDIFF_SHA256_LINUX_AMD64`.
 Verify: bash scripts/tests/run.sh unit --strict --only scripts
 Doku: DEVELOPMENT.md (ist die Änderung selbst)
+
+### T2 — Der Prüfsummen-Schritt muss das Entpacken wirklich verhindern  [x]
+Komponente: scripts · Dateien: DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @dabb05e3 2026-09-23T09:23:37+02:00
+Review: blocker aus dem Abschluss-Review, behoben; Re-Review folgt
+Änderung: Blocker aus dem Abschluss-Review. Der Block aus T1 prüft die Prüfsumme **vor** dem Entpacken, aber er hindert nichts: ohne `set -e` und ohne Verkettung läuft `tar` auch nach einem FEHLSCHLAG. In CI fällt das nicht auf, weil GitHub `run:`-Schritte mit `bash -e` fährt — beim Copy-Paste in eine normale Shell schon. Damit widerspricht der Block dem Satz direkt darunter („die Pruefsumme macht ein ausgetauschtes Asset zum Fehler statt zur Ueberraschung"), und genau das Szenario, für das die Prüfsumme da ist (gültiges Archiv, falscher Inhalt), landet still in `~/.local/bin`. Nachgestellt 2026-09-23 mit einem selbst gebauten `oasdiff.tgz` mit falschem Inhalt: alte Fassung `exit=0`, Binary entpackt; verkettete Fassung `exit=1`, nichts entpackt. Die Schritte werden deshalb mit `&&` verkettet. Kein `set -e`: der Block ist zum Einfügen in eine interaktive Shell gedacht, und dort wirkt `set -e` auf die Shell des Benutzers weiter.
+Verify: bash scripts/tests/run.sh unit --strict --only scripts
+Doku: DEVELOPMENT.md (ist die Änderung selbst)

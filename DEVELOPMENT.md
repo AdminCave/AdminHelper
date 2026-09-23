@@ -219,10 +219,17 @@ Release-Binary:
 V=1.32.0
 S=5b2050787cfee2a9a3ba7b25cb50fe2c5cc45cdf5b96fbc51a4a60107f8b4aad
 curl -sSfL -o /tmp/oasdiff.tgz \
-  "https://github.com/oasdiff/oasdiff/releases/download/v${V}/oasdiff_${V}_linux_amd64.tar.gz"
-echo "${S}  /tmp/oasdiff.tgz" | sha256sum -c -
-mkdir -p ~/.local/bin && tar xzf /tmp/oasdiff.tgz -C ~/.local/bin oasdiff
+  "https://github.com/oasdiff/oasdiff/releases/download/v${V}/oasdiff_${V}_linux_amd64.tar.gz" &&
+  echo "${S}  /tmp/oasdiff.tgz" | sha256sum -c - &&
+  mkdir -p ~/.local/bin &&
+  tar xzf /tmp/oasdiff.tgz -C ~/.local/bin oasdiff
 ```
+
+Die Schritte haengen mit `&&` zusammen, damit ein Pruefsummen-Fehlschlag das Entpacken
+wirklich verhindert: `sha256sum -c -` meldet den Fehler, stoppt aber von sich aus nichts, und
+ein gueltiges Archiv mit falschem Inhalt landete sonst trotzdem in `~/.local/bin`. In CI
+uebernimmt das `bash -e`, mit dem GitHub jeden `run:`-Schritt faehrt; beim Einfuegen in eine
+normale Shell gibt es das nicht.
 
 Das Release-Binary statt `go install`: jede oasdiff-Fassung ab v1.24.0 verlangt `go 1.26` in
 ihrer go.mod, waehrend die Workflows Go 1.25 mit `GOTOOLCHAIN=local` pinnen — aus der Quelle
