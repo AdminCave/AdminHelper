@@ -42,11 +42,6 @@
     ],
     "ask": [
       "Bash(bash scripts/vm/bootstrap_linux.sh:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git checkout:*)",
-      "Bash(git stash:*)",
-      "Bash(git restore:*)",
       "Bash(bash scripts/dev/harness.sh off:*)",
       "Bash(bash scripts/dev/ledger.sh mark-done:*)"
     ],
