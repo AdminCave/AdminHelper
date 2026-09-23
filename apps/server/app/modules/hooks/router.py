@@ -5,12 +5,14 @@
 import json
 import uuid
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import generate_api_key, get_current_admin, hash_api_key
+from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.modules.hooks.models import Hook
@@ -113,7 +115,7 @@ def list_hooks(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
 ):
     # created_at is the transaction timestamp -> identical for rows created
     # together; id breaks the tie so pages stay stable.

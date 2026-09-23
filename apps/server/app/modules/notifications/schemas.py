@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.bounds import BigIntPk, SafeText
+
 Severity = Literal["info", "warning", "critical"]
 ScopeType = Literal["all", "tag", "server"]
 
@@ -19,23 +21,28 @@ class IncomingEvent(BaseModel):
     """Event pushed to the hub by an event source (monitoring via
     /api/internal/events, or the in-process bus calling ingest_event directly)."""
 
-    event_type: str = Field(min_length=1, max_length=128)
+    # Every text field here is written verbatim into a Notification row, and
+    # source_id is also compared against Server.id. A NUL byte in any of them
+    # died in the driver; measured on source_id in the fuzz run of 2026-09-22.
+    event_type: SafeText = Field(min_length=1, max_length=128)
     severity: Severity
-    category: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=512)
-    body: Optional[str] = None
-    source_type: Optional[str] = Field(default=None, max_length=64)
-    source_id: Optional[str] = Field(default=None, max_length=256)
+    category: SafeText = Field(min_length=1, max_length=64)
+    title: SafeText = Field(min_length=1, max_length=512)
+    body: Optional[SafeText] = None
+    source_type: Optional[SafeText] = Field(default=None, max_length=64)
+    source_id: Optional[SafeText] = Field(default=None, max_length=256)
     # Monitoring transitions only: the status the check moved TO. severity is
     # the worse of old/new (so recoveries reach warning subscribers) — this
     # field lets the ingest tell an actual alert from a recovery.
-    new_status: Optional[str] = Field(default=None, max_length=32)
+    new_status: Optional[SafeText] = Field(default=None, max_length=32)
 
 
 class MarkReadRequest(BaseModel):
     """Mark feed rows as read. ids = None means "all of the caller's unread"."""
 
-    ids: Optional[list[int]] = None
+    # notification.id is Column(BigInteger): unbounded, an id past BIGINT reached
+    # Notification.id.in_() and Postgres rejected the parameter, uncaught.
+    ids: Optional[list[BigIntPk]] = None
 
 
 class SubscriptionInput(BaseModel):

@@ -10,7 +10,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.frp._helpers import get_allow_users
-from app.modules.frp.schemas import FrpServerConfigCreate, FrpTunnelCreate
+from app.modules.frp.schemas import (
+    FrpServerConfigCreate,
+    FrpServerConfigUpdate,
+    FrpTunnelCreate,
+    FrpTunnelUpdate,
+)
 from app.modules.servers.schemas import ServerCreate, ServerUpdate
 
 
@@ -139,3 +144,103 @@ def test_server_name_accepts_normal_names():
 def test_get_allow_users_fails_closed_to_empty(db_session):
     # No assigned users and no admins -> empty allow-list (deny), NOT ["*"].
     assert get_allow_users(db_session, "no-such-server") == []
+
+
+# app.core.bounds.IntColumn — every one of these is a Column(Integer).
+INT_COLUMN_MAX = 2147483647
+INT_COLUMN_MIN = -2147483648
+
+
+def _config(**over):
+    base = dict(name="c", server_addr="frps.example")
+    base.update(over)
+    return FrpServerConfigCreate(**base)
+
+
+def _build(model, **over):
+    """The Create models need their required fields; the Update models are
+    all-optional, so the field under test is the whole payload."""
+    if model is FrpServerConfigCreate:
+        return _config(**over)
+    if model is FrpTunnelCreate:
+        return _tunnel(**over)
+    return model(**over)
+
+
+@pytest.mark.parametrize(
+    "model,field",
+    [
+        (FrpServerConfigCreate, "bind_port"),
+        (FrpServerConfigCreate, "vhost_https_port"),
+        (FrpServerConfigCreate, "dashboard_port"),
+        (FrpServerConfigCreate, "max_ports_per_client"),
+        (FrpServerConfigUpdate, "bind_port"),
+        (FrpServerConfigUpdate, "vhost_https_port"),
+        (FrpServerConfigUpdate, "dashboard_port"),
+        (FrpServerConfigUpdate, "max_ports_per_client"),
+        (FrpTunnelCreate, "local_port"),
+        (FrpTunnelCreate, "visitor_port"),
+        (FrpTunnelUpdate, "local_port"),
+        (FrpTunnelUpdate, "visitor_port"),
+    ],
+)
+def test_integer_body_fields_hold_at_both_edges(model, field):
+    """Both edges of the INTEGER column each of these lands in (T5).
+
+    Unbounded they reached the INSERT and Postgres answered NumericValueOutOfRange,
+    uncaught — HTTP 500 instead of 422. Reproduced per field 2026-09-22 against
+    POST /api/frp/server-config and POST /api/frp/tunnels."""
+    for edge in (INT_COLUMN_MIN, INT_COLUMN_MAX):
+        assert getattr(_build(model, **{field: edge}), field) == edge
+
+    for past in (INT_COLUMN_MIN - 1, INT_COLUMN_MAX + 1):
+        with pytest.raises(ValidationError):
+            _build(model, **{field: past})
+
+
+# The raw values a mode="before" validator can be handed. Each one used to reach
+# .strip() or the for loop and raise AttributeError/TypeError — not a
+# ValidationError, so the six routes that register _validate_tags answered 500.
+BAD_TAGS = [
+    {"a": 1},  # dict with a str key: the old code iterated it into ["a"], silently
+    {1: "a"},  # dict with a non-str key: the key reached .strip() -> AttributeError
+    7,  # not iterable at all
+    True,  # bool: not iterable either
+    "ops",  # a bare string would silently become three one-character tags
+    [None],
+    [1],
+    [["nested"]],
+]
+
+
+@pytest.mark.parametrize("bad", BAD_TAGS)
+@pytest.mark.parametrize("model", [FrpTunnelCreate, ServerCreate, ServerUpdate])
+def test_tags_rejects_non_string_lists(model, bad):
+    build = _tunnel if model is FrpTunnelCreate else lambda **o: model(name="s", hostname="h", **o)
+    with pytest.raises(ValidationError):
+        build(tags=bad)
+
+
+def test_tags_still_normalizes_a_real_list():
+    """The type check must not cost the normalization the validator exists for."""
+    assert _tunnel(tags=["  b  ", "a", "b", "", "x" * 60]).tags == ["b", "a", "x" * 50]
+
+
+@pytest.mark.parametrize("tags", [True, [{"a": 1}]])
+def test_server_route_answers_422_not_500(tags, test_client, db_session, admin_user):
+    """The symptom that was measured on six routes: the validator died before a
+    response existed.
+
+    Both payloads verified against the unfixed validator: a bool is not iterable
+    (TypeError), a dict INSIDE the list reaches .strip() (AttributeError). A dict
+    as the whole value does not belong here — JSON object keys are always
+    strings, so it arrived as an iterable of strings and answered 201."""
+    login = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    r = test_client.post(
+        "/api/servers",
+        json={"name": "s1", "hostname": "h1", "tags": tags},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"][-1] == "tags"

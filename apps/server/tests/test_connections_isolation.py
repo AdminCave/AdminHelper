@@ -100,3 +100,67 @@ def test_server_bound_write_key_cannot_update_foreign_connection(test_client, db
         test_client.put("/api/connections/c-b", json={"name": "hijack"}, headers=hdr).status_code
         == 404
     )
+
+
+def _admin_headers(client) -> dict:
+    return {"Authorization": f"Bearer {_login(client, 'admin', 'adminpass')}"}
+
+
+def test_create_with_unknown_server_is_422_not_500(test_client, db_session, admin_user):
+    """serverId is a foreign key. An id no row matches used to reach the INSERT,
+    and psycopg raised ForeignKeyViolation uncaught — HTTP 500 before any
+    response existed (T8, reproduced 2026-09-22)."""
+    headers = _admin_headers(test_client)
+    r = test_client.post(
+        "/api/connections",
+        json={"name": "c1", "kind": "ssh", "serverId": "does-not-exist"},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    # The shape the schema declares for 422 — not a new error body.
+    assert r.json()["detail"][0]["loc"] == ["body", "serverId"]
+
+
+def test_update_with_unknown_server_is_422_not_500(test_client, db_session, admin_user):
+    headers = _admin_headers(test_client)
+    made = test_client.post("/api/connections", json={"name": "ok", "kind": "ssh"}, headers=headers)
+    assert made.status_code == 201, made.text
+
+    r = test_client.put(
+        f"/api/connections/{made.json()['id']}",
+        json={"serverId": "does-not-exist"},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["loc"] == ["body", "serverId"]
+
+
+def test_import_with_unknown_server_is_rejected_per_entry(test_client, db_session, admin_user):
+    """The import route reports per entry and validates all-or-nothing, so the
+    unknown server belongs in its `rejected` list, not in a second error shape."""
+    headers = _admin_headers(test_client)
+    r = test_client.post(
+        "/api/connections/import",
+        json={"mode": "merge", "connections": [{"name": "i1", "kind": "ssh", "serverId": "nope"}]},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    rejected = r.json()["detail"]["rejected"]
+    assert rejected[0]["index"] == 0
+    assert rejected[0]["errors"][0]["loc"] == ["serverId"]
+    # all-or-nothing: nothing was written
+    assert test_client.get("/api/connections", headers=headers).json() == []
+
+
+def test_create_with_a_known_server_still_works(test_client, db_session, admin_user):
+    """The check must not cost the legitimate case."""
+    db_session.add(Server(id="srv-real", name="real", hostname="real.example"))
+    db_session.commit()
+    headers = _admin_headers(test_client)
+    r = test_client.post(
+        "/api/connections",
+        json={"name": "c1", "kind": "ssh", "serverId": "srv-real"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["serverId"] == "srv-real"

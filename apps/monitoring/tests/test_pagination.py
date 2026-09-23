@@ -7,7 +7,12 @@ endpoints /checks, /status and /alerts.
 
 Pinned per endpoint: (a) no params = full list (legacy behaviour),
 (b) limit/offset slice in SQL + X-Total-Count carries the total,
-(c) limit=0 / negative values are rejected with 422."""
+(c) limit=0 / negative values are rejected with 422.
+
+Across all three: both edges of the upper bound (input-boundary-validation T9).
+Unbounded, the value reached LIMIT/OFFSET and raised before a response existed —
+OverflowError under SQLite, NumericValueOutOfRange under Postgres; the first CI
+run of the fuzz job found /alerts and /status that way."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +25,10 @@ from app.core.database import get_db
 from app.models import Base, MonitorAlertRule, MonitorCheck, MonitorState
 
 INVALID_QUERIES = ("limit=0", "limit=-1", "limit=1001", "offset=-1")
+
+# app.core.bounds.Offset, and the three endpoints that take one.
+OFFSET_MAX = 2147483647
+PAGINATED_PATHS = ("/checks", "/status", "/alerts")
 
 
 @pytest.fixture()
@@ -174,6 +183,17 @@ class TestAlertRulesPagination:
         for q in INVALID_QUERIES:
             r = client.get(f"/alerts?{q}")
             assert r.status_code == 422, f"{q}: {r.status_code} {r.text}"
+
+
+@pytest.mark.parametrize("path", PAGINATED_PATHS)
+def test_offset_bound_holds_at_both_edges(path, client_db):
+    client, _ = client_db
+
+    highest = client.get(f"{path}?offset={OFFSET_MAX}")
+    assert highest.status_code == 200, f"{path}: {highest.status_code} {highest.text}"
+
+    past = client.get(f"{path}?offset={OFFSET_MAX + 1}")
+    assert past.status_code == 422, f"{path}: {past.status_code} {past.text}"
 
 
 def test_status_summary_counts_per_status(client_db):
