@@ -41,7 +41,9 @@ def test_a_nul_in_a_query_name_is_422(client_db):
     client, _ = client_db
     r = client.get("/checks", params={"a" + NUL: "1"})
     assert r.status_code == 422, r.text
+    # The name is the input at fault here, not the value that follows it.
     assert r.json()["detail"][0]["loc"] == ["query", "a" + NUL]
+    assert r.json()["detail"][0]["input"] == "a" + NUL
 
 
 def test_an_encoded_percent_sign_is_not_a_nul(client_db):

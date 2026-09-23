@@ -105,8 +105,10 @@ Komponente: monitoring · Dateien: apps/monitoring/app/routers/agent.py, apps/mo
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine
 
-### T9 — NUL im Query-Namen, Monitoring-Kopie: input nennt den Namen (Branch-Review)  [ ]
+### T9 — NUL im Query-Namen, Monitoring-Kopie: input nennt den Namen (Branch-Review)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/core/middleware.py, apps/monitoring/tests/test_nul.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @2a5ed4de 2026-09-23T12:35:41+02:00
+Review: approve (sonnet)
 Änderung: Dasselbe wie T7 in der Monitoring-Kopie der Middleware: bei einem NUL im Query-Namen gehört der Name in `input`, nicht der Wert.
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: keine (Fehlerdetail, kein Verhalten)
