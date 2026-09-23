@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Bewusst gelöschte Tests: ein erlaubter Weg durch `diff-scan` — Task-Ledger (Kurz)
-Status: aktiv · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben, Roadmap R-0079)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/review.sh`, `scripts/dev/task-close.sh`, `scripts/tests/review_scripts_test.sh` und die Ledger-Doku.
@@ -77,6 +77,25 @@ Review: approve (sonnet, Re-Review der Gesamt-Review-Befunde)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md (die Regel genauer)
 Abhängt von: T2
+
+## Abschluss (2026-09-23, Worker 2)
+
+- **Gesamt-Review** (Sonnet, frischer Kontext, `git diff main...`): erst `request_changes`, mit zwei
+  Blockern (ein Kopf erbte die Assertion einer folgenden Funktion; ein gelöschter und wieder
+  hinzugefügter Kopf galt als ganzer Test weg) und einem wichtigen Punkt (`;` im Grund). Beide Blocker
+  waren im Scratch-Repo nachgestellt. Alle drei behoben in T3; die Re-Review-Runde gab `approve`. Offen
+  bleibt ein Nit, bewusst so: ein hinzugefügtes Rust-`fn` gleichen Namens zählt als wiedergekehrter
+  Kopf, auch wenn es kein Test ist (zu streng, nicht zu lasch).
+- **Gesamt-Schnellcheck** `run.sh quick --strict` auf dac361de: `16 passed, 1 failed, 0 skipped,
+  12 test-skips`. Der eine Fehlschlag war `ledger_test` mit der Invariante dieses Ledgers
+  (`aktiv` ohne offenes `[ ]`), die dieser Commit auflöst. T3 berührt nur `scripts/` und `tasks/`;
+  die `scripts`-Schicht lief dafür beim Schließen von T3 grün.
+- **Schwere Suite:** entfällt, siehe `Heavy: nein` im Kopf; der Diff berührt keinen Stack-, Gateway-,
+  PKI- oder Install-Pfad.
+- **Außerhalb des Scopes, gemeldet:** Die ältere Assertion-Regex in `diff-scan` erkennt `assert_eq!`
+  und `assert_ne!` in Rust nicht (der Unterstrich ist ausgeschlossen); eine gelöschte `assert_eq!`
+  war schon vorher kein Fund. Außerdem lässt `task-close.sh` beim Schließen der letzten Task den
+  Status auf `aktiv`, sodass dieser Commit für sich `ledger_test` rot macht, bis der Status-Commit folgt.
 
 ## Danach, als eigenes Kurz-Ledger (nicht in diesem Branch)
 
