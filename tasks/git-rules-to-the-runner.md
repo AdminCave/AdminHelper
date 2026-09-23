@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Die Git-Regeln gehören dem Runner, nicht Kevin — Task-Ledger
-Status: geplant · Branch: harness/git-rules-to-the-runner · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/git-rules-to-the-runner · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Korrektur an einer Regel aus Stufe 4)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `.claude/settings.json`, einen Skript-Test und zwei Sätze Doku.
@@ -46,14 +46,16 @@ der die Evidenz-Zeile schreibt, und das steht im Build-Skill, in `DEVELOPMENT.md
 `bash scripts/dev/ledger.sh mark-done` bleiben auf `ask`. Die drei sind selten, irreversibel oder
 unterlaufen einen Beweis — die sollen wehtun.
 
-### T1 — Die fünf Git-Regeln aus Kevins Settings nehmen  [ ]
+### T1 — Die fünf Git-Regeln aus Kevins Settings nehmen  [x]
 Komponente: scripts · Dateien: .claude/settings.json, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped (scripts) · hooks_test 171/0 · Gegenprobe: eine der fünf Regeln zurück in ask ⇒ Settings-Zusicherung rot
 Änderung: `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git checkout:*)`, `Bash(git restore:*)`, `Bash(git stash:*)` aus `permissions.ask` entfernen; die drei übrigen `ask`-Regeln bleiben. In `hooks_test.sh` die `must_ask`-Menge (Z. 641–644) entsprechend kürzen und eine Zusicherung ergänzen, die das Gegenteil festhält: diese fünf dürfen **nicht** in `ask` stehen, damit die Regel nicht unbemerkt zurückkehrt. Die Prüfung der Runner-Settings (Z. 522 ff., dort `deny`) bleibt unberührt — das ist die Liste, die trägt.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T2)
 
-### T2 — Den Satz in CLAUDE.md richtigstellen  [ ]
+### T2 — Den Satz in CLAUDE.md richtigstellen  [x]
 Komponente: scripts · Dateien: CLAUDE.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped (scripts) · hooks_test 171/0 · Gegenprobe: eine der fünf Regeln zurück in ask ⇒ Settings-Zusicherung rot
 Änderung: Zeile 62 sagt „`git add|commit|checkout|restore|stash` prompten seitdem". Das gilt ab hier nur noch für den Runner, dort als `deny`. Der Satz wird darauf umgeschrieben, ohne die Aussage zu verlieren, dass `task-close.sh` der Weg zum Commit ist. Kein `CHANGELOG`-Eintrag: das ist Harness-Verhalten im Bau, nichts am Produkt.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: CLAUDE.md
