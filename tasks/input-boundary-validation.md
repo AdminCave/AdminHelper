@@ -159,8 +159,10 @@ Review: approve (sonnet, 2 Runden, Lese-Prüfung + HTTP-Messung)
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: CHANGELOG (die Bilanz verschiebt sich: vier entfernt statt sechs, sechs verengt statt vier)
 
-### T16 — Zwei Doku-Befunde aus der Verifikation  [ ]
+### T16 — Zwei Doku-Befunde aus der Verifikation  [x]
 Komponente: server · Dateien: apps/server/tests/schemathesis_exclude.toml, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @3238a59e 2026-09-23T08:34:10+02:00
+Review: approve (adminhelper-04, Verifikation: beide Punkte behoben)
 Änderung: Zwei Befunde der Verifikation durch adminhelper-04, beide nachgeprüft. (1) Der Eintrag `list_tunnels_api_frp_tunnels_get` wurde von `checks = ["negative_data_rejection"]` auf `raises = true` **verbreitert**, nicht entfernt und zurückgeholt — meine Begründung behauptet aber, der alte Grund sei behoben. Ist er nicht: `frp/tunnel_router.py` ist in diesem Branch unberührt, die Lax-Koerzierung gilt unverändert. Die Begründung nennt jetzt **beide** Gründe, und der Kopf führt „einer verbreitert" als eigene Kategorie. Sonst verschwindet mit dem NUL-Fix später ein nie behobener Grund unbemerkt mit — dieselbe Falle wie in T14/T15, nur in der anderen Richtung. (2) Mein CHANGELOG-Block trägt Umlaute; `.claude/rules/docs.md` verlangt umlautfrei (ae/oe/ue), und der gesamte Unreleased-Abschnitt auf `main` hat null. Neu geschrieben, dabei auch die Bilanz vervollständigt (die vier hinzugekommenen Proxy-Einträge und die Verbreiterung fehlten, netto steigt der Server von 27 auf 29) und die nach außen sichtbare Änderung ergänzt, dass `tags` als nackter String jetzt 422 ergibt statt still zu Ein-Zeichen-Tags zu zerfallen.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: CHANGELOG

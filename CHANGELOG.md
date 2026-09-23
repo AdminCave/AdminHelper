@@ -97,28 +97,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
-- **422 statt 500 an den Rändern der API (Server und Monitoring):** Eingaben, die erst in der
-  Datenbankschicht scheiterten, werden jetzt am Rand geprüft. Betroffen waren alle drei
+- **422 statt 500 an den Raendern der API (Server und Monitoring):** Eingaben, die erst in der
+  Datenbankschicht scheiterten, werden jetzt am Rand geprueft. Betroffen waren alle drei
   Eingangswege: die int-Pfad- und Query-Parameter (`user_id`, `key_id`, `offset`), die
   Integer-Felder und die Id-Liste im Request-Body (FRP-Ports, `ids` von
   `POST /api/notifications/read`) und Textfelder, in denen ein NUL-Byte stand
   (`POST /api/enrollment/token/for`, die Filter von `GET /api/audit`, die Skript- und
-  Namensfelder von `/api/hooks`) — jeder davon lief bis hierher als ungefangener
-  `NumericValueOutOfRange` bzw. `DataError` durch und kam als HTTP 500 zurück. Dazu zwei
-  Nachbarn derselben Wurzel: der Tag-Validator antwortet auf einen falschen Typ (dict, int,
-  bool, Liste mit Nicht-Strings) mit einer Validierungsmeldung statt mit `AttributeError`
-  bzw. `TypeError` — das betraf sechs Routen —, und eine unbekannte `serverId` beim Anlegen,
-  Ändern oder Importieren einer Verbindung ergibt 422 mit Feldbezug statt einer
-  durchlaufenden `ForeignKeyViolation`. Die Schranken stehen als `minimum`/`maximum` im
-  OpenAPI-Schema und stammen je Feld aus dem Spaltentyp des Modells; für Clients, die
-  gültige Werte senden, ändert sich nichts. Zwei Schemathesis-Ausschlüsse im Server und drei im
-  Monitoring sind damit hinfällig und entfernt; acht weitere gelten nur noch für einen einzelnen
-  Check statt für die ganze Route, sodass auf ihnen die 500er-Prüfung wieder mitläuft — genau
-  die Prüfung, die diese Klasse überhaupt gefunden hat.
-  Nicht abgedeckt bleibt die NUL-Klasse in der Fläche: dass ein NUL-Byte in *jedem* Textfeld
-  und in jedem String-Pfad- und -Query-Parameter denselben 500er erzeugt, ist belegt, aber
-  nur dort behoben, wo ein Lauf es gezeigt hat — die übrigen Routen behalten ihren
-  Ausschluss mit einer Begründung aus diesem Lauf.
+  Namensfelder von `/api/hooks`, `server_ids` von `POST /api/users`, die Textfelder von
+  `POST /api/internal/events`, der Name von `POST /api/api-keys`) — jeder davon lief bis
+  hierher als ungefangener
+  `NumericValueOutOfRange` bzw. `DataError` durch und kam als HTTP 500 zurueck. Die Schranken
+  stehen als `minimum`/`maximum` im OpenAPI-Schema und stammen je Feld aus dem Spaltentyp des
+  Modells; fuer Clients, die gueltige Werte senden, aendert sich nichts.
+- **Tag-Validator und Fremdschluessel am Rand (Server):** ein `tags`-Wert vom falschen Typ
+  (dict, int, bool, Liste mit Nicht-Strings) ergibt eine Validierungsmeldung statt
+  `AttributeError` bzw. `TypeError` — das betraf sechs Routen. Ein nackter String wird dabei
+  jetzt abgelehnt: `tags: "ops"` ergab bisher still die drei Ein-Zeichen-Tags `o`, `p`, `s`
+  und ergibt nun 422. Und eine unbekannte `serverId` beim Anlegen, Aendern oder Importieren
+  einer Verbindung ergibt 422 mit Feldbezug statt einer durchlaufenden `ForeignKeyViolation`.
+- **Schemathesis-Ausschluesse, Bilanz (Server 27 -> 29, Monitoring 4 -> 1):** im Server sind
+  zwei Eintraege hinfaellig und entfernt, acht gelten nur noch fuer einen einzelnen Check statt
+  fuer die ganze Route — dort laeuft die 500er-Pruefung wieder mit, genau die Pruefung, die
+  diese Klasse gefunden hat. Einer (`GET /api/frp/tunnels`) ist umgekehrt verbreitert worden,
+  weil dort ein NUL-Pfad zum bestehenden Grund dazukam. Vier sind neu, alle vier fuer die
+  Catch-all-Routen des Monitoring-Proxys, und das ist kein Produktfehler, sondern eine
+  Eigenschaft der Testfixture. Im Monitoring fallen die drei `offset`-Eintraege weg.
+  Nicht abgedeckt bleibt die NUL-Klasse in der Flaeche: dass ein NUL-Byte in *jedem* Textfeld
+  und in jedem String-Pfad- und -Query-Parameter denselben 500er erzeugt, ist belegt, aber nur
+  dort behoben, wo ein Lauf es gezeigt hat — die uebrigen Routen behalten ihren Ausschluss mit
+  einer Begruendung aus genau diesem Lauf.
 
 - **Capstone, Visitor-Rolle:** der frpc-Visitor startete mit `sudo sh -c … &` und hielt damit stdout/stderr
   der ssh-Sitzung — `vm.py run` (ohne pty) sah nie EOF und lief 50 Minuten in den Timeout, obwohl die

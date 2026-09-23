@@ -33,7 +33,7 @@
 #
 # RANDVALIDIERUNG (2026-09-22/23, Vorhaben input-boundary-validation). Bilanz, gegen
 # `git show main:` nachgezaehlt: 27 Eintraege vorher, 29 nachher — zwei entfernt, acht
-# verengt, vier hinzugekommen.
+# verengt, einer VERBREITERT, vier hinzugekommen.
 #
 # ENTFERNT (2), weil der Fehler behoben ist und die Operation keinen zweiten Grund hat:
 # delete_api_key und delete_user. Beide nehmen nur einen (jetzt begrenzten) int-Pfad-
@@ -49,6 +49,11 @@
 # obwohl nur ihr ERSTER Grund behoben war. Zwei hat der Abschlusslauf gezeigt, zwei der
 # Review dazu; alle vier sind einzeln nachgestellt. Die Lehre: einen Eintrag entfernt man
 # nach dem, was die Route TUT, nicht nach dem, was in seiner Begruendung steht.
+#
+# VERBREITERT (1): list_tunnels, von checks auf raises. Der einzige Eintrag, bei dem KEIN
+# Grund behoben ist — der NUL-Pfad ueber die Query-Parameter kam zum bestehenden
+# negative_data_rejection dazu. Er darf spaeter nicht geloescht, sondern nur auf checks
+# zurueckgenommen werden; seine reason sagt das.
 #
 # HINZUGEKOMMEN (4): die Catch-all-Routen des Monitoring-Proxys. Kein Produktfehler auf diesen
 # Routen, sondern eine Eigenschaft der Fixture: ein prozessweiter Client, ein Lifespan, und wer
@@ -267,5 +272,5 @@ until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ue
 operation_id = "list_tunnels_api_frp_tunnels_get"
 raises = true
 # GET /api/frp/tunnels
-reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (negative_data_rejection); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: die Query-Parameter `server_id` und `frp_config_id`, die in einen Vergleich laufen"
-until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+reason = "ZWEI Gruende, und anders als bei den uebrigen Eintraegen dieses Vorhabens ist hier keiner von beiden behoben. (1) not_a_server_error — HTTP 500 bei einem NUL-Byte in den Query-Parametern `server_id` oder `frp_config_id`: beide laufen roh in einen Vergleich, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. (2) negative_data_rejection — Pydantic v2 koerziert im lax mode, dazu die bekannte HEADER-Blindstelle; mit diesem Grund stand der Eintrag schon vor diesem Vorhaben check-granular hier, und er gilt unveraendert weiter: `frp/tunnel_router.py` ist in diesem Branch NICHT angefasst worden. Der Eintrag ist deshalb von `checks` auf `raises` VERBREITERT, nicht zurueckgeholt — der Preis ist, dass not_a_server_error hier bis zum NUL-Fix nicht mitlaeuft. Wer Grund (1) schliesst, nimmt den Eintrag auf checks zurueck und loescht ihn NICHT, sonst faellt Grund (2) unbemerkt mit weg"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel; danach zurueck auf checks = [negative_data_rejection], nicht loeschen"
