@@ -85,6 +85,25 @@ for want in 'preflight: what this box has to provide' \
   grep -qF -- "$want" <<<"$OUT" && ok "plans: $want" || bad "missing from the plan: $want"
 done
 
+# On every run after the first the clone belongs to the runner, and root's git
+# refuses a repository owned by somebody else (safe.directory) — a second real run
+# died on exactly this on 2026-09-23. So the clone's config is written as the
+# runner, after the chown, and root never runs git inside /srv/ah/repo.
+CFG="$(grep -F 'config remote.origin.' <<<"$OUT")"
+[ "$(grep -c . <<<"$CFG")" = 2 ] \
+  && ! grep -vqF -- '$ su - adminhelper-runner -c git -C /srv/ah/repo config remote.origin.' <<<"$CFG" \
+  && grep -qF -- '-c git -C /srv/ah/repo config remote.origin.url ' <<<"$CFG" \
+  && grep -qF -- '-c git -C /srv/ah/repo config remote.origin.pushurl /dev/null' <<<"$CFG" \
+  && ok "the clone's url and pushurl are written as the runner, never by root" \
+  || bad "the clone's config is not (only) written as the runner: $CFG"
+! grep -qE '^[[:space:]]*\$ git -C /srv/ah/repo' <<<"$OUT" \
+  && ok "root runs no git inside the runner's clone" || bad "root runs git inside /srv/ah/repo"
+CHOWN_AT="$(grep -nF 'chown -R adminhelper-runner:adminhelper-runner /srv/ah' <<<"$OUT" | head -1 | cut -d: -f1)"
+CFG_AT="$(grep -nF 'config remote.origin.' <<<"$OUT" | head -1 | cut -d: -f1)"
+[ -n "$CHOWN_AT" ] && [ -n "$CFG_AT" ] && [ "$CHOWN_AT" -lt "$CFG_AT" ] \
+  && ok "the chown comes before the config, so the first run takes the same path" \
+  || bad "the config is written before the clone belongs to the runner (chown line ${CHOWN_AT:-?}, config line ${CFG_AT:-?})"
+
 # ── the two steps that depend on what this box already has ──────────────────
 # `useradd` and `git clone` drop out of the plan the moment the user and the clone
 # exist — and on a box that has been provisioned they do. Asserting them against
@@ -162,7 +181,7 @@ grep -q 'no_symlink_in "\$1"' "$SETUP" && grep -q 'no_symlink_in "\$path"' "$SET
   || bad "one of the two writers skips the symlink check"
 grep -q 'no_symlink_in "\$SRV/repo"' "$SETUP" \
   && ok "the clone path is checked too (the runner owns /srv/ah after the first run)" \
-  || bad "git clone/config/chown run without the symlink check"
+  || bad "mkdir/git clone/chown run without the symlink check"
 
 # The three things this user must not have.
 grep -q 'no ssh key, no gh, not in a sudo group' <<<"$OUT" \

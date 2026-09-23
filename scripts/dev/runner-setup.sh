@@ -228,7 +228,7 @@ esac
 step "clone $SRV/repo from $ROOT, fetching from $ORIGIN, unable to push"
 # The runner OWNS $SRV after the first run (chown -R below), so on every later
 # run these paths are attacker-controlled: a $SRV/repo replaced by a symlink
-# would make root's `git -C` write into whatever it points at.
+# would make root's mkdir, `git clone` or `chown -R` act on whatever it points at.
 no_symlink_in "$SRV"
 no_symlink_in "$SRV/repo"
 no_symlink_in "$SRV/lanes"
@@ -239,9 +239,14 @@ else
   # -b main: the runner's base is main, whatever branch this checkout sits on.
   run git clone --no-hardlinks -b main "$ROOT" "$SRV/repo"
 fi
-run git -C "$SRV/repo" config remote.origin.url "$ORIGIN"
-run git -C "$SRV/repo" config remote.origin.pushurl /dev/null
 run chown -R "$RUNNER:$RUNNER" "$SRV"
+# From here the clone belongs to the runner, on the first run as on every later
+# one, so its config is written AS the runner. Root's git refuses a repository
+# owned by somebody else (safe.directory; a second run of this script died right
+# here on 2026-09-23), and it is right to: a runner-owned .git/config can name
+# programs (core.fsmonitor, core.hooksPath) that root's git would then run.
+run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.url $(printf '%q' "$ORIGIN")"
+run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.pushurl /dev/null"
 
 # ── 3. its own database, and the devenv that carries the password ────────────
 # Both or neither: a rotated password without the matching devenv file leaves a
