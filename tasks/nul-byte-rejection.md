@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # NUL-Byte am Rand ablehnen — Task-Ledger
-Status: aktiv · Branch: feature/nul-byte-rejection · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/nul-byte-rejection · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/nul-byte-rejection.md
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — reine Eingangsprüfung, kein Datenfluss, kein Wire-Format, keine Migration. Am Abschluss am realen Diff gegenprüfen.
@@ -128,3 +128,11 @@ Review: Opus-Branch-Review 2026-09-23 (nit: Regressionsanker), Gegenprobe gegen 
 Änderung: Der Fuzz-Gate fand am 2026-09-23 auf `main` (CI von PR #37) `GET /api/frp/generate/{frps-toml,visitor-bundle,bulk-zip}?config_id=%00` ⇒ 500 (Roadmap R-0078). Die Middleware aus T1 deckt das allgemein ab, aber der Fuzzer trifft es nur bei manchen Seeds — ein parametrisierter Test pinnt die vier `config_id`-Routen (dazu `visitor-toml`, gleicher Pfad in `_resolve_config`) mit Login auf 422 und `loc == ["query", "config_id"]`. Gegenprobe: derselbe Test gegen `main` ⇒ 500.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_nul_middleware.py
 Doku: keine (Test)
+
+## PR-Verifikation (2026-09-23, frischer Kontext, eigener Worktree und eigene Test-DB)
+
+- `main` in den Branch gemergt (7c433a84, nur Harness-Dateien, konfliktfrei).
+- Lokal auf 7c433a84: `run.sh[quick]: 5 passed, 0 failed, 12 skipped, 12 test-skips` (`--only server monitoring`, CI-ruff 0.15.20) — server pytest 648 passed / 2 skipped (Redis) / 2 xfailed, monitoring pytest 480 passed / 10 skipped, Schemathesis 292 + 114 passed.
+- Schwere Suite auf einer Pool-VM (Kevins Freigabe): `run.sh[integration]: 6 passed, 0 failed, 0 skipped, 0 test-skips` — darunter `sse_push_e2e` (SSE hinter der dritten `BaseHTTPMiddleware`) und `agent_monitoring`; VM danach abgeräumt, `vm.py list`: 0 ours.
+- Opus-Review über den Feature-Diff: `approve`, kein Blocker. Nit „Regressionsanker für den Fuzz-Fund“ als T11 umgesetzt (Gegenprobe gegen `main` 4/4 rot); offen als Folgepunkte: reine ASGI- statt `BaseHTTPMiddleware`, `_refuse_nul`-Rest und privater Import `_find_nul` im Monitoring.
+- Nicht verifiziert: ob nginx im Gateway `%00` im Pfad schon selbst abweist.
