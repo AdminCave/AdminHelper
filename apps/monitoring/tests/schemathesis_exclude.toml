@@ -15,11 +15,11 @@
 # not_a_server_error mit stummschalten, also genau den Check, der die 500er findet.
 
 #
-# VOLLSTAENDIGKEIT DER PAGINIERUNGS-KLASSE (2026-09-22): Dieselbe statische Suche ueber das
-# OpenAPI-Schema (alle Integer-Parameter ohne `maximum`) findet im Monitoring genau drei
-# Treffer — `offset` auf /checks, /alerts und /status. Alle drei stehen unten. Zwei davon hat
-# erst der CI-Lauf gefunden, nicht der lokale: derselbe Baum, andere Auswahl. Deshalb nicht
-# auf den naechsten Zufallstreffer warten, sondern die Klasse einmal ganz aufnehmen.
+# RANDVALIDIERUNG (2026-09-22, Vorhaben input-boundary-validation): die drei offset-Eintraege
+# (/checks, /status, /alerts) sind weg, weil der Fehler behoben ist statt stummgeschaltet — die
+# Parameter tragen jetzt eine obere Schranke aus app/core/bounds.py. Damit laeuft
+# not_a_server_error auf allen drei Routen wieder mit. Uebrig bleibt der eine Eintrag, den ein
+# laufender AdminHelper-Server braucht; im Lauf vom 2026-09-22 nach dem Fix erneut gesehen.
 
 [[exclude]]
 operation_id = "trigger_tag_sync_templates_tag_sync_post"
@@ -27,26 +27,3 @@ checks = ["not_a_server_error"]
 # POST /templates/tag-sync
 reason = "not_a_server_error — Route ruft den AdminHelper-Server ueber HTTP (SERVER_HUB_URL) und antwortet ohne ihn mit 502 {\"detail\":\"Server inventory unavailable\"}. Belegt im Lauf ohne Ausschluesse 2026-09-22 (einziger Fehlschlag der Suite). In-process nicht fuzzbar, ein laufender Stack ist Nicht-Ziel der Spec. Die uebrigen vier Checks laufen weiter"
 until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub in dieser Fixture"
-
-[[exclude]]
-operation_id = "list_checks_checks_get"
-raises = true
-# GET /checks
-reason = "HTTP 500 bei offset jenseits von 2**63-1: routers/checks.py:112 deklariert `offset: int = Query(0, ge=0)` mit UNTERER, aber ohne obere Grenze, der Wert geht ungeprueft in LIMIT/OFFSET. Deterministisch nachgestellt 2026-09-22: offset=2**63-1 -> HTTP 200, offset=2**63 -> HTTP 500; mit raise_server_exceptions=True (so ruft Schemathesis auf) propagiert stattdessen OverflowError, es entsteht also gar keine Response. Unter Postgres waere es NumericValueOutOfRange. Dieselbe Klasse wie die drei Server-Faelle (Pfad, Query, Body); dieselbe Deklaration auch in checks.py:325 und alerts.py:29"
-until = "Roadmap: obere Schranke auf den Paginierungs-Parametern beider Dienste (le=2**63-1 oder eine fachliche Grenze)"
-# Der Aufruf stirbt an einer ungefangenen Exception, bevor eine Response entsteht —
-# kein Check kann hier greifen, deshalb die ganze Operation.
-
-[[exclude]]
-operation_id = "list_alert_rules_alerts_get"
-raises = true
-# GET /alerts
-reason = "HTTP 500 bei `offset` jenseits von 2**63-1, gefunden im ersten CI-Lauf des Fuzz-Jobs (Run 35725949370): `Query(0, ge=0)` ohne obere Schranke, der Wert geht ungeprueft in LIMIT/OFFSET. Unter SQLite OverflowError, unter Postgres NumericValueOutOfRange — beides ungefangen, es entsteht keine Response. Lokal hatte die Generierung diese Routen nicht erwischt, in CI schon: gleicher Baum, andere Auswahl"
-until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"
-
-[[exclude]]
-operation_id = "get_all_status_status_get"
-raises = true
-# GET /status
-reason = "HTTP 500 bei `offset` jenseits von 2**63-1, gefunden im ersten CI-Lauf des Fuzz-Jobs (Run 35725949370): `Query(0, ge=0)` ohne obere Schranke, der Wert geht ungeprueft in LIMIT/OFFSET. Unter SQLite OverflowError, unter Postgres NumericValueOutOfRange — beides ungefangen, es entsteht keine Response. Lokal hatte die Generierung diese Routen nicht erwischt, in CI schon: gleicher Baum, andere Auswahl"
-until = "Roadmap R-0052: obere Schranke auf den Paginierungs-Parametern beider Dienste"

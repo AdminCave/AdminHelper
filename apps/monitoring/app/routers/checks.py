@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.check_configs import validate_check_config
 from app.check_types import PUSH_ONLY_TYPES, VALID_CHECK_TYPES
 from app.core.auth import require_internal
+from app.core.bounds import Offset
 from app.core.database import get_db
 from app.core.pagination import paginate
 from app.core.victoria import escape_label_value, victoria
@@ -109,7 +111,7 @@ def list_checks(
     response: Response,
     server_id: str | None = Query(None),
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
     db: Session = Depends(get_db),
 ):
     """Lists all checks, optionally filtered by server_id."""
@@ -322,7 +324,7 @@ def run_check_now(check_id: str, db: Session = Depends(get_db)):
 def get_all_status(
     response: Response,
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
     db: Session = Depends(get_db),
 ):
     """Returns all check states for the dashboard."""

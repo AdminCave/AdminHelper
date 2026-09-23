@@ -6,12 +6,14 @@ import json
 import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
+from app.core.bounds import Offset
 from app.core.config import MONITOR_API_KEY, MONITOR_SERVICE_URL
 from app.core.database import get_db
 from app.core.events import fire_event
@@ -90,7 +92,7 @@ def list_servers(
     db: Session = Depends(get_db),
     _admin=Depends(get_current_admin),
     limit: int | None = Query(None, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    offset: Annotated[Offset, Query()] = 0,
 ):
     query = db.query(Server).order_by(Server.name, Server.id)
     servers = paginate(query, response, limit, offset).all()

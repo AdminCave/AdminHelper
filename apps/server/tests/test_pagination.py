@@ -8,9 +8,14 @@
 Pinned per endpoint: (a) no params = full list (legacy behaviour),
 (b) limit/offset slice in SQL + X-Total-Count carries the total,
 (c) limit=0 / negative values are rejected with 422. For /api/connections
-additionally: pagination and total apply AFTER the per-user scoping."""
+additionally: pagination and total apply AFTER the per-user scoping.
+
+Across all five endpoints that take an offset: both edges of the upper bound
+(input-boundary-validation T2/T3)."""
 
 import secrets
+
+import pytest
 
 from app.core.auth import hash_api_key
 from app.modules.api_keys.models import ApiKey
@@ -19,6 +24,18 @@ from app.modules.hooks.models import Hook
 from app.modules.servers.models import Server
 
 INVALID_QUERIES = ("limit=0", "limit=-1", "limit=1001", "offset=-1")
+
+# app.core.bounds.Offset. Every list endpoint that takes one, with the auth an
+# admin JWT already covers — /api/audit is admin-only, /api/notifications reads
+# the caller's own feed.
+OFFSET_MAX = 2147483647
+PAGINATED_PATHS = (
+    "/api/servers",
+    "/api/connections",
+    "/api/hooks",
+    "/api/audit",
+    "/api/notifications",
+)
 
 
 def _login(client, username: str, password: str) -> dict:
@@ -38,6 +55,25 @@ def _make_servers(db, n: int = 5) -> None:
     for i in range(n):
         db.add(Server(id=f"srv-{i}", name=f"server-{i}", hostname=f"host-{i}"))
     db.commit()
+
+
+@pytest.mark.parametrize("path", PAGINATED_PATHS)
+def test_offset_bound_holds_at_both_edges(path, test_client, db_session, admin_user):
+    """The highest allowed offset still answers, the first one past it is a 422.
+
+    The bound is the design gate's choice, not the point where anything breaks:
+    Postgres takes OFFSET as a bigint, so before T2/T3 an offset of 2**31 simply
+    returned an empty page with 200. The measured 500 sits at the BIGINT edge —
+    offset=2**63-1 answered, offset=2**63 died in the driver before a response
+    existed (tests/schemathesis_exclude.toml, runs of 2026-09-21/22). Capping at
+    INTEGER puts the rejection at the edge for every value beyond it."""
+    headers = _login(test_client, "admin", "adminpass")
+
+    highest = test_client.get(f"{path}?offset={OFFSET_MAX}", headers=headers)
+    assert highest.status_code == 200, f"{path}: {highest.status_code} {highest.text}"
+
+    past = test_client.get(f"{path}?offset={OFFSET_MAX + 1}", headers=headers)
+    assert past.status_code == 422, f"{path}: {past.status_code} {past.text}"
 
 
 class TestServersPagination:

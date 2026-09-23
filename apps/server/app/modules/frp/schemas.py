@@ -7,6 +7,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
+from app.core.bounds import IntColumn
+
 # These string fields are interpolated verbatim into the generated frps/frpc/
 # visitor TOML (config_generator.py). Reject the characters that could break out
 # of a TOML string and inject a directive (quote, backslash, newline, control
@@ -63,11 +65,26 @@ def _check_extra_config(v: Optional[dict]) -> Optional[dict]:
 
 
 def _validate_tags(tags: list[str] | None) -> list[str] | None:
+    """Normalize a tag list: strip, cap at 50 chars, drop empties, deduplicate.
+
+    Registered as field_validator(mode="before") in six places (frp, ansible,
+    servers) so it sees the RAW value — the normalization has to run before
+    Pydantic coerces. That also means the type check is this function's job: a
+    dict, an int, None inside the list or a bool used to reach .strip() or the
+    for loop and raise AttributeError/TypeError, which is not a ValidationError
+    and left the route with an uncaught 500 instead of a 422. A bare string is
+    rejected for the same reason it must not be accepted: iterating it would
+    silently turn "ops" into three one-character tags.
+    """
     if tags is None:
         return None
+    if not isinstance(tags, list):
+        raise ValueError("must be a list of strings")
     seen = set()
     result = []
     for t in tags:
+        if not isinstance(t, str):
+            raise ValueError("must be a list of strings")
         t = t.strip()[:50]
         if t and t not in seen:
             seen.add(t)
@@ -81,12 +98,12 @@ def _validate_tags(tags: list[str] | None) -> list[str] | None:
 class FrpServerConfigCreate(BaseModel):
     name: str
     server_addr: str  # e.g. "frps.example.net"
-    bind_port: int = 7000
-    vhost_https_port: Optional[int] = None
+    bind_port: IntColumn = 7000
+    vhost_https_port: Optional[IntColumn] = None
     auth_token: Optional[str] = None  # auto-generated if empty
     subdomain_host: Optional[str] = None
-    max_ports_per_client: Optional[int] = None
-    dashboard_port: Optional[int] = None
+    max_ports_per_client: Optional[IntColumn] = None
+    dashboard_port: Optional[IntColumn] = None
     dashboard_user: Optional[str] = None
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
@@ -104,12 +121,12 @@ class FrpServerConfigCreate(BaseModel):
 class FrpServerConfigUpdate(BaseModel):
     name: Optional[str] = None
     server_addr: Optional[str] = None
-    bind_port: Optional[int] = None
-    vhost_https_port: Optional[int] = None
+    bind_port: Optional[IntColumn] = None
+    vhost_https_port: Optional[IntColumn] = None
     auth_token: Optional[str] = None
     subdomain_host: Optional[str] = None
-    max_ports_per_client: Optional[int] = None
-    dashboard_port: Optional[int] = None
+    max_ports_per_client: Optional[IntColumn] = None
+    dashboard_port: Optional[IntColumn] = None
     dashboard_user: Optional[str] = None
     dashboard_password: Optional[str] = None
     extra_config: Optional[dict] = None
@@ -134,10 +151,10 @@ class FrpTunnelCreate(BaseModel):
     tunnel_type: Literal["stcp", "https"]
     protocol: str  # "ssh", "rdp", "web"
     local_ip: str = "127.0.0.1"
-    local_port: int
+    local_port: IntColumn
     secret_key: Optional[str] = None  # auto-generated for STCP if empty
     custom_domains: Optional[str] = None  # HTTPS only
-    visitor_port: Optional[int] = None  # STCP only
+    visitor_port: Optional[IntColumn] = None  # STCP only
     connection_id: Optional[str] = None
     enabled: bool = True
     extra_config: Optional[dict] = None
@@ -158,10 +175,10 @@ class FrpTunnelUpdate(BaseModel):
     tunnel_type: Optional[Literal["stcp", "https"]] = None
     protocol: Optional[str] = None
     local_ip: Optional[str] = None
-    local_port: Optional[int] = None
+    local_port: Optional[IntColumn] = None
     secret_key: Optional[str] = None
     custom_domains: Optional[str] = None
-    visitor_port: Optional[int] = None
+    visitor_port: Optional[IntColumn] = None
     connection_id: Optional[str] = None
     enabled: Optional[bool] = None
     extra_config: Optional[dict] = None

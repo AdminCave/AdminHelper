@@ -4,12 +4,14 @@
 
 import io
 import zipfile
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_admin, get_current_user
+from app.core.bounds import IntPk
 from app.core.database import get_db
 from app.modules.frp._helpers import get_allow_users, get_frp_config
 from app.modules.frp.config_generator import (
@@ -100,7 +102,7 @@ def gen_frpc_toml(server_id: str, db: Session = Depends(get_db), _admin=Depends(
 @router.get("/generate/visitor-toml")
 def gen_visitor_toml(
     config_id: str | None = Query(None),
-    user_id: int | None = Query(None),
+    user_id: Annotated[IntPk | None, Query()] = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
