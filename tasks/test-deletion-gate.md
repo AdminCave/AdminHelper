@@ -25,7 +25,12 @@ Der Schutz selbst ist richtig und soll bleiben: Eine Assertion aus einem **weite
 löschen, ist genau der Fall, den `diff-scan` fangen soll. Der erlaubte Weg darf nur den anderen Fall
 öffnen: Ein Test verschwindet **als Ganzes**, und die Task sagt das vorher.
 
-## Die Regel (Vorschlag, Entscheidung am Gate)
+## Entschieden am Gate (Kevin, 2026-09-23)
+
+1. **Regel:** Der ganze Test muss gehen, und die Task muss es ankündigen (unten). Eine Ankündigung je Datei allein reicht nicht.
+2. **Freigabe:** erteilt. Worker 2 baut im Haupt-Checkout, die Aufsichts-Session verifiziert.
+
+## Die Regel
 
 Eine gelöschte Assertion ist **kein** Fund, wenn beide Bedingungen gelten:
 
