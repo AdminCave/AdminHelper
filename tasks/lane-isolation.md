@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Isolation: eigene Test-DB, Lauf-Sperre, vollständige Lane, sicheres Aufräumen — Task-Ledger
-Status: bereit · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: erledigt · Branch: harness/lane-isolation · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben; AUTONOMOUS.md „Parallel-Betrieb", scripts/dev/lane.sh)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/lane.sh`, `scripts/tests/run.sh`, ein neues Testskript und die Doku. Abschluss-Beweis ist ein echter Lane-Durchlauf (unten), keine VM-Suite.
@@ -176,3 +176,10 @@ danach von Hand gelöscht (`git branch -D feature/probe-lane`). Nachkontrolle:
 alten Pfad (`/run/user/1000/…`). Die Reihenfolge der Sperre ist davon unberührt, und laut der
 Aufsicht ist kein neuer Lane-Durchlauf nötig. Der Überlappungstest in `lane_test.sh` ist seit T6
 deterministisch: Er war seit T2 zeitabhängig und auf der belasteten Box einmal rot.
+
+## PR-Verifikation (2026-09-23, Aufsichts-Session, eigener Worktree)
+
+- Abschluss-Beweis gegen die Rohdaten in `.ah-out/lane-isolation-proof/` geprüft: `pg.log` hat 478 Stichproben, in keiner sind beide Test-DBs zugleich aktiv; `lock.log` zeigt den Halter im Wechsel Haupt → Lane → Haupt → Lane. Das Aufräumen habe ich selbst nachgeprüft: keine Probe-DB, kein Lane-Venv, kein Worktree, `vm.py list` 0 ours.
+- Opus-Review (T1–T4): `request_changes`, zwei wichtige Funde → T5/T6. Opus-Re-Review (T5/T6): `request_changes`, ein mittlerer und zwei niedrige Funde → T7. Für T7 gab es keine dritte Review-Runde, sondern drei eigene Mutanten in einem Wegwerf-Worktree, jeder vom Test gefangen: db-Zeile vor `dropdb` entfernt ⇒ 1 failed; Passwort über `env` ⇒ 1 failed; db-Zeile ohne `createdb` ⇒ 2 failed.
+- Gate auf 6376dacb: `run.sh[quick]: 5 passed, 0 failed, 12 skipped` (`--only scripts`, CI-ruff 0.15.20), `lane_test` 59/0, `ledger_test` 52/0. Die Commits T6 und T7 sind je für sich im `ledger_test` rot, weil der Kopf dort noch „aktiv“ ohne offene Task steht; der jeweils folgende Ledger-Commit behebt das.
+- Folgepunkt außerhalb dieses Vorhabens: Die Sperre gilt je Nutzer; der Runner braucht ab Stufe 7 eine nutzerübergreifende (Roadmap R-0080).
