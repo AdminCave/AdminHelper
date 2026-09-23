@@ -32,18 +32,23 @@
 
 #
 # RANDVALIDIERUNG (2026-09-22/23, Vorhaben input-boundary-validation). Bilanz, gegen
-# `git show main:` nachgezaehlt: 27 Eintraege vorher, 25 nachher — sechs entfernt, vier
+# `git show main:` nachgezaehlt: 27 Eintraege vorher, 29 nachher — zwei entfernt, acht
 # verengt, vier hinzugekommen.
 #
-# ENTFERNT (6), weil der Fehler behoben ist statt stummgeschaltet: die int-Ueberlaeufe auf
-# `key_id` und `user_id` (delete_api_key, delete_user, update_user), die Paginierung auf
-# list_notifications, die Id-Liste im Body von mark_read und das NUL-Byte im Benutzernamen
-# von mint_enrollment_token_for.
+# ENTFERNT (2), weil der Fehler behoben ist und die Operation keinen zweiten Grund hat:
+# delete_api_key und delete_user. Beide nehmen nur einen (jetzt begrenzten) int-Pfad-
+# parameter, keinen Body und keine Query — es gibt dort nichts, woran ein anderer Check
+# haengen koennte.
 #
-# VERENGT (4) von der GANZEN Operation auf einen einzelnen Check — dort laeuft
-# not_a_server_error wieder mit: list_audit, list_hooks, list_servers, get_connections. Bei
-# allen vieren war die Ursache des Voll-Ausschlusses (Paginierungs-Ueberlauf bzw. das NUL-Byte
-# in den Audit-Filtern) behoben; was bleibt, ist negative_data_rejection.
+# VERENGT (8) von der GANZEN Operation auf einen einzelnen Check — dort laeuft
+# not_a_server_error wieder mit: list_audit, list_hooks, list_servers, get_connections,
+# list_notifications, mark_read, update_user und mint_enrollment_token_for. Bei allen acht war die Ursache des Voll-Ausschlusses
+# (Paginierungs- bzw. BIGINT-Ueberlauf, das NUL-Byte in den Audit-Filtern) behoben; was
+# bleibt, ist negative_data_rejection — Framework-Verhalten, kein Defekt. Vier davon kamen
+# erst nach dem Aufraeumen zum Vorschein: beim Abraeumen waren sie ganz weggefallen,
+# obwohl nur ihr ERSTER Grund behoben war. Zwei hat der Abschlusslauf gezeigt, zwei der
+# Review dazu; alle vier sind einzeln nachgestellt. Die Lehre: einen Eintrag entfernt man
+# nach dem, was die Route TUT, nicht nach dem, was in seiner Begruendung steht.
 #
 # HINZUGEKOMMEN (4): die Catch-all-Routen des Monitoring-Proxys. Kein Produktfehler auf diesen
 # Routen, sondern eine Eigenschaft der Fixture: ein prozessweiter Client, ein Lifespan, und wer
@@ -67,6 +72,34 @@ operation_id = "list_audit_api_audit_get"
 checks = ["negative_data_rejection"]
 # GET /api/audit
 reason = "negative_data_rejection — gemessen im Lauf vom 2026-09-22 nach dem Fix, `curl 'http://testserver/api/audit?q=null&actor_type=true'` -> 200: zwei Ursachen in einem Treffer, beide Framework-Verhalten. Pydantic v2 koerziert im lax mode `actor_type=true` auf einen String, und der Check laesst den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt (prepare_headers merged sie ueber die mutierten). Der NUL-Byte-Fehler, wegen dem hier bis 2026-09-22 die GANZE Operation stand, ist behoben: alle sechs Textfilter tragen jetzt SafeText, `not_a_server_error` laeuft hier also wieder"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
+
+[[exclude]]
+operation_id = "list_notifications_api_notifications_get"
+checks = ["negative_data_rejection"]
+# GET /api/notifications
+reason = "negative_data_rejection — derselbe zweite Grund wie bei list_hooks, list_servers und get_connections: FastAPI ignoriert unbekannte Query-Parameter, und der Check laesst zusaetzlich den Authorization-Header weg, waehrend die Fixture ihn von aussen ueber headers= setzt. Die Route antwortet mit 200, der Check liest das als akzeptierte schema-widrige Daten. Gemessen 2026-09-23 im Abschlusslauf (`?%13%C3%B6=…` plus ein NUL-Parametername), nachgestellt mit `GET /api/notifications?unknown_param=1` -> 200. Der offset-Ueberlauf, wegen dem hier bis zum 2026-09-22 die GANZE Operation stand, ist behoben — deshalb nur noch dieser eine Check statt der Operation"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
+
+[[exclude]]
+operation_id = "mark_read_api_notifications_read_post"
+checks = ["negative_data_rejection"]
+# POST /api/notifications/read
+reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode, und FastAPI ignoriert unbekannte Body-Felder. Nachgestellt 2026-09-23: `{\"ids\": [\"5\"]}` -> 200, `{\"ids\": [true]}` -> 200, `{\"unknown\": 1}` -> 200. Framework-Verhalten, kein Defekt. Der alte Eintrag nannte diesen Grund schon neben dem BIGINT-Ueberlauf; der Ueberlauf ist behoben (ids ist list[BigIntPk]), dieser Grund nicht — beim Aufraeumen ist die ganze Operation mit weggefallen statt nur der behobene Teil"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
+
+[[exclude]]
+operation_id = "update_user_api_users__user_id__put"
+checks = ["negative_data_rejection"]
+# PUT /api/users/{user_id}
+reason = "negative_data_rejection — dieselbe Lax-Koerzierung wie beim Anlegen (create_user, unveraendert in dieser Datei): `is_admin` ist ein bool, Pydantic v2 nimmt im lax mode 1 und \"yes\" an, und unbekannte Body-Felder verschluckt FastAPI. Nachgestellt 2026-09-23 gegen einen EXISTIERENDEN Benutzer (mit einer unbekannten Id antwortet die Route 404, und 404 steht auf der Erwartungsliste des Checks, der Treffer bliebe also verborgen): `{\"is_admin\": 1}`, `{\"is_admin\": \"yes\"}` und `{\"unknown_field\": 1}` jeweils -> 200. Framework-Verhalten, kein Defekt. Der int-Ueberlauf auf `user_id`, wegen dem hier bis zum 2026-09-22 die GANZE Operation stand, ist behoben (IntPk) — deshalb nur noch dieser eine Check"
+until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
+
+[[exclude]]
+operation_id = "mint_enrollment_token_for_api_enrollment_token_for_post"
+checks = ["negative_data_rejection"]
+# POST /api/enrollment/token/for
+reason = "negative_data_rejection — dasselbe Muster wie beim Self-Service-Pendant mint_self_enrollment_token, das den Eintrag unveraendert traegt: `browser` ist ein bool und wird im lax mode aus 1 koerziert, unbekannte Body-Felder verschluckt FastAPI. Nachgestellt 2026-09-23 gegen einen EXISTIERENDEN Benutzer: `{\"username\": \"target\", \"browser\": 1}` und `{\"username\": \"target\", \"unknown_field\": 1}` jeweils -> 200. Das NUL-Byte im Benutzernamen, wegen dem hier bis zum 2026-09-22 die GANZE Operation stand, ist behoben (SafeText) — deshalb nur noch dieser eine Check"
 until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
