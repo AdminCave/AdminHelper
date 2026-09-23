@@ -111,9 +111,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Ändern oder Importieren einer Verbindung ergibt 422 mit Feldbezug statt einer
   durchlaufenden `ForeignKeyViolation`. Die Schranken stehen als `minimum`/`maximum` im
   OpenAPI-Schema und stammen je Feld aus dem Spaltentyp des Modells; für Clients, die
-  gültige Werte senden, ändert sich nichts. Zwölf Schemathesis-Ausschlüsse im Server und drei
-  im Monitoring sind damit hinfällig und entfernt; fünf weitere gelten nur noch für einen
+  gültige Werte senden, ändert sich nichts. Sechs Schemathesis-Ausschlüsse im Server und drei
+  im Monitoring sind damit hinfällig und entfernt; vier weitere gelten nur noch für einen
   einzelnen Check statt für die ganze Route, sodass dort die 500er-Prüfung wieder mitläuft.
+  Nicht abgedeckt bleibt die NUL-Klasse in der Fläche: dass ein NUL-Byte in *jedem* Textfeld
+  und in jedem String-Pfad- und -Query-Parameter denselben 500er erzeugt, ist belegt, aber
+  nur dort behoben, wo ein Lauf es gezeigt hat — die übrigen Routen behalten ihren
+  Ausschluss mit einer Begründung aus diesem Lauf.
 
 - **Capstone, Visitor-Rolle:** der frpc-Visitor startete mit `sudo sh -c … &` und hielt damit stdout/stderr
   der ssh-Sitzung — `vm.py run` (ohne pty) sah nie EOF und lief 50 Minuten in den Timeout, obwohl die

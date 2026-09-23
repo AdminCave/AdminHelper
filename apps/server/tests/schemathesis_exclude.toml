@@ -31,26 +31,36 @@
 #   until         woran die Wiedervorlage haengt
 
 #
-# RANDVALIDIERUNG (2026-09-22, Vorhaben input-boundary-validation): zwoelf Eintraege sind
-# weggefallen, weil der Fehler behoben ist statt stummgeschaltet — die Ueberlaeufe auf den
-# int-Pfadparametern (user_id, key_id), die Paginierung auf audit, connections, hooks,
-# notifications und servers, die Id-Liste im Body von mark_read, das NUL-Byte auf
-# /api/enrollment/token/for, und die sechs Routen des Tag-Validators.
-# Fuenf weitere standen nur wegen eines behobenen Fehlers auf der GANZEN
-# Operation und sind jetzt check-granular (list_audit, list_hooks, list_servers,
-# get_connections, create_connection): dort laeuft not_a_server_error wieder mit.
+# RANDVALIDIERUNG (2026-09-22/23, Vorhaben input-boundary-validation). Bilanz, gegen
+# `git show main:` nachgezaehlt: 27 Eintraege vorher, 25 nachher — sechs entfernt, vier
+# verengt, vier hinzugekommen.
 #
-# Die Laeufe nach dem Fix haben dafuer zwei neue Produktfehler derselben Klasse gezeigt, die
-# vorher unter einem Ausschluss lagen: ein NUL-Byte im `script` von POST /api/hooks und eines
-# in `server_ids` von POST /api/users. Beide sind behoben (SafeText), nicht ausgeschlossen.
+# ENTFERNT (6), weil der Fehler behoben ist statt stummgeschaltet: die int-Ueberlaeufe auf
+# `key_id` und `user_id` (delete_api_key, delete_user, update_user), die Paginierung auf
+# list_notifications, die Id-Liste im Body von mark_read und das NUL-Byte im Benutzernamen
+# von mint_enrollment_token_for.
 #
-# HINZUGEKOMMEN sind nur die vier Catch-all-Routen des Monitoring-Proxys. Das ist kein
-# Produktfehler auf diesen Routen, sondern eine Eigenschaft der Fixture: ein Client, ein
-# Lifespan, und wer nach dem Shutdown drankommt, bekommt keine Response mehr. Damit stehen
-# hier 19 statt 27 Eintraege.
+# VERENGT (4) von der GANZEN Operation auf einen einzelnen Check — dort laeuft
+# not_a_server_error wieder mit: list_audit, list_hooks, list_servers, get_connections. Bei
+# allen vieren war die Ursache des Voll-Ausschlusses (Paginierungs-Ueberlauf bzw. das NUL-Byte
+# in den Audit-Filtern) behoben; was bleibt, ist negative_data_rejection.
 #
-# Jeder Eintrag, der unten geblieben ist, wurde im Lauf vom 2026-09-22 nach dem Fix erneut
-# gesehen; keiner steht mit einer geborgten Begruendung da.
+# HINZUGEKOMMEN (4): die Catch-all-Routen des Monitoring-Proxys. Kein Produktfehler auf diesen
+# Routen, sondern eine Eigenschaft der Fixture: ein prozessweiter Client, ein Lifespan, und wer
+# nach dem Shutdown drankommt, bekommt keine Response mehr.
+#
+# ZURUECKGEHOLT (8) — die Lehre dieses Vorhabens: beim ersten Aufraeumen wurden Eintraege
+# anhand ihrer DOKUMENTIERTEN Begruendung entfernt statt anhand der Route. Die alte Begruendung
+# war jeweils behoben (Tag-Validator, Fremdschluessel), die Route stirbt aber weiter an einem
+# NUL-Byte in einem ANDEREN Feld. Gefunden hat das erst der Abschluss-Review, den achten Fall
+# der Review der Nacharbeit. Jeder der acht ist unten einzeln nachgestellt und traegt die
+# Begruendung, die heute zutrifft.
+#
+# Drei neue Produktfehler derselben Klasse hat der Fuzzer gezeigt, nachdem die behobenen
+# Ausschluesse gefallen waren: NUL im `script` von POST /api/hooks, in `server_ids` von
+# POST /api/users und in den Textfeldern von POST /api/internal/events. Alle drei sind behoben
+# (SafeText), nicht ausgeschlossen. Die Klasse ist damit belegt und NICHT flaechendeckend
+# geschlossen — die offene Entscheidung darueber steht als T12 im Ledger.
 
 [[exclude]]
 operation_id = "list_audit_api_audit_get"
@@ -65,13 +75,6 @@ checks = ["response_schema_conformance"]
 # GET /api/api-keys
 reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-Spalte (Konvention F7: naiv, aber UTC). Pydantic serialisiert sie ohne Offset, OpenAPI format:date-time ist RFC 3339 und verlangt einen ⇒ jedes datetime-Feld in einem typisierten response_model bricht den deklarierten Vertrag. Gleiche Klasse wie der 422-Body von connections/import"
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
-
-[[exclude]]
-operation_id = "list_tunnels_api_frp_tunnels_get"
-checks = ["negative_data_rejection"]
-# GET /api/frp/tunnels
-reason = "negative_data_rejection — Pydantic v2 koerziert im lax mode (int->bool, str->zahl), die Route nimmt einen schema-widrigen Typ an und normalisiert ihn. Framework-Verhalten, kein Defekt; belegt an is_admin, dashboard_port, ids"
-until = "Entscheidung T3: Check abschalten statt Operationen ausschliessen"
 
 [[exclude]]
 operation_id = "create_api_key_api_api_keys_post"
@@ -179,8 +182,57 @@ reason = "negative_data_rejection — die HEADER-Blindstelle: der Check laesst d
 until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
 
 [[exclude]]
+operation_id = "create_server_api_servers_post"
+raises = true
+# POST /api/servers
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: `hostname` und `notes`. NICHT `name` — das traegt ueber `_validate_server_name` -> `_reject_toml_breakers` schon eine Pruefung auf Steuerzeichen und antwortet mit 422; nachgestellt 2026-09-23"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
+operation_id = "update_server_api_servers__server_id__put"
+raises = true
+# PUT /api/servers/{server_id}
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: der Pfadparameter `server_id`, der in `Server.id ==` laeuft (a%00b genuegt)"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
+operation_id = "update_tunnel_api_frp_tunnels__tunnel_id__put"
+raises = true
+# PUT /api/frp/tunnels/{tunnel_id}
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: der Pfadparameter `tunnel_id`, der in `FrpTunnel.id ==` laeuft"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
+operation_id = "create_playbook_api_ansible_playbooks_post"
+raises = true
+# POST /api/ansible/playbooks
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: `name` und `description`"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
+operation_id = "update_playbook_api_ansible_playbooks__playbook_id__put"
+raises = true
+# PUT /api/ansible/playbooks/{playbook_id}
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: der Pfadparameter `playbook_id`"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
 operation_id = "create_connection_api_connections_post"
-checks = ["negative_data_rejection"]
+raises = true
 # POST /api/connections
-reason = "negative_data_rejection — zwei Ursachen, beide gemessen: die HEADER-Blindstelle wie bei GET /api/connections, und `in body - trustCert: Incorrect type`, wo Pydantic v2 im lax mode einen schema-widrigen Typ auf bool koerziert. Framework-Verhalten, kein Defekt. Die ForeignKeyViolation, wegen der hier bis 2026-09-22 die GANZE Operation stand, ist gefangen: eine unbekannte serverId antwortet mit 422 statt 500, not_a_server_error laeuft hier also wieder"
-until = "Entscheidung: den Check abschalten statt Operationen auszuschliessen"
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (eine ForeignKeyViolation auf `serverId`); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: `host` und `notes`"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
+operation_id = "create_tunnel_api_frp_tunnels_post"
+raises = true
+# POST /api/frp/tunnels
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (der Tag-Validator); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Review zu T14 hat das gefunden, nachdem der Abschluss-Review die fuenf Geschwister gezeigt hatte. Betroffen: `server_id` und `frp_config_id` (beide laufen roh aus dem BODY in einen Vergleich, tunnel_router.py:59/63) sowie `protocol`, das roh in Column(String) geschrieben wird. `_v_str` in FrpTunnelCreate deckt nur name, custom_domains, local_ip und auto_connection_username ab"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
+
+[[exclude]]
+operation_id = "list_tunnels_api_frp_tunnels_get"
+raises = true
+# GET /api/frp/tunnels
+reason = "not_a_server_error — HTTP 500 bei einem NUL-Byte: Postgres nimmt kein 0x00 in einem Textwert, psycopg wirft beim Binden `DataError`, ungefangen, es entsteht keine Response. Einzeln nachgestellt 2026-09-23. Dieser Eintrag stand bis zum 2026-09-22 mit einer ANDEREN Begruendung hier (negative_data_rejection); die ist behoben. Beim Aufraeumen wurde er anhand jener Begruendung entfernt statt anhand der Route — der Abschluss-Review hat das gefunden. Er steht jetzt mit dem wieder, was die Route heute wirklich tut. Betroffen: die Query-Parameter `server_id` und `frp_config_id`, die in einen Vergleich laufen"
+until = "Entscheidung T12: NUL-Haertung Feld fuer Feld oder als Flaechenregel ueber alle Schemas"
