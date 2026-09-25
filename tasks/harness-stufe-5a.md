@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5a — Die Roadmap als Skript — Task-Ledger
-Status: geplant · Branch: harness/stufe-5a · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: freigegeben · Branch: harness/stufe-5a · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5a)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — nur `scripts/dev/`, `scripts/tests/`, ein Skill und Doku; `heavy.sh` wird hermetisch getestet (`heavy_test.sh`).

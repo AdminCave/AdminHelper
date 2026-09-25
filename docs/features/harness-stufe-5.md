@@ -159,4 +159,4 @@ den bestehenden Abschnitten.
 
 ## Offene Fragen
 
-Keine produktseitigen. Die Freigabe der drei Ledger steht aus.
+Keine. **Freigegeben am 2026-09-25 (Kevin): alle drei Ledger, 5a zuerst.**
