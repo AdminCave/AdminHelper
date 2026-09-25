@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `SafeText` löschen — Task-Ledger (Kurz)
-Status: aktiv · Branch: fix/safetext-delete · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: fix/safetext-delete · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Nachtrag zu R-0067, Entscheidung (b); Weg dafür: R-0079)
 Heavy: none
 DoD je Task: CLAUDE.md (Tests grün, ruff sauber, Doku im selben Commit).
@@ -27,3 +27,7 @@ Test-Löschung: apps/server/tests/test_text_bounds.py::test_safetext_passes_ever
 Änderung: Den gesicherten Patch `tasks/private/patches/r0079-safetext-delete.patch` anwenden; er passt ohne Konflikt auf `main` @61d1d04d. Er löscht `SafeText` und `_reject_nul` aus `bounds.py`; die Begründung, warum genau dieses Byte, wandert in den Docstring von `RequestModel`. In `test_text_bounds.py` fallen der Typ-Test und seine Importe weg, die Routentests bleiben. Nachweis, dass nichts mehr darauf zeigt: `grep -rn "SafeText\|_reject_nul(" apps/server/app` ist leer, dazu die volle Server-Suite. Beim Schließen muss `diff-scan` melden: `clean (1 declared test deletion(s): apps/server/tests/test_text_bounds.py::test_safetext_passes_everything_but_nul)`.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (interner Typ; CHANGELOG und Entwickler-Doku nennen ihn nicht)
+
+## Abschluss (2026-09-25)
+
+`diff-scan: clean (1 declared test deletion(s): apps/server/tests/test_text_bounds.py::test_safetext_passes_everything_but_nul)` — der erste echte Lauf der R-0079-Regel durch `task-close.sh`. Server-Suite 651 passed / 2 skipped (Redis) / 2 xfailed, Schemathesis 292 passed. Review (Sonnet, frischer Kontext): approve — kein Code-Verweis mehr, Docstring vollständig, keine toten Importe, ruff sauber.
