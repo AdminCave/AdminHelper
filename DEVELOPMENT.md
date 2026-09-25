@@ -339,7 +339,7 @@ Dev-Box: `vm.py sync` schliesst sie aus, damit auf einer Box `AH_REQUIRED` unges
 und die Box-Regel aus `run.sh` greift (alle Schritte eines schweren Layers Pflicht).
 
 ```bash
-export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-ui-vitest web-vitest scripts vm-pytest"
+export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-ui-vitest web-vitest scripts vm-pytest dev-pytest"
 ```
 
 Auf dieser Box deckt sich die Menge mit dem Default; ohne die Zeile gilt er. Die wirksame Menge druckt `run.sh` unter
@@ -421,6 +421,30 @@ nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 Seiten. Das dedupliziert aber nichts: legen beide dieselbe Versions-Ueberschrift an, steht
 sie hinterher doppelt im File, ohne Konflikt-Marker. Vor einem Release lohnt der Blick in
 den `Unreleased`-Block (`.claude/rules/release.md`).
+
+### Die Roadmap als Skript: `roadmap.py`
+
+`tasks/private/ROADMAP.md` (privates Repo) bleibt Markdown, das Kevin von Hand pflegt.
+`scripts/dev/roadmap.py` (nur Python-Stdlib) liest den Kopf (`Stand: … · WIP: …`) und die
+Tabellenzeilen mit ihren zehn Spalten; alles andere, also Prosa, „Als Naechstes" und
+Leerzeilen, reicht es byte-gleich durch.
+
+```bash
+python3 scripts/dev/roadmap.py lint                      # tasks/private/ROADMAP.md
+python3 scripts/dev/roadmap.py --file /tmp/x.md lint     # eine andere Datei
+```
+
+`lint` meldet je Fund eine Zeile mit ID und Zeilennummer: doppelte IDs, unbekannte Status
+(die Aliase `geparkt` und `erledigt` beim Namen), Zeilen im falschen Abschnitt, Zeilen ohne
+genau zehn Spalten (ein unmaskiertes `|` im Text macht eine elfte; `\|` ist erlaubt), einen
+`Dedup-Key:`, den zwei offene Zeilen tragen, und einen WIP-Kopf, der nicht zu den Zeilen
+passt. Exit 0 sauber, 1 Funde, 2 Aufruf falsch oder Datei fehlt.
+
+Die Datei ist `--file`, sonst `AH_ROADMAP`, sonst `tasks/private/ROADMAP.md`. Tests
+arbeiten **nie** auf der echten Datei, sondern auf Fixtures in einem Temp-Verzeichnis; das
+Datum fuer den Ablauf (`ALT`) setzt `--today`. Die Tests unter `scripts/dev/tests/` faehrt
+der `run.sh`-Schritt `scripts/dev pytest` (Id `dev-pytest`, Key `scripts`), gleich gebaut
+wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 
 ### Harness-Schutz und Kill-Switch
 

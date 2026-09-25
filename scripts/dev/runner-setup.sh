@@ -276,7 +276,7 @@ export AH_TEST_DB=\"postgresql://$DB_ROLE:$DB_PW@localhost/$DB_NAME\"
 # directory belongs to whoever created it first — as somebody else's, the pip
 # install of the three python suites fails for this user.
 export AH_VENV=\"\$HOME/.cache/ah-venv\"
-export AH_REQUIRED=\"ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest scripts vm-pytest\"
+export AH_REQUIRED=\"ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest scripts vm-pytest dev-pytest\"
 "
 write_file "$HOME_DIR/.devenv.sh" 600 "$DEVENV_CONTENT" \
   "${DEVENV_CONTENT//$DB_PW/<redacted>}"

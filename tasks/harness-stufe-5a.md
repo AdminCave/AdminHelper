@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5a — Die Roadmap als Skript — Task-Ledger
-Status: freigegeben · Branch: harness/stufe-5a · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5a · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5a)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — nur `scripts/dev/`, `scripts/tests/`, ein Skill und Doku; `heavy.sh` wird hermetisch getestet (`heavy_test.sh`).
@@ -15,8 +15,10 @@ Hängt ab von: —
 Tests arbeiten **nie** auf `tasks/private/ROADMAP.md`, sondern auf Fixture-Kopien in einem Temp-Verzeichnis:
 `roadmap.py` nimmt den Pfad über `--file` oder `AH_ROADMAP`, Default `tasks/private/ROADMAP.md`.
 
-### T1 — `roadmap.py` liest und lintet  [ ]
-Komponente: scripts · Dateien: scripts/dev/roadmap.py (neu, SPDX), scripts/dev/tests/test_roadmap.py (neu, SPDX), scripts/tests/run.sh
+### T1 — `roadmap.py` liest und lintet  [x]
+Komponente: scripts · Dateien: scripts/dev/roadmap.py (neu, SPDX), scripts/dev/tests/test_roadmap.py (neu, SPDX), scripts/tests/run.sh, scripts/tests/run_flags_test.sh, DEVELOPMENT.md, scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @a3bf1d97 2026-09-25T08:48:30+02:00
+Review: approve (sonnet, Runde 2 nach runner-setup-Fix)
 Änderung:
 - **Parser:** Er liest Abschnitte, Tabellenzeilen mit genau zehn Spalten und den Kopf. Der Rest der Datei wird unverändert durchgereicht; Prosa, „Als Nächstes“ und Leerzeilen bleiben byte-gleich.
 - **`lint` meldet:**
