@@ -61,8 +61,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T6)
 Abhängt von: T1
 
-### T4 — `feature-plan --kurz` und `--bundle`  [ ]
-Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md
+### T4 — `feature-plan --kurz` und `--bundle`  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/roadmap/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @6a932b0c 2026-09-25T13:57:17+02:00
+Review: approve (sonnet, Runde 2 nach Bündel-Gate)
 Änderung:
 - **`--kurz <R-id>`:**
   - erzeugt ein Kurz-Ledger mit 1–3 Tasks aus Roadmap-Zeile und Beweis, ohne Spec;

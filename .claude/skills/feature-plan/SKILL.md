@@ -1,6 +1,6 @@
 ---
 name: feature-plan
-description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus kleinen, autonom abarbeitbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate zur menschlichen Freigabe — implementiert selbst nichts.
+description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine Ledger aus kleinen, autonom abarbeitbaren Tasks. Nutzen, wenn ein nicht-triviales Vorhaben startet ("ich will Feature X", "baue Y ein", "plane Z"), BEVOR Code entsteht. Endet an einem Design-Gate zur menschlichen Freigabe — implementiert selbst nichts. Mit --kurz R-nnnn ein Kurz-Ledger aus einer belegten Roadmap-Zeile, mit --bundle <komponente> die REF-Zeilen einer Komponente als Sammel-Ledger.
 ---
 
 # Feature planen & in autonome Tasks zerlegen
@@ -10,6 +10,11 @@ aus so kleinen, unabhängig verifizierbaren Aufgaben, dass die Build-Phase sie o
 Rückfragen abarbeiten kann. **Am Ende: Design-Gate — stoppen, auf Freigabe warten.
 In dieser Phase entsteht KEIN Produktivcode.** Spec und Ledger werden am Gate der erste
 Commit auf dem Feature-Branch (R-0065); einen anderen Branch-Schritt gibt es hier nicht.
+
+**Drei Aufrufe:** `/feature-plan <idee>` — der volle Weg mit Spec (Abschnitte 1–4);
+`/feature-plan --kurz R-nnnn` — ein Kurz-Ledger aus einer Roadmap-Zeile, ohne Spec (3a);
+`/feature-plan --bundle <komponente>` — REF-Zeilen einer Komponente in einem Sammel-Ledger
+(3a). Alle drei enden am selben Design-Gate (4).
 
 Modell: **mindestens Opus** — die Planung selbst läuft auf Opus oder Fable, und auch die Explorer-
 und Verifikations-Subagenten dieser Phase werden mit `model: opus` gestartet (Kevin, 2026-09-18: eine
@@ -120,6 +125,46 @@ Verify: bash scripts/dev/verify.sh <komponente> --strict     (oder: bash scripts
 Doku: <docs/… DE+EN · README · CHANGELOG  |  keine (intern)>
 Abhängt von: T<k>   (nur falls nötig)
 ```
+
+## 3a. Die kurzen Wege: `--kurz` und `--bundle`
+
+**`--kurz R-nnnn`** — für einen belegten Fund, vor allem Klasse A (SEC, REG, BUG):
+- `python3 scripts/dev/roadmap.py show R-nnnn` lesen. Die Zeile muss einen Beweis tragen
+  (`Quelle / Beweis` mit Branch@SHA, Kommando oder Lauf). Steht dort „Beweis fehlt" oder nichts
+  Nachprüfbares: **stopp**, das sagen und den vollen Weg oder zuerst einen Beweis vorschlagen —
+  ein Kurz-Ledger ohne Beweis ist eine Vermutung.
+- Keine Spec. Das Ledger bekommt **1–3 Tasks**, `Review: am Ende`, `Spec: Roadmap R-nnnn`, den
+  Kopf aus Abschnitt 3 mit `Heavy:`. Braucht der Fund erkennbar mehr als drei Tasks: **stopp**,
+  das sagen und den vollen Weg vorschlagen — ein Kurz-Ledger, das man zusammenstauchen muss,
+  ist keins.
+- Jede Task trägt die Zeilen der Beweis-Konvention (tasks/README.md), soweit die Zeile sie
+  hergibt: `Beweis:` aus der Zeile (Branch + SHA + Kommando + erwartete Ausgabe), `Dedup-Key:`
+  und `HEAD:`, wenn bekannt. Die Fix-Task verifiziert mit genau dem Test, der den Fund zeigt.
+- **Pflicht: `Semantik:`** — die Stelle unter `docs/`, die das gewollte Verhalten beschreibt,
+  mit Datei und wörtlichem Zitat (vorher lesen, nicht erinnern). Beschreibt die Doku das
+  heutige Verhalten als Absicht, ist es kein Fehler: dann kein Fix-Task, sondern eine offene
+  Frage an Kevin am Gate. Findet
+  sich keine Stelle, steht `Semantik: keine Stelle in docs/ — <was gesucht wurde>`, und die
+  Lücke gehört in die offenen Fragen am Gate.
+
+**`--bundle <komponente>`** — Aufräumarbeit einer Komponente in einem Rutsch:
+- Nur Klasse **REF**. Aus `roadmap.py show` die `neu`- und `geplant`-Zeilen mit Klasse REF
+  sammeln, deren Komponente passt (`roadmap.py show R-nnnn`: die Komponente im vollen
+  Dedup-Key, sonst das Ledger oder Titel und Quelle). Andere Klassen werden **verweigert, mit
+  Grund**: ein Fehler (SEC, REG, BUG) braucht seinen eigenen Beweis und sein Kurz-Ledger, ein
+  REL seinen eigenen Pfad zum Release, ein FEAT eine Spec.
+- Ein Sammel-Ledger mit **höchstens 15 Tasks**, eine Task je Zeile (zwei Zeilen an derselben
+  Stelle dürfen eine Task sein). Mehr Zeilen: die ersten 15 in der Reihenfolge der Datei, der
+  Rest bleibt `neu` und wird am Gate genannt. Der Kopf aus Abschnitt 3 mit `Heavy:`,
+  `Spec: Roadmap R-a, R-b, …`; `Review: pro Task`, bei höchstens drei Tasks `am Ende`.
+- Jede Task nennt ihre Roadmap-ID und trägt, was die Beweis-Konvention für ihre Klasse verlangt
+  (bei REF meist Klasse B oder C: `Metrik:`, `Orakel:`).
+
+Beide Wege enden am **selben Gate** (4): Roadmap-Zeilen auf `geplant`, der Plan als erster
+Commit auf `feature/<slug>`, Präsentation, Freigabe nur mit Kevins Wort. Beim Bündel gilt jeder
+Roadmap-Schritt des Gates **für jede enthaltene Zeile**: `roadmap.py status R-x geplant --note
+"tasks/<slug>.md"` je Zeile, und bei der Freigabe `roadmap.py approve R-x` je Zeile (beide Verben
+nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl sie gebaut ist.
 
 ## 4. Design-Gate — STOPP
 - **Zeilenangaben frisch:** Jede `datei:zeile` in Spec und Ledger unmittelbar vor dem
