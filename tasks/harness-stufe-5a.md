@@ -122,8 +122,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T8)
 Abhängt von: T3
 
-### T7 — Der Skill `/roadmap`  [ ]
+### T7 — Der Skill `/roadmap`  [x]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md (neu, SPDX-Kommentar)
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @34d83b51 2026-09-25T10:53:04+02:00
+Review: approve (sonnet, Trockenlauf nachgefahren)
 Änderung:
 - `/roadmap` rendert `roadmap.py show` knapp: Als Nächstes, In Arbeit mit Deckeln, Neu mit Anzahl.
 - `/roadmap triage` führt per `AskUserQuestion` durch die `neu`-Zeilen, 2–4 je Runde, mit einer Empfehlung zuerst:
@@ -137,6 +139,21 @@ Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md (neu, SPDX-Komme
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T8)
 Abhängt von: T4
+
+Nachweis (Trockenlauf 2026-09-25, Worker 2): die Befehlsfolge des Skills über die Fixture `CLEAN` aus
+`scripts/dev/tests/test_roadmap.py`, als Datei im Scratch, eine Minute zurückdatiert, `--today 2026-09-25`:
+- `/roadmap`: `show` → Exit 0 („Als Nächstes" wörtlich, `WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0`,
+  In Arbeit 1, Neu 2, Geplant 2, Zurückgestellt 1, Blockiert 0, Abgeschlossen 2, Archiv 1); `lint` → Exit 0.
+- Vorbereitung für den REG-Weg: `add --class REG … --dedup-key reg:web-vitest --ledger tasks/reg-2026-09-25-web-vitest.md`
+  → `R-0010`, Exit 0; `show R-0010` zeigt Quelle, Dedup-Key, Ledger, `Ablauf: nie`.
+- `/roadmap triage`, eine Runde mit drei Zeilen (simulierte Antworten): R-0010 REG „Annehmen, Regression bestätigt" →
+  `status R-0010 geplant --note "Regression bestätigt"` Exit 0; R-0005 BUG Annehmen → `status R-0005 geplant` Exit 0;
+  R-0006 REF Zurückstellen → `status R-0006 zurückgestellt --note "nach Stufe 5b"` Exit 0.
+- Freigabe ohne Kevins Wort findet nicht statt; der Versuch `approve R-0006` endet mit Exit 2
+  („R-0006 is zurückgestellt, not geplant").
+- Abschluss: `show --wip` → `WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0`; `lint` → Exit 0. Die Fixture liegt
+  in keinem Git-Repo, jeder Schreibschritt meldet deshalb „not committed" (so gewollt, siehe T2).
+Nicht getestet: der `AskUserQuestion`-Dialog selbst, das ist Skill-Text.
 
 ### T8 — Doku  [ ]
 Komponente: scripts · Dateien: DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
