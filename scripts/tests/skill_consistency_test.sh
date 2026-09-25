@@ -31,6 +31,7 @@ BT='`'
 STATE="${BT}?(geplant|freigegeben|aktiv|bereit|erledigt|blockiert)${BT}?"
 SEP='[[:space:]]*(\||/|→|,)[[:space:]]*'
 LEDGER_CALL='status R-[^ ]+[[:space:]]+geplant[[:space:]]+--ledger'
+PR_CALL='pr[[:space:]]+--pr[[:space:]]+"#'
 
 # unreadable <file> — a file the checks cannot read is a finding of its own. awk
 # and tr read stdin for an empty path, and the empty result would pass every
@@ -42,6 +43,8 @@ unreadable() { [ -r "$1" ] && return 1; echo "cannot read '$1'"; }
 # "auf main". Read per sentence, not per line, so a wrapped sentence is still one;
 # list items and headings end a sentence, commas, brackets and dashes a clause —
 # "Ledger committen (…), zurück … — der Checkout bleibt auf main" is no finding.
+# Known limit: a bracket can also split one statement, and "Spec und Ledger (der
+# erste Commit) wandern auf main" goes unseen.
 plan_on_main() {
   local f
   for f; do
@@ -137,6 +140,10 @@ f=$(fixture '## 3a. Die kurzen Wege' '`roadmap.py status R-x geplant --note "tas
 { ! grep -qE "$LEDGER_CALL" <<<"$(section "$f" '## 3a.' '## 4.')" && grep -qE "$LEDGER_CALL" <<<"$(section "$f" '## 4.')"; } \
   && ok "section cuts at the next heading, and a wrapped --ledger call is found" \
   || bad "section: 3a='$(section "$f" '## 3a.' '## 4.')' 4='$(section "$f" '## 4.')'"
+f=$(fixture 'folgt die Zeile dem Ledger: mit dem PR `pr --pr "#<n>"` (die Spalte `PR`)')
+grep -qE "$PR_CALL" "$f" && ok "a PR set with pr --pr is found" || bad "PR_CALL missed pr --pr"
+f=$(fixture 'folgt die Zeile dem Ledger: mit dem PR `pr --note "PR #<n>"`')
+! grep -qE "$PR_CALL" "$f" && ok "a PR in --note is no --pr call" || bad "PR_CALL fired on pr --note"
 f=$(fixture '## 3. Ledger schreiben' '```' 'Status: geplant · Branch: feature/<slug>' 'Fast-Suite: lokal · Warm-Profil: desktop' '```')
 t=$(head_template "$f")
 { ! grep -q '^Heavy:' <<<"$t" && grep -q '^Fast-Suite:' <<<"$t"; } \
@@ -161,6 +168,8 @@ for part in "## 3a.:## 4." "## 4.:"; do
     && ok "feature-plan '${part%%:*}' sets the Ledger column with status … geplant --ledger" \
     || bad "feature-plan '${part%%:*}' has no status … geplant --ledger"
 done
+tr '\n' ' ' < .claude/skills/feature-build/SKILL.md | grep -qE "$PR_CALL" \
+  && ok "feature-build sets the PR column with pr --pr \"#<n>\"" || bad "feature-build names no pr --pr \"#<n>\""
 t=$(head_template .claude/skills/feature-plan/SKILL.md)
 grep -q '^Status: geplant' <<<"$t" && ok "feature-plan's head template is where the check looks" \
   || bad "no head template under '## 3.' in feature-plan: $t"

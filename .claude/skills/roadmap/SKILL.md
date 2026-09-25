@@ -54,8 +54,7 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
    Zeile. Header `R-nnnn`, Frage: Klasse, Titel, Quelle in einem Satz. Die **Empfehlung
    zuerst**, mit „(Empfohlen)" und einem Halbsatz Begründung in der Beschreibung:
    - **Annehmen** → `roadmap.py status R-nnnn geplant`. Danach `/feature-plan --kurz R-nnnn`
-     *vorschlagen*, nicht starten (den Kurz-Modus bringt Stufe 5b; bis dahin
-     `/feature-plan` mit der Zeile als Auftrag).
+     *vorschlagen*, nicht starten.
    - **Ablehnen** → `roadmap.py status R-nnnn abgelehnt --note "<Grund>"`. Ohne Grund
      kein Ablehnen: fehlt er in Kevins Antwort, einmal nachfragen.
    - **Zurückstellen** → `roadmap.py status R-nnnn zurückgestellt [--note "<bis wann/warum>"]`.

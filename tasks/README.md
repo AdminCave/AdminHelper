@@ -21,7 +21,7 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 | `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Interaktiv startet `/feature-build` es weiterhin mit ausdrücklichem Pfad (setzt auf `aktiv`). |
 | `freigegeben` | Kevin hat am Design-Gate freigegeben: `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
 | `aktiv` | wird gebaut. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
-| `bereit` | alle Tasks sind zu, der Branch ist PR-reif; die Verifikation durch Kevin oder die Aufsicht und der PR stehen aus. |
+| `bereit` | alle Tasks sind zu; der Abschluss von `feature-build` (Schnellcheck, schwere Suite, Branch-Review) und der PR stehen aus. |
 | `erledigt` | PR offen oder gemergt; bleibt als Historie liegen. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
@@ -38,12 +38,13 @@ DoD-Verweis auf `CLAUDE.md`.
 **`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite der
 Abschluss braucht: keine, den Linux-Stack auf einer Pool-VM (`run.sh integration`/`e2e`), einen
 Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first; das
-ersetzt auch die Zeile `Abschluss: multibox <flags>`) oder die Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen. Für neue Ledger ersetzt
-`Heavy:` die älteren Felder `Fast-Suite:` (lokal | vm) und `Warm-Profil:` (desktop | pond);
-`feature-build` und `ledger.sh` lesen diese weiter, solange es Ledger mit ihnen gibt; `lane.sh`
-nennt `Fast-Suite: vm` nur als Hinweis. Wo eine Lane mit `Heavy:` ihre Schnellsuite fährt, ist
-offen (R-0097). `ledger.sh lint` prüft den Wert und meldet `Heavy:` neben `Fast-Suite:`/`Warm-Profil:` als
-Fehler, denn das wären zwei Antworten auf eine Frage. Ein freier `Heavy:`-Text neben
+ersetzt auch die Zeile `Abschluss: multibox <flags>`) oder die Windows-VM. Hinter dem Wert darf
+nach ` — ` eine Begründung stehen. Für neue Ledger ersetzt `Heavy:` die älteren Felder
+`Fast-Suite:` (lokal | vm) und `Warm-Profil:` (desktop | pond); `feature-build` und `ledger.sh`
+lesen diese weiter, solange es Ledger mit ihnen gibt; `lane.sh` nennt `Fast-Suite: vm` nur als
+Hinweis. Wo eine Lane mit `Heavy:` ihre Schnellsuite fährt, ist offen (R-0097). `ledger.sh lint`
+prüft den Wert und meldet `Heavy:` neben `Fast-Suite:`/`Warm-Profil:` als Fehler, denn das wären
+zwei Antworten auf eine Frage. Ein freier `Heavy:`-Text neben
 `Fast-Suite:` („nein — …", „keine; …") ist die Form der Ledger vor Stufe 5b und bleibt gültig.
 
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
@@ -159,7 +160,7 @@ Die Zeilen stehen im Task-Block, jede optional, jede nur, wenn sie etwas trägt:
 | `Beweis:` | Branch + SHA + Kommando + erwartete Ausgabe | — |
 | `Orakel:` | `crash`, `contract`, `property`, `differential`, `mutation-sample`, `coverage`, `analyzer` oder `metric`; danach nach ` — ` eine Erläuterung | Wert aus der Liste |
 | `Refuter:` | wer oder was den Fund zu widerlegen versuchte, mit welchem Ergebnis | — |
-| `Dedup-Key:` | derselbe Schlüssel wie in der Roadmap, ein Token ohne Leerzeichen: voll `<klasse>:<komponente>:<datei>:<symbol>` (daraus liest `roadmap.py next` die Komponente) oder kurz wie die Wochenlauf-Zeilen (`reg:<schritt>`, `rel:deps-audit`); `sec:`-Schlüssel stehen nie im öffentlichen Repo (`review.sh sec` blockiert sie) | `<klasse>:<rest>`, `<klasse>` eine der Klassen in Kleinbuchstaben |
+| `Dedup-Key:` | derselbe Schlüssel wie in der Roadmap, ein Token ohne Leerzeichen: voll `<klasse>:<komponente>:<datei>:<symbol>` (daraus liest `roadmap.py next` die Komponente) oder kurz wie die Wochenlauf-Zeilen (`reg:<schritt>`, `rel:deps-audit`); `sec:`-Schlüssel stehen nie im öffentlichen Repo (`review.sh sec` blockiert sie) | das erste Token ist `<klasse>:<rest>`, `<klasse>` eine der Klassen in Kleinbuchstaben |
 | `Metrik:` | Klasse B: vorher → nachher, mit Werkzeug und Version; Klasse C: die gelöschten Zeilen oder Dateien | — |
 | `Kosten:` | was der Beweis gekostet hat (Zeit, Läufe, Tokens) | — |
 | `HEAD:` | der Commit, auf dem der Beweis galt | ein SHA (7–40 Hex-Zeichen) |

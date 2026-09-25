@@ -145,10 +145,10 @@ Abhängt von: T<k>   (nur falls nötig)
 - **Pflicht: `Semantik:`** — die Stelle unter `docs/`, die das gewollte Verhalten beschreibt,
   mit Datei und wörtlichem Zitat (vorher lesen, nicht erinnern). Beschreibt die Doku das
   heutige Verhalten als Absicht, ist es kein Fehler: dann kein Fix-Task, sondern eine offene
-  Frage an Kevin. Es entsteht kein Ledger und kein Plan-Branch; die Zeile behält ihren Status,
-  und die Frage geht mit `roadmap.py status R-nnnn <status> --note "Semantik-Frage: …"` in seine
-  Triage (`/roadmap`) — derselbe Status, nur die Notiz. Erst seine Antwort macht wieder einen
-  Plan daraus.
+  Frage an Kevin, sofort gestellt (Abschnitt 0). Es entsteht kein Ledger und kein Plan-Branch;
+  die Zeile behält ihren Status und hält die Frage in ihrer Notiz fest, hinter der bisherigen,
+  denn `--note` ersetzt sie: `roadmap.py status R-nnnn <status> --note "<bisherige Notiz>;
+  Semantik-Frage: …"`. Erst Kevins Antwort macht wieder einen Plan daraus.
   Findet sich keine Stelle, steht `Semantik: keine Stelle in docs/ — <was gesucht wurde>`, und
   die Lücke gehört in die offenen Fragen am Gate.
 

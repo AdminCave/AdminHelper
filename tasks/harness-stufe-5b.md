@@ -200,8 +200,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: AUTONOMOUS.md
 Abhängt von: T12
 
-### T14 — Semantik-Frage behält die Notiz; Texte und Konsistenz-Test nach dem zweiten Branch-Review  [ ]
+### T14 — Semantik-Frage behält die Notiz; Texte und Konsistenz-Test nach dem zweiten Branch-Review  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/roadmap/SKILL.md, tasks/README.md, docs/developer/cicd.html, docs/en/developer/cicd.html, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @c3cbff3b 2026-09-25T17:40:24+02:00
+Review: approve (sonnet)
 Änderung: Funde (B), (3), (4, README), (5), (6), (8, Ledger/Test) und (9, README) des zweiten Branch-Reviews, Auftrag der Aufsicht 2026-09-25:
 - (B) Zeigt `Semantik:` Absicht, fragt der Planer Kevin sofort (Abschnitt 0). Die Zeile hält die Frage fest und behält die alte Notiz: `--note "<bisherige Notiz>; Semantik-Frage: …"`, weil `--note` ersetzt. Die Behauptung „geht in die Triage“ fällt weg, denn `/roadmap triage` sieht nur `neu`-Zeilen.
 - (3) Im `/roadmap`-Skill fällt der veraltete Satz „den Kurz-Modus bringt Stufe 5b“ weg.
