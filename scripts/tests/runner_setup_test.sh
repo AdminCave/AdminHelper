@@ -149,6 +149,11 @@ PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); 
 # its AH_REQUIRED declares mandatory.
 grep -q 'AH_VENV=' <<<"$OUT" && ok "plans: its own AH_VENV, not the shared /tmp one" \
   || bad "the devenv does not set AH_VENV"
+# A host-given AH_REQUIRED wins as is (run.sh), so a pytest-only step missing
+# here would SKIP on the runner without --strict noticing.
+grep -q 'AH_REQUIRED=.*vm-pytest dev-pytest' <<<"$OUT" \
+  && ok "plans: both pytest-only scripts steps are mandatory on the runner" \
+  || bad "the runner's AH_REQUIRED lacks vm-pytest or dev-pytest"
 # install -d applies owner and mode to a symlink's TARGET — and it follows a
 # symlinked PARENT just as happily, existing directories included. Checked for
 # real against the function itself, not by grepping for a message.

@@ -339,7 +339,7 @@ Dev-Box: `vm.py sync` schliesst sie aus, damit auf einer Box `AH_REQUIRED` unges
 und die Box-Regel aus `run.sh` greift (alle Schritte eines schweren Layers Pflicht).
 
 ```bash
-export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-ui-vitest web-vitest scripts vm-pytest"
+export AH_REQUIRED="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest go-agent desktop-ui-vitest web-vitest scripts vm-pytest dev-pytest"
 ```
 
 Auf dieser Box deckt sich die Menge mit dem Default; ohne die Zeile gilt er. Die wirksame Menge druckt `run.sh` unter
@@ -360,8 +360,10 @@ Box-Menge explizit). Ein gesetztes `AH_REQUIRED` gewinnt immer unveraendert.
 
 `scripts/dev/hooks/session-status.sh` laeuft als `SessionStart`-Hook
 (`.claude/settings.json`) und druckt einen `AH-STATUS`-Block: Checkout und
-Dirty-Stand, `tauri.conf.json`-Version gegen den letzten Tag, die naechsten
-Roadmap-Zeilen, aktive Ledger, offene PRs und warme Boxen. Er ist rein lesend,
+Dirty-Stand, `tauri.conf.json`-Version gegen den letzten Tag, alle Punkte von „Als
+Naechstes" (je die erste Zeile) und darunter die WIP-Zeile aus `roadmap.py show --wip`, an den
+Deckeln aus `CLAUDE.md` gemessen und bei einem erreichten Deckel mit `Warnung:`, dann aktive
+Ledger, offene PRs und warme Boxen. Er ist rein lesend,
 endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 — kein
 Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
 feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`.
@@ -422,6 +424,85 @@ nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 Seiten. Das dedupliziert aber nichts: legen beide dieselbe Versions-Ueberschrift an, steht
 sie hinterher doppelt im File, ohne Konflikt-Marker. Vor einem Release lohnt der Blick in
 den `Unreleased`-Block (`.claude/rules/release.md`).
+
+### Die Roadmap als Skript: `roadmap.py`
+
+`tasks/private/ROADMAP.md` (privates Repo) bleibt Markdown, das Kevin lesen und von Hand
+aendern kann; den Abschnitt „Als Naechstes" kuratiert er allein. `scripts/dev/roadmap.py` (nur
+Python-Stdlib) liest den Kopf (`Stand: … · WIP: …`) und die Tabellenzeilen mit ihren zehn
+Spalten; alles andere, also Prosa, „Als Naechstes" und Leerzeilen, reicht es byte-gleich
+durch. Zeilen legen Kevin und die Skripte an (`heavy.sh`, spaeter die Finder); `/roadmap`
+zeigt und triagiert sie (`.claude/skills/roadmap/SKILL.md`).
+
+```bash
+python3 scripts/dev/roadmap.py lint                      # tasks/private/ROADMAP.md
+python3 scripts/dev/roadmap.py --file /tmp/x.md lint     # eine andere Datei
+python3 scripts/dev/roadmap.py show [R-nnnn] [--wip]
+python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web]
+python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
+    [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
+python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"]
+python3 scripts/dev/roadmap.py approve R-nnnn [--revoke]
+python3 scripts/dev/roadmap.py sync
+python3 scripts/dev/roadmap.py stats [--days 30]
+```
+
+- `lint` meldet je Fund eine Zeile mit ID und Zeilennummer: doppelte IDs, unbekannte Status
+  (die Aliase `geparkt` und `erledigt` beim Namen), Zeilen im falschen Abschnitt, Zeilen ohne
+  genau zehn Spalten (ein unmaskiertes `|` im Text macht eine elfte; `\|` ist erlaubt),
+  einen `Dedup-Key:`, den zwei offene Zeilen tragen, und einen WIP-Kopf, der nicht zu den
+  Zeilen passt. Exit 0 sauber, 1 Funde, 2 Aufruf falsch oder Datei fehlt.
+- `show` liest nur: ohne Argument „Als Naechstes" woertlich, die WIP-Zaehler aus den Zeilen,
+  die offenen Abschnitte mit ihren Zeilen und die Historie als Anzahl; mit einer ID die Zeile
+  Feld fuer Feld; mit `--wip` nur die Zaehler (die liest der Status-Hook).
+- `next` nennt die naechste Zeile zum Bauen: Klasse vor Reihenfolge (SEC > REG > REL > BUG >
+  FEAT > REF > IDEE), wartet, solange „Haengt ab von" eine Zeile nennt, die nicht
+  `abgeschlossen` ist, und ueberspringt Zeilen, die eine ausgeschlossene Komponente
+  beruehren (`Komponente:` ihres Ledgers, die Komponente eines vollen Dedup-Keys
+  `<klasse>:<komponente>:<datei>:<symbol>`; ein kurzer wie `reg:<schritt>` nennt keine).
+  Nichts bereit: Exit 1.
+- `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
+  eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
+  eine ID, die ein Hand-Edit wieder entfernt hat, nicht ein zweites Mal. `--proof` und
+  `Dedup-Key: <key>` stehen mit in „Quelle / Beweis"; `Ablauf` folgt der Klasse (IDEE 60
+  Tage, REF 90 Tage, sonst `nie`). Bei 20 `neu`-Zeilen ist Schluss (Exit 3). Traegt eine
+  offene Zeile den Dedup-Key schon, ist das Exit 4 mit ihrer ID, und ein leerer Commit
+  `roadmap: dedup <key> -> R-nnnn` haelt die Weigerung fuer `stats` fest.
+- `status` setzt den Status und verschiebt die Zeile in den Abschnitt, der zu ihm gehoert.
+  Erlaubt sind nur die Uebergaenge der Tabelle `TRANSITIONS` im Skript (sonst Exit 2);
+  derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
+  das Wort. Ein geschlossener Status (`abgeschlossen`, `abgelehnt`) traegt den Tag; mehr
+  als 30 Tage danach wandert die Zeile beim naechsten Schreiben oben ins „Archiv".
+- `approve` ist `geplant` -> `freigegeben`, Kevins Freigabe; `--revoke` nimmt sie zurueck.
+- `sync` fragt `gh pr list --state merged`: eine Zeile im Status `pr`, deren PR-Spalte nur
+  gemergte PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Eine Zeile in einem anderen
+  Status (etwa eine Stufe mit mehreren PRs, noch `aktiv`) meldet es nur; `sync` ueberspringt
+  keinen Status, denn ein Schliessen laesst sich nicht zuruecknehmen. Den Push des privaten
+  Repos druckt es, ausfuehren tut es ihn nicht. Laeuft `gh` nicht, scheitert es oder liefert
+  kein lesbares JSON: Exit 74.
+- `stats` zaehlt Tasks pro Tag (netto abgehakte `[x]` in `git log -p -- tasks/*.md`),
+  Kevin-Minuten pro PR, die Wartezeit je Zustand aus der Historie der Datei, die Stale-Quote
+  (offene Zeilen ueber ihrem Ablauf) und die Dedup-Quote. Seine Fenster sind ganze UTC-Tage,
+  damit dieselbe Frage auf jeder Maschine dieselbe Antwort hat.
+
+**Schreibregeln.** Jedes Schreiben (`add`, `status`, `approve`, `sync`) laeuft unter `flock`
+auf `<datei>.lock` und legt vorher `<datei>.bak` an. Es prueft danach die Zeilenzahl: vorher
+plus erwartete Aenderung muss nachher ergeben, sonst geht die `.bak` zurueck (Exit 6). Es
+rechnet den Kopf `Stand: <heute> · WIP: …` aus den Zeilen neu und committet die eine Datei in
+ihrem eigenen Repo (`roadmap: <verb> <id>`): lokal, nie gepusht, nur wenn das Verzeichnis der
+Datei die Wurzel dieses Repos ist, und nie in diesem oeffentlichen Repo. In einem Klon,
+dessen `tasks/private` ein gewoehnliches Verzeichnis ist, entsteht deshalb kein Commit. Hat
+jemand anders die Datei in den letzten 5 Sekunden geaendert, verweigert es (Exit 5), denn ein
+Editor koennte sie noch halten. Die Marke der eigenen letzten Schreibung (mtime und sha256)
+und die hoechste vergebene ID stehen in der Lock-Datei; auch der Dedup-Commit entsteht noch
+unter der Sperre.
+
+Die Datei ist `--file`, sonst `AH_ROADMAP`, sonst `tasks/private/ROADMAP.md`. Tests
+arbeiten **nie** auf der echten Datei, sondern auf Fixtures in einem Temp-Verzeichnis, die
+sie per `--file` oder `AH_ROADMAP` benennen; das Datum fuer Ablauf, Archiv und Kopf setzt
+`--today`. Die Tests unter `scripts/dev/tests/` faehrt
+der `run.sh`-Schritt `scripts/dev pytest` (Id `dev-pytest`, Key `scripts`), gleich gebaut
+wie `vm.py pytest`: er braucht nur `pytest` und ist unter `--strict` Pflicht.
 
 ### Harness-Schutz und Kill-Switch
 
@@ -1124,7 +1205,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   Session-Start in Zeile 4 des `AH-STATUS`-Blocks. Die `audit.yml`-Zeile erzeugt bei rot genau
   **eine** REL-Zeile je roter Phase: der Eintrag bleibt in `seen.md` offen (`deps-audit · open`),
   bis ein Lauf mit `success` ihn schliesst (`resolved`) — abgebrochene oder uebersprungene Laeufe
-  aendern nichts; erst der naechste rote Lauf nach einem gruenen ist wieder eine neue Zeile.
+  aendern nichts. Eine neue Zeile gibt es erst beim naechsten roten Lauf nach einem gruenen, und
+  auch dann nur, wenn die alte REL-Zeile nicht mehr offen ist: ihr Dedup-Key `rel:deps-audit`
+  haelt die neue sonst zurueck. Roadmap-Zeilen legt `heavy.sh` ueber `roadmap.py add` an; ist
+  der Deckel von 20 `neu`-Zeilen voll oder die Zeile schon offen, steht das laut in den Notizen
+  des Reports.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es
@@ -1155,7 +1240,9 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   (Quarantaene in `tasks/private/seen.md`); dreimal identisch rot ⇒ eine frische zweite VM
   (Worktree `.ah-worktrees/w2`, Lane `w2`): dort gruen ⇒ `unbestaetigt`,
   dort rot ⇒ Gegenprobe auf dem letzten PASS-Commit — Basis gruen ⇒ `reg` (Roadmap-Zeile
-  Klasse REG plus `tasks/reg-<datum>-<schritt>.md`), Basis ebenfalls rot ⇒ `extern`.
+  Klasse REG mit Dedup-Key `reg:<schritt>` plus `tasks/reg-<datum>-<schritt>.md`; `seen.md`
+  sperrt denselben Fund 30 Tage, der Dedup-Key, solange seine Zeile offen ist), Basis ebenfalls
+  rot ⇒ `extern`.
   Dreimal rot mit **unterschiedlichen** Markern ⇒ `fail` (reproduzierbar kaputt, aber ohne die
   stabile Signatur, die eine Regressions-Behauptung braucht — keine Zweit-VM).
   `--no-second-vm` ueberspringt die Zweit-VM, `--base <sha>` setzt den Vergleichs-Commit.

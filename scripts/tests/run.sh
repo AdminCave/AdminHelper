@@ -80,14 +80,14 @@ export AH_ONLY AH_STRICT
 #   lint/unit: ruff · ruff-vm · gofmt · shellcheck · server-pytest
 #              monitoring-pytest · ca-issuer-pytest · go-agent · desktop-cargo
 #              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
-#              vm-pytest
+#              vm-pytest · dev-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
 #                agent-monitoring · repo-build · upgrade-path
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
 # added to the default set (see AH_HEAVY_* below); a host-given AH_REQUIRED wins as is.
-AH_REQUIRED_DEFAULT="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest schemathesis go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest"
+AH_REQUIRED_DEFAULT="ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest schemathesis go-agent desktop-cargo desktop-ui-vitest web-vitest scripts vm-pytest dev-pytest"
 # Named by the host or derived here? Only an unset (or empty — iter.sh does
 # not forward an empty value either) AH_REQUIRED gets the heavy step ids added
 # below; a host that names its set keeps exactly that set.
@@ -351,9 +351,9 @@ scan_test_skips() {
 
 # py_step_possible -> 0 unless --step names something the shared venv is for.
 # The names must stay in sync with the run_py_step calls in layer_unit below —
-# except `vm.py pytest`, which is deliberately absent: it needs nothing but
-# pytest itself, and creating a venv for it would be a side effect nobody asked
-# for (the step dep-gates on `import pytest` instead).
+# except `vm.py pytest` and `scripts/dev pytest`, which are deliberately absent:
+# they need nothing but pytest itself, and creating a venv for them would be a
+# side effect nobody asked for (the steps dep-gate on `import pytest` instead).
 py_step_possible() {
   [ -n "$AH_STEP" ] || return 0
   local n; for n in "monitoring pytest" "ca-issuer pytest" "server pytest" "schemathesis"; do
@@ -725,6 +725,16 @@ layer_unit() {
     # --strict calls it unverified instead of reporting infrastructure as a
     # test failure.
     skip vm-pytest "vm.py pytest" "python3 or pytest not installed"
+  fi
+
+  # The Python under scripts/dev (roadmap.py) — stdlib only, hermetic, on
+  # fixtures, never the private roadmap. Its own step for vm.py's reason.
+  if ! only scripts; then skip dev-pytest "scripts/dev pytest" "AH_ONLY"
+  elif have python3 && python3 -c 'import pytest' 2>/dev/null; then
+    run_py_step dev-pytest "scripts/dev pytest" -- bash -c \
+      'python3 -m pytest scripts/dev/tests -q $AH_PYTEST_RS'
+  else
+    skip dev-pytest "scripts/dev pytest" "python3 or pytest not installed"
   fi
 
   # Web frontend — check + lint + vitest unit.

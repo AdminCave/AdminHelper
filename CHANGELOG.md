@@ -196,6 +196,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Die Roadmap als Skript (Harness Stufe 5a, Entwickler-Werkzeuge):** `scripts/dev/roadmap.py`
+  (Python-Stdlib) liest, lintet und schreibt die private Roadmap `tasks/private/ROADMAP.md`
+  mit `lint`, `show`, `next`, `add`, `status`, `approve`, `sync` und `stats`. Jedes Schreiben
+  laeuft unter `flock`, mit `.bak`, Zeilenzahl-Pruefung, einer 5-Sekunden-Regel gegen einen
+  offenen Editor und einem lokalen Commit im privaten Repo. Der Abschnitt einer Zeile folgt
+  ihrem Status, der WIP-Kopf wird neu gerechnet, `neu` ist bei 20 Zeilen gedeckelt, und ein
+  Dedup-Key haelt Dubletten zurueck. `heavy.sh` legt REG- und REL-Zeilen nur noch ueber
+  `roadmap.py add` an. Der Status-Hook zeigt alle Punkte von „Als Naechstes" und die
+  WIP-Deckel, bei einem erreichten mit `Warnung:`. Neu sind der Skill `/roadmap` (Ueberblick
+  und `triage`) und der `run.sh`-Schritt `scripts/dev pytest` (Id `dev-pytest`, Pflicht).
+  Anleitung: `DEVELOPMENT.md`, „Die Roadmap als Skript: `roadmap.py`".
 - **VM-Rollen bekommen mehr vCPUs:** `scripts/vm/profiles.json` gibt der Desktop-Rolle und dem Bake
   6 statt 4 bzw. 2 Kerne und der Server-Rolle 4 statt 2 — der Host lief waehrend eines Capstones
   bei 10 % CPU, waehrend Tauri-, npm- und Go-Builds in den VMs auf 2 Kernen warteten (Bake

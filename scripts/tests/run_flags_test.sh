@@ -123,6 +123,10 @@ run_bare unit --step "vm.py pytest"
 [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
   && grep -qE '^  (PASS|SKIP|FAIL)  vm\.py pytest' <<<"$OUT" \
   && ok "the vm.py suite is a step of its own" || bad "vm-pytest step: $OUT"
+run_bare unit --step "scripts/dev pytest"
+[ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
+  && grep -qE '^  (PASS|SKIP|FAIL)  scripts/dev pytest' <<<"$OUT" \
+  && ok "the scripts/dev suite is a step of its own" || bad "dev-pytest step: $OUT"
 
 # Schemathesis is its own step for the same reason: an own verdict and an own
 # budget only exist if --step can reach it without dragging a pytest step along.
