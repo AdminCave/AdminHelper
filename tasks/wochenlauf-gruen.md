@@ -56,8 +56,10 @@ Review: approve (sonnet); Gegenprobe: vorher 4 failed (OverflowError), nachher g
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: CHANGELOG.md `[Unreleased]` → `Fixed` (Monitoring antwortet auf ein Datum mit Offset am Kalenderrand mit 422 statt 500)
 
-### T5 — `restore.sh` und `sse_push_e2e.sh` warten über TCP (F5, ohne Roadmap-Zeile)  [ ]
+### T5 — `restore.sh` und `sse_push_e2e.sh` warten über TCP (F5, ohne Roadmap-Zeile)  [x]
 Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/sse_push_e2e.sh, scripts/tests/restore_guard_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @53cd46db 2026-09-25T14:12:41+02:00
+Review: approve (sonnet, mit Mutationsprobe); Gegenprobe: vorher rc=2 / 4 passed 2 failed, nachher 6 passed lokal und auf der Lane-Box
 Änderung: Test zuerst, in `restore_guard_test.sh` (der Kopfkommentar wird auf „hermetische Tests für restore.sh" erweitert): ein `docker`-Stub im `PATH` bildet den Socket-only-Init-Server nach. `pg_isready` ohne `-h` antwortet sofort 0, mit `-h 127.0.0.1` ab dem dritten Aufruf; `sh -c …psql…` davor endet ≠ 0, alles andere endet mit 0 und wird protokolliert. Das Archiv enthält `adminhelper.dump`, Aufruf mit `--yes`. Erwartung: Exit 0, und im Protokoll steht ein erfolgreiches TCP-`pg_isready` vor dem ersten `psql`. Vor dem Fix rot. Dann `restore.sh:114` und `sse_push_e2e.sh:65` auf `pg_isready -h 127.0.0.1 -U adminhelper`, mit einem Satz Kommentar zum Warum (Init-Server nur auf dem Socket, Beleg in der Spec). `sse_push_e2e.sh` braucht Docker; sein Beweis ist der Heavy-Lauf.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CHANGELOG.md `[Unreleased]` → `Fixed` (`restore.sh` auf einem frischen Host: Warten auf Postgres über TCP statt über den Socket)

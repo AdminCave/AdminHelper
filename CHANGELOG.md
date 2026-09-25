@@ -115,6 +115,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   UTC umgerechnet vor dem Jahr 1 oder nach dem Jahr 9999 laege (etwa
   `0001-01-01T00:00:00+00:01`), mit 422 und Feldbezug statt mit 500. Die Umrechnung lief als
   ungefangener `OverflowError` durch. Ein naives Datum im Jahr 1 bleibt gueltig.
+- **`restore.sh` auf einem frischen Host:** das Skript wartet jetzt ueber TCP auf Postgres
+  (`pg_isready -h 127.0.0.1`), ueber denselben Weg, den der DB-Restore danach nimmt. Auf einem
+  neuen Volume lauscht der Init-Server des offiziellen Images nur auf dem Unix-Socket; die
+  Socket-Probe meldete ihn bereit, und `psql`/`createdb` scheiterten dann mit
+  `Connection refused` — je nach Timing brach die Wiederherstellung mittendrin ab. Dieselbe
+  Warteschleife in `scripts/tests/sse_push_e2e.sh` ist mit korrigiert.
 - **422 statt 500 an den Raendern der API (Server und Monitoring):** Eingaben, die erst in der
   Datenbankschicht scheiterten, werden jetzt am Rand geprueft. Betroffen waren alle drei
   Eingangswege: die int-Pfad- und Query-Parameter (`user_id`, `key_id`, `offset`), die
