@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Bewusst gelöschte Tests: ein erlaubter Weg durch `diff-scan` — Task-Ledger (Kurz)
-Status: bereit · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben, Roadmap R-0079)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/review.sh`, `scripts/dev/task-close.sh`, `scripts/tests/review_scripts_test.sh` und die Ledger-Doku.
@@ -29,6 +29,8 @@ löschen, ist genau der Fall, den `diff-scan` fangen soll. Der erlaubte Weg darf
 
 1. **Regel:** Der ganze Test muss gehen, und die Task muss es ankündigen (unten). Eine Ankündigung je Datei allein reicht nicht.
 2. **Freigabe:** erteilt. Worker 2 baut im Haupt-Checkout, die Aufsichts-Session verifiziert.
+
+3. **Nach dem adversarialen Review (Kevin, 2026-09-25):** Die Ankündigung wird **nur aus dem committeten Ledger** (`HEAD`) gelesen, nicht aus dem Arbeitsbaum. Den Nachbau (T4) macht die Aufsichts-Session in einem eigenen Worktree.
 
 ## Die Regel
 
@@ -103,3 +105,23 @@ Abhängt von: T2
 `Test-Löschung: apps/server/tests/test_text_bounds.py::test_safetext_passes_everything_but_nul — der
 Typ hat seit R-0067 keinen Nutzer mehr`. Das ist zugleich der erste echte Lauf der neuen Regel durch
 `task-close.sh`. Harness und Produktcode bleiben dabei in getrennten Branches.
+
+### T4 — Die Prüfung am Inhalt statt am Diff-Text (adversarialer Review)  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, tasks/README.md, AUTONOMOUS.md, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @ab184f01 2026-09-25T08:59:12+02:00
+Review: adversarialer Opus-Review 2026-09-25 (request_changes) → Nachbau; Re-Review folgt
+Änderung: Der adversariale Opus-Review (2026-09-25) hat vier Umgehungen nachgestellt, alle am Diff-Text vorbei.
+- **Gleichnamige Tests:** Zwei `describe`-Blöcke teilen sich einen Test-Namen, git richtet den behaltenen Kopf am toten aus, und eine Assertion des weiterlebenden Tests rutscht durch.
+- **`++ x` als Dateikopf:** Die Inhaltszeile `++ x` erscheint im Diff als `+++ x` und schaltet die Datei um.
+- **Ankündigung ohne Grund:** `diff-scan` nimmt sie an.
+- **Verschobener Test:** Er gilt in einer anderen Datei als gelöscht.
+
+Dazu Kevins Entscheidung: nur die committete Ankündigung zählt. Neu:
+- `diff-scan` liest die Ankündigung aus `HEAD:<ledger>`.
+- `---`/`+++` sind nur Kopf zwischen `diff --git` und dem ersten `@@`.
+- Gelöschte Assertions gehen als Datensätze an eine Prüfung am Inhalt: Grund Pflicht; Name im alten Stand genau einmal; im neuen Stand weg; keine Datei des Diffs bekommt einen Kopf dieses Namens dazu; die alte Zeilennummer der Assertion liegt im alten Rumpf des Tests.
+- Bei einem Fund nennt die Meldung, warum eine Ankündigung nicht zählte.
+
+Tests: je ein Fall pro Umgehung, dazu „nur im Arbeitsbaum angekündigt“ und „gleichnamiger Test, der schon anderswo stand“ (Ankündigung bleibt gültig). Gegenprobe: dieselben Tests gegen `review.sh` von ab184f01 ⇒ 7 rot, fünf davon mit rc 0, also echte Umgehungen.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: tasks/README.md · AUTONOMOUS.md · DEVELOPMENT.md

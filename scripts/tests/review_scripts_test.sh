@@ -348,6 +348,14 @@ Test-Löschung: apps/server/tests/test_del.py::test_alive — angekündigt, aber
 ### T4 — go, vitest and rust  [ ]
 Komponente: scripts · Dateien: scripts/dev/tool.sh
 Test-Löschung: apps/agent/x_test.go::TestDead — tot; apps/web/src/x.test.ts::adds up — tot; apps/desktop/src-tauri/tests/x.rs::dead — tot; apps/desktop/src-tauri/tests/x.rs::helper — kein Test
+
+### T5 — declared without a reason  [ ]
+Komponente: server · Dateien: apps/server/tests/test_del.py
+Test-Löschung: apps/server/tests/test_del.py::test_dead
+
+### T6 — a name that two describe blocks share  [ ]
+Komponente: web · Dateien: apps/web/src/parse.test.ts
+Test-Löschung: apps/web/src/parse.test.ts::rejects empty input — the legacy parser is gone
 MD
 git -C "$FIX" add -A && git -C "$FIX" commit -qm "deletion ledger"
 
@@ -528,6 +536,88 @@ r diff-scan --staged --task tasks/del.md T4
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
   || bad "unknown task: rc=$rc out=$OUT"
+
+# ── the attacks of the adversarial review (2026-09-25), each once reproduced ──
+# Two describe blocks share a test name. git may align the KEPT head with the
+# dead one, and an assertion of the surviving test would ride on the
+# declaration. The name is ambiguous in the old file, so the declaration counts
+# for nothing.
+TS_TWO='describe("parse", () => {
+  it("rejects empty input", () => {
+    expect(parse("")).toBeNull();
+    expect(parse(" ")).toBeNull();
+  });
+});
+
+describe("legacy", () => {
+  it("rejects empty input", () => {
+    expect(parse("")).toBeNull();
+  });
+});
+'
+# git keeps the first head and its first expect and reports the rest as ONE
+# deleted block that starts with the kept test's head — the old diff-text rule
+# let `expect(parse(" "))` of the surviving test through (reproduced 2026-09-25).
+base apps/web/src/parse.test.ts "$TS_TWO"
+printf 'describe("parse", () => {\n  it("rejects empty input", () => {\n    expect(parse("")).toBeNull();\n  });\n});\n' \
+  > "$FIX/apps/web/src/parse.test.ts"; stage apps/web/src/parse.test.ts
+r diff-scan --staged --task tasks/del.md T6
+[ $rc -eq 3 ] && grep -q 'expect(parse(" ")).toBeNull()' <<<"$OUT" && grep -q "2 tests of that name in the old file" <<<"$OUT" \
+  && ok "a name two describe blocks share: the declaration counts for nothing" || bad "shared name: rc=$rc out=$OUT"
+# A content line `++ junk` reads `+++ junk` in the diff; taken for a file header
+# it switched files and hid the head that comes back.
+PY_JUNK='def test_alive():
+    assert 1 == 1
+
+
+X = """
+++ junk
+"""
+
+
+def test_dead(tmp_path):
+    x = 1
+'
+# The junk line sits right before the head that comes back, in the same hunk:
+# the old header rule switched files there and filed the head under "junk".
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_JUNK" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert helper() == 2" <<<"$OUT" \
+  && ok "a content line that looks like a +++ header switches no file" || bad "+++ in content: rc=$rc out=$OUT"
+# The reason is mandatory, and diff-scan holds to it, not only the lint.
+drop_dead; r diff-scan --staged --task tasks/del.md T5
+[ $rc -eq 3 ] && grep -q "without a reason ignored" <<<"$OUT" \
+  && ok "a declaration without a reason counts for nothing" || bad "no reason: rc=$rc out=$OUT"
+# Written into the working-tree ledger only, the declaration does not count:
+# the builder cannot grant itself the exception in the same run.
+drop_dead
+awk -v add='Test-Löschung: apps/server/tests/test_del.py::test_dead — selbst eingetragen' \
+  '{print} /^### T2 /{getline; print; print add}' "$FIX/tasks/del.md" > "$FIX/tasks/del.md.new" \
+  && mv "$FIX/tasks/del.md.new" "$FIX/tasks/del.md"
+grep -q "selbst eingetragen" "$FIX/tasks/del.md" || bad "fixture: the working-tree declaration was not written"
+r diff-scan --staged --task tasks/del.md T2
+[ $rc -eq 3 ] && grep -q "removed assertion" <<<"$OUT" \
+  && ok "a declaration only in the working-tree ledger does not count" || bad "uncommitted declaration: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/del.md
+# A test that moves to another file is not a test that goes.
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"
+printf 'def test_dead():\n    x = helper()\n' > "$FIX/apps/server/tests/test_moved.py"
+stage apps/server/tests/test_del.py apps/server/tests/test_moved.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "appears in apps/server/tests/test_moved.py" <<<"$OUT" \
+  && ok "a test that moves to another file is not declared away" || bad "moved test: rc=$rc out=$OUT"
+# ... but a test of the same name that was ALREADY in another file is a
+# different test: the declaration stands.
+base apps/server/tests/test_other.py 'def test_dead():
+    assert other() == 3
+'
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "declared test deletion(s): apps/server/tests/test_del.py::test_dead" <<<"$OUT" \
+  && ok "an unrelated test of the same name elsewhere does not block the declaration" || bad "same name elsewhere: rc=$rc out=$OUT"
 r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index

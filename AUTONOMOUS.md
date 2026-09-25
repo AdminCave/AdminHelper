@@ -27,8 +27,9 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 4. **Granulare Commits = einfache Recovery.** Ein Commit pro Task auf einem Feature-Branch,
    geschrieben von [`scripts/dev/task-close.sh`](scripts/dev/task-close.sh) — nicht von der
    Session. Geht etwas schief: `git revert <commit>` statt Handarbeit. Ein abgeschalteter Test
-   hält den Commit auf (`review.sh diff-scan`); ein ganzer Test darf nur mit totem Code gehen,
-   wenn die Task ihn als `Test-Löschung:` ankündigt ([`tasks/README.md`](tasks/README.md)).
+   hält den Commit auf (`review.sh diff-scan`); ein ganzer Test darf nur gehen (toter Code oder
+   ein genauerer Ersatz), wenn die Task ihn schon **committet** als `Test-Löschung:` ankündigt
+   ([`tasks/README.md`](tasks/README.md)).
 5. **Test-Tiering.** Schnelle Suiten laufen nach jeder Task; die schwere VM-Suite erst
    am Ende, einmal.
 

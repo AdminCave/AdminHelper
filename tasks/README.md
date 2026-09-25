@@ -79,14 +79,26 @@ Test-Löschung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
 Ein `;` trennt nur vor dem nächsten `<datei>::`, im Grund darf es also stehen.
 `<test>` ist der Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die
 Beschreibung aus `it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[test]` (Rust).
-Übergangen wird eine gelöschte Assertion nur, wenn **beides** gilt: Der Kopf des Tests steht
-im selben zusammenhängenden Block gelöschter Zeilen, der ganze Test geht also mit. Und
-`<datei>::<test>` ist angekündigt. Eine Assertion aus einem Test, der stehen bleibt, bleibt ein
-Fund, angekündigt oder nicht. Stehen bleibt ein Test auch, wenn der Diff einen Kopf gleichen
-Namens in derselben Datei wieder hinzufügt; ein Ersatztest trägt deshalb einen eigenen Namen.
-Zum Test gehört nur, was unter seinem Kopf tiefer eingerückt ist: Die nächste gelöschte Zeile,
-die nicht tiefer steht (die nächste Funktion, das schließende `}`), beendet ihn. Der Lauf nennt,
-was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`).
+Übergangen wird eine gelöschte Assertion nur, wenn **alles** gilt, geprüft am Inhalt der
+Dateien, nicht am Diff-Text:
+
+1. **Die Ankündigung ist committet.** `diff-scan` liest sie aus dem Ledger in `HEAD`, nicht aus
+   dem Arbeitsbaum. Sie kommt typischerweise mit dem Plan-Commit am Gate, den Kevin liest. Wer
+   unterwegs merkt, dass ein Test gehen muss, setzt `[?]` und fragt; eine Ankündigung, die im
+   selben Lauf entsteht, zählt nicht.
+2. **Sie trägt einen Grund.** Ohne `— <Grund>` zählt sie nicht, auch in `diff-scan`.
+3. **Der Name ist eindeutig.** Im alten Stand der Datei gibt es genau einen Test dieses
+   Namens. Teilen sich zwei `describe`-Blöcke einen Namen, kann das Gate sie nicht
+   auseinanderhalten, und die Ankündigung zählt nicht; umbenennen, dann löschen.
+4. **Der Test ist wirklich weg.** Im neuen Stand der Datei steht kein Kopf dieses Namens
+   mehr, und keine andere Datei des Diffs bekommt einen dazu: Ein Test, der wandert, geht
+   nicht. Ein Ersatztest trägt einen eigenen Namen.
+5. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
+   angekündigten Tests im alten Stand. Eine Assertion aus einem Test, der stehen bleibt,
+   bleibt ein Fund, angekündigt oder nicht.
+
+Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`),
+und bei einem Fund, warum eine Ankündigung nicht zählte.
 
 **Passt:** toter Code geht samt seinem Test; ein Test wird durch einen genaueren ersetzt, der
 im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das ist ein Befund

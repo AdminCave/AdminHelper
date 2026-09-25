@@ -103,8 +103,11 @@ changed_paths() { git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only; }
 
 case "$VERB" in
   diff-scan)
-    # The tests the task declares as deleted, one <file>::<test> per line. Only
-    # with --task: a call by hand has no task to speak for it and stays strict.
+    # The tests the task declares as deleted — read from the COMMITTED ledger
+    # (HEAD), never from the working tree: a builder must not be able to grant
+    # itself the exception in the same run (Kevin, 2026-09-25). The declaration
+    # typically arrives with the plan commit at the gate. Only with --task: a
+    # call by hand has no task to speak for it and stays strict.
     DECL=""
     if [ -n "$TASK_LEDGER" ]; then
       case "$TASK_ID" in ""|*[!A-Za-z0-9._-]*) die "not a task id: $TASK_ID" ;; esac
@@ -113,44 +116,24 @@ case "$VERB" in
       [ -f "$TASK_LEDGER" ] || die "no such ledger: $TASK_LEDGER"
       grep -qE "^###[[:space:]]+$TASK_ID([[:space:]]|\$)" "$TASK_LEDGER" \
         || die "no task $TASK_ID in $TASK_LEDGER"
-      # Entries split at a ; before the next <file>:: only: a reason may have one.
-      DECL="$(task_field "$TASK_LEDGER" "$TASK_ID" "Test-Löschung" \
-        | sed -E 's/;[[:space:]]*([^[:space:];:]+::)/\n\1/g' \
-        | sed 's/[[:space:]]*—.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')"
+      COMMITTED="$(mktemp)" || die "mktemp failed"
+      if git show "HEAD:$TASK_LEDGER" > "$COMMITTED" 2>/dev/null; then
+        DECL="$(task_field "$COMMITTED" "$TASK_ID" "Test-Löschung")"
+      fi
+      rm -f "$COMMITTED"
     fi
     # -U0: only what this diff actually adds or removes. Context lines would
     # convict a `|| true` that has been standing there for two years.
     # The patterns arrive as one \x1f-separated string: an awk -v value cannot
     # carry an array, and each of them is a fixed string, not a regex.
-    # A run of deleted lines is one block; the test head last deleted in it
-    # (pytest def test_…, Go func Test…, it(/test( in vitest/jest, a Rust fn
-    # after a deleted #[test]) is what an assertion further down belongs to,
-    # until a deleted line no deeper than the head (the next def or fn, the
-    # closing }) ends that test. A declared deletion only counts at the end:
-    # a head of the same name added anywhere in the file means the test stays.
-    FOUND="$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | DECL="$DECL" awk -v PAT="$SKIP_PATTERNS" '
-      BEGIN {
-        n = split(ENVIRON["DECL"], d, "\n")
-        for (i = 1; i <= n; i++) if (d[i] != "") declared[d[i]] = 1
-      }
+    # `---`/`+++` are file headers only between `diff --git` and the first `@@`
+    # of that file: inside a hunk the same characters are content (`++ x` added
+    # reads `+++ x`), and taking them for a header let a later line switch files.
+    # A removed assertion is not judged here: it leaves as an RA record, and the
+    # check below decides against the file CONTENTS whether a declared test
+    # covers it.
+    RAW="$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | awk -v PAT="$SKIP_PATTERNS" '
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-      # anyfn: every Rust fn counts, for heads the diff adds back.
-      function test_head(s, anyfn,   q, rest, k) {
-        if (match(s, /^[ \t]*(async[ \t]+)?def[ \t]+test[A-Za-z0-9_]*/)) {
-          s = substr(s, RSTART, RLENGTH); sub(/^.*def[ \t]+/, "", s); return s
-        }
-        if (match(s, /^func[ \t]+Test[A-Za-z0-9_]*/)) {
-          s = substr(s, RSTART, RLENGTH); sub(/^func[ \t]+/, "", s); return s
-        }
-        if (match(s, /^[ \t]*(it|test)[ \t]*\([ \t]*["\047`]/)) {
-          q = substr(s, RSTART + RLENGTH - 1, 1); rest = substr(s, RSTART + RLENGTH)
-          k = index(rest, q); if (k > 0) return substr(rest, 1, k - 1)
-        }
-        if ((rust_test || anyfn) && match(s, /^[ \t]*(pub[ \t]+)?(async[ \t]+)?fn[ \t]+[A-Za-z0-9_]+/)) {
-          s = substr(s, RSTART, RLENGTH); sub(/^.*fn[ \t]+/, "", s); return s
-        }
-        return ""
-      }
       # Where a comment starts, or 0. Only a marker at the start of the line or
       # after whitespace counts, so the // in an https:// URL is not a comment.
       function comment_at(s,   c, c2) {
@@ -159,45 +142,31 @@ case "$VERB" in
         if (match(s, /(^|[ \t])\/\//)) { c2 = RSTART + RLENGTH - 2; if (!c || c2 < c) c = c2 }
         return c
       }
-      /^--- /         { inblock = 0; oldfile = substr($0, 5); sub(/^a\//, "", oldfile); next }
-      /^\+\+\+ /      {
-                        inblock = 0
+      /^diff --git /  { inheader = 1; next }
+      inheader && /^--- / { oldfile = substr($0, 5); sub(/^a\//, "", oldfile); next }
+      inheader && /^\+\+\+ / {
                         file = substr($0, 5)
                         # A deletion has +++ /dev/null; the path is on the --- side.
                         if (file == "/dev/null") file = oldfile; else sub(/^b\//, "", file)
                         next
                       }
       /^@@/           {
-                        inblock = 0
+                        inheader = 0
                         split($2, o, ","); split($3, nw, ",")
                         oldno = o[1]; sub(/^-/, "", oldno); oldno += 0
                         newno = nw[1]; sub(/^\+/, "", newno); newno += 0
                         next
                       }
-      /^-/ && !/^---/ {
+      inheader        { next }
+      /^-/            {
                         line = substr($0, 2)
-                        if (!inblock) { inblock = 1; head = ""; rust_test = 0 }
-                        # -1 for a blank line. Only the ) that closes a
-                        # multi-line signature stands as deep as the head
-                        # and still belongs to it.
-                        ind = match(line, /[^ \t]/) - 1
-                        if (head != "" && ind >= 0 && ind <= headind && line !~ /^[ \t]*\)/) head = ""
-                        if (match(line, /^[ \t]*#\[([a-z_]+::)?test\]/)) rust_test = 1
-                        h = test_head(line, 0)
-                        if (h != "") { head = h; headind = ind; rust_test = 0 }
                         if (line !~ /review: ok/ &&
                             (line ~ /(^|[^A-Za-z_.])assert([^A-Za-z_]|$)/ || line ~ /expect\(/))
-                          if (head != "" && ((file "::" head) in declared)) {
-                            np++; pkey[np] = file "::" head
-                            pmsg[np] = sprintf("%s:%d  removed assertion: %s", file, oldno, trim(line))
-                          } else printf "%s:%d  removed assertion: %s\n", file, oldno, trim(line)
+                          printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {
-                        inblock = 0
                         line = substr($0, 2)
-                        h = test_head(line, 1)
-                        if (h != "") added[file "::" h] = 1
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
                           cnt = split(PAT, pat, "\x1f")
@@ -216,21 +185,139 @@ case "$VERB" in
                         }
                         newno++; next
                       }
-                      { inblock = 0; oldno++; newno++ }
-      END {
-        for (i = 1; i <= np; i++)
-          if (pkey[i] in added) printf "%s  (declared, but the diff adds its head again)\n", pmsg[i]
-          else gone[pkey[i]] = 1
-        for (k in gone) printf "DECLARED\t%s\n", k
-      }
+                      { oldno++; newno++ }
     ')" || die "could not read the diff"
+    # The removed assertions, judged against contents. A declared test counts
+    # only if (1) the entry carries a reason, (2) its name is a test head exactly
+    # ONCE in the old version of its file — two tests of the same name (two
+    # describe blocks) cannot be told apart, and git may align the kept head
+    # with the dead one —, (3) no head of that name is left in the new version of
+    # the file, and (4) no file of the diff gains a head of that name (a test
+    # that moves is not a test that goes). An assertion passes only when its OLD
+    # line number lies inside the old span of such a test.
+    FOUND="$(printf '%s\n' "$RAW" | DECL="$DECL" STAGED="$STAGED" python3 -c '
+import os, re, subprocess, sys
+
+staged = os.environ.get("STAGED") == "1"
+lines = [l for l in sys.stdin.read().split("\n") if l]
+ras = [l.split("\t", 3)[1:] for l in lines if l.startswith("RA\t")]
+out = [l for l in lines if not l.startswith("RA\t")]
+
+def git(*a):
+    r = subprocess.run(("git",) + a, capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+def old_text(path):   # the side the diff removes from
+    return git("show", ("HEAD:" if staged else ":") + path) or ""
+
+def new_text(path):   # the side the diff arrives at
+    if staged:
+        return git("show", ":" + path) or ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+PY = re.compile(r"^(\s*)(?:async\s+)?def\s+(test\w*)\s*\(")
+GO = re.compile(r"^()func\s+(Test\w*)\s*\(")
+JS = re.compile(r"^(\s*)(?:it|test)(?:\.only|\.skip)?\s*\(\s*([\x27\x22`])(.*?)\2")
+RS = re.compile(r"^(\s*)(?:pub\s+)?(?:async\s+)?fn\s+(\w+)")
+RS_ATTR = re.compile(r"^\s*#\[(?:[a-z_]+::)?test\]")
+
+def heads(path, text):
+    """[(name, first_line, last_line, indent)] of the test heads in text, 1-based."""
+    src = text.split("\n")
+    found = []
+    for i, s in enumerate(src):
+        name = ind = None
+        if path.endswith(".py"):
+            m = PY.match(s)
+            if m: ind, name = len(m.group(1)), m.group(2)
+        elif path.endswith(".go"):
+            m = GO.match(s)
+            if m: ind, name = 0, m.group(2)
+        elif re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path):
+            m = JS.match(s)
+            if m: ind, name = len(m.group(1)), m.group(3)
+        elif path.endswith(".rs"):
+            m = RS.match(s)
+            if m:
+                j = i - 1
+                attr = False
+                while j >= 0 and src[j].strip().startswith("#["):
+                    if RS_ATTR.match(src[j]): attr = True
+                    j -= 1
+                if attr: ind, name = len(m.group(1)), m.group(2)
+        if name is None:
+            continue
+        end = len(src)
+        for k in range(i + 1, len(src)):
+            t = src[k]
+            if not t.strip():
+                continue
+            k_ind = len(t) - len(t.lstrip())
+            if k_ind <= ind:
+                # the ) of a multi-line signature, or the closing brace of the
+                # test, still belongs to it; anything else at its depth ends it
+                if t.lstrip().startswith((")", "}")):
+                    if t.lstrip().startswith(")") and path.endswith(".py"):
+                        continue
+                    end = k + 1
+                else:
+                    end = k
+                break
+        found.append((name, i + 1, end, ind))
+    return found
+
+changed = (git("diff", *(["--staged"] if staged else []), "--name-only") or "").split()
+
+entries, notes = {}, {}
+decl = os.environ.get("DECL", "")
+for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
+    part = part.strip()
+    if not part:
+        continue
+    m = re.match(r"^([^\s:]+)::(.+?)\s+—\s+\S", part)
+    if not m:
+        notes.setdefault(part.split("::")[0], []).append("declaration without a reason ignored: " + part)
+        continue
+    path, name = m.group(1), m.group(2).strip()
+    old = [h for h in heads(path, old_text(path)) if h[0] == name]
+    new = [h for h in heads(path, new_text(path)) if h[0] == name]
+    moved = [f for f in changed if f != path and
+             len([h for h in heads(f, new_text(f)) if h[0] == name]) >
+             len([h for h in heads(f, old_text(f)) if h[0] == name])]
+    if len(old) != 1:
+        notes.setdefault(path, []).append(f"declared {path}::{name} ignored: {len(old)} tests of that name in the old file")
+    elif new:
+        notes.setdefault(path, []).append(f"declared {path}::{name} ignored: its head is still there — the diff adds its head again or never removed it")
+    elif moved:
+        notes.setdefault(path, []).append(f"declared {path}::{name} ignored: a test of that name appears in {moved[0]}")
+    else:
+        entries[(path, name)] = (old[0][1], old[0][2])
+
+used = set()
+for path, oldno, text in ras:
+    n = int(oldno)
+    hit = [k for k, (a, b) in entries.items() if k[0] == path and a <= n <= b]
+    if hit:
+        used.add(hit[0])
+    else:
+        why = "; ".join(notes.get(path, []))
+        out.append(f"{path}:{oldno}  removed assertion: {text}" + (f"  ({why})" if why else ""))
+for k in sorted(used):
+    out.append(f"DECLARED\t{k[0]}::{k[1]}")
+print("\n".join(out))
+')" || die "could not judge the removed assertions"
     GONE="$(printf '%s\n' "$FOUND" | sed -n 's/^DECLARED\t//p' | sort)"
     FOUND="$(printf '%s\n' "$FOUND" | grep -v '^DECLARED' | grep -v '^$')"
     if [ -n "$FOUND" ]; then
       echo "review.sh diff-scan: the diff changes what a green run means" >&2
       printf '%s\n' "$FOUND" >&2
       echo "  (deliberate? append '# review: ok <reason>' to the line; a whole test that" >&2
-      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task)" >&2
+      echo "   goes with dead code: 'Test-Löschung: <file>::<test> — <reason>' in the task," >&2
+      echo "   committed before the deletion — the working-tree ledger does not count)" >&2
       exit 3
     fi
     if [ -n "$GONE" ]; then
