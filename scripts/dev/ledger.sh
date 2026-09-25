@@ -329,7 +329,7 @@ case "$CMD" in
       /^Heavy:/ && !seen { seen = 1; heavy = $0; sub(/^Heavy:[ \t]*/, "", heavy) }
       # The old fields as fields: at the start of a line, or after the · of a
       # combined head line — not the word inside some other line.
-      /^Fast-Suite:/ || /^Warm-Profil:/ || /·[ \t]*Warm-Profil:/ { old = 1 }
+      /^Fast-Suite:/ || /^Warm-Profil:/ || /·[ \t]*(Fast-Suite|Warm-Profil):/ { old = 1 }
       END {
         if (!seen) exit
         n = split(heavy, w, /[ \t]+/); kw = (n > 0) ? w[1] : ""
@@ -354,8 +354,10 @@ case "$CMD" in
       }
       /^Dedup-Key:/ {
         v = value("Dedup-Key")
-        if (v !~ /^[^:]+:[^:]+:[^:]+:[^:]+$/)
-          printf "line %d: Dedup-Key: \047%s\047 is not <klasse>:<komponente>:<datei>:<symbol>\n", NR, v
+        # The keys of the roadmap: the full <klasse>:<komponente>:<datei>:<symbol>, and
+        # the short ones heavy.sh files (reg:<step>, rel:deps-audit) that --kurz copies.
+        if (v !~ /^(sec|reg|rel|bug|feat|ref|idee):.+$/)
+          printf "line %d: Dedup-Key: \047%s\047 is not <klasse>:<rest> (klasse sec|reg|rel|bug|feat|ref|idee)\n", NR, v
       }
       /^HEAD:/ {
         v = value("HEAD")

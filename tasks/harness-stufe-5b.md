@@ -173,8 +173,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: docs/developer/cicd.html · docs/en/developer/cicd.html · tasks/README.md
 Abhängt von: T10
 
-### T12 — `Dedup-Key:`-Lint nimmt die Schlüssel der Roadmap an  [ ]
+### T12 — `Dedup-Key:`-Lint nimmt die Schlüssel der Roadmap an  [x]
 Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @7e54ad10 2026-09-25T16:54:58+02:00
+Review: approve (sonnet)
 Änderung: Funde (3) und (9) des Branch-Reviews, Auftrag der Aufsicht 2026-09-25:
 - (3) Der Lint verlangte bei `Dedup-Key:` genau vier Teile. Die Roadmap trägt aber auch kurze Schlüssel aus `heavy.sh` (`reg:<schritt>`, `rel:deps-audit`), und `--kurz` übernimmt den Schlüssel aus der Zeile. Das erste `--kurz` auf einer REG-Zeile hätte `ledger_test` rot gemacht, weil es alle echten Ledger lintet. Ein Rust-Symbol `a::b` scheiterte ebenfalls. Künftig gilt: ein Token `<klasse>:<rest>` ohne Leerzeichen, `<klasse>` in Kleinbuchstaben.
 - Tests: `reg:web-vitest` und ein Schlüssel mit `::` sind gültig (die bisherige Erwartung „Fehler“ dreht sich um), ohne Klasse, mit leerem Rest oder mit Leerzeichen ist es ein Fehler.

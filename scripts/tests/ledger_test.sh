@@ -304,6 +304,13 @@ l lint fixture
 with_head "Heavy: none; kein Pfad berührt"
 l lint fixture
 [ $rc -eq 0 ] && ok "Heavy: none; … is none" || bad "none;: rc=$rc out=$OUT"
+# An old field can also sit behind a · in a combined head line.
+for old in "Commit-Granularität: pro Task · Fast-Suite: vm" "Modell: Opus · Warm-Profil: desktop"; do
+  with_head "$old" "Heavy: none"
+  l lint fixture
+  [ $rc -eq 1 ] && grep -q "beside Fast-Suite:/Warm-Profil:" <<<"$OUT" \
+    && ok "an old field behind a · beside Heavy: is an error (${old##* · })" || bad "$old: rc=$rc out=$OUT"
+done
 
 # The proof fields (tasks/README.md, Beweis-Konvention): optional, but where a
 # task carries one, its form is checked.
@@ -313,15 +320,18 @@ with_task_line() {  # with_task_line <line> — the clean fixture, T2 carrying t
   L_VAL="$1" awk '/^### T2 /{print; print ENVIRON["L_VAL"]; next} {print}' "$FIX" > "$FIX.new" && mv "$FIX.new" "$FIX"
 }
 for line in "Orakel: property" "Orakel: mutation-sample — zwei Mutanten, beide gefangen" \
-            "Dedup-Key: ref:web:src/a.ts:helper" "HEAD: 1a2b3c4" \
+            "Dedup-Key: ref:web:src/a.ts:helper" "Dedup-Key: reg:web-vitest" \
+            "Dedup-Key: bug:desktop:src/a.rs:tunnel::open" "HEAD: 1a2b3c4" \
             "HEAD: 0123456789abcdef0123456789abcdef01234567" \
             "Beweis: feature/x@1a2b3c4 · bash scripts/dev/verify.sh server --strict → 1 failed"; do
   with_task_line "$line"
   l lint fixture
   [ $rc -eq 0 ] && ok "valid: $line" || bad "$line: rc=$rc out=$OUT"
 done
-for case in "Orakel: gefühl|Orakel: 'gefühl' is not" "Dedup-Key: reg:web-vitest|Dedup-Key: 'reg:web-vitest' is not" \
-            "Dedup-Key: a:b:c:d:e|Dedup-Key: 'a:b:c:d:e' is not" "HEAD: main|HEAD: 'main' is not a commit SHA"; do
+for case in "Orakel: gefühl|Orakel: 'gefühl' is not" "Dedup-Key: web-vitest|Dedup-Key: 'web-vitest' is not" \
+            "Dedup-Key: reg:|Dedup-Key: 'reg:' is not" "Dedup-Key: reg: web|Dedup-Key: 'reg:' is not" \
+            "Dedup-Key: fix:web:a.ts:f|Dedup-Key: 'fix:web:a.ts:f' is not" \
+            "HEAD: main|HEAD: 'main' is not a commit SHA"; do
   with_task_line "${case%%|*}"
   l lint fixture
   [ $rc -eq 1 ] && grep -qF "${case#*|}" <<<"$OUT" && ok "an error: ${case%%|*}" || bad "${case%%|*}: rc=$rc out=$OUT"

@@ -159,7 +159,7 @@ Die Zeilen stehen im Task-Block, jede optional, jede nur, wenn sie etwas trägt:
 | `Beweis:` | Branch + SHA + Kommando + erwartete Ausgabe | — |
 | `Orakel:` | `crash`, `contract`, `property`, `differential`, `mutation-sample`, `coverage`, `analyzer` oder `metric`; danach nach ` — ` eine Erläuterung | Wert aus der Liste |
 | `Refuter:` | wer oder was den Fund zu widerlegen versuchte, mit welchem Ergebnis | — |
-| `Dedup-Key:` | `<klasse>:<komponente>:<datei>:<symbol>`, ein Token ohne Leerzeichen — derselbe Schlüssel wie in der Roadmap; `sec:`-Schlüssel stehen nie im öffentlichen Repo (`review.sh sec` blockiert sie) | genau drei `:` |
+| `Dedup-Key:` | derselbe Schlüssel wie in der Roadmap, ein Token ohne Leerzeichen: voll `<klasse>:<komponente>:<datei>:<symbol>` (daraus liest `roadmap.py next` die Komponente) oder kurz wie die Wochenlauf-Zeilen (`reg:<schritt>`, `rel:deps-audit`); `sec:`-Schlüssel stehen nie im öffentlichen Repo (`review.sh sec` blockiert sie) | `<klasse>:<rest>`, `<klasse>` eine der Klassen in Kleinbuchstaben |
 | `Metrik:` | Klasse B: vorher → nachher, mit Werkzeug und Version; Klasse C: die gelöschten Zeilen oder Dateien | — |
 | `Kosten:` | was der Beweis gekostet hat (Zeit, Läufe, Tokens) | — |
 | `HEAD:` | der Commit, auf dem der Beweis galt | ein SHA (7–40 Hex-Zeichen) |
