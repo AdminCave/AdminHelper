@@ -205,8 +205,11 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           </table>
           <p><code>ledger.sh lint</code> checks the form; <code>ledger_test.sh</code> runs it across all real
           ledgers, in the <code>scripts</code> suite and in the CI job <code>ops-scripts</code>. The reviewer checks
-          the content. <code>scripts/tests/skill_consistency_test.sh</code> keeps the skill and harness texts in line
-          with this convention and with the status sequence.</p>
+          the content. <code>scripts/tests/skill_consistency_test.sh</code> does not check the proof lines themselves;
+          it keeps the skill and harness texts in line with each other: the status sequence, the plan committed on the
+          feature branch rather than on <code>main</code>, <code>Heavy:</code> in the head template, and the ledger
+          path and PR number in their roadmap columns (<code>status --ledger</code>, <code>--pr</code>) rather than
+          in the note.</p>
 
           <h2>Parity and contract gates</h2>
           <p>Two classes of defect need no VM to be found: &ldquo;the copy drifts&rdquo; (the same truth lives in

@@ -208,8 +208,10 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           </table>
           <p>Die Form pr&uuml;ft <code>ledger.sh lint</code>; <code>ledger_test.sh</code> f&auml;hrt es &uuml;ber alle
           echten Ledger, in der <code>scripts</code>-Suite und im CI-Job <code>ops-scripts</code>. Den Inhalt pr&uuml;ft
-          der Reviewer. Dass die Skill- und Harness-Texte zu dieser Konvention und zur Status-Folge passen, h&auml;lt
-          <code>scripts/tests/skill_consistency_test.sh</code> fest.</p>
+          der Reviewer. Die Beweis-Zeilen selbst pr&uuml;ft <code>scripts/tests/skill_consistency_test.sh</code> nicht; er
+          h&auml;lt fest, dass die Skill- und Harness-Texte zueinander passen: die Status-Folge, der Plan-Commit auf dem
+          Feature-Branch statt auf <code>main</code>, <code>Heavy:</code> in der Kopf-Vorlage, und Ledger-Pfad und
+          PR-Nummer in ihren Roadmap-Spalten (<code>status --ledger</code>, <code>--pr</code>) statt in der Notiz.</p>
 
           <h2>Parit&auml;ts- und Contract-Gates</h2>
           <p>Zwei Fehlerklassen brauchen keine VM, um gefunden zu werden: &bdquo;Kopie driftet&ldquo; (dieselbe

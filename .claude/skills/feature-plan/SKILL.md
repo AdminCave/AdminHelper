@@ -68,13 +68,15 @@ Slug = kurz, kebab-case. Abschnitte:
 ```
 # <Feature> — Task-Ledger
 Status: geplant · Branch: feature/<slug> · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
-Spec: docs/features/<slug>.md
+Spec: docs/features/<slug>.md (Roadmap R-nnnn)
 Heavy: none — <warum keine schwere Suite>
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 ```
 (`Spec:` = Rück-Link zur Soll-Vorgabe, die `feature-build`/`feature-review` als Referenz
-nutzen; bei einem Report-Backlog zeigt das Feld auf den Report statt auf eine Spec.)
+nutzen; bei einem Report-Backlog zeigt das Feld auf den Report statt auf eine Spec. Die
+Roadmap-ID dahinter ist die Zeile, die das Gate anlegt (4) und der `feature-build` den Status
+nachzieht — ohne sie bleibt die Zeile über Bau und PR hinweg stehen.)
 (`Status:` = Ledger-Zustand in der Folge `geplant` → `freigegeben` → `aktiv` → `bereit` →
 `erledigt`, daneben `blockiert` (tasks/README.md). `feature-plan` schreibt `geplant`; Kevins
 Freigabe am Gate macht daraus `freigegeben`, der Start von `/feature-build` `aktiv`. Nicht mit
@@ -143,8 +145,10 @@ Abhängt von: T<k>   (nur falls nötig)
 - **Pflicht: `Semantik:`** — die Stelle unter `docs/`, die das gewollte Verhalten beschreibt,
   mit Datei und wörtlichem Zitat (vorher lesen, nicht erinnern). Beschreibt die Doku das
   heutige Verhalten als Absicht, ist es kein Fehler: dann kein Fix-Task, sondern eine offene
-  Frage an Kevin. Es entsteht kein Ledger und kein Plan-Branch, die Zeile bleibt `neu`, und die
-  Frage geht in seine Triage (`/roadmap`). Erst seine Antwort macht wieder einen Plan daraus.
+  Frage an Kevin. Es entsteht kein Ledger und kein Plan-Branch; die Zeile behält ihren Status,
+  und die Frage geht mit `roadmap.py status R-nnnn <status> --note "Semantik-Frage: …"` in seine
+  Triage (`/roadmap`) — derselbe Status, nur die Notiz. Erst seine Antwort macht wieder einen
+  Plan daraus.
   Findet sich keine Stelle, steht `Semantik: keine Stelle in docs/ — <was gesucht wurde>`, und
   die Lücke gehört in die offenen Fragen am Gate.
 
@@ -180,13 +184,16 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
   committen (Ledger mit `Status: geplant`), zurück mit `git switch main` — der Haupt-Checkout
   bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei
-  `--kurz` ohne Spec `chore(plan): add ledger for <slug>`. Worktrees und der Worker sehen nur
-  Committetes, und `lane.sh new` sucht den Plan genau dort.
+  `--kurz` und `--bundle` ohne Spec `chore(plan): add ledger for <slug>`. Worktrees und der
+  Worker sehen nur Committetes, und `lane.sh new` sucht den Plan genau dort.
 - Präsentiere im Chat: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify),
   und **alle offenen Fragen** klar herausgestellt.
 - **Parallel-Tauglichkeit prüfen — gegen alle `aktiv`- und `freigegeben`-Zeilen:**
   `roadmap.py show` listet sie („In Arbeit", „Geplant"), dazu `bash scripts/dev/lane.sh list`.
-  Für jede Zeile ihr Ledger lesen und prüfen, ob dieses Vorhaben disjunkt ist: Komponenten
+  Für jede Zeile ihr Ledger lesen — ein geplantes Ledger liegt bis zum Merge nur auf seinem
+  Branch (R-0065): `git show <branch>:tasks/<slug>.md`, den Branch nennen `lane.sh list` oder
+  `git branch --list 'feature/*'`; `next --exclude-components` sieht es dort noch nicht
+  (R-0099) — und prüfen, ob dieses Vorhaben disjunkt ist: Komponenten
   (die `Komponente:`-Zeilen beider Ledger) und geteilte Contract-Dateien (API-Routen/
   Pydantic-Schemas, DB-Migrationen, FRP-Config-Format, Tauri-Commands, `run.sh`/`ci.yml`,
   primäre `docs/`-Seiten). Ergebnis am Gate je Zeile: „parallel-tauglich zu R-nnnn: ja/nein —

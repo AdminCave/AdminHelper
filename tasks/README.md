@@ -40,8 +40,9 @@ Abschluss braucht: keine, den Linux-Stack auf einer Pool-VM (`run.sh integration
 Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first; das
 ersetzt auch die Zeile `Abschluss: multibox <flags>`) oder die Windows-VM. Hinter dem Wert darf nach ` — ` eine Begründung stehen. Für neue Ledger ersetzt
 `Heavy:` die älteren Felder `Fast-Suite:` (lokal | vm) und `Warm-Profil:` (desktop | pond);
-`feature-build`, `lane.sh` und `ledger.sh` lesen diese weiter, solange es Ledger mit ihnen gibt.
-`ledger.sh lint` prüft den Wert und meldet `Heavy:` neben `Fast-Suite:`/`Warm-Profil:` als
+`feature-build` und `ledger.sh` lesen diese weiter, solange es Ledger mit ihnen gibt; `lane.sh`
+nennt `Fast-Suite: vm` nur als Hinweis. Wo eine Lane mit `Heavy:` ihre Schnellsuite fährt, ist
+offen (R-0097). `ledger.sh lint` prüft den Wert und meldet `Heavy:` neben `Fast-Suite:`/`Warm-Profil:` als
 Fehler, denn das wären zwei Antworten auf eine Frage. Ein freier `Heavy:`-Text neben
 `Fast-Suite:` („nein — …", „keine; …") ist die Form der Ledger vor Stufe 5b und bleibt gültig.
 

@@ -158,8 +158,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md
 Abhängt von: T9
 
-### T11 — Skill-Texte nach dem Branch-Review: Roadmap-ID im Kopf, Ledger vom Branch, Semantik-Frage in die Triage  [ ]
+### T11 — Skill-Texte nach dem Branch-Review: Roadmap-ID im Kopf, Ledger vom Branch, Semantik-Frage in die Triage  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, tasks/README.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @caf82265 2026-09-25T16:44:41+02:00
+Review: approve (sonnet; nits: Umbruch nachgezogen)
 Änderung: Funde (2), (5, Gate-Teil), (6), (7), (8) des Branch-Reviews und der falsche Satz in `tasks/README.md:43`, Auftrag der Aufsicht 2026-09-25:
 - (2) Die Kopf-Vorlage des vollen Wegs schreibt `Spec: docs/features/<slug>.md (Roadmap R-nnnn)`. `feature-build` zieht jede ID mit, die der Kopf nennt, auch alle IDs eines Bündels. Bisher erkannte es nur `Spec: Roadmap R-nnnn`, und die Roadmap folgte einem normalen Plan nie.
 - (5) Die Parallel-Prüfung am Gate liest ein Ledger, das nur auf seinem Branch liegt, per `git show <branch>:tasks/<slug>.md`. `next --exclude-components` sieht es noch nicht (R-0099).
