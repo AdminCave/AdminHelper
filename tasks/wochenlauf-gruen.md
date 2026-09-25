@@ -72,9 +72,12 @@ Review: approve (opus, Harness-Pfad; eigene Gegenprobe 166/4 -> 170/0; 2 nits ei
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kommentar an der Schleife ist die Doku)
 
-### T7 — hooks_test.sh: `git check-attr` auf einer Box aus einem Worktree (Fund aus T1)  [?] (Wie soll hooks_test auf einer Worktree-Box die union-Attribut-Pruefung fahren? (a) wie T1 gegen ein Wegwerf-Repo mit Kopie der .gitattributes (Harness-Test, deine Freigabe noetig), (b) N2 an der Wurzel (vm.py sync ersetzt den Worktree-Zeiger), (c) Wochenlauf nur aus dem Haupt-Checkout)
+### T7 — hooks_test.sh: `git check-attr` auf einer Box aus einem Worktree (Fund aus T1)  [x]
 Komponente: scripts · Dateien: scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @2a8dd0ae 2026-09-25T14:54:07+02:00
+Review: approve (opus, Harness-Pfad; nit git init ohne geerbte GIT_* eingearbeitet); Gegenprobe Box-Kopie 170/1 -> 171/0, Mutation rot; Lane-Box scripts (hermetic) gruen
 Änderung: **Fund beim Bau von T1, nicht in der Spec.** Der `scripts`-Block von `run.sh` bricht beim ersten roten Test ab; im Wochenlauf war das `iter_flags_test`, deshalb lief `hooks_test` dort nie. Nach T1 auf der Lane-Box (aus diesem Worktree gesynct, 2026-09-25): `hooks_test: 170 passed, 1 failed`, rot ist genau `git does not see the union attribute` (`git -C "$REPO_ROOT" check-attr merge -- CHANGELOG.md` braucht ein Repo, auf der Box ist `.git` ein toter Zeiger, Spec N2). Die 17 Tests danach laufen dort einzeln alle grün (u. a. `heavy_test: 166 passed`, `lane_test: 59 passed`). Ohne Lösung bleibt `scripts (hermetic)` im Wochenlauf aus einem Worktree rot. `hooks_test.sh` ist ein Harness-Pfad und außerhalb des freigegebenen Scopes.
+Entscheidung: Kevin, 2026-09-25, übermittelt durch die Aufsichts-Session adminhelper-ac: Option (a) auf die Frage „Wie soll hooks_test auf einer Worktree-Box die union-Attribut-Pruefung fahren? (a) wie T1 gegen ein Wegwerf-Repo mit Kopie der .gitattributes (Harness-Test, deine Freigabe noetig), (b) N2 an der Wurzel (vm.py sync ersetzt den Worktree-Zeiger), (c) Wochenlauf nur aus dem Haupt-Checkout“. Umsetzung: ein Wegwerf-`GIT_DIR` über **genau diesem** Arbeitsbaum (`GIT_WORK_TREE=$REPO_ROOT`), exportiert nur um die unveränderte Prüfzeile herum. Abweichung von „Kopie der .gitattributes“: so bleibt die bestehende Assertion wörtlich stehen (Regel oben), und geprüft wird die echte Datei statt einer Kopie. Gegenprobe: eine Box-Kopie (rsync mit `rsync-exclude.txt`, `.git` = `gitdir: /nonexistent`) zeigt vorher `170 passed, 1 failed`, nachher 0 rot.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 

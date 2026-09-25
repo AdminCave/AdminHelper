@@ -631,8 +631,16 @@ echo "── .gitattributes ──"
 # that from being a conflict per PR.
 grep -qE '^/?CHANGELOG\.md[[:space:]]+merge=union$' "$REPO_ROOT/.gitattributes" \
   && ok "CHANGELOG.md is merged with merge=union" || bad "no union merge for CHANGELOG.md"
+# `git check-attr` needs a repository, and a box synced from a worktree has none:
+# its .git points at a path on the dev box. A throwaway git dir over this very
+# work tree answers the same question anywhere — what git makes of the
+# .gitattributes that is here.
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git init -q "$WORK/attr" \
+  || bad "cannot create the throwaway repo for check-attr"
+export GIT_DIR="$WORK/attr/.git" GIT_WORK_TREE="$REPO_ROOT"
 [ "$(git -C "$REPO_ROOT" check-attr merge -- CHANGELOG.md 2>/dev/null)" = "CHANGELOG.md: merge: union" ] \
   && ok "and git actually resolves that attribute" || bad "git does not see the union attribute"
+unset GIT_DIR GIT_WORK_TREE
 
 # ══ the project's own permission lists ═══════════════════════════════════════
 echo "── .claude/settings.json ──"
