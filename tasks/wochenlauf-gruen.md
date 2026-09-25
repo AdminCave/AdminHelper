@@ -40,8 +40,10 @@ Review: approve (sonnet); Gegenprobe: Test ohne /data/ rot, mit gruen; Lane-Box:
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Kommentar in `rsync-exclude.txt` ist die Doku)
 
-### T3 — SSE-Stream verlässt den Fuzz-Lauf, mit gemessenem Grund (R-0085)  [ ]
-Komponente: server · Dateien: apps/server/tests/schemathesis_exclude.toml
+### T3 — SSE-Stream verlässt den Fuzz-Lauf, mit gemessenem Grund (R-0085)  [x]
+Komponente: server · Dateien: apps/server/tests/schemathesis_exclude.toml, apps/server/tests/test_schemathesis.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @76c38e82 2026-09-25T13:54:41+02:00
+Review: approve (sonnet, 2. Runde: reason um die drei Kontexte ohne Bearer ergaenzt); Gegenprobe Box-Bedingung vorher OperationalError, nachher 288 deselected; Lane-Box schemathesis 288 passed
 Änderung: Ein `[[exclude]]` für `notification_stream_api_notifications_stream_get` mit `raises = true`, `# GET /api/notifications/stream`, `reason` aus Spec F3 (Kette `stream.py:70` → `auth.py:86` → Fallback `config.py:56`; Box 500, Dev/CI 401 aus dem falschen Grund, gebunden `ReadTimeout` nach 10 s; Messdatum 2026-09-25; wo der Rest abgedeckt ist: `test_stream.py::TestStreamAuth`/`TestStreamReauth`, `sse_push_e2e`, `desktop_e2e_sse_push`) und `until`. Den Satz im Dateikopf, jeder `raises`-Eintrag sei ein echter Produktfehler, so korrigieren, dass er die Fixture-Fälle (Proxy, Stream) einschließt. Nachweis: Der Server-Schemathesis-Schritt sammelt 288 statt 292 Fälle und ist grün. Gegenprobe unter Box-Bedingung mit dem Plugin aus Spec F3 (vorher der Fehler, nachher `-k "stream and admin_jwt"` ohne Treffer), Ergebnis in die Review-Notiz.
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (die Ausschlussdatei ist ihre eigene Doku)
