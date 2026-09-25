@@ -32,8 +32,10 @@ Review: approve (sonnet); Gegenprobe vorher 25/2 + 25/2, nachher 29/0 + 29/0; La
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 
-### T2 — `/data/` bleibt beim Box-Sync außen vor (R-0086)  [ ]
+### T2 — `/data/` bleibt beim Box-Sync außen vor (R-0086)  [x]
 Komponente: scripts · Dateien: scripts/vm/rsync-exclude.txt, scripts/vm/tests/test_vm.py
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @56804f32 2026-09-25T13:21:24+02:00
+Review: approve (sonnet); Gegenprobe: Test ohne /data/ rot, mit gruen; Lane-Box: Sync --delete ueber root-eigenes data/frp-config ohne Code 23
 Änderung: `/data/` **mit führendem `/`** in `rsync-exclude.txt`, mit einem Kommentar im Stil der Datei (gitignored Laufzeitverzeichnis des Compose-Stacks, als root angelegt, `--delete` scheitert sonst mit Code 23). In `test_the_exclude_list_never_hides_tracked_source` ein Muster mit führendem `/` als am Root verankert behandeln (Anker abstreifen, Präfixvergleich), ohne `assert`-Zeilen zu ändern. Ein neuer Test fährt echtes `rsync -a --delete --exclude-from vm.RSYNC_EXCLUDE` zwischen zwei `tmp_path`-Verzeichnissen und prüft den Zustand danach: `data/…` nur im Ziel bleibt, `data/…` nur in der Quelle reist nicht, `apps/x/data/…` nur im Ziel wird gelöscht. Kein `pytest.skip` bei fehlendem rsync. Gegenprobe: ohne die neue Zeile ist der neue Test rot. Fehlt rsync im CI-Job `ops-scripts` (nicht verifiziert), ist der Job rot; dann `[?]` setzen und eine Installzeile in `ci.yml` vorschlagen, nicht still skippen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (der Kommentar in `rsync-exclude.txt` ist die Doku)
@@ -61,6 +63,12 @@ Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test
 Änderung: **Harness-Pfad** (`heavy.sh`): Kevins Freigabe gilt über das Gate. In der interaktiven Session warnt `harness-guard.sh` nur; ein Runner mit `AH_AUTONOMOUS=1` braucht `bash scripts/dev/harness.sh off` (Kevins Handgriff). Test zuerst, in `heavy_test.sh`: ein Fall mit **zwei** roten Schritten (Artefakt mit zwei `fail`), die beide über die Retries in die Zweit-VM laufen. Die ssh-gestützten Fixture-Shims `$FIX/scripts/vm/warm.sh` und `iter.sh` leeren stdin wie ssh, nur bei gesetztem Schalter (z. B. `SHIM_DRAIN_STDIN=1`), und der Fall ruft `heavy.sh … </dev/null` auf. Erwartung: beide Schritte mit Urteil in `history.csv` und in der Tabelle von `report.md`, Summenzeile `2 step(s) red after retries`. Vor dem Fix sieht der Fall nur den ersten (Gegenprobe, Ergebnis in die Review-Notiz). Dann in `heavy.sh` beide Leseschleifen über `steps-all.tsv` (Z. 356-364 und 369-382) auf einen eigenen Deskriptor umstellen (`read -r … <&3`, `done 3< "$OUT/steps-all.tsv"`), den Kommentar an `rerun_step` (Z. 437-439) auf den neuen Grund umschreiben, die bestehenden `</dev/null` stehen lassen. Ursache und Nachstellung: Spec F6.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kommentar an der Schleife ist die Doku)
+
+### T7 — hooks_test.sh: `git check-attr` auf einer Box aus einem Worktree (Fund aus T1)  [?] (Wie soll hooks_test auf einer Worktree-Box die union-Attribut-Pruefung fahren? (a) wie T1 gegen ein Wegwerf-Repo mit Kopie der .gitattributes (Harness-Test, deine Freigabe noetig), (b) N2 an der Wurzel (vm.py sync ersetzt den Worktree-Zeiger), (c) Wochenlauf nur aus dem Haupt-Checkout)
+Komponente: scripts · Dateien: scripts/tests/hooks_test.sh
+Änderung: **Fund beim Bau von T1, nicht in der Spec.** Der `scripts`-Block von `run.sh` bricht beim ersten roten Test ab; im Wochenlauf war das `iter_flags_test`, deshalb lief `hooks_test` dort nie. Nach T1 auf der Lane-Box (aus diesem Worktree gesynct, 2026-09-25): `hooks_test: 170 passed, 1 failed`, rot ist genau `git does not see the union attribute` (`git -C "$REPO_ROOT" check-attr merge -- CHANGELOG.md` braucht ein Repo, auf der Box ist `.git` ein toter Zeiger, Spec N2). Die 17 Tests danach laufen dort einzeln alle grün (u. a. `heavy_test: 166 passed`, `lane_test: 59 passed`). Ohne Lösung bleibt `scripts (hermetic)` im Wochenlauf aus einem Worktree rot. `hooks_test.sh` ist ein Harness-Pfad und außerhalb des freigegebenen Scopes.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Test)
 
 ## Abschluss (Heavy, auf Kevins Freigabe)
 
