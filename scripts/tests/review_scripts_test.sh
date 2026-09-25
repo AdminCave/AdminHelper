@@ -608,6 +608,63 @@ stage apps/server/tests/test_del.py apps/server/tests/test_moved.py
 r diff-scan --staged --task tasks/del.md T1
 [ $rc -eq 3 ] && grep -q "appears in apps/server/tests/test_moved.py" <<<"$OUT" \
   && ok "a test that moves to another file is not declared away" || bad "moved test: rc=$rc out=$OUT"
+# ── the second adversarial review (2026-09-25) ──
+# A committed .gitattributes with -diff turns a test file into "Binary files
+# differ": every check went blind. The diff is read with --text.
+base apps/server/tests/.gitattributes '*.py -diff
+'
+base apps/server/tests/test_del.py "$PY"
+printf 'def test_alive():\n    pass\n\n\ndef test_dead():\n    assert helper() == 2\n' > "$FIX/apps/server/tests/test_del.py"
+stage apps/server/tests/test_del.py
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q "assert 1 == 1" <<<"$OUT" \
+  && ok "a -diff attribute does not blind diff-scan" || bad "gitattributes: rc=$rc out=$OUT"
+# The key is assembled at run time: written out, it would stop this very file at sec.
+printf 'x\nDedup-Key: %s\n' "sec:server:a.py:f" > "$FIX/apps/server/tests/test_leak.py"; stage apps/server/tests/test_leak.py
+r sec --staged
+[ $rc -eq 4 ] && grep -q "Dedup-Key" <<<"$OUT" && ok "a -diff attribute does not blind sec" || bad "gitattributes sec: rc=$rc out=$OUT"
+git -C "$FIX" rm -q --cached apps/server/tests/.gitattributes >/dev/null 2>&1; git -C "$FIX" commit -qm "drop the attribute" >/dev/null 2>&1
+# A lone \r in the declared test shifted the line count of text mode, and an
+# assertion of the NEXT test fell into the declared span.
+PY_CR="$(printf 'def test_dead():\n    assert a == 1  # see #12\r\r\r\r\n\n\ndef test_alive():\n    b = 2\n    assert b == 2\n')"
+base apps/server/tests/test_del.py "$PY_CR
+"
+printf 'def test_alive():\n    b = 2\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert b == 2" <<<"$OUT" \
+  && ok "a \\r in the declared test shifts no line: the next test's assertion is a finding" || bad "cr: rc=$rc out=$OUT"
+# A \f before the next head: lstrip() took it for indentation, Python does not.
+PY_FF="$(printf 'def test_dead():\n    assert a == 1\n\n\n\fdef test_alive():\n    assert c == 3\n')"
+base apps/server/tests/test_del.py "$PY_FF
+"
+printf '\fdef test_alive():\n    c = 3\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert c == 3" <<<"$OUT" \
+  && ok "a \\f before the next head does not stretch the declared span" || bad "ff: rc=$rc out=$OUT"
+# A head inside a comment of a test that stays: the declared name is unique in
+# the old file, but the test it names is not a test — its "span" keeps lines of
+# the surviving test, and the whole-test rule refuses it.
+base apps/web/src/parse.test.ts 'it("keep", () => {
+  /*
+it("rejects empty input", () => {
+  */
+  expect(c).toBe(3);
+  expect(d).toBe(4);
+});
+'
+printf 'it("keep", () => {\n  /*\n  */\n  expect(d).toBe(4);\n});\n' > "$FIX/apps/web/src/parse.test.ts"
+stage apps/web/src/parse.test.ts
+r diff-scan --staged --task tasks/del.md T6
+[ $rc -eq 3 ] && grep -q "expect(c).toBe(3)" <<<"$OUT" \
+  && ok "a test head in a comment covers nothing: the whole-test rule refuses it" || bad "comment head: rc=$rc out=$OUT"
+# A path with a space: git ends its header with a tab. A finding, not a crash.
+base "apps/server/tests/test with space.py" "$PY"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test with space.py"; stage "apps/server/tests/test with space.py"
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q "test with space.py:6  removed assertion" <<<"$OUT" \
+  && ok "a path with a space is a finding with its name, not rc 2" || bad "space path: rc=$rc out=$OUT"
+git -C "$FIX" rm -q -f -- "apps/server/tests/test with space.py" >/dev/null 2>&1; git -C "$FIX" commit -qm "drop the spaced file" >/dev/null 2>&1
+
 # ... but a test of the same name that was ALREADY in another file is a
 # different test: the declaration stands.
 base apps/server/tests/test_other.py 'def test_dead():

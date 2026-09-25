@@ -82,10 +82,13 @@ Beschreibung aus `it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[tes
 Übergangen wird eine gelöschte Assertion nur, wenn **alles** gilt, geprüft am Inhalt der
 Dateien, nicht am Diff-Text:
 
-1. **Die Ankündigung ist committet.** `diff-scan` liest sie aus dem Ledger in `HEAD`, nicht aus
-   dem Arbeitsbaum. Sie kommt typischerweise mit dem Plan-Commit am Gate, den Kevin liest. Wer
-   unterwegs merkt, dass ein Test gehen muss, setzt `[?]` und fragt; eine Ankündigung, die im
-   selben Lauf entsteht, zählt nicht.
+1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** `diff-scan` liest
+   sie aus dem Ledger in `HEAD`, nicht aus dem Arbeitsbaum, und `task-close.sh` verweigert
+   (Exit 4), sobald sich die `Test-Löschung:`-Zeilen gegenüber `HEAD` ändern. Sonst könnte ein
+   Builder die Zeile beim Schließen einer Task mitcommitten und in der nächsten benutzen. Sie
+   kommt mit dem Plan-Commit am Gate, den Kevin liest. Wer unterwegs merkt, dass ein Test gehen
+   muss, setzt `[?]` und fragt. Ein Commit von Hand an `task-close` vorbei ist Kevins eigene
+   Entscheidung; der Runner kann ihn nicht machen.
 2. **Sie trägt einen Grund.** Ohne `— <Grund>` zählt sie nicht, auch in `diff-scan`.
 3. **Der Name ist eindeutig.** Im alten Stand der Datei gibt es genau einen Test dieses
    Namens. Teilen sich zwei `describe`-Blöcke einen Namen, kann das Gate sie nicht
@@ -93,9 +96,16 @@ Dateien, nicht am Diff-Text:
 4. **Der Test ist wirklich weg.** Im neuen Stand der Datei steht kein Kopf dieses Namens
    mehr, und keine andere Datei des Diffs bekommt einen dazu: Ein Test, der wandert, geht
    nicht. Ein Ersatztest trägt einen eigenen Namen.
-5. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
+5. **Der ganze Test geht.** Jede nicht leere Zeile seines alten Rumpfs ist im Diff gelöscht.
+   Ein Kopf in einem Kommentar oder String, dessen „Rumpf“ in einen bleibenden Test ragt,
+   fällt daran auf.
+6. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
    angekündigten Tests im alten Stand. Eine Assertion aus einem Test, der stehen bleibt,
    bleibt ein Fund, angekündigt oder nicht.
+
+`review.sh` liest jeden Diff mit `--text --no-ext-diff --no-textconv --no-color`: eine
+`.gitattributes` mit `-diff` oder ein Diff-Treiber darf eine Testdatei nicht zu „Binary files
+differ“ machen und damit alle drei Prüfungen blind.
 
 Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`),
 und bei einem Fund, warum eine Ankündigung nicht zählte.

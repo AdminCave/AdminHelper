@@ -74,6 +74,18 @@ case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"
 
+# A declared test deletion (Test-Löschung:) counts only once it is committed, and
+# this script must not be the way it gets committed: it stages the whole ledger,
+# so a builder could write the line while closing one task and use it in the next
+# (adversarial review, 2026-09-25). The declaration comes with the plan commit at
+# the gate, or with a commit Kevin makes by hand — never through task-close.
+decl_lines() { grep -E '^Test-Löschung:' || true; }  # review: ok no match is an empty list, not a failure
+if [ "$(git show "HEAD:$LEDGER" 2>/dev/null | decl_lines)" != "$(decl_lines < "$LEDGER")" ]; then
+  echo "task-close: the Test-Löschung: lines of $LEDGER differ from the committed ones —" >&2
+  echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
+  exit 4
+fi
+
 # CLAUDE.md §3 trigger 2: a commit on main is one of the five things that must
 # not happen quietly. Until stage 4 that protection was `git commit` going
 # through the session; this script is now the only way to a commit, so the

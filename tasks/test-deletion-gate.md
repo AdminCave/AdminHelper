@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Bewusst gelöschte Tests: ein erlaubter Weg durch `diff-scan` — Task-Ledger (Kurz)
-Status: bereit · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben, Roadmap R-0079)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/review.sh`, `scripts/dev/task-close.sh`, `scripts/tests/review_scripts_test.sh` und die Ledger-Doku.
@@ -125,3 +125,24 @@ Dazu Kevins Entscheidung: nur die committete Ankündigung zählt. Neu:
 Tests: je ein Fall pro Umgehung, dazu „nur im Arbeitsbaum angekündigt“ und „gleichnamiger Test, der schon anderswo stand“ (Ankündigung bleibt gültig). Gegenprobe: dieselben Tests gegen `review.sh` von ab184f01 ⇒ 7 rot, fünf davon mit rc 0, also echte Umgehungen.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md · AUTONOMOUS.md · DEVELOPMENT.md
+
+### T5 — Zweiter adversarialer Review: Selbst-Ankündigung, `-diff`, Zeilen-Zählung, Kommentar-Köpfe  [x]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/dev/task-close.sh, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh, tasks/README.md
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @db310375 2026-09-25T09:22:51+02:00
+Review: zweiter adversarialer Opus-Review 2026-09-25 (request_changes) → Nachbau; Abschluss-Review folgt
+Änderung: Der zweite adversariale Opus-Review (2026-09-25) fand an der Inhaltsprüfung selbst mit einem Diff keinen Weg vorbei, aber vier Umgehungen daneben.
+- **Selbst-Ankündigung (Blocker):** `task-close.sh` staget das ganze Ledger, eine `Test-Löschung:`-Zeile reist also beim Schließen einer Task mit und gilt in der nächsten als committet.
+- **`-diff` in einer `.gitattributes` (Blocker, älter als R-0079):** Sie macht `diff-scan` und `sec` blind.
+- **Einzelnes `\r` und `\f`:** Sie verschieben Zeilen bzw. Einrückung.
+- **Test-Köpfe in Kommentaren:** Sie gelten als Tests.
+
+Neu:
+- `task-close.sh` verweigert (Exit 4), wenn sich die `Test-Löschung:`-Zeilen gegenüber `HEAD` ändern.
+- Jede Diff-Lesung in `review.sh` läuft über `git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --no-color` mit festen Präfixen. `sec` erkennt Köpfe wie `diff-scan` nur vor dem ersten `@@`.
+- Der Prüf-Teil liest Bytes und trennt nur an `\n`. Die Einrückung zählt nur Leerzeichen und Tabs, und die Pfade kommen `-z`-getrennt.
+- Neue Invariante: Jede nicht leere Zeile des alten Rumpfs ist gelöscht, der ganze Test geht also.
+- Pfade mit Leerzeichen führen zu einem Fund statt zu einem Absturz.
+
+Tests: je ein Fall pro Umgehung, dazu der Leerzeichen-Pfad. Gegenprobe gegen den Stand von T4: 6 rot in `review_scripts_test`, davon 5 mit rc 0; 2 rot in `task_close_test`.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: tasks/README.md

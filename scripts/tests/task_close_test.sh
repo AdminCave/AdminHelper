@@ -386,6 +386,17 @@ c fix T1 -m "feat: something"
 grep -q "set-files" <<<"$OUT" && ok "and it names the way out (ledger.sh set-files)" || bad "no hint: $OUT"
 reset_repo
 
+# A Test-Löschung: line written into the ledger does not travel through
+# task-close: the next task would find it "committed" (adversarial review).
+touch_tool
+printf 'Test-Löschung: apps/server/tests/test_x.py::test_y — selbst eingetragen\n' >> "$FIX/tasks/fix.md"
+c fix T1 -m "feat: something"
+[ $rc -eq 4 ] && grep -q "Test-Löschung" <<<"$OUT" \
+  && ok "a new Test-Löschung: line in the ledger -> exit 4, it is not committed through task-close" \
+  || bad "self-declared deletion: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a self-declared deletion"
+reset_repo
+
 # A task without a component cannot be verified — that is infrastructure, not a
 # red suite, and certainly not a commit.
 touch_tool

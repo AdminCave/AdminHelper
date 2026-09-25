@@ -31,7 +31,7 @@
 #              of the two gitignored files that carry credentials.
 #
 # --staged looks at the index (what task-close.sh is about to commit); without it
-# the working tree is compared against HEAD. Neither form sees UNTRACKED files —
+# the working tree is compared against the index. Neither form sees UNTRACKED files —
 # git diff does not — so the answer for a brand-new file exists only once it is
 # staged, which is the state task-close.sh works on anyway.
 #
@@ -98,8 +98,14 @@ task_field() {
 }
 DIFF_ARGS=()
 [ "$STAGED" = 1 ] && DIFF_ARGS+=(--staged)
+# Every verb reads the diff through this, never through a bare `git diff`: a
+# committed `.gitattributes` with `-diff` turned a test file into "Binary files
+# differ" and all three checks went blind (adversarial review, 2026-09-25); a
+# textconv or external diff driver, color.diff=always, other prefixes and
+# octal-quoted paths change the text the checks parse just as well.
+GIT_DIFF=(git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --no-color --src-prefix=a/ --dst-prefix=b/)
 
-changed_paths() { git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only; }
+changed_paths() { "${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" --name-only; }
 
 case "$VERB" in
   diff-scan)
@@ -132,7 +138,7 @@ case "$VERB" in
     # A removed assertion is not judged here: it leaves as an RA record, and the
     # check below decides against the file CONTENTS whether a declared test
     # covers it.
-    RAW="$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | awk -v PAT="$SKIP_PATTERNS" '
+    RAW="$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" -U0 | awk -v PAT="$SKIP_PATTERNS" '
       function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
       # Where a comment starts, or 0. Only a marker at the start of the line or
       # after whitespace counts, so the // in an https:// URL is not a comment.
@@ -143,11 +149,13 @@ case "$VERB" in
         return c
       }
       /^diff --git /  { inheader = 1; next }
-      inheader && /^--- / { oldfile = substr($0, 5); sub(/^a\//, "", oldfile); next }
+      # git ends a path that holds a space with a tab.
+      inheader && /^--- / { oldfile = substr($0, 5); sub(/^a\//, "", oldfile); sub(/\t$/, "", oldfile); next }
       inheader && /^\+\+\+ / {
                         file = substr($0, 5)
                         # A deletion has +++ /dev/null; the path is on the --- side.
                         if (file == "/dev/null") file = oldfile; else sub(/^b\//, "", file)
+                        sub(/\t$/, "", file)
                         next
                       }
       /^@@/           {
@@ -160,6 +168,7 @@ case "$VERB" in
       inheader        { next }
       /^-/            {
                         line = substr($0, 2)
+                        printf "RL\t%s\t%d\n", file, oldno
                         if (line !~ /review: ok/ &&
                             (line ~ /(^|[^A-Za-z_.])assert([^A-Za-z_]|$)/ || line ~ /expect\(/))
                           printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
@@ -201,21 +210,31 @@ import os, re, subprocess, sys
 staged = os.environ.get("STAGED") == "1"
 lines = [l for l in sys.stdin.read().split("\n") if l]
 ras = [l.split("\t", 3)[1:] for l in lines if l.startswith("RA\t")]
-out = [l for l in lines if not l.startswith("RA\t")]
+removed = {}
+for l in lines:
+    if l.startswith("RL\t"):
+        _, f, n = l.split("\t", 2)
+        removed.setdefault(f, set()).add(int(n))
+out = [l for l in lines if not l.startswith(("RA\t", "RL\t"))]
 
 def git(*a):
-    r = subprocess.run(("git",) + a, capture_output=True, text=True)
+    r = subprocess.run(("git", "-c", "core.quotePath=false") + a, capture_output=True)
     return r.stdout if r.returncode == 0 else None
 
+# Bytes, split on \n only: that is how git numbers lines. Text mode turned a
+# lone \r into a line break and shifted every span below it.
+def text(b):
+    return (b or b"").decode("utf-8", errors="replace")
+
 def old_text(path):   # the side the diff removes from
-    return git("show", ("HEAD:" if staged else ":") + path) or ""
+    return text(git("show", ("HEAD:" if staged else ":") + path))
 
 def new_text(path):   # the side the diff arrives at
     if staged:
-        return git("show", ":" + path) or ""
+        return text(git("show", ":" + path))
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            return fh.read()
+        with open(path, "rb") as fh:
+            return text(fh.read())
     except OSError:
         return ""
 
@@ -256,7 +275,8 @@ def heads(path, text):
             t = src[k]
             if not t.strip():
                 continue
-            k_ind = len(t) - len(t.lstrip())
+            # spaces and tabs only: Python resets the column at a \f
+            k_ind = len(t) - len(t.lstrip(" \t"))
             if k_ind <= ind:
                 # the ) of a multi-line signature, or the closing brace of the
                 # test, still belongs to it; anything else at its depth ends it
@@ -270,7 +290,7 @@ def heads(path, text):
         found.append((name, i + 1, end, ind))
     return found
 
-changed = (git("diff", *(["--staged"] if staged else []), "--name-only") or "").split()
+changed = [p for p in text(git("diff", *(["--staged"] if staged else []), "--name-only", "-z")).split("\0") if p]
 
 entries, notes = {}, {}
 decl = os.environ.get("DECL", "")
@@ -295,7 +315,18 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
     elif moved:
         notes.setdefault(path, []).append(f"declared {path}::{name} ignored: a test of that name appears in {moved[0]}")
     else:
-        entries[(path, name)] = (old[0][1], old[0][2])
+        a, b = old[0][1], old[0][2]
+        src = old_text(path).split("\n")
+        kept = [n for n in range(a, b + 1)
+                if n - 1 < len(src) and src[n - 1].strip() and n not in removed.get(path, set())]
+        # The whole test goes: every line of its old body is a deleted line. A
+        # span that was guessed too wide (a head in a comment or a string, a \r
+        # or \f that fooled the count) keeps lines of the next test and fails here.
+        if kept:
+            notes.setdefault(path, []).append(
+                f"declared {path}::{name} ignored: line {kept[0]} of its old body is not deleted — the whole test does not go")
+        else:
+            entries[(path, name)] = (a, b)
 
 used = set()
 for path, oldno, text in ras:
@@ -419,9 +450,12 @@ $IMPLICIT"
     # names the line, because "somewhere in this diff" is not actionable.
     while IFS= read -r hit; do
       [ -n "$hit" ] && BLOCKED+=("$hit (a security finding's Dedup-Key)")
-    done <<< "$(git diff "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" | awk '
-      /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); next }
-      /^@@/       { split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
+    done <<< "$("${GIT_DIFF[@]}" "${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"}" | awk '
+      # Headers only before the first @@ of a file: `++ x` added reads `+++ x`.
+      /^diff --git /             { inheader = 1; next }
+      inheader && /^\+\+\+ / { file = substr($0, 5); sub(/^b\//, "", file); sub(/\t$/, "", file); next }
+      /^@@/       { inheader = 0; split($3, nw, ","); newno = nw[1]; sub(/^\+/, "", newno); newno += 0; next }
+      inheader    { next }
       /^\+/       { if ($0 ~ /Dedup-Key:[[:space:]]*sec:/) printf "%s:%d\n", file, newno; newno++; next }
       /^-/        { next }
                   { newno++ }')"
