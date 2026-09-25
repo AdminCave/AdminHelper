@@ -13,8 +13,12 @@ behind the status word), none of its content.
 from __future__ import annotations
 
 import datetime as dt
+import fcntl
+import os
 import pathlib
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -387,3 +391,274 @@ def test_a_bad_date_is_exit_2(tmp_path: pathlib.Path) -> None:
     with pytest.raises(SystemExit) as e:
         roadmap.main(["--file", str(write(tmp_path, CLEAN)), "--today", "gestern", "lint"])
     assert e.value.code == 2
+
+
+# ── add: writing under the lock ──────────────────────────────────────────────
+
+SCRIPT = pathlib.Path(roadmap.__file__)
+ADD = ["--class", "REG", "--title", "Schritt rot", "--source", "weekly 2026-09-25 · 1a2b3c4d"]
+
+
+def aged(p: pathlib.Path, seconds: int = 60) -> pathlib.Path:
+    """Back-date the file: a fixture just written looks like a hand edit."""
+    t = time.time() - seconds
+    os.utime(p, (t, t))
+    return p
+
+
+def add(p: pathlib.Path, *args: str) -> int:
+    return roadmap.main(["--file", str(p), "--today", "2026-09-25", "add", *args])
+
+
+def spawn_add(p: pathlib.Path, title: str) -> subprocess.Popen[str]:
+    cmd = [sys.executable, str(SCRIPT), "--file", str(p), "--today", "2026-09-25", "add"]
+    cmd += ["--class", "BUG", "--title", title, "--source", "hunt 2026-09-25"]
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+NEW_HEADER = "Stand: 2026-09-25 · WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 3/20 · ALT: 0"
+OLD_HEADER = "Stand: 2026-09-20 · WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0"
+
+
+def test_add_appends_a_neu_row_and_touches_nothing_else(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    rc = add(p, "--class", "REF", "--title", "Toter Helfer", "--source", "find:dead 2026-09-25",
+             "--proof", "find/2026-09-25@1a2b3c4", "--dedup-key", "ref:web:src/b.ts:old",
+             "--ledger", "tasks/toter-helfer.md")  # fmt: skip
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "R-0010"
+    new = (
+        "| R-0010 | REF | Toter Helfer | neu | find:dead 2026-09-25 · find/2026-09-25@1a2b3c4 · "
+        "Dedup-Key: ref:web:src/b.ts:old | tasks/toter-helfer.md | — | — | 2026-12-24 | — |"
+    )
+    text = p.read_text(encoding="utf-8")
+    # Byte for byte the old file, plus the row at the end of "Neu" and the new header.
+    assert text.replace(new + "\n", "").replace(NEW_HEADER, OLD_HEADER) == CLEAN
+    rows = [r.id for s, r in roadmap.Roadmap(text).rows() if s == "Neu"]
+    assert rows == ["R-0006", "R-0005", "R-0010"]
+    assert findings(text) == []
+    assert (tmp_path / "ROADMAP.md.bak").read_text(encoding="utf-8") == CLEAN
+
+
+def test_the_id_is_the_highest_of_all_rows_plus_one(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    s = clean_sections()
+    s["Archiv"].append(row("R-0040", "abgeschlossen 2026-06-01"))
+    p = aged(write(tmp_path, doc(s)))
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.strip() == "R-0041"
+
+
+@pytest.mark.parametrize(
+    ("klasse", "ablauf"), [("REG", "nie"), ("IDEE", "2026-11-24"), ("REF", "2026-12-24")]
+)
+def test_the_ablauf_follows_the_class(tmp_path: pathlib.Path, klasse: str, ablauf: str) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, "--class", klasse, "--title", "x", "--source", "kevin 2026-09-25") == 0
+    [new] = [
+        r for _, r in roadmap.Roadmap(p.read_text(encoding="utf-8")).rows() if r.id == "R-0010"
+    ]
+    assert new.cells[roadmap.ABLAUF] == ablauf
+
+
+def test_a_pipe_in_the_title_is_escaped(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, "--class", "BUG", "--title", "a | b", "--source", "kevin 2026-09-25") == 0
+    text = p.read_text(encoding="utf-8")
+    [new] = [r for _, r in roadmap.Roadmap(text).rows() if r.id == "R-0010"]
+    assert new.well_formed and new.cells[roadmap.TITEL] == "a \\| b"
+    assert findings(text) == []
+
+
+def test_a_neu_section_without_a_table_gets_one(tmp_path: pathlib.Path) -> None:
+    s = clean_sections()
+    s["Neu (untriagiert)"] = []
+    p = aged(write(tmp_path, doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0")))
+    assert add(p, *ADD) == 0
+    text = p.read_text(encoding="utf-8")
+    assert f"## Neu (untriagiert)\n{HEAD}\n{SEP}\n| R-0010 |" in text
+    assert findings(text) == []
+
+
+def test_the_neu_cap_refuses_the_21st(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    s = clean_sections()
+    s["Neu (untriagiert)"] = [row(f"R-01{n:02d}", "neu", "BUG") for n in range(20)]
+    text = doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 20/20 · ALT: 0")
+    p = aged(write(tmp_path, text))
+    assert add(p, *ADD) == 3
+    assert "neu cap is reached (20/20)" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == text
+    assert not (tmp_path / "ROADMAP.md.bak").exists()
+
+
+def test_an_open_dedup_key_is_refused_and_named(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD, "--dedup-key", "ref:web:src/a.ts:helper") == 4
+    assert "already on open row R-0006" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+def test_the_dedup_key_of_a_closed_row_is_free(tmp_path: pathlib.Path) -> None:
+    s = clean_sections()
+    s["Abgeschlossen (letzte 30 Tage)"].append(
+        row(
+            "R-0010",
+            "abgeschlossen 2026-09-10",
+            "REF",
+            "Früher",
+            "weekly 2026-09-01 · Dedup-Key: reg:step-x",
+        )
+    )
+    p = aged(write(tmp_path, doc(s)))
+    assert add(p, *ADD, "--dedup-key", "reg:step-x") == 0
+
+
+@pytest.mark.parametrize("flag", ["--title", "--source"])
+def test_an_empty_title_or_source_is_refused(tmp_path: pathlib.Path, flag: str) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    args = ["--class", "BUG", "--title", "t", "--source", "s"]
+    args[args.index(flag) + 1] = "  "
+    assert add(p, *args) == 2
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+def test_a_dedup_key_is_one_token(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD, "--dedup-key", "reg: zwei worte") == 2
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+def test_a_file_just_changed_by_hand_is_refused(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = write(tmp_path, CLEAN)  # mtime: now, and roadmap.py never wrote it
+    assert add(p, *ADD) == 5
+    assert "not by roadmap.py" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+def test_its_own_last_write_is_no_reason_to_wait(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 0
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.split() == ["R-0010", "R-0011"]
+
+
+def test_a_hand_edit_after_its_own_write_is_refused(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 0
+    p.write_text(p.read_text(encoding="utf-8") + "Notiz von Hand\n", encoding="utf-8")
+    assert add(p, *ADD) == 5
+
+
+def test_a_hand_edit_in_the_same_clock_tick_is_still_a_hand_edit(tmp_path: pathlib.Path) -> None:
+    """The mtime moves in ticks of a few ms: an edit right after roadmap.py's
+    own write can carry the very same mtime_ns. Forced here, not waited for."""
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 0
+    own = p.stat().st_mtime_ns
+    p.write_text(p.read_text(encoding="utf-8") + "Notiz von Hand\n", encoding="utf-8")
+    os.utime(p, ns=(own, own))
+    assert add(p, *ADD) == 5
+
+
+def test_a_write_that_loses_a_row_is_undone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    real = roadmap.write_text
+
+    def loses_the_last_row(path: pathlib.Path, text: str) -> None:
+        lines = text.split("\n")
+        last = max(i for i, line in enumerate(lines) if line.startswith("| R-"))
+        real(path, "\n".join(lines[:last] + lines[last + 1 :]))
+
+    monkeypatch.setattr(roadmap, "write_text", loses_the_last_row)
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 6
+    assert "restored from" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+def test_a_writer_waits_for_the_lock(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    with open(tmp_path / "ROADMAP.md.lock", "a+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        proc = spawn_add(p, "Wartet")
+        time.sleep(1.0)
+        assert proc.poll() is None, proc.communicate()
+        assert p.read_text(encoding="utf-8") == CLEAN
+    out, err = proc.communicate(timeout=30)
+    assert proc.returncode == 0, err
+    assert out.strip() == "R-0010"
+
+
+def test_two_adds_at_once_get_two_ids(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    procs = [spawn_add(p, f"Parallel {n}") for n in range(2)]
+    results = [proc.communicate(timeout=30) for proc in procs]
+    assert [proc.returncode for proc in procs] == [0, 0], results
+    assert sorted(out.strip() for out, _ in results) == ["R-0010", "R-0011"]
+    text = p.read_text(encoding="utf-8")
+    assert "Parallel 0" in text and "Parallel 1" in text
+    assert findings(text) == []
+
+
+def git(repo: pathlib.Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+    ).stdout
+
+
+def fixture_repo(tmp_path: pathlib.Path) -> pathlib.Path:
+    repo = tmp_path / "private"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "config", "commit.gpgsign", "false")
+    write(repo, CLEAN)
+    (repo / "other.md").write_text("etwas anderes\n", encoding="utf-8")
+    git(repo, "add", "ROADMAP.md", "other.md")
+    git(repo, "commit", "-qm", "seed")
+    return repo
+
+
+def test_add_commits_the_file_alone(tmp_path: pathlib.Path) -> None:
+    repo = fixture_repo(tmp_path)
+    (repo / "other.md").write_text("halb fertig, gestagt\n", encoding="utf-8")
+    git(repo, "add", "other.md")
+    p = aged(repo / "ROADMAP.md")
+    assert add(p, *ADD) == 0
+    assert git(repo, "log", "-1", "--format=%s").strip() == "roadmap: add R-0010"
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["ROADMAP.md"]
+    # The staged edit of another file is still staged, not swept into the commit.
+    assert git(repo, "diff", "--cached", "--name-only").split() == ["other.md"]
+    assert git(repo, "status", "--porcelain", "--", "ROADMAP.md") == ""
+
+
+def test_outside_a_repository_it_writes_but_does_not_commit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 0
+    assert "no git repository — not committed" in capsys.readouterr().err
+    assert "| R-0010 |" in p.read_text(encoding="utf-8")
+
+
+def test_it_never_commits_in_the_public_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = fixture_repo(tmp_path)
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    assert add(aged(repo / "ROADMAP.md"), *ADD) == 0
+    assert "public repository — not committed" in capsys.readouterr().err
+    assert git(repo, "log", "-1", "--format=%s").strip() == "seed"

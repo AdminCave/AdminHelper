@@ -3,9 +3,13 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""roadmap.py — the roadmap as a script: tasks/private/ROADMAP.md, read and linted.
+"""roadmap.py — the roadmap as a script: tasks/private/ROADMAP.md, read, linted, written.
 
-    python3 scripts/dev/roadmap.py [--file <path>] [--today YYYY-MM-DD] lint
+    python3 scripts/dev/roadmap.py [--file <path>] [--today YYYY-MM-DD] <verb>
+
+    lint                        what does not fit the format
+    add --class K --title T --source S [--proof P] [--dedup-key K] [--ledger L]
+                                a `neu` row at the end of "Neu"; prints its ID
 
 The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
@@ -22,17 +26,32 @@ unknown statuses (the aliases `geparkt` and `erledigt` by name), rows in the
 section their status does not belong in, rows without exactly ten columns, a
 Dedup-Key two open rows share, and a WIP header the rows do not add up to.
 
-Exit codes: 0 clean · 1 findings · 2 usage (no such file, bad arguments).
+Every write runs under flock on <file>.lock, saves <file>.bak first, checks
+that the row count moved by exactly what the verb meant (else the .bak goes
+back), rewrites the header (`Stand: <today> · WIP: …`), and commits the file
+alone in its own repository — locally, never pushed, and never in this public
+one. A file changed in the last 5 s by anyone but roadmap.py (the mtime
+differs from the one the lock file remembers) is refused: an editor may hold
+it. The ID is the highest R-nnnn of all rows plus one.
+
+Exit codes: 0 ok · 1 lint findings · 2 usage (no such file, bad arguments) ·
+3 the `neu` cap (20) is reached · 4 an open row already carries the Dedup-Key ·
+5 the file was just changed by hand · 6 the row count came out wrong (restored).
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
+import hashlib
 import os
 import pathlib
 import re
+import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -40,6 +59,24 @@ DEFAULT_FILE = ROOT / "tasks" / "private" / "ROADMAP.md"
 
 NCOLS = 10
 ID, KLASSE, TITEL, STATUS, QUELLE, LEDGER, DEPENDS, PR, ABLAUF, KEVIN_MIN = range(NCOLS)
+COLUMNS = (
+    "ID",
+    "Klasse",
+    "Titel",
+    "Status",
+    "Quelle / Beweis",
+    "Ledger",
+    "Hängt ab von",
+    "PR",
+    "Ablauf",
+    "Kevin-min",
+)
+TABLE_HEAD = "| " + " | ".join(COLUMNS) + " |"
+TABLE_SEP = "|" + "---|" * NCOLS
+CLASSES = ("SEC", "REG", "REL", "BUG", "FEAT", "REF", "IDEE")
+# Ablauf of a new row (roadmap document 3.3.2); every other class never expires.
+EXPIRY_DAYS = {"IDEE": 60, "REF": 90}
+QUIET_SECONDS = 5
 
 SECTIONS = (
     "Als Nächstes",
@@ -69,6 +106,7 @@ CLOSED = frozenset({"abgeschlossen", "abgelehnt"})
 ALIASES = {"geparkt": "zurückgestellt", "erledigt": "abgeschlossen"}
 # The header's counters, in the order it prints them; the caps are CLAUDE.md's.
 WIP_CAPS = (("aktiv", 1), ("bereit", 2), ("pr", 3), ("neu", 20))
+NEU_CAP = dict(WIP_CAPS)["neu"]
 
 # A cell may carry a pipe only escaped (`\|`); an unescaped one starts a new
 # cell, which is exactly how a row ends up with eleven columns.
@@ -83,6 +121,14 @@ ALT_FIELD = re.compile(r"\bALT:\s*(\d+)")
 
 class UsageError(Exception):
     """Exit 2: the call itself is wrong, or the file is not there."""
+
+
+class Refused(Exception):
+    """A write that must not happen; `code` is the exit code."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass
@@ -117,10 +163,21 @@ class Row:
     def is_open(self) -> bool:
         return self.state in SECTION_OF and self.state not in CLOSED
 
+    @property
+    def dedup_key(self) -> str | None:
+        m = DEDUP.search(self.cells[QUELLE]) if self.well_formed else None
+        return m.group(1) if m else None
+
     def text(self) -> str:
         if self.raw is not None:
             return self.raw
         return "| " + " | ".join(self.cells) + " |"
+
+
+def cell(value: str) -> str:
+    """A value for a new cell: one line, its pipes escaped, never empty."""
+    value = " ".join(value.split())
+    return CELL_SPLIT.sub(r"\\|", value) or "—"
 
 
 def split_cells(line: str) -> list[str]:
@@ -204,6 +261,55 @@ class Roadmap:
                 if item.startswith("Stand:"):
                     return i
         return None
+
+    def section_bounds(self, name: str) -> tuple[int, int]:
+        """Item indices [heading, next heading) of the section `name`."""
+        start = None
+        for i, item in enumerate(self.items):
+            if isinstance(item, str) and item.startswith("## "):
+                if start is not None:
+                    return start, i
+                if section_name(item) == name:
+                    start = i
+        if start is None:
+            raise UsageError(f"the roadmap has no '## {name}' section")
+        return start, len(self.items)
+
+    def insert_row(self, section: str, row: Row, top: bool = False) -> None:
+        """At the end of the section's table (or its top); a section without
+        a table gets one right under its heading."""
+        start, end = self.section_bounds(section)
+        rows = [i for i in range(start, end) if isinstance(self.items[i], Row)]
+        seps = [
+            i
+            for i in range(start, end)
+            if isinstance(self.items[i], str) and SEPARATOR.match(self.items[i])
+        ]
+        if rows:
+            at = rows[0] if top else rows[-1] + 1
+        elif seps:
+            at = seps[0] + 1
+        else:
+            self.items[start + 1 : start + 1] = [TABLE_HEAD, TABLE_SEP]
+            at = start + 3
+        self.items.insert(at, row)
+
+    def next_id(self) -> str:
+        nums = [int(r.id[2:]) for _, r in self.rows() if ROW_ID.fullmatch(r.id)]
+        return f"R-{max(nums, default=0) + 1:04d}"
+
+    def set_header(self, today: dt.date) -> None:
+        """`Stand: <today> · WIP: …` computed from the rows, above the first section."""
+        c = self.counts(today)
+        wip = " · ".join(f"{state} {c[state]}/{cap}" for state, cap in WIP_CAPS)
+        line = f"Stand: {today.isoformat()} · WIP: {wip} · ALT: {c['ALT']}"
+        i = self.header_index()
+        if i is not None:
+            self.items[i] = line
+            return
+        first = self.items[0] if self.items else ""
+        at = 1 if isinstance(first, str) and first.startswith("# ") else 0
+        self.items.insert(at, line)
 
     def counts(self, today: dt.date) -> dict[str, int]:
         """What the header should say: open rows per WIP state, and ALT, the
@@ -305,6 +411,139 @@ def roadmap_path(given: str | None) -> pathlib.Path:
     return pathlib.Path(given or os.environ.get("AH_ROADMAP") or DEFAULT_FILE)
 
 
+def sibling(path: pathlib.Path, suffix: str) -> pathlib.Path:
+    return path.with_name(path.name + suffix)
+
+
+def replace_file(path: pathlib.Path, data: bytes) -> None:
+    """Atomically: a reader sees the old file or the new one, never half."""
+    tmp = sibling(path, ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def write_text(path: pathlib.Path, text: str) -> None:
+    """The one place a new roadmap reaches the disk."""
+    replace_file(path, text.encode("utf-8"))
+
+
+def mark(path: pathlib.Path, data: bytes) -> str:
+    """What roadmap.py's own last write looked like: mtime and content. The
+    mtime alone is not enough — it moves in clock ticks of a few ms, and a hand
+    edit inside the same tick would pass for our own."""
+    return f"{path.stat().st_mtime_ns} {hashlib.sha256(data).hexdigest()}"
+
+
+def remember(lock, path: pathlib.Path) -> None:
+    """The lock file keeps the mark of roadmap.py's own last write."""
+    lock.seek(0)
+    lock.truncate()
+    lock.write(mark(path, path.read_bytes()))
+    lock.flush()
+
+
+def write(
+    path: pathlib.Path,
+    change: Callable[[Roadmap], str],
+    *,
+    verb: str,
+    delta: int,
+    today: dt.date,
+    clock: Callable[[], float] = time.time,
+) -> str:
+    """Apply `change` (it returns the row's ID) under the lock; `delta` is
+    how many rows the change adds."""
+    with open(sibling(path, ".lock"), "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            raise UsageError(f"no such file: {path}") from None
+        lock.seek(0)
+        age = clock() - path.stat().st_mtime
+        if lock.read().strip() != mark(path, data) and age < QUIET_SECONDS:
+            raise Refused(
+                5,
+                f"{path} was changed {age:.1f} s ago, not by roadmap.py — an editor may "
+                f"still hold it; try again in {QUIET_SECONDS} s",
+            )
+        before_text = data.decode("utf-8")
+        roadmap = Roadmap(before_text)
+        before = len(roadmap.rows())
+        rid = change(roadmap)
+        roadmap.set_header(today)
+        bak = sibling(path, ".bak")
+        bak.write_bytes(before_text.encode("utf-8"))
+        write_text(path, roadmap.render())
+        after = len(Roadmap(path.read_bytes().decode("utf-8")).rows())
+        if after != before + delta:
+            replace_file(path, bak.read_bytes())
+            remember(lock, path)
+            raise Refused(
+                6,
+                f"{before} rows {delta:+d} should make {before + delta}, the written file "
+                f"has {after} — restored from {bak}",
+            )
+        remember(lock, path)
+        commit(path, f"roadmap: {verb} {rid}")
+    return rid
+
+
+def commit(path: pathlib.Path, message: str) -> None:
+    """Commit this one file in the repository it lives in. Locally: pushing
+    the private repo is Kevin's. Never in this public repository."""
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], capture_output=True, text=True)
+
+    top = git("-C", str(path.parent), "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        print(f"roadmap.py: {path.parent} is no git repository — not committed", file=sys.stderr)
+        return
+    repo = pathlib.Path(top.stdout.strip()).resolve()
+    if repo == ROOT.resolve():
+        print(f"roadmap.py: {path} is in the public repository — not committed", file=sys.stderr)
+        return
+    rel = str(path.resolve().relative_to(repo))
+    for args in (("add", "--", rel), ("commit", "-q", "-m", message, "--", rel)):
+        r = git("-C", str(repo), *args)
+        if r.returncode != 0:
+            print(
+                f"roadmap.py: git {args[0]} failed, written but not committed: {r.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    if not args.title.strip() or not args.source.strip():
+        raise UsageError("a row needs a --title and a --source")
+    if args.dedup_key is not None and (not args.dedup_key or len(args.dedup_key.split()) != 1):
+        raise UsageError(f"a Dedup-Key is one token: {args.dedup_key!r}")
+
+    def change(roadmap: Roadmap) -> str:
+        rows = [r for _, r in roadmap.rows() if r.well_formed]
+        neu = sum(r.state == "neu" for r in rows)
+        if neu >= NEU_CAP:
+            raise Refused(3, f"the neu cap is reached ({neu}/{NEU_CAP}) — triage first")
+        if args.dedup_key:
+            owner = next((r.id for r in rows if r.is_open and r.dedup_key == args.dedup_key), None)
+            if owner:
+                raise Refused(4, f"Dedup-Key {args.dedup_key} is already on open row {owner}")
+        rid = roadmap.next_id()
+        key = f"Dedup-Key: {args.dedup_key}" if args.dedup_key else ""
+        source = " · ".join(v for v in (args.source, args.proof or "", key) if v)
+        days = EXPIRY_DAYS.get(args.klass)
+        ablauf = (args.today + dt.timedelta(days=days)).isoformat() if days else "nie"
+        cells = [rid, args.klass, cell(args.title), "neu", cell(source)]
+        cells += [cell(args.ledger or ""), "—", "—", ablauf, "—"]
+        roadmap.insert_row("Neu", Row(cells))
+        return rid
+
+    print(write(roadmap_path(args.file), change, verb="add", delta=1, today=args.today))
+    return 0
+
+
 def cmd_lint(args: argparse.Namespace) -> int:
     path = roadmap_path(args.file)
     found = lint(Roadmap.load(path), args.today)
@@ -337,12 +576,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = p.add_subparsers(dest="verb", required=True)
     sub.add_parser("lint", help="report what does not fit the format").set_defaults(func=cmd_lint)
+    a = sub.add_parser("add", help="append a `neu` row and print its ID")
+    a.add_argument("--class", dest="klass", required=True, choices=CLASSES)
+    a.add_argument("--title", required=True)
+    a.add_argument("--source", required=True, help="where it comes from, e.g. 'weekly 2026-09-25'")
+    a.add_argument("--proof", help="where the proof lives, e.g. Branch@SHA")
+    a.add_argument("--dedup-key", help="<klasse>:<komponente>:<datei>:<symbol>, one token")
+    a.add_argument("--ledger", help="the ledger, if there is one")
+    a.set_defaults(func=cmd_add)
     args = p.parse_args(argv)
     try:
         return args.func(args)
     except UsageError as e:
         print(f"roadmap.py: {e}", file=sys.stderr)
         return 2
+    except Refused as e:
+        print(f"roadmap.py: {e}", file=sys.stderr)
+        return e.code
 
 
 if __name__ == "__main__":

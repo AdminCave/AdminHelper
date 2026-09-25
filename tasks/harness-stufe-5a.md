@@ -38,8 +38,10 @@ Review: approve (sonnet, Runde 2 nach runner-setup-Fix)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (roadmap.py, Schritt dev-pytest)
 
-### T2 — Schreiben mit Sperre: `add`  [ ]
+### T2 — Schreiben mit Sperre: `add`  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @2c3c62c4 2026-09-25T09:10:29+02:00
+Review: approve (sonnet, Runde 2 nach atomarer Wiederherstellung)
 Änderung: `add --class --title --source [--proof] [--dedup-key] [--ledger]` legt eine `neu`-Zeile an. Die ID ist max + 1 über alle Zeilen, der Dedup-Key steht als Token in „Quelle / Beweis“.
 - **Jede Schreiboperation (auch T3):**
   - läuft unter `flock` auf `<datei>.lock`;
