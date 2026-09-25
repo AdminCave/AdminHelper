@@ -15,7 +15,7 @@
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
-unset AH_ONLY AH_NO_SYNC AH_REQUIRED AH_SCHEMATHESIS_EXAMPLES
+unset AH_ONLY AH_NO_SYNC AH_REQUIRED AH_SCHEMATHESIS_EXAMPLES GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ITER="$HERE/../vm/iter.sh"

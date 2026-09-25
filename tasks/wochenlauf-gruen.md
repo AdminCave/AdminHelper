@@ -78,6 +78,14 @@ Komponente: scripts · Dateien: scripts/tests/hooks_test.sh
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
 
+### T8 — Nacharbeit aus dem Branch-Review: `GIT_*` des Aufrufers in iter_flags_test, rc im Zwei-Schritt-Fall  [x]
+Komponente: scripts · Dateien: scripts/tests/iter_flags_test.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @50dbca51 2026-09-25T14:42:05+02:00
+Review: approve (sonnet; nit GIT_OBJECT_DIRECTORY bewusst nicht, kein realistischer Aufrufer); Gegenprobe: Aufrufer-Index vorher mit seed, nachher sauber
+Änderung: Zwei Funde aus `/code-review` über den Branch-Diff, beide im neuen Code dieses Vorhabens. (1) `iter_flags_test.sh` legt das Wegwerf-Repo mit geerbten `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` an; aus einem Kontext, der sie exportiert (etwa ein Git-Hook mit `GIT_INDEX_FILE`), schreibt `git add seed` in den Index des Aufrufers. Die drei kommen in die `unset`-Zeile. Gegenprobe: ein Aufrufer-Repo mit exportiertem `GIT_INDEX_FILE`, vorher steht `seed` in dessen Index, nachher nicht. (2) Der Zwei-Schritt-Fall in `heavy_test.sh` (T6) liest `rc`, prüft ihn aber nicht; zwei unbestätigte Kandidaten sind Exit 1 wie im Nachbarfall `candidate_case`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Test)
+
 ## Abschluss (Heavy, auf Kevins Freigabe)
 
 Wochenlauf-Wiederholung `bash scripts/tests/heavy.sh weekly` als überwachter Hintergrund-Lauf

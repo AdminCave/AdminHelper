@@ -431,6 +431,7 @@ artifact "web vitest:fail:19" "scripts (hermetic):fail:30"
 export SHIM_W2_HEAD_RC=0
 # </dev/null: a draining shim outside the loop must never wait on a terminal.
 out=$(SHIM_DRAIN_STDIN=1 bash "$HEAVY" all 2>&1 </dev/null); rc=$?
+[ "$rc" = 1 ] && ok "two unconfirmed candidates -> exit 1" || bad "two candidates -> rc=$rc"
 [ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
   && ok "both red steps went through the second VM" \
   || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
