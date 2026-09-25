@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -185,6 +185,34 @@ Review: approve (sonnet)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md · docs/developer/cicd.html · docs/en/developer/cicd.html
 Abhängt von: T2, T11
+
+### T13 — `feature-build` findet den Plan auf seinem Branch (R-0065) und setzt einen unterbrochenen Abschluss fort  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, AUTONOMOUS.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @23d272f8 2026-09-25T17:30:07+02:00
+Review: approve (sonnet, Runde 2)
+Änderung: Funde (A), (4, Skill-Teil), (7), (8, AUTONOMOUS-Teil) und (9, feature-build) des zweiten Branch-Reviews, Auftrag der Aufsicht 2026-09-25:
+- (A) R-0065 legt den Plan auf `feature/<slug>`, aber `feature-build` las den Kopf aus dem Arbeitsbaum, bevor es den Branch wechselte. Aus `main` heraus fand es den Plan nicht. „Vor dem Start“ beginnt jetzt mit „Plan finden“: zuerst auf den Branch wechseln. Das Beispiel in `AUTONOMOUS.md` („So startest du konkret“) wechselt vor `/feature-build`.
+- (4) Bei `bereit` wird keine Task gebaut. Ein unterbrochener Abschluss geht ab Schritt 2 weiter, ein fertiger wird gemeldet.
+- (7) „Roadmap mitziehen“ erkennt auch die Kopfzeile `Roadmap: R-nnnn` der Regressions-Ledger aus `heavy.sh`. Schritt 6 verweist für den PR auf „Roadmap mitziehen“ (`--pr`, Teil-Ledger).
+- (8) `AUTONOMOUS.md` „Parallel-Betrieb“: Eine Lane mit `Heavy:` kann „Schnellsuite auf der VM“ nicht sagen (R-0097).
+- (9) Zwei überlange Zeilen im Abschluss sind umbrochen.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: AUTONOMOUS.md
+Abhängt von: T12
+
+### T14 — Semantik-Frage behält die Notiz; Texte und Konsistenz-Test nach dem zweiten Branch-Review  [ ]
+Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/roadmap/SKILL.md, tasks/README.md, docs/developer/cicd.html, docs/en/developer/cicd.html, scripts/tests/skill_consistency_test.sh
+Änderung: Funde (B), (3), (4, README), (5), (6), (8, Ledger/Test) und (9, README) des zweiten Branch-Reviews, Auftrag der Aufsicht 2026-09-25:
+- (B) Zeigt `Semantik:` Absicht, fragt der Planer Kevin sofort (Abschnitt 0). Die Zeile hält die Frage fest und behält die alte Notiz: `--note "<bisherige Notiz>; Semantik-Frage: …"`, weil `--note` ersetzt. Die Behauptung „geht in die Triage“ fällt weg, denn `/roadmap triage` sieht nur `neu`-Zeilen.
+- (3) Im `/roadmap`-Skill fällt der veraltete Satz „den Kurz-Modus bringt Stufe 5b“ weg.
+- (4) `tasks/README.md`: Bei `bereit` stehen der Abschluss von `feature-build` und der PR aus.
+- (5) Der Konsistenz-Test prüft positiv, dass `feature-build` die PR-Nummer mit `--pr` setzt. Mutationsprobe: ohne `--pr` wird der Test rot.
+- (6) Die Doku von `Dedup-Key:` in README und cicd DE+EN sagt, dass der Lint das erste Token prüft. Der Lint selbst bleibt.
+- (8) Die bekannte Grenze von `plan_on_main` (ein Klammer-Einschub trennt Commit und „auf main“) steht im Kommentar des Tests.
+- (9) Der `Heavy:`-Absatz in `tasks/README.md` ist umbrochen.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: tasks/README.md · docs/developer/cicd.html · docs/en/developer/cicd.html
+Abhängt von: T13
 
 ## Abschluss (nach T6, vor dem PR)
 

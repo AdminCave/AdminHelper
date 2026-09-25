@@ -17,6 +17,11 @@ und `erledigt` werden ohne Pfad nie automatisch gebaut (den Worker für `freigeg
 Stufe 7).
 
 ## Vor dem Start
+- **Plan finden:** Seit R-0065 liegt ein geplantes Ledger bis zum Merge nur auf seinem Branch
+  (der erste Commit von `feature/<slug>`). Steht `tasks/<slug>.md` nicht im Arbeitsbaum,
+  zuerst dorthin wechseln: `git switch feature/<slug>` (den Branch legt `feature-plan` am Gate
+  an, `git branch --list 'feature/*'` zeigt ihn; in einer Lane ist man schon dort). Ohne Pfad
+  sucht der Bau nur im Arbeitsbaum.
 - Ledger-Kopf lesen: **Status**, **Branch**, **Spec**, **Commit-Granularität**, **Review**-
   Granularität, **Heavy** (bei älteren Ledgern ohne `Heavy:` stattdessen **Fast-Suite** und
   **Warm-Profil**), DoD-Verweis.
@@ -31,10 +36,13 @@ Stufe 7).
 - **Status prüfen** (Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`,
   tasks/README.md): `freigegeben` → Kevins Freigabe liegt vor: Kopf auf `aktiv` setzen und
   bauen. `geplant` → nur mit ausdrücklichem Pfad; dann IST das Starten die Freigabe: Kopf auf
-  `aktiv`. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu, Verifikation und PR stehen
-  aus: **nicht** bauen, melden. `blockiert`/`erledigt` → **nicht** bauen, melden.
-- **Roadmap mitziehen:** Nennt der Ledger-Kopf Roadmap-IDs im `Spec:` (`Roadmap R-nnnn`,
-  `docs/features/<slug>.md (Roadmap R-nnnn)`, beim Bündel `Roadmap R-a, R-b, …`), folgt jede
+  `aktiv`. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu: **keine** Task bauen. Gibt es
+  für den Branch schon einen PR (`gh pr view <branch>`), ist der Abschluss fertig: melden; sonst
+  war er unterbrochen (etwa von einem Compact) und geht ab Schritt 2 weiter.
+  `blockiert`/`erledigt` → **nicht** bauen, melden.
+- **Roadmap mitziehen:** Nennt der Ledger-Kopf Roadmap-IDs — im `Spec:` (`Roadmap R-nnnn`,
+  `docs/features/<slug>.md (Roadmap R-nnnn)`, beim Bündel `Roadmap R-a, R-b, …`) oder in der
+  Zeile `Roadmap: R-nnnn` der Regressions-Ledger aus `heavy.sh` —, folgt jede
   dieser Zeilen dem Ledger, nur über `python3 scripts/dev/roadmap.py status R-nnnn <status>`, je
   ID ein Aufruf: beim Start `aktiv`, im Abschluss `bereit`, mit dem PR `pr --pr "#<n>"` (die
   Spalte `PR`, die `sync` liest); `abgeschlossen` setzt nach dem Merge `roadmap.py sync`. Ist das
@@ -194,11 +202,12 @@ Stufe 7).
    gibt es erst mit Stufe 12, also „nicht verifiziert" melden. Ältere Ledger ohne `Heavy:`:
    `Warm-Profil` und `Abschluss: multibox` wie unten. Den Plan immer am realen Diff
    re-checken, in beide Richtungen, und eine Abweichung im Abschluss nennen.
-   Erst den Branch-Diff prüfen (`git diff --stat main...`): Berührt er **heavy-relevante** Pfade? (`apps/server`-API/
-   Gateway, `apps/ca-issuer`, `apps/gateway`, `apps/agent`, `apps/desktop` Connect/Tunnel/
-   Enrollment, `docker-compose*.yml`, `Dockerfile`, `scripts/install|update`, FRP/PKI). **Wenn
-   nein** (z. B. reine `docs/`-, Web-UI- oder Kleinkram-Änderung) → schwere Suite **überspringen**
-   mit begründetem Vermerk, direkt zu Schritt 4. **Wenn ja:** dem `/test`-Skill folgen — Box warm
+   Erst den Branch-Diff prüfen (`git diff --stat main...`): Berührt er **heavy-relevante**
+   Pfade? (`apps/server`-API/Gateway, `apps/ca-issuer`, `apps/gateway`, `apps/agent`,
+   `apps/desktop` Connect/Tunnel/Enrollment, `docker-compose*.yml`, `Dockerfile`,
+   `scripts/install|update`, FRP/PKI). **Wenn nein** (z. B. reine `docs/`-, Web-UI- oder
+   Kleinkram-Änderung) → schwere Suite **überspringen** mit begründetem Vermerk, direkt zu
+   Schritt 4. **Wenn ja:** dem `/test`-Skill folgen — Box warm
    → `run.sh quick` → `AH_ALLOW_REAL=1 run.sh integration` (+ `e2e` nur bei berührter
    `apps/web`/`apps/desktop`-Journey). Dabei das **`Warm-Profil` am realen Diff re-checken**,
    in beide Richtungen: `pond` geplant, aber keine Desktop-Journey im Diff → Single-Box
@@ -226,8 +235,9 @@ Stufe 7).
    (fertig / übersprungen / offene `[?]`) und VM-Ergebnis. (Beide prompten, solange nicht
    allowlisted — das ist Absicht.)
 6. **Mit dem PR:** Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn `[?]`-Punkte
-   offen bleiben; ein `chore(ledger)`-Commit), die Roadmap-Zeile auf `pr` mit der PR-Nummer. Schluss-Zusammenfassung im
-   Chat; die `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
+   offen bleiben; ein `chore(ledger)`-Commit), die Roadmap-Zeile wie unter „Roadmap mitziehen"
+   (`pr --pr "#<n>"`, ein Teil-Ledger `aktiv --pr`). Schluss-Zusammenfassung im Chat; die
+   `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
 
 ## Recovery
 - Granulare Commits ⇒ ein Fehlgriff = `git revert <commit>`, keine Handarbeit.

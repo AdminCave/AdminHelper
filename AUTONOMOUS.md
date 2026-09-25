@@ -85,7 +85,8 @@ claude --model opus --permission-mode acceptEdits
 
 # 2. Du liest docs/features/connection-note.md + tasks/connection-note.md, passt an, gibst frei.
 
-# 3. Autonom bauen bis Draft-PR:
+# 3. Autonom bauen bis Draft-PR, auf dem Branch, auf dem der Plan liegt (R-0065):
+git switch feature/connection-note
 /feature-build tasks/connection-note.md
 ```
 
@@ -161,7 +162,9 @@ Mechanik dahinter:
   `DEVELOPMENT.md` („Python-Tests lokal").
 - **`Heavy:` im Ledger-Kopf** (`none | linux-full | scenario <flags> | windows`) sagt, welche
   schwere Suite der Abschluss braucht; es ersetzt für neue Ledger die beiden älteren Felder
-  unten, die `feature-build` bei älteren Ledgern weiter liest.
+  unten, die `feature-build` bei älteren Ledgern weiter liest. Dass eine Lane ihre
+  Schnellsuite auf der VM fährt (das alte `Fast-Suite: vm`), kann ein neues Ledger damit nicht
+  sagen; das ist offen (R-0097).
 - **`Fast-Suite: vm` im Ledger-Kopf** (ältere Ledger). Eine Lane hat keine `node_modules` und kein
   `target`; ihr Python-Testvenv (`AH_VENV`, `~/.cache/ah-venv-<slug>`) hat sie eigens, die
   Komponenten-Venvs mit dem CI-`ruff` sind nur Links in den Haupt-Checkout. N parallele lokale
