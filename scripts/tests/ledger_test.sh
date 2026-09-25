@@ -305,6 +305,28 @@ with_head "Heavy: none; kein Pfad berührt"
 l lint fixture
 [ $rc -eq 0 ] && ok "Heavy: none; … is none" || bad "none;: rc=$rc out=$OUT"
 
+# The proof fields (tasks/README.md, Beweis-Konvention): optional, but where a
+# task carries one, its form is checked.
+with_task_line() {  # with_task_line <line> — the clean fixture, T2 carrying this line
+  fresh_fixture
+  sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
+  L_VAL="$1" awk '/^### T2 /{print; print ENVIRON["L_VAL"]; next} {print}' "$FIX" > "$FIX.new" && mv "$FIX.new" "$FIX"
+}
+for line in "Orakel: property" "Orakel: mutation-sample — zwei Mutanten, beide gefangen" \
+            "Dedup-Key: ref:web:src/a.ts:helper" "HEAD: 1a2b3c4" \
+            "HEAD: 0123456789abcdef0123456789abcdef01234567" \
+            "Beweis: feature/x@1a2b3c4 · bash scripts/dev/verify.sh server --strict → 1 failed"; do
+  with_task_line "$line"
+  l lint fixture
+  [ $rc -eq 0 ] && ok "valid: $line" || bad "$line: rc=$rc out=$OUT"
+done
+for case in "Orakel: gefühl|Orakel: 'gefühl' is not" "Dedup-Key: reg:web-vitest|Dedup-Key: 'reg:web-vitest' is not" \
+            "Dedup-Key: a:b:c:d:e|Dedup-Key: 'a:b:c:d:e' is not" "HEAD: main|HEAD: 'main' is not a commit SHA"; do
+  with_task_line "${case%%|*}"
+  l lint fixture
+  [ $rc -eq 1 ] && grep -qF "${case#*|}" <<<"$OUT" && ok "an error: ${case%%|*}" || bad "${case%%|*}: rc=$rc out=$OUT"
+done
+
 # ══ the real ledgers ══════════════════════════════════════════════════════════
 echo "── the real ledgers ──"
 grep -q 'ledger_test' "$REPO_ROOT/scripts/tests/run.sh" \

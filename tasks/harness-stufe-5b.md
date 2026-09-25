@@ -24,8 +24,10 @@ Review: approve (sonnet, Runde 2 nach Verankerung)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md
 
-### T2 — Beweis-Konvention A–D: Felder, Vorlage, Lint  [ ]
-Komponente: scripts · Dateien: tasks/README.md, tasks/templates/task.md, scripts/dev/ledger.sh
+### T2 — Beweis-Konvention A–D: Felder, Vorlage, Lint  [x]
+Komponente: scripts · Dateien: tasks/README.md, tasks/templates/task.md, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @9a2312e2 2026-09-25T13:31:08+02:00
+Review: approve (sonnet, Runde 2 nach Metrik-Abgleich)
 Änderung:
 - `tasks/README.md` beschreibt die vier Beweisklassen aus dem Roadmap-Dokument §8.3 und die optionalen Task-Zeilen:
   - `Beweis:` (Branch + SHA + Kommando + erwartete Ausgabe),

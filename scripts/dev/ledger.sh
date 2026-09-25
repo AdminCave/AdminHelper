@@ -340,6 +340,29 @@ case "$CMD" in
         } else if (!old) print "Heavy: \047" heavy "\047 is not none | linux-full | scenario <flags> | windows"
       }' "$LEDGER")
 
+    # The proof fields (tasks/README.md, "Beweis-Konvention") are optional; where a
+    # task carries one, the part a script will read has to have its form.
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      function value(f,   v) { v = $0; sub("^" f ":[ \t]*", "", v); split(v, w, /[ \t]+/); return w[1] }
+      /^Orakel:/ {
+        v = value("Orakel")
+        if (v !~ /^(crash|contract|property|differential|mutation-sample|coverage|analyzer|metric)$/)
+          printf "line %d: Orakel: \047%s\047 is not crash|contract|property|differential|mutation-sample|coverage|analyzer|metric\n", NR, v
+      }
+      /^Dedup-Key:/ {
+        v = value("Dedup-Key")
+        if (v !~ /^[^:]+:[^:]+:[^:]+:[^:]+$/)
+          printf "line %d: Dedup-Key: \047%s\047 is not <klasse>:<komponente>:<datei>:<symbol>\n", NR, v
+      }
+      /^HEAD:/ {
+        v = value("HEAD")
+        if (v !~ /^[0-9a-f]+$/ || length(v) < 7 || length(v) > 40)
+          printf "line %d: HEAD: \047%s\047 is not a commit SHA\n", NR, v
+      }' "$LEDGER")
+
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
       echo "ERROR  Status: aktiv, but no open [ ] task left (tasks/README.md: the invariant)" >&2
       RC=1

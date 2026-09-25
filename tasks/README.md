@@ -127,6 +127,46 @@ im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das i
 `ledger.sh lint` prüft die Form: `<pfad>::<name> — <Grund>`, **der Grund ist Pflicht**. Eine
 Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
 
+## Beweis-Konvention — was eine Task belegt
+
+Eine Task, die einen **Fund** umsetzt (von Kevin, aus dem Wochenlauf, später von der
+Finder-Flotte), trägt den Beweis dafür, dass es ihn gibt, in ihren eigenen Zeilen. Jede Klasse
+von Fund hat ihre Beweisregel:
+
+- **A — Fehler (SEC, REG, BUG):** ein Test, der auf `HEAD:` **dreimal identisch rot** ist, klein
+  (höchstens etwa 40 Zeilen oder ein minimierter Input), mit einer Assertion, die Erwartung und
+  Beobachtung nennt. `Beweis:` ist das Kommando, das ihn rot zeigt; die Fix-Task verifiziert mit
+  demselben Test, jetzt grün. SEC zusätzlich mit einem `Refuter:`, der den Fund nicht widerlegen
+  konnte; REG zusätzlich rot auf einer zweiten VM und grün auf dem letzten grünen Stand.
+- **B — Vereinfachung, Refactor, Performance, Duplikat:** Der Fund belegt nur den Ist-Zustand
+  als Messwert (`Metrik:`, Werkzeug und Version fest). Der eigentliche Beweis fällt beim Fix: die
+  Suite vor **und** nach dem Diff grün (beide Summary-Zeilen), die Metrik strikt besser mit
+  demselben Werkzeug, die Coverage der Region nicht gesunken, dazu eine Mutations-Stichprobe
+  (`Orakel: mutation-sample`). Eine Stichprobe ist kein Beweis der Äquivalenz und heißt auch so.
+- **C — toter Code:** ein Analyzer-Treffer (Werkzeug und Version im `Beweis:`), ein repo-weiter
+  Wort-`grep` über alle Dateitypen, der nur die eigenen Tests findet (das ist der `Beweis:`-Befehl,
+  erwartet leer), die Checkliste der dynamischen Aufrufwege abgehakt, die Entfernung unter
+  `verify.sh --strict` grün. `Metrik:` sind die gelöschten Zeilen.
+- **D — Parität, Contract, Abhängigkeiten:** ein Paritäts-Test mit einer Assertion, die nicht leer
+  sein darf und bei einer einzelnen Mutation rot wird; bei Abhängigkeiten die Advisory-ID aus einem
+  roten `audit.yml`-Lauf.
+
+Die Zeilen stehen im Task-Block, jede optional, jede nur, wenn sie etwas trägt:
+
+| Zeile | Inhalt | `ledger.sh lint` prüft |
+|---|---|---|
+| `Beweis:` | Branch + SHA + Kommando + erwartete Ausgabe | — |
+| `Orakel:` | `crash`, `contract`, `property`, `differential`, `mutation-sample`, `coverage`, `analyzer` oder `metric`; danach nach ` — ` eine Erläuterung | Wert aus der Liste |
+| `Refuter:` | wer oder was den Fund zu widerlegen versuchte, mit welchem Ergebnis | — |
+| `Dedup-Key:` | `<klasse>:<komponente>:<datei>:<symbol>`, ein Token ohne Leerzeichen — derselbe Schlüssel wie in der Roadmap; `sec:`-Schlüssel stehen nie im öffentlichen Repo (`review.sh sec` blockiert sie) | genau drei `:` |
+| `Metrik:` | Klasse B: vorher → nachher, mit Werkzeug und Version; Klasse C: die gelöschten Zeilen oder Dateien | — |
+| `Kosten:` | was der Beweis gekostet hat (Zeit, Läufe, Tokens) | — |
+| `HEAD:` | der Commit, auf dem der Beweis galt | ein SHA (7–40 Hex-Zeichen) |
+| `Semantik:` | **Pflicht bei `/feature-plan --kurz`:** die Stelle unter `docs/`, die das gewollte Verhalten beschreibt, mit Zitat — damit der Fix nicht beseitigt, was Absicht ist | — |
+
+Die Form prüft `ledger.sh lint`, den Inhalt der Reviewer. Die Vorlage `tasks/templates/task.md`
+führt die Zeilen im Kopfkommentar auf; `new-task` hängt sie nicht an.
+
 ## Aktueller Stand
 
 - **`harness-stufe-3.md`** — `Status: aktiv`. Stufe 3 der Autonomie-Roadmap („Ausführung
