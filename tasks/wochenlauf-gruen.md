@@ -48,8 +48,10 @@ Review: approve (sonnet, 2. Runde: reason um die drei Kontexte ohne Bearer ergae
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (die Ausschlussdatei ist ihre eigene Doku)
 
-### T4 — Monitoring: Offset am Kalenderrand ist 422, nicht 500 (R-0089)  [ ]
+### T4 — Monitoring: Offset am Kalenderrand ist 422, nicht 500 (R-0089)  [x]
 Komponente: monitoring · Dateien: apps/monitoring/app/schemas.py, apps/monitoring/tests/test_maintenance_router.py, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @a81a2ecc 2026-09-25T14:01:15+02:00
+Review: approve (sonnet); Gegenprobe: vorher 4 failed (OverflowError), nachher gruen; CI-aequivalent 495 passed; Lane-Box monitoring 485 + schemathesis 114 passed
 Änderung: Test zuerst: `0001-01-01T00:00:00+00:01` und `9999-12-31T23:59:59-00:01`, je auf `starts_at` und `ends_at`, über `POST /maintenance` und `PUT /maintenance/{id}` → 422, `loc` endet auf dem Feld. Dazu: naives `0001-01-01T00:00:00` bleibt gültig. Vor dem Fix rot (Exception bzw. 500). Dann in `_naive_utc` den `OverflowError` aus `astimezone` in einen `ValueError` mit klarer Meldung umwandeln. Der OpenAPI-Snapshot bleibt unverändert (`test_openapi_snapshot.py` grün).
 Verify: bash scripts/dev/verify.sh monitoring --strict
 Doku: CHANGELOG.md `[Unreleased]` → `Fixed` (Monitoring antwortet auf ein Datum mit Offset am Kalenderrand mit 422 statt 500)

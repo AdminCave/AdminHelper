@@ -110,6 +110,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Wartungsfenster mit Offset am Kalenderrand (Monitoring):** `POST /maintenance` und
+  `PUT /maintenance/{id}` antworten auf ein `starts_at`/`ends_at` mit Zeitzonen-Offset, das in
+  UTC umgerechnet vor dem Jahr 1 oder nach dem Jahr 9999 laege (etwa
+  `0001-01-01T00:00:00+00:01`), mit 422 und Feldbezug statt mit 500. Die Umrechnung lief als
+  ungefangener `OverflowError` durch. Ein naives Datum im Jahr 1 bleibt gueltig.
 - **422 statt 500 an den Raendern der API (Server und Monitoring):** Eingaben, die erst in der
   Datenbankschicht scheiterten, werden jetzt am Rand geprueft. Betroffen waren alle drei
   Eingangswege: die int-Pfad- und Query-Parameter (`user_id`, `key_id`, `offset`), die
