@@ -131,7 +131,7 @@ for want in 'CLAUDE.md' '.claude/**' 'scripts/tests/run.sh' 'scripts/vm/vm.py' \
             'scripts/dev/runner-redteam.sh' 'scripts/tests/hooks_test.sh' \
             'scripts/tests/task_close_test.sh' 'scripts/tests/review_scripts_test.sh' \
             'scripts/vm/warm.sh' 'scripts/vm/iter.sh' 'scripts/vm/reap.sh' 'scripts/vm/lib.sh' \
-            'scripts/vm/bake.sh' 'scripts/tests/multibox.sh'; do
+            'scripts/vm/bake.sh' 'scripts/tests/multibox.sh' 'scripts/dev/roadmap.py'; do
   grep -qxF "$want" "$PATHS" && ok "listed: $want" || bad "missing from harness-paths.txt: $want"
 done
 
@@ -208,6 +208,10 @@ guard auto MultiEdit "{\"file_path\":\"$TREE/scripts/dev/hooks/session-status.sh
 denied "$OUT" && ok "MultiEdit under scripts/dev/hooks/** is denied" || bad "hooks subtree: $OUT"
 guard auto Edit "{\"file_path\":\"$TREE/scripts/dev/harness.sh\"}"
 denied "$OUT" && ok "the kill switch itself is a harness path" || bad "harness.sh: $OUT"
+# The WIP caps and the transitions live in roadmap.py, and the status hook takes
+# trigger 3 from it: an autonomous run must not move them (Kevin, 2026-09-25).
+guard auto Edit "{\"file_path\":\"$TREE/scripts/dev/roadmap.py\"}"
+denied "$OUT" && ok "roadmap.py is a harness path: an autonomous edit is denied" || bad "roadmap.py: $OUT"
 
 # A guard that also stops ordinary work would be switched off on day one.
 guard auto Edit "{\"file_path\":\"$TREE/apps/server/app/main.py\"}"

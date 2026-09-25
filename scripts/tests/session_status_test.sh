@@ -78,9 +78,11 @@ LEDGER
 ## Als Nächstes
 1. R-0042 SEC  erste Zeile
 2. R-0043 BUG  zweite Zeile
+   und ihre Fortsetzung, die nur in der Datei steht
+   - ein eingerückter Unterpunkt, der auch nur dort steht
 3. R-0044 FEAT dritte Zeile
 4. R-0045 REF  vierte Zeile
-5. R-0046 IDEE fuenfte Zeile darf nicht erscheinen
+5. R-0046 IDEE fuenfte Zeile
 
 ## Danach
 nichts
@@ -145,7 +147,13 @@ grep -qxF "Release: tauri 0.46.0 · letzter Tag v0.45.0 · Draft: ja" <<<"$OUT" 
 grep -qx "Roadmap:" <<<"$OUT" && ok "line 3: roadmap header" || bad "line 3 header missing"
 grep -qF "R-0042 SEC" <<<"$OUT" && ok "roadmap: first entry" || bad "roadmap: first entry missing"
 grep -qF "R-0045 REF" <<<"$OUT" && ok "roadmap: fourth entry" || bad "roadmap: fourth entry missing"
-grep -qF "R-0046" <<<"$OUT" && bad "roadmap: fifth entry leaked (only 4 lines)" || ok "roadmap: stops after 4"
+grep -qF "R-0046 IDEE fuenfte Zeile" <<<"$OUT" && ok "roadmap: the fifth point too" || bad "roadmap: fifth point missing"
+[ "$(grep -cE '^  [0-9]+\. R-00' <<<"$OUT")" = 5 ] && ok "roadmap: five points, five lines" \
+  || bad "roadmap: $(grep -cE '^  [0-9]+\. R-00' <<<"$OUT") point lines"
+grep -qF "Fortsetzung" <<<"$OUT" && bad "roadmap: a continuation line leaked" || ok "roadmap: a point is its first line"
+grep -qF "Unterpunkt" <<<"$OUT" && bad "roadmap: an indented sub-item became a point" || ok "roadmap: an indented sub-item is no point"
+grep -qxF "WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 0/20 · ALT: 0" <<<"$OUT" \
+  && ok "WIP: the counters from roadmap.py, no cap reached, no Warnung" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 grep -qF "## Danach" <<<"$OUT" && bad "roadmap: next section leaked" || ok "roadmap: stops at next section"
 grep -qxF "Ledger aktiv|bereit: demo-feature · PRs offen: 2 · Wochenlauf: $NEW_DAY (3 d): UNVERIFIED (doctor red) · Worker: — (ab 7)" <<<"$OUT" \
   && ok "line 4: ledgers + PRs + weekly verdict" || bad "line 4: $(grep -m1 '^Ledger' <<<"$OUT")"
@@ -252,6 +260,35 @@ OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$NOROADMAP"
 grep -qxF "Roadmap: fehlt (tasks/private/ROADMAP.md)" <<<"$OUT" \
   && ok "missing roadmap is stated, not guessed" || bad "roadmap line: $(grep -m1 '^Roadmap' <<<"$OUT")"
 grep -q '^WARN:' <<<"$OUT" && bad "missing roadmap must not warn" || ok "missing roadmap does not warn"
+
+# ══ case 6b: the WIP caps, and a roadmap.py that cannot answer ══════════════════
+echo "── WIP caps ──"
+cat >> "$CLEAN/tasks/private/ROADMAP.md" <<'ROWS'
+
+## In Arbeit
+| ID | Klasse | Titel | Status | Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min |
+|---|---|---|---|---|---|---|---|---|---|
+| R-0050 | FEAT | Im Bau | aktiv | kevin | — | — | — | — | — |
+| R-0051 | FEAT | Wartet auf den PR | bereit | kevin | — | — | — | — | — |
+| R-0052 | BUG | Wartet auch | bereit | kevin | — | — | — | — | — |
+ROWS
+OUT=$(SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN")
+grep -qxF "WIP: aktiv 1/1 · bereit 2/2 · pr 0/3 · neu 0/20 · ALT: 0 · Warnung: Deckel erreicht (aktiv 1/1, bereit 2/2)" <<<"$OUT" \
+  && ok "WIP: reached caps say Warnung, and name each" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
+# A copy of the hook with its own roadmap.py beside it: broken, then gone.
+HOOKCOPY="$WORK/hookcopy/scripts/dev"
+mkdir -p "$HOOKCOPY/hooks"
+cp "$HOOK" "$HOOKCOPY/hooks/session-status.sh"
+printf 'import sys\nsys.exit("kaputt: absichtlich")\n' > "$HOOKCOPY/roadmap.py"
+OUT=$(cd "$CLEAN" && SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" bash "$HOOKCOPY/hooks/session-status.sh" 2>&1)
+rc=$?
+grep -qxF "WIP: ? (roadmap.py show --wip, Exit 1: kaputt: absichtlich)" <<<"$OUT" \
+  && ok "WIP: a failing roadmap.py shows its error, not nothing" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
+[ $rc -eq 0 ] && ok "a failing roadmap.py does not fail the hook" || bad "hook exit $rc"
+rm "$HOOKCOPY/roadmap.py"
+OUT=$(cd "$CLEAN" && SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" bash "$HOOKCOPY/hooks/session-status.sh" 2>&1)
+grep -qxF "WIP: ? (roadmap.py fehlt: $HOOKCOPY/roadmap.py)" <<<"$OUT" \
+  && ok "WIP: a missing roadmap.py is said" || bad "WIP: $(grep -m1 '^WIP' <<<"$OUT")"
 
 # ══ case 7: tasks/private unpushed-commit threshold ═══════════════════════════
 echo "── tasks/private: 2 unpushed is quiet, 3 warns ──"

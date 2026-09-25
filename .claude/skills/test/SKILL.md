@@ -47,7 +47,10 @@ itself (CLAUDE.md §2): no timer, no cron, no "while I'm at it". But once Kevin 
 4. When it ends: quote the report's FIRST line verbatim (the verdict), the two summary
    lines (`run.sh[all]`, `multibox`), and the classification rows; then `vm.py list`
    (must be empty — a leak is a finding, not a footnote). `heavy.sh` has already written
-   `history.csv` and the ROADMAP rows into `tasks/private/` — commit and push that repo.
+   `history.csv` and `seen.md` and committed them in `tasks/private/`; a REG/REL row went in
+   through `roadmap.py add`, which commits it itself (a refused row — full `neu` cap, open
+   duplicate — is in the report's notes). Nothing is left to commit, and pushing the private
+   repo is Kevin's: name `git -C tasks/private push`, do not run it.
 5. Report to Kevin with the next action: rerun (infra), fix (reg), or nothing (pass). A
    rerun is again Kevin's word, never automatic.
 
