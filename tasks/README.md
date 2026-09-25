@@ -22,7 +22,7 @@ an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 | `freigegeben` | Kevin hat am Design-Gate freigegeben: `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
 | `aktiv` | wird gebaut. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
 | `bereit` | alle Tasks sind zu; der Abschluss von `feature-build` (Schnellcheck, schwere Suite, Branch-Review) und der PR stehen aus. |
-| `erledigt` | PR offen oder gemergt; bleibt als Historie liegen. |
+| `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. Bleibt als Historie liegen. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
 **Invariante:** kein `[ ]` mehr offen ⇒ `Status:` darf nicht `aktiv` bleiben. Der Loop **fragt

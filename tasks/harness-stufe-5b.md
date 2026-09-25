@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -231,6 +231,19 @@ Review: approve (opus, Runde 2)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: CHANGELOG.md (der Skill ist sonst die Doku)
 Abhängt von: T13
+
+### T16 — `erledigt` geht mit dem PR; der REG-Weg startet über die erlaubte Kette  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, tasks/README.md, scripts/dev/harness-paths.txt, scripts/tests/skill_consistency_test.sh, tasks/harness-stufe-5a.md, tasks/test-deletion-gate.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @5e75985e 2026-09-25T19:12:22+02:00
+Review: approve (opus, Runde 2; nit: noch auf bereit)
+Änderung: Die unabhängige Verifikation der Aufsicht auf 5e75985e fand zwei `wichtig` im Diff von T5/T13/T15; Auftrag 2026-09-25, Review mit Opus.
+- W1: `erledigt` kam nie in den PR. Schritt 5 pushte, erst Schritt 6 committete `erledigt`. Belegt: 5a und test-deletion-gate stehen auf `main` gemergt auf `bereit`. Jetzt setzt Schritt 5 den Kopf **vor** dem Push auf `erledigt`; Schritt 6 zieht nur noch die Roadmap mit `--pr` nach. Die `bereit`-Regel aus T15 zieht mit, die README-Zeile `erledigt` ebenso. Die beiden gemergten Ledger bekommen `erledigt`, als reine Kopf-Korrektur.
+- W2: Der REG-Weg brach. `heavy.sh` legt die Zeile `neu` an, und `feature-build` rief seit T13 beim Start `status aktiv` auf: Exit 2. Jetzt gilt bei ausdrücklichem Start (Pfad) die erlaubte Kette `geplant` → `approve` → `aktiv`, sonst melden. `--kurz` baut auf einem Ledger auf, das die Zeile schon nennt, statt ein zweites anzulegen.
+- Mitgenommen: Der Gate-Text fährt vor dem Plan-Commit `review.sh sec --staged`. `skill_consistency_test.sh` steht in `harness-paths.txt`, wie `ledger_test` und `hooks_test`. Der Konsistenz-Test prüft, dass Schritt 5 `erledigt` vor `git push` setzt.
+- Beim Schließen: `heavy_test` 4i-d ist flaky (Z. 546–547). Das liegt außerhalb von 5b, denn der Diff gegen heavy.sh und heavy_test.sh ist leer; gemeldet als R-0103. T16 ist mit dem zweiten, grünen task-close-Lauf geschlossen; der erste war genau an dieser Stelle rot. Ursache laut R-0103: plausibel, nicht belegt.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: tasks/README.md (sonst sind die Skills die Doku)
+Abhängt von: T15
 
 ## Abschluss (nach T6, vor dem PR)
 

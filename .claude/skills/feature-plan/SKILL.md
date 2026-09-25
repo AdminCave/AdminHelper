@@ -146,6 +146,9 @@ Abhängt von: T<k>   (nur falls nötig)
 - Jede Task trägt die Zeilen der Beweis-Konvention (tasks/README.md), soweit die Zeile sie
   hergibt: `Beweis:` aus der Zeile (Branch + SHA + Kommando + erwartete Ausgabe), `Dedup-Key:`
   und `HEAD:`, wenn bekannt. Die Fix-Task verifiziert mit genau dem Test, der den Fund zeigt.
+- Nennt die Zeile schon ein Ledger (Spalte `Ledger`, etwa das Regressions-Ledger, das
+  `heavy.sh` anlegt): darauf aufbauen oder Kevin fragen — kein zweites anlegen und die Spalte
+  nicht mit `--ledger` überschreiben.
 - **Pflicht: `Semantik:`** — die Stelle unter `docs/`, die das gewollte Verhalten beschreibt,
   mit Datei und wörtlichem Zitat (vorher lesen, nicht erinnern). Beschreibt die Doku das
   heutige Verhalten als Absicht, ist es kein Fehler: dann kein Fix-Task, sondern eine offene
@@ -186,7 +189,9 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   tasks/<slug>.md` — der Pfad gehört in die Spalte `Ledger`, dort lesen ihn `next` und die
   Parallel-Prüfung; derselbe Status füllt nur die Spalte. Nie ein Edit an der Datei.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
-  committen (Ledger mit `Status: geplant`), zurück mit `git switch main` — der Haupt-Checkout
+  stagen, `bash scripts/dev/review.sh sec --staged` (Exit 4: etwas darf nie in dieses
+  öffentliche Repo — nicht committen, melden), dann committen (Ledger mit `Status: geplant`),
+  zurück mit `git switch main` — der Haupt-Checkout
   bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei
   `--kurz` und `--bundle` ohne Spec `chore(plan): add ledger for <slug>`. Worktrees und der
   Worker sehen nur Committetes, und `lane.sh new` sucht den Plan genau dort.

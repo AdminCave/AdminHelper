@@ -95,6 +95,16 @@ section() {
     | tr '\n' ' '
 }
 
+# erledigt_before_push <feature-build SKILL.md> — "ok" when close step 5 (under
+# "## Abschluss", not step 5 of the iteration) sets the head to erledigt before
+# `git push`; after the push the commit never reaches the PR.
+erledigt_before_push() {
+  unreadable "$1" && return
+  awk '/^## / { a = ($0 ~ /^## Abschluss/); s = 0 } a && /^5\. \*\*/ { s = 1 } /^6\. \*\*/ { s = 0 }
+       s && /Status: erledigt/ && !e { e = NR } s && /git push/ && !p { p = NR }
+       END { if (e && p && e < p) print "ok" }' "$1"
+}
+
 # fires <detector> <file…> — the detector read its input and reported a finding.
 fires() { local out; out=$("$@"); [ -n "$out" ] && ! grep -q '^cannot read' <<<"$out"; }
 
@@ -153,6 +163,15 @@ grep -qE "$SEC_REFUSED" <<<"$(section "$f" '## 3a.' '## 4.')" && ok "the SEC ref
 f=$(fixture '## 3a. Die kurzen Wege' '**`--kurz R-nnnn`** — für einen belegten Fund, vor allem Klasse A (SEC, REG, BUG):' '## 4.')
 ! grep -qE "$SEC_REFUSED" <<<"$(section "$f" '## 3a.' '## 4.')" && ok "naming SEC among the classes is no refusal" \
   || bad "SEC_REFUSED fired on the old --kurz line"
+f=$(fixture '## Pro Iteration' '5. **Schließen:** hier kein `git push`' '## Abschluss' \
+            '5. **Erledigt, Push:** zuerst den Kopf auf `Status: erledigt`,' '   dann `git push -u origin <b>`' \
+            '6. **Mit dem PR:** Roadmap')
+[ "$(erledigt_before_push "$f")" = ok ] && ok "erledigt before the push in close step 5 is found (iteration step 5 aside)" \
+  || bad "erledigt_before_push missed the order"
+f=$(fixture '## Pro Iteration' '5. **Schließen:** noch nicht `Status: erledigt`' '## Abschluss' \
+            '5. **Push:** `git push -u origin <b>`, dann der PR' '6. **Mit dem PR:** Kopf auf `Status: erledigt`')
+[ -z "$(erledigt_before_push "$f")" ] && ok "erledigt after the push is no ok (iteration step 5 aside)" \
+  || bad "erledigt_before_push passed the old order"
 f=$(fixture '## 3. Ledger schreiben' '```' 'Status: geplant · Branch: feature/<slug>' 'Fast-Suite: lokal · Warm-Profil: desktop' '```')
 t=$(head_template "$f")
 { ! grep -q '^Heavy:' <<<"$t" && grep -q '^Fast-Suite:' <<<"$t"; } \
@@ -177,6 +196,9 @@ for part in "## 3a.:## 4." "## 4.:"; do
     && ok "feature-plan '${part%%:*}' sets the Ledger column with status … geplant --ledger" \
     || bad "feature-plan '${part%%:*}' has no status … geplant --ledger"
 done
+[ "$(erledigt_before_push .claude/skills/feature-build/SKILL.md)" = ok ] \
+  && ok "feature-build sets erledigt before the push, so it goes with the PR" \
+  || bad "feature-build's close step 5 does not set erledigt before git push"
 grep -qE "$SEC_REFUSED" <<<"$(section .claude/skills/feature-plan/SKILL.md '## 3a.' '## 4.')" \
   && ok "feature-plan's --kurz refuses SEC (a finding never goes into this public repo)" \
   || bad "feature-plan '## 3a.' no longer refuses SEC for --kurz"

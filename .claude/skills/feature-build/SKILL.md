@@ -37,18 +37,26 @@ Stufe 7).
   tasks/README.md): `freigegeben` → Kevins Freigabe liegt vor: Kopf auf `aktiv` setzen und
   bauen. `geplant` → nur mit ausdrücklichem Pfad; dann IST das Starten die Freigabe: Kopf auf
   `aktiv`. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu: **keine** Task bauen. Gibt es
-  für den Branch schon einen PR (`gh pr view <branch>`, etwa von Kevin geöffnet), fehlt nur noch
-  Abschluss-Schritt 6: nachholen wie dort (Kopf `erledigt` bzw. `blockiert`; die Roadmap wie
-  unter „Roadmap mitziehen", also `pr --pr`, ein Teil-Ledger `aktiv --pr`), dann melden; sonst
-  war der Abschluss unterbrochen (etwa von einem Compact) und geht ab Schritt 2 weiter.
-  `blockiert`/`erledigt` → **nicht** bauen, melden.
+  für den Branch schon einen PR (`gh pr view <branch>`, etwa von Kevin geöffnet), fehlen nur Kopf
+  und Roadmap aus Abschluss-Schritt 5 und 6: den Kopf auf `erledigt` (bzw. `blockiert`)
+  committen — der Commit muss noch in den PR, pushen tut Kevin —, die Roadmap wie unter
+  „Roadmap mitziehen" (`pr --pr`, ein Teil-Ledger `aktiv --pr`), dann melden; sonst war der
+  Abschluss unterbrochen (etwa von einem Compact) und geht ab Schritt 2 weiter. `erledigt` →
+  **nicht** bauen; gibt es einen PR und steht die Roadmap-Zeile noch auf `bereit` (beim
+  Teil-Ledger: seine Nummer fehlt in der Spalte `PR`), Schritt 6 nachholen, dann melden; gibt es
+  keinen PR, melden: Push und PR stehen aus, das ist Kevins Handgriff. `blockiert` → **nicht**
+  bauen, melden.
 - **Roadmap mitziehen:** Nennt der Ledger-Kopf Roadmap-IDs — im `Spec:` (`Roadmap R-nnnn`,
   `docs/features/<slug>.md (Roadmap R-nnnn)`, beim Bündel `Roadmap R-a, R-b, …`) oder in der
   Zeile `Roadmap: R-nnnn` der Regressions-Ledger aus `heavy.sh` —, folgt jede
   dieser Zeilen dem Ledger, nur über `python3 scripts/dev/roadmap.py status R-nnnn <status>`, je
   ID ein Aufruf: beim Start `aktiv`, im Abschluss `bereit`, mit dem PR `pr --pr "#<n>"` (die
-  Spalte `PR`, die `sync` liest); `abgeschlossen` setzt nach dem Merge `roadmap.py sync`. Ist das
-  Ledger nur ein Teil der Zeile (`Roadmap R-nnnn, Teil …`), bleibt sie mit dem PR `aktiv` und
+  Spalte `PR`, die `sync` liest); `abgeschlossen` setzt nach dem Merge `roadmap.py sync`. Steht
+  eine Zeile beim Start noch auf `neu` oder `geplant` (etwa die eines Regressions-Ledgers aus
+  `heavy.sh`, die `neu` ist), geht das nur bei ausdrücklichem Start — der Pfad ist wie bei
+  `geplant` Kevins Freigabe — und nur über die erlaubte Kette, je Schritt ein Aufruf mit
+  Exit-Prüfung: `status R-nnnn geplant` (nur von `neu`), `approve R-nnnn`, `status R-nnnn
+  aktiv`; ohne ausdrücklichen Start: melden. Ist das Ledger nur ein Teil der Zeile (`Roadmap R-nnnn, Teil …`), bleibt sie mit dem PR `aktiv` und
   sammelt nur die Nummern: `status R-nnnn aktiv --pr "#<n>"`, ab dem zweiten Teil
   `--pr "#<a>, #<n>"` — `sync` schließt nur eine Zeile in `pr`, und die setzt erst der letzte
   Teil. Nie ein Edit an der Datei. Ein Exit ≠ 0 wird gemeldet, nicht umgangen (Exit 5: die
@@ -231,15 +239,17 @@ Stufe 7).
      aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
    Echte neue Bugs als Tasks in den Ledger: Kopf zurück auf `aktiv` (Roadmap ebenso), fixen,
    erneut testen, dann wieder `bereit`.
-5. **Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen wirkend):
+5. **Erledigt, Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen
+   wirkend): **zuerst** den Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn
+   `[?]`-Punkte offen bleiben; ein `chore(ledger)`-Commit) — vor dem Push, sonst kommt er nie
+   in den PR und steht nach dem Merge auf `main` für immer auf `bereit`. Dann
    `git push -u origin <branch>`, dann `gh pr create --draft --title "<type>: <feature>"
    --body "…"` mit Link auf die **Spec** (Pfad aus dem `Spec:`-Ledgerfeld), Task-Zusammenfassung
    (fertig / übersprungen / offene `[?]`) und VM-Ergebnis. (Beide prompten, solange nicht
    allowlisted — das ist Absicht.)
-6. **Mit dem PR:** Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn `[?]`-Punkte
-   offen bleiben; ein `chore(ledger)`-Commit), die Roadmap-Zeile wie unter „Roadmap mitziehen"
-   (`pr --pr "#<n>"`, ein Teil-Ledger `aktiv --pr`). Schluss-Zusammenfassung im Chat; die
-   `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
+6. **Mit dem PR:** die Roadmap-Zeile wie unter „Roadmap mitziehen" (`pr --pr "#<n>"`, ein
+   Teil-Ledger `aktiv --pr`) — dafür braucht es die PR-Nummer. Schluss-Zusammenfassung im Chat;
+   die `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
 
 ## Recovery
 - Granulare Commits ⇒ ein Fehlgriff = `git revert <commit>`, keine Handarbeit.
