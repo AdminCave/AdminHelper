@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Wochenlauf grün — Task-Ledger
-Status: aktiv · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review; T6 Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review; T6 Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
 Spec: docs/features/wochenlauf-gruen.md
 Freigabe: Kevin, 2026-09-25, übermittelt durch die Aufsichts-Session adminhelper-ac; Bau als Lane (`lane.sh new wochenlauf-gruen`)
 Fast-Suite: vm · Warm-Profil: desktop
