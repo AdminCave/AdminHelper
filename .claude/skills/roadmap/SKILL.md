@@ -31,15 +31,17 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
 1. `python3 scripts/dev/roadmap.py show` (liest nur, keine Sperre).
 2. Knapp rendern, in dieser Reihenfolge:
    - **Als Nächstes**: die Punkte, je die erste Zeile, wörtlich.
-   - **In Arbeit** mit den Deckeln: die `WIP:`-Zeile. Ist ein Deckel erreicht
-     (`aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20), steht dahinter `Warnung:` mit dem
-     Deckel (CLAUDE.md §3, Warn-Trigger 3). Die Zeilen von „In Arbeit" mit ID, Klasse,
-     Status.
+   - **In Arbeit** mit den Deckeln: die `WIP:`-Zeile. `show` druckt nur die Zähler; ist
+     ein Deckel erreicht (Zähler >= `aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20), schreib
+     selbst `Warnung:` mit dem Deckel dahinter (CLAUDE.md §3, Warn-Trigger 3). Die Zeilen
+     von „In Arbeit" mit ID, Klasse, Status.
    - **Neu**: nur die Anzahl gegen den Deckel und `ALT` (abgelaufene Zeilen), keine Liste.
    - Geplant, Zurückgestellt, Blockiert als Anzahl; Abgeschlossen und Archiv weglassen.
 3. `python3 scripts/dev/roadmap.py lint`. Funde: Anzahl und die ersten drei nennen, nichts
-   reparieren — eine doppelte ID oder eine kaputte Zeile ist Kevins Handarbeit.
-4. Ist `neu` über dem Deckel oder `ALT` > 0: `/roadmap triage` vorschlagen, ein Satz.
+   reparieren — eine doppelte ID oder eine kaputte Zeile ist Kevins Handarbeit. Eine
+   Abweichung von `ALT` im Kopf ist keine: der nächste Schreibvorgang rechnet den Kopf neu.
+4. Steht `neu` am Deckel (>= 20: ab da verweigert `add`, und `heavy.sh` bekommt für einen
+   Fund keine Zeile mehr) oder ist `ALT` > 0: `/roadmap triage` vorschlagen, ein Satz.
 
 ## `/roadmap triage` — die neuen Zeilen mit Kevin
 

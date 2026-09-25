@@ -183,8 +183,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (sync, Commit-Ort)
 Abhängt von: T8
 
-### T10 — Gesamt-Review: Skill-Texte /roadmap und /test  [ ]
+### T10 — Gesamt-Review: Skill-Texte /roadmap und /test  [x]
 Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, .claude/skills/test/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @e640acb2 2026-09-25T11:46:10+02:00
+Review: approve (sonnet, gegen den Code geprüft)
 Änderung: N5: `/roadmap` schlägt die Triage schon ab dem Deckel vor (`neu` >= 20, wie `add` verweigert) und rechnet die `Warnung:` selbst (`show` druckt sie nicht). Zu N6: Eine ALT-Abweichung im Kopf heilt der nächste Schreibvorgang, das ist keine Handarbeit. N8: `/test` sagt nicht mehr, die Session solle die ROADMAP-Zeilen committen und pushen; seit T5 committet `roadmap.py` sie, pushen tut Kevin.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (Skill-Text)
