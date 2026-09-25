@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -213,3 +213,8 @@ Plan-Lauf auf einer Zeile, deren Komponente mit einer `aktiv`-Zeile kollidiert: 
   Ledger-Spalte zieht die Aufsicht nach dem Merge mit `status … --ledger` nach.
 - Bekannte Grenze, in 5b nicht geändert: Eine Sammelzeile wie R-0008 (5a bis 5c) würde der Abschluss von
   `feature-build` auf `bereit` setzen, obwohl 5c offen ist. Sie blieb deshalb unverändert.
+
+**Branch-Review, Runde 1 (2026-09-25, frischer Opus-Agent über `git diff main...`):** request_changes, 5 wichtig und 5 nit.
+Gebaut wurden (1) als T10 (PR-Nummer in der Spalte `PR`), (2) und der Gate-Teil von (5) mit den nits (6), (7) und (8)
+als T11, (3) mit nit (9) als T12. Nicht in 5b: (4) `Heavy:` gegen `Fast-Suite: vm` bleibt bei R-0097; der Rest von
+(5), also `components_of` liest den Arbeitsbaum, ist R-0099; (10), der Kommentar in `heavy.sh:627`, ist R-0100.
