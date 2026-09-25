@@ -111,6 +111,17 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: docs/developer/cicd.html · docs/en/developer/cicd.html
 Abhängt von: T2, T3, T4, T5
 
+### T7 — Schritt-Verweise im Abschluss von feature-build nach der Umnummerierung  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @2528c88d 2026-09-25T15:06:03+02:00
+Review: approve (sonnet)
+Änderung: Fund nach T6 (T5 hat die Abschluss-Schritte umnummeriert, `Bereit — zuerst` ist neu Schritt 1):
+- Schritt 3 sagt „schwere Suite überspringen … direkt zu Schritt 3“, zeigt also auf sich selbst; gemeint ist Schritt 4, der Review über den Branch-Diff.
+- Schritt 4 sagt „Sub-Agent wie in Schritt 4“ und liest sich damit als Selbstverweis; gemeint ist Schritt 4 der Iteration.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (der Skill ist die Doku)
+Abhängt von: T5
+
 ## Abschluss (nach T6, vor dem PR)
 
 `/feature-plan --kurz` auf einer echten `neu`-Zeile, einem Kandidaten der Aufsicht: das Ergebnis ist ein

@@ -193,7 +193,7 @@ Stufe 7).
    Gateway, `apps/ca-issuer`, `apps/gateway`, `apps/agent`, `apps/desktop` Connect/Tunnel/
    Enrollment, `docker-compose*.yml`, `Dockerfile`, `scripts/install|update`, FRP/PKI). **Wenn
    nein** (z. B. reine `docs/`-, Web-UI- oder Kleinkram-Änderung) → schwere Suite **überspringen**
-   mit begründetem Vermerk, direkt zu Schritt 3. **Wenn ja:** dem `/test`-Skill folgen — Box warm
+   mit begründetem Vermerk, direkt zu Schritt 4. **Wenn ja:** dem `/test`-Skill folgen — Box warm
    → `run.sh quick` → `AH_ALLOW_REAL=1 run.sh integration` (+ `e2e` nur bei berührter
    `apps/web`/`apps/desktop`-Journey). Dabei das **`Warm-Profil` am realen Diff re-checken**,
    in beide Richtungen: `pond` geplant, aber keine Desktop-Journey im Diff → Single-Box
@@ -208,7 +208,7 @@ Stufe 7).
    kein `multibox`/`bake` ohne Nachfrage.)
 4. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:
    - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
-     ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4) — und **kein**
+     ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4 der Iteration) — und **kein**
      `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
      zweite Durchgang kostet nur Zeit.
    - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
