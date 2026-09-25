@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -271,3 +271,9 @@ den nits (4), (7), (8) und (9). (B), die Semantik-Frage, die eine Notiz ersetzt 
 mit den nits (3), (4), (5), (6), (8) und (9). Ab Runde 3 gilt die Abbruchregel der Aufsicht: gefixt werden nur `blocker`
 und `wichtig` im Diff von T13/T14 oder solche, die den nächsten Lauf sofort brechen; andere `wichtig` werden
 Roadmap-Zeilen, nits stehen im PR-Text.
+
+**Branch-Review, Runde 3 (2026-09-25, neuer frischer Opus-Agent, mit Abbruchregel):** Die Funde aus Runde 2 sind behoben,
+und kein Fund bricht den nächsten Lauf sofort. Ein `wichtig` im Diff von T13, die `bereit`-Regel mit vorhandenem PR,
+wurde T15. Die SEC-Sperre für `--kurz` kam als Ausnahme von der Abbruchregel dazu, weil der Schaden nicht umkehrbar wäre,
+ebenso der fehlende CHANGELOG-Eintrag. Der private SEC-Weg für `--kurz` ist eine Roadmap-Zeile der Aufsicht (FEAT,
+Stufe 9); die nits stehen im PR-Text als „bekannt, nicht behoben“. Eine Runde 4 gibt es nicht.
