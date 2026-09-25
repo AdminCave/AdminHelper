@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `SafeText` löschen — Task-Ledger (Kurz)
-Status: geplant · Branch: fix/safetext-delete · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: fix/safetext-delete · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Nachtrag zu R-0067, Entscheidung (b); Weg dafür: R-0079)
 Heavy: none
 DoD je Task: CLAUDE.md (Tests grün, ruff sauber, Doku im selben Commit).
