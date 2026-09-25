@@ -457,22 +457,28 @@ python3 scripts/dev/roadmap.py stats [--days 30]
 - `next` nennt die naechste Zeile zum Bauen: Klasse vor Reihenfolge (SEC > REG > REL > BUG >
   FEAT > REF > IDEE), wartet, solange „Haengt ab von" eine Zeile nennt, die nicht
   `abgeschlossen` ist, und ueberspringt Zeilen, die eine ausgeschlossene Komponente
-  beruehren (`Komponente:` ihres Ledgers, zweites Feld ihres Dedup-Keys). Nichts bereit: Exit 1.
-- `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID, die hoechste `R-nnnn` plus
-  eins. `--proof` und `Dedup-Key: <key>` stehen mit in „Quelle / Beweis"; `Ablauf` folgt der
-  Klasse (IDEE 60 Tage, REF 90 Tage, sonst `nie`). Bei 20 `neu`-Zeilen ist Schluss (Exit 3).
-  Traegt eine offene Zeile den Dedup-Key schon, ist das Exit 4 mit ihrer ID, und ein leerer
-  Commit `roadmap: dedup <key> -> R-nnnn` haelt die Weigerung fuer `stats` fest.
+  beruehren (`Komponente:` ihres Ledgers, die Komponente eines vollen Dedup-Keys
+  `<klasse>:<komponente>:<datei>:<symbol>`; ein kurzer wie `reg:<schritt>` nennt keine).
+  Nichts bereit: Exit 1.
+- `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
+  eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
+  eine ID, die ein Hand-Edit wieder entfernt hat, nicht ein zweites Mal. `--proof` und
+  `Dedup-Key: <key>` stehen mit in „Quelle / Beweis"; `Ablauf` folgt der Klasse (IDEE 60
+  Tage, REF 90 Tage, sonst `nie`). Bei 20 `neu`-Zeilen ist Schluss (Exit 3). Traegt eine
+  offene Zeile den Dedup-Key schon, ist das Exit 4 mit ihrer ID, und ein leerer Commit
+  `roadmap: dedup <key> -> R-nnnn` haelt die Weigerung fuer `stats` fest.
 - `status` setzt den Status und verschiebt die Zeile in den Abschnitt, der zu ihm gehoert.
   Erlaubt sind nur die Uebergaenge der Tabelle `TRANSITIONS` im Skript (sonst Exit 2);
   derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
   das Wort. Ein geschlossener Status (`abgeschlossen`, `abgelehnt`) traegt den Tag; mehr
   als 30 Tage danach wandert die Zeile beim naechsten Schreiben oben ins „Archiv".
 - `approve` ist `geplant` -> `freigegeben`, Kevins Freigabe; `--revoke` nimmt sie zurueck.
-- `sync` fragt `gh pr list --state merged`: eine offene Zeile, deren PR-Spalte nur gemergte
-  PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Den Push des privaten Repos druckt es,
-  ausfuehren tut es ihn nicht. Laeuft `gh` nicht, scheitert es oder liefert kein lesbares
-  JSON: Exit 74.
+- `sync` fragt `gh pr list --state merged`: eine Zeile im Status `pr`, deren PR-Spalte nur
+  gemergte PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Eine Zeile in einem anderen
+  Status (etwa eine Stufe mit mehreren PRs, noch `aktiv`) meldet es nur; `sync` ueberspringt
+  keinen Status, denn ein Schliessen laesst sich nicht zuruecknehmen. Den Push des privaten
+  Repos druckt es, ausfuehren tut es ihn nicht. Laeuft `gh` nicht, scheitert es oder liefert
+  kein lesbares JSON: Exit 74.
 - `stats` zaehlt Tasks pro Tag (netto abgehakte `[x]` in `git log -p -- tasks/*.md`),
   Kevin-Minuten pro PR, die Wartezeit je Zustand aus der Historie der Datei, die Stale-Quote
   (offene Zeilen ueber ihrem Ablauf) und die Dedup-Quote. Seine Fenster sind ganze UTC-Tage,
@@ -482,10 +488,13 @@ python3 scripts/dev/roadmap.py stats [--days 30]
 auf `<datei>.lock` und legt vorher `<datei>.bak` an. Es prueft danach die Zeilenzahl: vorher
 plus erwartete Aenderung muss nachher ergeben, sonst geht die `.bak` zurueck (Exit 6). Es
 rechnet den Kopf `Stand: <heute> · WIP: …` aus den Zeilen neu und committet die eine Datei in
-ihrem eigenen Repo (`roadmap: <verb> <id>`): lokal, nie gepusht, nie in diesem oeffentlichen
-Repo. Hat jemand anders die Datei in den letzten 5 Sekunden geaendert, verweigert es (Exit 5),
-denn ein Editor koennte sie noch halten. Die Marke der eigenen letzten Schreibung (mtime und
-sha256) steht in der Lock-Datei.
+ihrem eigenen Repo (`roadmap: <verb> <id>`): lokal, nie gepusht, nur wenn das Verzeichnis der
+Datei die Wurzel dieses Repos ist, und nie in diesem oeffentlichen Repo. In einem Klon,
+dessen `tasks/private` ein gewoehnliches Verzeichnis ist, entsteht deshalb kein Commit. Hat
+jemand anders die Datei in den letzten 5 Sekunden geaendert, verweigert es (Exit 5), denn ein
+Editor koennte sie noch halten. Die Marke der eigenen letzten Schreibung (mtime und sha256)
+und die hoechste vergebene ID stehen in der Lock-Datei; auch der Dedup-Commit entsteht noch
+unter der Sperre.
 
 Die Datei ist `--file`, sonst `AH_ROADMAP`, sonst `tasks/private/ROADMAP.md`. Tests
 arbeiten **nie** auf der echten Datei, sondern auf Fixtures in einem Temp-Verzeichnis, die

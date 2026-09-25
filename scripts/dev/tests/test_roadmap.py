@@ -1249,3 +1249,158 @@ def test_next_reads_no_ledger_outside_the_repository(
     ]
     assert run(write(root, doc(s)), "next", "--exclude-components", "server") == 0
     assert capsys.readouterr().out.startswith("R-0022 BUG")
+
+
+# ── from the review of the whole branch ──────────────────────────────────────
+
+
+def test_sync_closes_only_rows_in_pr_and_reports_the_rest(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stage with several PRs is `aktiv` while one of them is merged: sync
+    must not close it, and nothing can take a close back."""
+    fake_gh(tmp_path, monkeypatch, MERGED)
+    repo = fixture_repo(tmp_path)
+    s = clean_sections()
+    s["In Arbeit"] = [
+        "| R-0004 | FEAT | Eine Stufe | aktiv (5a gemergt, 5b offen) | kevin | — | — | #7 | — | — |",
+        "| R-0010 | BUG | Fertig | pr | kevin | — | — | #7 | — | — |",
+    ]
+    write(repo, doc(s))
+    git(repo, "commit", "-qam", "a stage and a pr")
+    p = aged(repo / "ROADMAP.md")
+    assert run(p, "sync") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "sync: closed R-0010" in out
+    assert "sync: PR #7 merged, but R-0004 is aktiv — not closed" in out
+    assert placed(p, "R-0004")[1].cells[roadmap.STATUS] == "aktiv (5a gemergt, 5b offen)"
+
+
+def test_sync_with_only_rows_outside_pr_writes_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(tmp_path, monkeypatch, MERGED)
+    text = CLEAN.replace(
+        "| aktiv (T2/5) | kevin 2026-09-01 | — | — | — |",
+        "| aktiv (T2/5) | kevin 2026-09-01 | — | — | #7 |",
+    )
+    p = aged(write(tmp_path, text))
+    assert run(p, "sync") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:2] == [
+        "sync: PR #7 merged, but R-0004 is aktiv — not closed",
+        "sync: no open row with a merged PR to close (sync closes rows in pr only)",
+    ]
+    assert p.read_text(encoding="utf-8") == text
+    assert not (tmp_path / "ROADMAP.md.bak").exists()
+
+
+def test_no_commit_in_a_clone_whose_private_dir_is_a_plain_directory(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A second clone of the public repository without its own private repo:
+    tasks/private is a plain, ignored directory, and its HEAD is the clone's."""
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    git(clone, "init", "-q")
+    git(clone, "config", "user.email", "fixture@example.invalid")
+    git(clone, "config", "user.name", "Fixture")
+    git(clone, "config", "commit.gpgsign", "false")
+    (clone / ".gitignore").write_text("tasks/private/\n", encoding="utf-8")
+    git(clone, "add", ".gitignore")
+    git(clone, "commit", "-qm", "seed")
+    private = clone / "tasks" / "private"
+    private.mkdir(parents=True)
+    p = aged(write(private, CLEAN))
+    head = git(clone, "rev-parse", "HEAD")
+    assert add(p, *ADD) == 0
+    assert add(p, *ADD, "--dedup-key", "ref:web:src/a.ts:helper") == 4
+    assert git(clone, "rev-parse", "HEAD") == head
+    assert "is not the root of its own repository — not committed" in capsys.readouterr().err
+
+
+def test_the_dedup_record_is_written_under_the_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    held = []
+
+    def probe(path: pathlib.Path, message: str) -> None:
+        # Another open file description: a lock held by write() refuses it.
+        with open(tmp_path / "ROADMAP.md.lock", "a+") as other:
+            try:
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held.append(False)
+            except BlockingIOError:
+                held.append(True)
+
+    monkeypatch.setattr(roadmap, "commit_empty", probe)
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD, "--dedup-key", "ref:web:src/a.ts:helper") == 4
+    assert held == [True]
+
+
+def test_an_id_that_vanished_by_hand_is_not_given_again(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 0
+    # An editor saves an old buffer, well after the 5 s: R-0010 is gone again.
+    aged(write(tmp_path, CLEAN))
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.split() == ["R-0010", "R-0011"]
+
+
+def test_an_add_rolled_back_by_the_row_count_check_uses_no_id(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Exit 6 undoes the add: the ID it drew was never issued, so the next add
+    takes it, not the one after."""
+    real = roadmap.write_text
+
+    def loses_the_last_row(path: pathlib.Path, text: str) -> None:
+        lines = text.split("\n")
+        last = max(i for i, line in enumerate(lines) if line.startswith("| R-"))
+        real(path, "\n".join(lines[:last] + lines[last + 1 :]))
+
+    p = aged(write(tmp_path, CLEAN))
+    monkeypatch.setattr(roadmap, "write_text", loses_the_last_row)
+    assert add(p, *ADD) == 6
+    monkeypatch.setattr(roadmap, "write_text", real)
+    assert add(p, *ADD) == 0
+    assert capsys.readouterr().out.split() == ["R-0010"]
+
+
+@pytest.mark.parametrize(
+    ("key", "ledger", "components"),
+    [
+        ("reg:web-vitest", "", set()),  # a step, not a component
+        ("rel:deps-audit", "", set()),
+        ("ref:web:src/a.ts:helper", "", {"web"}),
+        ("", "tasks/reg.md", set()),  # Komponente: (aus dem Schritt ableiten)
+    ],
+)
+def test_only_a_real_component_is_a_component(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    ledger: str,
+    components: set[str],
+) -> None:
+    monkeypatch.setattr(roadmap, "ROOT", tmp_path)
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "reg.md").write_text(
+        "### R1 — x  [ ]\nKomponente: (aus dem Schritt ableiten)\n", encoding="utf-8"
+    )
+    source = f"weekly 2026-09-25 · Dedup-Key: {key}" if key else "weekly 2026-09-25"
+    [(_, r)] = roadmap.Roadmap(
+        doc(
+            {
+                "Neu": [
+                    row("R-0010", "neu", "REG", "x", source).replace(
+                        "| — | — | — | — |", f"| {ledger or '—'} | — | — | — |", 1
+                    )
+                ]
+            }
+        )
+    ).rows()
+    assert roadmap.components_of(r) == components

@@ -167,6 +167,29 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md · AUTONOMOUS.md · CHANGELOG.md
 Abhängt von: T7
 
+### T9 — Gesamt-Review: sync, Commit-Ort, Sperre, IDs, Komponenten  [x]
+Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @f1f5d558 2026-09-25T11:38:45+02:00
+Review: approve (sonnet, Runde 2 nach Rückroll-Test)
+Änderung: Aus dem Gesamt-Review über den Branch (Opus, `request_changes`), abgestimmt mit der Aufsicht:
+- W1: `sync` schließt nur Zeilen im Status `pr`. Eine andere offene Zeile, deren PRs alle gemergt sind, wird nur gemeldet („PR #n gemergt, Zeile noch <status>"); kein Status wird übersprungen.
+- W2: Committet wird nur in ein Repo, dessen Wurzel das Verzeichnis der Datei ist, und nie in ROOT. Test mit einem Zweitklon, dessen `tasks/private` ein gewöhnliches Verzeichnis ist: dort entsteht kein Commit, auch kein Dedup-Commit.
+- N3: Der Dedup-Commit läuft unter der Sperre in `write()`.
+- N6 entfällt (Aufsicht, Option i): Die committete Assertion zu ALT lässt sich auf diesem Branch nicht durch `diff-scan` ändern (er zweigte vor R-0079 ab). Das ist ein Nit und rechtfertigt keinen Merge von main. `lint` meldet ALT weiter, T10 erklärt es im Skill.
+- N9: Die Lock-Datei merkt sich die höchste vergebene ID; `add` vergibt das Maximum aus Datei und Merker plus eins, damit eine per Hand-Edit verschwundene ID nicht wiederkommt.
+- N4: `components_of` liest die Komponente nur aus einem Dedup-Key mit mindestens vier Feldern und nimmt aus Ledgern keine Werte in Klammern.
+Tests je Punkt, Gegenprobe gegen den Stand von T8.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md (sync, Commit-Ort)
+Abhängt von: T8
+
+### T10 — Gesamt-Review: Skill-Texte /roadmap und /test  [ ]
+Komponente: scripts · Dateien: .claude/skills/roadmap/SKILL.md, .claude/skills/test/SKILL.md
+Änderung: N5: `/roadmap` schlägt die Triage schon ab dem Deckel vor (`neu` >= 20, wie `add` verweigert) und rechnet die `Warnung:` selbst (`show` druckt sie nicht). Zu N6: Eine ALT-Abweichung im Kopf heilt der nächste Schreibvorgang, das ist keine Handarbeit. N8: `/test` sagt nicht mehr, die Session solle die ROADMAP-Zeilen committen und pushen; seit T5 committet `roadmap.py` sie, pushen tut Kevin.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (Skill-Text)
+Abhängt von: T9
+
 ## Abschluss (nach T8, vor dem PR)
 
 1. `roadmap.py lint --file tasks/private/ROADMAP.md` auf der echten Datei. Die Funde gehen als Liste an die Aufsicht.
@@ -176,3 +199,22 @@ Abhängt von: T7
    - Der WIP-Kopf wird neu gerechnet.
 3. Danach muss `lint` sauber sein. Der Diff des privaten Repos kommt zur Ansicht in die PR-Beschreibung, gekürzt auf IDs.
 4. Live-Probe: eine Wegwerf-Zeile durch alle Zustände (`add` → `geplant` → `approve` → `aktiv` → `bereit` → `pr` → `abgeschlossen`), je Schritt ein Commit, danach `status … abgelehnt`, damit sie nichts zählt.
+
+### Ergebnis (2026-09-25, Worker 2, abgestimmt mit der Aufsicht)
+
+1. **`lint` auf der echten Datei** (nur lesend): erst 28 Funde. Die Aufsicht hat dann die Handarbeit gemacht, für die es
+   kein Verb gibt (Commits 2970de8 und 4ca135a im privaten Repo): die jüngere R-0047 heißt jetzt R-0088, die jüngere
+   R-0084 heißt R-0087 (Verweis in „Als Nächstes" nachgezogen), R-0082 hat wieder zehn Spalten, `*.lock` ist ignoriert.
+   Danach blieben 26 Funde: der Kopf (`neu 7` statt 30, `ALT 0` statt 2), drei abgeschlossene Zeilen außerhalb von
+   „Abgeschlossen" (R-0001, R-0005, R-0007), der Alias `geparkt` (R-0051) und 20 `neu`-Zeilen im Archiv (R-0053–0058,
+   R-0063–0065, R-0068–0070, R-0074, R-0077, R-0080, R-0082, R-0083, R-0085–0087).
+2. **Bereinigung nur mit Verben:** 24 × `roadmap.py status`, alle mit Exit 0: R-0001/R-0005/R-0007 `abgeschlossen`
+   (derselbe Status, die Zeile wandert, Tag und Notiz bleiben), R-0051 `zurückgestellt`, 20 × `neu`. Das ergibt 24 lokale
+   Commits `roadmap: status R-nnnn <status>` im privaten Repo, nicht gepusht. Der Diff hat 25/25 Zeilen: die 24
+   verschobenen Zeilen und der Kopf. „Als Nächstes" und die Prosa sind byte-gleich. Der Kopf verliert seine alte Notiz
+   hinter dem Datum, denn das Skript schreibt ihn neu.
+3. **`lint` danach:** sauber (Exit 0). Kopf: `Stand: 2026-09-25 · WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 30/20 · ALT: 2`.
+4. **Live-Probe des Deckels** (Entscheidung der Aufsicht statt des vollen Zustandslaufs): Ein `add` auf der echten Datei
+   endet mit Exit 3 („the neu cap is reached (30/20) — triage first"). `ROADMAP.md` und `.bak` bleiben byte-gleich
+   (sha256), HEAD des privaten Repos ist unverändert, es entsteht kein Commit. Der volle Zustandslauf (`add` → … →
+   `abgelehnt`) folgt nach dem Merge und Kevins Triage. Eine Ausnahme im Skript gibt es nicht.

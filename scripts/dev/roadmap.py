@@ -16,7 +16,7 @@
     show [<id>] [--wip]         one row, the WIP counters, or the overview
     next [--status S] [--exclude-components C …]
                                 the next row to build; exit 1 when there is none
-    sync                        rows whose PRs are all merged (gh) -> abgeschlossen
+    sync                        rows in `pr` whose PRs are merged (gh) -> abgeschlossen
     stats [--days N]            tasks/day, Kevin-min/PR, wait per state, stale, dedup
 
 The file stays Markdown that Kevin edits by hand. The script understands the
@@ -37,18 +37,21 @@ Dedup-Key two open rows share, and a WIP header the rows do not add up to.
 Every write runs under flock on <file>.lock, saves <file>.bak first, checks
 that the row count moved by exactly what the verb meant (else the .bak goes
 back), rewrites the header (`Stand: <today> · WIP: …`), and commits the file
-alone in its own repository — locally, never pushed, and never in this public
-one. A file changed in the last 5 s by anyone but roadmap.py (the mtime
+alone in its own repository — locally, never pushed, only where the file's
+directory is the root of that repository, and never in this public one. A file changed in the last 5 s by anyone but roadmap.py (the mtime
 differs from the one the lock file remembers) is refused: an editor may hold
-it. The ID is the highest R-nnnn of all rows plus one. A closed row
+it. The ID is the highest R-nnnn of all rows plus one — or of all IDs this
+lock file has seen issued, so an ID a hand edit took out does not come back. A closed row
 (abgeschlossen, abgelehnt) carries the day it closed; more than 30 days later
 the next write moves it from "Abgeschlossen" to the top of "Archiv".
 
 next picks by class (SEC > REG > REL > BUG > FEAT > REF > IDEE), then by the
 order of the rows (Kevin's), and skips a row whose "Hängt ab von" names an
 R-ID that is not abgeschlossen, or that touches an excluded component (the
-`Komponente:` lines of its ledger, the second field of its Dedup-Key). sync
-prints the push of the private repository; it never runs it.
+`Komponente:` lines of its ledger, the component of a full Dedup-Key). sync
+closes only rows in `pr` and reports any other row whose PRs are merged: it
+never skips a status. It prints the push of the private repository and never
+runs it.
 
 A status follows only from the ones TRANSITIONS names (exit 2 otherwise).
 Setting a row's own status again is always allowed: it files a row left in
@@ -184,7 +187,7 @@ class Refused(Exception):
 
 
 class NothingToClose(Exception):
-    """sync: no open row names only merged PRs (any more)."""
+    """sync: no row in `pr` names only merged PRs (any more)."""
 
 
 class Duplicate(Refused):
@@ -277,6 +280,7 @@ class Roadmap:
 
     def __init__(self, text: str) -> None:
         self.ends_with_newline = text.endswith("\n")
+        self.issued = 0
         lines = text.split("\n")
         if self.ends_with_newline:
             lines = lines[:-1]
@@ -374,15 +378,12 @@ class Roadmap:
             raise UsageError(f"{rid} has {len(row.cells)} columns — fix the row by hand first")
         return section, row
 
-    def set_status(
-        self, rid: str, new: str, note: str | None, today: dt.date, check: bool = True
-    ) -> None:
-        """`check=False` is sync's: a merged PR closes a row from any status."""
+    def set_status(self, rid: str, new: str, note: str | None, today: dt.date) -> None:
         section, row = self.find(rid)
         old = row.state
         if old not in TRANSITIONS:
             raise UsageError(f"{rid} has the unknown status '{row.status}' — fix it by hand")
-        if check and new != old and new not in TRANSITIONS[old]:
+        if new != old and new not in TRANSITIONS[old]:
             allowed = ", ".join(sorted(TRANSITIONS[old])) or "nothing"
             raise UsageError(f"{rid}: {old} -> {new} is no transition (from {old}: {allowed})")
         if new != old or note is not None:
@@ -415,9 +416,13 @@ class Roadmap:
             self.remove(row)
             self.insert_row("Archiv", row, top=True)
 
-    def next_id(self) -> str:
+    def highest(self) -> int:
+        """The highest ID number in the rows, or issued before (write() sets it)."""
         nums = [int(r.id[2:]) for _, r in self.rows() if ROW_ID.fullmatch(r.id)]
-        return f"R-{max(nums, default=0) + 1:04d}"
+        return max(nums + [self.issued], default=0)
+
+    def next_id(self) -> str:
+        return f"R-{self.highest() + 1:04d}"
 
     def set_header(self, today: dt.date) -> None:
         """`Stand: <today> · WIP: …` computed from the rows, above the first section."""
@@ -558,11 +563,12 @@ def mark(path: pathlib.Path, data: bytes) -> str:
     return f"{path.stat().st_mtime_ns} {hashlib.sha256(data).hexdigest()}"
 
 
-def remember(lock, path: pathlib.Path) -> None:
-    """The lock file keeps the mark of roadmap.py's own last write."""
+def remember(lock, path: pathlib.Path, issued: int) -> None:
+    """The lock file keeps the mark of roadmap.py's own last write and, on its
+    second line, the highest ID number issued so far."""
     lock.seek(0)
     lock.truncate()
-    lock.write(mark(path, path.read_bytes()))
+    lock.write(f"{mark(path, path.read_bytes())}\n{issued}")
     lock.flush()
 
 
@@ -585,8 +591,10 @@ def write(
         except FileNotFoundError:
             raise UsageError(f"no such file: {path}") from None
         lock.seek(0)
+        held = lock.read().split("\n")
+        own, issued = held[0].strip(), int(held[1]) if held[1:] and held[1].isdigit() else 0
         age = clock() - path.stat().st_mtime
-        if lock.read().strip() != mark(path, data) and age < QUIET_SECONDS:
+        if own != mark(path, data) and age < QUIET_SECONDS:
             raise Refused(
                 5,
                 f"{path} was changed {age:.1f} s ago, not by roadmap.py — an editor may "
@@ -595,7 +603,13 @@ def write(
         before_text = data.decode("utf-8")
         roadmap = Roadmap(before_text)
         before = len(roadmap.rows())
-        rid = change(roadmap)
+        roadmap.issued = issued
+        try:
+            rid = change(roadmap)
+        except Duplicate as e:
+            # Still under the lock: this record must not race another writer's commit.
+            commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
+            raise
         roadmap.archive(today)
         roadmap.set_header(today)
         bak = sibling(path, ".bak")
@@ -604,13 +618,13 @@ def write(
         after = len(Roadmap(path.read_bytes().decode("utf-8")).rows())
         if after != before + delta:
             replace_file(path, bak.read_bytes())
-            remember(lock, path)
+            remember(lock, path, issued)
             raise Refused(
                 6,
                 f"{before} rows {delta:+d} should make {before + delta}, the written file "
                 f"has {after} — restored from {bak}",
             )
-        remember(lock, path)
+        remember(lock, path, roadmap.highest())
         commit(path, f"roadmap: {verb} {rid}{detail}")
     return rid
 
@@ -637,6 +651,14 @@ def private_repo(path: pathlib.Path) -> pathlib.Path | None:
         print(f"roadmap.py: {path.parent} is no git repository — not committed", file=sys.stderr)
     elif repo == ROOT.resolve():
         print(f"roadmap.py: {path} is in the public repository — not committed", file=sys.stderr)
+        return None
+    elif repo != path.parent.resolve():
+        # A clone of the public repository whose tasks/private is a plain
+        # directory: its HEAD is that clone's, not a private one's.
+        print(
+            f"roadmap.py: {path.parent} is not the root of its own repository — not committed",
+            file=sys.stderr,
+        )
         return None
     return repo
 
@@ -720,15 +742,9 @@ def cmd_add(args: argparse.Namespace) -> int:
         roadmap.insert_row("Neu", Row(cells))
         return rid
 
-    path = roadmap_path(args.file)
-    try:
-        rid = write(path, change, verb="add", delta=1, today=args.today)
-    except Duplicate as e:
-        # The refusal leaves its trace for `stats` (the dedup quote): an empty
-        # commit, nothing else.
-        commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
-        raise
-    print(rid)
+    # A refused duplicate leaves its trace for `stats` (the dedup quote): write()
+    # records it as an empty commit, under the lock.
+    print(write(roadmap_path(args.file), change, verb="add", delta=1, today=args.today))
     return 0
 
 
@@ -775,11 +791,13 @@ def next_up(roadmap: Roadmap) -> list[str]:
 
 def components_of(row: Row) -> set[str]:
     """What a row touches: the `Komponente:` lines of its ledger and the
-    component field of its Dedup-Key (<klasse>:<komponente>:…)."""
+    component of a full Dedup-Key (<klasse>:<komponente>:<datei>:<symbol>). A
+    short key like heavy.sh's `reg:<step>` names no component, nor does a
+    ledger's placeholder in parentheses."""
     found = set()
-    key = row.dedup_key
-    if key and key.count(":") >= 1:
-        found.add(key.split(":")[1])
+    parts = (row.dedup_key or "").split(":")
+    if len(parts) >= 4:
+        found.add(parts[1])
     ledger = row.cells[LEDGER]
     file = (ROOT / ledger).resolve()
     # Only a ledger of this repository: a stray absolute path reads nothing.
@@ -788,7 +806,9 @@ def components_of(row: Row) -> set[str]:
             text = file.read_text(encoding="utf-8")
         except OSError:
             text = ""
-        found |= set(re.findall(r"^Komponente:\s*([^\s·]+)", text, re.MULTILINE))
+        found |= {
+            c for c in re.findall(r"^Komponente:\s*([^\s·]+)", text, re.MULTILINE) if c[0] != "("
+        }
     return found
 
 
@@ -830,19 +850,30 @@ def merged_prs() -> dict[int, dt.date]:
         raise Refused(74, f"gh pr list answered something else: {e}") from None
 
 
-def to_close(roadmap: Roadmap, merged: dict[int, dt.date]) -> list[tuple[str, list[int]]]:
+def all_merged(roadmap: Roadmap, merged: dict[int, dt.date]) -> list[tuple[Row, list[int]]]:
     """Open rows whose PR column names PRs that are all merged."""
     out = []
     for _, r in roadmap.rows():
         nums = [int(n) for n in re.findall(r"#(\d+)", r.cells[PR])] if r.well_formed else []
         if r.is_open and nums and all(n in merged for n in nums):
-            out.append((r.id, nums))
+            out.append((r, nums))
     return out
+
+
+def to_close(roadmap: Roadmap, merged: dict[int, dt.date]) -> list[tuple[str, list[int]]]:
+    """The rows sync closes: those in `pr`. A merged PR says nothing about a row
+    in any other status (a stage with several PRs is `aktiv` after the first),
+    and a close cannot be taken back."""
+    return [(r.id, nums) for r, nums in all_merged(roadmap, merged) if r.state == "pr"]
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
     path = roadmap_path(args.file)
     merged = merged_prs()
+    for r, nums in all_merged(Roadmap.load(path), merged):
+        if r.state != "pr":
+            prs = ", ".join(f"PR #{n}" for n in nums)
+            print(f"sync: {prs} merged, but {r.id} is {r.state} — not closed")
 
     def change(roadmap: Roadmap) -> str:
         # Again under the lock: another sync may have closed them meanwhile.
@@ -852,7 +883,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
         for rid, nums in closed:
             note = ", ".join(f"PR #{n}" for n in nums)
             day = max(merged[n] for n in nums)
-            roadmap.set_status(rid, "abgeschlossen", note, day, check=False)
+            roadmap.set_status(rid, "abgeschlossen", note, day)
         return " ".join(rid for rid, _ in closed)
 
     try:
@@ -862,9 +893,9 @@ def cmd_sync(args: argparse.Namespace) -> int:
             raise NothingToClose
         print(f"sync: closed {write(path, change, verb='sync', delta=0, today=args.today)}")
     except NothingToClose:
-        print("sync: no open row with a merged PR")
+        print("sync: no open row with a merged PR to close (sync closes rows in pr only)")
     repo = repo_of(path)
-    if repo and repo != ROOT.resolve():
+    if repo and repo == path.parent.resolve() and repo != ROOT.resolve():
         print(f"sync: not pushed — push it yourself: git -C {repo} push")
     return 0
 
@@ -1021,7 +1052,7 @@ def main(argv: list[str] | None = None) -> int:
     nx.add_argument("--status", default="freigegeben", choices=sorted(SECTION_OF))
     nx.add_argument("--exclude-components", nargs="+", metavar="C", help="skip rows touching these")
     nx.set_defaults(func=cmd_next)
-    sub.add_parser("sync", help="close rows whose PRs are merged").set_defaults(func=cmd_sync)
+    sub.add_parser("sync", help="close rows in pr whose PRs are merged").set_defaults(func=cmd_sync)
     sa = sub.add_parser("stats", help="tasks/day, Kevin-min/PR, wait per state, stale, dedup")
     sa.add_argument("--days", type=int, default=30, help="the window for tasks/day (default 30)")
     sa.set_defaults(func=cmd_stats)
