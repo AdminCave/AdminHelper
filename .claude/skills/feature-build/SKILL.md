@@ -12,13 +12,15 @@ Backlog unter `/loop` starten; für ein normales Feature reicht eine Session.
 Eingabe: der Ledger-Pfad unter `tasks/` (z. B. `tasks/<slug>.md`, `tasks/audit-fixes.md`).
 Fehlt er, das **einzige** `Status: aktiv`-Ledger nehmen. Gibt es **mehrere** `aktiv` (oder
 keins): **nicht interaktiv fragen** — im Loop wartet niemand — sondern mit klarer Meldung
-abbrechen und den expliziten Pfad verlangen. `geplant`/`blockiert`/`erledigt` werden ohne Pfad
-nie automatisch gebaut.
+abbrechen und den expliziten Pfad verlangen. `geplant`, `freigegeben`, `bereit`, `blockiert`
+und `erledigt` werden ohne Pfad nie automatisch gebaut (den Worker für `freigegeben` bringt
+Stufe 7).
 
 ## Vor dem Start
 - Ledger-Kopf lesen: **Status**, **Branch**, **Spec**, **Commit-Granularität**, **Review**-
-  Granularität, **Fast-Suite**, **Warm-Profil**, DoD-Verweis.
-- **`Fast-Suite: vm`** (parallele Worktree-Lane, keine lokalen Toolchain-Artefakte —
+  Granularität, **Heavy** (bei älteren Ledgern ohne `Heavy:` stattdessen **Fast-Suite** und
+  **Warm-Profil**), DoD-Verweis.
+- **`Fast-Suite: vm`** (nur ältere Ledger; parallele Worktree-Lane, keine lokalen Toolchain-Artefakte —
   AUTONOMOUS.md „Parallel-Betrieb"): ALLE Verify-/Schnellsuite-Schritte laufen auf der
   warmen Lane-Box statt lokal. Einmalig `bash scripts/vm/warm.sh <Warm-Profil>`
   (Default `desktop`; `pond` nur wenn im Kopf). Pro Task: das `Verify:` via
@@ -26,8 +28,16 @@ nie automatisch gebaut.
   `bash scripts/vm/iter.sh quick --strict --only <komponenten>` (Keys: server
   monitoring ca-issuer agent desktop(-rs|-ui|-e2e) web scripts). Nichts lokal bauen/testen.
   Fehlt das Feld oder steht `lokal` → unverändert lokale Suiten (Solo-Default).
-- **Status prüfen:** `geplant` → das Starten von `feature-build` IST die Freigabe: Kopf auf
-  `aktiv` setzen und bauen. `aktiv` → bauen. `blockiert`/`erledigt` → **nicht** bauen, melden.
+- **Status prüfen** (Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`,
+  tasks/README.md): `freigegeben` → Kevins Freigabe liegt vor: Kopf auf `aktiv` setzen und
+  bauen. `geplant` → nur mit ausdrücklichem Pfad; dann IST das Starten die Freigabe: Kopf auf
+  `aktiv`. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu, Verifikation und PR stehen
+  aus: **nicht** bauen, melden. `blockiert`/`erledigt` → **nicht** bauen, melden.
+- **Roadmap mitziehen:** Nennt der Ledger-Kopf eine Roadmap-ID (`Roadmap R-nnnn` im `Spec:`),
+  folgt die Zeile dem Ledger, nur über `python3 scripts/dev/roadmap.py status R-nnnn <status>`:
+  beim Start `aktiv`, im Abschluss `bereit`, mit dem PR `pr --note "PR #<n>"`; `abgeschlossen`
+  setzt nach dem Merge `roadmap.py sync`. Nie ein Edit an der Datei. Ein Exit ≠ 0 wird
+  gemeldet, nicht umgangen (Exit 5: die Datei ist gerade von Hand offen — Kevin fragen).
 - **Branch prüfen:** Ist `Branch:` der Default-Branch (`main`)? → **abbrechen** und melden
   („dieses Ledger ist Handarbeit auf `main`, nicht für feature-build"); der Flow braucht einen
   isolierten Branch für Recovery + Draft-PR. Sonst existenz-tolerant sicherstellen:
@@ -167,10 +177,19 @@ nie automatisch gebaut.
    Commit-Body: Task-IDs + Stichwort.
 
 ## Abschluss (kein `[ ]` mehr offen)
-1. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit); bei
+1. **Bereit — zuerst:** Ledger-Kopf auf `Status: bereit` (ein `chore(ledger)`-Commit), die
+   Roadmap-Zeile auf `bereit`. Zuerst, weil `ledger.sh lint` ein `aktiv` ohne offene Task als
+   Fehler wertet und `ledger_test` jedes echte Ledger lintet — der Gesamt-Schnellcheck fiele
+   sonst über das eigene Ledger. Ab hier baut niemand mehr daran; Verifikation und PR stehen aus.
+2. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit); bei
    `Fast-Suite: vm` stattdessen `bash scripts/vm/iter.sh quick` (ohne `AH_ONLY`).
-2. **Schwere Suite auf der VM — nur wenn nötig (path-gated, CLAUDE.md).** Erst den Branch-Diff
-   prüfen (`git diff --stat main...`): Berührt er **heavy-relevante** Pfade? (`apps/server`-API/
+3. **Schwere Suite auf der VM — nur wenn nötig (path-gated, CLAUDE.md).** Was geplant ist, sagt
+   `Heavy:` im Kopf: `none` → keine; `linux-full` → der `/test`-Weg unten; `scenario <flags>`
+   → der Multibox-Lauf mit diesen Flags, **beim Nutzer anfragen**; `windows` → die Windows-VM
+   gibt es erst mit Stufe 12, also „nicht verifiziert" melden. Ältere Ledger ohne `Heavy:`:
+   `Warm-Profil` und `Abschluss: multibox` wie unten. Den Plan immer am realen Diff
+   re-checken, in beide Richtungen, und eine Abweichung im Abschluss nennen.
+   Erst den Branch-Diff prüfen (`git diff --stat main...`): Berührt er **heavy-relevante** Pfade? (`apps/server`-API/
    Gateway, `apps/ca-issuer`, `apps/gateway`, `apps/agent`, `apps/desktop` Connect/Tunnel/
    Enrollment, `docker-compose*.yml`, `Dockerfile`, `scripts/install|update`, FRP/PKI). **Wenn
    nein** (z. B. reine `docs/`-, Web-UI- oder Kleinkram-Änderung) → schwere Suite **überspringen**
@@ -187,22 +206,23 @@ nie automatisch gebaut.
    und `bash scripts/vm/reap.sh`. **Nur bei realem Pass weiter — SKIP ≠ grün.** (Die VMs tragen
    eine Frist und sterben beim nächsten `vm.py`-Aufruf danach — nur der single-box-Warm-Loop,
    kein `multibox`/`bake` ohne Nachfrage.)
-3. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:
+4. **Review über den Branch-Diff** — welcher, sagt das `Review:`-Feld des Kopfs:
    - **`Review: am Ende`** (Kurz-Ledger, ≤ 3 Tasks): **ein** Frischer-Kontext-Review über den
      ganzen Branch-Diff (`git diff main...`, Sub-Agent wie in Schritt 4) — und **kein**
      `/code-review` hinterher: der eine Reviewer hat genau diesen Diff schon gesehen, der
      zweite Durchgang kostet nur Zeit.
    - **`Review: pro Task`** (Default für große Ledger): die Einheiten sind einzeln reviewt,
      aber niemand hat das Ganze gesehen → hier `/code-review` über den Branch-Diff.
-   Echte neue Bugs als Tasks in den Ledger, fixen, erneut testen.
-4. **Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen wirkend):
+   Echte neue Bugs als Tasks in den Ledger: Kopf zurück auf `aktiv` (Roadmap ebenso), fixen,
+   erneut testen, dann wieder `bereit`.
+5. **Push + Draft-PR** (der eine bewusst prompt-pflichtige Schritt — nach außen wirkend):
    `git push -u origin <branch>`, dann `gh pr create --draft --title "<type>: <feature>"
    --body "…"` mit Link auf die **Spec** (Pfad aus dem `Spec:`-Ledgerfeld), Task-Zusammenfassung
    (fertig / übersprungen / offene `[?]`) und VM-Ergebnis. (Beide prompten, solange nicht
    allowlisted — das ist Absicht.)
-5. Ledger-Kopf auf `Status: erledigt` setzen (bzw. `blockiert`, wenn `[?]`-Punkte offen
-   bleiben). Schluss-Zusammenfassung im Chat; die `[?]`-Punkte klar auflisten — die
-   entscheidet der Mensch.
+6. **Mit dem PR:** Ledger-Kopf auf `Status: erledigt` (bzw. `blockiert`, wenn `[?]`-Punkte
+   offen bleiben; ein `chore(ledger)`-Commit), die Roadmap-Zeile auf `pr` mit der PR-Nummer. Schluss-Zusammenfassung im
+   Chat; die `[?]`-Punkte klar auflisten — die entscheidet der Mensch.
 
 ## Recovery
 - Granulare Commits ⇒ ein Fehlgriff = `git revert <commit>`, keine Handarbeit.

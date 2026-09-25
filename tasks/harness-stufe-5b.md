@@ -79,8 +79,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T6)
 Abhängt von: T3
 
-### T5 — `feature-build` kennt `freigegeben`, `bereit` und `Heavy:`  [ ]
-Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, AUTONOMOUS.md
+### T5 — `feature-build` kennt `freigegeben`, `bereit` und `Heavy:`  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, AUTONOMOUS.md, CLAUDE.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @08637e25 2026-09-25T14:12:29+02:00
+Review: approve (sonnet, Runde 2 nach bereit-zuerst)
 Änderung:
 - **Start:** `feature-build` startet `freigegeben` (setzt `aktiv`) und interaktiv wie bisher auch `geplant` mit ausdrücklichem Pfad.
 - **Abschluss:**

@@ -38,9 +38,9 @@ Terminal abgesetzt, nie von selbst gestartet (Regeln in `.claude/skills/test/SKI
 ebenfalls; Sonnet nur für die schnellen Task-Reviewer im Bau (Regeln in den Skills).
 
 **Verben, die es heute gibt (Stufe 0):** `/feature-plan` (Spec + Ledger, stoppt am Design-Gate), `/feature-build`
-(Ledger abarbeiten bis zum Draft-PR), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten
-auf VMs). Die Zielverben der Roadmap (`/roadmap /spec /build /audit /test /vm /find /hunt /release`) entstehen
-stufenweise. **Ein Verb, das hier fehlt, gibt es noch nicht: sagen, nicht improvisieren.**
+(Ledger abarbeiten bis zum Draft-PR), `/feature-review` (frischer Reviewer für einen Diff), `/test` (schwere Suiten auf
+VMs), `/roadmap` (Roadmap zeigen, triagieren). Die Zielverben der Roadmap (`/roadmap /spec /build /audit /test /vm /find
+/hunt /release`) entstehen stufenweise. **Ein Verb, das hier fehlt, gibt es noch nicht: sagen, nicht improvisieren.**
 
 **Lebenslauf einer Einheit:** Zeile in `tasks/private/ROADMAP.md` (Klasse SEC > REG > REL > BUG > FEAT > REF > IDEE)
 → `/feature-plan` schreibt `docs/features/<slug>.md` + `tasks/<slug>.md` mit `Status: geplant` → **Kevin liest und
