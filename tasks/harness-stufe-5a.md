@@ -109,8 +109,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T8)
 Abhängt von: T2
 
-### T6 — Der Status-Hook zeigt den ganzen Plan und die Deckel  [ ]
-Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/hooks_test.sh
+### T6 — Der Status-Hook zeigt den ganzen Plan und die Deckel  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/session-status.sh, scripts/tests/hooks_test.sh, scripts/tests/session_status_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @551aa327 2026-09-25T10:40:17+02:00
+Review: approve (sonnet, Runde 2 nach Spalte-0-Fix)
 Änderung:
 - Die Roadmap-Zeile im AH-STATUS-Block zeigt alle Punkte von „Als Nächstes“ statt nur vier. Punkte mit mehr als einer Zeile werden auf die erste Zeile gekürzt.
 - Die WIP-Deckel kommen aus `roadmap.py show --wip` und werden an den Zahlen aus CLAUDE.md gemessen: `aktiv` 1 · `bereit` 2 · `pr` 3 · `neu` 20. Ist ein Deckel erreicht, steht dort `Warnung:` (Warn-Trigger 3).

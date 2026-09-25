@@ -25,12 +25,13 @@
 # Implemented: version bumped without a tag · main ahead of origin · an open draft
 # release · .claude/rules or .claude/agents gitignored · an env block in the public
 # settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing.
+# Trigger 3 (a WIP cap reached: aktiv 1 · bereit 2 · pr 3 · neu 20) is no WARN
+# line: the WIP line under the roadmap carries `Warnung:` itself, counted by
+# roadmap.py from the rows, not read from the roadmap's own header.
 #
 # NOT yet implemented, so their silence means nothing: CLAUDE.md §3 trigger 1
-# (a stage whose `Hängt ab von` is unmerged), 3 (the WIP caps aktiv 1 · bereit 2 ·
-# pr 3 · neu 20 — the ledger line below merges aktiv and bereit, so the two caps
-# cannot be told apart as printed), 4 (harness files changed in a feature branch)
-# and 5 (the main checkout not clean while planning or merging).
+# (a stage whose `Hängt ab von` is unmerged), 4 (harness files changed in a
+# feature branch) and 5 (the main checkout not clean while planning or merging).
 
 set -uo pipefail
 
@@ -46,6 +47,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# roadmap.py comes from the checkout this hook lives in, not from the one it
+# looks at (a test runs it against a fixture repo without scripts/).
+ROADMAP_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/roadmap.py"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
 cd "$ROOT" || exit 0
@@ -102,9 +106,36 @@ fi
 
 # ── line 3: roadmap ───────────────────────────────────────────────────────────
 ROADMAP="tasks/private/ROADMAP.md"
+# The WIP caps of CLAUDE.md §3 trigger 3 — the hook measures against these, not
+# against whatever caps a roadmap header prints.
+WIP_CAPS="aktiv:1 bereit:2 pr:3 neu:20"
+wip_line() {  # the counters from roadmap.py, `Warnung:` on a reached cap, or the error
+  local out rc cap name n reached=()
+  [ -f "$ROADMAP_PY" ] || { echo "WIP: ? (roadmap.py fehlt: $ROADMAP_PY)"; return; }
+  out="$(timeout 3 python3 "$ROADMAP_PY" --file "$ROADMAP" show --wip 2>&1)"; rc=$?
+  if [ "$rc" != 0 ] || [ "${out#WIP: }" = "$out" ]; then
+    echo "WIP: ? (roadmap.py show --wip, Exit $rc: $(printf '%s\n' "$out" | tail -1))"
+    return
+  fi
+  for cap in $WIP_CAPS; do
+    name="${cap%%:*}"
+    n="$(grep -oE "(^|[: ])$name [0-9]+/" <<<"$out" | grep -oE '[0-9]+' | head -1)"
+    [ -n "$n" ] && [ "$n" -ge "${cap#*:}" ] && reached+=("$name $n/${cap#*:}")
+  done
+  if [ "${#reached[@]}" -gt 0 ]; then
+    echo "$out · Warnung: Deckel erreicht ($(IFS=,; echo "${reached[*]}" | sed 's/,/, /g'))"
+  else
+    echo "$out"
+  fi
+}
 if [ -f "$ROADMAP" ]; then
   echo "Roadmap:"
-  awk '/^## Als Nächstes/{f=1;next} f&&/^## /{exit} f&&NF{print "  " $0; n++; if(n==4) exit}' "$ROADMAP"
+  # Every point of "Als Nächstes", each as its first line: a point starts in
+  # column 0 (`N.`, `-`, `*`); its continuation, an indented sub-item included,
+  # stays in the file.
+  awk '/^## Als Nächstes/{f=1;next} f&&/^## /{exit}
+       f&&/^([0-9]+\.|[-*])[[:space:]]/{print "  " $0}' "$ROADMAP"
+  wip_line
 else
   echo "Roadmap: fehlt ($ROADMAP)"
 fi
