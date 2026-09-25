@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -150,3 +150,25 @@ Abhängt von: T8
 `/feature-plan --kurz` auf einer echten `neu`-Zeile, einem Kandidaten der Aufsicht: das Ergebnis ist ein
 2-Task-Ledger mit `Beweis:` und `Semantik:`. Das Ledger wird verworfen oder behalten, wie Kevin will. Dazu ein
 Plan-Lauf auf einer Zeile, deren Komponente mit einer `aktiv`-Zeile kollidiert: Er muss warnen.
+
+**Ergebnis der Probe (2026-09-25, Kandidat der Aufsicht: R-0095, BUG, `vm.py sync` aus einem Worktree)**
+- Erster Lauf: Die Zeile trägt einen Beweis. Nachgestellt ohne VM auf main@b4802aa1: `rsync -a --exclude-from
+  scripts/vm/rsync-exclude.txt <worktree>/ <tmp>/`, dieselben Argumente wie `vm.py:_sync`, legt am Ziel `.git` als
+  Datei `gitdir: <Haupt-Checkout>/.git/worktrees/<name>` ab. Die `Semantik:`-Prüfung fand aber `DEVELOPMENT.md:1165–1166`
+  („Der Sync aus Worktrees ist validiert; `.git` reist mit, die Evidenzfelder kommen trotzdem vom Client.“) und das
+  Nicht-Ziel der Spec wochenlauf-gruen („die Box braucht es nicht“). Beides beschreibt das heutige Verhalten als Absicht,
+  also kein Fix-Task, sondern eine offene Frage an Kevin. Daraus wurde T8.
+- Kevins Antwort: kein Box-Repo. Zweiter Lauf: `tasks/box-ohne-repo.md` auf dem lokalen Branch `feature/box-ohne-repo`
+  (6754daba von main, nicht gepusht, Commit `chore(plan): add ledger for box-ohne-repo`). 2 Tasks, beide mit `Beweis:`,
+  `Semantik:`, `Dedup-Key:` und `HEAD:`, `ledger.sh lint` ok. Ob das Ledger bleibt, entscheidet Kevin.
+- Die Warnung am Gate, wörtlich: „parallel-tauglich zu R-0093 (Ledger wochenlauf-gruen, dazu R-0085/86/87/92 derselben
+  Lane): nein — gleiche Komponente `scripts`, geteilte Dateien `scripts/vm/rsync-exclude.txt` und
+  `scripts/vm/tests/test_vm.py` (wochenlauf-gruen T2), dieselbe Ursache (T1/T7 umgehen den Worktree-`.git`). Seriell nach
+  dem Merge von wochenlauf-gruen, nicht parallel.“
+- Abweichung: Der Roadmap-Schritt des Gates lief mit `--file` auf einer Kopie der echten Datei, die echte
+  `tasks/private/ROADMAP.md` wurde nur gelesen. Eine Kopie ohne `cp -p` wies die 5-s-Regel aus 5a mit Exit 5 ab.
+- Funde: (1) Was bei `Semantik:` = Absicht geschieht, und (2) die Commit-Vorlage ohne Spec wurden T8. (4) Der Ledger-Pfad
+  landete in der Status-Zelle statt in der Spalte `Ledger`; daraus wurde T9. (3) Die Altzeilen R-0085/86/87/89/92 ohne
+  Ledger-Spalte zieht die Aufsicht nach dem Merge mit `status … --ledger` nach.
+- Bekannte Grenze, in 5b nicht geändert: Eine Sammelzeile wie R-0008 (5a bis 5c) würde der Abschluss von
+  `feature-build` auf `bereit` setzen, obwohl 5c offen ist. Sie blieb deshalb unverändert.
