@@ -386,7 +386,8 @@ Das ist kein Komfort, sondern die Folge derselben Stufe: `git add` steht seit St
 dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
 (halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash merken; (2) das
 `Verify:` der Task als `verify.sh <komponente> --strict`; (3) `review.sh diff-scan`
-(abgeschaltete Tests im Diff), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
+(abgeschaltete Tests im Diff; ein ganzer Test darf gehen, wenn die Task ihn schon committet
+als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
 mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` und **ein** Commit
 mit Code und Ledger. Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder

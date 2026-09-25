@@ -74,6 +74,23 @@ case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
 [ -n "$MSG" ] || [ -n "$MSGFILE" ] || die "a commit needs a message (-m or --message-file)"
 [ -z "$MSGFILE" ] || [ -f "$MSGFILE" ] || die "no such message file: $MSGFILE"
 
+# A declared test deletion (Test-Löschung:) counts only once it is committed, and
+# this script must not be the way it gets committed: it stages the whole ledger,
+# so a builder could write the line while closing one task and use it in the next
+# (adversarial review, 2026-09-25). The declaration comes with the plan commit at
+# the gate, or with a commit Kevin makes by hand — never through task-close.
+# This early look fails fast with a clear message; it is byte-exact (LC_ALL=C,
+# -a), because a line with an invalid UTF-8 byte was invisible to grep under a
+# UTF-8 locale while awk and python still read it. The check that carries is the
+# one on the finished commit, at the end: it also covers the ledger changing
+# while the suite runs and a declaration in any other staged ledger.
+decl_lines() { LC_ALL=C grep -aE '^Test-Löschung:' || true; }  # review: ok no match is an empty list, not a failure
+if [ "$(git show "HEAD:$LEDGER" 2>/dev/null | decl_lines)" != "$(decl_lines < "$LEDGER")" ]; then
+  echo "task-close: the Test-Löschung: lines of $LEDGER differ from the committed ones —" >&2
+  echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
+  exit 4
+fi
+
 # CLAUDE.md §3 trigger 2: a commit on main is one of the five things that must
 # not happen quietly. Until stage 4 that protection was `git commit` going
 # through the session; this script is now the only way to a commit, so the
@@ -208,7 +225,13 @@ if [ "$ART_TREE" != "$TREE_HASH" ]; then
 fi
 
 # ── 3. the deterministic reviews ─────────────────────────────────────────────
-bash scripts/dev/review.sh diff-scan --staged || exit 3
+# --task: a test the task declares as deleted (Test-Löschung:) may take its
+# assertions with it; anything else that silences a test is still a finding.
+bash scripts/dev/review.sh diff-scan --staged --task "$LEDGER" "$ID" || {
+  rc=$?
+  [ "$rc" = 2 ] && die "review.sh diff-scan could not run"
+  exit 3
+}
 bash scripts/dev/review.sh scope "$LEDGER" "$ID" --staged || {
   rc=$?
   # A usage error is not a blocked commit; only a real scope violation is.
@@ -282,5 +305,19 @@ if [ -n "$MSGFILE" ]; then
   git commit -q -F "$MSGFILE" || infra "$COMMIT_HELP"
 else
   git commit -q -m "$MSG" || infra "$COMMIT_HELP"
+fi
+# The check that carries: on the commit itself, byte-exact, over every ledger in
+# it. A Test-Löschung: line this commit adds, removes or moves — through a ledger
+# edited while the suite ran, or another ledger staged via Dateien: — takes the
+# commit back (adversarial review, 2026-09-25). grep -c reads to the end: with
+# -q it would leave early, git diff would die of SIGPIPE, and pipefail would turn
+# the hit into a pass.
+DECL_CHANGED="$(git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --no-color -U0 HEAD^ HEAD -- 'tasks/*.md' \
+  | LC_ALL=C grep -acE '^[-+]Test-Löschung:')"
+if [ "${DECL_CHANGED:-0}" != 0 ]; then
+  git reset -q --soft HEAD^ || infra "the commit changed a Test-Löschung: line and could not be taken back — inspect HEAD"
+  echo "task-close: the commit changed a Test-Löschung: line in a ledger — taken back (git reset --soft)" >&2
+  echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
+  exit 4
 fi
 echo "── closed $ID: $(git rev-parse --short HEAD) · $SUMMARY"
