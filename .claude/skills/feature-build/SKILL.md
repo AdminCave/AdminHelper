@@ -35,9 +35,12 @@ Stufe 7).
   aus: **nicht** bauen, melden. `blockiert`/`erledigt` → **nicht** bauen, melden.
 - **Roadmap mitziehen:** Nennt der Ledger-Kopf eine Roadmap-ID (`Roadmap R-nnnn` im `Spec:`),
   folgt die Zeile dem Ledger, nur über `python3 scripts/dev/roadmap.py status R-nnnn <status>`:
-  beim Start `aktiv`, im Abschluss `bereit`, mit dem PR `pr --note "PR #<n>"`; `abgeschlossen`
-  setzt nach dem Merge `roadmap.py sync`. Nie ein Edit an der Datei. Ein Exit ≠ 0 wird
-  gemeldet, nicht umgangen (Exit 5: die Datei ist gerade von Hand offen — Kevin fragen).
+  beim Start `aktiv`, im Abschluss `bereit`, mit dem PR `pr --pr "#<n>"` (die Spalte `PR`, die
+  `sync` liest); `abgeschlossen` setzt nach dem Merge `roadmap.py sync`. Ist das Ledger nur ein
+  Teil der Zeile (`Roadmap R-nnnn, Teil …`), bleibt sie mit dem PR `aktiv` und sammelt nur die
+  Nummern: `status R-nnnn aktiv --pr "#<n>"`, ab dem zweiten Teil `--pr "#<a>, #<n>"` — `sync`
+  schließt nur eine Zeile in `pr`, und die setzt erst der letzte Teil. Nie ein Edit an der Datei. Ein Exit ≠ 0 wird gemeldet,
+  nicht umgangen (Exit 5: die Datei ist gerade von Hand offen — Kevin fragen).
 - **Branch prüfen:** Ist `Branch:` der Default-Branch (`main`)? → **abbrechen** und melden
   („dieses Ledger ist Handarbeit auf `main`, nicht für feature-build"); der Flow braucht einen
   isolierten Branch für Recovery + Draft-PR. Sonst existenz-tolerant sicherstellen:

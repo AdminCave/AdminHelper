@@ -6,9 +6,10 @@
 # skill_consistency_test.sh — the skill and harness texts against the four
 # contradictions stage 5b removed: a plan committed on main (R-0065), a ledger
 # status list without `freigegeben` or `bereit`, a feature-plan head template
-# without `Heavy:`, and a ledger path handed to `roadmap.py status --note` instead
-# of `--ledger`. Read-only; each check first proves on a fixture that it can fail
-# at all, and that it stays quiet on the sentences it must not mistake.
+# without `Heavy:`, and a ledger path or PR number handed to `roadmap.py status
+# --note` instead of `--ledger`/`--pr`. Read-only; each check first proves on a
+# fixture that it can fail at all, and that it stays quiet on the sentences it
+# must not mistake.
 #
 # Run: bash scripts/tests/skill_consistency_test.sh
 
@@ -67,12 +68,12 @@ status_lists() {
     | awk -v f="$1" '!/freigegeben/ || !/bereit/ { print f ": " $0 }'
 }
 
-# ledger_as_note <file> — a ledger path handed to --note (across line breaks):
-# it lands in the status cell, and `next` and the gate's parallel check read the
-# Ledger column.
-ledger_as_note() {
+# column_in_note <file> — a ledger path or a PR number handed to --note (across
+# line breaks): it lands in the status cell, while `next` and the gate's parallel
+# check read the Ledger column and `sync` the PR column.
+column_in_note() {
   unreadable "$1" && return
-  tr '\n' ' ' < "$1" | grep -oE -- '--note[[:space:]]+"?tasks/[^" ]*' | awk -v f="$1" '{ print f ": " $0 }'
+  tr '\n' ' ' < "$1" | grep -oE -- '--note[[:space:]]+"?(tasks/|PR #)[^" ]*' | awk -v f="$1" '{ print f ": " $0 }'
 }
 
 # head_template <feature-plan SKILL.md> — the code block right under "## 3.".
@@ -96,7 +97,7 @@ fixture() { printf '%s\n' "$@" > "$WORK/fx.md"; echo "$WORK/fx.md"; }
 
 # ══ the checks can fail ═══════════════════════════════════════════════════════
 echo "── the checks themselves ──"
-for d in plan_on_main status_lists ledger_as_note; do
+for d in plan_on_main status_lists column_in_note; do
   { ! fires "$d" "" && [ -n "$("$d" "")" ]; } && ok "$d: an empty path is neither a finding nor quiet" \
     || bad "$d took an empty path for input"
 done
@@ -124,11 +125,13 @@ f=$(fixture 'Folge `geplant` → `freigegeben` → `aktiv` → `bereit` →' '`e
 f=$(fixture 'aus: **nicht** bauen, melden. `blockiert`/`erledigt` → **nicht** bauen, melden.')
 [ -z "$(status_lists "$f")" ] && ok "two states are no list" || bad "status_lists fired on: $(status_lists "$f")"
 f=$(fixture 'Roadmap-Schritt des Gates: `roadmap.py status R-x geplant --note' '"tasks/<slug>.md"` je Zeile')
-fires ledger_as_note "$f" && ok "a ledger path in --note is found across a line break" \
-  || bad "ledger_as_note missed the old gate step"
-f=$(fixture '`roadmap.py status R-nnnn abgelehnt --note "<Grund>"`, mit dem PR `pr --note "PR #<n>"`')
-[ -z "$(ledger_as_note "$f")" ] && ok "a reason or a PR in --note is no ledger" \
-  || bad "ledger_as_note fired on: $(ledger_as_note "$f")"
+fires column_in_note "$f" && ok "a ledger path in --note is found across a line break" \
+  || bad "column_in_note missed the old gate step"
+f=$(fixture 'folgt die Zeile dem Ledger: beim Start `aktiv`, mit dem PR `pr --note "PR #<n>"`; …')
+fires column_in_note "$f" && ok "a PR number in --note is found" || bad "column_in_note missed the old PR step"
+f=$(fixture '`roadmap.py status R-nnnn abgelehnt --note "<Grund>"`, `zurückgestellt --note "bis Q4"`')
+[ -z "$(column_in_note "$f")" ] && ok "a reason in --note is no column value" \
+  || bad "column_in_note fired on: $(column_in_note "$f")"
 f=$(fixture '## 3a. Die kurzen Wege' '`roadmap.py status R-x geplant --note "tasks/x.md"` je Zeile' \
             '## 4. Design-Gate' '`roadmap.py status R-nnnn geplant' '  --ledger tasks/x.md`')
 { ! grep -qE "$LEDGER_CALL" <<<"$(section "$f" '## 3a.' '## 4.')" && grep -qE "$LEDGER_CALL" <<<"$(section "$f" '## 4.')"; } \
@@ -149,8 +152,8 @@ out=$(plan_on_main "${skills[@]}" AUTONOMOUS.md)
 out=$(for f in "${skills[@]}" AUTONOMOUS.md tasks/README.md; do status_lists "$f"; done)
 [ -z "$out" ] && ok "every status list names freigegeben and bereit" || bad "incomplete status list:
 $out"
-out=$(for f in "${skills[@]}" AUTONOMOUS.md tasks/README.md; do ledger_as_note "$f"; done)
-[ -z "$out" ] && ok "no text hands a ledger path to --note" || bad "ledger in --note:
+out=$(for f in "${skills[@]}" AUTONOMOUS.md tasks/README.md; do column_in_note "$f"; done)
+[ -z "$out" ] && ok "no text hands a ledger path or a PR number to --note" || bad "column value in --note:
 $out"
 for part in "## 3a.:## 4." "## 4.:"; do
   text=$(section .claude/skills/feature-plan/SKILL.md "${part%%:*}" "${part#*:}")

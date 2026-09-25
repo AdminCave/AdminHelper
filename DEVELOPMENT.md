@@ -441,7 +441,7 @@ python3 scripts/dev/roadmap.py show [R-nnnn] [--wip]
 python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web]
 python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
     [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
-python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md]
+python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md] [--pr "#<n>"]
 python3 scripts/dev/roadmap.py approve R-nnnn [--revoke]
 python3 scripts/dev/roadmap.py sync
 python3 scripts/dev/roadmap.py stats [--days 30]
@@ -475,7 +475,9 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   als 30 Tage danach wandert die Zeile beim naechsten Schreiben oben ins „Archiv".
   `--ledger` schreibt die Spalte `Ledger` wie `add --ledger`, auch ohne Statuswechsel — so
   bekommt eine aeltere Zeile ihr Ledger nachgetragen; `next` und die Parallel-Pruefung am
-  Gate lesen es dort, nicht aus der Notiz.
+  Gate lesen es dort, nicht aus der Notiz. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
+  die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
+  ist Exit 2.
 - `approve` ist `geplant` -> `freigegeben`, Kevins Freigabe; `--revoke` nimmt sie zurueck.
 - `sync` fragt `gh pr list --state merged`: eine Zeile im Status `pr`, deren PR-Spalte nur
   gemergte PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Eine Zeile in einem anderen

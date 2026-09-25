@@ -859,6 +859,55 @@ def test_status_ledger_names_itself_in_the_commit(tmp_path: pathlib.Path) -> Non
     )
 
 
+def test_status_pr_fills_the_pr_column_not_the_status(tmp_path: pathlib.Path) -> None:
+    """`sync` closes a row by its PR column; a number in the status note never
+    reaches it (the 5b branch review)."""
+    p = aged(write(tmp_path, with_probe("bereit")))
+    rows = len(roadmap.Roadmap(p.read_text(encoding="utf-8")).rows())
+    assert status(p, "R-0020", "pr", "--pr", "#42") == 0
+    section, r = placed(p, "R-0020")
+    assert (section, r.cells[roadmap.STATUS], r.cells[roadmap.PR]) == ("In Arbeit", "pr", "#42")
+    text = p.read_text(encoding="utf-8")
+    assert len(roadmap.Roadmap(text).rows()) == rows
+    assert findings(text) == []
+
+
+def test_status_pr_is_what_sync_closes(tmp_path: pathlib.Path) -> None:
+    """The whole chain: the number set with the PR, then the merge closes the row."""
+    p = aged(write(tmp_path, with_probe("bereit")))
+    assert status(p, "R-0020", "pr", "--pr", "#42") == 0
+    after = roadmap.Roadmap(p.read_text(encoding="utf-8"))
+    assert roadmap.to_close(after, {41: TODAY}) == []
+    assert roadmap.to_close(after, {42: TODAY}) == [("R-0020", [42])]
+
+
+def test_status_pr_without_a_status_change(tmp_path: pathlib.Path) -> None:
+    """A row already in `pr` gets its number, or a second one, afterwards."""
+    p = aged(write(tmp_path, with_probe("pr")))
+    assert status(p, "R-0020", "pr", "--pr", "#7, #8") == 0
+    section, r = placed(p, "R-0020")
+    assert (section, r.cells[roadmap.STATUS], r.cells[roadmap.PR]) == ("In Arbeit", "pr", "#7, #8")
+
+
+@pytest.mark.parametrize("value", ["42", "PR 42", "https://github.com/o/r/pull/42"])
+def test_status_pr_without_a_number_sync_can_read_is_exit_2(
+    tmp_path: pathlib.Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A value without `#<n>` would leave the row in `pr` for good, silently."""
+    p = aged(write(tmp_path, with_probe("bereit")))
+    text = p.read_text(encoding="utf-8")
+    assert status(p, "R-0020", "pr", "--pr", value) == 2
+    assert "'#42'" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == text
+
+
+def test_status_pr_names_itself_in_the_commit(tmp_path: pathlib.Path) -> None:
+    repo = fixture_repo(tmp_path)
+    p = aged(repo / "ROADMAP.md")
+    assert status(p, "R-0004", "aktiv", "--pr", "#42") == 0
+    assert git(repo, "log", "--format=%s", "-1").strip() == "roadmap: status R-0004 aktiv --pr #42"
+
+
 def test_a_table_emptied_by_a_move_takes_the_next_row(tmp_path: pathlib.Path) -> None:
     p = aged(write(tmp_path, CLEAN))
     assert status(p, "R-0009", "geplant") == 0  # "Zurückgestellt" keeps only its table head

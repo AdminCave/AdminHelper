@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -144,6 +144,43 @@ Review: approve (opus, Runde 2; nit: Fixture für section nachgezogen, Mutations
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md
 Abhängt von: T8
+
+### T10 — `roadmap.py status --pr`: die PR-Nummer landet in der Spalte, die `sync` liest  [x]
+Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, .claude/skills/feature-build/SKILL.md, DEVELOPMENT.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @d518c666 2026-09-25T16:34:53+02:00
+Review: approve (opus, Runde 2; nit: erster Teil ohne alte Nummer)
+Änderung: Fund (1) des Branch-Reviews, Auftrag der Aufsicht 2026-09-25, Review mit Opus:
+- Problem: `feature-build` setzt mit dem PR `status … pr --note "PR #<n>"`, aber `sync` liest nur die Spalte `PR` (`all_merged`), und nichts schrieb sie. Eine Zeile bliebe damit für immer `pr`.
+- `roadmap.py status` bekommt `--pr P` und schreibt die Spalte `PR` wie T9 die Spalte `Ledger`, auch ohne Statuswechsel; der Commit-Betreff nennt das Flag.
+- Tests: Die Spalte wird gesetzt, die Status-Zelle bleibt ohne Nummer, der Aufruf ohne Statuswechsel geht, und die Kette `status --pr` → `to_close` schließt die Zeile, sobald der PR gemergt ist.
+- `feature-build` nutzt `pr --pr "#<n>"`, `DEVELOPMENT.md` zählt das Flag auf. Der Konsistenz-Test findet neben dem Ledger-Pfad auch eine PR-Nummer in `--note`; seine Fixture, die `pr --note "PR #<n>"` als harmlos führte, zieht nach.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md
+Abhängt von: T9
+
+### T11 — Skill-Texte nach dem Branch-Review: Roadmap-ID im Kopf, Ledger vom Branch, Semantik-Frage in die Triage  [ ]
+Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md, .claude/skills/feature-build/SKILL.md, tasks/README.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Funde (2), (5, Gate-Teil), (6), (7), (8) des Branch-Reviews und der falsche Satz in `tasks/README.md:43`, Auftrag der Aufsicht 2026-09-25:
+- (2) Die Kopf-Vorlage des vollen Wegs schreibt `Spec: docs/features/<slug>.md (Roadmap R-nnnn)`. `feature-build` zieht jede ID mit, die der Kopf nennt, auch alle IDs eines Bündels. Bisher erkannte es nur `Spec: Roadmap R-nnnn`, und die Roadmap folgte einem normalen Plan nie.
+- (5) Die Parallel-Prüfung am Gate liest ein Ledger, das nur auf seinem Branch liegt, per `git show <branch>:tasks/<slug>.md`. `next --exclude-components` sieht es noch nicht (R-0099).
+- (6) cicd DE+EN nennt, was `skill_consistency_test.sh` wirklich prüft.
+- (7) Die Commit-Vorlage ohne Spec gilt für `--kurz` und `--bundle`.
+- (8) Zeigt `Semantik:` Absicht, behält die Zeile ihren Status, und die Frage geht per `status R-nnnn <status> --note "Semantik-Frage: …"` in Kevins Triage.
+- `tasks/README.md:43`: `lane.sh` liest die alten Felder nicht, es nennt `Fast-Suite: vm` nur als Hinweis; die Frage dazu ist R-0097.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: docs/developer/cicd.html · docs/en/developer/cicd.html · tasks/README.md
+Abhängt von: T10
+
+### T12 — `Dedup-Key:`-Lint nimmt die Schlüssel der Roadmap an  [ ]
+Komponente: scripts · Dateien: scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/README.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Änderung: Funde (3) und (9) des Branch-Reviews, Auftrag der Aufsicht 2026-09-25:
+- (3) Der Lint verlangte bei `Dedup-Key:` genau vier Teile. Die Roadmap trägt aber auch kurze Schlüssel aus `heavy.sh` (`reg:<schritt>`, `rel:deps-audit`), und `--kurz` übernimmt den Schlüssel aus der Zeile. Das erste `--kurz` auf einer REG-Zeile hätte `ledger_test` rot gemacht, weil es alle echten Ledger lintet. Ein Rust-Symbol `a::b` scheiterte ebenfalls. Künftig gilt: ein Token `<klasse>:<rest>` ohne Leerzeichen, `<klasse>` in Kleinbuchstaben.
+- Tests: `reg:web-vitest` und ein Schlüssel mit `::` sind gültig (die bisherige Erwartung „Fehler“ dreht sich um), ohne Klasse, mit leerem Rest oder mit Leerzeichen ist es ein Fehler.
+- Die Doku in `tasks/README.md` und cicd DE+EN nennt die volle und die kurze Form.
+- (9) Der Heavy-Lint erkennt `· Fast-Suite:` in einer kombinierten Kopfzeile wie schon `· Warm-Profil:`; Tests für beide.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: tasks/README.md · docs/developer/cicd.html · docs/en/developer/cicd.html
+Abhängt von: T2, T11
 
 ## Abschluss (nach T6, vor dem PR)
 
