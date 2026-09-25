@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Wochenlauf grün — Task-Ledger
-Status: freigegeben · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review; T6 Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review; T6 Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
 Spec: docs/features/wochenlauf-gruen.md
 Freigabe: Kevin, 2026-09-25, übermittelt durch die Aufsichts-Session adminhelper-ac; Bau als Lane (`lane.sh new wochenlauf-gruen`)
 Fast-Suite: vm · Warm-Profil: desktop
@@ -24,8 +24,10 @@ ist eine `Test-Löschung:` angekündigt. Die Lane hat ihre eigene Test-DB und ih
 committet ist, bleibt `iter_flags_test` auf der Lane-Box rot, weil das `.git` der Lane dort
 ins Leere zeigt (Spec F1). Das ist der Befund selbst, kein Fehler der späteren Tasks.
 
-### T1 — `iter_flags_test.sh` hermetisch: geerbtes Budget und Worktree-`.git` (R-0087)  [ ]
+### T1 — `iter_flags_test.sh` hermetisch: geerbtes Budget und Worktree-`.git` (R-0087)  [x]
 Komponente: scripts · Dateien: scripts/tests/iter_flags_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @9c6823bb 2026-09-25T13:10:11+02:00
+Review: approve (sonnet); Gegenprobe vorher 25/2 + 25/2, nachher 29/0 + 29/0; Lane-Box: iter_flags_test 29 passed
 Änderung: `AH_SCHEMATHESIS_EXAMPLES` in die `unset`-Zeile (Z. 18). Vor dem ersten `iter.sh`-Aufruf ein Wegwerf-Repo anlegen (`mktemp -d` unter dem bestehenden `$SHIM`-Aufräumen, `git init`, ein Commit mit fester Identität per `-c user.name=… -c user.email=…`) und `GIT_DIR`/`GIT_WORK_TREE` darauf exportieren (`iter.sh` macht `cd "$VM_ROOT"`, ein `cd` im Test reicht nicht; der Weg ist in der Spec verifiziert). Zwei neue Fälle: `AH_HEAD` ist gleich `git rev-parse HEAD` des Wegwerf-Repos; mit `GIT_DIR` auf einem Pfad ohne Repo kommt keine Evidenz, `rc=0`, und der Befehl endet auf `run.sh quick --strict`. Die bestehenden `ok`/`bad`-Zeilen bleiben wörtlich. Gegenprobe, vor und nach dem Fix: (a) `AH_SCHEMATHESIS_EXAMPLES=100` exportiert; (b) eine Kopie von `scripts/` in einem Temp-Verzeichnis mit `.git` = `gitdir: /nonexistent`, dort den Test starten. Vorher je 2 rot (Spec F1), nachher 0.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Test)
