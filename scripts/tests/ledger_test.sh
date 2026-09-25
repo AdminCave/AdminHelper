@@ -265,6 +265,46 @@ with_deletion "apps/server/tests/test_x.py::test_dead — kein Aufrufer mehr; si
 l lint fixture
 [ $rc -eq 0 ] && ok "a ; inside a reason does not split the entry" || bad "; in the reason: rc=$rc out=$OUT"
 
+# Heavy: none | linux-full | scenario <flags> | windows — the head field that
+# replaces Fast-Suite:/Warm-Profil:. A free Heavy: text beside the old fields is
+# the form of every ledger before stage 5b, and stays valid.
+with_head() {  # with_head <line>… — the clean fixture, these lines under Spec:
+  fresh_fixture
+  sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
+  printf '%s\n' "$@" > "$FIX.head"
+  awk -v head="$FIX.head" '{print} /^Spec:/{while ((getline l < head) > 0) print l}' "$FIX" > "$FIX.new" \
+    && mv "$FIX.new" "$FIX"
+}
+for v in "none" "linux-full — Abschluss run.sh integration auf einer Pool-VM" "scenario --agents 3 --desktop" "windows"; do
+  with_head "Heavy: $v"
+  l lint fixture
+  [ $rc -eq 0 ] && ok "Heavy: $v lints clean" || bad "Heavy: $v: rc=$rc out=$OUT"
+done
+with_head "Heavy: linux"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "Heavy: 'linux' is not none | linux-full | scenario <flags> | windows" <<<"$OUT" \
+  && ok "an unknown Heavy: value is an error" || bad "Heavy: linux: rc=$rc out=$OUT"
+with_head "Heavy: scenario"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "scenario needs its flags" <<<"$OUT" && ok "scenario without flags is an error" \
+  || bad "Heavy: scenario: rc=$rc out=$OUT"
+with_head "Fast-Suite: lokal · Warm-Profil: desktop" "Heavy: none"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "beside Fast-Suite:/Warm-Profil:" <<<"$OUT" && ok "both forms at once are an error" \
+  || bad "both forms: rc=$rc out=$OUT"
+with_head "Fast-Suite: lokal · Warm-Profil: desktop" "Heavy: nein — der Diff berührt nur die Doku"
+l lint fixture
+[ $rc -eq 0 ] && ok "an old ledger: free Heavy: text beside Fast-Suite: stays green" || bad "old form: rc=$rc out=$OUT"
+with_head "Fast-Suite: lokal · Warm-Profil: desktop"
+l lint fixture
+[ $rc -eq 0 ] && ok "an old ledger without Heavy: stays green" || bad "no Heavy: rc=$rc out=$OUT"
+with_head "Hängt ab von: nichts, nur Vorsicht beim Warm-Profil: Umschalten" "Heavy: none"
+l lint fixture
+[ $rc -eq 0 ] && ok "the word Warm-Profil: inside another line is no old field" || bad "Warm-Profil in text: rc=$rc out=$OUT"
+with_head "Heavy: none; kein Pfad berührt"
+l lint fixture
+[ $rc -eq 0 ] && ok "Heavy: none; … is none" || bad "none;: rc=$rc out=$OUT"
+
 # ══ the real ledgers ══════════════════════════════════════════════════════════
 echo "── the real ledgers ──"
 grep -q 'ledger_test' "$REPO_ROOT/scripts/tests/run.sh" \

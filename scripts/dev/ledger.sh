@@ -317,6 +317,29 @@ case "$CMD" in
       | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
       | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
 
+    # Heavy: none | linux-full | scenario <flags> | windows replaces Fast-Suite: and
+    # Warm-Profil: (tasks/README.md). A free Heavy: text beside the old fields is
+    # how every ledger before stage 5b noted it, and stays valid; the new value
+    # beside them is two answers to one question.
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      /^###[ \t]/ { exit }
+      /^Heavy:/ && !seen { seen = 1; heavy = $0; sub(/^Heavy:[ \t]*/, "", heavy) }
+      # The old fields as fields: at the start of a line, or after the · of a
+      # combined head line — not the word inside some other line.
+      /^Fast-Suite:/ || /^Warm-Profil:/ || /·[ \t]*Warm-Profil:/ { old = 1 }
+      END {
+        if (!seen) exit
+        n = split(heavy, w, /[ \t]+/); kw = (n > 0) ? w[1] : ""
+        sub(/[;,.]+$/, "", kw)  # `none; …` means none
+        if (kw ~ /^(none|linux-full|scenario|windows)$/) {
+          if (kw == "scenario" && w[2] !~ /^-/) print "Heavy: scenario needs its flags (scenario --agents N …)"
+          if (old) print "Heavy: " kw " beside Fast-Suite:/Warm-Profil: — the new field replaces them"
+        } else if (!old) print "Heavy: \047" heavy "\047 is not none | linux-full | scenario <flags> | windows"
+      }' "$LEDGER")
+
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
       echo "ERROR  Status: aktiv, but no open [ ] task left (tasks/README.md: the invariant)" >&2
       RC=1

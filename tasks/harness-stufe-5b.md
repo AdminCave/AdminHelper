@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: freigegeben · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -12,8 +12,10 @@ DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, S
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 Hängt ab von: harness-stufe-5a (gemergt) — die Skills rufen `roadmap.py`
 
-### T1 — Status-Folge und Kopf-Feld `Heavy:` in Ledger-Doku und Lint  [ ]
-Komponente: scripts · Dateien: tasks/README.md, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh
+### T1 — Status-Folge und Kopf-Feld `Heavy:` in Ledger-Doku und Lint  [x]
+Komponente: scripts · Dateien: tasks/README.md, scripts/dev/ledger.sh, scripts/tests/ledger_test.sh, tasks/harness-stufe-5c.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @b4802aa1 2026-09-25T13:15:58+02:00
+Review: approve (sonnet, Runde 2 nach Verankerung)
 Änderung:
 - `tasks/README.md` beschreibt die Status-Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt` | `blockiert` mit der Bedeutung jedes Zustands.
 - Dazu das Kopf-Feld `Heavy: none | linux-full | scenario <flags> | windows`. `Fast-Suite:` und `Warm-Profil:` gelten für neue Ledger als veraltet, werden aber weiter gelesen.
