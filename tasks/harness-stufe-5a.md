@@ -239,3 +239,16 @@ Abhängt von: T10
    „written but not committed" aus `roadmap-add.err` bei Exit 0 nicht an; ein ID-Tippfehler (etwa R-0500), den das
    Skript mitschreibt, hebt den ID-Merker dauerhaft an (zurücksetzen: zweite Zeile der `.lock` löschen); der Runner
    braucht eine Allow-Regel für `python3 scripts/dev/roadmap.py`, sobald ein Runner-Lauf die 5b-Skills fährt.
+6. **Volle Live-Probe** (2026-09-25, nach Kevins Triage auf `neu 7/20`, auf Wunsch der Aufsicht vor dem PR), auf der
+   echten Datei, je Schritt ein lokaler Commit im privaten Repo, nicht gepusht:
+   `add` → R-0091 („Wegwerf-Probe 5a, 2026-09-25", Dedup-Key `probe:harness:roadmap.py:live`), dann ein zweites `add`
+   mit demselben Key → Exit 4 und ein leerer Commit `roadmap: dedup probe:harness:roadmap.py:live -> R-0091`, dann
+   `status geplant` → `approve` → `status aktiv` → `bereit` → `pr` → `abgeschlossen` (Notiz „Live-Probe-5a"), alle mit
+   Exit 0. Das ergibt acht Commits (d8a9aed … ef0d1a5), und der Dedup-Commit ändert keine Datei. `abgeschlossen` ist der
+   Endzustand der Zeile, `TRANSITIONS` erlaubt die ganze Folge. Den Dedup-Versuch hat die Probe vorgezogen, solange
+   R-0091 offen war: Der Key sperrt nur, solange seine Zeile offen ist, und nach dem Schließen hätte ein zweites `add`
+   eine zweite Zeile angelegt statt Exit 4.
+   Danach: `lint` sauber · `show --wip` → `WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 7/20 · ALT: 2` · `stats` (30 Tage)
+   → `tasks/day: 7.0`, `kevin-min/PR: 6 (5 PRs)`, Wartezeiten je Zustand aus der Historie (neu 1.6 d, geplant 3.1 d,
+   aktiv 0.9 d, pr 0.1 d, …), `stale: 2/43 (5%)`, `dedup: 1/2 adds refused as duplicates (50%)`. Die Probe-Zeile lief in
+   Sekunden durch alle Zustände und drückt die Wartezeit-Mittelwerte etwas nach unten.
