@@ -163,8 +163,8 @@ Abhängt von: T<k>   (nur falls nötig)
 
 Beide Wege enden am **selben Gate** (4): Roadmap-Zeilen auf `geplant`, der Plan als erster
 Commit auf `feature/<slug>`, Präsentation, Freigabe nur mit Kevins Wort. Beim Bündel gilt jeder
-Roadmap-Schritt des Gates **für jede enthaltene Zeile**: `roadmap.py status R-x geplant --note
-"tasks/<slug>.md"` je Zeile, und bei der Freigabe `roadmap.py approve R-x` je Zeile (beide Verben
+Roadmap-Schritt des Gates **für jede enthaltene Zeile**: `roadmap.py status R-x geplant --ledger
+tasks/<slug>.md` je Zeile, und bei der Freigabe `roadmap.py approve R-x` je Zeile (beide Verben
 nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl sie gebaut ist.
 
 ## 4. Design-Gate — STOPP
@@ -173,8 +173,10 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
 - **Roadmap vor dem Präsentieren:** Hat das Vorhaben noch keine Zeile, trägt das Gate sie
   ein — `python3 scripts/dev/roadmap.py add --class <K> --title "…" --source "kevin <datum>"
   --ledger tasks/<slug>.md` (druckt die ID) — und setzt sie auf `geplant`:
-  `roadmap.py status R-nnnn geplant`. Eine bestehende `neu`-Zeile wird
-  `roadmap.py status R-nnnn geplant --note "tasks/<slug>.md"`. Nie ein Edit an der Datei.
+  `roadmap.py status R-nnnn geplant`. Eine bestehende `neu`-Zeile, oder eine schon `geplant`e
+  (etwa in `/roadmap` angenommen), wird `roadmap.py status R-nnnn geplant --ledger
+  tasks/<slug>.md` — der Pfad gehört in die Spalte `Ledger`, dort lesen ihn `next` und die
+  Parallel-Prüfung; derselbe Status füllt nur die Spalte. Nie ein Edit an der Datei.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
   committen (Ledger mit `Status: geplant`), zurück mit `git switch main` — der Haupt-Checkout
   bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei

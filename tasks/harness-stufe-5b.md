@@ -132,6 +132,19 @@ Review: approve (sonnet, Runde 2)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (der Skill ist die Doku)
 
+### T9 — `roadmap.py status --ledger`: das Gate füllt die Spalte `Ledger`  [x]
+Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, .claude/skills/feature-plan/SKILL.md, DEVELOPMENT.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @03df6004 2026-09-25T15:56:51+02:00
+Review: approve (opus, Runde 2; nit: Fixture für section nachgezogen, Mutationsprobe rot)
+Änderung: Fund (4) aus der Abschluss-Probe (R-0095). Auftrag Kevin über die Aufsicht, 2026-09-25, Review mit Opus (roadmap.py ist ein Harness-Pfad aus 5a):
+- `status … --note "tasks/<slug>.md"` schrieb den Pfad in die Status-Zelle, die Spalte `Ledger` blieb `—`. `--ledger` gab es nur bei `add`. Die Parallel-Prüfung am Gate und `next` (`components_of`) lesen aber die Spalte.
+- `roadmap.py status` bekommt `--ledger L` und schreibt die Spalte `Ledger` wie `add --ledger`. Das wirkt auch ohne Statuswechsel (`new == old` ist erlaubt), so lassen sich Altzeilen nachziehen. Der Commit-Betreff nennt das Flag wie ` --revoke` bei `approve`.
+- Tests in `test_roadmap.py`: Die Spalte wird gesetzt, die Status-Zelle bleibt ohne Pfad, der Aufruf ohne Statuswechsel geht, die Zeilenzahl hält, und der Betreff nennt das Flag.
+- Der Gate-Text in `feature-plan` (§4 und der `--bundle`-Weg je Zeile) nutzt `--ledger` statt `--note "tasks/<slug>.md"`. `DEVELOPMENT.md` zählt das Flag bei `status` auf. Der Konsistenz-Test kennt die neue Form: keine Anleitung mehr mit `--note "tasks/…"`, und der Gate-Text nennt `--ledger`.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md
+Abhängt von: T8
+
 ## Abschluss (nach T6, vor dem PR)
 
 `/feature-plan --kurz` auf einer echten `neu`-Zeile, einem Kandidaten der Aufsicht: das Ergebnis ist ein
