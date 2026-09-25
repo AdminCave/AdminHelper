@@ -143,9 +143,10 @@ Abhängt von: T<k>   (nur falls nötig)
 - **Pflicht: `Semantik:`** — die Stelle unter `docs/`, die das gewollte Verhalten beschreibt,
   mit Datei und wörtlichem Zitat (vorher lesen, nicht erinnern). Beschreibt die Doku das
   heutige Verhalten als Absicht, ist es kein Fehler: dann kein Fix-Task, sondern eine offene
-  Frage an Kevin am Gate. Findet
-  sich keine Stelle, steht `Semantik: keine Stelle in docs/ — <was gesucht wurde>`, und die
-  Lücke gehört in die offenen Fragen am Gate.
+  Frage an Kevin. Es entsteht kein Ledger und kein Plan-Branch, die Zeile bleibt `neu`, und die
+  Frage geht in seine Triage (`/roadmap`). Erst seine Antwort macht wieder einen Plan daraus.
+  Findet sich keine Stelle, steht `Semantik: keine Stelle in docs/ — <was gesucht wurde>`, und
+  die Lücke gehört in die offenen Fragen am Gate.
 
 **`--bundle <komponente>`** — Aufräumarbeit einer Komponente in einem Rutsch:
 - Nur Klasse **REF**. Aus `roadmap.py show` die `neu`- und `geplant`-Zeilen mit Klasse REF
@@ -175,9 +176,10 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   `roadmap.py status R-nnnn geplant`. Eine bestehende `neu`-Zeile wird
   `roadmap.py status R-nnnn geplant --note "tasks/<slug>.md"`. Nie ein Edit an der Datei.
 - **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
-  committen (`chore(plan): add spec + ledger for <slug>`, Ledger mit `Status: geplant`),
-  zurück mit `git switch main` — der Haupt-Checkout bleibt auf `main`. Worktrees und der
-  Worker sehen nur Committetes, und `lane.sh new` sucht den Plan genau dort.
+  committen (Ledger mit `Status: geplant`), zurück mit `git switch main` — der Haupt-Checkout
+  bleibt auf `main`. Die Commit-Nachricht ist `chore(plan): add spec + ledger for <slug>`, bei
+  `--kurz` ohne Spec `chore(plan): add ledger for <slug>`. Worktrees und der Worker sehen nur
+  Committetes, und `lane.sh new` sucht den Plan genau dort.
 - Präsentiere im Chat: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify),
   und **alle offenen Fragen** klar herausgestellt.
 - **Parallel-Tauglichkeit prüfen — gegen alle `aktiv`- und `freigegeben`-Zeilen:**

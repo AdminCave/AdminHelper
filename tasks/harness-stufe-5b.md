@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -121,6 +121,16 @@ Review: approve (sonnet)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (der Skill ist die Doku)
 Abhängt von: T5
+
+### T8 — `--kurz`: was bei `Semantik:` = Absicht geschieht, und die Commit-Vorlage ohne Spec  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @9e05209a 2026-09-25T15:43:35+02:00
+Review: approve (sonnet, Runde 2)
+Änderung: Fund aus der Abschluss-Probe (R-0095, 2026-09-25), Auftrag Kevin über die Aufsicht:
+- §3a: Zeigt `Semantik:` das heutige Verhalten als Absicht, entsteht kein Ledger und kein Plan-Branch. Die Zeile bleibt `neu`, die Frage geht in Kevins Triage, erst seine Antwort macht wieder einen Plan daraus. Bisher sagte der Text nur „kein Fix-Task“, und das stand quer zu „1–3 Tasks“.
+- §4: Die Commit-Vorlage am Gate nennt für `--kurz`, das keine Spec hat, `chore(plan): add ledger for <slug>`.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (der Skill ist die Doku)
 
 ## Abschluss (nach T6, vor dem PR)
 
