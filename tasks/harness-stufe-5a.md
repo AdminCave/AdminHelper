@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5a — Die Roadmap als Skript — Task-Ledger
-Status: aktiv · Branch: harness/stufe-5a · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/stufe-5a · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5a)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — nur `scripts/dev/`, `scripts/tests/`, ein Skill und Doku; `heavy.sh` wird hermetisch getestet (`heavy_test.sh`).
@@ -229,3 +229,13 @@ Abhängt von: T10
    endet mit Exit 3 („the neu cap is reached (30/20) — triage first"). `ROADMAP.md` und `.bak` bleiben byte-gleich
    (sha256), HEAD des privaten Repos ist unverändert, es entsteht kein Commit. Der volle Zustandslauf (`add` → … →
    `abgelehnt`) folgt nach dem Merge und Kevins Triage. Eine Ausnahme im Skript gibt es nicht.
+5. **Gesamt-Review über den Branch** (Opus, frischer Kontext, `git diff main...HEAD`): erst `request_changes` mit zwei
+   wichtigen Punkten (W1: `sync` schloss Zeilen aus jedem Status, auch eine `aktiv`e Stufe mit mehreren PRs; W2: der
+   Schutz vor Commits im öffentlichen Repo kannte nur den eigenen Checkout) und neun Nits. Mit der Aufsicht abgestimmt,
+   umgesetzt in T9 (W1, W2, N3, N9, N4; N6 entfällt, siehe dort) und T10 (N5, N8). Kevins Entscheidung zu N11 wurde T11.
+   Die Re-Review-Runde über T9–T11 ergab `approve`. N7 (Triage vor dem nächsten Wochenlauf) und N10 (`dev-pytest` in
+   Kevins `.devenv.sh`) hat die Aufsicht übernommen.
+   Offene Folgepunkte, nicht in diesem Branch: eine überlange Docstring-Zeile in `roadmap.py`; `heavy.sh` zeigt ein
+   „written but not committed" aus `roadmap-add.err` bei Exit 0 nicht an; ein ID-Tippfehler (etwa R-0500), den das
+   Skript mitschreibt, hebt den ID-Merker dauerhaft an (zurücksetzen: zweite Zeile der `.lock` löschen); der Runner
+   braucht eine Allow-Regel für `python3 scripts/dev/roadmap.py`, sobald ein Runner-Lauf die 5b-Skills fährt.
