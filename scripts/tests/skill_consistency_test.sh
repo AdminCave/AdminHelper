@@ -7,9 +7,10 @@
 # contradictions stage 5b removed: a plan committed on main (R-0065), a ledger
 # status list without `freigegeben` or `bereit`, a feature-plan head template
 # without `Heavy:`, and a ledger path or PR number handed to `roadmap.py status
-# --note` instead of `--ledger`/`--pr`. Read-only; each check first proves on a
-# fixture that it can fail at all, and that it stays quiet on the sentences it
-# must not mistake.
+# --note` instead of `--ledger`/`--pr`; and it holds that `--kurz` refuses SEC, so
+# no finding is committed into this public repo. Read-only; each check first
+# proves on a fixture that it can fail at all, and that it stays quiet on the
+# sentences it must not mistake.
 #
 # Run: bash scripts/tests/skill_consistency_test.sh
 
@@ -32,6 +33,7 @@ STATE="${BT}?(geplant|freigegeben|aktiv|bereit|erledigt|blockiert)${BT}?"
 SEP='[[:space:]]*(\||/|→|,)[[:space:]]*'
 LEDGER_CALL='status R-[^ ]+[[:space:]]+geplant[[:space:]]+--ledger'
 PR_CALL='pr[[:space:]]+--pr[[:space:]]+"#'
+SEC_REFUSED='Nicht[[:space:]]+für[[:space:]]+SEC.*SEC-Funde[[:space:]]+bleiben[[:space:]]+unter[[:space:]]+`?tasks/private'
 
 # unreadable <file> — a file the checks cannot read is a finding of its own. awk
 # and tr read stdin for an empty path, and the empty result would pass every
@@ -144,6 +146,13 @@ f=$(fixture 'folgt die Zeile dem Ledger: mit dem PR `pr --pr "#<n>"` (die Spalte
 grep -qE "$PR_CALL" "$f" && ok "a PR set with pr --pr is found" || bad "PR_CALL missed pr --pr"
 f=$(fixture 'folgt die Zeile dem Ledger: mit dem PR `pr --note "PR #<n>"`')
 ! grep -qE "$PR_CALL" "$f" && ok "a PR in --note is no --pr call" || bad "PR_CALL fired on pr --note"
+f=$(fixture '## 3a. Die kurzen Wege' '- **Nicht für SEC:** Eine SEC-Zeile wird verweigert: SEC-Funde bleiben unter' \
+            '  `tasks/private/`.' '## 4. Design-Gate')
+grep -qE "$SEC_REFUSED" <<<"$(section "$f" '## 3a.' '## 4.')" && ok "the SEC refusal is found across a line break" \
+  || bad "SEC_REFUSED missed the refusal"
+f=$(fixture '## 3a. Die kurzen Wege' '**`--kurz R-nnnn`** — für einen belegten Fund, vor allem Klasse A (SEC, REG, BUG):' '## 4.')
+! grep -qE "$SEC_REFUSED" <<<"$(section "$f" '## 3a.' '## 4.')" && ok "naming SEC among the classes is no refusal" \
+  || bad "SEC_REFUSED fired on the old --kurz line"
 f=$(fixture '## 3. Ledger schreiben' '```' 'Status: geplant · Branch: feature/<slug>' 'Fast-Suite: lokal · Warm-Profil: desktop' '```')
 t=$(head_template "$f")
 { ! grep -q '^Heavy:' <<<"$t" && grep -q '^Fast-Suite:' <<<"$t"; } \
@@ -168,6 +177,9 @@ for part in "## 3a.:## 4." "## 4.:"; do
     && ok "feature-plan '${part%%:*}' sets the Ledger column with status … geplant --ledger" \
     || bad "feature-plan '${part%%:*}' has no status … geplant --ledger"
 done
+grep -qE "$SEC_REFUSED" <<<"$(section .claude/skills/feature-plan/SKILL.md '## 3a.' '## 4.')" \
+  && ok "feature-plan's --kurz refuses SEC (a finding never goes into this public repo)" \
+  || bad "feature-plan '## 3a.' no longer refuses SEC for --kurz"
 tr '\n' ' ' < .claude/skills/feature-build/SKILL.md | grep -qE "$PR_CALL" \
   && ok "feature-build sets the PR column with pr --pr \"#<n>\"" || bad "feature-build names no pr --pr \"#<n>\""
 t=$(head_template .claude/skills/feature-plan/SKILL.md)

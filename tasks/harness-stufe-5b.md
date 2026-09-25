@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -214,6 +214,22 @@ Review: approve (sonnet)
 - (9) Der `Heavy:`-Absatz in `tasks/README.md` ist umbrochen.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md · docs/developer/cicd.html · docs/en/developer/cicd.html
+Abhängt von: T13
+
+### T15 — `bereit` mit vorhandenem PR holt Schritt 6 nach  [x]
+Komponente: scripts · Dateien: .claude/skills/feature-build/SKILL.md, .claude/skills/feature-plan/SKILL.md, .claude/skills/roadmap/SKILL.md, scripts/tests/skill_consistency_test.sh, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @eb017349 2026-09-25T18:25:59+02:00
+Review: approve (opus, Runde 2)
+Änderung: Fund der dritten Runde des Branch-Reviews, im Diff von T13, also nach der Abbruchregel zu fixen:
+- Die Regel „`bereit` und ein PR existiert ⇒ Abschluss fertig, melden“ übersah Schritt 6. Der setzt mit dem PR den Kopf auf `erledigt` und zieht die Roadmap mit `pr --pr` nach.
+- Öffnet Kevin den PR selbst, bliebe das Ledger sonst `bereit`, und `sync` schlösse die Zeile nie.
+- Jetzt gilt: Ist ein PR da, wird Schritt 6 nachgeholt (Kopf `erledigt`, Roadmap `pr --pr`) und dann gemeldet.
+- Ausnahme von der Abbruchregel, Auftrag der Aufsicht 2026-09-25, weil der Schaden nicht umkehrbar wäre: `--kurz` verweigert SEC mit Grund. SEC-Funde bleiben unter `tasks/private/` (Roadmap-Dokument 3.3.3), und das Gate committet ins öffentliche Repo; bis es einen privaten Kurz-Weg gibt, plant Kevin SEC von Hand.
+  - Der `--bundle`-Grund und die Annehmen-Option im `/roadmap`-Skill ziehen mit.
+  - Der Konsistenz-Test hält die Sperre fest.
+- Der CHANGELOG-Eintrag „Harness Stufe 5b“ unter `[Unreleased]` fehlte; das ist eine Lücke in der DoD.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: CHANGELOG.md (der Skill ist sonst die Doku)
 Abhängt von: T13
 
 ## Abschluss (nach T6, vor dem PR)

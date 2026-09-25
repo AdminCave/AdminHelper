@@ -14,7 +14,8 @@ Commit auf dem Feature-Branch (R-0065); einen anderen Branch-Schritt gibt es hie
 **Drei Aufrufe:** `/feature-plan <idee>` — der volle Weg mit Spec (Abschnitte 1–4);
 `/feature-plan --kurz R-nnnn` — ein Kurz-Ledger aus einer Roadmap-Zeile, ohne Spec (3a);
 `/feature-plan --bundle <komponente>` — REF-Zeilen einer Komponente in einem Sammel-Ledger
-(3a). Alle drei enden am selben Design-Gate (4).
+(3a). Alle drei enden am selben Design-Gate (4). Eine SEC-Zeile plant keiner der drei Wege: das
+Gate committet in dieses öffentliche Repo, SEC-Funde bleiben unter `tasks/private/` (3a).
 
 Modell: **mindestens Opus** — die Planung selbst läuft auf Opus oder Fable, und auch die Explorer-
 und Verifikations-Subagenten dieser Phase werden mit `model: opus` gestartet (Kevin, 2026-09-18: eine
@@ -130,7 +131,10 @@ Abhängt von: T<k>   (nur falls nötig)
 
 ## 3a. Die kurzen Wege: `--kurz` und `--bundle`
 
-**`--kurz R-nnnn`** — für einen belegten Fund, vor allem Klasse A (SEC, REG, BUG):
+**`--kurz R-nnnn`** — für einen belegten Fund, vor allem REG und BUG:
+- **Nicht für SEC:** Eine SEC-Zeile wird **verweigert, mit Grund**: SEC-Funde bleiben unter
+  `tasks/private/` (Roadmap-Dokument 3.3.3), und das Gate committet das Ledger in dieses
+  öffentliche Repo. Einen privaten Kurz-Weg gibt es noch nicht; bis dahin plant Kevin SEC von Hand.
 - `python3 scripts/dev/roadmap.py show R-nnnn` lesen. Die Zeile muss einen Beweis tragen
   (`Quelle / Beweis` mit Branch@SHA, Kommando oder Lauf). Steht dort „Beweis fehlt" oder nichts
   Nachprüfbares: **stopp**, das sagen und den vollen Weg oder zuerst einen Beweis vorschlagen —
@@ -156,8 +160,8 @@ Abhängt von: T<k>   (nur falls nötig)
 - Nur Klasse **REF**. Aus `roadmap.py show` die `neu`- und `geplant`-Zeilen mit Klasse REF
   sammeln, deren Komponente passt (`roadmap.py show R-nnnn`: die Komponente im vollen
   Dedup-Key, sonst das Ledger oder Titel und Quelle). Andere Klassen werden **verweigert, mit
-  Grund**: ein Fehler (SEC, REG, BUG) braucht seinen eigenen Beweis und sein Kurz-Ledger, ein
-  REL seinen eigenen Pfad zum Release, ein FEAT eine Spec.
+  Grund**: ein Fehler (REG, BUG) braucht seinen eigenen Beweis und sein Kurz-Ledger, ein SEC
+  den Weg von Hand (siehe `--kurz`), ein REL seinen eigenen Pfad zum Release, ein FEAT eine Spec.
 - Ein Sammel-Ledger mit **höchstens 15 Tasks**, eine Task je Zeile (zwei Zeilen an derselben
   Stelle dürfen eine Task sein). Mehr Zeilen: die ersten 15 in der Reihenfolge der Datei, der
   Rest bleibt `neu` und wird am Gate genannt. Der Kopf aus Abschnitt 3 mit `Heavy:`,

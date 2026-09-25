@@ -37,8 +37,10 @@ Stufe 7).
   tasks/README.md): `freigegeben` → Kevins Freigabe liegt vor: Kopf auf `aktiv` setzen und
   bauen. `geplant` → nur mit ausdrücklichem Pfad; dann IST das Starten die Freigabe: Kopf auf
   `aktiv`. `aktiv` → weiterbauen. `bereit` → alle Tasks sind zu: **keine** Task bauen. Gibt es
-  für den Branch schon einen PR (`gh pr view <branch>`), ist der Abschluss fertig: melden; sonst
-  war er unterbrochen (etwa von einem Compact) und geht ab Schritt 2 weiter.
+  für den Branch schon einen PR (`gh pr view <branch>`, etwa von Kevin geöffnet), fehlt nur noch
+  Abschluss-Schritt 6: nachholen wie dort (Kopf `erledigt` bzw. `blockiert`; die Roadmap wie
+  unter „Roadmap mitziehen", also `pr --pr`, ein Teil-Ledger `aktiv --pr`), dann melden; sonst
+  war der Abschluss unterbrochen (etwa von einem Compact) und geht ab Schritt 2 weiter.
   `blockiert`/`erledigt` → **nicht** bauen, melden.
 - **Roadmap mitziehen:** Nennt der Ledger-Kopf Roadmap-IDs — im `Spec:` (`Roadmap R-nnnn`,
   `docs/features/<slug>.md (Roadmap R-nnnn)`, beim Bündel `Roadmap R-a, R-b, …`) oder in der
