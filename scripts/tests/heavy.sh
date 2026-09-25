@@ -579,30 +579,28 @@ second_vm_check() {  # second_vm_check <step> <spec> <marker>; sets CLASS_VERDIC
 # artefacts /feature-plan would produce — so Kevin's next move is a tick, not a
 # reconstruction. The FREEING of it stays his (D4): the row is `neu`, never
 # `freigegeben`.
-roadmap_append() {  # roadmap_append <klasse> <titel> <quelle> <ledger-name> -> prints the new id
-  local rm="$PRIVATE_DIR/ROADMAP.md"
+# The row goes in through roadmap.py (stage 5): the lock, the .bak, the row-count
+# check, the Dedup-Key and the commit in the private repo are its job. A refused
+# row is said loudly in the report — a full `neu` cap must not lose a finding
+# quietly. The new ID comes back in ROADMAP_ID, not on stdout: called as $(...),
+# every note here would die with the subshell, and none reached the report.
+roadmap_append() {  # roadmap_append <klasse> <titel> <quelle> <ledger|""> <dedup-key> -> ROADMAP_ID
+  local rm="$PRIVATE_DIR/ROADMAP.md" err="$OUT/roadmap-add.err" id rc why
+  ROADMAP_ID=""
+  local ledger=()
   [ -f "$rm" ] || { note "no ROADMAP.md at $rm — no row appended"; return 1; }
-  # .bak before every write: this is Kevin's hand-curated order-of-work file, and
-  # the row-count invariant + flock only arrive with roadmap.py (stage 5).
-  cp "$rm" "$rm.bak" 2>/dev/null || { note "cannot back up $rm — no row appended"; return 1; }
-  python3 - "$rm" "$1" "$2" "$3" "$4" <<'PY'
-import re, sys
-path, klasse, titel, quelle, ledger = sys.argv[1:6]
-lines = open(path).read().split("\n")
-ids = [int(m.group(1)) for m in re.finditer(r"R-(\d{4})", "\n".join(lines))]
-nid = "R-%04d" % ((max(ids) + 1) if ids else 1)
-row = "| %s | %s | %s | neu | %s | %s | — | — | nie | — |" % (nid, klasse, titel, quelle, ledger)
-start = next((i for i, l in enumerate(lines) if l.startswith("## Neu")), None)
-if start is None:
-    sys.exit(1)
-end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-rows = [i for i in range(start, end) if lines[i].startswith("|")]
-if not rows:
-    sys.exit(1)
-lines.insert(rows[-1] + 1, row)
-open(path, "w").write("\n".join(lines))
-print(nid)
-PY
+  [ -n "$4" ] && ledger=(--ledger "$4")
+  mkdir -p "$OUT" 2>/dev/null
+  id="$(python3 "$VM_ROOT/scripts/dev/roadmap.py" --file "$rm" add --class "$1" --title "$2" \
+        --source "$3" --dedup-key "$5" "${ledger[@]+"${ledger[@]}"}" 2>"$err")"; rc=$?
+  why="$(grep -m1 -e 'Dedup-Key' -e 'cap is reached' "$err" 2>/dev/null | sed 's/^roadmap.py: //')"
+  case "$rc" in
+    0) ROADMAP_ID="$id"; return 0 ;;
+    4) note "roadmap: $why — no second row" ;;
+    3) note "ROADMAP FULL: $why — the $1 finding '$2' got NO row" ;;
+    *) note "roadmap.py add failed (exit $rc): $(tail -1 "$err" 2>/dev/null | sed 's/^roadmap.py: //') — no row appended" ;;
+  esac
+  return 1
 }
 
 # seen.md doubles as the dedup memory: a step that fails the same way every week
@@ -657,16 +655,18 @@ LEDGER
 }
 
 reg_finding() {  # reg_finding <step> <marker> <base>
-  local step="$1" marker="$2" base="$3" name id
+  local step="$1" marker="$2" base="$3" slug name id
   if seen_recently reg "$step" "$marker"; then
     note "reg '$step' already reported within 30 days — history.csv only"
     return 0
   fi
-  name="reg-$DATE-$(printf '%s' "$step" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')"
-  id="$(roadmap_append REG \
-        "$step rot im Wochenlauf $DATE" \
-        "weekly $DATE · ${COMMIT:0:8} · Zweit-VM rot · Basis ${base:0:8} grün" \
-        "$name")" || return 0
+  slug="$(printf '%s' "$step" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')"
+  name="reg-$DATE-$slug"
+  roadmap_append REG \
+    "$step rot im Wochenlauf $DATE" \
+    "weekly $DATE · ${COMMIT:0:8} · Zweit-VM rot · Basis ${base:0:8} grün" \
+    "tasks/$name.md" "reg:$slug" || return 0
+  id="$ROADMAP_ID"
   note "roadmap: $id ($PRIVATE_DIR/ROADMAP.md)"
   write_reg_ledger "$name" "$step" "$marker" "$base" "$id"
   seen_record reg "$step" "$marker"
@@ -706,8 +706,9 @@ check_audit() {
     return 0
   fi
   local id
-  id="$(roadmap_append REL "Dependency Audit rot (audit.yml, Lauf $when)" \
-        "audit.yml $when · weekly $DATE" "—")" || return 0
+  roadmap_append REL "Dependency Audit rot (audit.yml, Lauf $when)" \
+    "audit.yml $when · weekly $DATE" "" "rel:deps-audit" || return 0
+  id="$ROADMAP_ID"
   note "roadmap: $id (audit.yml red)"
   seen_record deps-audit open "$when"
 }
@@ -972,9 +973,10 @@ notify() {
 commit_private() {
   [ -d "$PRIVATE_DIR/.git" ] || { note "no private repo at $PRIVATE_DIR — files written, nothing committed"; return 0; }
   # One file at a time: `git add a b c` adds NOTHING when one pathspec does not
-  # match, and seen.md / ROADMAP.md only exist once something wrote them.
+  # match, and seen.md only exists once something wrote it. ROADMAP.md is not
+  # ours: roadmap.py commits every row it adds itself.
   local f
-  for f in history.csv seen.md ROADMAP.md; do
+  for f in history.csv seen.md; do
     [ -e "$PRIVATE_DIR/$f" ] && git -C "$PRIVATE_DIR" add "$f" 2>/dev/null
   done
   # -q and no push: the private repo is Kevin's to push (CLAUDE.md).

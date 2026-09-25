@@ -184,6 +184,9 @@ mk_case() {  # mk_case -> fresh AH_OUT_DIR + AH_PRIVATE_DIR for one run
 | ID | Klasse | Titel | Status | Quelle / Beweis | Ledger | Hängt ab von | PR | Ablauf | Kevin-min |
 |---|---|---|---|---|---|---|---|---|---|
 RM
+  # Back-dated: roadmap.py refuses a file changed in the last 5 s (an editor
+  # may hold it), and a fixture written a moment ago looks exactly like that.
+  touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
   # write_reg_ledger writes into the checkout's tasks/ — the fixture's, never the
   # developer's (AH_HEAVY_ROOT).
   rm -rf "${FIX:-/nonexistent}/tasks"
@@ -464,6 +467,13 @@ roadmap_of | grep -q '| neu |' && ok "roadmap: the row is 'neu', never released"
   && ok "roadmap: one row added to the one that was there" \
   || bad "$(roadmap_of | grep -c '^| R-') R rows (expected 2)"
 [ -f "$AH_PRIVATE_DIR/ROADMAP.md.bak" ] && ok "roadmap: a .bak was written first" || bad "no .bak"
+# Through roadmap.py, not beside it: the key, the recomputed header, the ledger file.
+roadmap_of | grep -q '| weekly .* · Dedup-Key: reg:web-vitest |' \
+  && ok "roadmap: the row carries its Dedup-Key reg:<step>" || bad "no Dedup-Key: $(roadmap_of | grep '^| R-0018')"
+roadmap_of | grep -q '^Stand: .* · WIP: aktiv 0/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0$' \
+  && ok "roadmap: the header was recomputed by roadmap.py" || bad "header: $(roadmap_of | grep '^Stand')"
+roadmap_of | grep -q '^| R-0018 | .* | tasks/reg-[0-9-]*-web-vitest.md | ' \
+  && ok "roadmap: the Ledger column names the ledger file" || bad "ledger cell: $(roadmap_of | grep '^| R-0018')"
 REG_LEDGER=$(ls "$FIX"/tasks/reg-*-web-vitest.md 2>/dev/null | head -1)
 [ -n "$REG_LEDGER" ] && ok "a reg-*.md ledger was written" || bad "no reg ledger in $FIX/tasks"
 grep -q '^Status: geplant' "$REG_LEDGER" 2>/dev/null \
@@ -490,6 +500,57 @@ history_of | grep -q ',all,web vitest,reg,' \
   && ok "dedup: history.csv still records the reg" \
   || bad "reg not in history"
 ls "$FIX"/tasks/reg-*.md >/dev/null 2>&1 && bad "dedup: a second ledger was written"   || ok "dedup: no second ledger"
+
+# ── 4i-b: without seen.md, the open row's Dedup-Key still holds a second back ──
+candidate_case
+seed_pass_history
+cp "$PREV_PRIVATE/ROADMAP.md" "$AH_PRIVATE_DIR/ROADMAP.md"
+touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
+  && ok "dedup key: an open REG row holds back a second one, seen.md or not" \
+  || bad "$(roadmap_of | grep -c '^| R-') R rows (expected 2)"
+report_of | grep -q 'Dedup-Key reg:web-vitest is already on open row R-0018 — no second row' \
+  && ok "dedup key: the report names the row that holds it" || bad "report: $(report_of | grep -i roadmap)"
+ls "$FIX"/tasks/reg-*.md >/dev/null 2>&1 && bad "dedup key: a second ledger was written" || ok "dedup key: no second ledger"
+
+# ── 4i-c: a full `neu` cap loses no finding quietly ───────────────────────────
+candidate_case
+seed_pass_history
+python3 - "$AH_PRIVATE_DIR/ROADMAP.md" <<'PY'
+import sys
+p = sys.argv[1]
+rows = "\n".join(f"| R-01{n:02d} | BUG | voll | neu | kevin | — | — | — | nie | — |" for n in range(20))
+s = open(p).read().replace("| R-0017 | REL | irgendwas | neu | audit.yml | — | — | — | nie | — |", rows)
+open(p, "w").write(s)
+PY
+touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+[ "$(roadmap_of | grep -c '^| R-')" = 20 ] && ok "cap: no 21st neu row" || bad "$(roadmap_of | grep -c '^| R-') R rows"
+report_of | grep -q "ROADMAP FULL: the neu cap is reached (20/20) — triage first — the REG finding 'web vitest rot im Wochenlauf" \
+  && ok "cap: the report says the finding got no row" || bad "report: $(report_of | grep -i roadmap)"
+
+# ── 4i-d: roadmap.py commits its own row; the weekly commit leaves ROADMAP.md be ─
+candidate_case
+seed_pass_history
+git -C "$AH_PRIVATE_DIR" init -q
+git -C "$AH_PRIVATE_DIR" config user.email t@example.invalid
+git -C "$AH_PRIVATE_DIR" config user.name "heavy test"
+git -C "$AH_PRIVATE_DIR" config commit.gpgsign false
+git -C "$AH_PRIVATE_DIR" add ROADMAP.md
+git -C "$AH_PRIVATE_DIR" commit -qm seed
+export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
+out=$(bash "$HEAVY" all 2>&1); rc=$?
+git -C "$AH_PRIVATE_DIR" log --format=%s | grep -qx 'roadmap: add R-0018' \
+  && ok "private repo: roadmap.py committed the row" || bad "log: $(git -C "$AH_PRIVATE_DIR" log --format=%s)"
+weekly_sha=$(git -C "$AH_PRIVATE_DIR" log --format=%H --grep='^weekly ' -1)
+[ -n "$weekly_sha" ] && ! git -C "$AH_PRIVATE_DIR" show --name-only --format= "$weekly_sha" | grep -qx ROADMAP.md \
+  && ok "private repo: the weekly commit does not carry ROADMAP.md" \
+  || bad "weekly commit: $(git -C "$AH_PRIVATE_DIR" show --name-only --format= "$weekly_sha")"
+[ -z "$(git -C "$AH_PRIVATE_DIR" status --porcelain -- ROADMAP.md)" ] \
+  && ok "private repo: ROADMAP.md is committed as written" || bad "ROADMAP.md left uncommitted"
 
 # ── 4j: audit.yml ────────────────────────────────────────────────────────────
 mk_case
@@ -532,11 +593,21 @@ export SHIM_AUDIT_JSON='[{"conclusion": "success", "created_at": "2026-09-21T03:
 out=$(bash "$HEAVY" all 2>&1)
 grep -q '^deps-audit · resolved · ' "$AH_PRIVATE_DIR/seen.md" \
   && ok "a green audit resolves the seen.md entry" || bad "seen.md: $(cat "$AH_PRIVATE_DIR/seen.md")"
-# … so the NEXT red phase is a new row again
+# … but while the REL row is still open, its Dedup-Key holds the next red
+# phase back (the key blocks while a row is open, seen.md for 30 days) …
 export SHIM_AUDIT_JSON='[{"conclusion": "failure", "created_at": "2026-09-28T03:00:00Z"}]'
 out=$(bash "$HEAVY" all 2>&1)
+[ "$(roadmap_of | grep -c '^| R-')" = 2 ] \
+  && ok "a new red phase while the REL row is open adds no row" \
+  || bad "new red phase, row open: $(roadmap_of | grep -c '^| R-') R rows"
+report_of | grep -q 'Dedup-Key rel:deps-audit is already on open row R-0018' \
+  && ok "the report names the open REL row" || bad "report: $(report_of | grep -i roadmap)"
+# … and once it is closed, the next red phase is a new row again.
+sed -i 's/^\(| R-0018 | REL | .*\) | neu | /\1 | abgeschlossen 2026-09-22 | /' "$AH_PRIVATE_DIR/ROADMAP.md"
+touch -d '1 minute ago' "$AH_PRIVATE_DIR/ROADMAP.md"
+out=$(bash "$HEAVY" all 2>&1)
 [ "$(roadmap_of | grep -c '^| R-')" = 3 ] \
-  && ok "a red run after a green one opens a new row" \
+  && ok "a red run after a green one and a closed row opens a new row" \
   || bad "new red phase: $(roadmap_of | grep -c '^| R-') R rows"
 # the pre-3b line format (key = deps-audit) still counts as open
 mk_case

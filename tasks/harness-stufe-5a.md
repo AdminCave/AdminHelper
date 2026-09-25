@@ -94,8 +94,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T8)
 Abhängt von: T3
 
-### T5 — `heavy.sh` schreibt über `roadmap.py add`  [ ]
+### T5 — `heavy.sh` schreibt über `roadmap.py add`  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @6a02af2b 2026-09-25T10:21:02+02:00
+Review: approve (sonnet)
 Änderung:
 - `roadmap_append` (heavy.sh:582–606) wird zu einem Aufruf `roadmap.py add` mit Klasse, Titel, Quelle und Dedup-Key.
   - REG-Schlüssel: `reg:<schritt>`.
