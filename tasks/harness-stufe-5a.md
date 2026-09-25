@@ -155,8 +155,10 @@ Nachweis (Trockenlauf 2026-09-25, Worker 2): die Befehlsfolge des Skills über d
   in keinem Git-Repo, jeder Schreibschritt meldet deshalb „not committed" (so gewollt, siehe T2).
 Nicht getestet: der `AskUserQuestion`-Dialog selbst, das ist Skill-Text.
 
-### T8 — Doku  [ ]
+### T8 — Doku  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @28e7bd47 2026-09-25T11:06:22+02:00
+Review: approve (sonnet, gegen den Code geprüft)
 Änderung:
 - `DEVELOPMENT.md`: `roadmap.py`, die Verben mit einem Satz je Verb, die Schreibregeln (flock, `.bak`, 5 s, Deckel) und `AH_ROADMAP` für Tests.
 - `AUTONOMOUS.md`: Die Roadmap wird über `roadmap.py` gepflegt, „Als Nächstes“ bleibt von Hand, `/roadmap triage`.

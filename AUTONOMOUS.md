@@ -39,6 +39,17 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
 | **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
 
+**Woher die Arbeit kommt.** Was als Nächstes gebaut wird, steht in der privaten Roadmap
+`tasks/private/ROADMAP.md`. Ihren Abschnitt „Als Nächstes" kuratiert Kevin von Hand. Die
+Tabellenzeilen pflegt [`scripts/dev/roadmap.py`](scripts/dev/roadmap.py) (`add`, `status`,
+`approve`, `sync`), nie ein Edit an der Datei: Nur das Skript schreibt unter Sperre, mit
+`.bak`, Zeilenzahl-Prüfung und einem lokalen Commit im privaten Repo (`DEVELOPMENT.md`, „Die
+Roadmap als Skript"). Neue Zeilen legen Kevin und die Skripte an (`heavy.sh` für
+Regressionen und ein rotes Dependency-Audit). `/roadmap` zeigt den Stand mit den WIP-Deckeln, und `/roadmap triage` geht die
+`neu`-Zeilen mit Kevin durch (annehmen, ablehnen, zurückstellen, bündeln). Eine angenommene
+Zeile wird über `/feature-plan` zu Spec und Ledger (Phase 1); freigeben (`approve`) tut nur
+Kevin.
+
 Die Session läuft auf **mindestens Opus** (`/model opus` oder `claude --model opus`; Fable ist
 ebenso zulässig). Das gilt für Planen und Bauen und auch für die Explorer- und Verifikations-
 Subagenten der Planung (Kevin, 2026-09-18). Der **Reviewer** ist
@@ -249,8 +260,9 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   Gates.) `scripts/dev/format-file.sh` bleibt als **manuelles** Werkzeug (`bash scripts/dev/
   format-file.sh <datei>`).
 - **Skills** unter `.claude/skills/`: `feature-plan` (interaktiv), `feature-build`,
-  `feature-review` (frischer-Kontext-Reviewer, auch standalone), dazu das bestehende
-  `test` (die Suiten) und `vm` (die VMs darunter).
+  `feature-review` (frischer-Kontext-Reviewer, auch standalone), `roadmap` (die Roadmap
+  zeigen und triagieren, nur über `roadmap.py`), dazu das bestehende `test` (die Suiten) und
+  `vm` (die VMs darunter).
 
 ### Erweiterungsideen (noch nicht gebaut)
 
