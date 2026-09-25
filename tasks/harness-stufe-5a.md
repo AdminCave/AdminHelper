@@ -192,6 +192,15 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (Skill-Text)
 Abhängt von: T9
 
+### T11 — roadmap.py steht auf der Harness-Liste  [x]
+Komponente: scripts · Dateien: scripts/dev/harness-paths.txt, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @064f46e1 2026-09-25T11:56:55+02:00
+Review: approve (sonnet)
+Änderung: Kevins Entscheidung zu N11 aus dem Gesamt-Review (2026-09-25, über die Aufsicht): `scripts/dev/roadmap.py` kommt auf `scripts/dev/harness-paths.txt`. Dort stehen die Deckel (`WIP_CAPS`) und die Übergänge (`TRANSITIONS`), und der geschützte Status-Hook liest Warn-Trigger 3 daraus. Ein autonomer Lauf darf sie deshalb nicht ändern. Nachweis in `hooks_test.sh`: `roadmap.py` steht unter den Pflichteinträgen der Liste, und der Wächter verweigert im autonomen Modus ein Edit daran. Gegenprobe gegen die alte Liste.
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (die Liste ist ihre eigene Doku; DEVELOPMENT.md beschreibt sie als „die Gate-Skripte unter scripts/dev/")
+Abhängt von: T10
+
 ## Abschluss (nach T8, vor dem PR)
 
 1. `roadmap.py lint --file tasks/private/ROADMAP.md` auf der echten Datei. Die Funde gehen als Liste an die Aufsicht.
