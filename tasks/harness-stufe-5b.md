@@ -45,8 +45,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md
 Abhängt von: T1
 
-### T3 — `feature-plan`: Plan auf dem Branch, Roadmap am Gate, `Heavy:`  [ ]
+### T3 — `feature-plan`: Plan auf dem Branch, Roadmap am Gate, `Heavy:`  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @00e39cdc 2026-09-25T13:44:36+02:00
+Review: approve (sonnet, Runde 2)
 Änderung:
 - **R-0065:** Spec und Ledger sind der erste Commit auf dem Feature-Branch (`chore(plan): …`), gesetzt am Gate. Die Freigabe ist `roadmap.py approve` plus der Commit, der den Ledger-Kopf auf `freigegeben` setzt. Die veralteten Stellen fallen weg: :11, :133–135, :143–148.
 - **Roadmap am Gate:**

@@ -8,7 +8,8 @@ description: Plane ein neues Feature/Change und zerlege es in eine Spec + eine L
 Diese Phase macht aus einer Idee zwei Artefakte: eine **Spec** und eine **Task-Ledger**
 aus so kleinen, unabhängig verifizierbaren Aufgaben, dass die Build-Phase sie ohne
 Rückfragen abarbeiten kann. **Am Ende: Design-Gate — stoppen, auf Freigabe warten.
-In dieser Phase entsteht KEIN Produktivcode und KEIN Branch.**
+In dieser Phase entsteht KEIN Produktivcode.** Spec und Ledger werden am Gate der erste
+Commit auf dem Feature-Branch (R-0065); einen anderen Branch-Schritt gibt es hier nicht.
 
 Modell: **mindestens Opus** — die Planung selbst läuft auf Opus oder Fable, und auch die Explorer-
 und Verifikations-Subagenten dieser Phase werden mit `model: opus` gestartet (Kevin, 2026-09-18: eine
@@ -24,6 +25,8 @@ selbst wählen; alles, was das *Was* oder das sichtbare Verhalten betrifft, wird
 Bündle 2–4 Fragen pro Runde, mit einer Empfehlung als erster Option.
 
 ## 1. Verstehen & explorieren
+- Kommt das Vorhaben aus der Roadmap (`R-nnnn`), zuerst die Zeile lesen:
+  `python3 scripts/dev/roadmap.py show R-nnnn` (Quelle, Beweis, Abhängigkeiten, Dedup-Key).
 - Kläre die Idee so weit, dass **Scope** und **Erfolgskriterium** klar sind — per Rückfrage
   (siehe 0.), wo nötig. Echte Produktentscheidungen (nicht Implementierungsdetails) NICHT
   still treffen (CLAUDE.md: „Mehrdeutigkeit ansprechen").
@@ -61,31 +64,34 @@ Slug = kurz, kebab-case. Abschnitte:
 # <Feature> — Task-Ledger
 Status: geplant · Branch: feature/<slug> · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Spec: docs/features/<slug>.md
-Fast-Suite: lokal · Warm-Profil: desktop
+Heavy: none — <warum keine schwere Suite>
 DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 ```
 (`Spec:` = Rück-Link zur Soll-Vorgabe, die `feature-build`/`feature-review` als Referenz
 nutzen; bei einem Report-Backlog zeigt das Feld auf den Report statt auf eine Spec.)
-(`Status:` = Ledger-Zustand `geplant|aktiv|erledigt|blockiert`. `feature-plan` schreibt
-`geplant` — die menschliche Freigabe bzw. der Start von `/feature-build` macht daraus `aktiv`.
-Nicht mit dem Task-Status `[ ]`/`[x]` verwechseln.)
+(`Status:` = Ledger-Zustand in der Folge `geplant` → `freigegeben` → `aktiv` → `bereit` →
+`erledigt`, daneben `blockiert` (tasks/README.md). `feature-plan` schreibt `geplant`; Kevins
+Freigabe am Gate macht daraus `freigegeben`, der Start von `/feature-build` `aktiv`. Nicht mit
+dem Task-Status `[ ]`/`[x]` verwechseln.)
 (`Review:` = wann der Frischer-Kontext-Review läuft. `pro Task (feature-review)` ist der
 Default. Ein **Kurz-Ledger** mit **≤ 3 Tasks** bekommt stattdessen `Review: am Ende` —
 `feature-build` fährt dann genau **einen** Review über den ganzen Branch-Diff und lässt den
 abschließenden `/code-review` weg; bei drei kleinen Tasks sähe der zweite Durchgang nur
 denselben Diff noch einmal.)
-(`Fast-Suite:` = wo Verify + Schnellsuite laufen: `lokal` (Solo-Session im Haupt-Checkout,
-Default) oder `vm` (parallele Worktree-Lane ohne lokale Toolchain-Artefakte — siehe
-AUTONOMOUS.md „Parallel-Betrieb"). Wird das Vorhaben als Lane gebaut → `vm` setzen.)
-(`Warm-Profil:` = Box-Bedarf, aus „Betroffene Komponenten" der Spec ableiten:
-`desktop` = eine volle Box, der Default — Stack, Agent und GUI testen dort zusammen;
-`pond` = Server- + Desktop-Box, NUR wenn Desktop-**Journeys** berührt sind (Connect/
-Tunnel/Enrollment-UI, `apps/desktop/e2e/*.live.js`). Berührt die Spec **Cross-Host-Pfade**
+(`Heavy:` = welche schwere Suite der Abschluss braucht, aus „Betroffene Komponenten" der
+Spec abgeleitet, nach ` — ` die Begründung (tasks/README.md):
+`none` = keine, der Diff berührt keinen Stack-, Gateway-, PKI- oder Install-Pfad;
+`linux-full` = `run.sh integration` (und `e2e` bei einer berührten Web- oder Desktop-Journey)
+auf einer Pool-VM — Server-API/Gateway, `apps/ca-issuer`, `apps/agent`, Desktop-Journeys
+(Connect/Tunnel/Enrollment-UI, `apps/desktop/e2e/*.live.js`), `docker-compose*.yml`;
+`scenario <flags>` = ein Multibox-Lauf, wenn die Spec **Cross-Host-Pfade** berührt
 (FRP-Tunnel-Datenpfad, :8444-Provisioning, `build-deb.sh`/`build-rpm.sh`,
-`scripts/install|update`, mTLS/PKI, `docker-compose*.yml`), zusätzlich eine Zeile
-`Abschluss: multibox <flags>` (nur die passenden: `--tunnel`, `--agents 1`, `--rpm`,
-`--enforce`) — der Lauf bleibt ask-first, `feature-build` fragt am Ende.)
+`scripts/install|update`, mTLS/PKI), nur die passenden Flags (`--tunnel`, `--agents 1`,
+`--rpm`, `--enforce`) — der Lauf bleibt ask-first, `feature-build` fragt am Ende;
+`windows` = die Windows-VM (Stufe 12). Die älteren Felder `Fast-Suite:`/`Warm-Profil:` und die
+Zeile `Abschluss: multibox` schreibt ein neues Ledger nicht mehr; `ledger.sh lint` meldet
+beide Formen zugleich als Fehler.)
 
 **Task-Größe = autonomietauglich** (die wichtigste Regel dieser Phase):
 - Eine Task ≈ **eine fokussierte Änderung**, möglichst **eine Komponente**, ≤ ~3 Dateien.
@@ -116,33 +122,46 @@ Abhängt von: T<k>   (nur falls nötig)
 ```
 
 ## 4. Design-Gate — STOPP
+- **Zeilenangaben frisch:** Jede `datei:zeile` in Spec und Ledger unmittelbar vor dem
+  Schreiben neu greppen — ein früher Explorer-Lauf oder ein Merge dazwischen verschiebt sie.
+- **Roadmap vor dem Präsentieren:** Hat das Vorhaben noch keine Zeile, trägt das Gate sie
+  ein — `python3 scripts/dev/roadmap.py add --class <K> --title "…" --source "kevin <datum>"
+  --ledger tasks/<slug>.md` (druckt die ID) — und setzt sie auf `geplant`:
+  `roadmap.py status R-nnnn geplant`. Eine bestehende `neu`-Zeile wird
+  `roadmap.py status R-nnnn geplant --note "tasks/<slug>.md"`. Nie ein Edit an der Datei.
+- **Plan auf den Branch (R-0065):** `git switch -c feature/<slug> main`, Spec und Ledger
+  committen (`chore(plan): add spec + ledger for <slug>`, Ledger mit `Status: geplant`),
+  zurück mit `git switch main` — der Haupt-Checkout bleibt auf `main`. Worktrees und der
+  Worker sehen nur Committetes, und `lane.sh new` sucht den Plan genau dort.
 - Präsentiere im Chat: **1 Absatz** Zusammenfassung, die **Task-Liste** (Titel + Verify),
   und **alle offenen Fragen** klar herausgestellt.
-- **Parallel-Tauglichkeit prüfen:** Laufen andere Lanes (`bash scripts/dev/lane.sh list`
-  bzw. weitere `Status: aktiv`-Ledger unter `tasks/`)? Dann gegen jede prüfen, ob dieses
-  Vorhaben disjunkt ist — Komponenten, geteilte Contracts (API-Routen/Pydantic-Schemas,
-  DB-Migrationen, FRP-Config-Format, Tauri-Commands), primäre `docs/`-Seiten. Ergebnis am
-  Gate mit ausgeben: „parallel-tauglich zu <lane>: ja/nein — <Grund>". Überlappt es →
-  seriell empfehlen, nicht parallel.
+- **Parallel-Tauglichkeit prüfen — gegen alle `aktiv`- und `freigegeben`-Zeilen:**
+  `roadmap.py show` listet sie („In Arbeit", „Geplant"), dazu `bash scripts/dev/lane.sh list`.
+  Für jede Zeile ihr Ledger lesen und prüfen, ob dieses Vorhaben disjunkt ist: Komponenten
+  (die `Komponente:`-Zeilen beider Ledger) und geteilte Contract-Dateien (API-Routen/
+  Pydantic-Schemas, DB-Migrationen, FRP-Config-Format, Tauri-Commands, `run.sh`/`ci.yml`,
+  primäre `docs/`-Seiten). Ergebnis am Gate je Zeile: „parallel-tauglich zu R-nnnn: ja/nein —
+  <Grund>". Überlappt es → **warnen** und seriell empfehlen, nicht parallel.
 - **Lanes aktiv vorschlagen (Kevin, 2026-09-18).** Ist das Vorhaben disjunkt zu einem anderen
-  `geplant`- oder `aktiv`-Ledger (Komponenten, Contracts, `run.sh`/`ci.yml`-Stellen, primäre
+  `freigegeben`- oder `aktiv`-Ledger (Komponenten, Contracts, `run.sh`/`ci.yml`-Stellen, primäre
   Doku-Seiten) **und** braucht höchstens eines der beiden VMs **und** teilen sie sich keine
   Test-Datenbank (zwei Server-Suiten gleichzeitig zerstören sich das Ergebnis), dann steht am
   Gate nicht nur „parallel-tauglich: ja", sondern der fertige Lane-Start:
   ```
-  bash scripts/dev/lane.sh new <slug>
-  cp tasks/<slug>.md ../AdminHelper-<slug>/tasks/ && cp docs/features/<slug>.md ../AdminHelper-<slug>/docs/features/
+  bash scripts/dev/lane.sh new <slug>          # Worktree auf feature/<slug>, der Plan ist schon drin
   cd ../AdminHelper-<slug> && claude          # dort: /feature-build tasks/<slug>.md
   ```
   Dazu ein Satz zu den Grenzen: beide Opus-Bauten teilen sich Kevins Nutzungsfenster, der
   zweite PR muss rebasen (CHANGELOG, DEVELOPMENT.md), und Kevins Review-Zeit bleibt der
   Engpass. Die Lane ist die Ausnahme vom Deckel „genau ein Bau aktiv" (CLAUDE.md §2) — nicht
   der Default, sondern ein Vorschlag, den Kevin annimmt oder nicht.
-- Sage explizit: „Bitte `docs/features/<slug>.md` und `tasks/<slug>.md` prüfen/anpassen.
-  Zum autonomen Bauen: **`/feature-build tasks/<slug>.md`** in einer Opus-Session — oder
-  als parallele Lane: nach der Freigabe committe ich Spec + Ledger auf `main`, dann
+- Sage explizit: „Bitte `docs/features/<slug>.md` und `tasks/<slug>.md` auf `feature/<slug>`
+  prüfen/anpassen. Zum Bauen nach der Freigabe: **`/feature-build tasks/<slug>.md`** auf
+  `feature/<slug>` in einer Opus-Session — oder als parallele Lane
   **`bash scripts/dev/lane.sh new <slug>`** (AUTONOMOUS.md „Parallel-Betrieb")."
-- **Implementiere nichts, lege keinen Branch an.** Diese Phase endet hier. Einzige
-  Ausnahme nach erteilter Freigabe (nächster User-Turn): für eine **Lane** Spec + Ledger
-  auf `main` committen (`chore(plan): add spec + ledger for <slug>`) — Worktree-Lanes
-  sehen nur Committetes. Weiterhin kein Produktivcode, kein Branch.
+- **Die Freigabe** ist Kevins Wort (nächster User-Turn). Dann und nur dann:
+  `python3 scripts/dev/roadmap.py approve R-nnnn` und ein Commit auf `feature/<slug>`, der den
+  Ledger-Kopf auf `Status: freigegeben` setzt (`chore(plan): approve <slug>`). Ohne sein
+  Wort bleibt beides `geplant`.
+- **Implementiere nichts.** Diese Phase endet hier: kein Produktivcode, kein weiterer Branch,
+  nichts auf `main`.
