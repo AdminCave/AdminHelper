@@ -19,8 +19,10 @@ entschieden, ihn zu löschen (Entscheidung (b)). T10 von R-0067 war dafür gebau
 scheiterte aber am `diff-scan`: Für einen bewusst gelöschten Test gab es keinen Weg. R-0079 (#40) hat
 ihn geschaffen. Diese Task ist zugleich der erste echte Lauf der neuen Regel durch `task-close.sh`.
 
-### T1 — `SafeText` und seinen Test löschen  [ ]
+### T1 — `SafeText` und seinen Test löschen  [x]
 Komponente: server · Dateien: apps/server/app/core/bounds.py, apps/server/tests/test_text_bounds.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 13 skipped @f066b3cd 2026-09-25T10:18:46+02:00
+Review: Aufsicht; Abschluss-Review folgt
 Test-Löschung: apps/server/tests/test_text_bounds.py::test_safetext_passes_everything_but_nul — der Typ SafeText hat seit R-0067 keinen Nutzer mehr und geht mit
 Änderung: Den gesicherten Patch `tasks/private/patches/r0079-safetext-delete.patch` anwenden; er passt ohne Konflikt auf `main` @61d1d04d. Er löscht `SafeText` und `_reject_nul` aus `bounds.py`; die Begründung, warum genau dieses Byte, wandert in den Docstring von `RequestModel`. In `test_text_bounds.py` fallen der Typ-Test und seine Importe weg, die Routentests bleiben. Nachweis, dass nichts mehr darauf zeigt: `grep -rn "SafeText\|_reject_nul(" apps/server/app` ist leer, dazu die volle Server-Suite. Beim Schließen muss `diff-scan` melden: `clean (1 declared test deletion(s): apps/server/tests/test_text_bounds.py::test_safetext_passes_everything_but_nul)`.
 Verify: bash scripts/dev/verify.sh server --strict

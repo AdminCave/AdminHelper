@@ -17,9 +17,6 @@ storable, and the TOML-injection guards in frp/schemas.py are a separate
 concern."""
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
-
-from app.core.bounds import SafeText
 
 NUL = chr(0)
 AUDIT_FILTERS = ("action", "actor_type", "object_type", "object_id", "status", "q")
@@ -29,16 +26,6 @@ def _login(test_client) -> dict:
     r = test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-
-def test_safetext_passes_everything_but_nul():
-    adapter = TypeAdapter(SafeText)
-    # Not a general control-character guard: a tab, a newline and a DEL all pass.
-    for ok in ("", "plain", "a\tb", "a\nb", "a\x7fb", "ä€"):
-        assert adapter.validate_python(ok) == ok
-    for bad in (NUL, "a" + NUL, NUL + "a", "a" + NUL + "b"):
-        with pytest.raises(ValidationError):
-            adapter.validate_python(bad)
 
 
 @pytest.mark.parametrize("field", AUDIT_FILTERS)

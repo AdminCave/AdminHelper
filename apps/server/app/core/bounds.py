@@ -20,7 +20,7 @@ into the ``Annotated`` metadata instead (``offset: Annotated[Offset, Query()] =
 
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic_core import InitErrorDetails
 
 # Primary key of a table declared as Column(Integer) — Postgres INTEGER.
@@ -47,22 +47,6 @@ IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
 Offset = Annotated[int, Field(ge=0, le=2147483647)]
 
 
-def _reject_nul(value: str) -> str:
-    # Postgres stores no 0x00 in a text value: psycopg raises DataError while
-    # binding the parameter, before the query runs, so the route never produced a
-    # response at all. Rejecting at the edge turns that 500 into a 422.
-    if "\x00" in value:
-        raise ValueError("must not contain a NUL byte")
-    return value
-
-
-# A text value that travels into a Postgres text column or a comparison against
-# one. Deliberately narrow: this rejects the one byte the database refuses, not
-# control characters in general — the TOML guards in frp/schemas.py are a
-# separate concern with their own reason.
-SafeText = Annotated[str, AfterValidator(_reject_nul)]
-
-
 def _find_nul(data: dict) -> tuple[tuple, str] | None:
     """Location and value of a string in `data` that carries a NUL, if any.
 
@@ -87,7 +71,13 @@ def _find_nul(data: dict) -> tuple[tuple, str] | None:
 
 class RequestModel(BaseModel):
     """Base of every schema that describes a request body: no string anywhere in
-    it may carry a NUL byte (see _reject_nul for why that byte, and only it).
+    it may carry a NUL byte.
+
+    Postgres stores no 0x00 in a text value: psycopg raises DataError while
+    binding the parameter, before the query runs, so the route never produced a
+    response at all — HTTP 500. Deliberately only that byte, not control
+    characters in general: the TOML guards in frp/schemas.py are a separate
+    concern with their own reason.
 
     A model_validator, not a per-field type: the rule is a property of the input
     as a whole, and a subclass cannot forget it on a new field. mode="before"
