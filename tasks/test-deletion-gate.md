@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Bewusst gelöschte Tests: ein erlaubter Weg durch `diff-scan` — Task-Ledger (Kurz)
-Status: bereit · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/test-deletion-gate · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Spec: dieses Ledger (Harness-Vorhaben, Roadmap R-0079)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — der Diff berührt `scripts/dev/review.sh`, `scripts/dev/task-close.sh`, `scripts/tests/review_scripts_test.sh` und die Ledger-Doku.
@@ -146,3 +146,23 @@ Neu:
 Tests: je ein Fall pro Umgehung, dazu der Leerzeichen-Pfad. Gegenprobe gegen den Stand von T4: 6 rot in `review_scripts_test`, davon 5 mit rc 0; 2 rot in `task_close_test`.
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: tasks/README.md
+
+### T6 — Letzter enger Check: die Sperre in `task-close.sh` gilt für den fertigen Commit  [x]
+Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/dev/review.sh, scripts/tests/task_close_test.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @624afbd9 2026-09-25T09:48:51+02:00
+Review: letzter enger Opus-Check 2026-09-25 (request_changes) → Nachbau
+Änderung: Ein letzter, eng gefasster Opus-Check (2026-09-25) hat drei Wege um die Sperre aus T5 nachgestellt:
+- eine Ankündigung mit ungültigem UTF-8-Byte (unter UTF-8 unsichtbar für `grep`, lesbar für awk und Python);
+- eine Ankündigung, die Test-Code während `verify.sh` ins Ledger schreibt (die Prüfung lief davor);
+- eine Ankündigung in einem anderen, über `Dateien:` mitgestagten Ledger.
+
+Dazu kam ein zu weit geschätzter Rumpf, der einen zweiten Test mitnimmt.
+
+Neu:
+- Die frühe Prüfung ist bytegenau (`LC_ALL=C grep -a`).
+- **Maßgeblich ist eine Prüfung auf dem fertigen Commit:** Ändert er in irgendeinem `tasks/*.md` eine `Test-Löschung:`-Zeile, nimmt `task-close` ihn per `git reset --soft` zurück (Exit 4). Sie zählt mit `grep -c`, damit `pipefail` einen Treffer nicht zu einem Pass macht.
+- `diff-scan` verweigert eine Ankündigung, deren alter Rumpf den Kopf eines weiteren Tests enthält.
+
+Tests: je ein Fall pro Weg. Gegenprobe gegen T5 (`f2ceb4f9`): `task_close_test` 6 rot (alle drei mit rc 0 und bleibendem Commit), `review_scripts_test` 1 rot (rc 0).
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (tasks/README.md beschreibt die Sperre schon; die Stelle der Prüfung ist ein Detail des Skripts)

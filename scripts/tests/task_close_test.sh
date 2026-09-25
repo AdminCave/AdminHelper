@@ -53,6 +53,9 @@ cat > "$FIX/scripts/dev/verify.sh" <<'FAKE'
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 mkdir -p "$root/.ah-out"
 echo "$*" > "$root/.ah-out/verify-called.txt"
+# FIXTURE_INJECT: text the "suite" writes into the ledger while it runs — the
+# builder's test code between the closer's first look and its commit.
+[ -z "${FIXTURE_INJECT:-}" ] || printf '%s\n' "$FIXTURE_INJECT" >> "$root/tasks/fix.md"
 # Like the real one: a run that does not finish leaves NO artifact behind, so a
 # stale file from an earlier run can never be read as this run's evidence.
 rm -f "$root/.ah-out/last-verify.json"
@@ -113,7 +116,7 @@ c() { OUT=$(cd "$FIX" && bash "$CLOSE" "$@" 2>&1); rc=$?; }
 # move HEAD, and the next case has to start from the same state as the first.
 reset_repo() {
   git -C "$FIX" reset -q --hard "$BASE"; git -C "$FIX" clean -qfd; mkskel
-  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH
+  unset FIXTURE_VRC FIXTURE_NO_ARTIFACT FIXTURE_PASSED FIXTURE_NO_TREE_HASH FIXTURE_INJECT
 }
 head_count() { git -C "$FIX" rev-list --count HEAD; }
 touch_tool() { printf 'echo more\n' >> "$FIX/scripts/dev/tool.sh"; git -C "$FIX" add -- scripts/dev/tool.sh; }
@@ -395,6 +398,35 @@ c fix T1 -m "feat: something"
   && ok "a new Test-Löschung: line in the ledger -> exit 4, it is not committed through task-close" \
   || bad "self-declared deletion: rc=$rc out=$OUT"
 [ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite a self-declared deletion"
+reset_repo
+
+# ... nor with an invalid UTF-8 byte at its end, which hid it from grep under a
+# UTF-8 locale while awk and python still read it.
+touch_tool
+printf 'Test-Löschung: apps/server/tests/test_x.py::test_y — z\xff\n' >> "$FIX/tasks/fix.md"
+c fix T1 -m "feat: something"
+[ $rc -eq 4 ] && ok "a declaration with an invalid UTF-8 byte is seen too -> exit 4" \
+  || bad "invalid byte: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and nothing was committed" || bad "commit despite an invalid-byte declaration"
+reset_repo
+# ... nor written while the suite runs (after the first look): the check on the
+# finished commit takes it back.
+touch_tool
+export FIXTURE_INJECT='Test-Löschung: apps/server/tests/test_x.py::test_y — während des Laufs'
+c fix T1 -m "feat: something"
+[ $rc -eq 4 ] && grep -q "taken back" <<<"$OUT" \
+  && ok "a declaration written during the run -> the commit is taken back (exit 4)" || bad "toctou: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and HEAD is where it was" || bad "the toctou commit stayed"
+reset_repo
+# ... nor in another ledger staged along via Dateien:.
+touch_tool
+sed -i 's|^Komponente: scripts · Dateien: scripts/dev/tool.sh$|Komponente: scripts · Dateien: scripts/dev/tool.sh, tasks/other.md|' "$FIX/tasks/fix.md"
+printf '# Other\n\n### O1 — x  [ ]\nTest-Löschung: apps/server/tests/test_x.py::test_y — anderes Ledger\n' > "$FIX/tasks/other.md"
+git -C "$FIX" add -- tasks/other.md
+c fix T1 -m "feat: something"
+[ $rc -eq 4 ] && grep -q "taken back" <<<"$OUT" \
+  && ok "a declaration in another staged ledger -> the commit is taken back" || bad "other ledger: rc=$rc out=$OUT"
+[ "$(head_count)" = "$BEFORE" ] && ok "and HEAD is where it was" || bad "the other-ledger commit stayed"
 reset_repo
 
 # A task without a component cannot be verified — that is infrastructure, not a

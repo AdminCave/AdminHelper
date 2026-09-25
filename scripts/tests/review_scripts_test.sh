@@ -665,6 +665,21 @@ r diff-scan --staged
   && ok "a path with a space is a finding with its name, not rc 2" || bad "space path: rc=$rc out=$OUT"
 git -C "$FIX" rm -q -f -- "apps/server/tests/test with space.py" >/dev/null 2>&1; git -C "$FIX" commit -qm "drop the spaced file" >/dev/null 2>&1
 
+# A span guessed too wide by odd indentation must not take a second test with it.
+base apps/web/src/parse.test.ts "describe('d', () => {
+it('rejects empty input', () => expect(1).toBe(1));
+  it('y', () => {
+    expect(2).toBe(2);
+  });
+});
+"
+# The closing line comes back as `})`: git deletes `});` with the span, so every
+# line of the too-wide span reads as deleted (the reviewer's reproduction).
+printf "describe('d', () => {\n})\n" > "$FIX/apps/web/src/parse.test.ts"; stage apps/web/src/parse.test.ts
+r diff-scan --staged --task tasks/del.md T6
+[ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" \
+  && ok "a declared span that holds another test counts for nothing" || bad "span with two tests: rc=$rc out=$OUT"
+
 # ... but a test of the same name that was ALREADY in another file is a
 # different test: the declaration stands.
 base apps/server/tests/test_other.py 'def test_dead():

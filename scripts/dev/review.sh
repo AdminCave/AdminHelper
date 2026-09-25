@@ -317,6 +317,14 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
     else:
         a, b = old[0][1], old[0][2]
         src = old_text(path).split("\n")
+        # One test, not two: a span that holds the head of another test was
+        # guessed too wide (odd indentation), and deleting it would take a test
+        # nobody declared (adversarial review, 2026-09-25).
+        inner = [h for h in heads(path, old_text(path)) if a < h[1] <= b]
+        if inner:
+            notes.setdefault(path, []).append(
+                f"declared {path}::{name} ignored: its old span holds another test ({inner[0][0]}, line {inner[0][1]})")
+            continue
         kept = [n for n in range(a, b + 1)
                 if n - 1 < len(src) and src[n - 1].strip() and n not in removed.get(path, set())]
         # The whole test goes: every line of its old body is a deleted line. A

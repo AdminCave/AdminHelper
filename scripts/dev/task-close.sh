@@ -79,7 +79,12 @@ case "$LEDGER" in *.md) ;; *) LEDGER="$LEDGER.md" ;; esac
 # so a builder could write the line while closing one task and use it in the next
 # (adversarial review, 2026-09-25). The declaration comes with the plan commit at
 # the gate, or with a commit Kevin makes by hand — never through task-close.
-decl_lines() { grep -E '^Test-Löschung:' || true; }  # review: ok no match is an empty list, not a failure
+# This early look fails fast with a clear message; it is byte-exact (LC_ALL=C,
+# -a), because a line with an invalid UTF-8 byte was invisible to grep under a
+# UTF-8 locale while awk and python still read it. The check that carries is the
+# one on the finished commit, at the end: it also covers the ledger changing
+# while the suite runs and a declaration in any other staged ledger.
+decl_lines() { LC_ALL=C grep -aE '^Test-Löschung:' || true; }  # review: ok no match is an empty list, not a failure
 if [ "$(git show "HEAD:$LEDGER" 2>/dev/null | decl_lines)" != "$(decl_lines < "$LEDGER")" ]; then
   echo "task-close: the Test-Löschung: lines of $LEDGER differ from the committed ones —" >&2
   echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
@@ -300,5 +305,19 @@ if [ -n "$MSGFILE" ]; then
   git commit -q -F "$MSGFILE" || infra "$COMMIT_HELP"
 else
   git commit -q -m "$MSG" || infra "$COMMIT_HELP"
+fi
+# The check that carries: on the commit itself, byte-exact, over every ledger in
+# it. A Test-Löschung: line this commit adds, removes or moves — through a ledger
+# edited while the suite ran, or another ledger staged via Dateien: — takes the
+# commit back (adversarial review, 2026-09-25). grep -c reads to the end: with
+# -q it would leave early, git diff would die of SIGPIPE, and pipefail would turn
+# the hit into a pass.
+DECL_CHANGED="$(git -c core.quotePath=false diff --text --no-ext-diff --no-textconv --no-color -U0 HEAD^ HEAD -- 'tasks/*.md' \
+  | LC_ALL=C grep -acE '^[-+]Test-Löschung:')"
+if [ "${DECL_CHANGED:-0}" != 0 ]; then
+  git reset -q --soft HEAD^ || infra "the commit changed a Test-Löschung: line and could not be taken back — inspect HEAD"
+  echo "task-close: the commit changed a Test-Löschung: line in a ledger — taken back (git reset --soft)" >&2
+  echo "  a declaration comes with the plan commit at the gate, not through task-close" >&2
+  exit 4
 fi
 echo "── closed $ID: $(git rev-parse --short HEAD) · $SUMMARY"
