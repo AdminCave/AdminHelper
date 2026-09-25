@@ -64,8 +64,10 @@ Review: approve (sonnet, mit Mutationsprobe); Gegenprobe: vorher rc=2 / 4 passed
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CHANGELOG.md `[Unreleased]` → `Fixed` (`restore.sh` auf einem frischen Host: Warten auf Postgres über TCP statt über den Socket)
 
-### T6 — `heavy.sh` klassifiziert jeden roten Schritt, nicht nur den ersten (R-0092)  [ ]
+### T6 — `heavy.sh` klassifiziert jeden roten Schritt, nicht nur den ersten (R-0092)  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick]: 5 passed, 0 failed, 12 skipped @36ccbb96 2026-09-25T14:25:45+02:00
+Review: approve (opus, Harness-Pfad; eigene Gegenprobe 166/4 -> 170/0; 2 nits eingearbeitet); Lane-Box heavy_test 170 passed
 Änderung: **Harness-Pfad** (`heavy.sh`): Kevins Freigabe gilt über das Gate. In der interaktiven Session warnt `harness-guard.sh` nur; ein Runner mit `AH_AUTONOMOUS=1` braucht `bash scripts/dev/harness.sh off` (Kevins Handgriff). Test zuerst, in `heavy_test.sh`: ein Fall mit **zwei** roten Schritten (Artefakt mit zwei `fail`), die beide über die Retries in die Zweit-VM laufen. Die ssh-gestützten Fixture-Shims `$FIX/scripts/vm/warm.sh` und `iter.sh` leeren stdin wie ssh, nur bei gesetztem Schalter (z. B. `SHIM_DRAIN_STDIN=1`), und der Fall ruft `heavy.sh … </dev/null` auf. Erwartung: beide Schritte mit Urteil in `history.csv` und in der Tabelle von `report.md`, Summenzeile `2 step(s) red after retries`. Vor dem Fix sieht der Fall nur den ersten (Gegenprobe, Ergebnis in die Review-Notiz). Dann in `heavy.sh` beide Leseschleifen über `steps-all.tsv` (Z. 356-364 und 369-382) auf einen eigenen Deskriptor umstellen (`read -r … <&3`, `done 3< "$OUT/steps-all.tsv"`), den Kommentar an `rerun_step` (Z. 437-439) auf den neuen Grund umschreiben, die bestehenden `</dev/null` stehen lassen. Ursache und Nachstellung: Spec F6.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern; der Kommentar an der Schleife ist die Doku)
