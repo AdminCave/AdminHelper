@@ -4,22 +4,25 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Wochenlauf grün — Task-Ledger
-Status: geplant · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: freigegeben · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review; T6 Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
 Spec: docs/features/wochenlauf-gruen.md
-Fast-Suite: lokal · Warm-Profil: desktop
+Freigabe: Kevin, 2026-09-25, übermittelt durch die Aufsichts-Session adminhelper-ac; Bau als Lane (`lane.sh new wochenlauf-gruen`)
+Fast-Suite: vm · Warm-Profil: desktop
 Heavy: linux-full (Abschluss: Wochenlauf-Wiederholung `heavy.sh weekly` auf Kevins Freigabe, überwacht; siehe „Abschluss" unten)
 DoD je Task: CLAUDE.md (Tests grün, ruff/shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
-Roadmap: R-0087 (REG), R-0086, R-0085, R-0089 (BUG), F5 `backup_restore` (BUG, Zeile legt Kevin am Gate an) · Hängt ab von: —
+Roadmap: R-0087, R-0092 (REG), R-0086, R-0085, R-0089 (BUG), F5 `backup_restore` (BUG, Zeile legt die Aufsicht an) · Hängt ab von: —
 
 **Regeln für dieses Vorhaben.** Je Task erst der Test, der den Fund ohne Fix rot zeigt, dann
 der Fix (CLAUDE.md §6). Die **Gegenprobe** (der neue Test fällt ohne den Fix) steht mit ihrem
 Ergebnis im Task-Commit bzw. in der Review-Notiz, sonst beweist der Test nichts. Keine
 bestehende `assert`-Zeile löschen oder umschreiben, und in neuen Zeilen weder `pytest.skip(`
 noch `|| true` noch `set +e`: `review.sh diff-scan` wertet beides als Fund, und für keine Task
-ist eine `Test-Löschung:` angekündigt. Der Server-Schritt teilt sich `adminhelper_test` und
-`~/.cache/ah-venv` mit dem Haupt-Checkout; `run.sh` stellt die beiden Python-Läufe per `flock`
-in die Schlange, ein Warten auf die Sperre ist also kein Fehler.
+ist eine `Test-Löschung:` angekündigt. Die Lane hat ihre eigene Test-DB und ihr eigenes Venv
+(`lane.sh new`). `run.sh` stellt `server-pytest` und `schemathesis` trotzdem je Nutzer per
+`flock` in die Schlange, ein Warten auf die Sperre ist also kein Fehler. **T1 zuerst:** Bis T1
+committet ist, bleibt `iter_flags_test` auf der Lane-Box rot, weil das `.git` der Lane dort
+ins Leere zeigt (Spec F1). Das ist der Befund selbst, kein Fehler der späteren Tasks.
 
 ### T1 — `iter_flags_test.sh` hermetisch: geerbtes Budget und Worktree-`.git` (R-0087)  [ ]
 Komponente: scripts · Dateien: scripts/tests/iter_flags_test.sh
@@ -51,6 +54,12 @@ Komponente: scripts · Dateien: scripts/restore.sh, scripts/tests/sse_push_e2e.s
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: CHANGELOG.md `[Unreleased]` → `Fixed` (`restore.sh` auf einem frischen Host: Warten auf Postgres über TCP statt über den Socket)
 
+### T6 — `heavy.sh` klassifiziert jeden roten Schritt, nicht nur den ersten (R-0092)  [ ]
+Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+Änderung: **Harness-Pfad** (`heavy.sh`): Kevins Freigabe gilt über das Gate. In der interaktiven Session warnt `harness-guard.sh` nur; ein Runner mit `AH_AUTONOMOUS=1` braucht `bash scripts/dev/harness.sh off` (Kevins Handgriff). Test zuerst, in `heavy_test.sh`: ein Fall mit **zwei** roten Schritten (Artefakt mit zwei `fail`), die beide über die Retries in die Zweit-VM laufen. Die ssh-gestützten Fixture-Shims `$FIX/scripts/vm/warm.sh` und `iter.sh` leeren stdin wie ssh, nur bei gesetztem Schalter (z. B. `SHIM_DRAIN_STDIN=1`), und der Fall ruft `heavy.sh … </dev/null` auf. Erwartung: beide Schritte mit Urteil in `history.csv` und in der Tabelle von `report.md`, Summenzeile `2 step(s) red after retries`. Vor dem Fix sieht der Fall nur den ersten (Gegenprobe, Ergebnis in die Review-Notiz). Dann in `heavy.sh` beide Leseschleifen über `steps-all.tsv` (Z. 356-364 und 369-382) auf einen eigenen Deskriptor umstellen (`read -r … <&3`, `done 3< "$OUT/steps-all.tsv"`), den Kommentar an `rerun_step` (Z. 437-439) auf den neuen Grund umschreiben, die bestehenden `</dev/null` stehen lassen. Ursache und Nachstellung: Spec F6.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern; der Kommentar an der Schleife ist die Doku)
+
 ## Abschluss (Heavy, auf Kevins Freigabe)
 
 Wochenlauf-Wiederholung `bash scripts/tests/heavy.sh weekly` als überwachter Hintergrund-Lauf
@@ -59,4 +68,9 @@ Worktree geht das nach T1; das frpc-Sidecar und `.claude/settings.local.json` m�
 bisher verlinkt sein, sonst endet der Lauf UNVERIFIED. Erwartet: `schemathesis`,
 `scripts (hermetic)` und `backup_restore` grün, und ein zweiter Sync auf dieselbe Box geht durch
 (Beweis für T2). `backup_restore` hängt am Timing: Ein grüner Lauf allein beweist T5 nicht, den
-deterministischen Beweis liefert der Stub-Test. Nach dem Lauf `python3 scripts/vm/vm.py list`.
+deterministischen Beweis liefert der Stub-Test. Ist ein Schritt rot, nennt `report.md` jetzt
+jeden (Beweis für T6). Nach dem Lauf `python3 scripts/vm/vm.py list`.
+
+**Kapazität, außerhalb des Codes:** Der Capstone passte am 2026-09-25 nicht auf den Knoten
+(−7061 MiB, ohne Box 3000 noch −5348 MiB; Spec „Offene Fragen"). Ohne freien Speicher bleibt
+die Kopfzeile UNVERIFIED, auch wenn `all` grün ist. Das entscheidet Kevin vor dem Lauf.

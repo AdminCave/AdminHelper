@@ -5,8 +5,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # Wochenlauf grün — Spec
 
-Roadmap: R-0087 (REG), R-0086, R-0085, R-0089 (BUG) und ein fünfter Fund ohne Zeile (BUG,
-`backup_restore`). Quelle: Wochenlauf 2026-09-25, drei Läufe (`08:23`, `09:39`, `09:41`) plus
+Roadmap: R-0087, R-0092 (REG), R-0086, R-0085, R-0089 (BUG) und ein fünfter Fund ohne Zeile
+(BUG, `backup_restore`; die Zeile legt die Aufsicht an).
+
+**Freigabe:** Kevin, 2026-09-25, übermittelt durch die Aufsichts-Session `adminhelper-ac`,
+mit T6 (R-0092). Der Bau läuft als **Lane** (`lane.sh new wochenlauf-gruen`: eigene Test-DB,
+eigenes Venv, Sidecar-Links). Quelle: Wochenlauf 2026-09-25, drei Läufe (`08:23`, `09:39`, `09:41`) plus
 zwei Schemathesis-Retries; Artefakte lokal unter `.ah-out/weekly/2026-09-25-*` des Worktrees,
 aus dem der Lauf kam (nicht versioniert).
 
@@ -17,8 +21,12 @@ Box 3000, `run.sh all --strict`) endet mit `30 passed, 3 failed, 0 skipped`; rot
 `schemathesis`, `scripts (hermetic)` und `backup_restore (crown-jewel DR)`. Der Lauf `09:39`
 davor kam gar nicht an die Suiten: `vm.py: sync failed: rsync exited 23`, also UNVERIFIED.
 
+Dazu berichtet der Wochenlauf selbst falsch: `report.md` klassifiziert nur den **ersten** der
+drei roten Schritte (F6). `scripts (hermetic)` und `backup_restore` stehen weder in der
+Schritt-Tabelle noch in `history.csv`.
+
 Ein roter Wochenlauf blockiert den `beta`-Kanal (CLAUDE.md §2), und solange er aus bekannten
-Gründen rot ist, sieht niemand eine neue Regression. Alle fünf Ursachen sind unten belegt,
+Gründen rot ist, sieht niemand eine neue Regression. Alle sechs Ursachen sind unten belegt,
 keine ist geraten.
 
 ## Befund je Fund
@@ -117,11 +125,39 @@ Das ist ein **Produktfehler**: die DR-Wiederherstellung auf einem frischen Host 
 scheitern. `scripts/tests/sse_push_e2e.sh:65` wartet auf dieselbe Weise und verbindet sich danach
 über `127.0.0.1:5433` (alembic, uvicorn). Derselbe Fehler steckt dort latent, bisher zweimal grün.
 
+### F6 — R-0092: `heavy.sh` klassifiziert nur den ersten roten Schritt (REG)
+
+`report.md` von `09:41` (fertig 12:22): Die Schritt-Tabelle führt die Schritte bis
+`schemathesis` (`extern`, nach drei Retries, Zweit-VM und Gegenprobe gegen `d11a0c1f`),
+danach kommt sofort die Summenzeile `1 step(s) red after retries`. `steps-all.tsv` hat aber 33
+Zeilen mit drei `fail`; `scripts (hermetic)`, `backup_restore` und die 20 übrigen Schritte
+fehlen im Bericht und damit in `history.csv`.
+
+**Ursache, belegt.** Die Klassifizier-Schleife `heavy.sh:369-382` liest `steps-all.tsv` über
+**stdin** (`done < "$OUT/steps-all.tsv"`). Innerhalb der Schleife ruft
+`classify_red_step` → `second_vm_check` den Wrapper `warm.sh` für die Zweit-Box **ohne**
+`</dev/null` auf (`heavy.sh:538`, `AH_LANE=w2 bash "$W2_DIR/scripts/vm/warm.sh" desktop >>"$OUT/w2.log" 2>&1`).
+`warm.sh:63` ruft `vm_py wait` auf, und das ist `vm.py:run_ssh` (Z. 1053-1056):
+`subprocess.call(argv)` ohne `stdin=`, das Kind erbt also stdin, und `ssh` ohne `-n` liest es
+(ssh(1): „-n … verhindert das Lesen von Stdin"). Der Rest von `steps-all.tsv` landet im
+Remote-`true`, und die Schleife sieht EOF. `rerun_step` und `w2_run` tragen `</dev/null`, der
+Kommentar an `rerun_step` (Z. 437-439) warnt vor genau diesem Fall. Die Regel „`</dev/null`
+an jedem Remote-Aufruf" hat also eine Stelle übersehen. `reap.sh` in `w2_teardown` fährt nur
+API-Verben (`destroy`, `reap`, `list`) und liest nichts.
+
+**Nachstellung (2026-09-25):** Eine `while read`-Schleife über drei rote Zeilen, darin
+`python3 -c 'subprocess.call(["ssh", …])'` mit einem ssh-Double, das stdin liest, klassifiziert
+ohne `</dev/null` **1 von 3**, mit `</dev/null` 3 von 3.
+
+**Warum `heavy_test.sh` es nicht sieht:** Keiner der Shims (`$WRAP/*.sh`,
+`$FIX/scripts/vm/*.sh`) liest stdin; der echte Wrapper tut es über ssh.
+
 ## Ziel & Nicht-Ziele
 
 **Ziel:** `heavy.sh weekly` wird aus einem beliebigen Checkout grün, auch aus einem Worktree
-und auf einer Box, die schon einen Lauf hinter sich hat. Die fünf Ursachen sind behoben, nicht
-umgangen, und jede hat einen Test, der ohne den Fix rot ist.
+und auf einer Box, die schon einen Lauf hinter sich hat, und sein Bericht nennt jeden roten
+Schritt. Die sechs Ursachen sind behoben, nicht umgangen, und jede hat einen Test, der ohne den
+Fix rot ist.
 
 **Nicht-Ziele:**
 - Kein Umbau von `vm.py sync`, sodass ein Worktree-`.git` auf der Box benutzbar wird
@@ -131,7 +167,11 @@ umgangen, und jede hat einen Test, der ohne den Fix rot ist.
   auch eine injizierbare Sitzung würde nur zum `ReadTimeout` führen.
 - Keine fachliche Datumsgrenze (etwa 2000–2100) im Monitoring (Entscheidung Kevin,
   2026-09-25): nur der Überlauf wird 422.
-- Keine Änderung an `run.sh`, `heavy.sh`, `iter.sh`, `vm.py` (Harness-Pfade).
+- Keine Änderung an `run.sh`, `iter.sh`, `vm.py` (Harness-Pfade). `heavy.sh` ist ebenfalls
+  ein Harness-Pfad und wird **nur** in F6 angefasst, an den zwei Leseschleifen und dem
+  Kommentar an `rerun_step`.
+- `vm.py:run_ssh` bekommt kein `stdin=DEVNULL` (N4): `vm.py ssh` braucht stdin interaktiv, und
+  das wäre eine Änderung am VM-Werkzeug, nicht am Bericht.
 
 ## Entscheidungen (Kevin, 2026-09-25)
 
@@ -142,6 +182,7 @@ umgangen, und jede hat einen Test, der ohne den Fix rot ist.
    `schemathesis_exclude.toml`, mit gemessenem Grund. Präzedenz: die Monitoring-Proxy-Einträge
    stehen dort schon als „in-process nicht fuzzbar".
 4. F4: Der Überlauf wird an beiden Rändern zu 422, ohne fachlichen Bereich.
+5. Freigabe am Gate mit R-0092 als T6; Bau als Lane (übermittelt durch `adminhelper-ac`).
 
 ## Betroffene Komponenten & Dateien
 
@@ -152,8 +193,12 @@ umgangen, und jede hat einen Test, der ohne den Fix rot ist.
 | F3 | server | `apps/server/tests/schemathesis_exclude.toml` |
 | F4 | monitoring | `apps/monitoring/app/schemas.py`, `apps/monitoring/tests/test_maintenance_router.py`, `CHANGELOG.md` |
 | F5 | scripts | `scripts/restore.sh`, `scripts/tests/sse_push_e2e.sh`, `scripts/tests/restore_guard_test.sh`, `CHANGELOG.md` |
+| F6 | scripts | `scripts/tests/heavy.sh` (**Harness-Pfad**), `scripts/tests/heavy_test.sh` |
 
-Kein Harness-Pfad (`scripts/dev/harness-paths.txt`) ist berührt. Die neuen Testfälle für
+Genau ein Harness-Pfad (`scripts/dev/harness-paths.txt`) ist berührt: `scripts/tests/heavy.sh`
+in F6. `harness-guard.sh` warnt in Kevins interaktiver Session nur; ein Runner mit
+`AH_AUTONOMOUS=1` bekäme die Änderung verweigert, bis Kevin `bash scripts/dev/harness.sh off`
+setzt. Die neuen Testfälle für
 `restore.sh` kommen in `restore_guard_test.sh`, weil der schon im `scripts`-Block von `run.sh`
 steht; ein neues Testskript müsste dort eingetragen werden, und `run.sh` ist ein Harness-Pfad.
 
@@ -212,6 +257,19 @@ erfolgreiches TCP-`pg_isready` vor dem ersten `psql`. Gegenprobe mit dem alten B
 `sse_push_e2e.sh` braucht Docker und läuft nur im Heavy-Lauf; dort ist es derselbe
 Einzeiler.
 
+**F6.** Beide Leseschleifen über `steps-all.tsv` (`heavy.sh:356-364` und `369-382`) lesen von
+einem **eigenen Deskriptor** statt von stdin (`read -r … <&3` und `done 3< "$OUT/steps-all.tsv"`).
+Damit kann kein Aufruf in der Schleife die Datei mehr erreichen, gleich ob er stdin liest. Das
+behebt die Klasse, statt eine weitere `</dev/null`-Stelle nachzutragen; die Regel „an jedem
+Remote-Aufruf" hat schon einmal versagt. Die bestehenden `</dev/null` bleiben, der Kommentar an
+`rerun_step` wird auf den neuen Grund umgeschrieben. Test in `heavy_test.sh`: ein Fall mit
+**zwei** roten Schritten, die beide über Retries und Zweit-VM laufen. Die ssh-gestützten Shims
+im Fixture (`$FIX/scripts/vm/warm.sh`, `iter.sh`) lesen stdin leer wie ssh, per Schalter
+(z. B. `SHIM_DRAIN_STDIN=1`) nur in diesem Fall. Der Fall ruft `heavy.sh` mit `</dev/null` auf,
+damit ein leerender Shim außerhalb der Schleife nie an einem Terminal hängt. Erwartung: beide
+Schritte mit Urteil in `history.csv` und in der Tabelle von `report.md`, Summenzeile
+`2 step(s) red after retries`. Ohne Fix sieht der Fall nur den ersten (Gegenprobe).
+
 ## Datenmodell / API / Migrationen
 
 Keine Migration, kein neuer Endpunkt, keine Vertrags-Drift. Einzige sichtbare API-Änderung:
@@ -243,6 +301,10 @@ Monitoring `POST/PUT /maintenance` antwortet auf einen Offset am Kalenderrand mi
   psycopg-Verbindung über Threads hinweg.
 - **F5 TCP-Warteschleife vs. `sleep`/Retry um `psql`:** Retry verschiebt nur. Die
   Warteschleife prüft dann genau den Weg, den der nächste Befehl nimmt.
+- **F6 eigener Deskriptor vs. `</dev/null` an `warm.sh`:** Die eine fehlende Umleitung wäre
+  ein Einzeiler, schützt aber nur diese eine Stelle, und der nächste Aufruf in der Schleife hat
+  dasselbe Risiko. Der Deskriptor kostet zwei Zeilen und nimmt der Schleife die Abhängigkeit
+  ganz.
 
 ## Risiken & Rollback
 
@@ -254,6 +316,10 @@ Monitoring `POST/PUT /maintenance` antwortet auf einen Offset am Kalenderrand mi
   Loopback lauscht; im Normalbetrieb tut es das (verifiziert: `17/alpine3.24/Dockerfile:188`
   setzt `listen_addresses = '*'` in der Beispiel-Konfiguration), und `restore_db` verlässt sich
   schon heute darauf. Rollback: `-h` entfernen.
+- F6: `heavy.sh` ist das Werkzeug, das über Releases entscheidet (Harness). Ein Fehler in der
+  Schleife ließe Schritte still aus dem Bericht fallen, genau der heutige Zustand. Der neue
+  Zwei-Schritt-Fall und die bestehende Suite von `heavy_test.sh` fangen das. Review mit Opus
+  (Harness-Risikopfad). Rollback: den Commit revertieren.
 - Alle Tasks sind unabhängig und einzeln revertierbar.
 
 ## Doku-Impact
@@ -263,8 +329,15 @@ auf einem frischen Host). Alles andere ist Test-Infrastruktur: keine Doku.
 
 ## Offene Fragen
 
-Keine — die vier Entscheidungen oben sind gefallen. Am Gate bleibt: die Roadmap-Zeile für F5
-anlegen und R-0087 auf die zwei Ursachen korrigieren (Kevins Datei).
+Zur Spec keine, die Entscheidungen oben sind gefallen. Die Roadmap-Zeile für F5 und die
+Korrektur von R-0087 übernimmt die Aufsicht.
+
+Offen für den **Abschluss**, außerhalb des Codes: Der Capstone des Laufs `09:41` endete `infra`
+(`multibox.sh exited 74`), weil der Knoten nicht genug Speicher hat:
+`13084 MiB free − 4096 reserve − 1713 owed by ours − 14336 for server,agent,moncheck,rpm,tunnel,visitor = −7061 MiB`.
+Auch ohne die Desktop-Box 3000 bleiben −5348 MiB. Solange die vier fremden VMs auf dem Knoten
+so viel belegen, bleibt die Kopfzeile des Wochenlaufs UNVERIFIED, auch wenn `all` grün ist.
+Das entscheidet Kevin (Kapazität freigeben oder den Capstone getrennt fahren).
 
 ## Nebenfunde (nicht in diesem Vorhaben, Roadmap-Kandidaten)
 
@@ -280,3 +353,7 @@ anlegen und R-0087 auf die zwei Ursachen korrigieren (Kevins Datei).
   „.git stays". Harness.
 - **N3 — Positiver Auth-Pfad des SSE-Streams** (gültiges JWT → 200, erster Frame) ist nur
   noch E2E abgedeckt, nicht unterhalb.
+- **N4 — `vm.py:run_ssh` erbt stdin** in jedem nicht-interaktiven Aufruf (`wait`, `run`).
+  Jede Shell-Schleife, die einen Wrapper aufruft, kann so ihre Eingabe verlieren. F6 schützt
+  die eine Schleife in `heavy.sh`; ein `-n`/`stdin=DEVNULL` für die nicht-interaktiven Verben
+  wäre die Wurzel auf der Werkzeugseite. Harness.
