@@ -103,3 +103,18 @@ jeden (Beweis für T6). Nach dem Lauf `python3 scripts/vm/vm.py list`.
 **Kapazität, außerhalb des Codes:** Der Capstone passte am 2026-09-25 nicht auf den Knoten
 (−7061 MiB, ohne Box 3000 noch −5348 MiB; Spec „Offene Fragen"). Ohne freien Speicher bleibt
 die Kopfzeile UNVERIFIED, auch wenn `all` grün ist. Das entscheidet Kevin vor dem Lauf.
+
+**Ergebnis (2026-09-25-1529, gestartet von adminhelper-ac auf Kevins Wort, aus diesem Worktree nach
+dem Merge von `origin/main`, Commit `62e7ac16`):** Kopfzeile `UNVERIFIED (multibox.sh exited 74
+(infrastructure))`. Wörtlich:
+
+    run.sh[all]: 34 passed, 0 failed, 0 skipped, 19 test-skips, 0 reruns
+    multibox: 0 ok, 1 failed, 0 skipped  (doctor refused the scenario, exit 74)
+
+Die Ebene `all` ist unter `--strict` vollständig grün, darunter `schemathesis`, `scripts (hermetic)`,
+`backup_restore`, `sse_push_e2e` und alle Desktop-E2E. Die warme Box 3000 mit dem root-eigenen `data/`
+wurde wiederverwendet, der Sync ging durch (Beweis für T2). Kein Schritt war rot, T6 wurde also
+nicht live ausgeübt (sein Beweis ist `heavy_test`). Der Capstone scheiterte vor dem ersten Klon an der
+Kapazität (−7086 MiB), nicht am Code. Danach `vm.py list`: 0 eigene Boxen, Box 3000 per `reap.sh`
+abgebaut. Frischer Opus-Review über `origin/main...HEAD`: approve (ein nit: Wegwerf-Repos lesen weiter
+die globale Git-Konfiguration).
