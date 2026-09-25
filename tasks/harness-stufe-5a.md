@@ -74,8 +74,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T8)
 Abhängt von: T2
 
-### T4 — `show`, `next`, `sync`, `stats` (schlank)  [ ]
+### T4 — `show`, `next`, `sync`, `stats` (schlank)  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @ee3ceb4b 2026-09-25T10:00:12+02:00
+Review: approve (sonnet, Runde 2 nach UTC-Fenster)
 Änderung:
 - `show [id]`: eine Zeile oder die Übersicht je Abschnitt.
 - `next [--status freigegeben] [--exclude-components …]`: die nächste Zeile nach Klasse (SEC > REG > REL > BUG > FEAT > REF > IDEE), dann nach Reihenfolge der Zeilen.

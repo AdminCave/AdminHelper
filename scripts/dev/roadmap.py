@@ -13,6 +13,11 @@
     status <id> <status> [--note N]
                                 set the status; the row moves to its section
     approve <id> [--revoke]     geplant -> freigegeben, or back
+    show [<id>] [--wip]         one row, the WIP counters, or the overview
+    next [--status S] [--exclude-components C …]
+                                the next row to build; exit 1 when there is none
+    sync                        rows whose PRs are all merged (gh) -> abgeschlossen
+    stats [--days N]            tasks/day, Kevin-min/PR, wait per state, stale, dedup
 
 The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
@@ -39,13 +44,21 @@ it. The ID is the highest R-nnnn of all rows plus one. A closed row
 (abgeschlossen, abgelehnt) carries the day it closed; more than 30 days later
 the next write moves it from "Abgeschlossen" to the top of "Archiv".
 
+next picks by class (SEC > REG > REL > BUG > FEAT > REF > IDEE), then by the
+order of the rows (Kevin's), and skips a row whose "Hängt ab von" names an
+R-ID that is not abgeschlossen, or that touches an excluded component (the
+`Komponente:` lines of its ledger, the second field of its Dedup-Key). sync
+prints the push of the private repository; it never runs it.
+
 A status follows only from the ones TRANSITIONS names (exit 2 otherwise).
 Setting a row's own status again is always allowed: it files a row left in
 the wrong section into its own, and turns an alias into the real word.
 
 Exit codes: 0 ok · 1 lint findings · 2 usage (no such file, bad arguments) ·
-3 the `neu` cap (20) is reached · 4 an open row already carries the Dedup-Key ·
-5 the file was just changed by hand · 6 the row count came out wrong (restored).
+3 the `neu` cap (20) is reached · 4 an open row already carries the Dedup-Key
+(recorded as an empty commit `roadmap: dedup <key> -> R-nnnn`, for stats) ·
+5 the file was just changed by hand · 6 the row count came out wrong (restored) ·
+74 gh could not list the merged PRs (sync). next: 1 when no row is ready.
 """
 
 from __future__ import annotations
@@ -54,12 +67,14 @@ import argparse
 import datetime as dt
 import fcntl
 import hashlib
+import json
 import os
 import pathlib
 import re
 import subprocess
 import sys
 import time
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -83,6 +98,18 @@ COLUMNS = (
 TABLE_HEAD = "| " + " | ".join(COLUMNS) + " |"
 TABLE_SEP = "|" + "---|" * NCOLS
 CLASSES = ("SEC", "REG", "REL", "BUG", "FEAT", "REF", "IDEE")
+CLASS_RANK = {k: i for i, k in enumerate(CLASSES)}
+# The order `stats` prints the waits in: the chain first, the ways out after.
+STATE_ORDER = (
+    "neu",
+    "geplant",
+    "freigegeben",
+    "aktiv",
+    "bereit",
+    "pr",
+    "zurückgestellt",
+    "blockiert",
+)
 # Ablauf of a new row (roadmap document 3.3.2); every other class never expires.
 EXPIRY_DAYS = {"IDEE": 60, "REF": 90}
 QUIET_SECONDS = 5
@@ -154,6 +181,18 @@ class Refused(Exception):
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class NothingToClose(Exception):
+    """sync: no open row names only merged PRs (any more)."""
+
+
+class Duplicate(Refused):
+    """Exit 4: an open row already carries the Dedup-Key."""
+
+    def __init__(self, key: str, owner: str) -> None:
+        super().__init__(4, f"Dedup-Key {key} is already on open row {owner}")
+        self.key, self.owner = key, owner
 
 
 @dataclass
@@ -335,12 +374,15 @@ class Roadmap:
             raise UsageError(f"{rid} has {len(row.cells)} columns — fix the row by hand first")
         return section, row
 
-    def set_status(self, rid: str, new: str, note: str | None, today: dt.date) -> None:
+    def set_status(
+        self, rid: str, new: str, note: str | None, today: dt.date, check: bool = True
+    ) -> None:
+        """`check=False` is sync's: a merged PR closes a row from any status."""
         section, row = self.find(rid)
         old = row.state
         if old not in TRANSITIONS:
             raise UsageError(f"{rid} has the unknown status '{row.status}' — fix it by hand")
-        if new != old and new not in TRANSITIONS[old]:
+        if check and new != old and new not in TRANSITIONS[old]:
             allowed = ", ".join(sorted(TRANSITIONS[old])) or "nothing"
             raise UsageError(f"{rid}: {old} -> {new} is no transition (from {old}: {allowed})")
         if new != old or note is not None:
@@ -379,9 +421,7 @@ class Roadmap:
 
     def set_header(self, today: dt.date) -> None:
         """`Stand: <today> · WIP: …` computed from the rows, above the first section."""
-        c = self.counts(today)
-        wip = " · ".join(f"{state} {c[state]}/{cap}" for state, cap in WIP_CAPS)
-        line = f"Stand: {today.isoformat()} · WIP: {wip} · ALT: {c['ALT']}"
+        line = f"Stand: {today.isoformat()} · {wip_text(self.counts(today))}"
         i = self.header_index()
         if i is not None:
             self.items[i] = line
@@ -404,6 +444,11 @@ class Roadmap:
             if expiry and expiry < today:
                 counts["ALT"] += 1
         return counts
+
+
+def wip_text(counts: dict[str, int]) -> str:
+    wip = " · ".join(f"{state} {counts[state]}/{cap}" for state, cap in WIP_CAPS)
+    return f"WIP: {wip} · ALT: {counts['ALT']}"
 
 
 @dataclass
@@ -570,20 +615,49 @@ def write(
     return rid
 
 
-def commit(path: pathlib.Path, message: str) -> None:
-    """Commit this one file in the repository it lives in. Locally: pushing
-    the private repo is Kevin's. Never in this public repository."""
+def git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], capture_output=True, text=True)
 
-    def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", *args], capture_output=True, text=True)
 
-    top = git("-C", str(path.parent), "rev-parse", "--show-toplevel")
-    if top.returncode != 0:
+def git_out(repo: pathlib.Path, *args: str) -> str:
+    r = git("-C", str(repo), *args)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def repo_of(path: pathlib.Path) -> pathlib.Path | None:
+    r = git("-C", str(path.parent), "rev-parse", "--show-toplevel")
+    return pathlib.Path(r.stdout.strip()).resolve() if r.returncode == 0 else None
+
+
+def private_repo(path: pathlib.Path) -> pathlib.Path | None:
+    """The repository roadmap.py may commit in: the file's own, locally
+    (pushing the private repo is Kevin's), and never this public one."""
+    repo = repo_of(path)
+    if repo is None:
         print(f"roadmap.py: {path.parent} is no git repository — not committed", file=sys.stderr)
-        return
-    repo = pathlib.Path(top.stdout.strip()).resolve()
-    if repo == ROOT.resolve():
+    elif repo == ROOT.resolve():
         print(f"roadmap.py: {path} is in the public repository — not committed", file=sys.stderr)
+        return None
+    return repo
+
+
+def commit_empty(path: pathlib.Path, message: str) -> None:
+    """A commit on HEAD's own tree, by plumbing: `git commit --allow-empty`
+    would sweep in whatever is staged, and a path limit would take along a
+    hand edit of the file."""
+    repo = private_repo(path)
+    if repo is None:
+        return
+    head = git_out(repo, "rev-parse", "--verify", "HEAD").strip()
+    new = git_out(repo, "commit-tree", f"{head}^{{tree}}", "-p", head, "-m", message).strip()
+    if not (head and new and git("-C", str(repo), "update-ref", "HEAD", new, head).returncode == 0):
+        print(f"roadmap.py: could not record '{message}' in {repo}", file=sys.stderr)
+
+
+def commit(path: pathlib.Path, message: str) -> None:
+    """Commit this one file, alone, in its own repository."""
+    repo = private_repo(path)
+    if repo is None:
         return
     rel = str(path.resolve().relative_to(repo))
     for args in (("add", "--", rel), ("commit", "-q", "-m", message, "--", rel)):
@@ -635,7 +709,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         if args.dedup_key:
             owner = next((r.id for r in rows if r.is_open and r.dedup_key == args.dedup_key), None)
             if owner:
-                raise Refused(4, f"Dedup-Key {args.dedup_key} is already on open row {owner}")
+                raise Duplicate(args.dedup_key, owner)
         rid = roadmap.next_id()
         key = f"Dedup-Key: {args.dedup_key}" if args.dedup_key else ""
         source = " · ".join(v for v in (args.source, args.proof or "", key) if v)
@@ -646,8 +720,248 @@ def cmd_add(args: argparse.Namespace) -> int:
         roadmap.insert_row("Neu", Row(cells))
         return rid
 
-    print(write(roadmap_path(args.file), change, verb="add", delta=1, today=args.today))
+    path = roadmap_path(args.file)
+    try:
+        rid = write(path, change, verb="add", delta=1, today=args.today)
+    except Duplicate as e:
+        # The refusal leaves its trace for `stats` (the dedup quote): an empty
+        # commit, nothing else.
+        commit_empty(path, f"roadmap: dedup {e.key} -> {e.owner}")
+        raise
+    print(rid)
     return 0
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    roadmap = Roadmap.load(roadmap_path(args.file))
+    if args.wip:
+        print(wip_text(roadmap.counts(args.today)))
+        return 0
+    if args.id:
+        section, row = roadmap.find(args.id)
+        print(f"{row.id} · {section}")
+        for name, value in zip(COLUMNS[1:], row.cells[1:], strict=True):
+            print(f"  {name}: {value}")
+        return 0
+    rows = roadmap.rows()
+    for line in next_up(roadmap):
+        print(line)
+    print()
+    print(wip_text(roadmap.counts(args.today)))
+    for name in SECTIONS[1:]:
+        mine = [r for s, r in rows if s == name]
+        print(f"\n{name} ({len(mine)})")
+        if name in ("Abgeschlossen", "Archiv"):
+            continue  # history: the count is the overview
+        for r in mine:
+            title = r.cells[TITEL] if r.well_formed else r.text()
+            title = title if len(title) <= 90 else title[:89] + "…"
+            klasse = r.cells[KLASSE] if r.well_formed else "?"
+            print(f"  {r.id}  {klasse:<4}  {r.cells[STATUS] if r.well_formed else '?'}  {title}")
+    return 0
+
+
+def next_up(roadmap: Roadmap) -> list[str]:
+    """The "Als Nächstes" section as Kevin wrote it, heading included."""
+    try:
+        start, end = roadmap.section_bounds("Als Nächstes")
+    except UsageError:
+        return []
+    lines = [i if isinstance(i, str) else i.text() for i in roadmap.items[start:end]]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
+
+
+def components_of(row: Row) -> set[str]:
+    """What a row touches: the `Komponente:` lines of its ledger and the
+    component field of its Dedup-Key (<klasse>:<komponente>:…)."""
+    found = set()
+    key = row.dedup_key
+    if key and key.count(":") >= 1:
+        found.add(key.split(":")[1])
+    ledger = row.cells[LEDGER]
+    file = (ROOT / ledger).resolve()
+    # Only a ledger of this repository: a stray absolute path reads nothing.
+    if ledger not in ("", "—", "-") and file.is_relative_to(ROOT.resolve()):
+        try:
+            text = file.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        found |= set(re.findall(r"^Komponente:\s*([^\s·]+)", text, re.MULTILINE))
+    return found
+
+
+def cmd_next(args: argparse.Namespace) -> int:
+    rows = [r for _, r in Roadmap.load(roadmap_path(args.file)).rows() if r.well_formed]
+    done = {r.id for r in rows if r.state == "abgeschlossen"}
+    excluded = set(args.exclude_components or ())
+    ready = [
+        (CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)), i, r)
+        for i, r in enumerate(rows)
+        if r.state == args.status
+        and all(dep in done for dep in ROW_ID.findall(r.cells[DEPENDS]))
+        and not components_of(r) & excluded
+    ]
+    if not ready:
+        print(f"next: no {args.status} row is ready", file=sys.stderr)
+        return 1
+    _, _, r = min(ready, key=lambda c: (c[0], c[1]))
+    ledger = f" ({r.cells[LEDGER]})" if r.cells[LEDGER] not in ("", "—", "-") else ""
+    print(f"{r.id} {r.cells[KLASSE]} {r.cells[TITEL]}{ledger}")
+    return 0
+
+
+def merged_prs() -> dict[int, dt.date]:
+    """PR number -> the day it was merged, from gh in this repository."""
+    cmd = ["gh", "pr", "list", "--state", "merged", "--limit", "1000", "--json", "number,mergedAt"]
+    try:
+        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Refused(74, f"gh pr list could not run: {e}") from None
+    if r.returncode != 0:
+        raise Refused(74, f"gh pr list failed: {r.stderr.strip()}")
+    try:
+        return {
+            int(pr["number"]): dt.date.fromisoformat(pr["mergedAt"][:10])
+            for pr in json.loads(r.stdout)
+        }
+    except (ValueError, KeyError, TypeError) as e:
+        raise Refused(74, f"gh pr list answered something else: {e}") from None
+
+
+def to_close(roadmap: Roadmap, merged: dict[int, dt.date]) -> list[tuple[str, list[int]]]:
+    """Open rows whose PR column names PRs that are all merged."""
+    out = []
+    for _, r in roadmap.rows():
+        nums = [int(n) for n in re.findall(r"#(\d+)", r.cells[PR])] if r.well_formed else []
+        if r.is_open and nums and all(n in merged for n in nums):
+            out.append((r.id, nums))
+    return out
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    path = roadmap_path(args.file)
+    merged = merged_prs()
+
+    def change(roadmap: Roadmap) -> str:
+        # Again under the lock: another sync may have closed them meanwhile.
+        closed = to_close(roadmap, merged)
+        if not closed:
+            raise NothingToClose
+        for rid, nums in closed:
+            note = ", ".join(f"PR #{n}" for n in nums)
+            day = max(merged[n] for n in nums)
+            roadmap.set_status(rid, "abgeschlossen", note, day, check=False)
+        return " ".join(rid for rid, _ in closed)
+
+    try:
+        # Checked without the lock first: nothing to do must not wait for it,
+        # nor be refused by the 5 s rule.
+        if not to_close(Roadmap.load(path), merged):
+            raise NothingToClose
+        print(f"sync: closed {write(path, change, verb='sync', delta=0, today=args.today)}")
+    except NothingToClose:
+        print("sync: no open row with a merged PR")
+    repo = repo_of(path)
+    if repo and repo != ROOT.resolve():
+        print(f"sync: not pushed — push it yourself: git -C {repo} push")
+    return 0
+
+
+def window(since: dt.date, until: dt.date) -> tuple[str, str]:
+    """git log bounds for whole UTC days. Without an offset git reads them in
+    the local zone of whoever runs it, and the same question would count a
+    commit near midnight on one machine and not on the next."""
+    return (
+        f"--since={since.isoformat()}T00:00:00+00:00",
+        f"--until={until.isoformat()}T23:59:59+00:00",
+    )
+
+
+def tasks_closed(since: dt.date, until: dt.date) -> int:
+    """Ledger tasks ticked [x] in this repository's history, net of un-ticks."""
+    log = git_out(
+        ROOT, "log", "-p", *window(since, until), "--format=", "--", "tasks/*.md",
+    )  # fmt: skip
+    added = len(re.findall(r"^\+###\s.*\[x\]", log, re.MULTILINE))
+    removed = len(re.findall(r"^-###\s.*\[x\]", log, re.MULTILINE))
+    return added - removed
+
+
+def waits(path: pathlib.Path) -> dict[str, list[float]]:
+    """Days each row spent in a state it has left, from the file's own history."""
+    repo = repo_of(path)
+    if repo is None:
+        return {}
+    rel = str(path.resolve().relative_to(repo))
+    since: dict[str, tuple[str, dt.datetime]] = {}
+    out: dict[str, list[float]] = defaultdict(list)
+    for line in git_out(repo, "log", "--reverse", "--format=%H %cI", "--", rel).splitlines():
+        sha, when = line.split()
+        t = dt.datetime.fromisoformat(when)
+        for _, r in Roadmap(git_out(repo, "show", f"{sha}:{rel}")).rows():
+            if not r.well_formed:
+                continue
+            prev = since.get(r.id)
+            if prev is None:
+                since[r.id] = (r.state, t)
+            elif prev[0] != r.state:
+                out[prev[0]].append((t - prev[1]).total_seconds() / 86400)
+                since[r.id] = (r.state, t)
+    return out
+
+
+def cmd_stats(args: argparse.Namespace) -> int:
+    path = roadmap_path(args.file)
+    roadmap = Roadmap.load(path)
+    rows = [r for _, r in roadmap.rows() if r.well_formed]
+    since = args.today - dt.timedelta(days=args.days - 1)
+    n = tasks_closed(since, args.today)
+    print(f"tasks/day: {n / args.days:.1f} ({n} closed in the last {args.days} days)")
+    mins = [
+        int(m.group(0))
+        for r in rows
+        if "#" in r.cells[PR] and (m := re.match(r"\d+", r.cells[KEVIN_MIN]))
+    ]
+    if mins:
+        print(f"kevin-min/PR: {sum(mins) / len(mins):.0f} ({len(mins)} PRs)")
+    else:
+        print("kevin-min/PR: — (no row with a PR carries minutes)")
+    spent = waits(path)
+    for state in [s for s in STATE_ORDER if s in spent]:
+        days = spent[state]
+        print(f"wait {state}: {sum(days) / len(days):.1f} d ({len(days)} rows)")
+    if not spent:
+        print("wait: — (no history of state changes)")
+    alt, open_rows = roadmap.counts(args.today)["ALT"], sum(r.is_open for r in rows)
+    print(f"stale: {alt}/{open_rows} open rows past their Ablauf ({percent(alt, open_rows)})")
+    adds, dups = adds_and_dedups(path, since, args.today)
+    if adds + dups:
+        print(
+            f"dedup: {dups}/{adds + dups} adds refused as duplicates ({percent(dups, adds + dups)})"
+        )
+    else:
+        print(f"dedup: — (no add in the last {args.days} days)")
+    return 0
+
+
+def percent(part: int, whole: int) -> str:
+    return f"{100 * part / whole:.0f}%" if whole else "—"
+
+
+def adds_and_dedups(path: pathlib.Path, since: dt.date, until: dt.date) -> tuple[int, int]:
+    """`roadmap: add` and `roadmap: dedup` commits of the file's repository."""
+    repo = repo_of(path)
+    if repo is None:
+        return 0, 0
+    subjects = git_out(
+        repo, "log", *window(since, until), "--format=%s",
+    ).splitlines()  # fmt: skip
+    return (
+        sum(s.startswith("roadmap: add ") for s in subjects),
+        sum(s.startswith("roadmap: dedup ") for s in subjects),
+    )
 
 
 def cmd_lint(args: argparse.Namespace) -> int:
@@ -699,6 +1013,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("id")
     ap.add_argument("--revoke", action="store_true", help="freigegeben -> geplant")
     ap.set_defaults(func=cmd_approve)
+    sh = sub.add_parser("show", help="one row, the WIP counters, or the overview")
+    sh.add_argument("id", nargs="?")
+    sh.add_argument("--wip", action="store_true", help="only the WIP counters, from the rows")
+    sh.set_defaults(func=cmd_show)
+    nx = sub.add_parser("next", help="the next row to build")
+    nx.add_argument("--status", default="freigegeben", choices=sorted(SECTION_OF))
+    nx.add_argument("--exclude-components", nargs="+", metavar="C", help="skip rows touching these")
+    nx.set_defaults(func=cmd_next)
+    sub.add_parser("sync", help="close rows whose PRs are merged").set_defaults(func=cmd_sync)
+    sa = sub.add_parser("stats", help="tasks/day, Kevin-min/PR, wait per state, stale, dedup")
+    sa.add_argument("--days", type=int, default=30, help="the window for tasks/day (default 30)")
+    sa.set_defaults(func=cmd_stats)
     args = p.parse_args(argv)
     try:
         return args.func(args)

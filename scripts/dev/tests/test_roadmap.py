@@ -890,3 +890,362 @@ def test_a_row_status_cannot_safely_touch_is_exit_2(
     assert status(p, rid, "zurückgestellt") == 2
     assert says in capsys.readouterr().err
     assert p.read_text(encoding="utf-8") == text
+
+
+# ── show, next, sync, stats ──────────────────────────────────────────────────
+
+
+def run(p: pathlib.Path, *args: str, today: str = "2026-09-25") -> int:
+    return roadmap.main(["--file", str(p), "--today", today, *args])
+
+
+def test_show_is_read_only(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    p = write(tmp_path, CLEAN)  # just written: a writer would refuse it, show must not care
+    for args in ([], ["R-0004"], ["--wip"]):
+        assert run(p, "show", *args) == 0
+    assert p.read_text(encoding="utf-8") == CLEAN
+    assert sorted(f.name for f in tmp_path.iterdir()) == ["ROADMAP.md"]
+
+
+def test_show_wip_counts_the_rows_not_the_header(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = write(tmp_path, CLEAN.replace("neu 2/20", "neu 7/20"))
+    assert run(p, "show", "--wip") == 0
+    assert capsys.readouterr().out == "WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0\n"
+
+
+def test_show_one_row(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(write(tmp_path, CLEAN), "show", "R-0006") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "R-0006 · Neu"
+    assert "  Quelle / Beweis: weekly 2026-09-19 · Dedup-Key: ref:web:src/a.ts:helper" in out
+    assert "  Ablauf: 2026-12-18" in out
+
+
+def test_show_the_overview(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    long = "Ein Titel, der so lang ist, dass ihn die Übersicht kürzen muss, damit eine Zeile eine Zeile bleibt"
+    p = write(tmp_path, CLEAN.replace("| Etwas Großes |", f"| {long} |"))
+    assert run(p, "show") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:3] == [
+        "## Als Nächstes",
+        "1. R-0003 erst das, dann das",
+        "2. Kevin, Handarbeit: irgendwas",
+    ]
+    assert "WIP: aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 2/20 · ALT: 0" in out
+    assert "  R-0004  FEAT  aktiv (T2/5)  " + long[:89] + "…" in out
+    assert "  R-0005  BUG   neu  Ein Fehler" in out
+    # History is counted, not listed.
+    i = out.index("Abgeschlossen (2)")
+    assert out[i + 1 : i + 3] == ["", "Archiv (1)"]
+
+
+def next_fixture(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, extra: list[str]
+) -> pathlib.Path:
+    monkeypatch.setattr(roadmap, "ROOT", tmp_path)
+    (tmp_path / "tasks").mkdir()
+    (tmp_path / "tasks" / "bug.md").write_text(
+        "# Bug — Task-Ledger\n\n### T1 — x  [ ]\nKomponente: server · Dateien: a.py\n",
+        encoding="utf-8",
+    )
+    s = clean_sections()
+    s["Geplant (Stufen in Reihenfolge)"] += extra
+    return write(tmp_path, doc(s))
+
+
+FREIGEGEBEN = [
+    row("R-0021", "freigegeben", "FEAT", "Ein Feature"),
+    "| R-0022 | BUG | Erster Bug | freigegeben | hunt 2026-09-20 | tasks/bug.md | — | — | nie | — |",
+    row(
+        "R-0023",
+        "freigegeben",
+        "BUG",
+        "Zweiter Bug",
+        "weekly 2026-09-21 · Dedup-Key: bug:web:src/x.ts:f",
+    ),
+    "| R-0024 | SEC | Wartet auf Stufe X | freigegeben | kevin 2026-09-22 | — | R-0003 | — | nie | — |",
+]
+
+
+def test_next_takes_the_class_then_the_order_and_waits_for_dependencies(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = next_fixture(tmp_path, monkeypatch, FREIGEGEBEN)
+    # R-0024 is SEC, but it depends on R-0003 (geplant); R-0021 is only a FEAT.
+    assert run(p, "next") == 0
+    assert capsys.readouterr().out == "R-0022 BUG Erster Bug (tasks/bug.md)\n"
+
+
+def test_next_takes_a_row_whose_dependency_is_done(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = next_fixture(
+        tmp_path, monkeypatch, [f.replace("| R-0003 |", "| R-0002 |") for f in FREIGEGEBEN]
+    )
+    assert run(p, "next") == 0
+    assert capsys.readouterr().out.startswith("R-0024 SEC")
+
+
+def test_next_skips_excluded_components(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = next_fixture(tmp_path, monkeypatch, FREIGEGEBEN)
+    # server: from the ledger of R-0022; web: from the Dedup-Key of R-0023. Of
+    # the FEATs left, R-0007 stands first.
+    assert run(p, "next", "--exclude-components", "server", "web") == 0
+    assert capsys.readouterr().out == "R-0007 FEAT Etwas\n"
+
+
+def test_next_by_another_status(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(write(tmp_path, CLEAN), "next", "--status", "geplant") == 0
+    assert capsys.readouterr().out.startswith("R-0003 FEAT")
+
+
+def test_next_with_nothing_ready_is_exit_1(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(write(tmp_path, CLEAN.replace("| freigegeben |", "| geplant |")), "next") == 1
+    assert "no freigegeben row is ready" in capsys.readouterr().err
+
+
+def fake_gh(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, body: str, rc: int = 0
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(f"#!/bin/sh\ncat <<'JSON'\n{body}\nJSON\nexit {rc}\n", encoding="utf-8")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+MERGED = '[{"number": 7, "mergedAt": "2026-09-24T10:00:00Z"}, {"number": 3, "mergedAt": "2026-09-15T08:00:00Z"}]'
+
+
+def sync_fixture(tmp_path: pathlib.Path) -> pathlib.Path:
+    repo = fixture_repo(tmp_path)
+    s = clean_sections()
+    s["In Arbeit"] = [
+        "| R-0004 | FEAT | Etwas Großes | pr | kevin 2026-09-01 | — | — | #7 | — | 15 |",
+        "| R-0010 | BUG | Zwei PRs | pr | kevin 2026-09-02 | — | — | #7, #9 | — | — |",
+    ]
+    write(repo, doc(s))
+    git(repo, "commit", "-qam", "two prs")
+    return aged(repo / "ROADMAP.md")
+
+
+def test_sync_closes_the_rows_whose_prs_are_all_merged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(tmp_path, monkeypatch, MERGED)
+    p = sync_fixture(tmp_path)
+    assert run(p, "sync") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "sync: closed R-0004",
+        f"sync: not pushed — push it yourself: git -C {p.parent.resolve()} push",
+    ]
+    section, r = placed(p, "R-0004")
+    assert (section, r.cells[roadmap.STATUS]) == (
+        "Abgeschlossen",
+        "abgeschlossen 2026-09-24 (PR #7)",
+    )
+    assert placed(p, "R-0010")[1].status == "pr"  # PR #9 is not merged
+    assert (
+        placed(p, "R-0002")[1].cells[roadmap.STATUS]
+        == "abgeschlossen 2026-09-15 (PR #3, Merge abc1234)"
+    )
+    assert git(p.parent, "log", "-1", "--format=%s").strip() == "roadmap: sync R-0004"
+    assert findings(p.read_text(encoding="utf-8")) == []
+
+
+def test_sync_with_nothing_to_close_writes_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(tmp_path, monkeypatch, '[{"number": 3, "mergedAt": "2026-09-15T08:00:00Z"}]')
+    p = aged(write(tmp_path, CLEAN))
+    assert run(p, "sync") == 0
+    assert capsys.readouterr().out.startswith("sync: no open row with a merged PR")
+    assert p.read_text(encoding="utf-8") == CLEAN
+    assert not (tmp_path / "ROADMAP.md.bak").exists()
+
+
+def test_sync_without_an_answer_from_gh_is_exit_74(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(tmp_path, monkeypatch, "not logged in", rc=1)
+    p = aged(write(tmp_path, CLEAN))
+    assert run(p, "sync") == 74
+    assert "gh pr list failed" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+def dated_commit(repo: pathlib.Path, when: str, message: str) -> None:
+    env = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", message], check=True, env=env)
+
+
+def ledger_text(t1: str, t2: str) -> str:
+    return f"# X — Task-Ledger\n\n### T1 — eins  [{t1}]\nKomponente: server\n\n### T2 — zwei  [{t2}]\nKomponente: server\n"
+
+
+def test_stats_on_a_repository_of_three_commits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = fixture_repo(tmp_path)
+    monkeypatch.setattr(roadmap, "ROOT", repo)  # the ledgers live here too
+    (repo / "tasks").mkdir()
+    s = clean_sections()
+
+    def state(r10: str, r11: str) -> None:
+        s["Neu (untriagiert)"] = [row("R-0010", r10, "BUG", "Zehn")] if r10 == "neu" else []
+        s["Geplant (Stufen in Reihenfolge)"] = (
+            [row("R-0010", r10, "BUG", "Zehn")] if r10 != "neu" else []
+        )
+        s["In Arbeit"] = [row("R-0011", r11, "FEAT", "Elf")] if r11 == "aktiv" else []
+        s["Geplant (Stufen in Reihenfolge)"] += (
+            [row("R-0011", r11, "FEAT", "Elf")] if r11 != "aktiv" else []
+        )
+        s["Abgeschlossen (letzte 30 Tage)"] = [
+            "| R-0002 | BUG | Etwas | abgeschlossen 2026-09-15 | kevin | — | — | #3 | — | 12 |",
+            "| R-0008 | FEAT | Etwas | abgeschlossen 2026-09-14 | kevin | — | — | #5 | — | 20 |",
+            "| R-0012 | REF | Ohne PR | abgeschlossen 2026-09-14 | kevin | — | — | — | — | 99 |",
+        ]
+        s["Zurückgestellt"] = [row("R-0009", "zurückgestellt", "IDEE", "Alt", ablauf="2026-09-01")]
+        write(repo, doc(s))
+
+    state("neu", "geplant")
+    (repo / "tasks" / "x.md").write_text(ledger_text(" ", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-20T10:00:00+02:00", "one")
+    state("geplant", "geplant")
+    (repo / "tasks" / "x.md").write_text(ledger_text("x", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-22T10:00:00+02:00", "two")
+    state("freigegeben", "aktiv")
+    (repo / "tasks" / "x.md").write_text(ledger_text("x", "x"), encoding="utf-8")
+    dated_commit(repo, "2026-09-23T10:00:00+02:00", "three")
+
+    assert run(repo / "ROADMAP.md", "stats", "--days", "10") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "tasks/day: 0.2 (2 closed in the last 10 days)",
+        "kevin-min/PR: 16 (2 PRs)",
+        "wait neu: 2.0 d (1 rows)",
+        "wait geplant: 2.0 d (2 rows)",
+        "stale: 1/3 open rows past their Ablauf (33%)",
+        "dedup: — (no add in the last 10 days)",
+    ]
+
+
+def test_a_refused_duplicate_leaves_one_empty_commit_and_counts(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = fixture_repo(tmp_path)
+    p = repo / "ROADMAP.md"
+    today = dt.date.today().isoformat()
+    assert run(aged(p), "add", *ADD, today=today) == 0
+    # A hand edit of the file and a staged edit elsewhere: neither may ride along.
+    p.write_text(p.read_text(encoding="utf-8") + "Notiz von Hand\n", encoding="utf-8")
+    aged(p)
+    (repo / "other.md").write_text("gestagt\n", encoding="utf-8")
+    git(repo, "add", "other.md")
+    before = git(repo, "rev-list", "--count", "HEAD")
+    assert run(p, "add", *ADD, "--dedup-key", "ref:web:src/a.ts:helper", today=today) == 4
+    assert int(git(repo, "rev-list", "--count", "HEAD")) == int(before) + 1
+    assert (
+        git(repo, "log", "-1", "--format=%s").strip()
+        == "roadmap: dedup ref:web:src/a.ts:helper -> R-0006"
+    )
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").strip() == ""
+    assert sorted(git(repo, "status", "--porcelain", "--untracked-files=no").splitlines()) == [
+        " M ROADMAP.md",
+        "M  other.md",
+    ]
+    capsys.readouterr()
+    assert run(p, "stats", today=today) == 0
+    assert "dedup: 1/2 adds refused as duplicates (50%)" in capsys.readouterr().out.splitlines()
+
+
+def test_a_renamed_done_task_is_not_closed_twice(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = fixture_repo(tmp_path)
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    (repo / "tasks").mkdir()
+    ledger = repo / "tasks" / "x.md"
+    ledger.write_text(ledger_text(" ", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-20T10:00:00+02:00", "one")
+    ledger.write_text(ledger_text("x", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-21T10:00:00+02:00", "two")
+    # A later edit of a ticked heading shows in `git log -p` as - and + of an [x].
+    ledger.write_text(
+        ledger_text("x", " ").replace("T1 — eins", "T1 — eins, genauer"), encoding="utf-8"
+    )
+    dated_commit(repo, "2026-09-22T10:00:00+02:00", "three")
+    assert run(repo / "ROADMAP.md", "stats", "--days", "10") == 0
+    assert (
+        capsys.readouterr().out.splitlines()[0] == "tasks/day: 0.1 (1 closed in the last 10 days)"
+    )
+
+
+@pytest.mark.parametrize("tz", ["UTC", "Asia/Tokyo", "America/Los_Angeles"])
+def test_the_stats_window_is_the_same_in_every_time_zone(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tz: str,
+) -> None:
+    monkeypatch.setenv("TZ", tz)
+    repo = fixture_repo(tmp_path)
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    (repo / "tasks").mkdir()
+    ledger = repo / "tasks" / "x.md"
+    ledger.write_text(ledger_text(" ", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-10T10:00:00+00:00", "one")
+    ledger.write_text(ledger_text("x", " "), encoding="utf-8")
+    dated_commit(repo, "2026-09-16T01:00:00+02:00", "two")  # 2026-09-15 23:00 UTC: outside
+    ledger.write_text(ledger_text("x", "x"), encoding="utf-8")
+    dated_commit(repo, "2026-09-16T03:00:00+02:00", "three")  # 2026-09-16 01:00 UTC: inside
+    assert run(repo / "ROADMAP.md", "stats", "--days", "10") == 0
+    assert (
+        capsys.readouterr().out.splitlines()[0] == "tasks/day: 0.1 (1 closed in the last 10 days)"
+    )
+
+
+def test_a_sync_that_finds_the_work_done_under_the_lock_writes_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_gh(tmp_path, monkeypatch, MERGED)
+    p = sync_fixture(tmp_path)
+    real, calls = roadmap.to_close, []
+
+    def closed_meanwhile(
+        rm: roadmap.Roadmap, merged: dict[int, dt.date]
+    ) -> list[tuple[str, list[int]]]:
+        calls.append(1)  # the check without the lock still sees R-0004 open
+        return real(rm, merged) if len(calls) == 1 else []
+
+    monkeypatch.setattr(roadmap, "to_close", closed_meanwhile)
+    head = git(p.parent, "rev-parse", "HEAD")
+    assert run(p, "sync") == 0
+    assert capsys.readouterr().out.startswith("sync: no open row with a merged PR")
+    assert len(calls) == 2
+    assert git(p.parent, "rev-parse", "HEAD") == head
+    assert not (p.parent / "ROADMAP.md.bak").exists()
+
+
+def test_next_reads_no_ledger_outside_the_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outside = tmp_path / "outside.md"
+    outside.write_text("Komponente: server\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    root.mkdir()
+    monkeypatch.setattr(roadmap, "ROOT", root)
+    s = clean_sections()
+    s["Geplant (Stufen in Reihenfolge)"] = [
+        f"| R-0022 | BUG | Draußen | freigegeben | hunt 2026-09-20 | {outside} | — | — | nie | — |"
+    ]
+    assert run(write(root, doc(s)), "next", "--exclude-components", "server") == 0
+    assert capsys.readouterr().out.startswith("R-0022 BUG")
