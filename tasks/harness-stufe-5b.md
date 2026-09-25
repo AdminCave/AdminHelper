@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5b — Planen und Beweis — Task-Ledger
-Status: aktiv · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: bereit · Branch: harness/stufe-5b · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5b)
 Fast-Suite: lokal · Warm-Profil: desktop
 Heavy: nein — Skill-Texte, `ledger.sh`, Doku.
@@ -290,3 +290,9 @@ und kein Fund bricht den nächsten Lauf sofort. Ein `wichtig` im Diff von T13, d
 wurde T15. Die SEC-Sperre für `--kurz` kam als Ausnahme von der Abbruchregel dazu, weil der Schaden nicht umkehrbar wäre,
 ebenso der fehlende CHANGELOG-Eintrag. Der private SEC-Weg für `--kurz` ist eine Roadmap-Zeile der Aufsicht (FEAT,
 Stufe 9); die nits stehen im PR-Text als „bekannt, nicht behoben“. Eine Runde 4 gibt es nicht.
+
+**Unabhängige Verifikation der Aufsicht (2026-09-25, auf 5e75985e: eigener Worktree, CI-ruff, eigener Opus-Review):** Das
+Gate war grün, der Review fand zwei `wichtig`. W1: `erledigt` kam nie in den PR. W2: Der REG-Weg brach an `neu → aktiv`.
+Beides wurde T16, zusammen mit `review.sh sec --staged` am Gate und dem Eintrag in `harness-paths.txt`. Der erste
+task-close-Lauf von T16 fiel an `heavy_test` 4i-d. Der Test ist flaky, liegt außerhalb von 5b und ist als R-0103 gemeldet;
+T16 wurde mit dem zweiten, grünen Lauf geschlossen.
