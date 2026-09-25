@@ -96,8 +96,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: AUTONOMOUS.md
 Abhängt von: T3
 
-### T6 — Konsistenz-Test der Skill-Texte und Beweis-Konvention in der Entwickler-Doku  [ ]
+### T6 — Konsistenz-Test der Skill-Texte und Beweis-Konvention in der Entwickler-Doku  [x]
 Komponente: scripts · Dateien: scripts/tests/skill_consistency_test.sh (neu, SPDX), scripts/tests/run.sh (nur Registrierung), docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @8856cc2c 2026-09-25T14:57:15+02:00
+Review: approve (sonnet, Runde 2)
 Änderung:
 - Ein hermetischer Test prüft die Skill- und Doku-Texte auf die Widersprüche, die hier behoben werden. Er schlägt fehl, wenn:
   - ein Skill oder `AUTONOMOUS.md` „Spec + Ledger auf `main`“ verlangt;

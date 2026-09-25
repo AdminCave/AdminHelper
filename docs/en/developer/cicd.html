@@ -181,6 +181,33 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           pytest</code> cannot be allowlisted. The script resolves what the environment needs; the caller
           writes flags only.</p>
 
+          <h2>Proof convention (ledgers)</h2>
+          <p>A task that acts on a <em>finding</em> (from Kevin, from the weekly run, later from the finder
+          fleet) carries the proof that the finding exists in its own lines. Each class of finding has its rule:
+          <strong>A</strong> (defects: SEC, REG, BUG) is a test that is red three times in the same way on
+          <code>HEAD</code>; <strong>B</strong> (simplification, refactor, performance, duplicate) shows at the fix a
+          suite green before and after, a strictly better metric, coverage not lower and a mutation sample;
+          <strong>C</strong> (dead code) is an analyzer hit plus a repo-wide word <code>grep</code> that stays empty;
+          <strong>D</strong> (parity, contract, dependencies) is a parity test that a single mutation turns red, or
+          the advisory of a red <code>audit.yml</code> run. The details are in <code>tasks/README.md</code>.</p>
+          <table>
+            <thead><tr><th>Line</th><th>Content</th><th>Checked by</th></tr></thead>
+            <tbody>
+              <tr><td><code>Beweis:</code></td><td>branch + SHA + command + expected output</td><td>reviewer</td></tr>
+              <tr><td><code>Orakel:</code></td><td><code>crash</code>, <code>contract</code>, <code>property</code>, <code>differential</code>, <code>mutation-sample</code>, <code>coverage</code>, <code>analyzer</code> or <code>metric</code></td><td><code>ledger.sh lint</code>: a value from the list</td></tr>
+              <tr><td><code>Refuter:</code></td><td>who tried to refute the finding, with what result</td><td>reviewer</td></tr>
+              <tr><td><code>Dedup-Key:</code></td><td><code>&lt;class&gt;:&lt;component&gt;:&lt;file&gt;:&lt;symbol&gt;</code>, the same key as in the roadmap</td><td><code>ledger.sh lint</code>: exactly three <code>:</code>; <code>review.sh sec</code> blocks <code>sec:</code> keys in the public repository</td></tr>
+              <tr><td><code>Metrik:</code></td><td>class B: before &rarr; after with tool and version; class C: deleted lines</td><td>reviewer</td></tr>
+              <tr><td><code>Kosten:</code></td><td>what the proof cost</td><td>&ndash;</td></tr>
+              <tr><td><code>HEAD:</code></td><td>the commit the proof held on</td><td><code>ledger.sh lint</code>: a SHA</td></tr>
+              <tr><td><code>Semantik:</code></td><td>the place under <code>docs/</code> that describes the intended behaviour, quoted; required by <code>/feature-plan --kurz</code></td><td>reviewer</td></tr>
+            </tbody>
+          </table>
+          <p><code>ledger.sh lint</code> checks the form; <code>ledger_test.sh</code> runs it across all real
+          ledgers, in the <code>scripts</code> suite and in the CI job <code>ops-scripts</code>. The reviewer checks
+          the content. <code>scripts/tests/skill_consistency_test.sh</code> keeps the skill and harness texts in line
+          with this convention and with the status sequence.</p>
+
           <h2>Parity and contract gates</h2>
           <p>Two classes of defect need no VM to be found: &ldquo;the copy drifts&rdquo; (the same truth lives in
           two places, one of them changes) and &ldquo;the contract breaks silently&rdquo; (a field, a header, a
