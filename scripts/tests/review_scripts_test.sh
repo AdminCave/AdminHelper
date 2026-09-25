@@ -328,8 +328,376 @@ stage CHANGELOG.md
 r sec --staged
 [ $rc -eq 0 ] && ok "an ordinary change is not blocked" || bad "false block: rc=$rc out=$OUT"
 
+# ══ diff-scan: a declared test deletion ═══════════════════════════════════════
+echo "── diff-scan --task: a whole test may go when the task says so ──"
+cat > "$FIX/tasks/del.md" <<'MD'
+# Deletions — Task-Ledger
+Status: aktiv · Branch: feature/fixture
+
+### T1 — the dead test is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_del.py
+Test-Löschung: apps/server/tests/test_del.py::test_dead — sein Code hat keinen Nutzer mehr
+
+### T2 — nothing is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_del.py
+
+### T3 — the other test is declared  [ ]
+Komponente: server · Dateien: apps/server/tests/test_del.py
+Test-Löschung: apps/server/tests/test_del.py::test_alive — angekündigt, aber nicht der gelöschte
+
+### T4 — go, vitest and rust  [ ]
+Komponente: scripts · Dateien: scripts/dev/tool.sh
+Test-Löschung: apps/agent/x_test.go::TestDead — tot; apps/web/src/x.test.ts::adds up — tot; apps/desktop/src-tauri/tests/x.rs::dead — tot; apps/desktop/src-tauri/tests/x.rs::helper — kein Test
+
+### T5 — declared without a reason  [ ]
+Komponente: server · Dateien: apps/server/tests/test_del.py
+Test-Löschung: apps/server/tests/test_del.py::test_dead
+
+### T6 — a name that two describe blocks share  [ ]
+Komponente: web · Dateien: apps/web/src/parse.test.ts
+Test-Löschung: apps/web/src/parse.test.ts::rejects empty input — the legacy parser is gone
+MD
+git -C "$FIX" add -A && git -C "$FIX" commit -qm "deletion ledger"
+
+# base <path> <content> — commit a file as the starting point of a case; then the
+# case writes the file again without the test and stages it.
+base() {
+  reset_index; mkdir -p "$FIX/$(dirname "$1")"; printf '%s' "$2" > "$FIX/$1"
+  git -C "$FIX" add -A
+  git -C "$FIX" diff --cached --quiet || git -C "$FIX" commit -qm "base $1"
+}
+PY='def test_alive():
+    assert 1 == 1
+
+
+def test_dead():
+    assert helper() == 2
+'
+PY_WITHOUT_DEAD='def test_alive():
+    assert 1 == 1
+'
+PY_ALIVE_EMPTIED='def test_alive():
+    pass
+
+
+def test_dead():
+    assert helper() == 2
+'
+drop_dead() { base apps/server/tests/test_del.py "$PY"; printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py; }
+
+drop_dead; r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "clean (1 declared test deletion(s): apps/server/tests/test_del.py::test_dead)" <<<"$OUT" \
+  && ok "a whole test, declared: clean, and the run names it" || bad "declared: rc=$rc out=$OUT"
+drop_dead; r diff-scan --staged --task tasks/del.md T2
+[ $rc -eq 3 ] && grep -q "removed assertion" <<<"$OUT" && ok "a whole test, not declared: a finding" \
+  || bad "undeclared: rc=$rc out=$OUT"
+drop_dead; r diff-scan --staged --task tasks/del.md T3
+[ $rc -eq 3 ] && ok "another test of the same file declared: a finding" || bad "other test: rc=$rc out=$OUT"
+drop_dead; r diff-scan --staged
+[ $rc -eq 3 ] && ok "without --task a deleted test is a finding, as before" || bad "no --task: rc=$rc out=$OUT"
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_ALIVE_EMPTIED" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T3
+[ $rc -eq 3 ] && grep -q "assert 1 == 1" <<<"$OUT" \
+  && ok "an assertion out of a test that stays: a finding, declared or not" || bad "emptied test: rc=$rc out=$OUT"
+# The declared test goes whole, and in another block of the same diff an
+# assertion leaves the test that stays: the head of the first block must not
+# cover the second.
+base apps/server/tests/test_del.py 'def test_dead():
+    assert helper() == 2
+
+
+def test_alive():
+    x = 1
+    assert x == 1
+'
+printf 'def test_alive():\n    x = 1\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ "$(git -C "$FIX" diff --staged -U0 | grep -c '^@@')" = 2 ] || bad "fixture: expected two hunks"
+[ $rc -eq 3 ] && grep -q "assert x == 1" <<<"$OUT" && ! grep -q "assert helper" <<<"$OUT" \
+  && ok "a declared deletion covers its own block, not the next one" || bad "two blocks: rc=$rc out=$OUT"
+
+GO='package x
+
+import "testing"
+
+func TestAlive(t *testing.T) {
+	assert.Equal(t, 1, 1)
+}
+
+func TestDead(t *testing.T) {
+	assert.Equal(t, 2, 2)
+}
+'
+base apps/agent/x_test.go "$GO"
+printf 'package x\n\nimport "testing"\n\nfunc TestAlive(t *testing.T) {\n\tassert.Equal(t, 1, 1)\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/agent/x_test.go::TestDead" <<<"$OUT" && ok "Go: func Test… is a test head" \
+  || bad "go: rc=$rc out=$OUT"
+
+TS='import { expect, it } from "vitest";
+
+it("stays", () => {
+  expect(1).toBe(1);
+});
+
+it("adds up", () => {
+  expect(1 + 1).toBe(2);
+});
+'
+base apps/web/src/x.test.ts "$TS"
+printf 'import { expect, it } from "vitest";\n\nit("stays", () => {\n  expect(1).toBe(1);\n});\n' > "$FIX/apps/web/src/x.test.ts"
+stage apps/web/src/x.test.ts
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/web/src/x.test.ts::adds up" <<<"$OUT" && ok "vitest: it(\"…\") is a test head" \
+  || bad "vitest: rc=$rc out=$OUT"
+
+RS='#[test]
+fn alive() {
+    assert_eq!(1, 1);
+}
+
+#[test]
+fn dead() {
+    assert!(2 == 2);
+}
+
+fn helper() {
+    assert!(true);
+}
+'
+base apps/desktop/src-tauri/tests/x.rs "$RS"
+printf '#[test]\nfn alive() {\n    assert_eq!(1, 1);\n}\n\nfn helper() {\n    assert!(true);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/desktop/src-tauri/tests/x.rs::dead" <<<"$OUT" \
+  && ok "Rust: a fn behind a deleted #[test] is a test head" || bad "rust: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs "$RS"
+printf '#[test]\nfn alive() {\n    assert_eq!(1, 1);\n}\n\n#[test]\nfn dead() {\n    assert!(2 == 2);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 3 ] && grep -q "assert!(true)" <<<"$OUT" \
+  && ok "Rust: a plain fn is no test, declared or not — its assertion is a finding" || bad "rust helper: rc=$rc out=$OUT"
+
+# A declared head covers its own test only: a deleted line no deeper than the
+# head ends it, and a head the diff adds again means the test stays.
+PY_HELPER="$PY
+
+def check_helper():
+    assert helper() is not None
+"
+base apps/server/tests/test_del.py "$PY_HELPER"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert helper() is not None" <<<"$OUT" && ! grep -q "assert helper() == 2" <<<"$OUT" \
+  && ok "a function deleted after the declared test ends it: its assertion is a finding" \
+  || bad "helper after test: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs "$RS"
+printf '#[test]\nfn alive() {\n    assert_eq!(1, 1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 3 ] && grep -q "assert!(true)" <<<"$OUT" && ! grep -q "assert!(2 == 2)" <<<"$OUT" \
+  && ok "Rust: the plain fn deleted after the declared test is no part of it" || bad "rust after test: rc=$rc out=$OUT"
+PY_MULTILINE='def test_alive():
+    assert 1 == 1
+
+
+def test_dead(
+    monkeypatch,
+):
+    assert helper() == 2
+'
+base apps/server/tests/test_del.py "$PY_MULTILINE"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "clean (1 declared test deletion(s): apps/server/tests/test_del.py::test_dead)" <<<"$OUT" \
+  && ok "the ) closing a multi-line signature does not end the test" || bad "multi-line signature: rc=$rc out=$OUT"
+PY_DEAD_REWRITTEN='def test_alive():
+    assert 1 == 1
+
+
+def test_dead(monkeypatch):
+    pass
+'
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_DEAD_REWRITTEN" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert helper() == 2.*adds its head again" <<<"$OUT" \
+  && ok "a declared head the diff adds again: the test stays, its assertion is a finding" \
+  || bad "head added again: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs "$RS"
+printf '#[test]\nfn alive() {\n    assert_eq!(1, 1);\n}\n\n#[tokio::test]\nasync fn dead() {\n    run().await;\n}\n\nfn helper() {\n    assert!(true);\n}\n' \
+  > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 3 ] && grep -q "assert!(2 == 2).*adds its head again" <<<"$OUT" \
+  && ok "Rust: a declared test that comes back as #[tokio::test] stays" || bad "rust head added again: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/del.md T9
+[ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
+  || bad "unknown task: rc=$rc out=$OUT"
+
+# ── the attacks of the adversarial review (2026-09-25), each once reproduced ──
+# Two describe blocks share a test name. git may align the KEPT head with the
+# dead one, and an assertion of the surviving test would ride on the
+# declaration. The name is ambiguous in the old file, so the declaration counts
+# for nothing.
+TS_TWO='describe("parse", () => {
+  it("rejects empty input", () => {
+    expect(parse("")).toBeNull();
+    expect(parse(" ")).toBeNull();
+  });
+});
+
+describe("legacy", () => {
+  it("rejects empty input", () => {
+    expect(parse("")).toBeNull();
+  });
+});
+'
+# git keeps the first head and its first expect and reports the rest as ONE
+# deleted block that starts with the kept test's head — the old diff-text rule
+# let `expect(parse(" "))` of the surviving test through (reproduced 2026-09-25).
+base apps/web/src/parse.test.ts "$TS_TWO"
+printf 'describe("parse", () => {\n  it("rejects empty input", () => {\n    expect(parse("")).toBeNull();\n  });\n});\n' \
+  > "$FIX/apps/web/src/parse.test.ts"; stage apps/web/src/parse.test.ts
+r diff-scan --staged --task tasks/del.md T6
+[ $rc -eq 3 ] && grep -q 'expect(parse(" ")).toBeNull()' <<<"$OUT" && grep -q "2 tests of that name in the old file" <<<"$OUT" \
+  && ok "a name two describe blocks share: the declaration counts for nothing" || bad "shared name: rc=$rc out=$OUT"
+# A content line `++ junk` reads `+++ junk` in the diff; taken for a file header
+# it switched files and hid the head that comes back.
+PY_JUNK='def test_alive():
+    assert 1 == 1
+
+
+X = """
+++ junk
+"""
+
+
+def test_dead(tmp_path):
+    x = 1
+'
+# The junk line sits right before the head that comes back, in the same hunk:
+# the old header rule switched files there and filed the head under "junk".
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_JUNK" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert helper() == 2" <<<"$OUT" \
+  && ok "a content line that looks like a +++ header switches no file" || bad "+++ in content: rc=$rc out=$OUT"
+# The reason is mandatory, and diff-scan holds to it, not only the lint.
+drop_dead; r diff-scan --staged --task tasks/del.md T5
+[ $rc -eq 3 ] && grep -q "without a reason ignored" <<<"$OUT" \
+  && ok "a declaration without a reason counts for nothing" || bad "no reason: rc=$rc out=$OUT"
+# Written into the working-tree ledger only, the declaration does not count:
+# the builder cannot grant itself the exception in the same run.
+drop_dead
+awk -v add='Test-Löschung: apps/server/tests/test_del.py::test_dead — selbst eingetragen' \
+  '{print} /^### T2 /{getline; print; print add}' "$FIX/tasks/del.md" > "$FIX/tasks/del.md.new" \
+  && mv "$FIX/tasks/del.md.new" "$FIX/tasks/del.md"
+grep -q "selbst eingetragen" "$FIX/tasks/del.md" || bad "fixture: the working-tree declaration was not written"
+r diff-scan --staged --task tasks/del.md T2
+[ $rc -eq 3 ] && grep -q "removed assertion" <<<"$OUT" \
+  && ok "a declaration only in the working-tree ledger does not count" || bad "uncommitted declaration: rc=$rc out=$OUT"
+git -C "$FIX" checkout -q -- tasks/del.md
+# A test that moves to another file is not a test that goes.
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"
+printf 'def test_dead():\n    x = helper()\n' > "$FIX/apps/server/tests/test_moved.py"
+stage apps/server/tests/test_del.py apps/server/tests/test_moved.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "appears in apps/server/tests/test_moved.py" <<<"$OUT" \
+  && ok "a test that moves to another file is not declared away" || bad "moved test: rc=$rc out=$OUT"
+# ── the second adversarial review (2026-09-25) ──
+# A committed .gitattributes with -diff turns a test file into "Binary files
+# differ": every check went blind. The diff is read with --text.
+base apps/server/tests/.gitattributes '*.py -diff
+'
+base apps/server/tests/test_del.py "$PY"
+printf 'def test_alive():\n    pass\n\n\ndef test_dead():\n    assert helper() == 2\n' > "$FIX/apps/server/tests/test_del.py"
+stage apps/server/tests/test_del.py
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q "assert 1 == 1" <<<"$OUT" \
+  && ok "a -diff attribute does not blind diff-scan" || bad "gitattributes: rc=$rc out=$OUT"
+# The key is assembled at run time: written out, it would stop this very file at sec.
+printf 'x\nDedup-Key: %s\n' "sec:server:a.py:f" > "$FIX/apps/server/tests/test_leak.py"; stage apps/server/tests/test_leak.py
+r sec --staged
+[ $rc -eq 4 ] && grep -q "Dedup-Key" <<<"$OUT" && ok "a -diff attribute does not blind sec" || bad "gitattributes sec: rc=$rc out=$OUT"
+git -C "$FIX" rm -q --cached apps/server/tests/.gitattributes >/dev/null 2>&1; git -C "$FIX" commit -qm "drop the attribute" >/dev/null 2>&1
+# A lone \r in the declared test shifted the line count of text mode, and an
+# assertion of the NEXT test fell into the declared span.
+PY_CR="$(printf 'def test_dead():\n    assert a == 1  # see #12\r\r\r\r\n\n\ndef test_alive():\n    b = 2\n    assert b == 2\n')"
+base apps/server/tests/test_del.py "$PY_CR
+"
+printf 'def test_alive():\n    b = 2\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert b == 2" <<<"$OUT" \
+  && ok "a \\r in the declared test shifts no line: the next test's assertion is a finding" || bad "cr: rc=$rc out=$OUT"
+# A \f before the next head: lstrip() took it for indentation, Python does not.
+PY_FF="$(printf 'def test_dead():\n    assert a == 1\n\n\n\fdef test_alive():\n    assert c == 3\n')"
+base apps/server/tests/test_del.py "$PY_FF
+"
+printf '\fdef test_alive():\n    c = 3\n' > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 3 ] && grep -q "assert c == 3" <<<"$OUT" \
+  && ok "a \\f before the next head does not stretch the declared span" || bad "ff: rc=$rc out=$OUT"
+# A head inside a comment of a test that stays: the declared name is unique in
+# the old file, but the test it names is not a test — its "span" keeps lines of
+# the surviving test, and the whole-test rule refuses it.
+base apps/web/src/parse.test.ts 'it("keep", () => {
+  /*
+it("rejects empty input", () => {
+  */
+  expect(c).toBe(3);
+  expect(d).toBe(4);
+});
+'
+printf 'it("keep", () => {\n  /*\n  */\n  expect(d).toBe(4);\n});\n' > "$FIX/apps/web/src/parse.test.ts"
+stage apps/web/src/parse.test.ts
+r diff-scan --staged --task tasks/del.md T6
+[ $rc -eq 3 ] && grep -q "expect(c).toBe(3)" <<<"$OUT" \
+  && ok "a test head in a comment covers nothing: the whole-test rule refuses it" || bad "comment head: rc=$rc out=$OUT"
+# A path with a space: git ends its header with a tab. A finding, not a crash.
+base "apps/server/tests/test with space.py" "$PY"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test with space.py"; stage "apps/server/tests/test with space.py"
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q "test with space.py:6  removed assertion" <<<"$OUT" \
+  && ok "a path with a space is a finding with its name, not rc 2" || bad "space path: rc=$rc out=$OUT"
+git -C "$FIX" rm -q -f -- "apps/server/tests/test with space.py" >/dev/null 2>&1; git -C "$FIX" commit -qm "drop the spaced file" >/dev/null 2>&1
+
+# A span guessed too wide by odd indentation must not take a second test with it.
+base apps/web/src/parse.test.ts "describe('d', () => {
+it('rejects empty input', () => expect(1).toBe(1));
+  it('y', () => {
+    expect(2).toBe(2);
+  });
+});
+"
+# The closing line comes back as `})`: git deletes `});` with the span, so every
+# line of the too-wide span reads as deleted (the reviewer's reproduction).
+printf "describe('d', () => {\n})\n" > "$FIX/apps/web/src/parse.test.ts"; stage apps/web/src/parse.test.ts
+r diff-scan --staged --task tasks/del.md T6
+[ $rc -eq 3 ] && grep -q "holds another test (y" <<<"$OUT" \
+  && ok "a declared span that holds another test counts for nothing" || bad "span with two tests: rc=$rc out=$OUT"
+
+# ... but a test of the same name that was ALREADY in another file is a
+# different test: the declaration stands.
+base apps/server/tests/test_other.py 'def test_dead():
+    assert other() == 3
+'
+base apps/server/tests/test_del.py "$PY"
+printf '%s' "$PY_WITHOUT_DEAD" > "$FIX/apps/server/tests/test_del.py"; stage apps/server/tests/test_del.py
+r diff-scan --staged --task tasks/del.md T1
+[ $rc -eq 0 ] && grep -q "declared test deletion(s): apps/server/tests/test_del.py::test_dead" <<<"$OUT" \
+  && ok "an unrelated test of the same name elsewhere does not block the declaration" || bad "same name elsewhere: rc=$rc out=$OUT"
+r diff-scan --staged --task tasks/del.md
+[ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
+reset_index
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
+grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
+  && ok "task-close.sh hands diff-scan the task" || bad "task-close.sh calls diff-scan without --task"
 sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | grep -qw 'review_scripts_test' \
   && ok "review_scripts_test is registered in AH_SCRIPT_TESTS_DEFAULT" || bad "not registered"
 

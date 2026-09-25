@@ -66,6 +66,56 @@ Task „autonomietauglich" macht, steht in [`../AUTONOMOUS.md`](../AUTONOMOUS.md
 `Dateien:` steht, wird die Liste **sichtbar** erweitert — `task-close.sh` prüft die gestagten
 Pfade dagegen.
 
+## `Test-Löschung:` — ein ganzer Test geht mit
+
+`task-close.sh` lässt `review.sh diff-scan` über den Diff laufen, und der wertet jede
+gelöschte Assertion als „der Diff kauft sich sein Grün". Den einen Fall, in dem ein Test
+zu Recht verschwindet, kündigt die Task an:
+
+```
+Test-Löschung: <datei>::<test> — <Grund>[; <datei>::<test> — <Grund> …]
+```
+
+Ein `;` trennt nur vor dem nächsten `<datei>::`, im Grund darf es also stehen.
+`<test>` ist der Name, wie er im Kopf steht: `test_x` (pytest), `TestX` (Go), die
+Beschreibung aus `it("…")`/`test("…")` (vitest/jest), die `fn` hinter `#[test]` (Rust).
+Übergangen wird eine gelöschte Assertion nur, wenn **alles** gilt, geprüft am Inhalt der
+Dateien, nicht am Diff-Text:
+
+1. **Die Ankündigung ist committet, und zwar nicht über `task-close.sh`.** `diff-scan` liest
+   sie aus dem Ledger in `HEAD`, nicht aus dem Arbeitsbaum, und `task-close.sh` verweigert
+   (Exit 4), sobald sich die `Test-Löschung:`-Zeilen gegenüber `HEAD` ändern. Sonst könnte ein
+   Builder die Zeile beim Schließen einer Task mitcommitten und in der nächsten benutzen. Sie
+   kommt mit dem Plan-Commit am Gate, den Kevin liest. Wer unterwegs merkt, dass ein Test gehen
+   muss, setzt `[?]` und fragt. Ein Commit von Hand an `task-close` vorbei ist Kevins eigene
+   Entscheidung; der Runner kann ihn nicht machen.
+2. **Sie trägt einen Grund.** Ohne `— <Grund>` zählt sie nicht, auch in `diff-scan`.
+3. **Der Name ist eindeutig.** Im alten Stand der Datei gibt es genau einen Test dieses
+   Namens. Teilen sich zwei `describe`-Blöcke einen Namen, kann das Gate sie nicht
+   auseinanderhalten, und die Ankündigung zählt nicht; umbenennen, dann löschen.
+4. **Der Test ist wirklich weg.** Im neuen Stand der Datei steht kein Kopf dieses Namens
+   mehr, und keine andere Datei des Diffs bekommt einen dazu: Ein Test, der wandert, geht
+   nicht. Ein Ersatztest trägt einen eigenen Namen.
+5. **Der ganze Test geht.** Jede nicht leere Zeile seines alten Rumpfs ist im Diff gelöscht.
+   Ein Kopf in einem Kommentar oder String, dessen „Rumpf“ in einen bleibenden Test ragt,
+   fällt daran auf.
+6. **Die Assertion gehört zu genau diesem Test.** Ihre alte Zeilennummer liegt im Rumpf des
+   angekündigten Tests im alten Stand. Eine Assertion aus einem Test, der stehen bleibt,
+   bleibt ein Fund, angekündigt oder nicht.
+
+`review.sh` liest jeden Diff mit `--text --no-ext-diff --no-textconv --no-color`: eine
+`.gitattributes` mit `-diff` oder ein Diff-Treiber darf eine Testdatei nicht zu „Binary files
+differ“ machen und damit alle drei Prüfungen blind.
+
+Der Lauf nennt, was er übergangen hat (`diff-scan: clean (1 declared test deletion(s): …)`),
+und bei einem Fund, warum eine Ankündigung nicht zählte.
+
+**Passt:** toter Code geht samt seinem Test; ein Test wird durch einen genaueren ersetzt, der
+im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das ist ein Befund
+über den Code und gehört repariert oder als `[?]` vor Kevin, nicht gelöscht.
+`ledger.sh lint` prüft die Form: `<pfad>::<name> — <Grund>`, **der Grund ist Pflicht**. Eine
+Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
+
 ## Aktueller Stand
 
 - **`harness-stufe-3.md`** — `Status: aktiv`. Stufe 3 der Autonomie-Roadmap („Ausführung

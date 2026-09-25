@@ -241,6 +241,30 @@ sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/v
 l lint fixture
 [ $rc -eq 0 ] && grep -q "ok$" <<<"$OUT" && ok "a clean ledger lints green" || bad "clean lint: rc=$rc out=$OUT"
 
+# Test-Löschung: <file>::<test> — <reason>, the reason not optional.
+with_deletion() {  # with_deletion <value> — the clean fixture, T2 declaring a deletion
+  fresh_fixture
+  sed -i 's|^Verify: DATABASE_URL=postgres:// pytest -q|Verify: bash scripts/dev/verify.sh server --strict|' "$FIX"
+  L_VAL="$1" awk '/^### T2 /{print; print "Test-Löschung: " ENVIRON["L_VAL"]; next} {print}' "$FIX" > "$FIX.new" \
+    && mv "$FIX.new" "$FIX"
+}
+with_deletion "apps/server/tests/test_x.py::test_dead — der Code hat keinen Nutzer mehr; apps/web/src/x.test.ts::adds up — ersetzt durch den genaueren Test"
+l lint fixture
+[ $rc -eq 0 ] && ok "a well-formed Test-Löschung: line lints clean" || bad "valid deletion: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead"
+l lint fixture
+[ $rc -eq 1 ] && grep -q "Test-Löschung: 'apps/server/tests/test_x.py::test_dead'" <<<"$OUT" \
+  && ok "a deletion without a reason is an error" || bad "no reason: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead — "
+l lint fixture
+[ $rc -eq 1 ] && ok "an empty reason is an error too" || bad "empty reason: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py test_dead — der Code hat keinen Nutzer mehr"
+l lint fixture
+[ $rc -eq 1 ] && ok "a deletion without :: is an error" || bad "no ::: rc=$rc out=$OUT"
+with_deletion "apps/server/tests/test_x.py::test_dead — kein Aufrufer mehr; siehe Ticket #12; apps/web/src/x.test.ts::adds up — ersetzt"
+l lint fixture
+[ $rc -eq 0 ] && ok "a ; inside a reason does not split the entry" || bad "; in the reason: rc=$rc out=$OUT"
+
 # ══ the real ledgers ══════════════════════════════════════════════════════════
 echo "── the real ledgers ──"
 grep -q 'ledger_test' "$REPO_ROOT/scripts/tests/run.sh" \
