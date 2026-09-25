@@ -10,6 +10,9 @@
     lint                        what does not fit the format
     add --class K --title T --source S [--proof P] [--dedup-key K] [--ledger L]
                                 a `neu` row at the end of "Neu"; prints its ID
+    status <id> <status> [--note N]
+                                set the status; the row moves to its section
+    approve <id> [--revoke]     geplant -> freigegeben, or back
 
 The file stays Markdown that Kevin edits by hand. The script understands the
 header line and the ten-column table rows (ID | Klasse | Titel | Status |
@@ -32,7 +35,13 @@ back), rewrites the header (`Stand: <today> · WIP: …`), and commits the file
 alone in its own repository — locally, never pushed, and never in this public
 one. A file changed in the last 5 s by anyone but roadmap.py (the mtime
 differs from the one the lock file remembers) is refused: an editor may hold
-it. The ID is the highest R-nnnn of all rows plus one.
+it. The ID is the highest R-nnnn of all rows plus one. A closed row
+(abgeschlossen, abgelehnt) carries the day it closed; more than 30 days later
+the next write moves it from "Abgeschlossen" to the top of "Archiv".
+
+A status follows only from the ones TRANSITIONS names (exit 2 otherwise).
+Setting a row's own status again is always allowed: it files a row left in
+the wrong section into its own, and turns an alias into the real word.
 
 Exit codes: 0 ok · 1 lint findings · 2 usage (no such file, bad arguments) ·
 3 the `neu` cap (20) is reached · 4 an open row already carries the Dedup-Key ·
@@ -77,6 +86,7 @@ CLASSES = ("SEC", "REG", "REL", "BUG", "FEAT", "REF", "IDEE")
 # Ablauf of a new row (roadmap document 3.3.2); every other class never expires.
 EXPIRY_DAYS = {"IDEE": 60, "REF": 90}
 QUIET_SECONDS = 5
+ARCHIVE_AFTER_DAYS = 30
 
 SECTIONS = (
     "Als Nächstes",
@@ -107,6 +117,21 @@ ALIASES = {"geparkt": "zurückgestellt", "erledigt": "abgeschlossen"}
 # The header's counters, in the order it prints them; the caps are CLAUDE.md's.
 WIP_CAPS = (("aktiv", 1), ("bereit", 2), ("pr", 3), ("neu", 20))
 NEU_CAP = dict(WIP_CAPS)["neu"]
+# Which status may follow which (the Ledger chain of the spec, plus the ways
+# out: zurückgestellt, blockiert, abgelehnt). A closed row only turns
+# abgelehnt — a throwaway row that must not count as done.
+TRANSITIONS = {
+    "neu": {"geplant", "zurückgestellt", "blockiert", "abgelehnt"},
+    "geplant": {"freigegeben", "aktiv", "zurückgestellt", "blockiert", "abgelehnt"},
+    "freigegeben": {"geplant", "aktiv", "zurückgestellt", "blockiert", "abgelehnt"},
+    "aktiv": {"bereit", "geplant", "zurückgestellt", "blockiert", "abgelehnt"},
+    "bereit": {"pr", "aktiv", "zurückgestellt", "blockiert", "abgelehnt"},
+    "pr": {"abgeschlossen", "aktiv", "zurückgestellt", "blockiert", "abgelehnt"},
+    "zurückgestellt": {"neu", "geplant", "abgelehnt"},
+    "blockiert": {"geplant", "freigegeben", "aktiv", "zurückgestellt", "abgelehnt"},
+    "abgeschlossen": {"abgelehnt"},
+    "abgelehnt": set(),
+}
 
 # A cell may carry a pipe only escaped (`\|`); an unescaped one starts a new
 # cell, which is exactly how a row ends up with eleven columns.
@@ -294,6 +319,60 @@ class Roadmap:
             at = start + 3
         self.items.insert(at, row)
 
+    def remove(self, row: Row) -> None:
+        """By identity: two rows may look alike (the duplicate IDs lint reports)."""
+        del self.items[next(i for i, item in enumerate(self.items) if item is row)]
+
+    def find(self, rid: str) -> tuple[str, Row]:
+        """The one well-formed row with this ID, and its section."""
+        hits = [(s, r) for s, r in self.rows() if r.id == rid]
+        if not hits:
+            raise UsageError(f"no row {rid}")
+        if len(hits) > 1:
+            raise UsageError(f"{rid} is on {len(hits)} rows — fix the IDs by hand first (lint)")
+        section, row = hits[0]
+        if not row.well_formed:
+            raise UsageError(f"{rid} has {len(row.cells)} columns — fix the row by hand first")
+        return section, row
+
+    def set_status(self, rid: str, new: str, note: str | None, today: dt.date) -> None:
+        section, row = self.find(rid)
+        old = row.state
+        if old not in TRANSITIONS:
+            raise UsageError(f"{rid} has the unknown status '{row.status}' — fix it by hand")
+        if new != old and new not in TRANSITIONS[old]:
+            allowed = ", ".join(sorted(TRANSITIONS[old])) or "nothing"
+            raise UsageError(f"{rid}: {old} -> {new} is no transition (from {old}: {allowed})")
+        if new != old or note is not None:
+            # A closed row keeps the day it closed when only its note changes.
+            kept = parse_day(row.cells[STATUS]) if new == old else None
+            day = f" {(kept or today).isoformat()}" if new in CLOSED else ""
+            row.cells[STATUS] = cell(new + day + (f" ({note})" if note else ""))
+            row.raw = None
+        elif row.status != new:
+            # An alias turns into the word; its day and note stay.
+            row.cells[STATUS] = new + row.cells[STATUS][len(row.status) :]
+            row.raw = None
+        home = SECTION_OF[new]
+        # A closed row that only confirms its status may stay in the archive.
+        filed = section == home or (new == old and new in CLOSED and section == "Archiv")
+        if not filed:
+            self.remove(row)
+            self.insert_row(home, row, top=home == "Abgeschlossen")
+
+    def archive(self, today: dt.date) -> None:
+        """Closed rows more than ARCHIVE_AFTER_DAYS past their date leave
+        "Abgeschlossen" for the top of "Archiv", in the order they stood."""
+        old = []
+        for section, row in self.rows():
+            day = parse_day(row.cells[STATUS]) if row.well_formed else None
+            if section == "Abgeschlossen" and row.state in CLOSED and day:
+                if (today - day).days > ARCHIVE_AFTER_DAYS:
+                    old.append(row)
+        for row in reversed(old):
+            self.remove(row)
+            self.insert_row("Archiv", row, top=True)
+
     def next_id(self) -> str:
         nums = [int(r.id[2:]) for _, r in self.rows() if ROW_ID.fullmatch(r.id)]
         return f"R-{max(nums, default=0) + 1:04d}"
@@ -448,6 +527,7 @@ def write(
     *,
     verb: str,
     delta: int,
+    detail: str = "",
     today: dt.date,
     clock: Callable[[], float] = time.time,
 ) -> str:
@@ -471,6 +551,7 @@ def write(
         roadmap = Roadmap(before_text)
         before = len(roadmap.rows())
         rid = change(roadmap)
+        roadmap.archive(today)
         roadmap.set_header(today)
         bak = sibling(path, ".bak")
         bak.write_bytes(before_text.encode("utf-8"))
@@ -485,7 +566,7 @@ def write(
                 f"has {after} — restored from {bak}",
             )
         remember(lock, path)
-        commit(path, f"roadmap: {verb} {rid}")
+        commit(path, f"roadmap: {verb} {rid}{detail}")
     return rid
 
 
@@ -513,6 +594,31 @@ def commit(path: pathlib.Path, message: str) -> None:
                 file=sys.stderr,
             )
             return
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    def change(roadmap: Roadmap) -> str:
+        roadmap.set_status(args.id, args.value, args.note, args.today)
+        return args.id
+
+    path = roadmap_path(args.file)
+    write(path, change, verb="status", delta=0, detail=f" {args.value}", today=args.today)
+    return 0
+
+
+def cmd_approve(args: argparse.Namespace) -> int:
+    was, new = ("freigegeben", "geplant") if args.revoke else ("geplant", "freigegeben")
+
+    def change(roadmap: Roadmap) -> str:
+        _, row = roadmap.find(args.id)
+        if row.state != was:
+            raise UsageError(f"{args.id} is {row.status or 'without status'}, not {was}")
+        roadmap.set_status(args.id, new, None, args.today)
+        return args.id
+
+    detail = " --revoke" if args.revoke else ""
+    write(roadmap_path(args.file), change, verb="approve", delta=0, detail=detail, today=args.today)
+    return 0
 
 
 def cmd_add(args: argparse.Namespace) -> int:
@@ -584,6 +690,15 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--dedup-key", help="<klasse>:<komponente>:<datei>:<symbol>, one token")
     a.add_argument("--ledger", help="the ledger, if there is one")
     a.set_defaults(func=cmd_add)
+    st = sub.add_parser("status", help="set a row's status; the row moves to its section")
+    st.add_argument("id")
+    st.add_argument("value", choices=sorted(SECTION_OF), metavar="status")
+    st.add_argument("--note", help="appended in parentheses, e.g. 'PR #42'")
+    st.set_defaults(func=cmd_status)
+    ap = sub.add_parser("approve", help="geplant -> freigegeben (Kevin's approval)")
+    ap.add_argument("id")
+    ap.add_argument("--revoke", action="store_true", help="freigegeben -> geplant")
+    ap.set_defaults(func=cmd_approve)
     args = p.parse_args(argv)
     try:
         return args.func(args)

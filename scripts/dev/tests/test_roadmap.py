@@ -662,3 +662,231 @@ def test_it_never_commits_in_the_public_repository(
     assert add(aged(repo / "ROADMAP.md"), *ADD) == 0
     assert "public repository — not committed" in capsys.readouterr().err
     assert git(repo, "log", "-1", "--format=%s").strip() == "seed"
+
+
+# ── status and approve: the section follows the status ───────────────────────
+
+
+def status(p: pathlib.Path, *args: str) -> int:
+    return roadmap.main(["--file", str(p), "--today", "2026-09-25", "status", *args])
+
+
+def approve(p: pathlib.Path, *args: str) -> int:
+    return roadmap.main(["--file", str(p), "--today", "2026-09-25", "approve", *args])
+
+
+def placed(p: pathlib.Path, rid: str) -> tuple[str, roadmap.Row]:
+    [hit] = [
+        (s, r) for s, r in roadmap.Roadmap(p.read_text(encoding="utf-8")).rows() if r.id == rid
+    ]
+    return hit
+
+
+def with_probe(state: str) -> str:
+    """CLEAN plus R-0020 in `state`, filed in the section it belongs to."""
+    s = clean_sections()
+    home = roadmap.SECTION_OF[state]
+    [key] = [k for k in s if roadmap.section_name("## " + k) == home]
+    value = f"{state} 2026-09-20" if state in roadmap.CLOSED else state
+    s[key].append(row("R-0020", value, "BUG", "Die Probe"))
+    return doc(s)
+
+
+STATES = sorted(roadmap.TRANSITIONS)
+ALLOWED = [(a, b) for a in STATES for b in sorted(roadmap.TRANSITIONS[a])]
+FORBIDDEN = [(a, b) for a in STATES for b in STATES if b != a and b not in roadmap.TRANSITIONS[a]]
+
+
+@pytest.mark.parametrize(("old", "new"), ALLOWED, ids=[f"{a}->{b}" for a, b in ALLOWED])
+def test_an_allowed_transition_moves_the_row_home(
+    tmp_path: pathlib.Path, old: str, new: str
+) -> None:
+    p = aged(write(tmp_path, with_probe(old)))
+    assert status(p, "R-0020", new) == 0
+    section, r = placed(p, "R-0020")
+    assert (section, r.status) == (roadmap.SECTION_OF[new], new)
+    assert findings(p.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(("old", "new"), FORBIDDEN, ids=[f"{a}->{b}" for a, b in FORBIDDEN])
+def test_a_forbidden_transition_is_exit_2(tmp_path: pathlib.Path, old: str, new: str) -> None:
+    text = with_probe(old)
+    p = aged(write(tmp_path, text))
+    assert status(p, "R-0020", new) == 2
+    assert p.read_text(encoding="utf-8") == text
+
+
+def test_closed_to_neu_in_particular_is_forbidden(
+    capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    p = aged(write(tmp_path, with_probe("abgeschlossen")))
+    assert status(p, "R-0020", "neu") == 2
+    assert (
+        "abgeschlossen -> neu is no transition (from abgeschlossen: abgelehnt)"
+        in capsys.readouterr().err
+    )
+
+
+def test_the_life_of_a_row(tmp_path: pathlib.Path) -> None:
+    """The live probe of the Abschluss, on a fixture repository: every step one
+    commit, and the throwaway row ends abgelehnt so it counts for nothing."""
+    repo = fixture_repo(tmp_path)
+    p = aged(repo / "ROADMAP.md")
+    assert add(p, "--class", "FEAT", "--title", "Wegwerf", "--source", "kevin 2026-09-25") == 0
+    for step in (["status", "R-0010", "geplant"], ["approve", "R-0010"], ["status", "R-0010", "aktiv"],
+                 ["status", "R-0010", "bereit"], ["status", "R-0010", "pr"],
+                 ["status", "R-0010", "abgeschlossen", "--note", "PR #99"],
+                 ["status", "R-0010", "abgelehnt", "--note", "Probe"]):  # fmt: skip
+        assert roadmap.main(["--file", str(p), "--today", "2026-09-25", *step]) == 0, step
+    section, r = placed(p, "R-0010")
+    assert (section, r.cells[roadmap.STATUS]) == ("Abgeschlossen", "abgelehnt 2026-09-25 (Probe)")
+    assert git(repo, "log", "--format=%s", "-8").splitlines() == [
+        "roadmap: status R-0010 abgelehnt",
+        "roadmap: status R-0010 abgeschlossen",
+        "roadmap: status R-0010 pr",
+        "roadmap: status R-0010 bereit",
+        "roadmap: status R-0010 aktiv",
+        "roadmap: approve R-0010",
+        "roadmap: status R-0010 geplant",
+        "roadmap: add R-0010",
+    ]
+    assert findings(p.read_text(encoding="utf-8")) == []
+
+
+def test_a_closed_status_carries_its_day_and_note_at_the_top(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, with_probe("pr")))
+    assert status(p, "R-0020", "abgeschlossen", "--note", "PR #7, Merge 1a2b3c4") == 0
+    rows = [
+        r for s, r in roadmap.Roadmap(p.read_text(encoding="utf-8")).rows() if s == "Abgeschlossen"
+    ]
+    assert rows[0].id == "R-0020"
+    assert rows[0].cells[roadmap.STATUS] == "abgeschlossen 2026-09-25 (PR #7, Merge 1a2b3c4)"
+
+
+def test_the_same_status_again_files_a_row_and_keeps_it(tmp_path: pathlib.Path) -> None:
+    s = clean_sections()
+    lost = row("R-0010", "neu", "REF", "Im Archiv vergessen", ablauf="2026-12-01")
+    s["Archiv"].append(lost)
+    p = aged(write(tmp_path, doc(s, wip="aktiv 1/1 · bereit 0/2 · pr 0/3 · neu 3/20 · ALT: 0")))
+    assert status(p, "R-0010", "neu") == 0
+    section, r = placed(p, "R-0010")
+    assert section == "Neu" and r.text() == lost  # moved, not rewritten
+    assert findings(p.read_text(encoding="utf-8")) == []
+
+
+def test_the_same_status_again_keeps_its_note(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0004", "aktiv") == 0
+    assert placed(p, "R-0004")[1].cells[roadmap.STATUS] == "aktiv (T2/5)"
+
+
+def test_an_alias_becomes_the_word(tmp_path: pathlib.Path) -> None:
+    s = clean_sections()
+    s["Archiv"].append(row("R-0010", "geparkt", "IDEE", "Geparkt im Archiv"))
+    p = aged(write(tmp_path, doc(s)))
+    assert status(p, "R-0010", "zurückgestellt") == 0
+    section, r = placed(p, "R-0010")
+    assert (section, r.cells[roadmap.STATUS]) == ("Zurückgestellt", "zurückgestellt")
+
+
+def test_a_closed_alias_keeps_its_day_note_and_place(tmp_path: pathlib.Path) -> None:
+    """The cleanup of the real file turns `erledigt` into `abgeschlossen`: the
+    day it closed and its note are history, not something to overwrite."""
+    s = clean_sections()
+    s["Archiv"].insert(0, row("R-0010", "erledigt 2026-06-01 (PR #12)", "BUG", "Alt"))
+    p = aged(write(tmp_path, doc(s)))
+    assert status(p, "R-0010", "abgeschlossen") == 0
+    rows = roadmap.Roadmap(p.read_text(encoding="utf-8")).rows()
+    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0010", "R-0001"]
+    assert placed(p, "R-0010")[1].cells[roadmap.STATUS] == "abgeschlossen 2026-06-01 (PR #12)"
+
+
+def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0002", "abgeschlossen", "--note", "PR #3, nachgetragen") == 0
+    assert (
+        placed(p, "R-0002")[1].cells[roadmap.STATUS]
+        == "abgeschlossen 2026-09-15 (PR #3, nachgetragen)"
+    )
+
+
+def test_a_table_emptied_by_a_move_takes_the_next_row(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0009", "geplant") == 0  # "Zurückgestellt" keeps only its table head
+    assert status(p, "R-0003", "zurückgestellt") == 0
+    assert f"## Zurückgestellt\n{HEAD}\n{SEP}\n| R-0003 |" in p.read_text(encoding="utf-8")
+
+
+def test_the_header_follows_the_move(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0004", "bereit") == 0
+    assert (
+        "Stand: 2026-09-25 · WIP: aktiv 0/1 · bereit 1/2 · pr 0/3 · neu 2/20 · ALT: 0"
+        in p.read_text(encoding="utf-8")
+    )
+
+
+def test_closed_rows_older_than_30_days_go_to_the_top_of_the_archive(
+    tmp_path: pathlib.Path,
+) -> None:
+    s = clean_sections()
+    kept, older = (
+        row("R-0011", "abgeschlossen 2026-08-26 (30 Tage)", "BUG"),
+        row("R-0012", "abgeschlossen 2026-08-25 (31 Tage)", "BUG"),
+    )
+    s["Abgeschlossen (letzte 30 Tage)"] = [
+        row("R-0002", "abgeschlossen 2026-09-15", "BUG"),
+        kept,
+        older,
+        row("R-0013", "abgelehnt 2026-08-01", "IDEE"),
+        row("R-0014", "abgeschlossen (Datum fehlt)", "BUG"),
+    ]
+    p = aged(write(tmp_path, doc(s)))
+    assert status(p, "R-0003", "freigegeben") == 0  # any write archives
+    text = p.read_text(encoding="utf-8")
+    rows = roadmap.Roadmap(text).rows()
+    assert [r.id for sec, r in rows if sec == "Abgeschlossen"] == ["R-0002", "R-0011", "R-0014"]
+    assert [r.id for sec, r in rows if sec == "Archiv"] == ["R-0012", "R-0013", "R-0001"]
+    assert older in text.split("\n")  # moved byte for byte
+
+
+def test_approve_and_revoke(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert approve(p, "R-0003") == 0
+    assert placed(p, "R-0003")[1].status == "freigegeben"
+    assert approve(p, "R-0003", "--revoke") == 0
+    assert placed(p, "R-0003")[1].status == "geplant"
+
+
+@pytest.mark.parametrize(
+    ("rid", "args"), [("R-0005", []), ("R-0003", ["--revoke"]), ("R-0007", [])]
+)
+def test_approve_only_from_geplant_and_revoke_only_from_freigegeben(
+    tmp_path: pathlib.Path, rid: str, args: list[str]
+) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert approve(p, rid, *args) == 2
+    assert p.read_text(encoding="utf-8") == CLEAN
+
+
+@pytest.mark.parametrize(
+    ("text", "rid", "says"),
+    [
+        (CLEAN, "R-0099", "no row R-0099"),
+        (CLEAN.replace("| R-0009 |", "| R-0005 |"), "R-0005", "R-0005 is on 2 rows"),
+        (
+            CLEAN.replace("| Etwas Großes |", "| Etwas | Großes |"),
+            "R-0004",
+            "R-0004 has 11 columns",
+        ),
+        (CLEAN.replace("| geplant |", "| angedacht |"), "R-0003", "unknown status 'angedacht'"),
+    ],
+    ids=["unknown-id", "duplicate-id", "eleven-columns", "unknown-status"],
+)
+def test_a_row_status_cannot_safely_touch_is_exit_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], text: str, rid: str, says: str
+) -> None:
+    p = aged(write(tmp_path, text))
+    assert status(p, rid, "zurückgestellt") == 2
+    assert says in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == text

@@ -60,8 +60,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T8)
 Abhängt von: T1
 
-### T3 — `status`, `approve`, und der Abschnitt folgt dem Status  [ ]
+### T3 — `status`, `approve`, und der Abschnitt folgt dem Status  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @188ff332 2026-09-25T09:31:26+02:00
+Review: approve (sonnet, Runde 2 nach Alias-Fix)
 Änderung:
 - `status <id> <wert>` setzt den Status und verschiebt die Zeile in den Abschnitt, der zum Status gehört (Tabelle laut Spec). Zeilen, die länger als 30 Tage `abgeschlossen` sind, wandern beim nächsten Schreiben ins Archiv.
 - `approve <id> [--revoke]` ist die Kurzform für `freigegeben` bzw. zurück auf `geplant`.
