@@ -148,6 +148,9 @@ ensure_venv() {
 # finalizer below runs the on-box collector when AH_CAPTURE=1. iter.sh pulls
 # this dir back via -artifact-glob. No effect on plain dev/CI runs (AH_CAPTURE unset).
 export AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"
+# Absolute: the pytest steps cd into their component before writing their JUnit
+# XML to $AH_OUT_DIR/junit/<step-id>.xml, which heavy.sh collects for the report.
+case "$AH_OUT_DIR" in /*) ;; *) AH_OUT_DIR="$ROOT/$AH_OUT_DIR" ;; esac
 
 PASS=0 FAIL=0 SKIP=0
 # --only is honoured by the lint/unit layers only; integration/e2e always run
@@ -589,13 +592,13 @@ layer_unit() {
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if ! only monitoring; then skip monitoring-pytest "monitoring pytest" "AH_ONLY"
   elif have python3; then
-    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/monitoring-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip monitoring-pytest "monitoring pytest" "python3 not installed"; fi
 
   # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
   if ! only ca-issuer; then skip ca-issuer-pytest "ca-issuer pytest" "AH_ONLY"
   elif have python3 && [ -d apps/ca-issuer/tests ]; then
-    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/ca-issuer-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip ca-issuer-pytest "ca-issuer pytest" "python3 missing or no tests"; fi
 
   # Server pytest — needs a Postgres: testcontainers (docker) or an injected
@@ -603,7 +606,7 @@ layer_unit() {
   # without the fallback the step skipped there silently, every single run.
   if ! only server; then skip server-pytest "server pytest" "AH_ONLY"
   elif have python3 && { [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker; }; then
-    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/server-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Schemathesis — each service's API fuzzed against its OWN OpenAPI schema. A step
@@ -642,7 +645,10 @@ layer_unit() {
           # No $AH_ARGS: this step selects by marker, and a caller asking for one
           # file (verify.sh … -- tests/x.py) would leave it with nothing to collect
           # — an honest SKIP that under --strict reads as a hole in an unrelated run.
-          python3 -m pytest -q -m schemathesis $AH_PYTEST_RS
+          # One XML per service: the loop runs pytest three times, and a single
+          # file would keep only the cases of the last service.
+          python3 -m pytest -q -m schemathesis \
+            --junitxml="$AH_OUT_DIR/junit/schemathesis-${d#apps/}.xml" $AH_PYTEST_RS
         ); c=$?
         # Captured first: inside the case, $? would already be the status of case.
         case "$c" in
@@ -848,6 +854,10 @@ if [ -n "$AH_STEP" ]; then
   PASS=0 FAIL=0 SKIP=0; FAILED_STEPS=(); STRICT_FAILED=()
 fi
 
+# The JUnit directory holds this run's XMLs and nothing older. iter.sh pulls the
+# box's whole .ah-out back without deleting, so a file a step left there last
+# week would be counted as today's — the rule write_artifact follows for its JSON.
+rm -rf "$AH_OUT_DIR/junit"
 run_layer
 
 # On failure, collect on-box debug artifacts (container/agent logs, framebuffer

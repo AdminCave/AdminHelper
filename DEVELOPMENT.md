@@ -1215,6 +1215,13 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   haelt die neue sonst zurueck. Roadmap-Zeilen legt `heavy.sh` ueber `roadmap.py add` an; ist
   der Deckel von 20 `neu`-Zeilen voll oder die Zeile schon offen, steht das laut in den Notizen
   des Reports.
+- **JUnit:** Die pytest-Schritte von `run.sh` schreiben `.ah-out/junit/<schritt-id>.xml`
+  (`monitoring-pytest`, `ca-issuer-pytest`, `server-pytest`, fuer Schemathesis eine Datei je
+  Dienst: `schemathesis-server` usw.). Jeder `run.sh`-Lauf verwirft vorher die XMLs des
+  letzten, und `heavy.sh` leert das lokale `junit/` vor dem Lauf: der Pull von der Box loescht
+  nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert das gezogene `junit/`
+  nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die Report-Zeile `JUnit:` nennt, wie viele
+  XMLs dort liegen.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es

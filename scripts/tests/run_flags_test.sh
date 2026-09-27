@@ -221,6 +221,11 @@ case "$*" in
   *"import schemathesis"*) [ -n "${SHIM_NO_SCHEMATHESIS:-}" ] && exit 1; exit 0 ;;
 esac
 [ -n "${SHIM_ECHO_ARGV:-}" ] && echo "ARGV: $*"
+# pytest writes its JUnit XML wherever --junitxml points, creating the directory;
+# the stub does the same, so a test sees WHERE run.sh asks for the file.
+for a in "$@"; do
+  case "$a" in --junitxml=*) f="${a#--junitxml=}"; mkdir -p "$(dirname "$f")" && echo '<testsuites/>' > "$f" ;; esac
+done
 [ -n "${SHIM_NUL:-}" ] && printf 'a binary blob: \000 \001\n'
 [ -n "${SHIM_FAKE_LINE:-}" ] && echo "SKIPPED this is plain test output, not a summary line"
 echo "1 passed, 1 skipped in 0.01s"
@@ -273,6 +278,28 @@ grep -qE '"head": "[0-9a-f]{40}"' "$WORK/out-ev/last-unit.json" \
   && ok "artifact: head commit" || bad "head: $(grep head "$WORK/out-ev/last-unit.json")"
 grep -q '"reruns": 0' "$ART" && ok "artifact: reruns field (0 in stage 1)" || bad "reruns missing"
 grep -q '"name": "monitoring pytest", "result": "pass"' "$ART"   && ok "artifact: step name and verdict" || bad "steps: $(grep -A2 '"steps"' "$ART" | tr -d '\n')"
+
+# JUnit: each pytest step writes junit/<step-id>.xml under AH_OUT_DIR, which is
+# what heavy.sh collects. A file left by an earlier run is gone first — the pull
+# from the box would otherwise hand it to the report as this run's.
+mkdir -p "$WORK/out-junit/junit" && echo '<testsuites/>' > "$WORK/out-junit/junit/stale.xml"
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out-junit" SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -f "$WORK/out-junit/junit/monitoring-pytest.xml" ] \
+  && ok "the monitoring pytest step writes junit/monitoring-pytest.xml" \
+  || bad "junit: rc=$rc, dir: $(ls "$WORK/out-junit/junit" 2>&1)"
+[ -e "$WORK/out-junit/junit/stale.xml" ] \
+  && bad "a JUnit XML from an earlier run survived the new one" \
+  || ok "the run drops the JUnit XMLs of earlier runs"
+# The schemathesis step runs pytest once per service: one XML each, or the last
+# service's file would silently replace the other two.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out-junit" SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -f "$WORK/out-junit/junit/schemathesis-server.xml" ] \
+  && [ -f "$WORK/out-junit/junit/schemathesis-monitoring.xml" ] \
+  && [ -f "$WORK/out-junit/junit/schemathesis-ca-issuer.xml" ] \
+  && ok "schemathesis writes one JUnit XML per service" \
+  || bad "schemathesis junit: rc=$rc, dir: $(ls "$WORK/out-junit/junit" 2>&1)"
 
 # A NUL byte anywhere in a suite's output used to make grep treat the log as
 # binary and report NOTHING — every skip vanished and the run went green. This is
@@ -355,14 +382,16 @@ fi
 # AH_ARGS is what verify.sh forwards `-- <args>` through; it must arrive at the
 # suite and must be a true no-op when empty. The `-m "not schemathesis"` in
 # between is the pytest steps' own marker filter — the fuzz suite has its own
-# step with its own example budget and may not be collected twice.
+# step with its own example budget and may not be collected twice — and the
+# step's JUnit file.
+JX="--junitxml=$WORK/out/junit/monitoring-pytest.xml"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_ARGS="-k lifecycle" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
-grep -q 'ARGV: -m pytest -q -m not schemathesis -k lifecycle' <<<"$OUT" \
+grep -qF "ARGV: -m pytest -q -m not schemathesis $JX -k lifecycle" <<<"$OUT" \
   && ok "AH_ARGS reaches the suite command" || bad "AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
-grep -q 'ARGV: -m pytest -q -m not schemathesis$' <<<"$OUT" \
+grep -qxF "ARGV: -m pytest -q -m not schemathesis $JX" <<<"$OUT" \
   && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 
 # Where git cannot answer, run.sh must take the evidence fields from the client

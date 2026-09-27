@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5c — Test-Ausgaben und Pflicht-Tests gegen den Stack — Task-Ledger
-Status: freigegeben · Branch: harness/stufe-5c · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5c · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5c)
 Heavy: linux-full — Abschluss `run.sh integration` und `e2e` auf einer Pool-VM (Stack, Playwright live, JUnit), Kevins Wort vorausgesetzt.
 DoD je Task: CLAUDE.md (Tests grün, ruff/shellcheck/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -14,8 +14,10 @@ Hängt ab von: harness-stufe-5a (gemergt) — beide berühren `heavy.sh`
 Externe Formate vor dem Bau per WebFetch nachlesen und im Commit zitieren: Playwright-Reporter
 (playwright.dev/docs/test-reporters), `@wdio/junit-reporter` (webdriver.io/docs/junit-reporter).
 
-### T1 — JUnit aus den pytest-Schritten, gesammelt vom Wochenlauf  [ ]
-Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/heavy.sh, scripts/tests/heavy_test.sh
+### T1 — JUnit aus den pytest-Schritten, gesammelt vom Wochenlauf  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, scripts/tests/run_flags_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @70e91718 2026-09-27T11:41:01+02:00
+Review: approve (sonnet)
 Änderung:
 - Die pytest-Schritte in `run.sh` (monitoring :592, ca-issuer :598, server :606, schemathesis :626) bekommen `--junitxml="$AH_OUT_DIR/junit/<schritt-id>.xml"`.
 - `heavy.sh` kopiert `.ah-out/junit/` in das Verzeichnis des Laufs (`$OUT/junit/`). Der Report nennt, wie viele XMLs dort liegen.
