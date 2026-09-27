@@ -64,10 +64,12 @@ export const config = {
       'tauri:options': { application },
     },
   ],
-  // JUnit next to the screenshots, collected by heavy.sh (webdriver.io/docs/junit-reporter).
-  // Every spec is its own `wdio run` (box_desktopbox.sh, desktop_e2e_*.sh) whose one
-  // worker is always cid 0-0, so the cid alone would let each spec overwrite the last
-  // one's file; the spec path is inside the XML. The default name ends in .log.
+  // JUnit next to the screenshots (webdriver.io/docs/junit-reporter). heavy.sh collects
+  // what the desktop_e2e_*.sh suites write under run.sh on the `all` box; the capstone's
+  // box_desktopbox.sh writes the same files, but nothing pulls them. Every spec is its
+  // own `wdio run` whose one worker is always cid 0-0, so the cid alone would let each
+  // spec overwrite the last one's file; the spec path is inside the XML. The default
+  // name ends in .log.
   reporters: [
     'spec',
     [

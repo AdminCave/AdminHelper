@@ -44,10 +44,15 @@ test('Smoke: jede Admin-Seite laedt gegen die echte API', async ({ page }) => {
   const errors = trackPageErrors(page);
   await login(page);
   for (const hash of ADMIN_PAGES) {
-    // A full navigation, so the session also has to survive hydrate() and its
-    // refresh-cookie round trip, not only the in-app router.
+    // A goto that only changes the hash does not load the document (playwright.dev,
+    // page.goto), so reload: the session has to survive hydrate() and its
+    // refresh-cookie round trip, and the title visible afterwards can only be the
+    // one this page rendered.
     await page.goto(`/${hash}`);
+    await page.reload();
     await expect(page.locator('.page-title'), `page title on ${hash}`).toBeVisible();
+    // ...on this route, not on one the route guard sent the session to instead.
+    await expect(page).toHaveURL(new RegExp(`${hash.replace('/', '\\/')}$`));
   }
   expect(errors, 'page errors on the admin pages').toEqual([]);
 });

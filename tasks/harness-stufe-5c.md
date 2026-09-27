@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness Stufe 5c — Test-Ausgaben und Pflicht-Tests gegen den Stack — Task-Ledger
-Status: bereit · Branch: harness/stufe-5c · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
+Status: aktiv · Branch: harness/stufe-5c · Commit-Granularität: pro Task · Review: pro Task (Sonnet, 10 min) · Modell: Opus
 Spec: docs/features/harness-stufe-5.md (Roadmap R-0008, Teil 5c)
 Heavy: linux-full — Abschluss `run.sh integration` und `e2e` auf einer Pool-VM (Stack, Playwright live, JUnit), Kevins Wort vorausgesetzt.
 DoD je Task: CLAUDE.md (Tests grün, ruff/shellcheck/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
@@ -93,6 +93,20 @@ Review: approve (sonnet)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md · docs/developer/cicd.html · docs/en/developer/cicd.html · CHANGELOG.md
 Abhängt von: T1–T5
+
+### T7 — Live-Smoke lädt jede Admin-Seite wirklich neu; der wdio-Kommentar sagt, wer die XML sammelt  [x]
+Komponente: web · Dateien: apps/web/tests/live/smoke.live.spec.ts, apps/desktop/e2e/wdio.conf.js
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @b15916f4 2026-09-27T15:51:40+02:00
+Review: approve (sonnet)
+Änderung: Funde 1 und 3 aus `/code-review high` über den Branch (2026-09-27, Kevin: „fix die echten Funde als T7/T8“). (1) `page.goto` auf dieselbe URL mit anderem Hash lädt nicht neu (playwright.dev, page.goto: „navigation to the same URL with a different hash, which would succeed and return `null`“) — die Smoke prüft damit weder `hydrate()` noch, dass die neue Seite rendert, und `.page-title` kann der alte Titel sein; nach jedem Hash ein `page.reload()`, das das Dokument frisch lädt. (3) Der Kommentar in `wdio.conf.js` nennt `box_desktopbox.sh` neben „collected by heavy.sh“; gesammelt wird nur, was `run.sh` auf der Box schreibt (Ebene `all`), der Capstone-Pfad nicht.
+Verify: bash scripts/tests/run.sh quick --strict --only web desktop-e2e
+Doku: keine (Test- und Kommentar-Korrektur)
+
+### T8 — Stack-Skripte: AH_OUT_DIR absolut, Ports außerhalb des ephemeren Bereichs, Redis-URL mit Port-Default und Zugangsdaten  [ ]
+Komponente: scripts · Dateien: scripts/tests/stack_pytest.sh, scripts/tests/web_live.sh, scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/stack_pytest_test.sh, scripts/tests/run.sh, scripts/tests/run_flags_test.sh, DEVELOPMENT.md
+Änderung: Funde 5, 6 und 8 aus `/code-review high` über den Branch (2026-09-27). (5) `stack_pytest.sh` und `web_live.sh` machen ein relatives `AH_OUT_DIR` absolut, bevor sie in eine Komponente wechseln — sonst schreibt pytest bzw. Playwright die XML unter `apps/<komp>/` und das Urteil findet keine. (6) Die Postgres- und Redis-Ports von `e2e_init` liegen heute ganz im ephemeren Bereich von Linux (32768–60999); sie wandern darunter und unter den Datenpfad (21000–38999). (8) `redis_reachable` in `run.sh` nimmt ohne Port 6379 und streift Zugangsdaten ab, wie `redis.from_url`. Tests: Bereichsgrenzen in `lib_e2e_stack_test.sh`, ein relatives `AH_OUT_DIR` in `stack_pytest_test.sh`, eine URL mit Zugangsdaten gegen einen lokalen Listener in `run_flags_test.sh`. Nicht übernommen: Fund 2 (die VMs installieren `docker-ce` aus download.docker.com, Stand ≥ 28 — auf der Box geprüft im Abschluss), Fund 4 (die XML des roten Erstlaufs ist die Evidenz eines Flakes), Fund 7 (ein pip-Fehler ist rot wie in den Unit-Schritten).
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: DEVELOPMENT.md (Portbereiche)
 
 ## Abschluss (nach T6, auf Kevins Wort, überwacht)
 
