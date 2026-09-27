@@ -25,8 +25,10 @@ Review: approve (sonnet)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (wo JUnit liegt)
 
-### T2 — JUnit aus Playwright und wdio  [ ]
-Komponente: web · Dateien: apps/web/playwright.config.ts, apps/desktop/e2e/wdio.conf.js, apps/desktop/e2e/package.json
+### T2 — JUnit aus Playwright und wdio  [x]
+Komponente: web · Dateien: apps/web/playwright.config.ts, apps/desktop/e2e/wdio.conf.js, apps/desktop/e2e/package.json, apps/desktop/e2e/package-lock.json
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @ec5e771f 2026-09-27T11:47:52+02:00
+Review: approve (sonnet)
 Änderung:
 - `playwright.config.ts:13` bekommt zusätzlich `['junit', { outputFile: … }]`. Der Pfad kommt aus `AH_OUT_DIR`, mit Default wie im Repo üblich; ohne `AH_OUT_DIR` wird nichts geschrieben.
 - `wdio.conf.js:67` bekommt `@wdio/junit-reporter` mit `outputDir`. Die Paketversion wird zur installierten `@wdio/cli` passend gepinnt, die Lockfile wird nachgezogen.
