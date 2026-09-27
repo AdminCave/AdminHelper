@@ -119,3 +119,21 @@ Doku: DEVELOPMENT.md (Portbereiche)
 2. Gegenprobe auf einem Wegwerf-Branch: ein absichtlich roter Test ⇒ genau dieser Fall steht als `failure` im JUnit.
 3. `vm.py list` ist danach sauber.
 4. Die Box meldet Docker ≥ 28 (`docker version`): Fund 2 des Branch-Reviews (T8) setzt darauf, dass auf `127.0.0.1` veröffentlichte Ports nicht aus dem LAN erreichbar sind (moby #45610).
+
+### Ergebnis des Abschlusses (2026-09-27, Kevins Freigabe, Baum 78d9ec97)
+
+Gesamt-Schnellcheck lokal (`verify.sh all --strict`), vor und nach T7/T8, beide Male wörtlich:
+`run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns` — die 12 sind die bekannten Skips der Dev-Box (kein `DATABASE_URL` für Monitoring, kein Redis), keiner Pflicht.
+
+Pool-VM 3000 (`linux-full`, Lane `main`), `AH_REQUIRED` ungesetzt (Box-Regel):
+- Docker: `server 29.8.1` (Punkt 4 erfüllt).
+- `iter.sh quick --strict`: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 18 test-skips, 0 reruns`
+- `iter.sh integration --strict`: `run.sh[integration]: 7 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns`
+  - `stack_pytest` grün — die drei Pflicht-Tests erstmals als PASS: `stack-monitoring-migrations.xml` tests=3, `stack-server-redis.xml` tests=2, `stack-ca-issuer-toctou.xml` tests=1, je failures=0 skipped=0 (Punkt 1).
+  - `web_live` rot: Login und Benutzer-CRUD grün, der Smoke über die Admin-Seiten fing eine unbehandelte Exception der Web-UI gegen die echte API: `Cannot read properties of null (reading 'length')`. Vier Nachläufe desselben Schritts auf derselben Box (`AH_NO_SYNC=1 … --step web_live`) grün, je `run.sh[integration]: 1 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns` ⇒ **flaky, nicht PASS**; nicht R-0103. Trace des roten Laufs nicht mehr vorhanden (die Nachläufe haben `test-results/` überschrieben). Vermutung, nicht verifiziert: `apps/web/src/lib/api/client.ts` gibt bei `res.ok` und nicht lesbarem JSON `null` als `T` zurück, eine Seite liest `.length`.
+- `iter.sh e2e --strict`: `run.sh[e2e]: 10 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns` — `web-playwright.xml` tests=22 failures=0, 21 × `desktop-e2e-<ms>-<cid>.xml`.
+- Die XMLs lagen nach jedem Pull unter `.ah-out/junit/` (Punkt 1).
+
+Gegenprobe (Punkt 2), lokal in einem Wegwerf-Worktree auf 78d9ec97 mit einem absichtlich roten `test_gegenprobe_red`: `run.sh[unit]: 0 passed, 1 failed, 0 skipped, 0 test-skips, 0 reruns`; `monitoring-pytest.xml` tests=2 failures=1, `FAILURE tests.test_gegenprobe_red::test_gegenprobe_red`, der Nachbartest `pass`. Worktree danach entfernt.
+
+`reap.sh` hat 3000 zerstört; `vm.py list` danach: `0 ours, 4 not ours` (Punkt 3).
