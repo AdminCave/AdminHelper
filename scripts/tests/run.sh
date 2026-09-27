@@ -82,7 +82,7 @@ export AH_ONLY AH_STRICT
 #              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
 #              vm-pytest · dev-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build · upgrade-path
+#                agent-monitoring · repo-build · upgrade-path · stack-pytest
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
@@ -100,7 +100,7 @@ AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 # went green with the heavy steps silently SKIPped: the default set above only
 # names lint/unit ids, and iter.sh forwards AH_REQUIRED from the client,
 # where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
-AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path"
+AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path stack-pytest"
 # The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
 # hand-kept list would let a ninth suite run without being required, and its
 # self-SKIP would be green again — the very hole this block closes.
@@ -300,7 +300,8 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     this very test against the wrong database); CI's postgres service sets it.
 #   test_auth_token_lifecycle runs in the server suite, which run.sh feeds from
 #     DATABASE_URL or AH_TEST_DB, and which can also fall back to testcontainers.
-#   test_stream_redis         needs a reachable Redis on the port it names.
+#   test_stream_redis         needs a reachable Redis at the URL it reads
+#     (AH_TEST_REDIS_URL, else the PR CI's localhost:6380).
 #   test_db_token_store       needs AH_TEST_DB to point at a real Postgres; the
 #     TOCTOU test needs true concurrency, so SQLite is not a substitute.
 #   test_alembic_builtin      pytest-alembic builds the chain in a throwaway database
@@ -314,8 +315,12 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # gate on the URL naming a Postgres (a SQLite URL makes FOR UPDATE a no-op), so a
 # run with such a URL skips honestly — and calling that strict-failed would be a
 # red with nothing behind it.
-# Port from test_stream_redis.py's REDIS_URL (redis://localhost:6380/0).
-redis_reachable() { (exec 3<>/dev/tcp/localhost/6380) >/dev/null 2>&1; }
+# The same URL test_stream_redis.py's REDIS_URL resolves to.
+redis_reachable() {
+  local hp="${AH_TEST_REDIS_URL:-redis://localhost:6380/0}"
+  hp="${hp#redis://}"; hp="${hp%%/*}"
+  (exec 3<>"/dev/tcp/${hp%:*}/${hp##*:}") >/dev/null 2>&1
+}
 
 test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must not skip
   case "$1" in
@@ -541,7 +546,7 @@ AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_te
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test task_close_test runner_setup_test redteam_test
 desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test
-openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test vm_wrappers_test
+openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
 multibox_test lane_test skill_consistency_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
@@ -767,6 +772,17 @@ layer_integration() {
   # database is invisible to every other suite here. Needs the network (ghcr +
   # the GitHub API) and self-skips with 75 without it.
   run_step upgrade-path "upgrade_path (last release -> HEAD)" -- bash scripts/tests/upgrade_path_test.sh
+  # The three tests that skip wherever their Postgres or Redis is missing, run
+  # against the stack's own — here a skip is a failure (see stack_pytest.sh).
+  # They need the venv the unit layer creates: an integration run on its own
+  # would otherwise meet a python without the components' deps. Not for a
+  # --step that cannot reach this one, by layer_unit's rule. A venv that cannot
+  # be created says so and leaves the step to fail at its pip install.
+  local stack_name="stack_pytest (Postgres/Redis tests)"
+  if [ "$STEP_PROBE" != 1 ] && { [ -z "$AH_STEP" ] || [[ "$stack_name" == *"$AH_STEP"* ]]; }; then
+    ensure_venv
+  fi
+  run_step stack-pytest "$stack_name" -- bash scripts/tests/stack_pytest.sh
   # update_test/agent_install_test/diagnostics_test used to run here too. They are
   # hermetic, so they belong in the unit layer's scripts block — running them in
   # both meant the heavy layer paid for them twice and the unit layer looked

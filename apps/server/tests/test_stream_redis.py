@@ -9,12 +9,15 @@ registered stream's queue. Skipped when no Redis is reachable (e.g. PR CI)."""
 
 import asyncio
 import json
+import os
 
 import pytest
 
 from app.modules.notifications import stream_hub
 
-REDIS_URL = "redis://localhost:6380/0"
+# The default is the PR CI's service container (ci.yml); the integration layer
+# points it at the compose stack's Redis (scripts/tests/stack_pytest.sh).
+REDIS_URL = os.environ.get("AH_TEST_REDIS_URL", "redis://localhost:6380/0")
 
 
 def _redis_available() -> bool:
@@ -27,7 +30,9 @@ def _redis_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(not _redis_available(), reason="Redis not reachable on :6380")
+pytestmark = pytest.mark.skipif(
+    not _redis_available(), reason=f"Redis not reachable at {REDIS_URL}"
+)
 
 
 def test_redis_fanout_roundtrip(monkeypatch):

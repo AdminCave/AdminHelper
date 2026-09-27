@@ -49,8 +49,10 @@ Review: approve (sonnet)
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (T6)
 
-### T4 — Die drei Pflicht-Tests laufen im Integration-Layer gegen den Stack  [ ]
-Komponente: scripts · Dateien: scripts/tests/stack_pytest.sh (neu, SPDX), scripts/tests/run.sh, apps/server/tests/test_stream_redis.py
+### T4 — Die drei Pflicht-Tests laufen im Integration-Layer gegen den Stack  [x]
+Komponente: scripts · Dateien: scripts/tests/stack_pytest.sh (neu, SPDX), scripts/tests/run.sh, apps/server/tests/test_stream_redis.py, scripts/tests/stack_pytest_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @5c34e8db 2026-09-27T12:36:07+02:00
+Review: approve (sonnet); ensure_venv without || true after the diff-scan (no errexit in run.sh, same behaviour)
 Änderung:
 - `stack_pytest.sh` startet den Stack über `lib_e2e_stack.sh` und fährt drei Tests gegen dessen Dienste:
   - `apps/monitoring/tests/test_migrations_smoke.py` mit `DATABASE_URL=$ITEST_DATABASE_URL`;
