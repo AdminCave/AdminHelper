@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel scripts (R-0046, R-0057, R-0090, R-0083, R-0096, R-0100) — Task-Ledger
-Status: geplant · Branch: harness/ref-scripts · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/ref-scripts · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0046, R-0057, R-0090, R-0083, R-0096, R-0100
 Heavy: none — run.sh, iter.sh und heavy.sh ändern sich nur als Test-Werkzeug; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den geänderten venv-Pfad auf der Box (T4) prüft der nächste Wochenlauf, bis dahin der Gleichheitstest in T4.
 DoD je Task: CLAUDE.md (Tests grün, ruff/shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
