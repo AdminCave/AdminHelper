@@ -66,7 +66,7 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts server
 Doku: keine (T6)
 Abhängt von: T3
 
-### T5 — Playwright-Projekt `live` ohne Mocks gegen den Stack  [ ]
+### T5 — Playwright-Projekt `live` ohne Mocks gegen den Stack  [?] (Die Web-UI hat keine Server-Seite (apps/web/src/routes.ts: users, apikeys, hooks, frp, audit) — der geplante CRUD-Rundlauf 'Server anlegen, sehen, löschen' ist im Browser nicht machbar. Empfehlung A: Benutzer anlegen -> in der Liste -> löschen, echt gegen den Stack (die erste Journey der gemockten crud.spec.ts ohne Mocks). B: Server per API seeden, im Web nur Smoke+Login. C: API-Key oder Hook statt Benutzer. Gefragt bei adminhelper-ac am 2026-09-27.)
 Komponente: web · Dateien: apps/web/playwright.config.ts, apps/web/tests/live/smoke.live.spec.ts (neu, SPDX), scripts/tests/run.sh
 Änderung:
 - Neues Projekt `live` in `playwright.config.ts`:
