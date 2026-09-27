@@ -82,7 +82,7 @@ export AH_ONLY AH_STRICT
 #              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
 #              vm-pytest · dev-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build · upgrade-path · stack-pytest
+#                agent-monitoring · repo-build · upgrade-path · stack-pytest · web-live
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
@@ -100,7 +100,7 @@ AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 # went green with the heavy steps silently SKIPped: the default set above only
 # names lint/unit ids, and iter.sh forwards AH_REQUIRED from the client,
 # where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
-AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path stack-pytest"
+AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path stack-pytest web-live"
 # The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
 # hand-kept list would let a ninth suite run without being required, and its
 # self-SKIP would be green again — the very hole this block closes.
@@ -783,6 +783,10 @@ layer_integration() {
     ensure_venv
   fi
   run_step stack-pytest "$stack_name" -- bash scripts/tests/stack_pytest.sh
+  # The web panel without mocks: Playwright's `live` project logs in as the seed
+  # admin and writes for real. Here and not in e2e: it needs the stack, not a
+  # display, and the PR CI keeps the mocked chromium project (see web_live.sh).
+  run_step web-live "web_live (Playwright against the stack)" -- bash scripts/tests/web_live.sh
   # update_test/agent_install_test/diagnostics_test used to run here too. They are
   # hermetic, so they belong in the unit layer's scripts block — running them in
   # both meant the heavy layer paid for them twice and the unit layer looked

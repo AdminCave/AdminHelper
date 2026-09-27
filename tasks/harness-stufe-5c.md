@@ -66,16 +66,19 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts server
 Doku: keine (T6)
 Abhängt von: T3
 
-### T5 — Playwright-Projekt `live` ohne Mocks gegen den Stack  [?] (Die Web-UI hat keine Server-Seite (apps/web/src/routes.ts: users, apikeys, hooks, frp, audit) — der geplante CRUD-Rundlauf 'Server anlegen, sehen, löschen' ist im Browser nicht machbar. Empfehlung A: Benutzer anlegen -> in der Liste -> löschen, echt gegen den Stack (die erste Journey der gemockten crud.spec.ts ohne Mocks). B: Server per API seeden, im Web nur Smoke+Login. C: API-Key oder Hook statt Benutzer. Gefragt bei adminhelper-ac am 2026-09-27.)
-Komponente: web · Dateien: apps/web/playwright.config.ts, apps/web/tests/live/smoke.live.spec.ts (neu, SPDX), scripts/tests/run.sh
+### T5 — Playwright-Projekt `live` ohne Mocks gegen den Stack  [x]
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @91434b32 2026-09-27T15:00:10+02:00
+Review: request_changes -> approve (sonnet, 2 rounds: Verify line widened to web scripts)
+Entscheidung: Kevin, 2026-09-27, übermittelt durch die Aufsichts-Session adminhelper-ac: Option A auf die Frage „Die Web-UI hat keine Server-Seite (apps/web/src/routes.ts: users, apikeys, hooks, frp, audit), der CRUD-Rundlauf ‚Server anlegen, sehen, löschen‘ ist im Browser nicht machbar — (A) Benutzer anlegen, in der Liste sehen, löschen, (B) Server per API seeden und im Web nur Smoke+Login, (C) API-Key oder Hook“. Dazu bleiben Smoke und Login mit dem Seed-Admin. Bestätigt: `live` nur mit `ITEST_WEB_URL`, `chromium` unverändert, Stack-Start in `scripts/tests/web_live.sh` (per set-files), JUnit über `PLAYWRIGHT_JUNIT_OUTPUT_FILE`.
+Komponente: web · Dateien: apps/web/playwright.config.ts, apps/web/tests/live/smoke.live.spec.ts (neu, SPDX), scripts/tests/run.sh, scripts/tests/web_live.sh
 Änderung:
 - Neues Projekt `live` in `playwright.config.ts`:
   - `testDir: tests/live` und `baseURL` aus `ITEST_WEB_URL`, ohne `mockApi`;
   - das bestehende Projekt `chromium` bleibt unverändert und läuft weiter im PR-CI.
-- Die Specs decken Smoke, Login mit dem Seed-Admin aus `lib_e2e_stack` und ein CRUD-Rundlauf (Server anlegen, sehen, löschen) ab.
+- Die Specs decken Smoke, Login mit dem Seed-Admin aus `lib_e2e_stack` und ein CRUD-Rundlauf (Benutzer anlegen, sehen, löschen — Entscheidung oben) ab.
 - `run.sh`: neuer Schritt `web-live` im Integration-Layer (nicht e2e, nicht PR-CI), in `AH_HEAVY_INTEGRATION`.
 - Test: `npm run check` und `lint`. Der echte Lauf folgt im Abschluss.
-Verify: bash scripts/tests/run.sh quick --strict --only web
+Verify: bash scripts/tests/run.sh quick --strict --only web scripts
 Doku: keine (T6)
 Abhängt von: T2, T3
 
