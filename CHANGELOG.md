@@ -207,6 +207,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Planen und Beweis (Harness Stufe 5b, Entwickler-Werkzeuge):** Ledger haben die Status-Folge
+  `geplant` -> `freigegeben` -> `aktiv` -> `bereit` -> `erledigt` und das Kopf-Feld `Heavy:`
+  (`none | linux-full | scenario <flags> | windows`) statt `Fast-Suite:`/`Warm-Profil:`;
+  `ledger.sh lint` prueft `Heavy:` und die Zeilen der Beweis-Konvention A-D (`Orakel:`,
+  `Dedup-Key:`, `HEAD:`). `/feature-plan` committet den Plan am Gate als ersten Commit auf
+  `feature/<slug>`, kennt `--kurz R-nnnn` (Kurz-Ledger aus einer belegten Roadmap-Zeile, mit
+  Pflichtzeile `Semantik:`, ohne SEC) und `--bundle <komponente>` (REF-Zeilen einer Komponente)
+  und fuehrt die Roadmap-Schritte am Gate aus; `/feature-build` folgt der Status-Folge, liest
+  `Heavy:` und zieht die Roadmap mit. `roadmap.py status` bekommt `--ledger` und `--pr`, die
+  Spalten, die `next` und `sync` lesen. Neu ist `scripts/tests/skill_consistency_test.sh`, der
+  die Skill-Texte gegeneinander prueft. Anleitung: `tasks/README.md` und
+  `docs/developer/cicd.html` („Beweis-Konvention").
 - **Die Roadmap als Skript (Harness Stufe 5a, Entwickler-Werkzeuge):** `scripts/dev/roadmap.py`
   (Python-Stdlib) liest, lintet und schreibt die private Roadmap `tasks/private/ROADMAP.md`
   mit `lint`, `show`, `next`, `add`, `status`, `approve`, `sync` und `stats`. Jedes Schreiben

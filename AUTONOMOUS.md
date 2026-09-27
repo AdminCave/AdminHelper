@@ -12,8 +12,9 @@ Dein früheres root-`tasks.md` war bereits eine _durable Task-Ledger_ mit verifi
 Zielen pro Aufgabe. Dieses System formalisiert genau das.
 
 **Alle Ledger leben unter [`tasks/`](tasks/)** — eine Datei pro Vorhaben (`tasks/<slug>.md`),
-kein Anhängen an eine Sammel-Datei mehr. Jedes Ledger trägt im Kopf ein Feld `Status: aktiv |
-erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `tasks/README.md`.
+kein Anhängen an eine Sammel-Datei mehr. Jedes Ledger trägt im Kopf ein Feld `Status:` in der
+Folge `geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneben `blockiert`;
+`/feature-build` baut ein `freigegeben`es und das eine `aktiv`e. Konvention: `tasks/README.md`.
 
 ## Die Idee in fünf Sätzen
 
@@ -37,8 +38,8 @@ erledigt | blockiert`, damit `/feature-build` das aktive findet. Konvention: `ta
 
 | Phase | Aufruf | Ergebnis |
 |---|---|---|
-| **1 · Design** | `/feature-plan <idee>` | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger). **Stoppt am Design-Gate.** |
-| **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. |
+| **1 · Design** | `/feature-plan <idee>` (oder `--kurz R-nnnn`, `--bundle <komponente>`) | **Interaktiv** (fragt bei echter Mehrdeutigkeit sofort per Rückfrage): erzeugt `docs/features/<slug>.md` (Spec) + `tasks/<slug>.md` (Ledger, `Status: geplant`) als ersten Commit auf `feature/<slug>` und trägt die Roadmap-Zeile auf `geplant`. **Stoppt am Design-Gate.** |
+| **2 · Freigabe** | _du_ | Spec + Ledger lesen/anpassen, offene Fragen beantworten. Dein Wort ist die Freigabe: `roadmap.py approve` und der Kopf auf `freigegeben`. |
 | **3 · Build** | `/feature-build tasks/<slug>.md` | Task für Task: `ledger.sh start` → umsetzen → schnelle Tests → **frischer Review** (`feature-review`) → `task-close.sh` setzt den Haken und committet Code + Ledger auf `feature/<slug>`. |
 | **4 · Verify + PR** | _(automatisch am Ende von Phase 3)_ | `run.sh quick` → schwere VM-Suite → Review über den ganzen Branch (`/code-review`; beim Kurz-Ledger stattdessen der eine `feature-review`) → **Draft-PR**. |
 
@@ -84,7 +85,8 @@ claude --model opus --permission-mode acceptEdits
 
 # 2. Du liest docs/features/connection-note.md + tasks/connection-note.md, passt an, gibst frei.
 
-# 3. Autonom bauen bis Draft-PR:
+# 3. Autonom bauen bis Draft-PR, auf dem Branch, auf dem der Plan liegt (R-0065):
+git switch feature/connection-note
 /feature-build tasks/connection-note.md
 ```
 
@@ -158,7 +160,12 @@ Mechanik dahinter:
   Stufe 7) hat seine eigene Sperre; eine nutzerübergreifende steht noch aus. Das ersetzt die
   Absprache „nur ein server-Lauf zur Zeit"; Wartezeit und Abschalter stehen in
   `DEVELOPMENT.md` („Python-Tests lokal").
-- **`Fast-Suite: vm` im Ledger-Kopf.** Eine Lane hat keine `node_modules` und kein
+- **`Heavy:` im Ledger-Kopf** (`none | linux-full | scenario <flags> | windows`) sagt, welche
+  schwere Suite der Abschluss braucht; es ersetzt für neue Ledger die beiden älteren Felder
+  unten, die `feature-build` bei älteren Ledgern weiter liest. Dass eine Lane ihre
+  Schnellsuite auf der VM fährt (das alte `Fast-Suite: vm`), kann ein neues Ledger damit nicht
+  sagen; das ist offen (R-0097).
+- **`Fast-Suite: vm` im Ledger-Kopf** (ältere Ledger). Eine Lane hat keine `node_modules` und kein
   `target`; ihr Python-Testvenv (`AH_VENV`, `~/.cache/ah-venv-<slug>`) hat sie eigens, die
   Komponenten-Venvs mit dem CI-`ruff` sind nur Links in den Haupt-Checkout. N parallele lokale
   Suiten würden die Dev-Box überlasten. Die Test-DB ist es nicht mehr: jede Lane hat ihre
@@ -166,7 +173,7 @@ Mechanik dahinter:
   fährt deshalb das Task-`Verify:` via `bash scripts/vm/iter.sh --cmd '…'` und die
   Komponenten-Schnellsuite via `bash scripts/vm/iter.sh quick --strict --only <komponenten>`
   auf der warmen Lane-Box (~1,5–3,5 min pro Iteration).
-- **`Warm-Profil:` im Ledger-Kopf.** `desktop` (eine volle Box — Stack, Agent und GUI
+- **`Warm-Profil:` im Ledger-Kopf** (ältere Ledger). `desktop` (eine volle Box — Stack, Agent und GUI
   testen dort zusammen) reicht für fast alles; `pond` (2 Boxen) nur für Desktop-Journeys;
   Cross-Host-Pfade bekommen `Abschluss: multibox <flags>` — ein einmaliger, weiterhin
   ask-first-Lauf am Ende, keine warme Dauer-Infrastruktur. `/feature-plan` leitet das aus

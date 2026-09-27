@@ -10,8 +10,9 @@
     lint                        what does not fit the format
     add --class K --title T --source S [--proof P] [--dedup-key K] [--ledger L]
                                 a `neu` row at the end of "Neu"; prints its ID
-    status <id> <status> [--note N]
-                                set the status; the row moves to its section
+    status <id> <status> [--note N] [--ledger L] [--pr P]
+                                set the status; the row moves to its section;
+                                --ledger and --pr fill their columns, also on the same status
     approve <id> [--revoke]     geplant -> freigegeben, or back
     show [<id>] [--wip]         one row, the WIP counters, or the overview
     next [--status S] [--exclude-components C …]
@@ -378,7 +379,15 @@ class Roadmap:
             raise UsageError(f"{rid} has {len(row.cells)} columns — fix the row by hand first")
         return section, row
 
-    def set_status(self, rid: str, new: str, note: str | None, today: dt.date) -> None:
+    def set_status(
+        self,
+        rid: str,
+        new: str,
+        note: str | None,
+        today: dt.date,
+        ledger: str | None = None,
+        pr: str | None = None,
+    ) -> None:
         section, row = self.find(rid)
         old = row.state
         if old not in TRANSITIONS:
@@ -395,6 +404,12 @@ class Roadmap:
         elif row.status != new:
             # An alias turns into the word; its day and note stay.
             row.cells[STATUS] = new + row.cells[STATUS][len(row.status) :]
+            row.raw = None
+        if ledger is not None:
+            row.cells[LEDGER] = cell(ledger)
+            row.raw = None
+        if pr is not None:
+            row.cells[PR] = cell(pr)
             row.raw = None
         home = SECTION_OF[new]
         # A closed row that only confirms its status may stay in the archive.
@@ -693,12 +708,19 @@ def commit(path: pathlib.Path, message: str) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    # The same pattern all_merged reads: anything else would leave the row in
+    # `pr` for good, without a word. An empty value clears the column.
+    if args.pr and not re.search(r"#\d+", args.pr):
+        raise UsageError(f"--pr names PRs as '#42' — sync reads nothing else: {args.pr!r}")
+
     def change(roadmap: Roadmap) -> str:
-        roadmap.set_status(args.id, args.value, args.note, args.today)
+        roadmap.set_status(args.id, args.value, args.note, args.today, args.ledger, args.pr)
         return args.id
 
+    detail = f" {args.value}" + (f" --ledger {args.ledger}" if args.ledger is not None else "")
+    detail += f" --pr {args.pr}" if args.pr is not None else ""
     path = roadmap_path(args.file)
-    write(path, change, verb="status", delta=0, detail=f" {args.value}", today=args.today)
+    write(path, change, verb="status", delta=0, detail=detail, today=args.today)
     return 0
 
 
@@ -1038,7 +1060,13 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("status", help="set a row's status; the row moves to its section")
     st.add_argument("id")
     st.add_argument("value", choices=sorted(SECTION_OF), metavar="status")
-    st.add_argument("--note", help="appended in parentheses, e.g. 'PR #42'")
+    st.add_argument("--note", help="appended in parentheses, e.g. 'regression confirmed'")
+    st.add_argument(
+        "--ledger", help="the Ledger column, e.g. tasks/<slug>.md; also on the same status"
+    )
+    st.add_argument(
+        "--pr", help="the PR column that sync reads, e.g. '#42'; also on the same status"
+    )
     st.set_defaults(func=cmd_status)
     ap = sub.add_parser("approve", help="geplant -> freigegeben (Kevin's approval)")
     ap.add_argument("id")
