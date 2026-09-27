@@ -79,7 +79,7 @@
           <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/{id}/touch</code><p>Setzt <code>last_used = now</code> (read).</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/connections/{id}</code><p>L&ouml;schen (admin). Feuert <code>connection.deleted</code>.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/connections/export</code><p>JSON-Export (admin).</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/import</code><p><code>?mode=replace|merge</code> (admin). Feuert <code>connections.imported</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/import</code><p>Body: <code>{ "mode": "replace"|"merge", "connections": [&hellip;] }</code> (admin). Alles oder nichts: ein ung&uuml;ltiger Eintrag oder ein unbekannter <code>serverId</code> weist den ganzen Import mit <code>422</code> ab (<code>detail.rejected</code>, nach <code>index</code> sortiert). Feuert <code>connections.imported</code>.</p></div>
 
           <h2>Servers</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/servers</code><p>Server-Inventar (admin).</p></div>

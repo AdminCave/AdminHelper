@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel server: API-Vertrag (R-0043, R-0054, R-0068) — Task-Ledger
-Status: freigegeben · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0043, R-0054, R-0068
 Heavy: none — die Antwort-Bytes bleiben gleich (Differential-Test je Route), Header-Namen, Gateway, Compose und Agent unverändert; die Auth-Dependency läuft in-process in den Authz-Tests und in Schemathesis in allen vier Kontexten. Den Stack deckt der nächste Wochenlauf (Kevin, 2026-09-27).
@@ -105,8 +105,10 @@ Verify: bash scripts/dev/verify.sh server --strict
 Doku: api-reference DE+EN :56–57 (Auth optional, das Cookie wird gelöscht); nebenbei :49 korrigieren (Login liefert `token_type`, nicht `user`)
 Abhängt von: T4
 
-### T6 — R-0068: der Import prüft alle serverIds mit einer Abfrage  [ ]
+### T6 — R-0068: der Import prüft alle serverIds mit einer Abfrage  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_import.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @1922085f 2026-09-27T15:48:12+02:00
+Review: approve (sonnet)
 Änderung: Die Abfrage je Eintrag (connections/router.py:248–250, `db.query(Server.id).filter(Server.id ==
 payload["serverId"]).first()`) wandert aus der Schleife: erst alle Einträge validieren, dann die verschiedenen
 `serverId` sammeln und einmal `SELECT id FROM servers WHERE id IN (…)`, danach die Mitgliedschaft prüfen. Die Liste
