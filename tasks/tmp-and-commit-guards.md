@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz: /tmp-Globs und pre-commit (R-0098, R-0102) — Task-Ledger
-Status: geplant · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/tmp-and-commit-guards.md (Roadmap R-0098, R-0102)
 Heavy: none — nur scripts/dev, scripts/tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles hermetisch über verify.sh scripts.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
