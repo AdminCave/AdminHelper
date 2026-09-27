@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # heavy_test ohne SIGPIPE-Flake (R-0103) — Task-Ledger
-Status: geplant · Branch: harness/heavy-test-sigpipe · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: harness/heavy-test-sigpipe · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0103
 Heavy: none — hermetische Testskripte und ein Listeneintrag im scripts-Block von run.sh; kein Stack-, Gateway-, PKI- oder Install-Pfad, heavy.sh bleibt unverändert.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
