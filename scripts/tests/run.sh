@@ -315,11 +315,14 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # gate on the URL naming a Postgres (a SQLite URL makes FOR UPDATE a no-op), so a
 # run with such a URL skips honestly — and calling that strict-failed would be a
 # red with nothing behind it.
-# The same URL test_stream_redis.py's REDIS_URL resolves to.
+# The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
+# redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
 redis_reachable() {
-  local hp="${AH_TEST_REDIS_URL:-redis://localhost:6380/0}"
-  hp="${hp#redis://}"; hp="${hp%%/*}"
-  (exec 3<>"/dev/tcp/${hp%:*}/${hp##*:}") >/dev/null 2>&1
+  local hp="${AH_TEST_REDIS_URL:-redis://localhost:6380/0}" host port
+  hp="${hp#*://}"; hp="${hp%%/*}"; hp="${hp##*@}"
+  host="${hp%:*}"; port="${hp##*:}"
+  [ "$host" = "$hp" ] && port=6379
+  (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1
 }
 
 test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must not skip

@@ -37,6 +37,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 e2e_require
 e2e_init false
 JUNIT="${AH_OUT_DIR:-$E2E_REPO_ROOT/.ah-out}/junit"
+# Absolute: pytest writes after a cd into its component, the verdict reads from here.
+case "$JUNIT" in /*) ;; *) JUNIT="$PWD/$JUNIT" ;; esac
 mkdir -p "$JUNIT" || { echo "[stack-pytest] cannot create $JUNIT"; exit 1; }
 
 echo "[stack-pytest] starting postgres + redis (pg :$E2E_PG_PORT, redis :$E2E_REDIS_PORT)..."

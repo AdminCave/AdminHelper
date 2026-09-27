@@ -80,10 +80,12 @@ e2e_init() {
     # one must be the fixed 8444 — only the data plane gets a high per-run port.
     E2E_ENROLL_PORT=8444
     E2E_REPO_PORT=8445
-    # Ranges of their own above the data plane's (21000-38999): two runs whose
-    # PIDs differ by one must not hand one's Postgres port to the other's gateway.
-    E2E_PG_PORT=$(( 39000 + ($$ % 9000) ))
-    E2E_REDIS_PORT=$(( 48000 + ($$ % 9000) ))
+    # Ranges of their own, below the data plane's (21000-38999) so no PID hands
+    # one run's Postgres port to another run's gateway, and below Linux's
+    # ephemeral range (32768-60999), where an outgoing connection may be holding
+    # the port at the moment compose binds it.
+    E2E_PG_PORT=$(( 11000 + ($$ % 5000) ))
+    E2E_REDIS_PORT=$(( 16000 + ($$ % 5000) ))
     E2E_SERVER_URL="https://localhost:$E2E_HTTPS_PORT"
     E2E_ADMIN_PW="e2e-$(e2e_rand)"
     local pg_pw

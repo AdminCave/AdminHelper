@@ -962,8 +962,9 @@ hoch — `docker-compose.yml` plus das Test-Overlay `docker-compose.test.yml`, d
 die First-Party-Images aus dem Checkout baut, die Gateway-Ports auf hohe
 Per-Run-Ports umlegt, Postgres und Redis nur auf `127.0.0.1` veroeffentlicht und
 das `./data`-Volume isoliert. Die Ports streut `lib_e2e_stack.sh` pro Lauf
-(`ITEST_HTTPS_PORT` 21000-38999, `ITEST_PG_PORT` 39000-47999, `ITEST_REDIS_PORT`
-48000-56999; ohne `e2e_init` gelten 18443, 15432 und 16379) und exportiert
+(`ITEST_HTTPS_PORT` 21000-38999, `ITEST_PG_PORT` 11000-15999, `ITEST_REDIS_PORT`
+16000-20999 — die beiden letzten unterhalb des ephemeren Bereichs ab 32768; ohne
+`e2e_init` gelten 18443, 15432 und 16379) und exportiert
 `ITEST_DATABASE_URL` und `ITEST_REDIS_URL` fuer Tests, die auf dem Host laufen:
 
 ```bash

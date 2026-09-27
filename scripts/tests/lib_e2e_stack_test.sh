@@ -84,11 +84,12 @@ HTTPS_PORT="$(envv ITEST_HTTPS_PORT)"; PG_PW="$(envv POSTGRES_PASSWORD)"
 
 # ── the ports ────────────────────────────────────────────────────────────────
 # Disjoint ranges: the data plane is 21000-38999, so no PID can make one run's
-# Postgres port another run's gateway port.
-[ "${PG_PORT:-0}" -ge 39000 ] && [ "$PG_PORT" -lt 48000 ] \
-  && [ "${REDIS_PORT:-0}" -ge 48000 ] && [ "$REDIS_PORT" -lt 57000 ] \
-  && [ "${HTTPS_PORT:-0}" -lt 39000 ] \
-  && ok "Postgres, Redis and the data plane get ports from separate ranges" \
+# Postgres port another run's gateway port. Both new ranges stay below Linux's
+# ephemeral ports (32768 up), which outgoing connections take at random.
+[ "${PG_PORT:-0}" -ge 11000 ] && [ "$PG_PORT" -lt 16000 ] \
+  && [ "${REDIS_PORT:-0}" -ge 16000 ] && [ "$REDIS_PORT" -lt 21000 ] \
+  && [ "${HTTPS_PORT:-0}" -ge 21000 ] \
+  && ok "Postgres, Redis and the data plane get ports from separate ranges below 32768 for the first two" \
   || bad "ports: https=$HTTPS_PORT pg=$PG_PORT redis=$REDIS_PORT"
 
 # ── what docker was asked ────────────────────────────────────────────────────

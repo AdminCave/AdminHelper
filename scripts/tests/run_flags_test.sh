@@ -252,6 +252,29 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 grep -q "1 test-skips" <<<"$OUT" && ok "the summary counts test-skips" || bad "summary: $(grep -m1 'run.sh\[' <<<"$OUT")"
 grep -q "strict-failed" <<<"$OUT" && bad "unmet precondition strict-failed" || ok "no strict-fail without the precondition"
 
+# A Redis URL with credentials names the same host and port as without them —
+# redis.from_url connects there. A listener stands in for the Redis (the probe
+# only opens TCP); the real python3, not the shim, and stopped by its own PID.
+python3 - "$WORK/listener.port" <<'PY' &
+import socket, sys, time
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+s.listen(8)
+open(sys.argv[1], "w").write(str(s.getsockname()[1]))
+time.sleep(60)
+PY
+LPID=$!
+for _ in $(seq 1 50); do [ -s "$WORK/listener.port" ] && break; sleep 0.1; done
+LPORT=$(cat "$WORK/listener.port" 2>/dev/null)
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
+      AH_TEST_REDIS_URL="redis://:secret@127.0.0.1:${LPORT:-1}/0" \
+      SHIM_SKIP="tests/test_stream_redis.py:38: Redis not reachable at redis://:secret@127.0.0.1:${LPORT:-1}/0" \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
+kill "$LPID" 2>/dev/null; wait "$LPID" 2>/dev/null
+[ -n "$LPORT" ] && [ $rc -eq 1 ] && grep -q "strict-failed: .*test_stream_redis.*(test-skip)" <<<"$OUT" \
+  && ok "a reachable Redis behind a URL with credentials makes its skip strict-failed" \
+  || bad "redis URL with credentials: port=${LPORT:-none} rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
+
 # The same skip with its precondition met is a hole, not a note.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest"       DATABASE_URL="postgresql://x@localhost/y"       SHIM_SKIP="tests/test_migrations_smoke.py:21: DATABASE_URL nicht gesetzt"       "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
 [ $rc -eq 1 ] && ok "a required test-skip fails the run" || bad "required test-skip: rc=$rc"

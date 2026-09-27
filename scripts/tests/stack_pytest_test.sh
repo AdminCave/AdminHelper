@@ -107,6 +107,14 @@ grep -q -- 'up -d --wait --wait-timeout 180 postgres redis' "$WORK/log-green/doc
 grep -q -- 'exec -T postgres pg_isready -h 127.0.0.1' "$WORK/log-green/docker.args" \
   && ok "Postgres is waited for over TCP, not only the socket" || bad "no TCP readiness probe"
 
+# A relative AH_OUT_DIR is the caller's, not the component's the tests cd into:
+# the XMLs land under the caller's directory and the verdict finds them there.
+STUB_LOG="$WORK/log-rel"; mkdir -p "$STUB_LOG"
+OUT=$(cd "$WORK" && env PATH="$SHIM:$PATH" TMPDIR="$WORK" AH_OUT_DIR=out-rel bash "$STACK" 2>&1); rc=$?
+[ "$rc" = 0 ] && [ -f "$WORK/out-rel/junit/stack-server-redis.xml" ] \
+  && ok "a relative AH_OUT_DIR is taken from the caller's directory" \
+  || bad "relative AH_OUT_DIR: rc=$rc; $(ls -R "$WORK/out-rel" 2>&1 | head -5); $OUT"
+
 # ── the one thing the step exists for: a skip is a failure ───────────────────
 run_stack skip SHIM_PYTEST=skip SHIM_PYTEST_ONLY=test_stream_redis
 [ "$rc" = 1 ] && grep -q 'stack-server-redis.xml: 1 skipped' <<<"$OUT" \

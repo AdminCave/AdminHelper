@@ -31,6 +31,8 @@ e2e_up gateway || { echo "[web-live] the stack never answered on :$E2E_HTTPS_POR
 [ -n "$(e2e_admin_token)" ] || { echo "[web-live] the seed admin never became able to log in"; exit 1; }
 
 export AH_OUT_DIR="${AH_OUT_DIR:-$E2E_REPO_ROOT/.ah-out}"
+# Absolute: Playwright resolves both JUnit paths from apps/web, where this cds next.
+case "$AH_OUT_DIR" in /*) ;; *) AH_OUT_DIR="$PWD/$AH_OUT_DIR" ;; esac
 export ITEST_WEB_URL="$E2E_SERVER_URL" ITEST_ADMIN_PW="$E2E_ADMIN_PW"
 cd "$E2E_REPO_ROOT/apps/web" || exit 1
 # run.sh's npm_ci_if_stale, for a run of this script on its own.
