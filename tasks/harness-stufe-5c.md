@@ -82,8 +82,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only web scripts
 Doku: keine (T6)
 Abhängt von: T2, T3
 
-### T6 — Doku  [ ]
-Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+### T6 — Doku  [x]
+Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @a93e0b7e 2026-09-27T15:12:36+02:00
+Review: approve (sonnet)
 Änderung:
 - `DEVELOPMENT.md`: JUnit-Ort, Stack-Ports, die zwei neuen Integration-Schritte.
 - `cicd.html` DE+EN: was der Integration-Layer als Pflicht prüft und warum dieselben Tests im PR-CI weiter gegen Service-Container laufen.
