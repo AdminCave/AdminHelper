@@ -7,7 +7,6 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Status: erledigt · Branch: feature/wochenlauf-gruen · Commit-Granularität: pro Task · Review: pro Task (feature-review; T6 Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
 Spec: docs/features/wochenlauf-gruen.md
 Freigabe: Kevin, 2026-09-25, übermittelt durch die Aufsichts-Session adminhelper-ac; Bau als Lane (`lane.sh new wochenlauf-gruen`)
-Fast-Suite: vm · Warm-Profil: desktop
 Heavy: linux-full (Abschluss: Wochenlauf-Wiederholung `heavy.sh weekly` auf Kevins Freigabe, überwacht; siehe „Abschluss" unten)
 DoD je Task: CLAUDE.md (Tests grün, ruff/shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
