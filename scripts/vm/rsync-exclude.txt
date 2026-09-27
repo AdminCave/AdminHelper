@@ -25,6 +25,11 @@ backups
 .dt-xdg
 .vm
 .ah-out
+# The compose stack's runtime directory (docker-compose.yml binds ./data;
+# gitignored). An integration run creates it on the box as root, so the next
+# sync's --delete is refused and rsync ends with code 23. Anchored: a bare
+# `data` would match every path segment of that name, tracked ones included.
+/data/
 # Per-host, gitignored, and holding the hypervisor token: a throwaway VM has no
 # business carrying the credential that can clone and destroy it, and `bake`
 # would write it into the template. vm.py reads this file on the CLIENT.

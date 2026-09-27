@@ -353,7 +353,7 @@ run_all() {
     local strict_steps
     strict_steps="$(awk -F'\t' '$2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$OUT/steps-all.tsv")"
     if [ -n "$strict_steps" ]; then
-      while IFS="$(printf '\t')" read -r name result secs; do
+      while IFS="$(printf '\t')" read -r name result secs <&3; do
         [ -n "$name" ] || continue
         local detail=""
         case "$result" in
@@ -361,12 +361,15 @@ run_all() {
           fail)          detail="not classified (layer infra)" ;;
         esac
         FINDINGS+=("all|$name|$result|$secs|$box|$detail")
-      done < "$OUT/steps-all.tsv"
+      done 3< "$OUT/steps-all.tsv"
       set_infra "required step(s) could not run on the box (strict-failed): $strict_steps"
       FINDINGS+=("all|-|infra|$secs_layer|$box|strict-failed: $strict_steps")
       return 0
     fi
-    while IFS="$(printf '\t')" read -r name result secs; do
+    # fd 3, not stdin: classify_red_step leases and drives boxes, and anything
+    # in there that reaches ssh without its own stdin would read the rest of this
+    # file and end the loop after the first red step (R-0092).
+    while IFS="$(printf '\t')" read -r name result secs <&3; do
       [ -n "$name" ] || continue
       verdict="$result"; STEP_DETAIL=""
       if [ "$result" = "fail" ]; then
@@ -379,7 +382,7 @@ run_all() {
         case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
       fi
       FINDINGS+=("all|$name|$verdict|$secs|$box|$STEP_DETAIL")
-    done < "$OUT/steps-all.tsv"
+    done 3< "$OUT/steps-all.tsv"
   else
     note "no readable last-all.json — per-step results unavailable"
     [ "$rc" = 0 ] || reds=1
@@ -434,9 +437,12 @@ failing_spec() {  # failing_spec <step> <log>
   grep -aoE '^spec [a-z0-9-]+: fail' "$2" 2>/dev/null | head -1 | sed 's/^spec //; s/: fail$//'
 }
 
-# </dev/null on every remote call: the step loop reads from steps-all.tsv, and an
-# ssh-backed `vm.py run` that drains stdin would swallow the rest of the file —
-# the run would classify one red step and silently drop every later one.
+# </dev/null on both suite runs (here and in w2_run): an ssh-backed `vm.py run`
+# hands its stdin to the box, and a suite there that reads it would wait on
+# whatever terminal heavy.sh was started from. The step loop no longer depends
+# on this: it reads steps-all.tsv from fd 3, since the second box's warm.sh once
+# drained the file through stdin and cut the report after the first red step
+# (R-0092).
 rerun_step() {  # rerun_step <step> <spec-or-empty> <logfile> -> rc
   if [ -n "$2" ]; then
     AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null

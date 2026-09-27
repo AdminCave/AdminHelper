@@ -6,6 +6,8 @@
 HH:MM/duration ranges, IANA-timezone validation (typos must not silently fall
 back to UTC at runtime), aware→naive-UTC normalization, full-update PUT."""
 
+import pytest
+
 
 def _once(**over):
     p = {
@@ -83,3 +85,28 @@ def test_aware_datetimes_normalize_to_naive_utc(client_db):
     # +02:00 wall time stored as naive UTC.
     assert body["startsAt"] == "2026-07-19T12:00:00"
     assert body["endsAt"] == "2026-07-19T14:00:00"
+
+
+# One minute of offset is enough to push the UTC conversion past year 1 or 9999.
+_CALENDAR_EDGE = ["0001-01-01T00:00:00+00:01", "9999-12-31T23:59:59-00:01"]
+
+
+@pytest.mark.parametrize("value", _CALENDAR_EDGE)
+@pytest.mark.parametrize("field", ["starts_at", "ends_at"])
+def test_an_offset_at_the_calendar_edge_is_422_not_500(client_db, field, value):
+    client, _ = client_db
+    mid = client.post("/maintenance", json=_once()).json()["id"]
+    for resp in (
+        client.post("/maintenance", json=_once(**{field: value})),
+        client.put(f"/maintenance/{mid}", json=_once(**{field: value})),
+    ):
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"][0]["loc"][-1] == field
+
+
+def test_a_naive_year_one_stays_valid(client_db):
+    # Nothing overflows without an offset, and storing year 1 is harmless.
+    client, _ = client_db
+    created = client.post("/maintenance", json=_once(starts_at="0001-01-01T00:00:00"))
+    assert created.status_code == 201
+    assert created.json()["startsAt"] == "0001-01-01T00:00:00"

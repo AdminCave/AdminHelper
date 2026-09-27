@@ -83,7 +83,8 @@ def _read_exclusions(known: set[str], by_name: dict) -> tuple[dict[str, list], l
                 )
             # The call dies on an uncaught exception before a response exists, so
             # no check can look at anything. Only here is dropping the whole
-            # operation honest — and every one of these is a real product fault.
+            # operation honest. Most of these are product faults; the rest are
+            # properties of the in-process fixture, and their reason says so.
             dropped.append(operation_id)
             continue
         names = entry.get("checks")

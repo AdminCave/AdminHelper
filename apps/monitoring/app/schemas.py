@@ -217,7 +217,12 @@ class MaintenanceInput(RequestModel):
         # Service convention is tz-naive UTC; ISO strings with an offset are
         # converted instead of rejected (the desktop client sends UTC ISO).
         if v is not None and v.tzinfo is not None:
-            return v.astimezone(timezone.utc).replace(tzinfo=None)
+            try:
+                return v.astimezone(timezone.utc).replace(tzinfo=None)
+            except OverflowError:
+                # Pydantic turns only ValueError/AssertionError into a 422; an offset
+                # at the calendar edge would otherwise reach the client as a 500.
+                raise ValueError("date is out of range once converted to UTC") from None
         return v
 
     @model_validator(mode="after")
