@@ -15,7 +15,7 @@
 # ok()/bad() never fail; `cond && ok || bad` assertions are deliberate.
 # shellcheck disable=SC2015
 set -uo pipefail
-unset AH_ONLY AH_NO_SYNC AH_REQUIRED
+unset AH_ONLY AH_NO_SYNC AH_REQUIRED AH_SCHEMATHESIS_EXAMPLES GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ITER="$HERE/../vm/iter.sh"
@@ -35,6 +35,19 @@ SHIM=$(mktemp -d); trap 'rm -rf "$SHIM"' EXIT
 printf '#!/bin/sh\necho "vm.py must not be called by this test" >&2; exit 99\n' > "$SHIM/vm.py"
 chmod +x "$SHIM/vm.py"
 export AH_VM_PY="$SHIM/vm.py"
+
+# iter.sh takes the evidence from the git of the checkout it runs in, and that
+# checkout need not have a usable one: a worktree synced to a box carries a .git
+# file pointing at a path on the dev box, so the box runs this test with no repo
+# behind it. A throwaway repo makes the result independent of where it runs.
+# GIT_DIR/GIT_WORK_TREE rather than a `cd`, because iter.sh changes into its own
+# checkout first.
+REPO="$SHIM/repo"
+{ git init -q "$REPO" && echo seed > "$REPO/seed" && git -C "$REPO" add seed \
+    && git -C "$REPO" -c user.name=iter-flags-test -c user.email=iter-flags-test@invalid \
+         commit -q -m seed; } || { echo "cannot create the throwaway repo" >&2; exit 1; }
+export GIT_DIR="$REPO/.git" GIT_WORK_TREE="$REPO"
+REPO_HEAD=$(git rev-parse HEAD)
 
 PASS=0; FAIL=0
 ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
@@ -93,6 +106,14 @@ grep -qE 'AH_HEAD=[0-9a-f]{40} ' <<<"$OUT" \
   && ok "AH_HEAD travels to the box as 40 hex" || bad "AH_HEAD: $OUT"
 grep -qE 'AH_TREE_HASH=[0-9a-f]{40} ' <<<"$OUT" \
   && ok "AH_TREE_HASH travels to the box as 40 hex" || bad "AH_TREE_HASH: $OUT"
+grep -q "AH_HEAD=$REPO_HEAD " <<<"$OUT" \
+  && ok "AH_HEAD is the HEAD of the checkout iter.sh runs from" || bad "AH_HEAD is not $REPO_HEAD: $OUT"
+
+# Where git has nothing to say (the box, a dead worktree pointer), the run goes
+# ahead unlabelled: empty evidence is honest, and the command must not suffer.
+OUT=$(GIT_DIR="$SHIM/no-repo" AH_DRY_RUN=1 bash "$ITER" quick --strict 2>&1); rc=$?
+[ $rc -eq 0 ] && ! grep -qE 'AH_HEAD=|AH_TREE_HASH=' <<<"$OUT" && grep -q 'run.sh quick --strict$' <<<"$OUT" \
+  && ok "without a usable git the command runs without evidence" || bad "no git: rc=$rc out=$OUT"
 
 # Under AH_NO_SYNC the box keeps an OLDER tree — labelling it with today's hash
 # would be a run claiming a tree it never saw.

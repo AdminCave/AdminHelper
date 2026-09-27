@@ -62,7 +62,9 @@ docker run -d --name ah-sse-e2e-pg -e POSTGRES_USER=adminhelper -e POSTGRES_PASS
 docker run -d --name ah-sse-e2e-redis -p 127.0.0.1:6380:6379 redis:7-alpine >/dev/null
 echo "[stack] waiting for postgres..."
 pg_ok=0
-for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -U adminhelper >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 1; done
+# Over TCP: the image's init server listens on the socket only, and alembic and
+# uvicorn below connect through the published port.
+for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -h 127.0.0.1 -U adminhelper >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 1; done
 # Abort loudly instead of falling into alembic/uvicorn against a dead DB (4.128).
 [ "$pg_ok" = 1 ] || { echo "FAIL: postgres never became ready within 30s" >&2; exit 1; }
 

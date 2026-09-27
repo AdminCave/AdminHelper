@@ -105,8 +105,12 @@ chmod +x "$AH_VM_PY" "$BIN/curl" "$WRAP"/*.sh
 # the second-VM shims are COMMITTED here rather than living in $WRAP.
 FIX="$WORK/fixture"
 mkdir -p "$FIX/scripts/vm"
+# The real wrappers reach ssh through vm.py, and ssh without -n reads stdin.
+# SHIM_DRAIN_STDIN makes these two do the same, so a caller that forgets to
+# detach their stdin loses it here as it would against a real box.
 cat > "$FIX/scripts/vm/iter.sh" <<'SHIM'
 #!/usr/bin/env bash
+[ -z "${SHIM_DRAIN_STDIN:-}" ] || cat >/dev/null
 n=$(cat "$SHIM_STATE/w2.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$SHIM_STATE/w2.n"
 printf 'call %s: AH_LANE=%s AH_SPEC=%s ARGS=%s\n' "$n" "${AH_LANE:-unset}" "${AH_SPEC:-unset}" "$*" >> "$SHIM_STATE/w2.args"
 # Call 1 runs on HEAD, call 2 on the base commit (heavy.sh checks it out between).
@@ -115,6 +119,7 @@ exit "${SHIM_W2_BASE_RC:-1}"
 SHIM
 cat > "$FIX/scripts/vm/warm.sh" <<'SHIM'
 #!/usr/bin/env bash
+[ -z "${SHIM_DRAIN_STDIN:-}" ] || cat >/dev/null
 echo "w2 warm shim: $* (AH_LANE=${AH_LANE:-unset})" >> "$SHIM_STATE/w2.args"
 exit "${SHIM_W2_WARM_RC:-0}"
 SHIM
@@ -411,6 +416,36 @@ grep -q 'w2 reap shim' "$SHIM_STATE/w2.args" && ok "the second pond was reaped" 
   && ok "the w2 worktree was removed" \
   || bad "worktree left behind: $(git -C "$FIX" worktree list)"
 [ -d "$FIX/.ah-worktrees/w2" ] && bad "w2 directory left behind" || ok "no w2 directory left behind"
+
+# Two red steps, both through the second VM, with wrappers that drain stdin the
+# way ssh does. The step loop read steps-all.tsv from stdin, and the second
+# box's warm.sh swallowed the rest of it: the report named the first red step
+# and silently dropped every later one (R-0092).
+mk_case
+export SHIM_ITER_SEQ="1 1"
+export SHIM_ITER_OUT="  FAIL  web vitest"
+export SHIM_ITER_OUT1="  FAIL  web vitest
+  FAIL  scripts (hermetic)
+  run.sh[all]: 39 passed, 2 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "web vitest:fail:19" "scripts (hermetic):fail:30"
+# The w2 call counter is global: the first step's HEAD run is call 1 (green on
+# the fresh box), the second step's is call 2 and gets SHIM_W2_BASE_RC (red on
+# both boxes, no PASS in history). Two roads, both to unbestaetigt.
+export SHIM_W2_HEAD_RC=0
+# </dev/null: a draining shim outside the loop must never wait on a terminal.
+out=$(SHIM_DRAIN_STDIN=1 bash "$HEAVY" all 2>&1 </dev/null); rc=$?
+[ "$rc" = 1 ] && ok "two unconfirmed candidates -> exit 1" || bad "two candidates -> rc=$rc"
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "both red steps went through the second VM" \
+  || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+{ history_of | grep -q ',all,web vitest,unbestaetigt,' \
+    && history_of | grep -q ',all,scripts (hermetic),unbestaetigt,'; } \
+  && ok "history.csv has a verdict for both red steps" || bad "rows: $(history_of)"
+{ report_of | grep -qF '| all | web vitest | unbestaetigt |' \
+    && report_of | grep -qF '| all | scripts (hermetic) | unbestaetigt |'; } \
+  && ok "the report's step table names both" || bad "table: $(report_of | grep '^| all')"
+report_of | grep -qF '2 step(s) red after retries' \
+  && ok "the summary counts both red steps" || bad "summary: $(report_of | grep 'red after retries')"
 
 candidate_case
 seed_pass_history
