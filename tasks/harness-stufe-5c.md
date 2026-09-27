@@ -37,8 +37,10 @@ Review: approve (sonnet)
 Verify: bash scripts/tests/run.sh quick --strict --only web desktop-e2e
 Doku: keine (T6)
 
-### T3 — Postgres und Redis des Test-Stacks auf 127.0.0.1  [ ]
-Komponente: scripts · Dateien: docker-compose.test.yml, scripts/tests/lib_e2e_stack.sh
+### T3 — Postgres und Redis des Test-Stacks auf 127.0.0.1  [x]
+Komponente: scripts · Dateien: docker-compose.test.yml, scripts/tests/lib_e2e_stack.sh, scripts/tests/lib_e2e_stack_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @7bc9f6d0 2026-09-27T11:59:30+02:00
+Review: approve (sonnet)
 Änderung:
 - `docker-compose.test.yml` veröffentlicht Postgres und Redis nur auf `127.0.0.1`. Die Ports sind `ITEST_PG_PORT` und `ITEST_REDIS_PORT` und werden wie die übrigen ITEST-Ports pro PID gestreut.
 - `lib_e2e_stack.sh` exportiert `ITEST_DATABASE_URL` und `ITEST_REDIS_URL`, die Zugangsdaten stammen aus der Wegwerf-`.env`.
