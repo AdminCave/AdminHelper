@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # heavy_test ohne SIGPIPE-Flake (R-0103) — Task-Ledger
-Status: freigegeben · Branch: harness/heavy-test-sigpipe · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/heavy-test-sigpipe · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0103
 Heavy: none — hermetische Testskripte und ein Listeneintrag im scripts-Block von run.sh; kein Stack-, Gateway-, PKI- oder Install-Pfad, heavy.sh bleibt unverändert.
@@ -23,8 +23,10 @@ buffered or record-oriented flushing based on whether stdout appears to be redir
 erhaltenen Läufen), nicht „1 von 3". Falle beim Nachstellen: In der Tool-Shell von Claude Code ist `grep` eine
 Shell-Funktion, die das Lese-Ende offen hält; nachstellen nur in `bash --noprofile --norc -c` oder einem Skript.
 
-### T1 — 4i-d und Fall 10: das git-Log erst in eine Variable  [ ]
+### T1 — 4i-d und Fall 10: das git-Log erst in eine Variable  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @b240a732 2026-09-28T14:49:38+02:00
+Review: am Ende (Kurz-Ledger)
 Änderung: heavy_test.sh:581–582 (4i-d) wird `log=$(git -C "$AH_PRIVATE_DIR" log --format=%s)` und danach
 `grep -qx 'roadmap: add R-0018' <<<"$log" && ok … || bad "log: $log"`; :1110–1111 (Fall 10) in derselben Form.
 Ein Kommentar nennt SIGPIPE, pipefail und R-0103. Kein `|| true`, kein `GIT_FLUSH=0` (hilft nur, solange die
