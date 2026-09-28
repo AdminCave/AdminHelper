@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz: /tmp-Globs und pre-commit (R-0098, R-0102) — Task-Ledger
-Status: bereit · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/tmp-and-commit-guards.md (Roadmap R-0098, R-0102)
 Heavy: none — nur scripts/dev, scripts/tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles hermetisch über verify.sh scripts.
@@ -160,3 +160,10 @@ Review: approve (opus, 2nd round)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (ein Halbsatz zu `NOT armed`)
 Abhängt von: T9
+
+### T12 — Wächter: benannte Einträge unter /tmp/claude-<uid> sind frei, nur Claudes eigene Verzeichnisse sind geteilt  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Änderung: Fehlalarm aus der Nachmessung der Aufsicht auf fad69048 (dieselben 34 513 Befehle, 2026-09-28): `rm -f /tmp/claude-1000/rm.out`, `rmdir /tmp/claude-1000/tmp.XXXX` und `rm -rf /tmp/claude-1000/tmp.XXXX` wurden verweigert (11 Fälle), weil `is_shared` jeden Namen direkt unter `/tmp/claude-<uid>` als Projektverzeichnis las. Jetzt gelten als geteilt nur Claudes eigene Verzeichnisse: `/tmp/claude-<uid>`, ein Projekt (kodierter Pfad mit führendem `-`) und eine Session (UUID) darin. Jeder andere benannte Eintrag dort ist frei, ebenso ein Glob darin. Weiter verweigert werden die 4 gemessenen Treffer, ein Glob in einem geteilten Verzeichnis und das Löschen eines geteilten Verzeichnisses selbst. Die Deny-Meldung nennt beide Fälle.
+Beweis: harness/tmp-and-commit-guards@fad69048 · `rm -f /tmp/claude-1000/rm.out` → deny; erwartet: frei
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (welche Verzeichnisse geteilt sind)
