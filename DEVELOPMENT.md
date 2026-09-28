@@ -960,7 +960,12 @@ Vollstaendige Integration mit dem AdminHelper-Server:
 Ergaenzend zu den Komponenten-Unit-Tests fahren diese Tests den **echten** Stack
 hoch — `docker-compose.yml` plus das Test-Overlay `docker-compose.test.yml`, das
 die First-Party-Images aus dem Checkout baut, die Gateway-Ports auf hohe
-Per-Run-Ports umlegt und das `./data`-Volume isoliert:
+Per-Run-Ports umlegt, Postgres und Redis nur auf `127.0.0.1` veroeffentlicht und
+das `./data`-Volume isoliert. Die Ports streut `lib_e2e_stack.sh` pro Lauf
+(`ITEST_HTTPS_PORT` 21000-38999, `ITEST_PG_PORT` 11000-15999, `ITEST_REDIS_PORT`
+16000-20999 — die beiden letzten unterhalb des ephemeren Bereichs ab 32768; ohne
+`e2e_init` gelten 18443, 15432 und 16379) und exportiert
+`ITEST_DATABASE_URL` und `ITEST_REDIS_URL` fuer Tests, die auf dem Host laufen:
 
 ```bash
 # From-outside: mTLS-Enrollment (CSR -> :8444) + JWT von aussen durchs Gateway
@@ -999,6 +1004,17 @@ bash scripts/tests/sse_push_e2e.sh
 # Desktop-Live-E2E: SSE-Push in der echten GUI. Event injizieren -> die Glocke
 # aktualisiert sich in Echtzeit (Badge erscheint << 30s-Poll = beweist Push).
 bash scripts/tests/desktop_e2e_sse_push.sh
+
+# Pflicht-Tests gegen Postgres/Redis des Stacks (run.sh-Schritt stack-pytest):
+# Migrations-Smoke (monitoring), test_stream_redis (server), TOCTOU-Test
+# (ca-issuer). Startet nur postgres + redis; ein Skip ist hier ein Fehler.
+# JUnit: .ah-out/junit/stack-<name>.xml. Braucht das venv mit den Python-Deps.
+bash scripts/tests/stack_pytest.sh
+
+# Web-Panel ohne Mocks (run.sh-Schritt web-live): Playwright-Projekt `live`
+# gegen das Gateway — Login als Seed-Admin, jede Admin-Seite, Benutzer anlegen
+# und loeschen. JUnit: .ah-out/junit/web-live.xml.
+bash scripts/tests/web_live.sh
 ```
 
 Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`
@@ -1215,6 +1231,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   haelt die neue sonst zurueck. Roadmap-Zeilen legt `heavy.sh` ueber `roadmap.py add` an; ist
   der Deckel von 20 `neu`-Zeilen voll oder die Zeile schon offen, steht das laut in den Notizen
   des Reports.
+- **JUnit:** Die pytest-Schritte von `run.sh` schreiben `.ah-out/junit/<schritt-id>.xml`
+  (`monitoring-pytest`, `ca-issuer-pytest`, `server-pytest`, fuer Schemathesis eine Datei je
+  Dienst: `schemathesis-server` usw.), `stack-pytest` je Test `stack-<name>.xml`, Playwright
+  `web-playwright.xml` bzw. `web-live.xml` (nur mit gesetztem `AH_OUT_DIR`, sonst schriebe der
+  Reporter auf stdout) und die Desktop-E2E je `wdio run` eine `desktop-e2e-<ms>-<cid>.xml`
+  (`@wdio/junit-reporter`). Jeder `run.sh`-Lauf verwirft vorher die XMLs des
+  letzten, und `heavy.sh` leert das lokale `junit/` vor dem Lauf: der Pull von der Box loescht
+  nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert das gezogene `junit/`
+  nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die Report-Zeile `JUnit:` nennt, wie viele
+  XMLs dort liegen.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es

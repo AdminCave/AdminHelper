@@ -3,15 +3,28 @@
 # separate file would drift. Used by scripts/tests/*.sh via
 #   docker compose -f docker-compose.yml -f docker-compose.test.yml ...
 #
-# It does three things, all test-only:
+# It does four things, all test-only:
 #   - build the three first-party images from THIS checkout (so tests run the
 #     current code, not a published tag) under throwaway local tags;
 #   - publish the gateway on high, per-run host ports (ITEST_*_PORT) instead of
 #     the fixed 443/8444 — `!override` REPLACES the base ports (a plain merge
 #     keeps 443 and collides with a real stack or a parallel run);
+#   - publish Postgres and Redis on 127.0.0.1 only (ITEST_PG_PORT,
+#     ITEST_REDIS_PORT), for the tests that need a real database or Redis and run
+#     on the host (stack_pytest.sh). Production keeps them network-internal;
 #   - swap the server's ./data host bind for a named volume, so `down -v` cleans
 #     it and no container-UID-owned files are left in the repo.
 services:
+  # Loopback only: Redis has no auth at all, and nothing but tests on the same
+  # host needs either. The base defines no ports for them, so a plain list adds these.
+  postgres:
+    ports:
+      - "127.0.0.1:${ITEST_PG_PORT:-15432}:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:${ITEST_REDIS_PORT:-16379}:6379"
+
   server:
     image: adminhelper-test/server:latest
     build:
