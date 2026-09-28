@@ -63,8 +63,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only server web
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (`?include_tunnels` streichen)
 Abhängt von: T1
 
-### T3 — R-0043: FRP-Status typisieren  [ ]
+### T3 — R-0043: FRP-Status typisieren  [x] (Handcommit auf Kevins Wort (2026-09-28): diff-scan wertet die Zähler-Anhebung toBe(13) -> toBe(14) als entfernte Assertion; scope und sec clean)
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/status_router.py, apps/server/tests/test_frp_status.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped, 2 test-skips (task-close verify.sh server --strict: server pytest 662 passed, schemathesis 288 passed) · web vitest 88 passed, eslint+prettier clean (run.sh quick --strict --only server web)
+Review: approve (sonnet)
 Änderung: `FrpStatus{proxies, total, error?}` und `FrpStatusProxy` mit den neun Feldern aus `_collect_proxies`
 (status_router.py:20–35; int/str laut frps 0.69.1 `ProxyStatsInfo`, nie null). Das Feld `tunnel` bleibt ein
 **offenes Objekt** (`Optional[dict[str, Any]]`), nicht `FrpTunnelOut`: sein Inhalt wird hier nicht eingefroren,

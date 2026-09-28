@@ -207,6 +207,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **API-Schema: typisierte Antworten fuer users und frp (Server):** `GET`/`POST /api/users` und
+  `PUT /api/users/{id}` deklarieren `UserResponse`, die FRP-Server-Config-Routen
+  `FrpServerConfigOut` (Detail: `FrpServerConfigDetail` mit den Tunneln als `FrpTunnelOut`) und
+  `GET /api/frp/status` `FrpStatus` — statt eines leeren Schemas im OpenAPI. Die Antwort-Bytes
+  bleiben gleich (je Route ein Differential-Test gegen den bisherigen Builder); Zeitstempel
+  bleiben Strings aus `isoformat()`, das `tunnel`-Objekt im FRP-Status bleibt offen. Die Doku
+  nannte fuer die Config-Detail-Route ein `?include_tunnels=true`, das es nicht gibt: die Tunnel
+  kommen immer mit. Doku: `docs/developer/api-reference.html`.
 - **Planen und Beweis (Harness Stufe 5b, Entwickler-Werkzeuge):** Ledger haben die Status-Folge
   `geplant` -> `freigegeben` -> `aktiv` -> `bereit` -> `erledigt` und das Kopf-Feld `Heavy:`
   (`none | linux-full | scenario <flags> | windows`) statt `Fast-Suite:`/`Warm-Profil:`;

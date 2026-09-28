@@ -1043,6 +1043,104 @@
         "title": "FrpServerConfigUpdate",
         "type": "object"
       },
+      "FrpStatus": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "proxies": {
+            "items": {
+              "$ref": "#/components/schemas/FrpStatusProxy"
+            },
+            "title": "Proxies",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proxies",
+          "total"
+        ],
+        "title": "FrpStatus",
+        "type": "object"
+      },
+      "FrpStatusProxy": {
+        "properties": {
+          "clientVersion": {
+            "title": "Clientversion",
+            "type": "string"
+          },
+          "curConns": {
+            "title": "Curconns",
+            "type": "integer"
+          },
+          "lastCloseTime": {
+            "title": "Lastclosetime",
+            "type": "string"
+          },
+          "lastStartTime": {
+            "title": "Laststarttime",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "todayTrafficIn": {
+            "title": "Todaytrafficin",
+            "type": "integer"
+          },
+          "todayTrafficOut": {
+            "title": "Todaytrafficout",
+            "type": "integer"
+          },
+          "tunnel": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "status",
+          "curConns",
+          "clientVersion",
+          "todayTrafficIn",
+          "todayTrafficOut",
+          "lastStartTime",
+          "lastCloseTime",
+          "tunnel"
+        ],
+        "title": "FrpStatusProxy",
+        "type": "object"
+      },
       "FrpTunnelCreate": {
         "properties": {
           "auto_connection_username": {
@@ -4454,7 +4552,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpStatus"
+                }
               }
             },
             "description": "Successful Response"

@@ -239,3 +239,27 @@ class FrpTunnelOut(BaseModel):
 
 class FrpServerConfigDetail(FrpServerConfigOut):
     tunnels: list[FrpTunnelOut]
+
+
+class FrpStatusProxy(BaseModel):
+    # frps (0.69.1, ProxyStatsInfo) sends these as int64/string, never null; the router
+    # fills a missing one with 0 or "".
+    name: str
+    type: str
+    status: str
+    curConns: int
+    clientVersion: str
+    todayTrafficIn: int
+    todayTrafficOut: int
+    lastStartTime: str
+    lastCloseTime: str
+    # An open object on purpose: which tunnel keys the status view promises is a
+    # decision of its own, not a by-product of typing this route.
+    tunnel: Optional[dict[str, Any]]
+
+
+class FrpStatus(BaseModel):
+    proxies: list[FrpStatusProxy]
+    total: int
+    # Only on the answer for an unreachable dashboard; the route drops it when unset.
+    error: Optional[str] = None
