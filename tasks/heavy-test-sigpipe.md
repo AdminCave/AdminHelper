@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # heavy_test ohne SIGPIPE-Flake (R-0103) — Task-Ledger
-Status: bereit · Branch: harness/heavy-test-sigpipe · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: harness/heavy-test-sigpipe · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0103
 Heavy: none — hermetische Testskripte und ein Listeneintrag im scripts-Block von run.sh; kein Stack-, Gateway-, PKI- oder Install-Pfad, heavy.sh bleibt unverändert.
@@ -55,3 +55,18 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 Abhängt von: T1
+
+### T3 — pipe_guard_test: die drei nits aus dem Gesamt-Review  [x]
+Komponente: scripts · Dateien: scripts/tests/pipe_guard_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @55da6b66 2026-09-28T15:31:32+02:00
+Review: approve (opus, Re-Review der Gesamt-Review-nits)
+Änderung: Aus dem Opus-Gesamt-Review (approve mit drei nits, Kevin 2026-09-28: „T3 nachziehen"). (1) Der
+Leser-Teil des letzten Pipe-Segments endet dort, wo `mask()` den Zeilenend-Kommentar abgeschnitten hat
+(`orig[cnt] = substr(s, k, n - k + 1)`); dazu eine clean-Fixture `git log | grep -c x  # grep -q y`, vorher ein
+Fehlalarm. (2) Die Fixture „a pipe inside quotes" trifft die Maskierung wirklich (Zeilen, in denen `git` ein
+eigenes Wort ist), eine weitere Fixture mit einem escapten Quote deckt den Backslash-Zweig; beide werden rot,
+wenn Maskierung bzw. Backslash-Zweig fehlen. (3) Der Kopfkommentar nennt die Grenzen: eine Pipe am Zeilenende
+ohne `\` und `|&` sieht der Scan nicht.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (intern)
+Abhängt von: T2

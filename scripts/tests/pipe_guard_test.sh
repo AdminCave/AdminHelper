@@ -15,7 +15,8 @@
 #
 # A line scan, not a parser: continuation lines are joined, comments dropped, and
 # a pipe inside quotes is no pipe — which also hides one inside a quoted "$(…)",
-# whose status is rarely looked at.
+# whose status is rarely looked at. Not seen either: a pipe at the end of a line
+# without a backslash, and `|&`.
 #
 # Run: bash scripts/tests/pipe_guard_test.sh            self-test, then every *_test.sh
 #      bash scripts/tests/pipe_guard_test.sh <file…>    scan only these files
@@ -88,7 +89,8 @@ scan() {
       if (substr(m, i, 1) == "|" && substr(m, i + 1, 1) != "|" && substr(m, i - 1, 1) != "|") {
         cnt++; seg[cnt] = substr(m, k, i - k); orig[cnt] = substr(s, k, i - k); k = i + 1
       }
-    cnt++; seg[cnt] = substr(m, k); orig[cnt] = substr(s, k)
+    # n, not the end of s: mask() dropped a trailing comment, and it is no reader.
+    cnt++; seg[cnt] = substr(m, k); orig[cnt] = substr(s, k, n - k + 1)
     for (i = 1; i < cnt; i++) {
       # Only the last command before the pipe writes into it.
       p = seg[i]
@@ -147,7 +149,9 @@ else
   expect clean "the log in a variable first" 'x=$(git log --format=%s)' 'grep -q y <<<"$x"'
   expect clean "readers that read everything" 'git log | grep -c x' 'git log | wc -l'
   expect clean "a comment" '# git log | grep -q x' 'true  # git log | grep -q x'
-  expect clean "a pipe inside quotes" "echo 'git log | grep -q x'" 'echo "git log | grep -q x"'
+  expect clean "an early reader only in the comment" 'git log | grep -c x  # grep -q y'
+  expect clean "a pipe inside quotes" "echo 'see git log | grep -q x'" 'echo "see git log | grep -q x"'
+  expect clean "an escaped quote does not end the quotes" 'echo "a \" git log | grep -q x"'
   expect clean "a git command outside the list" 'git status --porcelain | grep -q x'
   expect clean "|| is no pipe" 'git log || grep -q x f'
   expect clean "the pipeline ended before the pipe" 'git log > f; cat f | grep -q x'
