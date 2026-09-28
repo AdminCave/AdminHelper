@@ -118,7 +118,7 @@
           <h2>FRP &ndash; Server Config</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/server-config</code></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/server-config</code><p>Also writes <code>frps.toml</code> into the shared volume.</p></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/server-config/{id}</code><p>Optional <code>?include_tunnels=true</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/server-config/{id}</code><p>Always includes the config&rsquo;s tunnels (<code>tunnels</code>).</p></div>
           <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/server-config/{id}</code></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/server-config/{id}</code></div>
 

@@ -46,8 +46,10 @@ HEAD: 70e91718
 Verify: bash scripts/tests/run.sh quick --strict --only server web
 Doku: keine (Antwort-Bytes unverändert; CHANGELOG in T3)
 
-### T2 — R-0043: FRP-Server-Config typisieren (Liste, POST, PUT, dazu GET-Detail)  [ ]
+### T2 — R-0043: FRP-Server-Config typisieren (Liste, POST, PUT, dazu GET-Detail)  [x] (Handcommit auf Kevins Wort (2026-09-28): diff-scan wertet die Zähler-Anhebung toBe(10) -> toBe(13) als entfernte Assertion; scope und sec clean)
 Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/config_router.py, apps/server/tests/test_frp_config.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts, docs/developer/api-reference.html, docs/en/developer/api-reference.html, apps/web/tests/e2e/mocks.ts
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped, 2 test-skips (task-close verify.sh server --strict: server pytest 660 passed, schemathesis 288 passed) · web vitest 88 passed, eslint+prettier clean (run.sh quick --strict --only server web)
+Review: approve (sonnet)
 Änderung: `FrpServerConfigOut` mit den 14 camelCase-Schlüsseln aus `FrpServerConfig.to_dict` (frp/models.py:41–65);
 optional nach DB-Nullbarkeit: bindPort, authToken, dashboard*, extraConfig, createdAt, updatedAt (Zeiten als str,
 wie to_dict sie liefert). `FrpTunnelOut` für die Tunnel der Detail-Antwort (models.py:111–129), Detail = Out plus

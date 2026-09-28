@@ -587,6 +587,326 @@
         "title": "FrpServerConfigCreate",
         "type": "object"
       },
+      "FrpServerConfigDetail": {
+        "properties": {
+          "authToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authtoken"
+          },
+          "bindPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bindport"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "dashboardPassword": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboardpassword"
+          },
+          "dashboardPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboardport"
+          },
+          "dashboardUser": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboarduser"
+          },
+          "extraConfig": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraconfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "maxPortsPerClient": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxportsperclient"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "serverAddr": {
+            "title": "Serveraddr",
+            "type": "string"
+          },
+          "subdomainHost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdomainhost"
+          },
+          "tunnels": {
+            "items": {
+              "$ref": "#/components/schemas/FrpTunnelOut"
+            },
+            "title": "Tunnels",
+            "type": "array"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "vhostHttpsPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vhosthttpsport"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "serverAddr",
+          "bindPort",
+          "vhostHttpsPort",
+          "authToken",
+          "subdomainHost",
+          "maxPortsPerClient",
+          "dashboardPort",
+          "dashboardUser",
+          "dashboardPassword",
+          "extraConfig",
+          "createdAt",
+          "updatedAt",
+          "tunnels"
+        ],
+        "title": "FrpServerConfigDetail",
+        "type": "object"
+      },
+      "FrpServerConfigOut": {
+        "properties": {
+          "authToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authtoken"
+          },
+          "bindPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bindport"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "dashboardPassword": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboardpassword"
+          },
+          "dashboardPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboardport"
+          },
+          "dashboardUser": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboarduser"
+          },
+          "extraConfig": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraconfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "maxPortsPerClient": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxportsperclient"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "serverAddr": {
+            "title": "Serveraddr",
+            "type": "string"
+          },
+          "subdomainHost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdomainhost"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "vhostHttpsPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vhosthttpsport"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "serverAddr",
+          "bindPort",
+          "vhostHttpsPort",
+          "authToken",
+          "subdomainHost",
+          "maxPortsPerClient",
+          "dashboardPort",
+          "dashboardUser",
+          "dashboardPassword",
+          "extraConfig",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "FrpServerConfigOut",
+        "type": "object"
+      },
       "FrpServerConfigUpdate": {
         "properties": {
           "auth_token": {
@@ -857,6 +1177,154 @@
           "local_port"
         ],
         "title": "FrpTunnelCreate",
+        "type": "object"
+      },
+      "FrpTunnelOut": {
+        "properties": {
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectionid"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "customDomains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customdomains"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "extraConfig": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraconfig"
+          },
+          "frpConfigId": {
+            "title": "Frpconfigid",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "localIp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Localip"
+          },
+          "localPort": {
+            "title": "Localport",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "secretKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secretkey"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "tunnelType": {
+            "title": "Tunneltype",
+            "type": "string"
+          },
+          "visitorPort": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visitorport"
+          }
+        },
+        "required": [
+          "id",
+          "serverId",
+          "frpConfigId",
+          "name",
+          "tunnelType",
+          "protocol",
+          "localIp",
+          "localPort",
+          "secretKey",
+          "customDomains",
+          "visitorPort",
+          "connectionId",
+          "enabled",
+          "extraConfig",
+          "tags",
+          "createdAt"
+        ],
+        "title": "FrpTunnelOut",
         "type": "object"
       },
       "FrpTunnelUpdate": {
@@ -3771,7 +4239,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FrpServerConfigOut"
+                  },
+                  "title": "Response List Server Configs Api Frp Server Config Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -3803,7 +4277,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpServerConfigOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -3886,7 +4362,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpServerConfigDetail"
+                }
               }
             },
             "description": "Successful Response"
@@ -3939,7 +4417,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FrpServerConfigOut"
+                }
               }
             },
             "description": "Successful Response"

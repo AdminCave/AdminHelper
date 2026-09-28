@@ -117,12 +117,23 @@ const makeHookCreated = (body: Record<string, unknown>, id: string): Record<stri
   token: body.hook_type === 'webhook' ? `whk_${id}` : null,
 });
 
-// GET never returns the stored secret (`_token`).
+// FrpServerConfigOut — every key the server sends, the unset ones as null. GET never
+// returns the stored secret (`_token`).
 const frpPub = (c: Record<string, unknown>): Record<string, unknown> => ({
   id: c.id,
   name: c.name,
   serverAddr: c.serverAddr,
   bindPort: c.bindPort,
+  vhostHttpsPort: null,
+  authToken: null,
+  subdomainHost: null,
+  maxPortsPerClient: null,
+  dashboardPort: null,
+  dashboardUser: null,
+  dashboardPassword: null,
+  extraConfig: null,
+  createdAt: '2026-01-01T00:00:00',
+  updatedAt: '2026-01-01T00:00:00',
 });
 
 const FRP_EXAMPLE = {
