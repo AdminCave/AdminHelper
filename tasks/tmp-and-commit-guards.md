@@ -106,8 +106,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 Abhängt von: T1, T3
 
-### T7 — eigenes `TMPDIR` je `verify.sh`-Lauf  [ ]
+### T7 — eigenes `TMPDIR` je `verify.sh`-Lauf  [x]
 Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/tests/verify_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @96d5948b 2026-09-28T10:14:55+02:00
+Review: approve (opus, 2nd round)
 Änderung: `verify.sh` legt je Lauf `mktemp -d "${TMPDIR:-/tmp}/ah-verify.XXXXXXXX"` an, exportiert es als `TMPDIR`
 und löscht genau diesen Pfad beim Beenden. Den EXIT-Trap erst **nach** dem devenv-Block (:82–91) setzen, damit er
 dessen Trap nicht überschreibt; der Exit-Code von verify.sh bleibt unverändert. Test: das Fake-`run.sh` des Tests

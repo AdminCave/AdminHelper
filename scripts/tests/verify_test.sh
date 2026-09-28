@@ -45,7 +45,12 @@ mk_tree() {
   echo "devenv_marker=\${FIXTURE_DEVENV-<unset>}"
   echo "required=\${AH_REQUIRED-<unset>}"
   echo "cwd=\$PWD"
+  echo "tmpdir=\${TMPDIR-<unset>}"
+  echo "tmpdir_existed=\$([ -d "\${TMPDIR-}" ] && echo yes || echo no)"
 } > "$dir/called.txt"
+# A leftover the way pytest leaves one: nested, so only removing the whole tree
+# gets rid of it.
+[ -d "\${TMPDIR-}" ] && mkdir -p "\$TMPDIR/pytest-of-x/p0" && : > "\$TMPDIR/pytest-of-x/p0/f"
 out="\${AH_OUT_DIR:-$dir/.ah-out}"
 mkdir -p "\$out"
 if [ -n "\${FIXTURE_TRUNCATE:-}" ]; then
@@ -166,6 +171,37 @@ assert d['args']=='tests/x.py', d
 assert d['tree']=='$A', d
 assert d['layer']=='quick', d
 " 2>/dev/null && ok "artifact: valid JSON with component, args, tree" || bad "artifact content: $(cat "$ART")"
+
+# ══ a TMPDIR of its own per run (R-0098) ══════════════════════════════════════
+echo "── TMPDIR per run ──"
+# A cleanup that reached for /tmp/tmp.* took another run's fixtures along; each
+# run now works in a directory of its own and takes it away when it ends.
+OUTER="$WORK/outer"; mkdir -p "$OUTER"
+seen=()
+for want in 0 1 75; do
+  OUT=$(TMPDIR="$OUTER" FIXTURE_RC=$want bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
+  t="$(called tmpdir)"
+  [ $rc -eq "$want" ] && ok "exit $want is passed through the TMPDIR trap" || bad "rc=$rc (expected $want)"
+  case "$t" in
+    "$OUTER"/ah-verify.*) ok "the suite runs with TMPDIR=<outer>/ah-verify.* (exit $want)" ;;
+    *) bad "tmpdir=$t (exit $want)" ;;
+  esac
+  [ "$(called tmpdir_existed)" = yes ] && ok "... which exists while the suite runs" || bad "tmpdir missing during the run"
+  [ ! -e "$t" ] && ok "... and is gone afterwards" || bad "$t survived the run"
+  seen+=("$t")
+done
+[ "$(printf '%s\n' "${seen[@]}" | sort -u | grep -c .)" = 3 ] \
+  && ok "every run gets a new directory" || bad "a directory was reused: ${seen[*]}"
+[ -z "$(ls -A "$OUTER")" ] && ok "nothing is left behind in the outer TMPDIR" || bad "leftovers: $(ls -A "$OUTER")"
+# A relative TMPDIR is taken from the caller's cwd, not from the tree's.
+mkdir -p "$WORK/caller/rel"
+OUT=$(cd "$WORK/caller" && TMPDIR=rel bash "$VERIFY" scripts --tree "$A" 2>&1); rc=$?
+t="$(called tmpdir)"
+case "$t" in
+  "$WORK/caller/rel"/ah-verify.*) ok "a relative TMPDIR becomes absolute before the cd into the tree" ;;
+  *) bad "relative TMPDIR: tmpdir=$t rc=$rc" ;;
+esac
+[ -z "$(ls -A "$WORK/caller/rel")" ] && ok "... and is cleaned up where it was made" || bad "left behind: $(ls -A "$WORK/caller/rel")"
 
 # ══ the artifact may only ever describe THIS run ══════════════════════════════
 echo "── stale evidence ──"
