@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz: /tmp-Globs und pre-commit (R-0098, R-0102) — Task-Ledger
-Status: bereit · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/tmp-and-commit-guards.md (Roadmap R-0098, R-0102)
 Heavy: none — nur scripts/dev, scripts/tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles hermetisch über verify.sh scripts.
@@ -132,3 +132,25 @@ er nur" gilt für Harness-Pfade, nicht für die rm- und die Umgehungs-Sperre; §
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, AUTONOMOUS.md, CLAUDE.md, CHANGELOG.md (die Task ist die Doku)
 Abhängt von: T1, T2, T3, T4, T5, T6, T7
+
+### T9 — Wächter: Befehlswort hinter Wrappern, case-Arme, Long-Option-Abkürzungen, Steuerzeichen  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Änderung: Befund aus `/code-review high` über den Branch-Diff (2026-09-28): Das Befehlswort hinter Wrappern ging verloren, weil eine gemeinsame `VALUE_FLAGS`-Menge galt und nur reine Ziffern als Dauer zählten. Dadurch liefen `sudo -n rm -rf /tmp/tmp.*`, `time -p …`, `timeout 10s …`, `setsid …` und `case x in x) rm … ;; esac` in jedem Modus durch, ebenso `timeout 1m git commit -n`. Jetzt hat jeder Wrapper seine eigenen Wert-Flags, Dauern wie `10s`/`1.5m` werden übersprungen, `setsid`, `ionice`, `builtin` und `time` (als `/usr/bin/time`) sind Wrapper, und case-Arme werden hinter `)` gelesen. Dazu: Abgekürzte Long-Options mit Wert (`git commit --mess "-n x"`) sind kein Fehlalarm mehr. `deny()` ersetzt Steuerzeichen, sonst gibt ein Tab im Harness-Pfad ungültiges JSON und der Hook versagt offen. Der Kopf listet git-Alias und direktes Schreiben von `.git/config` als Lücken.
+Beweis: harness/tmp-and-commit-guards@7d9cd60f · JSON `{"command":"timeout 10s rm -rf /tmp/tmp.*"}` in den Wächter → keine Ausgabe (frei); erwartet: deny
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (DEVELOPMENT.md beschreibt die Regeln, nicht den Parser)
+
+### T10 — Wächter: Löschen über Schleifen- und Pipe-Variablen, find -mindepth, jeder Git-Arbeitsbaum  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Änderung: Befund aus `/code-review high` (2026-09-28): `ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done`, `… | xargs rm` und `find /tmp/claude-1000 -mindepth 1 -delete` liefen durch. Gleichzeitig war eine `for`-Schleife über einen Temp-Glob verweigert, sobald irgendwo im selben Kommando ein unbeteiligtes `rm` stand. Jetzt hängt ein Temp-Glob am Löschen über die Variable, die ihn trägt: `for v in <glob>`, `… | while read v` und `… | xargs rm` (auch durch mehrere Pipe-Stufen); `done` schließt die Schleife. `find` darunter mit `-mindepth` ≥ 1 zählt wie ein Namensmuster. Die Checkout-Ausnahme gilt für jeden Git-Arbeitsbaum, nicht nur für den Checkout des Hooks (Scratch-Worktrees unter /tmp). Kopf und DEVELOPMENT.md nennen die neuen Grenzen: Prozess-Substitution und Umweg über eine zweite Variable.
+Beweis: harness/tmp-and-commit-guards@7d9cd60f · `ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done` → frei; `for f in /tmp/ah-*.log; do cat "$f"; done; rm -f build.o` → deny (Fehlalarm)
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md „Harness-Schutz und Kill-Switch"
+Abhängt von: T9
+
+### T11 — harness.sh status prüft die Hook-Datei; Modus-Test ohne .git  [ ]
+Komponente: scripts · Dateien: scripts/dev/harness.sh, scripts/tests/hooks_test.sh, scripts/tests/review_scripts_test.sh, scripts/tests/verify_test.sh, DEVELOPMENT.md
+Änderung: Befunde aus `/code-review high` (2026-09-28). `harness.sh status` meldete „armed“ allein wegen `core.hooksPath`, auch in einem Worktree, dessen Branch keine ausführbare `scripts/dev/hooks/pre-commit` hat; jetzt heißt es dort „NOT armed“. Die Modus-Prüfung in `review_scripts_test.sh` fällt ohne funktionierendes `.git` (Box-Worktree, Tarball) auf das Ausführungsbit zurück, statt aus Umgebungsgründen rot zu werden. Eigener Befund des Baus: Mutationsproben mit kaputtem Aufräumer ließen 30 `ah-verify.*` in /tmp liegen. `verify_test.sh` legt deshalb das `TMPDIR` aller seiner `verify.sh`-Läufe unter sein eigenes Arbeitsverzeichnis.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (ein Halbsatz zu `NOT armed`)
+Abhängt von: T9
