@@ -110,8 +110,10 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: api-reference DE+EN, Abschnitt Authentifizierung (X-Internal-Key nennen; Swagger „Authorize" kennt beide) · CHANGELOG Changed
 
-### T5 — R-0054: Logout-Schema ehrlich machen  [ ]
+### T5 — R-0054: Logout-Schema ehrlich machen  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/auth_router.py, apps/server/tests/test_auth.py, apps/server/tests/schemathesis_exclude.toml, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @86196e6e 2026-09-28T10:52:13+02:00
+Review: approve (opus)
 Änderung: Das Verhalten von `POST /api/auth/logout` (auth_router.py:220) bleibt; das Schema deklariert die Auth als
 **optional** (`security: [{"HTTPBearer": []}, {}]`, etwa über `openapi_extra`). Vorher nachlesen und im Commit
 zitieren, ob FastAPI die `security`-Liste bei `openapi_extra` anhängt oder ersetzt, und wie Schemathesis 4.x ein

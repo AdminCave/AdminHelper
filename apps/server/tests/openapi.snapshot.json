@@ -3430,7 +3430,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "description": "Add the access and (optionally) refresh token to the blacklist and clear\nthe refresh cookie.",
+        "description": "Blacklist the bearer token, if one is sent, and the refresh token from body\nor cookie; clear the refresh cookie.",
         "operationId": "logout_api_auth_logout_post",
         "requestBody": {
           "content": {
@@ -3472,7 +3472,8 @@
         "security": [
           {
             "HTTPBearer": []
-          }
+          },
+          {}
         ],
         "summary": "Logout",
         "tags": [
