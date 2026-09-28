@@ -207,6 +207,13 @@ desktop-e2e web scripts` und `all`. Ein Lauf, der die Suite erreicht, hinterlaes
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
 loescht eine aeltere: veraltete Evidenz ist schlechter als fehlende.
 
+Jeder Lauf bekommt ein eigenes `TMPDIR` (`${TMPDIR:-/tmp}/ah-verify.XXXXXXXX`) und
+loescht genau dieses Verzeichnis am Ende, den Exit-Code reicht er unveraendert durch
+(R-0098): ein Aufraeumer, der nach `/tmp/tmp.*` greift, trifft die Fixtures eines
+parallel laufenden Tests nicht mehr. Die Kehrseite: das `tmp_path` von pytest ist nach
+dem Lauf weg. Wer einen Rest zum Debuggen braucht, faehrt `run.sh` direkt: der bleibt
+vorerst im `TMPDIR` des Aufrufers (meist `/tmp`).
+
 Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
 ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
 nicht freigebbar. Env-Bedarf loest das Skript auf, der Aufrufer schreibt Flags.
@@ -523,18 +530,72 @@ kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
 auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash
-bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung
+bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung, pre-commit
 bash scripts/dev/harness.sh off      # Kill-Switch: der Waechter warnt nur noch
 bash scripts/dev/harness.sh on       # wieder scharf
 ```
 
-Der Deny greift **nur** im autonomen Lauf (`AH_AUTONOMOUS=1`) und nur ohne den
-Marker `.vm/harness.off` (gitignored, kann also nicht in einen Commit reisen).
+Der Deny fuer Harness-Pfade greift **nur** im autonomen Lauf (`AH_AUTONOMOUS=1`) und nur
+ohne den Marker `.vm/harness.off` (gitignored, kann also nicht in einen Commit reisen).
 Interaktiv warnt der Hook bloss — und diese Warnung sieht man nur mit
 `claude --debug`, weil Claude Code bei Exit 0 ausschliesslich das JSON auf stdout
 liest. Ein Ledger, das den Harness selbst umbaut, ist der Fall fuer `harness.sh off`.
 Der Hook kostet einen `python3`-Start je Tool-Aufruf (auf der Dev-Box ~60 ms) und
 laeuft auch in Kevins interaktiven Sessions.
+
+Zwei Regeln gelten dagegen **in jedem Modus** — interaktiv, im Auto-Modus, in Subagenten,
+im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
+
+- **Kein Loeschen per Glob in einem geteilten Temp-Verzeichnis** (R-0098). Geteilt sind
+  `/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR` und die Verzeichnisse von Claude Code darin:
+  `/tmp/claude-<uid>`, `…/<projekt>` (der kodierte Pfad mit fuehrendem `-`) und
+  `…/<projekt>/<session>` (eine UUID; dort liegen `tasks/` und `scratchpad/` aller Subagenten
+  einer Session), dazu die beiden, die Claude Code je uid fuer alle Sessions fuehrt
+  (`bash-edit-diff/`, `bundled-skills/`). Ein anderer Eintrag dort
+  (`/tmp/claude-<uid>/tmp.XXXX`, eine Datei) ist jemandes eigener. Verweigert werden `rm`,
+  `rmdir`, `unlink` und `shred` mit einem Glob, dessen woertliches Verzeichnis (nach `cd`
+  aufgeloest) ein solches Verzeichnis **ist** (`/tmp/tmp.*`, `cd /tmp && rm -rf tmp.*`, auch
+  `/tmp*` und ein geteiltes Verzeichnis selbst), `find` mit so einem Startpfad samt `-delete`
+  bzw. `-exec rm`, eine Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in
+  /tmp/tmp.*; do …`, `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… |
+  xargs rm` hinter einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen
+  Schleife. Frei bleibt alles eine Ebene tiefer, also im eigenen Verzeichnis
+  (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis `/tmp/foo.XXXX/*`), dazu Pfade hinter einer
+  Variablen (`rm -rf "$W"/*` — der Hook kann sie nicht aufloesen), Globs im eigenen Checkout
+  und derselbe Text in einer Commit-Message oder einem Here-Doc. Die Grenze ist gemessen:
+  „irgendwo unter `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in
+  Scratchpads. Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'` und eine
+  Schleife, die ihre Liste per Prozess-Substitution bekommt (`done < <(ls …)`). Die Regel dazu
+  fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
+  geloescht wird nur der eigene Pfad, nie per Glob.
+- **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
+  `git commit --no-verify` und `-n` (auch in `-qn`), `git -c core.hooksPath=…` (auch ueber <!-- review: ok nennt die verweigerte Umgehung -->
+  `GIT_CONFIG_*`) und `git config … core.hooksPath`, ausser lesend (`--get`), ebenso das
+  Entfernen der ganzen `core`-Sektion. Kevins eigene Shell bleibt frei: der Hook sieht nur,
+  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n`, ein direktes
+  Schreiben von `.git/config` (Edit, `sed -i`, `>>`), ein `core.hooksPath` ueber
+  `include.path`, `git config --edit`, `eval` oder eine Kommando-Substitution, Plumbing
+  (`commit-tree`) und `chmod -x` auf den Hook.
+
+**pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
+`review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
+`sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
+Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Scharf wird er je Klon
+mit einem Handgriff Kevins:
+
+```bash
+git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die Lanes erben es
+bash scripts/dev/harness.sh status            # pre-commit: armed (core.hooksPath=scripts/dev/hooks)
+```
+
+Der Pfad ist relativ: jeder Worktree faehrt den Hook **seines** Branches, ein Branch ohne
+die Datei hat keinen (und dessen aelteres `harness.sh` sagt dazu nichts). Fehlt die Datei im
+Checkout oder ist sie nicht ausfuehrbar, meldet `harness.sh status` `NOT armed`. Der Hook
+sperrt fail-closed — ein kaputtes `review.sh` blockiert
+jeden Commit; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
+Nur `git commit` faehrt ihn: `git cherry-pick`, `git revert` (festgehalten in
+`scripts/tests/review_scripts_test.sh`), ein Merge mit automatischem Commit und `rebase`
+(von Hand geprueft mit git 2.47) laufen am pre-commit-Hook vorbei.
 
 ### Runner-User `adminhelper-runner`
 
@@ -549,7 +610,10 @@ sudo bash scripts/dev/runner-setup.sh             # legt User, Klon, DB, Venv, S
 
 Das Skript ist idempotent: ein zweiter Lauf laesst gefuellte Token-Dateien in Ruhe
 und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
-Klon und Datenbank wieder weg. Danach bleiben **drei Handgriffe** fuer Kevin, die
+Klon und Datenbank wieder weg. Im Klon setzt es als Runner `core.hooksPath
+scripts/dev/hooks`, damit der pre-commit-Hook auch dort vor jedem Commit
+`review.sh sec` faehrt (R-0102); ein Klon von vorher bekommt es mit einem erneuten
+`sudo bash scripts/dev/runner-setup.sh`. Danach bleiben **drei Handgriffe** fuer Kevin, die
 der Runner nicht selbst tun kann:
 
 1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach

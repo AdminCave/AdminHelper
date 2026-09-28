@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Harness-Schutz fuer /tmp und Commits (R-0098, R-0102):** Der PreToolUse-Waechter
+  `scripts/dev/hooks/harness-guard.sh` verweigert in jedem Modus, auch mit gesetztem Kill-Switch,
+  das Loeschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`,
+  `$TMPDIR` und die Session-Verzeichnisse von Claude Code darin; auch ueber `find … -delete`,
+  Schleifen und Pipes) — ein Reviewer hatte mit `rm -rf /tmp/tmp.*` die Fixtures aller
+  Sessions geloescht. Neu ist `scripts/dev/hooks/pre-commit`: er faehrt `review.sh sec --staged`
+  vor jedem Commit, nicht mehr nur in `task-close.sh`; scharf wird er je Klon mit
+  `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt den Stand,
+  `runner-setup.sh` setzt ihn im Runner-Klon, und der Waechter verweigert seine Umgehung.
+  Shell-Schluesselwoerter wie `do` und `then` verdecken vor dem Waechter keinen Befehl mehr.
+  `verify.sh` gibt jedem Lauf ein eigenes `TMPDIR`, Reviewer arbeiten in einem eigenen
+  Verzeichnis. Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
 - **Lane-Isolation (Harness):** eine Lane (`scripts/dev/lane.sh new <slug>`) hat jetzt, was sie
   zum Bauen braucht, und teilt mit dem Haupt-Checkout nichts mehr, woran zwei Laeufe einander
   stoeren: eine eigene `.devenv.sh` mit eigener Test-Datenbank `adminhelper_test_<slug>` und

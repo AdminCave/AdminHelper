@@ -103,6 +103,15 @@ CFG_AT="$(grep -nF 'config remote.origin.' <<<"$OUT" | head -1 | cut -d: -f1)"
 [ -n "$CHOWN_AT" ] && [ -n "$CFG_AT" ] && [ "$CHOWN_AT" -lt "$CFG_AT" ] \
   && ok "the chown comes before the config, so the first run takes the same path" \
   || bad "the config is written before the clone belongs to the runner (chown line ${CHOWN_AT:-?}, config line ${CFG_AT:-?})"
+# R-0102: the clone runs review.sh sec before every commit through the
+# pre-commit hook — armed as the runner too, after the chown: root plus a
+# hooksPath is exactly the risk the script's comment names.
+HOOKS="$(grep -F 'config core.hooksPath' <<<"$OUT")"
+HOOKS_AT="$(grep -nF 'config core.hooksPath' <<<"$OUT" | head -1 | cut -d: -f1)"
+[ "$(grep -c . <<<"$HOOKS")" = 1 ] \
+  && grep -qF -- '$ su - adminhelper-runner -c git -C /srv/ah/repo config core.hooksPath scripts/dev/hooks' <<<"$HOOKS" \
+  && [ -n "$CHOWN_AT" ] && [ "${HOOKS_AT:-0}" -gt "$CHOWN_AT" ] \
+  && ok "the clone's core.hooksPath is set as the runner, after the chown" || bad "core.hooksPath in the plan: $HOOKS"
 
 # ── the two steps that depend on what this box already has ──────────────────
 # `useradd` and `git clone` drop out of the plan the moment the user and the clone
