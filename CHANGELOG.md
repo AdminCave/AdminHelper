@@ -235,6 +235,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   bleiben Strings aus `isoformat()`, das `tunnel`-Objekt im FRP-Status bleibt offen. Die Doku
   nannte fuer die Config-Detail-Route ein `?include_tunnels=true`, das es nicht gibt: die Tunnel
   kommen immer mit. Doku: `docs/developer/api-reference.html`.
+- **Test-Ausgaben und Pflicht-Tests gegen den Stack (Harness Stufe 5c, Entwickler-Werkzeuge):**
+  Die pytest-Schritte von `scripts/tests/run.sh` schreiben JUnit-XML nach
+  `.ah-out/junit/<schritt-id>.xml` (Schemathesis eine Datei je Dienst), Playwright mit gesetztem
+  `AH_OUT_DIR` nach `junit/web-playwright.xml`, die Desktop-E2E ueber `@wdio/junit-reporter` eine
+  Datei je `wdio run`; jeder Lauf verwirft die XMLs des letzten, `heavy.sh` kopiert `junit/` in
+  das Laufverzeichnis und nennt im Report ihre Zahl. Das Test-Overlay `docker-compose.test.yml`
+  veroeffentlicht Postgres und Redis nur auf `127.0.0.1` (`ITEST_PG_PORT`, `ITEST_REDIS_PORT`, pro
+  Lauf gestreut), `lib_e2e_stack.sh` exportiert `ITEST_DATABASE_URL` und `ITEST_REDIS_URL`. Zwei
+  neue Pflicht-Schritte im `integration`-Layer: `stack-pytest` (`scripts/tests/stack_pytest.sh`)
+  faehrt den Migrations-Smoke des Monitorings, `test_stream_redis` und den TOCTOU-Test des
+  ca-issuers gegen diese Dienste, ein Skip ist dort ein Fehler; `web-live`
+  (`scripts/tests/web_live.sh`) faehrt das Playwright-Projekt `live` ohne Mocks (Login als
+  Seed-Admin, jede Admin-Seite, Benutzer anlegen und loeschen). `test_stream_redis` liest die
+  Redis-URL aus `AH_TEST_REDIS_URL`. Anleitung: `DEVELOPMENT.md` („Automatisierte
+  Integrations-/E2E-Tests", „Wochenlauf") und `docs/developer/cicd.html`.
 - **Planen und Beweis (Harness Stufe 5b, Entwickler-Werkzeuge):** Ledger haben die Status-Folge
   `geplant` -> `freigegeben` -> `aktiv` -> `bereit` -> `erledigt` und das Kopf-Feld `Heavy:`
   (`none | linux-full | scenario <flags> | windows`) statt `Fast-Suite:`/`Warm-Profil:`;

@@ -111,6 +111,23 @@
           Then <code>scripts/update.sh --ref &lt;tag&gt;</code> runs for real against a second install directory
           (<code>UPDATE_SH_OK</code>, or <code>UPDATE_SH_SKIP</code> when that release ships no runtime bundle).
           Without Docker or network it exits 75.</p>
+          <p><strong>Mandatory tests against the stack.</strong> Three tests need a real service and skip
+          themselves wherever it is missing: the monitoring migration smoke (Postgres),
+          <code>test_stream_redis</code> (Redis) and the TOCTOU test in <code>test_db_token_store</code>
+          (Postgres, real concurrency). The <code>integration</code> layer runs them in the step
+          <code>stack-pytest</code> (<code>scripts/tests/stack_pytest.sh</code>) against the Postgres and Redis
+          of the compose stack, which the test overlay publishes on <code>127.0.0.1</code> only. There a skip
+          is a failure, because the service is up: the verdict comes from each test&rsquo;s JUnit XML
+          (<code>junit/stack-*.xml</code>), and a skip, a run without a test or a missing file turns the step
+          red. In the PR CI the migration smoke and <code>test_stream_redis</code> keep running against their
+          jobs&rsquo; service containers (Postgres, Redis on 6380): that catches a break at the PR already,
+          without an image build or a stack. The PR CI does not run the TOCTOU test with Postgres &ndash; the
+          <code>ca-issuer</code> job uses the in-memory token store &ndash;, so this is the only place it runs
+          against a real Postgres. The second step, <code>web-live</code>
+          (<code>scripts/tests/web_live.sh</code>), runs the Playwright project <code>live</code> without mocks
+          against the gateway: login as the seed admin, every admin page, creating and deleting a user. The
+          <code>chromium</code> project stays in the PR CI against the mocks; <code>live</code> only exists
+          when <code>ITEST_WEB_URL</code> is set.</p>
 
           <p><strong>Evidence.</strong> Every run writes <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
           (default <code>.ah-out/</code>, gitignored) holding the layer, the flags, the required set,
@@ -118,7 +135,11 @@
           and <code>tree_hash</code>. The tree hash comes from <code>scripts/dev/tree-hash.sh</code>: it is
           built in a throwaway index, so it sees <em>untracked</em> files while <code>tasks/</code> and the
           output directories stay out. Ticking a ledger box therefore does not invalidate a run&rsquo;s
-          evidence; a new, uncommitted source file does.</p>
+          evidence; a new, uncommitted source file does.
+          The pytest steps, Playwright and the desktop E2E also write JUnit XML to
+          <code>$AH_OUT_DIR/junit/</code>; every run drops the previous run&rsquo;s files first, and the weekly
+          run copies them into its run directory. Whoever classifies a red run reads test cases instead of
+          logs.</p>
 
           <h2>Weekly run (<code>scripts/tests/heavy.sh</code>)</h2>
           <p>The heavy tier used to run whenever someone remembered, and its results were recorded nowhere.
