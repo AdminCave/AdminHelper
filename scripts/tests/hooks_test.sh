@@ -354,7 +354,135 @@ done
 mv "$TREE/scripts/dev/harness-paths.txt" "$WORK/paths.bak"
 guard auto Edit "{\"file_path\":\"$TREE/CLAUDE.md\"}"
 [ $rc -eq 0 ] && [ -z "$OUT" ] && ok "without the list the guard steps aside" || bad "no list: rc=$rc out=$OUT"
+# ... for the harness paths only: the temp rule below does not need the list.
+guard inter Bash '{"command":"rm -rf /tmp/tmp.*"}'
+denied "$OUT" && ok "without the list a glob delete under /tmp is still denied" || bad "no list, rm glob: $OUT$ERR"
 mv "$WORK/paths.bak" "$TREE/scripts/dev/harness-paths.txt"
+
+# ══ harness-guard.sh — glob deletes under a temp root, in every mode ══════════
+echo "── harness-guard.sh: glob deletes under /tmp ──"
+
+# R-0098: on 2026-09-25 a review subagent cleaned up its probes with a glob and
+# took every mktemp directory of the user along, other sessions' fixtures
+# included. This rule has no mode and no kill switch (Kevin, 2026-09-27).
+cmdjson() { python3 -c 'import json, sys; print(json.dumps({"command": sys.argv[1]}))' "$1"; }
+
+INCIDENT='rm -rf /tmp/tmp.* 2>/dev/null; ls -d /tmp/tmp.* 2>/dev/null | head -3'
+guard inter Bash "$(cmdjson "$INCIDENT")"
+[ $rc -eq 0 ] && denied "$OUT" && ok "the incident's command is denied in an interactive session" \
+  || bad "incident, interactive: rc=$rc out=$OUT err=$ERR"
+grep -q 'full path' <<<"$OUT" && ok "the reason says what to do instead" || bad "reason: $OUT"
+guard auto Bash "$(cmdjson "$INCIDENT")"
+denied "$OUT" && ok "... and in an autonomous run" || bad "incident, autonomous: $OUT$ERR"
+bash "$HARNESS" off >/dev/null
+guard auto Bash "$(cmdjson "$INCIDENT")"
+denied "$OUT" && ok "... and the kill switch does not lift it (autonomous)" || bad "incident, marker, autonomous: $OUT$ERR"
+guard inter Bash "$(cmdjson "$INCIDENT")"
+denied "$OUT" && ok "... nor interactively" || bad "incident, marker, interactive: $OUT$ERR"
+bash "$HARNESS" on >/dev/null
+
+# The detours the incident could have taken. Interactive, because the rule has
+# no mode: what is denied there is denied everywhere.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+cd /tmp && rm -rf tmp.*
+cd /tmp; rm -rf ./tmp.*
+find /tmp -name 'x*' -delete
+find /tmp -maxdepth 1 -name 'tmp.*' -exec rm -rf {} +
+find /tmp/tmp.* -delete
+for d in /tmp/tmp.*; do rm -rf "$d"; done
+bash -c 'rm -rf /tmp/tmp.*'
+sudo rm -rf -- /tmp/ah-?
+rmdir /tmp/tmp.*
+unlink /tmp/x*
+shred -u /tmp/[ab]*
+rm -rf /var/tmp/ah-*
+rm -f /dev/shm/*
+rm -rf "$TMPDIR"/tmp.*
+rm -rf ${TMPDIR:-/tmp}/tmp.*
+cd "$TMPDIR" && rm -rf tmp.*
+rm -rf /tmp/claude-1000/*/scratchpad
+rm -rf /tmp/$U/*
+for d in /tmp/tmp.*; do find "$d" -delete; done
+rm -rf /tmp
+rm -rf //tmp
+rm -rf /tmp*
+rm -rf /var/tmp*
+cd / && rm -rf tmp*
+rm -rf /*/tmp.*
+find /tmp/x -name '*.log' -delete
+find /tmp/x -regex '.*' -delete
+find //tmp -delete
+if true; then rm -rf /tmp/tmp.*; fi
+time rm -rf /tmp/tmp.*
+exec rm -rf /tmp/tmp.*
+CMDS
+guard inter Bash "$(cmdjson "$(printf 'cd /tmp\nrm -rf tmp.*')")"
+denied "$OUT" && ok "denied: a cd on the line above" || bad "multi-line cd: $OUT$ERR"
+
+# The session's own cwd counts as well: the Bash tool keeps it between calls.
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf tmp.*"},"cwd":"/tmp"}' \
+  | env -u AH_AUTONOMOUS bash "$GUARD" 2>/dev/null)
+denied "$OUT" && ok "denied: a relative glob in a session whose cwd is /tmp" || bad "event cwd /tmp: $OUT"
+# ... but a word that starts with a variable points wherever the variable does.
+for cmd in 'rm -rf $SP/tmp.*' 'cd "$SP" && rm -rf tmp.*'; do
+  OUT=$(python3 -c 'import json, sys; print(json.dumps({"tool_name": "Bash", "tool_input": {"command": sys.argv[1]}, "cwd": "/tmp"}))' "$cmd" \
+    | env -u AH_AUTONOMOUS bash "$GUARD" 2>/dev/null)
+  [ -z "$OUT" ] && ok "free with cwd /tmp: $cmd" || bad "variable under cwd /tmp: $cmd -> $OUT"
+done
+
+# $TMPDIR as a value: wherever it points is a temp root.
+OUT=$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /srv/ah-td/tmp.*"}}' \
+  | TMPDIR=/srv/ah-td bash "$GUARD" 2>/dev/null)
+denied "$OUT" && ok "denied: a glob under the value of TMPDIR" || bad "TMPDIR value: $OUT"
+OUT=$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /srv/ah-td/tmp.*"}}' \
+  | env -u TMPDIR bash "$GUARD" 2>/dev/null)
+[ -z "$OUT" ] && ok "free: the same path when TMPDIR points elsewhere" || bad "TMPDIR unset: $OUT"
+
+# What stays free: own directories by name, variables the hook cannot resolve,
+# the text in prose, and globs inside the checkout — the fixture tree itself
+# lives under /tmp, so the repo-relative cases below prove that exemption.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -rf /tmp/scratch
+rm -rf /tmp/tmp.abc123 /tmp/tmp.def456
+rm -rf "$W"
+rm -rf "$TMPDIR"
+rm -rf $SP/tmp.*
+rm -rf /home/*/x*
+rm -rf "$W"/*
+git commit -m "never rm -rf /tmp/tmp.* again"
+echo 'rm -rf /tmp/tmp.*' >> notes.md
+rm -f apps/web/dist/*.js
+find . -name '*.pyc' -delete
+find /tmp/scratch -delete
+ls -d /tmp/tmp.*
+for f in /tmp/ah-*.log; do cat "$f"; done
+for f in *.bak; do rm -f "$f"; done
+CMDS
+guard inter Bash "$(cmdjson "$(printf 'cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
+[ -z "$OUT" ] && ok "free: the command as a here-doc body" || bad "here-doc: $OUT"
+
+# The keyword gap: `do`/`then`/… were read as the command word, so a harness
+# edit behind them went through even in an autonomous run.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "keyword prefix: $cmd" || bad "keyword gap: $cmd -> $OUT$ERR"
+done <<'CMDS'
+for f in a; do sed -i s/x/y/ CLAUDE.md; done
+if true; then rm CLAUDE.md; fi
+if false; then :; else sed -i s/a/b/ CLAUDE.md; fi
+while true; do tee CLAUDE.md; done
+until false; do cp /tmp/x scripts/dev/verify.sh; done
+! sed -i s/a/b/ CLAUDE.md
+CMDS
 
 fi   # GUARD_SKIPPED
 

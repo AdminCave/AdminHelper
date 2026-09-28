@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # harness-guard.sh — PreToolUse hook: an autonomous run does not edit the files
-# that define its own rules (autonomy stage 4).
+# that define its own rules (autonomy stage 4), and no session deletes by glob
+# under a temp root (R-0098).
 #
 # Registered in .claude/settings.json for Edit|Write|MultiEdit|Bash. It reads the
 # hook's JSON from stdin, works out which file the call would WRITE, and matches
@@ -14,9 +15,16 @@
 #   otherwise                               ->  one warning line on stderr, exit 0
 #   not a harness path                      ->  no output at all, exit 0
 #
-# Never exits non-zero: a PreToolUse hook that errors turns into a blocked tool
-# call for everything, harness path or not. The decision is carried by the JSON
-# document, which is the documented way for a hook to deny a call.
+# A Bash command that deletes by glob under /tmp, /var/tmp, /dev/shm or $TMPDIR
+# is denied in EVERY mode, and the kill switch does not lift it (Kevin,
+# 2026-09-27): on 2026-09-25 a reviewer cleaned up with `rm -rf /tmp/tmp.*` and
+# took the fixtures of every other session along. Globs inside this checkout
+# stay free even when the checkout itself lives under /tmp.
+#
+# Always exits 0: exit 2 would block every call whatever the JSON says, and any
+# other non-zero exit blocks nothing — the call goes on through the normal
+# permission flow. The decision is carried by the JSON document, the documented
+# way for a hook to deny a call; an error in here therefore fails open.
 #
 # Bash commands are BEST EFFORT and deliberately narrow: only the shapes that
 # actually write — a `>`/`>>` redirection, `sed -i`, `tee`, `cp`/`mv`/`install`,
@@ -31,8 +39,10 @@
 # `cd` is followed within a command, and `bash -c "…"` is scanned recursively,
 # because Claude Code does not strip it before matching its own rules either.
 #
-# Known gaps, checked and accepted: a file written from inside python/perl or an
-# interactive editor, a path built at runtime (`$VAR/CLAUDE.md`),
+# Known gaps, checked and accepted: a file written or deleted from inside
+# python/perl or an interactive editor, a path built at runtime
+# (`$VAR/CLAUDE.md`, `rm -rf "$D"/*` — the hook cannot resolve a variable other
+# than $TMPDIR), a delete fed through `xargs rm` or `find … -exec sh -c 'rm …'`,
 # `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), and the
 # three git ways of restoring content over a file — `git apply <patch>`,
 # `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
@@ -56,8 +66,6 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 0
 PATHS="$ROOT/scripts/dev/harness-paths.txt"
 MARKER="$ROOT/.vm/harness.off"
 
-[ -f "$PATHS" ] || exit 0
-
 # python3 does the parsing: the hook input is JSON with escaped strings, and a
 # shell that guesses at those is a guard that can be talked past with a quote.
 # Without python3 the hook steps aside (and says so) rather than denying every
@@ -69,23 +77,43 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 0
 fi
 
-# Reads the hook JSON on stdin, prints one repo-relative path per line: the files
-# this call would write. Prints nothing for a call that writes nothing.
+# Reads the hook JSON on stdin, prints one finding per line: `H <path>` for each
+# repo-relative file this call would write, `T <operand>` for each glob delete
+# under a temp root. Prints nothing for a call that does neither.
 # The program is handed over with -c, not on stdin: `python3 -` would eat the
 # very JSON this hook has to read.
 PARSE=$(cat <<'PY'
-import json, os, shlex, sys
+import fnmatch, json, os, re, shlex, sys
 
 root = os.path.realpath(sys.argv[1])
 
 # Wrappers that stand in front of the real command word, plus the subshell
 # parentheses shlex hands over as their own tokens.
-WRAPPERS = {"sudo", "env", "timeout", "nice", "nohup", "stdbuf", "command", "xargs", "(", ")", "{", "}"}
+WRAPPERS = {"sudo", "env", "timeout", "nice", "nohup", "stdbuf", "command", "exec", "xargs", "(", ")", "{", "}"}
+# Shell keywords in front of a command: `for …; do rm x; done` reaches the
+# segment `do rm x`, and reading `do` as the command word hid the rm.
+KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!", "time"}
 # Wrapper flags that eat the next word (`sudo -u root tee …`, `timeout -k 5 …`).
 VALUE_FLAGS = {"-u", "-g", "-k", "-s", "-n", "-p", "-C", "-D", "--user", "--group", "--signal"}
 SEPARATORS = {"|", "||", "&&", ";", "&", ";;"}
+DELETERS = {"rm", "rmdir", "unlink", "shred"}
 
-out = []
+# The temp roots. `$TMPDIR` as TEXT stands for itself (a placeholder root no
+# real path has), its current VALUE is a root as well.
+TMPDIR_ROOT = "/<TMPDIR>"
+TMP_ROOTS = ["/tmp", "/var/tmp", "/dev/shm", TMPDIR_ROOT]
+_tmpdir = os.environ.get("TMPDIR", "")
+if os.path.isabs(_tmpdir) and os.path.normpath(_tmpdir) != "/":
+    TMP_ROOTS.append(os.path.normpath(_tmpdir))
+TMPDIR_TEXT = re.compile(r"^\$(?:TMPDIR\b|\{TMPDIR(?::?[-=?+][^}]*)?\})")
+# Where a word that starts with any other variable points: nowhere this hook
+# can name, so nothing below it is matched (`cd "$SP" && rm -rf x*` is free).
+UNRESOLVED = "/<unresolved>"
+
+out = []        # repo-relative paths this call writes
+tmp_hits = []   # glob deletes under a temp root
+loop_globs = [] # `for v in <glob under a temp root>` ...
+deleted = []    # ... is only a finding next to a delete in the same command
 
 
 def rel(p, base):
@@ -96,6 +124,107 @@ def rel(p, base):
     if p == root:
         return None
     return os.path.relpath(p, root) if p.startswith(root + os.sep) else None
+
+
+def resolve(word, base):
+    """An absolute, normalized path for a word. `$TMPDIR`/`${TMPDIR…}` in front
+    becomes its placeholder root; any other variable, `~` or a command
+    substitution in front makes it UNRESOLVED."""
+    word = TMPDIR_TEXT.sub(TMPDIR_ROOT, word, count=1)
+    if word.startswith(("$", "~", "`")):
+        return UNRESOLVED
+    # normpath keeps a leading `//` (POSIX leaves it implementation-defined);
+    # on Linux `//tmp` is /tmp.
+    return "/" + os.path.normpath(os.path.join(base, word)).lstrip("/")
+
+
+def in_repo(p):
+    real = os.path.realpath(p)
+    return real == root or real.startswith(root + os.sep)
+
+
+def in_tmp(p):
+    """p is a temp root or below one — and not inside this checkout, which may
+    itself live under /tmp (a scratch worktree, a test fixture)."""
+    real = os.path.realpath(p)
+    if not any(c == r or c.startswith(r + "/") for c in (p, real) for r in TMP_ROOTS):
+        return False
+    return not in_repo(p)
+
+
+def has_glob(word):
+    return any(c in word for c in "*?[")
+
+
+def glob_dir(word, base):
+    """The directory a glob operand reaches into: its literal part — up to the
+    first glob character or variable — cut back to the last `/`
+    (`/tmp/tmp.*` -> /tmp, `/tmp/$U/*` -> /tmp, `$SP/tmp.*` -> UNRESOLVED)."""
+    word = TMPDIR_TEXT.sub(TMPDIR_ROOT, word, count=1)
+    lit = word[:min(i for i, c in enumerate(word + "*") if c in "*?[$`")]
+    if not lit and word.startswith(("$", "`")):
+        return UNRESOLVED
+    return resolve(lit[:lit.rfind("/") + 1], base) if "/" in lit else os.path.normpath(base)
+
+
+def reaches_root(pattern):
+    """The glob can match a temp root itself: `/tmp*`, `/t*`, `/*/tmp.*`, and
+    `tmp*` after `cd /` all take /tmp along."""
+    comps = pattern.strip("/").split("/")
+    for r in TMP_ROOTS:
+        rc = r.strip("/").split("/")
+        if r != TMPDIR_ROOT and len(comps) >= len(rc) and all(
+                fnmatch.fnmatchcase(c, p) for c, p in zip(rc, comps)):
+            return True
+    return False
+
+
+def tmp_glob(word, base):
+    """A glob under a temp root or reaching one, or a fixed temp root itself
+    (`rm -rf /tmp` takes the same as `rm -rf /tmp/*`). A bare `$TMPDIR` is left
+    to the variable rule: `rm -rf "$TMPDIR"` after `export TMPDIR=$(mktemp -d
+    …)` is cleanup."""
+    if has_glob(word):
+        d = glob_dir(word, base)
+        if d == UNRESOLVED or in_repo(d):
+            return False
+        return in_tmp(d) or reaches_root(resolve(word, base))
+    p = resolve(word, base)
+    return p in TMP_ROOTS and p != TMPDIR_ROOT
+
+
+def printable(word):
+    return "".join(c if c.isprintable() else "?" for c in word)
+
+
+def find_delete(args, cwd):
+    """For `find <start…> <expr>`: whether it deletes (-delete, -exec(dir) rm),
+    and the start path that makes it a glob delete under a temp root — a temp
+    root, a glob under one, or a path below one with a name pattern, the same
+    selection by pattern as `rm /tmp/x/*`."""
+    i = 0
+    while i < len(args) and (args[i] in ("-H", "-L", "-P", "-D") or args[i].startswith("-O")):
+        i += 2 if args[i] == "-D" else 1
+    starts = []
+    while i < len(args) and not (args[i].startswith("-") or args[i] in ("(", "!", ")", ",")):
+        starts.append(args[i])
+        i += 1
+    expr = args[i:]
+    deletes = "-delete" in expr or any(
+        a in ("-exec", "-execdir", "-ok", "-okdir") and j + 1 < len(expr)
+        and os.path.basename(expr[j + 1]) in DELETERS
+        for j, a in enumerate(expr))
+    if not deletes:
+        return False, None
+    pattern = any(
+        (a in ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename")
+         and j + 1 < len(expr) and has_glob(expr[j + 1]))
+        or a in ("-regex", "-iregex")
+        for j, a in enumerate(expr))
+    for s in starts or ["."]:
+        if tmp_glob(s, cwd) or (pattern and in_tmp(resolve(s, cwd))):
+            return True, s
+    return True, None
 
 
 def tokenize(cmd):
@@ -210,7 +339,7 @@ def run_segment(tok, cwd, depth):
             i += 1
         elif t.startswith("-"):
             i += 2 if t in VALUE_FLAGS else 1
-        elif os.path.basename(t) in WRAPPERS or t.isdigit():
+        elif os.path.basename(t) in WRAPPERS or t in KEYWORDS or t.isdigit():
             i += 1
         else:
             break
@@ -220,8 +349,20 @@ def run_segment(tok, cwd, depth):
     args = clean[i + 1:]
     words = [a for a in args if not a.startswith("-")]
 
+    if verb in DELETERS:
+        deleted.append(verb)
+        tmp_hits.extend(w for w in words if tmp_glob(w, cwd))
+    elif verb == "find":
+        deletes, hit = find_delete(args, cwd)
+        if deletes:
+            deleted.append(verb)
+        if hit is not None:
+            tmp_hits.append(hit)
+    elif verb == "for" and "in" in args:
+        loop_globs.extend(w for w in args[args.index("in") + 1:] if tmp_glob(w, cwd))
+
     if verb == "cd":
-        return os.path.normpath(os.path.join(cwd, words[0])) if words else cwd
+        return resolve(words[0], cwd) if words else cwd
 
     if verb in ("bash", "sh", "dash", "zsh"):
         # -c, but also -lc and friends: any flag carrying a c takes the next word
@@ -293,16 +434,22 @@ elif tool == "Bash":
     if isinstance(cmd, str):
         scan(cmd, cwd)
 
+if loop_globs and deleted:
+    tmp_hits.extend(loop_globs)
+for w in dict.fromkeys(tmp_hits):
+    print("T " + printable(w))
 for p in dict.fromkeys(p for p in out if p):
-    print(p)
+    print("H " + p)
 PY
 )
 targets() { python3 -c "$PARSE" "$ROOT"; }
 
 # The list is shell `case` patterns, where `*` crosses `/` — `.claude/**` is the
-# whole subtree, every other line is the file itself.
+# whole subtree, every other line is the file itself. A checkout without the
+# list guards no harness paths; the temp rule does not need it.
 match() {
   local path="$1" pattern
+  [ -f "$PATHS" ] || return 1
   while IFS= read -r pattern; do
     case "$pattern" in ''|'#'*) continue ;; esac
     # shellcheck disable=SC2254  # the list IS patterns; that is the point
@@ -311,20 +458,34 @@ match() {
   return 1
 }
 
-HIT=""
-while IFS= read -r p; do
-  [ -n "$p" ] || continue
-  if match "$p"; then HIT="$p"; break; fi
+# The documented deny document. The text is escaped for JSON: a file name with
+# a quote in it would otherwise produce a broken document, and a guard whose
+# answer cannot be parsed is a guard that failed open.
+deny() {
+  local esc="${1//\\/\\\\}"
+  esc="${esc//\"/\\\"}"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$esc"
+}
+
+TMP_HIT="" HIT=""
+while IFS= read -r line; do
+  case "$line" in
+    "T "*) [ -n "$TMP_HIT" ] || TMP_HIT="${line#T }" ;;
+    "H "*) if [ -z "$HIT" ] && match "${line#H }"; then HIT="${line#H }"; fi ;;
+  esac
 done < <(targets)
+
+# No mode, no kill switch: the one rule of this hook that also binds the model
+# in an interactive session (Kevin, 2026-09-27).
+if [ -n "$TMP_HIT" ]; then
+  deny "glob delete under a temp root: $TMP_HIT — refused in every mode; delete your own directories by their full path, never with a glob (create them with mktemp -d -p <your dir>)"
+  exit 0
+fi
 
 [ -n "$HIT" ] || exit 0
 
 if [ "${AH_AUTONOMOUS:-0}" = "1" ] && [ ! -e "$MARKER" ]; then
-  # The documented deny document. The path is escaped for JSON: a file name with
-  # a quote in it would otherwise produce a broken document, and a guard whose
-  # answer cannot be parsed is a guard that failed open.
-  ESC="${HIT//\\/\\\\}"; ESC="${ESC//\"/\\\"}"
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"harness path: %s (autonomous run; bash scripts/dev/harness.sh off lifts this)"}}\n' "$ESC"
+  deny "harness path: $HIT (autonomous run; bash scripts/dev/harness.sh off lifts this)"
 else
   echo "harness-guard: $HIT is a harness path — change it deliberately, not in passing" >&2
 fi

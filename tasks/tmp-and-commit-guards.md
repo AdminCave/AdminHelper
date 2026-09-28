@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz: /tmp-Globs und pre-commit (R-0098, R-0102) — Task-Ledger
-Status: freigegeben · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/tmp-and-commit-guards · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/tmp-and-commit-guards.md (Roadmap R-0098, R-0102)
 Heavy: none — nur scripts/dev, scripts/tests, Skills und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles hermetisch über verify.sh scripts.
@@ -16,8 +16,10 @@ Keine Lane: `lane.sh new` legt fest `feature/<slug>` an. Parallel zu Stufe 5c m�
 bleibt; einzige gemeinsame Datei ist `DEVELOPMENT.md` (andere Abschnitte). Reviewer-Subagenten bekommen ein
 eigenes Verzeichnis aus `mktemp -d -p <Scratchpad>` und löschen nur eigene Pfade mit vollem Pfad, nie per Glob.
 
-### T1 — Wächter: Glob-Löschen unter Temp-Wurzeln in jedem Modus verweigern, Schlüsselwort-Lücke schließen  [ ]
+### T1 — Wächter: Glob-Löschen unter Temp-Wurzeln in jedem Modus verweigern, Schlüsselwort-Lücke schließen  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @90093678 2026-09-28T08:55:54+02:00
+Review: approve (opus, 2nd round)
 Änderung: Neuer Fund-Typ „Löschen per Glob unter einer Temp-Wurzel", der **unabhängig** von `AH_AUTONOMOUS` und
 vom Marker `.vm/harness.off` verweigert (JSON-`deny` wie bisher, Grundtext: eigene Verzeichnisse mit vollem Pfad
 löschen). Muster laut Spec „Trade-offs": `rm`/`rmdir`/`unlink`/`shred` mit Glob-Operand unter `/tmp`,
