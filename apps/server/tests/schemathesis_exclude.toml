@@ -148,13 +148,6 @@ reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
-operation_id = "logout_api_auth_logout_post"
-checks = ["ignored_auth", "negative_data_rejection"]
-# POST /api/auth/logout
-reason = "zwei Checks, beide gemessen: ignored_auth — die Route antwortet ohne Token mit 200; negative_data_rejection — sie nimmt auch einen schema-widrigen Body an. Beides dieselbe Ursache: die Route verlangt gar nichts. Nachgeprueft: sie blacklistet dann nichts, loescht nur das Cookie und schreibt einen Audit-Eintrag. Schema deklariert Auth, Route verlangt keine — Mismatch, kein Loch"
-until = "Roadmap: Schema und Route in Einklang bringen"
-
-[[exclude]]
 operation_id = "import_connections_api_connections_import_post"
 checks = ["response_schema_conformance"]
 # POST /api/connections/import
