@@ -2099,6 +2099,49 @@
         "title": "UserMe",
         "type": "object"
       },
+      "UserResponse": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "server_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Server Ids",
+            "type": "array"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "is_admin",
+          "server_ids",
+          "created_at"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
       "UserUpdate": {
         "properties": {
           "is_admin": {
@@ -5516,7 +5559,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserResponse"
+                  },
+                  "title": "Response List Users Api Users Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -5548,7 +5597,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -5736,7 +5787,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
               }
             },
             "description": "Successful Response"

@@ -30,8 +30,10 @@ Regeln für diesen Bau:
 - Findet Schemathesis nach T4 in den Key-Kontexten Neues: `[?]`, keinen Ausschluss schreiben.
 - R-0056 (BUG, geplant) ändert dieselbe Funktion `import_connections` wie T6: seriell dazu bauen.
 
-### T1 — R-0043: Users-Antworten typisieren (GET/POST, dazu PUT)  [ ]
+### T1 — R-0043: Users-Antworten typisieren (GET/POST, dazu PUT)  [x] (Handcommit auf Kevins Wort (2026-09-28): diff-scan wertet die Zähler-Anhebung toBe(8) -> toBe(10) als entfernte Assertion; scope und sec clean)
 Komponente: server · Dateien: apps/server/app/modules/users/schemas.py, apps/server/app/modules/users/router.py, apps/server/tests/test_users.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped, 2 test-skips (task-close verify.sh server --strict: server pytest 655 passed, schemathesis 288 passed) · web vitest 88 passed (run.sh quick --strict --only server web)
+Review: approve (sonnet)
 Änderung: `UserResponse` (id, username, is_admin, server_ids, created_at als `Optional[str]`) in `users/schemas.py`;
 `response_model` an users/router.py:37, :43 und :96; `_user_response` (:27) bleibt der Builder und liefert
 `created_at` als `isoformat()`. Snapshot neu (`--update-openapi-snapshot`, generiert).
@@ -45,7 +47,7 @@ Verify: bash scripts/tests/run.sh quick --strict --only server web
 Doku: keine (Antwort-Bytes unverändert; CHANGELOG in T3)
 
 ### T2 — R-0043: FRP-Server-Config typisieren (Liste, POST, PUT, dazu GET-Detail)  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/config_router.py, apps/server/tests/test_frp_config.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/app/modules/frp/config_router.py, apps/server/tests/test_frp_config.py, apps/server/tests/openapi.snapshot.json, apps/web/src/lib/api/mocks.contract.test.ts, docs/developer/api-reference.html, docs/en/developer/api-reference.html, apps/web/tests/e2e/mocks.ts
 Änderung: `FrpServerConfigOut` mit den 14 camelCase-Schlüsseln aus `FrpServerConfig.to_dict` (frp/models.py:41–65);
 optional nach DB-Nullbarkeit: bindPort, authToken, dashboard*, extraConfig, createdAt, updatedAt (Zeiten als str,
 wie to_dict sie liefert). `FrpTunnelOut` für die Tunnel der Detail-Antwort (models.py:111–129), Detail = Out plus
@@ -74,7 +76,7 @@ Verify: bash scripts/tests/run.sh quick --strict --only server web
 Doku: CHANGELOG.md `[Unreleased]` / Changed (typisierte Antworten für users und frp im OpenAPI)
 Abhängt von: T2
 
-### T4 — R-0054: X-API-Key und X-Internal-Key als Security-Schemes, `ignored_auth` in allen Kontexten  [ ]
+### T4 — R-0054: X-API-Key und X-Internal-Key als Security-Schemes, `ignored_auth` in allen Kontexten  [?] (Schemathesis findet nach T4 in read_key/read_write_key 3 Fälle (GET+POST /api/connections): 'API accepts invalid authentication (generated auth likely invalid)'. Ursache: Schemathesis generiert zusätzlich einen zufälligen Authorization-Header (HTTPBearer ist deklariert), _contains_auth prüft die Schemes in Reihenfolge und nimmt den generierten Bearer; der Server antwortet 200, weil ApiKeyOrUser den gültigen X-API-Key zuerst prüft und den Bearer ignoriert. Optionen: (1) test_schemathesis.py setzt schema.config.generation.update(with_security_parameters=False) — belegt: connections in allen 4 Kontexten 28 passed, Mutationsprobe (ApiKeyOrUser lässt fehlenden Key durch) macht read_key rot; (2) ApiKeyOrUser weist ab, sobald ein mitgesendeter Bearer ungültig ist, auch bei gültigem Key (Verhaltensänderung); (3) Ausschluss — laut Ledger-Regel verboten. Welche?)
 Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_schemathesis.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
 Änderung: `APIKeyHeader(name="X-API-Key", scheme_name="ApiKey", auto_error=False)` als Security-Parameter in
 `ApiKeyOrUser.__call__`; der Wert geht an `_get_api_key` (core/auth.py:188), der Query-Fallback bleibt.

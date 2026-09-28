@@ -136,12 +136,13 @@ describe('playwright mocks vs. the server OpenAPI snapshot', () => {
     expect(drift).toEqual({});
 
     // Four `continue` paths above skip a fixture silently — most often because
-    // the server route declares no response_model at all (six do). Without this
+    // the server route declares no response_model at all (four do). Without this
     // the checked set could drain to zero while the test stayed green, which is
     // exactly the kind of quiet green this whole stage exists to prevent.
-    // 8 of the 15 fixtures reach a key check today; the other 7 answer routes
-    // that declare no response_model at all. Pinned at the real number, so a
-    // fixture quietly dropping out is a failure rather than a smaller green.
-    expect(checked, 'too few fixtures actually reached a key check').toBe(8);
+    // 10 of the 15 fixtures reach a key check today; the other 5 answer routes
+    // that declare no response_model (four) or an open dict (audit). Pinned at
+    // the real number, so a fixture quietly dropping out is a failure rather
+    // than a smaller green.
+    expect(checked, 'too few fixtures actually reached a key check').toBe(10);
   });
 });
