@@ -548,23 +548,26 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
 
 - **Kein Loeschen per Glob in einem geteilten Temp-Verzeichnis** (R-0098). Geteilt sind
   `/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR` und die Verzeichnisse von Claude Code darin:
-  `/tmp/claude-<uid>`, `…/<projekt>` und `…/<projekt>/<session>` (dort liegen `tasks/` und
-  `scratchpad/` aller Subagenten einer Session). Verweigert werden `rm`, `rmdir`, `unlink` und
-  `shred` mit einem Glob, dessen woertliches Verzeichnis (nach `cd` aufgeloest) ein solches
-  Verzeichnis **ist** (`/tmp/tmp.*`, `cd /tmp && rm -rf tmp.*`, auch `/tmp*` und ein geteiltes
-  Verzeichnis selbst), `find` mit so einem Startpfad samt `-delete` bzw. `-exec rm`, eine
-  Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in /tmp/tmp.*; do …`,
-  `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… | xargs rm` hinter
-  einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen Schleife.
-  Frei bleibt alles eine Ebene tiefer, also im eigenen Verzeichnis (`…/scratchpad/x/*`, ein
-  `mktemp`-Verzeichnis `/tmp/foo.XXXX/*`), dazu Pfade hinter einer Variablen
-  (`rm -rf "$W"/*` — der Hook kann sie nicht aufloesen), Globs im eigenen Checkout und derselbe
-  Text in einer Commit-Message oder einem Here-Doc. Die Grenze ist gemessen: „irgendwo unter
-  `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in Scratchpads. Nicht erfasst:
-  Loeschen aus python heraus, `find … -exec sh -c 'rm …'` und eine Schleife, die ihre Liste
-  per Prozess-Substitution bekommt (`done < <(ls …)`).
-  Die Regel dazu fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes
-  Verzeichnis>`, geloescht wird nur der eigene Pfad, nie per Glob.
+  `/tmp/claude-<uid>`, `…/<projekt>` (der kodierte Pfad mit fuehrendem `-`) und
+  `…/<projekt>/<session>` (eine UUID; dort liegen `tasks/` und `scratchpad/` aller Subagenten
+  einer Session), dazu die beiden, die Claude Code je uid fuer alle Sessions fuehrt
+  (`bash-edit-diff/`, `bundled-skills/`). Ein anderer Eintrag dort
+  (`/tmp/claude-<uid>/tmp.XXXX`, eine Datei) ist jemandes eigener. Verweigert werden `rm`,
+  `rmdir`, `unlink` und `shred` mit einem Glob, dessen woertliches Verzeichnis (nach `cd`
+  aufgeloest) ein solches Verzeichnis **ist** (`/tmp/tmp.*`, `cd /tmp && rm -rf tmp.*`, auch
+  `/tmp*` und ein geteiltes Verzeichnis selbst), `find` mit so einem Startpfad samt `-delete`
+  bzw. `-exec rm`, eine Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in
+  /tmp/tmp.*; do …`, `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… |
+  xargs rm` hinter einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen
+  Schleife. Frei bleibt alles eine Ebene tiefer, also im eigenen Verzeichnis
+  (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis `/tmp/foo.XXXX/*`), dazu Pfade hinter einer
+  Variablen (`rm -rf "$W"/*` — der Hook kann sie nicht aufloesen), Globs im eigenen Checkout
+  und derselbe Text in einer Commit-Message oder einem Here-Doc. Die Grenze ist gemessen:
+  „irgendwo unter `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in
+  Scratchpads. Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'` und eine
+  Schleife, die ihre Liste per Prozess-Substitution bekommt (`done < <(ls …)`). Die Regel dazu
+  fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
+  geloescht wird nur der eigene Pfad, nie per Glob.
 - **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
   `git commit --no-verify` und `-n` (auch in `-qn`), `git -c core.hooksPath=…` (auch ueber <!-- review: ok nennt die verweigerte Umgehung -->
   `GIT_CONFIG_*`) und `git config … core.hooksPath`, ausser lesend (`--get`), ebenso das

@@ -487,6 +487,11 @@ rm -rf /tmp/claude-1000/-home-dev-proj/*
 rm -rf /tmp/claude-1000/-home-dev-proj/3b753c96-0000-4000-8000-000000000000/*
 rm -rf /tmp/claude-1000
 rmdir /tmp/claude-1000/-home-dev-proj/3b753c96-0000-4000-8000-000000000000
+rm -rf /tmp/claude-1000/-home-dev-x
+rm -rf /tmp/claude-1000/-home-dev-x/3b753c96-0000-4000-8000-000000000000
+rm -rf /tmp/claude-1000/bash-edit-diff/*
+rm -rf /tmp/claude-1000/bash-edit-diff
+rm -rf /tmp/claude-1000/bundled-skills
 for d in /tmp/tmp.*; do echo "$d"; done | xargs rm -rf
 for d in /tmp/tmp.*; do echo "$d" | xargs rm -rf; done
 ls -d /tmp/tmp.* | while read d; do echo "$d"; done | xargs rm -rf
@@ -561,6 +566,13 @@ cd /tmp/x && rm -f *.o
 while true; do sleep 1; done; rm -f x.o
 for d in /tmp/x*; do echo; done; for d in a b; do rm -rf "$d"; done
 cat /tmp/*.list | xargs rm -f
+rm -rf /tmp/mydir.Ab12Cd34
+rm -f /tmp/claude-1000/rm.out
+rmdir /tmp/claude-1000/tmp.eo9L03WZKK
+rm -rf /tmp/claude-1000/tmp.eo9L03WZKK
+rm -rf /tmp/claude-1000/tmp.eo9L03WZKK/*
+rm -rf /tmp/claude-1000/bash-edit-diffX
+rm -f /tmp/claude-1000/bash-edit-diff/3b753c96-0000-4000-8000-000000000000/x.diff
 CMDS
 guard inter Bash "$(cmdjson "$(printf 'cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
 [ -z "$OUT" ] && ok "free: the command as a here-doc body" || bad "here-doc: $OUT"

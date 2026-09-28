@@ -16,8 +16,8 @@
 #   not a harness path                      ->  no output at all, exit 0
 #
 # A Bash command that deletes by glob in a SHARED temp directory — /tmp,
-# /var/tmp, /dev/shm, $TMPDIR, or Claude Code's /tmp/claude-<uid>, …/<project>
-# and …/<project>/<session> — is denied in EVERY mode, and the kill switch does
+# /var/tmp, /dev/shm, $TMPDIR, or Claude Code's /tmp/claude-<uid>, …/-<project>
+# and …/-<project>/<session-uuid> — is denied in EVERY mode, and the kill switch does
 # not lift it (Kevin, 2026-09-27): on 2026-09-25 a reviewer cleaned up with
 # `rm -rf /tmp/tmp.*` and took the fixtures of every other session along. That
 # covers a loop over such a glob that deletes in its body (`for d in /tmp/x*`,
@@ -176,17 +176,26 @@ def in_repo(p):
     return real == root or real.startswith(root + os.sep)
 
 
+# Claude Code's own directories in a temp root: per uid, per project (the path
+# encoded with a leading `-`), per session (a UUID; it holds tasks/ and
+# scratchpad/ of all its subagents), and the two it keeps per uid for every
+# session (bash-edit-diff/ with one folder per session, bundled-skills/). Any
+# other name there is somebody's own entry — an `mktemp -d -p /tmp/claude-<uid>`
+# dir, a file (`rm.out`).
+CLAUDE_DIR = re.compile(r"/claude-[0-9]+(/(-[^/]*(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?"
+                        r"|bash-edit-diff|bundled-skills))?$")
+
+
 def is_shared(p):
-    """p IS a shared temp directory — a temp root, or Claude Code's per-uid,
-    per-project or per-session directory in one (the session directory holds
-    tasks/ and scratchpad/ of all its subagents). Not below one: that is
-    somebody's own directory. Never inside this checkout."""
+    """p IS a shared temp directory — a temp root, or one of Claude Code's
+    directories in it. Not below one, and not a named entry in one: that is
+    somebody's own. Never inside this checkout."""
     if in_repo(p):
         return False
     for c in (p, os.path.realpath(p)):
         for r in TMP_ROOTS:
-            if c == r or r != TMPDIR_ROOT and re.match(
-                    re.escape(r.rstrip("/")) + r"/claude-[0-9]+(/[^/]+){0,2}$", c):
+            if c == r or r != TMPDIR_ROOT and c.startswith(r.rstrip("/") + "/") \
+                    and CLAUDE_DIR.match(c[len(r.rstrip("/")):]):
                 return True
     return False
 
@@ -685,7 +694,7 @@ done < <(targets)
 # No mode, no kill switch: the one rule of this hook that also binds the model
 # in an interactive session (Kevin, 2026-09-27).
 if [ -n "$TMP_HIT" ]; then
-  deny "glob delete in a shared temp directory: $TMP_HIT — refused in every mode; delete your own directories by their full path, never with a glob (create them with mktemp -d -p <your dir>)"
+  deny "glob delete in a shared temp directory, or of one: $TMP_HIT — refused in every mode; delete your own directories by their full path, never with a glob (create them with mktemp -d -p <your dir>)"
   exit 0
 fi
 if [ -n "$BYPASS" ]; then

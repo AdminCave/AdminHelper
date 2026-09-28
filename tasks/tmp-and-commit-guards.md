@@ -161,9 +161,11 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (ein Halbsatz zu `NOT armed`)
 Abhängt von: T9
 
-### T12 — Wächter: benannte Einträge unter /tmp/claude-<uid> sind frei, nur Claudes eigene Verzeichnisse sind geteilt  [ ]
+### T12 — Wächter: benannte Einträge unter /tmp/claude-<uid> sind frei, nur Claudes eigene Verzeichnisse sind geteilt  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
-Änderung: Fehlalarm aus der Nachmessung der Aufsicht auf fad69048 (dieselben 34 513 Befehle, 2026-09-28): `rm -f /tmp/claude-1000/rm.out`, `rmdir /tmp/claude-1000/tmp.XXXX` und `rm -rf /tmp/claude-1000/tmp.XXXX` wurden verweigert (11 Fälle), weil `is_shared` jeden Namen direkt unter `/tmp/claude-<uid>` als Projektverzeichnis las. Jetzt gelten als geteilt nur Claudes eigene Verzeichnisse: `/tmp/claude-<uid>`, ein Projekt (kodierter Pfad mit führendem `-`) und eine Session (UUID) darin. Jeder andere benannte Eintrag dort ist frei, ebenso ein Glob darin. Weiter verweigert werden die 4 gemessenen Treffer, ein Glob in einem geteilten Verzeichnis und das Löschen eines geteilten Verzeichnisses selbst. Die Deny-Meldung nennt beide Fälle.
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @0ae762a1 2026-09-28T13:00:00+02:00
+Review: approve (opus, 2nd round)
+Änderung: Fehlalarm aus der Nachmessung der Aufsicht auf fad69048 (dieselben 34 513 Befehle, 2026-09-28): `rm -f /tmp/claude-1000/rm.out`, `rmdir /tmp/claude-1000/tmp.XXXX` und `rm -rf /tmp/claude-1000/tmp.XXXX` wurden verweigert (11 Fälle), weil `is_shared` jeden Namen direkt unter `/tmp/claude-<uid>` als Projektverzeichnis las. Jetzt gelten als geteilt nur Claudes eigene Verzeichnisse: `/tmp/claude-<uid>`, ein Projekt (kodierter Pfad mit führendem `-`), eine Session (UUID) darin und die beiden, die Claude Code je uid für alle Sessions führt (`bash-edit-diff/`, `bundled-skills/`; Befund des Reviews, konservativ entschieden, der Aufsicht gemeldet). Jeder andere benannte Eintrag dort ist frei, ebenso ein Glob darin. Weiter verweigert werden die 4 gemessenen Treffer, ein Glob in einem geteilten Verzeichnis und das Löschen eines geteilten Verzeichnisses selbst. Die Deny-Meldung nennt beide Fälle.
 Beweis: harness/tmp-and-commit-guards@fad69048 · `rm -f /tmp/claude-1000/rm.out` → deny; erwartet: frei
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (welche Verzeichnisse geteilt sind)
