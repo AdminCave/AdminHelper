@@ -37,8 +37,10 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 
-### T2 — Reviewer räumen nur eigene Pfade weg  [ ]
+### T2 — Reviewer räumen nur eigene Pfade weg  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-review/SKILL.md, .claude/skills/feature-build/SKILL.md, scripts/tests/skill_consistency_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @94acac96 2026-09-28T09:06:11+02:00
+Review: approve (opus)
 Änderung: `feature-review/SKILL.md` bekommt einen kurzen Abschnitt „Proben und Aufräumen": Temp-Verzeichnisse
 nur mit `mktemp -d -p <dein Verzeichnis>`, nur eigene Pfade mit vollem Pfad löschen, nie per Glob.
 `feature-build/SKILL.md` Iterations-Schritt 4 (Frischer-Kontext-Review, :133 ff.) bekommt einen Punkt: Der Bau
