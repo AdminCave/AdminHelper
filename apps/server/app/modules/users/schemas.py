@@ -67,3 +67,13 @@ class UserUpdate(RequestModel):
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     is_admin: Optional[bool] = None
     server_ids: Optional[list[str]] = None
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    is_admin: bool
+    server_ids: list[str]
+    # A string, not a datetime: the builder hands out isoformat() — the bytes the
+    # untyped route sent — without promising `format: date-time` (R-0064).
+    created_at: Optional[str]

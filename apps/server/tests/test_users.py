@@ -197,3 +197,86 @@ class TestPromotionDefaultSubscription:
             .count()
             == 0
         )
+
+
+class TestUserResponseShape:
+    """R-0043: GET/POST/PUT declare UserResponse. Pydantic drops a key the model does not
+    declare without a word, so each route's body must equal what the builder hands out —
+    and created_at must be the bytes the untyped route sent for the raw datetime."""
+
+    def _servers(self, db_session):
+        from app.modules.servers.models import Server
+
+        db_session.add_all(
+            [
+                Server(id="srv-shape-a", name="A", hostname="a.example.test"),
+                Server(id="srv-shape-b", name="B", hostname="b.example.test"),
+            ]
+        )
+        db_session.commit()
+        return ["srv-shape-a", "srv-shape-b"]
+
+    def _expected(self, db_session, uid):
+        from fastapi.encoders import jsonable_encoder
+
+        from app.modules.users.models import User
+        from app.modules.users.router import _user_response
+
+        user = db_session.get(User, uid)
+        db_session.refresh(user)
+        expected = jsonable_encoder(_user_response(user))
+        assert expected["created_at"] == jsonable_encoder(user.created_at)
+        return expected
+
+    def test_post_without_servers(self, test_client, admin_user, db_session):
+        res = test_client.post(
+            "/api/users",
+            headers=_admin_headers(test_client),
+            json={"username": "shape-plain", "password": "validpass123"},
+        )
+        assert res.status_code == 201, res.text
+        assert res.json()["server_ids"] == []
+        assert res.json() == self._expected(db_session, res.json()["id"])
+
+    def test_post_with_servers(self, test_client, admin_user, db_session):
+        ids = self._servers(db_session)
+        res = test_client.post(
+            "/api/users",
+            headers=_admin_headers(test_client),
+            json={"username": "shape-srv", "password": "validpass123", "server_ids": ids},
+        )
+        assert res.status_code == 201, res.text
+        assert sorted(res.json()["server_ids"]) == ids
+        assert res.json() == self._expected(db_session, res.json()["id"])
+
+    def test_put_with_and_without_servers(self, test_client, admin_user, db_session):
+        ids = self._servers(db_session)
+        headers = _admin_headers(test_client)
+        uid = test_client.post(
+            "/api/users",
+            headers=headers,
+            json={"username": "shape-put", "password": "validpass123"},
+        ).json()["id"]
+        for server_ids in (ids, []):
+            res = test_client.put(
+                f"/api/users/{uid}", headers=headers, json={"server_ids": server_ids}
+            )
+            assert res.status_code == 200, res.text
+            assert sorted(res.json()["server_ids"]) == server_ids
+            assert res.json() == self._expected(db_session, uid)
+
+    def test_get_list_with_and_without_servers(self, test_client, admin_user, db_session):
+        ids = self._servers(db_session)
+        headers = _admin_headers(test_client)
+        test_client.post(
+            "/api/users",
+            headers=headers,
+            json={"username": "shape-list", "password": "validpass123", "server_ids": ids},
+        )
+        res = test_client.get("/api/users", headers=headers)
+        assert res.status_code == 200, res.text
+        body = {u["id"]: u for u in res.json()}
+        assert len(body) == 2
+        assert {tuple(u["server_ids"]) != () for u in body.values()} == {True, False}
+        for uid, got in body.items():
+            assert got == self._expected(db_session, uid)

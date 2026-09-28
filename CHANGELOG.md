@@ -207,6 +207,35 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
+  OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
+  Routen, die API-Key oder JWT annehmen) und `InternalKey` (Header `X-Internal-Key`, der
+  Dienst-zu-Dienst-Ingress); die Swagger UI bietet beide unter „Authorize" an. Dafuer entfaellt
+  der optionale Header-Parameter `x-internal-key` der zwei Internal-Routen, deren Verhalten
+  gleich bleibt (Anfragen mit zwei Anmeldungen: siehe naechsten Punkt). Der Schemathesis-Check
+  `ignored_auth` laeuft damit in allen vier Auth-Kontexten statt nur mit JWT. Doku:
+  `docs/developer/api-reference.html`.
+- **Verhaltensaenderung: jede mitgesendete Anmeldung muss gelten (Server):** An den Routen, die
+  API-Key oder JWT annehmen (`/api/connections`, `/api/frp/provision`), prueft der Server jetzt
+  alle mitgesendeten Anmeldungen, bevor er entscheidet. Ein gueltiger `X-API-Key` neben einem
+  ungueltigen oder abgelaufenen Bearer-Token — oder ein gueltiger Bearer neben einem
+  unbekannten Key, auch als `?api_key=` — ergibt `401` statt `200`; ebenso ein
+  `X-API-Key` neben einem ungueltigen `?api_key=` (bisher wurde die Query dann ignoriert). Nur
+  `Authorization: Basic` (von einem Proxy oder aus `user:pass@` einer Sync-URL) wird ignoriert;
+  jeder andere `Authorization`-Header muss ein gueltiger Bearer sein — ein fremdes Schema, ein
+  leerer oder unlesbarer Wert ergibt `401`. Sind beide
+  gueltig, entscheidet wie bisher der Key; mit nur einer Anmeldung bleibt alles wie es war.
+  Kein Client sendet zwei (Web und Desktop den Bearer, der Desktop-Sync nur `?api_key=`,
+  der Agent nur `X-API-Key`, das Monitoring nur `X-Internal-Key`). Doku:
+  `docs/developer/api-reference.html`.
+- **API-Schema: typisierte Antworten fuer users und frp (Server):** `GET`/`POST /api/users` und
+  `PUT /api/users/{id}` deklarieren `UserResponse`, die FRP-Server-Config-Routen
+  `FrpServerConfigOut` (Detail: `FrpServerConfigDetail` mit den Tunneln als `FrpTunnelOut`) und
+  `GET /api/frp/status` `FrpStatus` — statt eines leeren Schemas im OpenAPI. Die Antwort-Bytes
+  bleiben gleich (je Route ein Differential-Test gegen den bisherigen Builder); Zeitstempel
+  bleiben Strings aus `isoformat()`, das `tunnel`-Objekt im FRP-Status bleibt offen. Die Doku
+  nannte fuer die Config-Detail-Route ein `?include_tunnels=true`, das es nicht gibt: die Tunnel
+  kommen immer mit. Doku: `docs/developer/api-reference.html`.
 - **Test-Ausgaben und Pflicht-Tests gegen den Stack (Harness Stufe 5c, Entwickler-Werkzeuge):**
   Die pytest-Schritte von `scripts/tests/run.sh` schreiben JUnit-XML nach
   `.ah-out/junit/<schritt-id>.xml` (Schemathesis eine Datei je Dienst), Playwright mit gesetztem

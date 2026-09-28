@@ -34,11 +34,14 @@
           <p class="lead">Alle HTTP-Endpoints des AdminHelper-Servers. Basis-URL: <code>https://&lt;host&gt;</code>. Das vollst&auml;ndige OpenAPI-Schema steht unter <code>/api/docs</code> (Swagger UI) bzw. <code>/openapi.json</code>.</p>
 
           <h2>Authentifizierung</h2>
-          <p>Zwei Mechanismen, je nach Aufrufer:</p>
+          <p>Drei Mechanismen, je nach Aufrufer:</p>
           <ul>
             <li><strong>JWT-Bearer</strong> (Web-Panel, Desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access- und Refresh-Token kommen im JSON-Body; f&uuml;r Browser setzt der Server den Refresh-Token zus&auml;tzlich als HttpOnly-Cookie (<code>Secure; SameSite=Strict</code>, Pfad <code>/api/auth</code>) &ndash; Desktop/CLI senden ihn weiterhin im Body.</li>
             <li><strong>API-Key</strong> (Agents, Drittanbieter): Header <code>X-API-Key</code>. Permission ist <code>read</code> oder <code>read_write</code>.</li>
+            <li><strong>Internal-Key</strong> (nur Dienst zu Dienst, Monitoring &rarr; Server): Header <code>X-Internal-Key</code> mit dem gemeinsamen Secret <code>MONITOR_API_KEY</code>.</li>
           </ul>
+          <p>Das OpenAPI-Schema deklariert alle drei als Security-Schemes (<code>HTTPBearer</code>, <code>ApiKey</code>, <code>InternalKey</code>); die Swagger UI bietet sie unter &bdquo;Authorize&ldquo; an.</p>
+          <p>Wo zwei Verfahren angenommen werden (Connections, FRP-Provisioning: <code>/api/connections</code>, <code>/api/frp/provision</code>), muss jede mitgeschickte Anmeldung g&uuml;ltig sein, sonst <code>401</code> &ndash; auch wenn die andere g&uuml;ltig ist. Als mitgeschickt gilt ein nicht leerer <code>X-API-Key</code> bzw. <code>?api_key=</code> und jeder <code>Authorization</code>-Header au&szlig;er <code>Basic</code>: <code>Basic</code> von einem Proxy oder aus <code>user:pass@</code> einer Sync-URL wird ignoriert, jeder andere <code>Authorization</code>-Header muss ein g&uuml;ltiger Bearer sein &ndash; ein fremdes Schema, ein leerer oder unlesbarer Wert ergibt <code>401</code>. Sind beide g&uuml;ltig, entscheidet der API-Key. Routen, die nur JWT annehmen, werten einen <code>X-API-Key</code> nicht aus.</p>
 
           <h2>Pagination (Listen-Endpunkte)</h2>
           <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter liefern die kleinen Listen (servers/connections/hooks) die volle Liste; <code>GET /api/audit</code> deckelt dagegen ohne <code>limit</code> auf 200 Eintr&auml;ge, da der Trail unbeschr&auml;nkt w&auml;chst (mehr via <code>offset</code>).</p>
@@ -46,7 +49,7 @@
           <h2>Auth</h2>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/login</code>
-            <p>Body: <code>{ "username", "password" }</code>. Antwort: <code>{ "access_token", "refresh_token", "user" }</code>. Login-Rate-Limit: 5 Fehlversuche / 60&nbsp;s / IP.</p>
+            <p>Body: <code>{ "username", "password" }</code>. Antwort: <code>{ "access_token", "refresh_token", "token_type" }</code>. Login-Rate-Limit: 5 Fehlversuche / 60&nbsp;s / IP.</p>
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/refresh</code>
@@ -54,7 +57,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
-            <p>Blacklisted den aktuellen Access-Token (und optional einen mitgesendeten Refresh-Token).</p>
+            <p>Authentifizierung optional. Blacklisted einen mitgesendeten Access-Token (Bearer) und den Refresh-Token aus Body (<code>{ "refresh_token" }</code>) oder HttpOnly-Cookie und l&ouml;scht das Cookie. Ohne Bearer wirkt der Logout nur auf den Refresh-Token.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/auth/me</code>
@@ -79,7 +82,7 @@
           <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/{id}/touch</code><p>Setzt <code>last_used = now</code> (read).</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/connections/{id}</code><p>L&ouml;schen (admin). Feuert <code>connection.deleted</code>.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/connections/export</code><p>JSON-Export (admin).</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/import</code><p><code>?mode=replace|merge</code> (admin). Feuert <code>connections.imported</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/import</code><p>Body: <code>{ "mode": "replace"|"merge", "connections": [&hellip;] }</code> (admin). Alles oder nichts: ein ung&uuml;ltiger Eintrag oder ein unbekannter <code>serverId</code> weist den ganzen Import mit <code>422</code> ab (<code>detail.rejected</code>, nach <code>index</code> sortiert). Feuert <code>connections.imported</code>.</p></div>
 
           <h2>Servers</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/servers</code><p>Server-Inventar (admin).</p></div>
@@ -118,7 +121,7 @@
           <h2>FRP &ndash; Server-Config</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/server-config</code></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/server-config</code><p>Schreibt zus&auml;tzlich <code>frps.toml</code> ins Shared-Volume.</p></div>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/server-config/{id}</code><p>Optional <code>?include_tunnels=true</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/server-config/{id}</code><p>Liefert die Tunnel der Config immer mit (<code>tunnels</code>).</p></div>
           <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/server-config/{id}</code></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/server-config/{id}</code></div>
 
