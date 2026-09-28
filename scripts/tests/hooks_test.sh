@@ -368,6 +368,8 @@ denied "$OUT" && ok "bash -lc is scanned like bash -c" || bad "bash -lc: $OUT"
 # caller cannot parse is a guard that failed open.
 guard auto Edit "{\"file_path\":\"$TREE/.claude/a\\\"b.md\"}"
 denied "$OUT" && ok "a path containing a quote still yields valid JSON" || bad "json escaping: $OUT"
+guard auto Write "{\"file_path\":\"$TREE/.claude/a\\tb.md\"}"
+denied "$OUT" && ok "a path containing a tab still yields valid JSON" || bad "json with a tab: $OUT"
 
 # Nothing a malformed event can do may break every tool call in the session.
 for body in '{"command":}' 'not json at all' '' '{"tool_input":null}'; do
@@ -445,7 +447,33 @@ find //tmp -delete
 if true; then rm -rf /tmp/tmp.*; fi
 time rm -rf /tmp/tmp.*
 exec rm -rf /tmp/tmp.*
+time -p rm -rf /tmp/tmp.*
+timeout 10s rm -rf /tmp/tmp.*
+timeout -k 5 1.5m rm -rf /tmp/tmp.*
+sudo -n rm -rf /tmp/tmp.*
+nice -n 5 rm -rf /tmp/tmp.*
+setsid rm -rf /tmp/tmp.*
+case x in x) rm -rf /tmp/tmp.* ;; esac
+case x in y) echo ;; z) rm -rf /tmp/tmp.* ;; esac
+case x in a|b) rm -rf /tmp/tmp.* ;; esac
+case x in y) echo ;& x) rm -rf /tmp/tmp.* ;; esac
+case $(echo x) in x) rm -rf /tmp/tmp.* ;; esac
+if true; then case x in x) rm -rf /tmp/tmp.* ;; esac; fi
+env - rm -rf /tmp/tmp.*
+sudo -nu root rm -rf /tmp/tmp.*
+sudo -uroot rm -rf /tmp/tmp.*
+xargs -d'\n' rm -rf /tmp/tmp.*
+( case x in x) rm -rf /tmp/tmp.* ;; esac )
+timeout .5 rm -rf /tmp/tmp.*
+ionice -c 3 rm -rf /tmp/tmp.*
+builtin cd /tmp; rm -rf tmp.*
+/usr/bin/time -f %e -o /dev/null rm -rf /tmp/tmp.*
+exec -a x rm -rf /tmp/tmp.*
 CMDS
+guard inter Bash "$(cmdjson "$(printf 'case x in\n  a) echo ;;\n  b)\n    rm -rf /tmp/tmp.*\n    ;;\nesac')")"
+denied "$OUT" && ok "denied: the second arm of a case over several lines" || bad "multi-line case: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'case x in\n  a) rm -rf /tmp/tmp.* ;;\nesac')")"
+denied "$OUT" && ok "denied: a case arm on a line of its own" || bad "multi-line case arm: $OUT$ERR"
 guard inter Bash "$(cmdjson "$(printf 'cd /tmp\nrm -rf tmp.*')")"
 denied "$OUT" && ok "denied: a cd on the line above" || bad "multi-line cd: $OUT$ERR"
 
@@ -491,6 +519,9 @@ find /tmp/scratch -delete
 ls -d /tmp/tmp.*
 for f in /tmp/ah-*.log; do cat "$f"; done
 for f in *.bak; do rm -f "$f"; done
+case x in a) rm -rf build/* ;; esac
+case "$1" in -h) echo help ;; *) echo x ;; esac
+timeout 60 pytest -q
 CMDS
 guard inter Bash "$(cmdjson "$(printf 'cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
 [ -z "$OUT" ] && ok "free: the command as a here-doc body" || bad "here-doc: $OUT"
@@ -508,6 +539,9 @@ if false; then :; else sed -i s/a/b/ CLAUDE.md; fi
 while true; do tee CLAUDE.md; done
 until false; do cp /tmp/x scripts/dev/verify.sh; done
 ! sed -i s/a/b/ CLAUDE.md
+env - tee CLAUDE.md
+sudo -uroot tee CLAUDE.md
+case x in a) sed -i s/a/b/ CLAUDE.md ;; esac
 CMDS
 
 # ══ harness-guard.sh — the ways past the pre-commit hook, in every mode ═══════
@@ -548,6 +582,8 @@ GIT_CONFIG_PARAMETERS="'core.hooksPath'='/dev/null'" git commit -m x
 GIT_CONFIG_KEY_0=core.hooksPath; export GIT_CONFIG_KEY_0 GIT_CONFIG_COUNT=1; git commit -m x
 set -a; GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=core.hooksPath; git commit -m x
 bash -c 'git commit -n -m x'
+timeout 1m git commit -n -m x
+sudo -n git commit -n -m x
 CMDS
 guard auto Bash "$(cmdjson "git commit $NV -m x")"
 denied "$OUT" && ok "... in an autonomous run" || bad "bypass, autonomous: $OUT$ERR"
@@ -568,6 +604,7 @@ git commit -m "-n"
 git commit -am "fix -n"
 git commit -mnope
 git commit --no-verbose -m x
+git commit --mess "-n x" -m y
 git commit -c HEAD
 git commit -- -n
 git config --get core.hooksPath

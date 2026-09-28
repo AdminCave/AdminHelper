@@ -133,8 +133,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, AUTONOMOUS.md, CLAUDE.md, CHANGELOG.md (die Task ist die Doku)
 Abhängt von: T1, T2, T3, T4, T5, T6, T7
 
-### T9 — Wächter: Befehlswort hinter Wrappern, case-Arme, Long-Option-Abkürzungen, Steuerzeichen  [ ]
+### T9 — Wächter: Befehlswort hinter Wrappern, case-Arme, Long-Option-Abkürzungen, Steuerzeichen  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @fdeccd26 2026-09-28T11:22:29+02:00
+Review: opus: 2 rounds; round-2 finding (flag cluster) fixed as the reviewer proposed, then self-checked
 Änderung: Befund aus `/code-review high` über den Branch-Diff (2026-09-28): Das Befehlswort hinter Wrappern ging verloren, weil eine gemeinsame `VALUE_FLAGS`-Menge galt und nur reine Ziffern als Dauer zählten. Dadurch liefen `sudo -n rm -rf /tmp/tmp.*`, `time -p …`, `timeout 10s …`, `setsid …` und `case x in x) rm … ;; esac` in jedem Modus durch, ebenso `timeout 1m git commit -n`. Jetzt hat jeder Wrapper seine eigenen Wert-Flags, Dauern wie `10s`/`1.5m` werden übersprungen, `setsid`, `ionice`, `builtin` und `time` (als `/usr/bin/time`) sind Wrapper, und case-Arme werden hinter `)` gelesen. Dazu: Abgekürzte Long-Options mit Wert (`git commit --mess "-n x"`) sind kein Fehlalarm mehr. `deny()` ersetzt Steuerzeichen, sonst gibt ein Tab im Harness-Pfad ungültiges JSON und der Hook versagt offen. Der Kopf listet git-Alias und direktes Schreiben von `.git/config` als Lücken.
 Beweis: harness/tmp-and-commit-guards@7d9cd60f · JSON `{"command":"timeout 10s rm -rf /tmp/tmp.*"}` in den Wächter → keine Ausgabe (frei); erwartet: deny
 Verify: bash scripts/dev/verify.sh scripts --strict

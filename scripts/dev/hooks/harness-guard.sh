@@ -26,9 +26,10 @@
 # core.hooksPath=…` (and its GIT_CONFIG_* twins), and `git config … core.hooksPath`
 # unless it only reads, or dropping the whole `core` section. Kevin's own shell is
 # untouched: the hook sees only what the model runs. Not seen, like the write
-# gaps below: a hooksPath brought in through `include.path`, `git config --edit`,
-# `eval` or a command substitution, git-commit called by its exec path, plumbing
-# (`commit-tree`, `update-ref`) and `chmod -x` on the hook.
+# gaps below: a git alias for `commit -n`, `.git/config` written directly (it is
+# no harness path), a hooksPath brought in through `include.path`, `git config
+# --edit`, `eval` or a command substitution, git-commit called by its exec path,
+# plumbing (`commit-tree`, `update-ref`) and `chmod -x` on the hook.
 #
 # Always exits 0: exit 2 would block every call whatever the JSON says, and any
 # other non-zero exit blocks nothing — the call goes on through the normal
@@ -97,14 +98,32 @@ import fnmatch, json, os, re, shlex, sys
 root = os.path.realpath(sys.argv[1])
 
 # Wrappers that stand in front of the real command word, plus the subshell
-# parentheses shlex hands over as their own tokens.
-WRAPPERS = {"sudo", "env", "timeout", "nice", "nohup", "stdbuf", "command", "exec", "xargs", "(", ")", "{", "}"}
+# parentheses shlex hands over as their own tokens — each with the flags that
+# take the NEXT word as their value (`sudo -u root tee …`, `timeout -k 5 10s …`).
+# Per wrapper: `nice -n` takes a value, `sudo -n` does not, and one shared set
+# let `sudo -n rm …` eat the rm.
+WRAPPERS = {
+    "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U", "-R",
+             "--user", "--group", "--chdir", "--host", "--prompt", "--role", "--type",
+             "--other-user", "--command-timeout", "--chroot", "--close-from"},
+    "env": {"-u", "-C", "--unset", "--chdir"},
+    "timeout": {"-k", "-s", "--kill-after", "--signal"},
+    "nice": {"-n", "--adjustment"},
+    "ionice": {"-c", "-n", "-p", "-P", "-u", "--class", "--classdata"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
+    "xargs": {"-a", "-d", "-E", "-I", "-L", "-n", "-P", "-s", "--arg-file", "--delimiter",
+              "--max-args", "--max-procs", "--max-chars", "--max-lines", "--replace", "--eof"},
+    "time": {"-f", "-o", "--format", "--output"},
+    "exec": {"-a"},
+    "nohup": set(), "setsid": set(), "command": set(), "builtin": set(),
+    "(": set(), ")": set(), "{": set(), "}": set(),
+}
 # Shell keywords in front of a command: `for …; do rm x; done` reaches the
 # segment `do rm x`, and reading `do` as the command word hid the rm.
-KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!", "time"}
-# Wrapper flags that eat the next word (`sudo -u root tee …`, `timeout -k 5 …`).
-VALUE_FLAGS = {"-u", "-g", "-k", "-s", "-n", "-p", "-C", "-D", "--user", "--group", "--signal"}
-SEPARATORS = {"|", "||", "&&", ";", "&", ";;"}
+KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!"}
+# timeout's duration (`10`, `10s`, `1.5m`, `.5`) is no command word either.
+DURATION = re.compile(r"^([0-9]+\.?[0-9]*|\.[0-9]+)[smhd]?$")
+SEPARATORS = {"|", "||", "&&", ";", "&", ";;", ";&", ";;&"}
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
 
 # The temp roots. `$TMPDIR` as TEXT stands for itself (a placeholder root no
@@ -262,7 +281,8 @@ def commit_skips_hook(rest):
             # git takes any unambiguous prefix of a long option.
             if len(name) >= len("--no-veri") and "--no-verify".startswith(name):  # review: ok the flag this guard refuses
                 return a
-            if name in COMMIT_LONG_VALUE and "=" not in a:
+            # ... value options included: `--mess "-n x"` is a message.
+            if "=" not in a and len(name) > 3 and any(o.startswith(name) for o in COMMIT_LONG_VALUE):
                 j += 1
         elif a.startswith("-") and len(a) > 1:
             for k, c in enumerate(a[1:]):
@@ -396,15 +416,41 @@ def logical_lines(cmd):
     return out
 
 
+def case_arm(seg, state):
+    """The part of a segment that runs as a command. After `case w in` and after
+    every `;;` a pattern comes first, up to its `)` — possibly on a line of its
+    own, possibly split by `|` (`a|b)`). Returns [] for a pattern-only segment."""
+    k = 0
+    while k < len(seg) and (seg[k] in KEYWORDS or seg[k] in ("(", "{")):
+        k += 1
+    if k < len(seg) and seg[k] == "case":
+        state["case"] = state["arm"] = True
+        seg = seg[seg.index("in", k) + 1:] if "in" in seg[k:] else []
+    elif k < len(seg) and seg[k] == "esac":
+        state["case"] = state["arm"] = False
+        return []
+    if state["arm"]:
+        if ")" not in seg:
+            return []
+        state["arm"] = False
+        seg = seg[seg.index(")") + 1:]
+    return seg
+
+
 def scan(cmd, base, depth=0):
     if depth > 2:
         return
     cur = base
+    state = {"case": False, "arm": False}
     for line in logical_lines(cmd):
         segment = []
         for tok in tokenize(line) + [";"]:
             if tok in SEPARATORS:
-                cur = run_segment(segment, cur, depth)
+                # An empty segment (the `;` a line ends with) changes nothing.
+                if segment:
+                    cur = run_segment(case_arm(segment, state), cur, depth)
+                    if state["case"] and tok in (";;", ";&", ";;&"):
+                        state["arm"] = True
                 segment = []
             else:
                 segment.append(tok)
@@ -431,14 +477,26 @@ def run_segment(tok, cwd, depth):
         return cwd
 
     # The command word, past assignments, wrappers and their flags/values.
-    i = 0
+    i, value_flags = 0, set()
     while i < len(clean):
         t = clean[i]
         if "=" in t and not t.startswith("-") and t.split("=")[0].isidentifier():
             i += 1
         elif t.startswith("-"):
-            i += 2 if t in VALUE_FLAGS else 1
-        elif os.path.basename(t) in WRAPPERS or t in KEYWORDS or t.isdigit():
+            # A cluster is read like getopt, left to right: the first flag that
+            # takes a value takes the rest of the word (`-uroot`), or the next
+            # word when it ends the cluster (`sudo -nu root`).
+            takes = t in value_flags
+            if not takes and len(t) > 2 and t[1] != "-":
+                for k, c in enumerate(t[1:], 1):
+                    if "-" + c in value_flags:
+                        takes = k == len(t) - 1
+                        break
+            i += 2 if takes else 1
+        elif os.path.basename(t) in WRAPPERS:
+            value_flags = WRAPPERS[os.path.basename(t)]
+            i += 1
+        elif t in KEYWORDS or DURATION.match(t):
             i += 1
         else:
             break
@@ -574,6 +632,8 @@ match() {
 deny() {
   local esc="${1//\\/\\\\}"
   esc="${esc//\"/\\\"}"
+  # A control character (a tab in a file name) is no valid JSON string either.
+  esc="$(printf '%s' "$esc" | LC_ALL=C tr '\001-\037' '?')"
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$esc"
 }
 
