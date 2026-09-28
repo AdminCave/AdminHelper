@@ -218,11 +218,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Verhaltensaenderung: jede mitgesendete Anmeldung muss gelten (Server):** An den Routen, die
   API-Key oder JWT annehmen (`/api/connections`, `/api/frp/provision`), prueft der Server jetzt
   alle mitgesendeten Anmeldungen, bevor er entscheidet. Ein gueltiger `X-API-Key` neben einem
-  ungueltigen, abgelaufenen oder fremden `Authorization`-Header — oder ein gueltiger Bearer
-  neben einem unbekannten Key, auch als `?api_key=` — ergibt `401` statt `200`; ebenso ein
-  `X-API-Key` neben einem ungueltigen `?api_key=` (bisher wurde die Query dann ignoriert). Sind
-  beide gueltig, entscheidet wie bisher der Key; mit nur einer Anmeldung bleibt alles wie es
-  war. Kein Client sendet zwei (Web und Desktop den Bearer, der Desktop-Sync nur `?api_key=`,
+  ungueltigen oder abgelaufenen Bearer-Token — oder ein gueltiger Bearer neben einem
+  unbekannten Key, auch als `?api_key=` — ergibt `401` statt `200`; ebenso ein
+  `X-API-Key` neben einem ungueltigen `?api_key=` (bisher wurde die Query dann ignoriert). Als
+  Anmeldung zaehlt nur ein `Authorization`-Header mit Schema `Bearer`; ein anderes Schema (etwa
+  `Basic` von einem Proxy oder aus `user:pass@` einer Sync-URL) wird ignoriert. Sind beide
+  gueltig, entscheidet wie bisher der Key; mit nur einer Anmeldung bleibt alles wie es war.
+  Kein Client sendet zwei (Web und Desktop den Bearer, der Desktop-Sync nur `?api_key=`,
   der Agent nur `X-API-Key`, das Monitoring nur `X-Internal-Key`). Doku:
   `docs/developer/api-reference.html`.
 - **API-Schema: typisierte Antworten fuer users und frp (Server):** `GET`/`POST /api/users` und

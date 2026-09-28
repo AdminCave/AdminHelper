@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel server: API-Vertrag (R-0043, R-0054, R-0068) — Task-Ledger
-Status: bereit · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0043, R-0054, R-0068
 Heavy: none — die Antwort-Bytes bleiben gleich (Differential-Test je Route), Header-Namen, Gateway, Compose und Agent unverändert; die Auth-Dependency läuft in-process in den Authz-Tests und in Schemathesis in allen vier Kontexten. Den Stack deckt der nächste Wochenlauf (Kevin, 2026-09-27).
@@ -144,3 +144,24 @@ Metrik: SELECTs auf servers bei N=20: 20 (aus dem Code gelesen, auf HEAD zu mess
 HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: api-reference DE+EN :82 — `?mode=replace|merge` ist falsch, `mode` steht im Body (ImportRequest.mode)
+
+### T7 — R-0054: nur Bearer zählt als vorgelegte Anmeldung  [x]
+Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/tests/test_connections_authz.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @12318de5 2026-09-28T11:51:41+02:00
+Review: approve (opus)
+Änderung: Entscheidung Kevin (2026-09-28, übermittelt durch adminhelper-ac) zu den offenen Punkten aus T4: In
+`ApiKeyOrUser` zählt als vorgelegte Anmeldung nur ein `Authorization`-Header mit Schema `Bearer` (Groß-/Kleinschreibung
+egal, auch ohne Token); ein anderes Schema (Basic u. a.) gehört zur Infrastruktur (Proxy, `user:pass@` aus einer
+Sync-URL) und wird ignoriert. Ein ungültiger oder abgelaufener Bearer neben einem gültigen Key bleibt 401, ebenso ein
+unbekannter Key (Header oder `?api_key=`) neben einem gültigen Bearer. Nur-Bearer-Routen bleiben, wie sie sind (ein
+`X-API-Key` ist dort ein fremder Header). Test: gültiger Key + `Authorization: Basic x` → akzeptiert, der Key gilt
+(statt 401 aus T4); gültiger Key + Bearer ohne Token bzw. kleingeschriebener ungültiger Bearer → 401; die übrigen
+Ablehnungs-Tests aus T4 bleiben. Mutationsprobe: jeder Authorization-Header zählt wieder ⇒ der Basic-Test rot.
+Orakel: mutation-sample
+HEAD: 12318de5
+Verify: bash scripts/dev/verify.sh server --strict
+Doku: API-Referenz DE+EN, Abschnitt Authentifizierung („Wo zwei Verfahren angenommen werden (Connections,
+FRP-Provisioning), muss jede mitgeschickte Anmeldung gültig sein, sonst 401"; nur `Bearer` zählt, anderes Schema wird
+ignoriert; an Nur-Bearer-Routen ist `X-API-Key` ein fremder Header) · CHANGELOG: der T4-Eintrag nannte einen „fremden"
+`Authorization`-Header als 401-Fall, das stimmt mit T7 nicht mehr
+Abhängt von: T4

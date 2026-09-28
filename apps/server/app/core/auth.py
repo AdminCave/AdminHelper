@@ -14,6 +14,7 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security.utils import get_authorization_scheme_param
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -265,9 +266,12 @@ class ApiKeyOrUser:
     ):
         # Every credential the request presents has to hold, so all of them are checked
         # before anything is decided (R-0054): a valid key must not carry a broken bearer
-        # through, nor a valid bearer an unknown key. Presented is ANY Authorization header
-        # (bearer_scheme yields None for another scheme or an empty token, which is then
-        # invalid, not absent) and a non-empty X-API-Key or ?api_key=. No client sends two.
+        # through, nor a valid bearer an unknown key. Presented is an Authorization header
+        # with the Bearer scheme (bearer_scheme yields None for an empty token, which is
+        # then invalid, not absent) and a non-empty X-API-Key or ?api_key=. Another scheme
+        # (Basic from a proxy, user:pass@ from a sync URL) is infrastructure and ignored.
+        # No client sends two.
+        scheme, _ = get_authorization_scheme_param(request.headers.get("Authorization"))
         query_key = request.query_params.get("api_key")
         header_api_key = _get_api_key(db, header_key) if header_key else None
         query_api_key = _get_api_key(db, query_key, from_query=True) if query_key else None
@@ -275,7 +279,7 @@ class ApiKeyOrUser:
         rejected = (
             (header_key and header_api_key is None)
             or (query_key and query_api_key is None)
-            or ("authorization" in request.headers and user is None)
+            or (scheme.lower() == "bearer" and user is None)
         )
 
         if not rejected:
