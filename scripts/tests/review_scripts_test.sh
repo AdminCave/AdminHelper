@@ -781,8 +781,17 @@ OUT=$(git -C "$HFIX" revert --no-edit HEAD 2>&1); rc=$?
 
 # The file itself: git ignores a hook without the execute bit, and the lint
 # step of run.sh only covers *.sh.
-mode=$(git -C "$REPO_ROOT" ls-files -s -- scripts/dev/hooks/pre-commit | cut -d' ' -f1)
-[ "$mode" = 100755 ] && ok "pre-commit is tracked with mode 100755" || bad "pre-commit mode: '${mode:-untracked}'"
+# A tree without a working .git (a box's synced worktree, a tarball) cannot say
+# what git recorded; there the bit on disk is what git would run.
+# --show-toplevel, not --git-dir: a tarball unpacked inside another repository
+# would find that one.
+if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
+  mode=$(git -C "$REPO_ROOT" ls-files -s -- scripts/dev/hooks/pre-commit | cut -d' ' -f1)
+  [ "$mode" = 100755 ] && ok "pre-commit is tracked with mode 100755" || bad "pre-commit mode: '${mode:-untracked}'"
+else
+  [ -x "$REPO_ROOT/scripts/dev/hooks/pre-commit" ] \
+    && ok "pre-commit is executable (no git here to read the recorded mode)" || bad "pre-commit is not executable"
+fi
 HOOK_SKIPPED=0
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning "$REPO_ROOT/scripts/dev/hooks/pre-commit" \

@@ -152,8 +152,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „Harness-Schutz und Kill-Switch", AUTONOMOUS.md, CLAUDE.md §2, CHANGELOG.md (die Regel ist enger)
 Abhängt von: T9
 
-### T11 — harness.sh status prüft die Hook-Datei; Modus-Test ohne .git  [ ]
+### T11 — harness.sh status prüft die Hook-Datei; Modus-Test ohne .git  [x]
 Komponente: scripts · Dateien: scripts/dev/harness.sh, scripts/tests/hooks_test.sh, scripts/tests/review_scripts_test.sh, scripts/tests/verify_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @f71ef349 2026-09-28T12:16:36+02:00
+Review: approve (opus, 2nd round)
 Änderung: Befunde aus `/code-review high` (2026-09-28). `harness.sh status` meldete „armed“ allein wegen `core.hooksPath`, auch in einem Worktree, dessen Branch keine ausführbare `scripts/dev/hooks/pre-commit` hat; jetzt heißt es dort „NOT armed“. Die Modus-Prüfung in `review_scripts_test.sh` fällt ohne funktionierendes `.git` (Box-Worktree, Tarball) auf das Ausführungsbit zurück, statt aus Umgebungsgründen rot zu werden. Eigener Befund des Baus: Mutationsproben mit kaputtem Aufräumer ließen 30 `ah-verify.*` in /tmp liegen. `verify_test.sh` legt deshalb das `TMPDIR` aller seiner `verify.sh`-Läufe unter sein eigenes Arbeitsverzeichnis.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (ein Halbsatz zu `NOT armed`)

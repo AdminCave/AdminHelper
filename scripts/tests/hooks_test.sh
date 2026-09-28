@@ -122,8 +122,17 @@ if [ "$(git -C "$TREE" rev-parse --git-dir 2>/dev/null)" = ".git" ]; then
     && ok "a clone without core.hooksPath: pre-commit NOT set, with the command" || bad "unarmed: rc=$rc out=$OUT"
   git -C "$TREE" config core.hooksPath scripts/dev/hooks
   run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — core.hooksPath is set, but this checkout has no executable" <<<"$OUT" \
+    && ok "core.hooksPath set, but no hook file in this checkout: NOT armed" || bad "no hook file: rc=$rc out=$OUT"
+  printf '#!/bin/sh\nexit 0\n' > "$TREE/scripts/dev/hooks/pre-commit"
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed" <<<"$OUT" \
+    && ok "... and a hook file without the execute bit is NOT armed either" || bad "non-executable hook: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/pre-commit"
+  run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *armed (core.hooksPath=scripts/dev/hooks)" <<<"$OUT" \
-    && ok "core.hooksPath=scripts/dev/hooks: pre-commit armed" || bad "armed: rc=$rc out=$OUT"
+    && ok "core.hooksPath=scripts/dev/hooks and an executable hook: pre-commit armed" || bad "armed: rc=$rc out=$OUT"
+  rm -f "$TREE/scripts/dev/hooks/pre-commit"
   git -C "$TREE" config core.hooksPath .githooks
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT set (core.hooksPath=.githooks)" <<<"$OUT" \

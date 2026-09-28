@@ -47,7 +47,11 @@ hook_line() {
 precommit_line() {
   local hp
   hp="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null)"
-  if [ "$hp" = "scripts/dev/hooks" ]; then
+  # The setting alone arms nothing: a hook file that is gone or lost its
+  # execute bit (`chmod -x`, a copy without modes) is skipped by git in silence.
+  if [ "$hp" = "scripts/dev/hooks" ] && [ ! -x "$ROOT/scripts/dev/hooks/pre-commit" ]; then
+    echo "pre-commit:      NOT armed — core.hooksPath is set, but this checkout has no executable scripts/dev/hooks/pre-commit"
+  elif [ "$hp" = "scripts/dev/hooks" ]; then
     echo "pre-commit:      armed (core.hooksPath=scripts/dev/hooks)"
   else
     echo "pre-commit:      NOT set${hp:+ (core.hooksPath=$hp)} — git config core.hooksPath scripts/dev/hooks"

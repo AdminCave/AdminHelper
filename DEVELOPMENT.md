@@ -586,7 +586,9 @@ bash scripts/dev/harness.sh status            # pre-commit: armed (core.hooksPat
 ```
 
 Der Pfad ist relativ: jeder Worktree faehrt den Hook **seines** Branches, ein Branch ohne
-die Datei hat keinen. Der Hook sperrt fail-closed — ein kaputtes `review.sh` blockiert
+die Datei hat keinen (und dessen aelteres `harness.sh` sagt dazu nichts). Fehlt die Datei im
+Checkout oder ist sie nicht ausfuehrbar, meldet `harness.sh status` `NOT armed`. Der Hook
+sperrt fail-closed — ein kaputtes `review.sh` blockiert
 jeden Commit; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
 Nur `git commit` faehrt ihn: `git cherry-pick`, `git revert` (festgehalten in
 `scripts/tests/review_scripts_test.sh`), ein Merge mit automatischem Commit und `rebase`

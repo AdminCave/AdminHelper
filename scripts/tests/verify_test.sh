@@ -31,6 +31,10 @@ command -v python3 >/dev/null 2>&1 \
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+# Every verify.sh run below makes its TMPDIR in here, not in /tmp: a mutation
+# probe with a broken cleanup once left 30 ah-verify.* behind in /tmp.
+mkdir -p "$WORK/tmp"
+export TMPDIR="$WORK/tmp"
 
 # mk_tree <dir> <marker> — a checkout whose run.sh only records how it was called
 mk_tree() {
