@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel server: API-Vertrag (R-0043, R-0054, R-0068) — Task-Ledger
-Status: aktiv · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0043, R-0054, R-0068
 Heavy: none — die Antwort-Bytes bleiben gleich (Differential-Test je Route), Header-Namen, Gateway, Compose und Agent unverändert; die Auth-Dependency läuft in-process in den Authz-Tests und in Schemathesis in allen vier Kontexten. Den Stack deckt der nächste Wochenlauf (Kevin, 2026-09-27).
