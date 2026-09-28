@@ -231,7 +231,7 @@ def import_connections(
     # name) used to land in the table or blow up with a 500 mid-loop. Validate
     # all-or-nothing — otherwise a "replace" import with bad input would wipe
     # every existing connection and import nothing (data loss).
-    validated: list[dict] = []
+    validated: list[tuple[int, dict]] = []
     errors: list[dict] = []
     for idx, conn_data in enumerate(req.connections):
         try:
@@ -245,9 +245,17 @@ def import_connections(
                 }
             )
             continue
-        if payload.get("serverId") is not None and (
-            db.query(Server.id).filter(Server.id == payload["serverId"]).first() is None
-        ):
+        validated.append((idx, payload))
+
+    # One query for every serverId the import names, not one per entry (R-0068).
+    server_ids = {p["serverId"] for _, p in validated if p.get("serverId") is not None}
+    known = (
+        {sid for (sid,) in db.query(Server.id).filter(Server.id.in_(server_ids))}
+        if server_ids
+        else set()
+    )
+    for idx, payload in validated:
+        if payload.get("serverId") is not None and payload["serverId"] not in known:
             errors.append(
                 {
                     "index": idx,
@@ -262,11 +270,9 @@ def import_connections(
                     ],
                 }
             )
-            continue
-        payload["id"] = str(uuid.uuid4())
-        validated.append(payload)
 
     if errors:
+        errors.sort(key=lambda e: e["index"])
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"message": "Import enthält ungültige Einträge", "rejected": errors},
@@ -276,7 +282,8 @@ def import_connections(
         db.query(Connection).delete()
 
     imported = []
-    for payload in validated:
+    for _, payload in validated:
+        payload["id"] = str(uuid.uuid4())
         conn = Connection.from_dict(payload)
         db.add(conn)
         imported.append(conn)

@@ -220,3 +220,104 @@ def test_write_frps_config_tightens_an_existing_world_readable_file(tmp_path, mo
     stale.chmod(0o644)
     path = docker_manager.write_frps_config(_frps_cfg())
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+class TestConfigResponseShape:
+    """R-0043: the server-config routes declare FrpServerConfigOut (detail: plus the tunnels).
+    Pydantic drops a key the model does not declare without a word, so every body must equal
+    what to_dict hands out — the bytes the untyped routes sent."""
+
+    def _expected(self, db, cid, **to_dict_args):
+        from fastapi.encoders import jsonable_encoder
+
+        cfg = db.get(FrpServerConfig, cid)
+        db.refresh(cfg)
+        return jsonable_encoder(cfg.to_dict(**to_dict_args))
+
+    def _sparse_config_with_tunnel(self, db):
+        """bind_port NULL, extra_config set, and one tunnel with the nullable columns filled."""
+        from app.modules.frp.models import FrpTunnel
+        from app.modules.servers.models import Server
+
+        db.add(Server(id="srv-shape", name="shape", hostname="shape.example.test"))
+        cfg = FrpServerConfig(
+            id="cfg-shape",
+            name="shape",
+            server_addr="frps.example.net",
+            auth_token="a-stored-token-that-is-masked",
+            extra_config='{"log.level": "debug", "transport.tls.force": true}',
+        )
+        db.add(cfg)
+        db.flush()
+        # An INSERT with bind_port=None takes the column default (7000); only an UPDATE
+        # leaves the NULL a row can hold.
+        cfg.bind_port = None
+        db.add(
+            FrpTunnel(
+                id="tun-shape",
+                server_id="srv-shape",
+                frp_config_id="cfg-shape",
+                name="shape-ssh",
+                tunnel_type="stcp",
+                protocol="ssh",
+                local_port=22,
+                secret_key="s" * 32,
+                visitor_port=6001,
+                extra_config='{"transport.useCompression": true}',
+                tags='["prod", "edge"]',
+            )
+        )
+        db.commit()
+        assert db.get(FrpServerConfig, "cfg-shape").bind_port is None
+        return "cfg-shape"
+
+    def test_post_and_list(self, test_client, db_session, admin_user, monkeypatch):
+        import app.modules.frp.config_router as cr
+
+        monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+        h = _login(test_client)
+        created = test_client.post(
+            "/api/frp/server-config",
+            json={
+                "name": "shape",
+                "server_addr": "frps.example.net",
+                "dashboard_port": 7500,
+                "extra_config": {"log.level": "debug", "transport.tls.force": True},
+            },
+            headers=h,
+        )
+        assert created.status_code == 201, created.text
+        cid = created.json()["id"]
+        assert created.json() == self._expected(db_session, cid)
+
+        listed = test_client.get("/api/frp/server-config", headers=h)
+        assert listed.status_code == 200, listed.text
+        assert listed.json() == [self._expected(db_session, cid, mask_secrets=True)]
+
+    def test_sparse_row_through_list_detail_and_put(
+        self, test_client, db_session, admin_user, monkeypatch
+    ):
+        import app.modules.frp.config_router as cr
+
+        monkeypatch.setattr(cr, "write_frps_config", lambda config, **kwargs: None)
+        cid = self._sparse_config_with_tunnel(db_session)
+        h = _login(test_client)
+
+        listed = test_client.get("/api/frp/server-config", headers=h)
+        assert listed.status_code == 200, listed.text
+        assert listed.json() == [self._expected(db_session, cid, mask_secrets=True)]
+        assert listed.json()[0]["bindPort"] is None
+
+        detail = test_client.get(f"/api/frp/server-config/{cid}", headers=h)
+        assert detail.status_code == 200, detail.text
+        assert detail.json() == self._expected(
+            db_session, cid, include_tunnels=True, mask_secrets=True
+        )
+        assert [t["id"] for t in detail.json()["tunnels"]] == ["tun-shape"]
+
+        updated = test_client.put(
+            f"/api/frp/server-config/{cid}", json={"name": "renamed"}, headers=h
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json() == self._expected(db_session, cid, mask_secrets=True)
+        assert updated.json()["extraConfig"] == {"log.level": "debug", "transport.tls.force": True}

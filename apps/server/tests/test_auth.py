@@ -317,6 +317,23 @@ class TestRefreshCookie:
         denied = test_client.post("/api/auth/refresh", json={"refresh_token": refresh_before})
         assert denied.status_code == 401
 
+    def test_logout_with_the_cookie_alone(self, test_client, admin_user):
+        """R-0054: the schema declares logout's auth optional (`security: [HTTPBearer, {}]`)
+        because the route works without a bearer: the refresh cookie alone is blacklisted and
+        the response clears it."""
+        test_client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+        refresh_before = test_client.cookies.get("refresh_token")
+        assert refresh_before
+
+        out = test_client.post("/api/auth/logout")  # no Authorization header, no body
+
+        assert out.status_code == 200
+        set_cookie = out.headers.get("set-cookie", "").lower()
+        assert "refresh_token=" in set_cookie
+        assert "max-age=0" in set_cookie
+        denied = test_client.post("/api/auth/refresh", json={"refresh_token": refresh_before})
+        assert denied.status_code == 401
+
     def test_body_refresh_still_works_for_non_browser_clients(self, test_client, admin_user):
         # Backward compatibility: desktop/CLI send the token in the body and must
         # keep working unchanged.

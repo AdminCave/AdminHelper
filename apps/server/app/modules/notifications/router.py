@@ -17,7 +17,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -156,7 +157,14 @@ def put_prefs(
 # --- Internal event ingress (monitoring → server) --------------------------
 
 
-def require_internal_key(x_internal_key: str = Header(default="")) -> None:
+# A security scheme rather than a plain header parameter, so the schema says what the
+# header is. Its own scheme_name: two APIKeyHeader schemes would both be "APIKeyHeader".
+_internal_key_scheme = APIKeyHeader(
+    name="X-Internal-Key", scheme_name="InternalKey", auto_error=False
+)
+
+
+def require_internal_key(x_internal_key: str | None = Depends(_internal_key_scheme)) -> None:
     """Gate for service-to-service ingress. Fail-closed: a missing/blank shared
     secret rejects everything (constant-time compare).
 

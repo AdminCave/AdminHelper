@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import re
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import field_validator
+from pydantic import BaseModel, field_validator
 
 from app.core.bounds import IntColumn, RequestModel
 
@@ -192,3 +192,74 @@ class FrpTunnelUpdate(RequestModel):
     )
     _v_secret = field_validator("secret_key")(_check_secret)
     _v_extra = field_validator("extra_config")(_check_extra_config)
+
+
+# --- Responses ---
+# Key for key what FrpServerConfig.to_dict / FrpTunnel.to_dict hand out (R-0043): Pydantic
+# drops a key the model does not declare without a word. Nullable columns are Optional
+# (authToken and dashboardPassword also because every response but the create masks them),
+# and the timestamps stay the isoformat() strings to_dict builds.
+
+
+class FrpServerConfigOut(BaseModel):
+    id: str
+    name: str
+    serverAddr: str
+    bindPort: Optional[int]
+    vhostHttpsPort: Optional[int]
+    authToken: Optional[str]
+    subdomainHost: Optional[str]
+    maxPortsPerClient: Optional[int]
+    dashboardPort: Optional[int]
+    dashboardUser: Optional[str]
+    dashboardPassword: Optional[str]
+    extraConfig: Optional[dict[str, Any]]
+    createdAt: Optional[str]
+    updatedAt: Optional[str]
+
+
+class FrpTunnelOut(BaseModel):
+    id: str
+    serverId: str
+    frpConfigId: str
+    name: str
+    tunnelType: str
+    protocol: str
+    localIp: Optional[str]
+    localPort: int
+    secretKey: Optional[str]
+    customDomains: Optional[str]
+    visitorPort: Optional[int]
+    connectionId: Optional[str]
+    enabled: Optional[bool]
+    extraConfig: Optional[dict[str, Any]]
+    tags: list[str]
+    createdAt: Optional[str]
+
+
+class FrpServerConfigDetail(FrpServerConfigOut):
+    tunnels: list[FrpTunnelOut]
+
+
+class FrpStatusProxy(BaseModel):
+    # frps (0.69.1, ProxyStatsInfo) sends these as int64/string, never null; the router
+    # fills a missing one with 0 or "".
+    name: str
+    type: str
+    status: str
+    curConns: int
+    clientVersion: str
+    todayTrafficIn: int
+    todayTrafficOut: int
+    lastStartTime: str
+    lastCloseTime: str
+    # An open object on purpose: which tunnel keys the status view promises is a
+    # decision of its own, not a by-product of typing this route.
+    tunnel: Optional[dict[str, Any]]
+
+
+class FrpStatus(BaseModel):
+    proxies: list[FrpStatusProxy]
+    total: int
+    # Only on the answer for an unreachable dashboard; the route drops it when unset.
+    error: Optional[str] = None
