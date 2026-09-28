@@ -188,7 +188,7 @@ preflight() {
 # it expects.
 collect_artifacts() {
   local d
-  for d in screenshots logs; do
+  for d in screenshots logs junit; do
     [ -d "$AH_OUT_DIR/$d" ] || continue
     cp -r "$AH_OUT_DIR/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
   done
@@ -300,6 +300,9 @@ run_all() {
   # and tree hash — two green rows for steps that never ran. run.sh deletes its
   # own artifact for the same reason: missing evidence is honest, stale is not.
   rm -f "$AH_OUT_DIR/last-all.json"
+  # The same for the JUnit XMLs: the pull merges into this directory, so a file
+  # from an earlier run or a local verify.sh would be copied and counted as today's.
+  rm -rf "$AH_OUT_DIR/junit"
   local t0=$SECONDS
   bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
   local secs_layer=$((SECONDS - t0))
@@ -899,7 +902,8 @@ write_history() {
 }
 
 write_report() {
-  local e ebene schritt ergebnis secs vm detail vms_now
+  local e ebene schritt ergebnis secs vm detail vms_now junit_n
+  junit_n="$(find "$OUT/junit" -type f -name '*.xml' 2>/dev/null | wc -l)"
   {
     # EXACTLY one line, and it is the first: the hook and `/test status` read it.
     if [ "$VERDICT" = "UNVERIFIED" ]; then echo "UNVERIFIED ($REASON)"; else echo "$VERDICT"; fi
@@ -909,6 +913,7 @@ write_report() {
     echo "- Modus: \`$MODE\`"
     echo "- Commit: \`$COMMIT\` · Tree: \`$TREE\`"
     echo "- Artefakte: \`$OUT\`"
+    echo "- JUnit: $junit_n XML in \`$OUT/junit\`"
     echo ""
     echo "## Summary-Zeilen (wörtlich)"
     echo ""
