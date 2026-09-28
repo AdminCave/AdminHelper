@@ -142,12 +142,14 @@ Beweis: harness/tmp-and-commit-guards@7d9cd60f · JSON `{"command":"timeout 10s 
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (DEVELOPMENT.md beschreibt die Regeln, nicht den Parser)
 
-### T10 — Wächter: Löschen über Schleifen- und Pipe-Variablen, find -mindepth, jeder Git-Arbeitsbaum  [ ]
-Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
-Änderung: Befund aus `/code-review high` (2026-09-28): `ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done`, `… | xargs rm` und `find /tmp/claude-1000 -mindepth 1 -delete` liefen durch. Gleichzeitig war eine `for`-Schleife über einen Temp-Glob verweigert, sobald irgendwo im selben Kommando ein unbeteiligtes `rm` stand. Jetzt hängt ein Temp-Glob am Löschen über die Variable, die ihn trägt: `for v in <glob>`, `… | while read v` und `… | xargs rm` (auch durch mehrere Pipe-Stufen); `done` schließt die Schleife. `find` darunter mit `-mindepth` ≥ 1 zählt wie ein Namensmuster. Die Checkout-Ausnahme gilt für jeden Git-Arbeitsbaum, nicht nur für den Checkout des Hooks (Scratch-Worktrees unter /tmp). Kopf und DEVELOPMENT.md nennen die neuen Grenzen: Prozess-Substitution und Umweg über eine zweite Variable.
+### T10 — Wächter: Löschen über Schleifen- und Pipe-Variablen, nur in geteilten Temp-Verzeichnissen  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CLAUDE.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @c78300dd 2026-09-28T11:58:46+02:00
+Review: approve (opus, 2nd round)
+Änderung: Befund aus `/code-review high` (2026-09-28): `ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done`, `… | xargs rm` und `find /tmp/claude-1000 -mindepth 1 -delete` liefen durch, und eine `for`-Schleife über einen Temp-Glob war verweigert, sobald irgendwo im selben Kommando ein unbeteiligtes `rm` stand. Jetzt gilt eine Schleife über einen Temp-Glob (`for v in <glob>`, `… | while read v`), in deren Rumpf gelöscht wird, als Treffer, auch über `cd "$v"` oder `bash -c`; ein Löschen nach `done` zählt nicht. Dazu `… | xargs rm` hinter einem Lister oder einer solchen Schleife, auch durch mehrere Pipe-Stufen. Regel nach der Messung der Aufsicht (adminhelper-ac, Kevins Auftrag, 2026-09-28: 34 513 echte Befehle, 4 echte Treffer, 13 Fehlalarme in Scratchpads): Verweigert wird nur, wenn das wörtliche Verzeichnis des Globs ein **geteiltes** Verzeichnis IST, also `/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>`, `…/<projekt>` oder `…/<projekt>/<session>`, bzw. ein `find`-Startpfad dort. Alles tiefer ist erlaubt. Regressions-Test mit den gemessenen Formen: Die 4 Treffer sind verweigert, alle 9 Scratchpad-Formen gehen durch. Kopf, DEVELOPMENT.md, AUTONOMOUS.md, CLAUDE.md §2 und CHANGELOG nennen die Regel und ihre Grenzen.
 Beweis: harness/tmp-and-commit-guards@7d9cd60f · `ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done` → frei; `for f in /tmp/ah-*.log; do cat "$f"; done; rm -f build.o` → deny (Fehlalarm)
 Verify: bash scripts/dev/verify.sh scripts --strict
-Doku: DEVELOPMENT.md „Harness-Schutz und Kill-Switch"
+Doku: DEVELOPMENT.md „Harness-Schutz und Kill-Switch", AUTONOMOUS.md, CLAUDE.md §2, CHANGELOG.md (die Regel ist enger)
 Abhängt von: T9
 
 ### T11 — harness.sh status prüft die Hook-Datei; Modus-Test ohne .git  [ ]

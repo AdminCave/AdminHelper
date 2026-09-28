@@ -5,7 +5,7 @@
 #
 # harness-guard.sh — PreToolUse hook: an autonomous run does not edit the files
 # that define its own rules (autonomy stage 4), and no session deletes by glob
-# under a temp root (R-0098).
+# in a shared temp directory (R-0098).
 #
 # Registered in .claude/settings.json for Edit|Write|MultiEdit|Bash. It reads the
 # hook's JSON from stdin, works out which file the call would WRITE, and matches
@@ -15,11 +15,15 @@
 #   otherwise                               ->  one warning line on stderr, exit 0
 #   not a harness path                      ->  no output at all, exit 0
 #
-# A Bash command that deletes by glob under /tmp, /var/tmp, /dev/shm or $TMPDIR
-# is denied in EVERY mode, and the kill switch does not lift it (Kevin,
-# 2026-09-27): on 2026-09-25 a reviewer cleaned up with `rm -rf /tmp/tmp.*` and
-# took the fixtures of every other session along. Globs inside this checkout
-# stay free even when the checkout itself lives under /tmp.
+# A Bash command that deletes by glob in a SHARED temp directory — /tmp,
+# /var/tmp, /dev/shm, $TMPDIR, or Claude Code's /tmp/claude-<uid>, …/<project>
+# and …/<project>/<session> — is denied in EVERY mode, and the kill switch does
+# not lift it (Kevin, 2026-09-27): on 2026-09-25 a reviewer cleaned up with
+# `rm -rf /tmp/tmp.*` and took the fixtures of every other session along. That
+# covers a loop over such a glob that deletes in its body (`for d in /tmp/x*`,
+# `… | while read d`) and `… | xargs rm` behind it. One level deeper is somebody's
+# own directory (a scratchpad, an mktemp dir) and stays free: "anywhere below
+# /tmp" hit 13 legitimate scratchpad cleanups in 34 513 real commands.
 #
 # The same holds for the ways past the pre-commit hook (R-0102, Kevin
 # 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git -c
@@ -52,7 +56,8 @@
 # Known gaps, checked and accepted: a file written or deleted from inside
 # python/perl or an interactive editor, a path built at runtime
 # (`$VAR/CLAUDE.md`, `rm -rf "$D"/*` — the hook cannot resolve a variable other
-# than $TMPDIR), a delete fed through `xargs rm` or `find … -exec sh -c 'rm …'`,
+# than $TMPDIR), `find … -exec sh -c 'rm …'`, a loop fed by a process substitution
+# (`done < <(ls /tmp/x*)`),
 # `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), and the
 # three git ways of restoring content over a file — `git apply <patch>`,
 # `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
@@ -89,7 +94,7 @@ fi
 
 # Reads the hook JSON on stdin, prints one finding per line: `H <path>` for each
 # repo-relative file this call would write, `T <operand>` for each glob delete
-# under a temp root. Prints nothing for a call that does neither.
+# in a shared temp directory. Prints nothing for a call that does neither.
 # The program is handed over with -c, not on stdin: `python3 -` would eat the
 # very JSON this hook has to read.
 PARSE=$(cat <<'PY'
@@ -139,10 +144,9 @@ TMPDIR_TEXT = re.compile(r"^\$(?:TMPDIR\b|\{TMPDIR(?::?[-=?+][^}]*)?\})")
 UNRESOLVED = "/<unresolved>"
 
 out = []        # repo-relative paths this call writes
-tmp_hits = []   # glob deletes under a temp root
+tmp_hits = []   # glob deletes in a shared temp directory
 bypasses = []   # ways past the pre-commit hook
-loop_globs = [] # `for v in <glob under a temp root>` ...
-deleted = []    # ... is only a finding next to a delete in the same command
+deletes = []    # every delete seen, nested `bash -c` included: a loop counts them
 
 
 def rel(p, base):
@@ -172,13 +176,19 @@ def in_repo(p):
     return real == root or real.startswith(root + os.sep)
 
 
-def in_tmp(p):
-    """p is a temp root or below one — and not inside this checkout, which may
-    itself live under /tmp (a scratch worktree, a test fixture)."""
-    real = os.path.realpath(p)
-    if not any(c == r or c.startswith(r + "/") for c in (p, real) for r in TMP_ROOTS):
+def is_shared(p):
+    """p IS a shared temp directory — a temp root, or Claude Code's per-uid,
+    per-project or per-session directory in one (the session directory holds
+    tasks/ and scratchpad/ of all its subagents). Not below one: that is
+    somebody's own directory. Never inside this checkout."""
+    if in_repo(p):
         return False
-    return not in_repo(p)
+    for c in (p, os.path.realpath(p)):
+        for r in TMP_ROOTS:
+            if c == r or r != TMPDIR_ROOT and re.match(
+                    re.escape(r.rstrip("/")) + r"/claude-[0-9]+(/[^/]+){0,2}$", c):
+                return True
+    return False
 
 
 def has_glob(word):
@@ -197,29 +207,31 @@ def glob_dir(word, base):
 
 
 def reaches_root(pattern):
-    """The glob can match a temp root itself: `/tmp*`, `/t*`, `/*/tmp.*`, and
-    `tmp*` after `cd /` all take /tmp along."""
+    """The glob, with its glob character above a temp root, can match that root
+    itself or an entry right in it: `/tmp*`, `/t*`, `/*/tmp.*`, and `tmp*`
+    after `cd /` all take /tmp along. Deeper matches are somebody's own."""
     comps = pattern.strip("/").split("/")
     for r in TMP_ROOTS:
         rc = r.strip("/").split("/")
-        if r != TMPDIR_ROOT and len(comps) >= len(rc) and all(
+        if r != TMPDIR_ROOT and len(comps) in (len(rc), len(rc) + 1) and all(
                 fnmatch.fnmatchcase(c, p) for c, p in zip(rc, comps)):
             return True
     return False
 
 
 def tmp_glob(word, base):
-    """A glob under a temp root or reaching one, or a fixed temp root itself
-    (`rm -rf /tmp` takes the same as `rm -rf /tmp/*`). A bare `$TMPDIR` is left
-    to the variable rule: `rm -rf "$TMPDIR"` after `export TMPDIR=$(mktemp -d
-    …)` is cleanup."""
+    """A glob whose literal directory is a shared temp directory, or one that
+    can match a temp root itself; or a shared directory itself (`rm -rf /tmp`
+    takes the same as `rm -rf /tmp/*`). A bare `$TMPDIR` is left to the
+    variable rule: `rm -rf "$TMPDIR"` after `export TMPDIR=$(mktemp -d …)` is
+    cleanup."""
     if has_glob(word):
         d = glob_dir(word, base)
         if d == UNRESOLVED or in_repo(d):
             return False
-        return in_tmp(d) or reaches_root(resolve(word, base))
+        return is_shared(d) or reaches_root(resolve(word, base))
     p = resolve(word, base)
-    return p in TMP_ROOTS and p != TMPDIR_ROOT
+    return p != TMPDIR_ROOT and is_shared(p)
 
 
 def printable(word):
@@ -228,9 +240,9 @@ def printable(word):
 
 def find_delete(args, cwd):
     """For `find <start…> <expr>`: whether it deletes (-delete, -exec(dir) rm),
-    and the start path that makes it a glob delete under a temp root — a temp
-    root, a glob under one, or a path below one with a name pattern, the same
-    selection by pattern as `rm /tmp/x/*`."""
+    the start path that makes that a delete in a shared temp directory — a
+    shared directory itself or a glob in one, whatever the expression selects
+    there — and its start paths."""
     i = 0
     while i < len(args) and (args[i] in ("-H", "-L", "-P", "-D") or args[i].startswith("-O")):
         i += 2 if args[i] == "-D" else 1
@@ -243,17 +255,11 @@ def find_delete(args, cwd):
         a in ("-exec", "-execdir", "-ok", "-okdir") and j + 1 < len(expr)
         and os.path.basename(expr[j + 1]) in DELETERS
         for j, a in enumerate(expr))
-    if not deletes:
-        return False, None
-    pattern = any(
-        (a in ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename")
-         and j + 1 < len(expr) and has_glob(expr[j + 1]))
-        or a in ("-regex", "-iregex")
-        for j, a in enumerate(expr))
-    for s in starts or ["."]:
-        if tmp_glob(s, cwd) or (pattern and in_tmp(resolve(s, cwd))):
-            return True, s
-    return True, None
+    starts = starts or ["."]
+    for s in starts:
+        if tmp_glob(s, cwd):
+            return deletes, s, starts
+    return deletes, None, starts
 
 
 # `git commit` options whose value may be the NEXT word: skipped, so that
@@ -441,23 +447,32 @@ def scan(cmd, base, depth=0):
     if depth > 2:
         return
     cur = base
-    state = {"case": False, "arm": False}
+    # What one segment tells the next: the case syntax; the loops that are open,
+    # each as (the temp glob it walks or None, the deletes seen when it opened);
+    # the temp glob a pipe carries into the next segment.
+    state = {"case": False, "arm": False, "loops": [], "pipe": None}
     for line in logical_lines(cmd):
         segment = []
         for tok in tokenize(line) + [";"]:
             if tok in SEPARATORS:
                 # An empty segment (the `;` a line ends with) changes nothing.
                 if segment:
-                    cur = run_segment(case_arm(segment, state), cur, depth)
+                    cur = run_segment(case_arm(segment, state), cur, depth, state, tok)
                     if state["case"] and tok in (";;", ";&", ";;&"):
                         state["arm"] = True
                 segment = []
             else:
                 segment.append(tok)
+    # A loop that is never closed still counts.
+    for glob, seen in state["loops"]:
+        if glob and len(deletes) > seen:
+            tmp_hits.append(glob)
 
 
-def run_segment(tok, cwd, depth):
-    """Record what this segment writes; return the cwd the NEXT one runs in."""
+def run_segment(tok, cwd, depth, state, sep):
+    """Record what this segment writes; return the cwd the NEXT one runs in.
+    sep is the separator that ends it (`|` hands a temp glob on)."""
+    piped, state["pipe"] = state["pipe"], None
     if not tok:
         return cwd
 
@@ -515,17 +530,40 @@ def run_segment(tok, cwd, depth):
         if hit:
             bypasses.append(hit)
 
+    # A temp glob reaches a delete by name; through a loop over it that deletes
+    # in its body, however the body gets there (`rm "$d"`, `cd "$d" && rm ./*`,
+    # `bash -c`) — `for d in /tmp/x*`, `… /tmp/x* | while read d`; or through a
+    # pipe into `xargs rm`, from a lister or from the loop's `done`. A delete
+    # after `done` is no part of the loop.
+    selects = None
     if verb in DELETERS:
-        deleted.append(verb)
+        deletes.append(verb)
         tmp_hits.extend(w for w in words if tmp_glob(w, cwd))
+        if piped and "xargs" in (os.path.basename(t) for t in clean[:i]):
+            tmp_hits.append(piped)
     elif verb == "find":
-        deletes, hit = find_delete(args, cwd)
-        if deletes:
-            deleted.append(verb)
-        if hit is not None:
-            tmp_hits.append(hit)
-    elif verb == "for" and "in" in args:
-        loop_globs.extend(w for w in args[args.index("in") + 1:] if tmp_glob(w, cwd))
+        is_delete, selects, starts = find_delete(args, cwd)
+        if is_delete:
+            deletes.append(verb)
+            if selects is not None:
+                tmp_hits.append(selects)
+    elif verb in ("for", "select"):
+        globs = [w for w in args[args.index("in") + 1:] if tmp_glob(w, cwd)] if "in" in args else []
+        state["loops"].append((globs[0] if globs else None, len(deletes)))
+    elif verb == "read" and any(t in ("while", "until") for t in clean[:i]):
+        state["loops"].append((piped, len(deletes)))
+    elif verb == "done" and state["loops"]:
+        glob, seen = state["loops"].pop()
+        if glob and len(deletes) > seen:
+            tmp_hits.append(glob)
+        selects = glob
+    if any(t in ("while", "until") for t in clean[:i]) and verb != "read":
+        state["loops"].append((None, len(deletes)))   # a loop over nothing; `done` pops it
+    if sep == "|":
+        # Only a lister hands a glob on: `cat /tmp/*.list | xargs rm` reads them.
+        listed = next((w for w in words if has_glob(w) and tmp_glob(w, cwd)), None) \
+            if verb in ("ls", "echo", "printf") else None
+        state["pipe"] = piped or selects or listed
 
     if verb == "cd":
         return resolve(words[0], cwd) if words else cwd
@@ -600,8 +638,6 @@ elif tool == "Bash":
     if isinstance(cmd, str):
         scan(cmd, cwd)
 
-if loop_globs and deleted:
-    tmp_hits.extend(loop_globs)
 for w in dict.fromkeys(tmp_hits):
     print("T " + printable(w))
 for w in dict.fromkeys(bypasses):
@@ -649,7 +685,7 @@ done < <(targets)
 # No mode, no kill switch: the one rule of this hook that also binds the model
 # in an interactive session (Kevin, 2026-09-27).
 if [ -n "$TMP_HIT" ]; then
-  deny "glob delete under a temp root: $TMP_HIT — refused in every mode; delete your own directories by their full path, never with a glob (create them with mktemp -d -p <your dir>)"
+  deny "glob delete in a shared temp directory: $TMP_HIT — refused in every mode; delete your own directories by their full path, never with a glob (create them with mktemp -d -p <your dir>)"
   exit 0
 fi
 if [ -n "$BYPASS" ]; then

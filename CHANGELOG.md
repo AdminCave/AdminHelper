@@ -11,8 +11,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 - **Harness-Schutz fuer /tmp und Commits (R-0098, R-0102):** Der PreToolUse-Waechter
   `scripts/dev/hooks/harness-guard.sh` verweigert in jedem Modus, auch mit gesetztem Kill-Switch,
-  das Loeschen per Glob unter `/tmp`, `/var/tmp`, `/dev/shm` und `$TMPDIR` (auch ueber `find …
-  -delete` und `for`-Schleifen) — ein Reviewer hatte mit `rm -rf /tmp/tmp.*` die Fixtures aller
+  das Loeschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`,
+  `$TMPDIR` und die Session-Verzeichnisse von Claude Code darin; auch ueber `find … -delete`,
+  Schleifen und Pipes) — ein Reviewer hatte mit `rm -rf /tmp/tmp.*` die Fixtures aller
   Sessions geloescht. Neu ist `scripts/dev/hooks/pre-commit`: er faehrt `review.sh sec --staged`
   vor jedem Commit, nicht mehr nur in `task-close.sh`; scharf wird er je Klon mit
   `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt den Stand,

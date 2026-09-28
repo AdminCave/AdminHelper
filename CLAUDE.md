@@ -64,8 +64,9 @@ in seinen Settings hart verboten; in Kevins Sessions prompten sie nicht — eine
 bestätigt wird, hält nur den Bau auf (zwei Worker verloren daran je 45 Minuten).
 **Harness-Schutz:** ein PreToolUse-Hook verweigert im autonomen Lauf Änderungen an den Dateien aus
 `scripts/dev/harness-paths.txt` (Regeln, Skills, Gates) — bei Shell-Kommandos best effort, interaktiv
-warnt er dort nur. In **jedem** Modus, auch mit gesetztem Kill-Switch, verweigert er Löschen per Glob unter
-`/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR` und die Umgehung des pre-commit-Hooks per Flag oder `core.hooksPath`;
+warnt er dort nur. In **jedem** Modus, auch mit gesetztem Kill-Switch, verweigert er Löschen per Glob in einem
+geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session) und
+die Umgehung des pre-commit-Hooks per Flag oder `core.hooksPath`;
 der pre-commit-Hook fährt vor jedem Commit `review.sh sec` (scharf mit `git config core.hooksPath
 scripts/dev/hooks`, Kevins Handgriff).
 **Kill-Switch:** `bash scripts/dev/harness.sh off|on|status` (Marker `.vm/harness.off`) ist Kevins

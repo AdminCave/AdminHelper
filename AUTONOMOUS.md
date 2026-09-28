@@ -264,8 +264,8 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   liest. Ein Ledger, das den Harness selbst ändert (wie Stufe 4), ist genau der Fall für
   `harness.sh off` — den **Kevin** setzt: ein Modell, das seinen eigenen Wächter abschalten
   darf, hat keinen. Zwei Regeln gelten dagegen **in jedem Modus**, auch interaktiv und auch
-  mit gesetztem Kill-Switch: kein Löschen per Glob unter `/tmp`, `/var/tmp`, `/dev/shm` oder `$TMPDIR`
-  (R-0098), und keine Umgehung des pre-commit-Hooks (R-0102). Der Hook
+  mit gesetztem Kill-Switch: kein Löschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`,
+  `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session; R-0098), und keine Umgehung des pre-commit-Hooks (R-0102). Der Hook
   `scripts/dev/hooks/pre-commit` fährt vor jedem Commit `review.sh sec --staged`; scharf wird
   er je Klon mit `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt es.
   Einzelheiten: DEVELOPMENT.md „Harness-Schutz und Kill-Switch".

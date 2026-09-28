@@ -441,8 +441,6 @@ rm -rf /tmp*
 rm -rf /var/tmp*
 cd / && rm -rf tmp*
 rm -rf /*/tmp.*
-find /tmp/x -name '*.log' -delete
-find /tmp/x -regex '.*' -delete
 find //tmp -delete
 if true; then rm -rf /tmp/tmp.*; fi
 time rm -rf /tmp/tmp.*
@@ -469,6 +467,25 @@ ionice -c 3 rm -rf /tmp/tmp.*
 builtin cd /tmp; rm -rf tmp.*
 /usr/bin/time -f %e -o /dev/null rm -rf /tmp/tmp.*
 exec -a x rm -rf /tmp/tmp.*
+ls -d /tmp/tmp.* | while read d; do rm -rf "$d"; done
+ls -d /tmp/tmp.* | while read -r d; do rm -rf "${d}"; done
+ls -d /tmp/tmp.* | xargs rm -rf
+ls -d /tmp/tmp.* | grep -v keep | xargs -r rm -rf
+find /tmp -maxdepth 1 -name 'tmp.*' -print0 | xargs -0 rm -rf
+find /tmp/claude-1000 -mindepth 1 -maxdepth 1 -delete
+rm -rf /tmp/claude-1000/*
+rm -rf /tmp/claude-1000/-home-dev-proj/*
+rm -rf /tmp/claude-1000/-home-dev-proj/3b753c96-0000-4000-8000-000000000000/*
+rm -rf /tmp/claude-1000
+rmdir /tmp/claude-1000/-home-dev-proj/3b753c96-0000-4000-8000-000000000000
+for d in /tmp/tmp.*; do echo "$d"; done | xargs rm -rf
+for d in /tmp/tmp.*; do echo "$d" | xargs rm -rf; done
+ls -d /tmp/tmp.* | while read d; do echo "$d"; done | xargs rm -rf
+for d in /tmp/tmp.*; do cd "$d" && rm -rf ./*; done
+for d in /tmp/tmp.*; do pushd "$d"; rm -rf ./*; popd; done
+for d in /tmp/tmp.*; do bash -c "rm -rf $d"; done
+for d in /tmp/tmp.*; do for ((i=0;i<2;i++)); do :; done; rm -rf "$d"; done
+for d in /tmp/tmp.*; do while true; do break; done; rm -rf "$d"; done
 CMDS
 guard inter Bash "$(cmdjson "$(printf 'case x in\n  a) echo ;;\n  b)\n    rm -rf /tmp/tmp.*\n    ;;\nesac')")"
 denied "$OUT" && ok "denied: the second arm of a case over several lines" || bad "multi-line case: $OUT$ERR"
@@ -476,6 +493,8 @@ guard inter Bash "$(cmdjson "$(printf 'case x in\n  a) rm -rf /tmp/tmp.* ;;\nesa
 denied "$OUT" && ok "denied: a case arm on a line of its own" || bad "multi-line case arm: $OUT$ERR"
 guard inter Bash "$(cmdjson "$(printf 'cd /tmp\nrm -rf tmp.*')")"
 denied "$OUT" && ok "denied: a cd on the line above" || bad "multi-line cd: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'for d in /tmp/tmp.*\ndo\n  rm -rf "$d"\ndone')")"
+denied "$OUT" && ok "denied: a for loop over several lines" || bad "multi-line for: $OUT$ERR"
 
 # The session's own cwd counts as well: the Bash tool keeps it between calls.
 OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf tmp.*"},"cwd":"/tmp"}' \
@@ -522,9 +541,52 @@ for f in *.bak; do rm -f "$f"; done
 case x in a) rm -rf build/* ;; esac
 case "$1" in -h) echo help ;; *) echo x ;; esac
 timeout 60 pytest -q
+for f in /tmp/ah-*.log; do cat "$f"; done; rm -f build.o
+ls -d /tmp/x* | while read d; do echo "$d"; done
+ls /tmp/*.json | head -3
+git ls-files -z | xargs -0 rm -f
+find /tmp/scratch -mindepth 0 -delete
+find /tmp/x -name '*.log' -delete
+find /tmp/x -regex '.*' -delete
+cd /tmp/x && rm -f *.o
+while true; do sleep 1; done; rm -f x.o
+for d in /tmp/x*; do echo; done; for d in a b; do rm -rf "$d"; done
+cat /tmp/*.list | xargs rm -f
 CMDS
 guard inter Bash "$(cmdjson "$(printf 'cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
 [ -z "$OUT" ] && ok "free: the command as a here-doc body" || bad "here-doc: $OUT"
+
+# Measured on 34 513 real commands (2026-09-28, the supervising session): the
+# rule "anywhere below /tmp" hit 4 real cases and 13 cleanups in scratchpads.
+# The real ones sit right in a shared directory and stay denied; the scratchpad
+# forms (names neutralised) one level deeper must pass, every one of them.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "measured hit, denied: $cmd" || bad "measured hit not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+rm -rf /tmp/tmp.* 2>/dev/null; ls -d /tmp/tmp.* 2>/dev/null | head -3
+rm -rf /tmp/ah-guard-probe-212834b7-*
+for d in /tmp/ah-verify.????????; do rm -r -- "$d"; done
+rm -rf /tmp/golden-wt.*
+CMDS
+SESS=/tmp/claude-1000/-home-dev-proj/3b753c96-0000-4000-8000-000000000000
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  cmd="${cmd//@S@/$SESS}"
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "measured false alarm, free: ${cmd#"$SESS"}" || bad "scratchpad cleanup denied: $cmd -> $OUT"
+done <<'CMDS'
+cd @S@/scratchpad && rm -f pkg_*.deb
+cd @S@/scratchpad; rm -rf probe2; rm -f probe2/tree/.box-out/*
+cd @S@/scratchpad/vd; for d in *.deb; do rm -rf "x-$d"; done
+cd @S@/scratchpad/co && rm -f *.prev.sh
+cd @S@/scratchpad/co && rm -f logs/*.err
+cd @S@/scratchpad/co && rm -f w/$p/*.log
+rm -rf @S@/scratchpad/r3/cd-*
+cd @S@/scratchpad/co && rm -rf a8/packages out/xo out/xn out/tx-*
+rm -rf @S@/scratchpad/samba_4.22*
+CMDS
 
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
