@@ -69,8 +69,10 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 
-### T4 — Runner-Klon: `core.hooksPath` fest  [ ]
+### T4 — Runner-Klon: `core.hooksPath` fest  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @5f9088df 2026-09-28T09:27:54+02:00
+Review: approve (opus)
 Änderung: In Schritt 2 nach runner-setup.sh:249 (`… config remote.origin.pushurl /dev/null`) eine Zeile
 `run su - "$RUNNER" -c "git -C $SRV/repo config core.hooksPath scripts/dev/hooks"`, als Runner, nie als root
 (der Kommentar :243–247 nennt root plus hooksPath selbst als Risiko). Test: die Zeile steht im `--dry-run`-Plan,

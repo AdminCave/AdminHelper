@@ -24,7 +24,8 @@
 #   * a clone at /srv/ah/repo whose origin cannot be pushed to
 #     (remote.origin.pushurl=/dev/null). That alone is not the boundary — a push
 #     to an explicit URL would bypass it; what carries is that this user has no
-#     credential anywhere and its settings deny `git push` outright.
+#     credential anywhere and its settings deny `git push` outright. Its commits
+#     run review.sh sec first (core.hooksPath=scripts/dev/hooks, R-0102).
 #   * its own Postgres role and test database
 #   * its own subscription token and its own Proxmox token, both 0600 and read
 #     by scripts/dev/runner-env.sh
@@ -247,6 +248,9 @@ run chown -R "$RUNNER:$RUNNER" "$SRV"
 # programs (core.fsmonitor, core.hooksPath) that root's git would then run.
 run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.url $(printf '%q' "$ORIGIN")"
 run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.pushurl /dev/null"
+# review.sh sec before every commit the runner makes, not only inside
+# task-close.sh (R-0102). Relative: each lane worktree runs its branch's hook.
+run su - "$RUNNER" -c "git -C $SRV/repo config core.hooksPath scripts/dev/hooks"
 
 # ── 3. its own database, and the devenv that carries the password ────────────
 # Both or neither: a rotated password without the matching devenv file leaves a
