@@ -21,6 +21,15 @@
 # took the fixtures of every other session along. Globs inside this checkout
 # stay free even when the checkout itself lives under /tmp.
 #
+# The same holds for the ways past the pre-commit hook (R-0102, Kevin
+# 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git -c
+# core.hooksPath=…` (and its GIT_CONFIG_* twins), and `git config … core.hooksPath`
+# unless it only reads, or dropping the whole `core` section. Kevin's own shell is
+# untouched: the hook sees only what the model runs. Not seen, like the write
+# gaps below: a hooksPath brought in through `include.path`, `git config --edit`,
+# `eval` or a command substitution, git-commit called by its exec path, plumbing
+# (`commit-tree`, `update-ref`) and `chmod -x` on the hook.
+#
 # Always exits 0: exit 2 would block every call whatever the JSON says, and any
 # other non-zero exit blocks nothing — the call goes on through the normal
 # permission flow. The decision is carried by the JSON document, the documented
@@ -112,6 +121,7 @@ UNRESOLVED = "/<unresolved>"
 
 out = []        # repo-relative paths this call writes
 tmp_hits = []   # glob deletes under a temp root
+bypasses = []   # ways past the pre-commit hook
 loop_globs = [] # `for v in <glob under a temp root>` ...
 deleted = []    # ... is only a finding next to a delete in the same command
 
@@ -225,6 +235,95 @@ def find_delete(args, cwd):
         if tmp_glob(s, cwd) or (pattern and in_tmp(resolve(s, cwd))):
             return True, s
     return True, None
+
+
+# `git commit` options whose value may be the NEXT word: skipped, so that
+# `-m "-n"` stays a message. In a cluster like `-am` the value follows it.
+COMMIT_SHORT_VALUE = set("mFCct")
+COMMIT_LONG_VALUE = {"--message", "--file", "--reuse-message", "--reedit-message", "--template",
+                     "--author", "--date", "--cleanup", "--fixup", "--squash", "--trailer",
+                     "--pathspec-from-file"}
+CONFIG_VALUE = {"-f", "--file", "--blob", "--type", "--default", "--comment"}
+GIT_CONFIG_ENV = re.compile(r"^GIT_CONFIG_(?:KEY_[0-9]+|PARAMETERS)=")
+
+
+def hooks_key(s):
+    return s.lower().startswith("core.hookspath")
+
+
+def commit_skips_hook(rest):
+    j = 0
+    while j < len(rest):
+        a = rest[j]
+        if a == "--":
+            break
+        if a.startswith("--"):
+            name = a.split("=", 1)[0]
+            # git takes any unambiguous prefix of a long option.
+            if len(name) >= len("--no-veri") and "--no-verify".startswith(name):  # review: ok the flag this guard refuses
+                return a
+            if name in COMMIT_LONG_VALUE and "=" not in a:
+                j += 1
+        elif a.startswith("-") and len(a) > 1:
+            for k, c in enumerate(a[1:]):
+                if c == "n":
+                    return a
+                if c in COMMIT_SHORT_VALUE or c in "Su":
+                    # The rest of the cluster is the value; at its end, the next word.
+                    if c in COMMIT_SHORT_VALUE and k == len(a) - 2:
+                        j += 1
+                    break
+        j += 1
+    return None
+
+
+def config_sets_hooks(rest):
+    words, opts, j = [], set(), 0
+    while j < len(rest):
+        a = rest[j]
+        if a.startswith("-"):
+            opts.add(a.split("=", 1)[0])
+            if a in CONFIG_VALUE:
+                j += 1
+        else:
+            words.append(a)
+        j += 1
+    # Dropping or renaming the section takes core.hooksPath with it.
+    if (opts & {"--remove-section", "--rename-section"} or words[:1] in (["remove-section"], ["rename-section"])) \
+            and any(w.lower() == "core" for w in words):
+        return True
+    if not any(hooks_key(w) for w in words) or words[0] in ("get", "list"):
+        return False
+    if words[0] in ("set", "unset"):
+        return True
+    if opts & {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l"}:
+        return False
+    # `git config core.hooksPath` alone reads it; a value or --unset writes.
+    return bool(opts & {"--unset", "--unset-all", "--add", "--replace-all"}) or len(words) >= 2
+
+
+def git_skips_hook(args):
+    """The ways a git call gets past the pre-commit hook, or None."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        a = args[i]
+        if a in ("-c", "--config-env") and i + 1 < len(args):
+            if hooks_key(args[i + 1].split("=", 1)[0]) or hooks_key(args[i + 1]):
+                return "git %s %s" % (a, args[i + 1])
+            i += 2
+            continue
+        if a.startswith("--config-env=") and hooks_key(a.split("=", 1)[1]):
+            return "git " + a
+        i += 2 if a in ("-C", "--git-dir", "--work-tree", "--namespace", "--attr-source") else 1
+    if i >= len(args):
+        return None
+    sub, rest = args[i], args[i + 1:]
+    if sub == "commit":
+        hit = commit_skips_hook(rest)
+        return "git commit " + hit if hit else None
+    if sub == "config" and config_sets_hooks(rest):
+        return "git config " + " ".join(rest)
+    return None
 
 
 def tokenize(cmd):
@@ -343,11 +442,20 @@ def run_segment(tok, cwd, depth):
             i += 1
         else:
             break
-    if i >= len(clean):
-        return cwd
-    verb = os.path.basename(clean[i])
+    # GIT_CONFIG_KEY_n / GIT_CONFIG_PARAMETERS are `git -c` by environment — as a
+    # prefix, on their own (`X=…; export X`, `set -a; X=…`) or behind export.
+    verb = os.path.basename(clean[i]) if i < len(clean) else ""
     args = clean[i + 1:]
+    env_words = clean[:i] + (args if verb in ("export", "declare", "typeset", "local") else [])
+    bypasses.extend(w for w in env_words if GIT_CONFIG_ENV.match(w) and "hookspath" in w.lower())
+    if not verb:
+        return cwd
     words = [a for a in args if not a.startswith("-")]
+
+    if verb == "git":
+        hit = git_skips_hook(args)
+        if hit:
+            bypasses.append(hit)
 
     if verb in DELETERS:
         deleted.append(verb)
@@ -438,6 +546,8 @@ if loop_globs and deleted:
     tmp_hits.extend(loop_globs)
 for w in dict.fromkeys(tmp_hits):
     print("T " + printable(w))
+for w in dict.fromkeys(bypasses):
+    print("B " + printable(w))
 for p in dict.fromkeys(p for p in out if p):
     print("H " + p)
 PY
@@ -467,10 +577,11 @@ deny() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$esc"
 }
 
-TMP_HIT="" HIT=""
+TMP_HIT="" BYPASS="" HIT=""
 while IFS= read -r line; do
   case "$line" in
     "T "*) [ -n "$TMP_HIT" ] || TMP_HIT="${line#T }" ;;
+    "B "*) [ -n "$BYPASS" ] || BYPASS="${line#B }" ;;
     "H "*) if [ -z "$HIT" ] && match "${line#H }"; then HIT="${line#H }"; fi ;;
   esac
 done < <(targets)
@@ -479,6 +590,10 @@ done < <(targets)
 # in an interactive session (Kevin, 2026-09-27).
 if [ -n "$TMP_HIT" ]; then
   deny "glob delete under a temp root: $TMP_HIT — refused in every mode; delete your own directories by their full path, never with a glob (create them with mktemp -d -p <your dir>)"
+  exit 0
+fi
+if [ -n "$BYPASS" ]; then
+  deny "pre-commit bypass: $BYPASS — refused in every mode; the hook runs review.sh sec --staged, fix what it reports instead (R-0102)"
   exit 0
 fi
 

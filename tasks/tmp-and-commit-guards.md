@@ -92,8 +92,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 Abhängt von: T3
 
-### T6 — Wächter verweigert die Umgehung des pre-commit-Hooks  [ ]
+### T6 — Wächter verweigert die Umgehung des pre-commit-Hooks  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @2cee6ae8 2026-09-28T09:58:56+02:00
+Review: approve (opus, 2nd round)
 Änderung: Verweigert in jedem Modus `git commit --no-verify` und `-n` (auch in kombinierten Kurzflags wie `-qn`),
 `git -c core.hooksPath=…` und `git config [--global|--local|…] core.hooksPath …` (setzen und `--unset`). Kevins
 eigene Shell bleibt frei (der Hook sieht nur Modell-Aufrufe). Testzeilen, die `--no-verify` im Klartext tragen,
