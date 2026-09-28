@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel server: API-Vertrag (R-0043, R-0054, R-0068) — Task-Ledger
-Status: erledigt · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0043, R-0054, R-0068
 Heavy: none — die Antwort-Bytes bleiben gleich (Differential-Test je Route), Header-Namen, Gateway, Compose und Agent unverändert; die Auth-Dependency läuft in-process in den Authz-Tests und in Schemathesis in allen vier Kontexten. Den Stack deckt der nächste Wochenlauf (Kevin, 2026-09-27).
@@ -180,3 +180,22 @@ HEAD: 920b89d5
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (nur ein Test; CHANGELOG und API-Referenz beschreiben das Verhalten schon)
 Abhängt von: T7
+
+### T9 — R-0054: nur Basic wird ignoriert, jeder andere Authorization-Header muss ein gültiger Bearer sein  [x]
+Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/tests/test_connections_authz.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @f40c35aa 2026-09-28T13:25:26+02:00
+Review: approve (opus)
+Änderung: PR #47 war im CI-Job Schema fuzzing rot: `GET /api/connections` in read_key/read_write_key „API accepts
+invalid authentication (generated auth likely invalid)" — T7 ignorierte jedes Nicht-Bearer-Schema, mit gültigem Key
+gaben `Authorization: xyz`, `Token abc`, `!#$%` und `  Bearer x` 200. Entscheidung Kevin (2026-09-28, übermittelt durch
+adminhelper-ac): in `ApiKeyOrUser` wird nur `Basic` ignoriert (Proxy, `user:pass@` aus einer Sync-URL); jeder andere
+`Authorization`-Wert, der kein gültiger Bearer ist, gibt 401 — fremdes Schema, Müll, leerer Wert. Der Header wird vorher
+getrimmt, damit `  Bearer x` als Bearer geprüft wird. Tests parametrisiert: Müll, `Token abc`, `!#$%`, `  Bearer x`,
+leerer Wert, `Bearer`, `bearer <ungültig>` → 401; `Basic x` → 200 (der Key gilt).
+Beweis: f40c35aa · Schemathesis connections, alle vier Kontexte, AH_SCHEMATHESIS_EXAMPLES=300 → 2 failed (GET /api/connections read_key, read_write_key: „generated auth likely invalid")
+Orakel: contract — derselbe Lauf nach der Änderung dreimal grün; Mutationsprobe: T7-Regel (nur Schema Bearer zählt) ⇒ die Müll-Tests rot
+HEAD: f40c35aa
+Verify: bash scripts/dev/verify.sh server --strict
+Doku: API-Referenz DE+EN, Abschnitt Authentifizierung („Basic von Proxy/Sync-URL wird ignoriert, jeder andere
+Authorization-Header muss ein gültiger Bearer sein") · CHANGELOG: die Zeile zur Schema-Regel aus T7
+Abhängt von: T8

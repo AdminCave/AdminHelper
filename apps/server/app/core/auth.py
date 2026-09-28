@@ -266,20 +266,23 @@ class ApiKeyOrUser:
     ):
         # Every credential the request presents has to hold, so all of them are checked
         # before anything is decided (R-0054): a valid key must not carry a broken bearer
-        # through, nor a valid bearer an unknown key. Presented is an Authorization header
-        # with the Bearer scheme (bearer_scheme yields None for an empty token, which is
-        # then invalid, not absent) and a non-empty X-API-Key or ?api_key=. Another scheme
-        # (Basic from a proxy, user:pass@ from a sync URL) is infrastructure and ignored.
-        # No client sends two.
-        scheme, _ = get_authorization_scheme_param(request.headers.get("Authorization"))
+        # through, nor a valid bearer an unknown key. Presented is a non-empty X-API-Key or
+        # ?api_key=, and any Authorization header but Basic (a proxy's, or user:pass@ from a
+        # sync URL — infrastructure, ignored): it has to be a valid bearer, so a foreign
+        # scheme, junk or an empty value is a 401. The header is trimmed and parsed here
+        # rather than taken from `credentials` (which declares HTTPBearer in the schema), so
+        # "  Bearer x" is checked as the bearer it is. No client sends two.
+        authorization = request.headers.get("Authorization")
+        scheme, token = get_authorization_scheme_param((authorization or "").strip())
+        authorization_sent = authorization is not None and scheme.lower() != "basic"
         query_key = request.query_params.get("api_key")
         header_api_key = _get_api_key(db, header_key) if header_key else None
         query_api_key = _get_api_key(db, query_key, from_query=True) if query_key else None
-        user = _get_user_from_token(credentials.credentials, db) if credentials else None
+        user = _get_user_from_token(token, db) if scheme.lower() == "bearer" and token else None
         rejected = (
             (header_key and header_api_key is None)
             or (query_key and query_api_key is None)
-            or (scheme.lower() == "bearer" and user is None)
+            or (authorization_sent and user is None)
         )
 
         if not rejected:

@@ -97,8 +97,9 @@ class TestEveryPresentedCredentialMustHold:
     """R-0054: ApiKeyOrUser checks every credential a request presents before it decides.
     A valid key next to a broken bearer, or a valid bearer next to an unknown key, is a 401 —
     the valid one no longer carries the other through. Both valid: the key decides, as when it
-    was checked first. One credential alone keeps the matrix above unchanged. Only the Bearer
-    scheme is a credential (T7): another Authorization scheme is infrastructure and ignored."""
+    was checked first. One credential alone keeps the matrix above unchanged. Only Basic is
+    ignored (T9) — a proxy's, or user:pass@ from a sync URL; any other Authorization header has
+    to be a valid bearer."""
 
     def _assert_unauthenticated(self, r):
         assert r.status_code == 401, r.text
@@ -120,26 +121,50 @@ class TestEveryPresentedCredentialMustHold:
         )
         self._assert_unauthenticated(r)
 
-    def test_valid_key_with_a_bearer_without_a_valid_token(self, test_client, db_session):
-        # A Bearer without a token is still a bearer; the scheme matches in any case.
+    @pytest.mark.parametrize(
+        "authorization",
+        # The junk schemathesis sent in CI (PR #47), a leading blank before a bearer, an
+        # empty value, a token-less and a lower-case invalid bearer.
+        ["xyz", "Token abc", "!#$%", "  Bearer x", "", "Bearer", "bearer not-a-jwt"],
+    )
+    def test_valid_key_with_anything_but_basic_or_a_valid_bearer(
+        self, test_client, db_session, authorization
+    ):
         key = _api_key(db_session, "read")
-        for authorization in ("Bearer", "bearer not-a-jwt"):
-            r = test_client.get(
-                "/api/connections", headers={"X-API-Key": key, "Authorization": authorization}
-            )
-            self._assert_unauthenticated(r)
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": authorization}
+        )
+        self._assert_unauthenticated(r)
 
-    def test_valid_key_with_another_scheme_is_accepted(self, test_client, db_session):
-        # Basic from a proxy, or from user:pass@ in a sync URL, is not a credential: ignored,
-        # and the key decides. Alone it authenticates nothing, as before.
+    def test_valid_key_with_basic_is_accepted(self, test_client, db_session):
+        # Basic from a proxy, or from user:pass@ in a sync URL, is not a credential: ignored in
+        # any case of the scheme, and the key decides. Alone it authenticates nothing, as before.
         key = _api_key(db_session, "read")
         r = test_client.get(
             "/api/connections", headers={"X-API-Key": key, "Authorization": "Basic x"}
         )
         assert r.status_code == 200, r.text
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": "basic x"}
+        )
+        assert r.status_code == 200, r.text
         self._assert_unauthenticated(
             test_client.get("/api/connections", headers={"Authorization": "Basic x"})
         )
+
+    def test_the_header_is_trimmed_before_its_scheme_is_read(
+        self, test_client, db_session, admin_user
+    ):
+        # Leading blanks do not hide a scheme: a valid bearer still authenticates, and a
+        # Basic next to a key is still the ignored infrastructure header.
+        token = _login(test_client, "admin", "adminpass")
+        r = test_client.get("/api/connections", headers={"Authorization": f"  Bearer {token}"})
+        assert r.status_code == 200, r.text
+        key = _api_key(db_session, "read")
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": "  Basic x"}
+        )
+        assert r.status_code == 200, r.text
 
     def test_valid_bearer_with_unknown_key(self, test_client, db_session, admin_user):
         token = _login(test_client, "admin", "adminpass")

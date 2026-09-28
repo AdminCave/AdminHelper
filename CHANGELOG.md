@@ -220,9 +220,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   alle mitgesendeten Anmeldungen, bevor er entscheidet. Ein gueltiger `X-API-Key` neben einem
   ungueltigen oder abgelaufenen Bearer-Token — oder ein gueltiger Bearer neben einem
   unbekannten Key, auch als `?api_key=` — ergibt `401` statt `200`; ebenso ein
-  `X-API-Key` neben einem ungueltigen `?api_key=` (bisher wurde die Query dann ignoriert). Als
-  Anmeldung zaehlt nur ein `Authorization`-Header mit Schema `Bearer`; ein anderes Schema (etwa
-  `Basic` von einem Proxy oder aus `user:pass@` einer Sync-URL) wird ignoriert. Sind beide
+  `X-API-Key` neben einem ungueltigen `?api_key=` (bisher wurde die Query dann ignoriert). Nur
+  `Authorization: Basic` (von einem Proxy oder aus `user:pass@` einer Sync-URL) wird ignoriert;
+  jeder andere `Authorization`-Header muss ein gueltiger Bearer sein — ein fremdes Schema, ein
+  leerer oder unlesbarer Wert ergibt `401`. Sind beide
   gueltig, entscheidet wie bisher der Key; mit nur einer Anmeldung bleibt alles wie es war.
   Kein Client sendet zwei (Web und Desktop den Bearer, der Desktop-Sync nur `?api_key=`,
   der Agent nur `X-API-Key`, das Monitoring nur `X-Internal-Key`). Doku:
