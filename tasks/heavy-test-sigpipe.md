@@ -39,8 +39,10 @@ Kosten: rund 10 000 Pipe-Läufe, etwa 3 min, keine VM
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T2 — Wächter: kein git-Erzeuger mit mehreren Datensätzen vor einem frühen Lese-Ende  [ ]
+### T2 — Wächter: kein git-Erzeuger mit mehreren Datensätzen vor einem frühen Lese-Ende  [x]
 Komponente: scripts · Dateien: scripts/tests/pipe_guard_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @b33a7d01 2026-09-28T15:02:55+02:00
+Review: am Ende (Kurz-Ledger)
 Änderung: Neue Datei `scripts/tests/pipe_guard_test.sh` (SPDX-Kopf `GPL-3.0-or-later`, nach dem Vorbild von
 `box_scripts_guard_test.sh`), eingetragen in `AH_SCRIPT_TESTS_DEFAULT` (run.sh:537–541). Sie scannt die
 Nicht-Kommentarzeilen aller `scripts/tests/*_test.sh` nach `git … (log|rev-list|reflog|shortlog|check-attr|check-ignore)`
