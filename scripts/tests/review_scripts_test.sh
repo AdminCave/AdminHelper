@@ -694,6 +694,104 @@ r diff-scan --staged --task tasks/del.md
 [ $rc -eq 2 ] && ok "--task without an id -> exit 2" || bad "--task arity: rc=$rc out=$OUT"
 reset_index
 
+# ══ the pre-commit hook ═══════════════════════════════════════════════════════
+echo "── pre-commit hook ──"
+# R-0102: sec ran only inside task-close.sh, so the plan commit at the gate and
+# every commit by hand were unchecked. A fixture of its own: the hook is armed
+# per clone, and the cases above must keep committing without it.
+HFIX="$WORK/hooked"
+mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
+cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
+cp "$REPO_ROOT/scripts/dev/hooks/pre-commit" "$HFIX/scripts/dev/hooks/pre-commit"
+chmod 755 "$HFIX/scripts/dev/hooks/pre-commit"
+printf 'plain\n' > "$HFIX/docs/note.md"
+# Tracked before the hook was armed, so `commit -a` has a blocked path to carry.
+printf '# sec\n' > "$HFIX/tasks/sec-old.md"
+git -C "$HFIX" init -q
+git -C "$HFIX" config user.email test@example.invalid
+git -C "$HFIX" config user.name "Fixture"
+git -C "$HFIX" add -A
+git -C "$HFIX" commit -qm "fixture"
+hc() { OUT=$(cd "$HFIX" && git commit -q "$@" 2>&1); rc=$?; }
+heads() { git -C "$HFIX" rev-list --count HEAD; }
+
+# Without the hook — the state R-0102 found — the sec ledger goes through.
+printf 'finding\n' > "$HFIX/tasks/sec-x.md"; git -C "$HFIX" add -- tasks/sec-x.md
+hc -m "unhooked"
+[ $rc -eq 0 ] && ok "without core.hooksPath a sec ledger is committed (the gap)" || bad "unhooked: rc=$rc out=$OUT"
+git -C "$HFIX" reset -q --hard HEAD^
+
+git -C "$HFIX" config core.hooksPath scripts/dev/hooks
+H0=$(heads)
+printf 'finding\n' > "$HFIX/tasks/sec-x.md"; git -C "$HFIX" add -- tasks/sec-x.md
+hc -m "a sec ledger"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q 'tasks/sec-x.md' <<<"$OUT" \
+  && ok "armed: a blocked path in the index is refused" || bad "index path: rc=$rc out=$OUT"
+git -C "$HFIX" rm -q --cached -- tasks/sec-x.md; rm -f "$HFIX/tasks/sec-x.md"
+# The key is assembled at run time: written out, it would stop this very file at sec.
+printf 'x\nDedup-Key: %s\n' "sec:server:a.py:f" > "$HFIX/docs/leak.md"; git -C "$HFIX" add -- docs/leak.md
+hc -m "a finding's key"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q 'Dedup-Key' <<<"$OUT" \
+  && ok "armed: a sec dedup key in the index is refused" || bad "index key: rc=$rc out=$OUT"
+git -C "$HFIX" rm -q --cached -- docs/leak.md; rm -f "$HFIX/docs/leak.md"
+# commit -a stages into a temporary index that git hands the hook through
+# GIT_INDEX_FILE; a hook that read the real index would see nothing staged.
+printf 'more\n' >> "$HFIX/tasks/sec-old.md"
+hc -a -m "commit -a, blocked path"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q 'tasks/sec-old.md' <<<"$OUT" \
+  && ok "armed: commit -a with a blocked path is refused" || bad "commit -a path: rc=$rc out=$OUT"
+git -C "$HFIX" checkout -q -- tasks/sec-old.md
+printf 'Dedup-Key: %s\n' "sec:server:b.py:g" >> "$HFIX/docs/note.md"
+hc -a -m "commit -a, key"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H0" ] && grep -q 'Dedup-Key' <<<"$OUT" \
+  && ok "armed: commit -a with a sec dedup key is refused" || bad "commit -a key: rc=$rc out=$OUT"
+git -C "$HFIX" checkout -q -- docs/note.md
+printf 'clean line\n' >> "$HFIX/docs/note.md"
+hc -a -m "a clean change"
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H0 + 1))" ] && ok "armed: a clean change is committed" || bad "clean: rc=$rc out=$OUT"
+
+# The relative core.hooksPath is resolved per worktree: a lane runs the hook of
+# ITS branch. Here that branch carries a hook that only leaves a marker behind.
+git -C "$HFIX" switch -q -c other
+printf '#!/bin/sh\necho other > hook-ran.txt\n' > "$HFIX/scripts/dev/hooks/pre-commit"
+# Committed without hooks: the armed hook of this checkout is already the
+# marker one, and its marker here would spoil the check below.
+git -C "$HFIX" -c core.hooksPath=/dev/null commit -qam "other hook" >/dev/null 2>&1
+git -C "$HFIX" switch -q -
+git -C "$HFIX" worktree add -q "$WORK/hooked-wt" other 2>/dev/null
+printf 'x\n' >> "$WORK/hooked-wt/docs/note.md"
+( cd "$WORK/hooked-wt" && git commit -qam "in the worktree" >/dev/null 2>&1 )
+[ -f "$WORK/hooked-wt/hook-ran.txt" ] && [ ! -f "$HFIX/hook-ran.txt" ] \
+  && ok "a worktree runs the hook of its own branch" || bad "worktree hook: $(ls "$WORK/hooked-wt" "$HFIX")"
+
+# What the hook does NOT cover (the spec left it open): cherry-pick and revert
+# commit without running pre-commit. Documented here, so a git that starts to
+# run it turns this red instead of the docs going stale.
+git -C "$HFIX" switch -q -c side
+printf 'finding\n' > "$HFIX/tasks/sec-side.md"; git -C "$HFIX" add -- tasks/sec-side.md
+git -C "$HFIX" -c core.hooksPath=/dev/null commit -qm "side" >/dev/null 2>&1
+git -C "$HFIX" switch -q -
+H1=$(heads)
+OUT=$(git -C "$HFIX" cherry-pick side 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H1 + 1))" ] && [ -f "$HFIX/tasks/sec-side.md" ] \
+  && ok "known gap: cherry-pick commits a sec ledger without running pre-commit" || bad "cherry-pick: rc=$rc out=$OUT"
+OUT=$(git -C "$HFIX" revert --no-edit HEAD 2>&1); rc=$?
+[ $rc -eq 0 ] && [ ! -f "$HFIX/tasks/sec-side.md" ] \
+  && ok "known gap: revert commits a sec path without running pre-commit" || bad "revert: rc=$rc out=$OUT"
+
+# The file itself: git ignores a hook without the execute bit, and the lint
+# step of run.sh only covers *.sh.
+mode=$(git -C "$REPO_ROOT" ls-files -s -- scripts/dev/hooks/pre-commit | cut -d' ' -f1)
+[ "$mode" = 100755 ] && ok "pre-commit is tracked with mode 100755" || bad "pre-commit mode: '${mode:-untracked}'"
+HOOK_SKIPPED=0
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck --severity=warning "$REPO_ROOT/scripts/dev/hooks/pre-commit" \
+    && ok "shellcheck: pre-commit is clean" || bad "shellcheck findings in pre-commit"
+else
+  echo "  SKIP: shellcheck not available — pre-commit is not linted"
+  HOOK_SKIPPED=1
+fi
+
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
 grep -qF 'review.sh diff-scan --staged --task "$LEDGER" "$ID"' "$REPO_ROOT/scripts/dev/task-close.sh" \
@@ -704,3 +802,5 @@ sed -n '/^AH_SCRIPT_TESTS_DEFAULT=/,/"$/p' "$REPO_ROOT/scripts/tests/run.sh" | g
 echo ""
 echo "review_scripts_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
+# A skipped lint is not a verified one.
+[ "$HOOK_SKIPPED" = 0 ] || exit 75

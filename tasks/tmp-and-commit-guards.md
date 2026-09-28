@@ -50,8 +50,10 @@ in beiden Texten; die Prüfung wird zuerst an einer Fixture ohne den Satz rot.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (die Skills sind selbst Prozess-Doku)
 
-### T3 — pre-commit-Hook fährt `review.sh sec --staged`  [ ]
+### T3 — pre-commit-Hook fährt `review.sh sec --staged`  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/pre-commit, scripts/tests/review_scripts_test.sh, scripts/tests/task_close_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @0d547e7e 2026-09-28T09:18:18+02:00
+Review: approve (opus)
 Änderung: Neue Datei `scripts/dev/hooks/pre-commit` (SPDX-Kommentar `GPL-3.0-or-later`, Modus 100755, shellcheck
 sauber): löst seinen Checkout aus `$0` auf und ruft `exec bash <root>/scripts/dev/review.sh sec --staged`. Test in
 einer Fixture mit `git config core.hooksPath scripts/dev/hooks`: ein blockierter Pfad (`tasks/sec-x.md`) und
