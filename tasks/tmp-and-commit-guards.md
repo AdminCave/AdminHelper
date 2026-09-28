@@ -118,8 +118,10 @@ und dass der Exit-Code (0, 1, 75) durchgereicht wird.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 
-### T8 — Doku: Harness-Schutz, Handgriff `core.hooksPath`, Aufräum-Regel  [ ]
+### T8 — Doku: Harness-Schutz, Handgriff `core.hooksPath`, Aufräum-Regel  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, AUTONOMOUS.md, CLAUDE.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @a8290fd8 2026-09-28T10:28:32+02:00
+Review: approve (opus, 2nd round)
 Änderung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch" (:512 ff.): die rm-Sperre gilt in jedem Modus ohne
 Kill-Switch, die Umgehungs-Sperre, der pre-commit-Hook und der Einmal-Handgriff `git config core.hooksPath
 scripts/dev/hooks` (danach `harness.sh status`); Runner-User: `runner-setup.sh` erneut ausführen; verify.sh:
