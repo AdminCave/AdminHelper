@@ -139,14 +139,13 @@ CHECKS = [
 MAX_EXAMPLES = int(os.environ.get("AH_SCHEMATHESIS_EXAMPLES", "5"))
 
 # ignored_auth repeats each call with the credentials stripped and expects a
-# rejection — but it only counts security parameters the SCHEMA declares, and this
-# app declares HTTPBearer alone (core/auth.py reads X-API-Key and X-Internal-Key
-# straight from the headers). For every context that does not send a bearer token
-# the check finds nothing to strip and falls through to "any 2xx is a failure",
-# which is not an auth verdict at all. It stays on for the JWT, where it works,
-# and is excluded elsewhere rather than papered over by excluding whole
-# operations — those would lose the other five checks too.
-_BEARER_CONTEXTS = {"admin_jwt"}
+# rejection — but it only counts security parameters the SCHEMA declares. All three
+# ways in are declared schemes (HTTPBearer, ApiKey for X-API-Key, InternalKey for
+# X-Internal-Key; R-0054), so every context has something to strip and the check
+# runs in all four. A context added later is not in this set until someone has
+# checked that its credential is a declared scheme too — otherwise the check falls
+# through to "any 2xx is a failure", which is not an auth verdict at all.
+_AUTH_CHECKED_CONTEXTS = {"admin_jwt", "read_key", "read_write_key", "internal_key"}
 
 _WAIVED_BY_OPERATION, _DROPPED_OPERATIONS = _read_exclusions(
     _KNOWN_OPERATION_IDS, {check.__name__: check for check in CHECKS}
@@ -157,7 +156,7 @@ if _DROPPED_OPERATIONS:
 
 def _excluded_checks_for(context: str, operation_id: str | None) -> list:
     """Checks that say nothing for this call: the context's, plus the operation's."""
-    waived = [] if context in _BEARER_CONTEXTS else [ignored_auth]
+    waived = [] if context in _AUTH_CHECKED_CONTEXTS else [ignored_auth]
     waived.extend(_WAIVED_BY_OPERATION.get(operation_id or "", []))
     return waived
 

@@ -80,13 +80,27 @@ Verify: bash scripts/tests/run.sh quick --strict --only server web
 Doku: CHANGELOG.md `[Unreleased]` / Changed (typisierte Antworten für users und frp im OpenAPI)
 Abhängt von: T2
 
-### T4 — R-0054: X-API-Key und X-Internal-Key als Security-Schemes, `ignored_auth` in allen Kontexten  [?] (Schemathesis findet nach T4 in read_key/read_write_key 3 Fälle (GET+POST /api/connections): 'API accepts invalid authentication (generated auth likely invalid)'. Ursache: Schemathesis generiert zusätzlich einen zufälligen Authorization-Header (HTTPBearer ist deklariert), _contains_auth prüft die Schemes in Reihenfolge und nimmt den generierten Bearer; der Server antwortet 200, weil ApiKeyOrUser den gültigen X-API-Key zuerst prüft und den Bearer ignoriert. Optionen: (1) test_schemathesis.py setzt schema.config.generation.update(with_security_parameters=False) — belegt: connections in allen 4 Kontexten 28 passed, Mutationsprobe (ApiKeyOrUser lässt fehlenden Key durch) macht read_key rot; (2) ApiKeyOrUser weist ab, sobald ein mitgesendeter Bearer ungültig ist, auch bei gültigem Key (Verhaltensänderung); (3) Ausschluss — laut Ledger-Regel verboten. Welche?)
-Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_schemathesis.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+### T4 — R-0054: X-API-Key und X-Internal-Key als Security-Schemes, `ignored_auth` in allen Kontexten  [x]
+Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_schemathesis.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md, apps/server/tests/test_connections_authz.py, apps/server/tests/test_frp_provision_authz.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @ea5a7cca 2026-09-28T10:11:10+02:00
+Review: approve (opus)
 Änderung: `APIKeyHeader(name="X-API-Key", scheme_name="ApiKey", auto_error=False)` als Security-Parameter in
 `ApiKeyOrUser.__call__`; der Wert geht an `_get_api_key` (core/auth.py:188), der Query-Fallback bleibt.
 `require_internal_key` (notifications/router.py:159) nimmt `APIKeyHeader("X-Internal-Key", scheme_name="InternalKey",
 auto_error=False)`, der `or ""`-Guard bleibt. Zwei verschiedene `scheme_name`, sonst kollidieren beide als
 „APIKeyHeader". `_BEARER_CONTEXTS` (test_schemathesis.py:149) auf alle vier Kontexte, Kommentar :141–148 neu.
+Entscheidung zur [?]-Frage (Kevin, 2026-09-28, übermittelt durch adminhelper-ac): Variante 2 direkt in T4, kein
+`with_security_parameters=False`. Nur in `ApiKeyOrUser` (die einzige Dependency mit zwei Verfahren: connections
+read/write, frp/provision): (1) vorgelegt ist jeder `Authorization`-Header (auch anderes Schema, leerer Token), ein
+nicht leerer `X-API-Key`, ein nicht leeres `?api_key=`; (2) erst alle prüfen, dann entscheiden — ist eine vorgelegte
+Anmeldung ungültig, 401 in der heutigen Form, auch wenn die andere gilt; `bind_actor` erst danach; (3) beide gültig:
+der Key gilt (per Test); (4) nur eine vorgelegt: unverändert, auch die 403-Pfade; (5) `get_current_user` und
+`require_internal_key` unverändert. Tests in test_connections_authz.py und test_frp_provision_authz.py: gültiger Key +
+ungültiger/abgelaufener/`Basic`-Bearer → 401, gültiger Bearer + unbekannter Key bzw. `?api_key=` → 401, beide gültig →
+der Key entscheidet. Befund der Aufsicht: kein Client sendet beide Anmeldungen (Web/Desktop/Skripte nur Bearer, Agent
+nur X-API-Key, Monitoring → Server nur X-Internal-Key, Gateway fasst beide Header nicht an). Schemathesis
+`ignored_auth` in allen vier Kontexten ohne Generator-Anpassung grün, sonst [?], kein Ausschluss. Doku: Abschnitt
+Authentifizierung „jede mitgesendete Anmeldung gültig, sonst 401"; CHANGELOG Changed (Verhaltensänderung).
 Zusatzbeleg: `bash scripts/dev/openapi-breaking.sh server` → 0 error, 2 warning (der optionale Header-Parameter
 `x-internal-key` entfällt), Exit 0.
 Beweis: origin/main@70e91718 · `components.securitySchemes` im Snapshot → nur `HTTPBearer`; test_schemathesis.py:149 `_BEARER_CONTEXTS = {"admin_jwt"}`

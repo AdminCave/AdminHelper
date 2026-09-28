@@ -2794,9 +2794,19 @@
       }
     },
     "securitySchemes": {
+      "ApiKey": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
       "HTTPBearer": {
         "scheme": "bearer",
         "type": "http"
+      },
+      "InternalKey": {
+        "in": "header",
+        "name": "X-Internal-Key",
+        "type": "apiKey"
       }
     }
   },
@@ -3609,6 +3619,9 @@
         "security": [
           {
             "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
           }
         ],
         "summary": "Get Connections",
@@ -3655,6 +3668,9 @@
         "security": [
           {
             "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
           }
         ],
         "summary": "Create Connection",
@@ -3815,6 +3831,9 @@
         "security": [
           {
             "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
           }
         ],
         "summary": "Update Connection",
@@ -3865,6 +3884,9 @@
         "security": [
           {
             "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
           }
         ],
         "summary": "Touch Connection",
@@ -4276,6 +4298,9 @@
         "security": [
           {
             "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
           }
         ],
         "summary": "Get Provision Config",
@@ -4322,6 +4347,9 @@
         "security": [
           {
             "HTTPBearer": []
+          },
+          {
+            "ApiKey": []
           }
         ],
         "summary": "Get Provision Config Hash",
@@ -5273,18 +5301,6 @@
       "post": {
         "description": "Accept one event from an event source and fan it out to recipients.",
         "operationId": "ingest_api_internal_events_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-internal-key",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "X-Internal-Key",
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5315,6 +5331,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "InternalKey": []
+          }
+        ],
         "summary": "Ingest",
         "tags": [
           "notifications"
@@ -5325,18 +5346,6 @@
       "get": {
         "description": "Inventory listing for the monitoring service's tag-sync: the server DB\nis the only source of tag membership. Deliberately minimal — id, hostname,\nname, tags; no connections, notes or pagination (fleet-sized, not user-facing).",
         "operationId": "list_servers_internal_api_internal_servers_get",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-internal-key",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "X-Internal-Key",
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -5345,18 +5354,13 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "InternalKey": []
+          }
+        ],
         "summary": "List Servers Internal",
         "tags": [
           "internal"

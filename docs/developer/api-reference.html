@@ -34,11 +34,14 @@
           <p class="lead">Alle HTTP-Endpoints des AdminHelper-Servers. Basis-URL: <code>https://&lt;host&gt;</code>. Das vollst&auml;ndige OpenAPI-Schema steht unter <code>/api/docs</code> (Swagger UI) bzw. <code>/openapi.json</code>.</p>
 
           <h2>Authentifizierung</h2>
-          <p>Zwei Mechanismen, je nach Aufrufer:</p>
+          <p>Drei Mechanismen, je nach Aufrufer:</p>
           <ul>
             <li><strong>JWT-Bearer</strong> (Web-Panel, Desktop): <code>Authorization: Bearer &lt;access_token&gt;</code>. Access- und Refresh-Token kommen im JSON-Body; f&uuml;r Browser setzt der Server den Refresh-Token zus&auml;tzlich als HttpOnly-Cookie (<code>Secure; SameSite=Strict</code>, Pfad <code>/api/auth</code>) &ndash; Desktop/CLI senden ihn weiterhin im Body.</li>
             <li><strong>API-Key</strong> (Agents, Drittanbieter): Header <code>X-API-Key</code>. Permission ist <code>read</code> oder <code>read_write</code>.</li>
+            <li><strong>Internal-Key</strong> (nur Dienst zu Dienst, Monitoring &rarr; Server): Header <code>X-Internal-Key</code> mit dem gemeinsamen Secret <code>MONITOR_API_KEY</code>.</li>
           </ul>
+          <p>Das OpenAPI-Schema deklariert alle drei als Security-Schemes (<code>HTTPBearer</code>, <code>ApiKey</code>, <code>InternalKey</code>); die Swagger UI bietet sie unter &bdquo;Authorize&ldquo; an.</p>
+          <p>Endpunkte, die API-Key <em>oder</em> JWT annehmen (Verbindungen, <code>/api/frp/provision</code>): Pro Anfrage muss jede mitgesendete Anmeldung g&uuml;ltig sein, sonst <code>401</code> &ndash; auch wenn die andere g&uuml;ltig ist. Als mitgesendet gilt jeder <code>Authorization</code>-Header (auch ein anderes Schema oder ein leerer Token) und ein nicht leerer <code>X-API-Key</code> bzw. <code>?api_key=</code>. Sind beide g&uuml;ltig, entscheidet der API-Key.</p>
 
           <h2>Pagination (Listen-Endpunkte)</h2>
           <p>Die Listen-Endpunkte <code>GET /api/servers</code>, <code>GET /api/connections</code>, <code>GET /api/hooks</code>, <code>GET /api/audit</code> sowie die Monitoring-Listen (<code>/api/monitoring/checks</code>, <code>/api/monitoring/status</code>, <code>/api/monitoring/alerts</code>) akzeptieren optionale Query-Parameter <code>limit</code> (1&ndash;1000) und <code>offset</code> (&ge;&nbsp;0) und liefern im Header <code>X-Total-Count</code> die Gesamtanzahl vor der Pagination (der Monitoring-Proxy reicht den Header durch). Ohne Parameter liefern die kleinen Listen (servers/connections/hooks) die volle Liste; <code>GET /api/audit</code> deckelt dagegen ohne <code>limit</code> auf 200 Eintr&auml;ge, da der Trail unbeschr&auml;nkt w&auml;chst (mehr via <code>offset</code>).</p>
