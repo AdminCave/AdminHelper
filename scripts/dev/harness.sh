@@ -8,8 +8,9 @@
 #   bash scripts/dev/harness.sh off      write .vm/harness.off; the PreToolUse
 #                                        guard then only warns about harness paths
 #   bash scripts/dev/harness.sh on       remove the marker; the guard denies again
-#   bash scripts/dev/harness.sh status   marker, AH_AUTONOMOUS, and whether the
-#                                        guard is registered in .claude/settings.json
+#   bash scripts/dev/harness.sh status   marker, AH_AUTONOMOUS, whether the guard
+#                                        is registered in .claude/settings.json,
+#                                        and whether the pre-commit hook is armed
 #
 # A marker FILE, not an environment variable: hooks are started by Claude Code,
 # not from the session's shell, so a variable exported inside a Bash tool call
@@ -37,6 +38,19 @@ hook_line() {
     echo "PreToolUse hook: registered in .claude/settings.json"
   else
     echo "PreToolUse hook: NOT registered in .claude/settings.json"
+  fi
+}
+
+# The pre-commit hook (review.sh sec before every commit, R-0102) is armed per
+# clone by hand; nothing else would tell that it is missing, because a clone
+# without it commits exactly as before.
+precommit_line() {
+  local hp
+  hp="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null)"
+  if [ "$hp" = "scripts/dev/hooks" ]; then
+    echo "pre-commit:      armed (core.hooksPath=scripts/dev/hooks)"
+  else
+    echo "pre-commit:      NOT set${hp:+ (core.hooksPath=$hp)} — git config core.hooksPath scripts/dev/hooks"
   fi
 }
 
@@ -70,6 +84,7 @@ case "${1-}" in
       echo "AH_AUTONOMOUS:   ${AH_AUTONOMOUS:-unset} (interactive — the guard warns)"
     fi
     hook_line
+    precommit_line
     ;;
   -h|--help) usage ;;
   "") echo "harness.sh needs a verb" >&2; usage >&2; exit 2 ;;

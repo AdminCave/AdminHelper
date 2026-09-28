@@ -108,6 +108,32 @@ run_h status
 [ $rc -eq 0 ] && grep -q "no .claude/settings.json" <<<"$OUT" \
   && ok "a checkout without settings.json is reported, not fatal" || bad "no settings: rc=$rc out=$OUT"
 
+# ══ harness.sh — the pre-commit hook it reports ═══════════════════════════════
+echo "── pre-commit status ──"
+# Armed per clone by hand (R-0102), so status is the one place that says so.
+# The config below is only written once the fixture is a repository of its own:
+# `git -C` into a failed init would find an enclosing one and arm or break that.
+# A core.hooksPath in the developer's global config must not decide the result.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+git -C "$TREE" init -q
+if [ "$(git -C "$TREE" rev-parse --git-dir 2>/dev/null)" = ".git" ]; then
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT set — git config core.hooksPath scripts/dev/hooks" <<<"$OUT" \
+    && ok "a clone without core.hooksPath: pre-commit NOT set, with the command" || bad "unarmed: rc=$rc out=$OUT"
+  git -C "$TREE" config core.hooksPath scripts/dev/hooks
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *armed (core.hooksPath=scripts/dev/hooks)" <<<"$OUT" \
+    && ok "core.hooksPath=scripts/dev/hooks: pre-commit armed" || bad "armed: rc=$rc out=$OUT"
+  git -C "$TREE" config core.hooksPath .githooks
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT set (core.hooksPath=.githooks)" <<<"$OUT" \
+    && ok "another hooksPath is not ours: NOT set, and it names the value" || bad "other path: $OUT"
+  rm -rf "$TREE/.git"
+else
+  bad "the fixture could not become a git repository of its own"
+fi
+unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+
 # ══ harness-paths.txt — the list itself ═══════════════════════════════════════
 echo "── harness-paths.txt ──"
 

@@ -81,8 +81,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T8)
 Abhängt von: T3
 
-### T5 — `harness.sh status` zeigt, ob der pre-commit-Hook scharf ist  [ ]
+### T5 — `harness.sh status` zeigt, ob der pre-commit-Hook scharf ist  [x]
 Komponente: scripts · Dateien: scripts/dev/harness.sh, scripts/tests/hooks_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @8dc36492 2026-09-28T09:38:41+02:00
+Review: approve (opus)
 Änderung: `status` (harness.sh:61) druckt eine zweite Zeile: `pre-commit: armed (core.hooksPath=scripts/dev/hooks)`
 oder `pre-commit: NOT set — git config core.hooksPath scripts/dev/hooks`. Test in einer `git init`-Fixture, beide
 Zustände.
