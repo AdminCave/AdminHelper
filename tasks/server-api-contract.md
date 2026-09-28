@@ -82,7 +82,7 @@ Abhängt von: T2
 
 ### T4 — R-0054: X-API-Key und X-Internal-Key als Security-Schemes, `ignored_auth` in allen Kontexten  [x]
 Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/app/modules/notifications/router.py, apps/server/tests/test_schemathesis.py, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md, apps/server/tests/test_connections_authz.py, apps/server/tests/test_frp_provision_authz.py
-Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @ea5a7cca 2026-09-28T10:11:10+02:00
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @eb362af6 2026-09-28T10:11:10+02:00
 Review: approve (opus)
 Änderung: `APIKeyHeader(name="X-API-Key", scheme_name="ApiKey", auto_error=False)` als Security-Parameter in
 `ApiKeyOrUser.__call__`; der Wert geht an `_get_api_key` (core/auth.py:188), der Query-Fallback bleibt.
@@ -112,7 +112,7 @@ Doku: api-reference DE+EN, Abschnitt Authentifizierung (X-Internal-Key nennen; S
 
 ### T5 — R-0054: Logout-Schema ehrlich machen  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/auth_router.py, apps/server/tests/test_auth.py, apps/server/tests/schemathesis_exclude.toml, apps/server/tests/openapi.snapshot.json, docs/developer/api-reference.html, docs/en/developer/api-reference.html
-Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @86196e6e 2026-09-28T10:52:13+02:00
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @13a81eba 2026-09-28T10:52:13+02:00
 Review: approve (opus)
 Änderung: Das Verhalten von `POST /api/auth/logout` (auth_router.py:220) bleibt; das Schema deklariert die Auth als
 **optional** (`security: [{"HTTPBearer": []}, {}]`, etwa über `openapi_extra`). Vorher nachlesen und im Commit
@@ -147,7 +147,7 @@ Doku: api-reference DE+EN :82 — `?mode=replace|merge` ist falsch, `mode` steht
 
 ### T7 — R-0054: nur Bearer zählt als vorgelegte Anmeldung  [x]
 Komponente: server · Dateien: apps/server/app/core/auth.py, apps/server/tests/test_connections_authz.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
-Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @12318de5 2026-09-28T11:51:41+02:00
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @d560c172 2026-09-28T11:51:41+02:00
 Review: approve (opus)
 Änderung: Entscheidung Kevin (2026-09-28, übermittelt durch adminhelper-ac) zu den offenen Punkten aus T4: In
 `ApiKeyOrUser` zählt als vorgelegte Anmeldung nur ein `Authorization`-Header mit Schema `Bearer` (Groß-/Kleinschreibung
@@ -158,7 +158,7 @@ unbekannter Key (Header oder `?api_key=`) neben einem gültigen Bearer. Nur-Bear
 (statt 401 aus T4); gültiger Key + Bearer ohne Token bzw. kleingeschriebener ungültiger Bearer → 401; die übrigen
 Ablehnungs-Tests aus T4 bleiben. Mutationsprobe: jeder Authorization-Header zählt wieder ⇒ der Basic-Test rot.
 Orakel: mutation-sample
-HEAD: 12318de5
+HEAD: d560c172
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: API-Referenz DE+EN, Abschnitt Authentifizierung („Wo zwei Verfahren angenommen werden (Connections,
 FRP-Provisioning), muss jede mitgeschickte Anmeldung gültig sein, sonst 401"; nur `Bearer` zählt, anderes Schema wird
