@@ -23,6 +23,8 @@ import logging
 import secrets
 from datetime import timedelta
 
+import pytest
+
 from app.core.auth import create_access_token, hash_api_key
 from app.modules.api_keys.models import ApiKey
 
@@ -152,6 +154,15 @@ class TestEveryPresentedCredentialMustHold:
         r = test_client.get(
             "/api/connections?api_key=ah_unknown", headers={"Authorization": f"Bearer {token}"}
         )
+        self._assert_unauthenticated(r)
+
+    @pytest.mark.parametrize("valid_in", ["header", "query"])
+    def test_header_key_and_query_key_must_both_hold(self, test_client, db_session, valid_in):
+        # Both key channels are checked: the header no longer shadows an unknown ?api_key=,
+        # and a valid ?api_key= does not carry an unknown header key.
+        key = _api_key(db_session, "read")
+        header, query = (key, "ah_unknown") if valid_in == "header" else ("ah_unknown", key)
+        r = test_client.get(f"/api/connections?api_key={query}", headers={"X-API-Key": header})
         self._assert_unauthenticated(r)
 
     def test_both_valid_the_key_decides(self, test_client, db_session, admin_user):

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel server: API-Vertrag (R-0043, R-0054, R-0068) — Task-Ledger
-Status: bereit · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/server-api-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0043, R-0054, R-0068
 Heavy: none — die Antwort-Bytes bleiben gleich (Differential-Test je Route), Header-Namen, Gateway, Compose und Agent unverändert; die Auth-Dependency läuft in-process in den Authz-Tests und in Schemathesis in allen vier Kontexten. Den Stack deckt der nächste Wochenlauf (Kevin, 2026-09-27).
@@ -165,3 +165,18 @@ FRP-Provisioning), muss jede mitgeschickte Anmeldung gültig sein, sonst 401"; n
 ignoriert; an Nur-Bearer-Routen ist `X-API-Key` ein fremder Header) · CHANGELOG: der T4-Eintrag nannte einen „fremden"
 `Authorization`-Header als 401-Fall, das stimmt mit T7 nicht mehr
 Abhängt von: T4
+
+### T8 — R-0054: Test für Header-Key und Query-Key zusammen  [x]
+Komponente: server · Dateien: apps/server/tests/test_connections_authz.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @920b89d5 2026-09-28T12:21:05+02:00
+Review: approve (sonnet)
+Änderung: Testlücke aus dem Verifikations-Review der Aufsicht (adminhelper-ac, 2026-09-28): In
+`TestEveryPresentedCredentialMustHold` ein parametrisierter Test mit zwei Fällen, beide 401 per
+`_assert_unauthenticated`: (a) gültiger `X-API-Key` plus `?api_key=ah_unknown`, (b) `X-API-Key: ah_unknown` plus
+gültiger `?api_key=`. Der CHANGELOG verspricht genau das (T4/T7); der Code bleibt unverändert.
+Orakel: mutation-sample — die alte Regel „Header hat Vorrang" (`or (query_key and not header_key and query_api_key is
+None)` in core/auth.py) macht den Test rot
+HEAD: 920b89d5
+Verify: bash scripts/dev/verify.sh server --strict
+Doku: keine (nur ein Test; CHANGELOG und API-Referenz beschreiben das Verhalten schon)
+Abhängt von: T7
