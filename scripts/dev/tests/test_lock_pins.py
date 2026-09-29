@@ -171,10 +171,17 @@ def _locked_images() -> dict[str, str]:
 
 
 def _ci_job(job_id: str) -> str:
-    """The text of one job in ci.yml, from its key to the next one's; "" if there is none."""
+    """One job of ci.yml, from its key to the next one's, without comments; "" if there is none.
+
+    Without comments, because a step that only a comment still names — `run: "true"`
+    under a line that mentions lock-pins.py — is exactly the job this test exists to catch.
+    """
     text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     m = re.search(rf"^  {re.escape(job_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text, re.M | re.S)
-    return m.group(1) if m else ""
+    if not m:
+        return ""
+    lines = (re.sub(r"(^|\s)#.*$", "", line) for line in m.group(1).splitlines())
+    return "\n".join(line for line in lines if line.strip())
 
 
 def test_every_locked_image_has_a_lock_job_on_its_python():
@@ -190,3 +197,4 @@ def test_every_locked_image_has_a_lock_job_on_its_python():
         assert f"working-directory: apps/{service}" in job
         assert "pip install --require-hashes -r requirements.txt" in job
         assert "lock-pins.py requirements.txt" in job
+        assert '-m "not schemathesis"' in job

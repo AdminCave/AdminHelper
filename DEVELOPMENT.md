@@ -70,7 +70,10 @@ Image ausliefert, prüfen die CI-Jobs `python-lock-server`, `-monitoring` und
 `requirements-dev.txt` in einem zweiten Aufruf (`-c requirements.txt` scheitert an
 Extras), dann `scripts/dev/lock-pins.py`, das jeden Pin nennt, den die
 Dev-Dependencies verschoben haben. Lokal genauso nach `source .devenv.sh`, das Venv
-unter `~/.cache` (nie das geteilte `AH_VENV`, nie `/tmp`):
+unter `~/.cache` (nie das geteilte `AH_VENV`, nie `/tmp`) und mit dem Python des
+Dockerfiles — `lock-pins.py` prüft den Interpreter nicht; unter 3.13 wäre es grün, ohne
+den Stand des Images zu zeigen. Fehlt `python3.12` im PATH (Debian 13 bringt 3.13 mit):
+erst ein 3.12 bereitstellen (Paketquelle, pyenv oder uv), dann das Rezept.
 
 ```bash
 python3.12 -m venv ~/.cache/ah-venv-lock-server && . ~/.cache/ah-venv-lock-server/bin/activate

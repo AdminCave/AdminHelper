@@ -78,3 +78,15 @@ verträgt keine Mischung aus gehashten und ungehashten Zeilen.“) beschreibt da
 Ergänzung um den Lock-Stand hat Kevin am 2026-09-29 zur Planung freigegeben.
 Nach dem Merge, Kevins Handgriff: die neuen Job-Namen ins Ruleset der Pflicht-Checks aufnehmen (sonst ist der Job
 nur beratend).
+
+### T4 — Review-Nits: Lockstep-Test ohne Kommentare, lokales Rezept nennt Python 3.12  [x]
+Komponente: scripts · Dateien: scripts/dev/tests/test_lock_pins.py, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @17c52041 2026-09-29T15:01:59+02:00
+Review: Nits aus dem Opus-Schluss-Review (approve)
+Änderung: Aus dem Schluss-Review (Opus, approve, nits). Der Lockstep-Test sucht die Pflicht-Strings eines
+`python-lock-*`-Jobs nur in Zeilen, die kein YAML-Kommentar sind (Probe des Reviewers: `lock-pins.py
+requirements.txt` nur noch im Kommentar, Schritt `run: "true"` → Test grün), und verlangt zusätzlich
+`-m "not schemathesis"`. Das lokale Rezept in `DEVELOPMENT.md` nennt, dass es ein Python 3.12 braucht (auf der
+Dev-Box liegt kein `python3.12` im PATH; etwa `uv python install 3.12`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (die Task ist zur Hälfte Doku)
