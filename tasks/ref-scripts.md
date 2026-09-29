@@ -94,8 +94,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (Default-Pfad des Test-Venvs)
 Abhängt von: T3
 
-### T5 — R-0100: das REG-Ledger aus heavy.sh in der Form von `--kurz`  [ ]
+### T5 — R-0100: das REG-Ledger aus heavy.sh in der Form von `--kurz`  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, tasks/README.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @ffa3a704 2026-09-29T08:04:39+02:00
+Review: approve (opus), 3 nits erledigt
 Änderung: `write_reg_ledger` (heavy.sh:635 ff.) schreibt den Kopf mit `Review: am Ende`, `Modell: Opus`,
 `Heavy: linux-full — …` und der DoD-Zeile, in der Task die Zeilen `Beweis:`, `Dedup-Key: reg:<slug>` und
 `HEAD: <commit>`. Die Zeile `Roadmap:` bleibt (feature-build liest sie). Der Kommentar heavy.sh:633–634 sagt künftig:

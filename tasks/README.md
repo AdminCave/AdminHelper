@@ -177,9 +177,13 @@ führt die Zeilen im Kopfkommentar auf; `new-task` hängt sie nicht an.
   verwaisten Desktop-Specs. Spec: `docs/features/harness-stufe-3.md`.
 - **`reg-<datum>-<schritt>.md`** — von `scripts/tests/heavy.sh` geschrieben, nicht von
   `/feature-plan`: eine bestätigte Regression aus einem Wochenlauf (Schritt auf zwei
-  Boxen rot, auf dem letzten PASS-Commit grün). `Status: geplant` mit einem Beweis-Absatz
-  über die drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit); die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie
-  jedes andere. Die zugehörige Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
+  Boxen rot, auf dem letzten PASS-Commit grün). Ein Entwurf in der Form von
+  `/feature-plan --kurz`: `Status: geplant`, `Review: am Ende`, `Heavy: linux-full`, die
+  DoD-Zeile, in der Task `Beweis:`, `Dedup-Key: reg:<schritt>` und `HEAD:`, dazu ein
+  Beweis-Absatz über die drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit).
+  Komponente, `Verify:` und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
+  die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie jedes andere. Die zugehörige
+  Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
 - **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt
   Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,
   der Session-Status-Hook und der CI-Job `agent-windows`. Spec: `docs/features/harness-stufe-1.md`.
