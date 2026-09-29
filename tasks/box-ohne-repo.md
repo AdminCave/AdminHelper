@@ -49,3 +49,21 @@ HEAD: b4802aa1
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (die Task ist die Doku)
 Abhängt von: T1
+
+### T3 — Die vier übrigen Stellen sagen dasselbe über .git auf der Box  [x]
+Komponente: scripts · Dateien: AUTONOMOUS.md, scripts/vm/tests/test_vm.py, scripts/tests/iter_flags_test.sh, scripts/tests/run.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @2ac58133 2026-09-29T12:53:18+02:00
+Review: Review am Ende (Kurz-Ledger), Re-Review folgt
+Änderung: Der Gesamt-Review über T1/T2 (Opus, request_changes) fand die alte Aussage an vier weiteren Stellen:
+`AUTONOMOUS.md` („Parallel-Betrieb“: „Der Sync aus Worktrees ist validiert; `.git` reist mit …“ — DEVELOPMENT.md
+verweist nach T2 genau dorthin), `test_vm.py` (Kommentar über `assert ".git" not in ours`: „.git stays: run.sh reads
+head and tree_hash from it“), `iter_flags_test.sh` („A box has no .git, so …“) und der Kommentar über
+`evidence_field` in `run.sh` („The evidence fields come from the CLIENT, not from the box … keeps it on purpose“ —
+der Code fragt zuerst das git der Box). Alle vier sagen künftig dasselbe wie T1/T2. Nur Kommentare und Doku, kein
+Verhalten. Umfang von Kevin am 2026-09-29 über die Aufsicht erweitert, mit AUTONOMOUS.md und run.sh als
+Harness-Dateien.
+Semantik: wie T1
+Dedup-Key: bug:scripts:vm.py:worktree-git-pointer
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: AUTONOMOUS.md (die Task ist Doku)
+Abhängt von: T2
