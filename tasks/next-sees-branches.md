@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `roadmap.py next` sieht Ledger auf Branches (R-0099) — Task-Ledger
-Status: bereit · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/next-sees-branches.md (Roadmap R-0099)
 Heavy: none — nur scripts/dev (Stdlib-Python, hermetische Fixtures); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine DB, keine VM.
@@ -58,3 +58,23 @@ gefundenes Ledger gilt als Konflikt; `git show <branch>:tasks/<slug>.md` bleibt 
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (der Skill ist selbst Prozess-Doku)
 Abhängt von: T2
+
+### T4 — Nacharbeit aus dem Branch-Review: git-Config des Aufrufers, Test-Helfer, Gate-Satz  [x]
+Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, .claude/skills/feature-plan/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @6ae2ab1c 2026-09-29T07:47:25+02:00
+Review: Nacharbeit aus dem Branch-Review (opus), Re-Review folgt
+Änderung: Drei Funde aus dem Review über den Branch-Diff (Opus, 2026-09-29). (1) wichtig: `git grep` in
+`components_of` erbt die Config des Aufrufers; `grep.lineNumber`, `grep.column` oder `color.grep=always` setzen
+vor jede Zeile `12:`, eine Spalte oder ANSI-Codes, `^Komponente:` trifft nichts, und die Zeile gilt still als
+disjunkt — `ledger_nowhere` findet den Blob ja. Fix: `--no-line-number --no-column --no-color`. Test:
+`GIT_CONFIG_GLOBAL` auf eine Datei mit den drei Einstellungen, dann `{"scripts"}`. (2) nit: der Test-Helfer `git()`
+reicht `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` des Aufrufers durch, und die neuen Fixtures setzen Refs und HEAD
+(`switch -c`, `branch -D`, `update-ref`, `symbolic-ref`) — aus einem Hook-Kontext im Repo des Aufrufers (Muster
+2a8dd0ae); der Helfer nimmt die drei heraus. (3) nit: Gate-Satz in feature-plan §4 mit Semikolon statt Komma vor
+„die Contract-Dateien", sonst liest er sich als Relativsatz.
+Beweis: harness/next-sees-branches@6ae2ab1c · Fixture-Roadmap per `--file` mit einer Zeile auf
+tasks/box-ohne-repo.md (nur auf feature/box-ohne-repo): `next --exclude-components scripts` → Exit 1; dasselbe mit
+`GIT_CONFIG_GLOBAL` auf `[grep] lineNumber = true` → `R-0095 BUG Box ohne Repo (tasks/box-ohne-repo.md)`, Exit 0
+Verify: bash scripts/tests/run.sh quick --strict --only scripts
+Doku: keine (Bugfix am eigenen, noch ungemergten Code)
+Abhängt von: T3

@@ -868,7 +868,10 @@ def components_of(row: Row) -> set[str]:
         refs = branches()
         if refs:
             rel = file.relative_to(ROOT.resolve()).as_posix()
-            r = repo_git("grep", "-h", "-E", "^Komponente:", *refs, "--", rel)
+            # The caller's grep.lineNumber, grep.column or colour would put
+            # something in front of every line, and ^Komponente: finds nothing.
+            no_decoration = ("--no-line-number", "--no-column", "--no-color")
+            r = repo_git("grep", *no_decoration, "-h", "-E", "^Komponente:", *refs, "--", rel)
             if r is not None and r.returncode == 0:
                 text += "\n" + r.stdout
         found |= {

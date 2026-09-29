@@ -613,8 +613,15 @@ def test_two_adds_at_once_get_two_ids(tmp_path: pathlib.Path) -> None:
 
 
 def git(repo: pathlib.Path, *args: str) -> str:
+    # Without the caller's GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE: from a hook
+    # that exports them, the fixtures would set refs and HEAD in its repository.
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+    }
     return subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True, env=env
     ).stdout
 
 
@@ -1605,6 +1612,22 @@ def test_the_callers_git_dir_does_not_move_the_search(
     plan_on(repo, "feature/x", "scripts")
     monkeypatch.setenv("GIT_DIR", str(other / ".git"))
     monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def test_the_callers_git_config_does_not_blind_the_search(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dotfiles with line numbers, columns or forced colour put something in
+    front of every line git grep prints — and ^Komponente: would find nothing."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    config = tmp_path / "gitconfig"
+    config.write_text(
+        "[grep]\n\tlineNumber = true\n\tcolumn = true\n[color]\n\tgrep = always\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     assert components("tasks/x.md") == {"scripts"}
 
 
