@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # AH-STATUS nennt die geplanten Workflows (R-0120) — Task-Ledger
-Status: geplant · Branch: harness/scheduled-workflows-status · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/scheduled-workflows-status · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-09-29 („R-0115 und R-0120 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0120
 Heavy: none — nur der lesende SessionStart-Hook und sein hermetischer Test; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
