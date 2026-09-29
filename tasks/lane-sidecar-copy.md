@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Sidecar als Kopie (R-0094) — Task-Ledger
-Status: bereit · Branch: harness/lane-sidecar-copy · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: harness/lane-sidecar-copy · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0094
 Heavy: none — nur das lokale Lane-Werkzeug und sein hermetischer Test; vm.py, bootstrap_linux.sh, Stack und Install-Pfad bleiben unverändert, die Box-Seite belegt der Test mit echtem rsync.
@@ -18,7 +18,7 @@ Branch `harness/`, weil T1 `AUTONOMOUS.md` ändert (Harness-Pfad): Bau interakti
 ### T1 — `lane.sh new` kopiert das frpc-Sidecar statt es zu verlinken  [x]
 Komponente: scripts · Dateien: scripts/dev/lane.sh, scripts/tests/lane_test.sh, AUTONOMOUS.md
 Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @8f71a57a 2026-09-29T06:54:33+02:00
-Review: Review: am Ende (Kurz-Ledger)
+Review: approve (opus, Branch-Review am Ende, Mutationsprobe: altes lane.sh 58 passed, 3 failed)
 Änderung: `lane_new` (lane.sh:211) kopiert die Einträge von `apps/desktop/src-tauri/binaries` mit `cp -p`
 (dereferenzierend, Modus bleibt) in ein echtes Verzeichnis der Lane, statt `lane_link_dir` zu rufen; ein
 fehlschlagendes `cp` warnt, bricht `new` aber nicht ab. Die Komponenten-Venvs bleiben Links
