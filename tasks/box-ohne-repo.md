@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Box ohne Repo — was über `.git` auf der Box gesagt wird — Task-Ledger
-Status: bereit · Branch: feature/box-ohne-repo · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/box-ohne-repo · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27, übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0095
 Heavy: none — zwei Kommentare und eine Doku-Stelle; kein Box-, Stack- oder Install-Pfad ändert sein Verhalten.
