@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI prüft den Lock-Stand der Images (R-0115) — Task-Ledger
-Status: bereit · Branch: harness/lock-state-ci · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/lock-state-ci · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-29 („R-0115 und R-0120 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0115
 Heavy: none — die Images ändern sich nicht; der neue CI-Job selbst ist die Prüfung und läuft im PR (drei Lock-Jobs grün, per `gh run watch` belegt).
