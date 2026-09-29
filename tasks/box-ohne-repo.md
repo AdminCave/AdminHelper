@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Box ohne Repo — was über `.git` auf der Box gesagt wird — Task-Ledger
-Status: freigegeben · Branch: feature/box-ohne-repo · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/box-ohne-repo · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27, übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0095
 Heavy: none — zwei Kommentare und eine Doku-Stelle; kein Box-, Stack- oder Install-Pfad ändert sein Verhalten.
@@ -15,8 +15,10 @@ Entscheidung Kevin, 2026-09-25 (am Gate der Probe, über die Aufsicht): **kein B
 kein `.git`, die Evidenz kommt vom Client. R-0095 schrumpft deshalb auf die drei Stellen, die sich über
 `.git` auf der Box widersprechen. `vm.py` bleibt unverändert.
 
-### T1 — `iter.sh` und `rsync-exclude.txt` beschreiben die Box, wie sie ist  [ ]
+### T1 — `iter.sh` und `rsync-exclude.txt` beschreiben die Box, wie sie ist  [x]
 Komponente: scripts · Dateien: scripts/vm/iter.sh, scripts/vm/rsync-exclude.txt
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @ef0b999a 2026-09-29T08:53:42+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Die zwei Kommentare sagen dasselbe. Die Box verlässt sich nicht auf `.git`: Aus dem Haupt-Checkout
 reist ein Repo mit, aus einem Worktree eine Zeiger-Datei, die auf der Box ins Leere zeigt. `run.sh` fragt
 zuerst das `git` der Box und nimmt sonst `AH_HEAD`/`AH_TREE_HASH` vom Client (`run.sh:397–405`
