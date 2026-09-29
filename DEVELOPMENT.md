@@ -372,7 +372,12 @@ Box-Menge explizit). Ein gesetztes `AH_REQUIRED` gewinnt immer unveraendert.
 Dirty-Stand, `tauri.conf.json`-Version gegen den letzten Tag, alle Punkte von „Als
 Naechstes" (je die erste Zeile) und darunter die WIP-Zeile aus `roadmap.py show --wip`, an den
 Deckeln aus `CLAUDE.md` gemessen und bei einem erreichten Deckel mit `Warnung:`, dann aktive
-Ledger, offene PRs und warme Boxen. Er ist rein lesend,
+Ledger, offene PRs und warme Boxen. Je Workflow mit `schedule:` folgt eine Zeile
+`Geplant: <name> <Tag> (<n> d): <conclusion>` fuer den neuesten abgeschlossenen Lauf auf
+`main`, Cron oder `workflow_dispatch` — ein per Dispatch bestaetigter Fix schliesst einen roten
+Cron wie in `heavy.sh`; `WARN:` bei `failure`, `timed_out` oder `startup_failure` (mit
+`gh run view <id> --log-failed`) und bei einem Lauf aelter als 8 Tage, wobei ein toter Cron erst
+8 Tage nach dem letzten Dispatch auffaellt. Ohne `gh` steht dort `?`, ohne `WARN:`. Er ist rein lesend,
 endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 — kein
 Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
 feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`.

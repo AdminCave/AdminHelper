@@ -22,9 +22,13 @@
 # run" (CLAUDE.md §3 trigger 2) deliberately waits for stage 13 — a FAIL here
 # without a WARN line does not mean the trigger already fired.
 #
+# Below line 4, one `Geplant:` line per workflow with a `schedule:` (line 4b):
+# the newest completed run on main, "kein Lauf" without one, "?" without gh.
+#
 # Implemented: version bumped without a tag · main ahead of origin · an open draft
 # release · .claude/rules or .claude/agents gitignored · an env block in the public
-# settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing.
+# settings.json · tasks/private unpushed or without a remote · AH_TEST_DB missing ·
+# a scheduled workflow whose last run on main is red or older than 8 days.
 # Trigger 3 (a WIP cap reached: aktiv 1 · bereit 2 · pr 3 · neu 20) is no WARN
 # line: the WIP line under the roadmap carries `Warnung:` itself, counted by
 # roadmap.py from the rows, not read from the roadmap's own header.
@@ -179,6 +183,43 @@ weekly_line() {
   fi
 }
 echo "Ledger aktiv|bereit: $LEDGERS · PRs offen: $PRS · Wochenlauf: $(weekly_line) · Worker: — (ab 7)"
+
+# ── line 4b: scheduled workflows ──────────────────────────────────────────────
+# One line per workflow with a `schedule:`. The newest COMPLETED run on main
+# counts, cron or dispatch alike — a fix confirmed by `gh workflow run` has to
+# close a red cron here just as it does in heavy.sh's check_audit, or the line
+# warns for a week about something already fixed. The price: the age counts
+# from the last run on main, so a dead cron shows only 8 days after the last
+# dispatch. The -q expression prints "kein Lauf" for an empty list itself,
+# because gh_json turns empty output into "?".
+scheduled_line() {  # scheduled_line <workflow file> — prints the line, may warn()
+  local f="$1" name out created concl id day t0 now n
+  name="$(sed -n 's/^name:[[:space:]]*//p' "$f" 2>/dev/null | head -1 | tr -d "\"'")"
+  [ -n "$name" ] || name="$(basename "$f")"
+  out="$(gh_json run list --workflow "$(basename "$f")" --branch main --status completed --limit 1 \
+    --json conclusion,createdAt,databaseId \
+    -q 'if length == 0 then "kein Lauf" else .[0] | "\(.createdAt) \(.conclusion) \(.databaseId)" end')"
+  case "$out" in
+    "?"|"kein Lauf") echo "Geplant: $name $out"; return 0 ;;
+  esac
+  read -r created concl id <<<"$out"
+  day="${created%%T*}"
+  if t0="$(date -u -d "$day" +%s 2>/dev/null)" && now="$(date -u -d "$(date -u +%F)" +%s 2>/dev/null)"; then
+    n=$(( (now - t0) / 86400 ))
+    [ "$n" -lt 0 ] && n=0
+    echo "Geplant: $name $day ($n d): $concl"
+    [ "$n" -gt 8 ] && warn "$name: letzter Lauf auf main vor $n Tagen ($day) — läuft der Zeitplan noch? \`gh workflow list --all\` zeigt den Stand."
+  else
+    echo "Geplant: $name $day: $concl"
+  fi
+  case "$concl" in
+    failure|timed_out|startup_failure)
+      warn "$name am $day: $concl — \`gh run view $id --log-failed\` zeigt den Grund." ;;
+  esac
+}
+for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [ -f "$f" ] && grep -qE '^[[:space:]]+schedule:' "$f" && scheduled_line "$f"
+done
 
 # ── line 5: warm boxes ────────────────────────────────────────────────────────
 WARM="$(grep -E '^[A-Za-z0-9_-]+=' .vm/warm.env 2>/dev/null | paste -sd' ' -)"

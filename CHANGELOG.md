@@ -9,6 +9,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **AH-STATUS nennt die geplanten Workflows (R-0120):** Der SessionStart-Hook
+  `scripts/dev/hooks/session-status.sh` druckt je Workflow mit `schedule:` eine Zeile
+  `Geplant: <name> <Tag> (<n> d): <conclusion>` fuer den neuesten abgeschlossenen Lauf auf `main`
+  und warnt bei einem roten Lauf (mit `gh run view <id> --log-failed`) oder einem Lauf aelter als
+  8 Tage. Bisher sah zwischen zwei Wochenlaeufen keine Session, dass der Dependency Audit rot war.
+  Ohne `gh` steht dort `?`, ohne Warnung. Anleitung: `DEVELOPMENT.md` „Session-Status-Hook".
 - **Harness-Schutz fuer /tmp und Commits (R-0098, R-0102):** Der PreToolUse-Waechter
   `scripts/dev/hooks/harness-guard.sh` verweigert in jedem Modus, auch mit gesetztem Kill-Switch,
   das Loeschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`,
