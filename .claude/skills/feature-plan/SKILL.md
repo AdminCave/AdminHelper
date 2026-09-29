@@ -201,8 +201,10 @@ nehmen genau eine ID). Eine vergessene Zeile bliebe in der Roadmap offen, obwohl
   `roadmap.py show` listet sie („In Arbeit", „Geplant"), dazu `bash scripts/dev/lane.sh list`.
   Für jede Zeile ihr Ledger lesen — ein geplantes Ledger liegt bis zum Merge nur auf seinem
   Branch (R-0065): `git show <branch>:tasks/<slug>.md`, den Branch nennen `lane.sh list` oder
-  `git branch --list 'feature/*'`; `next --exclude-components` sieht es dort noch nicht
-  (R-0099) — und prüfen, ob dieses Vorhaben disjunkt ist: Komponenten
+  `git branch --list 'feature/*'`; `next --exclude-components` sieht es dort auch (lokale
+  und Remote-Branches, nach `git fetch`; ein nirgends gefundenes Ledger zählt als Konflikt,
+  R-0099), prüft aber nur Komponenten; die Contract-Dateien bleiben Prüfung von Hand per
+  `git show` — und prüfen, ob dieses Vorhaben disjunkt ist: Komponenten
   (die `Komponente:`-Zeilen beider Ledger) und geteilte Contract-Dateien (API-Routen/
   Pydantic-Schemas, DB-Migrationen, FRP-Config-Format, Tauri-Commands, `run.sh`/`ci.yml`,
   primäre `docs/`-Seiten). Ergebnis am Gate je Zeile: „parallel-tauglich zu R-nnnn: ja/nein —

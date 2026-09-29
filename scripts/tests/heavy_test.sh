@@ -521,6 +521,22 @@ grep -q '^Status: geplant' "$REG_LEDGER" 2>/dev/null \
 grep -q 'auf dem letzten PASS-Commit' "$REG_LEDGER" 2>/dev/null \
   && ok "the reg ledger carries the three-run proof" \
   || bad "no proof paragraph"
+# The shape of /feature-plan --kurz (R-0100): the head fields and the proof lines
+# of tasks/README.md, so --kurz completes the draft instead of rewriting it.
+grep -q '^Status: .* · Review: am Ende · Modell: Opus$' "$REG_LEDGER" 2>/dev/null \
+  && grep -q '^Heavy: linux-full — ' "$REG_LEDGER" && grep -q '^DoD je Task: CLAUDE.md' "$REG_LEDGER" \
+  && ok "the reg ledger head: Review: am Ende, Modell, Heavy: linux-full, DoD" \
+  || bad "reg ledger head: $(sed -n '/^# Regression/,/^Task-Status/p' "$REG_LEDGER" 2>/dev/null)"
+grep -q '^Dedup-Key: reg:web-vitest$' "$REG_LEDGER" 2>/dev/null \
+  && grep -qx "HEAD: $(git -C "$FIX" rev-parse HEAD)" "$REG_LEDGER" \
+  && grep -q "^Beweis: main@$(git -C "$FIX" rev-parse HEAD) · .* → rot mit " "$REG_LEDGER" \
+  && ok "the reg task carries Beweis:, Dedup-Key: reg:<step> and HEAD:" \
+  || bad "reg task proof lines: $(grep -E '^(Beweis|Dedup-Key|HEAD):' "$REG_LEDGER" 2>/dev/null)"
+grep -q '^Roadmap: R-0018 · ' "$REG_LEDGER" 2>/dev/null \
+  && ok "the Roadmap: line stays for feature-build" || bad "no Roadmap: line"
+lint_out=$(bash "$HERE/../dev/ledger.sh" lint "$REG_LEDGER" 2>&1); lint_rc=$?
+[ "$lint_rc" = 0 ] && ! grep -q 'WARN\|ERROR' <<<"$lint_out" \
+  && ok "the reg ledger lints clean" || bad "ledger.sh lint (rc=$lint_rc): $lint_out"
 grep -q '^reg · web vitest · ' "$AH_PRIVATE_DIR/seen.md" 2>/dev/null \
   && ok "seen.md remembers the finding for the dedup" \
   || bad "seen.md: $(cat "$AH_PRIVATE_DIR/seen.md" 2>/dev/null)"

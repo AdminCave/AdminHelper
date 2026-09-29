@@ -64,17 +64,18 @@ mkdir -p "$MAIN/scripts/dev" "$MAIN/scripts/vm" "$MAIN/tasks" "$MAIN/.claude"
 cp "$REPO_ROOT/scripts/dev/lane.sh" "$MAIN/scripts/dev/"
 cp "$REPO_ROOT/scripts/vm/lib.sh" "$REPO_ROOT/scripts/vm/reap.sh" "$MAIN/scripts/vm/"
 printf '/.devenv.sh\n.vm/\n.claude/settings.local.json\n/apps/desktop/src-tauri/binaries/\n.venv/\n' > "$MAIN/.gitignore"
-# Gitignored parts of the main checkout a lane links to (T3): the frpc sidecar
-# and two of the three component venvs, each with something to recognise.
+# Gitignored parts of the main checkout a lane copies or links (T3): the frpc
+# sidecar and two of the three component venvs, each with something to recognise.
 SIDECAR=apps/desktop/src-tauri/binaries/frpc-x86_64-unknown-linux-gnu
 mkdir -p "$MAIN/${SIDECAR%/*}" "$MAIN/apps/server/.venv/bin" "$MAIN/apps/monitoring/.venv/bin"
 echo "frpc" > "$MAIN/$SIDECAR"
+chmod +x "$MAIN/$SIDECAR"
 for c in server monitoring; do
   printf '#!/bin/sh\necho ruff-%s\n' "$c" > "$MAIN/apps/$c/.venv/bin/ruff"
   chmod +x "$MAIN/apps/$c/.venv/bin/ruff"
   echo "home = /usr/bin" > "$MAIN/apps/$c/.venv/pyvenv.cfg"
 done
-for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
+for slug in alpha beta-two gamma theta kappa lambda mu nu xi omicron sigma; do echo "# plan $slug" > "$MAIN/tasks/$slug.md"; done
 git -C "$MAIN" init -q -b main
 git -C "$MAIN" -c user.name=t -c user.email=t@t add -A
 git -C "$MAIN" -c user.name=t -c user.email=t@t commit -qm init
@@ -185,7 +186,7 @@ lane new zeta; rc=$?
 [ "$rc" = 1 ] && grep -q "tasks/zeta.md is not committed on feature/zeta" "$WORK/out.log" \
   && ok "with feature/zeta present, the plan on main does not count" || bad "new zeta rc=$rc: $(cat "$WORK/out.log")"
 
-echo "── new: the lane links what it needs from the main checkout ──"
+echo "── new: the lane copies or links what it needs from the main checkout ──"
 WTD="$WORK/AdminHelper-delta"
 [ -d "$WTD/apps/server/.venv" ] && [ ! -L "$WTD/apps/server/.venv" ] \
   && [ "$(readlink "$WTD/apps/server/.venv/bin")" = "$MAIN/apps/server/.venv/bin" ] \
@@ -195,14 +196,33 @@ WTD="$WORK/AdminHelper-delta"
   && ok "the monitoring venv's ruff runs through the link" || bad "monitoring ruff not reachable"
 [ ! -e "$WTD/apps/ca-issuer/.venv" ] && ok "a venv the main checkout lacks is not invented" \
   || bad "ca-issuer venv appeared from nowhere"
-[ "$(readlink "$WTD/$SIDECAR")" = "$MAIN/$SIDECAR" ] && ok "the frpc sidecar is linked" \
-  || bad "sidecar: $(ls -la "$WTD/${SIDECAR%/*}" 2>&1)"
+[ -f "$WTD/$SIDECAR" ] && [ ! -L "$WTD/$SIDECAR" ] && [ -x "$WTD/$SIDECAR" ] && cmp -s "$WTD/$SIDECAR" "$MAIN/$SIDECAR" \
+  && ok "the frpc sidecar is a copy: a regular, executable file equal to the main one" \
+  || bad "sidecar: expected a regular executable copy, got $(ls -la "$WTD/$SIDECAR" 2>&1)"
 [ -z "$(git -C "$WTD" status --porcelain)" ] && ok "and git status in the lane stays clean" \
   || bad "git status: $(git -C "$WTD" status --porcelain)"
+# What the copy is for (R-0094): vm.py sync is rsync -a, which carries a link as
+# a link, and a box has no main checkout for it to point into — here the main
+# sidecar is moved aside for the check.
+BOX="$WORK/box-delta"; mkdir -p "$BOX"
+rsync -az --exclude-from "$REPO_ROOT/scripts/vm/rsync-exclude.txt" --delete "$WTD/" "$BOX/"
+mv "$MAIN/$SIDECAR" "$WORK/sidecar.saved"
+[ -e "$BOX/$SIDECAR" ] && [ -x "$BOX/$SIDECAR" ] && ok "a sync to a box carries the sidecar itself, not a link into nothing" \
+  || bad "box sidecar: $(ls -la "$BOX/$SIDECAR" 2>&1)"
+mv "$WORK/sidecar.saved" "$MAIN/$SIDECAR"
 lane "done" delta && [ ! -e "$WTD" ] && ok "done removes the lane with its links" \
   || bad "done delta: $(cat "$WORK/out.log")"
 [ -x "$MAIN/apps/server/.venv/bin/ruff" ] && [ -f "$MAIN/apps/server/.venv/pyvenv.cfg" ] && [ -f "$MAIN/$SIDECAR" ] \
   && ok "and leaves what they pointed at alone" || bad "done removed the main checkout's venv or sidecar"
+# sigma: an entry next to the sidecar that cannot be copied (a dangling link).
+ln -s "$WORK/nowhere" "$MAIN/${SIDECAR%/*}/frpc-dangling"
+lane new sigma; rc=$?
+rm -f "$MAIN/${SIDECAR%/*}/frpc-dangling"
+[ "$rc" = 0 ] && grep -q "WARN: could not copy all of ${SIDECAR%/*}" "$WORK/out.log" \
+  && cmp -s "$WORK/AdminHelper-sigma/$SIDECAR" "$MAIN/$SIDECAR" \
+  && ok "an entry that cannot be copied: new warns, finishes and copies the rest" \
+  || bad "new sigma rc=$rc: $(cat "$WORK/out.log")"
+lane "done" sigma || bad "done sigma: $(cat "$WORK/out.log")"
 
 echo "── a lane owns its database and venv by a mark, and only then (T5) ──"
 : > "$PG_LOG"

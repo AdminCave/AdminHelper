@@ -49,7 +49,9 @@ the next write moves it from "Abgeschlossen" to the top of "Archiv".
 next picks by class (SEC > REG > REL > BUG > FEAT > REF > IDEE), then by the
 order of the rows (Kevin's), and skips a row whose "Hängt ab von" names an
 R-ID that is not abgeschlossen, or that touches an excluded component (the
-`Komponente:` lines of its ledger, the component of a full Dedup-Key). sync
+`Komponente:` lines of its ledger — in the tree and on every local and remote
+branch, since a planned ledger lives on its branch until the merge; next never
+fetches, its caller does — and the component of a full Dedup-Key). sync
 closes only rows in `pr` and reports any other row whose PRs are merged: it
 never skips a status. It prints the push of the private repository and never
 runs it.
@@ -811,11 +813,46 @@ def next_up(roadmap: Roadmap) -> list[str]:
     return lines
 
 
+def repo_git(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str] | None:
+    """git in ROOT's own repository, None without git. An inherited GIT_DIR,
+    GIT_WORK_TREE or GIT_INDEX_FILE (a hook exports them) would point it at
+    another repository, and the ceiling keeps a ROOT that is none from finding
+    one above it. Pathspecs are literal: a ledger cell is a path, not magic."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+    }
+    env["GIT_CEILING_DIRECTORIES"] = str(ROOT.resolve().parent)
+    cmd = ["git", "--literal-pathspecs", "-C", str(ROOT), *args]
+    try:
+        return subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def branches() -> list[str]:
+    """Every local and remote branch of ROOT's repository, without a symbolic
+    ref like origin/HEAD; none without git or without a repository."""
+    r = repo_git("for-each-ref", "--format=%(refname)%09%(symref)", "refs/heads", "refs/remotes")
+    if r is None or r.returncode != 0:
+        return []
+    return [
+        ref
+        for ref, _, symref in (line.partition("\t") for line in r.stdout.splitlines())
+        if not symref
+    ]
+
+
 def components_of(row: Row) -> set[str]:
     """What a row touches: the `Komponente:` lines of its ledger and the
     component of a full Dedup-Key (<klasse>:<komponente>:<datei>:<symbol>). A
     short key like heavy.sh's `reg:<step>` names no component, nor does a
-    ledger's placeholder in parentheses."""
+    ledger's placeholder in parentheses. The ledger is read from the tree and
+    from every branch that carries it (R-0099): a planned ledger lives only on
+    its branch until the merge, and which branch that is does not follow from
+    the path. Stale copies on old branches exclude more than needed, never
+    less."""
     found = set()
     parts = (row.dedup_key or "").split(":")
     if len(parts) >= 4:
@@ -828,23 +865,64 @@ def components_of(row: Row) -> set[str]:
             text = file.read_text(encoding="utf-8")
         except OSError:
             text = ""
+        refs = branches()
+        if refs:
+            rel = file.relative_to(ROOT.resolve()).as_posix()
+            # The caller's grep.lineNumber, grep.column or colour would put
+            # something in front of every line, and ^Komponente: finds nothing.
+            no_decoration = ("--no-line-number", "--no-column", "--no-color")
+            r = repo_git("grep", *no_decoration, "-h", "-E", "^Komponente:", *refs, "--", rel)
+            if r is not None and r.returncode == 0:
+                text += "\n" + r.stdout
         found |= {
             c for c in re.findall(r"^Komponente:\s*([^\s·]+)", text, re.MULTILINE) if c[0] != "("
         }
     return found
 
 
+def ledger_nowhere(row: Row) -> bool:
+    """The row names its ledger as a path of this repository (`tasks/….md`),
+    and neither the tree nor any branch carries it — no fetch yet, or a typo.
+    Its components are then unknown. A slug, `—` or a path outside the
+    repository is not this case: those read as nothing, as before."""
+    ledger = row.cells[LEDGER]
+    file = (ROOT / ledger).resolve()
+    if not (ledger.startswith("tasks/") and ledger.endswith(".md")):
+        return False
+    if not file.is_relative_to(ROOT.resolve()) or file.is_file():
+        return False
+    rel = file.relative_to(ROOT.resolve()).as_posix()
+    refs = branches()
+    if not refs:
+        return True
+    r = repo_git(
+        "cat-file", "--batch-check=%(objecttype)", stdin="".join(f"{ref}:{rel}\n" for ref in refs)
+    )
+    return not (r is not None and r.returncode == 0 and "blob" in r.stdout.split("\n"))
+
+
 def cmd_next(args: argparse.Namespace) -> int:
     rows = [r for _, r in Roadmap.load(roadmap_path(args.file)).rows() if r.well_formed]
     done = {r.id for r in rows if r.state == "abgeschlossen"}
     excluded = set(args.exclude_components or ())
-    ready = [
-        (CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)), i, r)
-        for i, r in enumerate(rows)
-        if r.state == args.status
-        and all(dep in done for dep in ROW_ID.findall(r.cells[DEPENDS]))
-        and not components_of(r) & excluded
-    ]
+    ready = []
+    for i, r in enumerate(rows):
+        if r.state != args.status or not all(
+            dep in done for dep in ROW_ID.findall(r.cells[DEPENDS])
+        ):
+            continue
+        if components_of(r) & excluded:
+            continue
+        # Fail-closed, but only where a list asks for disjoint rows: a ledger
+        # nobody can read may touch any component.
+        if excluded and ledger_nowhere(r):
+            print(
+                f"next: {r.id} skipped — ledger {r.cells[LEDGER]} not found in the tree "
+                "or on any branch (git fetch?)",
+                file=sys.stderr,
+            )
+            continue
+        ready.append((CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)), i, r))
     if not ready:
         print(f"next: no {args.status} row is ready", file=sys.stderr)
         return 1
