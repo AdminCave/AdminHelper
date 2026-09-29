@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI prüft den Lock-Stand der Images (R-0115) — Task-Ledger
-Status: freigegeben · Branch: harness/lock-state-ci · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/lock-state-ci · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-29 („R-0115 und R-0120 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0115
 Heavy: none — die Images ändern sich nicht; der neue CI-Job selbst ist die Prüfung und läuft im PR (drei Lock-Jobs grün, per `gh run watch` belegt).
@@ -26,8 +26,10 @@ mit `-r requirements.in` beginnt. Die drei Images bauen auf `python:3.12-slim` m
 `pip freeze` ohne verschobene Lock-Zeile, `pip check` sauber, in allen drei Diensten; `-c requirements.txt`
 scheitert an Extras („Constraints cannot have extras“).
 
-### T1 — Pin-Check: jeder Lock-Pin ist so installiert, wie der Lock ihn nennt  [ ]
+### T1 — Pin-Check: jeder Lock-Pin ist so installiert, wie der Lock ihn nennt  [x]
 Komponente: scripts · Dateien: scripts/dev/lock-pins.py, scripts/dev/tests/test_lock_pins.py
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @2438ef75 2026-09-29T14:26:16+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Neues stdlib-Skript (SPDX-Header) `lock-pins.py <requirements.txt>`: liest die `name==version`-Zeilen
 eines pip-compile-Locks (Extras entfernt, Namen nach PEP 503 normalisiert, Hash- und Kommentarzeilen übersprungen)
 und vergleicht sie mit `importlib.metadata` der laufenden Umgebung. Exit 0 nur, wenn jeder Pin in genau dieser
