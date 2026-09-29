@@ -59,8 +59,10 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (intern)
 
-### T3 — R-0090: ruff-Gate über ganz `scripts/` in run.sh und CI  [ ]
+### T3 — R-0090: ruff-Gate über ganz `scripts/` in run.sh und CI  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh, .github/workflows/ci.yml, DEVELOPMENT.md, ruff.toml
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @9ccfe24e 2026-09-29T07:33:15+02:00
+Review: approve (opus), nit erledigt
 Änderung: Der Schritt `ruff-vm` (run.sh:505–514) lintet und formatiert-prüft `scripts` statt `scripts/vm`; die Id
 bleibt, der Name wird „ruff check (scripts)" bzw. „ruff format check (scripts)". `ci.yml:103` und `:105` gleich
 ziehen. Die veralteten Kommentare `DEVELOPMENT.md:124–127` und `ruff.toml:5–9` (CI decke nur server und monitoring

@@ -99,23 +99,48 @@ echo "── --step ──"
 run_bare lint --step nixda
 [ $rc -eq 2 ] && grep -q "unknown step: 'nixda'" <<<"$OUT" && ok "unknown step -> exit 2" || bad "unknown step: rc=$rc"
 
-# Four candidates since scripts/vm got its own ruff step: check and format
-# check, for apps/ and for the VM harness.
+# Four candidates since scripts/ got its own ruff step: check and format
+# check, for apps/ and for scripts/.
 run_bare lint --step ruff
 [ $rc -eq 2 ] && grep -q "ambiguous step: 'ruff' matches 4 steps" <<<"$OUT" \
-  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts/vm)" <<<"$OUT" \
+  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts)" <<<"$OUT" \
   && ok "ambiguous step -> exit 2, candidates listed" || bad "ambiguous step: rc=$rc"
 
 # The dry pass must reject BEFORE running anything: an ambiguous --step may not
 # have executed one of its candidates on the way to the error.
 grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" && bad "ambiguous --step ran a step anyway" || ok "ambiguous --step runs nothing"
 
-# The VM harness has to be reachable as its own step, or `verify.sh scripts`
-# could not lint it without linting apps/ too.
-run_bare lint --step "ruff check (scripts/vm)"
+# scripts/ has to be reachable as its own step, or `verify.sh scripts` could
+# not lint it without linting apps/ too.
+run_bare lint --step "ruff check (scripts)"
 [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
-  && ok "the scripts/vm ruff step is addressable on its own" \
-  || bad "--step 'ruff check (scripts/vm)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+  && ok "the scripts ruff step is addressable on its own" \
+  || bad "--step 'ruff check (scripts)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+
+# What the two ruff steps really lint, read off a stub's argv: roadmap.py and
+# doc-smoke.py sat outside every gate while the step covered scripts/vm only.
+RUFFSTUB="$WORK/bin-ruff"; mkdir -p "$RUFFSTUB"
+cp -a "$BARE/." "$RUFFSTUB/"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$RUFF_LOG"\nexit 0\n' > "$RUFFSTUB/ruff"; chmod +x "$RUFFSTUB/ruff"
+RUFF_LOG="$WORK/ruff.log"; : > "$RUFF_LOG"
+OUT=$(PATH="$RUFFSTUB" RUFF_LOG="$RUFF_LOG" AH_OUT_DIR="$WORK/out" "$RUFFSTUB/bash" "$RUN" lint --only scripts 2>&1); rc=$?
+grep -qx 'check scripts' "$RUFF_LOG" && grep -qx 'format --check scripts' "$RUFF_LOG" \
+  && grep -q "PASS  ruff check (scripts)" <<<"$OUT" \
+  && ok "lint --only scripts runs ruff check and format over all of scripts/" \
+  || bad "ruff was called as: $(tr '\n' '|' < "$RUFF_LOG")"
+
+# CI and run.sh lint the same paths. The set run.sh covers is the union of its
+# two ruff steps; ci.yml names it in one line each for check and format.
+: > "$RUFF_LOG"
+OUT=$(PATH="$RUFFSTUB" RUFF_LOG="$RUFF_LOG" AH_OUT_DIR="$WORK/out" "$RUFFSTUB/bash" "$RUN" lint --only server monitoring ca-issuer scripts 2>&1)
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+for verb in 'check' 'format --check'; do
+  run_paths=$(sed -n "s/^$verb //p" "$RUFF_LOG" | tr ' ' '\n' | grep -v '^$' | sort)
+  ci_paths=$(sed -n "s/^[[:space:]]*run: ruff $verb //p" "$CI_YML" | tr ' ' '\n' | grep -v '^$' | sort)
+  [ -n "$run_paths" ] && [ "$run_paths" = "$ci_paths" ] \
+    && ok "ruff $verb: ci.yml and run.sh cover the same paths" \
+    || bad "ruff $verb: run.sh [$(echo $run_paths)] vs ci.yml [$(echo $ci_paths)]"
+done
 
 # Counted, not grepped: the error "unknown step: 'vm.py pytest'" contains the
 # name too, so a grep would pass against a run.sh that has no such step at all.
@@ -194,7 +219,7 @@ OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_REQUIRED="go-agent" "$BARE/bash" "$
   && ok "--only makes a non-required step required" || bad "--only strictness: rc=$rc"
 # ...while the steps --only filtered away must not fail: they were never asked
 # for. Named, not counted: how many of the INCLUDED steps can run depends on
-# what the box has installed (a venv ruff makes the scripts/vm pair pass here
+# what the box has installed (a venv ruff makes the scripts pair pass here
 # and skip in CI), and a count would make this assertion box-dependent.
 FILTERED_FAILED=0
 for step in "ruff check (SKIP)" "ruff format check (SKIP)" "gofmt (agent) (SKIP)"; do

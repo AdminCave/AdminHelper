@@ -507,21 +507,24 @@ layer_lint() {
     skip ruff "ruff format check" "ruff not installed (not on PATH, no component venv)"
   fi
 
-  # Its own step rather than three more paths on the one above: the `scripts`
+  # Its own step rather than one more path on the one above: the `scripts`
   # key has to be able to lint its own Python without dragging apps/ along, and
-  # `--only server` has no business linting the VM harness.
+  # `--only server` has no business linting the harness. All of scripts/, not
+  # just scripts/vm: the Python beside it (roadmap.py, doc-smoke.py, e2e_api.py
+  # and their tests) hung on no gate at all. The id
+  # stays `ruff-vm` — it is named in every AH_REQUIRED, the host's .devenv.sh too.
   # Two skips for two runs, like the block above: a box without ruff must offer
   # the same step NAMES as one with it, or `--step` and the candidate count
   # would depend on what happens to be installed.
   if ! only scripts; then
-    skip ruff-vm "ruff check (scripts/vm)" "AH_ONLY"
-    skip ruff-vm "ruff format check (scripts/vm)" "AH_ONLY"
+    skip ruff-vm "ruff check (scripts)" "AH_ONLY"
+    skip ruff-vm "ruff format check (scripts)" "AH_ONLY"
   elif [ -n "$ruff_bin" ]; then
-    run_step ruff-vm "ruff check (scripts/vm)"        -- "$ruff_bin" check scripts/vm
-    run_step ruff-vm "ruff format check (scripts/vm)" -- "$ruff_bin" format --check scripts/vm
+    run_step ruff-vm "ruff check (scripts)"        -- "$ruff_bin" check scripts
+    run_step ruff-vm "ruff format check (scripts)" -- "$ruff_bin" format --check scripts
   else
-    skip ruff-vm "ruff check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
-    skip ruff-vm "ruff format check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff check (scripts)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff format check (scripts)" "ruff not installed (not on PATH, no component venv)"
   fi
 
   if ! only agent; then skip gofmt "gofmt (agent)" "AH_ONLY"
