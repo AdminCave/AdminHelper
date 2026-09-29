@@ -33,8 +33,10 @@ HEAD: 70e91718
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (`next`: wo das Ledger gesucht wird, der Aufrufer fetcht vorher)
 
-### T2 — fail-closed: ein genanntes Ledger, das nirgends liegt, zählt als Konflikt  [ ]
+### T2 — fail-closed: ein genanntes Ledger, das nirgends liegt, zählt als Konflikt  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @0afee83a 2026-09-29T07:25:24+02:00
+Review: am Ende (Kurz-Ledger)
 Änderung: Nur mit `--exclude-components` wird eine Zeile übersprungen, deren repo-relativer Ledger-Pfad
 (`tasks/….md`) weder im Baum noch auf einem Ref liegt; dazu auf stderr `next: R-nnnn skipped — ledger <pfad> not
 found in the tree or on any branch (git fetch?)`. Ohne Ausschlussliste, bei `—`, bei Slug-Formen und bei

@@ -813,7 +813,7 @@ def next_up(roadmap: Roadmap) -> list[str]:
     return lines
 
 
-def repo_git(*args: str) -> subprocess.CompletedProcess[str] | None:
+def repo_git(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str] | None:
     """git in ROOT's own repository, None without git. An inherited GIT_DIR,
     GIT_WORK_TREE or GIT_INDEX_FILE (a hook exports them) would point it at
     another repository, and the ceiling keeps a ROOT that is none from finding
@@ -826,7 +826,7 @@ def repo_git(*args: str) -> subprocess.CompletedProcess[str] | None:
     env["GIT_CEILING_DIRECTORIES"] = str(ROOT.resolve().parent)
     cmd = ["git", "--literal-pathspecs", "-C", str(ROOT), *args]
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+        return subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return None
 
@@ -877,17 +877,49 @@ def components_of(row: Row) -> set[str]:
     return found
 
 
+def ledger_nowhere(row: Row) -> bool:
+    """The row names its ledger as a path of this repository (`tasks/….md`),
+    and neither the tree nor any branch carries it — no fetch yet, or a typo.
+    Its components are then unknown. A slug, `—` or a path outside the
+    repository is not this case: those read as nothing, as before."""
+    ledger = row.cells[LEDGER]
+    file = (ROOT / ledger).resolve()
+    if not (ledger.startswith("tasks/") and ledger.endswith(".md")):
+        return False
+    if not file.is_relative_to(ROOT.resolve()) or file.is_file():
+        return False
+    rel = file.relative_to(ROOT.resolve()).as_posix()
+    refs = branches()
+    if not refs:
+        return True
+    r = repo_git(
+        "cat-file", "--batch-check=%(objecttype)", stdin="".join(f"{ref}:{rel}\n" for ref in refs)
+    )
+    return not (r is not None and r.returncode == 0 and "blob" in r.stdout.split("\n"))
+
+
 def cmd_next(args: argparse.Namespace) -> int:
     rows = [r for _, r in Roadmap.load(roadmap_path(args.file)).rows() if r.well_formed]
     done = {r.id for r in rows if r.state == "abgeschlossen"}
     excluded = set(args.exclude_components or ())
-    ready = [
-        (CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)), i, r)
-        for i, r in enumerate(rows)
-        if r.state == args.status
-        and all(dep in done for dep in ROW_ID.findall(r.cells[DEPENDS]))
-        and not components_of(r) & excluded
-    ]
+    ready = []
+    for i, r in enumerate(rows):
+        if r.state != args.status or not all(
+            dep in done for dep in ROW_ID.findall(r.cells[DEPENDS])
+        ):
+            continue
+        if components_of(r) & excluded:
+            continue
+        # Fail-closed, but only where a list asks for disjoint rows: a ledger
+        # nobody can read may touch any component.
+        if excluded and ledger_nowhere(r):
+            print(
+                f"next: {r.id} skipped — ledger {r.cells[LEDGER]} not found in the tree "
+                "or on any branch (git fetch?)",
+                file=sys.stderr,
+            )
+            continue
+        ready.append((CLASS_RANK.get(r.cells[KLASSE], len(CLASSES)), i, r))
     if not ready:
         print(f"next: no {args.status} row is ready", file=sys.stderr)
         return 1

@@ -1606,3 +1606,65 @@ def test_the_callers_git_dir_does_not_move_the_search(
     monkeypatch.setenv("GIT_DIR", str(other / ".git"))
     monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))
     assert components("tasks/x.md") == {"scripts"}
+
+
+def fail_closed_fixture(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, rows: list[str]
+) -> pathlib.Path:
+    """R-0022's ledger lies nowhere; R-0023's only on feature/x (scripts)."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    s = clean_sections()
+    s["Geplant (Stufen in Reihenfolge)"] = rows
+    return write(tmp_path, doc(s))
+
+
+GONE = ledger_row("tasks/gone.md")
+ON_BRANCH = ledger_row("tasks/x.md").replace("| R-0022 |", "| R-0023 |")
+SKIPPED = (
+    "next: R-0022 skipped — ledger tasks/gone.md not found in the tree or on any branch"
+    " (git fetch?)\n"
+)
+
+
+def test_a_ledger_found_nowhere_is_skipped_under_an_exclusion_and_named(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [GONE, ON_BRANCH])
+    assert run(p, "next", "--exclude-components", "web") == 0
+    out = capsys.readouterr()
+    # R-0023's ledger is only on a branch: found, and scripts is not excluded.
+    assert out.out == "R-0023 BUG Nur am Branch (tasks/x.md)\n"
+    assert out.err == SKIPPED
+
+
+def test_without_an_exclusion_a_ledger_found_nowhere_is_handed_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [GONE, ON_BRANCH])
+    assert run(p, "next") == 0
+    out = capsys.readouterr()
+    assert out.out == "R-0022 BUG Nur am Branch (tasks/gone.md)\n"
+    assert out.err == ""
+
+
+def test_a_ledger_found_nowhere_as_the_only_row_is_exit_1(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [GONE])
+    assert run(p, "next", "--exclude-components", "web") == 1
+    assert capsys.readouterr().err == SKIPPED + "next: no freigegeben row is ready\n"
+
+
+@pytest.mark.parametrize("ledger", ["—", "wochenlauf-gruen", "/nowhere/tasks/gone.md"])
+def test_only_a_repository_path_is_fail_closed(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ledger: str,
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [ledger_row(ledger)])
+    assert run(p, "next", "--exclude-components", "web") == 0
+    out = capsys.readouterr()
+    assert out.out.startswith("R-0022 BUG Nur am Branch")
+    assert out.err == ""
