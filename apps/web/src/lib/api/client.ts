@@ -106,10 +106,12 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   if (res.status === 204) return null as T;
 
   let data: unknown;
+  let unreadable = false;
   try {
     data = await res.json();
   } catch {
     data = null;
+    unreadable = true;
   }
 
   if (!res.ok) {
@@ -119,6 +121,11 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
         : null) ?? `HTTP ${res.status}`;
     throw new ApiError(res.status, message, data);
   }
+
+  // A 2xx promises a T. A body that could not be read — cut off by a reload
+  // mid-transfer, or not JSON at all — is not one: as null it reached the list
+  // pages and crashed them on `.length` (R-0107). A JSON null stays null.
+  if (unreadable) throw new ApiError(res.status, 'Invalid response body');
 
   return data as T;
 }

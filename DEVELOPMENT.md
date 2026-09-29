@@ -1261,8 +1261,10 @@ Steps melden SKIP). `scripts/vm/iter.sh` reicht die Flags an die Box weiter.
   auf der eigenen Lane — Reap einer Lane laesst die anderen stehen. `destroy` filtert
   ueber `--lane/--scenario/--role`; eine ausdruecklich genannte VMID wird zerstoert,
   geschuetzt ist dort nur, was kein `ah`-Tag traegt. Klone werden seriell abgeschickt (ein
-  Linked Clone dauert ~2 s). Der Sync aus Worktrees ist validiert; `.git` reist mit,
-  die Evidenzfelder kommen trotzdem vom Client. `lane.sh done <slug>` zerstoert die
+  Linked Clone dauert ~2 s). Aus einem Worktree reist `.git` nur als Zeiger mit, der
+  auf der Box ins Leere zeigt. Die Box braucht kein Repo (Entscheidung Kevin,
+  2026-09-25): Kopf und Tree-Hash gibt `iter.sh` vom Client mit. Ein Test, der auf der
+  Box `git` voraussetzt, gehoert deshalb nicht auf die Box. `lane.sh done <slug>` zerstoert die
   VMs der Lane und raeumt Worktree + Branch ab — auch dann, wenn der Worktree schon
   von Hand entfernt wurde.
   Kompletter autonomer Ablauf: `AUTONOMOUS.md` („Parallel-Betrieb").

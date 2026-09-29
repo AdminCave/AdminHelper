@@ -147,3 +147,22 @@ def test_notify_does_not_block_the_request(test_client, db_session, admin_user, 
     assert elapsed < 5, f"request blocked on the notify ({elapsed:.1f}s)"
     release.set()
     _drain_notify()
+
+
+def test_leftover_notify_left_behind():
+    # R-0112 proof pair, part 1: queue a notify behind a slow job and return
+    # without draining — what every server CRUD test outside this file does.
+    import time
+
+    import app.modules.servers.router as servers_router
+
+    servers_router._NOTIFY_POOL.submit(time.sleep, 1.0)
+    servers_router._notify_monitoring_tag_sync("leftover")
+
+
+def test_leftover_notify_never_reaches_the_next_spy(monkeypatch):
+    # Part 2, next in file order: part 1's notify must be gone before this spy
+    # is set — the barrier at every test boundary (conftest) guarantees it.
+    calls = _spy_notify(monkeypatch)
+    _drain_notify()
+    assert calls == [], f"leftover notifies of earlier tests reached the spy: {calls}"

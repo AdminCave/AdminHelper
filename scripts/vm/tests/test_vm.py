@@ -1400,8 +1400,9 @@ def test_the_exclude_list_never_hides_tracked_source():
             # prefix would wave exactly that case through.
             hits = [t for t in tracked if entry in t.split("/")]
         assert not hits, "%s excludes tracked source: %s" % (entry, hits[:3])
-    # .git stays: run.sh reads head and tree_hash from it, and an artifact
-    # without those fields proves nothing about which tree ran.
+    # .git is not excluded (R-0095: vm.py stays as it is). Synced from the main
+    # checkout, the box's own git answers for the tree it holds; from a worktree
+    # it is a dead pointer, and run.sh takes head and tree_hash from the client.
     assert ".git" not in ours
     # Our own local state never travels — it describes THIS machine's leases.
     assert {".vm", ".ah-out"} <= set(ours)

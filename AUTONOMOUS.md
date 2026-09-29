@@ -152,9 +152,10 @@ Mechanik dahinter:
   filtert über `--lane/--scenario/--role`; eine ausdrücklich genannte VMID wird zerstört —
   darauf beruht `reap.sh`, das die VMIDs aus der warm.env der eigenen Lane nimmt.) Klone werden seriell
   abgeschickt (ein Linked Clone dauert ~2 s); Bootstrap und Iterationen laufen parallel.
-  Der Sync aus Worktrees ist validiert; **`.git` reist mit** (`scripts/vm/rsync-exclude.txt`
-  schließt es bewusst nicht aus), die Evidenzfelder kommen trotzdem vom Client, weil eine
-  Box ohne `git` nichts antworten kann.
+  Aus einem Worktree reist `.git` nur als Zeiger mit, der auf der Box ins Leere zeigt
+  (`scripts/vm/rsync-exclude.txt` schließt `.git` nicht aus, aber nichts auf der Box verlässt
+  sich darauf). Die Box braucht kein Repo (Kevin, 2026-09-25): Kopf und Tree-Hash gibt
+  `iter.sh` vom Client mit, und `run.sh` nimmt sie, wenn das `git` der Box nichts antwortet.
 - **Die schweren Python-Schritte stehen je Nutzer Schlange.** `server-pytest` und
   `schemathesis` holen in `run.sh` eine Sperre, die alle Checkouts desselben Unix-Nutzers
   teilen: laufen eine Lane und der Haupt-Checkout gleichzeitig, fährt der zweite Server-Lauf

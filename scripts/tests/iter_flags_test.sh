@@ -99,8 +99,9 @@ eval "set -- $rest"
   && ok "a step name with spaces re-parses as one argument" || bad "step quoting: $# args from: $rest"
 
 # ── the evidence fields the box cannot compute itself ────────────────────────
-# A box has no .git, so head and tree_hash must ride along in the remote
-# command; without them every box returns an artifact that proves nothing.
+# A box need not have a usable .git (from a worktree the sync carries only a
+# pointer), so head and tree_hash must ride along in the remote command; without
+# them such a box returns an artifact that proves nothing.
 dry quick --strict
 grep -qE 'AH_HEAD=[0-9a-f]{40} ' <<<"$OUT" \
   && ok "AH_HEAD travels to the box as 40 hex" || bad "AH_HEAD: $OUT"
