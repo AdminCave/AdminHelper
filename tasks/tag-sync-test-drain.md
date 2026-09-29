@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Tag-Sync-Test: Notify-Pool an jeder Testgrenze leer (R-0112) — Task-Ledger
-Status: freigegeben · Branch: feature/tag-sync-test-drain · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/tag-sync-test-drain · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-29 (Design-Gate der Aufsicht), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0112
 Heavy: none — nur Testcode unter `apps/server/tests/`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -19,8 +19,10 @@ jede Server-Anlage, -Änderung und -Löschung legt dort einen Notify ab (`:48`),
 früherer Tests — in CI `assert 5 == 1`, daneben DNS-Fehler der alten Aufträge. `_drain_notify()` (`:35–40`) ist
 die Barriere, die der Test schon kennt; sie läuft nur zu spät.
 
-### T1 — Beweis-Paar und autouse-Fixture: der Notify-Pool ist an jeder Testgrenze leer  [ ]
+### T1 — Beweis-Paar und autouse-Fixture: der Notify-Pool ist an jeder Testgrenze leer  [x]
 Komponente: server · Dateien: apps/server/tests/test_tag_sync_notify.py, apps/server/tests/conftest.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @dc167b23 2026-09-29T13:29:32+02:00
+Review: am Ende (Kurz-Ledger, Gesamt-Review folgt) · Metrik: server pytest 321.16 s vor, 318.49 s nach T1 (-0.8 %) · Beweis: ohne Fixture 3x 1 failed, 1 passed; mit Fixture 3x 7 passed
 Änderung: Ans Ende von `test_tag_sync_notify.py` (heute 149 Zeilen) ein DB-freies Beweis-Paar in dieser Reihenfolge:
 `test_leftover_notify_left_behind` patcht `servers_router.httpx.post` auf eine Antwort mit `status_code = 200`,
 legt `servers_router._NOTIFY_POOL.submit(time.sleep, 1.0)` und danach `_notify_monitoring_tag_sync("leftover")` ab
