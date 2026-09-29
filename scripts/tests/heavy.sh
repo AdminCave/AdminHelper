@@ -90,6 +90,7 @@ REPORT="$OUT/report.md"
 HISTORY="$PRIVATE_DIR/history.csv"
 
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 TREE="$(bash "$ROOT/scripts/dev/tree-hash.sh" 2>/dev/null || echo unknown)"
 
 # ── verdict bookkeeping ───────────────────────────────────────────────────────
@@ -633,11 +634,15 @@ seen_record() {  # seen_record <kind> <key> <marker>
   printf '%s · %s · %s · %s\n' "$1" "$2" "$DATE" "$3" >> "$seen"
 }
 
-# The short ledger. Deliberately the shape /feature-plan produces (tasks/README),
-# so `/feature-build tasks/reg-...md` works on it without translation.
-write_reg_ledger() {  # write_reg_ledger <name> <step> <marker> <base> <roadmap-id>
-  local f="$ROOT/tasks/$1.md" step="$2" marker="$3" base="$4" rid="$5"
+# The short ledger: a draft in the shape of `/feature-plan --kurz` (head with
+# Review: am Ende and Heavy:, the proof lines of tasks/README.md), which
+# `/feature-plan --kurz` completes with component, Verify and Semantik.
+write_reg_ledger() {  # write_reg_ledger <name> <step> <marker> <base> <roadmap-id> <slug>
+  local f="$ROOT/tasks/$1.md" step="$2" marker="$3" base="$4" rid="$5" slug="$6" head_line=""
   mkdir -p "$ROOT/tasks" 2>/dev/null || return 1
+  # HEAD: is linted as a SHA; a run that could not read its commit leaves the
+  # line out, newline and all.
+  case "$COMMIT" in *[!0-9a-f]* | "") ;; *) head_line="HEAD: $COMMIT"$'\n' ;; esac
   cat > "$f" <<LEDGER
 <!--
 SPDX-FileCopyrightText: Kevin Stenzel
@@ -645,14 +650,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression $step ($DATE) — Task-Ledger
-Status: geplant · Branch: fix/$1 · Commit-Granularität: pro Task · Review: pro Task (feature-review)
+Status: geplant · Branch: fix/$1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Roadmap: $rid · Quelle: Wochenlauf $STAMP
+Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (\`/test\`)
+DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 ### R1 — $step wieder grün  [ ]
 Komponente: (aus dem Schritt ableiten)
 Änderung: erst den Fehler reproduzieren, dann die Ursache beheben — kein Workaround, der den Schritt nur wieder grün färbt.
-Verify: \`bash scripts/tests/run.sh all --strict --step "$step"\` auf einer Box (über \`/test\`), danach \`bash scripts/tests/run.sh quick\`
+Beweis: $BRANCH@$COMMIT · \`bash scripts/tests/run.sh all --strict --step "$step"\` → rot mit \`$marker\` (erste Box 3x, frische Zweit-VM), grün auf \`$base\`
+Dedup-Key: reg:$slug
+${head_line}Verify: \`bash scripts/tests/run.sh all --strict --step "$step"\` auf einer Box (über \`/test\`), danach \`bash scripts/tests/run.sh quick\`
 
 ## Beweis (heavy.sh, $STAMP)
 - Schritt \`$step\` war auf der ersten Box 3x rot, jedes Mal mit demselben Marker: \`$marker\`
@@ -677,7 +686,7 @@ reg_finding() {  # reg_finding <step> <marker> <base>
     "tasks/$name.md" "reg:$slug" || return 0
   id="$ROADMAP_ID"
   note "roadmap: $id ($PRIVATE_DIR/ROADMAP.md)"
-  write_reg_ledger "$name" "$step" "$marker" "$base" "$id"
+  write_reg_ledger "$name" "$step" "$marker" "$base" "$id" "$slug"
   seen_record reg "$step" "$marker"
 }
 

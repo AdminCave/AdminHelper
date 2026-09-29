@@ -131,12 +131,16 @@ export AH_PYTEST_RS
 AH_ARGS="${AH_ARGS:-}"
 export AH_ARGS
 
-# Python suites install into a venv (AH_VENV, default /tmp/ah-venv) so a dev's
+# Python suites install into a venv (AH_VENV, default ~/.cache/ah-venv) so a dev's
 # default `run.sh quick` never mutates the host's system site-packages (PEP 668) —
 # no host-wide PIP_BREAK_SYSTEM_PACKAGES. ensure_venv (called at the top of
 # layer_unit) creates + activates it; the activation reaches the run_step `bash -c`
 # subshells via the exported PATH/VIRTUAL_ENV. Ephemeral boxes reuse it too (6.140).
-AH_VENV="${AH_VENV:-/tmp/ah-venv}"
+# Under the home, not /tmp: systemd-tmpfiles clears /tmp after ten days, and a
+# venv half gone there turned four suites red without a code change (2026-09-21).
+# The path .devenv.sh and runner-setup.sh set. Without HOME (an `env -i` shell)
+# the home comes from passwd, as for AH_PY_LOCK_FILE below.
+AH_VENV="${AH_VENV:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/ah-venv}"
 ensure_venv() {
   [ -x "$AH_VENV/bin/python" ] || python3 -m venv "$AH_VENV" \
     || { echo "  (venv creation failed; python suites may hit PEP 668)" >&2; return 1; }
@@ -507,21 +511,24 @@ layer_lint() {
     skip ruff "ruff format check" "ruff not installed (not on PATH, no component venv)"
   fi
 
-  # Its own step rather than three more paths on the one above: the `scripts`
+  # Its own step rather than one more path on the one above: the `scripts`
   # key has to be able to lint its own Python without dragging apps/ along, and
-  # `--only server` has no business linting the VM harness.
+  # `--only server` has no business linting the harness. All of scripts/, not
+  # just scripts/vm: the Python beside it (roadmap.py, doc-smoke.py, e2e_api.py
+  # and their tests) hung on no gate at all. The id
+  # stays `ruff-vm` — it is named in every AH_REQUIRED, the host's .devenv.sh too.
   # Two skips for two runs, like the block above: a box without ruff must offer
   # the same step NAMES as one with it, or `--step` and the candidate count
   # would depend on what happens to be installed.
   if ! only scripts; then
-    skip ruff-vm "ruff check (scripts/vm)" "AH_ONLY"
-    skip ruff-vm "ruff format check (scripts/vm)" "AH_ONLY"
+    skip ruff-vm "ruff check (scripts)" "AH_ONLY"
+    skip ruff-vm "ruff format check (scripts)" "AH_ONLY"
   elif [ -n "$ruff_bin" ]; then
-    run_step ruff-vm "ruff check (scripts/vm)"        -- "$ruff_bin" check scripts/vm
-    run_step ruff-vm "ruff format check (scripts/vm)" -- "$ruff_bin" format --check scripts/vm
+    run_step ruff-vm "ruff check (scripts)"        -- "$ruff_bin" check scripts
+    run_step ruff-vm "ruff format check (scripts)" -- "$ruff_bin" format --check scripts
   else
-    skip ruff-vm "ruff check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
-    skip ruff-vm "ruff format check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff check (scripts)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff format check (scripts)" "ruff not installed (not on PATH, no component venv)"
   fi
 
   if ! only agent; then skip gofmt "gofmt (agent)" "AH_ONLY"
@@ -537,8 +544,9 @@ layer_lint() {
 
 # The hermetic shell tests as ONE step. They need nothing but bash and coreutils,
 # run in seconds, and cover the ops scripts nothing else touches. As a block
-# rather than a dozen steps because a dozen entries would drown the summary; the
-# trade-off is that the first red one hides the rest until you read the log.
+# rather than a dozen steps because a dozen entries would drown the summary; a
+# red one does not stop the block, it names every red test at the end — the
+# weekly run of 2026-09-25 stopped at the first one and 19 of 31 never ran.
 # Overridable so the aggregation logic itself can be tested with fixture scripts
 # (run_flags_test.sh) — that logic was wrong once already, and hand-checking it is
 # exactly what this stage abolishes. An empty list would make the block trivially
@@ -557,7 +565,7 @@ AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # shift every later tree_hash, which is the evidence this stage is built on.
 AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
 scripts_block() {
-  local t rc skipped=0 ran=0
+  local t rc skipped=0 ran=0 nfail=0 failed=""
   # Two of the block's tests start run.sh themselves. They pin --step or a layer
   # that never reaches this block, but a future one might not — and the whole
   # list per level is a fork bomb, not a test run.
@@ -570,7 +578,7 @@ scripts_block() {
     case "$rc" in
       0)  ;;
       75) skipped=$((skipped + 1)); echo "     $t: SKIP (75)" ;;
-      *)  echo "     $t: FAILED (rc=$rc)"; return "$rc" ;;
+      *)  echo "     $t: FAILED (rc=$rc)"; nfail=$((nfail + 1)); failed="$failed $t" ;;
     esac
   done
   # One block, one result for the whole list: if even one could not run, PASS
@@ -581,6 +589,11 @@ scripts_block() {
   # Counted, not pattern-matched: any whitespace-only value would slip past a
   # string check and report a green block for zero tests.
   [ "$ran" -gt 0 ] || { echo "  AH_SCRIPT_TESTS is empty — nothing to verify"; return 1; }
+  # A failure outranks a skip: the block is red, whatever else could not run.
+  if [ "$nfail" -gt 0 ]; then
+    echo "  $nfail of $ran failed:$failed"
+    return 1
+  fi
   if [ "$skipped" -gt 0 ]; then
     echo "  $skipped of the block's tests could not run — block is not verified"
     return 75

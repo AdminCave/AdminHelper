@@ -36,6 +36,8 @@
 #                              verdict for another tree is no verdict.
 #   5. ledger + commit         ledger.sh mark-done with the run's summary line as
 #                              evidence, then one commit carrying code and ledger.
+#                              The last open task also moves an `aktiv` head to
+#                              `bereit`, in that same commit.
 #
 # Exit: 0 committed · 2 usage, nothing staged, or the tree changed under the run
 #       · 3 verify red or a diff-scan finding · 4 blocked (sec or scope) · 74 the
@@ -289,6 +291,15 @@ REVIEW_TEXT="$(oneline "$REVIEW_TEXT")"
 
 bash scripts/dev/ledger.sh mark-done "$LEDGER" "$ID" \
   --evidence "$EVIDENCE" --review "$REVIEW_TEXT" || infra "ledger.sh mark-done failed"
+# The box that closes the last open task also ends the build: `aktiv` without an
+# open [ ] breaks the invariant of tasks/README.md, and ledger_test lints every
+# real ledger — the commit that ticked the last box was red on its own, and each
+# build needed a hand commit "ready" after it (R-0083). Same patterns as the
+# lint. Only `aktiv` moves; any other head is not this script's to change.
+if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
+  bash scripts/dev/ledger.sh status "$LEDGER" bereit >/dev/null || infra "ledger.sh status bereit failed"
+  echo "── last open task closed: $LEDGER aktiv -> bereit"
+fi
 git add -- "$LEDGER" || infra "could not stage the ledger"
 
 # The ledger is staged last, and `Edit(./tasks/**)` is allowed even where

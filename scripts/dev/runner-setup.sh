@@ -276,9 +276,10 @@ step "$HOME_DIR/.devenv.sh (PATH, AH_TEST_DB, AH_REQUIRED)"
 # git — no go, rust or node. The heavy work happens on the VMs (Fast-Suite: vm).
 DEVENV_CONTENT="export PATH=\"\$HOME/.local/bin:\$PATH\"
 export AH_TEST_DB=\"postgresql://$DB_ROLE:$DB_PW@localhost/$DB_NAME\"
-# run.sh puts the shared python venv in AH_VENV (default /tmp/ah-venv). That
-# directory belongs to whoever created it first — as somebody else's, the pip
-# install of the three python suites fails for this user.
+# run.sh puts the shared python venv in AH_VENV (its default was /tmp/ah-venv
+# until R-0057). That directory belongs to whoever created it first — as somebody
+# else's, the pip install of the three python suites fails for this user. Kept
+# explicit, so the runner does not hang on run.sh's default.
 export AH_VENV=\"\$HOME/.cache/ah-venv\"
 export AH_REQUIRED=\"ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest scripts vm-pytest dev-pytest\"
 "
