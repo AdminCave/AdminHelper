@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Lane-Sidecar als Kopie (R-0094) — Task-Ledger
-Status: aktiv · Branch: harness/lane-sidecar-copy · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: harness/lane-sidecar-copy · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0094
 Heavy: none — nur das lokale Lane-Werkzeug und sein hermetischer Test; vm.py, bootstrap_linux.sh, Stack und Install-Pfad bleiben unverändert, die Box-Seite belegt der Test mit echtem rsync.
