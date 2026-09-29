@@ -73,9 +73,12 @@ mk_repo() {
   echo "rule" > "$dir/.claude/rules/testing.md"
   printf '.vm/\n' > "$dir/.gitignore"
   mkdir -p "$dir/.github/workflows"
-  printf 'name: Dependency Audit\n\non:\n  schedule:\n    - cron: "17 6 * * 1"\n  workflow_dispatch:\n' \
+  # A quoted name (the quotes are not part of it) and a schedule that is only a
+  # comment (not a schedule).
+  printf 'name: "Dependency Audit"\n\non:\n  schedule:\n    - cron: "17 6 * * 1"\n  workflow_dispatch:\n' \
     > "$dir/.github/workflows/audit.yml"
-  printf 'name: CI\n\non:\n  push:\n    branches: [main]\n' > "$dir/.github/workflows/ci.yml"
+  printf 'name: CI\n\non:\n  push:\n    branches: [main]\n  # schedule:\n  #   - cron: "0 3 * * *"\n' \
+    > "$dir/.github/workflows/ci.yml"
   cat > "$dir/tasks/demo-feature.md" <<'LEDGER'
 Status: aktiv · Branch: feature/demo
 LEDGER

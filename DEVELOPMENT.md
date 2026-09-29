@@ -393,8 +393,8 @@ Ledger, offene PRs und warme Boxen. Je Workflow mit `schedule:` folgt eine Zeile
 Cron wie in `heavy.sh`; `WARN:` bei `failure`, `timed_out` oder `startup_failure` (mit
 `gh run view <id> --log-failed`) und bei einem Lauf aelter als 8 Tage, wobei ein toter Cron erst
 8 Tage nach dem letzten Dispatch auffaellt. Ohne `gh` steht dort `?`, ohne `WARN:`. Er ist rein lesend,
-endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 — kein
-Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
+endet immer mit 0 und warnt nur bei den Triggern aus `CLAUDE.md` §3 und bei einem roten oder
+veralteten geplanten Workflow — kein Trigger, keine `WARN:`-Zeile. `AH_AUTONOMOUS=1` schaltet ihn stumm (der Hook
 feuert auch in `claude -p`). Manuell: `bash scripts/dev/hooks/session-status.sh`.
 
 ### Task schliessen: `ledger.sh` und `task-close.sh`

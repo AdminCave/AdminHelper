@@ -45,6 +45,8 @@ Hook müssen rot sein (Gegenprobe im Wegwerf-Worktree).
 Metrik: Laufzeit des Hooks vor und nach T1 (heute ~1,6 s mit zwei gh-Aufrufen; ein `gh run list` ~1 s).
 Gemessen: je 5 Läufe im Haupt-Checkout, vorher 1,54–2,12 s (Median 1,65 s), nachher 2,38–2,51 s (Median
 2,45 s), also +0,8 s je Sessionstart; ein `gh run list` allein ~1,1 s. Offline (gh scheitert) bleibt es bei `?`.
+Echter Lauf (2026-09-29, prüft den `-q`-Ausdruck, den der Shim umgeht): `bash scripts/dev/hooks/session-status.sh` →
+genau eine Zeile `Geplant: Dependency Audit 2026-09-29 (0 d): success`, keine neue `WARN:`-Zeile.
 Abweichung: ohne `--event schedule` (Aufsicht auf Empfehlung, 2026-09-29): am 2026-09-29 war der letzte Cron-Lauf
 (2026-09-28) rot, der Fix per `workflow_dispatch` auf main grün — mit dem Event-Filter hätte der Hook bis zum
 nächsten Cron (2026-10-05) gewarnt und `heavy.sh check_audit` widersprochen, wo ein grüner Lauf den Eintrag schließt.
@@ -59,3 +61,15 @@ Semantik: DEVELOPMENT.md:370–378 beschreibt den Block heute ohne geplante Work
 PRs und warme Boxen“) — das ist der heutige, gewollte Umfang; die Erweiterung hat Kevin am 2026-09-29 zur Planung
 freigegeben. CLAUDE.md §3 („Stand feststellen, nicht raten“) nennt den Inhalt des Blocks; eine Zeile dort ergänzt
 Kevin von Hand, falls er will.
+
+### T2 — Review-Nits: Fixture deckt Anführungszeichen und Kommentar ab, WARN-Umfang in der Doku  [x]
+Komponente: scripts · Dateien: scripts/tests/session_status_test.sh, scripts/dev/hooks/session-status.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @2853639d 2026-09-29T15:39:13+02:00
+Review: Nits aus dem Opus-Schluss-Review (approve)
+Änderung: Aus dem Schluss-Review (Opus, approve, nits). Die Fixture schreibt `name: "Dependency Audit"` in
+Anführungszeichen und trägt in `ci.yml` eine auskommentierte `# schedule:`-Zeile — beide Mutanten (Anführungszeichen
+nicht entfernt, Kommentar als Zeitplan gelesen) überlebten bisher. Hook-Kopf (`The WARN lines fire ONLY …`) und
+DEVELOPMENT.md („warnt nur bei den Triggern aus `CLAUDE.md` §3“) nennen die neue Warnung, die kein §3-Trigger ist;
+CLAUDE.md §3 selbst bleibt Kevins Handgriff.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (der eine Satz)

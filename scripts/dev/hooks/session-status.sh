@@ -14,7 +14,9 @@
 #   AH_DEVENV        path to the devenv file (default <root>/.devenv.sh)
 #
 # The WARN lines fire ONLY when Kevin's next move would fail or something
-# irreversible looms. No trigger, no WARN line.
+# irreversible looms — plus one that is no CLAUDE.md §3 trigger: a scheduled
+# workflow (the dependency audit) that is red or has stopped running. No
+# trigger, no WARN line.
 #
 # Line 4 carries the weekly run's verdict, read verbatim from the newest
 # non-empty $AH_OUT_DIR/weekly/<stamp>/report.md (heavy.sh, stage 3); "kein
