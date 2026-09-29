@@ -4,8 +4,10 @@
 # Never exclude a TRACKED source path here. The box builds its evidence hash
 # from what it received; an exclude over tracked source would make the artifact
 # describe a tree the box never had. apps/server/data is safe — its only
-# tracked entry is an empty .gitkeep. .git stays: run.sh reads head and
-# tree_hash from it.
+# tracked entry is an empty .gitkeep. .git is not excluded, and nothing on the
+# box relies on it: from the main checkout it is the repository, from a
+# worktree a pointer into a directory the box does not have. run.sh then takes
+# head and tree_hash from what iter.sh passes in from the client.
 .cache
 .turbo
 dist
