@@ -473,6 +473,7 @@ mk_case() { printf '#!/bin/sh\nexit %s\n' "$2" > "$BLOCK/$1.sh"; chmod +x "$BLOC
 mk_case blockpass 0
 mk_case blockskip 75
 mk_case blockfail 1
+mk_case blockfail2 2
 # AH_SCRIPT_TESTS_DIR keeps the fixtures in the temp dir: a leftover under
 # scripts/tests/ would shift every later tree_hash — the evidence this stage is
 # built on. AH_IN_SCRIPTS_BLOCK is cleared per call rather than for the whole
@@ -498,11 +499,19 @@ block_run "blockskip blockskip" --strict
 grep -q "2 of the block's tests could not run" <<<"$OUT" \
   && ok "block: every skip stays visible, not just the first" || bad "only the first skip reported"
 
-block_run "blockpass blockfail blockpass"
-[ $rc -eq 1 ] && grep -q "blockfail: FAILED" <<<"$OUT" \
+block_run "blockpass blockfail blockpass blockfail2"
+[ $rc -eq 1 ] && grep -q "blockfail: FAILED (rc=1)" <<<"$OUT" \
   && ok "block: a failing test fails the block" || bad "failing test: rc=$rc"
-[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 2 ] \
-  && ok "block: stops at the first failure" || bad "did not stop: $(grep -c '^  ── block' <<<"$OUT") ran"
+# A red test does not end the block: the weekly run of 2026-09-25 stopped at the
+# first one, and 19 of 31 tests behind it never ran.
+[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 4 ] \
+  && ok "block: runs on past a failure, every test runs" || bad "stopped early: $(grep -c '^  ── block' <<<"$OUT") of 4 ran"
+grep -q "blockfail2: FAILED (rc=2)" <<<"$OUT" && grep -q "2 of 4 failed: blockfail blockfail2" <<<"$OUT" \
+  && ok "block: every red test is named, with the count" || bad "failures not summed up: $(grep 'failed' <<<"$OUT")"
+# A failure outranks a skip: the block is red, not SKIP.
+block_run "blockskip blockfail"
+[ $rc -eq 1 ] && grep -q "FAIL  scripts (hermetic)" <<<"$OUT" && grep -q "1 of 2 failed: blockfail" <<<"$OUT" \
+  && ok "block: a failure next to a skip is a FAIL, not a SKIP" || bad "fail+skip: rc=$rc"
 
 block_run ""
 [ $rc -ne 0 ] && grep -q "AH_SCRIPT_TESTS is empty" <<<"$OUT" \

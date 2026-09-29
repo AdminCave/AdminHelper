@@ -42,8 +42,10 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (Kopfkommentar des Skripts)
 
-### T2 — R-0096: der scripts-Block fährt alle Skripte und meldet die Summe  [ ]
+### T2 — R-0096: der scripts-Block fährt alle Skripte und meldet die Summe  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/run_flags_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @428db12c 2026-09-29T07:14:49+02:00
+Review: approve (opus)
 Änderung: `scripts_block` (run.sh:548–578) merkt sich Name und rc jedes roten Skripts und läuft weiter; am Ende eine
 Zeile `N of M failed: a b`, danach `return 1` (ein Fehler zählt mehr als ein Skip). Die Zeile
 `     <t>: FAILED (rc=N)` (:562) bleibt, weil `heavy.sh` `first_marker` die erste FAIL-Zeile liest. Kommentar

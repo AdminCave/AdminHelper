@@ -537,8 +537,9 @@ layer_lint() {
 
 # The hermetic shell tests as ONE step. They need nothing but bash and coreutils,
 # run in seconds, and cover the ops scripts nothing else touches. As a block
-# rather than a dozen steps because a dozen entries would drown the summary; the
-# trade-off is that the first red one hides the rest until you read the log.
+# rather than a dozen steps because a dozen entries would drown the summary; a
+# red one does not stop the block, it names every red test at the end — the
+# weekly run of 2026-09-25 stopped at the first one and 19 of 31 never ran.
 # Overridable so the aggregation logic itself can be tested with fixture scripts
 # (run_flags_test.sh) — that logic was wrong once already, and hand-checking it is
 # exactly what this stage abolishes. An empty list would make the block trivially
@@ -557,7 +558,7 @@ AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # shift every later tree_hash, which is the evidence this stage is built on.
 AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
 scripts_block() {
-  local t rc skipped=0 ran=0
+  local t rc skipped=0 ran=0 nfail=0 failed=""
   # Two of the block's tests start run.sh themselves. They pin --step or a layer
   # that never reaches this block, but a future one might not — and the whole
   # list per level is a fork bomb, not a test run.
@@ -570,7 +571,7 @@ scripts_block() {
     case "$rc" in
       0)  ;;
       75) skipped=$((skipped + 1)); echo "     $t: SKIP (75)" ;;
-      *)  echo "     $t: FAILED (rc=$rc)"; return "$rc" ;;
+      *)  echo "     $t: FAILED (rc=$rc)"; nfail=$((nfail + 1)); failed="$failed $t" ;;
     esac
   done
   # One block, one result for the whole list: if even one could not run, PASS
@@ -581,6 +582,11 @@ scripts_block() {
   # Counted, not pattern-matched: any whitespace-only value would slip past a
   # string check and report a green block for zero tests.
   [ "$ran" -gt 0 ] || { echo "  AH_SCRIPT_TESTS is empty — nothing to verify"; return 1; }
+  # A failure outranks a skip: the block is red, whatever else could not run.
+  if [ "$nfail" -gt 0 ]; then
+    echo "  $nfail of $ran failed:$failed"
+    return 1
+  fi
   if [ "$skipped" -gt 0 ]; then
     echo "  $skipped of the block's tests could not run — block is not verified"
     return 75
