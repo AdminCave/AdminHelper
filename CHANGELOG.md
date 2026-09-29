@@ -15,6 +15,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   und warnt bei einem roten Lauf (mit `gh run view <id> --log-failed`) oder einem Lauf aelter als
   8 Tage. Bisher sah zwischen zwei Wochenlaeufen keine Session, dass der Dependency Audit rot war.
   Ohne `gh` steht dort `?`, ohne Warnung. Anleitung: `DEVELOPMENT.md` „Session-Status-Hook".
+- **CI prueft den Lock-Stand der Images (R-0115):** Die Test-Jobs installieren das lose
+  `requirements.in`, die Images den gehashten Lock — der lose Stand laeuft dem Lock voraus, und
+  ein Bruch wie der von fastapi 0.138 im Auth-Gate-Test zeigte sich nur dort. Neu fahren die Jobs
+  `python-lock-server`, `python-lock-monitoring` und `python-lock-ca-issuer` die Suiten auf dem
+  Python der Images gegen den Lock (`--require-hashes`, danach die Dev-Dependencies), und
+  `scripts/dev/lock-pins.py` macht den Job rot, sobald ein Pin nicht in der Lock-Version
+  installiert ist. Ein Lockstep-Test haelt die Python-Version jedes Jobs beim `FROM` seines
+  Dockerfiles. Anleitung: `DEVELOPMENT.md` „Python-Dependencies & Lockfiles".
 - **Harness-Schutz fuer /tmp und Commits (R-0098, R-0102):** Der PreToolUse-Waechter
   `scripts/dev/hooks/harness-guard.sh` verweigert in jedem Modus, auch mit gesetztem Kill-Switch,
   das Loeschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`,

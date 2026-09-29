@@ -76,7 +76,7 @@ jobs:
       - name: Install dependencies
         working-directory: apps/server
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
-        # hashed requirements.txt lock is for the Docker image, not the tests.
+        # hashed requirements.txt lock the image ships is python-lock-server's.
         run: pip install -r requirements-dev.txt
       - name: Run pytest
         working-directory: apps/server
@@ -136,7 +136,7 @@ jobs:
       - name: Install dependencies
         working-directory: apps/monitoring
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the
-        # hashed requirements.txt lock is for the Docker image, not the tests.
+        # hashed requirements.txt lock the image ships is python-lock-monitoring's.
         run: pip install -r requirements-dev.txt
       - name: Run pytest
         working-directory: apps/monitoring
@@ -157,12 +157,135 @@ jobs:
       - name: Install dependencies
         working-directory: apps/ca-issuer
         # requirements-dev.txt pulls in requirements.in (loose, unhashed); the hashed
-        # requirements.txt lock is for the Docker image, not the tests. The test-only
+        # requirements.txt lock the image ships is python-lock-ca-issuer's. The test-only
         # httpx dep and the reason it is test-only are documented in that file.
         run: pip install -r requirements-dev.txt
       - name: Run pytest
         working-directory: apps/ca-issuer
         # Tests opt into the in-memory token store (no DATABASE_URL) — no DB service needed (6.3/6.4).
+        run: python -m pytest -q -m "not schemathesis"
+
+  # The images install the hashed lock on python:3.12-slim; the three jobs above
+  # test the loose requirements.in, which runs ahead of it (fastapi 0.138 broke
+  # test_route_auth_gate only in the loose state). These three run the same suites
+  # against what the image ships: the lock with --require-hashes as the Dockerfile
+  # does, the dev deps on top in a second call (one hashed line makes pip demand
+  # hashes for every package, and -c cannot carry extras), then lock-pins.py proves
+  # that installing them moved no pin. Three jobs, not a matrix: services and env
+  # differ per service, and an empty env value is not an unset one. The names carry
+  # no Python version so a base-image bump keeps the required-check names;
+  # test_lock_pins.py holds python-version in lockstep with each Dockerfile's FROM.
+  python-lock-server:
+    name: Server (pytest, image lock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper
+      DATA_DIR: /tmp/adminhelper-test-data
+      SECRET_KEY: ci-test-secret-key
+      ADMIN_PASSWORD: ciadmin
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/server/requirements*
+      - name: Install the image lock, then the dev dependencies
+        working-directory: apps/server
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Every lock pin is installed as locked
+        working-directory: apps/server
+        run: python ../../scripts/dev/lock-pins.py requirements.txt
+      - name: Run pytest
+        working-directory: apps/server
+        run: pytest -q -m "not schemathesis"
+
+  python-lock-monitoring:
+    name: Monitoring (pytest, image lock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: adminhelper
+          POSTGRES_PASSWORD: cipw
+          POSTGRES_DB: adminhelper_monitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adminhelper -d adminhelper_monitor"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://adminhelper:cipw@localhost:5432/adminhelper_monitor
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/monitoring/requirements*
+      - name: Install the image lock, then the dev dependencies
+        working-directory: apps/monitoring
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Every lock pin is installed as locked
+        working-directory: apps/monitoring
+        run: python ../../scripts/dev/lock-pins.py requirements.txt
+      - name: Run pytest
+        working-directory: apps/monitoring
+        run: python -m pytest -q -m "not schemathesis"
+
+  python-lock-ca-issuer:
+    name: CA-Issuer (pytest, image lock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/ca-issuer/requirements*
+      - name: Install the image lock, then the dev dependencies
+        working-directory: apps/ca-issuer
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Every lock pin is installed as locked
+        working-directory: apps/ca-issuer
+        run: python ../../scripts/dev/lock-pins.py requirements.txt
+      - name: Run pytest
+        working-directory: apps/ca-issuer
         run: python -m pytest -q -m "not schemathesis"
 
   schemathesis:
