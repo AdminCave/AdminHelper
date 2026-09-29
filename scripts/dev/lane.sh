@@ -11,9 +11,10 @@
 #                                         feature/<slug> (forked from main); writes
 #                                         .vm/lane, copies .claude/settings.local.json,
 #                                         writes the lane's own .devenv.sh and creates
-#                                         its test database, links the frpc sidecar and
-#                                         the component venvs; refuses without the plan
-#                                         committed on feature/<slug> (else on main)
+#                                         its test database, copies the frpc sidecar,
+#                                         links the component venvs; refuses without
+#                                         the plan committed on feature/<slug> (else
+#                                         on main)
 #   bash scripts/dev/lane.sh done <slug>  destroy the lane's VMs, then remove
 #                                         worktree + branch (branch only if merged),
 #                                         and what the lane's mark .vm/lanes/<slug>
@@ -103,10 +104,12 @@ lane_mark() { printf '%s/.vm/lanes/%s' "$ROOT" "$1"; }
 
 # lane_link_dir <worktree> <dir> — link every entry of the main checkout's <dir>
 # into a REAL <dir> in the lane. .gitignore matches these as directories
-# (`.venv/`, `binaries/`); a symlink in their place is no directory to it, so it
-# would be an untracked file — noise in every git status of the lane, one
-# `git add -A` away from a commit, and a worktree `done` calls unclean. A venv
-# still works through the links: python finds pyvenv.cfg next to bin/.
+# (`.venv/`); a symlink in their place is no directory to it, so it would be
+# an untracked file — noise in every git status of the lane, one `git add -A`
+# away from a commit, and a worktree `done` calls unclean. A venv still works
+# through the links: python finds pyvenv.cfg next to bin/.
+# Only for what stays on this dev box: `vm.py sync` carries a link as a link,
+# and on a box it points into a main checkout that is not there.
 # "For reading" is how the lane uses them, not a lock: they are ordinary links,
 # and a `pip install` through apps/<c>/.venv would change the main checkout's
 # venv. run.sh installs into AH_VENV, which is the lane's own.
@@ -205,10 +208,17 @@ lane_new() {
   [ -f .claude/settings.local.json ] \
     && cp .claude/settings.local.json "$wt/.claude/settings.local.json"
   [ ! -f .devenv.sh ] || lane_devenv "$slug" > "$wt/.devenv.sh"
-  # Gitignored parts of the main checkout that a build needs, linked for
-  # reading: the frpc sidecar cargo test wants, and the component venvs that
-  # carry the ruff CI pins (without them run.sh finds no ruff at all).
-  lane_link_dir "$wt" apps/desktop/src-tauri/binaries
+  # Gitignored parts of the main checkout that a build needs. The frpc sidecar
+  # cargo test wants is COPIED: a link would reach a box as a link into nothing,
+  # and a heavy run from the lane loses cargo test and the desktop E2E (R-0094).
+  # A failed copy costs the lane that sidecar, not the lane. The component venvs
+  # that carry the ruff CI pins (without them run.sh finds no ruff at all) stay
+  # links for reading: rsync-exclude.txt keeps .venv off the box anyway.
+  local bin=apps/desktop/src-tauri/binaries
+  if [ -d "$ROOT/$bin" ]; then
+    { mkdir -p "$wt/$bin" && cp -RpL "$ROOT/$bin/." "$wt/$bin/"; } \
+      || echo "  WARN: could not copy all of $bin — without the frpc sidecar cargo test (desktop) skips in the lane"
+  fi
   local c
   for c in server monitoring ca-issuer; do lane_link_dir "$wt" "apps/$c/.venv"; done
   echo ""
