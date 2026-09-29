@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # CI prüft den Lock-Stand der Images (R-0115) — Task-Ledger
-Status: aktiv · Branch: harness/lock-state-ci · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/lock-state-ci · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-29 („R-0115 und R-0120 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0115
 Heavy: none — die Images ändern sich nicht; der neue CI-Job selbst ist die Prüfung und läuft im PR (drei Lock-Jobs grün, per `gh run watch` belegt).
@@ -60,8 +60,10 @@ Abschluss-Evidenz: der CI-Lauf des PRs mit drei grünen Lock-Jobs (`gh run watch
 Doku: keine (T3)
 Abhängt von: T1
 
-### T3 — Doku: was CI gegen welchen Stand prüft  [ ]
+### T3 — Doku: was CI gegen welchen Stand prüft  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @678e66a7 2026-09-29T14:37:58+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: `DEVELOPMENT.md:66–72` („Tests/CI installieren `requirements.in` …“) nennt den Lock-Job und das lokale
 Rezept in drei Zeilen (Venv unter `~/.cache`, Lock mit `--require-hashes`, dann `requirements-dev.txt`, dann
 `lock-pins.py`). `cicd.html:40` DE+EN: der neue Job in der `ci.yml`-Zeile. CHANGELOG [Unreleased] ein Eintrag.

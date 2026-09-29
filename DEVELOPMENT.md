@@ -64,7 +64,19 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 ```
 
 Tests/CI installieren `requirements.in` (lose, ungehasht) — `--require-hashes`
-verträgt keine Mischung aus gehashten und ungehashten Zeilen.
+verträgt keine Mischung aus gehashten und ungehashten Zeilen. Den Stand, den das
+Image ausliefert, prüfen die CI-Jobs `python-lock-server`, `-monitoring` und
+`-ca-issuer` (Python wie im Dockerfile): erst der Lock mit `--require-hashes`, dann
+`requirements-dev.txt` in einem zweiten Aufruf (`-c requirements.txt` scheitert an
+Extras), dann `scripts/dev/lock-pins.py`, das jeden Pin nennt, den die
+Dev-Dependencies verschoben haben. Lokal genauso nach `source .devenv.sh`, das Venv
+unter `~/.cache` (nie das geteilte `AH_VENV`, nie `/tmp`):
+
+```bash
+python3.12 -m venv ~/.cache/ah-venv-lock-server && . ~/.cache/ah-venv-lock-server/bin/activate
+cd apps/server && pip install --require-hashes -r requirements.txt && pip install -r requirements-dev.txt
+python ../../scripts/dev/lock-pins.py requirements.txt && DATABASE_URL="$AH_TEST_DB" pytest -q -m "not schemathesis"
+```
 
 - `requirements-dev.txt` — die **Test-Dependencies** je Dienst (`-r requirements.in`
   plus pytest & Generatoren). Eine Wahrheit pro Dienst: `scripts/tests/run.sh` und
