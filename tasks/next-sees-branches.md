@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `roadmap.py next` sieht Ledger auf Branches (R-0099) — Task-Ledger
-Status: bereit · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/next-sees-branches.md (Roadmap R-0099)
 Heavy: none — nur scripts/dev (Stdlib-Python, hermetische Fixtures); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine DB, keine VM.
@@ -18,7 +18,7 @@ Argumente an `dev-pytest` durch; jedes Verify fährt den ganzen scripts-Key.
 ### T1 — `components_of` liest das Ledger aus Baum und allen Refs  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md
 Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @32b1f39c 2026-09-29T07:15:32+02:00
-Review: am Ende (Kurz-Ledger)
+Review: Branch-Review am Ende (opus): request_changes → T4, nach T4 approve
 Änderung: `components_of` (roadmap.py:814–834) vereinigt die `Komponente:`-Zeilen aus dem Baum (wie heute) und
 aus jedem `refs/heads/*` und `refs/remotes/*` (ohne symbolisches `HEAD`), das den Pfad trägt: ein
 `git -C ROOT grep` über alle Bäume mit `--literal-pathspecs`, aufgerufen mit einer Umgebung ohne `GIT_DIR`,
@@ -36,7 +36,7 @@ Doku: DEVELOPMENT.md (`next`: wo das Ledger gesucht wird, der Aufrufer fetcht vo
 ### T2 — fail-closed: ein genanntes Ledger, das nirgends liegt, zählt als Konflikt  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md
 Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @0afee83a 2026-09-29T07:25:24+02:00
-Review: am Ende (Kurz-Ledger)
+Review: Branch-Review am Ende (opus): request_changes → T4, nach T4 approve
 Änderung: Nur mit `--exclude-components` wird eine Zeile übersprungen, deren repo-relativer Ledger-Pfad
 (`tasks/….md`) weder im Baum noch auf einem Ref liegt; dazu auf stderr `next: R-nnnn skipped — ledger <pfad> not
 found in the tree or on any branch (git fetch?)`. Ohne Ausschlussliste, bei `—`, bei Slug-Formen und bei
@@ -50,7 +50,7 @@ Abhängt von: T1
 ### T3 — Gate-Text: `next` sieht Branch-Ledger  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md
 Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @d0656f57 2026-09-29T07:33:06+02:00
-Review: am Ende (Kurz-Ledger)
+Review: Branch-Review am Ende (opus): request_changes → T4, nach T4 approve
 Änderung: Der Satz „`next --exclude-components` sieht es dort noch nicht (R-0099)" (feature-plan/SKILL.md, §4,
 um :203–205) wird ersetzt: `next` sieht Ledger auf lokalen und Remote-Branches (nach `git fetch`), ein nirgends
 gefundenes Ledger gilt als Konflikt; `git show <branch>:tasks/<slug>.md` bleibt für die Prüfung von Hand
@@ -62,7 +62,7 @@ Abhängt von: T2
 ### T4 — Nacharbeit aus dem Branch-Review: git-Config des Aufrufers, Test-Helfer, Gate-Satz  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, .claude/skills/feature-plan/SKILL.md
 Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @6ae2ab1c 2026-09-29T07:47:25+02:00
-Review: Nacharbeit aus dem Branch-Review (opus), Re-Review folgt
+Review: approve (opus, Re-Review; Gegenprobe je Flag)
 Änderung: Drei Funde aus dem Review über den Branch-Diff (Opus, 2026-09-29). (1) wichtig: `git grep` in
 `components_of` erbt die Config des Aufrufers; `grep.lineNumber`, `grep.column` oder `color.grep=always` setzen
 vor jede Zeile `12:`, eine Spalte oder ANSI-Codes, `^Komponente:` trifft nichts, und die Zeile gilt still als
