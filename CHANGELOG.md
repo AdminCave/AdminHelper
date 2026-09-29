@@ -120,6 +120,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   zusaetzlich fuenf `windows-sys`-Kanten (errno, os_pipe, rustix, tempfile, winapi-util)
   auf bereits gelockte Versionen um — Windows-only, vom CI-Job `rust-windows` gebaut.
 
+- **anyio 4.13.0 → 4.14.2** in server, monitoring und ca-issuer (gehashte Locks neu generiert):
+  behebt CVE-2026-63374 und CVE-2026-64847. Vom woechentlichen Dependency-Audit (`pip-audit`)
+  erkannt. Die Locks von server und monitoring ziehen dabei `sqlalchemy[asyncio]` nach, faellig
+  seit der `.in`-Aenderung (gleiche Version, gleiche Hashes). `pytest` gegen die exakten neuen
+  Locks unter Python 3.12 gruen — server 968, monitoring 599, ca-issuer 74 —, `pip-audit` ohne Befund.
+
 ### Fixed
 
 - **Wartungsfenster mit Offset am Kalenderrand (Monitoring):** `POST /maintenance` und
