@@ -126,9 +126,11 @@ demselben Ledger** — der Ledger ist die einzige Fortschritts-Wahrheit, es gibt
 #    lane.sh new sucht den Plan dort (ohne den Branch: auf main) und bricht ohne ihn ab.
 # 2. Lane aufmachen — mehr braucht es nicht (Worktree ../AdminHelper-<slug>; eine
 #    eigene .devenv.sh mit eigener Test-DB adminhelper_test_<slug> und eigenem Venv,
-#    settings.local.json als Kopie — Claude Code schreibt sie bei Grants; frpc-Sidecar
-#    und Komponenten-Venvs mit dem CI-ruff als Links in den Haupt-Checkout, nur zum
-#    Lesen — die Links sperren nichts, installiert wird ins eigene Venv der Lane):
+#    settings.local.json als Kopie — Claude Code schreibt sie bei Grants; das
+#    frpc-Sidecar als Kopie — vm.py sync trägt einen Link als Link auf die Box, und
+#    dort zeigt er ins Leere; die Komponenten-Venvs mit dem CI-ruff als Links in den
+#    Haupt-Checkout, nur zum Lesen — die Links sperren nichts, installiert wird ins
+#    eigene Venv der Lane, und auf die Box reist kein .venv):
 bash scripts/dev/lane.sh new <slug>
 # 3. Lane starten (eigenes Terminal/tmux-Pane):
 cd ../AdminHelper-<slug> && claude --model opus --permission-mode acceptEdits

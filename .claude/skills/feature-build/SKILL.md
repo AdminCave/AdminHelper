@@ -40,8 +40,10 @@ Stufe 7).
   für den Branch schon einen PR (`gh pr view <branch>`, etwa von Kevin geöffnet), fehlen nur Kopf
   und Roadmap aus Abschluss-Schritt 5 und 6: den Kopf auf `erledigt` (bzw. `blockiert`)
   committen — der Commit muss noch in den PR, pushen tut Kevin —, die Roadmap wie unter
-  „Roadmap mitziehen" (`pr --pr`, ein Teil-Ledger `aktiv --pr`), dann melden; sonst war der
-  Abschluss unterbrochen (etwa von einem Compact) und geht ab Schritt 2 weiter. `erledigt` →
+  „Roadmap mitziehen" (`pr --pr`, ein Teil-Ledger `aktiv --pr`; eine Zeile, die noch auf `aktiv`
+  steht, zuerst auf `bereit`), dann melden; sonst war der Abschluss unterbrochen (etwa von einem
+  Compact) und geht ab Schritt 1 weiter — den Kopf setzt schon `task-close.sh`, die Roadmap-Zeile
+  vielleicht noch nicht, und Schritt 1 ist wiederholbar. `erledigt` →
   **nicht** bauen; gibt es einen PR und steht die Roadmap-Zeile noch auf `bereit` (beim
   Teil-Ledger: seine Nummer fehlt in der Spalte `PR`), Schritt 6 nachholen, dann melden; gibt es
   keinen PR, melden: Push und PR stehen aus, das ist Kevins Handgriff. `blockiert` → **nicht**
@@ -204,10 +206,14 @@ Stufe 7).
    Commit-Body: Task-IDs + Stichwort.
 
 ## Abschluss (kein `[ ]` mehr offen)
-1. **Bereit — zuerst:** Ledger-Kopf auf `Status: bereit` (ein `chore(ledger)`-Commit), die
-   Roadmap-Zeile auf `bereit`. Zuerst, weil `ledger.sh lint` ein `aktiv` ohne offene Task als
-   Fehler wertet und `ledger_test` jedes echte Ledger lintet — der Gesamt-Schnellcheck fiele
-   sonst über das eigene Ledger. Ab hier baut niemand mehr daran; Verifikation und PR stehen aus.
+1. **Bereit — zuerst:** Den Ledger-Kopf setzt `task-close.sh` beim Schließen der letzten
+   offenen Task selbst von `aktiv` auf `Status: bereit`, im selben Commit (R-0083). Steht der
+   Kopf danach noch auf `aktiv` — die letzte Task ging per `mark-skip` oder `[?]` zu, oder eine
+   Handarbeit ohne `Komponente:` blieb offen —, von Hand: `ledger.sh status <ledger> bereit` als
+   `chore(ledger)`-Commit. Die Roadmap-Zeile auf `bereit` zieht die Session in jedem Fall nach.
+   Zuerst, weil `ledger.sh lint` ein `aktiv` ohne offene Task als Fehler wertet und
+   `ledger_test` jedes echte Ledger lintet — der Gesamt-Schnellcheck fiele sonst über das eigene
+   Ledger. Ab hier baut niemand mehr daran; Verifikation und PR stehen aus.
 2. Gesamt-Schnellcheck: `bash scripts/tests/run.sh quick` (lint + unit); bei
    `Fast-Suite: vm` stattdessen `bash scripts/vm/iter.sh quick` (ohne `AH_ONLY`).
 3. **Schwere Suite auf der VM — nur wenn nötig (path-gated, CLAUDE.md).** Was geplant ist, sagt

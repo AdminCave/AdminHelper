@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Lint + Format für die Python-Komponenten (apps/server, apps/monitoring,
-# apps/ca-issuer).
-# CI: eigener python-lint-Job (ruff check + ruff format --check) — deckt
-# derzeit nur server + monitoring ab; ca-issuer prüft `scripts/tests/run.sh`.
-# Lokal: `ruff check apps/server apps/monitoring apps/ca-issuer`.
+# apps/ca-issuer) und die Python-Skripte unter scripts/.
+# CI: eigener python-lint-Job (ruff check + ruff format --check) über alle vier
+# Pfade; `scripts/tests/run.sh lint` prüft dieselben (Schritte ruff und ruff-vm).
+# Lokal: `ruff check apps/server apps/monitoring apps/ca-issuer scripts`.
 
 line-length = 100
 target-version = "py312"

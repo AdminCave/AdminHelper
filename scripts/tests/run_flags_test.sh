@@ -99,23 +99,48 @@ echo "── --step ──"
 run_bare lint --step nixda
 [ $rc -eq 2 ] && grep -q "unknown step: 'nixda'" <<<"$OUT" && ok "unknown step -> exit 2" || bad "unknown step: rc=$rc"
 
-# Four candidates since scripts/vm got its own ruff step: check and format
-# check, for apps/ and for the VM harness.
+# Four candidates since scripts/ got its own ruff step: check and format
+# check, for apps/ and for scripts/.
 run_bare lint --step ruff
 [ $rc -eq 2 ] && grep -q "ambiguous step: 'ruff' matches 4 steps" <<<"$OUT" \
-  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts/vm)" <<<"$OUT" \
+  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts)" <<<"$OUT" \
   && ok "ambiguous step -> exit 2, candidates listed" || bad "ambiguous step: rc=$rc"
 
 # The dry pass must reject BEFORE running anything: an ambiguous --step may not
 # have executed one of its candidates on the way to the error.
 grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" && bad "ambiguous --step ran a step anyway" || ok "ambiguous --step runs nothing"
 
-# The VM harness has to be reachable as its own step, or `verify.sh scripts`
-# could not lint it without linting apps/ too.
-run_bare lint --step "ruff check (scripts/vm)"
+# scripts/ has to be reachable as its own step, or `verify.sh scripts` could
+# not lint it without linting apps/ too.
+run_bare lint --step "ruff check (scripts)"
 [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
-  && ok "the scripts/vm ruff step is addressable on its own" \
-  || bad "--step 'ruff check (scripts/vm)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+  && ok "the scripts ruff step is addressable on its own" \
+  || bad "--step 'ruff check (scripts)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+
+# What the two ruff steps really lint, read off a stub's argv: roadmap.py and
+# doc-smoke.py sat outside every gate while the step covered scripts/vm only.
+RUFFSTUB="$WORK/bin-ruff"; mkdir -p "$RUFFSTUB"
+cp -a "$BARE/." "$RUFFSTUB/"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$RUFF_LOG"\nexit 0\n' > "$RUFFSTUB/ruff"; chmod +x "$RUFFSTUB/ruff"
+RUFF_LOG="$WORK/ruff.log"; : > "$RUFF_LOG"
+OUT=$(PATH="$RUFFSTUB" RUFF_LOG="$RUFF_LOG" AH_OUT_DIR="$WORK/out" "$RUFFSTUB/bash" "$RUN" lint --only scripts 2>&1); rc=$?
+grep -qx 'check scripts' "$RUFF_LOG" && grep -qx 'format --check scripts' "$RUFF_LOG" \
+  && grep -q "PASS  ruff check (scripts)" <<<"$OUT" \
+  && ok "lint --only scripts runs ruff check and format over all of scripts/" \
+  || bad "ruff was called as: $(tr '\n' '|' < "$RUFF_LOG")"
+
+# CI and run.sh lint the same paths. The set run.sh covers is the union of its
+# two ruff steps; ci.yml names it in one line each for check and format.
+: > "$RUFF_LOG"
+OUT=$(PATH="$RUFFSTUB" RUFF_LOG="$RUFF_LOG" AH_OUT_DIR="$WORK/out" "$RUFFSTUB/bash" "$RUN" lint --only server monitoring ca-issuer scripts 2>&1)
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+for verb in 'check' 'format --check'; do
+  run_paths=$(sed -n "s/^$verb //p" "$RUFF_LOG" | tr ' ' '\n' | grep -v '^$' | sort)
+  ci_paths=$(sed -n "s/^[[:space:]]*run: ruff $verb //p" "$CI_YML" | tr ' ' '\n' | grep -v '^$' | sort)
+  [ -n "$run_paths" ] && [ "$run_paths" = "$ci_paths" ] \
+    && ok "ruff $verb: ci.yml and run.sh cover the same paths" \
+    || bad "ruff $verb: run.sh [$(echo $run_paths)] vs ci.yml [$(echo $ci_paths)]"
+done
 
 # Counted, not grepped: the error "unknown step: 'vm.py pytest'" contains the
 # name too, so a grep would pass against a run.sh that has no such step at all.
@@ -194,7 +219,7 @@ OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_REQUIRED="go-agent" "$BARE/bash" "$
   && ok "--only makes a non-required step required" || bad "--only strictness: rc=$rc"
 # ...while the steps --only filtered away must not fail: they were never asked
 # for. Named, not counted: how many of the INCLUDED steps can run depends on
-# what the box has installed (a venv ruff makes the scripts/vm pair pass here
+# what the box has installed (a venv ruff makes the scripts pair pass here
 # and skip in CI), and a count would make this assertion box-dependent.
 FILTERED_FAILED=0
 for step in "ruff check (SKIP)" "ruff format check (SKIP)" "gofmt (agent) (SKIP)"; do
@@ -215,6 +240,9 @@ cat > "$PYSHIM/python3" <<'EOF'
 # `-m pip install …` and `-m venv …` succeed silently; `-m pytest …` prints a
 # short summary. The SHIM_* knobs reproduce the shapes real suites produce.
 case "$*" in
+  # SHIM_VENV_LOG records where run.sh asks for the venv. Before the pip arm: a
+  # temp path may well contain "pip".
+  *"-m venv "*) [ -n "${SHIM_VENV_LOG:-}" ] && printf '%s\n' "$*" >> "$SHIM_VENV_LOG"; exit 0 ;;
   *pip*|*venv*) exit 0 ;;
   # The schemathesis step probes for its package before running anything;
   # SHIM_NO_SCHEMATHESIS stands in for a box where it is not installed.
@@ -463,6 +491,33 @@ grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out5/last-li
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out2" AH_REQUIRED="go-agent"       "$BARE/bash" "$RUN" unit --strict --step "go agent" 2>&1)
 grep -q '"result": "strict-failed"' "$WORK/out2/last-unit.json"   && ok "artifact: a strict-failed skip has its own verdict"   || bad "verdict: $(grep -A2 '"steps"' "$WORK/out2/last-unit.json" | tr -d '\n')"
 
+# ══ where the python venv lives (R-0057) ══════════════════════════════════════
+echo "── the venv default ──"
+# Not under /tmp: systemd-tmpfiles clears it after ten days, and a venv half gone
+# there turned four suites red without a code change. This file exports AH_VENV
+# for every case; this one unsets it and gives run.sh a fixture HOME.
+VLOG="$WORK/venv.log"; : > "$VLOG"
+env -u AH_VENV PATH="$PYSHIM" HOME="$WORK/home" SHIM_VENV_LOG="$VLOG" AH_OUT_DIR="$WORK/out" \
+  "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" >/dev/null 2>&1
+grep -qxF -- "-m venv $WORK/home/.cache/ah-venv" "$VLOG" \
+  && ok "AH_VENV unset -> run.sh builds the venv under \$HOME/.cache" \
+  || bad "run.sh asked for the venv as: $(tr '\n' '|' < "$VLOG")"
+# One default in three places: run.sh builds the venv, iter.sh activates it on a
+# box for a Verify: command, sse_push_e2e.sh starts the server from it. Each
+# expression is evaluated as written, with AH_VENV/VENV unset and the same HOME.
+WANT_VENV="$WORK/home/.cache/ah-venv"
+ITER_EXPR=$(sed -n "s/^[[:space:]]*VENVPRE='\(v=\"[^;]*\"\);.*/\1/p" "$REPO_ROOT/scripts/vm/iter.sh")
+SSE_EXPR=$(grep -m1 '^VENV=' "$REPO_ROOT/scripts/tests/sse_push_e2e.sh")
+got=$(env -u AH_VENV HOME="$WORK/home" bash -c "$ITER_EXPR"'; printf %s "$v"')
+[ -n "$ITER_EXPR" ] && [ "$got" = "$WANT_VENV" ] \
+  && ok "iter.sh activates the same venv on a box" || bad "iter.sh: '$ITER_EXPR' -> '$got'"
+got=$(env -u AH_VENV -u VENV HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
+[ -n "$SSE_EXPR" ] && [ "$got" = "$WANT_VENV" ] \
+  && ok "sse_push_e2e.sh starts the server from the same venv" || bad "sse_push_e2e.sh: '$SSE_EXPR' -> '$got'"
+got=$(env -u VENV AH_VENV="$WORK/host-venv" HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
+[ "$got" = "$WORK/host-venv" ] \
+  && ok "sse_push_e2e.sh follows an AH_VENV the host sets" || bad "sse_push_e2e.sh with AH_VENV: '$got'"
+
 # ══ the scripts block's own aggregation logic (T9) ════════════════════════════
 echo "── the scripts block ──"
 # Thirteen tests, one result: the mapping from their exit codes to that result is
@@ -473,6 +528,7 @@ mk_case() { printf '#!/bin/sh\nexit %s\n' "$2" > "$BLOCK/$1.sh"; chmod +x "$BLOC
 mk_case blockpass 0
 mk_case blockskip 75
 mk_case blockfail 1
+mk_case blockfail2 2
 # AH_SCRIPT_TESTS_DIR keeps the fixtures in the temp dir: a leftover under
 # scripts/tests/ would shift every later tree_hash — the evidence this stage is
 # built on. AH_IN_SCRIPTS_BLOCK is cleared per call rather than for the whole
@@ -498,11 +554,19 @@ block_run "blockskip blockskip" --strict
 grep -q "2 of the block's tests could not run" <<<"$OUT" \
   && ok "block: every skip stays visible, not just the first" || bad "only the first skip reported"
 
-block_run "blockpass blockfail blockpass"
-[ $rc -eq 1 ] && grep -q "blockfail: FAILED" <<<"$OUT" \
+block_run "blockpass blockfail blockpass blockfail2"
+[ $rc -eq 1 ] && grep -q "blockfail: FAILED (rc=1)" <<<"$OUT" \
   && ok "block: a failing test fails the block" || bad "failing test: rc=$rc"
-[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 2 ] \
-  && ok "block: stops at the first failure" || bad "did not stop: $(grep -c '^  ── block' <<<"$OUT") ran"
+# A red test does not end the block: the weekly run of 2026-09-25 stopped at the
+# first one, and 19 of 31 tests behind it never ran.
+[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 4 ] \
+  && ok "block: runs on past a failure, every test runs" || bad "stopped early: $(grep -c '^  ── block' <<<"$OUT") of 4 ran"
+grep -q "blockfail2: FAILED (rc=2)" <<<"$OUT" && grep -q "2 of 4 failed: blockfail blockfail2" <<<"$OUT" \
+  && ok "block: every red test is named, with the count" || bad "failures not summed up: $(grep 'failed' <<<"$OUT")"
+# A failure outranks a skip: the block is red, not SKIP.
+block_run "blockskip blockfail"
+[ $rc -eq 1 ] && grep -q "FAIL  scripts (hermetic)" <<<"$OUT" && grep -q "1 of 2 failed: blockfail" <<<"$OUT" \
+  && ok "block: a failure next to a skip is a FAIL, not a SKIP" || bad "fail+skip: rc=$rc"
 
 block_run ""
 [ $rc -ne 0 ] && grep -q "AH_SCRIPT_TESTS is empty" <<<"$OUT" \

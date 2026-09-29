@@ -121,10 +121,10 @@ elif [ "${1:-}" = "--cmd" ]; then
   BOX="$(warm_get desktop)"
   [ -n "$BOX" ] || { echo "no warm box (run: warm.sh desktop)"; exit 1; }
   echo "== cmd on warm box $BOX: $CMD =="
-  # run.sh's python suites install into the box venv (AH_VENV, default /tmp/ah-venv)
+  # run.sh's python suites install into the box venv (AH_VENV, default ~/.cache/ah-venv)
   # and only run.sh activates it — bridge it here so a task Verify like
   # 'python3 -m pytest …' sees the same deps. The $-expansion happens ON THE BOX.
-  VENVPRE='v="${AH_VENV:-/tmp/ah-venv}"; [ -f "$v/bin/activate" ] && . "$v/bin/activate"; '
+  VENVPRE='v="${AH_VENV:-$HOME/.cache/ah-venv}"; [ -f "$v/bin/activate" ] && . "$v/bin/activate"; '
   # Same reason as the layer form: a Verify: command that writes an artifact needs
   # the evidence fields too, and the box cannot derive them.
   CMDENVS="$(evidence_envs)"; CMDENVS="${CMDENVS# }"

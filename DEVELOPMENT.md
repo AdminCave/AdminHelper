@@ -113,18 +113,20 @@ Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Bef
 
 ### Python-Lint/Format (ruff)
 
-Alle drei Python-Komponenten nutzen [ruff](https://docs.astral.sh/ruff/) (Lint +
-Formatter, Config in `ruff.toml` im Repo-Root):
+Alle drei Python-Komponenten und die Python-Skripte unter `scripts/` nutzen
+[ruff](https://docs.astral.sh/ruff/) (Lint + Formatter, Config in `ruff.toml` im
+Repo-Root):
 
 ```bash
-ruff check apps/server apps/monitoring apps/ca-issuer    # Lint (--fix behebt)
-ruff format apps/server apps/monitoring apps/ca-issuer   # Formatieren
+ruff check apps/server apps/monitoring apps/ca-issuer scripts    # Lint (--fix behebt)
+ruff format apps/server apps/monitoring apps/ca-issuer scripts   # Formatieren
 ```
 
-`scripts/tests/run.sh` lintet alle drei und findet ruff auch dann, wenn es
-nicht im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job
-`python-lint` deckt derzeit nur `apps/server` und `apps/monitoring` ab —
-`apps/ca-issuer` faellt lokal auf, nicht im PR-Gate.
+`scripts/tests/run.sh` lintet dieselben Pfade — die drei Komponenten im Schritt
+`ruff`, ganz `scripts/` im Schritt `ruff-vm` (Key `scripts`; die Id stammt aus der
+Zeit, als er nur `scripts/vm` abdeckte) — und findet ruff auch dann, wenn es nicht
+im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job `python-lint`
+prueft genau diese vier Pfade mit dem gepinnten ruff.
 
 ### Python-Tests lokal (ohne Docker)
 
@@ -399,7 +401,9 @@ dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sei
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
 mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` und **ein** Commit
-mit Code und Ledger. Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
+mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
+`aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
+`ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
 Eingabefehler, `3` Suite rot oder Diff-Scan-Fund, `4` blockiert (Scope/Sec),
 `74` die Suite konnte gar nicht laufen.
 
@@ -467,6 +471,16 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   `abgeschlossen` ist, und ueberspringt Zeilen, die eine ausgeschlossene Komponente
   beruehren (`Komponente:` ihres Ledgers, die Komponente eines vollen Dedup-Keys
   `<klasse>:<komponente>:<datei>:<symbol>`; ein kurzer wie `reg:<schritt>` nennt keine).
+  Das Ledger liest `next` aus dem Arbeitsbaum und von jedem lokalen und Remote-Branch, der
+  den Pfad traegt, und vereinigt die Komponenten: ein geplantes Ledger liegt bis zum Merge
+  nur auf seinem Branch (R-0065). `next` fetcht nicht — wer auf `origin/*` angewiesen ist
+  (etwa der Worker-Klon), fuehrt vorher `git fetch --prune` aus; eine veraltete Kopie auf
+  einem alten Branch schliesst hoechstens zu viel aus. Mit `--exclude-components` gilt
+  fail-closed: nennt die Spalte `Ledger` einen Pfad `tasks/….md`, den weder der Baum noch
+  ein Branch traegt, wird die Zeile uebersprungen, und stderr sagt es
+  (`next: R-nnnn skipped — ledger <pfad> not found in the tree or on any branch (git fetch?)`).
+  Ohne Ausschlussliste, bei `—`, einem Slug oder einem Pfad ausserhalb des Repos bleibt die
+  Zeile im Rennen.
   Nichts bereit: Exit 1.
 - `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
   eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
@@ -1062,7 +1076,7 @@ bash scripts/tests/desktop_e2e_connect_tunnel.sh
 # SSE-Push: Cross-Instance-Fan-out ueber echtes Redis. Zwei Server-Instanzen
 # (8081/8082) an einem Postgres+Redis; SSE-Stream gegen A, Event gegen B ->
 # A empfaengt den Push (beweist den Multi-Worker-Redis-Pfad). Braucht das
-# Server-venv (VENV=..., Default /tmp/ah-venv).
+# Server-venv (VENV=..., Default das von run.sh: AH_VENV bzw. ~/.cache/ah-venv).
 bash scripts/tests/sse_push_e2e.sh
 
 # Desktop-Live-E2E: SSE-Push in der echten GUI. Event injizieren -> die Glocke
