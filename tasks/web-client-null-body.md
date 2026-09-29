@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Client: kein null bei unlesbarem 2xx-Body (R-0107) — Task-Ledger
-Status: bereit · Branch: feature/web-client-null-body · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/web-client-null-body · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-29 (Design-Gate der Aufsicht), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0107
 Heavy: linux-full — nur `run.sh integration`, Schritt `web_live`: der Client wird strenger, erst der echte Stack belegt, dass kein vom Web genutzter Endpunkt ein 2xx ohne JSON liefert und Login, Seiten und CRUD grün bleiben. Den seltenen Flake beweist ein grüner Lauf nicht; den Mechanismus beweisen T1 und T2. e2e nicht nötig, das gemockte chromium-Projekt läuft in der PR-CI.
