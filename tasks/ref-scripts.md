@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel scripts (R-0046, R-0057, R-0090, R-0083, R-0096, R-0100) — Task-Ledger
-Status: freigegeben · Branch: harness/ref-scripts · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/ref-scripts · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0046, R-0057, R-0090, R-0083, R-0096, R-0100
 Heavy: none — run.sh, iter.sh und heavy.sh ändern sich nur als Test-Werkzeug; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den geänderten venv-Pfad auf der Box (T4) prüft der nächste Wochenlauf, bis dahin der Gleichheitstest in T4.
@@ -26,8 +26,10 @@ R-0046 bewacht ci.yml gegen bootstrap plus den Boden in requirements-dev (der Ru
 R-0100 schreibt die mechanisch bekannten Felder (Option B); R-0083 schaltet in task-close um. Nicht im Bündel,
 obwohl REF/scripts: R-0080 (Python-Sperre, Voraussetzung für Stufe 7) und R-0044 (doc-smoke-Env-Namen).
 
-### T1 — R-0046: ruff-Pins im Lockstep-Guard  [ ]
-Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, .github/workflows/ci.yml
+### T1 — R-0046: ruff-Pins im Lockstep-Guard  [x]
+Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, .github/workflows/ci.yml, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @c8841a28 2026-09-29T07:00:29+02:00
+Review: approve (opus), 3 nits erledigt
 Änderung: Eine dritte Prüfung in `toolchain-lockstep.sh`, **vor** dem Proxy-Abruf: die Version aus `ci.yml`
 (`pip install ruff==X`, :101) muss gleich dem Default von `RUFF_VERSION` in `scripts/vm/bootstrap_linux.sh:31` sein,
 und der Boden in `apps/server/requirements-dev.txt` (`ruff>=…`) darf X nicht übersteigen. Bei Drift Exit 1 mit
