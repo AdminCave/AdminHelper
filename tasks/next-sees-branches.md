@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `roadmap.py next` sieht Ledger auf Branches (R-0099) — Task-Ledger
-Status: freigegeben · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/next-sees-branches.md (Roadmap R-0099)
 Heavy: none — nur scripts/dev (Stdlib-Python, hermetische Fixtures); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine DB, keine VM.
@@ -15,8 +15,10 @@ Bau nur interaktiv (roadmap.py und der Skill sind Harness-Pfade). Vor Stufe 7 me
 über `--file` und eigene Fixtures, nie gegen `tasks/private/ROADMAP.md`. `verify.sh scripts` reicht keine
 Argumente an `dev-pytest` durch; jedes Verify fährt den ganzen scripts-Key.
 
-### T1 — `components_of` liest das Ledger aus Baum und allen Refs  [ ]
+### T1 — `components_of` liest das Ledger aus Baum und allen Refs  [x]
 Komponente: scripts · Dateien: scripts/dev/roadmap.py, scripts/dev/tests/test_roadmap.py, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @32b1f39c 2026-09-29T07:15:32+02:00
+Review: am Ende (Kurz-Ledger)
 Änderung: `components_of` (roadmap.py:814–834) vereinigt die `Komponente:`-Zeilen aus dem Baum (wie heute) und
 aus jedem `refs/heads/*` und `refs/remotes/*` (ohne symbolisches `HEAD`), das den Pfad trägt: ein
 `git -C ROOT grep` über alle Bäume mit `--literal-pathspecs`, aufgerufen mit einer Umgebung ohne `GIT_DIR`,

@@ -1502,3 +1502,107 @@ def test_only_a_real_component_is_a_component(
         )
     ).rows()
     assert roadmap.components_of(r) == components
+
+
+# ── next sees ledgers on branches (R-0099) ───────────────────────────────────
+
+
+def branch_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """ROOT as a repository whose main carries no ledger, as after a gate."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "config", "commit.gpgsign", "false")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "seed")
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    return repo
+
+
+def plan_on(repo: pathlib.Path, branch: str, component: str, path: str = "tasks/x.md") -> None:
+    """Commit a ledger on its own branch off main, then go back to main."""
+    git(repo, "switch", "-q", "-c", branch, "main")
+    (repo / path).parent.mkdir(exist_ok=True)
+    (repo / path).write_text(
+        f"### T1 — x  [ ]\nKomponente: {component} · Dateien: a\n", encoding="utf-8"
+    )
+    git(repo, "add", path)
+    git(repo, "commit", "-qm", f"plan on {branch}")
+    git(repo, "switch", "-q", "main")
+
+
+def ledger_row(ledger: str, status: str = "freigegeben") -> str:
+    return row("R-0022", status, "BUG", "Nur am Branch").replace(
+        "| — | — | — | — |", f"| {ledger} | — | — | — |", 1
+    )
+
+
+def components(ledger: str) -> set[str]:
+    [(_, r)] = roadmap.Roadmap(doc({"Neu": [ledger_row(ledger, "neu")]})).rows()
+    return roadmap.components_of(r)
+
+
+def test_a_ledger_only_on_a_local_branch_is_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    assert not (repo / "tasks" / "x.md").exists()
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def test_a_ledger_only_on_a_remote_branch_is_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker's clone: main and, after a fetch, origin/* — no local branch."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    git(repo, "update-ref", "refs/remotes/origin/feature/x", "feature/x")
+    git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/feature/x")
+    git(repo, "branch", "-q", "-D", "feature/x")
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def test_two_branches_with_different_components_are_the_union(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    plan_on(repo, "harness/x", "web")
+    assert components("tasks/x.md") == {"scripts", "web"}
+
+
+def test_next_skips_a_row_whose_ledger_is_only_on_a_branch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    s = clean_sections()
+    s["Geplant (Stufen in Reihenfolge)"] = [ledger_row("tasks/x.md")]
+    p = write(tmp_path, doc(s))
+    assert run(p, "next") == 0
+    assert capsys.readouterr().out == "R-0022 BUG Nur am Branch (tasks/x.md)\n"
+    assert run(p, "next", "--exclude-components", "scripts") == 1
+
+
+def test_the_callers_git_dir_does_not_move_the_search(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook exports GIT_DIR and GIT_INDEX_FILE: the refs are still ROOT's."""
+    other = tmp_path / "other"
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    for key, value in (
+        ("user.email", "o@example.invalid"),
+        ("user.name", "O"),
+        ("commit.gpgsign", "false"),
+    ):
+        git(other, "config", key, value)
+    git(other, "commit", "-q", "--allow-empty", "-m", "seed")
+    plan_on(other, "feature/x", "web")
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))
+    assert components("tasks/x.md") == {"scripts"}
