@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Tag-Sync-Test: Notify-Pool an jeder Testgrenze leer (R-0112) — Task-Ledger
-Status: bereit · Branch: feature/tag-sync-test-drain · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/tag-sync-test-drain · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-29 (Design-Gate der Aufsicht), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0112
 Heavy: none — nur Testcode unter `apps/server/tests/`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
@@ -23,6 +23,10 @@ die Barriere, die der Test schon kennt; sie läuft nur zu spät.
 Komponente: server · Dateien: apps/server/tests/test_tag_sync_notify.py, apps/server/tests/conftest.py
 Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @dc167b23 2026-09-29T13:29:32+02:00
 Review: am Ende (Kurz-Ledger, Gesamt-Review folgt) · Metrik: server pytest 321.16 s vor, 318.49 s nach T1 (-0.8 %) · Beweis: ohne Fixture 3x 1 failed, 1 passed; mit Fixture 3x 7 passed
+Abweichung (Bau): kein httpx-Patch in `test_leftover_notify_left_behind` — eine schlichte autouse-Fixture baut nach
+`monkeypatch` ab (Probe, pytest 9.1.1), der Patch wäre mit und ohne Fixture wirkungslos; der Rest des Notifies läuft
+mit Fixture beim Teardown gegen echtes httpx (DNS-Fehler, ~16 ms, nur geloggt).
+Review-Nachtrag (2026-09-29, Gesamt-Review): approve (sonnet); einziger Punkt (nit) war diese fehlende Abweichungs-Zeile.
 Änderung: Ans Ende von `test_tag_sync_notify.py` (heute 149 Zeilen) ein DB-freies Beweis-Paar in dieser Reihenfolge:
 `test_leftover_notify_left_behind` patcht `servers_router.httpx.post` auf eine Antwort mit `status_code = 200`,
 legt `servers_router._NOTIFY_POOL.submit(time.sleep, 1.0)` und danach `_notify_monitoring_tag_sync("leftover")` ab
