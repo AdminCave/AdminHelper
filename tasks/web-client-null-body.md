@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Client: kein null bei unlesbarem 2xx-Body (R-0107) — Task-Ledger
-Status: aktiv · Branch: feature/web-client-null-body · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/web-client-null-body · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-29 (Design-Gate der Aufsicht), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0107
 Heavy: linux-full — nur `run.sh integration`, Schritt `web_live`: der Client wird strenger, erst der echte Stack belegt, dass kein vom Web genutzter Endpunkt ein 2xx ohne JSON liefert und Login, Seiten und CRUD grün bleiben. Den seltenen Flake beweist ein grüner Lauf nicht; den Mechanismus beweisen T1 und T2. e2e nicht nötig, das gemockte chromium-Projekt läuft in der PR-CI.
@@ -38,8 +38,10 @@ Semantik: keine Stelle in docs/ — docs/developer/webui.html:75 beschreibt nur 
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: CHANGELOG `[Unreleased]` Fixed; docs/developer/webui.html + docs/en/developer/webui.html (`:75` Fehlerverhalten, `:65` Token nur im Speicher)
 
-### T2 — Seiten-Test: die Admin-Seiten überstehen einen unlesbaren 2xx-Body  [ ]
+### T2 — Seiten-Test: die Admin-Seiten überstehen einen unlesbaren 2xx-Body  [x]
 Komponente: web · Dateien: apps/web/src/pages.load.test.ts
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @bdcb7f1a 2026-09-29T13:27:23+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: Neue Datei (SPDX-Kopf `GPL-3.0-or-later`, Kevin Stenzel). Rendert Users, ApiKeys, Hooks und Audit mit einem
 fetch-Stub (Listen-Endpunkt 200 mit abbrechendem Body, Auth-Pfade 200 mit JSON) und erwartet `.page-title`, den
 EmptyState, einen Fehler-Toast im `notifications`-Store und keinen unbehandelten Fehler. Schließt die Lücke, die
