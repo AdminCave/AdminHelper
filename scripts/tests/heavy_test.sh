@@ -582,8 +582,13 @@ git -C "$AH_PRIVATE_DIR" add ROADMAP.md
 git -C "$AH_PRIVATE_DIR" commit -qm seed
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-git -C "$AH_PRIVATE_DIR" log --format=%s | grep -qx 'roadmap: add R-0018' \
-  && ok "private repo: roadmap.py committed the row" || bad "log: $(git -C "$AH_PRIVATE_DIR" log --format=%s)"
+# The log into a variable first, never `git log | grep -q`: git flushes a pipe
+# after every commit, grep -q exits on the middle line, the next write gets
+# SIGPIPE (141), and pipefail turns the match into a red — about 3 % of runs
+# (R-0103).
+log=$(git -C "$AH_PRIVATE_DIR" log --format=%s)
+grep -qx 'roadmap: add R-0018' <<<"$log" \
+  && ok "private repo: roadmap.py committed the row" || bad "log: $log"
 weekly_sha=$(git -C "$AH_PRIVATE_DIR" log --format=%H --grep='^weekly ' -1)
 [ -n "$weekly_sha" ] && ! git -C "$AH_PRIVATE_DIR" show --name-only --format= "$weekly_sha" | grep -qx ROADMAP.md \
   && ok "private repo: the weekly commit does not carry ROADMAP.md" \
@@ -1140,7 +1145,9 @@ git -C "$AH_PRIVATE_DIR" config user.name "heavy test"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 0 ] && ok "run with a private repo -> exit 0" || bad "private repo run -> rc=$rc"
-git -C "$AH_PRIVATE_DIR" log --oneline 2>/dev/null | grep -q 'weekly ' \
+# Into a variable first, for the SIGPIPE reason at 4i-d (R-0103).
+log=$(git -C "$AH_PRIVATE_DIR" log --oneline 2>/dev/null)
+grep -q 'weekly ' <<<"$log" \
   && ok "history.csv committed in the private repo" || bad "no weekly commit in the private repo"
 report_of | grep -q 'committed in' \
   && ok "the report records that the history was committed" \
