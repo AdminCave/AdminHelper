@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # REF-Bündel scripts (R-0046, R-0057, R-0090, R-0083, R-0096, R-0100) — Task-Ledger
-Status: aktiv · Branch: harness/ref-scripts · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/ref-scripts · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0046, R-0057, R-0090, R-0083, R-0096, R-0100
 Heavy: none — run.sh, iter.sh und heavy.sh ändern sich nur als Test-Werkzeug; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den geänderten venv-Pfad auf der Box (T4) prüft der nächste Wochenlauf, bis dahin der Gleichheitstest in T4.
@@ -111,8 +111,10 @@ HEAD: 70e91718
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (reg-*.md)
 
-### T6 — R-0083: `task-close` setzt nach der letzten Task `bereit`  [ ]
+### T6 — R-0083: `task-close` setzt nach der letzten Task `bereit`  [x]
 Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, .claude/skills/feature-build/SKILL.md, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @b1198523 2026-09-29T08:19:11+02:00
+Review: approve (opus) nach 1 Runde (W1, N1 erledigt)
 Änderung: Nach `ledger.sh mark-done` (task-close.sh:290–291): steht der Kopf auf `aktiv` und ist keine Task mehr
 `[ ]`, dann `ledger.sh status "$LEDGER" bereit`; das Stagen danach nimmt es in denselben Commit. `feature-build/SKILL.md`
 Abschluss-Schritt 1: ein Hand-Commit ist nur noch nötig, wenn die letzte Task per mark-skip oder `[?]` zuging. Die
