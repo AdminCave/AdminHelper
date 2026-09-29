@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # `roadmap.py next` sieht Ledger auf Branches (R-0099) — Task-Ledger
-Status: aktiv · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/next-sees-branches · Commit-Granularität: pro Task · Review: am Ende (feature-review; Harness-Pfad roadmap.py ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-27 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/next-sees-branches.md (Roadmap R-0099)
 Heavy: none — nur scripts/dev (Stdlib-Python, hermetische Fixtures); kein Stack-, Gateway-, PKI- oder Install-Pfad, keine DB, keine VM.
