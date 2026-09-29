@@ -7,18 +7,22 @@
 The lock and the installed state are fixtures in tmp_path (``--freeze``), except
 for the two cases that read the running environment through importlib.metadata.
 Every case asserts more than the exit code, so a script that always says 0 —
-or always says 1 — fails here.
+or always says 1 — fails here. The last test reads the real repository: every
+image that installs a hashed lock has a CI job that tests against that lock, on
+the image's Python.
 """
 
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 import sys
 
 import pytest
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "lock-pins.py"
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 # The shape pip-compile --generate-hashes writes: pin, hash continuations, "via" comments.
 LOCK = """\
@@ -145,3 +149,44 @@ def test_the_running_environment_is_read_by_default(tmp_path):
     r = run(tmp_path, "pytest==0.0.1\n", freeze=None)
     assert r.returncode == 1, r.stdout + r.stderr
     assert f"drift    pytest: locked 0.0.1, installed {installed}" in r.stdout
+
+
+def _locked_images() -> dict[str, str]:
+    """service -> Python minor of every image that installs a hashed lock."""
+    images: dict[str, str] = {}
+    for dockerfile in [ROOT / "Dockerfile", *sorted((ROOT / "apps").glob("*/Dockerfile"))]:
+        text = dockerfile.read_text(encoding="utf-8")
+        if "--require-hashes -r requirements.txt" not in text:
+            continue
+        pythons = re.findall(r"^FROM python:(\d+\.\d+)", text, re.M)
+        lock = re.search(r"^COPY (\S*requirements\.txt) ", text, re.M)
+        assert len(pythons) == 1 and lock, (
+            f"{dockerfile}: no single FROM python:X or COPY of the lock"
+        )
+        # The root Dockerfile builds the server from the repo root, the others from their own directory.
+        src = lock.group(1)
+        service = src.split("/")[1] if src.startswith("apps/") else dockerfile.parent.name
+        images[service] = pythons[0]
+    return images
+
+
+def _ci_job(job_id: str) -> str:
+    """The text of one job in ci.yml, from its key to the next one's; "" if there is none."""
+    text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    m = re.search(rf"^  {re.escape(job_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text, re.M | re.S)
+    return m.group(1) if m else ""
+
+
+def test_every_locked_image_has_a_lock_job_on_its_python():
+    images = _locked_images()
+    # A floor, not the list: a parser that loses an image must not pass as "nothing to check".
+    assert {"server", "monitoring", "ca-issuer"} <= images.keys(), images
+    for service, python in images.items():
+        job = _ci_job(f"python-lock-{service}")
+        assert job, f"ci.yml has no job python-lock-{service} for the {service} image"
+        assert f'python-version: "{python}"' in job, (
+            f"python-lock-{service} is not on python {python}"
+        )
+        assert f"working-directory: apps/{service}" in job
+        assert "pip install --require-hashes -r requirements.txt" in job
+        assert "lock-pins.py requirements.txt" in job

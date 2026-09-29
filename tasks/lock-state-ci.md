@@ -41,8 +41,10 @@ das immer 0 liefert, ist rot.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T3)
 
-### T2 — CI-Job `python-lock`: die Suiten gegen den Lock-Stand der Images  [ ]
+### T2 — CI-Job `python-lock`: die Suiten gegen den Lock-Stand der Images  [x]
 Komponente: scripts · Dateien: .github/workflows/ci.yml, scripts/dev/tests/test_lock_pins.py
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @4d32865a 2026-09-29T14:32:59+02:00
+Review: Review am Ende (Kurz-Ledger, Opus)
 Änderung: Neuer Job in `ci.yml`, Python 3.12 wie `FROM python:3.12-slim`, für server, monitoring und ca-issuer
 (Matrix oder drei Jobs, je nachdem, ob die Services von server und monitoring sich sauber in eine Matrix fassen
 lassen — Postgres/Redis wie in den bestehenden Jobs): `pip install --require-hashes -r requirements.txt`, dann
