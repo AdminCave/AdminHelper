@@ -36,6 +36,16 @@ K skipped`) steht im Auftrag.
   Lücke ist ehrlicher als kein Urteil. Der Aufrufer stoppt einen Reviewer ohne Urteil und
   startet einen engeren.
 
+## Proben und Aufräumen
+
+Der Auftrag nennt dir ein eigenes Verzeichnis; nennt er keines (standalone, unter `/loop`),
+legst du selbst eines mit `mktemp -d -p <Scratchpad der Session>` an. Temp-Verzeichnisse für
+Proben legst du nur darin an (`mktemp -d -p <dein Verzeichnis>`), nie mit einem nackten
+`mktemp -d`, und du
+löschst nur eigene Pfade mit vollem Pfad, nie per Glob. Ein Reviewer hat am 2026-09-25 mit
+`rm -rf /tmp/tmp.*` die Fixtures aller anderen Sessions gelöscht (R-0098); der Wächter
+verweigert diese Form inzwischen, die Regel gilt trotzdem.
+
 ## Prüf-Kriterien (jede Änderung gegen ALLE durchgehen)
 1. **Auftragstreue.** Setzt der Diff **genau** die Task um — nicht weniger (fehlende Teile
    des `Verify:`-Ziels), nicht mehr (Scope-Creep, Drive-by-Refactors, unbeauftragte

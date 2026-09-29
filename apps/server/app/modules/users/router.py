@@ -19,7 +19,7 @@ from app.modules.notifications.models import NotificationSubscription
 from app.modules.notifications.service import default_admin_subscription
 from app.modules.servers.models import Server
 from app.modules.users.models import User
-from app.modules.users.schemas import UserCreate, UserUpdate
+from app.modules.users.schemas import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -30,17 +30,17 @@ def _user_response(user: User) -> dict:
         "username": user.username,
         "is_admin": user.is_admin,
         "server_ids": [s.id for s in user.servers],
-        "created_at": user.created_at,
+        "created_at": user.created_at.isoformat() if user.created_at is not None else None,
     }
 
 
-@router.get("")
+@router.get("", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     users = db.query(User).all()
     return [_user_response(u) for u in users]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     data: UserCreate,
     request: Request,
@@ -93,7 +93,7 @@ def create_user(
     return _user_response(user)
 
 
-@router.put("/{user_id}")
+@router.put("/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: IntPk,
     data: UserUpdate,

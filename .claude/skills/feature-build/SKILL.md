@@ -147,6 +147,10 @@ Stufe 7).
    - **Modell:** `model: sonnet` ist der Default. `opus` **nur**, wenn der Diff einen
      **Risikopfad** berührt: PKI/mTLS, Auth/AuthZ, SSRF-Guards, DB-Migrationen (Alembic),
      Release-Workflows (`.github/workflows/release*`, `scripts/install.sh`/`update.sh`).
+   - **Eigenes Verzeichnis:** je Reviewer `mktemp -d -p <Scratchpad der Session>` anlegen und
+     im Prompt nennen, samt der Regel aus feature-review „Proben und Aufräumen": Proben nur
+     mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade mit vollem Pfad löschen, nie per
+     Glob. Kein fester Pfad unter `/tmp` mit eingebauter uid: der Runner hat eine andere.
    - **Zeitbudget 10 Minuten.** Liegt nach ~10 Minuten kein Urteil vor: den Agent stoppen
      (`TaskStop`) und **einmal** einen frischen mit engerem Prompt starten (nur die geänderten
      Dateien und die Kriterien 1–4 nennen). Bleibt auch der ohne Urteil → selbst gegen dieselben

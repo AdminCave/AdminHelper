@@ -90,6 +90,17 @@ if [ -f "$DEVENV" ]; then
   set +e   # a `set -e` in the devenv file must not leak into this wrapper
 fi
 
+# A TMPDIR of its own per run (R-0098): a cleanup that reached for /tmp/tmp.*
+# took the fixtures of the suite running next to it. Whatever the suite leaves
+# in there goes with the run — pytest's tmp_path included. Set only after the
+# devenv block, whose EXIT trap this one would otherwise replace; `exit "$rc"`
+# below keeps its code, a trap without an exit of its own does not change it.
+RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/ah-verify.XXXXXXXX")" || { echo "verify.sh: mktemp failed" >&2; exit 2; }
+# Absolute: a relative TMPDIR would point elsewhere after the `cd "$TREE"` below.
+case "$RUN_TMP" in /*) ;; *) RUN_TMP="$PWD/$RUN_TMP" ;; esac
+trap 'rm -rf "$RUN_TMP"' EXIT
+export TMPDIR="$RUN_TMP"
+
 # The quick layer, not just unit: a component's fast suite is lint AND unit
 # (CLAUDE.md's component table — ruff, gofmt, shellcheck live in layer_lint).
 # Delegating to `unit` alone would have made `verify.sh server` silently skip

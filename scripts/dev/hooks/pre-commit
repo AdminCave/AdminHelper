@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# pre-commit — git hook: `review.sh sec --staged` before every commit (R-0102).
+#
+# task-close.sh runs the same check, but the plan commit at the gate and every
+# commit by hand did not: nothing stopped the private roadmap, a security ledger
+# or a finding's dedup key on its way into this public repo.
+#
+# Armed per clone, once: `git config core.hooksPath scripts/dev/hooks`
+# (`bash scripts/dev/harness.sh status` shows it). The path is relative, so every
+# worktree runs the hook of its OWN branch, and a branch without this file has
+# none. For `git commit -a` git hands the hook a temporary index through
+# GIT_INDEX_FILE; `git diff --staged` inside review.sh reads that one.
+#
+# Exit ≠ 0 aborts the commit: 4 for a finding, anything else when review.sh could
+# not run — fail closed.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
+exec bash "$ROOT/scripts/dev/review.sh" sec --staged

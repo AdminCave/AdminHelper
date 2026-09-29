@@ -65,6 +65,10 @@ n=$(cat "$SHIM_STATE/iter.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "
 if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -f "$SHIM_STATE/artifact.json" ]; then
   cp "$SHIM_STATE/artifact.json" "$AH_OUT_DIR/last-all.json"
 fi
+# The box's JUnit XMLs arrive the same way, merged into what is already there.
+if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -d "$SHIM_STATE/junit" ]; then
+  mkdir -p "$AH_OUT_DIR/junit" && cp "$SHIM_STATE/junit/"*.xml "$AH_OUT_DIR/junit/"
+fi
 echo "iter shim call $n: $* (AH_NO_SYNC=${AH_NO_SYNC:-unset} AH_SPEC=${AH_SPEC:-unset})"
 printf 'AH_NO_SYNC=%s AH_SPEC=%s AH_REQUIRED=%s ARGS=%s\n' "${AH_NO_SYNC:-unset}" "${AH_SPEC:-unset}" "${AH_REQUIRED-unset}" "$*" >> "$SHIM_STATE/iter.args"
 eval "out=\${SHIM_ITER_OUT$n:-\${SHIM_ITER_OUT:-}}"
@@ -578,8 +582,13 @@ git -C "$AH_PRIVATE_DIR" add ROADMAP.md
 git -C "$AH_PRIVATE_DIR" commit -qm seed
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-git -C "$AH_PRIVATE_DIR" log --format=%s | grep -qx 'roadmap: add R-0018' \
-  && ok "private repo: roadmap.py committed the row" || bad "log: $(git -C "$AH_PRIVATE_DIR" log --format=%s)"
+# The log into a variable first, never `git log | grep -q`: git flushes a pipe
+# after every commit, grep -q exits on the middle line, the next write gets
+# SIGPIPE (141), and pipefail turns the match into a red — about 3 % of runs
+# (R-0103).
+log=$(git -C "$AH_PRIVATE_DIR" log --format=%s)
+grep -qx 'roadmap: add R-0018' <<<"$log" \
+  && ok "private repo: roadmap.py committed the row" || bad "log: $log"
 weekly_sha=$(git -C "$AH_PRIVATE_DIR" log --format=%H --grep='^weekly ' -1)
 [ -n "$weekly_sha" ] && ! git -C "$AH_PRIVATE_DIR" show --name-only --format= "$weekly_sha" | grep -qx ROADMAP.md \
   && ok "private repo: the weekly commit does not carry ROADMAP.md" \
@@ -846,6 +855,35 @@ mkdir -p "$AH_OUT_DIR/screenshots" && echo png > "$AH_OUT_DIR/screenshots/login.
 out=$(bash "$HEAVY" all 2>&1)
 ls "$AH_OUT_DIR"/weekly/*/screenshots/login.png >/dev/null 2>&1   && ok "screenshots are copied into the run directory the report names"   || bad "the report points at a directory the artifacts are not in"
 
+# ── 5d: the box's JUnit XMLs land in the run directory and are counted ───────
+# One XML is already in the local junit/ before the run — left by a local
+# verify.sh or an earlier weekly. It is not this run's evidence and must neither
+# be copied nor counted.
+mk_case
+artifact "server pytest:pass:120"
+mkdir -p "$SHIM_STATE/junit" "$AH_OUT_DIR/junit"
+echo '<testsuites/>' > "$SHIM_STATE/junit/server-pytest.xml"
+echo '<testsuites/>' > "$SHIM_STATE/junit/stack-redis.xml"
+echo '<testsuites/>' > "$AH_OUT_DIR/junit/stale-from-last-week.xml"
+out=$(bash "$HEAVY" all 2>&1)
+ls "$AH_OUT_DIR"/weekly/*/junit/server-pytest.xml "$AH_OUT_DIR"/weekly/*/junit/stack-redis.xml >/dev/null 2>&1 \
+  && ok "the pulled JUnit XMLs are copied into the run directory" \
+  || bad "junit in the run dir: $(ls "$AH_OUT_DIR"/weekly/*/junit 2>&1)"
+ls "$AH_OUT_DIR"/weekly/*/junit/stale-from-last-week.xml >/dev/null 2>&1 \
+  && bad "a JUnit XML from before the run was copied as this run's" \
+  || ok "a JUnit XML from before the run is not carried into the run directory"
+report_of | grep -qE '^- JUnit: 2 XML in `.*/weekly/[^/]+/junit`$' \
+  && ok "the report counts the run's JUnit XMLs" \
+  || bad "report junit line: $(report_of | grep -m1 'JUnit' || echo none)"
+# A run whose box pulled none says 0, not nothing: a missing line would look
+# like a report from before the field existed.
+mk_case
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1)
+report_of | grep -qE '^- JUnit: 0 XML in ' \
+  && ok "no pulled XMLs -> the report says 0" \
+  || bad "report junit line without XMLs: $(report_of | grep -m1 'JUnit' || echo none)"
+
 # ── 6: doctor red ────────────────────────────────────────────────────────────
 mk_case
 export SHIM_DOCTOR_RC=1
@@ -1107,7 +1145,9 @@ git -C "$AH_PRIVATE_DIR" config user.name "heavy test"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 0 ] && ok "run with a private repo -> exit 0" || bad "private repo run -> rc=$rc"
-git -C "$AH_PRIVATE_DIR" log --oneline 2>/dev/null | grep -q 'weekly ' \
+# Into a variable first, for the SIGPIPE reason at 4i-d (R-0103).
+log=$(git -C "$AH_PRIVATE_DIR" log --oneline 2>/dev/null)
+grep -q 'weekly ' <<<"$log" \
   && ok "history.csv committed in the private repo" || bad "no weekly commit in the private repo"
 report_of | grep -q 'committed in' \
   && ok "the report records that the history was committed" \

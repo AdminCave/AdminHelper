@@ -113,6 +113,23 @@
           real gegen ein zweites Install-Verzeichnis (<code>UPDATE_SH_OK</code>, oder
           <code>UPDATE_SH_SKIP</code>, wenn das Release kein Runtime-Bundle hat). Ohne Docker oder Netz endet
           sie mit 75.</p>
+          <p><strong>Pflicht-Tests gegen den Stack.</strong> Drei Tests brauchen einen echten Dienst und
+          skippen sich &uuml;berall, wo er fehlt: der Migrations-Smoke des Monitorings (Postgres),
+          <code>test_stream_redis</code> (Redis) und der TOCTOU-Test in <code>test_db_token_store</code>
+          (Postgres, echte Nebenl&auml;ufigkeit). Der <code>integration</code>-Layer f&auml;hrt sie im Schritt
+          <code>stack-pytest</code> (<code>scripts/tests/stack_pytest.sh</code>) gegen Postgres und Redis des
+          Compose-Stacks, die das Test-Overlay nur auf <code>127.0.0.1</code> ver&ouml;ffentlicht. Dort ist ein
+          Skip ein Fehler, denn der Dienst ist da: das Urteil kommt aus der JUnit-XML jedes Tests
+          (<code>junit/stack-*.xml</code>), und ein Skip, ein Lauf ohne Test oder eine fehlende Datei f&auml;rbt
+          den Schritt rot. Im PR-CI laufen der Migrations-Smoke und <code>test_stream_redis</code> weiter
+          gegen die Service-Container ihrer Jobs (Postgres, Redis auf 6380): dort f&auml;ngt schon der PR
+          einen Fehler, ohne Image-Build und ohne Stack. Den TOCTOU-Test f&auml;hrt das PR-CI nicht mit
+          Postgres &ndash; der Job <code>ca-issuer</code> nutzt den In-Memory-Token-Store &ndash;, mit echtem
+          Postgres l&auml;uft er nur hier. Der zweite Schritt, <code>web-live</code>
+          (<code>scripts/tests/web_live.sh</code>), f&auml;hrt das Playwright-Projekt <code>live</code> ohne
+          Mocks gegen das Gateway: Login als Seed-Admin, jede Admin-Seite, Benutzer anlegen und l&ouml;schen.
+          Das Projekt <code>chromium</code> bleibt im PR-CI gegen die Mocks; <code>live</code> gibt es nur,
+          wenn <code>ITEST_WEB_URL</code> gesetzt ist.</p>
 
           <p><strong>Evidenz.</strong> Jeder Lauf schreibt <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
           (Default <code>.ah-out/</code>, gitignored) mit Layer, Flags, Pflicht-Menge, Zeitstempeln,
@@ -120,7 +137,11 @@
           <code>tree_hash</code>. Den Tree-Hash liefert <code>scripts/dev/tree-hash.sh</code>: er wird in einem
           Wegwerf-Index gebildet, sieht also auch <em>untracked</em> Dateien, w&auml;hrend <code>tasks/</code>
           und die Ausgabeverzeichnisse ausgeklammert bleiben. Ein Haken im Ledger &auml;ndert die Evidenz
-          eines Laufs damit nicht, eine neue, noch nicht committete Quelldatei sehr wohl.</p>
+          eines Laufs damit nicht, eine neue, noch nicht committete Quelldatei sehr wohl.
+          Au&szlig;erdem schreiben die pytest-Schritte, Playwright und die Desktop-E2E JUnit-XML nach
+          <code>$AH_OUT_DIR/junit/</code>; jeder Lauf verwirft vorher die des letzten, und der Wochenlauf
+          kopiert sie in sein Laufverzeichnis. Wer einen roten Lauf klassifiziert, liest Testf&auml;lle statt
+          Logs.</p>
 
           <h2>Wochenlauf (<code>scripts/tests/heavy.sh</code>)</h2>
           <p>Der schwere Tier lief bisher, wenn jemand daran dachte, und seine Ergebnisse wurden nirgends
