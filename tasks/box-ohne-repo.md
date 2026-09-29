@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Box ohne Repo — was über `.git` auf der Box gesagt wird — Task-Ledger
-Status: aktiv · Branch: feature/box-ohne-repo · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/box-ohne-repo · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-27, übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0095
 Heavy: none — zwei Kommentare und eine Doku-Stelle; kein Box-, Stack- oder Install-Pfad ändert sein Verhalten.
@@ -33,8 +33,10 @@ HEAD: b4802aa1
 Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: keine (Kommentare; die Doku-Stelle ist T2)
 
-### T2 — `DEVELOPMENT.md`: Sync aus einem Worktree ohne „validiert“  [ ]
+### T2 — `DEVELOPMENT.md`: Sync aus einem Worktree ohne „validiert“  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @6b790d47 2026-09-29T09:01:25+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `DEVELOPMENT.md:1165–1166` sagt heute: „Der Sync aus Worktrees ist validiert; `.git` reist mit, die
 Evidenzfelder kommen trotzdem vom Client.“ Künftig steht dort, was gilt: Aus einem Worktree reist `.git` als
 Zeiger mit, der auf der Box ins Leere zeigt. Die Box braucht kein Repo; Kopf und Tree-Hash gibt `iter.sh` vom
