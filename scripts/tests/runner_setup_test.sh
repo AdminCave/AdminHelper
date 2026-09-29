@@ -153,9 +153,9 @@ PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); 
   && ok "a real run without --dry-run still demands root and names no override" \
   || bad "a real run reacted to the override: rc=$prc out=$PLAN"
 
-# The runner's own venv path: run.sh's default (/tmp/ah-venv) belongs to whoever
-# created it first, and pip then fails for this user in exactly the three suites
-# its AH_REQUIRED declares mandatory.
+# The runner's own venv path: run.sh's default until R-0057 (/tmp/ah-venv)
+# belonged to whoever created it first, and pip then failed for this user in
+# exactly the three suites its AH_REQUIRED declares mandatory.
 grep -q 'AH_VENV=' <<<"$OUT" && ok "plans: its own AH_VENV, not the shared /tmp one" \
   || bad "the devenv does not set AH_VENV"
 # A host-given AH_REQUIRED wins as is (run.sh), so a pytest-only step missing

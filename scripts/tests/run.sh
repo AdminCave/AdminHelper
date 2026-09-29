@@ -131,12 +131,16 @@ export AH_PYTEST_RS
 AH_ARGS="${AH_ARGS:-}"
 export AH_ARGS
 
-# Python suites install into a venv (AH_VENV, default /tmp/ah-venv) so a dev's
+# Python suites install into a venv (AH_VENV, default ~/.cache/ah-venv) so a dev's
 # default `run.sh quick` never mutates the host's system site-packages (PEP 668) —
 # no host-wide PIP_BREAK_SYSTEM_PACKAGES. ensure_venv (called at the top of
 # layer_unit) creates + activates it; the activation reaches the run_step `bash -c`
 # subshells via the exported PATH/VIRTUAL_ENV. Ephemeral boxes reuse it too (6.140).
-AH_VENV="${AH_VENV:-/tmp/ah-venv}"
+# Under the home, not /tmp: systemd-tmpfiles clears /tmp after ten days, and a
+# venv half gone there turned four suites red without a code change (2026-09-21).
+# The path .devenv.sh and runner-setup.sh set. Without HOME (an `env -i` shell)
+# the home comes from passwd, as for AH_PY_LOCK_FILE below.
+AH_VENV="${AH_VENV:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/ah-venv}"
 ensure_venv() {
   [ -x "$AH_VENV/bin/python" ] || python3 -m venv "$AH_VENV" \
     || { echo "  (venv creation failed; python suites may hit PEP 668)" >&2; return 1; }

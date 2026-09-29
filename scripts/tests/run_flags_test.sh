@@ -240,6 +240,9 @@ cat > "$PYSHIM/python3" <<'EOF'
 # `-m pip install …` and `-m venv …` succeed silently; `-m pytest …` prints a
 # short summary. The SHIM_* knobs reproduce the shapes real suites produce.
 case "$*" in
+  # SHIM_VENV_LOG records where run.sh asks for the venv. Before the pip arm: a
+  # temp path may well contain "pip".
+  *"-m venv "*) [ -n "${SHIM_VENV_LOG:-}" ] && printf '%s\n' "$*" >> "$SHIM_VENV_LOG"; exit 0 ;;
   *pip*|*venv*) exit 0 ;;
   # The schemathesis step probes for its package before running anything;
   # SHIM_NO_SCHEMATHESIS stands in for a box where it is not installed.
@@ -487,6 +490,33 @@ grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out5/last-li
 # "fail" or "skip" — the summary counts it twice, the artifact must not.
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out2" AH_REQUIRED="go-agent"       "$BARE/bash" "$RUN" unit --strict --step "go agent" 2>&1)
 grep -q '"result": "strict-failed"' "$WORK/out2/last-unit.json"   && ok "artifact: a strict-failed skip has its own verdict"   || bad "verdict: $(grep -A2 '"steps"' "$WORK/out2/last-unit.json" | tr -d '\n')"
+
+# ══ where the python venv lives (R-0057) ══════════════════════════════════════
+echo "── the venv default ──"
+# Not under /tmp: systemd-tmpfiles clears it after ten days, and a venv half gone
+# there turned four suites red without a code change. This file exports AH_VENV
+# for every case; this one unsets it and gives run.sh a fixture HOME.
+VLOG="$WORK/venv.log"; : > "$VLOG"
+env -u AH_VENV PATH="$PYSHIM" HOME="$WORK/home" SHIM_VENV_LOG="$VLOG" AH_OUT_DIR="$WORK/out" \
+  "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" >/dev/null 2>&1
+grep -qxF -- "-m venv $WORK/home/.cache/ah-venv" "$VLOG" \
+  && ok "AH_VENV unset -> run.sh builds the venv under \$HOME/.cache" \
+  || bad "run.sh asked for the venv as: $(tr '\n' '|' < "$VLOG")"
+# One default in three places: run.sh builds the venv, iter.sh activates it on a
+# box for a Verify: command, sse_push_e2e.sh starts the server from it. Each
+# expression is evaluated as written, with AH_VENV/VENV unset and the same HOME.
+WANT_VENV="$WORK/home/.cache/ah-venv"
+ITER_EXPR=$(sed -n "s/^[[:space:]]*VENVPRE='\(v=\"[^;]*\"\);.*/\1/p" "$REPO_ROOT/scripts/vm/iter.sh")
+SSE_EXPR=$(grep -m1 '^VENV=' "$REPO_ROOT/scripts/tests/sse_push_e2e.sh")
+got=$(env -u AH_VENV HOME="$WORK/home" bash -c "$ITER_EXPR"'; printf %s "$v"')
+[ -n "$ITER_EXPR" ] && [ "$got" = "$WANT_VENV" ] \
+  && ok "iter.sh activates the same venv on a box" || bad "iter.sh: '$ITER_EXPR' -> '$got'"
+got=$(env -u AH_VENV -u VENV HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
+[ -n "$SSE_EXPR" ] && [ "$got" = "$WANT_VENV" ] \
+  && ok "sse_push_e2e.sh starts the server from the same venv" || bad "sse_push_e2e.sh: '$SSE_EXPR' -> '$got'"
+got=$(env -u VENV AH_VENV="$WORK/host-venv" HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
+[ "$got" = "$WORK/host-venv" ] \
+  && ok "sse_push_e2e.sh follows an AH_VENV the host sets" || bad "sse_push_e2e.sh with AH_VENV: '$got'"
 
 # ══ the scripts block's own aggregation logic (T9) ════════════════════════════
 echo "── the scripts block ──"

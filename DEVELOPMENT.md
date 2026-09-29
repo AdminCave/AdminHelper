@@ -1064,7 +1064,7 @@ bash scripts/tests/desktop_e2e_connect_tunnel.sh
 # SSE-Push: Cross-Instance-Fan-out ueber echtes Redis. Zwei Server-Instanzen
 # (8081/8082) an einem Postgres+Redis; SSE-Stream gegen A, Event gegen B ->
 # A empfaengt den Push (beweist den Multi-Worker-Redis-Pfad). Braucht das
-# Server-venv (VENV=..., Default /tmp/ah-venv).
+# Server-venv (VENV=..., Default das von run.sh: AH_VENV bzw. ~/.cache/ah-venv).
 bash scripts/tests/sse_push_e2e.sh
 
 # Desktop-Live-E2E: SSE-Push in der echten GUI. Event injizieren -> die Glocke

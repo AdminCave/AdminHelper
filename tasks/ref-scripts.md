@@ -76,8 +76,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (ruff-Abschnitt :124 ff.)
 Abhängt von: T2
 
-### T4 — R-0057: `AH_VENV`-Default von /tmp nach ~/.cache  [ ]
-Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/vm/iter.sh, scripts/tests/sse_push_e2e.sh, DEVELOPMENT.md
+### T4 — R-0057: `AH_VENV`-Default von /tmp nach ~/.cache  [x]
+Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/vm/iter.sh, scripts/tests/sse_push_e2e.sh, DEVELOPMENT.md, scripts/tests/run_flags_test.sh, scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @7aa2dde0 2026-09-29T07:51:10+02:00
+Review: approve (opus), Kommentar-Nits erledigt
 Änderung: Default `$HOME/.cache/ah-venv` in `run.sh:139` (mit HOME-Fallback über `getent` wie an anderer Stelle in
 run.sh, wegen `set -u`), derselbe Default in `iter.sh:127` (VENVPRE) und in `sse_push_e2e.sh:30` als
 `${VENV:-${AH_VENV:-…}}`. Kommentare run.sh:134, iter.sh:124, sse_push_e2e.sh:19 und `DEVELOPMENT.md:996`
