@@ -47,8 +47,10 @@ Verify: bash scripts/tests/run.sh quick --strict --only scripts
 Doku: DEVELOPMENT.md (`next`, fail-closed)
 Abhängt von: T1
 
-### T3 — Gate-Text: `next` sieht Branch-Ledger  [ ]
+### T3 — Gate-Text: `next` sieht Branch-Ledger  [x]
 Komponente: scripts · Dateien: .claude/skills/feature-plan/SKILL.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @d0656f57 2026-09-29T07:33:06+02:00
+Review: am Ende (Kurz-Ledger)
 Änderung: Der Satz „`next --exclude-components` sieht es dort noch nicht (R-0099)" (feature-plan/SKILL.md, §4,
 um :203–205) wird ersetzt: `next` sieht Ledger auf lokalen und Remote-Branches (nach `git fetch`), ein nirgends
 gefundenes Ledger gilt als Konflikt; `git show <branch>:tasks/<slug>.md` bleibt für die Prüfung von Hand
