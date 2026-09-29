@@ -128,6 +128,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Web-Panel: F5 waehrend eine Liste laedt (R-0107):** `apps/web/src/lib/api/client.ts` gibt
+  bei einem 2xx, dessen Body sich nicht lesen laesst (Reload bricht die Uebertragung ab, oder
+  kein JSON), nicht mehr still `null` zurueck, sondern wirft `ApiError(status, 'Invalid response
+  body')`. Die Seiten Benutzer, API-Keys, Hooks und Audit lasen `.length` auf dem `null` und
+  endeten im `pageerror` „Cannot read properties of null (reading 'length')", den der Live-Smoke
+  fand; jetzt zeigen sie ihren Fehler-Toast. 204 und ein gueltiges JSON-`null` bleiben `null`.
+  `docs/developer/webui.html` (DE+EN) sagt dazu, dass der Access-Token nur im Speicher liegt.
 - **Wartungsfenster mit Offset am Kalenderrand (Monitoring):** `POST /maintenance` und
   `PUT /maintenance/{id}` antworten auf ein `starts_at`/`ends_at` mit Zeitzonen-Offset, das in
   UTC umgerechnet vor dem Jahr 1 oder nach dem Jahr 9999 laege (etwa

@@ -48,10 +48,13 @@ BOX_LOG="$OUT_DIR/last.out.log"
 # keeps the old 8h renewal.
 TTL="${AH_WARM_TTL:-$(warm_get desktop_ttl)}"; TTL="${TTL:-8h}"
 
-# The box has no .git (the sync carries files, not the repository), so it cannot
-# compute the evidence fields of last-<layer>.json itself — without these, every
-# box returns an artifact with an empty head and tree_hash. Computed here, over
-# the tree that is about to be synced.
+# The box does not rely on a .git of its own: from the main checkout the sync
+# carries the repository along, from a worktree only a pointer file whose gitdir
+# does not exist on the box — and the box needs no repository (Kevin, 2026-09-25).
+# run.sh asks the box's git first and falls back on these two values
+# (evidence_field); without them a box synced from a worktree returns an artifact
+# with an empty head and tree_hash. Computed here, over the tree that is about to
+# be synced.
 #
 # Nothing is passed under AH_NO_SYNC: the box then keeps an OLDER tree, and
 # labelling it with today's hash would be a run claiming a tree it never saw.

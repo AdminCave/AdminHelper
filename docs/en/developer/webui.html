@@ -62,7 +62,7 @@
           <table>
             <thead><tr><th>Store</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>auth</code></td><td>Login, logout, refresh, current user; only the short-lived access token is in <code>localStorage</code> (<code>adminhelper_token</code>), the long-lived refresh token lives in an <code>HttpOnly</code> cookie (set by the server, unreadable to JS/XSS).</td></tr>
+              <tr><td><code>auth</code></td><td>Login, logout, refresh, current user; the short-lived access token lives only in the memory of the <code>client.ts</code> module, never in <code>localStorage</code>/<code>sessionStorage</code> (the client deletes copies left by older builds on load), the long-lived refresh token lives in an <code>HttpOnly</code> cookie (set by the server, unreadable to JS/XSS). After a reload <code>restoreSession()</code> gets a new access token through the cookie.</td></tr>
               <tr><td><code>users</code></td><td>User CRUD incl. the user&harr;server mapping (the assignment stays in the web panel).</td></tr>
               <tr><td><code>apikeys</code></td><td>Key CRUD, one-time clear-text reveal.</td></tr>
               <tr><td><code>hooks</code></td><td>Hook CRUD, trigger test, token rotation.</td></tr>
@@ -72,7 +72,7 @@
           </table>
 
           <h2>API Wrapper</h2>
-          <p>All HTTP calls go through <code>src/lib/api/client.ts</code>. The client owns the access token, holds an in-flight-deduplicated <code>tryRefresh()</code> promise and automatically refreshes on 401. If that fails, <code>registerAuthFailureHandler()</code> calls into the <code>auth</code> store, which navigates to login.</p>
+          <p>All HTTP calls go through <code>src/lib/api/client.ts</code>. The client owns the access token, holds an in-flight-deduplicated <code>tryRefresh()</code> promise and automatically refreshes on 401. If that fails, <code>registerAuthFailureHandler()</code> calls into the <code>auth</code> store, which navigates to login. A 2xx whose body cannot be read (cut off by a reload mid-transfer, or not JSON) throws <code>ApiError(status, 'Invalid response body')</code> instead of quietly returning <code>null</code>; only a 204 and a valid JSON <code>null</code> yield <code>null</code>.</p>
           <p>Domain wrappers sit alongside: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (only for the user&harr;server assignment), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP server configuration) &ndash; all typed via <code>types.ts</code>.</p>
 
           <h2>i18n</h2>

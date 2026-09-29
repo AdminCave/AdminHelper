@@ -395,13 +395,14 @@ json_list() {  # json_list <item…>
   for i in "$@"; do [ "$first" = 1 ] && first=0 || printf ', '; json_str "$i"; done
   printf ']'
 }
-# The evidence fields come from the CLIENT, not from the box. The sync does
-# carry .git along (scripts/vm/rsync-exclude.txt keeps it on purpose), but a box
-# without git installed — or a tree that arrived by any other route — answers
-# nothing, and the fields would then be empty on exactly the machine the heavy
-# runs happen on. The client that synced the tree passes both values in.
+# The evidence fields: the box's own git first, the CLIENT's values second. The
+# sync carries .git along, but only from the main checkout is it a repository;
+# from a worktree it is a pointer into a directory the box does not have, and a
+# box without git — or a tree that arrived by any other route — answers nothing
+# at all. The fields would then be empty on exactly the machine the heavy runs
+# happen on, so the client that synced the tree passes both values in (iter.sh).
 #
-# They describe the CLIENT's tree, which is not byte-for-byte the box's: the sync
+# The client's values describe the CLIENT's tree, which is not byte-for-byte the box's: the sync
 # excludes what scripts/vm/rsync-exclude.txt lists (today apps/server/data), while the hash
 # excludes tasks/ and the output dirs. The hash therefore only stays truthful as
 # long as no exclude in rsync-exclude.txt covers a tracked source path.

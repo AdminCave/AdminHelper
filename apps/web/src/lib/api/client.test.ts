@@ -228,6 +228,56 @@ describe('http client token refresh', () => {
     expect(calls[2].authorization).toBe('Bearer new-token');
   });
 
+  // A 2xx promises a T. A body that cannot be read is not one: returning null here
+  // reached the list pages as a list, and `.length` on it became the pageerror the
+  // live smoke found when it reloaded mid-request (R-0107).
+  it('rejects a 200 whose body stream aborts with an ApiError, not null (R-0107)', async () => {
+    const aborted = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new DOMException('The operation was aborted.', 'AbortError'));
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(aborted, { status: 200 }))),
+    );
+
+    const { http } = await importClient();
+    const err = await http.get('/api/users').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    const apiErr = err as ApiError;
+    expect(apiErr.name).toBe('ApiError');
+    expect(apiErr.status).toBe(200);
+    expect(apiErr.message).toBe('Invalid response body');
+  });
+
+  it('rejects a 200 with an empty body with an ApiError, not null (R-0107)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 200 }))),
+    );
+
+    const { http } = await importClient();
+    const err = await http.get('/api/users').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    const apiErr = err as ApiError;
+    expect(apiErr.name).toBe('ApiError');
+    expect(apiErr.status).toBe(200);
+    expect(apiErr.message).toBe('Invalid response body');
+  });
+
+  it('still returns a JSON null body as null', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(jsonResponse(null))),
+    );
+
+    const { http } = await importClient();
+    await expect(http.get<null>('/api/something')).resolves.toBeNull();
+  });
+
   it('translates a request timeout into an ApiError with status 0 (4.74)', async () => {
     // A hung server (dead upstream, no response) makes AbortSignal.timeout fire a TimeoutError;
     // it must surface as an ApiError so the UI can unstick, not propagate as a raw DOMException.
