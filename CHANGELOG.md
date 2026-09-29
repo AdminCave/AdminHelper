@@ -9,6 +9,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **AH-STATUS nennt die geplanten Workflows (R-0120):** Der SessionStart-Hook
+  `scripts/dev/hooks/session-status.sh` druckt je Workflow mit `schedule:` eine Zeile
+  `Geplant: <name> <Tag> (<n> d): <conclusion>` fuer den neuesten abgeschlossenen Lauf auf `main`
+  und warnt bei einem roten Lauf (mit `gh run view <id> --log-failed`) oder einem Lauf aelter als
+  8 Tage. Bisher sah zwischen zwei Wochenlaeufen keine Session, dass der Dependency Audit rot war.
+  Ohne `gh` steht dort `?`, ohne Warnung. Anleitung: `DEVELOPMENT.md` „Session-Status-Hook".
 - **CI prueft den Lock-Stand der Images (R-0115):** Die Test-Jobs installieren das lose
   `requirements.in`, die Images den gehashten Lock — der lose Stand laeuft dem Lock voraus, und
   ein Bruch wie der von fastapi 0.138 im Auth-Gate-Test zeigte sich nur dort. Neu fahren die Jobs

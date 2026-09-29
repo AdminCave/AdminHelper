@@ -38,16 +38,22 @@ bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# ── gh shim: the hook asks for two numbers; the shim answers from env ──────────
+# ── gh shim: the hook asks for two numbers and a run; the shim answers from env ─
+# `run` answers with what the hook's -q expression prints ("<createdAt>
+# <conclusion> <id>" or "kein Lauf") — the shim cannot evaluate jq, so the real
+# expression is checked by a real run (ledger R-0120). The default is a green run
+# today, so every case that does not ask for more stays free of WARN lines.
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/gh" <<'EOF'
 #!/usr/bin/env bash
 case "${SHIM_GH:-ok}" in
   fail) exit 1 ;;
 esac
+[ -n "${SHIM_LOG:-}" ] && echo "$*" >> "$SHIM_LOG"
 case "$1" in
   release) echo "${SHIM_DRAFTS:-0}" ;;
   pr)      echo "${SHIM_PRS:-0}" ;;
+  run)     echo "${SHIM_RUN:-$(date -u +%F)T06:17:00Z success 100}" ;;
   *)       exit 1 ;;
 esac
 EOF
@@ -66,6 +72,13 @@ mk_repo() {
   printf '{\n  "version": "%s"\n}\n' "$version" > "$dir/apps/desktop/src-tauri/tauri.conf.json"
   echo "rule" > "$dir/.claude/rules/testing.md"
   printf '.vm/\n' > "$dir/.gitignore"
+  mkdir -p "$dir/.github/workflows"
+  # A quoted name (the quotes are not part of it) and a schedule that is only a
+  # comment (not a schedule).
+  printf 'name: "Dependency Audit"\n\non:\n  schedule:\n    - cron: "17 6 * * 1"\n  workflow_dispatch:\n' \
+    > "$dir/.github/workflows/audit.yml"
+  printf 'name: CI\n\non:\n  push:\n    branches: [main]\n  # schedule:\n  #   - cron: "0 3 * * *"\n' \
+    > "$dir/.github/workflows/ci.yml"
   cat > "$dir/tasks/demo-feature.md" <<'LEDGER'
 Status: aktiv · Branch: feature/demo
 LEDGER
@@ -196,6 +209,10 @@ grep -q '^WARN:' <<<"$OUT" && bad "clean repo warned: $(grep -m1 '^WARN:' <<<"$O
 grep -q 'AH_TEST_DB ok' <<<"$OUT" && ok "AH_TEST_DB read from AH_DEVENV" || bad "AH_TEST_DB not resolved via devenv"
 grep -qF '· 0 dirty · origin +0/-0 ·' <<<"$OUT" && ok "clean counters" || bad "counters: $(grep -m1 AH-STATUS <<<"$OUT")"
 grep -qF 'Draft: nein' <<<"$OUT" && ok "no draft" || bad "draft state wrong"
+grep -qxF "Geplant: Dependency Audit $(date -u +%F) (0 d): success" <<<"$OUT" \
+  && ok "scheduled workflow: a green run is one quiet line" || bad "scheduled: $(grep -m1 '^Geplant' <<<"$OUT")"
+[ "$(grep -c '^Geplant:' <<<"$OUT")" = 1 ] && ok "a workflow without schedule: gets no line" \
+  || bad "Geplant lines: $(grep -c '^Geplant:' <<<"$OUT")"
 grep -qF 'Wochenlauf: kein Report ·' <<<"$OUT" \
   && ok "no weekly report -> 'kein Report'" || bad "weekly: $(grep -m1 '^Ledger' <<<"$OUT")"
 # A report from the future (clock skew) must not print a negative age.
@@ -228,6 +245,8 @@ rc=$?
 [ $rc -eq 0 ] && ok "exit 0 without gh" || bad "exit=$rc"
 grep -qF 'Draft: ?' <<<"$OUT" && ok "draft unknown -> ?" || bad "draft: $(grep -m1 '^Release:' <<<"$OUT")"
 grep -qF 'PRs offen: ?' <<<"$OUT" && ok "PRs unknown -> ?" || bad "PRs: $(grep -m1 '^Ledger' <<<"$OUT")"
+grep -qxF 'Geplant: Dependency Audit ?' <<<"$OUT" && ok "scheduled run unknown -> ?" \
+  || bad "scheduled: $(grep -m1 '^Geplant' <<<"$OUT")"
 grep -q '^WARN:' <<<"$OUT" && bad "unknown draft must not warn" || ok "no WARN from an unknown draft state"
 
 # ══ case 4: AH_AUTONOMOUS + --for ═════════════════════════════════════════════
@@ -319,6 +338,52 @@ grep -q '^WARN:.*tasks/private' <<<"$OUT" \
   || ok "plain tasks/private is not mistaken for the private repo"
 grep -q '^WARN: main 3 Commit(s) vor origin/main' <<<"$OUT" \
   && ok "the main-ahead trigger still fires" || bad "main-ahead trigger lost"
+
+# ══ case 9: scheduled workflows ═══════════════════════════════════════════════
+echo "── scheduled workflows: red and stale warn, cancelled and none stay quiet ──"
+# CLEAN has 3 unpushed private commits from case 7 by now — that WARN is counted
+# out below, every other WARN line has to come from the scheduled run.
+sched() { SHIM_DRAFTS=0 SHIM_PRS=0 AH_DEVENV="$WORK/devenv.sh" run_hook "$CLEAN" | grep -v 'tasks/private'; }
+D3=$(date -u -d '3 days ago' +%F)
+for concl in failure timed_out startup_failure; do
+  OUT=$(SHIM_RUN="${D3}T06:17:00Z $concl 4242" sched)
+  grep -qxF "Geplant: Dependency Audit $D3 (3 d): $concl" <<<"$OUT" \
+    && ok "$concl: the line names day, age and conclusion" || bad "$concl: $(grep -m1 '^Geplant' <<<"$OUT")"
+  grep -q "^WARN: .*Dependency Audit.*$concl.*gh run view 4242 --log-failed" <<<"$OUT" \
+    && ok "$concl: WARN with the command that shows why" || bad "$concl: no WARN ($(grep -m1 '^WARN' <<<"$OUT"))"
+  [ "$(grep -c '^WARN:' <<<"$OUT")" = 1 ] && ok "$concl: exactly one WARN" || bad "$concl: $(grep -c '^WARN:' <<<"$OUT") WARN lines"
+done
+OUT=$(SHIM_RUN="${D3}T06:17:00Z cancelled 4243" sched)
+grep -qxF "Geplant: Dependency Audit $D3 (3 d): cancelled" <<<"$OUT" \
+  && ok "cancelled is shown" || bad "cancelled: $(grep -m1 '^Geplant' <<<"$OUT")"
+grep -q '^WARN:' <<<"$OUT" && bad "cancelled warned: $(grep -m1 '^WARN' <<<"$OUT")" || ok "cancelled does not warn"
+OUT=$(SHIM_RUN="kein Lauf" sched)
+grep -qxF "Geplant: Dependency Audit kein Lauf" <<<"$OUT" \
+  && ok "no run yet is said" || bad "no run: $(grep -m1 '^Geplant' <<<"$OUT")"
+grep -q '^WARN:' <<<"$OUT" && bad "no run warned: $(grep -m1 '^WARN' <<<"$OUT")" || ok "no run does not warn"
+# Stale: older than 8 days warns, 8 days is still a weekly cron's slack.
+OUT=$(SHIM_RUN="$(date -u -d '8 days ago' +%F)T06:17:00Z success 4244" sched)
+grep -q '^WARN:' <<<"$OUT" && bad "8 days warned: $(grep -m1 '^WARN' <<<"$OUT")" || ok "8 days old stays quiet"
+D9=$(date -u -d '9 days ago' +%F)
+OUT=$(SHIM_RUN="${D9}T06:17:00Z success 4245" sched)
+grep -qxF "Geplant: Dependency Audit $D9 (9 d): success" <<<"$OUT" \
+  && ok "stale: the line shows the age" || bad "stale: $(grep -m1 '^Geplant' <<<"$OUT")"
+grep -q '^WARN: .*Dependency Audit.*9 Tagen' <<<"$OUT" \
+  && ok "9 days old warns" || bad "9 days: no WARN ($(grep -m1 '^WARN' <<<"$OUT"))"
+# One query per scheduled file, by file name, for completed runs on main; a
+# workflow without `name:` is shown by its file name.
+printf 'on:\n  schedule:\n    - cron: "0 3 * * *"\n' > "$CLEAN/.github/workflows/nightly.yaml"
+: > "$WORK/gh.log"
+OUT=$(SHIM_LOG="$WORK/gh.log" sched)
+grep -qxF "Geplant: nightly.yaml $(date -u +%F) (0 d): success" <<<"$OUT" \
+  && ok "a second scheduled file gets its own line, named by its file" || bad "nightly: $(grep '^Geplant' <<<"$OUT" | tr '\n' '|')"
+grep -q '^run list --workflow audit.yml --branch main --status completed --limit 1 ' "$WORK/gh.log" \
+  && ok "the query: this file, main, completed, newest" || bad "query: $(grep -m1 '^run' "$WORK/gh.log")"
+[ "$(grep -c '^run list' "$WORK/gh.log")" = 2 ] && ok "one gh call per scheduled workflow" \
+  || bad "gh run calls: $(grep -c '^run list' "$WORK/gh.log")"
+grep -q -- '--event' "$WORK/gh.log" && bad "the query filters by event (a dispatch fix must count)" \
+  || ok "no event filter: a green dispatch on main closes a red cron"
+rm "$CLEAN/.github/workflows/nightly.yaml"
 
 echo ""
 echo "session_status_test: $PASS passed, $FAIL failed"
