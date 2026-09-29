@@ -24,7 +24,8 @@
 #   * a clone at /srv/ah/repo whose origin cannot be pushed to
 #     (remote.origin.pushurl=/dev/null). That alone is not the boundary — a push
 #     to an explicit URL would bypass it; what carries is that this user has no
-#     credential anywhere and its settings deny `git push` outright.
+#     credential anywhere and its settings deny `git push` outright. Its commits
+#     run review.sh sec first (core.hooksPath=scripts/dev/hooks, R-0102).
 #   * its own Postgres role and test database
 #   * its own subscription token and its own Proxmox token, both 0600 and read
 #     by scripts/dev/runner-env.sh
@@ -247,6 +248,9 @@ run chown -R "$RUNNER:$RUNNER" "$SRV"
 # programs (core.fsmonitor, core.hooksPath) that root's git would then run.
 run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.url $(printf '%q' "$ORIGIN")"
 run su - "$RUNNER" -c "git -C $SRV/repo config remote.origin.pushurl /dev/null"
+# review.sh sec before every commit the runner makes, not only inside
+# task-close.sh (R-0102). Relative: each lane worktree runs its branch's hook.
+run su - "$RUNNER" -c "git -C $SRV/repo config core.hooksPath scripts/dev/hooks"
 
 # ── 3. its own database, and the devenv that carries the password ────────────
 # Both or neither: a rotated password without the matching devenv file leaves a
@@ -272,9 +276,10 @@ step "$HOME_DIR/.devenv.sh (PATH, AH_TEST_DB, AH_REQUIRED)"
 # git — no go, rust or node. The heavy work happens on the VMs (Fast-Suite: vm).
 DEVENV_CONTENT="export PATH=\"\$HOME/.local/bin:\$PATH\"
 export AH_TEST_DB=\"postgresql://$DB_ROLE:$DB_PW@localhost/$DB_NAME\"
-# run.sh puts the shared python venv in AH_VENV (default /tmp/ah-venv). That
-# directory belongs to whoever created it first — as somebody else's, the pip
-# install of the three python suites fails for this user.
+# run.sh puts the shared python venv in AH_VENV (its default was /tmp/ah-venv
+# until R-0057). That directory belongs to whoever created it first — as somebody
+# else's, the pip install of the three python suites fails for this user. Kept
+# explicit, so the runner does not hang on run.sh's default.
 export AH_VENV=\"\$HOME/.cache/ah-venv\"
 export AH_REQUIRED=\"ruff ruff-vm shellcheck server-pytest monitoring-pytest ca-issuer-pytest scripts vm-pytest dev-pytest\"
 "

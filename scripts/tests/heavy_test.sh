@@ -65,6 +65,10 @@ n=$(cat "$SHIM_STATE/iter.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "
 if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -f "$SHIM_STATE/artifact.json" ]; then
   cp "$SHIM_STATE/artifact.json" "$AH_OUT_DIR/last-all.json"
 fi
+# The box's JUnit XMLs arrive the same way, merged into what is already there.
+if [ "$n" = 1 ] && [ -z "${SHIM_NO_PULL:-}" ] && [ -d "$SHIM_STATE/junit" ]; then
+  mkdir -p "$AH_OUT_DIR/junit" && cp "$SHIM_STATE/junit/"*.xml "$AH_OUT_DIR/junit/"
+fi
 echo "iter shim call $n: $* (AH_NO_SYNC=${AH_NO_SYNC:-unset} AH_SPEC=${AH_SPEC:-unset})"
 printf 'AH_NO_SYNC=%s AH_SPEC=%s AH_REQUIRED=%s ARGS=%s\n' "${AH_NO_SYNC:-unset}" "${AH_SPEC:-unset}" "${AH_REQUIRED-unset}" "$*" >> "$SHIM_STATE/iter.args"
 eval "out=\${SHIM_ITER_OUT$n:-\${SHIM_ITER_OUT:-}}"
@@ -105,8 +109,12 @@ chmod +x "$AH_VM_PY" "$BIN/curl" "$WRAP"/*.sh
 # the second-VM shims are COMMITTED here rather than living in $WRAP.
 FIX="$WORK/fixture"
 mkdir -p "$FIX/scripts/vm"
+# The real wrappers reach ssh through vm.py, and ssh without -n reads stdin.
+# SHIM_DRAIN_STDIN makes these two do the same, so a caller that forgets to
+# detach their stdin loses it here as it would against a real box.
 cat > "$FIX/scripts/vm/iter.sh" <<'SHIM'
 #!/usr/bin/env bash
+[ -z "${SHIM_DRAIN_STDIN:-}" ] || cat >/dev/null
 n=$(cat "$SHIM_STATE/w2.n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$SHIM_STATE/w2.n"
 printf 'call %s: AH_LANE=%s AH_SPEC=%s ARGS=%s\n' "$n" "${AH_LANE:-unset}" "${AH_SPEC:-unset}" "$*" >> "$SHIM_STATE/w2.args"
 # Call 1 runs on HEAD, call 2 on the base commit (heavy.sh checks it out between).
@@ -115,6 +123,7 @@ exit "${SHIM_W2_BASE_RC:-1}"
 SHIM
 cat > "$FIX/scripts/vm/warm.sh" <<'SHIM'
 #!/usr/bin/env bash
+[ -z "${SHIM_DRAIN_STDIN:-}" ] || cat >/dev/null
 echo "w2 warm shim: $* (AH_LANE=${AH_LANE:-unset})" >> "$SHIM_STATE/w2.args"
 exit "${SHIM_W2_WARM_RC:-0}"
 SHIM
@@ -412,6 +421,36 @@ grep -q 'w2 reap shim' "$SHIM_STATE/w2.args" && ok "the second pond was reaped" 
   || bad "worktree left behind: $(git -C "$FIX" worktree list)"
 [ -d "$FIX/.ah-worktrees/w2" ] && bad "w2 directory left behind" || ok "no w2 directory left behind"
 
+# Two red steps, both through the second VM, with wrappers that drain stdin the
+# way ssh does. The step loop read steps-all.tsv from stdin, and the second
+# box's warm.sh swallowed the rest of it: the report named the first red step
+# and silently dropped every later one (R-0092).
+mk_case
+export SHIM_ITER_SEQ="1 1"
+export SHIM_ITER_OUT="  FAIL  web vitest"
+export SHIM_ITER_OUT1="  FAIL  web vitest
+  FAIL  scripts (hermetic)
+  run.sh[all]: 39 passed, 2 failed, 3 skipped, 0 test-skips, 0 reruns"
+artifact "web vitest:fail:19" "scripts (hermetic):fail:30"
+# The w2 call counter is global: the first step's HEAD run is call 1 (green on
+# the fresh box), the second step's is call 2 and gets SHIM_W2_BASE_RC (red on
+# both boxes, no PASS in history). Two roads, both to unbestaetigt.
+export SHIM_W2_HEAD_RC=0
+# </dev/null: a draining shim outside the loop must never wait on a terminal.
+out=$(SHIM_DRAIN_STDIN=1 bash "$HEAVY" all 2>&1 </dev/null); rc=$?
+[ "$rc" = 1 ] && ok "two unconfirmed candidates -> exit 1" || bad "two candidates -> rc=$rc"
+[ "$(grep -c 'w2 warm shim' "$SHIM_STATE/w2.args" 2>/dev/null)" = 2 ] \
+  && ok "both red steps went through the second VM" \
+  || bad "second-VM checks: $(cat "$SHIM_STATE/w2.args" 2>/dev/null)"
+{ history_of | grep -q ',all,web vitest,unbestaetigt,' \
+    && history_of | grep -q ',all,scripts (hermetic),unbestaetigt,'; } \
+  && ok "history.csv has a verdict for both red steps" || bad "rows: $(history_of)"
+{ report_of | grep -qF '| all | web vitest | unbestaetigt |' \
+    && report_of | grep -qF '| all | scripts (hermetic) | unbestaetigt |'; } \
+  && ok "the report's step table names both" || bad "table: $(report_of | grep '^| all')"
+report_of | grep -qF '2 step(s) red after retries' \
+  && ok "the summary counts both red steps" || bad "summary: $(report_of | grep 'red after retries')"
+
 candidate_case
 seed_pass_history
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0   # HEAD red on a fresh box, base green
@@ -482,6 +521,22 @@ grep -q '^Status: geplant' "$REG_LEDGER" 2>/dev/null \
 grep -q 'auf dem letzten PASS-Commit' "$REG_LEDGER" 2>/dev/null \
   && ok "the reg ledger carries the three-run proof" \
   || bad "no proof paragraph"
+# The shape of /feature-plan --kurz (R-0100): the head fields and the proof lines
+# of tasks/README.md, so --kurz completes the draft instead of rewriting it.
+grep -q '^Status: .* · Review: am Ende · Modell: Opus$' "$REG_LEDGER" 2>/dev/null \
+  && grep -q '^Heavy: linux-full — ' "$REG_LEDGER" && grep -q '^DoD je Task: CLAUDE.md' "$REG_LEDGER" \
+  && ok "the reg ledger head: Review: am Ende, Modell, Heavy: linux-full, DoD" \
+  || bad "reg ledger head: $(sed -n '/^# Regression/,/^Task-Status/p' "$REG_LEDGER" 2>/dev/null)"
+grep -q '^Dedup-Key: reg:web-vitest$' "$REG_LEDGER" 2>/dev/null \
+  && grep -qx "HEAD: $(git -C "$FIX" rev-parse HEAD)" "$REG_LEDGER" \
+  && grep -q "^Beweis: main@$(git -C "$FIX" rev-parse HEAD) · .* → rot mit " "$REG_LEDGER" \
+  && ok "the reg task carries Beweis:, Dedup-Key: reg:<step> and HEAD:" \
+  || bad "reg task proof lines: $(grep -E '^(Beweis|Dedup-Key|HEAD):' "$REG_LEDGER" 2>/dev/null)"
+grep -q '^Roadmap: R-0018 · ' "$REG_LEDGER" 2>/dev/null \
+  && ok "the Roadmap: line stays for feature-build" || bad "no Roadmap: line"
+lint_out=$(bash "$HERE/../dev/ledger.sh" lint "$REG_LEDGER" 2>&1); lint_rc=$?
+[ "$lint_rc" = 0 ] && ! grep -q 'WARN\|ERROR' <<<"$lint_out" \
+  && ok "the reg ledger lints clean" || bad "ledger.sh lint (rc=$lint_rc): $lint_out"
 grep -q '^reg · web vitest · ' "$AH_PRIVATE_DIR/seen.md" 2>/dev/null \
   && ok "seen.md remembers the finding for the dedup" \
   || bad "seen.md: $(cat "$AH_PRIVATE_DIR/seen.md" 2>/dev/null)"
@@ -543,8 +598,13 @@ git -C "$AH_PRIVATE_DIR" add ROADMAP.md
 git -C "$AH_PRIVATE_DIR" commit -qm seed
 export SHIM_W2_HEAD_RC=1 SHIM_W2_BASE_RC=0
 out=$(bash "$HEAVY" all 2>&1); rc=$?
-git -C "$AH_PRIVATE_DIR" log --format=%s | grep -qx 'roadmap: add R-0018' \
-  && ok "private repo: roadmap.py committed the row" || bad "log: $(git -C "$AH_PRIVATE_DIR" log --format=%s)"
+# The log into a variable first, never `git log | grep -q`: git flushes a pipe
+# after every commit, grep -q exits on the middle line, the next write gets
+# SIGPIPE (141), and pipefail turns the match into a red — about 3 % of runs
+# (R-0103).
+log=$(git -C "$AH_PRIVATE_DIR" log --format=%s)
+grep -qx 'roadmap: add R-0018' <<<"$log" \
+  && ok "private repo: roadmap.py committed the row" || bad "log: $log"
 weekly_sha=$(git -C "$AH_PRIVATE_DIR" log --format=%H --grep='^weekly ' -1)
 [ -n "$weekly_sha" ] && ! git -C "$AH_PRIVATE_DIR" show --name-only --format= "$weekly_sha" | grep -qx ROADMAP.md \
   && ok "private repo: the weekly commit does not carry ROADMAP.md" \
@@ -811,6 +871,35 @@ mkdir -p "$AH_OUT_DIR/screenshots" && echo png > "$AH_OUT_DIR/screenshots/login.
 out=$(bash "$HEAVY" all 2>&1)
 ls "$AH_OUT_DIR"/weekly/*/screenshots/login.png >/dev/null 2>&1   && ok "screenshots are copied into the run directory the report names"   || bad "the report points at a directory the artifacts are not in"
 
+# ── 5d: the box's JUnit XMLs land in the run directory and are counted ───────
+# One XML is already in the local junit/ before the run — left by a local
+# verify.sh or an earlier weekly. It is not this run's evidence and must neither
+# be copied nor counted.
+mk_case
+artifact "server pytest:pass:120"
+mkdir -p "$SHIM_STATE/junit" "$AH_OUT_DIR/junit"
+echo '<testsuites/>' > "$SHIM_STATE/junit/server-pytest.xml"
+echo '<testsuites/>' > "$SHIM_STATE/junit/stack-redis.xml"
+echo '<testsuites/>' > "$AH_OUT_DIR/junit/stale-from-last-week.xml"
+out=$(bash "$HEAVY" all 2>&1)
+ls "$AH_OUT_DIR"/weekly/*/junit/server-pytest.xml "$AH_OUT_DIR"/weekly/*/junit/stack-redis.xml >/dev/null 2>&1 \
+  && ok "the pulled JUnit XMLs are copied into the run directory" \
+  || bad "junit in the run dir: $(ls "$AH_OUT_DIR"/weekly/*/junit 2>&1)"
+ls "$AH_OUT_DIR"/weekly/*/junit/stale-from-last-week.xml >/dev/null 2>&1 \
+  && bad "a JUnit XML from before the run was copied as this run's" \
+  || ok "a JUnit XML from before the run is not carried into the run directory"
+report_of | grep -qE '^- JUnit: 2 XML in `.*/weekly/[^/]+/junit`$' \
+  && ok "the report counts the run's JUnit XMLs" \
+  || bad "report junit line: $(report_of | grep -m1 'JUnit' || echo none)"
+# A run whose box pulled none says 0, not nothing: a missing line would look
+# like a report from before the field existed.
+mk_case
+artifact "ruff check:pass:3"
+out=$(bash "$HEAVY" all 2>&1)
+report_of | grep -qE '^- JUnit: 0 XML in ' \
+  && ok "no pulled XMLs -> the report says 0" \
+  || bad "report junit line without XMLs: $(report_of | grep -m1 'JUnit' || echo none)"
+
 # ── 6: doctor red ────────────────────────────────────────────────────────────
 mk_case
 export SHIM_DOCTOR_RC=1
@@ -1072,7 +1161,9 @@ git -C "$AH_PRIVATE_DIR" config user.name "heavy test"
 artifact "ruff check:pass:3"
 out=$(bash "$HEAVY" all 2>&1); rc=$?
 [ "$rc" = 0 ] && ok "run with a private repo -> exit 0" || bad "private repo run -> rc=$rc"
-git -C "$AH_PRIVATE_DIR" log --oneline 2>/dev/null | grep -q 'weekly ' \
+# Into a variable first, for the SIGPIPE reason at 4i-d (R-0103).
+log=$(git -C "$AH_PRIVATE_DIR" log --oneline 2>/dev/null)
+grep -q 'weekly ' <<<"$log" \
   && ok "history.csv committed in the private repo" || bad "no weekly commit in the private repo"
 report_of | grep -q 'committed in' \
   && ok "the report records that the history was committed" \

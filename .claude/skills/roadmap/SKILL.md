@@ -54,13 +54,14 @@ wiederholen, bis er es sagt) · **6** Zeilenzahl passte nicht, `.bak` ist zurüc
    Zeile. Header `R-nnnn`, Frage: Klasse, Titel, Quelle in einem Satz. Die **Empfehlung
    zuerst**, mit „(Empfohlen)" und einem Halbsatz Begründung in der Beschreibung:
    - **Annehmen** → `roadmap.py status R-nnnn geplant`. Danach `/feature-plan --kurz R-nnnn`
-     *vorschlagen*, nicht starten (den Kurz-Modus bringt Stufe 5b; bis dahin
-     `/feature-plan` mit der Zeile als Auftrag).
+     *vorschlagen*, nicht starten — bei SEC nicht: den Fund plant Kevin von Hand (feature-plan 3a).
    - **Ablehnen** → `roadmap.py status R-nnnn abgelehnt --note "<Grund>"`. Ohne Grund
      kein Ablehnen: fehlt er in Kevins Antwort, einmal nachfragen.
    - **Zurückstellen** → `roadmap.py status R-nnnn zurückgestellt [--note "<bis wann/warum>"]`.
    - **Bündeln** (nur REF, ≥ 2 Zeilen derselben Komponente in dieser Triage) → noch kein
-     Status; am Ende `/feature-plan --bundle R-a,R-b` vorschlagen (auch das bringt 5b).
+     Status; am Ende `/feature-plan --bundle <komponente>` vorschlagen. Der Modus nimmt alle
+     `neu`- und `geplant`-REF-Zeilen dieser Komponente, nicht nur die aus dieser Triage; das
+     beim Vorschlag sagen.
    - **REG**: die Annehmen-Option heißt „Annehmen, Regression bestätigt" und setzt
      `status R-nnnn geplant --note "Regression bestätigt"` — der Haken ist die Notiz.
      Hält Kevin sie für nicht reproduziert: Ablehnen mit diesem Grund.

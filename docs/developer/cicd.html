@@ -37,7 +37,7 @@
           <table>
             <thead><tr><th>Workflow</th><th>Aufgabe</th></tr></thead>
             <tbody>
-              <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo test --locked</code> auf Windows, die Go-Suite nativ unter Windows (Job <code>agent-windows</code>: <code>go test -v ./...</code>, Build und <code>version</code>-Smoke der <code>.exe</code>), <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>bootstrap_linux.sh</code>), und im selben Job der Toolchain-Lockstep (<code>scripts/dev/toolchain-lockstep.sh</code>): jede <code>go-version</code>-Stelle in <code>ci.yml</code>/<code>release.yml</code>/<code>audit.yml</code> muss dieselbe sein, und die <code>go</code>-Direktive des in <code>audit.yml</code> gepinnten <code>govulncheck</code>-Release darf nicht dar&uuml;ber liegen &ndash; sonst scheitert der Audit-Job unter <code>GOTOOLCHAIN=local</code> schon am Installieren des Werkzeugs und meldet nichts &uuml;ber unsere Dependencies (ist der Modul-Proxy nicht erreichbar, endet der Check mit 75/SKIP und f&auml;rbt den Job rot, statt eine Pr&uuml;fung durchzuwinken, die nie lief &ndash; dann ist ein Re-Run f&auml;llig, kein Fix). Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate). Auf <code>main</code>-Pushes + manuell (bewusst noch kein PR-Gate, da Image-Build + 5-Container-Boot): ein From-outside-Integrationstest (<code>scripts/tests/integration_stack_test.sh</code>), der den echten Stack mit erzwungenem mTLS hochf&auml;hrt und nur &uuml;ber das nginx-Gateway den vollen Pfad pr&uuml;ft &ndash; Enrollment-Token, CSR&nbsp;&rarr;&nbsp;Enroll-Plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;Client-Cert, certless&nbsp;&rarr;&nbsp;abgewiesen, Cert+JWT&nbsp;&rarr;&nbsp;200. Der Desktop-E2E (WebdriverIO + <code>tauri-driver</code> unter <code>xvfb</code>, <code>apps/desktop/e2e/</code>) l&auml;uft <strong>bewusst nicht in CI</strong>, sondern lokal/manuell (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): die headless-WebKit-Kette (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) driftet mit Runner-Image + ungepinnten Upstream-Tools und f&auml;rbte <code>main</code> rot ohne echten Defekt. Der schwere Tier (Multi-Host-Stack, mTLS &uuml;ber einen echten Netz-Hop, Desktop-GUI) l&auml;uft stattdessen auf <strong>ephemeren Proxmox-VMs</strong> &ndash; siehe <code>DEVELOPMENT.md</code> und die <code>/test</code>-Skill</td></tr>
+              <tr><td><code>ci.yml</code></td><td>Lint &amp; Tests aller Komponenten: Server-<code>pytest</code> (Postgres-Service, Python&nbsp;3.12/3.13), Monitoring-<code>pytest</code> (Postgres-Service f&uuml;r den Migrations-Smoke-Test), Go-Agent (<code>gofmt</code>/<code>vet</code>/<code>test</code>), Desktop-UI &amp; Web-Panel (<code>svelte-check</code>/<code>eslint</code>/<code>vitest</code>, Playwright-E2E), Rust/Tauri (<code>fmt</code>/<code>clippy</code>/<code>test</code>). Zus&auml;tzliche PR-Gates gegen &bdquo;gr&uuml;n-aber-kaputt": <code>cargo test --locked</code> auf Windows, die Go-Suite nativ unter Windows (Job <code>agent-windows</code>: <code>go test -v ./...</code>, Build und <code>version</code>-Smoke der <code>.exe</code>), <code>cargo tauri build</code>-Smoke auf Linux (Debug, nur deb), Docker-Builds beider Images ohne Push, FRP-Pin-Konsistenz-Check (<code>FRP_VERSION</code> + SHA-256 in <code>ci.yml</code>/<code>release.yml</code>/<code>docker-compose.yml</code>/<code>bootstrap_linux.sh</code>), und im selben Job der Toolchain-Lockstep (<code>scripts/dev/toolchain-lockstep.sh</code>): jede <code>go-version</code>-Stelle in <code>ci.yml</code>/<code>release.yml</code>/<code>audit.yml</code> muss dieselbe sein, und die <code>go</code>-Direktive des in <code>audit.yml</code> gepinnten <code>govulncheck</code>-Release darf nicht dar&uuml;ber liegen &ndash; sonst scheitert der Audit-Job unter <code>GOTOOLCHAIN=local</code> schon am Installieren des Werkzeugs und meldet nichts &uuml;ber unsere Dependencies (ist der Modul-Proxy nicht erreichbar, endet der Check mit 75/SKIP und f&auml;rbt den Job rot, statt eine Pr&uuml;fung durchzuwinken, die nie lief &ndash; dann ist ein Re-Run f&auml;llig, kein Fix); au&szlig;erdem muss der in <code>ci.yml</code> gepinnte <code>ruff</code> dem Default in <code>scripts/vm/bootstrap_linux.sh</code> entsprechen, und der Boden in <code>apps/server/requirements-dev.txt</code> darf nicht dar&uuml;ber liegen &ndash; diese Pr&uuml;fung l&auml;uft offline vor dem Proxy-Abruf, eine Drift bleibt also auch bei Proxy-Ausfall rot. Coverage l&auml;uft in den Test-Jobs report-only mit (kein Gate). Auf <code>main</code>-Pushes + manuell (bewusst noch kein PR-Gate, da Image-Build + 5-Container-Boot): ein From-outside-Integrationstest (<code>scripts/tests/integration_stack_test.sh</code>), der den echten Stack mit erzwungenem mTLS hochf&auml;hrt und nur &uuml;ber das nginx-Gateway den vollen Pfad pr&uuml;ft &ndash; Enrollment-Token, CSR&nbsp;&rarr;&nbsp;Enroll-Plane&nbsp;(:8444)&nbsp;&rarr;&nbsp;Client-Cert, certless&nbsp;&rarr;&nbsp;abgewiesen, Cert+JWT&nbsp;&rarr;&nbsp;200. Der Desktop-E2E (WebdriverIO + <code>tauri-driver</code> unter <code>xvfb</code>, <code>apps/desktop/e2e/</code>) l&auml;uft <strong>bewusst nicht in CI</strong>, sondern lokal/manuell (<code>cd apps/desktop/e2e &amp;&amp; xvfb-run -a npm test</code>): die headless-WebKit-Kette (tauri-driver&nbsp;&rarr;&nbsp;WebKitWebDriver&nbsp;&rarr;&nbsp;WebKit) driftet mit Runner-Image + ungepinnten Upstream-Tools und f&auml;rbte <code>main</code> rot ohne echten Defekt. Der schwere Tier (Multi-Host-Stack, mTLS &uuml;ber einen echten Netz-Hop, Desktop-GUI) l&auml;uft stattdessen auf <strong>ephemeren Proxmox-VMs</strong> &ndash; siehe <code>DEVELOPMENT.md</code> und die <code>/test</code>-Skill</td></tr>
               <tr><td><code>docker.yml</code></td><td>Server- + Monitoring-Image bauen &amp; nach <code>ghcr.io/admincave/adminhelper/{server,monitoring}</code> pushen; jeden Digest schlüssellos mit cosign signieren (+ SLSA-Provenance/SBOM)</td></tr>
               <tr><td><code>release.yml</code></td><td>Desktop-DEB/RPM/Binary, Go-Agent-DEB/RPM + Linux/Windows-Binaries, Windows-MSI (best-effort), <code>SHA256SUMS</code> (+ minisign-Signatur), Draft-Release. Jobs: <code>desktop-linux</code>, <code>agent</code>, <code>agent-windows-smoke</code> (hart &ndash; f&uuml;hrt die gebaute <code>.exe</code> einmal aus), <code>desktop-windows</code> (best-effort, installiert und deinstalliert das MSI), <code>release</code>. Die Assertionen stehen unten unter &bdquo;Release-Assertionen".</td></tr>
               <tr><td><code>audit.yml</code></td><td>W&ouml;chentlicher Dependency-Audit (Montag fr&uuml;h, auch manuell per <code>workflow_dispatch</code>): <code>pip-audit</code> (Server- + Monitoring-Locks), <code>cargo audit</code> (Desktop), <code>govulncheck</code> (Agent), <code>npm audit</code> (Web + Desktop-UI)</td></tr>
@@ -113,6 +113,23 @@
           real gegen ein zweites Install-Verzeichnis (<code>UPDATE_SH_OK</code>, oder
           <code>UPDATE_SH_SKIP</code>, wenn das Release kein Runtime-Bundle hat). Ohne Docker oder Netz endet
           sie mit 75.</p>
+          <p><strong>Pflicht-Tests gegen den Stack.</strong> Drei Tests brauchen einen echten Dienst und
+          skippen sich &uuml;berall, wo er fehlt: der Migrations-Smoke des Monitorings (Postgres),
+          <code>test_stream_redis</code> (Redis) und der TOCTOU-Test in <code>test_db_token_store</code>
+          (Postgres, echte Nebenl&auml;ufigkeit). Der <code>integration</code>-Layer f&auml;hrt sie im Schritt
+          <code>stack-pytest</code> (<code>scripts/tests/stack_pytest.sh</code>) gegen Postgres und Redis des
+          Compose-Stacks, die das Test-Overlay nur auf <code>127.0.0.1</code> ver&ouml;ffentlicht. Dort ist ein
+          Skip ein Fehler, denn der Dienst ist da: das Urteil kommt aus der JUnit-XML jedes Tests
+          (<code>junit/stack-*.xml</code>), und ein Skip, ein Lauf ohne Test oder eine fehlende Datei f&auml;rbt
+          den Schritt rot. Im PR-CI laufen der Migrations-Smoke und <code>test_stream_redis</code> weiter
+          gegen die Service-Container ihrer Jobs (Postgres, Redis auf 6380): dort f&auml;ngt schon der PR
+          einen Fehler, ohne Image-Build und ohne Stack. Den TOCTOU-Test f&auml;hrt das PR-CI nicht mit
+          Postgres &ndash; der Job <code>ca-issuer</code> nutzt den In-Memory-Token-Store &ndash;, mit echtem
+          Postgres l&auml;uft er nur hier. Der zweite Schritt, <code>web-live</code>
+          (<code>scripts/tests/web_live.sh</code>), f&auml;hrt das Playwright-Projekt <code>live</code> ohne
+          Mocks gegen das Gateway: Login als Seed-Admin, jede Admin-Seite, Benutzer anlegen und l&ouml;schen.
+          Das Projekt <code>chromium</code> bleibt im PR-CI gegen die Mocks; <code>live</code> gibt es nur,
+          wenn <code>ITEST_WEB_URL</code> gesetzt ist.</p>
 
           <p><strong>Evidenz.</strong> Jeder Lauf schreibt <code>$AH_OUT_DIR/last-&lt;layer&gt;.json</code>
           (Default <code>.ah-out/</code>, gitignored) mit Layer, Flags, Pflicht-Menge, Zeitstempeln,
@@ -120,7 +137,11 @@
           <code>tree_hash</code>. Den Tree-Hash liefert <code>scripts/dev/tree-hash.sh</code>: er wird in einem
           Wegwerf-Index gebildet, sieht also auch <em>untracked</em> Dateien, w&auml;hrend <code>tasks/</code>
           und die Ausgabeverzeichnisse ausgeklammert bleiben. Ein Haken im Ledger &auml;ndert die Evidenz
-          eines Laufs damit nicht, eine neue, noch nicht committete Quelldatei sehr wohl.</p>
+          eines Laufs damit nicht, eine neue, noch nicht committete Quelldatei sehr wohl.
+          Au&szlig;erdem schreiben die pytest-Schritte, Playwright und die Desktop-E2E JUnit-XML nach
+          <code>$AH_OUT_DIR/junit/</code>; jeder Lauf verwirft vorher die des letzten, und der Wochenlauf
+          kopiert sie in sein Laufverzeichnis. Wer einen roten Lauf klassifiziert, liest Testf&auml;lle statt
+          Logs.</p>
 
           <h2>Wochenlauf (<code>scripts/tests/heavy.sh</code>)</h2>
           <p>Der schwere Tier lief bisher, wenn jemand daran dachte, und seine Ergebnisse wurden nirgends
@@ -182,6 +203,36 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           Allowlist: eine Bash-Allow-Regel matcht nie &uuml;ber ein Env-Pr&auml;fix, <code>source .devenv.sh
           &amp;&amp; DATABASE_URL=&hellip; pytest</code> ist also nicht freigebbar. Env-Bedarf l&ouml;st das
           Skript auf, der Aufrufer schreibt Flags.</p>
+
+          <h2>Beweis-Konvention (Ledger)</h2>
+          <p>Eine Task, die einen <em>Fund</em> umsetzt (von Kevin, aus dem Wochenlauf, sp&auml;ter von der
+          Finder-Flotte), tr&auml;gt den Beweis, dass es ihn gibt, in ihren eigenen Zeilen. Jede Klasse von Fund hat
+          ihre Regel: <strong>A</strong> (Fehler: SEC, REG, BUG) ist ein Test, der auf <code>HEAD</code> dreimal
+          identisch rot ist; <strong>B</strong> (Vereinfachung, Refactor, Performance, Duplikat) belegt beim Fix eine
+          Suite, die vorher und nachher gr&uuml;n ist, eine strikt bessere Metrik, eine nicht gesunkene Coverage und
+          eine Mutations-Stichprobe; <strong>C</strong> (toter Code) ist ein Analyzer-Treffer plus ein repo-weiter
+          Wort-<code>grep</code>, der leer bleibt; <strong>D</strong> (Parit&auml;t, Contract, Abh&auml;ngigkeiten)
+          ist ein Parit&auml;ts-Test, den eine einzelne Mutation rot macht, bzw. die Advisory eines roten
+          <code>audit.yml</code>-Laufs. Die Einzelheiten stehen in <code>tasks/README.md</code>.</p>
+          <table>
+            <thead><tr><th>Zeile</th><th>Inhalt</th><th>Wo gepr&uuml;ft</th></tr></thead>
+            <tbody>
+              <tr><td><code>Beweis:</code></td><td>Branch + SHA + Kommando + erwartete Ausgabe</td><td>Reviewer</td></tr>
+              <tr><td><code>Orakel:</code></td><td><code>crash</code>, <code>contract</code>, <code>property</code>, <code>differential</code>, <code>mutation-sample</code>, <code>coverage</code>, <code>analyzer</code> oder <code>metric</code></td><td><code>ledger.sh lint</code>: Wert aus der Liste</td></tr>
+              <tr><td><code>Refuter:</code></td><td>wer den Fund zu widerlegen versuchte, mit welchem Ergebnis</td><td>Reviewer</td></tr>
+              <tr><td><code>Dedup-Key:</code></td><td>derselbe Schl&uuml;ssel wie in der Roadmap: voll <code>&lt;klasse&gt;:&lt;komponente&gt;:&lt;datei&gt;:&lt;symbol&gt;</code> oder kurz wie die Wochenlauf-Zeilen (<code>reg:&lt;schritt&gt;</code>)</td><td><code>ledger.sh lint</code>: das erste Token ist <code>&lt;klasse&gt;:&lt;rest&gt;</code>, <code>&lt;klasse&gt;</code> eine der Klassen; <code>review.sh sec</code> sperrt <code>sec:</code>-Schl&uuml;ssel im &ouml;ffentlichen Repo</td></tr>
+              <tr><td><code>Metrik:</code></td><td>Klasse B: vorher &rarr; nachher mit Werkzeug und Version; Klasse C: gel&ouml;schte Zeilen</td><td>Reviewer</td></tr>
+              <tr><td><code>Kosten:</code></td><td>was der Beweis gekostet hat</td><td>&ndash;</td></tr>
+              <tr><td><code>HEAD:</code></td><td>der Commit, auf dem der Beweis galt</td><td><code>ledger.sh lint</code>: ein SHA</td></tr>
+              <tr><td><code>Semantik:</code></td><td>die Stelle unter <code>docs/</code>, die das gewollte Verhalten beschreibt, mit Zitat; Pflicht bei <code>/feature-plan --kurz</code></td><td>Reviewer</td></tr>
+            </tbody>
+          </table>
+          <p>Die Form pr&uuml;ft <code>ledger.sh lint</code>; <code>ledger_test.sh</code> f&auml;hrt es &uuml;ber alle
+          echten Ledger, in der <code>scripts</code>-Suite und im CI-Job <code>ops-scripts</code>. Den Inhalt pr&uuml;ft
+          der Reviewer. Die Beweis-Zeilen selbst pr&uuml;ft <code>scripts/tests/skill_consistency_test.sh</code> nicht; er
+          h&auml;lt fest, dass die Skill- und Harness-Texte zueinander passen: die Status-Folge, der Plan-Commit auf dem
+          Feature-Branch statt auf <code>main</code>, <code>Heavy:</code> in der Kopf-Vorlage, und Ledger-Pfad und
+          PR-Nummer in ihren Roadmap-Spalten (<code>status --ledger</code>, <code>--pr</code>) statt in der Notiz.</p>
 
           <h2>Parit&auml;ts- und Contract-Gates</h2>
           <p>Zwei Fehlerklassen brauchen keine VM, um gefunden zu werden: &bdquo;Kopie driftet&ldquo; (dieselbe

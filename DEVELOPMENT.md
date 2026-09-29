@@ -113,18 +113,20 @@ Tests grün, committen. Für npm/cargo/go analog über die jeweiligen Update-Bef
 
 ### Python-Lint/Format (ruff)
 
-Alle drei Python-Komponenten nutzen [ruff](https://docs.astral.sh/ruff/) (Lint +
-Formatter, Config in `ruff.toml` im Repo-Root):
+Alle drei Python-Komponenten und die Python-Skripte unter `scripts/` nutzen
+[ruff](https://docs.astral.sh/ruff/) (Lint + Formatter, Config in `ruff.toml` im
+Repo-Root):
 
 ```bash
-ruff check apps/server apps/monitoring apps/ca-issuer    # Lint (--fix behebt)
-ruff format apps/server apps/monitoring apps/ca-issuer   # Formatieren
+ruff check apps/server apps/monitoring apps/ca-issuer scripts    # Lint (--fix behebt)
+ruff format apps/server apps/monitoring apps/ca-issuer scripts   # Formatieren
 ```
 
-`scripts/tests/run.sh` lintet alle drei und findet ruff auch dann, wenn es
-nicht im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job
-`python-lint` deckt derzeit nur `apps/server` und `apps/monitoring` ab —
-`apps/ca-issuer` faellt lokal auf, nicht im PR-Gate.
+`scripts/tests/run.sh` lintet dieselben Pfade — die drei Komponenten im Schritt
+`ruff`, ganz `scripts/` im Schritt `ruff-vm` (Key `scripts`; die Id stammt aus der
+Zeit, als er nur `scripts/vm` abdeckte) — und findet ruff auch dann, wenn es nicht
+im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job `python-lint`
+prueft genau diese vier Pfade mit dem gepinnten ruff.
 
 ### Python-Tests lokal (ohne Docker)
 
@@ -206,6 +208,13 @@ desktop-e2e web scripts` und `all`. Ein Lauf, der die Suite erreicht, hinterlaes
 `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
 loescht eine aeltere: veraltete Evidenz ist schlechter als fehlende.
+
+Jeder Lauf bekommt ein eigenes `TMPDIR` (`${TMPDIR:-/tmp}/ah-verify.XXXXXXXX`) und
+loescht genau dieses Verzeichnis am Ende, den Exit-Code reicht er unveraendert durch
+(R-0098): ein Aufraeumer, der nach `/tmp/tmp.*` greift, trifft die Fixtures eines
+parallel laufenden Tests nicht mehr. Die Kehrseite: das `tmp_path` von pytest ist nach
+dem Lauf weg. Wer einen Rest zum Debuggen braucht, faehrt `run.sh` direkt: der bleibt
+vorerst im `TMPDIR` des Aufrufers (meist `/tmp`).
 
 Der Grund fuer den Wrapper ist die Allowlist: eine Bash-Allow-Regel matcht nie
 ueber ein Env-Praefix, `source .devenv.sh && DATABASE_URL=… pytest` ist also
@@ -392,7 +401,9 @@ dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sei
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
 mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` und **ein** Commit
-mit Code und Ledger. Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
+mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
+`aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
+`ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
 Eingabefehler, `3` Suite rot oder Diff-Scan-Fund, `4` blockiert (Scope/Sec),
 `74` die Suite konnte gar nicht laufen.
 
@@ -441,7 +452,7 @@ python3 scripts/dev/roadmap.py show [R-nnnn] [--wip]
 python3 scripts/dev/roadmap.py next [--status freigegeben] [--exclude-components server web]
 python3 scripts/dev/roadmap.py add --class REG --title "…" --source "weekly 2026-09-25 · 1a2b3c4d" \
     [--proof <branch@sha>] [--dedup-key reg:web-vitest] [--ledger tasks/reg-….md]
-python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"]
+python3 scripts/dev/roadmap.py status R-nnnn geplant [--note "…"] [--ledger tasks/<slug>.md] [--pr "#<n>"]
 python3 scripts/dev/roadmap.py approve R-nnnn [--revoke]
 python3 scripts/dev/roadmap.py sync
 python3 scripts/dev/roadmap.py stats [--days 30]
@@ -460,6 +471,16 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   `abgeschlossen` ist, und ueberspringt Zeilen, die eine ausgeschlossene Komponente
   beruehren (`Komponente:` ihres Ledgers, die Komponente eines vollen Dedup-Keys
   `<klasse>:<komponente>:<datei>:<symbol>`; ein kurzer wie `reg:<schritt>` nennt keine).
+  Das Ledger liest `next` aus dem Arbeitsbaum und von jedem lokalen und Remote-Branch, der
+  den Pfad traegt, und vereinigt die Komponenten: ein geplantes Ledger liegt bis zum Merge
+  nur auf seinem Branch (R-0065). `next` fetcht nicht — wer auf `origin/*` angewiesen ist
+  (etwa der Worker-Klon), fuehrt vorher `git fetch --prune` aus; eine veraltete Kopie auf
+  einem alten Branch schliesst hoechstens zu viel aus. Mit `--exclude-components` gilt
+  fail-closed: nennt die Spalte `Ledger` einen Pfad `tasks/….md`, den weder der Baum noch
+  ein Branch traegt, wird die Zeile uebersprungen, und stderr sagt es
+  (`next: R-nnnn skipped — ledger <pfad> not found in the tree or on any branch (git fetch?)`).
+  Ohne Ausschlussliste, bei `—`, einem Slug oder einem Pfad ausserhalb des Repos bleibt die
+  Zeile im Rennen.
   Nichts bereit: Exit 1.
 - `add` haengt eine `neu`-Zeile an „Neu" an und druckt ihre ID: die hoechste `R-nnnn` plus
   eins, gezaehlt ueber die Datei und ueber alle IDs, die das Skript je vergeben hat. So kommt
@@ -473,6 +494,11 @@ python3 scripts/dev/roadmap.py stats [--days 30]
   derselbe Status erneut sortiert eine falsch abgelegte Zeile ein und macht aus einem Alias
   das Wort. Ein geschlossener Status (`abgeschlossen`, `abgelehnt`) traegt den Tag; mehr
   als 30 Tage danach wandert die Zeile beim naechsten Schreiben oben ins „Archiv".
+  `--ledger` schreibt die Spalte `Ledger` wie `add --ledger`, auch ohne Statuswechsel — so
+  bekommt eine aeltere Zeile ihr Ledger nachgetragen; `next` und die Parallel-Pruefung am
+  Gate lesen es dort, nicht aus der Notiz. Ebenso schreibt `--pr "#<n>"` die Spalte `PR`,
+  die `sync` liest; eine Nummer in der Notiz sieht `sync` nicht, und ein Wert ohne `#<n>`
+  ist Exit 2.
 - `approve` ist `geplant` -> `freigegeben`, Kevins Freigabe; `--revoke` nimmt sie zurueck.
 - `sync` fragt `gh pr list --state merged`: eine Zeile im Status `pr`, deren PR-Spalte nur
   gemergte PRs nennt, wird `abgeschlossen <Merge-Tag> (PR #n)`. Eine Zeile in einem anderen
@@ -518,18 +544,72 @@ kommen durch (der Skript-Kopf zaehlt die Luecken auf). Die tragende Grenze ist
 auch hier die Deny-Liste, der Hook ist die zweite Schicht:
 
 ```bash
-bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung
+bash scripts/dev/harness.sh status   # Marker, AH_AUTONOMOUS, Hook-Registrierung, pre-commit
 bash scripts/dev/harness.sh off      # Kill-Switch: der Waechter warnt nur noch
 bash scripts/dev/harness.sh on       # wieder scharf
 ```
 
-Der Deny greift **nur** im autonomen Lauf (`AH_AUTONOMOUS=1`) und nur ohne den
-Marker `.vm/harness.off` (gitignored, kann also nicht in einen Commit reisen).
+Der Deny fuer Harness-Pfade greift **nur** im autonomen Lauf (`AH_AUTONOMOUS=1`) und nur
+ohne den Marker `.vm/harness.off` (gitignored, kann also nicht in einen Commit reisen).
 Interaktiv warnt der Hook bloss — und diese Warnung sieht man nur mit
 `claude --debug`, weil Claude Code bei Exit 0 ausschliesslich das JSON auf stdout
 liest. Ein Ledger, das den Harness selbst umbaut, ist der Fall fuer `harness.sh off`.
 Der Hook kostet einen `python3`-Start je Tool-Aufruf (auf der Dev-Box ~60 ms) und
 laeuft auch in Kevins interaktiven Sessions.
+
+Zwei Regeln gelten dagegen **in jedem Modus** — interaktiv, im Auto-Modus, in Subagenten,
+im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
+
+- **Kein Loeschen per Glob in einem geteilten Temp-Verzeichnis** (R-0098). Geteilt sind
+  `/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR` und die Verzeichnisse von Claude Code darin:
+  `/tmp/claude-<uid>`, `…/<projekt>` (der kodierte Pfad mit fuehrendem `-`) und
+  `…/<projekt>/<session>` (eine UUID; dort liegen `tasks/` und `scratchpad/` aller Subagenten
+  einer Session), dazu die beiden, die Claude Code je uid fuer alle Sessions fuehrt
+  (`bash-edit-diff/`, `bundled-skills/`). Ein anderer Eintrag dort
+  (`/tmp/claude-<uid>/tmp.XXXX`, eine Datei) ist jemandes eigener. Verweigert werden `rm`,
+  `rmdir`, `unlink` und `shred` mit einem Glob, dessen woertliches Verzeichnis (nach `cd`
+  aufgeloest) ein solches Verzeichnis **ist** (`/tmp/tmp.*`, `cd /tmp && rm -rf tmp.*`, auch
+  `/tmp*` und ein geteiltes Verzeichnis selbst), `find` mit so einem Startpfad samt `-delete`
+  bzw. `-exec rm`, eine Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in
+  /tmp/tmp.*; do …`, `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… |
+  xargs rm` hinter einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen
+  Schleife. Frei bleibt alles eine Ebene tiefer, also im eigenen Verzeichnis
+  (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis `/tmp/foo.XXXX/*`), dazu Pfade hinter einer
+  Variablen (`rm -rf "$W"/*` — der Hook kann sie nicht aufloesen), Globs im eigenen Checkout
+  und derselbe Text in einer Commit-Message oder einem Here-Doc. Die Grenze ist gemessen:
+  „irgendwo unter `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in
+  Scratchpads. Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'` und eine
+  Schleife, die ihre Liste per Prozess-Substitution bekommt (`done < <(ls …)`). Die Regel dazu
+  fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
+  geloescht wird nur der eigene Pfad, nie per Glob.
+- **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
+  `git commit --no-verify` und `-n` (auch in `-qn`), `git -c core.hooksPath=…` (auch ueber <!-- review: ok nennt die verweigerte Umgehung -->
+  `GIT_CONFIG_*`) und `git config … core.hooksPath`, ausser lesend (`--get`), ebenso das
+  Entfernen der ganzen `core`-Sektion. Kevins eigene Shell bleibt frei: der Hook sieht nur,
+  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n`, ein direktes
+  Schreiben von `.git/config` (Edit, `sed -i`, `>>`), ein `core.hooksPath` ueber
+  `include.path`, `git config --edit`, `eval` oder eine Kommando-Substitution, Plumbing
+  (`commit-tree`) und `chmod -x` auf den Hook.
+
+**pre-commit-Hook.** `scripts/dev/hooks/pre-commit` faehrt vor jedem Commit
+`review.sh sec --staged` — bis dahin lief die Sperre fuer privaten Plan, SEC-Ledger,
+`sec:`-Dedup-Keys, `.devenv.sh` und `settings.local.json` nur in `task-close.sh`, der
+Plan-Commit am Gate und jeder Commit von Hand blieben mechanisch ungeprueft. Scharf wird er je Klon
+mit einem Handgriff Kevins:
+
+```bash
+git config core.hooksPath scripts/dev/hooks   # einmal im Haupt-Checkout; die Lanes erben es
+bash scripts/dev/harness.sh status            # pre-commit: armed (core.hooksPath=scripts/dev/hooks)
+```
+
+Der Pfad ist relativ: jeder Worktree faehrt den Hook **seines** Branches, ein Branch ohne
+die Datei hat keinen (und dessen aelteres `harness.sh` sagt dazu nichts). Fehlt die Datei im
+Checkout oder ist sie nicht ausfuehrbar, meldet `harness.sh status` `NOT armed`. Der Hook
+sperrt fail-closed — ein kaputtes `review.sh` blockiert
+jeden Commit; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
+Nur `git commit` faehrt ihn: `git cherry-pick`, `git revert` (festgehalten in
+`scripts/tests/review_scripts_test.sh`), ein Merge mit automatischem Commit und `rebase`
+(von Hand geprueft mit git 2.47) laufen am pre-commit-Hook vorbei.
 
 ### Runner-User `adminhelper-runner`
 
@@ -544,7 +624,10 @@ sudo bash scripts/dev/runner-setup.sh             # legt User, Klon, DB, Venv, S
 
 Das Skript ist idempotent: ein zweiter Lauf laesst gefuellte Token-Dateien in Ruhe
 und haelt DB-Passwort und `~/.devenv.sh` zusammen. `--remove --yes` nimmt User,
-Klon und Datenbank wieder weg. Danach bleiben **drei Handgriffe** fuer Kevin, die
+Klon und Datenbank wieder weg. Im Klon setzt es als Runner `core.hooksPath
+scripts/dev/hooks`, damit der pre-commit-Hook auch dort vor jedem Commit
+`review.sh sec` faehrt (R-0102); ein Klon von vorher bekommt es mit einem erneuten
+`sudo bash scripts/dev/runner-setup.sh`. Danach bleiben **drei Handgriffe** fuer Kevin, die
 der Runner nicht selbst tun kann:
 
 1. `sudo -iu adminhelper-runner env DISABLE_AUTOUPDATER=1 claude setup-token` → Token nach
@@ -955,7 +1038,12 @@ Vollstaendige Integration mit dem AdminHelper-Server:
 Ergaenzend zu den Komponenten-Unit-Tests fahren diese Tests den **echten** Stack
 hoch — `docker-compose.yml` plus das Test-Overlay `docker-compose.test.yml`, das
 die First-Party-Images aus dem Checkout baut, die Gateway-Ports auf hohe
-Per-Run-Ports umlegt und das `./data`-Volume isoliert:
+Per-Run-Ports umlegt, Postgres und Redis nur auf `127.0.0.1` veroeffentlicht und
+das `./data`-Volume isoliert. Die Ports streut `lib_e2e_stack.sh` pro Lauf
+(`ITEST_HTTPS_PORT` 21000-38999, `ITEST_PG_PORT` 11000-15999, `ITEST_REDIS_PORT`
+16000-20999 — die beiden letzten unterhalb des ephemeren Bereichs ab 32768; ohne
+`e2e_init` gelten 18443, 15432 und 16379) und exportiert
+`ITEST_DATABASE_URL` und `ITEST_REDIS_URL` fuer Tests, die auf dem Host laufen:
 
 ```bash
 # From-outside: mTLS-Enrollment (CSR -> :8444) + JWT von aussen durchs Gateway
@@ -988,12 +1076,23 @@ bash scripts/tests/desktop_e2e_connect_tunnel.sh
 # SSE-Push: Cross-Instance-Fan-out ueber echtes Redis. Zwei Server-Instanzen
 # (8081/8082) an einem Postgres+Redis; SSE-Stream gegen A, Event gegen B ->
 # A empfaengt den Push (beweist den Multi-Worker-Redis-Pfad). Braucht das
-# Server-venv (VENV=..., Default /tmp/ah-venv).
+# Server-venv (VENV=..., Default das von run.sh: AH_VENV bzw. ~/.cache/ah-venv).
 bash scripts/tests/sse_push_e2e.sh
 
 # Desktop-Live-E2E: SSE-Push in der echten GUI. Event injizieren -> die Glocke
 # aktualisiert sich in Echtzeit (Badge erscheint << 30s-Poll = beweist Push).
 bash scripts/tests/desktop_e2e_sse_push.sh
+
+# Pflicht-Tests gegen Postgres/Redis des Stacks (run.sh-Schritt stack-pytest):
+# Migrations-Smoke (monitoring), test_stream_redis (server), TOCTOU-Test
+# (ca-issuer). Startet nur postgres + redis; ein Skip ist hier ein Fehler.
+# JUnit: .ah-out/junit/stack-<name>.xml. Braucht das venv mit den Python-Deps.
+bash scripts/tests/stack_pytest.sh
+
+# Web-Panel ohne Mocks (run.sh-Schritt web-live): Playwright-Projekt `live`
+# gegen das Gateway — Login als Seed-Admin, jede Admin-Seite, Benutzer anlegen
+# und loeschen. JUnit: .ah-out/junit/web-live.xml.
+bash scripts/tests/web_live.sh
 ```
 
 Gemeinsamer Boot/Seed-Code liegt in `scripts/tests/lib_e2e_stack.sh`
@@ -1210,6 +1309,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base <sha>] [--no-second-vm] 
   haelt die neue sonst zurueck. Roadmap-Zeilen legt `heavy.sh` ueber `roadmap.py add` an; ist
   der Deckel von 20 `neu`-Zeilen voll oder die Zeile schon offen, steht das laut in den Notizen
   des Reports.
+- **JUnit:** Die pytest-Schritte von `run.sh` schreiben `.ah-out/junit/<schritt-id>.xml`
+  (`monitoring-pytest`, `ca-issuer-pytest`, `server-pytest`, fuer Schemathesis eine Datei je
+  Dienst: `schemathesis-server` usw.), `stack-pytest` je Test `stack-<name>.xml`, Playwright
+  `web-playwright.xml` bzw. `web-live.xml` (nur mit gesetztem `AH_OUT_DIR`, sonst schriebe der
+  Reporter auf stdout) und die Desktop-E2E je `wdio run` eine `desktop-e2e-<ms>-<cid>.xml`
+  (`@wdio/junit-reporter`). Jeder `run.sh`-Lauf verwirft vorher die XMLs des
+  letzten, und `heavy.sh` leert das lokale `junit/` vor dem Lauf: der Pull von der Box loescht
+  nichts, eine alte Datei zaehlte sonst als heutige. `heavy.sh` kopiert das gezogene `junit/`
+  nach `.ah-out/weekly/<jjjj-mm-tt-hhmm>/junit/`; die Report-Zeile `JUnit:` nennt, wie viele
+  XMLs dort liegen.
 - **Historie:** `tasks/private/history.csv`
   (`datum,commit,tree_hash,ebene,schritt,ergebnis,sekunden,vm`). `heavy.sh` uebernimmt das
   Ergebnis eines Schritts woertlich aus `last-all.json` und klassifiziert nur die roten, es

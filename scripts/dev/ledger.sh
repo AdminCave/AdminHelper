@@ -317,6 +317,54 @@ case "$CMD" in
       | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' \
       | grep -vE '^[^[:space:]:]+::[^—]*[^[:space:]—][[:space:]]+—[[:space:]]+[^[:space:]]')
 
+    # Heavy: none | linux-full | scenario <flags> | windows replaces Fast-Suite: and
+    # Warm-Profil: (tasks/README.md). A free Heavy: text beside the old fields is
+    # how every ledger before stage 5b noted it, and stays valid; the new value
+    # beside them is two answers to one question.
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      /^###[ \t]/ { exit }
+      /^Heavy:/ && !seen { seen = 1; heavy = $0; sub(/^Heavy:[ \t]*/, "", heavy) }
+      # The old fields as fields: at the start of a line, or after the · of a
+      # combined head line — not the word inside some other line.
+      /^Fast-Suite:/ || /^Warm-Profil:/ || /·[ \t]*(Fast-Suite|Warm-Profil):/ { old = 1 }
+      END {
+        if (!seen) exit
+        n = split(heavy, w, /[ \t]+/); kw = (n > 0) ? w[1] : ""
+        sub(/[;,.]+$/, "", kw)  # `none; …` means none
+        if (kw ~ /^(none|linux-full|scenario|windows)$/) {
+          if (kw == "scenario" && w[2] !~ /^-/) print "Heavy: scenario needs its flags (scenario --agents N …)"
+          if (old) print "Heavy: " kw " beside Fast-Suite:/Warm-Profil: — the new field replaces them"
+        } else if (!old) print "Heavy: \047" heavy "\047 is not none | linux-full | scenario <flags> | windows"
+      }' "$LEDGER")
+
+    # The proof fields (tasks/README.md, "Beweis-Konvention") are optional; where a
+    # task carries one, the part a script will read has to have its form.
+    while IFS= read -r msg; do
+      echo "ERROR  $msg" >&2
+      RC=1
+    done < <(awk '
+      function value(f,   v) { v = $0; sub("^" f ":[ \t]*", "", v); split(v, w, /[ \t]+/); return w[1] }
+      /^Orakel:/ {
+        v = value("Orakel")
+        if (v !~ /^(crash|contract|property|differential|mutation-sample|coverage|analyzer|metric)$/)
+          printf "line %d: Orakel: \047%s\047 is not crash|contract|property|differential|mutation-sample|coverage|analyzer|metric\n", NR, v
+      }
+      /^Dedup-Key:/ {
+        v = value("Dedup-Key")
+        # The keys of the roadmap: the full <klasse>:<komponente>:<datei>:<symbol>, and
+        # the short ones heavy.sh files (reg:<step>, rel:deps-audit) that --kurz copies.
+        if (v !~ /^(sec|reg|rel|bug|feat|ref|idee):.+$/)
+          printf "line %d: Dedup-Key: \047%s\047 is not <klasse>:<rest> (klasse sec|reg|rel|bug|feat|ref|idee)\n", NR, v
+      }
+      /^HEAD:/ {
+        v = value("HEAD")
+        if (v !~ /^[0-9a-f]+$/ || length(v) < 7 || length(v) > 40)
+          printf "line %d: HEAD: \047%s\047 is not a commit SHA\n", NR, v
+      }' "$LEDGER")
+
     if grep -qE '^Status:[[:space:]]*aktiv' "$LEDGER" && ! grep -qE '^###.*\[ \]' "$LEDGER"; then
       echo "ERROR  Status: aktiv, but no open [ ] task left (tasks/README.md: the invariant)" >&2
       RC=1

@@ -519,6 +519,73 @@ c fix T1 -m "feat: something" --review-note "$(printf 'approve (sonnet)\n### T1 
   && ok "and no second evidence line" || bad "the note forged an evidence line"
 reset_repo
 
+# ══ with the pre-commit hook armed (R-0102) ═══════════════════════════════════
+echo "── pre-commit hook armed ──"
+# The hook runs review.sh sec a third time; the closer keeps its own two runs for
+# clones without the hook. Armed, a close still has to go through.
+mkdir -p "$FIX/scripts/dev/hooks"
+cp "$REPO_ROOT/scripts/dev/hooks/pre-commit" "$FIX/scripts/dev/hooks/pre-commit"
+chmod 755 "$FIX/scripts/dev/hooks/pre-commit"
+git -C "$FIX" config core.hooksPath scripts/dev/hooks
+touch_tool
+c fix T1 -m "feat: closed with the hook armed"
+[ $rc -eq 0 ] && [ "$(head_count)" = "$((BEFORE + 1))" ] \
+  && ok "a close with the pre-commit hook armed still commits" || bad "armed close: rc=$rc out=$OUT"
+# ... and the hook really was armed: the same fixture refuses a sec ledger by hand.
+printf 'finding\n' > "$FIX/tasks/sec-x.md"; git -C "$FIX" add -- tasks/sec-x.md
+OUT=$(git -C "$FIX" commit -qm "by hand" 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q 'tasks/sec-x.md' <<<"$OUT" \
+  && ok "and the same fixture refuses a sec ledger committed by hand" || bad "hook not armed: rc=$rc out=$OUT"
+git -C "$FIX" config --unset core.hooksPath
+reset_repo
+
+# ══ the last open task (R-0083) ═══════════════════════════════════════════════
+echo "── the last open task ──"
+# `aktiv` without an open [ ] breaks the invariant ledger_test lints every real
+# ledger for; the commit that ticked the last box was red on its own. A second
+# ledger, so the fixture's own keeps its open tasks for every other case.
+# mk_one <status> [second]  — one open task, or a second one still open behind it
+mk_one() {
+  { printf '# One — Task-Ledger\nStatus: %s · Branch: feature/one\n\n' "$1"
+    printf '### T1 — die letzte Aufgabe  [ ]\nKomponente: scripts · Dateien: scripts/dev/tool.sh\n'
+    printf 'Änderung: irgendwas\nVerify: bash scripts/dev/verify.sh scripts --strict\n'
+    [ -z "${2:-}" ] || printf '\n### T2 — noch eine  [ ]\nÄnderung: später\n'
+  } > "$FIX/tasks/one.md"
+  git -C "$FIX" add -- tasks/one.md && git -C "$FIX" commit -qm "one ledger"
+}
+one_head() { git -C "$FIX" show HEAD:tasks/one.md 2>/dev/null | sed -n '/^Status:/{p;q}'; }
+
+reset_repo
+mk_one aktiv
+N0=$(head_count)
+printf 'echo the last one\n' >> "$FIX/scripts/dev/tool.sh"
+c one T1 --stage -m "feat: the last task"
+[ $rc -eq 0 ] && [ "$(head_count)" = "$((N0 + 1))" ] \
+  && ok "the last open task closes in one commit" || bad "last task: rc=$rc out=$OUT"
+[ "$(one_head)" = "Status: bereit · Branch: feature/one" ] \
+  && git -C "$FIX" show HEAD:tasks/one.md | grep -q '^### T1 .*\[x\]' \
+  && ok "the same commit moves the head aktiv -> bereit" || bad "head after the last task: '$(one_head)'"
+LINT=$(cd "$FIX" && bash scripts/dev/ledger.sh lint tasks/one.md 2>&1); lrc=$?
+[ $lrc -eq 0 ] && [ -z "$(git -C "$FIX" status --porcelain -- tasks/one.md)" ] \
+  && ok "and the committed ledger lints clean" || bad "lint (rc=$lrc): $LINT"
+
+# Another task still open: the build is not over.
+reset_repo
+mk_one aktiv second
+printf 'echo not the last\n' >> "$FIX/scripts/dev/tool.sh"
+c one T1 --stage -m "feat: not the last task"
+[ $rc -eq 0 ] && [ "$(one_head)" = "Status: aktiv · Branch: feature/one" ] \
+  && ok "with a task still open the head stays aktiv" || bad "open task left: rc=$rc head='$(one_head)'"
+
+# Only aktiv moves: a head in any other state is not the closer's to change.
+reset_repo
+mk_one geplant
+printf 'echo geplant\n' >> "$FIX/scripts/dev/tool.sh"
+c one T1 --stage -m "feat: a geplant ledger"
+[ $rc -eq 0 ] && [ "$(one_head)" = "Status: geplant · Branch: feature/one" ] \
+  && ok "a geplant head stays untouched" || bad "geplant: rc=$rc head='$(one_head)'"
+reset_repo
+
 # ══ the message file ══════════════════════════════════════════════════════════
 echo "── the commit message ──"
 touch_tool

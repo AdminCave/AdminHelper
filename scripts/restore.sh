@@ -108,10 +108,12 @@ fi
 
 echo "[restore] Starte postgres für den DB-Restore..."
 docker compose up -d postgres
-# Wait for postgres to accept connections.
+# Wait for postgres to accept connections — over TCP, the way restore_db connects.
+# On a fresh volume the image's init server listens on the socket only, so a
+# socket probe says ready while 127.0.0.1 still refuses until the restart.
 ready=0
 for _ in $(seq 1 60); do
-    if docker compose exec -T postgres pg_isready -U adminhelper >/dev/null 2>&1; then ready=1; break; fi
+    if docker compose exec -T postgres pg_isready -h 127.0.0.1 -U adminhelper >/dev/null 2>&1; then ready=1; break; fi
     sleep 1
 done
 # The loop just falling through on timeout would let restore_db run against a

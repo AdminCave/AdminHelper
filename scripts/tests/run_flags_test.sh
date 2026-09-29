@@ -99,23 +99,48 @@ echo "── --step ──"
 run_bare lint --step nixda
 [ $rc -eq 2 ] && grep -q "unknown step: 'nixda'" <<<"$OUT" && ok "unknown step -> exit 2" || bad "unknown step: rc=$rc"
 
-# Four candidates since scripts/vm got its own ruff step: check and format
-# check, for apps/ and for the VM harness.
+# Four candidates since scripts/ got its own ruff step: check and format
+# check, for apps/ and for scripts/.
 run_bare lint --step ruff
 [ $rc -eq 2 ] && grep -q "ambiguous step: 'ruff' matches 4 steps" <<<"$OUT" \
-  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts/vm)" <<<"$OUT" \
+  && grep -q "ruff format check" <<<"$OUT" && grep -q "ruff check (scripts)" <<<"$OUT" \
   && ok "ambiguous step -> exit 2, candidates listed" || bad "ambiguous step: rc=$rc"
 
 # The dry pass must reject BEFORE running anything: an ambiguous --step may not
 # have executed one of its candidates on the way to the error.
 grep -qE '^  (PASS|SKIP|FAIL)' <<<"$OUT" && bad "ambiguous --step ran a step anyway" || ok "ambiguous --step runs nothing"
 
-# The VM harness has to be reachable as its own step, or `verify.sh scripts`
-# could not lint it without linting apps/ too.
-run_bare lint --step "ruff check (scripts/vm)"
+# scripts/ has to be reachable as its own step, or `verify.sh scripts` could
+# not lint it without linting apps/ too.
+run_bare lint --step "ruff check (scripts)"
 [ "$(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT")" -eq 1 ] \
-  && ok "the scripts/vm ruff step is addressable on its own" \
-  || bad "--step 'ruff check (scripts/vm)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+  && ok "the scripts ruff step is addressable on its own" \
+  || bad "--step 'ruff check (scripts)' ran $(grep -cE '^  (PASS|SKIP|FAIL)' <<<"$OUT") steps"
+
+# What the two ruff steps really lint, read off a stub's argv: roadmap.py and
+# doc-smoke.py sat outside every gate while the step covered scripts/vm only.
+RUFFSTUB="$WORK/bin-ruff"; mkdir -p "$RUFFSTUB"
+cp -a "$BARE/." "$RUFFSTUB/"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$RUFF_LOG"\nexit 0\n' > "$RUFFSTUB/ruff"; chmod +x "$RUFFSTUB/ruff"
+RUFF_LOG="$WORK/ruff.log"; : > "$RUFF_LOG"
+OUT=$(PATH="$RUFFSTUB" RUFF_LOG="$RUFF_LOG" AH_OUT_DIR="$WORK/out" "$RUFFSTUB/bash" "$RUN" lint --only scripts 2>&1); rc=$?
+grep -qx 'check scripts' "$RUFF_LOG" && grep -qx 'format --check scripts' "$RUFF_LOG" \
+  && grep -q "PASS  ruff check (scripts)" <<<"$OUT" \
+  && ok "lint --only scripts runs ruff check and format over all of scripts/" \
+  || bad "ruff was called as: $(tr '\n' '|' < "$RUFF_LOG")"
+
+# CI and run.sh lint the same paths. The set run.sh covers is the union of its
+# two ruff steps; ci.yml names it in one line each for check and format.
+: > "$RUFF_LOG"
+OUT=$(PATH="$RUFFSTUB" RUFF_LOG="$RUFF_LOG" AH_OUT_DIR="$WORK/out" "$RUFFSTUB/bash" "$RUN" lint --only server monitoring ca-issuer scripts 2>&1)
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+for verb in 'check' 'format --check'; do
+  run_paths=$(sed -n "s/^$verb //p" "$RUFF_LOG" | tr ' ' '\n' | grep -v '^$' | sort)
+  ci_paths=$(sed -n "s/^[[:space:]]*run: ruff $verb //p" "$CI_YML" | tr ' ' '\n' | grep -v '^$' | sort)
+  [ -n "$run_paths" ] && [ "$run_paths" = "$ci_paths" ] \
+    && ok "ruff $verb: ci.yml and run.sh cover the same paths" \
+    || bad "ruff $verb: run.sh [$(echo $run_paths)] vs ci.yml [$(echo $ci_paths)]"
+done
 
 # Counted, not grepped: the error "unknown step: 'vm.py pytest'" contains the
 # name too, so a grep would pass against a run.sh that has no such step at all.
@@ -194,7 +219,7 @@ OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out" AH_REQUIRED="go-agent" "$BARE/bash" "$
   && ok "--only makes a non-required step required" || bad "--only strictness: rc=$rc"
 # ...while the steps --only filtered away must not fail: they were never asked
 # for. Named, not counted: how many of the INCLUDED steps can run depends on
-# what the box has installed (a venv ruff makes the scripts/vm pair pass here
+# what the box has installed (a venv ruff makes the scripts pair pass here
 # and skip in CI), and a count would make this assertion box-dependent.
 FILTERED_FAILED=0
 for step in "ruff check (SKIP)" "ruff format check (SKIP)" "gofmt (agent) (SKIP)"; do
@@ -215,12 +240,20 @@ cat > "$PYSHIM/python3" <<'EOF'
 # `-m pip install …` and `-m venv …` succeed silently; `-m pytest …` prints a
 # short summary. The SHIM_* knobs reproduce the shapes real suites produce.
 case "$*" in
+  # SHIM_VENV_LOG records where run.sh asks for the venv. Before the pip arm: a
+  # temp path may well contain "pip".
+  *"-m venv "*) [ -n "${SHIM_VENV_LOG:-}" ] && printf '%s\n' "$*" >> "$SHIM_VENV_LOG"; exit 0 ;;
   *pip*|*venv*) exit 0 ;;
   # The schemathesis step probes for its package before running anything;
   # SHIM_NO_SCHEMATHESIS stands in for a box where it is not installed.
   *"import schemathesis"*) [ -n "${SHIM_NO_SCHEMATHESIS:-}" ] && exit 1; exit 0 ;;
 esac
 [ -n "${SHIM_ECHO_ARGV:-}" ] && echo "ARGV: $*"
+# pytest writes its JUnit XML wherever --junitxml points, creating the directory;
+# the stub does the same, so a test sees WHERE run.sh asks for the file.
+for a in "$@"; do
+  case "$a" in --junitxml=*) f="${a#--junitxml=}"; mkdir -p "$(dirname "$f")" && echo '<testsuites/>' > "$f" ;; esac
+done
 [ -n "${SHIM_NUL:-}" ] && printf 'a binary blob: \000 \001\n'
 [ -n "${SHIM_FAKE_LINE:-}" ] && echo "SKIPPED this is plain test output, not a summary line"
 echo "1 passed, 1 skipped in 0.01s"
@@ -246,6 +279,29 @@ OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED=
 [ $rc -eq 0 ] && ok "an unmet-precondition test-skip does not fail the run" || bad "redis skip: rc=$rc"
 grep -q "1 test-skips" <<<"$OUT" && ok "the summary counts test-skips" || bad "summary: $(grep -m1 'run.sh\[' <<<"$OUT")"
 grep -q "strict-failed" <<<"$OUT" && bad "unmet precondition strict-failed" || ok "no strict-fail without the precondition"
+
+# A Redis URL with credentials names the same host and port as without them —
+# redis.from_url connects there. A listener stands in for the Redis (the probe
+# only opens TCP); the real python3, not the shim, and stopped by its own PID.
+python3 - "$WORK/listener.port" <<'PY' &
+import socket, sys, time
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+s.listen(8)
+open(sys.argv[1], "w").write(str(s.getsockname()[1]))
+time.sleep(60)
+PY
+LPID=$!
+for _ in $(seq 1 50); do [ -s "$WORK/listener.port" ] && break; sleep 0.1; done
+LPORT=$(cat "$WORK/listener.port" 2>/dev/null)
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest" \
+      AH_TEST_REDIS_URL="redis://:secret@127.0.0.1:${LPORT:-1}/0" \
+      SHIM_SKIP="tests/test_stream_redis.py:38: Redis not reachable at redis://:secret@127.0.0.1:${LPORT:-1}/0" \
+      "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
+kill "$LPID" 2>/dev/null; wait "$LPID" 2>/dev/null
+[ -n "$LPORT" ] && [ $rc -eq 1 ] && grep -q "strict-failed: .*test_stream_redis.*(test-skip)" <<<"$OUT" \
+  && ok "a reachable Redis behind a URL with credentials makes its skip strict-failed" \
+  || bad "redis URL with credentials: port=${LPORT:-none} rc=$rc $(grep -m1 -E 'strict-failed|run.sh\[' <<<"$OUT")"
 
 # The same skip with its precondition met is a hole, not a note.
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_REQUIRED="monitoring-pytest"       DATABASE_URL="postgresql://x@localhost/y"       SHIM_SKIP="tests/test_migrations_smoke.py:21: DATABASE_URL nicht gesetzt"       "$PYSHIM/bash" "$RUN" unit --strict --step "monitoring pytest" 2>&1); rc=$?
@@ -273,6 +329,28 @@ grep -qE '"head": "[0-9a-f]{40}"' "$WORK/out-ev/last-unit.json" \
   && ok "artifact: head commit" || bad "head: $(grep head "$WORK/out-ev/last-unit.json")"
 grep -q '"reruns": 0' "$ART" && ok "artifact: reruns field (0 in stage 1)" || bad "reruns missing"
 grep -q '"name": "monitoring pytest", "result": "pass"' "$ART"   && ok "artifact: step name and verdict" || bad "steps: $(grep -A2 '"steps"' "$ART" | tr -d '\n')"
+
+# JUnit: each pytest step writes junit/<step-id>.xml under AH_OUT_DIR, which is
+# what heavy.sh collects. A file left by an earlier run is gone first — the pull
+# from the box would otherwise hand it to the report as this run's.
+mkdir -p "$WORK/out-junit/junit" && echo '<testsuites/>' > "$WORK/out-junit/junit/stale.xml"
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out-junit" SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -f "$WORK/out-junit/junit/monitoring-pytest.xml" ] \
+  && ok "the monitoring pytest step writes junit/monitoring-pytest.xml" \
+  || bad "junit: rc=$rc, dir: $(ls "$WORK/out-junit/junit" 2>&1)"
+[ -e "$WORK/out-junit/junit/stale.xml" ] \
+  && bad "a JUnit XML from an earlier run survived the new one" \
+  || ok "the run drops the JUnit XMLs of earlier runs"
+# The schemathesis step runs pytest once per service: one XML each, or the last
+# service's file would silently replace the other two.
+OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out-junit" SHIM_SKIP="" \
+      "$PYSHIM/bash" "$RUN" unit --step "schemathesis" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -f "$WORK/out-junit/junit/schemathesis-server.xml" ] \
+  && [ -f "$WORK/out-junit/junit/schemathesis-monitoring.xml" ] \
+  && [ -f "$WORK/out-junit/junit/schemathesis-ca-issuer.xml" ] \
+  && ok "schemathesis writes one JUnit XML per service" \
+  || bad "schemathesis junit: rc=$rc, dir: $(ls "$WORK/out-junit/junit" 2>&1)"
 
 # A NUL byte anywhere in a suite's output used to make grep treat the log as
 # binary and report NOTHING — every skip vanished and the run went green. This is
@@ -355,14 +433,16 @@ fi
 # AH_ARGS is what verify.sh forwards `-- <args>` through; it must arrive at the
 # suite and must be a true no-op when empty. The `-m "not schemathesis"` in
 # between is the pytest steps' own marker filter — the fuzz suite has its own
-# step with its own example budget and may not be collected twice.
+# step with its own example budget and may not be collected twice — and the
+# step's JUnit file.
+JX="--junitxml=$WORK/out/junit/monitoring-pytest.xml"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" AH_ARGS="-k lifecycle" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
-grep -q 'ARGV: -m pytest -q -m not schemathesis -k lifecycle' <<<"$OUT" \
+grep -qF "ARGV: -m pytest -q -m not schemathesis $JX -k lifecycle" <<<"$OUT" \
   && ok "AH_ARGS reaches the suite command" || bad "AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 OUT=$(PATH="$PYSHIM" AH_VENV="$WORK/no-venv" AH_OUT_DIR="$WORK/out" \
       SHIM_ECHO_ARGV=1 "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" 2>&1)
-grep -q 'ARGV: -m pytest -q -m not schemathesis$' <<<"$OUT" \
+grep -qxF "ARGV: -m pytest -q -m not schemathesis $JX" <<<"$OUT" \
   && ok "an empty AH_ARGS adds nothing" || bad "empty AH_ARGS: $(grep -m1 'ARGV: -m' <<<"$OUT")"
 
 # Where git cannot answer, run.sh must take the evidence fields from the client
@@ -411,6 +491,33 @@ grep -q '"head": "3333333333333333333333333333333333333333"' "$WORK/out5/last-li
 OUT=$(PATH="$BARE" AH_OUT_DIR="$WORK/out2" AH_REQUIRED="go-agent"       "$BARE/bash" "$RUN" unit --strict --step "go agent" 2>&1)
 grep -q '"result": "strict-failed"' "$WORK/out2/last-unit.json"   && ok "artifact: a strict-failed skip has its own verdict"   || bad "verdict: $(grep -A2 '"steps"' "$WORK/out2/last-unit.json" | tr -d '\n')"
 
+# ══ where the python venv lives (R-0057) ══════════════════════════════════════
+echo "── the venv default ──"
+# Not under /tmp: systemd-tmpfiles clears it after ten days, and a venv half gone
+# there turned four suites red without a code change. This file exports AH_VENV
+# for every case; this one unsets it and gives run.sh a fixture HOME.
+VLOG="$WORK/venv.log"; : > "$VLOG"
+env -u AH_VENV PATH="$PYSHIM" HOME="$WORK/home" SHIM_VENV_LOG="$VLOG" AH_OUT_DIR="$WORK/out" \
+  "$PYSHIM/bash" "$RUN" unit --step "monitoring pytest" >/dev/null 2>&1
+grep -qxF -- "-m venv $WORK/home/.cache/ah-venv" "$VLOG" \
+  && ok "AH_VENV unset -> run.sh builds the venv under \$HOME/.cache" \
+  || bad "run.sh asked for the venv as: $(tr '\n' '|' < "$VLOG")"
+# One default in three places: run.sh builds the venv, iter.sh activates it on a
+# box for a Verify: command, sse_push_e2e.sh starts the server from it. Each
+# expression is evaluated as written, with AH_VENV/VENV unset and the same HOME.
+WANT_VENV="$WORK/home/.cache/ah-venv"
+ITER_EXPR=$(sed -n "s/^[[:space:]]*VENVPRE='\(v=\"[^;]*\"\);.*/\1/p" "$REPO_ROOT/scripts/vm/iter.sh")
+SSE_EXPR=$(grep -m1 '^VENV=' "$REPO_ROOT/scripts/tests/sse_push_e2e.sh")
+got=$(env -u AH_VENV HOME="$WORK/home" bash -c "$ITER_EXPR"'; printf %s "$v"')
+[ -n "$ITER_EXPR" ] && [ "$got" = "$WANT_VENV" ] \
+  && ok "iter.sh activates the same venv on a box" || bad "iter.sh: '$ITER_EXPR' -> '$got'"
+got=$(env -u AH_VENV -u VENV HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
+[ -n "$SSE_EXPR" ] && [ "$got" = "$WANT_VENV" ] \
+  && ok "sse_push_e2e.sh starts the server from the same venv" || bad "sse_push_e2e.sh: '$SSE_EXPR' -> '$got'"
+got=$(env -u VENV AH_VENV="$WORK/host-venv" HOME="$WORK/home" bash -c "$SSE_EXPR"'; printf %s "$VENV"')
+[ "$got" = "$WORK/host-venv" ] \
+  && ok "sse_push_e2e.sh follows an AH_VENV the host sets" || bad "sse_push_e2e.sh with AH_VENV: '$got'"
+
 # ══ the scripts block's own aggregation logic (T9) ════════════════════════════
 echo "── the scripts block ──"
 # Thirteen tests, one result: the mapping from their exit codes to that result is
@@ -421,6 +528,7 @@ mk_case() { printf '#!/bin/sh\nexit %s\n' "$2" > "$BLOCK/$1.sh"; chmod +x "$BLOC
 mk_case blockpass 0
 mk_case blockskip 75
 mk_case blockfail 1
+mk_case blockfail2 2
 # AH_SCRIPT_TESTS_DIR keeps the fixtures in the temp dir: a leftover under
 # scripts/tests/ would shift every later tree_hash — the evidence this stage is
 # built on. AH_IN_SCRIPTS_BLOCK is cleared per call rather than for the whole
@@ -446,11 +554,19 @@ block_run "blockskip blockskip" --strict
 grep -q "2 of the block's tests could not run" <<<"$OUT" \
   && ok "block: every skip stays visible, not just the first" || bad "only the first skip reported"
 
-block_run "blockpass blockfail blockpass"
-[ $rc -eq 1 ] && grep -q "blockfail: FAILED" <<<"$OUT" \
+block_run "blockpass blockfail blockpass blockfail2"
+[ $rc -eq 1 ] && grep -q "blockfail: FAILED (rc=1)" <<<"$OUT" \
   && ok "block: a failing test fails the block" || bad "failing test: rc=$rc"
-[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 2 ] \
-  && ok "block: stops at the first failure" || bad "did not stop: $(grep -c '^  ── block' <<<"$OUT") ran"
+# A red test does not end the block: the weekly run of 2026-09-25 stopped at the
+# first one, and 19 of 31 tests behind it never ran.
+[ "$(grep -c '^  ── block' <<<"$OUT")" -eq 4 ] \
+  && ok "block: runs on past a failure, every test runs" || bad "stopped early: $(grep -c '^  ── block' <<<"$OUT") of 4 ran"
+grep -q "blockfail2: FAILED (rc=2)" <<<"$OUT" && grep -q "2 of 4 failed: blockfail blockfail2" <<<"$OUT" \
+  && ok "block: every red test is named, with the count" || bad "failures not summed up: $(grep 'failed' <<<"$OUT")"
+# A failure outranks a skip: the block is red, not SKIP.
+block_run "blockskip blockfail"
+[ $rc -eq 1 ] && grep -q "FAIL  scripts (hermetic)" <<<"$OUT" && grep -q "1 of 2 failed: blockfail" <<<"$OUT" \
+  && ok "block: a failure next to a skip is a FAIL, not a SKIP" || bad "fail+skip: rc=$rc"
 
 block_run ""
 [ $rc -ne 0 ] && grep -q "AH_SCRIPT_TESTS is empty" <<<"$OUT" \

@@ -1386,7 +1386,12 @@ def test_the_exclude_list_never_hides_tracked_source():
     for entry in ours:
         if entry == "apps/server/data":
             continue
-        if "/" in entry:
+        if entry.startswith("/"):
+            # A leading slash anchors the pattern at the transfer root, a trailing
+            # one only narrows it to directories: it hides that path and all below.
+            anchored = entry.strip("/")
+            hits = [t for t in tracked if t == anchored or t.startswith(anchored + "/")]
+        elif "/" in entry:
             # An anchored pattern only matches from the root.
             hits = [t for t in tracked if t == entry or t.startswith(entry + "/")]
         else:
@@ -1400,6 +1405,35 @@ def test_the_exclude_list_never_hides_tracked_source():
     assert ".git" not in ours
     # Our own local state never travels — it describes THIS machine's leases.
     assert {".vm", ".ah-out"} <= set(ours)
+
+
+def test_the_root_data_dir_survives_a_sync_with_delete(tmp_path):
+    """./data on a used box is the stack's, not the sync's to delete (R-0086).
+
+    docker-compose binds ./data, and an integration run fills it as root. The next
+    sync found a directory that is missing locally (gitignored), tried to --delete
+    it, was refused, and rsync's code 23 left the run UNVERIFIED. Real rsync,
+    because what matters is how rsync reads the pattern: /data/ must spare the
+    root directory and nothing deeper. The test checks the state afterwards, not
+    permissions, so it proves the same when it runs as root.
+    """
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    for path in (
+        src / "apps/x/keep.txt",
+        src / "data/local-only.txt",
+        dst / "data/frp-config/box-only.txt",
+        dst / "apps/x/data/stale.txt",
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.name)
+    subprocess.run(
+        ["rsync", "-a", "--delete", "--exclude-from", vm.RSYNC_EXCLUDE, "%s/" % src, "%s/" % dst],
+        check=True,
+    )
+    assert (dst / "apps/x/keep.txt").read_text() == "keep.txt"
+    assert (dst / "data/frp-config/box-only.txt").exists()
+    assert not (dst / "data/local-only.txt").exists()
+    assert not (dst / "apps/x/data/stale.txt").exists()
 
 
 def test_ssh_without_a_command_opens_a_login_shell(cfg, api, reachable, shell):

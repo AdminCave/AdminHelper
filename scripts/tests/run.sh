@@ -82,7 +82,7 @@ export AH_ONLY AH_STRICT
 #              desktop-ui-vitest · desktop-e2e-lint · web-vitest · scripts
 #              vm-pytest · dev-pytest
 #   integration: integration · integration-stack · backup-restore · sse-push
-#                agent-monitoring · repo-build · upgrade-path
+#                agent-monitoring · repo-build · upgrade-path · stack-pytest · web-live
 #   e2e: web-playwright · desktop-e2e-smoke · desktop-e2e-gui · desktop_e2e_<name>
 #        (each GUI suite carries its script name as id, underscores and all)
 # Unset AH_REQUIRED + a heavy layer (integration|e2e|all) => the layer's own ids are
@@ -100,7 +100,7 @@ AH_REQUIRED="${AH_REQUIRED:-$AH_REQUIRED_DEFAULT}"
 # went green with the heavy steps silently SKIPped: the default set above only
 # names lint/unit ids, and iter.sh forwards AH_REQUIRED from the client,
 # where it is the DEV BOX's (heavy-free) set — heavy.sh unsets it for that reason.
-AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path"
+AH_HEAVY_INTEGRATION="integration integration-stack backup-restore sse-push agent-monitoring repo-build upgrade-path stack-pytest web-live"
 # The GUI suites are globbed from the directory exactly as layer_e2e runs them: a
 # hand-kept list would let a ninth suite run without being required, and its
 # self-SKIP would be green again — the very hole this block closes.
@@ -131,12 +131,16 @@ export AH_PYTEST_RS
 AH_ARGS="${AH_ARGS:-}"
 export AH_ARGS
 
-# Python suites install into a venv (AH_VENV, default /tmp/ah-venv) so a dev's
+# Python suites install into a venv (AH_VENV, default ~/.cache/ah-venv) so a dev's
 # default `run.sh quick` never mutates the host's system site-packages (PEP 668) —
 # no host-wide PIP_BREAK_SYSTEM_PACKAGES. ensure_venv (called at the top of
 # layer_unit) creates + activates it; the activation reaches the run_step `bash -c`
 # subshells via the exported PATH/VIRTUAL_ENV. Ephemeral boxes reuse it too (6.140).
-AH_VENV="${AH_VENV:-/tmp/ah-venv}"
+# Under the home, not /tmp: systemd-tmpfiles clears /tmp after ten days, and a
+# venv half gone there turned four suites red without a code change (2026-09-21).
+# The path .devenv.sh and runner-setup.sh set. Without HOME (an `env -i` shell)
+# the home comes from passwd, as for AH_PY_LOCK_FILE below.
+AH_VENV="${AH_VENV:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/ah-venv}"
 ensure_venv() {
   [ -x "$AH_VENV/bin/python" ] || python3 -m venv "$AH_VENV" \
     || { echo "  (venv creation failed; python suites may hit PEP 668)" >&2; return 1; }
@@ -148,6 +152,9 @@ ensure_venv() {
 # finalizer below runs the on-box collector when AH_CAPTURE=1. iter.sh pulls
 # this dir back via -artifact-glob. No effect on plain dev/CI runs (AH_CAPTURE unset).
 export AH_OUT_DIR="${AH_OUT_DIR:-$ROOT/.ah-out}"
+# Absolute: the pytest steps cd into their component before writing their JUnit
+# XML to $AH_OUT_DIR/junit/<step-id>.xml, which heavy.sh collects for the report.
+case "$AH_OUT_DIR" in /*) ;; *) AH_OUT_DIR="$ROOT/$AH_OUT_DIR" ;; esac
 
 PASS=0 FAIL=0 SKIP=0
 # --only is honoured by the lint/unit layers only; integration/e2e always run
@@ -297,7 +304,8 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 #     this very test against the wrong database); CI's postgres service sets it.
 #   test_auth_token_lifecycle runs in the server suite, which run.sh feeds from
 #     DATABASE_URL or AH_TEST_DB, and which can also fall back to testcontainers.
-#   test_stream_redis         needs a reachable Redis on the port it names.
+#   test_stream_redis         needs a reachable Redis at the URL it reads
+#     (AH_TEST_REDIS_URL, else the PR CI's localhost:6380).
 #   test_db_token_store       needs AH_TEST_DB to point at a real Postgres; the
 #     TOCTOU test needs true concurrency, so SQLite is not a substitute.
 #   test_alembic_builtin      pytest-alembic builds the chain in a throwaway database
@@ -311,8 +319,15 @@ run_py_step() { local id="$1" name="$2"; shift 2; [ "$1" = "--" ] && shift
 # gate on the URL naming a Postgres (a SQLite URL makes FOR UPDATE a no-op), so a
 # run with such a URL skips honestly — and calling that strict-failed would be a
 # red with nothing behind it.
-# Port from test_stream_redis.py's REDIS_URL (redis://localhost:6380/0).
-redis_reachable() { (exec 3<>/dev/tcp/localhost/6380) >/dev/null 2>&1; }
+# The host and port test_stream_redis.py's REDIS_URL connects to, taken the way
+# redis.from_url takes them: any scheme, credentials dropped, 6379 without a port.
+redis_reachable() {
+  local hp="${AH_TEST_REDIS_URL:-redis://localhost:6380/0}" host port
+  hp="${hp#*://}"; hp="${hp%%/*}"; hp="${hp##*@}"
+  host="${hp%:*}"; port="${hp##*:}"
+  [ "$host" = "$hp" ] && port=6379
+  (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1
+}
 
 test_skip_is_required() {  # test_skip_is_required <skip line> -> 0 if it must not skip
   case "$1" in
@@ -496,21 +511,24 @@ layer_lint() {
     skip ruff "ruff format check" "ruff not installed (not on PATH, no component venv)"
   fi
 
-  # Its own step rather than three more paths on the one above: the `scripts`
+  # Its own step rather than one more path on the one above: the `scripts`
   # key has to be able to lint its own Python without dragging apps/ along, and
-  # `--only server` has no business linting the VM harness.
+  # `--only server` has no business linting the harness. All of scripts/, not
+  # just scripts/vm: the Python beside it (roadmap.py, doc-smoke.py, e2e_api.py
+  # and their tests) hung on no gate at all. The id
+  # stays `ruff-vm` — it is named in every AH_REQUIRED, the host's .devenv.sh too.
   # Two skips for two runs, like the block above: a box without ruff must offer
   # the same step NAMES as one with it, or `--step` and the candidate count
   # would depend on what happens to be installed.
   if ! only scripts; then
-    skip ruff-vm "ruff check (scripts/vm)" "AH_ONLY"
-    skip ruff-vm "ruff format check (scripts/vm)" "AH_ONLY"
+    skip ruff-vm "ruff check (scripts)" "AH_ONLY"
+    skip ruff-vm "ruff format check (scripts)" "AH_ONLY"
   elif [ -n "$ruff_bin" ]; then
-    run_step ruff-vm "ruff check (scripts/vm)"        -- "$ruff_bin" check scripts/vm
-    run_step ruff-vm "ruff format check (scripts/vm)" -- "$ruff_bin" format --check scripts/vm
+    run_step ruff-vm "ruff check (scripts)"        -- "$ruff_bin" check scripts
+    run_step ruff-vm "ruff format check (scripts)" -- "$ruff_bin" format --check scripts
   else
-    skip ruff-vm "ruff check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
-    skip ruff-vm "ruff format check (scripts/vm)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff check (scripts)" "ruff not installed (not on PATH, no component venv)"
+    skip ruff-vm "ruff format check (scripts)" "ruff not installed (not on PATH, no component venv)"
   fi
 
   if ! only agent; then skip gofmt "gofmt (agent)" "AH_ONLY"
@@ -526,8 +544,9 @@ layer_lint() {
 
 # The hermetic shell tests as ONE step. They need nothing but bash and coreutils,
 # run in seconds, and cover the ops scripts nothing else touches. As a block
-# rather than a dozen steps because a dozen entries would drown the summary; the
-# trade-off is that the first red one hides the rest until you read the log.
+# rather than a dozen steps because a dozen entries would drown the summary; a
+# red one does not stop the block, it names every red test at the end — the
+# weekly run of 2026-09-25 stopped at the first one and 19 of 31 never ran.
 # Overridable so the aggregation logic itself can be tested with fixture scripts
 # (run_flags_test.sh) — that logic was wrong once already, and hand-checking it is
 # exactly what this stage abolishes. An empty list would make the block trivially
@@ -537,16 +556,16 @@ layer_lint() {
 AH_SCRIPT_TESTS_DEFAULT="install_test update_test init-secrets_test uninstall_test
 restore_guard_test gateway_mtls_test agent_install_test diagnostics_test
 session_status_test run_flags_test verify_test iter_flags_test hooks_test ledger_test review_scripts_test task_close_test runner_setup_test redteam_test
-desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test
-openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test vm_wrappers_test
-multibox_test lane_test"
+desktop_e2e_skip_test check_versions_test toolchain_lockstep_test heavy_test box_scripts_guard_test pipe_guard_test
+openapi_breaking_test doc_smoke_test sync_check_test lib_vm_test lib_e2e_stack_test stack_pytest_test vm_wrappers_test
+multibox_test lane_test skill_consistency_test"
 AH_SCRIPT_TESTS="${AH_SCRIPT_TESTS-$AH_SCRIPT_TESTS_DEFAULT}"
 # Where the block looks for them. Overridable so a test can keep its fixtures in
 # a temp dir instead of littering the checkout — an untracked leftover there would
 # shift every later tree_hash, which is the evidence this stage is built on.
 AH_SCRIPT_TESTS_DIR="${AH_SCRIPT_TESTS_DIR:-$ROOT/scripts/tests}"
 scripts_block() {
-  local t rc skipped=0 ran=0
+  local t rc skipped=0 ran=0 nfail=0 failed=""
   # Two of the block's tests start run.sh themselves. They pin --step or a layer
   # that never reaches this block, but a future one might not — and the whole
   # list per level is a fork bomb, not a test run.
@@ -559,7 +578,7 @@ scripts_block() {
     case "$rc" in
       0)  ;;
       75) skipped=$((skipped + 1)); echo "     $t: SKIP (75)" ;;
-      *)  echo "     $t: FAILED (rc=$rc)"; return "$rc" ;;
+      *)  echo "     $t: FAILED (rc=$rc)"; nfail=$((nfail + 1)); failed="$failed $t" ;;
     esac
   done
   # One block, one result for the whole list: if even one could not run, PASS
@@ -570,6 +589,11 @@ scripts_block() {
   # Counted, not pattern-matched: any whitespace-only value would slip past a
   # string check and report a green block for zero tests.
   [ "$ran" -gt 0 ] || { echo "  AH_SCRIPT_TESTS is empty — nothing to verify"; return 1; }
+  # A failure outranks a skip: the block is red, whatever else could not run.
+  if [ "$nfail" -gt 0 ]; then
+    echo "  $nfail of $ran failed:$failed"
+    return 1
+  fi
   if [ "$skipped" -gt 0 ]; then
     echo "  $skipped of the block's tests could not run — block is not verified"
     return 75
@@ -589,13 +613,13 @@ layer_unit() {
   # Monitoring pytest — bulk is pure logic; the migrations-smoke self-skips w/o DATABASE_URL.
   if ! only monitoring; then skip monitoring-pytest "monitoring pytest" "AH_ONLY"
   elif have python3; then
-    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step monitoring-pytest "monitoring pytest" -- bash -c 'cd apps/monitoring && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/monitoring-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip monitoring-pytest "monitoring pytest" "python3 not installed"; fi
 
   # ca-issuer pytest — pure PKI logic. NOT covered by CI today (closes a gap).
   if ! only ca-issuer; then skip ca-issuer-pytest "ca-issuer pytest" "AH_ONLY"
   elif have python3 && [ -d apps/ca-issuer/tests ]; then
-    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step ca-issuer-pytest "ca-issuer pytest" -- bash -c 'cd apps/ca-issuer && { python3 -m pip install -q -r requirements-dev.txt 2>/dev/null || python3 -m pip install -q pytest cryptography; }; python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/ca-issuer-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip ca-issuer-pytest "ca-issuer pytest" "python3 missing or no tests"; fi
 
   # Server pytest — needs a Postgres: testcontainers (docker) or an injected
@@ -603,7 +627,7 @@ layer_unit() {
   # without the fallback the step skipped there silently, every single run.
   if ! only server; then skip server-pytest "server pytest" "AH_ONLY"
   elif have python3 && { [ -n "${DATABASE_URL:-${AH_TEST_DB:-}}" ] || have_docker; }; then
-    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" $AH_PYTEST_RS $AH_ARGS'
+    run_py_step server-pytest "server pytest" -- bash -c 'cd apps/server && export DATABASE_URL="${DATABASE_URL:-${AH_TEST_DB:-}}" && python3 -m pip install -q -r requirements-dev.txt && python3 -m pytest -q -m "not schemathesis" --junitxml="$AH_OUT_DIR/junit/server-pytest.xml" $AH_PYTEST_RS $AH_ARGS'
   else skip server-pytest "server pytest" "needs docker (testcontainers) or DATABASE_URL"; fi
 
   # Schemathesis — each service's API fuzzed against its OWN OpenAPI schema. A step
@@ -642,7 +666,10 @@ layer_unit() {
           # No $AH_ARGS: this step selects by marker, and a caller asking for one
           # file (verify.sh … -- tests/x.py) would leave it with nothing to collect
           # — an honest SKIP that under --strict reads as a hole in an unrelated run.
-          python3 -m pytest -q -m schemathesis $AH_PYTEST_RS
+          # One XML per service: the loop runs pytest three times, and a single
+          # file would keep only the cases of the last service.
+          python3 -m pytest -q -m schemathesis \
+            --junitxml="$AH_OUT_DIR/junit/schemathesis-${d#apps/}.xml" $AH_PYTEST_RS
         ); c=$?
         # Captured first: inside the case, $? would already be the status of case.
         case "$c" in
@@ -761,6 +788,21 @@ layer_integration() {
   # database is invisible to every other suite here. Needs the network (ghcr +
   # the GitHub API) and self-skips with 75 without it.
   run_step upgrade-path "upgrade_path (last release -> HEAD)" -- bash scripts/tests/upgrade_path_test.sh
+  # The three tests that skip wherever their Postgres or Redis is missing, run
+  # against the stack's own — here a skip is a failure (see stack_pytest.sh).
+  # They need the venv the unit layer creates: an integration run on its own
+  # would otherwise meet a python without the components' deps. Not for a
+  # --step that cannot reach this one, by layer_unit's rule. A venv that cannot
+  # be created says so and leaves the step to fail at its pip install.
+  local stack_name="stack_pytest (Postgres/Redis tests)"
+  if [ "$STEP_PROBE" != 1 ] && { [ -z "$AH_STEP" ] || [[ "$stack_name" == *"$AH_STEP"* ]]; }; then
+    ensure_venv
+  fi
+  run_step stack-pytest "$stack_name" -- bash scripts/tests/stack_pytest.sh
+  # The web panel without mocks: Playwright's `live` project logs in as the seed
+  # admin and writes for real. Here and not in e2e: it needs the stack, not a
+  # display, and the PR CI keeps the mocked chromium project (see web_live.sh).
+  run_step web-live "web_live (Playwright against the stack)" -- bash scripts/tests/web_live.sh
   # update_test/agent_install_test/diagnostics_test used to run here too. They are
   # hermetic, so they belong in the unit layer's scripts block — running them in
   # both meant the heavy layer paid for them twice and the unit layer looked
@@ -848,6 +890,10 @@ if [ -n "$AH_STEP" ]; then
   PASS=0 FAIL=0 SKIP=0; FAILED_STEPS=(); STRICT_FAILED=()
 fi
 
+# The JUnit directory holds this run's XMLs and nothing older. iter.sh pulls the
+# box's whole .ah-out back without deleting, so a file a step left there last
+# week would be counted as today's — the rule write_artifact follows for its JSON.
+rm -rf "$AH_OUT_DIR/junit"
 run_layer
 
 # On failure, collect on-box debug artifacts (container/agent logs, framebuffer

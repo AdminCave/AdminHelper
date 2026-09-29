@@ -13,7 +13,8 @@ from typing import Optional
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security.utils import get_authorization_scheme_param
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -33,6 +34,10 @@ from app.modules.users.models import TokenBlacklist, User
 logger = logging.getLogger("adminhelper.auth")
 
 bearer_scheme = HTTPBearer(auto_error=False)
+# Declared, not read by hand, so the schema names the header as a security scheme
+# (Swagger "Authorize", schemathesis ignored_auth). auto_error=False: a request
+# without it is judged by its ?api_key= and its bearer alone.
+api_key_scheme = APIKeyHeader(name="X-API-Key", scheme_name="ApiKey", auto_error=False)
 
 
 def _prehash(password: str) -> bytes:
@@ -185,18 +190,11 @@ def get_user_from_refresh_token(token: str, db: Session) -> Optional[User]:
     return _get_user_from_token(token, db, expected_type="refresh")
 
 
-def _get_api_key(request: Request, db: Session) -> Optional[ApiKey]:
+def _get_api_key(db: Session, key: str, from_query: bool = False) -> Optional[ApiKey]:
     # Header is the safe path. The query-param fallback (documented for sync URLs)
     # lands the key in nginx/uvicorn access logs, so audit any key that arrives that
     # way — naming it so the operator can rotate the exposed one (3.87). Dropping the
     # fallback entirely would be safer but is a breaking change to a documented feature.
-    key = request.headers.get("X-API-Key")
-    from_query = False
-    if not key:
-        key = request.query_params.get("api_key")
-        from_query = bool(key)
-    if not key:
-        return None
     hashed = hash_api_key(key)
     api_key = db.query(ApiKey).filter(ApiKey.hashed_key == hashed).first()
     if api_key and from_query:
@@ -263,23 +261,43 @@ class ApiKeyOrUser:
         self,
         request: Request,
         credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+        header_key: Optional[str] = Depends(api_key_scheme),
         db: Session = Depends(get_db),
     ):
-        # Check API key
-        api_key = _get_api_key(request, db)
-        if api_key:
-            if self.require_write and api_key.permission != "read_write":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Schreibzugriff erforderlich"
-                )
-            bind_actor(
-                request, Actor("api_key", str(api_key.id), api_key.name, resolve_client_ip(request))
-            )
-            return None, api_key
+        # Every credential the request presents has to hold, so all of them are checked
+        # before anything is decided (R-0054): a valid key must not carry a broken bearer
+        # through, nor a valid bearer an unknown key. Presented is a non-empty X-API-Key or
+        # ?api_key=, and any Authorization header but Basic (a proxy's, or user:pass@ from a
+        # sync URL — infrastructure, ignored): it has to be a valid bearer, so a foreign
+        # scheme, junk or an empty value is a 401. The header is trimmed and parsed here
+        # rather than taken from `credentials` (which declares HTTPBearer in the schema), so
+        # "  Bearer x" is checked as the bearer it is. No client sends two.
+        authorization = request.headers.get("Authorization")
+        scheme, token = get_authorization_scheme_param((authorization or "").strip())
+        authorization_sent = authorization is not None and scheme.lower() != "basic"
+        query_key = request.query_params.get("api_key")
+        header_api_key = _get_api_key(db, header_key) if header_key else None
+        query_api_key = _get_api_key(db, query_key, from_query=True) if query_key else None
+        user = _get_user_from_token(token, db) if scheme.lower() == "bearer" and token else None
+        rejected = (
+            (header_key and header_api_key is None)
+            or (query_key and query_api_key is None)
+            or (authorization_sent and user is None)
+        )
 
-        # Check JWT
-        if credentials:
-            user = _get_user_from_token(credentials.credentials, db)
+        if not rejected:
+            # Both valid: the key decides, as it did when it was checked first.
+            api_key = header_api_key or query_api_key
+            if api_key:
+                if self.require_write and api_key.permission != "read_write":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="Schreibzugriff erforderlich"
+                    )
+                bind_actor(
+                    request,
+                    Actor("api_key", str(api_key.id), api_key.name, resolve_client_ip(request)),
+                )
+                return None, api_key
             if user:
                 if self.require_admin and not user.is_admin:
                     raise HTTPException(

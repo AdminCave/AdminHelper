@@ -103,6 +103,15 @@ CFG_AT="$(grep -nF 'config remote.origin.' <<<"$OUT" | head -1 | cut -d: -f1)"
 [ -n "$CHOWN_AT" ] && [ -n "$CFG_AT" ] && [ "$CHOWN_AT" -lt "$CFG_AT" ] \
   && ok "the chown comes before the config, so the first run takes the same path" \
   || bad "the config is written before the clone belongs to the runner (chown line ${CHOWN_AT:-?}, config line ${CFG_AT:-?})"
+# R-0102: the clone runs review.sh sec before every commit through the
+# pre-commit hook — armed as the runner too, after the chown: root plus a
+# hooksPath is exactly the risk the script's comment names.
+HOOKS="$(grep -F 'config core.hooksPath' <<<"$OUT")"
+HOOKS_AT="$(grep -nF 'config core.hooksPath' <<<"$OUT" | head -1 | cut -d: -f1)"
+[ "$(grep -c . <<<"$HOOKS")" = 1 ] \
+  && grep -qF -- '$ su - adminhelper-runner -c git -C /srv/ah/repo config core.hooksPath scripts/dev/hooks' <<<"$HOOKS" \
+  && [ -n "$CHOWN_AT" ] && [ "${HOOKS_AT:-0}" -gt "$CHOWN_AT" ] \
+  && ok "the clone's core.hooksPath is set as the runner, after the chown" || bad "core.hooksPath in the plan: $HOOKS"
 
 # ── the two steps that depend on what this box already has ──────────────────
 # `useradd` and `git clone` drop out of the plan the moment the user and the clone
@@ -144,9 +153,9 @@ PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); 
   && ok "a real run without --dry-run still demands root and names no override" \
   || bad "a real run reacted to the override: rc=$prc out=$PLAN"
 
-# The runner's own venv path: run.sh's default (/tmp/ah-venv) belongs to whoever
-# created it first, and pip then fails for this user in exactly the three suites
-# its AH_REQUIRED declares mandatory.
+# The runner's own venv path: run.sh's default until R-0057 (/tmp/ah-venv)
+# belonged to whoever created it first, and pip then failed for this user in
+# exactly the three suites its AH_REQUIRED declares mandatory.
 grep -q 'AH_VENV=' <<<"$OUT" && ok "plans: its own AH_VENV, not the shared /tmp one" \
   || bad "the devenv does not set AH_VENV"
 # A host-given AH_REQUIRED wins as is (run.sh), so a pytest-only step missing

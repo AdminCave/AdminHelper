@@ -90,6 +90,7 @@ REPORT="$OUT/report.md"
 HISTORY="$PRIVATE_DIR/history.csv"
 
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 TREE="$(bash "$ROOT/scripts/dev/tree-hash.sh" 2>/dev/null || echo unknown)"
 
 # ── verdict bookkeeping ───────────────────────────────────────────────────────
@@ -188,7 +189,7 @@ preflight() {
 # it expects.
 collect_artifacts() {
   local d
-  for d in screenshots logs; do
+  for d in screenshots logs junit; do
     [ -d "$AH_OUT_DIR/$d" ] || continue
     cp -r "$AH_OUT_DIR/$d" "$OUT/" 2>/dev/null && note "artifacts: $d/ -> $OUT"
   done
@@ -300,6 +301,9 @@ run_all() {
   # and tree hash — two green rows for steps that never ran. run.sh deletes its
   # own artifact for the same reason: missing evidence is honest, stale is not.
   rm -f "$AH_OUT_DIR/last-all.json"
+  # The same for the JUnit XMLs: the pull merges into this directory, so a file
+  # from an earlier run or a local verify.sh would be copied and counted as today's.
+  rm -rf "$AH_OUT_DIR/junit"
   local t0=$SECONDS
   bash "$WRAPPERS/iter.sh" all --strict >"$log" 2>&1 || rc=$?
   local secs_layer=$((SECONDS - t0))
@@ -353,7 +357,7 @@ run_all() {
     local strict_steps
     strict_steps="$(awk -F'\t' '$2 == "strict-failed" { printf "%s%s", (n++ ? ", " : ""), $1 }' "$OUT/steps-all.tsv")"
     if [ -n "$strict_steps" ]; then
-      while IFS="$(printf '\t')" read -r name result secs; do
+      while IFS="$(printf '\t')" read -r name result secs <&3; do
         [ -n "$name" ] || continue
         local detail=""
         case "$result" in
@@ -361,12 +365,15 @@ run_all() {
           fail)          detail="not classified (layer infra)" ;;
         esac
         FINDINGS+=("all|$name|$result|$secs|$box|$detail")
-      done < "$OUT/steps-all.tsv"
+      done 3< "$OUT/steps-all.tsv"
       set_infra "required step(s) could not run on the box (strict-failed): $strict_steps"
       FINDINGS+=("all|-|infra|$secs_layer|$box|strict-failed: $strict_steps")
       return 0
     fi
-    while IFS="$(printf '\t')" read -r name result secs; do
+    # fd 3, not stdin: classify_red_step leases and drives boxes, and anything
+    # in there that reaches ssh without its own stdin would read the rest of this
+    # file and end the loop after the first red step (R-0092).
+    while IFS="$(printf '\t')" read -r name result secs <&3; do
       [ -n "$name" ] || continue
       verdict="$result"; STEP_DETAIL=""
       if [ "$result" = "fail" ]; then
@@ -379,7 +386,7 @@ run_all() {
         case "$verdict" in flaky) ;; *) reds=$((reds + 1)) ;; esac
       fi
       FINDINGS+=("all|$name|$verdict|$secs|$box|$STEP_DETAIL")
-    done < "$OUT/steps-all.tsv"
+    done 3< "$OUT/steps-all.tsv"
   else
     note "no readable last-all.json — per-step results unavailable"
     [ "$rc" = 0 ] || reds=1
@@ -434,9 +441,12 @@ failing_spec() {  # failing_spec <step> <log>
   grep -aoE '^spec [a-z0-9-]+: fail' "$2" 2>/dev/null | head -1 | sed 's/^spec //; s/: fail$//'
 }
 
-# </dev/null on every remote call: the step loop reads from steps-all.tsv, and an
-# ssh-backed `vm.py run` that drains stdin would swallow the rest of the file —
-# the run would classify one red step and silently drop every later one.
+# </dev/null on both suite runs (here and in w2_run): an ssh-backed `vm.py run`
+# hands its stdin to the box, and a suite there that reads it would wait on
+# whatever terminal heavy.sh was started from. The step loop no longer depends
+# on this: it reads steps-all.tsv from fd 3, since the second box's warm.sh once
+# drained the file through stdin and cut the report after the first red step
+# (R-0092).
 rerun_step() {  # rerun_step <step> <spec-or-empty> <logfile> -> rc
   if [ -n "$2" ]; then
     AH_NO_SYNC=1 bash "$WRAPPERS/iter.sh" --cmd "AH_SPEC=$2 bash scripts/tests/$1.sh" >"$3" 2>&1 </dev/null
@@ -624,11 +634,15 @@ seen_record() {  # seen_record <kind> <key> <marker>
   printf '%s · %s · %s · %s\n' "$1" "$2" "$DATE" "$3" >> "$seen"
 }
 
-# The short ledger. Deliberately the shape /feature-plan produces (tasks/README),
-# so `/feature-build tasks/reg-...md` works on it without translation.
-write_reg_ledger() {  # write_reg_ledger <name> <step> <marker> <base> <roadmap-id>
-  local f="$ROOT/tasks/$1.md" step="$2" marker="$3" base="$4" rid="$5"
+# The short ledger: a draft in the shape of `/feature-plan --kurz` (head with
+# Review: am Ende and Heavy:, the proof lines of tasks/README.md), which
+# `/feature-plan --kurz` completes with component, Verify and Semantik.
+write_reg_ledger() {  # write_reg_ledger <name> <step> <marker> <base> <roadmap-id> <slug>
+  local f="$ROOT/tasks/$1.md" step="$2" marker="$3" base="$4" rid="$5" slug="$6" head_line=""
   mkdir -p "$ROOT/tasks" 2>/dev/null || return 1
+  # HEAD: is linted as a SHA; a run that could not read its commit leaves the
+  # line out, newline and all.
+  case "$COMMIT" in *[!0-9a-f]* | "") ;; *) head_line="HEAD: $COMMIT"$'\n' ;; esac
   cat > "$f" <<LEDGER
 <!--
 SPDX-FileCopyrightText: Kevin Stenzel
@@ -636,14 +650,18 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Regression $step ($DATE) — Task-Ledger
-Status: geplant · Branch: fix/$1 · Commit-Granularität: pro Task · Review: pro Task (feature-review)
+Status: geplant · Branch: fix/$1 · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Roadmap: $rid · Quelle: Wochenlauf $STAMP
+Heavy: linux-full — der Schritt ist im Wochenlauf rot; der Fix beweist sich auf einer Box (\`/test\`)
+DoD je Task: CLAUDE.md (Tests grün, ruff/gofmt/clippy/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
 Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
 
 ### R1 — $step wieder grün  [ ]
 Komponente: (aus dem Schritt ableiten)
 Änderung: erst den Fehler reproduzieren, dann die Ursache beheben — kein Workaround, der den Schritt nur wieder grün färbt.
-Verify: \`bash scripts/tests/run.sh all --strict --step "$step"\` auf einer Box (über \`/test\`), danach \`bash scripts/tests/run.sh quick\`
+Beweis: $BRANCH@$COMMIT · \`bash scripts/tests/run.sh all --strict --step "$step"\` → rot mit \`$marker\` (erste Box 3x, frische Zweit-VM), grün auf \`$base\`
+Dedup-Key: reg:$slug
+${head_line}Verify: \`bash scripts/tests/run.sh all --strict --step "$step"\` auf einer Box (über \`/test\`), danach \`bash scripts/tests/run.sh quick\`
 
 ## Beweis (heavy.sh, $STAMP)
 - Schritt \`$step\` war auf der ersten Box 3x rot, jedes Mal mit demselben Marker: \`$marker\`
@@ -668,7 +686,7 @@ reg_finding() {  # reg_finding <step> <marker> <base>
     "tasks/$name.md" "reg:$slug" || return 0
   id="$ROADMAP_ID"
   note "roadmap: $id ($PRIVATE_DIR/ROADMAP.md)"
-  write_reg_ledger "$name" "$step" "$marker" "$base" "$id"
+  write_reg_ledger "$name" "$step" "$marker" "$base" "$id" "$slug"
   seen_record reg "$step" "$marker"
 }
 
@@ -893,7 +911,8 @@ write_history() {
 }
 
 write_report() {
-  local e ebene schritt ergebnis secs vm detail vms_now
+  local e ebene schritt ergebnis secs vm detail vms_now junit_n
+  junit_n="$(find "$OUT/junit" -type f -name '*.xml' 2>/dev/null | wc -l)"
   {
     # EXACTLY one line, and it is the first: the hook and `/test status` read it.
     if [ "$VERDICT" = "UNVERIFIED" ]; then echo "UNVERIFIED ($REASON)"; else echo "$VERDICT"; fi
@@ -903,6 +922,7 @@ write_report() {
     echo "- Modus: \`$MODE\`"
     echo "- Commit: \`$COMMIT\` · Tree: \`$TREE\`"
     echo "- Artefakte: \`$OUT\`"
+    echo "- JUnit: $junit_n XML in \`$OUT/junit\`"
     echo ""
     echo "## Summary-Zeilen (wörtlich)"
     echo ""

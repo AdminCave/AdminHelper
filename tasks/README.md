@@ -13,13 +13,16 @@ steht in [`../AUTONOMOUS.md`](../AUTONOMOUS.md).
 **Eine Datei pro Vorhaben:** `tasks/<slug>.md` (z. B. `connection-note.md`). Kein Anhängen
 an eine Sammel-Datei mehr — jedes Feature/Effort bekommt sein eigenes Ledger.
 
-**Kopf jedes Ledgers** trägt eine Konventions-Zeile, u. a. das Feld **`Status:`**:
+**Kopf jedes Ledgers** trägt eine Konventions-Zeile, u. a. das Feld **`Status:`**. Die Folge ist
+`geplant` → `freigegeben` → `aktiv` → `bereit` → `erledigt`, daneben `blockiert`:
 
 | `Status:` | Bedeutung |
 |---|---|
-| `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Das Starten von `/feature-build` ist die Freigabe (setzt auf `aktiv`). |
-| `aktiv` | freigegeben, wird bearbeitet. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
-| `erledigt` | fertig + PR offen/gemergt; bleibt als Historie liegen. |
+| `geplant` | von `/feature-plan` erstellt, **noch nicht freigegeben**. Wird nie automatisch gebaut. Interaktiv startet `/feature-build` es weiterhin mit ausdrücklichem Pfad (setzt auf `aktiv`). |
+| `freigegeben` | Kevin hat am Design-Gate freigegeben: `roadmap.py approve` für die Roadmap-Zeile und der Commit, der den Kopf auf `freigegeben` setzt. `/feature-build` startet es (setzt auf `aktiv`); der Worker (Stufe 7) nimmt nur diese. |
+| `aktiv` | wird gebaut. Im **Parallel-Betrieb** (AUTONOMOUS.md) sind mehrere `aktiv` normal — **eine Lane pro Ledger, nie zwei Builds auf demselben Ledger**. Ohne Pfad nimmt `/feature-build` ein Ledger nur, wenn **genau eines** `aktiv` ist; sonst bricht er ab und verlangt den Pfad. |
+| `bereit` | alle Tasks sind zu; der Abschluss von `feature-build` (Schnellcheck, schwere Suite, Branch-Review) und der PR stehen aus. |
+| `erledigt` | gesetzt im letzten Commit vor dem Push, damit er mit dem PR geht; der PR ist offen oder gemergt. Bleibt als Historie liegen. |
 | `blockiert` | wartet auf Entscheidung/Abhängigkeit (`[?]`-Punkte) oder ist bewusst nicht für `/feature-build` (z. B. Release-Handarbeit). |
 
 **Invariante:** kein `[ ]` mehr offen ⇒ `Status:` darf nicht `aktiv` bleiben. Der Loop **fragt
@@ -29,10 +32,20 @@ Dazu im Kopf: `Branch:`, `Spec:` (Rück-Link zur Soll-Vorgabe), `Commit-Granular
 (pro Task | pro Komponente | pro Abschnitt), `Review:` (**pro Task** | **am Ende** — wann der
 Frischer-Kontext-Review läuft: je Commit-Einheit, oder einmal über den ganzen Branch-Diff.
 `am Ende` gehört zu einem **Kurz-Ledger** mit ≤ 3 Tasks; dann entfällt auch der abschließende
-`/code-review`, weil derselbe Diff sonst zweimal geprüft würde), `Modell:`, `Fast-Suite:`
-(lokal | vm — wo Verify + Schnellsuite laufen; `vm` in Worktree-Lanes),
-`Warm-Profil:` (desktop | pond — Box-Bedarf; optional `Abschluss: multibox <flags>`,
-bleibt ask-first), DoD-Verweis auf `CLAUDE.md`.
+`/code-review`, weil derselbe Diff sonst zweimal geprüft würde), `Modell:`, `Heavy:`,
+DoD-Verweis auf `CLAUDE.md`.
+
+**`Heavy: none | linux-full | scenario <flags> | windows`** sagt, welche schwere Suite der
+Abschluss braucht: keine, den Linux-Stack auf einer Pool-VM (`run.sh integration`/`e2e`), einen
+Multibox-Lauf mit diesen Flags (etwa `scenario --agents 3 --desktop`, bleibt ask-first; das
+ersetzt auch die Zeile `Abschluss: multibox <flags>`) oder die Windows-VM. Hinter dem Wert darf
+nach ` — ` eine Begründung stehen. Für neue Ledger ersetzt `Heavy:` die älteren Felder
+`Fast-Suite:` (lokal | vm) und `Warm-Profil:` (desktop | pond); `feature-build` und `ledger.sh`
+lesen diese weiter, solange es Ledger mit ihnen gibt; `lane.sh` nennt `Fast-Suite: vm` nur als
+Hinweis. Wo eine Lane mit `Heavy:` ihre Schnellsuite fährt, ist offen (R-0097). `ledger.sh lint`
+prüft den Wert und meldet `Heavy:` neben `Fast-Suite:`/`Warm-Profil:` als Fehler, denn das wären
+zwei Antworten auf eine Frage. Ein freier `Heavy:`-Text neben
+`Fast-Suite:` („nein — …", „keine; …") ist die Form der Ledger vor Stufe 5b und bleibt gültig.
 
 **Task-Status im Body:** `[ ]` offen · `[x]` fertig · `[~]` übersprungen (Grund) ·
 `[?]` braucht menschliche Entscheidung.
@@ -116,6 +129,46 @@ im selben Commit kommt. **Passt nicht:** ein roter Test, der „weg soll". Das i
 `ledger.sh lint` prüft die Form: `<pfad>::<name> — <Grund>`, **der Grund ist Pflicht**. Eine
 Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
 
+## Beweis-Konvention — was eine Task belegt
+
+Eine Task, die einen **Fund** umsetzt (von Kevin, aus dem Wochenlauf, später von der
+Finder-Flotte), trägt den Beweis dafür, dass es ihn gibt, in ihren eigenen Zeilen. Jede Klasse
+von Fund hat ihre Beweisregel:
+
+- **A — Fehler (SEC, REG, BUG):** ein Test, der auf `HEAD:` **dreimal identisch rot** ist, klein
+  (höchstens etwa 40 Zeilen oder ein minimierter Input), mit einer Assertion, die Erwartung und
+  Beobachtung nennt. `Beweis:` ist das Kommando, das ihn rot zeigt; die Fix-Task verifiziert mit
+  demselben Test, jetzt grün. SEC zusätzlich mit einem `Refuter:`, der den Fund nicht widerlegen
+  konnte; REG zusätzlich rot auf einer zweiten VM und grün auf dem letzten grünen Stand.
+- **B — Vereinfachung, Refactor, Performance, Duplikat:** Der Fund belegt nur den Ist-Zustand
+  als Messwert (`Metrik:`, Werkzeug und Version fest). Der eigentliche Beweis fällt beim Fix: die
+  Suite vor **und** nach dem Diff grün (beide Summary-Zeilen), die Metrik strikt besser mit
+  demselben Werkzeug, die Coverage der Region nicht gesunken, dazu eine Mutations-Stichprobe
+  (`Orakel: mutation-sample`). Eine Stichprobe ist kein Beweis der Äquivalenz und heißt auch so.
+- **C — toter Code:** ein Analyzer-Treffer (Werkzeug und Version im `Beweis:`), ein repo-weiter
+  Wort-`grep` über alle Dateitypen, der nur die eigenen Tests findet (das ist der `Beweis:`-Befehl,
+  erwartet leer), die Checkliste der dynamischen Aufrufwege abgehakt, die Entfernung unter
+  `verify.sh --strict` grün. `Metrik:` sind die gelöschten Zeilen.
+- **D — Parität, Contract, Abhängigkeiten:** ein Paritäts-Test mit einer Assertion, die nicht leer
+  sein darf und bei einer einzelnen Mutation rot wird; bei Abhängigkeiten die Advisory-ID aus einem
+  roten `audit.yml`-Lauf.
+
+Die Zeilen stehen im Task-Block, jede optional, jede nur, wenn sie etwas trägt:
+
+| Zeile | Inhalt | `ledger.sh lint` prüft |
+|---|---|---|
+| `Beweis:` | Branch + SHA + Kommando + erwartete Ausgabe | — |
+| `Orakel:` | `crash`, `contract`, `property`, `differential`, `mutation-sample`, `coverage`, `analyzer` oder `metric`; danach nach ` — ` eine Erläuterung | Wert aus der Liste |
+| `Refuter:` | wer oder was den Fund zu widerlegen versuchte, mit welchem Ergebnis | — |
+| `Dedup-Key:` | derselbe Schlüssel wie in der Roadmap, ein Token ohne Leerzeichen: voll `<klasse>:<komponente>:<datei>:<symbol>` (daraus liest `roadmap.py next` die Komponente) oder kurz wie die Wochenlauf-Zeilen (`reg:<schritt>`, `rel:deps-audit`); `sec:`-Schlüssel stehen nie im öffentlichen Repo (`review.sh sec` blockiert sie) | das erste Token ist `<klasse>:<rest>`, `<klasse>` eine der Klassen in Kleinbuchstaben |
+| `Metrik:` | Klasse B: vorher → nachher, mit Werkzeug und Version; Klasse C: die gelöschten Zeilen oder Dateien | — |
+| `Kosten:` | was der Beweis gekostet hat (Zeit, Läufe, Tokens) | — |
+| `HEAD:` | der Commit, auf dem der Beweis galt | ein SHA (7–40 Hex-Zeichen) |
+| `Semantik:` | **Pflicht bei `/feature-plan --kurz`:** die Stelle unter `docs/`, die das gewollte Verhalten beschreibt, mit Zitat — damit der Fix nicht beseitigt, was Absicht ist | — |
+
+Die Form prüft `ledger.sh lint`, den Inhalt der Reviewer. Die Vorlage `tasks/templates/task.md`
+führt die Zeilen im Kopfkommentar auf; `new-task` hängt sie nicht an.
+
 ## Aktueller Stand
 
 - **`harness-stufe-3.md`** — `Status: aktiv`. Stufe 3 der Autonomie-Roadmap („Ausführung
@@ -124,9 +177,13 @@ Löschung, die niemand begründet, ist genau das, was das Gate verhindern soll.
   verwaisten Desktop-Specs. Spec: `docs/features/harness-stufe-3.md`.
 - **`reg-<datum>-<schritt>.md`** — von `scripts/tests/heavy.sh` geschrieben, nicht von
   `/feature-plan`: eine bestätigte Regression aus einem Wochenlauf (Schritt auf zwei
-  Boxen rot, auf dem letzten PASS-Commit grün). `Status: geplant` mit einem Beweis-Absatz
-  über die drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit); die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie
-  jedes andere. Die zugehörige Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
+  Boxen rot, auf dem letzten PASS-Commit grün). Ein Entwurf in der Form von
+  `/feature-plan --kurz`: `Status: geplant`, `Review: am Ende`, `Heavy: linux-full`, die
+  DoD-Zeile, in der Task `Beweis:`, `Dedup-Key: reg:<schritt>` und `HEAD:`, dazu ein
+  Beweis-Absatz über die drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit).
+  Komponente, `Verify:` und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
+  die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie jedes andere. Die zugehörige
+  Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
 - **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt
   Beweis"): SKIP wird Exit 75, `run.sh` bekommt `--strict`/`--only`/`--step`, dazu `verify.sh`,
   der Session-Status-Hook und der CI-Job `agent-windows`. Spec: `docs/features/harness-stufe-1.md`.

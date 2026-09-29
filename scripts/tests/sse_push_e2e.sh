@@ -16,8 +16,9 @@
 #
 # Two SEPARATE processes (not `uvicorn --workers 2`) make cross-instance
 # DETERMINISTIC: Redis is the only path between them. Needs docker, plus the
-# server venv (default /tmp/ah-venv, override with VENV=...). SKIPs cleanly when
-# docker is unavailable. Run: bash scripts/tests/sse_push_e2e.sh
+# server venv (run.sh's: AH_VENV, default ~/.cache/ah-venv; override with
+# VENV=...). SKIPs cleanly when docker is unavailable.
+# Run: bash scripts/tests/sse_push_e2e.sh
 set -euo pipefail
 
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
@@ -27,7 +28,7 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVER="$ROOT/apps/server"
-VENV="${VENV:-/tmp/ah-venv}"
+VENV="${VENV:-${AH_VENV:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cache/ah-venv}}"
 PY="$VENV/bin"
 # Build the venv on-demand instead of skipping — neither run.sh nor bootstrap_linux
 # seeds it, so this cross-instance Redis fan-out path (the ONE thing unit tests can't
@@ -62,7 +63,9 @@ docker run -d --name ah-sse-e2e-pg -e POSTGRES_USER=adminhelper -e POSTGRES_PASS
 docker run -d --name ah-sse-e2e-redis -p 127.0.0.1:6380:6379 redis:7-alpine >/dev/null
 echo "[stack] waiting for postgres..."
 pg_ok=0
-for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -U adminhelper >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 1; done
+# Over TCP: the image's init server listens on the socket only, and alembic and
+# uvicorn below connect through the published port.
+for _ in $(seq 1 30); do docker exec ah-sse-e2e-pg pg_isready -h 127.0.0.1 -U adminhelper >/dev/null 2>&1 && { pg_ok=1; break; }; sleep 1; done
 # Abort loudly instead of falling into alembic/uvicorn against a dead DB (4.128).
 [ "$pg_ok" = 1 ] || { echo "FAIL: postgres never became ready within 30s" >&2; exit 1; }
 

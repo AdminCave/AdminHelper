@@ -613,8 +613,15 @@ def test_two_adds_at_once_get_two_ids(tmp_path: pathlib.Path) -> None:
 
 
 def git(repo: pathlib.Path, *args: str) -> str:
+    # Without the caller's GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE: from a hook
+    # that exports them, the fixtures would set refs and HEAD in its repository.
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+    }
     return subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True, env=env
     ).stdout
 
 
@@ -808,6 +815,104 @@ def test_a_new_note_on_a_closed_row_keeps_its_day(tmp_path: pathlib.Path) -> Non
         placed(p, "R-0002")[1].cells[roadmap.STATUS]
         == "abgeschlossen 2026-09-15 (PR #3, nachgetragen)"
     )
+
+
+def test_status_ledger_fills_the_ledger_column_not_the_status(tmp_path: pathlib.Path) -> None:
+    """The gate names the ledger of an existing row in its own column, where
+    `next` and the parallel check read it — a path in the status note is lost to
+    them (the 5b close probe on R-0095)."""
+    p = aged(write(tmp_path, CLEAN))
+    rows = len(roadmap.Roadmap(p.read_text(encoding="utf-8")).rows())
+    assert status(p, "R-0005", "geplant", "--ledger", "tasks/fix.md") == 0
+    section, r = placed(p, "R-0005")
+    assert (section, r.cells[roadmap.STATUS], r.cells[roadmap.LEDGER]) == (
+        "Geplant",
+        "geplant",
+        "tasks/fix.md",
+    )
+    text = p.read_text(encoding="utf-8")
+    assert len(roadmap.Roadmap(text).rows()) == rows
+    assert findings(text) == []
+
+
+def test_status_ledger_without_a_status_change(tmp_path: pathlib.Path) -> None:
+    """An older row gets its ledger afterwards; its status, note and place stay."""
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0004", "aktiv", "--ledger", "tasks/gross.md") == 0
+    section, r = placed(p, "R-0004")
+    assert (section, r.cells[roadmap.STATUS], r.cells[roadmap.LEDGER]) == (
+        "In Arbeit",
+        "aktiv (T2/5)",
+        "tasks/gross.md",
+    )
+
+
+def test_status_ledger_and_note_stay_apart(tmp_path: pathlib.Path) -> None:
+    p = aged(write(tmp_path, CLEAN))
+    assert status(p, "R-0005", "geplant", "--note", "bestätigt", "--ledger", "tasks/fix.md") == 0
+    r = placed(p, "R-0005")[1]
+    assert (r.cells[roadmap.STATUS], r.cells[roadmap.LEDGER]) == (
+        "geplant (bestätigt)",
+        "tasks/fix.md",
+    )
+
+
+def test_status_ledger_names_itself_in_the_commit(tmp_path: pathlib.Path) -> None:
+    repo = fixture_repo(tmp_path)
+    p = aged(repo / "ROADMAP.md")
+    assert status(p, "R-0007", "freigegeben", "--ledger", "tasks/x.md") == 0
+    assert git(repo, "log", "--format=%s", "-1").strip() == (
+        "roadmap: status R-0007 freigegeben --ledger tasks/x.md"
+    )
+
+
+def test_status_pr_fills_the_pr_column_not_the_status(tmp_path: pathlib.Path) -> None:
+    """`sync` closes a row by its PR column; a number in the status note never
+    reaches it (the 5b branch review)."""
+    p = aged(write(tmp_path, with_probe("bereit")))
+    rows = len(roadmap.Roadmap(p.read_text(encoding="utf-8")).rows())
+    assert status(p, "R-0020", "pr", "--pr", "#42") == 0
+    section, r = placed(p, "R-0020")
+    assert (section, r.cells[roadmap.STATUS], r.cells[roadmap.PR]) == ("In Arbeit", "pr", "#42")
+    text = p.read_text(encoding="utf-8")
+    assert len(roadmap.Roadmap(text).rows()) == rows
+    assert findings(text) == []
+
+
+def test_status_pr_is_what_sync_closes(tmp_path: pathlib.Path) -> None:
+    """The whole chain: the number set with the PR, then the merge closes the row."""
+    p = aged(write(tmp_path, with_probe("bereit")))
+    assert status(p, "R-0020", "pr", "--pr", "#42") == 0
+    after = roadmap.Roadmap(p.read_text(encoding="utf-8"))
+    assert roadmap.to_close(after, {41: TODAY}) == []
+    assert roadmap.to_close(after, {42: TODAY}) == [("R-0020", [42])]
+
+
+def test_status_pr_without_a_status_change(tmp_path: pathlib.Path) -> None:
+    """A row already in `pr` gets its number, or a second one, afterwards."""
+    p = aged(write(tmp_path, with_probe("pr")))
+    assert status(p, "R-0020", "pr", "--pr", "#7, #8") == 0
+    section, r = placed(p, "R-0020")
+    assert (section, r.cells[roadmap.STATUS], r.cells[roadmap.PR]) == ("In Arbeit", "pr", "#7, #8")
+
+
+@pytest.mark.parametrize("value", ["42", "PR 42", "https://github.com/o/r/pull/42"])
+def test_status_pr_without_a_number_sync_can_read_is_exit_2(
+    tmp_path: pathlib.Path, value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A value without `#<n>` would leave the row in `pr` for good, silently."""
+    p = aged(write(tmp_path, with_probe("bereit")))
+    text = p.read_text(encoding="utf-8")
+    assert status(p, "R-0020", "pr", "--pr", value) == 2
+    assert "'#42'" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == text
+
+
+def test_status_pr_names_itself_in_the_commit(tmp_path: pathlib.Path) -> None:
+    repo = fixture_repo(tmp_path)
+    p = aged(repo / "ROADMAP.md")
+    assert status(p, "R-0004", "aktiv", "--pr", "#42") == 0
+    assert git(repo, "log", "--format=%s", "-1").strip() == "roadmap: status R-0004 aktiv --pr #42"
 
 
 def test_a_table_emptied_by_a_move_takes_the_next_row(tmp_path: pathlib.Path) -> None:
@@ -1404,3 +1509,185 @@ def test_only_a_real_component_is_a_component(
         )
     ).rows()
     assert roadmap.components_of(r) == components
+
+
+# ── next sees ledgers on branches (R-0099) ───────────────────────────────────
+
+
+def branch_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """ROOT as a repository whose main carries no ledger, as after a gate."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "config", "commit.gpgsign", "false")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "seed")
+    monkeypatch.setattr(roadmap, "ROOT", repo)
+    return repo
+
+
+def plan_on(repo: pathlib.Path, branch: str, component: str, path: str = "tasks/x.md") -> None:
+    """Commit a ledger on its own branch off main, then go back to main."""
+    git(repo, "switch", "-q", "-c", branch, "main")
+    (repo / path).parent.mkdir(exist_ok=True)
+    (repo / path).write_text(
+        f"### T1 — x  [ ]\nKomponente: {component} · Dateien: a\n", encoding="utf-8"
+    )
+    git(repo, "add", path)
+    git(repo, "commit", "-qm", f"plan on {branch}")
+    git(repo, "switch", "-q", "main")
+
+
+def ledger_row(ledger: str, status: str = "freigegeben") -> str:
+    return row("R-0022", status, "BUG", "Nur am Branch").replace(
+        "| — | — | — | — |", f"| {ledger} | — | — | — |", 1
+    )
+
+
+def components(ledger: str) -> set[str]:
+    [(_, r)] = roadmap.Roadmap(doc({"Neu": [ledger_row(ledger, "neu")]})).rows()
+    return roadmap.components_of(r)
+
+
+def test_a_ledger_only_on_a_local_branch_is_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    assert not (repo / "tasks" / "x.md").exists()
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def test_a_ledger_only_on_a_remote_branch_is_read(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker's clone: main and, after a fetch, origin/* — no local branch."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    git(repo, "update-ref", "refs/remotes/origin/feature/x", "feature/x")
+    git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/feature/x")
+    git(repo, "branch", "-q", "-D", "feature/x")
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def test_two_branches_with_different_components_are_the_union(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    plan_on(repo, "harness/x", "web")
+    assert components("tasks/x.md") == {"scripts", "web"}
+
+
+def test_next_skips_a_row_whose_ledger_is_only_on_a_branch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    s = clean_sections()
+    s["Geplant (Stufen in Reihenfolge)"] = [ledger_row("tasks/x.md")]
+    p = write(tmp_path, doc(s))
+    assert run(p, "next") == 0
+    assert capsys.readouterr().out == "R-0022 BUG Nur am Branch (tasks/x.md)\n"
+    assert run(p, "next", "--exclude-components", "scripts") == 1
+
+
+def test_the_callers_git_dir_does_not_move_the_search(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook exports GIT_DIR and GIT_INDEX_FILE: the refs are still ROOT's."""
+    other = tmp_path / "other"
+    other.mkdir()
+    git(other, "init", "-q", "-b", "main")
+    for key, value in (
+        ("user.email", "o@example.invalid"),
+        ("user.name", "O"),
+        ("commit.gpgsign", "false"),
+    ):
+        git(other, "config", key, value)
+    git(other, "commit", "-q", "--allow-empty", "-m", "seed")
+    plan_on(other, "feature/x", "web")
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def test_the_callers_git_config_does_not_blind_the_search(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dotfiles with line numbers, columns or forced colour put something in
+    front of every line git grep prints — and ^Komponente: would find nothing."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    config = tmp_path / "gitconfig"
+    config.write_text(
+        "[grep]\n\tlineNumber = true\n\tcolumn = true\n[color]\n\tgrep = always\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    assert components("tasks/x.md") == {"scripts"}
+
+
+def fail_closed_fixture(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, rows: list[str]
+) -> pathlib.Path:
+    """R-0022's ledger lies nowhere; R-0023's only on feature/x (scripts)."""
+    repo = branch_repo(tmp_path, monkeypatch)
+    plan_on(repo, "feature/x", "scripts")
+    s = clean_sections()
+    s["Geplant (Stufen in Reihenfolge)"] = rows
+    return write(tmp_path, doc(s))
+
+
+GONE = ledger_row("tasks/gone.md")
+ON_BRANCH = ledger_row("tasks/x.md").replace("| R-0022 |", "| R-0023 |")
+SKIPPED = (
+    "next: R-0022 skipped — ledger tasks/gone.md not found in the tree or on any branch"
+    " (git fetch?)\n"
+)
+
+
+def test_a_ledger_found_nowhere_is_skipped_under_an_exclusion_and_named(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [GONE, ON_BRANCH])
+    assert run(p, "next", "--exclude-components", "web") == 0
+    out = capsys.readouterr()
+    # R-0023's ledger is only on a branch: found, and scripts is not excluded.
+    assert out.out == "R-0023 BUG Nur am Branch (tasks/x.md)\n"
+    assert out.err == SKIPPED
+
+
+def test_without_an_exclusion_a_ledger_found_nowhere_is_handed_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [GONE, ON_BRANCH])
+    assert run(p, "next") == 0
+    out = capsys.readouterr()
+    assert out.out == "R-0022 BUG Nur am Branch (tasks/gone.md)\n"
+    assert out.err == ""
+
+
+def test_a_ledger_found_nowhere_as_the_only_row_is_exit_1(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [GONE])
+    assert run(p, "next", "--exclude-components", "web") == 1
+    assert capsys.readouterr().err == SKIPPED + "next: no freigegeben row is ready\n"
+
+
+@pytest.mark.parametrize("ledger", ["—", "wochenlauf-gruen", "/nowhere/tasks/gone.md"])
+def test_only_a_repository_path_is_fail_closed(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    ledger: str,
+) -> None:
+    p = fail_closed_fixture(tmp_path, monkeypatch, [ledger_row(ledger)])
+    assert run(p, "next", "--exclude-components", "web") == 0
+    out = capsys.readouterr()
+    assert out.out.startswith("R-0022 BUG Nur am Branch")
+    assert out.err == ""

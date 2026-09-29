@@ -11,6 +11,7 @@ from app.core.config import FRPS_DASHBOARD_URL
 from app.core.database import get_db
 from app.modules.frp._helpers import get_frp_config
 from app.modules.frp.models import FrpTunnel
+from app.modules.frp.schemas import FrpStatus
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
@@ -35,7 +36,7 @@ def _collect_proxies(resp: httpx.Response, proxy_type: str) -> list[dict]:
     ]
 
 
-@router.get("/status")
+@router.get("/status", response_model=FrpStatus, response_model_exclude_unset=True)
 def frps_status(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     """Queries the frps dashboard API and returns the status of all proxies.
 

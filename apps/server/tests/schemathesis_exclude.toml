@@ -26,7 +26,10 @@
 #   raises        statt checks: der Aufruf selbst stirbt an einer ungefangenen
 #                 Exception, bevor eine Response entsteht. Dann kann kein Check
 #                 greifen, und nur hier ist ein Ausschluss der GANZEN Operation
-#                 ehrlich — jeder dieser Eintraege ist ein echter Produktfehler.
+#                 ehrlich. Meist ist das ein echter Produktfehler; die Ausnahmen
+#                 sind Eigenschaften der In-Process-Fixture (die Proxy-Routen mit
+#                 ihrem geschlossenen Client, der SSE-Stream ohne Ende), und ihre
+#                 reason sagt das.
 #   reason        warum diese Checks hier heute nichts beitragen
 #   until         woran die Wiedervorlage haengt
 
@@ -145,13 +148,6 @@ reason = "response_schema_conformance — created_at ist eine tz-naive DateTime-
 until = "Roadmap: tz-aware Serialisierung oder Schema auf tz-naiv stellen"
 
 [[exclude]]
-operation_id = "logout_api_auth_logout_post"
-checks = ["ignored_auth", "negative_data_rejection"]
-# POST /api/auth/logout
-reason = "zwei Checks, beide gemessen: ignored_auth — die Route antwortet ohne Token mit 200; negative_data_rejection — sie nimmt auch einen schema-widrigen Body an. Beides dieselbe Ursache: die Route verlangt gar nichts. Nachgeprueft: sie blacklistet dann nichts, loescht nur das Cookie und schreibt einen Audit-Eintrag. Schema deklariert Auth, Route verlangt keine — Mismatch, kein Loch"
-until = "Roadmap: Schema und Route in Einklang bringen"
-
-[[exclude]]
 operation_id = "import_connections_api_connections_import_post"
 checks = ["response_schema_conformance"]
 # POST /api/connections/import
@@ -213,6 +209,13 @@ raises = true
 # POST /api/monitoring/agent/{server_id}/report
 reason = "Proxy-Route: leitet an den Monitoring-Dienst weiter, ueber einen prozessweiten httpx-Client, den der Lifespan-Shutdown schliesst (main.py: _client.aclose()). Sobald ein Lauf den Lifespan beendet hat, stirbt jeder weitere Aufruf im Transport mit `Cannot send a request, as the client has been closed` — kein Check kommt an eine Antwort. In-process nicht fuzzbar, wie /templates/tag-sync auf der Monitoring-Seite"
 until = "Stufe 8c (Cross-Service-Vertraege) oder ein Stub fuer den Proxy-Client"
+
+[[exclude]]
+operation_id = "notification_stream_api_notifications_stream_get"
+raises = true
+# GET /api/notifications/stream
+reason = "SSE-Stream, in-process nicht fuzzbar. authenticate_stream_user oeffnet absichtlich eine eigene, sofort geschlossene SessionLocal() statt Depends(get_db) (eine SSE-Antwort lebt Minuten bis Stunden und darf keine Pool-Verbindung halten); der get_db-Override der Fixture api_db erreicht diese Sitzung nicht. Kette: stream.py:70 authenticate_stream_user -> auth.py:86 _get_user_from_token -> die Engine aus dem Fallback config.py:56 (localhost:5432). Gemessen 2026-09-25, Kontext admin_jwt, drei Umgebungen: auf der Box (DATABASE_URL leer, Test-DB aus testcontainers) stirbt der Aufruf an einer ungefangenen OperationalError, deterministisch in zwei Wochenlaeufen und zwei Retries; auf Dev/CI (DATABASE_URL auf der Test-DB) kommt 401, weil die Sitzung den Admin der offenen Test-Transaktion nicht sieht — gruen aus dem falschen Grund, der authentifizierte Pfad wurde dort nie gefuzzt; mit richtig gebundener Sitzung kommt 200 und ein Stream ohne Ende, ReadTimeout nach 10 s im schemathesis-Transport. Der Ausschluss gilt fuer alle vier Kontexte, weil das Format nur die Operation kennt (292 -> 288 Faelle): read_key, read_write_key und internal_key senden kein Bearer-Token, dort antwortet die Route ohne Datenbankzugriff mit 401 (stream.py:69-70). Abgedeckt bleibt: der 401-Pfad ohne Token in tests/test_stream.py::TestStreamAuth, die Re-Auth in TestStreamReauth, die Live-Frames in scripts/tests/sse_push_e2e.sh und desktop_e2e_sse_push.sh"
+until = "solange der In-Process-Transport eine Streaming-Antwort bis zum Ende liest"
 
 [[exclude]]
 operation_id = "create_user_api_users_post"

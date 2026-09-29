@@ -45,6 +45,7 @@ scripts/vm/bake.sh
 # gate agree with it produces a green that proves nothing.
 scripts/tests/hooks_test.sh
 scripts/tests/ledger_test.sh
+scripts/tests/skill_consistency_test.sh
 scripts/tests/review_scripts_test.sh
 scripts/tests/task_close_test.sh
 scripts/tests/runner_setup_test.sh

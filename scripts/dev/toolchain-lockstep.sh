@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # toolchain-lockstep.sh — assert the govulncheck pin still builds on our Go.
+# Since R-0046 it also holds the ruff pins together.
 #
 #   bash scripts/dev/toolchain-lockstep.sh [--root <dir>]
 #
@@ -15,12 +16,19 @@
 # looking like an ordinary red run. The pin's comment says "raise this together
 # with go-version"; this is that sentence as a check.
 #
-# Two assertions:
+# Three assertions:
 #   1  every `go-version:` in ci.yml, release.yml and audit.yml is the same
 #      (the pin is chosen against one Go version — three different ones make
-#      "the Go version" meaningless before the second assertion can mean
+#      "the Go version" meaningless before the third assertion can mean
 #      anything)
-#   2  the `go` directive of the pinned x/vuln release is <= that go-version
+#   2  the ruff that ci.yml installs is the default of RUFF_VERSION in
+#      scripts/vm/bootstrap_linux.sh, and the floor in
+#      apps/server/requirements-dev.txt does not exceed it. The first bake of a
+#      linux-server template ran an unpinned ruff and went red on rules the dev
+#      box and CI never saw; the comments at all three places said "keep in
+#      sync", and nothing checked it. Offline, so it runs before the proxy fetch
+#      and a drift stays a drift when the proxy is down.
+#   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
 # 2 usage · 75 the module proxy was unreachable, nothing was asserted — run.sh's
@@ -84,7 +92,42 @@ for pair in $versions; do
 done
 echo "go-version:$versions"
 
-# ── 2: the pinned x/vuln release must build on that Go ───────────────────────
+# ── 2: one ruff across CI, the VM bootstrap and the dev floor ────────────────
+# Plain dotted digits only: the floor is compared with sort -V, and a "0.15.*"
+# or "~=0.15" would sort somewhere without meaning anything.
+plain_version() { case "$1" in "" | *[!0-9.]* | .* | *. | *..*) return 1 ;; esac; }
+BOOT="$ROOT/scripts/vm/bootstrap_linux.sh"
+REQ="$ROOT/apps/server/requirements-dev.txt"
+for f in "$BOOT" "$REQ"; do
+  [ -f "$f" ] || { echo "::error::missing ${f#"$ROOT"/} — the ruff pin cannot be checked"; exit 1; }
+done
+RUFF_BOOT="$(sed -n 's/^RUFF_VERSION="\${AH_RUFF_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
+plain_version "$RUFF_BOOT" || {
+  echo "::error::no plain RUFF_VERSION=\"\${AH_RUFF_VERSION:-X.Y.Z}\" default in scripts/vm/bootstrap_linux.sh (found '$RUFF_BOOT')"
+  exit 1; }
+# Every ruff pin in ci.yml, like every go-version above: a second install line
+# that lags behind is the same drift.
+ruff_ci=""
+while IFS= read -r v; do
+  [ "$v" = "$RUFF_BOOT" ] || {
+    echo "::error::ruff pin drift: .github/workflows/ci.yml installs ruff==$v, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — raise both together (and the floor in apps/server/requirements-dev.txt)"
+    exit 1; }
+  ruff_ci="$v"
+done < <(sed -n 's/.*pip install ruff==\([^[:space:]"]*\).*/\1/p' "$WF/ci.yml")
+[ -n "$ruff_ci" ] || {
+  echo "::error::no pinned 'pip install ruff==X.Y.Z' in .github/workflows/ci.yml — an unpinned ruff is the drift this check exists to prevent"
+  exit 1; }
+RUFF_FLOOR="$(sed -n 's/^ruff>=\([^[:space:]#,;]*\).*/\1/p' "$REQ" | head -1)"
+plain_version "$RUFF_FLOOR" || {
+  echo "::error::no plain 'ruff>=X.Y' floor in apps/server/requirements-dev.txt (found '$RUFF_FLOOR')"
+  exit 1; }
+if [ "$(printf '%s\n%s\n' "$RUFF_FLOOR" "$RUFF_BOOT" | sort -V | tail -1)" != "$RUFF_BOOT" ]; then
+  echo "::error::ruff floor $RUFF_FLOOR in apps/server/requirements-dev.txt is above the pinned ruff $RUFF_BOOT (ci.yml, bootstrap_linux.sh) — a dev install would pull a ruff the gates never ran"
+  exit 1
+fi
+echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT floor>=$RUFF_FLOOR"
+
+# ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"
 [ -n "$PIN" ] || {
   echo "::error::no pinned 'go install $VULN_MOD/cmd/govulncheck@vX.Y.Z' in .github/workflows/audit.yml — an unpinned @latest is the drift this check exists to prevent"

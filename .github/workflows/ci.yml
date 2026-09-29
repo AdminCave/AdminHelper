@@ -100,9 +100,9 @@ jobs:
         # in sync with the ruff floor in apps/server/requirements-dev.txt (4.88).
         run: pip install ruff==0.15.20
       - name: ruff check
-        run: ruff check apps/server apps/monitoring apps/ca-issuer scripts/vm
+        run: ruff check apps/server apps/monitoring apps/ca-issuer scripts
       - name: ruff format --check
-        run: ruff format --check apps/server apps/monitoring apps/ca-issuer scripts/vm
+        run: ruff format --check apps/server apps/monitoring apps/ca-issuer scripts
 
   monitoring:
     name: Monitoring (pytest)
@@ -561,7 +561,7 @@ jobs:
           tauri_rel=$(grep -m1 'cargo install tauri-cli' .github/workflows/release.yml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           test -n "$tauri_ci" && test "$tauri_ci" = "$tauri_rel" || {
             echo "::error::tauri-cli pin differs (ci=$tauri_ci, release=$tauri_rel)"; exit 1; }
-      - name: Toolchain pins in lockstep (go-version ↔ govulncheck)
+      - name: Toolchain pins in lockstep (go-version ↔ govulncheck, ruff)
         # audit.yml builds govulncheck from source under GOTOOLCHAIN=local, so the
         # pin only compiles while x/vuln's own `go` directive stays at or below the
         # go-version the workflows set — the coupling that made `@latest` stop
