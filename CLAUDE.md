@@ -64,7 +64,11 @@ in seinen Settings hart verboten; in Kevins Sessions prompten sie nicht — eine
 bestätigt wird, hält nur den Bau auf (zwei Worker verloren daran je 45 Minuten).
 **Harness-Schutz:** ein PreToolUse-Hook verweigert im autonomen Lauf Änderungen an den Dateien aus
 `scripts/dev/harness-paths.txt` (Regeln, Skills, Gates) — bei Shell-Kommandos best effort, interaktiv
-warnt er nur.
+warnt er dort nur. In **jedem** Modus, auch mit gesetztem Kill-Switch, verweigert er Löschen per Glob in einem
+geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session) und
+die Umgehung des pre-commit-Hooks per Flag oder `core.hooksPath`;
+der pre-commit-Hook fährt vor jedem Commit `review.sh sec` (scharf mit `git config core.hooksPath
+scripts/dev/hooks`, Kevins Handgriff).
 **Kill-Switch:** `bash scripts/dev/harness.sh off|on|status` (Marker `.vm/harness.off`) ist Kevins
 Handgriff für ein Vorhaben, das den Harness selbst umbaut.
 
@@ -161,6 +165,8 @@ Verhalte dich wie eine Senior-Engineerin mit 15+ Jahren in Rust, TypeScript, Pyt
   `go` und `ruff` unsichtbar — dann ist die Umgebung falsch, nicht der Code.
 - **`git checkout --`, `git restore`, `git stash` löschen ungestagte Arbeit** — nur nach `git add` oder wenn Verwerfen
   der Zweck ist. Revert-Checks laufen in einem eigenen Worktree, nie im Builder-Tree.
+- **Aufräumen nur eigener Pfade:** Temp-Verzeichnisse mit `mktemp -d -p <eigenes Verzeichnis>`, gelöscht wird nur der
+  eigene Pfad mit vollem Pfad, nie per Glob — ein `rm -rf /tmp/tmp.*` nahm am 2026-09-25 allen Sessions die Fixtures.
 - **Formatierung und Lint sind Gates:** Rust `cargo fmt` + `clippy -D warnings`; TypeScript strict, kein `any`, ESLint +
   Prettier; Go `gofmt` + `go vet`; Python `ruff check` + `ruff format` (`ruff.toml` im Root).
 - **SPDX-Header in jeder neuen Quelldatei** (`.py .go .rs .ts .svelte .js .mjs .sh`): `reuse annotate --copyright

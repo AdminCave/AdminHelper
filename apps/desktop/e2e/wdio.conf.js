@@ -64,7 +64,22 @@ export const config = {
       'tauri:options': { application },
     },
   ],
-  reporters: ['spec'],
+  // JUnit next to the screenshots (webdriver.io/docs/junit-reporter). heavy.sh collects
+  // what the desktop_e2e_*.sh suites write under run.sh on the `all` box; the capstone's
+  // box_desktopbox.sh writes the same files, but nothing pulls them. Every spec is its
+  // own `wdio run` whose one worker is always cid 0-0, so the cid alone would let each
+  // spec overwrite the last one's file; the spec path is inside the XML. The default
+  // name ends in .log.
+  reporters: [
+    'spec',
+    [
+      'junit',
+      {
+        outputDir: path.join(ahOutDir, 'junit'),
+        outputFileFormat: (opts) => `desktop-e2e-${Date.now()}-${opts.cid}.xml`,
+      },
+    ],
+  ],
   framework: 'mocha',
   // A single it can legitimately wait longer than 60s (tunnel-connect sums per-step
   // waitUntil budgets up to ~131s); the per-step waitUntils stay the real guards, so

@@ -217,7 +217,11 @@ def refresh_token(
     return TokenResponse(access_token=access, refresh_token=refresh)
 
 
-@router.post("/logout")
+# The route works without a bearer (the refresh token from body or cookie is blacklisted
+# and the cookie cleared), so the schema declares the auth optional. FastAPI deep-merges
+# openapi_extra and appends lists, which turns the derived [{HTTPBearer}] into
+# [{HTTPBearer}, {}] — `{}` being OpenAPI's "no auth" alternative (R-0054).
+@router.post("/logout", openapi_extra={"security": [{}]})
 def logout(
     request: Request,
     response: Response,
@@ -225,8 +229,8 @@ def logout(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ):
-    """Add the access and (optionally) refresh token to the blacklist and clear
-    the refresh cookie."""
+    """Blacklist the bearer token, if one is sent, and the refresh token from body
+    or cookie; clear the refresh cookie."""
     uname = None
     if credentials:
         blacklist_token(credentials.credentials, db)

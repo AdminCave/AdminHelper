@@ -9,6 +9,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Added
 
+- **Harness-Schutz fuer /tmp und Commits (R-0098, R-0102):** Der PreToolUse-Waechter
+  `scripts/dev/hooks/harness-guard.sh` verweigert in jedem Modus, auch mit gesetztem Kill-Switch,
+  das Loeschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`, `/var/tmp`, `/dev/shm`,
+  `$TMPDIR` und die Session-Verzeichnisse von Claude Code darin; auch ueber `find … -delete`,
+  Schleifen und Pipes) — ein Reviewer hatte mit `rm -rf /tmp/tmp.*` die Fixtures aller
+  Sessions geloescht. Neu ist `scripts/dev/hooks/pre-commit`: er faehrt `review.sh sec --staged`
+  vor jedem Commit, nicht mehr nur in `task-close.sh`; scharf wird er je Klon mit
+  `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt den Stand,
+  `runner-setup.sh` setzt ihn im Runner-Klon, und der Waechter verweigert seine Umgehung.
+  Shell-Schluesselwoerter wie `do` und `then` verdecken vor dem Waechter keinen Befehl mehr.
+  `verify.sh` gibt jedem Lauf ein eigenes `TMPDIR`, Reviewer arbeiten in einem eigenen
+  Verzeichnis. Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
 - **Lane-Isolation (Harness):** eine Lane (`scripts/dev/lane.sh new <slug>`) hat jetzt, was sie
   zum Bauen braucht, und teilt mit dem Haupt-Checkout nichts mehr, woran zwei Laeufe einander
   stoeren: eine eigene `.devenv.sh` mit eigener Test-Datenbank `adminhelper_test_<slug>` und
@@ -207,6 +219,50 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
+  OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
+  Routen, die API-Key oder JWT annehmen) und `InternalKey` (Header `X-Internal-Key`, der
+  Dienst-zu-Dienst-Ingress); die Swagger UI bietet beide unter „Authorize" an. Dafuer entfaellt
+  der optionale Header-Parameter `x-internal-key` der zwei Internal-Routen, deren Verhalten
+  gleich bleibt (Anfragen mit zwei Anmeldungen: siehe naechsten Punkt). Der Schemathesis-Check
+  `ignored_auth` laeuft damit in allen vier Auth-Kontexten statt nur mit JWT. Doku:
+  `docs/developer/api-reference.html`.
+- **Verhaltensaenderung: jede mitgesendete Anmeldung muss gelten (Server):** An den Routen, die
+  API-Key oder JWT annehmen (`/api/connections`, `/api/frp/provision`), prueft der Server jetzt
+  alle mitgesendeten Anmeldungen, bevor er entscheidet. Ein gueltiger `X-API-Key` neben einem
+  ungueltigen oder abgelaufenen Bearer-Token — oder ein gueltiger Bearer neben einem
+  unbekannten Key, auch als `?api_key=` — ergibt `401` statt `200`; ebenso ein
+  `X-API-Key` neben einem ungueltigen `?api_key=` (bisher wurde die Query dann ignoriert). Nur
+  `Authorization: Basic` (von einem Proxy oder aus `user:pass@` einer Sync-URL) wird ignoriert;
+  jeder andere `Authorization`-Header muss ein gueltiger Bearer sein — ein fremdes Schema, ein
+  leerer oder unlesbarer Wert ergibt `401`. Sind beide
+  gueltig, entscheidet wie bisher der Key; mit nur einer Anmeldung bleibt alles wie es war.
+  Kein Client sendet zwei (Web und Desktop den Bearer, der Desktop-Sync nur `?api_key=`,
+  der Agent nur `X-API-Key`, das Monitoring nur `X-Internal-Key`). Doku:
+  `docs/developer/api-reference.html`.
+- **API-Schema: typisierte Antworten fuer users und frp (Server):** `GET`/`POST /api/users` und
+  `PUT /api/users/{id}` deklarieren `UserResponse`, die FRP-Server-Config-Routen
+  `FrpServerConfigOut` (Detail: `FrpServerConfigDetail` mit den Tunneln als `FrpTunnelOut`) und
+  `GET /api/frp/status` `FrpStatus` — statt eines leeren Schemas im OpenAPI. Die Antwort-Bytes
+  bleiben gleich (je Route ein Differential-Test gegen den bisherigen Builder); Zeitstempel
+  bleiben Strings aus `isoformat()`, das `tunnel`-Objekt im FRP-Status bleibt offen. Die Doku
+  nannte fuer die Config-Detail-Route ein `?include_tunnels=true`, das es nicht gibt: die Tunnel
+  kommen immer mit. Doku: `docs/developer/api-reference.html`.
+- **Test-Ausgaben und Pflicht-Tests gegen den Stack (Harness Stufe 5c, Entwickler-Werkzeuge):**
+  Die pytest-Schritte von `scripts/tests/run.sh` schreiben JUnit-XML nach
+  `.ah-out/junit/<schritt-id>.xml` (Schemathesis eine Datei je Dienst), Playwright mit gesetztem
+  `AH_OUT_DIR` nach `junit/web-playwright.xml`, die Desktop-E2E ueber `@wdio/junit-reporter` eine
+  Datei je `wdio run`; jeder Lauf verwirft die XMLs des letzten, `heavy.sh` kopiert `junit/` in
+  das Laufverzeichnis und nennt im Report ihre Zahl. Das Test-Overlay `docker-compose.test.yml`
+  veroeffentlicht Postgres und Redis nur auf `127.0.0.1` (`ITEST_PG_PORT`, `ITEST_REDIS_PORT`, pro
+  Lauf gestreut), `lib_e2e_stack.sh` exportiert `ITEST_DATABASE_URL` und `ITEST_REDIS_URL`. Zwei
+  neue Pflicht-Schritte im `integration`-Layer: `stack-pytest` (`scripts/tests/stack_pytest.sh`)
+  faehrt den Migrations-Smoke des Monitorings, `test_stream_redis` und den TOCTOU-Test des
+  ca-issuers gegen diese Dienste, ein Skip ist dort ein Fehler; `web-live`
+  (`scripts/tests/web_live.sh`) faehrt das Playwright-Projekt `live` ohne Mocks (Login als
+  Seed-Admin, jede Admin-Seite, Benutzer anlegen und loeschen). `test_stream_redis` liest die
+  Redis-URL aus `AH_TEST_REDIS_URL`. Anleitung: `DEVELOPMENT.md` („Automatisierte
+  Integrations-/E2E-Tests", „Wochenlauf") und `docs/developer/cicd.html`.
 - **Planen und Beweis (Harness Stufe 5b, Entwickler-Werkzeuge):** Ledger haben die Status-Folge
   `geplant` -> `freigegeben` -> `aktiv` -> `bereit` -> `erledigt` und das Kopf-Feld `Heavy:`
   (`none | linux-full | scenario <flags> | windows`) statt `Fast-Suite:`/`Warm-Profil:`;
