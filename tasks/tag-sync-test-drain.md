@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Tag-Sync-Test: Notify-Pool an jeder Testgrenze leer (R-0112) — Task-Ledger
-Status: geplant · Branch: feature/tag-sync-test-drain · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/tag-sync-test-drain · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Kevin, 2026-09-29 (Design-Gate der Aufsicht), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0112
 Heavy: none — nur Testcode unter `apps/server/tests/`; kein Stack-, Gateway-, PKI- oder Install-Pfad.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format sauber, keine Doku, SPDX bei neuen Dateien).
