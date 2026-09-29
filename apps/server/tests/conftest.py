@@ -6,6 +6,7 @@
 SAVEPOINT-based transaction-rollback pattern for test isolation."""
 
 import os
+import sys
 
 # Set test defaults BEFORE app modules are imported.
 os.environ.setdefault("DATA_DIR", "/tmp/adminhelper-test-data")
@@ -67,6 +68,23 @@ def _fresh_rate_limit_backend():
     reset_backend_for_tests()
     yield
     reset_backend_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _idle_tag_sync_notify_pool():
+    # Server CRUD queues a fire-and-forget tag-sync notify on a process-wide
+    # single-worker pool (servers router, T46). A notify one test leaves behind
+    # would otherwise run during a later test and land in its httpx spy (R-0112).
+    # A no-op barrier at both boundaries — only once the router is imported, so
+    # this fixture never imports it itself.
+    def barrier():
+        router = sys.modules.get("app.modules.servers.router")
+        if router is not None:
+            router._NOTIFY_POOL.submit(lambda: None).result()
+
+    barrier()
+    yield
+    barrier()
 
 
 @pytest.fixture(scope="session")
