@@ -36,8 +36,14 @@ E2E_PROJECT=""
 E2E_HTTPS_PORT=""
 E2E_ENROLL_PORT=""
 E2E_REPO_PORT=""
+E2E_PG_PORT=""
+E2E_REDIS_PORT=""
 E2E_SERVER_URL=""
 E2E_ADMIN_PW=""
+# Exported by e2e_init: the stack's Postgres and Redis as the host sees them
+# (127.0.0.1, docker-compose.test.yml), for tests that run outside the containers.
+ITEST_DATABASE_URL=""
+ITEST_REDIS_URL=""
 
 e2e_rand() { openssl rand -hex 16; }
 
@@ -74,12 +80,20 @@ e2e_init() {
     # one must be the fixed 8444 — only the data plane gets a high per-run port.
     E2E_ENROLL_PORT=8444
     E2E_REPO_PORT=8445
+    # Ranges of their own, below the data plane's (21000-38999) so no PID hands
+    # one run's Postgres port to another run's gateway, and below Linux's
+    # ephemeral range (32768-60999), where an outgoing connection may be holding
+    # the port at the moment compose binds it.
+    E2E_PG_PORT=$(( 11000 + ($$ % 5000) ))
+    E2E_REDIS_PORT=$(( 16000 + ($$ % 5000) ))
     E2E_SERVER_URL="https://localhost:$E2E_HTTPS_PORT"
     E2E_ADMIN_PW="e2e-$(e2e_rand)"
+    local pg_pw
+    pg_pw="$(e2e_rand)"
     cat > "$E2E_WORK/.env" <<EOF
 DOMAIN=localhost
 SECRET_KEY=$(e2e_rand)$(e2e_rand)
-POSTGRES_PASSWORD=$(e2e_rand)
+POSTGRES_PASSWORD=$pg_pw
 CA_ROOT_PASSPHRASE=$(e2e_rand)
 MONITOR_API_KEY=$(e2e_rand)
 ADMIN_PASSWORD=$E2E_ADMIN_PW
@@ -87,7 +101,13 @@ MTLS_ENFORCE=${1:?e2e_init needs MTLS_ENFORCE (true|false)}
 ITEST_HTTPS_PORT=$E2E_HTTPS_PORT
 ITEST_ENROLL_PORT=$E2E_ENROLL_PORT
 ITEST_REPO_PORT=$E2E_REPO_PORT
+ITEST_PG_PORT=$E2E_PG_PORT
+ITEST_REDIS_PORT=$E2E_REDIS_PORT
 EOF
+    # User and database as docker-compose.yml creates them; the password is hex,
+    # so it needs no URL escaping.
+    export ITEST_DATABASE_URL="postgresql+psycopg://adminhelper:$pg_pw@127.0.0.1:$E2E_PG_PORT/adminhelper"
+    export ITEST_REDIS_URL="redis://127.0.0.1:$E2E_REDIS_PORT/0"
     trap e2e_teardown EXIT
 }
 

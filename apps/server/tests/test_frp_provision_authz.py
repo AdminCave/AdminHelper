@@ -55,6 +55,16 @@ class TestFrpProvisionConfigIDOR:
         res = test_client.get("/api/frp/provision/srv-a/config", headers={"X-API-Key": key_a})
         assert res.status_code != 403, res.text
 
+    def test_bound_key_with_invalid_bearer_is_401(self, test_client, db_session):
+        # R-0054: a second, broken credential is a 401 before the scope is even looked at.
+        _server(db_session, "srv-a", "server-a")
+        key_a = _api_key(db_session, server_id="srv-a")
+        res = test_client.get(
+            "/api/frp/provision/srv-a/config",
+            headers={"X-API-Key": key_a, "Authorization": "Bearer not-a-jwt"},
+        )
+        assert res.status_code == 401, res.text
+
     def test_unbound_key_denied(self, test_client, db_session):
         _server(db_session, "srv-a", "server-a")
         key = _api_key(db_session, server_id=None)

@@ -21,8 +21,11 @@ uses `get_current_admin` directly instead.
 
 import logging
 import secrets
+from datetime import timedelta
 
-from app.core.auth import hash_api_key
+import pytest
+
+from app.core.auth import create_access_token, hash_api_key
 from app.modules.api_keys.models import ApiKey
 
 BODY = {"name": "authz-regression", "kind": "ssh"}
@@ -88,3 +91,114 @@ def test_apikey_via_query_param_is_audited(test_client, db_session, caplog):
         r = test_client.get("/api/connections", headers={"X-API-Key": key})
     assert r.status_code == 200, r.text
     assert not any("Query-Parameter" in rec.message for rec in caplog.records)
+
+
+class TestEveryPresentedCredentialMustHold:
+    """R-0054: ApiKeyOrUser checks every credential a request presents before it decides.
+    A valid key next to a broken bearer, or a valid bearer next to an unknown key, is a 401 —
+    the valid one no longer carries the other through. Both valid: the key decides, as when it
+    was checked first. One credential alone keeps the matrix above unchanged. Only Basic is
+    ignored (T9) — a proxy's, or user:pass@ from a sync URL; any other Authorization header has
+    to be a valid bearer."""
+
+    def _assert_unauthenticated(self, r):
+        assert r.status_code == 401, r.text
+        assert r.json()["detail"] == "Nicht authentifiziert"
+        assert r.headers["www-authenticate"] == "Bearer"
+
+    def test_valid_key_with_invalid_bearer(self, test_client, db_session):
+        key = _api_key(db_session, "read")
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": "Bearer not-a-jwt"}
+        )
+        self._assert_unauthenticated(r)
+
+    def test_valid_key_with_expired_bearer(self, test_client, db_session, admin_user):
+        key = _api_key(db_session, "read")
+        expired = create_access_token({"sub": "admin"}, expires_delta=timedelta(seconds=-10))
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": f"Bearer {expired}"}
+        )
+        self._assert_unauthenticated(r)
+
+    @pytest.mark.parametrize(
+        "authorization",
+        # The junk schemathesis sent in CI (PR #47), a leading blank before a bearer, an
+        # empty value, a token-less and a lower-case invalid bearer.
+        ["xyz", "Token abc", "!#$%", "  Bearer x", "", "Bearer", "bearer not-a-jwt"],
+    )
+    def test_valid_key_with_anything_but_basic_or_a_valid_bearer(
+        self, test_client, db_session, authorization
+    ):
+        key = _api_key(db_session, "read")
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": authorization}
+        )
+        self._assert_unauthenticated(r)
+
+    def test_valid_key_with_basic_is_accepted(self, test_client, db_session):
+        # Basic from a proxy, or from user:pass@ in a sync URL, is not a credential: ignored in
+        # any case of the scheme, and the key decides. Alone it authenticates nothing, as before.
+        key = _api_key(db_session, "read")
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": "Basic x"}
+        )
+        assert r.status_code == 200, r.text
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": "basic x"}
+        )
+        assert r.status_code == 200, r.text
+        self._assert_unauthenticated(
+            test_client.get("/api/connections", headers={"Authorization": "Basic x"})
+        )
+
+    def test_the_header_is_trimmed_before_its_scheme_is_read(
+        self, test_client, db_session, admin_user
+    ):
+        # Leading blanks do not hide a scheme: a valid bearer still authenticates, and a
+        # Basic next to a key is still the ignored infrastructure header.
+        token = _login(test_client, "admin", "adminpass")
+        r = test_client.get("/api/connections", headers={"Authorization": f"  Bearer {token}"})
+        assert r.status_code == 200, r.text
+        key = _api_key(db_session, "read")
+        r = test_client.get(
+            "/api/connections", headers={"X-API-Key": key, "Authorization": "  Basic x"}
+        )
+        assert r.status_code == 200, r.text
+
+    def test_valid_bearer_with_unknown_key(self, test_client, db_session, admin_user):
+        token = _login(test_client, "admin", "adminpass")
+        r = test_client.get(
+            "/api/connections",
+            headers={"Authorization": f"Bearer {token}", "X-API-Key": "ah_unknown"},
+        )
+        self._assert_unauthenticated(r)
+
+    def test_valid_bearer_with_unknown_query_key(self, test_client, db_session, admin_user):
+        token = _login(test_client, "admin", "adminpass")
+        r = test_client.get(
+            "/api/connections?api_key=ah_unknown", headers={"Authorization": f"Bearer {token}"}
+        )
+        self._assert_unauthenticated(r)
+
+    @pytest.mark.parametrize("valid_in", ["header", "query"])
+    def test_header_key_and_query_key_must_both_hold(self, test_client, db_session, valid_in):
+        # Both key channels are checked: the header no longer shadows an unknown ?api_key=,
+        # and a valid ?api_key= does not carry an unknown header key.
+        key = _api_key(db_session, "read")
+        header, query = (key, "ah_unknown") if valid_in == "header" else ("ah_unknown", key)
+        r = test_client.get(f"/api/connections?api_key={query}", headers={"X-API-Key": header})
+        self._assert_unauthenticated(r)
+
+    def test_both_valid_the_key_decides(self, test_client, db_session, admin_user):
+        # The admin bearer alone would create (201); with a read key next to it the key
+        # decides, and a read key may not write.
+        key = _api_key(db_session, "read")
+        token = _login(test_client, "admin", "adminpass")
+        r = test_client.post(
+            "/api/connections",
+            json=BODY,
+            headers={"X-API-Key": key, "Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 403, r.text
+        assert r.json()["detail"] == "Schreibzugriff erforderlich"

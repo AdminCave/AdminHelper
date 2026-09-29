@@ -519,6 +519,26 @@ c fix T1 -m "feat: something" --review-note "$(printf 'approve (sonnet)\n### T1 
   && ok "and no second evidence line" || bad "the note forged an evidence line"
 reset_repo
 
+# ══ with the pre-commit hook armed (R-0102) ═══════════════════════════════════
+echo "── pre-commit hook armed ──"
+# The hook runs review.sh sec a third time; the closer keeps its own two runs for
+# clones without the hook. Armed, a close still has to go through.
+mkdir -p "$FIX/scripts/dev/hooks"
+cp "$REPO_ROOT/scripts/dev/hooks/pre-commit" "$FIX/scripts/dev/hooks/pre-commit"
+chmod 755 "$FIX/scripts/dev/hooks/pre-commit"
+git -C "$FIX" config core.hooksPath scripts/dev/hooks
+touch_tool
+c fix T1 -m "feat: closed with the hook armed"
+[ $rc -eq 0 ] && [ "$(head_count)" = "$((BEFORE + 1))" ] \
+  && ok "a close with the pre-commit hook armed still commits" || bad "armed close: rc=$rc out=$OUT"
+# ... and the hook really was armed: the same fixture refuses a sec ledger by hand.
+printf 'finding\n' > "$FIX/tasks/sec-x.md"; git -C "$FIX" add -- tasks/sec-x.md
+OUT=$(git -C "$FIX" commit -qm "by hand" 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q 'tasks/sec-x.md' <<<"$OUT" \
+  && ok "and the same fixture refuses a sec ledger committed by hand" || bad "hook not armed: rc=$rc out=$OUT"
+git -C "$FIX" config --unset core.hooksPath
+reset_repo
+
 # ══ the message file ══════════════════════════════════════════════════════════
 echo "── the commit message ──"
 touch_tool

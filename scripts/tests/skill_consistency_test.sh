@@ -7,8 +7,10 @@
 # contradictions stage 5b removed: a plan committed on main (R-0065), a ledger
 # status list without `freigegeben` or `bereit`, a feature-plan head template
 # without `Heavy:`, and a ledger path or PR number handed to `roadmap.py status
-# --note` instead of `--ledger`/`--pr`; and it holds that `--kurz` refuses SEC, so
-# no finding is committed into this public repo. Read-only; each check first
+# --note` instead of `--ledger`/`--pr`; it holds that `--kurz` refuses SEC, so
+# no finding is committed into this public repo; and that a reviewer gets its own
+# directory and the cleanup rule of R-0098 (a reviewer's `rm -rf /tmp/tmp.*`
+# took every other session's fixtures on 2026-09-25). Read-only; each check first
 # proves on a fixture that it can fail at all, and that it stays quiet on the
 # sentences it must not mistake.
 #
@@ -105,6 +107,16 @@ erledigt_before_push() {
        END { if (e && p && e < p) print "ok" }' "$1"
 }
 
+# cleanup_rule <text> — "ok" when the text carries all three parts of the
+# cleanup rule: temp directories only under an own one (`mktemp -d -p`), only
+# own paths by their full path, never by glob.
+CLEANUP_RULE=('mktemp[[:space:]]+-d[[:space:]]+-p' 'vollem[[:space:]]+Pfad' 'nie[[:space:]]+per[[:space:]]+Glob')
+cleanup_rule() {
+  local re
+  for re in "${CLEANUP_RULE[@]}"; do grep -qE -- "$re" <<<"$1" || return 0; done
+  echo ok
+}
+
 # fires <detector> <file…> — the detector read its input and reported a finding.
 fires() { local out; out=$("$@"); [ -n "$out" ] && ! grep -q '^cannot read' <<<"$out"; }
 
@@ -176,6 +188,17 @@ f=$(fixture '## 3. Ledger schreiben' '```' 'Status: geplant · Branch: feature/<
 t=$(head_template "$f")
 { ! grep -q '^Heavy:' <<<"$t" && grep -q '^Fast-Suite:' <<<"$t"; } \
   && ok "the old head template is read as one without Heavy:" || bad "head_template read: $t"
+f=$(fixture '4. **Frischer-Kontext-Review** (vor dem Commit jeder Einheit): einen frischen Sub-Agent' \
+            '   - **Modell:** `model: sonnet` ist der Default.' '5. **Schließen**')
+[ -z "$(cleanup_rule "$(section "$f" '4. **Frischer' '5. **Schließen')")" ] \
+  && ok "a review step without the cleanup rule is no ok" || bad "cleanup_rule passed the old step 4"
+f=$(fixture 'Proben mit `mktemp -d` anlegen und danach mit vollem Pfad oder' '`rm -rf /tmp/tmp.*` aufräumen.')
+[ -z "$(cleanup_rule "$(tr '\n' ' ' < "$f")")" ] \
+  && ok "a bare mktemp -d with a glob cleanup is no cleanup rule" || bad "cleanup_rule passed mktemp -d without -p"
+f=$(fixture 'Proben nur mit `mktemp -d -p <sein Verzeichnis>`, nur eigene Pfade mit vollem Pfad löschen, nie per' \
+            '     Glob.')
+[ "$(cleanup_rule "$(tr '\n' ' ' < "$f")")" = ok ] \
+  && ok "the rule wrapped across a line break is found" || bad "cleanup_rule missed the wrapped rule"
 
 # ══ the real texts ════════════════════════════════════════════════════════════
 echo "── the skills, AUTONOMOUS.md, tasks/README.md ──"
@@ -209,6 +232,15 @@ grep -q '^Status: geplant' <<<"$t" && ok "feature-plan's head template is where 
   || bad "no head template under '## 3.' in feature-plan: $t"
 grep -q '^Heavy: ' <<<"$t" && ! grep -qE '^(Fast-Suite|Warm-Profil):' <<<"$t" \
   && ok "feature-plan's head template carries Heavy: and not the old fields" || bad "head template: $t"
+step4=$(section .claude/skills/feature-build/SKILL.md '4. **Frischer-Kontext-Review**' '5. **Schließen')
+[ "$(cleanup_rule "$step4")" = ok ] \
+  && ok "feature-build step 4 hands each reviewer its own directory and the cleanup rule" \
+  || bad "feature-build step 4 lacks the cleanup rule (mktemp -d -p, vollem Pfad, nie per Glob)"
+! grep -q '/tmp/claude-' <<<"$step4" \
+  && ok "and names no fixed /tmp/claude-<uid> path (the runner has another uid)" || bad "step 4 names /tmp/claude-…"
+[ "$(cleanup_rule "$(section .claude/skills/feature-review/SKILL.md '## Proben und Aufräumen' '## ')")" = ok ] \
+  && ok "feature-review's 'Proben und Aufräumen' carries the cleanup rule" \
+  || bad "feature-review has no '## Proben und Aufräumen' with the cleanup rule"
 
 echo ""
 echo "skill_consistency_test: $PASS passed, $FAIL failed"

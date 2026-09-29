@@ -51,3 +51,91 @@ def test_status_unreachable_dashboard_returns_error_payload(
     assert body["total"] == 0
     assert body["proxies"] == []
     assert "nicht erreichbar" in body["error"]
+
+
+_DASHBOARD = "http://frps-test:7500"
+
+
+def test_status_body_equals_the_untyped_dict(
+    test_client, admin_user, db_session, httpx_mock, monkeypatch
+):
+    """R-0043: the route declares FrpStatus. One proxy from the stubbed dashboard, matched to
+    a tunnel: the body must be exactly the dict the untyped route built — every proxy key, the
+    tunnel as to_dict() hands it out, and no `error` key on success."""
+    from fastapi.encoders import jsonable_encoder
+
+    import app.modules.frp.status_router as sr
+    from app.modules.frp.models import FrpTunnel
+    from app.modules.servers.models import Server
+
+    monkeypatch.setattr(sr, "FRPS_DASHBOARD_URL", _DASHBOARD)
+    _config(db_session, dashboard_port=7500)
+    db_session.add(Server(id="srv-st", name="st", hostname="st.example.test"))
+    db_session.add(
+        FrpTunnel(
+            id="tun-st",
+            server_id="srv-st",
+            frp_config_id="c1",
+            name="st-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            tags='["prod"]',
+        )
+    )
+    db_session.commit()
+    proxy = {
+        "name": "admin.st-ssh",
+        "status": "online",
+        "curConns": 2,
+        "todayTrafficIn": 1024,
+        "todayTrafficOut": 2048,
+        "lastStartTime": "09-27 10:00:00",
+        "lastCloseTime": "",
+    }
+    httpx_mock.add_response(url=f"{_DASHBOARD}/api/proxy/stcp", json={"proxies": [proxy]})
+    for proxy_type in ("https", "tcp", "udp"):
+        httpx_mock.add_response(url=f"{_DASHBOARD}/api/proxy/{proxy_type}", json={"proxies": []})
+
+    resp = test_client.get("/api/frp/status", headers=_login(test_client))
+
+    assert resp.status_code == 200, resp.text
+    tunnel = db_session.get(FrpTunnel, "tun-st")
+    assert resp.json() == {
+        "proxies": [
+            {
+                "name": "admin.st-ssh",
+                "type": "stcp",
+                "status": "online",
+                "curConns": 2,
+                "clientVersion": "",
+                "todayTrafficIn": 1024,
+                "todayTrafficOut": 2048,
+                "lastStartTime": "09-27 10:00:00",
+                "lastCloseTime": "",
+                "tunnel": jsonable_encoder(tunnel.to_dict()),
+            }
+        ],
+        "total": 1,
+    }
+
+
+def test_status_unreachable_body_equals_the_untyped_dict(
+    test_client, admin_user, db_session, httpx_mock, monkeypatch
+):
+    """The error answer keeps its three keys, nothing more (an unset `error` is dropped, a set
+    one is not)."""
+    import app.modules.frp.status_router as sr
+
+    monkeypatch.setattr(sr, "FRPS_DASHBOARD_URL", _DASHBOARD)
+    _config(db_session, dashboard_port=7500)
+    httpx_mock.add_exception(httpx.ConnectError("connection refused"))
+
+    resp = test_client.get("/api/frp/status", headers=_login(test_client))
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "proxies": [],
+        "total": 0,
+        "error": "frps-Dashboard: nicht erreichbar (ConnectError)",
+    }

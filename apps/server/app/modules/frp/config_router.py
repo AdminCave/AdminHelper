@@ -17,20 +17,27 @@ from app.core.request_context import actor_from_request
 from app.modules.audit import service as audit
 from app.modules.frp.docker_manager import remove_frps_config, write_frps_config
 from app.modules.frp.models import FrpServerConfig
-from app.modules.frp.schemas import FrpServerConfigCreate, FrpServerConfigUpdate
+from app.modules.frp.schemas import (
+    FrpServerConfigCreate,
+    FrpServerConfigDetail,
+    FrpServerConfigOut,
+    FrpServerConfigUpdate,
+)
 
 logger = logging.getLogger("adminhelper.frp")
 
 router = APIRouter(prefix="/api/frp", tags=["frp"])
 
 
-@router.get("/server-config")
+@router.get("/server-config", response_model=list[FrpServerConfigOut])
 def list_server_configs(db: Session = Depends(get_db), _admin=Depends(get_current_admin)):
     configs = db.query(FrpServerConfig).all()
     return [c.to_dict(mask_secrets=True) for c in configs]
 
 
-@router.post("/server-config", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/server-config", response_model=FrpServerConfigOut, status_code=status.HTTP_201_CREATED
+)
 def create_server_config(
     data: FrpServerConfigCreate,
     request: Request,
@@ -86,7 +93,7 @@ def create_server_config(
     return config.to_dict()
 
 
-@router.get("/server-config/{config_id}")
+@router.get("/server-config/{config_id}", response_model=FrpServerConfigDetail)
 def get_server_config(
     config_id: str, db: Session = Depends(get_db), _admin=Depends(get_current_admin)
 ):
@@ -96,7 +103,7 @@ def get_server_config(
     return config.to_dict(include_tunnels=True, mask_secrets=True)
 
 
-@router.put("/server-config/{config_id}")
+@router.put("/server-config/{config_id}", response_model=FrpServerConfigOut)
 def update_server_config(
     config_id: str,
     data: FrpServerConfigUpdate,
