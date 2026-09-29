@@ -62,7 +62,7 @@
           <table>
             <thead><tr><th>Store</th><th>Zweck</th></tr></thead>
             <tbody>
-              <tr><td><code>auth</code></td><td>Login, Logout, Refresh, aktueller User; nur der kurzlebige Access-Token liegt in <code>localStorage</code> (<code>adminhelper_token</code>), der langlebige Refresh-Token in einem <code>HttpOnly</code>-Cookie (vom Server gesetzt, für JS/XSS unlesbar).</td></tr>
+              <tr><td><code>auth</code></td><td>Login, Logout, Refresh, aktueller User; der kurzlebige Access-Token liegt nur im Speicher des Moduls <code>client.ts</code>, nie in <code>localStorage</code>/<code>sessionStorage</code> (Kopien &auml;lterer Builds l&ouml;scht der Client beim Laden), der langlebige Refresh-Token in einem <code>HttpOnly</code>-Cookie (vom Server gesetzt, für JS/XSS unlesbar). Nach einem Reload holt <code>restoreSession()</code> den Access-Token &uuml;ber das Cookie neu.</td></tr>
               <tr><td><code>users</code></td><td>Benutzer-CRUD inkl. User&harr;Server-Mapping (die Zuweisung bleibt im Web-Panel).</td></tr>
               <tr><td><code>apikeys</code></td><td>Key-CRUD, einmaliges Anzeigen des Klartext-Keys.</td></tr>
               <tr><td><code>hooks</code></td><td>Hook-CRUD, Trigger-Test, Token-Rotation.</td></tr>
@@ -72,7 +72,7 @@
           </table>
 
           <h2>API-Wrapper</h2>
-          <p>Alle HTTP-Calls gehen durch <code>src/lib/api/client.ts</code>. Der Client verwaltet Access-Token, h&auml;lt eine in-flight-deduplizierte <code>tryRefresh()</code>-Promise und triggert automatisch Refresh, wenn ein 401 zur&uuml;ckkommt. Schl&auml;gt das fehl, ruft <code>registerAuthFailureHandler()</code> den <code>auth</code>-Store, der zum Login leitet.</p>
+          <p>Alle HTTP-Calls gehen durch <code>src/lib/api/client.ts</code>. Der Client verwaltet Access-Token, h&auml;lt eine in-flight-deduplizierte <code>tryRefresh()</code>-Promise und triggert automatisch Refresh, wenn ein 401 zur&uuml;ckkommt. Schl&auml;gt das fehl, ruft <code>registerAuthFailureHandler()</code> den <code>auth</code>-Store, der zum Login leitet. Ein 2xx, dessen Body sich nicht lesen l&auml;sst (etwa weil ein Reload die &Uuml;bertragung abbricht, oder weil er kein JSON ist), wirft <code>ApiError(status, 'Invalid response body')</code>, statt still <code>null</code> zu liefern; nur 204 und ein g&uuml;ltiges JSON-<code>null</code> ergeben <code>null</code>.</p>
           <p>Domain-Wrapper liegen daneben: <code>auth.ts</code>, <code>users.ts</code>, <code>servers.ts</code> (nur für die User&harr;Server-Zuweisung), <code>apikeys.ts</code>, <code>hooks.ts</code>, <code>frp.ts</code> (FRP-Server-Konfiguration) &ndash; jeweils typisiert &uuml;ber <code>types.ts</code>.</p>
 
           <h2>i18n</h2>

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Web-Client: kein null bei unlesbarem 2xx-Body (R-0107) — Task-Ledger
-Status: freigegeben · Branch: feature/web-client-null-body · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/web-client-null-body · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-29 (Design-Gate der Aufsicht), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0107
 Heavy: linux-full — nur `run.sh integration`, Schritt `web_live`: der Client wird strenger, erst der echte Stack belegt, dass kein vom Web genutzter Endpunkt ein 2xx ohne JSON liefert und Login, Seiten und CRUD grün bleiben. Den seltenen Flake beweist ein grüner Lauf nicht; den Mechanismus beweisen T1 und T2. e2e nicht nötig, das gemockte chromium-Projekt läuft in der PR-CI.
@@ -20,8 +20,10 @@ ApiKeys (`:73`), Hooks (`:132`) und Audit (`:111`, `:143`) lesen `.length` auf d
 Listen-Endpunkte haben ein `response_model=list[...]`, der Catch ist der einzige Weg zu `null`. Der Smoke bleibt
 unverändert — er hat einen echten Nutzerpfad (F5 während des Ladens) gefunden.
 
-### T1 — client.ts: ein 2xx mit unlesbarem Body wirft ApiError statt null  [ ]
+### T1 — client.ts: ein 2xx mit unlesbarem Body wirft ApiError statt null  [x]
 Komponente: web · Dateien: apps/web/src/lib/api/client.ts, apps/web/src/lib/api/client.test.ts, CHANGELOG.md, docs/developer/webui.html, docs/en/developer/webui.html
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @2585c6c4 2026-09-29T13:21:42+02:00
+Review: Review am Ende (Kurz-Ledger)
 Änderung: `request()` (client.ts:108–123) parst nur bei `!res.ok` tolerant; bei `res.ok` und fehlschlagendem `res.json()`
 wirft es `ApiError(res.status, 'Invalid response body')` (englisch wie die übrigen Meldungen). 204 (`:106`) und ein
 gültiges JSON-`null` bleiben wie bisher. Neuer Test in `client.test.ts` nach dem vorhandenen Muster (`importClient()`,
