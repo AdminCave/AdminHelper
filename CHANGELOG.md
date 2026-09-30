@@ -116,6 +116,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **npm-Abhaengigkeiten (dev) ohne Audit-Befund (R-0038):** `vitest` und die `@vitest/*`-Pakete
+  stehen in `apps/web` und `apps/desktop/ui` auf 4.1.11 (GHSA-82fw-gwwq-j7x9; Ranges `^4.1.11`).
+  Die Lockfiles dort und in `apps/desktop/e2e` heben `brace-expansion` (GHSA-qhr7-859c-m2p7,
+  GHSA-6j4f-fj2g-mc7p; high), `undici` (GHSA-rfgv-xxqx-mfg5, GHSA-w293-vg96-wgc3; high),
+  `devalue` (GHSA-9rgm-9g3h-6x36) und in e2e `ip-address` (GHSA-j6r3-76f7-8jcv,
+  GHSA-h3mg-xc3c-68pw) auf gefixte Versionen, alles `dev`-Abhaengigkeiten. Vorher meldete
+  `npm audit --audit-level=high`, mit dem der woechentliche Dependency Audit gated, in allen drei
+  Verzeichnissen zwei high-Funde; jetzt ist `--audit-level=moderate` ueberall ohne Befund. Die
+  Lockfiles von web und desktop-ui schreibt einmalig `npx -y npm@11 … --package-lock-only`, weil
+  npm 10.9.8 dabei in arborist abbricht; `npm ci` laeuft mit npm 10 unveraendert.
+
 - **SSRF-Guard (Server und Monitoring):** Die DNS-Aufloesung des Guards lief ueber einen
   geteilten Vier-Worker-Pool. Vier haengende Aufloesungen belegten ihn vollstaendig, jeder
   weitere `is_private_url`-Aufruf lief in seine 5-Sekunden-Frist und meldete fail-closed
@@ -139,6 +150,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   erkannt. Die Locks von server und monitoring ziehen dabei `sqlalchemy[asyncio]` nach, faellig
   seit der `.in`-Aenderung (gleiche Version, gleiche Hashes). `pytest` gegen die exakten neuen
   Locks unter Python 3.12 gruen — server 968, monitoring 599, ca-issuer 74 —, `pip-audit` ohne Befund.
+
+- **pyjwt 2.13.0 → 2.14.0** im Server (gehashte Lock neu generiert, Untergrenze in `requirements.in`
+  auf `>=2.14.0`): behebt CVE-2026-101917, CVE-2026-102265 bis -102269 und CVE-2026-102271 bis -102274.
+  Vom Dependency-Audit (`pip-audit`) erkannt. Der Changelog 2.13.0 → 2.14.0 enthaelt keine inkompatible Aenderung; `pytest`
+  gegen den exakten neuen Lock unter Python 3.12 gruen (server 682), `pip-audit` ohne Befund.
 
 ### Fixed
 
@@ -245,6 +261,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Eintraege mit.
 
 ### Changed
+
+- **Ein ruff ueberall (R-0074):** `apps/server/requirements-dev.txt` pinnt `ruff==0.15.20`
+  statt des Bodens `ruff>=0.15`, und `scripts/dev/toolchain-lockstep.sh` verlangt Gleichheit
+  mit `ci.yml` und `scripts/vm/bootstrap_linux.sh` statt nur „nicht darueber". Mit dem Boden
+  blieb ein vorhandenes ruff 0.16.x im `AH_VENV` liegen und meldete ueber die vier Lint-Pfade
+  841 Treffer, die CI mit 0.15.20 nie sah. Der Schritt `server-pytest` zieht das `AH_VENV`
+  beim naechsten Lauf auf 0.15.20 zurueck. Dazu verlangt `ruff.toml` per
+  `required-version = "==0.15.20"` genau diese Version, und der Lockstep prueft auch diese
+  Stelle: ein anderes ruff im `PATH` bricht mit Exit 2 ab, statt still andere Regeln
+  anzuwenden (der Format-Hook `scripts/dev/format-file.sh` formatiert dann still nicht).
+  Auch das Tool-Venv des Runners (`VENV_PKGS` in `scripts/dev/runner-setup.sh`, das erste
+  ruff in seinem `PATH`) installiert `ruff==0.15.20`, als fuenfte Stelle im Lockstep; auf
+  einem bestehenden Runner wirkt das nach erneutem `sudo bash scripts/dev/runner-setup.sh`.
 
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
