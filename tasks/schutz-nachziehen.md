@@ -127,8 +127,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: Kopfkommentar von harness-guard.sh, falls er Here-Strings nennt; sonst keine (Bugfix)
 Abhängt von: T5
 
-### T7 — Commit-Hooks: pre-applypatch für git am und rebase --apply  [ ]
-Komponente: scripts · Dateien: scripts/dev/hooks/pre-applypatch, scripts/dev/harness.sh, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+### T7 — Commit-Hooks: pre-applypatch für git am und rebase --apply  [x]
+Komponente: scripts · Dateien: scripts/dev/hooks/pre-applypatch, scripts/dev/harness.sh, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md, scripts/dev/hooks/prepare-commit-msg
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @5b9246a5 2026-09-30T15:10:20+02:00
+Review: request_changes -> fixed -> approve (opus, 2 rounds)
 Herkunft: R-0110, gefunden im Opus-Review von T3 (2026-09-30); aufgenommen von der Aufsicht (adminhelper-ac) als
 derselbe Mechanismus wie R-0110, im freigegebenen Umfang. Die Verzeichnisebene des Wächters (`rm -rf .claude`,
 `chmod -R …`) ist eine eigene Roadmap-Zeile, nicht Teil dieses Ledgers.
@@ -144,3 +146,18 @@ und shellcheck des Hooks wie bei den anderen.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „pre-commit-Hook" (vier Hooks, `git am`/`rebase --apply` aus „nicht abgedeckt“ heraus); AUTONOMOUS.md (PreToolUse-Absatz); CHANGELOG [Unreleased] Changed (Eintrag aus T3 ergänzen)
 Abhängt von: T3
+
+### T8 — Wächter: git am -n und --no-verify sind eine Hook-Umgehung  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, scripts/dev/hooks/pre-applypatch, DEVELOPMENT.md, CHANGELOG.md
+Herkunft: Opus-Review von T7 (2026-09-30); aufgenommen von der Aufsicht (adminhelper-ac), weil Kevin das Verweigern
+von `--no-verify` für commit schon entschieden hat (R-0102) und harness-guard.sh zu diesem Ledger gehört.
+Änderung: `git_skips_hook` (harness-guard.sh) verweigert auch `git am -n` und `git am --no-verify` (samt eindeutiger
+Präfixe der langen Option), in jedem Modus wie bei `git commit`. Nach T7 ist `git am -n` der letzte Flag-Weg an allen
+vier Hooks vorbei (`pre-applypatch` ist der einzige Hook, der für `git am` läuft). Die „nicht abgedeckt“-Zeile aus T7
+in DEVELOPMENT.md und im Kopf von `pre-applypatch` dreht T8 wieder um.
+Test (zuerst, rot): JSON-Fälle `git am -n x.patch` und `git am --no-verify x.patch` → heute frei, danach in jedem Modus
+verweigert; Gegenprobe: `git am x.patch`, `git am -3 x.patch` und `git am --abort` bleiben frei, ein Wort wie
+`git amend` wird nicht getroffen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (Umgehungen des pre-commit-Hooks; „nicht abgedeckt“ ohne `git am -n`), Kopf von pre-applypatch; CHANGELOG [Unreleased] Changed (Eintrag aus T3 ergänzen)
+Abhängt von: T7

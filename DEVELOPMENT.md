@@ -638,21 +638,27 @@ bash scripts/dev/harness.sh status            # pre-commit: armed (core.hooksPat
 
 Der Pfad ist relativ: jeder Worktree faehrt die Hooks **seines** Branches, ein Branch ohne
 die Dateien hat keine (und dessen aelteres `harness.sh` sagt dazu nichts). Seit R-0110 liegen
-dort drei Hooks, alle mit demselben `review.sh sec --staged`: `pre-commit` fuer `git commit`,
+dort vier Hooks, alle mit demselben `review.sh sec --staged`: `pre-commit` fuer `git commit`,
 `prepare-commit-msg` fuer `git cherry-pick`, `git revert`, jeden Commit, den ein `rebase`
-mit dem Standard-Backend nachspielt, und den Merge-Commit, und `pre-merge-commit` fuer `git merge` mit eigenem Commit
-(githooks(5): bricht ab, bevor der Commit entsteht). Dass der Sequencer `prepare-commit-msg`
+mit dem Standard-Backend nachspielt, und den Merge-Commit, `pre-merge-commit` fuer
+`git merge` mit eigenem Commit (githooks(5): bricht ab, bevor der Commit entsteht) und
+`pre-applypatch` fuer `git am` und `git rebase --apply` (auch ueber `rebase.backend=apply`),
+die keinen der drei anderen rufen. Dass der Sequencer `prepare-commit-msg`
 ruft, dokumentiert git nicht; gemessen ist es mit git 2.47.3, und
 `scripts/tests/review_scripts_test.sh` haelt es fest — ein git, das damit aufhoert, macht
 diese Faelle rot. `git commit -n` ueberspringt nur `pre-commit`, nicht `prepare-commit-msg`;
-ein gewoehnlicher Commit faehrt `sec` deshalb zweimal (~20 ms je Lauf). Fehlt einer der drei
+ein gewoehnlicher Commit faehrt `sec` deshalb zweimal (~20 ms je Lauf). Fehlt einer der vier
 im Checkout oder ist er nicht ausfuehrbar, meldet `harness.sh status` `NOT armed` und nennt
-ihn. Die Hooks sperren fail-closed — ein kaputtes `review.sh` blockiert jeden Commit, jeden
-Merge, cherry-pick und rebase; der Ausweg in Kevins Shell ist
-`git config --unset core.hooksPath`. Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt
-keinen Commit), `git am` und `git rebase --apply` (auch ueber `rebase.backend=apply`; sie rufen
-nur die applypatch-Hooks), Plumbing (`commit-tree`, `update-ref`) und die Wege am Hook vorbei,
-die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
+ihn. Nach einer Weigerung geht es mit `--abort` zurueck (`git cherry-pick`, `merge`, `rebase`,
+`am`, `git revert` einer Serie); ein verweigertes `git revert` eines einzelnen Commits
+hinterlaesst dagegen keinen `REVERT_HEAD` und seine Aenderung gestaged, dort hilft
+`git reset --merge`. Die Hooks sperren
+fail-closed — ein kaputtes `review.sh` blockiert jeden Commit, jeden Merge, cherry-pick,
+rebase und `git am`; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
+Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt keinen Commit), `git am -n` bzw.
+`--no-verify` (ueberspringt `pre-applypatch`, und fuer `git am` laeuft kein anderer Hook; der <!-- review: ok nennt die Umgehung -->
+Waechter kennt diese Umgehung noch nicht), Plumbing (`commit-tree`, `update-ref`) und die Wege
+am Hook vorbei, die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
 `dontAsk` ohne passende Allow-Regel wird so ein Edit schon heute verweigert, und die
 Bash-Schreibwege deckt eine Edit-Regel nicht ab.
 

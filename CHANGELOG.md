@@ -254,14 +254,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   innerhalb eines Tests (Python, Go, Rust, TS/JS). Der Ausweg bleibt `review: ok <grund>` auf
   der Zeile. Anleitung: `DEVELOPMENT.md` „Task schliessen".
 
-- **Commit-Hooks auch bei merge, cherry-pick, revert und rebase (R-0110):** Neben
+- **Commit-Hooks auch bei merge, cherry-pick, revert, rebase und git am (R-0110):** Neben
   `scripts/dev/hooks/pre-commit` fahren jetzt `prepare-commit-msg` (cherry-pick, revert, jeder
-  Commit eines rebase mit dem Standard-Backend, Merge-Commit) und `pre-merge-commit` (vor einem
-  Merge-Commit)
+  Commit eines rebase mit dem Standard-Backend, Merge-Commit), `pre-merge-commit` (vor einem
+  Merge-Commit) und `pre-applypatch` (`git am`, `git rebase --apply`)
   `review.sh sec --staged` — bisher kam eine private Datei aus einem anderen Branch ueber diese
   Wege ungeprueft in den Verlauf. Dass der Sequencer `prepare-commit-msg` ruft, ist nicht
   dokumentiert, aber mit git 2.47.3 gemessen und im Test festgehalten. `harness.sh status`
-  prueft alle drei Hooks und nennt einen fehlenden; `chmod`, `chown` und `chgrp` auf einen
+  prueft alle vier Hooks und nennt einen fehlenden; `chmod`, `chown` und `chgrp` auf einen
   Harness-Pfad zaehlen fuer den Waechter als Schreiben. Wirksam je Worktree mit dem Branch,
   der die Hooks traegt. Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
 

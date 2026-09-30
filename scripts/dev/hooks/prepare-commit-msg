@@ -6,8 +6,7 @@
 # prepare-commit-msg — git hook: `review.sh sec --staged` for the commits that
 # never run pre-commit (R-0110): cherry-pick, revert, each commit a rebase
 # replays (the default merge backend), and a merge commit. `git am` and
-# `git rebase --apply` call none of the three hooks — they run the applypatch
-# hooks — and stay uncovered.
+# `git rebase --apply` never call it; pre-applypatch covers them.
 #
 # That the sequencer (cherry-pick, revert, rebase) calls this hook is NOT in
 # githooks(5); it was measured on git 2.47.3, and

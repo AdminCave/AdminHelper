@@ -964,7 +964,7 @@ echo "── pre-commit hook ──"
 HFIX="$WORK/hooked"
 mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
 cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
-for h in pre-commit prepare-commit-msg pre-merge-commit; do
+for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
   cp "$REPO_ROOT/scripts/dev/hooks/$h" "$HFIX/scripts/dev/hooks/$h"
   chmod 755 "$HFIX/scripts/dev/hooks/$h"
 done
@@ -1083,7 +1083,36 @@ H2=$(heads)
 OUT=$(git -C "$HFIX" revert --no-edit HEAD 2>&1); rc=$?
 [ $rc -ne 0 ] && [ "$(heads)" = "$H2" ] && grep -q 'tasks/sec-rev.md' <<<"$OUT" \
   && ok "a revert that touches a sec ledger is refused, HEAD stays" || bad "revert: rc=$rc heads=$(heads) out=$OUT"
-git -C "$HFIX" revert --abort >/dev/null 2>&1
+# A refused revert of one commit leaves its change staged and writes no
+# REVERT_HEAD, so --abort has nothing to abort (git 2.47.3); DEVELOPMENT.md
+# names reset --merge as the way back, and this holds it.
+git -C "$HFIX" reset -q --merge
+[ -z "$(git -C "$HFIX" status --porcelain)" ] && [ -f "$HFIX/tasks/sec-rev.md" ] \
+  && ok "... and git reset --merge takes the refused revert back" || bad "reset --merge: $(git -C "$HFIX" status --porcelain)"
+# git am and rebase --apply run none of those hooks, only the applypatch ones:
+# pre-applypatch runs after the patch is applied, before the commit (T7).
+git -C "$HFIX" format-patch -1 --stdout side > "$WORK/side.patch" 2>/dev/null
+H3=$(heads)
+OUT=$(git -C "$HFIX" am "$WORK/side.patch" 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(heads)" = "$H3" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "git am of a sec ledger is refused, HEAD stays" || bad "git am: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" am --abort >/dev/null 2>&1
+[ ! -e "$HFIX/tasks/sec-side.md" ] && [ -z "$(git -C "$HFIX" status --porcelain)" ] \
+  && ok "... and git am --abort leaves nothing behind" || bad "am left behind: $(git -C "$HFIX" status --porcelain)"
+git -C "$HFIX" switch -q -c am-clean "$MAIN"
+printf 'am\n' > "$HFIX/docs/am-clean.md"; git -C "$HFIX" add -- docs/am-clean.md
+git -C "$HFIX" commit -qm "am-clean" >/dev/null 2>&1
+git -C "$HFIX" format-patch -1 --stdout am-clean > "$WORK/clean.patch" 2>/dev/null
+git -C "$HFIX" switch -q "$MAIN"
+OUT=$(git -C "$HFIX" am "$WORK/clean.patch" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H3 + 1))" ] && ok "a clean git am goes through" || bad "clean am: rc=$rc out=$OUT"
+SIDE=$(git -C "$HFIX" rev-parse side)
+OUT=$(git -C "$HFIX" rebase --apply "$MAIN" side 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "a rebase --apply over a sec commit stops with the sec message" || bad "rebase --apply: rc=$rc out=$OUT"
+git -C "$HFIX" rebase --abort >/dev/null 2>&1
+[ "$(git -C "$HFIX" rev-parse side)" = "$SIDE" ] && ok "... and side is untouched after --abort" || bad "rebase --apply moved side"
+git -C "$HFIX" switch -q "$MAIN"
 
 # The files themselves: git ignores a hook without the execute bit, and the
 # lint step of run.sh only covers *.sh.
@@ -1092,7 +1121,7 @@ git -C "$HFIX" revert --abort >/dev/null 2>&1
 # --show-toplevel, not --git-dir: a tarball unpacked inside another repository
 # would find that one.
 HOOK_SKIPPED=0
-for h in pre-commit prepare-commit-msg pre-merge-commit; do
+for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
   if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
     mode=$(git -C "$REPO_ROOT" ls-files -s -- "scripts/dev/hooks/$h" | cut -d' ' -f1)
     [ "$mode" = 100755 ] && ok "$h is tracked with mode 100755" || bad "$h mode: '${mode:-untracked}'"
