@@ -41,19 +41,24 @@ FAKE_LOG="$WORK/curl.log"; : > "$FAKE_LOG"; export FAKE_LOG
 export PATH="$FAKE:$PATH"
 
 # fixture <dir> <go-version-ci> <go-version-release> <go-version-audit> <pin>
-#         [<ruff-ci> <ruff-bootstrap> <ruff-floor>]
+#         [<ruff-ci> <ruff-bootstrap> <ruff-dev>]
 # ci.yml carries go-version TWICE, like the real one (agent + agent-windows) —
 # the single-file drift a per-file check would miss. The ruff pins default to
-# agreeing ones, so the go cases below see a tree that is in lockstep there.
+# agreeing ones, so the go cases below see a tree that is in lockstep there;
+# ruff.toml's required-version and runner-setup.sh's VENV_PKGS follow
+# <ruff-bootstrap>.
 fixture() {
   local d="$1" ci="$2" rel="$3" aud="$4" pin="$5"
-  local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_floor="${8:-0.15}"
-  mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/apps/server"
+  local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}"
+  mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/scripts/dev" "$d/apps/server"
+  printf '#!/usr/bin/env bash\nRUNNER="adminhelper-runner"\nVENV_PKGS="ruff==%s pytest pytest-cov pytest-httpx"\n' \
+    "$ruff_boot" > "$d/scripts/dev/runner-setup.sh"
+  printf 'required-version = "==%s"\nline-length = 100\n\n[lint]\nextend-select = ["I"]\n' "$ruff_boot" > "$d/ruff.toml"
   printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
   printf '#!/usr/bin/env bash\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
     "$ruff_boot" > "$d/scripts/vm/bootstrap_linux.sh"
-  printf -- '-r requirements.in\n\npytest>=9.0.3\nruff>=%s\n' "$ruff_floor" > "$d/apps/server/requirements-dev.txt"
+  printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
   printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
     "$rel" > "$d/.github/workflows/release.yml"
   printf 'name: Dependency Audit\njobs:\n  go:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n      - name: Install govulncheck\n        run: go install golang.org/x/vuln/cmd/govulncheck@%s\n' \
@@ -153,31 +158,68 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version ^1.25 -> exit 1, named" 1 "ca
 # everything would make every case above green for the wrong reason.
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a plain 1.25 passes the validator" 0 "ok (go 1.25 <= 1.25)" -- --root "$GOOD"
 
-# ── 5d: the ruff pins (CI, VM bootstrap, dev floor) ─────────────────────────
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing ruff pins are named in the output" 0 "ruff: ci.yml=0.15.20 bootstrap=0.15.20 floor>=0.15" -- --root "$GOOD"
-RDRIFT="$WORK/ruffdrift"; fixture "$RDRIFT" 1.25 1.25 1.25 v1.7.0 0.15.21 0.15.20 0.15
+# ── 5d: the ruff pins (CI, bootstrap, dev, ruff.toml, runner) ────────────────
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing ruff pins are named in the output" 0 "ruff: ci.yml=0.15.20 bootstrap=0.15.20 dev=0.15.20" -- --root "$GOOD"
+RDRIFT="$WORK/ruffdrift"; fixture "$RDRIFT" 1.25 1.25 1.25 v1.7.0 0.15.21 0.15.20 0.15.20
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml ruff ahead of bootstrap -> exit 1" 1 "ruff pin drift: .github/workflows/ci.yml installs ruff==0.15.21, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDRIFT"
 # Offline: the drift is a finding even when the proxy is down, never a SKIP.
 FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "ruff pin drift" -- --root "$RDRIFT"
-RBOOT="$WORK/ruffboot"; fixture "$RBOOT" 1.25 1.25 1.25 v1.7.0 0.15.20 0.16.0 0.15
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap ruff bumped alone -> exit 1" 1 "ruff pin drift" -- --root "$RBOOT"
-RFLOOR="$WORK/rufffloor"; fixture "$RFLOOR" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.16
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev floor above the pin -> exit 1" 1 "ruff floor 0.16 in apps/server/requirements-dev.txt is above the pinned ruff 0.15.20" -- --root "$RFLOOR"
-# sort -V, not a string compare: 0.15.20 is above 0.15.3.
-RVER="$WORK/ruffver"; fixture "$RVER" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.3
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "floor 0.15.3 under pin 0.15.20 -> exit 0" 0 "floor>=0.15.3" -- --root "$RVER"
+RBOOT="$WORK/ruffboot"; fixture "$RBOOT" 1.25 1.25 1.25 v1.7.0 0.15.20 0.16.0 0.15.20
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap ruff bumped alone -> exit 1" 1 "ruff pin drift: .github/workflows/ci.yml installs ruff==0.15.20, scripts/vm/bootstrap_linux.sh defaults to 0.16.0" -- --root "$RBOOT"
+RDEVHI="$WORK/ruffdevhi"; fixture "$RDEVHI" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.16.0
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev pins a newer ruff -> exit 1" 1 "ruff pin drift: apps/server/requirements-dev.txt pins ruff==0.16.0, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDEVHI"
+# Equality, not a floor: an older pin is the same drift. run.sh installs
+# requirements-dev.txt into AH_VENV, and a floor there left a newer ruff in place.
+RDEVLO="$WORK/ruffdevlo"; fixture "$RDEVLO" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.19
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev pins 0.15.19 under 0.15.20 -> exit 1" 1 "ruff pin drift: apps/server/requirements-dev.txt pins ruff==0.15.19, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDEVLO"
+RRANGE="$WORK/ruffrange"; fixture "$RRANGE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^ruff==.*/ruff>=0.15/' "$RRANGE/apps/server/requirements-dev.txt"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev with a ruff>= range -> exit 1" 1 "no pinned 'ruff==X.Y.Z' in apps/server/requirements-dev.txt" -- --root "$RRANGE"
 RNOPIN="$WORK/ruffnopin"; fixture "$RNOPIN" 1.25 1.25 1.25 v1.7.0
 sed -i 's/pip install ruff==0.15.20/pip install ruff/' "$RNOPIN/.github/workflows/ci.yml"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml installs an unpinned ruff -> exit 1" 1 "no pinned 'pip install ruff==X.Y.Z'" -- --root "$RNOPIN"
 RNOBOOT="$WORK/ruffnoboot"; fixture "$RNOBOOT" 1.25 1.25 1.25 v1.7.0
 sed -i '/^RUFF_VERSION=/d' "$RNOBOOT/scripts/vm/bootstrap_linux.sh"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without a RUFF_VERSION default -> exit 1" 1 "no plain RUFF_VERSION" -- --root "$RNOBOOT"
-RNOFLOOR="$WORK/ruffnofloor"; fixture "$RNOFLOOR" 1.25 1.25 1.25 v1.7.0
-sed -i 's/^ruff>=.*/ruff/' "$RNOFLOOR/apps/server/requirements-dev.txt"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev without a ruff floor -> exit 1" 1 "no plain 'ruff>=X.Y' floor" -- --root "$RNOFLOOR"
+RNODEV="$WORK/ruffnodev"; fixture "$RNODEV" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^ruff==.*/ruff/' "$RNODEV/apps/server/requirements-dev.txt"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev without a ruff pin -> exit 1" 1 "no pinned 'ruff==X.Y.Z' in apps/server/requirements-dev.txt" -- --root "$RNODEV"
 RNOREQ="$WORK/ruffnoreq"; fixture "$RNOREQ" 1.25 1.25 1.25 v1.7.0
 rm -f "$RNOREQ/apps/server/requirements-dev.txt"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev missing -> exit 1" 1 "missing apps/server/requirements-dev.txt" -- --root "$RNOREQ"
+# ruff.toml's required-version: the pins above only heal a venv that pip
+# touches, and run.sh takes the first ruff on PATH. With it, any other ruff
+# stops with exit 2 instead of linting this tree by its own rules.
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml requiring the pinned ruff -> exit 0" 0 "ruff.toml=0.15.20" -- --root "$GOOD"
+RTOML="$WORK/rufftoml"; fixture "$RTOML" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^required-version = .*/required-version = "==0.15.19"/' "$RTOML/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml requires another ruff -> exit 1" 1 "ruff.toml required-version ==0.15.19, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RTOML"
+RTOMLNONE="$WORK/rufftomlnone"; fixture "$RTOMLNONE" 1.25 1.25 1.25 v1.7.0
+sed -i '/^required-version/d' "$RTOMLNONE/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml without required-version -> exit 1" 1 "ruff.toml required-version is not an exact \"==X.Y.Z\" (found '')" -- --root "$RTOMLNONE"
+RTOMLRANGE="$WORK/rufftomlrange"; fixture "$RTOMLRANGE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^required-version = .*/required-version = ">=0.15"/' "$RTOMLRANGE/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml with a >= range -> exit 1" 1 "ruff.toml required-version is not an exact \"==X.Y.Z\" (found '>=0.15')" -- --root "$RTOMLRANGE"
+# ruff reads a bare "0.15.20" as ==0.15.20 too; the check holds the one
+# canonical spelling, the one the error message asks for.
+RTOMLBARE="$WORK/rufftomlbare"; fixture "$RTOMLBARE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^required-version = .*/required-version = "0.15.20"/' "$RTOMLBARE/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml with a bare version -> exit 1" 1 "ruff.toml required-version is not an exact \"==X.Y.Z\" (found '0.15.20')" -- --root "$RTOMLBARE"
+RNOTOML="$WORK/ruffnotoml"; fixture "$RNOTOML" 1.25 1.25 1.25 v1.7.0
+rm -f "$RNOTOML/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml missing -> exit 1" 1 "missing ruff.toml" -- --root "$RNOTOML"
+# The runner's tool venv: runner-setup.sh links it into ~/.local/bin, so its
+# ruff is the first on the runner's PATH — unpinned, ruff.toml stops it (exit 2).
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh pinning the same ruff -> exit 0" 0 "runner=0.15.20" -- --root "$GOOD"
+RRUN="$WORK/ruffrunner"; fixture "$RRUN" 1.25 1.25 1.25 v1.7.0
+sed -i 's/ruff==[^ ]*/ruff/' "$RRUN/scripts/dev/runner-setup.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh installs an unpinned ruff -> exit 1" 1 "no pinned 'ruff==X.Y.Z' in VENV_PKGS of scripts/dev/runner-setup.sh (found 'ruff pytest pytest-cov pytest-httpx')" -- --root "$RRUN"
+RRUNDRIFT="$WORK/ruffrunnerdrift"; fixture "$RRUNDRIFT" 1.25 1.25 1.25 v1.7.0
+sed -i 's/ruff==[^ ]*/ruff==0.15.19/' "$RRUNDRIFT/scripts/dev/runner-setup.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh pins another ruff -> exit 1" 1 "ruff pin drift: scripts/dev/runner-setup.sh installs ruff==0.15.19, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RRUNDRIFT"
+RNORUN="$WORK/ruffnorunner"; fixture "$RNORUN" 1.25 1.25 1.25 v1.7.0
+rm -f "$RNORUN/scripts/dev/runner-setup.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh missing -> exit 1" 1 "missing scripts/dev/runner-setup.sh" -- --root "$RNORUN"
 # The one case that reads the real tree instead of a fixture, with a proxy
 # answer every Go satisfies: only the offline assertions decide (go-version,
 # ruff), so a pin raised at one place is red here in run.sh quick, not first in CI.

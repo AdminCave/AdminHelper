@@ -50,5 +50,5 @@ class Server(Base):
         }
         if include_connections:
             result["connections"] = [c.to_dict() for c in self.connections]
-        result["frpTunnels"] = [t.to_dict() for t in self.frp_tunnels]
+        result["frpTunnels"] = [t.to_dict(mask_secrets=True) for t in self.frp_tunnels]
         return result
