@@ -246,6 +246,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **FRP: leere STCP-Secrets werden gefuellt (Server):** Eine Datenmigration gibt jedem
+  stcp-Tunnel, dessen Secret leer ist, ein eigenes zufaelliges Secret; der Generator laesst
+  einen stcp-Tunnel ohne Secret aus der frpc- und Visitor-Konfiguration weg. Der Agent holt die
+  neue Konfiguration von selbst (Provision-Hash); ein laufender Desktop-Visitor eines solchen
+  Tunnels braucht einen Tunnel-Neustart.
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
   Routen, die API-Key oder JWT annehmen) und `InternalKey` (Header `X-Internal-Key`, der

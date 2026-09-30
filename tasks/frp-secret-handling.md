@@ -40,8 +40,10 @@ Warnung wird geloggt (`caplog`), ein gültiger Tunnel daneben steht unverändert
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_config_generator.py tests/test_frp_toml_roundtrip.py
 Doku: keine (intern)
 
-### T3 — Datenmigration: bestehende stcp-Tunnel ohne Secret bekommen je ein eigenes  [ ]
-Komponente: server · Dateien: apps/server/alembic/versions/<neu>_fill_empty_stcp_secrets.py, apps/server/tests/test_migrations_smoke.py
+### T3 — Datenmigration: bestehende stcp-Tunnel ohne Secret bekommen je ein eigenes  [x]
+Komponente: server · Dateien: apps/server/alembic/versions/<neu>_fill_empty_stcp_secrets.py, apps/server/tests/test_migrations_smoke.py, apps/server/alembic/versions/8bdf9641a51f_fill_empty_stcp_secrets.py, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @70b463ba 2026-09-30T12:24:46+02:00
+Review: approve (opus)
 Änderung: Neue Alembic-Revision (SPDX-Header) auf den Head `e5f7a1b3c9d0`: für jede Zeile in `frp_tunnels` mit
 `tunnel_type = 'stcp'` und `secret_key IS NULL OR secret_key = ''` ein eigenes `secrets.token_urlsafe(32)` in Python
 (keine SQL-Zufallsfunktion, kein gemeinsamer Wert); Downgrade ist ein No-op mit Kommentar. Test nach dem Muster
