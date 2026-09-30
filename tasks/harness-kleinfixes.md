@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinfixes: Verify-Zeile, REG-Ledger, Doku-Drift — Task-Ledger
-Status: aktiv · Branch: harness/harness-kleinfixes · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/harness-kleinfixes · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/harness-kleinfixes.md (Roadmap R-0104, R-0119, R-0111)
 Heavy: none — nur Harness-Skripte, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine VM.
@@ -59,8 +59,10 @@ dort (aus dem Skill-Text abgeleitet, nicht live geprüft).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: tasks/README.md (REG-Ledger-Absatz)
 
-### T3 — Doku-Drift: die Git-Verben stehen nicht mehr unter `ask`  [ ]
+### T3 — Doku-Drift: die Git-Verben stehen nicht mehr unter `ask`  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, AUTONOMOUS.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @65fc0776 2026-09-30T17:34:20+02:00
+Review: Review am Ende (Kurz-Ledger, Opus über den Branch-Diff)
 Änderung: Nur Text. `DEVELOPMENT.md:413–414` („`git add` steht seit Stufe 4 unter `ask`“), `:449–451` und
 `AUTONOMOUS.md:252–254` sagen künftig, was gilt: `git add|commit|checkout|restore|stash` sind in den
 Runner-Settings hart verboten, in Kevins Sessions frei (eine Abfrage, die immer bestätigt wird, hielt nur den Bau

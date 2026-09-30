@@ -421,8 +421,8 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage --review-note "approve
 
 `--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`;
 Verzeichnisse werden abgelehnt, Loeschungen mitgenommen).
-Das ist kein Komfort, sondern die Folge derselben Stufe: `git add` steht seit Stufe 4 unter
-`ask`, ein Lauf, der von Hand stagen will, bleibt im Permission-Prompt stehen.
+Das ist kein Komfort: beim Runner ist `git add` hart verboten, ein autonomer Lauf, der von
+Hand stagen will, kommt nicht weiter; in Kevins Sessions ist es frei.
 
 `task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
 dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
@@ -461,9 +461,14 @@ Artefakt des Laufs erzeugt, den es selbst gefahren hat. Deshalb steht `mark-done
 Settings unter `ask` und beim Runner im Deny. Eine Zeile mit `# review: ok <grund>`
 nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 
-`git add`, `git commit`, `git checkout`, `git restore` und `git stash` stehen in
-`.claude/settings.json` seit Stufe 4 unter `ask`: der Weg zum Commit fuehrt ueber
-`task-close.sh`, und die drei Recovery-Verben loeschen im Zweifel ungestagte Arbeit.
+`git add`, `git commit`, `git checkout`, `git restore` und `git stash` sind in den
+Runner-Settings (`scripts/dev/runner-settings.json`) hart verboten und in Kevins Sessions
+frei — eine Abfrage, die immer bestaetigt wird, hielt nur den Bau auf (zwei Worker verloren
+daran je 45 Minuten). Unter `permissions.ask` in `.claude/settings.json` stehen nur
+`bootstrap_linux.sh`, `harness.sh off` und `ledger.sh mark-done`, und
+`scripts/tests/hooks_test.sh` haelt fest, dass die Git-Verben dort nicht zurueckkehren. Der Weg
+zum Commit fuehrt ueber `task-close.sh`; die drei Recovery-Verben loeschen im Zweifel
+ungestagte Arbeit.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**
