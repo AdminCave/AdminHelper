@@ -262,7 +262,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   mit `ci.yml` und `scripts/vm/bootstrap_linux.sh` statt nur „nicht darueber". Mit dem Boden
   blieb ein vorhandenes ruff 0.16.x im `AH_VENV` liegen und meldete ueber die vier Lint-Pfade
   841 Treffer, die CI mit 0.15.20 nie sah. Der Schritt `server-pytest` zieht das `AH_VENV`
-  beim naechsten Lauf auf 0.15.20 zurueck.
+  beim naechsten Lauf auf 0.15.20 zurueck. Dazu verlangt `ruff.toml` per
+  `required-version = "==0.15.20"` genau diese Version, und der Lockstep prueft auch diese
+  Stelle: ein anderes ruff im `PATH` bricht mit Exit 2 ab, statt still andere Regeln
+  anzuwenden (der Format-Hook `scripts/dev/format-file.sh` formatiert dann still nicht).
 
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen

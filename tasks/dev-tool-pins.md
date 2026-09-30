@@ -84,8 +84,10 @@ Zusatzbeleg (von Hand vor dem Close, in die Evidenz): `bash scripts/dev/verify.s
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: docs/developer/cicd.html:40 + docs/en/developer/cicd.html:40 („Boden … darf nicht darüber liegen“ → „pinnt dieselbe Version“); DEVELOPMENT.md „Python-Lint/Format (ruff)“ (`:129–144`) ein Satz; CHANGELOG [Unreleased] Changed
 
-### T4 — ruff.toml verlangt die gepinnte Version  [ ]
-Komponente: scripts · Dateien: ruff.toml, scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, DEVELOPMENT.md, CHANGELOG.md
+### T4 — ruff.toml verlangt die gepinnte Version  [x]
+Komponente: scripts · Dateien: ruff.toml, scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, DEVELOPMENT.md, CHANGELOG.md, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @253f5888 2026-09-30T11:55:19+02:00
+Review: approve (opus)
 Änderung: `ruff.toml` bekommt top-level `required-version = "==0.15.20"` (vor `line-length`, mit einem
 Kommentar zum Warum). Der Lockstep liest den Wert in Prüfung 2 und verlangt Gleichheit mit `RUFF_BOOT`; fehlt er
 oder weicht er ab → Exit 1 mit „ruff.toml required-version …“. Warum: `run.sh:497–503` nimmt das erste `ruff`
@@ -99,6 +101,22 @@ Beweis: Probe 2026-09-30 · ruff 0.16.8 mit `required-version = "==0.15.20"` →
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „Python-Lint/Format (ruff)“ ein Satz; CHANGELOG [Unreleased] Changed (Eintrag aus T3 ergänzen)
 Abhängt von: T3
+
+### T5 — Runner-Venv pinnt dasselbe ruff (fünfte Stelle im Lockstep)  [ ]
+Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh, scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md
+Herkunft: Opus-Review von T3 (2026-09-30); aufgenommen von der Aufsicht (adminhelper-ac), weil
+`tasks/ref-scripts.md:25` den Runner-Pin ausdrücklich R-0074 zugewiesen hat, Spec und T1–T4 ihn aber nicht abdecken.
+Änderung: `scripts/dev/runner-setup.sh:52` `VENV_PKGS="ruff pytest pytest-cov pytest-httpx"` → `ruff==0.15.20`.
+Das Venv wird nach `~/.local/bin` verlinkt (`:301`) und ist damit das erste ruff im `PATH` des Runners; ungepinnt
+bricht es nach T4 mit Exit 2 ab (heute wäre es bei 0.16.x still rot). Der Lockstep liest den ruff-Pin aus
+`VENV_PKGS` als fünfte Stelle und verlangt Gleichheit mit `RUFF_BOOT`; fehlt er oder weicht er ab → Exit 1.
+`runner_setup_test.sh:80` zieht den erwarteten Plan-Text nach. Wirksam auf dem Runner erst, wenn Kevin
+`sudo bash scripts/dev/runner-setup.sh` erneut fährt (die Aufsicht schreibt es in den PR-Body).
+Test (zuerst, rot): Die Fixture schreibt `scripts/dev/runner-setup.sh` mit `VENV_PKGS="ruff==<ruff_boot> …"`;
+Fälle: ungepinnt → Exit 1, weicht ab → Exit 1; REAL_ROOT ist gegen das ungepinnte runner-setup.sh rot, danach grün.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: cicd.html DE+EN (Lockstep-Satz), DEVELOPMENT.md „Python-Lint/Format (ruff)“, CHANGELOG [Unreleased] Changed (Eintrag aus T3/T4 ergänzen)
+Abhängt von: T4
 
 Abschluss-Evidenz (PR-Body): PR-CI grün (web check/lint/unit, Web-Frontend (Playwright E2E), desktop-ui,
 python-lint, tools-Job mit Lockstep) und ein `audit.yml`-Lauf auf dem Branch mit grünem npm-Job — den startet

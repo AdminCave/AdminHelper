@@ -145,7 +145,10 @@ prueft genau diese vier Pfade mit dem gepinnten ruff. `apps/server/requirements-
 pinnt mit `ruff==` dieselbe Version wie `ci.yml` und `scripts/vm/bootstrap_linux.sh`
 (kein Boden), `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit; ein anderes
 ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf diese
-Version zurueck.
+Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
+andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —
+auch im Format-Hook `scripts/dev/format-file.sh`, der dann still gar nicht formatiert
+(sein Exit bleibt 0).
 
 ### Python-Tests lokal (ohne Docker)
 

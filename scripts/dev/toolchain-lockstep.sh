@@ -28,8 +28,11 @@
 #      never saw; the comments at all three places said "keep in sync", and
 #      nothing checked it. requirements-dev.txt pins rather than floors: run.sh
 #      installs it into AH_VENV, and a `ruff>=` there left a newer ruff in place
-#      that reported 841 findings CI never saw. Offline, so it runs before the
-#      proxy fetch and a drift stays a drift when the proxy is down.
+#      that reported 841 findings CI never saw. ruff.toml's `required-version`
+#      names the same release: the pins only heal a venv that pip touches, and
+#      run.sh takes the first ruff on PATH — with it, any other ruff stops with
+#      exit 2 instead of linting by its own rules. Offline, so it runs before
+#      the proxy fetch and a drift stays a drift when the proxy is down.
 #   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
@@ -94,13 +97,14 @@ for pair in $versions; do
 done
 echo "go-version:$versions"
 
-# ── 2: one ruff across CI, the VM bootstrap and requirements-dev ─────────────
+# ── 2: one ruff across CI, the VM bootstrap, requirements-dev and ruff.toml ──
 # Plain dotted digits only: `ruff==0.15.*` is a valid pip specifier that matches
 # more than one ruff, and a pin that is not one release is the drift itself.
 plain_version() { case "$1" in "" | *[!0-9.]* | .* | *. | *..*) return 1 ;; esac; }
 BOOT="$ROOT/scripts/vm/bootstrap_linux.sh"
 REQ="$ROOT/apps/server/requirements-dev.txt"
-for f in "$BOOT" "$REQ"; do
+TOML="$ROOT/ruff.toml"
+for f in "$BOOT" "$REQ" "$TOML"; do
   [ -f "$f" ] || { echo "::error::missing ${f#"$ROOT"/} — the ruff pin cannot be checked"; exit 1; }
 done
 RUFF_BOOT="$(sed -n 's/^RUFF_VERSION="\${AH_RUFF_VERSION:-\([^}]*\)}".*/\1/p' "$BOOT" | head -1)"
@@ -112,7 +116,7 @@ plain_version "$RUFF_BOOT" || {
 ruff_ci=""
 while IFS= read -r v; do
   [ "$v" = "$RUFF_BOOT" ] || {
-    echo "::error::ruff pin drift: .github/workflows/ci.yml installs ruff==$v, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — raise both together (and the pin in apps/server/requirements-dev.txt)"
+    echo "::error::ruff pin drift: .github/workflows/ci.yml installs ruff==$v, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — raise both together (and requirements-dev.txt and ruff.toml)"
     exit 1; }
   ruff_ci="$v"
 done < <(sed -n 's/.*pip install ruff==\([^[:space:]"]*\).*/\1/p' "$WF/ci.yml")
@@ -124,9 +128,17 @@ plain_version "$RUFF_DEV" || {
   echo "::error::no pinned 'ruff==X.Y.Z' in apps/server/requirements-dev.txt (found '$RUFF_DEV') — anything but an exact pin leaves whatever ruff a venv already has"
   exit 1; }
 [ "$RUFF_DEV" = "$RUFF_BOOT" ] || {
-  echo "::error::ruff pin drift: apps/server/requirements-dev.txt pins ruff==$RUFF_DEV, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — ci.yml, bootstrap_linux.sh and requirements-dev.txt move together"
+  echo "::error::ruff pin drift: apps/server/requirements-dev.txt pins ruff==$RUFF_DEV, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — ci.yml, bootstrap_linux.sh, requirements-dev.txt and ruff.toml move together"
   exit 1; }
-echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT dev=$RUFF_DEV"
+RUFF_TOML_RAW="$(sed -n 's/^required-version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$TOML" | head -1)"
+case "$RUFF_TOML_RAW" in "=="*) RUFF_TOML="${RUFF_TOML_RAW#==}" ;; *) RUFF_TOML="" ;; esac
+plain_version "$RUFF_TOML" || {
+  echo "::error::ruff.toml required-version is not an exact \"==X.Y.Z\" (found '$RUFF_TOML_RAW') — without it any ruff on PATH lints this tree by its own rules"
+  exit 1; }
+[ "$RUFF_TOML" = "$RUFF_BOOT" ] || {
+  echo "::error::ruff.toml required-version ==$RUFF_TOML, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — ci.yml, bootstrap_linux.sh, requirements-dev.txt and ruff.toml move together"
+  exit 1; }
+echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT dev=$RUFF_DEV ruff.toml=$RUFF_TOML"
 
 # ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"

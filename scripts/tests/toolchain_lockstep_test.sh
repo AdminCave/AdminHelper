@@ -44,11 +44,13 @@ export PATH="$FAKE:$PATH"
 #         [<ruff-ci> <ruff-bootstrap> <ruff-dev>]
 # ci.yml carries go-version TWICE, like the real one (agent + agent-windows) —
 # the single-file drift a per-file check would miss. The ruff pins default to
-# agreeing ones, so the go cases below see a tree that is in lockstep there.
+# agreeing ones, so the go cases below see a tree that is in lockstep there;
+# ruff.toml's required-version follows <ruff-bootstrap>.
 fixture() {
   local d="$1" ci="$2" rel="$3" aud="$4" pin="$5"
   local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}"
   mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/apps/server"
+  printf 'required-version = "==%s"\nline-length = 100\n\n[lint]\nextend-select = ["I"]\n' "$ruff_boot" > "$d/ruff.toml"
   printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
   printf '#!/usr/bin/env bash\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
@@ -153,7 +155,7 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version ^1.25 -> exit 1, named" 1 "ca
 # everything would make every case above green for the wrong reason.
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a plain 1.25 passes the validator" 0 "ok (go 1.25 <= 1.25)" -- --root "$GOOD"
 
-# ── 5d: the ruff pins (CI, VM bootstrap, requirements-dev) ──────────────────
+# ── 5d: the ruff pins (CI, VM bootstrap, requirements-dev, ruff.toml) ───────
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing ruff pins are named in the output" 0 "ruff: ci.yml=0.15.20 bootstrap=0.15.20 dev=0.15.20" -- --root "$GOOD"
 RDRIFT="$WORK/ruffdrift"; fixture "$RDRIFT" 1.25 1.25 1.25 v1.7.0 0.15.21 0.15.20 0.15.20
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml ruff ahead of bootstrap -> exit 1" 1 "ruff pin drift: .github/workflows/ci.yml installs ruff==0.15.21, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDRIFT"
@@ -182,6 +184,27 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev without a ruff pin -> e
 RNOREQ="$WORK/ruffnoreq"; fixture "$RNOREQ" 1.25 1.25 1.25 v1.7.0
 rm -f "$RNOREQ/apps/server/requirements-dev.txt"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev missing -> exit 1" 1 "missing apps/server/requirements-dev.txt" -- --root "$RNOREQ"
+# ruff.toml's required-version: the pins above only heal a venv that pip
+# touches, and run.sh takes the first ruff on PATH. With it, any other ruff
+# stops with exit 2 instead of linting this tree by its own rules.
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml requiring the pinned ruff -> exit 0" 0 "ruff.toml=0.15.20" -- --root "$GOOD"
+RTOML="$WORK/rufftoml"; fixture "$RTOML" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^required-version = .*/required-version = "==0.15.19"/' "$RTOML/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml requires another ruff -> exit 1" 1 "ruff.toml required-version ==0.15.19, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RTOML"
+RTOMLNONE="$WORK/rufftomlnone"; fixture "$RTOMLNONE" 1.25 1.25 1.25 v1.7.0
+sed -i '/^required-version/d' "$RTOMLNONE/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml without required-version -> exit 1" 1 "ruff.toml required-version is not an exact \"==X.Y.Z\" (found '')" -- --root "$RTOMLNONE"
+RTOMLRANGE="$WORK/rufftomlrange"; fixture "$RTOMLRANGE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^required-version = .*/required-version = ">=0.15"/' "$RTOMLRANGE/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml with a >= range -> exit 1" 1 "ruff.toml required-version is not an exact \"==X.Y.Z\" (found '>=0.15')" -- --root "$RTOMLRANGE"
+# ruff reads a bare "0.15.20" as ==0.15.20 too; the check holds the one
+# canonical spelling, the one the error message asks for.
+RTOMLBARE="$WORK/rufftomlbare"; fixture "$RTOMLBARE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^required-version = .*/required-version = "0.15.20"/' "$RTOMLBARE/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml with a bare version -> exit 1" 1 "ruff.toml required-version is not an exact \"==X.Y.Z\" (found '0.15.20')" -- --root "$RTOMLBARE"
+RNOTOML="$WORK/ruffnotoml"; fixture "$RNOTOML" 1.25 1.25 1.25 v1.7.0
+rm -f "$RNOTOML/ruff.toml"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml missing -> exit 1" 1 "missing ruff.toml" -- --root "$RNOTOML"
 # The one case that reads the real tree instead of a fixture, with a proxy
 # answer every Go satisfies: only the offline assertions decide (go-version,
 # ruff), so a pin raised at one place is red here in run.sh quick, not first in CI.
