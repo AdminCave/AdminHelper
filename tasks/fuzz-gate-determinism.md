@@ -45,7 +45,7 @@ plus eine neue `hypothesis`-Zeile), in genau den Versionen, die die letzte grün
 auflöst (aus ihrem Log, nicht aus der Dev-Box). Die Jobs `python-lock-*` installieren `requirements-dev.txt`
 über den Lock; `lock-pins.py` muss dort grün bleiben.
 Beweis: T1-Instrument auf origin/main rot (Monitoring); nach T2 `--only server monitoring ca-issuer` 0 Zeilen.
-Verify: bash scripts/tests/run.sh unit --strict --step schemathesis --only server monitoring ca-issuer
+Verify: bash scripts/tests/run.sh unit --strict --step schemathesis --only scripts server monitoring ca-issuer
 Zusatzbeleg: bash scripts/tests/schemathesis_determinism.sh --only server monitoring ca-issuer → je Dienst 0 abweichende Zeilen (Summary in die Evidenz)
 Doku: keine (T5)
 Abhängt von: T1
