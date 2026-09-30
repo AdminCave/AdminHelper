@@ -112,6 +112,33 @@ for pat in "${PATTERNS[@]}"; do
     && ok "caught: $pat" || bad "missed: $pat (rc=$rc out=$OUT)"
 done
 
+# R-0082: the rest of that class — each added line must be caught, and caught
+# by the pattern that belongs to it.
+NEW_PATTERNS=(
+  'describe.skip(|describe.skip("x", () => {})'          # review: ok fixture pattern
+  '.skipIf(|it.skipIf(onCi)("x", () => {})'              # review: ok fixture pattern
+  '.todo(|it.todo("later")'                              # review: ok fixture pattern
+  'xdescribe(|xdescribe("x", () => {})'                  # review: ok fixture pattern
+  'xtest(|xtest("x", () => {})'                          # review: ok fixture pattern
+  'test.fixme(|test.fixme("x", async () => {})'          # review: ok fixture pattern
+  'it.only(|it.only("x", () => {})'                      # review: ok fixture pattern
+  'test.only(|test.only("x", () => {})'                  # review: ok fixture pattern
+  'describe.only(|describe.only("x", () => {})'          # review: ok fixture pattern
+  't.SkipNow(|	t.SkipNow()'                             # review: ok fixture pattern
+  '@pytest.mark.xfail|@pytest.mark.xfail(reason="x")'    # review: ok fixture pattern
+  'pytest.xfail(|    pytest.xfail("x")'                  # review: ok fixture pattern
+  '#[ignore|#[ignore = "flaky"]'                         # review: ok fixture pattern
+)
+for entry in "${NEW_PATTERNS[@]}"; do
+  want="${entry%%|*}" line="${entry#*|}"
+  reset_index
+  printf '%s\n' "$line" >> "$FIX/scripts/dev/tool.sh"
+  stage scripts/dev/tool.sh
+  r diff-scan --staged
+  [ $rc -eq 3 ] && grep -qF -- "  $want: " <<<"$OUT" \
+    && ok "caught by $want: $line" || bad "missed or misnamed: $line (want $want; rc=$rc out=$OUT)"
+done
+
 reset_index
 printf 'assert x == 1\n' >> "$FIX/apps/server/tests/test_x.py"
 stage apps/server/tests/test_x.py
@@ -643,6 +670,131 @@ stage apps/desktop/src-tauri/tests/x.rs
 r diff-scan --staged --task tasks/del.md T4
 [ $rc -eq 0 ] && grep -q "apps/desktop/src-tauri/tests/x.rs::dead" <<<"$OUT" \
   && ok "Rust: a whole declared test with its assert_{eq}! goes" || bad "rust declared: rc=$rc out=$OUT"
+# R-0082: a bare `return` added inside a test ends it before its assertions —
+# Python, Go, Rust, TS. The same line in another function is free, and
+# `review: ok <reason>` exempts it like any other finding.
+ret_case() {  # ret_case <path> <content> <added-content> <want-rc> <label>
+  base "$1" "$2"; printf '%s' "$3" > "$FIX/$1"; stage "$1"
+  r diff-scan --staged
+  if [ "$4" = 3 ]; then
+    [ $rc -eq 3 ] && grep -q "$1:.*bare return in a test" <<<"$OUT" && ok "$5" || bad "$5: rc=$rc out=$OUT"
+  else
+    [ $rc -eq 0 ] && ok "$5" || bad "$5: rc=$rc out=$OUT"
+  fi
+}
+PY_R='def test_r():
+    x = 1
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+'
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: a bare return in a test is a finding"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    assert x == 1
+
+
+def helper():
+    return
+    x = 2
+    return x
+' 0 "Python: a bare return in a helper is free"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return  # review: ok the case below needs a network, see R-0000
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 0 "Python: review: ok exempts the bare return"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return  # later
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: any other comment behind the return exempts nothing"
+GO_R='package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	if f() != 1 {
+		t.Fatal("x")
+	}
+}
+'
+ret_case apps/agent/r_test.go "$GO_R" 'package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	return
+	if f() != 1 {
+		t.Fatal("x")
+	}
+}
+' 3 "Go: a bare return in a test is a finding"
+RS_R='#[test]
+fn r() {
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+'
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    return;
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+' 3 "Rust: a bare return; in a test is a finding"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    assert!(f());
+}
+
+fn f() -> bool {
+    return;
+    true
+}
+' 0 "Rust: a bare return; outside a test is free"
+TS_R='import { expect, it } from "vitest";
+
+it("r", () => {
+  expect(1).toBe(1);
+});
+'
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  return;
+  expect(1).toBe(1);
+});
+' 3 "TS: a bare return; in a test is a finding"
+
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
   || bad "unknown task: rc=$rc out=$OUT"

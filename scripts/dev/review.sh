@@ -14,8 +14,10 @@
 # answer three questions a reviewer would otherwise have to ask every time:
 #
 #   diff-scan  does this diff buy its green by switching a test off? A `|| true`,
-#              a `set +e`, a `@pytest.mark.skip` or a deleted assertion changes
-#              what "passed" means. Two things are deliberately not findings: a
+#              a `set +e`, a skip, xfail, todo or `.only(` of the test frameworks,
+#              a deleted assertion (with the Rust assert_ macros and, in a Go
+#              test, the t.Fatal/t.Error calls) or a bare `return` inside a test
+#              changes what "passed" means. Two things are deliberately not findings: a
 #              line that carries `# review: ok <reason>` (and says why), and a
 #              pattern that only appears behind a comment marker, because a
 #              comment switches nothing off. With --task, a third: an assertion
@@ -47,9 +49,12 @@ usage() { sed -n '/^#   bash scripts\/dev\/review.sh diff-scan/,/^# Deterministi
 die() { echo "review.sh: $*" >&2; exit 2; }
 
 # The ways a diff can buy a green run. Fixed strings, \x1f-separated, each one
-# with the language it comes from: pytest, vitest/jest, Rust, Go, shell.
-SKIP_PATTERNS="$(printf '%s' \
-  '@pytest.mark.skip\x1fpytest.skip(\x1fit.skip(\x1ftest.skip(\x1fxit(\x1f#[ignore]\x1ft.Skip(\x1ft.Skipf(\x1f|| true\x1f--no-verify\x1fset +e')"  # review: ok this IS the list
+# with the language it comes from: pytest, vitest/jest/Playwright, Rust, Go,
+# shell. One line per group, so each can carry the marker that exempts it.
+SKIP_PATTERNS='@pytest.mark.skip\x1fpytest.skip(\x1f@pytest.mark.xfail\x1fpytest.xfail(\x1f'        # review: ok this IS the list
+SKIP_PATTERNS+='it.skip(\x1ftest.skip(\x1fdescribe.skip(\x1f.skipIf(\x1f.todo(\x1ftest.fixme(\x1f'  # review: ok this IS the list
+SKIP_PATTERNS+='xit(\x1fxtest(\x1fxdescribe(\x1fit.only(\x1ftest.only(\x1fdescribe.only(\x1f'     # review: ok this IS the list
+SKIP_PATTERNS+='#[ignore\x1ft.Skip(\x1ft.Skipf(\x1ft.SkipNow(\x1f|| true\x1f--no-verify\x1fset +e'  # review: ok this IS the list
 
 # Which test files a component owns. The scope check allows them even when the
 # task's Dateien: line forgot to name the test that proves it — a task that may
@@ -195,12 +200,20 @@ case "$VERB" in
                             # `sys.exit(` in the repo. index() rather than a
                             # regex: the patterns are fixed strings full of
                             # regex metacharacters.
+                            # A pattern that starts with no word character (`.todo(`,
+                            # `@pytest…`, `|| true`) needs no boundary in front.
                             prev = (pos > 1) ? substr(line, pos - 1, 1) : " "
+                            if (substr(pat[i], 1, 1) !~ /[A-Za-z0-9_]/) prev = " "
                             if (pos > 0 && prev !~ /[A-Za-z0-9_]/ && (cmt == 0 || pos <= cmt)) {
                               printf "%s:%d  %s: %s\n", file, newno, pat[i], trim(line)
                               break
                             }
                           }
+                          # A line that is only a return: inside a test it ends
+                          # the test before its checks. Whether it is inside one
+                          # is decided below, against the new file.
+                          if (line ~ /^[ \t]*return;?[ \t]*((#|\/\/).*)?$/)
+                            printf "AR\t%s\t%d\t%s\n", file, newno, trim(line)
                         }
                         newno++; next
                       }
@@ -225,7 +238,8 @@ for l in lines:
     if l.startswith("RL\t"):
         _, f, n = l.split("\t", 2)
         removed.setdefault(f, set()).add(int(n))
-out = [l for l in lines if not l.startswith(("RA\t", "RL\t"))]
+ars = [l.split("\t", 3)[1:] for l in lines if l.startswith("AR\t")]
+out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t"))]
 
 def git(*a):
     r = subprocess.run(("git", "-c", "core.quotePath=false") + a, capture_output=True)
@@ -345,6 +359,16 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
                 f"declared {path}::{name} ignored: line {kept[0]} of its old body is not deleted — the whole test does not go")
         else:
             entries[(path, name)] = (a, b)
+
+# A bare return counts inside the span of a test in the NEW file only; a
+# helper next to the tests may return early.
+spans = {}
+for path, newno, ln in ars:
+    if path not in spans:
+        spans[path] = heads(path, new_text(path))
+    n = int(newno)
+    if any(a < n <= b for _, a, b, _ in spans[path]):
+        out.append(f"{path}:{newno}  bare return in a test: {ln}")
 
 used = set()
 for path, oldno, text in ras:

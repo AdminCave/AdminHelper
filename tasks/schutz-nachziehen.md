@@ -92,8 +92,10 @@ HEAD: 8224e84c (die Zeile R-0082 trägt keinen Dedup-Key)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T5)
 
-### T5 — diff-scan: fehlende Skip-Muster und ein nacktes `return` in einem Test  [ ]
+### T5 — diff-scan: fehlende Skip-Muster und ein nacktes `return` in einem Test  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @9a1c2973 2026-09-30T14:29:24+02:00
+Review: request_changes -> fixed -> approve (opus, 2 rounds); Lautstaerke: 8 nackte returns in Test-Spannen im Bestand (go/py), ~7 von 1681 Commits, kein [?]
 Änderung: `SKIP_PATTERNS` (:51–52) bekommt `describe.skip(`, `.skipIf(`, `.todo(`, `xdescribe(`, `xtest(`,
 `test.fixme(`, `it.only(`, `test.only(`, `describe.only(`, `t.SkipNow(`, `@pytest.mark.xfail`, `pytest.xfail(`;
 `#[ignore]` wird zum Präfix `#[ignore` (trifft auch `#[ignore = "…"]`). Neuer Satz: eine **hinzugefügte** Zeile,

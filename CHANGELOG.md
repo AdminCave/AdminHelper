@@ -246,6 +246,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **diff-scan erkennt mehr stummgeschaltete Tests (R-0082):** `scripts/dev/review.sh diff-scan`
+  wertet jetzt auch geloeschte Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`
+  als entfernte Assertion (ausserhalb einer `*_test.go` bleibt `err.Error()` frei), kennt die
+  Skip-, xfail-, todo- und only-Muster von vitest/jest, Playwright, pytest, Rust (auch
+  `#[ignore = "…"]`) und Go (`t.SkipNow()`), und meldet ein hinzugefuegtes nacktes `return` <!-- review: ok nennt die Muster -->
+  innerhalb eines Tests (Python, Go, Rust, TS/JS). Der Ausweg bleibt `review: ok <grund>` auf
+  der Zeile. Anleitung: `DEVELOPMENT.md` „Task schliessen".
+
 - **Commit-Hooks auch bei merge, cherry-pick, revert und rebase (R-0110):** Neben
   `scripts/dev/hooks/pre-commit` fahren jetzt `prepare-commit-msg` (cherry-pick, revert, jeder
   Commit eines rebase mit dem Standard-Backend, Merge-Commit) und `pre-merge-commit` (vor einem
