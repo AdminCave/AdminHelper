@@ -141,7 +141,11 @@ ruff format apps/server apps/monitoring apps/ca-issuer scripts   # Formatieren
 `ruff`, ganz `scripts/` im Schritt `ruff-vm` (Key `scripts`; die Id stammt aus der
 Zeit, als er nur `scripts/vm` abdeckte) — und findet ruff auch dann, wenn es nicht
 im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job `python-lint`
-prueft genau diese vier Pfade mit dem gepinnten ruff.
+prueft genau diese vier Pfade mit dem gepinnten ruff. `apps/server/requirements-dev.txt`
+pinnt mit `ruff==` dieselbe Version wie `ci.yml` und `scripts/vm/bootstrap_linux.sh`
+(kein Boden), `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit; ein anderes
+ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf diese
+Version zurueck.
 
 ### Python-Tests lokal (ohne Docker)
 

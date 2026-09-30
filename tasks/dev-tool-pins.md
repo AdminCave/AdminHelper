@@ -58,8 +58,10 @@ Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: CHANGELOG [Unreleased] Security (Eintrag aus T1 ergänzen)
 Abhängt von: T1
 
-### T3 — ruff: requirements-dev pinnt, was CI pinnt, und der Lockstep verlangt Gleichheit  [ ]
+### T3 — ruff: requirements-dev pinnt, was CI pinnt, und der Lockstep verlangt Gleichheit  [x]
 Komponente: scripts · Dateien: scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, apps/server/requirements-dev.txt, .github/workflows/ci.yml, scripts/vm/bootstrap_linux.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @0ecdc3ca 2026-09-30T11:41:34+02:00
+Review: approve (opus) · Zusatzbeleg abweichend vom Ledger (Aufsicht 2026-09-30, gemeinsame Test-DB durch Worker A belegt): statt verify.sh server Probe Wegwerf-Venv ruff 0.16.8 -> pip install -r apps/server/requirements-dev.txt -> ruff 0.15.20
 Änderung: `apps/server/requirements-dev.txt:18` `ruff>=0.15` → `ruff==0.15.20` (nur server führt ruff).
 `toolchain-lockstep.sh` Prüfung 2 (`:95–128`): statt des Bodens (`sed 's/^ruff>=…'` `:120`, `sort -V` `:124`)
 die Zeile `ruff==X.Y.Z` lesen und Gleichheit mit `RUFF_BOOT` verlangen; Meldungen „no pinned 'ruff==X.Y.Z' in

@@ -22,12 +22,14 @@
 #      "the Go version" meaningless before the third assertion can mean
 #      anything)
 #   2  the ruff that ci.yml installs is the default of RUFF_VERSION in
-#      scripts/vm/bootstrap_linux.sh, and the floor in
-#      apps/server/requirements-dev.txt does not exceed it. The first bake of a
-#      linux-server template ran an unpinned ruff and went red on rules the dev
-#      box and CI never saw; the comments at all three places said "keep in
-#      sync", and nothing checked it. Offline, so it runs before the proxy fetch
-#      and a drift stays a drift when the proxy is down.
+#      scripts/vm/bootstrap_linux.sh and the `ruff==` pin in
+#      apps/server/requirements-dev.txt. The first bake of a linux-server
+#      template ran an unpinned ruff and went red on rules the dev box and CI
+#      never saw; the comments at all three places said "keep in sync", and
+#      nothing checked it. requirements-dev.txt pins rather than floors: run.sh
+#      installs it into AH_VENV, and a `ruff>=` there left a newer ruff in place
+#      that reported 841 findings CI never saw. Offline, so it runs before the
+#      proxy fetch and a drift stays a drift when the proxy is down.
 #   3  the `go` directive of the pinned x/vuln release is <= that go-version
 #
 # Exit: 0 in lockstep · 1 drift (with a ::error:: line for the CI annotation) ·
@@ -92,9 +94,9 @@ for pair in $versions; do
 done
 echo "go-version:$versions"
 
-# ── 2: one ruff across CI, the VM bootstrap and the dev floor ────────────────
-# Plain dotted digits only: the floor is compared with sort -V, and a "0.15.*"
-# or "~=0.15" would sort somewhere without meaning anything.
+# ── 2: one ruff across CI, the VM bootstrap and requirements-dev ─────────────
+# Plain dotted digits only: `ruff==0.15.*` is a valid pip specifier that matches
+# more than one ruff, and a pin that is not one release is the drift itself.
 plain_version() { case "$1" in "" | *[!0-9.]* | .* | *. | *..*) return 1 ;; esac; }
 BOOT="$ROOT/scripts/vm/bootstrap_linux.sh"
 REQ="$ROOT/apps/server/requirements-dev.txt"
@@ -110,22 +112,21 @@ plain_version "$RUFF_BOOT" || {
 ruff_ci=""
 while IFS= read -r v; do
   [ "$v" = "$RUFF_BOOT" ] || {
-    echo "::error::ruff pin drift: .github/workflows/ci.yml installs ruff==$v, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — raise both together (and the floor in apps/server/requirements-dev.txt)"
+    echo "::error::ruff pin drift: .github/workflows/ci.yml installs ruff==$v, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — raise both together (and the pin in apps/server/requirements-dev.txt)"
     exit 1; }
   ruff_ci="$v"
 done < <(sed -n 's/.*pip install ruff==\([^[:space:]"]*\).*/\1/p' "$WF/ci.yml")
 [ -n "$ruff_ci" ] || {
   echo "::error::no pinned 'pip install ruff==X.Y.Z' in .github/workflows/ci.yml — an unpinned ruff is the drift this check exists to prevent"
   exit 1; }
-RUFF_FLOOR="$(sed -n 's/^ruff>=\([^[:space:]#,;]*\).*/\1/p' "$REQ" | head -1)"
-plain_version "$RUFF_FLOOR" || {
-  echo "::error::no plain 'ruff>=X.Y' floor in apps/server/requirements-dev.txt (found '$RUFF_FLOOR')"
+RUFF_DEV="$(sed -n 's/^ruff==\([^[:space:]#,;]*\).*/\1/p' "$REQ" | head -1)"
+plain_version "$RUFF_DEV" || {
+  echo "::error::no pinned 'ruff==X.Y.Z' in apps/server/requirements-dev.txt (found '$RUFF_DEV') — anything but an exact pin leaves whatever ruff a venv already has"
   exit 1; }
-if [ "$(printf '%s\n%s\n' "$RUFF_FLOOR" "$RUFF_BOOT" | sort -V | tail -1)" != "$RUFF_BOOT" ]; then
-  echo "::error::ruff floor $RUFF_FLOOR in apps/server/requirements-dev.txt is above the pinned ruff $RUFF_BOOT (ci.yml, bootstrap_linux.sh) — a dev install would pull a ruff the gates never ran"
-  exit 1
-fi
-echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT floor>=$RUFF_FLOOR"
+[ "$RUFF_DEV" = "$RUFF_BOOT" ] || {
+  echo "::error::ruff pin drift: apps/server/requirements-dev.txt pins ruff==$RUFF_DEV, scripts/vm/bootstrap_linux.sh defaults to $RUFF_BOOT — ci.yml, bootstrap_linux.sh and requirements-dev.txt move together"
+  exit 1; }
+echo "ruff: ci.yml=$ruff_ci bootstrap=$RUFF_BOOT dev=$RUFF_DEV"
 
 # ── 3: the pinned x/vuln release must build on that Go ───────────────────────
 PIN="$(sed -n "s|.*go install $VULN_MOD/cmd/govulncheck@\(v[0-9][0-9A-Za-z.-]*\).*|\1|p" "$AUDIT" | head -1)"

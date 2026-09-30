@@ -257,6 +257,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Ein ruff ueberall (R-0074):** `apps/server/requirements-dev.txt` pinnt `ruff==0.15.20`
+  statt des Bodens `ruff>=0.15`, und `scripts/dev/toolchain-lockstep.sh` verlangt Gleichheit
+  mit `ci.yml` und `scripts/vm/bootstrap_linux.sh` statt nur „nicht darueber". Mit dem Boden
+  blieb ein vorhandenes ruff 0.16.x im `AH_VENV` liegen und meldete ueber die vier Lint-Pfade
+  841 Treffer, die CI mit 0.15.20 nie sah. Der Schritt `server-pytest` zieht das `AH_VENV`
+  beim naechsten Lauf auf 0.15.20 zurueck.
+
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
   Routen, die API-Key oder JWT annehmen) und `InternalKey` (Header `X-Internal-Key`, der

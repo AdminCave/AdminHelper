@@ -41,19 +41,19 @@ FAKE_LOG="$WORK/curl.log"; : > "$FAKE_LOG"; export FAKE_LOG
 export PATH="$FAKE:$PATH"
 
 # fixture <dir> <go-version-ci> <go-version-release> <go-version-audit> <pin>
-#         [<ruff-ci> <ruff-bootstrap> <ruff-floor>]
+#         [<ruff-ci> <ruff-bootstrap> <ruff-dev>]
 # ci.yml carries go-version TWICE, like the real one (agent + agent-windows) —
 # the single-file drift a per-file check would miss. The ruff pins default to
 # agreeing ones, so the go cases below see a tree that is in lockstep there.
 fixture() {
   local d="$1" ci="$2" rel="$3" aud="$4" pin="$5"
-  local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_floor="${8:-0.15}"
+  local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}"
   mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/apps/server"
   printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
   printf '#!/usr/bin/env bash\nTAURI_CLI_VERSION="${AH_TAURI_CLI_VERSION:-2.11.2}"\nRUFF_VERSION="${AH_RUFF_VERSION:-%s}"\n' \
     "$ruff_boot" > "$d/scripts/vm/bootstrap_linux.sh"
-  printf -- '-r requirements.in\n\npytest>=9.0.3\nruff>=%s\n' "$ruff_floor" > "$d/apps/server/requirements-dev.txt"
+  printf -- '-r requirements.in\n\npytest>=9.0.3\nruff==%s\n' "$ruff_dev" > "$d/apps/server/requirements-dev.txt"
   printf 'name: Release\njobs:\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
     "$rel" > "$d/.github/workflows/release.yml"
   printf 'name: Dependency Audit\njobs:\n  go:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n      - name: Install govulncheck\n        run: go install golang.org/x/vuln/cmd/govulncheck@%s\n' \
@@ -153,28 +153,32 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version ^1.25 -> exit 1, named" 1 "ca
 # everything would make every case above green for the wrong reason.
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a plain 1.25 passes the validator" 0 "ok (go 1.25 <= 1.25)" -- --root "$GOOD"
 
-# ── 5d: the ruff pins (CI, VM bootstrap, dev floor) ─────────────────────────
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing ruff pins are named in the output" 0 "ruff: ci.yml=0.15.20 bootstrap=0.15.20 floor>=0.15" -- --root "$GOOD"
-RDRIFT="$WORK/ruffdrift"; fixture "$RDRIFT" 1.25 1.25 1.25 v1.7.0 0.15.21 0.15.20 0.15
+# ── 5d: the ruff pins (CI, VM bootstrap, requirements-dev) ──────────────────
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing ruff pins are named in the output" 0 "ruff: ci.yml=0.15.20 bootstrap=0.15.20 dev=0.15.20" -- --root "$GOOD"
+RDRIFT="$WORK/ruffdrift"; fixture "$RDRIFT" 1.25 1.25 1.25 v1.7.0 0.15.21 0.15.20 0.15.20
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml ruff ahead of bootstrap -> exit 1" 1 "ruff pin drift: .github/workflows/ci.yml installs ruff==0.15.21, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDRIFT"
 # Offline: the drift is a finding even when the proxy is down, never a SKIP.
 FAKE_MOD="" FAKE_RC=6 run_case "  …also with the proxy unreachable (1, not 75)" 1 "ruff pin drift" -- --root "$RDRIFT"
-RBOOT="$WORK/ruffboot"; fixture "$RBOOT" 1.25 1.25 1.25 v1.7.0 0.15.20 0.16.0 0.15
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap ruff bumped alone -> exit 1" 1 "ruff pin drift" -- --root "$RBOOT"
-RFLOOR="$WORK/rufffloor"; fixture "$RFLOOR" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.16
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev floor above the pin -> exit 1" 1 "ruff floor 0.16 in apps/server/requirements-dev.txt is above the pinned ruff 0.15.20" -- --root "$RFLOOR"
-# sort -V, not a string compare: 0.15.20 is above 0.15.3.
-RVER="$WORK/ruffver"; fixture "$RVER" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.3
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "floor 0.15.3 under pin 0.15.20 -> exit 0" 0 "floor>=0.15.3" -- --root "$RVER"
+RBOOT="$WORK/ruffboot"; fixture "$RBOOT" 1.25 1.25 1.25 v1.7.0 0.15.20 0.16.0 0.15.20
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap ruff bumped alone -> exit 1" 1 "ruff pin drift: .github/workflows/ci.yml installs ruff==0.15.20, scripts/vm/bootstrap_linux.sh defaults to 0.16.0" -- --root "$RBOOT"
+RDEVHI="$WORK/ruffdevhi"; fixture "$RDEVHI" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.16.0
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev pins a newer ruff -> exit 1" 1 "ruff pin drift: apps/server/requirements-dev.txt pins ruff==0.16.0, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDEVHI"
+# Equality, not a floor: an older pin is the same drift. run.sh installs
+# requirements-dev.txt into AH_VENV, and a floor there left a newer ruff in place.
+RDEVLO="$WORK/ruffdevlo"; fixture "$RDEVLO" 1.25 1.25 1.25 v1.7.0 0.15.20 0.15.20 0.15.19
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev pins 0.15.19 under 0.15.20 -> exit 1" 1 "ruff pin drift: apps/server/requirements-dev.txt pins ruff==0.15.19, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDEVLO"
+RRANGE="$WORK/ruffrange"; fixture "$RRANGE" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^ruff==.*/ruff>=0.15/' "$RRANGE/apps/server/requirements-dev.txt"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev with a ruff>= range -> exit 1" 1 "no pinned 'ruff==X.Y.Z' in apps/server/requirements-dev.txt" -- --root "$RRANGE"
 RNOPIN="$WORK/ruffnopin"; fixture "$RNOPIN" 1.25 1.25 1.25 v1.7.0
 sed -i 's/pip install ruff==0.15.20/pip install ruff/' "$RNOPIN/.github/workflows/ci.yml"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml installs an unpinned ruff -> exit 1" 1 "no pinned 'pip install ruff==X.Y.Z'" -- --root "$RNOPIN"
 RNOBOOT="$WORK/ruffnoboot"; fixture "$RNOBOOT" 1.25 1.25 1.25 v1.7.0
 sed -i '/^RUFF_VERSION=/d' "$RNOBOOT/scripts/vm/bootstrap_linux.sh"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "bootstrap without a RUFF_VERSION default -> exit 1" 1 "no plain RUFF_VERSION" -- --root "$RNOBOOT"
-RNOFLOOR="$WORK/ruffnofloor"; fixture "$RNOFLOOR" 1.25 1.25 1.25 v1.7.0
-sed -i 's/^ruff>=.*/ruff/' "$RNOFLOOR/apps/server/requirements-dev.txt"
-FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev without a ruff floor -> exit 1" 1 "no plain 'ruff>=X.Y' floor" -- --root "$RNOFLOOR"
+RNODEV="$WORK/ruffnodev"; fixture "$RNODEV" 1.25 1.25 1.25 v1.7.0
+sed -i 's/^ruff==.*/ruff/' "$RNODEV/apps/server/requirements-dev.txt"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev without a ruff pin -> exit 1" 1 "no pinned 'ruff==X.Y.Z' in apps/server/requirements-dev.txt" -- --root "$RNODEV"
 RNOREQ="$WORK/ruffnoreq"; fixture "$RNOREQ" 1.25 1.25 1.25 v1.7.0
 rm -f "$RNOREQ/apps/server/requirements-dev.txt"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "requirements-dev missing -> exit 1" 1 "missing apps/server/requirements-dev.txt" -- --root "$RNOREQ"
