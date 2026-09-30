@@ -12,15 +12,16 @@ from app.core.bounds import IntColumn, RequestModel
 # These string fields are interpolated verbatim into the generated frps/frpc/
 # visitor TOML (config_generator.py). Reject the characters that could break out
 # of a TOML string and inject a directive (quote, backslash, newline, control
-# chars) at the boundary, so the generator stays a pure interpolation. (Defense
-# in depth — the fields are admin-set, so this is hardening, not an open hole.)
+# chars — DEL included, TOML forbids it in a basic string) at the boundary, so
+# the generator stays a pure interpolation. (Defense in depth — the fields are
+# admin-set, so this is hardening, not an open hole.)
 _TOML_BREAKERS = set('"\\\n\r')
 
 
 def _reject_toml_breakers(v: Optional[str]) -> Optional[str]:
     if v is None:
         return v
-    if any(c in _TOML_BREAKERS for c in v) or any(ord(c) < 0x20 for c in v):
+    if any(c in _TOML_BREAKERS for c in v) or any(ord(c) < 0x20 or c == "\x7f" for c in v):
         raise ValueError("enthält unzulässige Zeichen (Anführungszeichen/Backslash/Steuerzeichen)")
     return v
 

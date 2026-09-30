@@ -142,6 +142,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: U+007F in Konfigurationswerten (Server):** Die Felder, die der Server in die erzeugten
+  FRP-TOML-Dateien schreibt (FRP-Server-Config, Tunnel, Servername), lehnen neben den anderen
+  Steuerzeichen jetzt auch U+007F (DEL) mit 422 ab. TOML verbietet das Zeichen in einem
+  String; eine `frps.toml` damit konnte frps nicht lesen.
 - **Web-Panel: F5 waehrend eine Liste laedt (R-0107):** `apps/web/src/lib/api/client.ts` gibt
   bei einem 2xx, dessen Body sich nicht lesen laesst (Reload bricht die Uebertragung ab, oder
   kein JSON), nicht mehr still `null` zurueck, sondern wirft `ApiError(status, 'Invalid response

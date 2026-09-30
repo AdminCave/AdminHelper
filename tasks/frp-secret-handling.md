@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Tunnel-Secrets beim Bearbeiten erhalten, in JSON-Antworten maskieren — Task-Ledger
-Status: aktiv · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: bereit · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/frp-secret-handling.md (Roadmap R-0113, R-0106, R-0053)
 Heavy: scenario --tunnel — Generator, Datenmigration und Tunnel-API ändern sich; der Tunnel-Datenpfad über zwei Hosts belegt, dass gültige Tunnel unverändert laufen und stcp ohne Secret beim Anlegen weiter ein Secret bekommt (box_serverbox.sh). Bleibt ask-first; dazu die Desktop-Journey tunnel-crud.live.js (Umbenennen nach dem Maskieren)
@@ -81,8 +81,10 @@ alten beim Anlegen. Test in `TunnelModal.test.ts`: Anlegen zeigt „automatisch 
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: docs/admin/frp-tunnel.html DE+EN, ein Satz zum Secret-Feld (leer beim Anlegen = erzeugt, beim Bearbeiten = unverändert, Rotieren = neuen Wert eintragen)
 
-### T6 — Schema lehnt U+007F (DEL) in TOML-Werten ab  [ ]
-Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_toml_roundtrip.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/test_servers_schemas.py
+### T6 — Schema lehnt U+007F (DEL) in TOML-Werten ab  [x]
+Komponente: server · Dateien: apps/server/app/modules/frp/schemas.py, apps/server/tests/test_frp_toml_roundtrip.py, apps/server/tests/test_frp_input_hardening.py, apps/server/tests/test_servers_schemas.py, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @aa19f5f6 2026-09-30T13:12:01+02:00
+Review: approve (sonnet)
 Änderung: `_reject_toml_breakers` (`frp/schemas.py:20–25`) weist neben `ord(c) < 0x20` auch `0x7F` ab (gleiche
 Meldung). Der strikte xfail `test_del_character_breaks_the_generated_toml` (`test_frp_toml_roundtrip.py:276`) wird
 ersetzt durch einen Test, der denselben Wert (`auth_token` mit DEL) als `ValidationError` erwartet; dazu ein Fall in
