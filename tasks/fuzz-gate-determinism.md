@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fuzz-Gate deterministisch (R-0063) — Task-Ledger
-Status: geplant · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/fuzz-gate-determinism.md (Roadmap R-0063)
 Heavy: none — nur Test-Konfiguration, Test-Stubs, ein Lint und Request-Schranken im Monitoring-Schema; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Tiefe (alle Phasen, 100 Beispiele) bleibt im Wochenlauf; ein grüner Wochenlauf nach dem Merge ist die Evidenz dafür.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format + shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
