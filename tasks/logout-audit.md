@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Logout: Audit nur, wenn eine Sitzung endet (R-0105) — Task-Ledger
-Status: bereit · Branch: feature/logout-audit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/logout-audit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0105
 Heavy: none — nur die Bedingung um den Audit-Aufruf; Antwort, Status, Cookie-Verhalten, Security-Schema (R-0054) und Gateway bleiben gleich, pytest deckt jeden Zweig ab.
@@ -39,3 +39,13 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_audit_wiring.py
 Doku: docs/developer/api-reference.html DE+EN (:60, ein Satz: protokolliert wird der Logout nur, wenn er einen Token gesperrt hat); docs/admin/betrieb.html:127 und docs/en/admin/operations.html:87 („Logout“ → „Logout, der eine Sitzung beendet“); CHANGELOG (Changed)
 HEAD: 8224e84c
 Semantik: docs/admin/betrieb.html:127 — „Sicherheits- und änderungsrelevante Aktionen werden in einem append-only Audit-Trail protokolliert … Erfasst werden u. a. … Logins (Erfolg/Fehlschlag), Logout …“; ein Logout, der keinen Token beendet, ist keine solche Aktion.
+
+Abschluss-Evidenz (2026-09-30):
+- Vor dem Fix: `pytest tests/test_audit_wiring.py -k logout` → 6 failed, 1 passed (grün nur der Wächter „Bearer plus Body“;
+  rot waren außer den ersten vier Fällen auch „zweimal“ und „nur Cookie“, wie in der Beweis-Zeile).
+- Gesamt-Schnellcheck @ad0f60d3: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns` (`run.sh quick --strict`).
+- Gesamt-Review (Review: am Ende, Opus, frischer Kontext) über `origin/main...HEAD`: approve, keine blocker/wichtig.
+- Heavy: none, am Diff bestätigt: nur die Bedingung um den Audit-Aufruf. Antwort, Cookie-Löschung, Docstring und openapi_extra
+  bleiben gleich.
+- Nach dem Merge von origin/main (003f35d7, mit #61): `verify.sh server --strict` → `704 passed, 2 skipped` (Redis lokal),
+  Schemathesis `288 passed`, `run.sh[quick]: 4 passed, 0 failed, 14 skipped, 2 test-skips, 0 reruns`.
