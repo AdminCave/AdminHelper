@@ -534,6 +534,17 @@ grep -q '^Dedup-Key: reg:web-vitest$' "$REG_LEDGER" 2>/dev/null \
   || bad "reg task proof lines: $(grep -E '^(Beweis|Dedup-Key|HEAD):' "$REG_LEDGER" 2>/dev/null)"
 grep -q '^Roadmap: R-0018 · ' "$REG_LEDGER" 2>/dev/null \
   && ok "the Roadmap: line stays for feature-build" || bad "no Roadmap: line"
+# R-0119: the branch the --kurz gate creates and commits the plan on, the heavy
+# step in the Heavy: line where heavy runs belong, and a Verify: placeholder that
+# --kurz fills with the component.
+grep -q '^Status: geplant · Branch: feature/reg-[0-9-]*-web-vitest · ' "$REG_LEDGER" 2>/dev/null \
+  && ok "the reg ledger names the branch the --kurz gate creates (feature/<slug>)" \
+  || bad "reg ledger branch: $(grep '^Status:' "$REG_LEDGER" 2>/dev/null)"
+grep -q '^Heavy: linux-full — .*bash scripts/tests/run.sh all --strict --step "web vitest"' "$REG_LEDGER" 2>/dev/null \
+  && ok "the heavy step command stands in the Heavy: line" || bad "Heavy: $(grep '^Heavy:' "$REG_LEDGER" 2>/dev/null)"
+grep -qx 'Verify: bash scripts/dev/verify.sh <komponente> --strict' "$REG_LEDGER" 2>/dev/null \
+  && ! grep -q '^Verify: .*--step' "$REG_LEDGER" \
+  && ok "the task's Verify: is the placeholder --kurz fills" || bad "Verify: $(grep '^Verify:' "$REG_LEDGER" 2>/dev/null)"
 lint_out=$(bash "$HERE/../dev/ledger.sh" lint "$REG_LEDGER" 2>&1); lint_rc=$?
 [ "$lint_rc" = 0 ] && ! grep -q 'WARN\|ERROR' <<<"$lint_out" \
   && ok "the reg ledger lints clean" || bad "ledger.sh lint (rc=$lint_rc): $lint_out"

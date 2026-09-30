@@ -40,8 +40,10 @@ Evidenz `run.sh[quick]` nur `web`; der neue task_close-Fall ist gegen das heutig
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (verify.sh-Liste, Evidenz-Form); CHANGELOG [Unreleased] Changed
 
-### T2 — Das REG-Ledger aus `heavy.sh` hat die Form von `/feature-plan --kurz`  [ ]
+### T2 — Das REG-Ledger aus `heavy.sh` hat die Form von `/feature-plan --kurz`  [x]
 Komponente: scripts · Dateien: scripts/tests/heavy.sh, scripts/tests/heavy_test.sh, tasks/README.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @89eea107 2026-09-30T17:29:35+02:00
+Review: Review am Ende (Kurz-Ledger, Opus über den Branch-Diff)
 Änderung: `write_reg_ledger` (`scripts/tests/heavy.sh:640–673`) schreibt `Branch: feature/$1` statt `fix/$1`
 (`:653`; `$1` ist der Ledger-Name, also derselbe Slug, den das `--kurz`-Gate als `feature/<slug>` anlegt).
 Der Schritt-Befehl `bash scripts/tests/run.sh all --strict --step "<schritt>"` wandert aus der Task-`Verify:`
