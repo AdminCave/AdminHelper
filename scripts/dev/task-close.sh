@@ -26,7 +26,8 @@
 #                              excluded) is recorded here, checked against the
 #                              one the suite wrote, and handed to the verdict
 #                              check as the identity of what ran.
-#   2. verify.sh <component>   the task's own fast suite, --strict, for real.
+#   2. verify.sh <components>  the task's Verify: line as it stands, --strict, for
+#                              real (a prose line: the task's own component).
 #   3. review.sh               diff-scan (did the diff buy its green?), scope
 #                              (did it stay inside the task?), sec (may this be
 #                              committed at all?).
@@ -177,36 +178,61 @@ TREE_HASH="$(bash scripts/dev/tree-hash.sh)" || infra "tree-hash.sh failed"
 # ── 2. the task's own suite ──────────────────────────────────────────────────
 [ -n "$COMPONENT" ] && [ "$COMPONENT" != "—" ] \
   || infra "task $ID has no component — nothing to verify (a manual task is closed by hand)"
-# Extra arguments, but ONLY from a Verify: line that really is a verify.sh call:
-# "… verify.sh server --strict -- tests/test_auth.py" -> tests/test_auth.py. A
-# greedy match here used to swallow prose — `cargo clippy -- -D warnings` in a
-# sentence turned into the suite's arguments and the task could not be closed.
-case "$VERIFY_LINE" in
-  "bash scripts/dev/verify.sh "*)
-    VERIFY_ARGS="$(sed -n 's|^bash scripts/dev/verify\.sh [^ ]\{1,\}[^-]*--strict[[:space:]]\{1,\}--[[:space:]]\{1,\}\(.*\)$|\1|p' <<<"$VERIFY_LINE")"
-    # A Verify: line may carry a SECOND command ("… --strict -- tests/x.py   und
-    # bash …"). The ledgers separate those with a run of spaces, so the args end
-    # at the first one; a real argument list uses single spaces.
-    VERIFY_ARGS="${VERIFY_ARGS%%  *}"
-    ;;
-  *)
-    VERIFY_ARGS=""
-    [ -n "$VERIFY_LINE" ] && echo "   (the task's Verify: line is not a verify.sh call — running the component's suite instead)"
-    ;;
+# The Verify: line runs as it stands (R-0104): its components, from
+# `bash scripts/dev/verify.sh <a> [<b> …] --strict [-- <args>]` or
+# `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` — the close of
+# 5c T2 ran web alone for `--only web desktop-e2e`. Extra arguments come ONLY
+# from a verify.sh call ("… --strict -- tests/test_auth.py"): a greedy match
+# used to swallow prose, `cargo clippy -- -D warnings` in a sentence turned into
+# the suite's arguments. A Verify: line may carry a SECOND command ("… -- x.py
+# und bash …"); the ledgers separate those with a run of spaces, so the first
+# command ends at the first one. Prose keeps the task's component, with a note.
+VERIFY_COMPONENTS="" VERIFY_ARGS=""
+FIRST_CMD="${VERIFY_LINE%%  *}"
+read -ra VW <<<"$FIRST_CMD"
+case "$FIRST_CMD" in
+  "bash scripts/dev/verify.sh "*) k=2 ;;
+  "bash scripts/tests/run.sh "*)
+    k=2
+    while [ "$k" -lt "${#VW[@]}" ] && [ "${VW[$k]}" != "--only" ]; do k=$((k + 1)); done
+    k=$((k + 1)) ;;
+  *) k="${#VW[@]}" ;;
 esac
-echo "── verify.sh $COMPONENT --strict ${VERIFY_ARGS:+-- $VERIFY_ARGS}"
-if [ -n "$VERIFY_ARGS" ]; then
-  # A word list, not a shell line: `set -f` keeps a `*` in the ledger from being
-  # expanded against the repo root, and quotes in it stay characters either way.
-  set -f
-  # shellcheck disable=SC2086  # the ledger's args are a word list on purpose
-  bash scripts/dev/verify.sh "$COMPONENT" --strict -- $VERIFY_ARGS
-  VRC=$?
-  set +f
+while [ "$k" -lt "${#VW[@]}" ] && [ "${VW[$k]#-}" = "${VW[$k]}" ]; do
+  VERIFY_COMPONENTS="${VERIFY_COMPONENTS:+$VERIFY_COMPONENTS }${VW[$k]}"; k=$((k + 1))
+done
+case "$FIRST_CMD" in
+  "bash scripts/dev/verify.sh "*)
+    while [ "$k" -lt "${#VW[@]}" ] && [ "${VW[$k]}" != "--" ]; do k=$((k + 1)); done
+    [ "$k" -lt "${#VW[@]}" ] && VERIFY_ARGS="${VW[*]:$((k + 1))}" ;;
+esac
+if [ -n "$VERIFY_COMPONENTS" ]; then
+  # A line that runs other components than the task's would close it on a suite
+  # that never looked at it — an input error, not a green.
+  case " $VERIFY_COMPONENTS " in
+    *" $COMPONENT "*|*" all "*) ;;
+    *) die "the Verify: line runs '$VERIFY_COMPONENTS' — it does not name the task's component '$COMPONENT'" ;;
+  esac
+  [ -z "$VERIFY_ARGS" ] || [ "${VERIFY_COMPONENTS// /}" = "$VERIFY_COMPONENTS" ] \
+    || die "the Verify: line gives '$VERIFY_ARGS' to '$VERIFY_COMPONENTS' — extra arguments need a single component"
 else
-  bash scripts/dev/verify.sh "$COMPONENT" --strict
+  VERIFY_COMPONENTS="$COMPONENT"
+  [ -n "$VERIFY_LINE" ] && echo "   (the task's Verify: line is not a verify.sh call — running the component's suite instead)"
+fi
+echo "── verify.sh $VERIFY_COMPONENTS --strict ${VERIFY_ARGS:+-- $VERIFY_ARGS}"
+# Word lists, not a shell line: `set -f` keeps a `*` in the ledger from being
+# expanded against the repo root, and quotes in it stay characters either way.
+set -f
+if [ -n "$VERIFY_ARGS" ]; then
+  # shellcheck disable=SC2086  # the ledger's components and args are word lists on purpose
+  bash scripts/dev/verify.sh $VERIFY_COMPONENTS --strict -- $VERIFY_ARGS
+  VRC=$?
+else
+  # shellcheck disable=SC2086
+  bash scripts/dev/verify.sh $VERIFY_COMPONENTS --strict
   VRC=$?
 fi
+set +f
 ARTIFACT="${AH_OUT_DIR:-$ROOT/.ah-out}/last-verify.json"
 case "$VRC" in
   0) ;;
@@ -276,8 +302,11 @@ esac
 SUMMARY="$(python3 - "$ARTIFACT" <<'PY' 2>/dev/null
 import json, sys
 d = json.load(open(sys.argv[1]))
-print("run.sh[%s]: %d passed, %d failed, %d skipped"
-      % (d.get("layer", "?"), d.get("passed", 0), d.get("failed", 0), d.get("skipped", 0)))
+# The components that ran belong to the evidence (R-0104): a line that names two
+# must not read like one.
+comp = (" " + d["component"]) if d.get("component") else ""
+print("run.sh[%s]%s: %d passed, %d failed, %d skipped"
+      % (d.get("layer", "?"), comp, d.get("passed", 0), d.get("failed", 0), d.get("skipped", 0)))
 PY
 )"
 [ -n "$SUMMARY" ] || infra "could not read the summary line out of $ARTIFACT"

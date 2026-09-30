@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinfixes: Verify-Zeile, REG-Ledger, Doku-Drift — Task-Ledger
-Status: freigegeben · Branch: harness/harness-kleinfixes · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/harness-kleinfixes · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/harness-kleinfixes.md (Roadmap R-0104, R-0119, R-0111)
 Heavy: none — nur Harness-Skripte, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine VM.
@@ -16,8 +16,10 @@ Branch `harness/`, weil `verify.sh`, `task-close.sh`, `heavy.sh` und `AUTONOMOUS
 Bau interaktiv, keine Lane. Worker B baut dieses Ledger **nach** `harness/schutz-nachziehen`: beide ändern
 DEVELOPMENT.md und AUTONOMOUS.md (andere Abschnitte), also seriell und vor dem Merge die Kombination prüfen.
 
-### T1 — `verify.sh` nimmt mehrere Komponenten, `task-close.sh` fährt die Verify-Zeile, wie sie dasteht  [ ]
+### T1 — `verify.sh` nimmt mehrere Komponenten, `task-close.sh` fährt die Verify-Zeile, wie sie dasteht  [x]
 Komponente: scripts · Dateien: scripts/dev/verify.sh, scripts/dev/task-close.sh, scripts/tests/verify_test.sh, scripts/tests/task_close_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @e557168c 2026-09-30T17:20:08+02:00
+Review: Review am Ende (Kurz-Ledger, Opus über den Branch-Diff)
 Änderung: `verify.sh` (Argument-Schleife `:45–55`) nimmt mehrere Komponenten und reicht sie an
 `run.sh quick --only a b` weiter (`:109–113`); mehrere Komponenten plus `-- args` ist Exit 2 mit klarer
 Meldung, `all` bleibt allein gültig. `last-verify.json` trägt im Feld `component` die Liste.
