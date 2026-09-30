@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Werkzeug-Pins: npm-Lockfiles ohne Audit-Befund, ein ruff überall (R-0038, R-0074) — Task-Ledger
-Status: geplant · Branch: harness/dev-tool-pins · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/dev-tool-pins · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/dev-tool-pins.md (Roadmap R-0038, R-0074)
 Heavy: none — nur Lockfiles von dev-only-Paketen, requirements-dev, ruff.toml und der Offline-Lockstep; kein Stack-, Gateway-, PKI- oder Install-Pfad. Belegt wird es in der PR-CI (web check/lint/unit und Playwright, desktop-ui, python-lint, tools-Job) und mit einem `audit.yml`-Lauf auf dem Branch (`gh workflow run audit.yml --ref harness/dev-tool-pins`, npm-Job grün).
 DoD je Task: CLAUDE.md (Tests grün, ruff/shellcheck/eslint sauber, Doku im selben Commit, SPDX bei neuen Dateien).
