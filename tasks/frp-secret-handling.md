@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Tunnel-Secrets beim Bearbeiten erhalten, in JSON-Antworten maskieren — Task-Ledger
-Status: bereit · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/frp-secret-handling.md (Roadmap R-0113, R-0106, R-0053)
 Heavy: scenario --tunnel — Generator, Datenmigration und Tunnel-API ändern sich; der Tunnel-Datenpfad über zwei Hosts belegt, dass gültige Tunnel unverändert laufen und stcp ohne Secret beim Anlegen weiter ein Secret bekommt (box_serverbox.sh). Bleibt ask-first; dazu die Desktop-Journey tunnel-crud.live.js (Umbenennen nach dem Maskieren)
@@ -104,3 +104,19 @@ Herkunft: /code-review über den Branch-Diff (2026-09-30); Auftrag der Aufsicht 
 zeigt „automatisch generiert“. Vor dem Fix rot.
 Verify: bash scripts/dev/verify.sh desktop-ui --strict
 Doku: keine (die Admin-Doku aus T5 beschreibt Anlegen und Bearbeiten eines STCP-Tunnels, das bleibt richtig)
+
+Abschluss-Evidenz (2026-09-30):
+- Gesamt-Schnellcheck @5f0d6b4c: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns` (`run.sh quick --strict`).
+- /code-review über den Branch-Diff: acht Punkte, keiner davon eine Regression gegenüber `main`. Einer wurde T7, zwei andere trägt die Aufsicht als Roadmap-Zeilen ein, der Rest ist so geplant.
+- Heavy 1 (`multibox.sh --tunnel`, gestartet von der Aufsicht auf Kevins Entscheidung) @5dd4e196:
+  `multibox: 15 ok, 0 failed, 1 skipped` (Adresse und VMID der Pool-VMs hier ausgelassen), exit 0 um 2026-09-30T13:55:47+02:00. Der Skip ist
+  `SKIP MTLS_ENFORCE guard (no --enforce; --capstone implies it)` (Teillauf ohne `--enforce`, laut /test vorgesehen). Belegt:
+  „frps registered the agent's STCP tunnel (cross-host)“, „visitor reached the agent's sshd THROUGH the tunnel (3-host data path)“.
+- Heavy 2 (`warm.sh desktop`, `iter.sh e2e --strict --step desktop_e2e_crud`, danach `reap`) @5dd4e196:
+  `desktop_e2e_crud: 6 passed, 0 failed` und `run.sh[e2e]: 1 passed, 0 failed, 0 skipped, 0 test-skips, 0 reruns`, iter exit 0
+  um 2026-09-30T14:15:00+02:00, `tunnel-crud.live.js` PASSED. Der erste Versuch startete keinen Spec, weil dem node_modules der
+  Template-Box `@wdio/junit-reporter` fehlte (Harness-Fehler, Roadmap R-0131); der zweite Versuch lief nach `npm ci` auf der Box.
+- VMs nach beiden Läufen abgeräumt, `vm.py list`: 0 ours.
+- Nach dem Merge von origin/main (3af2d7e3): `verify.sh server --strict` → `697 passed, 2 skipped` (Redis lokal), Schemathesis
+  `288 passed`, `run.sh[quick]: 4 passed, 0 failed, 14 skipped, 2 test-skips, 0 reruns`; `verify.sh desktop-ui --strict` →
+  `Tests 385 passed`, `run.sh[quick]: 1 passed, 0 failed, 17 skipped, 0 test-skips, 0 reruns`.
