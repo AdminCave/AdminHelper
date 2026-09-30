@@ -593,10 +593,12 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
   bzw. `-exec rm`, eine Schleife ueber so einen Glob, in deren Rumpf geloescht wird (`for d in
   /tmp/tmp.*; do …`, `… | while read d; do …`, auch ueber `cd "$d"` oder `bash -c`), und `… |
   xargs rm` hinter einem Lister (`ls`, `echo`, `printf`, `find`) oder hinter einer solchen
-  Schleife. Frei bleibt alles eine Ebene tiefer, also im eigenen Verzeichnis
-  (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis `/tmp/foo.XXXX/*`), dazu Pfade hinter einer
-  Variablen (`rm -rf "$W"/*` — der Hook kann sie nicht aufloesen), Globs im eigenen Checkout
-  und derselbe Text in einer Commit-Message oder einem Here-Doc. Die Grenze ist gemessen:
+  Schleife. Ein Glob **ueber** der Wurzel zaehlt in jeder Tiefe (`/t*/claude-1000/*`,
+  `cd /t* && rm -rf claude-1000/*`, R-0109). Frei bleibt ein Glob, der erst eine Ebene
+  tiefer beginnt, also im eigenen Verzeichnis (`…/scratchpad/x/*`, ein `mktemp`-Verzeichnis
+  `/tmp/foo.XXXX/*`), dazu Pfade hinter einer Variablen (`rm -rf "$W"/*` — der Hook kann sie
+  nicht aufloesen), Globs im eigenen Checkout und derselbe Text in einer Commit-Message oder
+  einem Here-Doc. Die Grenze ist gemessen:
   „irgendwo unter `/tmp`" traf in 34 513 echten Befehlen 13 legitime Aufraeumer in
   Scratchpads. Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'` und eine
   Schleife, die ihre Liste per Prozess-Substitution bekommt (`done < <(ls …)`). Die Regel dazu

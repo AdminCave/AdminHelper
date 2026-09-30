@@ -609,6 +609,35 @@ cd @S@/scratchpad/co && rm -rf a8/packages out/xo out/xn out/tx-*
 rm -rf @S@/scratchpad/samba_4.22*
 CMDS
 
+# R-0109: a glob ABOVE a temp root reaches every depth below it. Only a match on
+# the root or an entry right in it was caught, so `/t*/claude-1000/*` walked
+# into every session's directories. No mode, no kill switch, like the rest of
+# the rule; the scratchpad cleanups above keep their glob below the root.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  modes=""
+  guard inter Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes inter"
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes auto"
+  bash "$HARNESS" off >/dev/null
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes off"
+  bash "$HARNESS" on >/dev/null
+  [ "$modes" = " inter auto off" ] && ok "glob above the root, denied in every mode: $cmd" \
+    || bad "glob above the root: $cmd — denied only in:${modes:- no mode}"
+done <<'CMDS'
+rm -rf /t*/claude-1000/*
+rm -rf /t*/claude-1000/-home-*/*
+rm -rf /tm?/claude-*/*
+rm -rf /*/claude-1000/*
+rm -rf /var/t*/x/*
+cd /t* && rm -rf claude-1000/*
+CMDS
+# The value of TMPDIR is a root as well; a glob that cannot match any root stays free.
+OUT=$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /srv/ah-t*/x/*"}}' \
+  | TMPDIR=/srv/ah-td bash "$GUARD" 2>/dev/null)
+denied "$OUT" && ok "denied: a glob above the value of TMPDIR" || bad "glob above TMPDIR value: $OUT"
+guard inter Bash "$(cmdjson 'rm -rf /?/x/*')"
+[ -z "$OUT" ] && ok "free: a glob above no temp root (/?/x/*)" || bad "false positive: /?/x/* -> $OUT"
+
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
 while IFS= read -r cmd; do

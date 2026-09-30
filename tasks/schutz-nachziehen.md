@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz nachziehen (R-0109, R-0110, R-0082) — Task-Ledger
-Status: freigegeben · Branch: harness/schutz-nachziehen · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/schutz-nachziehen · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/schutz-nachziehen.md (Roadmap R-0109, R-0110, R-0082)
 Heavy: none — nur der PreToolUse-Wächter, die Git-Hooks, review.sh und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles über verify.sh scripts.
@@ -18,8 +18,10 @@ Lane: `lane.sh new` legt fest `feature/<slug>` an. Den Wächter nie mit echten L
 Beweis ist ein JSON-Dokument auf stdin wie in `scripts/tests/hooks_test.sh`. Reviewer-Subagenten bekommen ein
 eigenes Verzeichnis aus `mktemp -d -p <Scratchpad>` und löschen nur eigene Pfade mit vollem Pfad.
 
-### T1 — Wächter: ein Glob über der Temp-Wurzel wird verweigert  [ ]
+### T1 — Wächter: ein Glob über der Temp-Wurzel wird verweigert  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @dabd90f8 2026-09-30T12:43:25+02:00
+Review: approve (opus)
 Änderung: `reaches_root` (harness-guard.sh:218–228) verweigert zusätzlich, wenn in `comps[:len(rc)]` ein
 Glob-Zeichen steht, dieser Präfix per `fnmatch` zur Wurzel passt und `len(comps) >= len(rc)` gilt (Glob über der
 Wurzel, beliebig tiefer Treffer). Die bestehende Regel (Treffer genau auf der Wurzel oder eine Ebene darunter)

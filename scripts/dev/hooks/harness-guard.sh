@@ -21,7 +21,8 @@
 # not lift it (Kevin, 2026-09-27): on 2026-09-25 a reviewer cleaned up with
 # `rm -rf /tmp/tmp.*` and took the fixtures of every other session along. That
 # covers a loop over such a glob that deletes in its body (`for d in /tmp/x*`,
-# `… | while read d`) and `… | xargs rm` behind it. One level deeper is somebody's
+# `… | while read d`) and `… | xargs rm` behind it, and a glob ABOVE the root
+# at any depth (`/t*/claude-1000/*`, R-0109). One level deeper is somebody's
 # own directory (a scratchpad, an mktemp dir) and stays free: "anywhere below
 # /tmp" hit 13 legitimate scratchpad cleanups in 34 513 real commands.
 #
@@ -216,21 +217,26 @@ def glob_dir(word, base):
 
 
 def reaches_root(pattern):
-    """The glob, with its glob character above a temp root, can match that root
-    itself or an entry right in it: `/tmp*`, `/t*`, `/*/tmp.*`, and `tmp*`
-    after `cd /` all take /tmp along. Deeper matches are somebody's own."""
+    """The glob can match a temp root itself or an entry right in it: `/tmp*`,
+    `/t*`, `/*/tmp.*`, and `tmp*` after `cd /` all take /tmp along. With its
+    glob character ABOVE the root it reaches every depth: `/t*/claude-1000/*`
+    and `cd /t* && rm -rf claude-1000/*` walk into every session's directories
+    (R-0109). A glob that only starts below the root, in a path that names the
+    root literally, matches deeper entries only — somebody's own."""
     comps = pattern.strip("/").split("/")
     for r in TMP_ROOTS:
         rc = r.strip("/").split("/")
-        if r != TMPDIR_ROOT and len(comps) in (len(rc), len(rc) + 1) and all(
+        if r == TMPDIR_ROOT or len(comps) < len(rc) or not all(
                 fnmatch.fnmatchcase(c, p) for c, p in zip(rc, comps)):
+            continue
+        if len(comps) <= len(rc) + 1 or any(has_glob(p) for p in comps[:len(rc)]):
             return True
     return False
 
 
 def tmp_glob(word, base):
     """A glob whose literal directory is a shared temp directory, or one that
-    can match a temp root itself; or a shared directory itself (`rm -rf /tmp`
+    reaches a temp root (see reaches_root); or a shared directory itself (`rm -rf /tmp`
     takes the same as `rm -rf /tmp/*`). A bare `$TMPDIR` is left to the
     variable rule: `rm -rf "$TMPDIR"` after `export TMPDIR=$(mktemp -d …)` is
     cleanup."""
