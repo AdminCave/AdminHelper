@@ -57,7 +57,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
-            <p>Authentication optional. Blacklists a presented access token (bearer) and the refresh token from the body (<code>{ "refresh_token" }</code>) or the HttpOnly cookie, and clears the cookie. Without a bearer the logout only affects the refresh token.</p>
+            <p>Authentication optional. Blacklists a presented access token (bearer) and the refresh token from the body (<code>{ "refresh_token" }</code>) or the HttpOnly cookie, and clears the cookie. Without a bearer the logout only affects the refresh token. The audit log (<code>auth.logout</code>) records the logout only when it revoked a token; the response is <code>200</code> either way.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/auth/me</code>
