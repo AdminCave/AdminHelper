@@ -217,7 +217,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
               <input
                 type={showSecret ? 'text' : 'password'}
                 bind:value={form.secretKey}
-                placeholder={$t('infra.tun.secretHint')}
+                placeholder={isNew ? $t('infra.tun.secretHint') : $t('infra.tun.secretHintEdit')}
               />
               <button
                 type="button"

@@ -71,8 +71,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py 
 Doku: docs/developer/api-reference.html DE+EN bei `/api/frp/tunnels` (:130): Antworten liefern `secretKey` als `null`, das Secret steht nur in den erzeugten TOML-Dateien und im Provisioning; ein PUT mit leerem `secret_key` lässt es unverändert. CHANGELOG (Changed)
 Abhängt von: T1
 
-### T5 — Desktop-Editor: beim Bearbeiten „leer = unverändert“  [ ]
+### T5 — Desktop-Editor: beim Bearbeiten „leer = unverändert“  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/src/lib/i18n/dictionaries.ts, apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @ec6ac7f0 2026-09-30T12:52:45+02:00
+Review: approve (sonnet)
 Änderung: Neuer Schlüssel `infra.tun.secretHintEdit` („leer = unverändert“ / „empty = unchanged“) neben
 `infra.tun.secretHint` (`dictionaries.ts:107`, EN `:702`); `TunnelModal.svelte` zeigt ihn im Bearbeiten-Modus, den
 alten beim Anlegen. Test in `TunnelModal.test.ts`: Anlegen zeigt „automatisch generiert“, Bearbeiten „unverändert“.
