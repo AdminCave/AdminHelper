@@ -57,7 +57,7 @@
           </div>
           <div class="endpoint">
             <span class="method-post">POST</span><code>/api/auth/logout</code>
-            <p>Authentication optional. Blacklists a presented access token (bearer) and the refresh token from the body (<code>{ "refresh_token" }</code>) or the HttpOnly cookie, and clears the cookie. Without a bearer the logout only affects the refresh token.</p>
+            <p>Authentication optional. Blacklists a presented access token (bearer) and the refresh token from the body (<code>{ "refresh_token" }</code>) or the HttpOnly cookie, and clears the cookie. Without a bearer the logout only affects the refresh token. The audit log (<code>auth.logout</code>) records the logout only when it revoked a token; the response is <code>200</code> either way.</p>
           </div>
           <div class="endpoint">
             <span class="method-get">GET</span><code>/api/auth/me</code>
@@ -126,10 +126,10 @@
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/server-config/{id}</code></div>
 
           <h2>FRP &ndash; Tunnels</h2>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels</code><p>Query: <code>?server_id</code>, <code>?frp_config_id</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels</code><p>Query: <code>?server_id</code>, <code>?frp_config_id</code>. Tunnel responses carry <code>secretKey</code> as <code>null</code> &ndash; here, in <code>/api/frp/status</code>, <code>/api/frp/server-config/{id}</code> and <code>/api/servers</code> (<code>frpTunnels</code>). The secret is only in the generated TOML files (<code>/api/frp/generate/*</code>) and in provisioning (<code>/api/frp/provision/{server_id}/config</code>).</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/tunnels</code><p>STCP (with <code>secret_key</code>, <code>visitor_port</code>) or HTTPS (<code>custom_domains</code>). <code>auto_create_connection=true</code> also creates a matching connection.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels/{id}</code></div>
-          <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/tunnels/{id}</code></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/tunnels/{id}</code><p>A <code>secret_key</code> of <code>null</code> or <code>""</code> keeps the stored secret; if the tunnel becomes STCP without a secret, the server generates one.</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/tunnels/{id}</code></div>
 
           <h2>FRP &ndash; Generate (TOML/ZIP)</h2>

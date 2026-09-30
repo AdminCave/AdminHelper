@@ -118,6 +118,46 @@ def test_status_body_equals_the_untyped_dict(
         ],
         "total": 1,
     }
+    assert resp.json()["proxies"][0]["tunnel"]["secretKey"] is None
+
+
+def test_status_masks_the_tunnel_secret(
+    test_client, admin_user, db_session, httpx_mock, monkeypatch
+):
+    """The matched tunnel is handed out without its secret: the status page never needs it."""
+    import app.modules.frp.status_router as sr
+    from app.modules.frp.models import FrpTunnel
+    from app.modules.servers.models import Server
+
+    monkeypatch.setattr(sr, "FRPS_DASHBOARD_URL", _DASHBOARD)
+    _config(db_session, dashboard_port=7500)
+    db_session.add(Server(id="srv-sec", name="sec", hostname="sec.example.test"))
+    db_session.add(
+        FrpTunnel(
+            id="tun-sec",
+            server_id="srv-sec",
+            frp_config_id="c1",
+            name="sec-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+        )
+    )
+    db_session.commit()
+    httpx_mock.add_response(
+        url=f"{_DASHBOARD}/api/proxy/stcp",
+        json={"proxies": [{"name": "admin.sec-ssh", "status": "online"}]},
+    )
+    for proxy_type in ("https", "tcp", "udp"):
+        httpx_mock.add_response(url=f"{_DASHBOARD}/api/proxy/{proxy_type}", json={"proxies": []})
+
+    resp = test_client.get("/api/frp/status", headers=_login(test_client))
+
+    assert resp.status_code == 200, resp.text
+    tunnel = resp.json()["proxies"][0]["tunnel"]
+    assert tunnel["id"] == "tun-sec"
+    assert tunnel["secretKey"] is None
 
 
 def test_status_unreachable_body_equals_the_untyped_dict(

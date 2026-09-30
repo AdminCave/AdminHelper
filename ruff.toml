@@ -8,6 +8,12 @@
 # Pfade; `scripts/tests/run.sh lint` prüft dieselben (Schritte ruff und ruff-vm).
 # Lokal: `ruff check apps/server apps/monitoring apps/ca-issuer scripts`.
 
+# Genau das ruff, das CI pinnt (ci.yml, scripts/vm/bootstrap_linux.sh,
+# apps/server/requirements-dev.txt; scripts/dev/toolchain-lockstep.sh prüft die
+# Gleichheit). run.sh nimmt das erste ruff im PATH: ein anderes bricht hier mit
+# Exit 2 ab, statt still andere Regeln anzuwenden (0.16.x: 841 Treffer, die CI
+# nie sieht).
+required-version = "==0.15.20"
 line-length = 100
 target-version = "py312"
 

@@ -63,7 +63,7 @@ Erzeugt mit `pip-licenses` aus je einer frischen venv mit **nur** der
 | Mako | 1.3.12 | MIT | x | x |  |
 | pydantic | 2.13.4 | MIT | x | x | x |
 | pydantic_core | 2.46.4 | MIT | x | x | x |
-| PyJWT | 2.13.0 | MIT | x |  |  |
+| PyJWT | 2.14.0 | MIT | x |  |  |
 | PyYAML | 6.0.3 | MIT | x | x | x |
 | redis | 8.0.0 | MIT | x |  |  |
 | SQLAlchemy | 2.0.50 | MIT | x | x | x |

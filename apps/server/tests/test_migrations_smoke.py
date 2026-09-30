@@ -228,3 +228,54 @@ def test_add_server_id_backfill_skips_ambiguous_names(pg_engine, monkeypatch):
         engine.dispose()
         _drop_database(admin_engine, dbname)
         admin_engine.dispose()
+
+
+def test_fill_empty_stcp_secrets_gives_each_its_own(pg_engine, monkeypatch):
+    # Before the data migration an stcp tunnel could hold secret_key NULL or ''; afterwards each
+    # of them has its own secret, while a set secret and an https tunnel stay as they were.
+    admin_url = pg_engine.url
+    dbname = f"alembic_stcpsecret_{uuid.uuid4().hex[:8]}"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{dbname}"'))
+    smoke_url = admin_url.set(database=dbname).render_as_string(hide_password=False)
+    monkeypatch.setattr(app_config, "DATABASE_URL", smoke_url)
+    cfg = Config(str(SERVER_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    engine = create_engine(smoke_url)
+    try:
+        command.upgrade(cfg, "e5f7a1b3c9d0")  # the down_revision, just before the data migration
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO servers (id, name, hostname) VALUES ('s1', 'S', 'h')"))
+            conn.execute(
+                text(
+                    "INSERT INTO frp_server_config (id, name, server_addr, auth_token)"
+                    " VALUES ('c1', 'C', 'frps', 'tok')"
+                )
+            )
+            for tid, ttype, port, secret in (
+                ("t_null", "stcp", 7001, None),
+                ("t_empty", "stcp", 7002, ""),
+                ("t_set", "stcp", 7003, "kept-secret-0123456789"),
+                ("t_web", "https", None, None),
+            ):
+                conn.execute(
+                    text(
+                        "INSERT INTO frp_tunnels (id, server_id, frp_config_id, name, tunnel_type,"
+                        " protocol, local_port, visitor_port, secret_key)"
+                        " VALUES (:id, 's1', 'c1', :id, :type, 'ssh', 22, :port, :secret)"
+                    ),
+                    {"id": tid, "type": ttype, "port": port, "secret": secret},
+                )
+        command.upgrade(cfg, "8bdf9641a51f")
+        with engine.connect() as conn:
+            rows = dict(conn.execute(text("SELECT id, secret_key FROM frp_tunnels")).all())
+        assert rows["t_null"] and len(rows["t_null"]) >= 32
+        assert rows["t_empty"] and len(rows["t_empty"]) >= 32
+        assert rows["t_null"] != rows["t_empty"], "jede Zeile bekommt ein eigenes Secret"
+        assert rows["t_set"] == "kept-secret-0123456789"
+        assert rows["t_web"] is None
+    finally:
+        engine.dispose()
+        _drop_database(admin_engine, dbname)
+        admin_engine.dispose()

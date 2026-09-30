@@ -239,6 +239,46 @@ class TestGenerateVisitorToml:
         assert "/etc/frp/pki" not in toml
 
 
+class TestStcpWithoutSecret:
+    # An stcp tunnel without a secret is left out of the frpc and visitor TOML (and logged)
+    # instead of being written with secretKey "None" or ""; the tunnels next to it are untouched.
+    def test_frpc_skips_stcp_without_secret(self, caplog):
+        import logging
+
+        tunnels = [
+            _make_tunnel(name="no-secret", secret_key=None),
+            _make_tunnel(name="empty-secret", secret_key=""),
+            _make_tunnel(name="ok", secret_key="tunnel-secret"),
+        ]
+        with caplog.at_level(logging.WARNING):
+            toml = generate_frpc_toml(_make_config(), tunnels, "srv1")
+        assert "no-secret" not in toml and "empty-secret" not in toml
+        assert "None" not in toml
+        assert 'secretKey = ""' not in toml
+        assert toml.count("[[proxies]]") == 1
+        assert toml == generate_frpc_toml(_make_config(), [tunnels[2]], "srv1")
+        warned = " ".join(r.getMessage() for r in caplog.records)
+        assert "no-secret" in warned and "empty-secret" in warned
+
+    def test_visitor_skips_stcp_without_secret(self, caplog):
+        import logging
+
+        tunnels = [
+            _make_tunnel(name="no-secret", secret_key=None, visitor_port=6002),
+            _make_tunnel(name="empty-secret", secret_key="", visitor_port=6003),
+            _make_tunnel(name="ok", secret_key="tunnel-secret"),
+        ]
+        with caplog.at_level(logging.WARNING):
+            toml = generate_visitor_toml(_make_config(), tunnels)
+        assert "no-secret" not in toml and "empty-secret" not in toml
+        assert "None" not in toml
+        assert 'secretKey = ""' not in toml
+        assert toml.count("[[visitors]]") == 1
+        assert toml == generate_visitor_toml(_make_config(), [tunnels[2]])
+        warned = " ".join(r.getMessage() for r in caplog.records)
+        assert "no-secret" in warned and "empty-secret" in warned
+
+
 def test_write_frps_config_warns_only_on_runtime_change(tmp_path, monkeypatch, caplog):
     import logging
 
