@@ -154,6 +154,10 @@ def update_tunnel(
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
     sent = data.model_fields_set
+    # Responses never carry the secret, so an editor sends the field back
+    # empty: on update, null or "" means "keep the stored secret".
+    if "secret_key" in sent and not data.secret_key:
+        sent = sent - {"secret_key"}
 
     if "name" in sent and data.name != tunnel.name:
         existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
@@ -194,6 +198,8 @@ def update_tunnel(
 
     if tunnel.tunnel_type == "stcp" and not tunnel.visitor_port:
         tunnel.visitor_port = next_visitor_port(db, exclude_tunnel_id=tunnel_id)
+    if tunnel.tunnel_type == "stcp" and not tunnel.secret_key:
+        tunnel.secret_key = FrpTunnel.generate_secret()
 
     if "extra_config" in sent:
         tunnel.extra_config = json.dumps(data.extra_config) if data.extra_config else None

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Tunnel-Secrets beim Bearbeiten erhalten, in JSON-Antworten maskieren — Task-Ledger
-Status: freigegeben · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/frp-secret-handling.md (Roadmap R-0113, R-0106, R-0053)
 Heavy: scenario --tunnel — Generator, Datenmigration und Tunnel-API ändern sich; der Tunnel-Datenpfad über zwei Hosts belegt, dass gültige Tunnel unverändert laufen und stcp ohne Secret beim Anlegen weiter ein Secret bekommt (box_serverbox.sh). Bleibt ask-first; dazu die Desktop-Journey tunnel-crud.live.js (Umbenennen nach dem Maskieren)
@@ -14,8 +14,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 Geplant 2026-09-30 von der Aufsicht (adminhelper-ac); Entscheidungen Kevin 2026-09-30. Zeilenangaben main@8224e84c.
 Reihenfolge: T1 vor T4 (ohne T1 würde das Maskieren beim Bearbeiten das Secret leeren).
 
-### T1 — PUT: ein leeres Secret lässt das gespeicherte unverändert, stcp ohne Secret bekommt eins  [ ]
+### T1 — PUT: ein leeres Secret lässt das gespeicherte unverändert, stcp ohne Secret bekommt eins  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_tunnels.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @946f01af 2026-09-30T11:46:41+02:00
+Review: approve (sonnet)
 Änderung: In `update_tunnel` (`tunnel_router.py:145`) gilt ein gesendetes `secret_key` mit `null` oder `""` als nicht
 gesendet (aus `sent`, `:156`, entfernen, bevor die Schleife `:180–193` schreibt). Nach der Schleife, neben der
 Visitor-Port-Regel (`:195–196`): ist der Tunnel stcp und hat kein Secret, erzeugt `FrpTunnel.generate_secret()` eins.
