@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP: Tunnel-Secrets beim Bearbeiten erhalten, in JSON-Antworten maskieren — Task-Ledger
-Status: geplant · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: freigegeben · Branch: feature/frp-secret-handling · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/frp-secret-handling.md (Roadmap R-0113, R-0106, R-0053)
 Heavy: scenario --tunnel — Generator, Datenmigration und Tunnel-API ändern sich; der Tunnel-Datenpfad über zwei Hosts belegt, dass gültige Tunnel unverändert laufen und stcp ohne Secret beim Anlegen weiter ein Secret bekommt (box_serverbox.sh). Bleibt ask-first; dazu die Desktop-Journey tunnel-crud.live.js (Umbenennen nach dem Maskieren)
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format bzw. eslint/svelte-check sauber, Doku im selben Commit, SPDX bei neuen Dateien).
