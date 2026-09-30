@@ -314,6 +314,7 @@ class TestConfigResponseShape:
             db_session, cid, include_tunnels=True, mask_secrets=True
         )
         assert [t["id"] for t in detail.json()["tunnels"]] == ["tun-shape"]
+        assert detail.json()["tunnels"][0]["secretKey"] is None
 
         updated = test_client.put(
             f"/api/frp/server-config/{cid}", json={"name": "renamed"}, headers=h

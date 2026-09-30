@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.modules.frp.models import FrpServerConfig, FrpTunnel
+
+logger = logging.getLogger(__name__)
 
 # Where frps finds its TLS material — the volume the ca-issuer provisions under
 # the tunnel intermediate (A7), no longer the server's self-run FRP CA.
@@ -27,6 +30,23 @@ _AGENT_IDENTITY_DIR = "/etc/adminhelper/identity"
 # hinging on a substring match. frps trusts the access intermediate (ca-issuer
 # extra_trust) so this access cert is accepted.
 _VISITOR_IDENTITY_DIR = "{{IDENTITY_DIR}}"
+
+
+def _without_secretless_stcp(tunnels: list[FrpTunnel]) -> list[FrpTunnel]:
+    """Leave out stcp tunnels that have no secret.
+
+    Proxy and visitor must carry the same secretKey; writing one without it would
+    emit secretKey "None" or "". Skipping it keeps the other tunnels of the host
+    and the provision hash intact, where raising would stop the whole config."""
+    kept = []
+    for tunnel in tunnels:
+        if tunnel.tunnel_type == "stcp" and not tunnel.secret_key:
+            logger.warning(
+                "FRP tunnel %s is stcp without a secret, left out of the config", tunnel.name
+            )
+            continue
+        kept.append(tunnel)
+    return kept
 
 
 def _tls_server_block(
@@ -157,7 +177,7 @@ def generate_frpc_toml(
 
     lines.extend(_tls_agent_block())
 
-    active_tunnels = [t for t in tunnels if t.enabled]
+    active_tunnels = _without_secretless_stcp([t for t in tunnels if t.enabled])
 
     for tunnel in active_tunnels:
         lines.append("")
@@ -216,7 +236,9 @@ def generate_visitor_toml(
 
     lines.extend(_tls_client_block())
 
-    stcp_tunnels = [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
+    stcp_tunnels = _without_secretless_stcp(
+        [t for t in tunnels if t.tunnel_type == "stcp" and t.enabled]
+    )
     stcp_tunnels.sort(key=lambda t: t.visitor_port or 0)
 
     for tunnel in stcp_tunnels:

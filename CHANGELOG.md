@@ -158,6 +158,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: U+007F in Konfigurationswerten (Server):** Die Felder, die der Server in die erzeugten
+  FRP-TOML-Dateien schreibt (FRP-Server-Config, Tunnel, Servername), lehnen neben den anderen
+  Steuerzeichen jetzt auch U+007F (DEL) mit 422 ab. TOML verbietet das Zeichen in einem
+  String; eine `frps.toml` damit konnte frps nicht lesen.
 - **Web-Panel: F5 waehrend eine Liste laedt (R-0107):** `apps/web/src/lib/api/client.ts` gibt
   bei einem 2xx, dessen Body sich nicht lesen laesst (Reload bricht die Uebertragung ab, oder
   kein JSON), nicht mehr still `null` zurueck, sondern wirft `ApiError(status, 'Invalid response
@@ -268,6 +272,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Tokens ein zweites Mal hinterlaesst keinen Eintrag; Antwort (`200`) und Cookie-Loeschung bleiben
   gleich. Ein Logout nur mit Cookie traegt jetzt den Benutzernamen. Doku:
   `docs/developer/api-reference.html`, `docs/admin/betrieb.html`.
+- **FRP: leere STCP-Secrets werden gefuellt (Server):** Eine Datenmigration gibt jedem
+  stcp-Tunnel, dessen Secret leer ist, ein eigenes zufaelliges Secret; der Generator laesst
+  einen stcp-Tunnel ohne Secret aus der frpc- und Visitor-Konfiguration weg. Der Agent holt die
+  neue Konfiguration von selbst (Provision-Hash); ein laufender Desktop-Visitor eines solchen
+  Tunnels braucht einen Tunnel-Neustart.
+- **FRP: Tunnel-Antworten ohne Secret (Server):** Die JSON-Antworten von `/api/frp/tunnels`,
+  `/api/frp/status`, `/api/frp/server-config/{id}` und `/api/servers` liefern `secretKey` als
+  `null`; das Feld bleibt, das Schema aendert sich nicht. Das Secret steht nur noch in den
+  erzeugten TOML-Dateien und im Provisioning. Ein `PUT /api/frp/tunnels/{id}` mit `secret_key`
+  `null` oder `""` laesst das gespeicherte Secret unveraendert; wird ein Tunnel per `PUT` zu STCP
+  und hat kein Secret, erzeugt der Server eins. Doku: `docs/developer/api-reference.html`.
 - **Ein ruff ueberall (R-0074):** `apps/server/requirements-dev.txt` pinnt `ruff==0.15.20`
   statt des Bodens `ruff>=0.15`, und `scripts/dev/toolchain-lockstep.sh` verlangt Gleichheit
   mit `ci.yml` und `scripts/vm/bootstrap_linux.sh` statt nur „nicht darueber". Mit dem Boden

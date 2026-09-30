@@ -35,7 +35,7 @@ def list_tunnels(
     if frp_config_id:
         query = query.filter(FrpTunnel.frp_config_id == frp_config_id)
     tunnels = query.order_by(FrpTunnel.name).all()
-    return [t.to_dict() for t in tunnels]
+    return [t.to_dict(mask_secrets=True) for t in tunnels]
 
 
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
@@ -130,7 +130,7 @@ def create_tunnel(
         object_id=tunnel.id,
         object_label=tunnel.name,
     )
-    return tunnel.to_dict()
+    return tunnel.to_dict(mask_secrets=True)
 
 
 @router.get("/tunnels/{tunnel_id}")
@@ -138,7 +138,7 @@ def get_tunnel(tunnel_id: str, db: Session = Depends(get_db), _admin=Depends(get
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
-    return tunnel.to_dict()
+    return tunnel.to_dict(mask_secrets=True)
 
 
 @router.put("/tunnels/{tunnel_id}")
@@ -154,6 +154,10 @@ def update_tunnel(
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
 
     sent = data.model_fields_set
+    # Responses never carry the secret, so an editor sends the field back
+    # empty: on update, null or "" means "keep the stored secret".
+    if "secret_key" in sent and not data.secret_key:
+        sent = sent - {"secret_key"}
 
     if "name" in sent and data.name != tunnel.name:
         existing = db.query(FrpTunnel).filter(FrpTunnel.name == data.name).first()
@@ -194,6 +198,8 @@ def update_tunnel(
 
     if tunnel.tunnel_type == "stcp" and not tunnel.visitor_port:
         tunnel.visitor_port = next_visitor_port(db, exclude_tunnel_id=tunnel_id)
+    if tunnel.tunnel_type == "stcp" and not tunnel.secret_key:
+        tunnel.secret_key = FrpTunnel.generate_secret()
 
     if "extra_config" in sent:
         tunnel.extra_config = json.dumps(data.extra_config) if data.extra_config else None
@@ -221,7 +227,7 @@ def update_tunnel(
         object_id=tunnel.id,
         object_label=tunnel.name,
     )
-    return tunnel.to_dict()
+    return tunnel.to_dict(mask_secrets=True)
 
 
 @router.delete("/tunnels/{tunnel_id}", status_code=status.HTTP_204_NO_CONTENT)
