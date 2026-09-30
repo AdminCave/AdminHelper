@@ -288,9 +288,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `docs/developer/api-reference.html`.
 - **Verbindungen nur in camelCase (Server):** `POST` und `PUT /api/connections` lehnen die
   snake_case-Schreibweisen `server_id`, `key_path`, `trust_cert` und `last_used` mit `422` ab (je
-  Feld ein Eintrag in `detail`, Hinweis auf den camelCase-Namen). Jede dieser Spalten wird damit nur ueber ihren API-Namen geschrieben und
-  durchlaeuft dessen Pruefungen. Alle Clients im Repo senden camelCase; andere Zusatzfelder bleiben
-  erlaubt.
+  Feld ein Eintrag in `detail`, Hinweis auf den camelCase-Namen). Jede dieser Spalten wird damit nur
+  ueber ihren API-Namen geschrieben und durchlaeuft dessen Pruefungen. Alle Clients im Repo senden
+  camelCase; andere Zusatzfelder bleiben erlaubt.
 - **diff-scan erkennt mehr stummgeschaltete Tests (R-0082):** `scripts/dev/review.sh diff-scan`
   wertet jetzt auch geloeschte Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`
   als entfernte Assertion (ausserhalb einer `*_test.go` bleibt `err.Error()` frei), kennt die
