@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Werkzeug-Pins: npm-Lockfiles ohne Audit-Befund, ein ruff überall (R-0038, R-0074) — Task-Ledger
-Status: aktiv · Branch: harness/dev-tool-pins · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/dev-tool-pins · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/dev-tool-pins.md (Roadmap R-0038, R-0074)
 Heavy: none — nur Lockfiles von dev-only-Paketen, requirements-dev, ruff.toml und der Offline-Lockstep; kein Stack-, Gateway-, PKI- oder Install-Pfad. Belegt wird es in der PR-CI (web check/lint/unit und Playwright, desktop-ui, python-lint, tools-Job) und mit einem `audit.yml`-Lauf auf dem Branch (`gh workflow run audit.yml --ref harness/dev-tool-pins`, npm-Job grün).
@@ -102,8 +102,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „Python-Lint/Format (ruff)“ ein Satz; CHANGELOG [Unreleased] Changed (Eintrag aus T3 ergänzen)
 Abhängt von: T3
 
-### T5 — Runner-Venv pinnt dasselbe ruff (fünfte Stelle im Lockstep)  [ ]
+### T5 — Runner-Venv pinnt dasselbe ruff (fünfte Stelle im Lockstep)  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh, scripts/dev/toolchain-lockstep.sh, scripts/tests/toolchain_lockstep_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @ae133498 2026-09-30T12:10:00+02:00
+Review: approve (opus)
 Herkunft: Opus-Review von T3 (2026-09-30); aufgenommen von der Aufsicht (adminhelper-ac), weil
 `tasks/ref-scripts.md:25` den Runner-Pin ausdrücklich R-0074 zugewiesen hat, Spec und T1–T4 ihn aber nicht abdecken.
 Änderung: `scripts/dev/runner-setup.sh:52` `VENV_PKGS="ruff pytest pytest-cov pytest-httpx"` → `ruff==0.15.20`.

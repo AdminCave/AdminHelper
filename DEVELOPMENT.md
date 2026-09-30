@@ -143,7 +143,8 @@ Zeit, als er nur `scripts/vm` abdeckte) — und findet ruff auch dann, wenn es n
 im `PATH` liegt, sondern nur in einem Komponenten-venv. Der CI-Job `python-lint`
 prueft genau diese vier Pfade mit dem gepinnten ruff. `apps/server/requirements-dev.txt`
 pinnt mit `ruff==` dieselbe Version wie `ci.yml` und `scripts/vm/bootstrap_linux.sh`
-(kein Boden), `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit; ein anderes
+(kein Boden), ebenso `VENV_PKGS` in `scripts/dev/runner-setup.sh` fuer das Tool-Venv des
+Runners; `scripts/dev/toolchain-lockstep.sh` prueft die Gleichheit. Ein anderes
 ruff im `AH_VENV` zieht der Schritt `server-pytest` beim naechsten Lauf auf diese
 Version zurueck. `ruff.toml` verlangt sie zusaetzlich per `required-version`: jedes
 andere ruff bricht in diesem Baum mit Exit 2 ab, statt still andere Regeln anzuwenden —

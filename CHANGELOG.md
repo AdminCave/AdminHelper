@@ -266,6 +266,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `required-version = "==0.15.20"` genau diese Version, und der Lockstep prueft auch diese
   Stelle: ein anderes ruff im `PATH` bricht mit Exit 2 ab, statt still andere Regeln
   anzuwenden (der Format-Hook `scripts/dev/format-file.sh` formatiert dann still nicht).
+  Auch das Tool-Venv des Runners (`VENV_PKGS` in `scripts/dev/runner-setup.sh`, das erste
+  ruff in seinem `PATH`) installiert `ruff==0.15.20`, als fuenfte Stelle im Lockstep; auf
+  einem bestehenden Runner wirkt das nach erneutem `sudo bash scripts/dev/runner-setup.sh`.
 
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen

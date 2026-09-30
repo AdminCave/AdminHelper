@@ -45,11 +45,14 @@ export PATH="$FAKE:$PATH"
 # ci.yml carries go-version TWICE, like the real one (agent + agent-windows) —
 # the single-file drift a per-file check would miss. The ruff pins default to
 # agreeing ones, so the go cases below see a tree that is in lockstep there;
-# ruff.toml's required-version follows <ruff-bootstrap>.
+# ruff.toml's required-version and runner-setup.sh's VENV_PKGS follow
+# <ruff-bootstrap>.
 fixture() {
   local d="$1" ci="$2" rel="$3" aud="$4" pin="$5"
   local ruff_ci="${6:-0.15.20}" ruff_boot="${7:-0.15.20}" ruff_dev="${8:-0.15.20}"
-  mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/apps/server"
+  mkdir -p "$d/.github/workflows" "$d/scripts/vm" "$d/scripts/dev" "$d/apps/server"
+  printf '#!/usr/bin/env bash\nRUNNER="adminhelper-runner"\nVENV_PKGS="ruff==%s pytest pytest-cov pytest-httpx"\n' \
+    "$ruff_boot" > "$d/scripts/dev/runner-setup.sh"
   printf 'required-version = "==%s"\nline-length = 100\n\n[lint]\nextend-select = ["I"]\n' "$ruff_boot" > "$d/ruff.toml"
   printf 'name: CI\njobs:\n  python-lint:\n    steps:\n      - name: Install ruff\n        run: pip install ruff==%s\n  agent:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n  agent-windows:\n    steps:\n      - uses: actions/setup-go@v6\n        with:\n          go-version: "%s"\n' \
     "$ruff_ci" "$ci" "$ci" > "$d/.github/workflows/ci.yml"
@@ -155,7 +158,7 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "go-version ^1.25 -> exit 1, named" 1 "ca
 # everything would make every case above green for the wrong reason.
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "a plain 1.25 passes the validator" 0 "ok (go 1.25 <= 1.25)" -- --root "$GOOD"
 
-# ── 5d: the ruff pins (CI, VM bootstrap, requirements-dev, ruff.toml) ───────
+# ── 5d: the ruff pins (CI, bootstrap, dev, ruff.toml, runner) ────────────────
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "agreeing ruff pins are named in the output" 0 "ruff: ci.yml=0.15.20 bootstrap=0.15.20 dev=0.15.20" -- --root "$GOOD"
 RDRIFT="$WORK/ruffdrift"; fixture "$RDRIFT" 1.25 1.25 1.25 v1.7.0 0.15.21 0.15.20 0.15.20
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ci.yml ruff ahead of bootstrap -> exit 1" 1 "ruff pin drift: .github/workflows/ci.yml installs ruff==0.15.21, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RDRIFT"
@@ -205,6 +208,18 @@ FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml with a bare version -> exit 1"
 RNOTOML="$WORK/ruffnotoml"; fixture "$RNOTOML" 1.25 1.25 1.25 v1.7.0
 rm -f "$RNOTOML/ruff.toml"
 FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "ruff.toml missing -> exit 1" 1 "missing ruff.toml" -- --root "$RNOTOML"
+# The runner's tool venv: runner-setup.sh links it into ~/.local/bin, so its
+# ruff is the first on the runner's PATH — unpinned, ruff.toml stops it (exit 2).
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh pinning the same ruff -> exit 0" 0 "runner=0.15.20" -- --root "$GOOD"
+RRUN="$WORK/ruffrunner"; fixture "$RRUN" 1.25 1.25 1.25 v1.7.0
+sed -i 's/ruff==[^ ]*/ruff/' "$RRUN/scripts/dev/runner-setup.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh installs an unpinned ruff -> exit 1" 1 "no pinned 'ruff==X.Y.Z' in VENV_PKGS of scripts/dev/runner-setup.sh (found 'ruff pytest pytest-cov pytest-httpx')" -- --root "$RRUN"
+RRUNDRIFT="$WORK/ruffrunnerdrift"; fixture "$RRUNDRIFT" 1.25 1.25 1.25 v1.7.0
+sed -i 's/ruff==[^ ]*/ruff==0.15.19/' "$RRUNDRIFT/scripts/dev/runner-setup.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh pins another ruff -> exit 1" 1 "ruff pin drift: scripts/dev/runner-setup.sh installs ruff==0.15.19, scripts/vm/bootstrap_linux.sh defaults to 0.15.20" -- --root "$RRUNDRIFT"
+RNORUN="$WORK/ruffnorunner"; fixture "$RNORUN" 1.25 1.25 1.25 v1.7.0
+rm -f "$RNORUN/scripts/dev/runner-setup.sh"
+FAKE_MOD="$MOD_125" FAKE_RC=0 run_case "runner-setup.sh missing -> exit 1" 1 "missing scripts/dev/runner-setup.sh" -- --root "$RNORUN"
 # The one case that reads the real tree instead of a fixture, with a proxy
 # answer every Go satisfies: only the offline assertions decide (go-version,
 # ruff), so a pin raised at one place is red here in run.sh quick, not first in CI.

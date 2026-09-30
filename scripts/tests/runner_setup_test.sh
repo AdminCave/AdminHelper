@@ -77,7 +77,7 @@ for want in 'preflight: what this box has to provide' \
             'AH_TEST_DB="postgresql://ah_runner:' \
             'AH_REQUIRED=' \
             '.local/share/ah-tools/venv' \
-            'pip install --quiet ruff pytest pytest-cov pytest-httpx' \
+            'pip install --quiet ruff==0.15.20 pytest pytest-cov pytest-httpx' \
             '.local/bin' \
             'scripts/dev/runner-settings.json /home/adminhelper-runner/.claude/settings.json' \
             '.config/adminhelper/oauth.env' \
