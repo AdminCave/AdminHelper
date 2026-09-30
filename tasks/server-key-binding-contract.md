@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Key-Bindung, Import-422 und BIGINT-Grenze — Task-Ledger
-Status: geplant · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: freigegeben · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/server-key-binding-contract.md (Roadmap R-0055, R-0056, R-0069)
 Heavy: none — alles in-process: Authz-Matrix über die Key-Routen, Import-Fehlerform gegen das deklarierte Schema, Snapshot und oasdiff; Gateway, Compose, Agent, Web und Desktop bleiben unverändert, kein Client im Repo ruft /import, die Agent-Pfade (provision config/config-hash) sind in der Matrix.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
