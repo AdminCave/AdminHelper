@@ -166,6 +166,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **OpenAPI: exakte BIGINT-Grenze (Server):** Das veroeffentlichte Schema (`/openapi.json`) traegt die
+  Obergrenze der BIGINT-Felder im Request-Body als Ganzzahl `9223372036854775807`. FastAPI tippt
+  `maximum` als Float, dort stand bisher `9.223372036854776e+18`, 193 ueber der echten Grenze. Die
+  Pruefung zur Laufzeit war davon nicht betroffen. `app/core/openapi.py` schreibt die Grenze in das
+  erzeugte Schema zurueck; der Snapshot aendert genau diese Zahl, oasdiff meldet keine Aenderung.
 - **FRP: U+007F in Konfigurationswerten (Server):** Die Felder, die der Server in die erzeugten
   FRP-TOML-Dateien schreibt (FRP-Server-Config, Tunnel, Servername), lehnen neben den anderen
   Steuerzeichen jetzt auch U+007F (DEL) mit 422 ab. TOML verbietet das Zeichen in einem

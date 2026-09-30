@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Key-Bindung, Import-422 und BIGINT-Grenze — Task-Ledger
-Status: aktiv · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: bereit · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/server-key-binding-contract.md (Roadmap R-0055, R-0056, R-0069)
 Heavy: none — alles in-process: Authz-Matrix über die Key-Routen, Import-Fehlerform gegen das deklarierte Schema, Snapshot und oasdiff; Gateway, Compose, Agent, Web und Desktop bleiben unverändert, kein Client im Repo ruft /import, die Agent-Pfade (provision config/config-hash) sind in der Matrix.
@@ -50,8 +50,10 @@ Test-Löschung: apps/server/tests/test_connections_isolation.py::test_import_wit
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: docs/developer/api-reference.html DE+EN (:85): Fehlerform `detail[]` mit `loc` je Eintrag statt `detail.rejected`; CHANGELOG (Changed)
 
-### T3 — Das veröffentlichte Schema trägt die exakte BIGINT-Grenze  [ ]
-Komponente: server · Dateien: apps/server/app/main.py, apps/server/app/core/bounds.py, apps/server/tests/test_bounds.py, apps/server/tests/openapi.snapshot.json, CHANGELOG.md
+### T3 — Das veröffentlichte Schema trägt die exakte BIGINT-Grenze  [x]
+Komponente: server · Dateien: apps/server/app/main.py, apps/server/app/core/bounds.py, apps/server/tests/test_bounds.py, apps/server/tests/openapi.snapshot.json, CHANGELOG.md, apps/server/app/core/openapi.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @788ad660 2026-09-30T18:16:29+02:00
+Review: approve (sonnet)
 Änderung: `app.openapi` überschreiben (nach FastAPI „Extending OpenAPI“, einmal erzeugen und cachen; bei Bedarf in
 einem neuen `app/core/openapi.py`, dann mit SPDX): jedes `maximum`/`minimum`, das als Float gleich
 `float(BIGINT_MAX)` bzw. dem Minimum ist, wird durch den int aus `bounds.py` ersetzt (neue Konstante `BIGINT_MAX`
