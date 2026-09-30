@@ -583,6 +583,17 @@ rm -f /tmp/claude-1000/bash-edit-diff/3b753c96-0000-4000-8000-000000000000/x.dif
 CMDS
 guard inter Bash "$(cmdjson "$(printf 'cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
 [ -z "$OUT" ] && ok "free: the command as a here-doc body" || bad "here-doc: $OUT"
+# R-0126: a here-string (`<<<`) starts no here-doc. Read as one with the
+# delimiter `<`, it hid every line after it — the temp rule and, in an
+# autonomous run, the harness rule alike. Real here-docs stay skipped.
+guard inter Bash "$(cmdjson "$(printf 'tr a b <<< "$x"\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: a delete on the line after a here-string" || bad "here-string, temp rule: $OUT$ERR"
+guard auto Bash "$(cmdjson "$(printf 'tr a b <<< "$x"\nsed -i s/a/b/ CLAUDE.md')")"
+denied "$OUT" && ok "denied (autonomous): a harness edit on the line after a here-string" || bad "here-string, harness rule: $OUT$ERR"
+for hd in '<<-EOF' "<<'EOF'" '<< "EOF"'; do
+  guard inter Bash "$(cmdjson "$(printf 'cat > notes.md %s\nrm -rf /tmp/tmp.*\nEOF' "$hd")")"
+  [ -z "$OUT" ] && ok "free: the command as the body of $hd" || bad "here-doc $hd: $OUT"
+done
 
 # Measured on 34 513 real commands (2026-09-28, the supervising session): the
 # rule "anywhere below /tmp" hit 4 real cases and 13 cleanups in scratchpads.

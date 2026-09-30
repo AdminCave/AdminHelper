@@ -111,8 +111,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „Task schliessen" (:419–421: was diff-scan erkennt, der Ausweg `review: ok`; Doku-Zeilen, die ein Muster zitieren, tragen `<!-- review: ok … -->` wie DEVELOPMENT.md:606); CHANGELOG [Unreleased] Changed
 Abhängt von: T4
 
-### T6 — Wächter: ein Here-String <<< beginnt kein Here-Doc  [ ]
+### T6 — Wächter: ein Here-String <<< beginnt kein Here-Doc  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @f1a5663b 2026-09-30T14:43:06+02:00
+Review: approve (opus)
 Herkunft: Roadmap R-0126, gefunden im Opus-Review von T2 (2026-09-30), aufgenommen auf Kevins Wort (übermittelt durch
 die Aufsicht adminhelper-ac). R-0125 (`[^…]`, `{a,b}`, `cd /t*` mit wörtlichem Operand) bleibt draußen.
 Änderung: `logical_lines` (harness-guard.sh) liest `<<<` als Beginn eines Here-Docs mit dem Delimiter `<` und

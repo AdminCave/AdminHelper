@@ -468,6 +468,12 @@ def logical_lines(cmd):
                     quote = None
             elif ch in "\"'":
                 quote = ch
+            elif ch == "<" and line[i:i + 3] == "<<<":
+                # A here-string: its word is data on THIS line, and no body
+                # follows — read as `<<` it took `<` for a delimiter and hid
+                # every line after it (R-0126).
+                i += 3
+                continue
             elif ch == "<" and line[i:i + 2] == "<<":
                 # `<<EOF`, `<<-'EOF'`, `<< "EOF"` — the body is data, not commands.
                 rest = line[i + 2:].lstrip("-").lstrip()
