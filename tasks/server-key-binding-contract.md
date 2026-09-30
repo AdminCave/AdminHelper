@@ -62,3 +62,16 @@ im ganzen Schema (heute ein Treffer, `MarkReadRequest.ids`), die Grenze ist exak
 erzeugen; oasdiff meldet keine Änderung.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_bounds.py tests/test_openapi_snapshot.py tests/test_id_bounds.py
 Doku: CHANGELOG (Fixed)
+
+### T4 — Nachträge aus /code-review: API-Referenz, ungebundener Schreib-Key, voller Zustandsvergleich  [x]
+Komponente: server · Dateien: apps/server/tests/test_api_key_server_binding.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @9f1611d2 2026-09-30T18:53:46+02:00
+Review: approve (sonnet)
+Herkunft: /code-review über den Branch-Diff (2026-09-30)
+Änderung: (1) API-Referenz DE+EN bei `POST`/`PUT /api/connections` (:80–81): ein an einen Server gebundener API-Key darf nur
+`serverId` gleich seinem Server senden, sonst 403; die snake_case-Schreibweisen gemappter Felder ergeben 422.
+(2) Matrix um einen ungebundenen read_write-Key erweitern: POST mit `serverId` srv-b und ohne → 201, PUT c-b mit
+`serverId` srv-a → 200 (belegt „ungebundene Keys unverändert“; rot, wenn die Bindungsprüfung auch ohne Bindung greift).
+(3) `_state` vergleicht die ganzen Zeilen (`to_dict()`), nicht nur `(id, name, server_id)`.
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py
+Doku: API-Referenz DE+EN (Teil der Task)

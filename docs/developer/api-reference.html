@@ -77,8 +77,8 @@
 
           <h2>Connections</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/connections</code><p>Liste (read).</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections</code><p>Anlegen (write). Feuert <code>connection.created</code>.</p></div>
-          <div class="endpoint"><span class="method-put">PUT</span><code>/api/connections/{id}</code><p>Aktualisieren (write). Feuert <code>connection.updated</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections</code><p>Anlegen (write). Ein an einen Server gebundener API-Key darf nur <code>serverId</code> gleich seinem Server senden, sonst <code>403</code>. Gemappte Felder nur in camelCase (<code>serverId</code>, <code>keyPath</code>, <code>trustCert</code>, <code>lastUsed</code>); die snake_case-Schreibweise ergibt <code>422</code>. Feuert <code>connection.created</code>.</p></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/connections/{id}</code><p>Aktualisieren (write). Regeln f&uuml;r <code>serverId</code> und camelCase wie beim Anlegen; eine Verbindung au&szlig;erhalb der Bindung eines Keys ist <code>404</code>. Feuert <code>connection.updated</code>.</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/{id}/touch</code><p>Setzt <code>last_used = now</code> (read).</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/connections/{id}</code><p>L&ouml;schen (admin). Feuert <code>connection.deleted</code>.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/connections/export</code><p>JSON-Export (admin).</p></div>

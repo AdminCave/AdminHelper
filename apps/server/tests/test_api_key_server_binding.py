@@ -25,6 +25,7 @@ _KEYS = {
     "bound_read": ("read", "srv-a"),
     "bound_rw": ("read_write", "srv-a"),
     "global_read": ("read", None),
+    "global_rw": ("read_write", None),
 }
 
 
@@ -47,9 +48,9 @@ def _seed(db) -> None:
     db.commit()
 
 
-def _state(db) -> list[tuple]:
+def _state(db) -> list[dict]:
     db.expire_all()
-    return sorted((c.id, c.name, c.server_id) for c in db.query(Connection).all())
+    return sorted((c.to_dict() for c in db.query(Connection).all()), key=lambda c: c["id"])
 
 
 def _send(client, method: str, path: str, key: str, via: str, body):
@@ -109,6 +110,10 @@ MATRIX = [
     (_UPDATE, "/api/connections/c-a", "bound_rw", {"server_id": "srv-b"}, 422),
     (_UPDATE, "/api/connections/c-b", "bound_rw", {"name": "x"}, 404),
     (_UPDATE, "/api/connections/c-null", "bound_rw", {"serverId": "srv-a"}, 404),
+    # A key without a binding writes for any server, and for none.
+    (_CREATE, "/api/connections", "global_rw", _new("srv-b"), 201),
+    (_CREATE, "/api/connections", "global_rw", _new(), 201),
+    (_UPDATE, "/api/connections/c-b", "global_rw", {"serverId": "srv-a"}, 200),
     # FRP provisioning of a foreign server, for both permissions.
     (_FRP_CONFIG, "/api/frp/provision/srv-b/config", "bound_read", None, 403),
     (_FRP_CONFIG, "/api/frp/provision/srv-b/config", "bound_rw", None, 403),
