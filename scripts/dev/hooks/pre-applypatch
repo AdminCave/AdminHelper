@@ -8,8 +8,8 @@
 # pre-commit, prepare-commit-msg and pre-merge-commit (R-0110). githooks(5):
 # invoked after the patch is applied to the index, before the commit is made;
 # a non-zero exit stops it — `git am --abort` or `git rebase --abort` goes back.
-# `git am -n`/`--no-verify` skips this hook, and no other runs for git am: the
-# one flag past all four hooks, documented in DEVELOPMENT.md.
+# `git am -n` (long form likewise) skips this hook, and no other runs for git
+# am; the PreToolUse guard refuses it like `git commit -n` (R-0110 T8).
 #
 # Exit ≠ 0 stops the commit: 4 for a finding, anything else when review.sh could
 # not run — fail closed, like pre-commit.

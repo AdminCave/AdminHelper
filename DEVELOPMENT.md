@@ -615,10 +615,11 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
   fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
   geloescht wird nur der eigene Pfad, nie per Glob.
 - **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden
-  `git commit --no-verify` und `-n` (auch in `-qn`), `git -c core.hooksPath=…` (auch ueber <!-- review: ok nennt die verweigerte Umgehung -->
+  `git commit --no-verify` und `-n` (auch in `-qn`), `git am -n` und `--no-verify` (fuer <!-- review: ok nennt die verweigerte Umgehung -->
+  `git am` laeuft nur `pre-applypatch`), `git -c core.hooksPath=…` (auch ueber
   `GIT_CONFIG_*`) und `git config … core.hooksPath`, ausser lesend (`--get`), ebenso das
   Entfernen der ganzen `core`-Sektion. Kevins eigene Shell bleibt frei: der Hook sieht nur,
-  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n`, ein direktes
+  was das Modell ausfuehrt. Nicht erfasst: ein git-Alias auf `commit -n` oder `am -n`, ein direktes
   Schreiben von `.git/config` (Edit, `sed -i`, `>>`), ein `core.hooksPath` ueber
   `include.path`, `git config --edit`, `eval` oder eine Kommando-Substitution und Plumbing
   (`commit-tree`, `update-ref`). `chmod -x` auf einen Hook zaehlt seit R-0110 als Schreiben
@@ -655,10 +656,8 @@ hinterlaesst dagegen keinen `REVERT_HEAD` und seine Aenderung gestaged, dort hil
 `git reset --merge`. Die Hooks sperren
 fail-closed — ein kaputtes `review.sh` blockiert jeden Commit, jeden Merge, cherry-pick,
 rebase und `git am`; der Ausweg in Kevins Shell ist `git config --unset core.hooksPath`.
-Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt keinen Commit), `git am -n` bzw.
-`--no-verify` (ueberspringt `pre-applypatch`, und fuer `git am` laeuft kein anderer Hook; der <!-- review: ok nennt die Umgehung -->
-Waechter kennt diese Umgehung noch nicht), Plumbing (`commit-tree`, `update-ref`) und die Wege
-am Hook vorbei, die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
+Nicht abgedeckt: ein Fast-Forward-Merge (er erzeugt keinen Commit), Plumbing (`commit-tree`,
+`update-ref`) und die Wege am Hook vorbei, die der Waechter nicht sieht (oben). Eine Runner-Regel `Edit(./.git/**)` gibt es bewusst nicht: unter
 `dontAsk` ohne passende Allow-Regel wird so ein Edit schon heute verweigert, und die
 Bash-Schreibwege deckt eine Edit-Regel nicht ab.
 

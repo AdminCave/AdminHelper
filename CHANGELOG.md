@@ -261,7 +261,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   `review.sh sec --staged` — bisher kam eine private Datei aus einem anderen Branch ueber diese
   Wege ungeprueft in den Verlauf. Dass der Sequencer `prepare-commit-msg` ruft, ist nicht
   dokumentiert, aber mit git 2.47.3 gemessen und im Test festgehalten. `harness.sh status`
-  prueft alle vier Hooks und nennt einen fehlenden; `chmod`, `chown` und `chgrp` auf einen
+  prueft alle vier Hooks und nennt einen fehlenden; der Waechter verweigert `git am -n` wie
+  `git commit -n`; `chmod`, `chown` und `chgrp` auf einen
   Harness-Pfad zaehlen fuer den Waechter als Schreiben. Wirksam je Worktree mit dem Branch,
   der die Hooks traegt. Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
 

@@ -33,11 +33,12 @@
 # `cat … | xargs rm` (the file's content, not names).
 #
 # The same holds for the ways past the pre-commit hook (R-0102, Kevin
-# 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git -c
+# 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git am -n`
+# and its long form (pre-applypatch is the one hook git am runs), `git -c
 # core.hooksPath=…` (and its GIT_CONFIG_* twins), and `git config … core.hooksPath`
 # unless it only reads, or dropping the whole `core` section. Kevin's own shell is
 # untouched: the hook sees only what the model runs. Not seen, like the write
-# gaps below: a git alias for `commit -n`, `.git/config` written directly (it is
+# gaps below: a git alias for `commit -n` or `am -n`, `.git/config` written directly (it is
 # no harness path), a hooksPath brought in through `include.path`, `git config
 # --edit`, `eval` or a command substitution, git-commit called by its exec path,
 # and plumbing (`commit-tree`, `update-ref`). `chmod -x` on a hook is a write to
@@ -321,8 +322,9 @@ def commit_skips_hook(rest):
             # git takes any unambiguous prefix of a long option.
             if len(name) >= len("--no-veri") and "--no-verify".startswith(name):  # review: ok the flag this guard refuses
                 return a
-            # ... value options included: `--mess "-n x"` is a message.
-            if "=" not in a and len(name) > 3 and any(o.startswith(name) for o in COMMIT_LONG_VALUE):
+            # ... value options included: `--mess "-n x"` is a message, and git
+            # takes a prefix down to one letter (`--m -- -n` skips the hook).
+            if "=" not in a and len(name) > 2 and any(o.startswith(name) for o in COMMIT_LONG_VALUE):
                 j += 1
         elif a.startswith("-") and len(a) > 1:
             for k, c in enumerate(a[1:]):
@@ -331,6 +333,42 @@ def commit_skips_hook(rest):
                 if c in COMMIT_SHORT_VALUE or c in "Su":
                     # The rest of the cluster is the value; at its end, the next word.
                     if c in COMMIT_SHORT_VALUE and k == len(a) - 2:
+                        j += 1
+                    break
+        j += 1
+    return None
+
+
+# `git am` options whose value may be the NEXT word: skipped, so that
+# `--resolvemsg -- -n` is read as git reads it — `--` is the message, -n a flag.
+AM_LONG_VALUE = {"--resolvemsg", "--directory", "--exclude", "--include", "--whitespace",
+                 "--patch-format", "--quoted-cr", "--empty"}
+
+
+def am_skips_hook(rest):
+    """`git am -n` (and its long form) skips pre-applypatch, the one hook git am
+    runs (R-0110 T8). In a cluster, -C and -p take the rest as their value, or
+    the next word at its end (`-C1`, `-C 1`); -S takes only an attached key id."""
+    j = 0
+    while j < len(rest):
+        a = rest[j]
+        if a == "--":
+            break
+        if a.startswith("--"):
+            name = a.split("=", 1)[0]
+            # git am has no other long option under --no-v, so every prefix from
+            # there on is the flag (commit needs more: --no-verbose).
+            if len(name) >= len("--no-v") and "--no-verify".startswith(name):  # review: ok the flag this guard refuses
+                return a
+            # git takes any unambiguous prefix, down to one letter (`--d`).
+            if "=" not in a and len(name) > 2 and any(o.startswith(name) for o in AM_LONG_VALUE):
+                j += 1
+        elif a.startswith("-") and len(a) > 1:
+            for k, c in enumerate(a[1:]):
+                if c == "n":
+                    return a
+                if c in "CpS":
+                    if c in "Cp" and k == len(a) - 2:
                         j += 1
                     break
         j += 1
@@ -381,6 +419,9 @@ def git_skips_hook(args):
     if sub == "commit":
         hit = commit_skips_hook(rest)
         return "git commit " + hit if hit else None
+    if sub == "am":
+        hit = am_skips_hook(rest)
+        return "git am " + hit if hit else None
     if sub == "config" and config_sets_hooks(rest):
         return "git config " + " ".join(rest)
     return None

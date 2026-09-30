@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz nachziehen (R-0109, R-0110, R-0082) — Task-Ledger
-Status: aktiv · Branch: harness/schutz-nachziehen · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/schutz-nachziehen · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/schutz-nachziehen.md (Roadmap R-0109, R-0110, R-0082)
 Heavy: none — nur der PreToolUse-Wächter, die Git-Hooks, review.sh und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles über verify.sh scripts.
@@ -147,14 +147,20 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „pre-commit-Hook" (vier Hooks, `git am`/`rebase --apply` aus „nicht abgedeckt“ heraus); AUTONOMOUS.md (PreToolUse-Absatz); CHANGELOG [Unreleased] Changed (Eintrag aus T3 ergänzen)
 Abhängt von: T3
 
-### T8 — Wächter: git am -n und --no-verify sind eine Hook-Umgehung  [ ]
+### T8 — Wächter: git am -n und --no-verify sind eine Hook-Umgehung  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, scripts/dev/hooks/pre-applypatch, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @7ebfd31c 2026-09-30T15:39:58+02:00
+Review: request_changes (blocker, wichtig) -> fixed -> request_changes (wichtig: one-letter prefix) -> fixed with tests, commit fix on the supervisor's word; no third round (feature-build: max. 2) (opus)
 Herkunft: Opus-Review von T7 (2026-09-30); aufgenommen von der Aufsicht (adminhelper-ac), weil Kevin das Verweigern
 von `--no-verify` für commit schon entschieden hat (R-0102) und harness-guard.sh zu diesem Ledger gehört.
 Änderung: `git_skips_hook` (harness-guard.sh) verweigert auch `git am -n` und `git am --no-verify` (samt eindeutiger
 Präfixe der langen Option), in jedem Modus wie bei `git commit`. Nach T7 ist `git am -n` der letzte Flag-Weg an allen
 vier Hooks vorbei (`pre-applypatch` ist der einzige Hook, der für `git am` läuft). Die „nicht abgedeckt“-Zeile aus T7
 in DEVELOPMENT.md und im Kopf von `pre-applypatch` dreht T8 wieder um.
+Nachtrag (Opus-Re-Review T8, von der Aufsicht aufgenommen): derselbe Präfix-Fehler steckt in `commit_skips_hook` —
+`git commit --m -- -n` (git nimmt `--m` als `--message`, `--` als Nachricht) ist frei; die Präfix-Schwelle der
+Wert-Optionen sinkt bei commit wie bei am auf ein Zeichen. Test: `git commit --m -- -n` verweigert; `git commit -m "--"`
+und `git commit -m x` frei.
 Test (zuerst, rot): JSON-Fälle `git am -n x.patch` und `git am --no-verify x.patch` → heute frei, danach in jedem Modus
 verweigert; Gegenprobe: `git am x.patch`, `git am -3 x.patch` und `git am --abort` bleiben frei, ein Wort wie
 `git amend` wird nicht getroffen.

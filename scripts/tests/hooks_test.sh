@@ -778,6 +778,7 @@ GIT_CONFIG_KEY_0=core.hooksPath; export GIT_CONFIG_KEY_0 GIT_CONFIG_COUNT=1; git
 set -a; GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=core.hooksPath; git commit -m x
 bash -c 'git commit -n -m x'
 timeout 1m git commit -n -m x
+git commit --m -- -n
 sudo -n git commit -n -m x
 CMDS
 guard auto Bash "$(cmdjson "git commit $NV -m x")"
@@ -786,6 +787,47 @@ bash "$HARNESS" off >/dev/null
 guard auto Bash "$(cmdjson "git commit $NV -m x")"
 denied "$OUT" && ok "... and the kill switch does not lift it" || bad "bypass, marker: $OUT$ERR"
 bash "$HARNESS" on >/dev/null
+
+# T8: git am runs only pre-applypatch, and -n/--no-verify skips it — the one
+# flag past all four hooks. Refused like `git commit -n`, in every mode.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  cmd="${cmd//@NV@/$NV}"
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+git am -n x.patch
+git am @NV@ x.patch
+git am --no-veri x.patch
+git am --no-v x.patch
+git am -3n x.patch
+git am --resolvemsg -- -n x.patch
+git am --d -- -n x.patch
+git am -C -- -n x.patch
+git -C /somewhere am -n x.patch
+CMDS
+guard auto Bash "$(cmdjson 'git am -n x.patch')"
+denied "$OUT" && ok "... git am -n in an autonomous run" || bad "am bypass, autonomous: $OUT$ERR"
+bash "$HARNESS" off >/dev/null
+guard auto Bash "$(cmdjson 'git am -n x.patch')"
+denied "$OUT" && ok "... and the kill switch does not lift it" || bad "am bypass, marker: $OUT$ERR"
+bash "$HARNESS" on >/dev/null
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+git am x.patch
+git am -3 x.patch
+git am -s -3 x.patch
+git am --abort
+git am --continue
+git am -- -n.patch
+git am -C1n x.patch
+git am -p2n x.patch
+git am -Sn x.patch
+git amend -n
+CMDS
 
 # The same words as text, and every read, stay free.
 while IFS= read -r cmd; do
@@ -800,6 +842,8 @@ git commit -am "fix -n"
 git commit -mnope
 git commit --no-verbose -m x
 git commit --mess "-n x" -m y
+git commit -m "--"
+git commit -m x
 git commit -c HEAD
 git commit -- -n
 git config --get core.hooksPath
