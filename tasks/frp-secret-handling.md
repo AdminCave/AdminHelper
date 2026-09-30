@@ -92,3 +92,15 @@ ersetzt durch einen Test, der denselben Wert (`auth_token` mit DEL) als `Validat
 Test-Löschung: apps/server/tests/test_frp_toml_roundtrip.py::test_del_character_breaks_the_generated_toml — der strikte xfail war die Erinnerung an diesen Fix; der Ersatz erwartet die Ablehnung im Schema
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_toml_roundtrip.py tests/test_frp_input_hardening.py tests/test_servers_schemas.py
 Doku: CHANGELOG (Fixed)
+
+### T7 — Desktop-Editor: „unverändert“ nur, wenn der Tunnel schon stcp war  [x]
+Komponente: desktop-ui · Dateien: apps/desktop/ui/src/components/infra/TunnelModal.svelte, apps/desktop/ui/src/components/infra/TunnelModal.test.ts
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @5f0d6b4c 2026-09-30T13:39:53+02:00
+Review: approve (sonnet)
+Herkunft: /code-review über den Branch-Diff (2026-09-30); Auftrag der Aufsicht (adminhelper-ac) auf Kevins Entscheidung 2026-09-30
+Änderung: `TunnelModal.svelte` zeigt `infra.tun.secretHintEdit` nur, wenn der bearbeitete Tunnel schon stcp war
+(`editing?.tunnelType === 'stcp'`); beim Anlegen und beim Wechsel eines https-Tunnels auf stcp gilt `infra.tun.secretHint`
+(der Server erzeugt dann ein Secret, T1). Test in `TunnelModal.test.ts`: ein https-Tunnel im Editor, Typ auf stcp gestellt,
+zeigt „automatisch generiert“. Vor dem Fix rot.
+Verify: bash scripts/dev/verify.sh desktop-ui --strict
+Doku: keine (die Admin-Doku aus T5 beschreibt Anlegen und Bearbeiten eines STCP-Tunnels, das bleibt richtig)

@@ -176,4 +176,20 @@ describe('TunnelModal secret hint', () => {
     expect(secretInput(container).value).toBe('');
     expect(secretInput(container).placeholder).toContain('unverändert');
   });
+
+  it('says the secret is generated when an https tunnel is switched to stcp', async () => {
+    // There is no stored secret to keep: the server generates one on save.
+    const https: FrpTunnel = {
+      ...stored,
+      tunnelType: 'https',
+      protocol: 'web',
+      customDomains: 'tunnel.example.net',
+      visitorPort: null,
+    };
+    const { container } = openModal({ editing: https });
+    await tick();
+    await fireEvent.change(typeSelect(container), { target: { value: 'stcp' } });
+    await tick();
+    expect(secretInput(container).placeholder).toContain('automatisch generiert');
+  });
 });
