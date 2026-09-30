@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Logout: Audit nur, wenn eine Sitzung endet (R-0105) — Task-Ledger
-Status: geplant · Branch: feature/logout-audit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: freigegeben · Branch: feature/logout-audit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0105
 Heavy: none — nur die Bedingung um den Audit-Aufruf; Antwort, Status, Cookie-Verhalten, Security-Schema (R-0054) und Gateway bleiben gleich, pytest deckt jeden Zweig ab.
 DoD je Task: CLAUDE.md (Tests grün, ruff check + ruff format sauber, Doku im selben Commit, SPDX bei neuen Dateien).
