@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Key-Bindung, Import-422 und BIGINT-Grenze — Task-Ledger
-Status: freigegeben · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: aktiv · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/server-key-binding-contract.md (Roadmap R-0055, R-0056, R-0069)
 Heavy: none — alles in-process: Authz-Matrix über die Key-Routen, Import-Fehlerform gegen das deklarierte Schema, Snapshot und oasdiff; Gateway, Compose, Agent, Web und Desktop bleiben unverändert, kein Client im Repo ruft /import, die Agent-Pfade (provision config/config-hash) sind in der Matrix.
@@ -13,8 +13,10 @@ Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht
 
 Geplant 2026-09-30 von der Aufsicht (adminhelper-ac); Entscheidungen Kevin 2026-09-30. Zeilenangaben main@8224e84c.
 
-### T1 — Key-Bindung: Matrix über alle Key-Routen, Schreibpfade prüfen serverId  [ ]
-Komponente: server · Dateien: apps/server/tests/test_api_key_server_binding.py, apps/server/app/modules/connections/router.py, CHANGELOG.md
+### T1 — Key-Bindung: Matrix über alle Key-Routen, Schreibpfade prüfen serverId  [x]
+Komponente: server · Dateien: apps/server/tests/test_api_key_server_binding.py, apps/server/app/modules/connections/router.py, CHANGELOG.md, apps/server/app/modules/connections/schemas.py, apps/server/tests/test_connection_schemas.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @1fb94435 2026-09-30T17:27:15+02:00
+Review: approve (opus, 2 Runden: snake_case-Feld nach Kevins Entscheidung in T1, Import-422 nach T2)
 Änderung: Neue Testdatei (SPDX-Header), parametrisiert über (Route, Key, erwartet). Fixture: Server srv-a, srv-b;
 Verbindungen c-a, c-b, c-null; Keys: an srv-a gebunden read, an srv-a gebunden read_write, global read; Übergabe als
 Header und als `?api_key=`. Lesen: GET-Liste = {c-a}; touch c-b und c-null → 404, c-a → 200. Schreiben: PUT c-b → 404;
@@ -28,7 +30,7 @@ seiner Bindung (auch `None`) → `HTTPException(403, "Kein Zugriff auf diesen Se
 `_reject_unknown_server` (`:105`, `:141`). Vor dem Fix rot: die vier Schreibzeilen mit fremder oder leerer `serverId`.
 Mutationsprobe: den Zweig `:50–51` entfernen macht die Lese- und PUT-404-Zeilen rot; `_require_server_scope` entfernen
 die FRP-Zeilen.
-Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py tests/test_connections_isolation.py tests/test_connections_authz.py tests/test_frp_provision_authz.py tests/test_route_auth_gate.py
+Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py tests/test_connection_schemas.py tests/test_connections_isolation.py tests/test_connections_authz.py tests/test_frp_provision_authz.py tests/test_route_auth_gate.py
 Doku: CHANGELOG (Security, neutral: „Server-gebundene API-Keys dürfen Verbindungen nur für ihren eigenen Server anlegen oder dorthin verschieben“); docs/ beschreibt die Key-Bindung nicht
 
 ### T2 — Import antwortet bei abgelehnten Einträgen in der deklarierten 422-Form  [ ]
@@ -39,6 +41,9 @@ Komponente: server · Dateien: apps/server/app/modules/connections/router.py, ap
 `schemathesis_exclude.toml` (um `:150–155`) fällt. Neuer Test: Einträge 1 und 3 ungültig → 422, Body validiert gegen
 `HTTPValidationError`, `loc[2]` in Eintragsreihenfolge [1, 3], nichts geschrieben. Die zwei Tests der alten Form werden
 ersetzt (unten). Zusatzbeleg: `bash scripts/dev/openapi-breaking.sh server` → Exit 0.
+Nachtrag aus dem T1-Review (2026-09-30): Ein Import-Eintrag mit snake_case-Feld (etwa `server_id`) → 422 mit
+`loc == ["body", "connections", <index>, "server_id"]`, nichts geschrieben (T1 lehnt es im Schema ab; erst die
+422-Form aus T2 liefert es als 422 aus). Der Satz dazu gehört in den CHANGELOG-Eintrag von T2.
 Test-Löschung: apps/server/tests/test_connections_isolation.py::test_import_with_unknown_server_is_rejected_per_entry — prüft die alte Form detail.rejected; der Ersatz prüft dieselbe Ablehnung in der FastAPI-Form; apps/server/tests/test_connections_import.py::test_import_rejects_mixed_errors_in_index_order — dito, Ersatz mit loc-Index statt rejected[].index
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: docs/developer/api-reference.html DE+EN (:85): Fehlerform `detail[]` mit `loc` je Eintrag statt `detail.rejected`; CHANGELOG (Changed)

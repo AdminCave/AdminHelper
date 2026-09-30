@@ -113,3 +113,26 @@ class TestConnectionUpdate:
         # Gate PUT like POST — otherwise vnc/custom drift back in via update.
         with pytest.raises(ValidationError):
             ConnectionUpdate(kind="vnc")
+
+
+class TestSnakeCaseSpellings:
+    """The model maps keyPath/trustCert/lastUsed/serverId to snake_case columns. The
+    snake_case spelling of these fields is refused, each with its own location, so a
+    column is written only through its API name and the checks on that name."""
+
+    @pytest.mark.parametrize("model", [ConnectionCreate, ConnectionUpdate])
+    @pytest.mark.parametrize("key", ["server_id", "key_path", "trust_cert", "last_used"])
+    def test_snake_case_spelling_rejected(self, model, key):
+        with pytest.raises(ValidationError) as exc:
+            model(name="Test", kind="ssh", **{key: "x"})
+        assert [e["loc"] for e in exc.value.errors()] == [(key,)]
+
+    def test_every_snake_case_key_is_reported(self):
+        with pytest.raises(ValidationError) as exc:
+            ConnectionUpdate(server_id="a", key_path="b")
+        assert sorted(e["loc"] for e in exc.value.errors()) == [("key_path",), ("server_id",)]
+
+    def test_camel_case_and_other_extras_still_accepted(self):
+        c = ConnectionCreate(name="Test", kind="ssh", serverId="srv", customField="value")
+        assert c.serverId == "srv"
+        assert c.model_dump()["customField"] == "value"

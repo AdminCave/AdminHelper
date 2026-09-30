@@ -52,6 +52,17 @@ def _scope_connections(query, auth):
     return query
 
 
+def _require_key_server(auth, server_id: str | None) -> None:
+    """A server-bound API key writes only connections of its own server: any other
+    serverId, and none at all, is refused. Checked before the server's existence,
+    so the answer is the same for a server that exists and one that does not."""
+    _user, api_key = auth
+    if api_key is not None and api_key.server_id and server_id != api_key.server_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Kein Zugriff auf diesen Server"
+        )
+
+
 def _reject_unknown_server(db: Session, server_id: str | None) -> None:
     """A serverId no row matches used to reach the INSERT and come back as an
     uncaught ForeignKeyViolation — HTTP 500 before any response existed.
@@ -102,6 +113,7 @@ def create_connection(
     db: Session = Depends(get_db),
     _auth=Depends(write_dep),
 ):
+    _require_key_server(_auth, connection.serverId)
     _reject_unknown_server(db, connection.serverId)
     data = connection.model_dump()
     data["id"] = str(uuid.uuid4())
@@ -138,6 +150,8 @@ def update_connection(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Verbindung nicht gefunden"
         )
+    if "serverId" in connection.model_fields_set:
+        _require_key_server(_auth, connection.serverId)
     _reject_unknown_server(db, connection.serverId)
     conn.update_from_dict(connection.model_dump(exclude_unset=True))
     db.commit()

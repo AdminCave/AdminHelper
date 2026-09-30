@@ -116,6 +116,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **Server-gebundene API-Keys schreiben nur fuer ihren Server (Server):** `POST /api/connections` und
+  `PUT /api/connections/{id}` nehmen von einem an einen Server gebundenen API-Key nur eine `serverId`
+  gleich diesem Server an; eine andere oder eine leere `serverId` ergibt `403` „Kein Zugriff auf diesen
+  Server". Ein solcher Key darf Verbindungen also nur fuer seinen eigenen Server anlegen oder dorthin
+  verschieben. Ungebundene Keys und Benutzer sind nicht betroffen. Eine Test-Matrix
+  (`tests/test_api_key_server_binding.py`) haelt fest, was jede Key-Art auf jeder Route darf, die einen
+  API-Key annimmt.
+
 - **npm-Abhaengigkeiten (dev) ohne Audit-Befund (R-0038):** `vitest` und die `@vitest/*`-Pakete
   stehen in `apps/web` und `apps/desktop/ui` auf 4.1.11 (GHSA-82fw-gwwq-j7x9; Ranges `^4.1.11`).
   Die Lockfiles dort und in `apps/desktop/e2e` heben `brace-expansion` (GHSA-qhr7-859c-m2p7,
@@ -266,6 +274,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Verbindungen nur in camelCase (Server):** `POST` und `PUT /api/connections` lehnen die
+  snake_case-Schreibweisen `server_id`, `key_path`, `trust_cert` und `last_used` mit `422` ab (je
+  Feld ein Eintrag in `detail`, Hinweis auf den camelCase-Namen). Jede dieser Spalten wird damit nur ueber ihren API-Namen geschrieben und
+  durchlaeuft dessen Pruefungen. Alle Clients im Repo senden camelCase; andere Zusatzfelder bleiben
+  erlaubt.
 - **FRP: leere STCP-Secrets werden gefuellt (Server):** Eine Datenmigration gibt jedem
   stcp-Tunnel, dessen Secret leer ist, ein eigenes zufaelliges Secret; der Generator laesst
   einen stcp-Tunnel ohne Secret aus der frpc- und Visitor-Konfiguration weg. Der Agent holt die
