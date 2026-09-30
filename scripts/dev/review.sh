@@ -172,6 +172,16 @@ case "$VERB" in
                         if (line !~ /review: ok/ &&
                             (line ~ /(^|[^A-Za-z_.])assert([^A-Za-z_]|$)/ || line ~ /expect\(/))
                           printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
+                        # R-0082: the Rust macros assert_{eq,ne,matches,…}! (the
+                        # underscore kept them out above), and in a Go test file the
+                        # calls on its testing.T t — outside one, a t is just a name.
+                        # A branch of its own, not a wider regex above: diff-scan reads
+                        # its own removed regex line as a removed assertion.
+                        else if (line !~ /review: ok/ &&
+                                 (line ~ /(^|[^A-Za-z_.])assert_[a-z]+!?([^A-Za-z_]|$)/ ||
+                                  (file ~ /_test\.go$/ &&
+                                   line ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)))
+                          printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {

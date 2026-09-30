@@ -533,6 +533,116 @@ stage apps/desktop/src-tauri/tests/x.rs
 r diff-scan --staged --task tasks/del.md T4
 [ $rc -eq 3 ] && grep -q "assert!(2 == 2).*adds its head again" <<<"$OUT" \
   && ok "Rust: a declared test that comes back as #[tokio::test] stays" || bad "rust head added again: rc=$rc out=$OUT"
+# R-0082: the Rust macros assert_{eq,ne,matches,…}! and, in a *_test.go, the
+# calls on its testing.T t are assertions too; the same call outside a test file,
+# on another receiver or on debug_ macros is not. A whole declared test still
+# goes with them.
+base apps/desktop/src-tauri/tests/x.rs '#[test]
+fn alive() {
+    let (a, b) = (1, 1);
+    assert_eq!(a, b);
+    assert_ne!(a, 2);
+}
+'
+printf '#[test]\nfn alive() {\n    let (a, b) = (1, 1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'removed assertion: assert_eq!(a, b);' <<<"$OUT" && grep -q 'assert_ne!(a, 2);' <<<"$OUT" \
+  && ok "Rust: a deleted assert_{eq,ne}! is a finding" || bad "rust assert_eq: rc=$rc out=$OUT"
+GO_T='package x
+
+import "testing"
+
+func TestAlive(t *testing.T) {
+	if got := f(); got != 1 {
+		t.Fatalf("got %d", got)
+	}
+	t.Errorf("x")
+}
+'
+base apps/agent/y_test.go "$GO_T"
+printf 'package x\n\nimport "testing"\n\nfunc TestAlive(t *testing.T) {\n\tif got := f(); got != 1 {\n\t}\n}\n' > "$FIX/apps/agent/y_test.go"
+stage apps/agent/y_test.go
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'removed assertion: t.Fatalf("got %d", got)' <<<"$OUT" && grep -q 't.Errorf("x")' <<<"$OUT" \
+  && ok "Go: a deleted t.Fatalf/t.Errorf in a _test.go is a finding" || bad "go t.Fatalf: rc=$rc out=$OUT"
+base apps/agent/y.go 'package x
+
+func msg(err error) string {
+	return err.Error()
+}
+'
+printf 'package x\n\nfunc msg(err error) string {\n\treturn ""\n}\n' > "$FIX/apps/agent/y.go"
+stage apps/agent/y.go
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Go: err.Error() deleted outside a test file is no finding" || bad "go err.Error: rc=$rc out=$OUT"
+base apps/agent/y.go 'package x
+
+func fail(t *thing) {
+	t.Fatalf("x")
+}
+'
+printf 'package x\n\nfunc fail(t *thing) {\n}\n' > "$FIX/apps/agent/y.go"
+stage apps/agent/y.go
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Go: t.Fatalf deleted outside a test file is no finding" || bad "go t outside a test: rc=$rc out=$OUT"
+base apps/agent/z_test.go 'package x
+
+import "testing"
+
+func TestZ(t *testing.T) {
+	for _, tt := range cases {
+		tt.Fatalf("x")
+		_ = result.Error()
+	}
+}
+'
+printf 'package x\n\nimport "testing"\n\nfunc TestZ(t *testing.T) {\n\tfor _, tt := range cases {\n\t}\n}\n' > "$FIX/apps/agent/z_test.go"
+stage apps/agent/z_test.go
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Go: tt.Fatalf and result.Error() in a _test.go are no finding" || bad "go receiver: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/z.rs '#[test]
+fn z() {
+    debug_assert_eq!(1, 1);
+}
+'
+printf '#[test]\nfn z() {\n}\n' > "$FIX/apps/desktop/src-tauri/tests/z.rs"
+stage apps/desktop/src-tauri/tests/z.rs
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Rust: the debug_ macros stay outside, as they always did" || bad "rust debug_: rc=$rc out=$OUT"
+GO_DEAD='package x
+
+import "testing"
+
+func TestAlive(t *testing.T) {
+	t.Log("stays")
+}
+
+func TestDead(t *testing.T) {
+	t.Fatalf("dead")
+}
+'
+base apps/agent/x_test.go "$GO_DEAD"
+printf 'package x\n\nimport "testing"\n\nfunc TestAlive(t *testing.T) {\n\tt.Log("stays")\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/agent/x_test.go::TestDead" <<<"$OUT" \
+  && ok "Go: a whole declared test with its t.Fatalf goes" || bad "go declared: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs '#[test]
+fn alive() {
+    assert!(true);
+}
+
+#[test]
+fn dead() {
+    assert_eq!(2, 2);
+}
+'
+printf '#[test]\nfn alive() {\n    assert!(true);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/desktop/src-tauri/tests/x.rs::dead" <<<"$OUT" \
+  && ok "Rust: a whole declared test with its assert_{eq}! goes" || bad "rust declared: rc=$rc out=$OUT"
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
   || bad "unknown task: rc=$rc out=$OUT"

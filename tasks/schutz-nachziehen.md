@@ -76,8 +76,10 @@ Dedup-Key: bug:scripts:pre-commit:merge-and-bypass-gaps · HEAD: 8224e84c
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „pre-commit-Hook" (:614–632: drei Hooks, was sie abdecken, die verbleibenden Grenzen aus der Spec, kein Runner-Deny für `.git/**` und warum); AUTONOMOUS.md (:271–273); CHANGELOG [Unreleased] Changed
 
-### T4 — diff-scan: gelöschte Rust-`assert_*!` und Go-`t.Fatal*`/`t.Error*` sind Funde  [ ]
+### T4 — diff-scan: gelöschte Rust-`assert_*!` und Go-`t.Fatal*`/`t.Error*` sind Funde  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @6e9251a0 2026-09-30T14:03:41+02:00
+Review: request_changes -> fixed -> approve (opus, 2 rounds)
 Änderung: Die RA-Regex (review.sh:173) trifft `assert`, `assert_eq!`, `assert_ne!`, `assert_matches!` usw.
 (`assert(_[a-z]+)?!?` mit derselben Wortgrenze). In `*_test.go` zählt eine gelöschte Zeile mit
 `t.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)(` als RA-Satz; außerhalb von `*_test.go` bleibt `err.Error()` frei.
