@@ -28,8 +28,10 @@ PUT ohne `secret_key` lässt es gleich. Die ersten drei sind vor dem Fix rot.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_tunnels.py tests/test_frp_input_hardening.py
 Doku: keine (T4 und T5 tragen die sichtbare Änderung)
 
-### T2 — Generator: ein stcp-Tunnel ohne Secret wird übersprungen, nicht mit leerem Secret geschrieben  [ ]
+### T2 — Generator: ein stcp-Tunnel ohne Secret wird übersprungen, nicht mit leerem Secret geschrieben  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/config_generator.py, apps/server/tests/test_config_generator.py
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @a2aaafb1 2026-09-30T12:05:10+02:00
+Review: approve (sonnet)
 Änderung: `generate_frpc_toml` (Filter `:160`) und `generate_visitor_toml` (Filter `:219`) lassen einen stcp-Tunnel
 ohne Secret (`None` oder `""`) weg und schreiben je Tunnel ein `logger.warning` mit Tunnel-Name; kein `raise`. Für
 alle anderen Tunnel bleibt die Ausgabe byte-gleich. Tests: ein stcp-Tunnel mit `secret_key=None` und einer mit `""`
