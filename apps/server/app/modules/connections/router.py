@@ -70,7 +70,7 @@ def _reject_unknown_server(db: Session, server_id: str | None) -> None:
     Checked here rather than in the schema because a Pydantic validator has no
     session. RequestValidationError (not HTTPException) so the body stays the
     HTTPValidationError shape the OpenAPI schema declares for 422; the import
-    route has its own per-entry shape and reports it there instead.
+    route reports the same shape per entry, under ("body", "connections", index).
 
     A server deleted between this check and the commit still violates the
     constraint. That race is the old behaviour, not a new one, and closing it
@@ -246,18 +246,12 @@ def import_connections(
     # all-or-nothing — otherwise a "replace" import with bad input would wipe
     # every existing connection and import nothing (data loss).
     validated: list[tuple[int, dict]] = []
-    errors: list[dict] = []
+    errors: list[tuple[int, dict]] = []
     for idx, conn_data in enumerate(req.connections):
         try:
             payload = ConnectionCreate(**conn_data).model_dump()
         except ValidationError as exc:
-            errors.append(
-                {
-                    "index": idx,
-                    "name": conn_data.get("name") if isinstance(conn_data, dict) else None,
-                    "errors": exc.errors(include_url=False),
-                }
-            )
+            errors.extend((idx, err) for err in exc.errors(include_url=False))
             continue
         validated.append((idx, payload))
 
@@ -271,25 +265,23 @@ def import_connections(
     for idx, payload in validated:
         if payload.get("serverId") is not None and payload["serverId"] not in known:
             errors.append(
-                {
-                    "index": idx,
-                    "name": payload.get("name"),
-                    "errors": [
-                        {
-                            "type": "value_error",
-                            "loc": ["serverId"],
-                            "msg": "server not found",
-                            "input": payload["serverId"],
-                        }
-                    ],
-                }
+                (
+                    idx,
+                    {
+                        "type": "value_error",
+                        "loc": ("serverId",),
+                        "msg": "server not found",
+                        "input": payload["serverId"],
+                    },
+                )
             )
 
     if errors:
-        errors.sort(key=lambda e: e["index"])
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={"message": "Import enthält ungültige Einträge", "rejected": errors},
+        # The 422 the schema declares (HTTPValidationError), one item per error, each
+        # located at its entry; sorted so the entries read in import order.
+        errors.sort(key=lambda e: e[0])
+        raise RequestValidationError(
+            [{**err, "loc": ("body", "connections", idx, *err["loc"])} for idx, err in errors]
         )
 
     if req.mode == "replace":

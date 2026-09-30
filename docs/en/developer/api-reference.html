@@ -82,7 +82,7 @@
           <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/{id}/touch</code><p>Sets <code>last_used = now</code> (read).</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/connections/{id}</code><p>Delete (admin). Fires <code>connection.deleted</code>.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/connections/export</code><p>JSON export (admin).</p></div>
-          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/import</code><p>Body: <code>{ "mode": "replace"|"merge", "connections": [&hellip;] }</code> (admin). All or nothing: an invalid entry or an unknown <code>serverId</code> rejects the whole import with <code>422</code> (<code>detail.rejected</code>, sorted by <code>index</code>). Fires <code>connections.imported</code>.</p></div>
+          <div class="endpoint"><span class="method-post">POST</span><code>/api/connections/import</code><p>Body: <code>{ "mode": "replace"|"merge", "connections": [&hellip;] }</code> (admin). All or nothing: an invalid entry or an unknown <code>serverId</code> rejects the whole import with <code>422</code>, in the form the schema declares: <code>detail[]</code> with one item per error, <code>loc</code> = <code>["body", "connections", &lt;index&gt;, &lt;field&gt;]</code>, in import order. Fires <code>connections.imported</code>.</p></div>
 
           <h2>Servers</h2>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/servers</code><p>Server inventory (admin).</p></div>

@@ -274,6 +274,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Import-422 in der deklarierten Form (Server):** `POST /api/connections/import` meldet abgelehnte
+  Eintraege jetzt wie jede andere 422 der API: `detail` ist eine Liste mit einem Eintrag je Fehler,
+  `loc` = `["body", "connections", <index>, <feld>]`, in Import-Reihenfolge. Bisher stand dort
+  `detail.message` und `detail.rejected[]` mit `index`, `name` und `errors`; Skripte, die das lesen,
+  muessen auf `detail[]` umstellen. Alles oder nichts bleibt. Auch ein Eintrag mit snake_case-Feld
+  (etwa `server_id`) wird so gemeldet. Der Schemathesis-Ausschluss fuer die Route faellt. Doku:
+  `docs/developer/api-reference.html`.
 - **Verbindungen nur in camelCase (Server):** `POST` und `PUT /api/connections` lehnen die
   snake_case-Schreibweisen `server_id`, `key_path`, `trust_cert` und `last_used` mit `422` ab (je
   Feld ein Eintrag in `detail`, Hinweis auf den camelCase-Namen). Jede dieser Spalten wird damit nur ueber ihren API-Namen geschrieben und

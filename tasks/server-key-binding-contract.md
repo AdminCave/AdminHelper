@@ -33,8 +33,10 @@ die FRP-Zeilen.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py tests/test_connection_schemas.py tests/test_connections_isolation.py tests/test_connections_authz.py tests/test_frp_provision_authz.py tests/test_route_auth_gate.py
 Doku: CHANGELOG (Security, neutral: „Server-gebundene API-Keys dürfen Verbindungen nur für ihren eigenen Server anlegen oder dorthin verschieben“); docs/ beschreibt die Key-Bindung nicht
 
-### T2 — Import antwortet bei abgelehnten Einträgen in der deklarierten 422-Form  [ ]
+### T2 — Import antwortet bei abgelehnten Einträgen in der deklarierten 422-Form  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/router.py, apps/server/tests/test_connections_import.py, apps/server/tests/test_connections_isolation.py, apps/server/tests/schemathesis_exclude.toml, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @4292406d 2026-09-30T17:55:29+02:00
+Review: approve (sonnet)
 Änderung: `import_connections` (`:223`) wirft für abgelehnte Einträge `RequestValidationError` mit
 `loc = ("body", "connections", <index>, *err.loc)`, dasselbe Muster wie `_reject_unknown_server` (`:55–81`), statt
 `{"message", "rejected"}`; alles-oder-nichts bleibt. Der Ausschluss `response_schema_conformance` für den Import in
