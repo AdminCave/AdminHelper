@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# prepare-commit-msg — git hook: `review.sh sec --staged` for the commits that
+# never run pre-commit (R-0110): cherry-pick, revert, each commit a rebase
+# replays (the default merge backend), and a merge commit. `git am` and
+# `git rebase --apply` never call it; pre-applypatch covers them.
+#
+# That the sequencer (cherry-pick, revert, rebase) calls this hook is NOT in
+# githooks(5); it was measured on git 2.47.3, and
+# scripts/tests/review_scripts_test.sh holds it — a git that stops calling it
+# there turns those cases red. `git commit --no-verify` skips pre-commit and
+# commit-msg but not this hook, so a plain commit runs the check twice (~20 ms
+# each). git hands over the message file, its source and a SHA ($1-$3); the
+# check needs none of them.
+#
+# Exit ≠ 0 aborts the commit: 4 for a finding, anything else when review.sh
+# could not run — fail closed, like pre-commit.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
+exec bash "$ROOT/scripts/dev/review.sh" sec --staged

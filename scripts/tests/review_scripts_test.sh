@@ -112,6 +112,33 @@ for pat in "${PATTERNS[@]}"; do
     && ok "caught: $pat" || bad "missed: $pat (rc=$rc out=$OUT)"
 done
 
+# R-0082: the rest of that class — each added line must be caught, and caught
+# by the pattern that belongs to it.
+NEW_PATTERNS=(
+  'describe.skip(|describe.skip("x", () => {})'          # review: ok fixture pattern
+  '.skipIf(|it.skipIf(onCi)("x", () => {})'              # review: ok fixture pattern
+  '.todo(|it.todo("later")'                              # review: ok fixture pattern
+  'xdescribe(|xdescribe("x", () => {})'                  # review: ok fixture pattern
+  'xtest(|xtest("x", () => {})'                          # review: ok fixture pattern
+  'test.fixme(|test.fixme("x", async () => {})'          # review: ok fixture pattern
+  'it.only(|it.only("x", () => {})'                      # review: ok fixture pattern
+  'test.only(|test.only("x", () => {})'                  # review: ok fixture pattern
+  'describe.only(|describe.only("x", () => {})'          # review: ok fixture pattern
+  't.SkipNow(|	t.SkipNow()'                             # review: ok fixture pattern
+  '@pytest.mark.xfail|@pytest.mark.xfail(reason="x")'    # review: ok fixture pattern
+  'pytest.xfail(|    pytest.xfail("x")'                  # review: ok fixture pattern
+  '#[ignore|#[ignore = "flaky"]'                         # review: ok fixture pattern
+)
+for entry in "${NEW_PATTERNS[@]}"; do
+  want="${entry%%|*}" line="${entry#*|}"
+  reset_index
+  printf '%s\n' "$line" >> "$FIX/scripts/dev/tool.sh"
+  stage scripts/dev/tool.sh
+  r diff-scan --staged
+  [ $rc -eq 3 ] && grep -qF -- "  $want: " <<<"$OUT" \
+    && ok "caught by $want: $line" || bad "missed or misnamed: $line (want $want; rc=$rc out=$OUT)"
+done
+
 reset_index
 printf 'assert x == 1\n' >> "$FIX/apps/server/tests/test_x.py"
 stage apps/server/tests/test_x.py
@@ -533,6 +560,241 @@ stage apps/desktop/src-tauri/tests/x.rs
 r diff-scan --staged --task tasks/del.md T4
 [ $rc -eq 3 ] && grep -q "assert!(2 == 2).*adds its head again" <<<"$OUT" \
   && ok "Rust: a declared test that comes back as #[tokio::test] stays" || bad "rust head added again: rc=$rc out=$OUT"
+# R-0082: the Rust macros assert_{eq,ne,matches,…}! and, in a *_test.go, the
+# calls on its testing.T t are assertions too; the same call outside a test file,
+# on another receiver or on debug_ macros is not. A whole declared test still
+# goes with them.
+base apps/desktop/src-tauri/tests/x.rs '#[test]
+fn alive() {
+    let (a, b) = (1, 1);
+    assert_eq!(a, b);
+    assert_ne!(a, 2);
+}
+'
+printf '#[test]\nfn alive() {\n    let (a, b) = (1, 1);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'removed assertion: assert_eq!(a, b);' <<<"$OUT" && grep -q 'assert_ne!(a, 2);' <<<"$OUT" \
+  && ok "Rust: a deleted assert_{eq,ne}! is a finding" || bad "rust assert_eq: rc=$rc out=$OUT"
+GO_T='package x
+
+import "testing"
+
+func TestAlive(t *testing.T) {
+	if got := f(); got != 1 {
+		t.Fatalf("got %d", got)
+	}
+	t.Errorf("x")
+}
+'
+base apps/agent/y_test.go "$GO_T"
+printf 'package x\n\nimport "testing"\n\nfunc TestAlive(t *testing.T) {\n\tif got := f(); got != 1 {\n\t}\n}\n' > "$FIX/apps/agent/y_test.go"
+stage apps/agent/y_test.go
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'removed assertion: t.Fatalf("got %d", got)' <<<"$OUT" && grep -q 't.Errorf("x")' <<<"$OUT" \
+  && ok "Go: a deleted t.Fatalf/t.Errorf in a _test.go is a finding" || bad "go t.Fatalf: rc=$rc out=$OUT"
+base apps/agent/y.go 'package x
+
+func msg(err error) string {
+	return err.Error()
+}
+'
+printf 'package x\n\nfunc msg(err error) string {\n\treturn ""\n}\n' > "$FIX/apps/agent/y.go"
+stage apps/agent/y.go
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Go: err.Error() deleted outside a test file is no finding" || bad "go err.Error: rc=$rc out=$OUT"
+base apps/agent/y.go 'package x
+
+func fail(t *thing) {
+	t.Fatalf("x")
+}
+'
+printf 'package x\n\nfunc fail(t *thing) {\n}\n' > "$FIX/apps/agent/y.go"
+stage apps/agent/y.go
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Go: t.Fatalf deleted outside a test file is no finding" || bad "go t outside a test: rc=$rc out=$OUT"
+base apps/agent/z_test.go 'package x
+
+import "testing"
+
+func TestZ(t *testing.T) {
+	for _, tt := range cases {
+		tt.Fatalf("x")
+		_ = result.Error()
+	}
+}
+'
+printf 'package x\n\nimport "testing"\n\nfunc TestZ(t *testing.T) {\n\tfor _, tt := range cases {\n\t}\n}\n' > "$FIX/apps/agent/z_test.go"
+stage apps/agent/z_test.go
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Go: tt.Fatalf and result.Error() in a _test.go are no finding" || bad "go receiver: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/z.rs '#[test]
+fn z() {
+    debug_assert_eq!(1, 1);
+}
+'
+printf '#[test]\nfn z() {\n}\n' > "$FIX/apps/desktop/src-tauri/tests/z.rs"
+stage apps/desktop/src-tauri/tests/z.rs
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "Rust: the debug_ macros stay outside, as they always did" || bad "rust debug_: rc=$rc out=$OUT"
+GO_DEAD='package x
+
+import "testing"
+
+func TestAlive(t *testing.T) {
+	t.Log("stays")
+}
+
+func TestDead(t *testing.T) {
+	t.Fatalf("dead")
+}
+'
+base apps/agent/x_test.go "$GO_DEAD"
+printf 'package x\n\nimport "testing"\n\nfunc TestAlive(t *testing.T) {\n\tt.Log("stays")\n}\n' > "$FIX/apps/agent/x_test.go"
+stage apps/agent/x_test.go
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/agent/x_test.go::TestDead" <<<"$OUT" \
+  && ok "Go: a whole declared test with its t.Fatalf goes" || bad "go declared: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/tests/x.rs '#[test]
+fn alive() {
+    assert!(true);
+}
+
+#[test]
+fn dead() {
+    assert_eq!(2, 2);
+}
+'
+printf '#[test]\nfn alive() {\n    assert!(true);\n}\n' > "$FIX/apps/desktop/src-tauri/tests/x.rs"
+stage apps/desktop/src-tauri/tests/x.rs
+r diff-scan --staged --task tasks/del.md T4
+[ $rc -eq 0 ] && grep -q "apps/desktop/src-tauri/tests/x.rs::dead" <<<"$OUT" \
+  && ok "Rust: a whole declared test with its assert_{eq}! goes" || bad "rust declared: rc=$rc out=$OUT"
+# R-0082: a bare `return` added inside a test ends it before its assertions —
+# Python, Go, Rust, TS. The same line in another function is free, and
+# `review: ok <reason>` exempts it like any other finding.
+ret_case() {  # ret_case <path> <content> <added-content> <want-rc> <label>
+  base "$1" "$2"; printf '%s' "$3" > "$FIX/$1"; stage "$1"
+  r diff-scan --staged
+  if [ "$4" = 3 ]; then
+    [ $rc -eq 3 ] && grep -q "$1:.*bare return in a test" <<<"$OUT" && ok "$5" || bad "$5: rc=$rc out=$OUT"
+  else
+    [ $rc -eq 0 ] && ok "$5" || bad "$5: rc=$rc out=$OUT"
+  fi
+}
+PY_R='def test_r():
+    x = 1
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+'
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: a bare return in a test is a finding"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    assert x == 1
+
+
+def helper():
+    return
+    x = 2
+    return x
+' 0 "Python: a bare return in a helper is free"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return  # review: ok the case below needs a network, see R-0000
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 0 "Python: review: ok exempts the bare return"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return  # later
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: any other comment behind the return exempts nothing"
+GO_R='package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	if f() != 1 {
+		t.Fatal("x")
+	}
+}
+'
+ret_case apps/agent/r_test.go "$GO_R" 'package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	return
+	if f() != 1 {
+		t.Fatal("x")
+	}
+}
+' 3 "Go: a bare return in a test is a finding"
+RS_R='#[test]
+fn r() {
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+'
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    return;
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+' 3 "Rust: a bare return; in a test is a finding"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    assert!(f());
+}
+
+fn f() -> bool {
+    return;
+    true
+}
+' 0 "Rust: a bare return; outside a test is free"
+TS_R='import { expect, it } from "vitest";
+
+it("r", () => {
+  expect(1).toBe(1);
+});
+'
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  return;
+  expect(1).toBe(1);
+});
+' 3 "TS: a bare return; in a test is a finding"
+
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
   || bad "unknown task: rc=$rc out=$OUT"
@@ -702,8 +964,10 @@ echo "── pre-commit hook ──"
 HFIX="$WORK/hooked"
 mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
 cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
-cp "$REPO_ROOT/scripts/dev/hooks/pre-commit" "$HFIX/scripts/dev/hooks/pre-commit"
-chmod 755 "$HFIX/scripts/dev/hooks/pre-commit"
+for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+  cp "$REPO_ROOT/scripts/dev/hooks/$h" "$HFIX/scripts/dev/hooks/$h"
+  chmod 755 "$HFIX/scripts/dev/hooks/$h"
+done
 printf 'plain\n' > "$HFIX/docs/note.md"
 # Tracked before the hook was armed, so `commit -a` has a blocked path to carry.
 printf '# sec\n' > "$HFIX/tasks/sec-old.md"
@@ -764,42 +1028,115 @@ printf 'x\n' >> "$WORK/hooked-wt/docs/note.md"
 [ -f "$WORK/hooked-wt/hook-ran.txt" ] && [ ! -f "$HFIX/hook-ran.txt" ] \
   && ok "a worktree runs the hook of its own branch" || bad "worktree hook: $(ls "$WORK/hooked-wt" "$HFIX")"
 
-# What the hook does NOT cover (the spec left it open): cherry-pick and revert
-# commit without running pre-commit. Documented here, so a git that starts to
-# run it turns this red instead of the docs going stale.
+# R-0110: cherry-pick, revert, rebase and a merge commit never run pre-commit.
+# prepare-commit-msg runs for all of them — for the sequencer undocumented,
+# measured on git 2.47.3 — and pre-merge-commit for a merge; both run the same
+# check. A git that stops calling them there turns these cases red.
+MAIN=$(git -C "$HFIX" branch --show-current)
 git -C "$HFIX" switch -q -c side
 printf 'finding\n' > "$HFIX/tasks/sec-side.md"; git -C "$HFIX" add -- tasks/sec-side.md
 git -C "$HFIX" -c core.hooksPath=/dev/null commit -qm "side" >/dev/null 2>&1
-git -C "$HFIX" switch -q -
+git -C "$HFIX" switch -q "$MAIN"
 H1=$(heads)
 OUT=$(git -C "$HFIX" cherry-pick side 2>&1); rc=$?
-[ $rc -eq 0 ] && [ "$(heads)" = "$((H1 + 1))" ] && [ -f "$HFIX/tasks/sec-side.md" ] \
-  && ok "known gap: cherry-pick commits a sec ledger without running pre-commit" || bad "cherry-pick: rc=$rc out=$OUT"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H1" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "cherry-pick of a sec ledger is refused, HEAD stays" || bad "cherry-pick: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" cherry-pick --abort >/dev/null 2>&1
+OUT=$(git -C "$HFIX" merge --no-ff --no-edit side 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(heads)" = "$H1" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "a merge commit that brings a sec ledger is refused, no merge commit" || bad "merge: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" merge --abort >/dev/null 2>&1
+[ ! -e "$HFIX/tasks/sec-side.md" ] && [ -z "$(git -C "$HFIX" status --porcelain)" ] \
+  && ok "... and both leave nothing behind after --abort" || bad "left behind: $(git -C "$HFIX" status --porcelain)"
+# pre-merge-commit on its own: with prepare-commit-msg not executable, the merge
+# is still refused — the documented hook carries it.
+chmod 644 "$HFIX/scripts/dev/hooks/prepare-commit-msg"
+OUT=$(git -C "$HFIX" merge --no-ff --no-edit side 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(heads)" = "$H1" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "pre-merge-commit alone refuses the merge commit" || bad "pre-merge-commit alone: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" merge --abort >/dev/null 2>&1
+chmod 755 "$HFIX/scripts/dev/hooks/prepare-commit-msg"
+# What is clean still goes through, as a cherry-pick and as a merge commit.
+for b in pick-clean merge-clean; do
+  git -C "$HFIX" switch -q -c "$b" "$MAIN"
+  printf '%s\n' "$b" > "$HFIX/docs/$b.md"; git -C "$HFIX" add -- "docs/$b.md"
+  git -C "$HFIX" commit -qm "$b" >/dev/null 2>&1
+  git -C "$HFIX" switch -q "$MAIN"
+done
+OUT=$(git -C "$HFIX" cherry-pick pick-clean 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H1 + 1))" ] && ok "a clean cherry-pick goes through" || bad "clean cherry-pick: rc=$rc out=$OUT"
+OUT=$(git -C "$HFIX" merge --no-ff --no-edit merge-clean 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -n "$(git -C "$HFIX" rev-parse -q --verify HEAD^2)" ] \
+  && ok "a clean merge commit goes through" || bad "clean merge: rc=$rc out=$OUT"
+# Rebasing side onto the moved main replays the sec commit: the rebase stops.
+SIDE=$(git -C "$HFIX" rev-parse side)
+OUT=$(git -C "$HFIX" rebase "$MAIN" side 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "a rebase over a sec commit stops with the sec message" || bad "rebase: rc=$rc out=$OUT"
+git -C "$HFIX" rebase --abort >/dev/null 2>&1
+[ "$(git -C "$HFIX" rev-parse side)" = "$SIDE" ] && ok "... and side is untouched after --abort" || bad "rebase moved side"
+git -C "$HFIX" switch -q "$MAIN"
+# A revert whose commit touches a sec path: the same refusal.
+printf 'finding\n' > "$HFIX/tasks/sec-rev.md"; git -C "$HFIX" add -- tasks/sec-rev.md
+git -C "$HFIX" -c core.hooksPath=/dev/null commit -qm "sec on main" >/dev/null 2>&1
+H2=$(heads)
 OUT=$(git -C "$HFIX" revert --no-edit HEAD 2>&1); rc=$?
-[ $rc -eq 0 ] && [ ! -f "$HFIX/tasks/sec-side.md" ] \
-  && ok "known gap: revert commits a sec path without running pre-commit" || bad "revert: rc=$rc out=$OUT"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H2" ] && grep -q 'tasks/sec-rev.md' <<<"$OUT" \
+  && ok "a revert that touches a sec ledger is refused, HEAD stays" || bad "revert: rc=$rc heads=$(heads) out=$OUT"
+# A refused revert of one commit leaves its change staged and writes no
+# REVERT_HEAD, so --abort has nothing to abort (git 2.47.3); DEVELOPMENT.md
+# names reset --merge as the way back, and this holds it.
+git -C "$HFIX" reset -q --merge
+[ -z "$(git -C "$HFIX" status --porcelain)" ] && [ -f "$HFIX/tasks/sec-rev.md" ] \
+  && ok "... and git reset --merge takes the refused revert back" || bad "reset --merge: $(git -C "$HFIX" status --porcelain)"
+# git am and rebase --apply run none of those hooks, only the applypatch ones:
+# pre-applypatch runs after the patch is applied, before the commit (T7).
+git -C "$HFIX" format-patch -1 --stdout side > "$WORK/side.patch" 2>/dev/null
+H3=$(heads)
+OUT=$(git -C "$HFIX" am "$WORK/side.patch" 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(heads)" = "$H3" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "git am of a sec ledger is refused, HEAD stays" || bad "git am: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" am --abort >/dev/null 2>&1
+[ ! -e "$HFIX/tasks/sec-side.md" ] && [ -z "$(git -C "$HFIX" status --porcelain)" ] \
+  && ok "... and git am --abort leaves nothing behind" || bad "am left behind: $(git -C "$HFIX" status --porcelain)"
+git -C "$HFIX" switch -q -c am-clean "$MAIN"
+printf 'am\n' > "$HFIX/docs/am-clean.md"; git -C "$HFIX" add -- docs/am-clean.md
+git -C "$HFIX" commit -qm "am-clean" >/dev/null 2>&1
+git -C "$HFIX" format-patch -1 --stdout am-clean > "$WORK/clean.patch" 2>/dev/null
+git -C "$HFIX" switch -q "$MAIN"
+OUT=$(git -C "$HFIX" am "$WORK/clean.patch" 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H3 + 1))" ] && ok "a clean git am goes through" || bad "clean am: rc=$rc out=$OUT"
+SIDE=$(git -C "$HFIX" rev-parse side)
+OUT=$(git -C "$HFIX" rebase --apply "$MAIN" side 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "a rebase --apply over a sec commit stops with the sec message" || bad "rebase --apply: rc=$rc out=$OUT"
+git -C "$HFIX" rebase --abort >/dev/null 2>&1
+[ "$(git -C "$HFIX" rev-parse side)" = "$SIDE" ] && ok "... and side is untouched after --abort" || bad "rebase --apply moved side"
+git -C "$HFIX" switch -q "$MAIN"
 
-# The file itself: git ignores a hook without the execute bit, and the lint
-# step of run.sh only covers *.sh.
+# The files themselves: git ignores a hook without the execute bit, and the
+# lint step of run.sh only covers *.sh.
 # A tree without a working .git (a box's synced worktree, a tarball) cannot say
 # what git recorded; there the bit on disk is what git would run.
 # --show-toplevel, not --git-dir: a tarball unpacked inside another repository
 # would find that one.
-if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
-  mode=$(git -C "$REPO_ROOT" ls-files -s -- scripts/dev/hooks/pre-commit | cut -d' ' -f1)
-  [ "$mode" = 100755 ] && ok "pre-commit is tracked with mode 100755" || bad "pre-commit mode: '${mode:-untracked}'"
-else
-  [ -x "$REPO_ROOT/scripts/dev/hooks/pre-commit" ] \
-    && ok "pre-commit is executable (no git here to read the recorded mode)" || bad "pre-commit is not executable"
-fi
 HOOK_SKIPPED=0
-if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck --severity=warning "$REPO_ROOT/scripts/dev/hooks/pre-commit" \
-    && ok "shellcheck: pre-commit is clean" || bad "shellcheck findings in pre-commit"
-else
-  echo "  SKIP: shellcheck not available — pre-commit is not linted"
-  HOOK_SKIPPED=1
-fi
+for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+  if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
+    mode=$(git -C "$REPO_ROOT" ls-files -s -- "scripts/dev/hooks/$h" | cut -d' ' -f1)
+    [ "$mode" = 100755 ] && ok "$h is tracked with mode 100755" || bad "$h mode: '${mode:-untracked}'"
+  else
+    [ -x "$REPO_ROOT/scripts/dev/hooks/$h" ] \
+      && ok "$h is executable (no git here to read the recorded mode)" || bad "$h is not executable"
+  fi
+  if command -v shellcheck >/dev/null 2>&1; then
+    shellcheck --severity=warning "$REPO_ROOT/scripts/dev/hooks/$h" \
+      && ok "shellcheck: $h is clean" || bad "shellcheck findings in $h"
+  else
+    echo "  SKIP: shellcheck not available — $h is not linted"
+    HOOK_SKIPPED=1
+  fi
+done
 
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"
