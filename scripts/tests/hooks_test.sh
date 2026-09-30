@@ -124,15 +124,28 @@ if [ "$(git -C "$TREE" rev-parse --git-dir 2>/dev/null)" = ".git" ]; then
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — core.hooksPath is set, but this checkout has no executable" <<<"$OUT" \
     && ok "core.hooksPath set, but no hook file in this checkout: NOT armed" || bad "no hook file: rc=$rc out=$OUT"
-  printf '#!/bin/sh\nexit 0\n' > "$TREE/scripts/dev/hooks/pre-commit"
+  for h in pre-commit prepare-commit-msg pre-merge-commit pre-applypatch; do
+    printf '#!/bin/sh\nexit 0\n' > "$TREE/scripts/dev/hooks/$h"
+  done
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed" <<<"$OUT" \
-    && ok "... and a hook file without the execute bit is NOT armed either" || bad "non-executable hook: rc=$rc out=$OUT"
-  chmod 755 "$TREE/scripts/dev/hooks/pre-commit"
+    && ok "... and hook files without the execute bit are NOT armed either" || bad "non-executable hook: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/pre-commit" "$TREE/scripts/dev/hooks/prepare-commit-msg" \
+    "$TREE/scripts/dev/hooks/pre-applypatch"
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — .* no executable pre-merge-commit in scripts/dev/hooks" <<<"$OUT" \
+    && ok "one of the hooks missing: NOT armed, and it names that one" || bad "pre-merge-commit missing: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/pre-merge-commit"
+  chmod 644 "$TREE/scripts/dev/hooks/pre-applypatch"
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — .* no executable pre-applypatch in scripts/dev/hooks" <<<"$OUT" \
+    && ok "pre-applypatch missing: NOT armed, and it names that one" || bad "pre-applypatch missing: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/pre-applypatch"
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *armed (core.hooksPath=scripts/dev/hooks)" <<<"$OUT" \
-    && ok "core.hooksPath=scripts/dev/hooks and an executable hook: pre-commit armed" || bad "armed: rc=$rc out=$OUT"
-  rm -f "$TREE/scripts/dev/hooks/pre-commit"
+    && ok "core.hooksPath=scripts/dev/hooks and all four hooks executable: armed" || bad "armed: rc=$rc out=$OUT"
+  rm -f "$TREE/scripts/dev/hooks/pre-commit" "$TREE/scripts/dev/hooks/prepare-commit-msg" \
+    "$TREE/scripts/dev/hooks/pre-merge-commit" "$TREE/scripts/dev/hooks/pre-applypatch"
   git -C "$TREE" config core.hooksPath .githooks
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT set (core.hooksPath=.githooks)" <<<"$OUT" \
@@ -576,6 +589,17 @@ rm -f /tmp/claude-1000/bash-edit-diff/3b753c96-0000-4000-8000-000000000000/x.dif
 CMDS
 guard inter Bash "$(cmdjson "$(printf 'cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
 [ -z "$OUT" ] && ok "free: the command as a here-doc body" || bad "here-doc: $OUT"
+# R-0126: a here-string (`<<<`) starts no here-doc. Read as one with the
+# delimiter `<`, it hid every line after it — the temp rule and, in an
+# autonomous run, the harness rule alike. Real here-docs stay skipped.
+guard inter Bash "$(cmdjson "$(printf 'tr a b <<< "$x"\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: a delete on the line after a here-string" || bad "here-string, temp rule: $OUT$ERR"
+guard auto Bash "$(cmdjson "$(printf 'tr a b <<< "$x"\nsed -i s/a/b/ CLAUDE.md')")"
+denied "$OUT" && ok "denied (autonomous): a harness edit on the line after a here-string" || bad "here-string, harness rule: $OUT$ERR"
+for hd in '<<-EOF' "<<'EOF'" '<< "EOF"'; do
+  guard inter Bash "$(cmdjson "$(printf 'cat > notes.md %s\nrm -rf /tmp/tmp.*\nEOF' "$hd")")"
+  [ -z "$OUT" ] && ok "free: the command as the body of $hd" || bad "here-doc $hd: $OUT"
+done
 
 # Measured on 34 513 real commands (2026-09-28, the supervising session): the
 # rule "anywhere below /tmp" hit 4 real cases and 13 cleanups in scratchpads.
@@ -608,6 +632,94 @@ rm -rf @S@/scratchpad/r3/cd-*
 cd @S@/scratchpad/co && rm -rf a8/packages out/xo out/xn out/tx-*
 rm -rf @S@/scratchpad/samba_4.22*
 CMDS
+
+# R-0109: a glob ABOVE a temp root reaches every depth below it. Only a match on
+# the root or an entry right in it was caught, so `/t*/claude-1000/*` walked
+# into every session's directories. No mode, no kill switch, like the rest of
+# the rule; the scratchpad cleanups above keep their glob below the root.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  modes=""
+  guard inter Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes inter"
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes auto"
+  bash "$HARNESS" off >/dev/null
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes off"
+  bash "$HARNESS" on >/dev/null
+  [ "$modes" = " inter auto off" ] && ok "glob above the root, denied in every mode: $cmd" \
+    || bad "glob above the root: $cmd — denied only in:${modes:- no mode}"
+done <<'CMDS'
+rm -rf /t*/claude-1000/*
+rm -rf /t*/claude-1000/-home-*/*
+rm -rf /tm?/claude-*/*
+rm -rf /*/claude-1000/*
+rm -rf /var/t*/x/*
+cd /t* && rm -rf claude-1000/*
+CMDS
+# The value of TMPDIR is a root as well; a glob that cannot match any root stays free.
+OUT=$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /srv/ah-t*/x/*"}}' \
+  | TMPDIR=/srv/ah-td bash "$GUARD" 2>/dev/null)
+denied "$OUT" && ok "denied: a glob above the value of TMPDIR" || bad "glob above TMPDIR value: $OUT"
+guard inter Bash "$(cmdjson 'rm -rf /?/x/*')"
+[ -z "$OUT" ] && ok "free: a glob above no temp root (/?/x/*)" || bad "false positive: /?/x/* -> $OUT"
+
+# R-0109, the parser: `--` ends the options (a `-home-…` operand is one), `|&`
+# is a pipe, `);` is two operators, `xargs sh -c 'rm …'` deletes like `xargs rm`,
+# and `grep -l`/`-L` list names. The same forms in an own directory stay free.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+cd /tmp/claude-1000 && rm -rf -- -home-x*
+ls -d /tmp/tmp.* |& xargs rm -rf
+for d in $(ls -d /tmp/tmp.*); do rm -rf "$d"; done
+ls /tmp/tmp.* | xargs sh -c 'rm -rf "$@"' _
+ls /tmp/tmp.* | xargs -I{} bash -c 'rm -rf {}'
+grep -l x /tmp/*.x | xargs rm
+grep -rL x /tmp/*.x | xargs rm -f
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+cd /tmp/foo.Ab12 && rm -rf -- -home-x*
+rm -rf -- -x*
+ls -d /tmp/foo.Ab12/tmp.* |& xargs rm -rf
+ls -d $SP/tmp.* |& xargs rm -rf
+for d in $(ls -d /tmp/foo.Ab12/tmp.*); do rm -rf "$d"; done
+for d in $(ls -d $SP/tmp.*); do rm -rf "$d"; done
+ls /tmp/foo.Ab12/tmp.* | xargs sh -c 'rm -rf "$@"' _
+ls /tmp/tmp.* | xargs sh -c 'echo "$@"' _
+grep -l x /tmp/foo.Ab12/*.x | xargs rm
+grep -l x /tmp/*.x | head -3
+grep -e l /tmp/*.x | xargs rm
+ls /tmp/tmp.* |& head -3
+CMDS
+
+# R-0110: taking a hook's execute bit disarms it as surely as deleting it, so
+# chmod/chown/chgrp on a harness path is a write like `sed -i`.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+chmod -x scripts/dev/hooks/pre-commit
+chmod 644 scripts/dev/hooks/pre-merge-commit
+chmod u-x,go-w scripts/dev/hooks/prepare-commit-msg
+chown nobody CLAUDE.md
+chgrp staff .claude/settings.json
+chmod --reference=README.md scripts/dev/verify.sh
+chown --ref=README.md CLAUDE.md
+chgrp --refer README.md scripts/dev/hooks/pre-commit
+CMDS
+guard inter Bash "$(cmdjson 'chmod -x scripts/dev/hooks/pre-commit')"
+[ -z "$OUT" ] && grep -q 'harness path' <<<"$ERR" \
+  && ok "interactive: chmod on a hook only warns" || bad "interactive chmod: out=$OUT err=$ERR"
+guard auto Bash "$(cmdjson 'chmod +x apps/web/x.sh')"
+[ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: chmod outside the harness paths" || bad "chmod false positive: $OUT$ERR"
+guard auto Bash "$(cmdjson 'chmod --reference CLAUDE.md apps/web/x.sh')"
+[ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: the --reference file is only read" || bad "chmod --reference: $OUT$ERR"
 
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
@@ -666,6 +778,7 @@ GIT_CONFIG_KEY_0=core.hooksPath; export GIT_CONFIG_KEY_0 GIT_CONFIG_COUNT=1; git
 set -a; GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=core.hooksPath; git commit -m x
 bash -c 'git commit -n -m x'
 timeout 1m git commit -n -m x
+git commit --m -- -n
 sudo -n git commit -n -m x
 CMDS
 guard auto Bash "$(cmdjson "git commit $NV -m x")"
@@ -674,6 +787,47 @@ bash "$HARNESS" off >/dev/null
 guard auto Bash "$(cmdjson "git commit $NV -m x")"
 denied "$OUT" && ok "... and the kill switch does not lift it" || bad "bypass, marker: $OUT$ERR"
 bash "$HARNESS" on >/dev/null
+
+# T8: git am runs only pre-applypatch, and -n/--no-verify skips it — the one
+# flag past all four hooks. Refused like `git commit -n`, in every mode.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  cmd="${cmd//@NV@/$NV}"
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+git am -n x.patch
+git am @NV@ x.patch
+git am --no-veri x.patch
+git am --no-v x.patch
+git am -3n x.patch
+git am --resolvemsg -- -n x.patch
+git am --d -- -n x.patch
+git am -C -- -n x.patch
+git -C /somewhere am -n x.patch
+CMDS
+guard auto Bash "$(cmdjson 'git am -n x.patch')"
+denied "$OUT" && ok "... git am -n in an autonomous run" || bad "am bypass, autonomous: $OUT$ERR"
+bash "$HARNESS" off >/dev/null
+guard auto Bash "$(cmdjson 'git am -n x.patch')"
+denied "$OUT" && ok "... and the kill switch does not lift it" || bad "am bypass, marker: $OUT$ERR"
+bash "$HARNESS" on >/dev/null
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+git am x.patch
+git am -3 x.patch
+git am -s -3 x.patch
+git am --abort
+git am --continue
+git am -- -n.patch
+git am -C1n x.patch
+git am -p2n x.patch
+git am -Sn x.patch
+git amend -n
+CMDS
 
 # The same words as text, and every read, stay free.
 while IFS= read -r cmd; do
@@ -688,6 +842,8 @@ git commit -am "fix -n"
 git commit -mnope
 git commit --no-verbose -m x
 git commit --mess "-n x" -m y
+git commit -m "--"
+git commit -m x
 git commit -c HEAD
 git commit -- -n
 git config --get core.hooksPath

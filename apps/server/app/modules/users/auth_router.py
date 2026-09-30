@@ -231,21 +231,29 @@ def logout(
 ):
     """Blacklist the bearer token, if one is sent, and the refresh token from body
     or cookie; clear the refresh cookie."""
+    # Audited only when this call revoked a token: a logout without a token, with an
+    # invalid or expired one, or a repeat of an earlier logout ends no session.
+    # Both tokens are blacklisted unconditionally — no short circuit between them.
     uname = None
+    revoked = False
     if credentials:
-        blacklist_token(credentials.credentials, db)
+        revoked = blacklist_token(credentials.credentials, db)
         uname = username_from_token_unverified(credentials.credentials)
     refresh = _resolve_refresh_token(request, data.refresh_token if data else None)
     if refresh:
-        blacklist_token(refresh, db)
+        refresh_revoked = blacklist_token(refresh, db)
+        revoked = revoked or refresh_revoked
+        if refresh_revoked and not uname:
+            uname = username_from_token_unverified(refresh)
     _clear_refresh_cookie(response)
-    audit.record(
-        db,
-        "auth.logout",
-        actor=Actor("user", None, uname, resolve_client_ip(request)),
-        object_type="user",
-        object_label=uname,
-    )
+    if revoked:
+        audit.record(
+            db,
+            "auth.logout",
+            actor=Actor("user", None, uname, resolve_client_ip(request)),
+            object_type="user",
+            object_label=uname,
+        )
     return {"detail": "Abgemeldet"}
 
 

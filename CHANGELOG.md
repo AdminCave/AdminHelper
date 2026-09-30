@@ -291,6 +291,41 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Feld ein Eintrag in `detail`, Hinweis auf den camelCase-Namen). Jede dieser Spalten wird damit nur ueber ihren API-Namen geschrieben und
   durchlaeuft dessen Pruefungen. Alle Clients im Repo senden camelCase; andere Zusatzfelder bleiben
   erlaubt.
+- **diff-scan erkennt mehr stummgeschaltete Tests (R-0082):** `scripts/dev/review.sh diff-scan`
+  wertet jetzt auch geloeschte Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…`
+  als entfernte Assertion (ausserhalb einer `*_test.go` bleibt `err.Error()` frei), kennt die
+  Skip-, xfail-, todo- und only-Muster von vitest/jest, Playwright, pytest, Rust (auch
+  `#[ignore = "…"]`) und Go (`t.SkipNow()`), und meldet ein hinzugefuegtes nacktes `return` <!-- review: ok nennt die Muster -->
+  innerhalb eines Tests (Python, Go, Rust, TS/JS). Der Ausweg bleibt `review: ok <grund>` auf
+  der Zeile. Anleitung: `DEVELOPMENT.md` „Task schliessen".
+
+- **Commit-Hooks auch bei merge, cherry-pick, revert, rebase und git am (R-0110):** Neben
+  `scripts/dev/hooks/pre-commit` fahren jetzt `prepare-commit-msg` (cherry-pick, revert, jeder
+  Commit eines rebase mit dem Standard-Backend, Merge-Commit), `pre-merge-commit` (vor einem
+  Merge-Commit) und `pre-applypatch` (`git am`, `git rebase --apply`)
+  `review.sh sec --staged` — bisher kam eine private Datei aus einem anderen Branch ueber diese
+  Wege ungeprueft in den Verlauf. Dass der Sequencer `prepare-commit-msg` ruft, ist nicht
+  dokumentiert, aber mit git 2.47.3 gemessen und im Test festgehalten. `harness.sh status`
+  prueft alle vier Hooks und nennt einen fehlenden; der Waechter verweigert `git am -n` wie
+  `git commit -n`; `chmod`, `chown` und `chgrp` auf einen
+  Harness-Pfad zaehlen fuer den Waechter als Schreiben. Wirksam je Worktree mit dem Branch,
+  der die Hooks traegt. Anleitung: `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+
+- **Temp-Waechter erkennt mehr Formen (R-0109):** `scripts/dev/hooks/harness-guard.sh`
+  verweigert jetzt auch einen Glob **ueber** einer Temp-Wurzel in jeder Tiefe
+  (`/t*/claude-1000/*`, `cd /t* && rm -rf claude-1000/*`) — bisher zaehlte nur ein Treffer auf
+  der Wurzel oder direkt darin, so dass ein solcher Glob die Verzeichnisse aller Sessions
+  erreichte. Dazu erkennt der Parser einen Operanden nach `--`, `|&` als Pipe, `);` als zwei
+  Operatoren (`for d in $(ls -d /tmp/tmp.*); do rm …`), `xargs sh -c 'rm …'` wie `xargs rm`
+  und `grep -l`/`-L` als Lister. Frei bleiben die Aufraeumer im eigenen Verzeichnis; die
+  verbleibenden Grenzen (Prozess-Substitution, `mapfile`, Laufzeit-Pfade ohne Glob,
+  `cat … | xargs rm`) stehen in `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+- **Audit: Logout nur, wenn eine Sitzung endet (Server, R-0105):** `POST /api/auth/logout` schreibt
+  `auth.logout` nur noch, wenn der Aufruf einen Token gesperrt hat (Bearer oder Refresh-Token aus Body
+  oder Cookie). Ein Logout ohne Token, mit ungueltigem oder abgelaufenem Token oder mit denselben
+  Tokens ein zweites Mal hinterlaesst keinen Eintrag; Antwort (`200`) und Cookie-Loeschung bleiben
+  gleich. Ein Logout nur mit Cookie traegt jetzt den Benutzernamen. Doku:
+  `docs/developer/api-reference.html`, `docs/admin/betrieb.html`.
 - **FRP: leere STCP-Secrets werden gefuellt (Server):** Eine Datenmigration gibt jedem
   stcp-Tunnel, dessen Secret leer ist, ein eigenes zufaelliges Secret; der Generator laesst
   einen stcp-Tunnel ohne Secret aus der frpc- und Visitor-Konfiguration weg. Der Agent holt die
