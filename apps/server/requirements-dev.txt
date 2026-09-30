@@ -15,7 +15,7 @@ pytest-asyncio>=1.4.0
 testcontainers[postgres]>=4.14.2
 pytest-httpx>=0.36.2
 pytest-cov>=7.0.0
-ruff>=0.15
+ruff==0.15.20
 
 # Generatoren (Harness 8b): schema-getriebene API-Tests gegen die eigene
 # OpenAPI, Property-based Tests und die vier eingebauten Alembic-Tests.
