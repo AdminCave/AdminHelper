@@ -151,6 +151,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   seit der `.in`-Aenderung (gleiche Version, gleiche Hashes). `pytest` gegen die exakten neuen
   Locks unter Python 3.12 gruen — server 968, monitoring 599, ca-issuer 74 —, `pip-audit` ohne Befund.
 
+- **pyjwt 2.13.0 → 2.14.0** im Server (gehashte Lock neu generiert, Untergrenze in `requirements.in`
+  auf `>=2.14.0`): behebt CVE-2026-101917, CVE-2026-102265 bis -102269 und CVE-2026-102271 bis -102274.
+  Vom Dependency-Audit (`pip-audit`) erkannt. Der Changelog 2.13.0 → 2.14.0 enthaelt keine inkompatible Aenderung; `pytest`
+  gegen den exakten neuen Lock unter Python 3.12 gruen (server 682), `pip-audit` ohne Befund.
+
 ### Fixed
 
 - **Web-Panel: F5 waehrend eine Liste laedt (R-0107):** `apps/web/src/lib/api/client.ts` gibt
