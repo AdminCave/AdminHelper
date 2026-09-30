@@ -49,7 +49,10 @@ RUNNER="adminhelper-runner"
 SRV="/srv/ah"
 DB_ROLE="ah_runner"
 DB_NAME="ah_runner_test"
-VENV_PKGS="ruff pytest pytest-cov pytest-httpx"
+# ruff pinned to the release CI runs (toolchain-lockstep.sh holds the five places
+# together): this venv is linked first on the runner's PATH, and ruff.toml's
+# required-version stops any other ruff with exit 2.
+VENV_PKGS="ruff==0.15.20 pytest pytest-cov pytest-httpx"
 
 DB_PW=""   # set in step 3; referenced by the redaction in as_pg_sql before that
 DRY=0 REMOVE=0 YES=0 TRUST=0

@@ -41,7 +41,7 @@ vi.mock('$lib/stores/session', async () => {
 import TunnelModal from './TunnelModal.svelte';
 import { frpApi } from '$lib/api/frp';
 import { reportError } from '$lib/stores/statusBar';
-import type { FrpConfig } from '$lib/api/types';
+import type { FrpConfig, FrpTunnel } from '$lib/api/types';
 
 setLanguage('de');
 afterEach(() => {
@@ -143,5 +143,53 @@ describe('TunnelModal create flow', () => {
 
     expect(reportError).toHaveBeenCalledTimes(1);
     expect(frpApi.createTunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe('TunnelModal secret hint', () => {
+  // The server never hands the secret back, so an edit starts with an empty field:
+  // there it means "keep the stored secret", on create "generate one".
+  const secretInput = (c: HTMLElement) => c.querySelector('.secret-row input') as HTMLInputElement;
+  const stored: FrpTunnel = {
+    id: 'tun-1',
+    serverId: 'srv-1',
+    frpConfigId: 'cfg-1',
+    name: 'k01-ssh',
+    tunnelType: 'stcp',
+    protocol: 'ssh',
+    localIp: '127.0.0.1',
+    localPort: 22,
+    secretKey: null,
+    visitorPort: 6001,
+    enabled: true,
+  };
+
+  it('says the secret is generated when creating', async () => {
+    const { container } = openModal();
+    await tick();
+    expect(secretInput(container).placeholder).toContain('automatisch generiert');
+  });
+
+  it('says the secret stays unchanged when editing', async () => {
+    const { container } = openModal({ editing: stored });
+    await tick();
+    expect(secretInput(container).value).toBe('');
+    expect(secretInput(container).placeholder).toContain('unverändert');
+  });
+
+  it('says the secret is generated when an https tunnel is switched to stcp', async () => {
+    // There is no stored secret to keep: the server generates one on save.
+    const https: FrpTunnel = {
+      ...stored,
+      tunnelType: 'https',
+      protocol: 'web',
+      customDomains: 'tunnel.example.net',
+      visitorPort: null,
+    };
+    const { container } = openModal({ editing: https });
+    await tick();
+    await fireEvent.change(typeSelect(container), { target: { value: 'stcp' } });
+    await tick();
+    expect(secretInput(container).placeholder).toContain('automatisch generiert');
   });
 });
