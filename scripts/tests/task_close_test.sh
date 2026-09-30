@@ -178,8 +178,8 @@ reset_repo
 
 # ══ --stage ══════════════════════════════════════════════════════════════════
 echo "── --stage ──"
-# From stage 4 on `git add` prompts, so the session cannot stage by hand any
-# more — the closer stages what the task declared, and nothing else.
+# The runner may not run `git add` at all (its settings deny it), so the closer
+# stages what the task declared, and nothing else.
 reset_repo
 printf 'echo staged by the closer\n' >> "$FIX/scripts/dev/tool.sh"
 printf 'unrelated\n' > "$FIX/docs/unrelated.md"
@@ -382,6 +382,29 @@ rm -f "$FIX/.ah-out/verify-called.txt"
 c fix T1 -m "feat: a list without the task's component"
 [ $rc -eq 2 ] && grep -q "does not name the task's component 'web'" <<<"$OUT" && [ ! -f "$FIX/.ah-out/verify-called.txt" ] \
   && ok "a Verify: list without the task's component -> exit 2, nothing run" || bad "foreign list: rc=$rc out=$OUT"
+reset_repo
+# Arguments only where the flags end in ` -- `: prose after --strict that holds a
+# ` -- ` of its own is no argument list (the old sed demanded `--strict --`).
+verify_line scripts "bash scripts/dev/verify.sh scripts --strict und danach cargo clippy -- -D warnings"
+touch_tool
+c fix T1 -m "feat: prose after the flags"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "scripts --strict" ] \
+  && ok "a -- in prose after the flags reaches the suite as no arguments" \
+  || bad "prose after flags: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt")"
+reset_repo
+verify_line web "bash scripts/dev/verify.sh all web --strict"
+touch_tool
+rm -f "$FIX/.ah-out/verify-called.txt"
+c fix T1 -m "feat: all next to a component"
+[ $rc -eq 2 ] && grep -q "'all' stands alone" <<<"$OUT" && [ ! -f "$FIX/.ah-out/verify-called.txt" ] \
+  && ok "'all' next to a component -> exit 2 before anything runs" || bad "all plus web: rc=$rc out=$OUT"
+reset_repo
+verify_line scripts "bash scripts/tests/run.sh quick --strict"
+touch_tool
+c fix T1 -m "feat: run.sh without --only"
+[ $rc -eq 0 ] && [ "$(cat "$FIX/.ah-out/verify-called.txt")" = "scripts --strict" ] && grep -q "run.sh call without --only" <<<"$OUT" \
+  && ok "run.sh without --only: the task's component, and the note says why" \
+  || bad "run.sh without --only: rc=$rc called=$(cat "$FIX/.ah-out/verify-called.txt") out=$OUT"
 reset_repo
 verify_line web "bash scripts/dev/verify.sh web desktop-e2e --strict -- tests/x.test.ts"
 touch_tool

@@ -10,9 +10,9 @@
 #     [--stage] [--review none|verdict:<json>] [--review-note "<text>"]
 #
 # --stage stages exactly the paths the task declares in its `Dateien:` line —
-# nothing else, and never `git add -A`. From stage 4 on `git add` prompts in an
-# interactive session (the way to a commit goes through this script), so the one
-# step the session still had to do by hand was the one that blocked it.
+# nothing else, and never `git add -A`. The runner may not run `git add` at all
+# (its settings deny it; in Kevin's sessions it is free), and the way to a commit
+# goes through this script either way.
 #
 # Until this stage the model ran the suite, ticked the box and wrote the commit —
 # three claims in a row that nobody checked. This script makes them one
@@ -203,21 +203,35 @@ while [ "$k" -lt "${#VW[@]}" ] && [ "${VW[$k]#-}" = "${VW[$k]}" ]; do
 done
 case "$FIRST_CMD" in
   "bash scripts/dev/verify.sh "*)
-    while [ "$k" -lt "${#VW[@]}" ] && [ "${VW[$k]}" != "--" ]; do k=$((k + 1)); done
-    [ "$k" -lt "${#VW[@]}" ] && VERIFY_ARGS="${VW[*]:$((k + 1))}" ;;
+    # Past the flags verify.sh knows; arguments only where they end in ` -- ` —
+    # prose after them may hold a ` -- ` of its own.
+    while [ "$k" -lt "${#VW[@]}" ]; do
+      case "${VW[$k]}" in
+        --strict) k=$((k + 1)) ;;
+        --tree) k=$((k + 2)) ;;
+        --) VERIFY_ARGS="${VW[*]:$((k + 1))}"; break ;;
+        *) break ;;
+      esac
+    done ;;
 esac
 if [ -n "$VERIFY_COMPONENTS" ]; then
   # A line that runs other components than the task's would close it on a suite
   # that never looked at it — an input error, not a green.
   case " $VERIFY_COMPONENTS " in
-    *" $COMPONENT "*|*" all "*) ;;
+    *" all "*) [ "$VERIFY_COMPONENTS" = all ] \
+      || die "the Verify: line names '$VERIFY_COMPONENTS' — 'all' stands alone" ;;
+    *" $COMPONENT "*) ;;
     *) die "the Verify: line runs '$VERIFY_COMPONENTS' — it does not name the task's component '$COMPONENT'" ;;
   esac
   [ -z "$VERIFY_ARGS" ] || [ "${VERIFY_COMPONENTS// /}" = "$VERIFY_COMPONENTS" ] \
     || die "the Verify: line gives '$VERIFY_ARGS' to '$VERIFY_COMPONENTS' — extra arguments need a single component"
 else
   VERIFY_COMPONENTS="$COMPONENT"
-  [ -n "$VERIFY_LINE" ] && echo "   (the task's Verify: line is not a verify.sh call — running the component's suite instead)"
+  case "$FIRST_CMD" in
+    "bash scripts/tests/run.sh "*)
+      echo "   (the task's Verify: line is a run.sh call without --only — running the component's suite instead)" ;;
+    *) [ -n "$VERIFY_LINE" ] && echo "   (the task's Verify: line is not a verify.sh call — running the component's suite instead)" ;;
+  esac
 fi
 echo "── verify.sh $VERIFY_COMPONENTS --strict ${VERIFY_ARGS:+-- $VERIFY_ARGS}"
 # Word lists, not a shell line: `set -f` keeps a `*` in the ledger from being

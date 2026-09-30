@@ -194,12 +194,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           <h2>Verify-Konvention (<code>scripts/dev/verify.sh</code>)</h2>
           <p>Die <code>Verify:</code>-Zeile einer Task ruft eine Komponenten-Suite immer in dieser Form auf:</p>
           <div class="code-header"><span>bash</span></div>
-          <pre><code>bash scripts/dev/verify.sh &lt;komponente&gt; [--strict] [--tree &lt;pfad&gt;] [-- &lt;args&gt;]</code></pre>
+          <pre><code>bash scripts/dev/verify.sh &lt;komponente&gt; [&lt;komponente&gt; &hellip;] [--strict] [--tree &lt;pfad&gt;] [-- &lt;args&gt;]</code></pre>
           <p>Das Skript sourct <code>.devenv.sh</code> (bzw. <code>$AH_DEVENV</code>), l&ouml;st
-          <code>AH_TEST_DB</code> auf, delegiert an <code>run.sh quick --only &lt;komponente&gt;</code>
-          (also Lint <em>und</em> Unit dieser Komponente), l&auml;uft mit <code>--tree</code> gegen einen anderen
-          Checkout und schreibt <code>last-verify.json</code> &ndash; das Lauf-Artefakt plus
-          <code>component</code>, <code>args</code>, <code>tree</code>. Der Grund f&uuml;r den Wrapper ist die
+          <code>AH_TEST_DB</code> auf, delegiert an <code>run.sh quick --only &lt;komponente&gt; &hellip;</code>
+          (also Lint <em>und</em> Unit dieser Komponenten, mehrere in einem Lauf; <code>-- &lt;args&gt;</code> nur
+          f&uuml;r eine Komponente, <code>all</code> nur allein), l&auml;uft mit <code>--tree</code> gegen einen
+          anderen Checkout und schreibt <code>last-verify.json</code> &ndash; das Lauf-Artefakt plus
+          <code>component</code>, <code>args</code>, <code>tree</code>. Die Form
+          <code>bash scripts/tests/run.sh &lt;layer&gt; --strict --only &lt;a&gt; &lt;b&gt;</code> ist ebenfalls
+          erlaubt; <code>task-close.sh</code> f&auml;hrt beide als <code>verify.sh &lt;a&gt; &lt;b&gt; --strict</code>,
+          und die Liste muss die <code>Komponente:</code> der Task enthalten. Der Grund f&uuml;r den Wrapper ist die
           Allowlist: eine Bash-Allow-Regel matcht nie &uuml;ber ein Env-Pr&auml;fix, <code>source .devenv.sh
           &amp;&amp; DATABASE_URL=&hellip; pytest</code> ist also nicht freigebbar. Env-Bedarf l&ouml;st das
           Skript auf, der Aufrufer schreibt Flags.</p>

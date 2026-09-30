@@ -72,3 +72,22 @@ Beweis: origin/main@8224e84c · `.claude/settings.json` `permissions.ask` hat dr
 `scripts/tests/hooks_test.sh:998–1012` hält `never_ask = {git add, commit, checkout, restore, stash}` fest.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md, AUTONOMOUS.md (die Task ist die Doku)
+
+### T4 — Nachbesserungen aus dem Gesamt-Review: Verify-Parsing am Commit-Gate, Doku  [x]
+Komponente: scripts · Dateien: scripts/dev/task-close.sh, scripts/tests/task_close_test.sh, docs/developer/cicd.html, docs/en/developer/cicd.html
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7e0054ee 2026-09-30T18:00:00+02:00
+Review: approve (opus, focused review of T4 after the Kurz-Ledger's final review)
+Herkunft: Opus-Gesamt-Review des Kurz-Ledgers (2026-09-30, approve mit nits); am Commit-Gate lohnt die Nachbesserung.
+Änderung: (1) task-close.sh nimmt Argumente nur, wenn nach den Komponenten und den Flags `--strict`/`--tree <p>`
+direkt `--` folgt — nicht mehr jedes `--` im ersten Befehl (`verify.sh scripts --strict und danach cargo clippy -- -D
+warnings` gäbe sonst `-D warnings` weiter; das alte sed verlangte `--strict --`). (2) `all` neben weiteren Komponenten
+ist wie der Argument-Fall Exit 2 per `die`, nicht 74 über verify.sh. (3) Der Hinweis für eine `run.sh`-Zeile ohne
+`--only` sagt das statt „not a verify.sh call“. (4) Kopfkommentar von task-close.sh: `git add` steht nicht mehr unter
+`ask` (hart verboten beim Runner, frei in Kevins Sessions), ebenso der Kommentar in task_close_test.sh. (5)
+`docs/developer/cicd.html` und `docs/en/developer/cicd.html`, Abschnitt Verify-Konvention: die Form mit mehreren
+Komponenten und die `run.sh … --only`-Form.
+Test: task_close_test.sh — Prosa mit `--` nach `--strict` → keine Argumente; `all web` → Exit 2, nichts gelaufen;
+`run.sh quick --strict` ohne `--only` → Rückfall mit dem neuen Hinweis.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: cicd.html DE+EN (Verify-Konvention)
+Abhängt von: T1

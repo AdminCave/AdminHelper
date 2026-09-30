@@ -192,12 +192,16 @@ bash scripts/tests/heavy.sh all|capstone|weekly [--base &lt;sha&gt;] [--no-secon
           <h2>Verify convention (<code>scripts/dev/verify.sh</code>)</h2>
           <p>A task&rsquo;s <code>Verify:</code> line always calls a component suite in this form:</p>
           <div class="code-header"><span>bash</span></div>
-          <pre><code>bash scripts/dev/verify.sh &lt;component&gt; [--strict] [--tree &lt;path&gt;] [-- &lt;args&gt;]</code></pre>
+          <pre><code>bash scripts/dev/verify.sh &lt;component&gt; [&lt;component&gt; &hellip;] [--strict] [--tree &lt;path&gt;] [-- &lt;args&gt;]</code></pre>
           <p>The script sources <code>.devenv.sh</code> (or <code>$AH_DEVENV</code>), resolves
-          <code>AH_TEST_DB</code>, delegates to <code>run.sh quick --only &lt;component&gt;</code>
-          (its lint <em>and</em> unit steps), runs against another checkout with <code>--tree</code>
-          and writes <code>last-verify.json</code> &ndash; the run artifact plus <code>component</code>,
-          <code>args</code>, <code>tree</code>. The wrapper exists because of the allowlist: a Bash allow
+          <code>AH_TEST_DB</code>, delegates to <code>run.sh quick --only &lt;component&gt; &hellip;</code>
+          (the lint <em>and</em> unit steps of those components, several in one run; <code>-- &lt;args&gt;</code>
+          only for a single component, <code>all</code> only on its own), runs against another checkout with
+          <code>--tree</code> and writes <code>last-verify.json</code> &ndash; the run artifact plus
+          <code>component</code>, <code>args</code>, <code>tree</code>. The form
+          <code>bash scripts/tests/run.sh &lt;layer&gt; --strict --only &lt;a&gt; &lt;b&gt;</code> is allowed as well;
+          <code>task-close.sh</code> runs both as <code>verify.sh &lt;a&gt; &lt;b&gt; --strict</code>, and the list
+          must contain the task&rsquo;s <code>Komponente:</code>. The wrapper exists because of the allowlist: a Bash allow
           rule never matches across an env prefix, so <code>source .devenv.sh &amp;&amp; DATABASE_URL=&hellip;
           pytest</code> cannot be allowlisted. The script resolves what the environment needs; the caller
           writes flags only.</p>
