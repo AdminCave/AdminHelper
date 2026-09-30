@@ -246,6 +246,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Temp-Waechter erkennt mehr Formen (R-0109):** `scripts/dev/hooks/harness-guard.sh`
+  verweigert jetzt auch einen Glob **ueber** einer Temp-Wurzel in jeder Tiefe
+  (`/t*/claude-1000/*`, `cd /t* && rm -rf claude-1000/*`) — bisher zaehlte nur ein Treffer auf
+  der Wurzel oder direkt darin, so dass ein solcher Glob die Verzeichnisse aller Sessions
+  erreichte. Dazu erkennt der Parser einen Operanden nach `--`, `|&` als Pipe, `);` als zwei
+  Operatoren (`for d in $(ls -d /tmp/tmp.*); do rm …`), `xargs sh -c 'rm …'` wie `xargs rm`
+  und `grep -l`/`-L` als Lister. Frei bleiben die Aufraeumer im eigenen Verzeichnis; die
+  verbleibenden Grenzen (Prozess-Substitution, `mapfile`, Laufzeit-Pfade ohne Glob,
+  `cat … | xargs rm`) stehen in `DEVELOPMENT.md` „Harness-Schutz und Kill-Switch".
+
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
   Routen, die API-Key oder JWT annehmen) und `InternalKey` (Header `X-Internal-Key`, der

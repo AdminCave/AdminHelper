@@ -638,6 +638,41 @@ denied "$OUT" && ok "denied: a glob above the value of TMPDIR" || bad "glob abov
 guard inter Bash "$(cmdjson 'rm -rf /?/x/*')"
 [ -z "$OUT" ] && ok "free: a glob above no temp root (/?/x/*)" || bad "false positive: /?/x/* -> $OUT"
 
+# R-0109, the parser: `--` ends the options (a `-home-…` operand is one), `|&`
+# is a pipe, `);` is two operators, `xargs sh -c 'rm …'` deletes like `xargs rm`,
+# and `grep -l`/`-L` list names. The same forms in an own directory stay free.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+cd /tmp/claude-1000 && rm -rf -- -home-x*
+ls -d /tmp/tmp.* |& xargs rm -rf
+for d in $(ls -d /tmp/tmp.*); do rm -rf "$d"; done
+ls /tmp/tmp.* | xargs sh -c 'rm -rf "$@"' _
+ls /tmp/tmp.* | xargs -I{} bash -c 'rm -rf {}'
+grep -l x /tmp/*.x | xargs rm
+grep -rL x /tmp/*.x | xargs rm -f
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+cd /tmp/foo.Ab12 && rm -rf -- -home-x*
+rm -rf -- -x*
+ls -d /tmp/foo.Ab12/tmp.* |& xargs rm -rf
+ls -d $SP/tmp.* |& xargs rm -rf
+for d in $(ls -d /tmp/foo.Ab12/tmp.*); do rm -rf "$d"; done
+for d in $(ls -d $SP/tmp.*); do rm -rf "$d"; done
+ls /tmp/foo.Ab12/tmp.* | xargs sh -c 'rm -rf "$@"' _
+ls /tmp/tmp.* | xargs sh -c 'echo "$@"' _
+grep -l x /tmp/foo.Ab12/*.x | xargs rm
+grep -l x /tmp/*.x | head -3
+grep -e l /tmp/*.x | xargs rm
+ls /tmp/tmp.* |& head -3
+CMDS
+
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
 while IFS= read -r cmd; do

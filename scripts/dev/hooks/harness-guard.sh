@@ -21,10 +21,16 @@
 # not lift it (Kevin, 2026-09-27): on 2026-09-25 a reviewer cleaned up with
 # `rm -rf /tmp/tmp.*` and took the fixtures of every other session along. That
 # covers a loop over such a glob that deletes in its body (`for d in /tmp/x*`,
-# `… | while read d`) and `… | xargs rm` behind it, and a glob ABOVE the root
-# at any depth (`/t*/claude-1000/*`, R-0109). One level deeper is somebody's
-# own directory (a scratchpad, an mktemp dir) and stays free: "anywhere below
-# /tmp" hit 13 legitimate scratchpad cleanups in 34 513 real commands.
+# `for d in $(ls /tmp/x*)`, `… | while read d`), `… | xargs rm` behind it (also
+# `|&`, `xargs sh -c 'rm …'`, a `grep -l` as the lister), an operand after `--`,
+# and a glob ABOVE the root at any depth (`/t*/claude-1000/*`, R-0109). One
+# level deeper is somebody's own directory (a scratchpad, an mktemp dir) and
+# stays free: "anywhere below /tmp" hit 13 legitimate scratchpad cleanups in
+# 34 513 real commands. Not seen: a list read by `mapfile`/`readarray` or a
+# process substitution, a list without a glob whose paths are built at runtime
+# (`ls /tmp | while read d; do rm -rf /tmp/$d`), a list piped into a shell
+# without xargs (`… | sh -c 'xargs rm'`, `… | sed 's/^/rm /' | sh`), and
+# `cat … | xargs rm` (the file's content, not names).
 #
 # The same holds for the ways past the pre-commit hook (R-0102, Kevin
 # 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git -c
@@ -59,7 +65,9 @@
 # (`$VAR/CLAUDE.md`, `rm -rf "$D"/*` — the hook cannot resolve a variable other
 # than $TMPDIR), `find … -exec sh -c 'rm …'`, a loop fed by a process substitution
 # (`done < <(ls /tmp/x*)`),
-# `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), and the
+# `find … -exec sed -i`, a here-doc fed to a shell (`bash <<EOF … EOF`), a
+# quoted string of operator characters only (`-m ");"`, read as the operators
+# once shlex has dropped the quotes), and the
 # three git ways of restoring content over a file — `git apply <patch>`,
 # `git checkout <rev> -- <pfad>`, `git restore --source=<rev> -- <pfad>`. For the
 # runner the settings cover those (checkout/restore/stash are denied outright,
@@ -129,7 +137,14 @@ WRAPPERS = {
 KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!"}
 # timeout's duration (`10`, `10s`, `1.5m`, `.5`) is no command word either.
 DURATION = re.compile(r"^([0-9]+\.?[0-9]*|\.[0-9]+)[smhd]?$")
-SEPARATORS = {"|", "||", "&&", ";", "&", ";;", ";&", ";;&"}
+SEPARATORS = {"|", "|&", "||", "&&", ";", "&", ";;", ";&", ";;&"}
+# Pipes hand what the left side lists on to the right side; `|&` is `2>&1 |`.
+PIPES = {"|", "|&"}
+# The shell operators, longest first: shlex hands a run of punctuation over as
+# ONE token (`$(ls /tmp/x*); do` ends in `);`), and each has to be split back
+# into the operators it is made of.
+OPERATORS = sorted(SEPARATORS | {"(", ")", "<", ">", ">>", "<<", "<<<", ">&", "<&", "&>", "&>>",
+                                 ">|", "<>"}, key=len, reverse=True)
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
 
 # The temp roots. `$TMPDIR` as TEXT stands for itself (a placeholder root no
@@ -367,6 +382,23 @@ def git_skips_hook(args):
     return None
 
 
+def grep_lists(args):
+    """grep prints file NAMES with -l/-L (also in a cluster like -rl), read
+    like getopt: in `-el` the l is -e's pattern, not a flag."""
+    for a in args:
+        if a in ("--files-with-matches", "--files-without-match"):
+            return True
+        if a == "--":
+            break
+        if a.startswith("-") and not a.startswith("--"):
+            for c in a[1:]:
+                if c in "lL":
+                    return True
+                if c in "efmABCdDX":
+                    break
+    return False
+
+
 def tokenize(cmd):
     """Shell tokens, quotes respected. punctuation_chars keeps the operators as
     tokens of their own, so `x|tee f` and `>CLAUDE.md` survive while a `|` inside
@@ -374,9 +406,25 @@ def tokenize(cmd):
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     try:
-        return list(lex)
+        return split_operators(list(lex))
     except ValueError:
         return cmd.split()
+
+
+def split_operators(tokens):
+    """A token of punctuation only that is no single operator — `);`, `));`,
+    `)|` — becomes the operators it is made of, longest match first; without
+    that, the body of `for d in $(ls /tmp/x*); do rm …` never became a segment."""
+    out = []
+    for t in tokens:
+        if t in OPERATORS or not t or any(c not in "();<>|&" for c in t):
+            out.append(t)
+            continue
+        while t:
+            op = next((o for o in OPERATORS if t.startswith(o)), t[0])
+            out.append(op)
+            t = t[len(op):]
+    return out
 
 
 def is_redirect(tok):
@@ -538,7 +586,9 @@ def run_segment(tok, cwd, depth, state, sep):
     bypasses.extend(w for w in env_words if GIT_CONFIG_ENV.match(w) and "hookspath" in w.lower())
     if not verb:
         return cwd
-    words = [a for a in args if not a.startswith("-")]
+    # After `--` every word is an operand: `rm -rf -- -home-x*` deletes -home-x*.
+    end = args.index("--") if "--" in args else len(args)
+    words = [a for a in args[:end] if not a.startswith("-")] + args[end + 1:]
 
     if verb == "git":
         hit = git_skips_hook(args)
@@ -574,10 +624,10 @@ def run_segment(tok, cwd, depth, state, sep):
         selects = glob
     if any(t in ("while", "until") for t in clean[:i]) and verb != "read":
         state["loops"].append((None, len(deletes)))   # a loop over nothing; `done` pops it
-    if sep == "|":
+    if sep in PIPES:
         # Only a lister hands a glob on: `cat /tmp/*.list | xargs rm` reads them.
         listed = next((w for w in words if has_glob(w) and tmp_glob(w, cwd)), None) \
-            if verb in ("ls", "echo", "printf") else None
+            if verb in ("ls", "echo", "printf") or verb == "grep" and grep_lists(args) else None
         state["pipe"] = piped or selects or listed
 
     if verb == "cd":
@@ -586,12 +636,17 @@ def run_segment(tok, cwd, depth, state, sep):
     if verb in ("bash", "sh", "dash", "zsh"):
         # -c, but also -lc and friends: any flag carrying a c takes the next word
         # as a command string.
+        seen = len(deletes)
         for j, a in enumerate(args):
             if a.startswith("-") and "c" in a:
                 rest = [w for w in args[j + 1:] if not w.startswith("-")]
                 if rest:
                     scan(rest[0], cwd, depth + 1)
                 break
+        # `… | xargs sh -c 'rm -rf "$@"' _` deletes what the pipe carries, like
+        # `… | xargs rm`.
+        if piped and len(deletes) > seen and "xargs" in (os.path.basename(t) for t in clean[:i]):
+            tmp_hits.append(piped)
     elif verb == "sed" and any(
         a == "-i" or a.startswith("-i.") or a.startswith("--in-place") for a in args
     ):

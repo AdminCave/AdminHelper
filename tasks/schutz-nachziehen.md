@@ -35,8 +35,10 @@ Dedup-Key: bug:scripts:harness-guard.sh:temp-glob-bypasses · HEAD: 8224e84c
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „Harness-Schutz und Kill-Switch" (:583–602): ein Satz, dass auch ein Glob über der Wurzel zählt
 
-### T2 — Wächter: `--`, `|&`, `);`, `xargs sh -c`, `grep -l/-L`; Grenzen aufschreiben  [ ]
+### T2 — Wächter: `--`, `|&`, `);`, `xargs sh -c`, `grep -l/-L`; Grenzen aufschreiben  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @41070ab1 2026-09-30T13:03:49+02:00
+Review: approve (opus)
 Änderung: (1) nach `--` zählt jedes Wort als Operand (`words`, :535); (2) `|&` ist ein Pipe-Trenner (`SEPARATORS`,
 :131, und die Pipe-Logik bei :572); (3) ein Token aus reiner Interpunktion wie `);` wird vor dem Segmentieren in
 seine Operatoren aufgetrennt (nach `tokenize`, :364–374); (4) `xargs` mit einer verschachtelten Shell (`sh`/`bash`
