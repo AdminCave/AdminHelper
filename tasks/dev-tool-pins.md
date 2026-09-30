@@ -39,8 +39,10 @@ rc 0; `npm ci` mit npm 10.9.8 fehlerfrei; `git diff --stat` nur die beiden packa
 Verify: bash scripts/dev/verify.sh web --strict
 Doku: CHANGELOG [Unreleased] Security
 
-### T2 — desktop-ui und desktop/e2e: dieselben Funde  [ ]
+### T2 — desktop-ui und desktop/e2e: dieselben Funde  [x]
 Komponente: desktop-ui · Dateien: apps/desktop/ui/package.json, apps/desktop/ui/package-lock.json, apps/desktop/e2e/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @ba9c2485 2026-09-30T11:25:03+02:00
+Review: approve (sonnet)
 Änderung: `apps/desktop/ui` wie T1, zusätzlich `@vitest/ui@4.1.11`; Ranges in `package.json` (`:25`
 `@vitest/coverage-v8`, `:26` `@vitest/ui`, `:39` `vitest`) werden `^4.1.11`. Erwartet: dieselben 12 Pakete,
 `@vitest/mocker` wandert im Lockfile aus `vitest/node_modules` nach oben. `apps/desktop/e2e`: nur
