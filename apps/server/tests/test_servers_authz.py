@@ -100,3 +100,35 @@ def test_server_delete_logs_monitoring_cleanup_http_error(
         r = test_client.delete(f"/api/servers/{server_id}", headers=headers)
     assert r.status_code == 204, r.text
     assert "HTTP 403" in caplog.text
+
+
+def test_server_answers_carry_tunnels_without_the_secret(test_client, db_session, admin_user):
+    from app.modules.frp.models import FrpServerConfig, FrpTunnel
+    from app.modules.servers.models import Server
+
+    db_session.add(
+        FrpServerConfig(id="cfg-m", name="m", server_addr="frps.example", auth_token="t")
+    )
+    db_session.add(Server(id="srv-m", name="masked", hostname="masked.example"))
+    db_session.add(
+        FrpTunnel(
+            id="tun-m",
+            server_id="srv-m",
+            frp_config_id="cfg-m",
+            name="masked-ssh",
+            tunnel_type="stcp",
+            protocol="ssh",
+            local_port=22,
+            secret_key="s" * 32,
+            visitor_port=6100,
+        )
+    )
+    db_session.commit()
+    headers = _auth(_login(test_client, "admin", "adminpass"))
+    listed = test_client.get("/api/servers", headers=headers)
+    assert listed.status_code == 200, listed.text
+    server = next(s for s in listed.json() if s["id"] == "srv-m")
+    assert [t["secretKey"] for t in server["frpTunnels"]] == [None]
+    one = test_client.get("/api/servers/srv-m", headers=headers)
+    assert one.status_code == 200, one.text
+    assert [t["secretKey"] for t in one.json()["frpTunnels"]] == [None]

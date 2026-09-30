@@ -47,6 +47,11 @@ class TestValidateServerName:
         with pytest.raises(ValueError):
             _validate_server_name(name)
 
+    def test_del_character_rejected(self):
+        # The server name reaches the frpc/visitor TOML through the same helper.
+        with pytest.raises(ValueError):
+            _validate_server_name("srv\x7f1")
+
 
 class TestValidateTags:
     def test_none_passes_through(self):

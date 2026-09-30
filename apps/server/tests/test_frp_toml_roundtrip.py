@@ -38,12 +38,10 @@ from app.modules.frp.models import FrpServerConfig, FrpTunnel
 from app.modules.frp.schemas import _TOML_BREAKERS, FrpServerConfigCreate
 from app.modules.users.schemas import UserCreate
 
-# What the validator lets through: no quote, no backslash, no control character.
-# Everything else — spaces, '=', '[', '#', unicode — is fair game and must survive.
-# U+007F is excluded here although the validator DOES let it through: TOML forbids
-# it in a basic string, so it produces a file frps cannot parse. That gap is a
-# finding of this suite, pinned in test_del_character_breaks_the_generated_toml
-# below rather than re-discovered as a random failure in every other property.
+# What the validator lets through: no quote, no backslash, no control character
+# (U+007F included — TOML forbids it in a basic string, so the schema rejects it,
+# see test_del_character_is_rejected_by_the_schema). Everything else — spaces, '=',
+# '[', '#', unicode — is fair game and must survive.
 SAFE_TEXT = st.text(
     alphabet=st.characters(
         blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20
@@ -70,8 +68,7 @@ EXTRA_VALUE = st.one_of(
 )
 PORT = st.integers(min_value=1, max_value=65535)
 SECRET = st.text(
-    # U+007F excluded for the same reason as in SAFE_TEXT — the gap belongs to
-    # its own pinned test, not to every secret this suite generates.
+    # U+007F excluded for the same reason as in SAFE_TEXT.
     alphabet=st.characters(
         blacklist_characters=sorted(_TOML_BREAKERS) + ["\x7f"], min_codepoint=0x20
     ),
@@ -265,36 +262,6 @@ def test_visitor_toml_round_trips(name, visitor_port, secret):
 
 @pytest.mark.xfail(
     strict=True,
-    # raises= is what makes the reminder work: without it ANY exception counts as
-    # the expected failure, so once the validator learns about U+007F the
-    # ValidationError from the line above would keep this test quietly xfailing
-    # forever instead of turning XPASS and asking to be deleted.
-    raises=tomllib.TOMLDecodeError,
-    reason="_reject_toml_breakers rejects ord(c) < 0x20 but not U+007F, which TOML "
-    "forbids in a basic string just the same — the generated file then does not parse",
-)
-def test_del_character_breaks_the_generated_toml():
-    """U+007F passes the schema and produces TOML that tomllib refuses.
-
-    Held as a strict xfail on purpose: the moment the validator learns about
-    U+007F this test XPASSes and fails the suite, which is the reminder to delete
-    it. Pure availability, not injection — DEL cannot close a string or open a
-    section, it only makes the file unreadable for frps.
-    """
-    # auth_token, not server_addr: frps.toml carries the token, while server_addr
-    # only ever reaches the frpc and visitor files.
-    poisoned = "0123456789abcde\x7f"  # 16 chars, so _check_secret's floor is met
-    accepted = FrpServerConfigCreate(
-        name="frps", server_addr="frps.example.test", auth_token=poisoned
-    )
-    assert accepted.auth_token == poisoned  # the schema let it through
-
-    toml = generate_frps_toml(_config(auth_token=accepted.auth_token))
-    tomllib.loads(toml)  # raises TOMLDecodeError -> the xfail
-
-
-@pytest.mark.xfail(
-    strict=True,
     raises=tomllib.TOMLDecodeError,
     reason="an extra_config key that the generator also writes itself (auth, webServer, "
     "transport) is emitted a second time and TOML refuses the duplicate — the schema "
@@ -344,7 +311,7 @@ def test_allow_users_is_only_safe_because_usernames_are_validated():
 
 @given(
     text=st.text(min_size=1, max_size=30),
-    breaker=st.sampled_from(sorted(_TOML_BREAKERS) + ["\x00", "\x1f", "\t"]),
+    breaker=st.sampled_from(sorted(_TOML_BREAKERS) + ["\x00", "\x1f", "\t", "\x7f"]),
     position=st.integers(min_value=0, max_value=30),
 )
 @example(text="host", breaker='"', position=0)
@@ -363,3 +330,14 @@ def test_every_breaker_is_rejected(text, breaker, position):
 
     with pytest.raises(ValidationError):
         FrpServerConfigCreate(name="frps", server_addr=poisoned, auth_token="0123456789abcdef")
+
+
+def test_del_character_is_rejected_by_the_schema():
+    """TOML forbids U+007F in a basic string like the other control characters: in
+    the generated frps.toml it would leave a file frps cannot read. The schema
+    rejects it with the same message."""
+    # auth_token, not server_addr: frps.toml carries the token, while server_addr
+    # only ever reaches the frpc and visitor files.
+    poisoned = "0123456789abcde\x7f"  # 16 chars, so _check_secret's floor is met
+    with pytest.raises(ValidationError, match="unzulässige Zeichen"):
+        FrpServerConfigCreate(name="frps", server_addr="frps.example.test", auth_token=poisoned)

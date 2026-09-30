@@ -46,6 +46,14 @@ def test_tunnel_name_rejects_toml_breakers():
         _tunnel(name='evil"\nauth.token = "attacker')
 
 
+def test_tunnel_name_rejects_del():
+    # U+007F is a control character to TOML as well; a basic string may not carry it.
+    with pytest.raises(ValidationError):
+        _tunnel(name="ok\x7fname")
+    with pytest.raises(ValidationError):
+        FrpTunnelUpdate(name="ok\x7fname")
+
+
 def test_custom_domains_rejects_newline():
     with pytest.raises(ValidationError):
         _tunnel(custom_domains="ok.example\nvhostHTTPSPort = 1")
