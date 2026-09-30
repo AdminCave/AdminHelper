@@ -56,8 +56,10 @@ Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md (:583–602, „Nicht erfasst"); CHANGELOG [Unreleased] Changed: der Temp-Wächter erkennt mehr Formen
 Abhängt von: T1
 
-### T3 — Commit-Hooks auch bei merge, cherry-pick, revert und rebase; `chmod` als Schreib-Verb  [ ]
+### T3 — Commit-Hooks auch bei merge, cherry-pick, revert und rebase; `chmod` als Schreib-Verb  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/prepare-commit-msg, scripts/dev/hooks/pre-merge-commit, scripts/dev/harness.sh, scripts/dev/hooks/harness-guard.sh, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+Evidenz: run.sh[quick]: 6 passed, 0 failed, 12 skipped @591a4c68 2026-09-30T13:38:47+02:00
+Review: request_changes -> fixed -> approve (opus, 2 rounds)
 Änderung: Zwei neue Hooks (Modus 100755, SPDX-Kopf wie `pre-commit`), beide
 `exec bash "$ROOT/scripts/dev/review.sh" sec --staged`; der Kopf-Kommentar von `prepare-commit-msg` sagt, dass
 der Sequencer ihn undokumentiert ruft (git 2.47.3 gemessen) und der Test das bewacht. `harness.sh status`
@@ -104,3 +106,35 @@ HEAD: 8224e84c (die Zeile R-0082 trägt keinen Dedup-Key)
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md „Task schliessen" (:419–421: was diff-scan erkennt, der Ausweg `review: ok`; Doku-Zeilen, die ein Muster zitieren, tragen `<!-- review: ok … -->` wie DEVELOPMENT.md:606); CHANGELOG [Unreleased] Changed
 Abhängt von: T4
+
+### T6 — Wächter: ein Here-String <<< beginnt kein Here-Doc  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Herkunft: Roadmap R-0126, gefunden im Opus-Review von T2 (2026-09-30), aufgenommen auf Kevins Wort (übermittelt durch
+die Aufsicht adminhelper-ac). R-0125 (`[^…]`, `{a,b}`, `cd /t*` mit wörtlichem Operand) bleibt draußen.
+Änderung: `logical_lines` (harness-guard.sh) liest `<<<` als Beginn eines Here-Docs mit dem Delimiter `<` und
+überspringt in einem mehrzeiligen Kommando alles nach dieser Zeile. Ein Here-String (`<<<`) beginnt kein Here-Doc;
+`<<EOF`, `<<-EOF`, `<<'EOF'`, `<< "EOF"` bleiben Here-Docs und ihre Rümpfe weiter übersprungen.
+Test (zuerst, rot): die mehrzeiligen JSON-Fälle `tr a b <<< "$x"` + Zeilenumbruch + `rm -rf /tmp/tmp.*` (interaktiv)
+und + `sed -i s/a/b/ CLAUDE.md` (mit `AH_AUTONOMOUS=1`) → heute frei, danach verweigert; Gegenprobe: die bestehenden
+Here-Doc-Fälle (Rumpf mit `rm -rf /tmp/tmp.*` frei) bleiben grün, dazu `<<-EOF` und `<<'EOF'` mit demselben Rumpf.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: Kopfkommentar von harness-guard.sh, falls er Here-Strings nennt; sonst keine (Bugfix)
+Abhängt von: T5
+
+### T7 — Commit-Hooks: pre-applypatch für git am und rebase --apply  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/pre-applypatch, scripts/dev/harness.sh, scripts/tests/review_scripts_test.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, AUTONOMOUS.md, CHANGELOG.md
+Herkunft: R-0110, gefunden im Opus-Review von T3 (2026-09-30); aufgenommen von der Aufsicht (adminhelper-ac) als
+derselbe Mechanismus wie R-0110, im freigegebenen Umfang. Die Verzeichnisebene des Wächters (`rm -rf .claude`,
+`chmod -R …`) ist eine eigene Roadmap-Zeile, nicht Teil dieses Ledgers.
+Änderung: Neuer Hook `scripts/dev/hooks/pre-applypatch` (Modus 100755, SPDX-Kopf wie `pre-commit`),
+`exec bash "$ROOT/scripts/dev/review.sh" sec --staged`. `git am` und `git rebase --apply` (auch über
+`rebase.backend=apply`) rufen keinen der drei Hooks aus T3, sondern die applypatch-Hooks; githooks(5):
+pre-applypatch läuft nach dem Anwenden, vor dem Commit, ein Exit ≠ 0 verhindert den Commit. `harness.sh status`
+prüft alle vier Hooks. T3 hat `git am`/`rebase --apply` unter „nicht abgedeckt“ dokumentiert; T7 dreht das um.
+Test (zuerst, rot): in `$HFIX` (alle vier Hooks) `git am` eines Patches mit `tasks/sec-*.md` → heute committet
+(rc 0), danach verweigert, HEAD bleibt (`git am --abort`); `git rebase --apply` über den sec-Commit stoppt; ein
+sauberes `git am` geht durch; `harness.sh status` meldet einen fehlenden `pre-applypatch` als `NOT armed`; Modus
+und shellcheck des Hooks wie bei den anderen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md „pre-commit-Hook" (vier Hooks, `git am`/`rebase --apply` aus „nicht abgedeckt“ heraus); AUTONOMOUS.md (PreToolUse-Absatz); CHANGELOG [Unreleased] Changed (Eintrag aus T3 ergänzen)
+Abhängt von: T3

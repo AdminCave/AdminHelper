@@ -41,16 +41,20 @@ hook_line() {
   fi
 }
 
-# The pre-commit hook (review.sh sec before every commit, R-0102) is armed per
-# clone by hand; nothing else would tell that it is missing, because a clone
-# without it commits exactly as before.
+# The commit hooks (review.sh sec before every commit, R-0102; for cherry-pick,
+# revert, rebase and merge commits too, R-0110) are armed per clone by hand;
+# nothing else would tell that they are missing, because a clone without them
+# commits exactly as before.
 precommit_line() {
-  local hp
+  local hp h missing=""
   hp="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null)"
   # The setting alone arms nothing: a hook file that is gone or lost its
   # execute bit (`chmod -x`, a copy without modes) is skipped by git in silence.
-  if [ "$hp" = "scripts/dev/hooks" ] && [ ! -x "$ROOT/scripts/dev/hooks/pre-commit" ]; then
-    echo "pre-commit:      NOT armed — core.hooksPath is set, but this checkout has no executable scripts/dev/hooks/pre-commit"
+  for h in pre-commit prepare-commit-msg pre-merge-commit; do
+    [ -x "$ROOT/scripts/dev/hooks/$h" ] || missing="${missing:+$missing, }$h"
+  done
+  if [ "$hp" = "scripts/dev/hooks" ] && [ -n "$missing" ]; then
+    echo "pre-commit:      NOT armed — core.hooksPath is set, but this checkout has no executable $missing in scripts/dev/hooks"
   elif [ "$hp" = "scripts/dev/hooks" ]; then
     echo "pre-commit:      armed (core.hooksPath=scripts/dev/hooks)"
   else

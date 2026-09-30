@@ -268,9 +268,12 @@ Damit „autonom" nicht an ständigen Prompts scheitert, ist Folgendes eingerich
   `harness.sh off` — den **Kevin** setzt: ein Modell, das seinen eigenen Wächter abschalten
   darf, hat keinen. Zwei Regeln gelten dagegen **in jedem Modus**, auch interaktiv und auch
   mit gesetztem Kill-Switch: kein Löschen per Glob in einem geteilten Temp-Verzeichnis (`/tmp`,
-  `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session; R-0098), und keine Umgehung des pre-commit-Hooks (R-0102). Der Hook
-  `scripts/dev/hooks/pre-commit` fährt vor jedem Commit `review.sh sec --staged`; scharf wird
-  er je Klon mit `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt es.
+  `/var/tmp`, `/dev/shm`, `$TMPDIR`, `/tmp/claude-<uid>/…` bis zur Session; R-0098), und keine Umgehung des pre-commit-Hooks (R-0102). Drei Git-Hooks
+  fahren `review.sh sec --staged`: `scripts/dev/hooks/pre-commit` vor jedem Commit,
+  `prepare-commit-msg` bei cherry-pick, revert, rebase (Standard-Backend) und Merge-Commit,
+  `pre-merge-commit`
+  vor einem Merge-Commit (R-0110); scharf werden sie je Klon mit
+  `git config core.hooksPath scripts/dev/hooks`, `harness.sh status` zeigt es.
   Einzelheiten: DEVELOPMENT.md „Harness-Schutz und Kill-Switch".
 - **Kein Auto-Format-Hook.** (Ein früherer PostToolUse-Formatter wurde entfernt: er
   reformatierte ganze Dateien → gegen die Surgical-Regel und die Doku-Commits, und brach

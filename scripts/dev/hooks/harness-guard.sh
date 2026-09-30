@@ -40,7 +40,8 @@
 # gaps below: a git alias for `commit -n`, `.git/config` written directly (it is
 # no harness path), a hooksPath brought in through `include.path`, `git config
 # --edit`, `eval` or a command substitution, git-commit called by its exec path,
-# plumbing (`commit-tree`, `update-ref`) and `chmod -x` on the hook.
+# and plumbing (`commit-tree`, `update-ref`). `chmod -x` on a hook is a write to
+# a harness path (below), so the harness rule, not this one, covers it.
 #
 # Always exits 0: exit 2 would block every call whatever the JSON says, and any
 # other non-zero exit blocks nothing — the call goes on through the normal
@@ -49,8 +50,9 @@
 #
 # Bash commands are BEST EFFORT and deliberately narrow: only the shapes that
 # actually write — a `>`/`>>` redirection, `sed -i`, `tee`, `cp`/`mv`/`install`,
-# and the ones that take a file away entirely (`rm`, `truncate`, `ln -sf`, `dd
-# of=`) — are inspected, and only when they are the segment's COMMAND, so reading a
+# the ones that take a file away entirely (`rm`, `truncate`, `ln -sf`, `dd
+# of=`), and the ones that change what it is (`chmod`, `chown`, `chgrp`) — are
+# inspected, and only when they are the segment's COMMAND, so reading a
 # harness file (`cat CLAUDE.md`, `grep -n mv scripts/tests/run.sh`) stays free.
 # The command is tokenized before it is split into segments, so a `|` or `&&`
 # inside a quoted string (a commit message, say) is text and not a pipeline; a
@@ -146,6 +148,8 @@ PIPES = {"|", "|&"}
 OPERATORS = sorted(SEPARATORS | {"(", ")", "<", ">", ">>", "<<", "<<<", ">&", "<&", "&>", "&>>",
                                  ">|", "<>"}, key=len, reverse=True)
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
+# A chmod mode word: octal, or symbolic (`+x`, `u=rw,go-w`).
+CHMOD_MODE = re.compile(r"^([0-7]+|[ugoa]*[-+=].*)$")
 
 # The temp roots. `$TMPDIR` as TEXT stands for itself (a placeholder root no
 # real path has), its current VALUE is a root as well.
@@ -663,6 +667,21 @@ def run_segment(tok, cwd, depth, state, sep):
         for a in args:
             if a.startswith("of="):
                 out.append(rel(a[3:], cwd))
+    elif verb in ("chmod", "chown", "chgrp"):
+        # `chmod -x scripts/dev/hooks/pre-commit` disarms the hook as surely as
+        # deleting it (R-0110). The mode, owner or group comes first unless
+        # --reference names a file for it; a `-x` mode already left `words`.
+        # getopt takes any unambiguous prefix of --reference (`--ref=`).
+        ops = list(words)
+        refs = [k for k, a in enumerate(args)
+                if len(a.split("=", 1)[0]) >= 5 and "--reference".startswith(a.split("=", 1)[0])]
+        if refs:
+            k = refs[0]
+            if "=" not in args[k] and k + 1 < len(args) and args[k + 1] in ops:
+                ops.remove(args[k + 1])   # the reference file is only read
+        elif ops and (verb != "chmod" or CHMOD_MODE.match(ops[0])):
+            ops = ops[1:]
+        out.extend(rel(w, cwd) for w in ops)
     elif verb in ("cp", "mv", "install"):
         # An explicit -t/--target-directory, or the last word, is the target.
         target = None

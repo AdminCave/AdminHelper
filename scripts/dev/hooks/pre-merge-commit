@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Kevin Stenzel
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# pre-merge-commit — git hook: `review.sh sec --staged` before `git merge`
+# creates a merge commit (R-0110). githooks(5): a non-zero exit "causes the git
+# merge command to abort before creating a commit". prepare-commit-msg runs for
+# that commit as well; this is the hook git documents for it. A fast-forward
+# creates no commit and runs neither.
+#
+# Exit ≠ 0 aborts the merge: 4 for a finding, anything else when review.sh could
+# not run — fail closed, like pre-commit.
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)" || exit 2
+exec bash "$ROOT/scripts/dev/review.sh" sec --staged

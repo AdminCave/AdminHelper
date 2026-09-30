@@ -702,8 +702,10 @@ echo "── pre-commit hook ──"
 HFIX="$WORK/hooked"
 mkdir -p "$HFIX/scripts/dev/hooks" "$HFIX/tasks" "$HFIX/docs"
 cp "$REPO_ROOT/scripts/dev/review.sh" "$HFIX/scripts/dev/review.sh"
-cp "$REPO_ROOT/scripts/dev/hooks/pre-commit" "$HFIX/scripts/dev/hooks/pre-commit"
-chmod 755 "$HFIX/scripts/dev/hooks/pre-commit"
+for h in pre-commit prepare-commit-msg pre-merge-commit; do
+  cp "$REPO_ROOT/scripts/dev/hooks/$h" "$HFIX/scripts/dev/hooks/$h"
+  chmod 755 "$HFIX/scripts/dev/hooks/$h"
+done
 printf 'plain\n' > "$HFIX/docs/note.md"
 # Tracked before the hook was armed, so `commit -a` has a blocked path to carry.
 printf '# sec\n' > "$HFIX/tasks/sec-old.md"
@@ -764,42 +766,86 @@ printf 'x\n' >> "$WORK/hooked-wt/docs/note.md"
 [ -f "$WORK/hooked-wt/hook-ran.txt" ] && [ ! -f "$HFIX/hook-ran.txt" ] \
   && ok "a worktree runs the hook of its own branch" || bad "worktree hook: $(ls "$WORK/hooked-wt" "$HFIX")"
 
-# What the hook does NOT cover (the spec left it open): cherry-pick and revert
-# commit without running pre-commit. Documented here, so a git that starts to
-# run it turns this red instead of the docs going stale.
+# R-0110: cherry-pick, revert, rebase and a merge commit never run pre-commit.
+# prepare-commit-msg runs for all of them — for the sequencer undocumented,
+# measured on git 2.47.3 — and pre-merge-commit for a merge; both run the same
+# check. A git that stops calling them there turns these cases red.
+MAIN=$(git -C "$HFIX" branch --show-current)
 git -C "$HFIX" switch -q -c side
 printf 'finding\n' > "$HFIX/tasks/sec-side.md"; git -C "$HFIX" add -- tasks/sec-side.md
 git -C "$HFIX" -c core.hooksPath=/dev/null commit -qm "side" >/dev/null 2>&1
-git -C "$HFIX" switch -q -
+git -C "$HFIX" switch -q "$MAIN"
 H1=$(heads)
 OUT=$(git -C "$HFIX" cherry-pick side 2>&1); rc=$?
-[ $rc -eq 0 ] && [ "$(heads)" = "$((H1 + 1))" ] && [ -f "$HFIX/tasks/sec-side.md" ] \
-  && ok "known gap: cherry-pick commits a sec ledger without running pre-commit" || bad "cherry-pick: rc=$rc out=$OUT"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H1" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "cherry-pick of a sec ledger is refused, HEAD stays" || bad "cherry-pick: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" cherry-pick --abort >/dev/null 2>&1
+OUT=$(git -C "$HFIX" merge --no-ff --no-edit side 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(heads)" = "$H1" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "a merge commit that brings a sec ledger is refused, no merge commit" || bad "merge: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" merge --abort >/dev/null 2>&1
+[ ! -e "$HFIX/tasks/sec-side.md" ] && [ -z "$(git -C "$HFIX" status --porcelain)" ] \
+  && ok "... and both leave nothing behind after --abort" || bad "left behind: $(git -C "$HFIX" status --porcelain)"
+# pre-merge-commit on its own: with prepare-commit-msg not executable, the merge
+# is still refused — the documented hook carries it.
+chmod 644 "$HFIX/scripts/dev/hooks/prepare-commit-msg"
+OUT=$(git -C "$HFIX" merge --no-ff --no-edit side 2>&1); rc=$?
+[ $rc -ne 0 ] && [ "$(heads)" = "$H1" ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "pre-merge-commit alone refuses the merge commit" || bad "pre-merge-commit alone: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" merge --abort >/dev/null 2>&1
+chmod 755 "$HFIX/scripts/dev/hooks/prepare-commit-msg"
+# What is clean still goes through, as a cherry-pick and as a merge commit.
+for b in pick-clean merge-clean; do
+  git -C "$HFIX" switch -q -c "$b" "$MAIN"
+  printf '%s\n' "$b" > "$HFIX/docs/$b.md"; git -C "$HFIX" add -- "docs/$b.md"
+  git -C "$HFIX" commit -qm "$b" >/dev/null 2>&1
+  git -C "$HFIX" switch -q "$MAIN"
+done
+OUT=$(git -C "$HFIX" cherry-pick pick-clean 2>&1); rc=$?
+[ $rc -eq 0 ] && [ "$(heads)" = "$((H1 + 1))" ] && ok "a clean cherry-pick goes through" || bad "clean cherry-pick: rc=$rc out=$OUT"
+OUT=$(git -C "$HFIX" merge --no-ff --no-edit merge-clean 2>&1); rc=$?
+[ $rc -eq 0 ] && [ -n "$(git -C "$HFIX" rev-parse -q --verify HEAD^2)" ] \
+  && ok "a clean merge commit goes through" || bad "clean merge: rc=$rc out=$OUT"
+# Rebasing side onto the moved main replays the sec commit: the rebase stops.
+SIDE=$(git -C "$HFIX" rev-parse side)
+OUT=$(git -C "$HFIX" rebase "$MAIN" side 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -q 'tasks/sec-side.md' <<<"$OUT" \
+  && ok "a rebase over a sec commit stops with the sec message" || bad "rebase: rc=$rc out=$OUT"
+git -C "$HFIX" rebase --abort >/dev/null 2>&1
+[ "$(git -C "$HFIX" rev-parse side)" = "$SIDE" ] && ok "... and side is untouched after --abort" || bad "rebase moved side"
+git -C "$HFIX" switch -q "$MAIN"
+# A revert whose commit touches a sec path: the same refusal.
+printf 'finding\n' > "$HFIX/tasks/sec-rev.md"; git -C "$HFIX" add -- tasks/sec-rev.md
+git -C "$HFIX" -c core.hooksPath=/dev/null commit -qm "sec on main" >/dev/null 2>&1
+H2=$(heads)
 OUT=$(git -C "$HFIX" revert --no-edit HEAD 2>&1); rc=$?
-[ $rc -eq 0 ] && [ ! -f "$HFIX/tasks/sec-side.md" ] \
-  && ok "known gap: revert commits a sec path without running pre-commit" || bad "revert: rc=$rc out=$OUT"
+[ $rc -ne 0 ] && [ "$(heads)" = "$H2" ] && grep -q 'tasks/sec-rev.md' <<<"$OUT" \
+  && ok "a revert that touches a sec ledger is refused, HEAD stays" || bad "revert: rc=$rc heads=$(heads) out=$OUT"
+git -C "$HFIX" revert --abort >/dev/null 2>&1
 
-# The file itself: git ignores a hook without the execute bit, and the lint
-# step of run.sh only covers *.sh.
+# The files themselves: git ignores a hook without the execute bit, and the
+# lint step of run.sh only covers *.sh.
 # A tree without a working .git (a box's synced worktree, a tarball) cannot say
 # what git recorded; there the bit on disk is what git would run.
 # --show-toplevel, not --git-dir: a tarball unpacked inside another repository
 # would find that one.
-if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
-  mode=$(git -C "$REPO_ROOT" ls-files -s -- scripts/dev/hooks/pre-commit | cut -d' ' -f1)
-  [ "$mode" = 100755 ] && ok "pre-commit is tracked with mode 100755" || bad "pre-commit mode: '${mode:-untracked}'"
-else
-  [ -x "$REPO_ROOT/scripts/dev/hooks/pre-commit" ] \
-    && ok "pre-commit is executable (no git here to read the recorded mode)" || bad "pre-commit is not executable"
-fi
 HOOK_SKIPPED=0
-if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck --severity=warning "$REPO_ROOT/scripts/dev/hooks/pre-commit" \
-    && ok "shellcheck: pre-commit is clean" || bad "shellcheck findings in pre-commit"
-else
-  echo "  SKIP: shellcheck not available — pre-commit is not linted"
-  HOOK_SKIPPED=1
-fi
+for h in pre-commit prepare-commit-msg pre-merge-commit; do
+  if [ "$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
+    mode=$(git -C "$REPO_ROOT" ls-files -s -- "scripts/dev/hooks/$h" | cut -d' ' -f1)
+    [ "$mode" = 100755 ] && ok "$h is tracked with mode 100755" || bad "$h mode: '${mode:-untracked}'"
+  else
+    [ -x "$REPO_ROOT/scripts/dev/hooks/$h" ] \
+      && ok "$h is executable (no git here to read the recorded mode)" || bad "$h is not executable"
+  fi
+  if command -v shellcheck >/dev/null 2>&1; then
+    shellcheck --severity=warning "$REPO_ROOT/scripts/dev/hooks/$h" \
+      && ok "shellcheck: $h is clean" || bad "shellcheck findings in $h"
+  else
+    echo "  SKIP: shellcheck not available — $h is not linted"
+    HOOK_SKIPPED=1
+  fi
+done
 
 # ══ the real repo ═════════════════════════════════════════════════════════════
 echo "── repo wiring ──"

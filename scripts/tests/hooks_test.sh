@@ -124,15 +124,22 @@ if [ "$(git -C "$TREE" rev-parse --git-dir 2>/dev/null)" = ".git" ]; then
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — core.hooksPath is set, but this checkout has no executable" <<<"$OUT" \
     && ok "core.hooksPath set, but no hook file in this checkout: NOT armed" || bad "no hook file: rc=$rc out=$OUT"
-  printf '#!/bin/sh\nexit 0\n' > "$TREE/scripts/dev/hooks/pre-commit"
+  for h in pre-commit prepare-commit-msg pre-merge-commit; do
+    printf '#!/bin/sh\nexit 0\n' > "$TREE/scripts/dev/hooks/$h"
+  done
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed" <<<"$OUT" \
-    && ok "... and a hook file without the execute bit is NOT armed either" || bad "non-executable hook: rc=$rc out=$OUT"
-  chmod 755 "$TREE/scripts/dev/hooks/pre-commit"
+    && ok "... and hook files without the execute bit are NOT armed either" || bad "non-executable hook: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/pre-commit" "$TREE/scripts/dev/hooks/prepare-commit-msg"
+  run_h status
+  [ $rc -eq 0 ] && grep -q "pre-commit: *NOT armed — .* no executable pre-merge-commit in scripts/dev/hooks" <<<"$OUT" \
+    && ok "one of the three hooks missing: NOT armed, and it names that one" || bad "pre-merge-commit missing: rc=$rc out=$OUT"
+  chmod 755 "$TREE/scripts/dev/hooks/pre-merge-commit"
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *armed (core.hooksPath=scripts/dev/hooks)" <<<"$OUT" \
-    && ok "core.hooksPath=scripts/dev/hooks and an executable hook: pre-commit armed" || bad "armed: rc=$rc out=$OUT"
-  rm -f "$TREE/scripts/dev/hooks/pre-commit"
+    && ok "core.hooksPath=scripts/dev/hooks and all three hooks executable: armed" || bad "armed: rc=$rc out=$OUT"
+  rm -f "$TREE/scripts/dev/hooks/pre-commit" "$TREE/scripts/dev/hooks/prepare-commit-msg" \
+    "$TREE/scripts/dev/hooks/pre-merge-commit"
   git -C "$TREE" config core.hooksPath .githooks
   run_h status
   [ $rc -eq 0 ] && grep -q "pre-commit: *NOT set (core.hooksPath=.githooks)" <<<"$OUT" \
@@ -672,6 +679,30 @@ grep -l x /tmp/*.x | head -3
 grep -e l /tmp/*.x | xargs rm
 ls /tmp/tmp.* |& head -3
 CMDS
+
+# R-0110: taking a hook's execute bit disarms it as surely as deleting it, so
+# chmod/chown/chgrp on a harness path is a write like `sed -i`.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+chmod -x scripts/dev/hooks/pre-commit
+chmod 644 scripts/dev/hooks/pre-merge-commit
+chmod u-x,go-w scripts/dev/hooks/prepare-commit-msg
+chown nobody CLAUDE.md
+chgrp staff .claude/settings.json
+chmod --reference=README.md scripts/dev/verify.sh
+chown --ref=README.md CLAUDE.md
+chgrp --refer README.md scripts/dev/hooks/pre-commit
+CMDS
+guard inter Bash "$(cmdjson 'chmod -x scripts/dev/hooks/pre-commit')"
+[ -z "$OUT" ] && grep -q 'harness path' <<<"$ERR" \
+  && ok "interactive: chmod on a hook only warns" || bad "interactive chmod: out=$OUT err=$ERR"
+guard auto Bash "$(cmdjson 'chmod +x apps/web/x.sh')"
+[ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: chmod outside the harness paths" || bad "chmod false positive: $OUT$ERR"
+guard auto Bash "$(cmdjson 'chmod --reference CLAUDE.md apps/web/x.sh')"
+[ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: the --reference file is only read" || bad "chmod --reference: $OUT$ERR"
 
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.
