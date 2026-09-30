@@ -262,6 +262,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Audit: Logout nur, wenn eine Sitzung endet (Server, R-0105):** `POST /api/auth/logout` schreibt
+  `auth.logout` nur noch, wenn der Aufruf einen Token gesperrt hat (Bearer oder Refresh-Token aus Body
+  oder Cookie). Ein Logout ohne Token, mit ungueltigem oder abgelaufenem Token oder mit denselben
+  Tokens ein zweites Mal hinterlaesst keinen Eintrag; Antwort (`200`) und Cookie-Loeschung bleiben
+  gleich. Ein Logout nur mit Cookie traegt jetzt den Benutzernamen. Doku:
+  `docs/developer/api-reference.html`, `docs/admin/betrieb.html`.
 - **Ein ruff ueberall (R-0074):** `apps/server/requirements-dev.txt` pinnt `ruff==0.15.20`
   statt des Bodens `ruff>=0.15`, und `scripts/dev/toolchain-lockstep.sh` verlangt Gleichheit
   mit `ci.yml` und `scripts/vm/bootstrap_linux.sh` statt nur „nicht darueber". Mit dem Boden

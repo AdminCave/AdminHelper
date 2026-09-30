@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Logout: Audit nur, wenn eine Sitzung endet (R-0105) — Task-Ledger
-Status: freigegeben · Branch: feature/logout-audit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/logout-audit · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0105
 Heavy: none — nur die Bedingung um den Audit-Aufruf; Antwort, Status, Cookie-Verhalten, Security-Schema (R-0054) und Gateway bleiben gleich, pytest deckt jeden Zweig ab.
@@ -20,8 +20,10 @@ beendet — kein oder ein ungültiger Token, ein abgelaufener Access-Token allei
 schreibt so trotzdem einen Eintrag; ein Logout nur mit Cookie trägt keinen Benutzernamen. Heute prüft kein Test das
 Logout-Audit (`tests/test_audit_wiring.py` kennt nur Login, `:88`/`:99`).
 
-### T1 — `auth.logout` wird nur protokolliert, wenn der Logout einen Token gesperrt hat  [ ]
+### T1 — `auth.logout` wird nur protokolliert, wenn der Logout einen Token gesperrt hat  [x]
 Komponente: server · Dateien: apps/server/app/modules/users/auth_router.py, apps/server/tests/test_audit_wiring.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/betrieb.html, docs/en/admin/operations.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @2c70c43e 2026-09-30T14:51:38+02:00
+Review: am Ende (Kurz-Ledger, Gesamt-Review nach T1)
 Änderung: In `logout` beide `blacklist_token`-Aufrufe immer ausführen und ihre Rückgaben zu `revoked` verbinden (kein
 Kurzschluss wie `revoked = revoked or blacklist_token(…)`, sonst bliebe der Refresh-Token ungesperrt); `audit.record`
 nur bei `revoked`. Wurde der Refresh-Token gesperrt und fehlt `uname`, kommt der Name aus
