@@ -251,6 +251,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   einen stcp-Tunnel ohne Secret aus der frpc- und Visitor-Konfiguration weg. Der Agent holt die
   neue Konfiguration von selbst (Provision-Hash); ein laufender Desktop-Visitor eines solchen
   Tunnels braucht einen Tunnel-Neustart.
+- **FRP: Tunnel-Antworten ohne Secret (Server):** Die JSON-Antworten von `/api/frp/tunnels`,
+  `/api/frp/status`, `/api/frp/server-config/{id}` und `/api/servers` liefern `secretKey` als
+  `null`; das Feld bleibt, das Schema aendert sich nicht. Das Secret steht nur noch in den
+  erzeugten TOML-Dateien und im Provisioning. Ein `PUT /api/frp/tunnels/{id}` mit `secret_key`
+  `null` oder `""` laesst das gespeicherte Secret unveraendert; wird ein Tunnel per `PUT` zu STCP
+  und hat kein Secret, erzeugt der Server eins. Doku: `docs/developer/api-reference.html`.
 - **API-Schema: `X-API-Key` und `X-Internal-Key` als Security-Schemes (Server):** Das
   OpenAPI-Schema deklariert neben `HTTPBearer` jetzt `ApiKey` (Header `X-API-Key`, an allen
   Routen, die API-Key oder JWT annehmen) und `InternalKey` (Header `X-Internal-Key`, der

@@ -35,7 +35,7 @@ def list_tunnels(
     if frp_config_id:
         query = query.filter(FrpTunnel.frp_config_id == frp_config_id)
     tunnels = query.order_by(FrpTunnel.name).all()
-    return [t.to_dict() for t in tunnels]
+    return [t.to_dict(mask_secrets=True) for t in tunnels]
 
 
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
@@ -130,7 +130,7 @@ def create_tunnel(
         object_id=tunnel.id,
         object_label=tunnel.name,
     )
-    return tunnel.to_dict()
+    return tunnel.to_dict(mask_secrets=True)
 
 
 @router.get("/tunnels/{tunnel_id}")
@@ -138,7 +138,7 @@ def get_tunnel(tunnel_id: str, db: Session = Depends(get_db), _admin=Depends(get
     tunnel = db.query(FrpTunnel).filter(FrpTunnel.id == tunnel_id).first()
     if not tunnel:
         raise HTTPException(status_code=404, detail="Tunnel nicht gefunden")
-    return tunnel.to_dict()
+    return tunnel.to_dict(mask_secrets=True)
 
 
 @router.put("/tunnels/{tunnel_id}")
@@ -227,7 +227,7 @@ def update_tunnel(
         object_id=tunnel.id,
         object_label=tunnel.name,
     )
-    return tunnel.to_dict()
+    return tunnel.to_dict(mask_secrets=True)
 
 
 @router.delete("/tunnels/{tunnel_id}", status_code=status.HTTP_204_NO_CONTENT)

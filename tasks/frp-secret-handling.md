@@ -53,8 +53,10 @@ unverändert. `test_migration_chain_*` bleiben grün.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_migrations_smoke.py
 Doku: CHANGELOG (Changed: Migration füllt leere stcp-Secrets; laufende Desktop-Visitoren dieser Tunnel brauchen einen Neustart)
 
-### T4 — JSON-Antworten liefern secretKey als null; TOML und Provisioning unverändert  [ ]
+### T4 — JSON-Antworten liefern secretKey als null; TOML und Provisioning unverändert  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/models.py, apps/server/app/modules/frp/tunnel_router.py, apps/server/app/modules/frp/status_router.py, apps/server/app/modules/servers/models.py, apps/server/tests/test_frp_tunnels.py, apps/server/tests/test_frp_status.py, apps/server/tests/test_frp_config.py, apps/server/tests/test_servers_authz.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, CHANGELOG.md
+Evidenz: run.sh[quick]: 4 passed, 0 failed, 14 skipped @26155818 2026-09-30T12:46:41+02:00
+Review: approve (sonnet)
 Änderung: `FrpTunnel.to_dict(mask_secrets: bool = False)` (`frp/models.py:111`, Muster `FrpServerConfig.to_dict`
 `:41`) setzt `secretKey` auf `None`, wenn maskiert. Maskiert wird in den Tunnel-Routen (`tunnel_router.py:38/133/141/224`),
 in `status_router.py:105`, in `FrpServerConfig.to_dict` für `include_tunnels` (`:64`, `mask_secrets` durchreichen) und

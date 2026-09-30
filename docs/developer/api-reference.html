@@ -126,10 +126,10 @@
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/server-config/{id}</code></div>
 
           <h2>FRP &ndash; Tunnels</h2>
-          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels</code><p>Query: <code>?server_id</code>, <code>?frp_config_id</code>.</p></div>
+          <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels</code><p>Query: <code>?server_id</code>, <code>?frp_config_id</code>. Tunnel-Antworten liefern <code>secretKey</code> als <code>null</code> &ndash; hier, in <code>/api/frp/status</code>, <code>/api/frp/server-config/{id}</code> und <code>/api/servers</code> (<code>frpTunnels</code>). Das Secret steht nur in den erzeugten TOML-Dateien (<code>/api/frp/generate/*</code>) und im Provisioning (<code>/api/frp/provision/{server_id}/config</code>).</p></div>
           <div class="endpoint"><span class="method-post">POST</span><code>/api/frp/tunnels</code><p>STCP (mit <code>secret_key</code>, <code>visitor_port</code>) oder HTTPS (<code>custom_domains</code>). <code>auto_create_connection=true</code> erzeugt direkt eine passende Connection.</p></div>
           <div class="endpoint"><span class="method-get">GET</span><code>/api/frp/tunnels/{id}</code></div>
-          <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/tunnels/{id}</code></div>
+          <div class="endpoint"><span class="method-put">PUT</span><code>/api/frp/tunnels/{id}</code><p>Ein <code>secret_key</code> mit <code>null</code> oder <code>""</code> l&auml;sst das gespeicherte Secret unver&auml;ndert; wird der Tunnel STCP und hat kein Secret, erzeugt der Server eins.</p></div>
           <div class="endpoint"><span class="method-delete">DELETE</span><code>/api/frp/tunnels/{id}</code></div>
 
           <h2>FRP &ndash; Generate (TOML/ZIP)</h2>
