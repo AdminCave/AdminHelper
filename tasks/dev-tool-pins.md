@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Werkzeug-Pins: npm-Lockfiles ohne Audit-Befund, ein ruff überall (R-0038, R-0074) — Task-Ledger
-Status: freigegeben · Branch: harness/dev-tool-pins · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/dev-tool-pins · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfad scripts/dev ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/dev-tool-pins.md (Roadmap R-0038, R-0074)
 Heavy: none — nur Lockfiles von dev-only-Paketen, requirements-dev, ruff.toml und der Offline-Lockstep; kein Stack-, Gateway-, PKI- oder Install-Pfad. Belegt wird es in der PR-CI (web check/lint/unit und Playwright, desktop-ui, python-lint, tools-Job) und mit einem `audit.yml`-Lauf auf dem Branch (`gh workflow run audit.yml --ref harness/dev-tool-pins`, npm-Job grün).
@@ -19,8 +19,10 @@ Branch `harness/`, weil T3/T4 `scripts/dev/toolchain-lockstep.sh` ändern: Bau i
 `npm audit --audit-level=high`) liefert heute in allen drei Verzeichnissen rc 1, der nächste Cron läuft Montag
 2026-10-05 06:17 UTC.
 
-### T1 — web: vitest 4.1.11 und die offenen npm-Funde  [ ]
+### T1 — web: vitest 4.1.11 und die offenen npm-Funde  [x]
 Komponente: web · Dateien: apps/web/package.json, apps/web/package-lock.json, CHANGELOG.md
+Evidenz: run.sh[quick]: 1 passed, 0 failed, 17 skipped @15de02b3 2026-09-30T11:20:02+02:00
+Review: approve (sonnet)
 Änderung: In `apps/web` einmalig `npx -y npm@11 install --package-lock-only --ignore-scripts vitest@4.1.11
 @vitest/coverage-v8@4.1.11`, danach `npx -y npm@11 audit fix --package-lock-only --ignore-scripts`; nichts von
 Hand im Lockfile. Die Ranges in `package.json` (`:28` `@vitest/coverage-v8`, `:40` `vitest`) werden `^4.1.11`

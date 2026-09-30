@@ -116,6 +116,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Security
 
+- **npm-Abhaengigkeiten (dev) ohne Audit-Befund (R-0038):** In `apps/web` stehen `vitest` und
+  `@vitest/coverage-v8` auf 4.1.11 (GHSA-82fw-gwwq-j7x9, moderate; Range `^4.1.11`), dazu im
+  Lockfile `brace-expansion` 5.0.9 → 5.0.12 (GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p; high),
+  `undici` 7.29.0 → 7.30.0 (GHSA-rfgv-xxqx-mfg5, GHSA-w293-vg96-wgc3; high) und `devalue`
+  5.8.1 → 5.9.4 (GHSA-9rgm-9g3h-6x36). Alle sind im Lockfile `dev`-Abhaengigkeiten.
+  `npm audit --audit-level=high`, mit dem der woechentliche Dependency Audit gated, meldete die
+  beiden high-Funde; jetzt ist `npm audit --audit-level=moderate` ohne Befund. Die Lockfiles
+  schreibt einmalig `npx -y npm@11 … --package-lock-only`, weil npm 10.9.8 dabei in arborist
+  abbricht; `npm ci` laeuft mit npm 10 unveraendert.
+
 - **SSRF-Guard (Server und Monitoring):** Die DNS-Aufloesung des Guards lief ueber einen
   geteilten Vier-Worker-Pool. Vier haengende Aufloesungen belegten ihn vollstaendig, jeder
   weitere `is_private_url`-Aufruf lief in seine 5-Sekunden-Frist und meldete fail-closed
