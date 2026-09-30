@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Kleinfixes: Verify-Zeile, REG-Ledger, Doku-Drift — Task-Ledger
-Status: bereit · Branch: harness/harness-kleinfixes · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/harness-kleinfixes · Commit-Granularität: pro Task · Review: am Ende (Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/harness-kleinfixes.md (Roadmap R-0104, R-0119, R-0111)
 Heavy: none — nur Harness-Skripte, ihre hermetischen Tests und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad, keine VM.
