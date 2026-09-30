@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Server: Key-Bindung, Import-422 und BIGINT-Grenze — Task-Ledger
-Status: bereit · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
+Status: erledigt · Branch: feature/server-key-binding-contract · Commit-Granularität: pro Task · Review: pro Task (feature-review) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/server-key-binding-contract.md (Roadmap R-0055, R-0056, R-0069)
 Heavy: none — alles in-process: Authz-Matrix über die Key-Routen, Import-Fehlerform gegen das deklarierte Schema, Snapshot und oasdiff; Gateway, Compose, Agent, Web und Desktop bleiben unverändert, kein Client im Repo ruft /import, die Agent-Pfade (provision config/config-hash) sind in der Matrix.
@@ -75,3 +75,18 @@ Herkunft: /code-review über den Branch-Diff (2026-09-30)
 (3) `_state` vergleicht die ganzen Zeilen (`to_dict()`), nicht nur `(id, name, server_id)`.
 Verify: bash scripts/dev/verify.sh server --strict -- tests/test_api_key_server_binding.py
 Doku: API-Referenz DE+EN (Teil der Task)
+
+Abschluss-Evidenz (2026-09-30):
+- T1 in zwei Review-Runden (Opus). Nach Runde 1 kam auf Kevins Entscheidung Variante (a) hinzu: Schema-422 für die
+  snake_case-Schreibweisen gemappter Felder. Dazu kamen Tests für die 403 vor der Existenzprüfung (srv-missing-Zeilen).
+  Die Import-Hälfte des 422-Satzes ging nach T2.
+- Ein voller Server-Lauf während T2 war verworfen, nicht rot: `UndefinedTable revoked_identities`, weil eine andere
+  pytest-Session auf derselben Test-DB per `drop_all` abräumte. Der Nachlauf über task-close war grün (783 passed).
+- Gesamt-Schnellcheck @9f1611d2: `run.sh[quick]: 18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`.
+- /code-review über den Branch-Diff: acht Punkte, keiner eine Regression. Drei wurden T4, die übrigen gingen zur Einordnung
+  an die Aufsicht.
+- Heavy: none, am Diff bestätigt: nur connections-Router/-Schemas, das OpenAPI-Override und Tests. Gateway, Compose, Agent,
+  Web und Desktop sind unberührt.
+- Nach dem Merge von origin/main (0d656ff1, mit #62 logout-audit und #63): `verify.sh server --strict` → `798 passed,
+  2 skipped` (Redis lokal), Schemathesis `288 passed`, `run.sh[quick]: 4 passed, 0 failed, 14 skipped, 2 test-skips,
+  0 reruns`; `openapi-breaking.sh server` → no breaking changes.
