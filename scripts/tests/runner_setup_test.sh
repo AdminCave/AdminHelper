@@ -26,7 +26,7 @@ ok()  { echo "  ok   $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL $*"; FAIL=$((FAIL + 1)); }
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod -R u+rwx "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 SHIM="$WORK/shim"; mkdir -p "$SHIM"
 CALLED="$WORK/called.txt"; : > "$CALLED"
 for cmd in useradd userdel su psql createdb install chown chmod rm ln mkdir; do
@@ -57,6 +57,9 @@ system_state() {
     stat -c '%n %Y %a' /srv/ah /srv/ah/repo /srv/ah/lanes 2>/dev/null
     stat -c '%n %Y %a' /home/adminhelper-runner/.devenv.sh 2>/dev/null
     stat -c '%n %Y %a' /home/adminhelper-runner/.config/adminhelper/oauth.env 2>/dev/null
+    # The inode, not the mtime: every run.sh that takes the shared lock rewrites the holder
+    # line, and the inode is what "never recreated" promises.
+    stat -c '%n %i %a %U' /var/lib/adminhelper-dev /var/lib/adminhelper-dev/py.lock 2>/dev/null
   } 2>/dev/null
 }
 STATE_BEFORE="$(system_state)"
@@ -138,6 +141,91 @@ grep -q 'exists — git clone would be skipped' <<<"$PLAN" \
 grep -qF -- 'useradd -m -s /bin/bash' <<<"$PLAN" \
   && bad "existing user: useradd is still in the plan" || ok "existing user: useradd appears nowhere in the plan"
 
+# The python lock Kevin's checkouts and the runner share: a root-owned 0755
+# directory, a 0666 file in it — created only when missing; an existing file only
+# gets owner and mode back (a new inode would split a lock that is being held).
+echo "── the shared python lock ──"
+LOCKS_FRESH="$WORK/lock-fresh"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_FRESH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "install -d -o root -g root -m 755 $LOCKS_FRESH" <<<"$PLAN" \
+  && ok "the lock directory is root:root 0755" || bad "no root:root 0755 install of the lock directory"
+grep -qF -- "install -o root -g root -m 666 /dev/null $LOCKS_FRESH/py.lock" <<<"$PLAN" \
+  && ok "a missing lock file is created root:root 0666" || bad "no root:root 0666 install of py.lock"
+LOCKS_PRESENT="$WORK/lock-present"; mkdir -p "$LOCKS_PRESENT"; : > "$LOCKS_PRESENT/py.lock"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_PRESENT" bash "$SETUP" --dry-run 2>&1)
+! grep -qF -- "/dev/null $LOCKS_PRESENT/py.lock" <<<"$PLAN" \
+  && grep -qF -- "chown root:root $LOCKS_PRESENT/py.lock" <<<"$PLAN" \
+  && grep -qF -- "chmod 666 $LOCKS_PRESENT/py.lock" <<<"$PLAN" \
+  && ok "an existing lock file only gets owner and mode, it is not recreated" \
+  || bad "existing lock file: $(grep -F "$LOCKS_PRESENT" <<<"$PLAN")"
+grep -qF -- "/var/lib/adminhelper-dev/py.lock" <<<"$OUT" \
+  && ok "without the override the plan uses /var/lib/adminhelper-dev/py.lock" || bad "the default lock path is not in the plan"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_PRESENT" bash "$SETUP" --dry-run --remove 2>&1)
+grep -qF -- "rm -rf $LOCKS_PRESENT" <<<"$PLAN" \
+  && ok "--remove takes the lock directory and its file away" || bad "--remove leaves the lock in place"
+[ -f "$LOCKS_PRESENT/py.lock" ] && ok "and the dry run left the file where it was" || bad "the dry run removed the lock file"
+LOCKS_ODD="$WORK/lock-odd"; mkdir -p "$LOCKS_ODD/py.lock"
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_LOCKDIR="$LOCKS_ODD" bash "$SETUP" --dry-run 2>&1); rc=$?
+[ $rc -ne 0 ] && grep -qF -- "$LOCKS_ODD/py.lock exists but is no regular file" <<<"$PLAN" \
+  && ! grep -qF -- "chmod 666 $LOCKS_ODD/py.lock" <<<"$PLAN" \
+  && ok "a py.lock that is no regular file stops the run, nothing is chmod-ed" \
+  || bad "a directory at py.lock: rc=$rc $(grep -F "$LOCKS_ODD" <<<"$PLAN")"
+# Three scripts name the shared lock: this one creates it, run.sh takes it, the red
+# team checks it. A path changed in one of them alone would split the lock again
+# without a single red test (lane_test always passes its own AH_PY_LOCK_SHARED).
+SETUP_LOCK="$(sed -n 's/^LOCK_DIR="\(.*\)"$/\1/p' "$SETUP")/py.lock"
+RUN_LOCK="$(sed -n 's/^AH_PY_LOCK_SHARED="\${AH_PY_LOCK_SHARED:-\(.*\)}"$/\1/p' "$REPO_ROOT/scripts/tests/run.sh")"
+[ "$SETUP_LOCK" = /var/lib/adminhelper-dev/py.lock ] && [ "$RUN_LOCK" = "$SETUP_LOCK" ] \
+  && grep -qx "redteam_py_lock $SETUP_LOCK 0" "$REPO_ROOT/scripts/dev/runner-redteam.sh" \
+  && ok "runner-setup.sh, run.sh and the red team name the same lock" \
+  || bad "the lock path differs: setup '$SETUP_LOCK', run.sh '$RUN_LOCK', red team: $(grep '^redteam_py_lock ' "$REPO_ROOT/scripts/dev/runner-redteam.sh")"
+
+# The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
+# root-owned directory, then moved into place with one `mv --no-copy -T`. Anything already at
+# $SRV/repo without a .git — a directory or a file — stops the run, dry or not.
+echo "── the clone goes only into a path that does not exist ──"
+for kind in dir file; do
+  TARGET="$WORK/srv-occupied-$kind"; mkdir -p "$TARGET"
+  if [ "$kind" = dir ]; then mkdir -p "$TARGET/repo"; else : > "$TARGET/repo"; fi
+  PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$TARGET" bash "$SETUP" --dry-run 2>&1); rc=$?
+  [ $rc -ne 0 ] && grep -qF -- "$TARGET/repo exists but is no git clone" <<<"$PLAN" \
+    && ok "a $kind at \$SRV/repo without .git stops the run (rc=$rc)" \
+    || bad "a $kind at \$SRV/repo without .git: rc=$rc, plan: $(tail -3 <<<"$PLAN")"
+  ! grep -qE '^[[:space:]]*\$ git clone' <<<"$PLAN" \
+    && ok "and no clone is planned into it" || bad "a clone is planned into an occupied $kind"
+done
+# The runner owns $SRV and may close $SRV/repo to everybody else; a plan made
+# without root then cannot see the .git, and that is no reason to stop.
+if [ "$(id -u)" != 0 ]; then
+  CLOSED="$WORK/srv-closed"; mkdir -p "$CLOSED/repo/.git"; chmod 000 "$CLOSED/repo"
+  PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$CLOSED" bash "$SETUP" --dry-run 2>&1); rc=$?
+  chmod 755 "$CLOSED/repo"
+  [ $rc -eq 0 ] && grep -qF -- "$CLOSED/repo is not searchable without root — the real run decides" <<<"$PLAN" \
+    && ! grep -q 'is no git clone' <<<"$PLAN" && ! grep -qE '^[[:space:]]*\$ git clone' <<<"$PLAN" \
+    && ok "a dry run without root that cannot look into \$SRV/repo says so and goes on" \
+    || bad "an unsearchable \$SRV/repo: rc=$rc, plan: $(grep -F "$CLOSED" <<<"$PLAN" | tail -3)"
+  SHUT="$WORK/srv-shut"; mkdir -p "$SHUT/repo/.git"; chmod 000 "$SHUT"
+  PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$SHUT" bash "$SETUP" --dry-run 2>&1); rc=$?
+  chmod 755 "$SHUT"
+  [ $rc -eq 0 ] && grep -qF -- "$SHUT/repo is not searchable without root — the real run decides" <<<"$PLAN" \
+    && ! grep -qE '^[[:space:]]*\$ (git clone|mv )' <<<"$PLAN" \
+    && ok "so does one that cannot look into \$SRV, and it plans no clone" \
+    || bad "an unsearchable \$SRV: rc=$rc, plan: $(grep -F "$SHUT" <<<"$PLAN" | tail -3)"
+else
+  echo "  (as root: the two cases of a dry run without root are not run)"
+fi
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$FRESH" bash "$SETUP" --dry-run 2>&1)
+grep -qF -- "the real run checks first: $WORK belongs to root, is writable by nobody else and shares a filesystem with $FRESH" <<<"$PLAN" \
+  && ok "the plan names the checks the real run makes before the clone" || bad "the plan does not name the parent and filesystem checks"
+MK_AT="$(grep -nF -- "mktemp -d -p $WORK .ah-clone.XXXXXX" <<<"$PLAN" | head -1 | cut -d: -f1)"
+CL_AT="$(grep -nF -- "git clone --no-hardlinks -b main $REPO_ROOT $WORK/.ah-clone.XXXXXX/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
+MV_AT="$(grep -nF -- "mv --no-copy -T $WORK/.ah-clone.XXXXXX/repo $FRESH/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
+[ -n "$MK_AT" ] && [ -n "$CL_AT" ] && [ -n "$MV_AT" ] && [ "$MK_AT" -lt "$CL_AT" ] && [ "$CL_AT" -lt "$MV_AT" ] \
+  && ok "absent \$SRV/repo: mktemp beside it, clone into the temp dir, then mv --no-copy -T into place" \
+  || bad "clone plan out of order or missing (mktemp ${MK_AT:-?}, clone ${CL_AT:-?}, mv ${MV_AT:-?})"
+! grep -qF -- "git clone --no-hardlinks -b main $REPO_ROOT $FRESH/repo" <<<"$PLAN" \
+  && ok "and never straight into \$SRV/repo" || bad "the plan still clones straight into \$SRV/repo"
+
 # The overrides are a test hook and must stay one: outside --dry-run they have to
 # be ignored, or a stray variable in somebody's shell could provision the wrong
 # user. A behaviour test cannot show this — between argument parsing and the root
@@ -148,6 +236,8 @@ awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | gre
   && ok "the overrides sit inside the --dry-run guard" || bad "AH_RUNNER_DRY_USER is not guarded by DRY=1"
 awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_SRV' \
   && ok "the SRV override sits inside the same guard" || bad "AH_RUNNER_DRY_SRV is not guarded by DRY=1"
+awk '/^if \[ "\$DRY" = 1 \]; then/{f=1} f{print} f&&/^fi$/{exit}' "$SETUP" | grep -q 'AH_RUNNER_DRY_LOCKDIR' \
+  && ok "the lock directory override too (--remove deletes it as root)" || bad "AH_RUNNER_DRY_LOCKDIR is not guarded by DRY=1"
 PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER=nobody-at-all bash "$SETUP" 2>&1); prc=$?
 [ $prc -eq 2 ] && ! grep -q 'nobody-at-all' <<<"$PLAN" \
   && ok "a real run without --dry-run still demands root and names no override" \

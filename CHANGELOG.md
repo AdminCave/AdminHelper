@@ -178,6 +178,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **FRP: Secret und Visitor-Port nur an STCP-Tunneln (Server, R-0129):** Ein HTTPS-Tunnel speichert weder
+  `secret_key` noch `visitor_port`; `POST` verwirft mitgeschickte Werte, und der Wechsel per `PUT` auf HTTPS
+  loescht beide. Der Wechsel zurueck auf STCP erzeugt ein neues Secret und vergibt einen freien Port, wenn der
+  gespeicherte inzwischen einem anderen Tunnel gehoert. Das heilt auch aeltere Zeilen ohne Datenmigration;
+  bisher endete dieser Rueckwechsel mit `409`. Doku: `docs/developer/api-reference.html`,
+  `docs/admin/frp-tunnel.html`.
+- **FRP: Generate-Routen nur mit nutzbaren Tunneln (Server, R-0128):** `visitor-toml`, `visitor-bundle` und
+  `frpc-toml` lassen STCP-Tunnel ohne Secret weg, bevor sie pruefen, ob ein Tunnel da ist. Bleibt keiner uebrig,
+  antworten sie mit demselben `404` wie ohne Tunnel, und `bulk-zip` schreibt fuer einen solchen Nutzer keine
+  `visitors/<user>.toml`. Das `auth.token` von frps steht damit nur in einer Datei, die auch einen Tunnel
+  enthaelt. Doku: `docs/developer/api-reference.html`.
 - **Verbindungen: nur bekannte Felder gehen in Spalten (Server, R-0136):** Beim Anlegen, Aendern und
   Importieren uebernimmt der Server nur die Felder der API (`name`, `kind`, `host`, …, in camelCase) in
   die Spalten einer Verbindung. Alles andere bleibt Zusatzinformation in `extra_data`, auch ein
@@ -296,6 +307,22 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Eintraege mit.
 
 ### Changed
+
+- **Python-Sperre ueber Nutzergrenzen, Runner-Setup klont nur neu (R-0080, R-0077):**
+  `scripts/tests/run.sh` nimmt fuer `server-pytest` und `schemathesis` die geteilte Sperre
+  `/var/lib/adminhelper-dev/py.lock`, sobald ihr Verzeichnis existiert (`AH_PY_LOCK_FILE` geht
+  vor, der Pfad ist ueber `AH_PY_LOCK_SHARED` aenderbar); ohne es bleibt es bei
+  `~/.cache/adminhelper-py.lock` je Nutzer. So warten Kevins Laeufe und die des Runners
+  aufeinander. Eine nur lesbare Sperrdatei sperrt weiter, eine fehlende oder nicht oeffenbare ist
+  ein SKIP mit Grund (unter `--strict` rot), und die Halter-Zeile erscheint nur mit druckbaren
+  Zeichen. `scripts/dev/runner-setup.sh` legt die Datei
+  an (`--remove` nimmt sie mit) und klont nur noch in einen Pfad, den es nicht gibt: ein
+  vorhandenes Verzeichnis ohne `.git` bricht mit einem Satz ab, der Klon entsteht in einem
+  Temp-Verzeichnis in `/srv` und wird danach umbenannt. Ein bestehender Runner bekommt die Sperre mit einem erneuten
+  `sudo bash scripts/dev/runner-setup.sh`. Das Red Team prueft die Sperre mit
+  (`runner-redteam.sh --py-lock <pfad>`: vorhanden, root gehoerend, Verzeichnis fuer den Runner
+  nicht schreibbar, nehmbar) und meldet `FAIL`, solange das Setup nicht erneut lief. Anleitung:
+  `DEVELOPMENT.md` „Runner-User".
 
 - **diff-scan: weitere Skip-Muster und Rueckgaben mit Wert (R-0132):** `review.sh diff-scan`
   meldet jetzt auch `fit(`, `fdescribe(`, `.runIf(`, `.fails(`, `test.fail(`, `.fixme(` (also <!-- review: ok nennt die Muster -->

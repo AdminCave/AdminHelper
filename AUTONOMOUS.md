@@ -165,13 +165,13 @@ Mechanik dahinter:
   (`scripts/vm/rsync-exclude.txt` schließt `.git` nicht aus, aber nichts auf der Box verlässt
   sich darauf). Die Box braucht kein Repo (Kevin, 2026-09-25): Kopf und Tree-Hash gibt
   `iter.sh` vom Client mit, und `run.sh` nimmt sie, wenn das `git` der Box nichts antwortet.
-- **Die schweren Python-Schritte stehen je Nutzer Schlange.** `server-pytest` und
-  `schemathesis` holen in `run.sh` eine Sperre, die alle Checkouts desselben Unix-Nutzers
-  teilen: laufen eine Lane und der Haupt-Checkout gleichzeitig, fährt der zweite Server-Lauf
-  sichtbar nach dem ersten, statt ihm Speicher und Tabellen zu nehmen. Der Runner-Nutzer (ab
-  Stufe 7) hat seine eigene Sperre; eine nutzerübergreifende steht noch aus. Das ersetzt die
-  Absprache „nur ein server-Lauf zur Zeit"; Wartezeit und Abschalter stehen in
-  `DEVELOPMENT.md` („Python-Tests lokal").
+- **Die schweren Python-Schritte stehen Schlange.** `server-pytest` und `schemathesis` holen
+  in `run.sh` eine Sperre, die alle Checkouts teilen: laufen eine Lane und der Haupt-Checkout
+  gleichzeitig, fährt der zweite Server-Lauf sichtbar nach dem ersten, statt ihm Speicher und
+  Tabellen zu nehmen. Hat `runner-setup.sh` die geteilte Sperre `/var/lib/adminhelper-dev/py.lock`
+  angelegt, warten auch Kevin und der Runner-Nutzer (ab Stufe 7) aufeinander; ohne ihr Verzeichnis
+  gilt die Sperre je Unix-Nutzer. Das ersetzt die Absprache „nur ein server-Lauf zur Zeit";
+  Wartezeit und Abschalter stehen in `DEVELOPMENT.md` („Python-Tests lokal").
 - **`Heavy:` im Ledger-Kopf** (`none | linux-full | scenario <flags> | windows`) sagt, welche
   schwere Suite der Abschluss braucht; es ersetzt für neue Ledger die beiden älteren Felder
   unten, die `feature-build` bei älteren Ledgern weiter liest. Dass eine Lane ihre

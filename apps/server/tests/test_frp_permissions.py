@@ -220,3 +220,60 @@ def test_visitor_toml_admin_for_unknown_user_returns_404(
     r = test_client.get("/api/frp/generate/visitor-toml?user_id=999999", headers=h)
     assert r.status_code == 404, r.text
     assert "Benutzer" in r.json()["detail"]
+
+
+class TestTunnelsWithoutSecret:
+    """A stcp tunnel without a secret is left out of every generated config. A user or server
+    whose only stcp tunnel lacks one is answered like one without tunnels: the shared frps
+    auth token goes out only next to a tunnel that can be used."""
+
+    @staticmethod
+    def _without_secret(db, tid: str) -> None:
+        db.get(FrpTunnel, tid).secret_key = None
+        db.commit()
+
+    @staticmethod
+    def _assign(db, user, *server_ids: str) -> None:
+        for sid in server_ids:
+            user.servers.append(db.get(Server, sid))
+        db.commit()
+
+    def test_visitor_bundle_refuses(self, db_session, normal_user, two_servers_with_tunnels):
+        self._without_secret(db_session, "t-a")
+        self._assign(db_session, normal_user, "srv-a")
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+
+    def test_visitor_toml_refuses(self, db_session, normal_user, two_servers_with_tunnels):
+        self._without_secret(db_session, "t-a")
+        self._assign(db_session, normal_user, "srv-a")
+        with pytest.raises(HTTPException) as exc:
+            gen_visitor_toml(config_id=None, user_id=None, db=db_session, current_user=normal_user)
+        assert exc.value.status_code == 404
+
+    def test_frpc_toml_refuses(self, test_client, db_session, admin_user, two_servers_with_tunnels):
+        self._without_secret(db_session, "t-a")
+        r = test_client.get("/api/frp/generate/frpc-toml/srv-a", headers=_login(test_client))
+        assert r.status_code == 404, r.text
+
+    def test_bulk_zip_writes_no_visitor_without_one(
+        self, test_client, db_session, admin_user, normal_user, two_servers_with_tunnels
+    ):
+        import io
+        import zipfile
+
+        self._without_secret(db_session, "t-a")
+        self._assign(db_session, normal_user, "srv-a")
+        r = test_client.get("/api/frp/generate/bulk-zip", headers=_login(test_client))
+        assert r.status_code == 200, r.text
+        names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+        assert f"visitors/{normal_user.username}.toml" not in names, names
+        assert "clients/serverB/frpc.toml" in names, names
+
+    def test_one_usable_tunnel_is_enough(self, db_session, normal_user, two_servers_with_tunnels):
+        self._without_secret(db_session, "t-a")
+        self._assign(db_session, normal_user, "srv-a", "srv-b")
+        toml = gen_visitor_bundle(config_id=None, db=db_session, current_user=normal_user)["toml"]
+        assert toml.count("[[visitors]]") == 1
+        assert "b-ssh" in toml and "a-ssh" not in toml
