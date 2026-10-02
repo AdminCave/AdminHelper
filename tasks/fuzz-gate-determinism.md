@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fuzz-Gate deterministisch (R-0063) — Task-Ledger
-Status: bereit · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: erledigt · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/fuzz-gate-determinism.md (Roadmap R-0063)
 Heavy: none — nur Test-Konfiguration, Test-Stubs, ein Lint und Request-Schranken im Monitoring-Schema; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Tiefe (alle Phasen, 100 Beispiele) bleibt im Wochenlauf; ein grüner Wochenlauf nach dem Merge ist die Evidenz dafür.
@@ -116,3 +116,19 @@ jedem run.sh-Lauf, dessen pytest-Schritte `requirements-dev.txt` installieren; e
 venv, wie es ist. CHANGELOG-Eintrag aus T3 nachziehen.
 Verify: bash scripts/tests/run.sh quick --strict --only monitoring scripts
 Doku: DEVELOPMENT.md (Teil der Task), CHANGELOG
+
+Abschluss-Evidenz (2026-10-02):
+- Instrument (T1) auf dem alten Gate (5 Beispiele, alle Phasen): `monitoring: 3915 cases, 5968 differing lines`, exit 1.
+  Nach T2 (Vergleich je Test, weil pytest-randomly die Testreihenfolge mischt) mit dem neuen Gate (0, nur explicit):
+  `server: 9576 cases, 0 differing lines`, `monitoring: 3552 cases, 0 differing lines`, `ca-issuer: 177 cases, 0 differing lines`,
+  exit 0. Gegenprobe mit 5 Beispielen: `monitoring: 4062 cases, 930 differing lines`, exit 1.
+- Pins: hypothesis==6.168.3, schemathesis==4.29.0. Der Job „Schema fuzzing“ nennt keine Versionen (pip -q); die Lock-Jobs desselben
+  grünen Laufs 36983502860 zeigen sie, die Aufsicht hat das bestätigt.
+- T3: Der Monitoring-Lint fand 12 Einträge (acht Felder); oasdiff monitoring exit 0, nur WARN. T4: ohne Stub `4 failed, 304 passed`
+  (proxy_agent_report, client has been closed), mit Stub `308 passed`.
+- /code-review über den Branch-Diff: zehn Punkte. Vier wurden T6 (Domänengrenze duration_minutes, wirksame 422-Tests,
+  Protokoll-Kodierung, Pin-Satz); vier gingen als Roadmap-Kandidaten an die Aufsicht; der Rest bleibt unverändert, begründet in der
+  Übergabe.
+- Nach dem Merge von origin/main (abef751a, mit #65): `run.sh quick --strict` → `18 passed, 0 failed, 0 skipped, 12 test-skips,
+  0 reruns`; danach T6 per task-close `run.sh[quick] monitoring scripts: 10 passed, 0 failed`.
+- Heavy: none. Der nächste grüne Wochenlauf nach dem Merge ist die Evidenz für die Tiefe (alle Phasen, 100 Beispiele).
