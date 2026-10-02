@@ -178,10 +178,14 @@ führt die Zeilen im Kopfkommentar auf; `new-task` hängt sie nicht an.
 - **`reg-<datum>-<schritt>.md`** — von `scripts/tests/heavy.sh` geschrieben, nicht von
   `/feature-plan`: eine bestätigte Regression aus einem Wochenlauf (Schritt auf zwei
   Boxen rot, auf dem letzten PASS-Commit grün). Ein Entwurf in der Form von
-  `/feature-plan --kurz`: `Status: geplant`, `Review: am Ende`, `Heavy: linux-full`, die
-  DoD-Zeile, in der Task `Beweis:`, `Dedup-Key: reg:<schritt>` und `HEAD:`, dazu ein
-  Beweis-Absatz über die drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit).
-  Komponente, `Verify:` und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
+  `/feature-plan --kurz`: `Status: geplant`, `Branch: feature/reg-<datum>-<schritt>` (der
+  Branch, den das `--kurz`-Gate anlegt und auf dem es den Plan committet), `Review: am Ende`,
+  `Heavy: linux-full` mit dem Schritt-Befehl `bash scripts/tests/run.sh all --strict --step
+  "<schritt>"` in der Begründung, die DoD-Zeile, in der Task `Beweis:`,
+  `Dedup-Key: reg:<schritt>`, `HEAD:` und den Platzhalter
+  `Verify: bash scripts/dev/verify.sh <komponente> --strict`, dazu ein Beweis-Absatz über die
+  drei Stationen (erste Box 3×, frische Zweit-VM, Basis-Commit). Komponente (auch im
+  Platzhalter) und `Semantik:` ergänzt `/feature-plan --kurz` aus der Roadmap-Zeile;
   die Freigabe bleibt Kevins Haken, danach ist es ein Ledger wie jedes andere. Die zugehörige
   Roadmap-Zeile (Klasse REG) hängt `heavy.sh` selbst an.
 - **`harness-stufe-1.md`** — `Status: erledigt` (gemergt, PR #11). Stufe 1 der Autonomie-Roadmap („Grün heißt

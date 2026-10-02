@@ -217,18 +217,21 @@ Komponenten-Suite startet. Es sourct `.devenv.sh` (bzw. `$AH_DEVENV`), loest
 `AH_TEST_DB` auf und delegiert an `scripts/tests/run.sh`:
 
 ```bash
-bash scripts/dev/verify.sh <komponente> [--strict] [--tree <pfad>] [-- <args>]
+bash scripts/dev/verify.sh <komponente> [<komponente> …] [--strict] [--tree <pfad>] [-- <args>]
 
 bash scripts/dev/verify.sh monitoring --strict           # eine Komponente
+bash scripts/dev/verify.sh web desktop-e2e --strict      # mehrere, in einem Lauf
 bash scripts/dev/verify.sh server -- tests/test_auth.py  # gezielt eine Datei
 bash scripts/dev/verify.sh all --strict                  # der ganze quick-Layer
 bash scripts/dev/verify.sh web --tree ../lane-b          # ein anderer Worktree
 ```
 
 Komponenten: `server monitoring ca-issuer agent desktop desktop-rs desktop-ui
-desktop-e2e web scripts` und `all`. Ein Lauf, der die Suite erreicht, hinterlaesst
-`.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component`,
-`args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
+desktop-e2e web scripts` und `all` (nur allein). Mehrere Komponenten werden ein Lauf
+`run.sh quick --only <a> <b>`; Argumente nach `--` gibt es nur fuer eine Komponente, sonst
+Exit 2. Ein Lauf, der die Suite erreicht, hinterlaesst
+`.ah-out/last-verify.json` (das Artefakt von `run.sh` plus `component` — bei mehreren die
+Liste —, `args`, `tree`) — die Evidenz, dass ein Gruen zu einem bestimmten Baum gehoert.
 Ein Lauf, der vorher abbricht (vertippte Komponente), schreibt **keine** Datei und
 loescht eine aeltere: veraltete Evidenz ist schlechter als fehlende.
 
@@ -418,13 +421,16 @@ bash scripts/dev/task-close.sh tasks/<slug>.md T7 --stage --review-note "approve
 
 `--stage` stagt die Pfade aus der `Dateien:`-Zeile der Task (nur die, nie `git add -A`;
 Verzeichnisse werden abgelehnt, Loeschungen mitgenommen).
-Das ist kein Komfort, sondern die Folge derselben Stufe: `git add` steht seit Stufe 4 unter
-`ask`, ein Lauf, der von Hand stagen will, bleibt im Permission-Prompt stehen.
+Das ist kein Komfort: beim Runner ist `git add` hart verboten, ein autonomer Lauf, der von
+Hand stagen will, kommt nicht weiter; in Kevins Sessions ist es frei.
 
 `task-close.sh` laeuft **ausserhalb** der Modell-Session und macht fuenf Dinge in
 dieser Reihenfolge: (1) jede Datei aus `Dateien:` muss vollstaendig gestaged sein
 (halb gestaged, ungestaged oder untracked bricht ab), Tree-Hash merken; (2) das
-`Verify:` der Task als `verify.sh <komponente> --strict`; (3) `review.sh diff-scan`
+`Verify:` der Task, wie sie dasteht: die Komponenten aus `bash scripts/dev/verify.sh <a> [<b> …]
+--strict [-- <args>]` oder `bash scripts/tests/run.sh <layer> --strict --only <a> [<b> …]` als
+`verify.sh <a> [<b> …] --strict` (fehlt die `Komponente:` der Task in der Liste, Exit 2; eine
+Prosa-Zeile faehrt die Komponente der Task, mit Hinweis); (3) `review.sh diff-scan`
 (abgeschaltete Tests im Diff: Skip-, xfail-, todo- und only-Muster von pytest, vitest/jest,
 Playwright, Rust und Go, `|| true` und `set +e`, eine geloeschte Assertion — auch die <!-- review: ok nennt die Muster -->
 Rust-Makros `assert_…!` und in Go-Tests `t.Fatal…`/`t.Error…` — und ein nacktes `return` in
@@ -432,7 +438,8 @@ einem Test; eine Zeile, die das bewusst tut, traegt `# review: ok <grund>`, eine
 die ein Muster zitiert, `<!-- review: ok <grund> -->`; ein ganzer Test darf gehen, wenn die Task ihn schon committet
 als `Test-Löschung:` ankündigt — geprüft am Inhalt, siehe `tasks/README.md`), `review.sh scope` (Fremd-Pfade) und `review.sh sec`
 (was nie ins oeffentliche Repo darf); (4) das Review-Urteil; (5) `ledger.sh
-mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` und **ein** Commit
+mark-done` mit der Summary-Zeile dieses Laufs als `Evidenz:` (sie nennt die gelaufenen
+Komponenten, etwa `run.sh[quick] web desktop-e2e: 2 passed, 0 failed, 16 skipped`) und **ein** Commit
 mit Code und Ledger; war es die letzte offene Task, setzt derselbe Commit den Kopf von
 `aktiv` auf `bereit` (sonst stuende das Ledger mit `aktiv` ohne offene Task im Baum, und
 `ledger_test` waere rot). Exit-Codes: `0` committed, `2` nicht (voll) gestaged oder
@@ -458,9 +465,14 @@ Artefakt des Laufs erzeugt, den es selbst gefahren hat. Deshalb steht `mark-done
 Settings unter `ask` und beim Runner im Deny. Eine Zeile mit `# review: ok <grund>`
 nimmt sie aus dem Diff-Scan — bewusst und mit Begruendung in derselben Zeile.
 
-`git add`, `git commit`, `git checkout`, `git restore` und `git stash` stehen in
-`.claude/settings.json` seit Stufe 4 unter `ask`: der Weg zum Commit fuehrt ueber
-`task-close.sh`, und die drei Recovery-Verben loeschen im Zweifel ungestagte Arbeit.
+`git add`, `git commit`, `git checkout`, `git restore` und `git stash` sind in den
+Runner-Settings (`scripts/dev/runner-settings.json`) hart verboten und in Kevins Sessions
+frei — eine Abfrage, die immer bestaetigt wird, hielt nur den Bau auf (zwei Worker verloren
+daran je 45 Minuten). Unter `permissions.ask` in `.claude/settings.json` stehen nur
+`bootstrap_linux.sh`, `harness.sh off` und `ledger.sh mark-done`, und
+`scripts/tests/hooks_test.sh` haelt fest, dass die Git-Verben dort nicht zurueckkehren. Der Weg
+zum Commit fuehrt ueber `task-close.sh`; die drei Recovery-Verben loeschen im Zweifel
+ungestagte Arbeit.
 
 **`.gitattributes`: `CHANGELOG.md merge=union`.** Zwei Lanes, die beide unter
 `## [Unreleased]` etwas anhaengen, bekommen damit keinen Konflikt — union nimmt **beide**

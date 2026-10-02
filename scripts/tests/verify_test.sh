@@ -80,8 +80,21 @@ echo "── arguments ──"
 run_v --tree "$A"
 [ $rc -eq 2 ] && grep -q "needs a component" <<<"$OUT" && ok "no component -> exit 2" || bad "bare call: rc=$rc"
 
+# Several components are one run over all of them (R-0104): a Verify: line in
+# the run.sh form (`--only web desktop-e2e`) must not shrink to its first key.
 run_v server web --tree "$A"
-[ $rc -eq 2 ] && grep -q "unexpected argument: web" <<<"$OUT" && ok "second component -> exit 2" || bad "two components: rc=$rc"
+[ $rc -eq 0 ] && [ "$(called args)" = "quick --only server web" ] \
+  && ok "two components -> one run.sh quick --only server web" || bad "two components: rc=$rc args=$(called args)"
+python3 -c "
+import json
+d=json.load(open('$A/.ah-out/last-verify.json'))
+assert d['component']=='server web', d
+" 2>/dev/null && ok "last-verify.json names both components" || bad "component list: $(cat "$A/.ah-out/last-verify.json")"
+run_v server web --tree "$A" -- tests/test_auth.py
+[ $rc -eq 2 ] && grep -q "extra arguments need a single component" <<<"$OUT" \
+  && ok "two components plus -- args -> exit 2 (whose suite would get them?)" || bad "list plus args: rc=$rc out=$OUT"
+run_v all web --tree "$A"
+[ $rc -eq 2 ] && grep -q "'all' stands alone" <<<"$OUT" && ok "'all' next to a component -> exit 2" || bad "all plus web: rc=$rc out=$OUT"
 
 run_v server --bogus --tree "$A"
 [ $rc -eq 2 ] && grep -q "unknown flag: --bogus" <<<"$OUT" && ok "unknown flag -> exit 2" || bad "unknown flag: rc=$rc"
