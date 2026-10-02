@@ -81,8 +81,10 @@ Grenze: Prozess-Substitution (`<(…)`).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: DEVELOPMENT.md Harness-Schutz (Grenzen)
 
-### T5 — diff-scan: entfernte Assertions zählen nur, wo Tests stehen  [ ]
+### T5 — diff-scan: entfernte Assertions zählen nur, wo Tests stehen  [x]
 Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @5487f69d 2026-10-02T13:02:55+02:00
+Review: request_changes (2 regressions) -> fixed -> approve (opus, 2 rounds)
 Änderung: Ein `RA`-Fund (`:174–190`) zählt nur, wenn der Pfad eine Testdatei ist (`tests/`, `e2e/`, `test_*.py`,
 `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`) **oder** die alte Zeile in einer Test-Spanne von `heads()` (`:271`)
 liegt. Import-Zeilen (`use …`, `import …`, `from … import …`) zählen nie. Danach darf der zweite `else if`-Zweig

@@ -266,6 +266,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **diff-scan: entfernte Assertions zaehlen nur, wo Tests stehen (R-0130):** Eine geloeschte Zeile
+  mit `assert`, `assert_…!`, `expect(` oder Go-`t.Fatal…` ist nur noch ein Fund in einer
+  Testdatei (`tests/`, `e2e/`, `test_*.py`, `*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`) oder in
+  der Spanne eines Tests (inline `#[test]` unter `src/`); eine Import-Zeile nie. Bisher meldete
+  diff-scan auch ein entferntes `.expect("…")` im Rust-Produktivcode, einen entfernten Import
+  `use pretty_assertions::assert_eq;` und `review.sh` selbst, ohne Ausweg (eine geloeschte Zeile
+  kann kein `review: ok` tragen).
+
 - **Waechter: wer ein Verzeichnis mit Harness-Pfaden wegnimmt, nimmt sie mit (R-0127):**
   `scripts/dev/hooks/harness-guard.sh` verweigert im autonomen Lauf auch `rm -rf .claude`,
   `rm -rf scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`, `mv scripts/dev /tmp/x`, einen

@@ -637,6 +637,84 @@ printf '#[test]\nfn z() {\n}\n' > "$FIX/apps/desktop/src-tauri/tests/z.rs"
 stage apps/desktop/src-tauri/tests/z.rs
 r diff-scan --staged
 [ $rc -eq 0 ] && ok "Rust: the debug_ macros stay outside, as they always did" || bad "rust debug_: rc=$rc out=$OUT"
+# R-0130: a removed assertion counts where tests are — a test file, or the span
+# of a test in the old file — and never on an import line. Removing one from
+# production code is no silenced test.
+base apps/desktop/src-tauri/tests/imp.rs 'use pretty_assertions::assert_eq;
+fn f() {}
+'
+printf 'fn f() {}\n' > "$FIX/apps/desktop/src-tauri/tests/imp.rs"; stage apps/desktop/src-tauri/tests/imp.rs
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed import in a test file is no assertion" || bad "removed import: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/src/lib.rs 'fn g(o: Option<u8>) -> u8 {
+    let v = o.expect("boom");
+    v
+}
+'
+printf 'fn g(o: Option<u8>) -> u8 {\n    o.unwrap()\n}\n' > "$FIX/apps/desktop/src-tauri/src/lib.rs"; stage apps/desktop/src-tauri/src/lib.rs
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed .expect( in production code is no assertion" || bad "removed expect in src: rc=$rc out=$OUT"
+base apps/server/app/helpers.py 'def check(r, s):
+    assert r.status == s
+'
+printf 'def check(r, s):\n    return r.status == s\n' > "$FIX/apps/server/app/helpers.py"; stage apps/server/app/helpers.py
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed assert in an app helper is no silenced test" || bad "removed assert in app: rc=$rc out=$OUT"
+base apps/web/src/i.test.ts 'import assert from "node:assert";
+it("i", () => {});
+'
+printf 'it("i", () => {});\n' > "$FIX/apps/web/src/i.test.ts"; stage apps/web/src/i.test.ts
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed JS import of assert in a test file is no assertion" || bad "removed js import: rc=$rc out=$OUT"
+base apps/server/tests/test_imp.py 'from hamcrest import assert_that
+def test_i():
+    pass
+'
+printf 'def test_i():\n    pass\n' > "$FIX/apps/server/tests/test_imp.py"; stage apps/server/tests/test_imp.py
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed Python from-import of assert_that is no assertion" || bad "removed py import: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/src/inl.rs '#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        assert!(true);
+    }
+}
+'
+printf '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n    }\n}\n' > "$FIX/apps/desktop/src-tauri/src/inl.rs"; stage apps/desktop/src-tauri/src/inl.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'apps/desktop/src-tauri/src/inl.rs:.*removed assertion' <<<"$OUT" \
+  && ok "an assertion out of an inline #[test] under src/ still counts" || bad "inline rust test: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/src/tk.rs '#[cfg(test)]
+mod tests {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn t() {
+        assert_eq!(1, 1);
+    }
+}
+'
+printf '#[cfg(test)]\nmod tests {\n    #[tokio::test(flavor = "multi_thread")]\n    async fn t() {\n    }\n}\n' > "$FIX/apps/desktop/src-tauri/src/tk.rs"
+stage apps/desktop/src-tauri/src/tk.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'src/tk.rs:.*removed assertion' <<<"$OUT" \
+  && ok "an assertion out of a #[tokio::test(...)] under src/ still counts" || bad "tokio test attr: rc=$rc out=$OUT"
+# A renamed module: the old span lives in the OLD path.
+base apps/desktop/src-tauri/src/inl.rs '#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        let a = 1;
+        let b = 1;
+        assert_eq!(a, b);
+    }
+}
+'
+git -C "$FIX" mv apps/desktop/src-tauri/src/inl.rs apps/desktop/src-tauri/src/inl2.rs
+printf '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n        let a = 1;\n        let b = 1;\n    }\n}\n' > "$FIX/apps/desktop/src-tauri/src/inl2.rs"
+stage apps/desktop/src-tauri/src/inl2.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'removed assertion: assert_eq!(a, b);' <<<"$OUT" \
+  && ok "a module renamed with an assertion removed from its test still counts" || bad "renamed module: rc=$rc out=$OUT"
 GO_DEAD='package x
 
 import "testing"
