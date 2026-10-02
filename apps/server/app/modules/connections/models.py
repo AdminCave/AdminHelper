@@ -3,12 +3,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 
 from app.core.database import Base
 from app.core.time import utc_now_sql
+
+logger = logging.getLogger(__name__)
 
 # Fields mapped between camelCase (API) and snake_case (DB)
 _CAMEL_TO_SNAKE = {
@@ -79,11 +82,28 @@ class Connection(Base):
         }
         if self.server_id:
             result["serverId"] = self.server_id
-        # Merge the extra fields back in
-        if self.extra_data:
-            extra = json.loads(self.extra_data)
-            result.update(extra)
+        # Merge the extra fields back in; a known field always wins, also one left
+        # out above (serverId without a server).
+        for key, value in self._extra().items():
+            if key not in result and key not in _KNOWN_FIELDS:
+                result[key] = value
         return result
+
+    def _extra(self) -> dict[str, Any]:
+        """The extra fields, or none if extra_data is not a JSON object.
+
+        Rows written before only the API fields mapped to columns can hold anything
+        there; reading them must not fail the whole list."""
+        if not self.extra_data:
+            return {}
+        try:
+            extra = json.loads(self.extra_data)
+        except ValueError:
+            extra = None
+        if not isinstance(extra, dict):
+            logger.warning("connection %s: extra_data is not a JSON object, left out", self.id)
+            return {}
+        return extra
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Connection":
@@ -96,7 +116,9 @@ class Connection(Base):
             snake_key = _CAMEL_TO_SNAKE.get(key, key)
             if key == "tags":
                 kwargs["tags"] = json.dumps(value) if isinstance(value, list) else value
-            elif key in _KNOWN_FIELDS or snake_key in {c.key for c in cls.__table__.columns}:
+            elif key in _KNOWN_FIELDS:
+                # Only the API names map to columns. A key that merely looks like a column
+                # (extra_data, created_at, server_id) is an extra entry like any other.
                 kwargs[snake_key] = value
             else:
                 extra[key] = value
@@ -116,12 +138,12 @@ class Connection(Base):
                 self.tags = json.dumps(value) if isinstance(value, list) else value
             elif key == "id":
                 continue  # do not change the ID
-            elif key in _KNOWN_FIELDS or snake_key in {c.key for c in self.__table__.columns}:
+            elif key in _KNOWN_FIELDS:
                 setattr(self, snake_key, value)
             else:
                 extra[key] = value
 
         if extra:
-            existing = json.loads(self.extra_data) if self.extra_data else {}
+            existing = self._extra()
             existing.update(extra)
             self.extra_data = json.dumps(existing, ensure_ascii=False)

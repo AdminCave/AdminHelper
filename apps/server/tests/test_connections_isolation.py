@@ -166,3 +166,16 @@ def test_import_with_unknown_server_is_a_validation_error_of_its_entry(
     assert detail[0]["msg"] == "server not found"
     # all-or-nothing: nothing was written
     assert test_client.get("/api/connections", headers=headers).json() == []
+
+
+def test_list_answers_despite_unreadable_extra_data(test_client, db_session, admin_user, caplog):
+    import logging
+
+    db_session.add(Connection(id="c-bad", name="bad", kind="ssh", host="h", extra_data="{not json"))
+    db_session.commit()
+    headers = _admin_headers(test_client)
+    with caplog.at_level(logging.WARNING):
+        r = test_client.get("/api/connections", headers=headers)
+    assert r.status_code == 200, r.text
+    assert [c["id"] for c in r.json()] == ["c-bad"]
+    assert any("c-bad" in rec.getMessage() for rec in caplog.records)
