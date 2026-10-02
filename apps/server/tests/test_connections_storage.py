@@ -50,3 +50,120 @@ def test_save_connections_empty_list_clears_all(db_session, monkeypatch):
     storage.save_connections([])
 
     assert db_session.query(Connection).count() == 0
+
+
+# Only the API fields map to columns; any other key — a column name such as extra_data or
+# created_at included — is an extra entry, kept in extra_data and nothing else.
+
+
+def test_from_dict_keeps_column_names_out_of_their_columns():
+    import json
+
+    conn = Connection.from_dict(
+        {
+            "name": "a",
+            "kind": "ssh",
+            "keyPath": "/k",
+            "trustCert": True,
+            "extra_data": '{"host": "other.example"}',
+            "created_at": "2000-01-01T00:00:00",
+        }
+    )
+    assert conn.key_path == "/k" and conn.trust_cert is True
+    assert conn.created_at is None
+    assert json.loads(conn.extra_data) == {
+        "extra_data": '{"host": "other.example"}',
+        "created_at": "2000-01-01T00:00:00",
+    }
+
+
+def test_update_from_dict_keeps_column_names_out_of_their_columns():
+    import json
+
+    conn = Connection(id="c", name="old", kind="ssh")
+    conn.update_from_dict({"name": "new", "extra_data": "x", "created_at": "2000-01-01T00:00:00"})
+    assert conn.name == "new"
+    assert conn.created_at is None
+    assert json.loads(conn.extra_data) == {"extra_data": "x", "created_at": "2000-01-01T00:00:00"}
+
+
+def _admin_headers(client) -> dict:
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+_COLUMN_NAMES = {"extra_data": '{"host": "other.example"}', "created_at": "2000-01-01T00:00:00"}
+
+
+def _stored(db, cid: str) -> Connection:
+    db.expire_all()
+    return db.query(Connection).filter(Connection.id == cid).one()
+
+
+def test_post_and_put_keep_column_names_out_of_their_columns(test_client, db_session, admin_user):
+    import json
+
+    h = _admin_headers(test_client)
+    r = test_client.post(
+        "/api/connections",
+        json={"name": "a", "kind": "ssh", "host": "h", **_COLUMN_NAMES},
+        headers=h,
+    )
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    row = _stored(db_session, cid)
+    assert row.host == "h" and row.created_at.year != 2000
+    assert json.loads(row.extra_data) == _COLUMN_NAMES
+
+    r = test_client.put(f"/api/connections/{cid}", json={"notes": "n", **_COLUMN_NAMES}, headers=h)
+    assert r.status_code == 200, r.text
+    row = _stored(db_session, cid)
+    assert row.notes == "n" and row.created_at.year != 2000
+    assert json.loads(row.extra_data) == _COLUMN_NAMES
+
+
+def test_import_keeps_column_names_out_of_their_columns(test_client, db_session, admin_user):
+    import json
+
+    h = _admin_headers(test_client)
+    body = {
+        "mode": "merge",
+        "connections": [{"name": "i", "kind": "ssh", "host": "h", **_COLUMN_NAMES}],
+    }
+    r = test_client.post("/api/connections/import", json=body, headers=h)
+    assert r.status_code == 200, r.text
+    row = db_session.query(Connection).filter(Connection.name == "i").one()
+    assert row.host == "h" and row.created_at.year != 2000
+    assert json.loads(row.extra_data) == _COLUMN_NAMES
+
+
+# Reading: extra entries never override a known field, and extra_data that cannot be read
+# as a JSON object (rows written before only API names mapped to columns) is left out.
+
+
+def test_known_fields_win_over_extra_entries():
+    extra = '{"host": "x", "serverId": "y", "id": "z", "custom": 1}'
+    bound = Connection(
+        id="c1", name="a", kind="ssh", host="real", server_id="srv", extra_data=extra
+    )
+    d = bound.to_dict()
+    assert (d["id"], d["host"], d["serverId"], d["custom"]) == ("c1", "real", "srv", 1)
+    unbound = Connection(id="c2", name="a", kind="ssh", host="real", extra_data=extra)
+    d = unbound.to_dict()
+    assert "serverId" not in d
+    assert (d["id"], d["host"], d["custom"]) == ("c2", "real", 1)
+
+
+def test_unreadable_extra_data_is_left_out_with_a_warning(caplog):
+    import logging
+
+    for raw in ("{not json", "[1, 2]"):
+        conn = Connection(id="c-bad", name="a", kind="ssh", host="h", extra_data=raw)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            d = conn.to_dict()
+        assert d["host"] == "h" and d["name"] == "a"
+        assert any("c-bad" in r.getMessage() for r in caplog.records), raw
+        conn.update_from_dict({"custom": 2})
+        assert conn.to_dict()["custom"] == 2
