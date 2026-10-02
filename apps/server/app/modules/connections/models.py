@@ -96,7 +96,9 @@ class Connection(Base):
             snake_key = _CAMEL_TO_SNAKE.get(key, key)
             if key == "tags":
                 kwargs["tags"] = json.dumps(value) if isinstance(value, list) else value
-            elif key in _KNOWN_FIELDS or snake_key in {c.key for c in cls.__table__.columns}:
+            elif key in _KNOWN_FIELDS:
+                # Only the API names map to columns. A key that merely looks like a column
+                # (extra_data, created_at, server_id) is an extra entry like any other.
                 kwargs[snake_key] = value
             else:
                 extra[key] = value
@@ -116,7 +118,7 @@ class Connection(Base):
                 self.tags = json.dumps(value) if isinstance(value, list) else value
             elif key == "id":
                 continue  # do not change the ID
-            elif key in _KNOWN_FIELDS or snake_key in {c.key for c in self.__table__.columns}:
+            elif key in _KNOWN_FIELDS:
                 setattr(self, snake_key, value)
             else:
                 extra[key] = value

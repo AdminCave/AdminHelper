@@ -166,6 +166,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- **Verbindungen: nur bekannte Felder gehen in Spalten (Server, R-0136):** Beim Anlegen, Aendern und
+  Importieren uebernimmt der Server nur die Felder der API (`name`, `kind`, `host`, …, in camelCase) in
+  die Spalten einer Verbindung. Alles andere bleibt Zusatzinformation in `extra_data`, auch ein
+  Schluessel, der wie eine Spalte heisst (`extra_data`, `created_at`).
 - **OpenAPI: exakte BIGINT-Grenze (Server):** Das veroeffentlichte Schema (`/openapi.json`) traegt die
   Obergrenze der BIGINT-Felder im Request-Body als Ganzzahl `9223372036854775807`. FastAPI tippt
   `maximum` als Float, dort stand bisher `9.223372036854776e+18`, 193 ueber der echten Grenze. Die

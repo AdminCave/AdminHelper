@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Verbindungen: nur bekannte API-Felder gehen in Spalten, extra_data bleibt Beiwerk — Task-Ledger
-Status: freigegeben · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: aktiv · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („R-0136 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0136
 Heavy: none — nur das Mapping im Modell und das Lesen von extra_data; Antwort-Schema, Routen und Clients bleiben gleich, pytest deckt Create, Update, Import und Lesen ab.
@@ -20,8 +20,10 @@ eine Spalte heißt (`snake_key in {c.key for c in cls.__table__.columns}`, `:99`
 Fehlerbehandlung (`:84`). Die snake_case-Sperre im Schema (`schemas.py`, `_SNAKE_SPELLINGS`, seit #65) deckt nur die
 vier gemappten Felder.
 
-### T1 — Nur bekannte API-Felder gehen in Spalten, alles andere nach extra_data  [ ]
+### T1 — Nur bekannte API-Felder gehen in Spalten, alles andere nach extra_data  [x]
 Komponente: server · Dateien: apps/server/app/modules/connections/models.py, apps/server/tests/test_connections_storage.py, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @3d391eef 2026-10-02T13:47:40+02:00
+Review: am Ende (Kurz-Ledger, Gesamt-Review nach T2)
 Änderung: In `from_dict` und `update_from_dict` geht ein Schlüssel nur dann in eine Spalte, wenn er in `_KNOWN_FIELDS`
 steht (über `_CAMEL_TO_SNAKE`); die Bedingung `or snake_key in … columns` entfällt. Jeder andere Schlüssel, auch ein
 Spaltenname wie `extra_data`, `created_at` oder `server_id`, wird ein Eintrag in `extra_data`. `id` bleibt beim
