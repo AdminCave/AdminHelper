@@ -138,6 +138,30 @@ grep -q 'exists — git clone would be skipped' <<<"$PLAN" \
 grep -qF -- 'useradd -m -s /bin/bash' <<<"$PLAN" \
   && bad "existing user: useradd is still in the plan" || ok "existing user: useradd appears nowhere in the plan"
 
+# The clone goes only into a path that does not exist yet: made beside $SRV in a fresh
+# root-owned directory, then moved into place with one `mv -T`. Anything already at
+# $SRV/repo without a .git — a directory or a file — stops the run, dry or not.
+echo "── the clone goes only into a path that does not exist ──"
+for kind in dir file; do
+  TARGET="$WORK/srv-occupied-$kind"; mkdir -p "$TARGET"
+  if [ "$kind" = dir ]; then mkdir -p "$TARGET/repo"; else : > "$TARGET/repo"; fi
+  PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$TARGET" bash "$SETUP" --dry-run 2>&1); rc=$?
+  [ $rc -ne 0 ] && grep -qF -- "$TARGET/repo exists but is no git clone" <<<"$PLAN" \
+    && ok "a $kind at \$SRV/repo without .git stops the run (rc=$rc)" \
+    || bad "a $kind at \$SRV/repo without .git: rc=$rc, plan: $(tail -3 <<<"$PLAN")"
+  ! grep -qE '^[[:space:]]*\$ git clone' <<<"$PLAN" \
+    && ok "and no clone is planned into it" || bad "a clone is planned into an occupied $kind"
+done
+PLAN=$(PATH="$SHIM:$PATH" AH_RUNNER_DRY_USER="$(id -un)" AH_RUNNER_DRY_SRV="$FRESH" bash "$SETUP" --dry-run 2>&1)
+MK_AT="$(grep -nF -- "mktemp -d -p $WORK .ah-clone.XXXXXX" <<<"$PLAN" | head -1 | cut -d: -f1)"
+CL_AT="$(grep -nF -- "git clone --no-hardlinks -b main $REPO_ROOT $WORK/.ah-clone.XXXXXX/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
+MV_AT="$(grep -nF -- "mv -T $WORK/.ah-clone.XXXXXX/repo $FRESH/repo" <<<"$PLAN" | head -1 | cut -d: -f1)"
+[ -n "$MK_AT" ] && [ -n "$CL_AT" ] && [ -n "$MV_AT" ] && [ "$MK_AT" -lt "$CL_AT" ] && [ "$CL_AT" -lt "$MV_AT" ] \
+  && ok "absent \$SRV/repo: mktemp beside it, clone into the temp dir, then mv -T into place" \
+  || bad "clone plan out of order or missing (mktemp ${MK_AT:-?}, clone ${CL_AT:-?}, mv ${MV_AT:-?})"
+! grep -qF -- "git clone --no-hardlinks -b main $REPO_ROOT $FRESH/repo" <<<"$PLAN" \
+  && ok "and never straight into \$SRV/repo" || bad "the plan still clones straight into \$SRV/repo"
+
 # The overrides are a test hook and must stay one: outside --dry-run they have to
 # be ignored, or a stray variable in somebody's shell could provision the wrong
 # user. A behaviour test cannot show this — between argument parsing and the root

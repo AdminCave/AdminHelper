@@ -239,9 +239,45 @@ no_symlink_in "$SRV/lanes"
 run mkdir -p "$SRV" "$SRV/lanes"
 if [ -d "$SRV/repo/.git" ]; then
   note "exists — git clone would be skipped"
+elif [ -e "$SRV/repo" ] || [ -L "$SRV/repo" ]; then
+  # Only a path that does not exist yet is cloned into ($SRV belongs to the runner, and
+  # git clone accepts an empty directory that is already there); anything at
+  # $SRV/repo without a .git is left for a human to look at.
+  echo "runner-setup: $SRV/repo exists but is no git clone — refusing to clone into it" >&2
+  echo "  (look at what is there, remove it as root if it can go, and run again)" >&2
+  exit 1
 else
+  # The clone is made where only root can write — a fresh directory beside $SRV —
+  # and then moved into place with one rename: `mv -T` replaces at most an empty
+  # directory and fails on anything else, so nothing that appears at $SRV/repo
+  # meanwhile is merged into the clone. The parent must be root's alone.
+  PARENT="$(dirname "$SRV")"
+  if [ "$DRY" = 0 ]; then
+    read -r p_uid p_mode < <(stat -c '%u %a' "$PARENT" 2>/dev/null)
+    if [ "${p_uid:-}" != 0 ] || (( 8#${p_mode:-777} & 8#022 )); then
+      echo "runner-setup: $PARENT must belong to root and be writable by nobody else (uid ${p_uid:-?}, mode ${p_mode:-?})" >&2
+      exit 1
+    fi
+  fi
+  printf '   $ mktemp -d -p %s .ah-clone.XXXXXX\n' "$PARENT"
   # -b main: the runner's base is main, whatever branch this checkout sits on.
-  run git clone --no-hardlinks -b main "$ROOT" "$SRV/repo"
+  if [ "$DRY" = 1 ]; then
+    printf '   $ git clone --no-hardlinks -b main %s %s/.ah-clone.XXXXXX/repo\n' "$ROOT" "$PARENT"
+    printf '   $ mv -T %s/.ah-clone.XXXXXX/repo %s/repo\n' "$PARENT" "$SRV"
+    printf '   $ rm -rf %s/.ah-clone.XXXXXX\n' "$PARENT"
+  else
+    CLONE_TMP="$(mktemp -d -p "$PARENT" .ah-clone.XXXXXX)" \
+      || { echo "runner-setup: failed: mktemp in $PARENT" >&2; exit 1; }
+    trap 'rm -rf "$CLONE_TMP"' EXIT   # an interrupted clone leaves nothing behind either
+    clone_failed() { echo "runner-setup: failed: $1" >&2; rm -rf "$CLONE_TMP"; exit 1; }
+    printf '   $ git clone --no-hardlinks -b main %s %s/repo\n' "$ROOT" "$CLONE_TMP"
+    git clone --no-hardlinks -b main "$ROOT" "$CLONE_TMP/repo" || clone_failed "git clone"
+    printf '   $ mv -T %s/repo %s/repo\n' "$CLONE_TMP" "$SRV"
+    mv -T "$CLONE_TMP/repo" "$SRV/repo" || clone_failed "mv -T into $SRV/repo"
+    printf '   $ rm -rf %s\n' "$CLONE_TMP"
+    rm -rf "$CLONE_TMP"
+    trap - EXIT
+  fi
 fi
 run chown -R "$RUNNER:$RUNNER" "$SRV"
 # From here the clone belongs to the runner, on the first run as on every later

@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Runner-Vorarbeit für Stufe 7 (R-0080, R-0077) — Task-Ledger
-Status: freigegeben · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
+Status: aktiv · Branch: harness/runner-vorarbeit · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus, eine Runde) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „Runner-Vorarbeit“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/runner-vorarbeit.md (Roadmap R-0080, R-0077)
 Heavy: none — nur Skripte (run.sh-Sperre, runner-setup.sh, Red Team) und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad. Den Beweis über zwei echte Nutzer liefern Kevins Setup- und Red-Team-Lauf nach dem Merge (Spec, „Kevins Handarbeit“).
@@ -17,8 +17,10 @@ Prüfung ja, Pfad `/var/lib/adminhelper-dev/py.lock`). Branch `harness/`, weil `
 `runner-redteam.sh` Harness-Pfade sind: Bau interaktiv, keine Lane. Kein sudo im Bau: alles, was root braucht,
 wird über `--dry-run` und hermetische Tests geprüft; der echte Lauf ist Kevins Handarbeit nach dem Merge.
 
-### T1 — runner-setup.sh klont nur in einen Pfad, den es noch nicht gibt  [ ]
+### T1 — runner-setup.sh klont nur in einen Pfad, den es noch nicht gibt  [x]
 Komponente: scripts · Dateien: scripts/dev/runner-setup.sh, scripts/tests/runner_setup_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @d0c532b9 2026-10-02T16:17:43+02:00
+Review: approve (opus), nits miterledigt
 Änderung: Schritt 2 (`runner-setup.sh:224–246`): Ein vorhandenes `$SRV/repo` ohne `.git` (Verzeichnis, Datei
 oder Link) bricht mit Satz und Abhilfe ab, auch unter `--dry-run`. Fehlt `$SRV/repo`, klont root in ein frisches
 `mktemp -d -p "$(dirname "$SRV")" .ah-clone.XXXXXX` und verschiebt mit `mv -T` an seinen Platz; das
