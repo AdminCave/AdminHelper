@@ -4,7 +4,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Stufe 6a — deterministische Review-Prüfer — Task-Ledger
-Status: geplant · Branch: harness/stufe-6a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: freigegeben · Branch: harness/stufe-6a · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Freigabe: Kevin, 2026-10-02 („6a freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/stufe-6a.md (Roadmap R-0009, Teil 6a)
 Heavy: none — nur Harness-Skripte unter scripts/dev, ihre hermetischen Tests, ein Skill und Doku; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Seed-Probe in T5 läuft lokal über verify.sh (monitoring, sqlite).
 DoD je Task: CLAUDE.md (Tests grün, shellcheck/ruff sauber, Doku im selben Commit, SPDX bei neuen Dateien).
