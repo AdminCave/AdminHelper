@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Verbindungen: nur bekannte API-Felder gehen in Spalten, extra_data bleibt Beiwerk — Task-Ledger
-Status: bereit · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: erledigt · Branch: feature/connection-field-mapping · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („R-0136 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0136
 Heavy: none — nur das Mapping im Modell und das Lesen von extra_data; Antwort-Schema, Routen und Clients bleiben gleich, pytest deckt Create, Update, Import und Lesen ab.
@@ -55,3 +55,13 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_connections_sto
 Doku: CHANGELOG (Fixed)
 HEAD: abef751a
 Abhängt von: T1
+
+Abschluss-Evidenz (2026-10-02, nachgetragen: #67 war gemergt, bevor der Kopf gesetzt war):
+- T1 981c9352: vier neue Tests vor dem Fix rot (Modell, POST/PUT, Import). T2 245b7135: drei neue Tests vor dem Fix rot; der
+  fehlertolerante Leser gilt auch in update_from_dict (vom T2-Titel gedeckt, im Review bestätigt).
+- `run.sh quick --strict` @d679146c: `18 passed, 0 failed, 0 skipped, 12 test-skips, 0 reruns`.
+- Gesamt-Review (Kurz-Ledger, Sonnet): approve. Der eine Nit, ein veralteter Kommentar zur snake_case-Sperre in
+  connections/schemas.py, wurde als d679146c nachgezogen.
+- Nach dem Merge von origin/main (927134b3, mit #66), gemergt als 5f0ef143: `verify.sh server --strict` → `807 passed,
+  2 skipped` (Redis lokal), Schemathesis `308 passed`.
+- Heavy: none.
