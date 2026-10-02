@@ -48,8 +48,10 @@ Lock-Pfad erweitert).
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: keine (T4)
 
-### T3 — run.sh nimmt die geteilte Sperre, wenn es sie gibt  [ ]
+### T3 — run.sh nimmt die geteilte Sperre, wenn es sie gibt  [x]
 Komponente: scripts · Dateien: scripts/tests/run.sh, scripts/tests/lane_test.sh
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @1d025e99 2026-10-02T16:54:15+02:00
+Review: request_changes (opus): wichtig fehlender Test fuer AH_PY_LOCK_FILE-Vorrang, in derselben Runde nachgezogen; Nits Abhilfe-Satz und 200-Zeichen-Test erledigt
 Änderung: Wahl der Sperrdatei (`run.sh:248`): `AH_PY_LOCK_FILE` aus der Umgebung, sonst die geteilte Datei
 (`AH_PY_LOCK_SHARED`, Default `/var/lib/adminhelper-dev/py.lock`), wenn sie existiert, sonst wie heute
 `$HOME/.cache/adminhelper-py.lock`. `py_lock` (`run.sh:255–272`) öffnet erst mit `exec 9>>`, sonst mit `exec 9<`

@@ -312,8 +312,10 @@ lane "done" theta && [ ! -e "$WORK/AdminHelper-theta" ] && ok "once it has ended
 # ── run.sh: the shared lock for the heavy python steps (T2, T6) ─────────────
 # The real run.sh, one step at a time (--step), against a venv whose python is a
 # stub: pip succeeds, pytest writes when it starts and ends and sleeps between.
-# HOME (set to the temp dir at the top) puts the lock file there — a real server
-# run on this box must neither block this test nor be blocked by it.
+# HOME (set to the temp dir at the top) puts the per-user lock file there, and
+# AH_PY_LOCK_SHARED points at a path under the temp dir too — a real server run on
+# this box, or the lock Kevin and the runner share, must neither block this test
+# nor be blocked by it.
 RUN="$REPO_ROOT/scripts/tests/run.sh"
 VENV="$WORK/venv"; mkdir -p "$VENV/bin" "$WORK/run"
 export STEP_LOG="$WORK/steps.log"
@@ -342,7 +344,8 @@ LOCKF="$HOME/.cache/adminhelper-py.lock"
 run_step_alone() {
   local tag="$1" step="$2"; shift 2
   env -u AH_ONLY -u AH_STRICT -u AH_STEP -u AH_REQUIRED -u AH_SCRIPT_TESTS \
-      -u AH_IN_SCRIPTS_BLOCK -u DATABASE_URL \
+      -u AH_IN_SCRIPTS_BLOCK -u DATABASE_URL -u AH_PY_LOCK_FILE \
+      AH_PY_LOCK_SHARED="${SHARED_LOCK:-$WORK/no-shared/py.lock}" ${OWN_LOCK:+"AH_PY_LOCK_FILE=$OWN_LOCK"} \
       AH_VENV="$VENV" XDG_RUNTIME_DIR="${XDG_ALT:-$WORK/run}" AH_OUT_DIR="$WORK/out-$tag" \
       AH_PY_LOCK="${AH_PY_LOCK:-1}" AH_PY_LOCK_WAIT="${AH_PY_LOCK_WAIT:-3600}" \
       AH_TEST_DB="postgresql+psycopg://ah:secret@localhost:5432/adminhelper_test" \
@@ -401,6 +404,69 @@ AH_PY_LOCK=0 AH_PY_LOCK_WAIT=1 run_step_alone off "server pytest" --only server 
   && ok "AH_PY_LOCK=0 runs the server step despite the held lock" || bad "AH_PY_LOCK=0: $(tail -15 "$WORK/run-off.log")"
 
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
+grep -q "server pytest pid" "$LOCKF" \
+  && ok "without the shared file each user keeps its own lock under \$HOME" || bad "per-user lock: $(cat "$LOCKF")"
+
+# ── run.sh: the lock Kevin and the runner share (R-0080) ────────────────────
+echo "── run.sh: once the shared lock file exists, every run meets there ──"
+SHARED="$WORK/shared/py.lock"; mkdir -p "$(dirname "$SHARED")"; : > "$SHARED"; chmod 666 "$SHARED"
+: > "$STEP_LOG"; rm -f "$WORK/release-s1"
+SHARED_LOCK="$SHARED" STUB_HOLD="$WORK/release-s1" run_step_alone s1 "server pytest" --only server & p1=$!
+wait_for "$STEP_LOG" "^start .* s1$" || bad "run s1 never reached its step"
+SHARED_LOCK="$SHARED" run_step_alone s2 "server pytest" --only server & p2=$!
+wait_for "$WORK/run-s2.log" "waiting for the shared python lock ($SHARED)" || bad "run s2 never said it waits on $SHARED"
+touch "$WORK/release-s1"
+wait "$p1"; rc1=$?; wait "$p2"; rc2=$?
+order=$(sort -k2 -n "$STEP_LOG" | awk '{printf "%s ", $1}')
+[ "$rc1" = 0 ] && [ "$rc2" = 0 ] && [ "$order" = "start end start end " ] \
+  && ok "two runs serialise on the shared file" || bad "shared: rc $rc1/$rc2, order: $order"
+grep -q "server pytest pid" "$SHARED" && ok "and the holder line is written there" || bad "no holder line in $SHARED"
+
+echo "── run.sh: AH_PY_LOCK_FILE still comes first ──"
+echo "untouched" > "$SHARED"; OWN="$WORK/own/py.lock"
+SHARED_LOCK="$SHARED" OWN_LOCK="$OWN" run_step_alone own "server pytest" --only server \
+  && grep -q "server pytest pid" "$OWN" && [ "$(cat "$SHARED")" = untouched ] \
+  && ok "an explicit lock file wins over the shared one" || bad "own: $(tail -4 "$WORK/run-own.log"); shared: $(cat "$SHARED")"
+
+echo "── run.sh: a shared file this user may only read still locks ──"
+chmod 444 "$SHARED"
+( exec 9<"$SHARED"; flock 9; exec sleep 60 ) & holder=$!
+for _ in $(seq 1 50); do flock -n "$SHARED" true 2>/dev/null || break; sleep 0.1; done
+SHARED_LOCK="$SHARED" AH_PY_LOCK_WAIT=1 run_step_alone ro "server pytest" --only server
+grep -q "gave up after 1s waiting for the shared python lock" "$WORK/run-ro.log" \
+  && ! grep -q "cannot open the python lock" "$WORK/run-ro.log" \
+  && ok "a read-only shared file is waited on, not refused" || bad "read-only: $(tail -8 "$WORK/run-ro.log")"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+SHARED_LOCK="$SHARED" run_step_alone ro2 "server pytest" --only server \
+  && grep -q "PASS  server pytest" "$WORK/run-ro2.log" \
+  && ok "and once free it runs, without a holder line to write" || bad "read-only free: $(tail -8 "$WORK/run-ro2.log")"
+
+echo "── run.sh: a holder line reaches the terminal as printable text only ──"
+chmod 666 "$SHARED"
+{ printf 'evil\033[31mred\033]0;title\007 tail'; printf 'x%.0s' $(seq 1 300); printf 'END\n'; } > "$SHARED"
+( exec 9<"$SHARED"; flock 9; exec sleep 60 ) & holder=$!
+for _ in $(seq 1 50); do flock -n "$SHARED" true 2>/dev/null || break; sleep 0.1; done
+SHARED_LOCK="$SHARED" AH_PY_LOCK_WAIT=1 run_step_alone esc "server pytest" --only server
+HELD="$(grep "held by:" "$WORK/run-esc.log")"
+grep -q "evil" <<<"$HELD" && ! LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]' <<<"$HELD" \
+  && ok "the holder line is shown without control characters" || bad "holder line: $(od -c <<<"$HELD" | head -3)"
+SHOWN="${HELD#*held by: }"
+[ "${#SHOWN}" -le 200 ] && ! grep -q "END" <<<"$SHOWN" \
+  && ok "and cut short (200 bytes of the file at most)" || bad "holder line not cut: ${#SHOWN} chars"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
+if [ "$(id -u)" != 0 ]; then
+  echo "── run.sh: a shared file that cannot be opened is a SKIP, not a lock of its own ──"
+  chmod 000 "$SHARED"
+  SHARED_LOCK="$SHARED" run_step_alone no "server pytest" --only server
+  grep -q "cannot open the python lock $SHARED" "$WORK/run-no.log" && grep -q "SKIP  server pytest" "$WORK/run-no.log" \
+    && ok "it says why and skips the step" || bad "unopenable: $(tail -8 "$WORK/run-no.log")"
+  SHARED_LOCK="$SHARED" run_step_alone no-strict "server pytest" --only server --strict; rc=$?
+  [ "$rc" != 0 ] && grep -q "strict-failed: server pytest" "$WORK/run-no-strict.log" \
+    && ok "under --strict that is red" || bad "unopenable strict: rc=$rc $(tail -8 "$WORK/run-no-strict.log")"
+  chmod 600 "$SHARED"
+fi
 
 echo
 echo "lane_test: $PASS passed, $FAIL failed"
