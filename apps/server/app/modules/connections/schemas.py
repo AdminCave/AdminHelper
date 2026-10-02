@@ -10,10 +10,11 @@ from pydantic_core import InitErrorDetails
 from app.core.bounds import RequestModel
 from app.modules.connections.models import _CAMEL_TO_SNAKE
 
-# Connection.from_dict/update_from_dict write any key that names a column straight
-# into it. Only the camelCase spelling of a mapped field is accepted, so the column
-# is set only through its API name and the checks on it (serverId against a key's
-# server binding, the known server); extra=allow stays for the rest.
+# Only the camelCase spelling of a mapped field is accepted. Connection.from_dict/
+# update_from_dict map the API names to columns and keep any other key as an extra
+# entry, so a snake_case spelling would not set the field it names; the 422 says so,
+# and the column stays set only through its API name and the checks on it (serverId
+# against a key's server binding, the known server). extra=allow stays for the rest.
 _SNAKE_SPELLINGS = {snake: camel for camel, snake in _CAMEL_TO_SNAKE.items()}
 
 
