@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # FRP-Nachzügler: Wächter nach dem Filtern, stcp-Felder nur an stcp-Tunneln — Task-Ledger
-Status: aktiv · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
+Status: bereit · Branch: feature/frp-secret-followups · Commit-Granularität: pro Task · Review: am Ende · Modell: Opus
 Freigabe: Kevin, 2026-10-02 (Design-Gate, „FRP-Nachzügler“ freigegeben), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: Roadmap R-0128, R-0129
 Heavy: none — kein Datenpfad eines nutzbaren Tunnels ändert sich: T1 betrifft nur stcp-Tunnel ohne Secret (über die API seit #61 nicht mehr erzeugbar), T2 nur das Speichern beim Typwechsel; pytest deckt Generate-Routen, POST und PUT ab, das Szenario `--tunnel` lief für #61 grün.
@@ -59,8 +59,10 @@ Verify: bash scripts/dev/verify.sh server --strict -- tests/test_frp_permissions
 Doku: docs/developer/api-reference.html + docs/en/developer/api-reference.html (Zeilen 137–139: 404, wenn kein
 nutzbarer STCP-Tunnel sichtbar ist, auch wenn die sichtbaren kein Secret haben) · CHANGELOG (Fixed)
 
-### T2 — Secret und Visitor-Port nur an stcp-Tunneln; der Wechsel zurück auf stcp heilt einen belegten Port  [ ]
+### T2 — Secret und Visitor-Port nur an stcp-Tunneln; der Wechsel zurück auf stcp heilt einen belegten Port  [x]
 Komponente: server · Dateien: apps/server/app/modules/frp/tunnel_router.py, apps/server/tests/test_frp_tunnels.py, docs/developer/api-reference.html, docs/en/developer/api-reference.html, docs/admin/frp-tunnel.html, docs/en/admin/frp-tunnel.html, CHANGELOG.md
+Evidenz: run.sh[quick] server: 4 passed, 0 failed, 14 skipped @f235a89d 2026-10-02T15:35:33+02:00
+Review: am Ende (Kurz-Ledger, Gesamt-Review folgt)
 Änderung: `update_tunnel` (`tunnel_router.py:145`) setzt nach dem Übernehmen der Felder (`:184–197`) bei einem
 Tunnel, der danach nicht stcp ist, `secret_key` und `visitor_port` auf `None` (Entscheidung B). `create_tunnel`
 (`:53`) speichert für einen nicht-stcp-Tunnel weder ein mitgeschicktes `secret_key` noch einen `visitor_port`

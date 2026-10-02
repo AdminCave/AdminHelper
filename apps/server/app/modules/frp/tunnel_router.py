@@ -38,6 +38,20 @@ def list_tunnels(
     return [t.to_dict(mask_secrets=True) for t in tunnels]
 
 
+def _port_taken(db: Session, port: int, tunnel_id: str) -> bool:
+    """Whether another stcp tunnel already binds this visitor port."""
+    return (
+        db.query(FrpTunnel.id)
+        .filter(
+            FrpTunnel.visitor_port == port,
+            FrpTunnel.tunnel_type == "stcp",
+            FrpTunnel.id != tunnel_id,
+        )
+        .first()
+        is not None
+    )
+
+
 def _attach_auto_connection(db: Session, tunnel: FrpTunnel, username: str | None) -> None:
     """Create the paired auto-connection for a tunnel (if the checker returns one)
     and link it back. Shared by create_tunnel and update_tunnel so the args — esp.
@@ -68,12 +82,14 @@ def create_tunnel(
     if existing:
         raise HTTPException(status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits")
 
-    secret = data.secret_key
-    if data.tunnel_type == "stcp" and not secret:
+    # secret_key and visitor_port belong to stcp; any other type stores neither.
+    is_stcp = data.tunnel_type == "stcp"
+    secret = data.secret_key if is_stcp else None
+    if is_stcp and not secret:
         secret = FrpTunnel.generate_secret()
 
-    visitor_port = data.visitor_port
-    if data.tunnel_type == "stcp":
+    visitor_port = data.visitor_port if is_stcp else None
+    if is_stcp:
         if not visitor_port:
             visitor_port = next_visitor_port(db)
         else:
@@ -166,17 +182,11 @@ def update_tunnel(
                 status_code=409, detail=f"Proxy-Name '{data.name}' existiert bereits"
             )
 
-    if "visitor_port" in sent and data.visitor_port:
-        conflict = (
-            db.query(FrpTunnel)
-            .filter(
-                FrpTunnel.visitor_port == data.visitor_port,
-                FrpTunnel.tunnel_type == "stcp",
-                FrpTunnel.id != tunnel_id,
-            )
-            .first()
-        )
-        if conflict:
+    was_stcp = tunnel.tunnel_type == "stcp"
+    ends_stcp = (data.tunnel_type if "tunnel_type" in sent else tunnel.tunnel_type) == "stcp"
+
+    if ends_stcp and "visitor_port" in sent and data.visitor_port:
+        if _port_taken(db, data.visitor_port, tunnel_id):
             raise HTTPException(
                 status_code=409, detail=f"Visitor-Port {data.visitor_port} ist bereits belegt"
             )
@@ -196,10 +206,26 @@ def update_tunnel(
         if field in sent:
             setattr(tunnel, field, getattr(data, field))
 
-    if tunnel.tunnel_type == "stcp" and not tunnel.visitor_port:
-        tunnel.visitor_port = next_visitor_port(db, exclude_tunnel_id=tunnel_id)
-    if tunnel.tunnel_type == "stcp" and not tunnel.secret_key:
-        tunnel.secret_key = FrpTunnel.generate_secret()
+    if not ends_stcp:
+        # An https tunnel keeps no stcp fields: its port is free for another stcp tunnel,
+        # and a later switch back starts with a new secret.
+        tunnel.secret_key = None
+        tunnel.visitor_port = None
+    else:
+        if not was_stcp and "secret_key" not in sent:
+            tunnel.secret_key = None  # a switch to stcp always gets a new secret
+        if (
+            tunnel.visitor_port
+            and "visitor_port" not in sent
+            and _port_taken(db, tunnel.visitor_port, tunnel_id)
+        ):
+            # A stored port another stcp tunnel took meanwhile (rows from before https
+            # cleared it) is replaced; only a port the client sends is a 409.
+            tunnel.visitor_port = None
+        if not tunnel.visitor_port:
+            tunnel.visitor_port = next_visitor_port(db, exclude_tunnel_id=tunnel_id)
+        if not tunnel.secret_key:
+            tunnel.secret_key = FrpTunnel.generate_secret()
 
     if "extra_config" in sent:
         tunnel.extra_config = json.dumps(data.extra_config) if data.extra_config else None
