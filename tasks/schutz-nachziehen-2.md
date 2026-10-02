@@ -1,0 +1,102 @@
+<!--
+SPDX-FileCopyrightText: Kevin Stenzel
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
+# Harness-Schutz nachziehen 2 (R-0125, R-0127, R-0133, R-0134, R-0130, R-0132) — Task-Ledger
+Status: geplant · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Spec: docs/features/schutz-nachziehen-2.md (Roadmap R-0125, R-0127, R-0133, R-0134, R-0130, R-0132)
+Heavy: none — nur der PreToolUse-Wächter, review.sh und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles über verify.sh scripts.
+DoD je Task: CLAUDE.md (Tests grün, shellcheck sauber, Doku im selben Commit, SPDX bei neuen Dateien).
+Task-Status: [ ] offen · [x] fertig · [~] übersprungen (Grund) · [?] braucht Entscheidung
+
+Geplant 2026-10-02 von der Aufsicht (adminhelper-ac) aus der Erkundung von Worker B; Entscheidungen Kevin 2026-10-02
+(Spec, „Ziel & Nicht-Ziele“). Harness-Pfade ⇒ Bau nur interaktiv, durch Worker B in `../AdminHelper-harness-b`
+(eigene Test-DB `adminhelper_test_harness_b`); keine Lane (`lane.sh` legt fest `feature/<slug>` an). Zeilenangaben
+main@159d1c97. Wächter-Proben nur als JSON auf stdin wie `scripts/tests/hooks_test.sh`, nie als echte Befehle;
+diff-scan-Proben in einem Scratch-Repo mit einer Kopie von `review.sh` wie `scripts/tests/review_scripts_test.sh`.
+„Rot vorher“ heißt: heute frei bzw. `diff-scan: clean` gemessen (Worker B, 2026-10-02).
+
+### T1 — Wächter: `[^…]`, Klammer-Expansion und `cd` in einen Glob mit wörtlichem Operand  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Änderung: (a) `reaches_root` (`:239–255`) normalisiert vor `fnmatch` `[^` zu `[!` (bash liest beides als Negation).
+(b) Operanden werden vor `tmp_glob`/`rel` per Klammer-Expansion aufgelöst: nur Komma-Listen, verschachtelt, auf etwa
+32 Ergebnisse gedeckelt; jedes Ergebnis wird geprüft. (c) `tmp_glob` (`:257–270`) prüft „hat Glob“ am aufgelösten
+Pfad (cwd plus Wort), nicht nur am Wort, damit ein cwd aus einem Glob (`cd /t*`) zählt.
+Rot vorher (verweigert danach, in jedem Modus): `rm -rf /[^x]mp/tmp.*`, `rm -rf /[^x]mp`, `rm -rf /{tmp,x}/tmp.*`,
+`rm -rf /{tmp,var}`, `cd /t* && rm -rf claude-1000`. Gegenproben: `[!x]` bleibt verweigert, tiefe Scratchpad-Pfade
+und `/home/*/x*` bleiben frei, die bestehende Liste freier Formen in hooks_test.sh bleibt grün.
+Grenzen (Kopf + DEVELOPMENT.md): `{1..3}`-Sequenzen und Klammern in Variablen.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md Harness-Schutz (erkannte Formen, Grenzen)
+
+### T2 — Wächter: Wegnehmen eines Vorfahren von Harness-Pfaden  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Änderung: Die Wegnehm-Verben (`rm`, `rmdir`, `shred`, `unlink`; `chmod`/`chown`/`chgrp`; die Quelle von `mv`) und
+die Startpfade eines löschenden `find` (`find_delete`, `:276–308`) melden ihre Pfade auf eigenem Weg an die
+Shell-Seite; dort trifft ein solcher Pfad auch, wenn er Vorfahr eines Musters aus `harness-paths.txt` ist (ein
+Muster beginnt mit `<pfad>/`). Die Repo-Wurzel selbst ist Vorfahr von allem (heute liefert `rel()` für sie `None`,
+`:173`). Ein Glob-Operand im Checkout zählt über sein wörtliches Verzeichnis (`glob_dir`, `:228`): `rm -rf ./*`
+→ Wurzel, `rm -rf scripts/dev/*` → `scripts/dev`. `rmdir` kommt in den Harness-Zweig (`:707`). Alle anderen
+Schreibformen bleiben bei der heutigen Regel (nur der Pfad selbst). Im autonomen Lauf verweigert, interaktiv eine
+Warnung wie bei jedem Harness-Pfad.
+Rot vorher (mit `AH_AUTONOMOUS=1`): `rm -rf .claude`, `rm -rf scripts/dev/hooks`, `chmod -R -x scripts/dev/hooks`,
+`chown -R x .claude`, `rm -rf scripts/dev/*`, `rm -rf ./*`, `rm -rf scripts`, `find scripts -delete`,
+`mv scripts/dev /tmp/x`. Gegenproben frei: `rm -f apps/web/dist/*.js`, `chmod -R +x apps/web/scripts`,
+`rm -rf apps/web/node_modules`, `cp CLAUDE.md /tmp/x` (Lesen).
+Grenzen: `git clean`, Löschen aus Python/anderen Interpretern.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md Harness-Schutz (Vorfahr-Regel, ihr Radius); CHANGELOG (Changed)
+
+### T3 — Wächter: arithmetisches `<<` beginnt kein Here-Doc  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh
+Änderung: `logical_lines` (`:479–537`) zählt `((` und `$((` bis zum passenden `))` mit; darin sind `<<` und `<<=`
+Operatoren, kein Here-Doc-Beginn (`:518`). Echte Here-Docs (`<<EOF`, `<<-EOF`, `<<'EOF'`) und der Here-String
+(`:512`, R-0126) bleiben wie sie sind.
+Rot vorher: `echo $((1<<3))` + Zeilenumbruch + `sed -i s/a/b/ CLAUDE.md` (autonom frei), `(( x <<= 1 ))` +
+Zeilenumbruch + derselbe `sed` (autonom frei), `echo $((1<<3))` + Zeilenumbruch + `rm -rf /tmp/tmp.*` (interaktiv
+frei). Gegenproben: die bestehenden Here-Doc-Fälle (Commit-Nachricht als Here-Doc bleibt frei).
+Grenze: ein unquotiertes `let x<<=1` ist auch für bash ein Here-Doc.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: keine (Kopfkommentar)
+
+### T4 — Wächter: Eingabe-Umleitungen verlassen das Segment  [ ]
+Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Änderung: `is_redirect` (`:475–476`) erkennt jedes Operator-Token mit `<` als Umleitung. Bei `<`, `<&` und `<<<`
+fällt das nächste Wort weg und wird nicht als geschrieben gemeldet; `<>` schreibt (heute schon über `>`). Die
+Schleife in `run_segment` (`:594–604`) behandelt beide Richtungen.
+Rot vorher: `< /dev/null rm -rf /tmp/tmp.*` (interaktiv frei), `<<< x tee CLAUDE.md`,
+`cp /etc/hosts CLAUDE.md < /dev/null`, `cp /etc/hosts CLAUDE.md <<< x` (autonom frei). Gegenproben bleiben
+verweigert: `2>/dev/null rm -rf /tmp/tmp.*`, `exec 3<> CLAUDE.md`; `wc -l < CLAUDE.md` bleibt frei (Lesen).
+Grenze: Prozess-Substitution (`<(…)`).
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md Harness-Schutz (Grenzen)
+
+### T5 — diff-scan: entfernte Assertions zählen nur, wo Tests stehen  [ ]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Änderung: Ein `RA`-Fund (`:174–190`) zählt nur, wenn der Pfad eine Testdatei ist (`tests/`, `e2e/`, `test_*.py`,
+`*_test.{py,go,sh}`, `*.test.*`, `*.spec.*`) **oder** die alte Zeile in einer Test-Spanne von `heads()` (`:271`)
+liegt. Import-Zeilen (`use …`, `import …`, `from … import …`) zählen nie. Danach darf der zweite `else if`-Zweig
+aus #63 (Rust `assert_*!`, Go `t.Fatal*`) in die erste Regel gefaltet werden — nur, wenn der Diff es ohne Umweg
+zulässt.
+Rot vorher (heute je `rc 3`, Fehlalarm; danach clean): entferntes `use pretty_assertions::assert_eq;` in einer
+Datei unter `tests/`, entferntes `o.expect("boom")` in `apps/desktop/src-tauri/src/` außerhalb eines Tests,
+entferntes `assert x` in `apps/server/app/helpers.py`. Muss rot bleiben: `assert` in `tests/test_*.py`, `assert!`
+in einem inline `#[test]` unter `src/`, `t.Fatalf` in `*_test.go`.
+Grenze: Helfer in `#[cfg(test)] mod tests` ohne `#[test]`.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (diff-scan: wo entfernte Assertions zählen); CHANGELOG (Changed)
+
+### T6 — diff-scan: weitere Skip-Muster, Rückgaben mit Wert, CRLF  [ ]
+Komponente: scripts · Dateien: scripts/dev/review.sh, scripts/tests/review_scripts_test.sh, DEVELOPMENT.md, CHANGELOG.md
+Änderung: `SKIP_PATTERNS` (`:54–57`) bekommt `fit(`, `fdescribe(`, `.runIf(`, `.fails(`, `test.fail(`,
+`.skipTest(`, `pytest.importorskip(`; `test.fixme(` wird zu `.fixme(`, damit auch `test.describe.fixme(` trifft. Die
+AR-Regel (`:212–216`) schneidet `\r` vor dem Abgleich ab und nimmt zusätzlich `return None`, `return undefined;`
+und `return Ok(());`.
+Rot vorher (heute je clean): jedes der acht hinzugefügten Muster in einer neuen Zeile; `return None` (py),
+`return undefined;` (ts), `return Ok(());` (rs) am Anfang eines Tests; eine CRLF-Datei mit nacktem `return` in
+einem Test. Gegenproben: `assert.fail(` bleibt frei, `sys.exit(` und `profit(` bleiben frei (Wortgrenze),
+`return None` außerhalb eines Tests bleibt frei.
+Grenzen: kein generisches `.fail(`; andere Rückgabewerte.
+Verify: bash scripts/dev/verify.sh scripts --strict
+Doku: DEVELOPMENT.md (diff-scan-Muster); CHANGELOG (Changed)
