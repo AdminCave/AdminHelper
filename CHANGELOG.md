@@ -266,6 +266,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Changed
 
+- **Schema-Fuzzing im PR deterministisch (R-0063):** Der Schritt `schemathesis` (lokal `run.sh` und der
+  CI-Job „Schema fuzzing") faehrt mit `AH_SCHEMATHESIS_EXAMPLES=0` nur noch die explizite Phase
+  (Schema-Beispiele und Coverage-Faelle): fuer denselben Baum dieselben Faelle, ein roter Lauf ist
+  lokal nachstellbar. Der Wochenlauf behaelt alle Phasen mit 100 Beispielen. `hypothesis==6.168.3`
+  und `schemathesis==4.29.0` sind exakt gepinnt. `scripts/tests/schemathesis_determinism.sh` prueft,
+  ob zwei Laeufe je Test dieselben Faelle schicken. Die Server-Suite ersetzt den Proxy-Client zum
+  Monitoring durch einen Stub; die fuenf Ausschluesse der Proxy-Routen sind entfallen. Doku:
+  `DEVELOPMENT.md` „Generatoren", `docs/developer/cicd.html`.
 - **Monitoring: Obergrenzen fuer ganzzahlige Eingaben (R-0063):** `cooldown_minutes` (Alert-Regeln und
   Vorlagen), `consecutive_fails` (Checks und Vorlagen) und `duration_minutes` (Wartungsfenster) enden
   bei der INTEGER-Grenze `2147483647`, `weekdays` traegt 0–6 jetzt auch im Schema. Groessere Werte

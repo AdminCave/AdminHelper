@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Fuzz-Gate deterministisch (R-0063) — Task-Ledger
-Status: aktiv · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: bereit · Branch: harness/fuzz-gate-determinism · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-09-30 („alle freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/fuzz-gate-determinism.md (Roadmap R-0063)
 Heavy: none — nur Test-Konfiguration, Test-Stubs, ein Lint und Request-Schranken im Monitoring-Schema; kein Stack-, Gateway-, PKI- oder Install-Pfad. Die Tiefe (alle Phasen, 100 Beispiele) bleibt im Wochenlauf; ein grüner Wochenlauf nach dem Merge ist die Evidenz dafür.
@@ -88,8 +88,10 @@ vier Kontexten, `RuntimeError … client has been closed`; Explorer 2026-09-30);
 Verify: bash scripts/dev/verify.sh server --strict
 Doku: keine (intern)
 
-### T5 — Doku: was der PR-Gate prüft und was der Wochenlauf  [ ]
+### T5 — Doku: was der PR-Gate prüft und was der Wochenlauf  [x]
 Komponente: scripts · Dateien: DEVELOPMENT.md, docs/developer/cicd.html, docs/en/developer/cicd.html, CHANGELOG.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @7302011b 2026-10-02T12:46:56+02:00
+Review: approve (sonnet), nit miterledigt
 Änderung: `DEVELOPMENT.md:107–116`: die Aussage „reproduzierbar bei gleichem Baum“ ist widerlegt; stattdessen:
 der PR-Gate (lokal und CI, `AH_SCHEMATHESIS_EXAMPLES=0`) fährt nur die expliziten Phasen und ist
 deterministisch, der Wochenlauf fährt alle Phasen mit 100 Beispielen und schreibt Funde in die Roadmap; der
