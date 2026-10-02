@@ -627,11 +627,15 @@ im Runner — und der Kill-Switch hebt sie nicht auf (Kevin, 2026-09-27):
   Scratchpads. Erkannt werden auch ein Operand nach `--`
   (`cd /tmp/claude-<uid> && rm -rf -- -home-x*`), `|&` als Pipe,
   `for d in $(ls -d /tmp/tmp.*); do …`, `… | xargs sh -c 'rm …'` und `grep -l`/`-L` als Lister
-  (R-0109). Nicht erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'`, eine
+  (R-0109), dazu `[^x]` wie `[!x]`, Klammer-Listen (`/{tmp,x}/tmp.*`, auch verschachtelt) und ein
+  woertlicher Operand nach `cd` in einen Glob (`cd /t* && rm -rf claude-1000`, R-0125). Nicht
+  erfasst: Loeschen aus python heraus, `find … -exec sh -c 'rm …'`, eine
   Schleife, die ihre Liste per Prozess-Substitution oder `mapfile`/`readarray` bekommt
   (`done < <(ls …)`), eine Liste ohne Glob mit einem erst zur Laufzeit gebauten Pfad
   (`ls /tmp | while read d; do rm -rf /tmp/$d`), eine Liste, die ohne xargs in eine Shell geht
-  (`… | sh -c 'xargs rm'`), und `cat … | xargs rm` (Dateiinhalt statt Namen). Die Regel dazu
+  (`… | sh -c 'xargs rm'`), `cat … | xargs rm` (Dateiinhalt statt Namen), Klammer-Sequenzen
+  (`{1..3}`), eine Variable in einer Klammer-Liste (`/{$X,y}/…`) und die Expansionen nach der
+  32. einer Klammer-Liste. Die Regel dazu
   fuer jede Session: Temp-Verzeichnisse nur mit `mktemp -d -p <eigenes Verzeichnis>`,
   geloescht wird nur der eigene Pfad, nie per Glob.
 - **Keine Umgehung des pre-commit-Hooks** (R-0102). Verweigert werden

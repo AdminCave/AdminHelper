@@ -662,6 +662,44 @@ denied "$OUT" && ok "denied: a glob above the value of TMPDIR" || bad "glob abov
 guard inter Bash "$(cmdjson 'rm -rf /?/x/*')"
 [ -z "$OUT" ] && ok "free: a glob above no temp root (/?/x/*)" || bad "false positive: /?/x/* -> $OUT"
 
+# R-0125: three more glob forms. bash reads `[^x]` like `[!x]` (Python's fnmatch
+# took the `^` literally), `{tmp,x}` expands before the command sees it, and a
+# cwd that is itself a glob (`cd /t*`) makes a literal operand a glob. Every mode.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  modes=""
+  guard inter Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes inter"
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes auto"
+  bash "$HARNESS" off >/dev/null
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes off"
+  bash "$HARNESS" on >/dev/null
+  [ "$modes" = " inter auto off" ] && ok "denied in every mode: $cmd" \
+    || bad "$cmd — denied only in:${modes:- no mode}"
+done <<'CMDS'
+rm -rf /[^x]mp/tmp.*
+rm -rf /[^x]mp
+rm -rf /[!x]mp/tmp.*
+rm -rf /{tmp,x}/tmp.*
+rm -rf /{tmp,var}
+rm -rf /{x,{y,tmp}}/tmp.*
+cd /t* && rm -rf claude-1000
+for d in /{tmp,x}/tmp.*; do rm -rf "$d"; done
+cd {,/tmp} && rm -rf tmp.*
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -rf /tmp/foo.{a,b}
+rm -f build/{a,b}.o
+find . -name '*.o' -exec rm {} +
+rm -rf ${TMPDIR:-x}/y
+rm -rf /tmp/{1..3}
+CMDS
+guard auto Bash "$(cmdjson 'rm -f CLAUDE.{md,bak}')"
+denied "$OUT" && ok "autonomous: a brace operand that names a harness path is denied" || bad "brace harness path: $OUT$ERR"
+
 # R-0109, the parser: `--` ends the options (a `-home-…` operand is one), `|&`
 # is a pipe, `);` is two operators, `xargs sh -c 'rm …'` deletes like `xargs rm`,
 # and `grep -l`/`-L` list names. The same forms in an own directory stay free.

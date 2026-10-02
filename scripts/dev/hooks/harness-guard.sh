@@ -23,14 +23,18 @@
 # covers a loop over such a glob that deletes in its body (`for d in /tmp/x*`,
 # `for d in $(ls /tmp/x*)`, `… | while read d`), `… | xargs rm` behind it (also
 # `|&`, `xargs sh -c 'rm …'`, a `grep -l` as the lister), an operand after `--`,
-# and a glob ABOVE the root at any depth (`/t*/claude-1000/*`, R-0109). One
+# a glob ABOVE the root at any depth (`/t*/claude-1000/*`, R-0109), and since
+# R-0125 `[^x]` read like `[!x]`, a brace list (`/{tmp,x}/…`) and a literal
+# operand after `cd` into a glob (`cd /t* && rm -rf claude-1000`). One
 # level deeper is somebody's own directory (a scratchpad, an mktemp dir) and
 # stays free: "anywhere below /tmp" hit 13 legitimate scratchpad cleanups in
 # 34 513 real commands. Not seen: a list read by `mapfile`/`readarray` or a
 # process substitution, a list without a glob whose paths are built at runtime
 # (`ls /tmp | while read d; do rm -rf /tmp/$d`), a list piped into a shell
-# without xargs (`… | sh -c 'xargs rm'`, `… | sed 's/^/rm /' | sh`), and
-# `cat … | xargs rm` (the file's content, not names).
+# without xargs (`… | sh -c 'xargs rm'`, `… | sed 's/^/rm /' | sh`),
+# `cat … | xargs rm` (the file's content, not names), a brace sequence
+# (`{1..3}`), a variable inside a brace list (`/{$X,y}/…`) and the expansions
+# past the 32nd of a brace list.
 #
 # The same holds for the ways past the pre-commit hook (R-0102, Kevin
 # 2026-09-27): `git commit --no-verify`/`-n` (also inside `-qn`), `git am -n`
@@ -243,7 +247,9 @@ def reaches_root(pattern):
     and `cd /t* && rm -rf claude-1000/*` walk into every session's directories
     (R-0109). A glob that only starts below the root, in a path that names the
     root literally, matches deeper entries only — somebody's own."""
-    comps = pattern.strip("/").split("/")
+    # bash reads `[^x]` like `[!x]`; Python's fnmatch takes the `^` literally
+    # (R-0125).
+    comps = pattern.replace("[^", "[!").strip("/").split("/")
     for r in TMP_ROOTS:
         rc = r.strip("/").split("/")
         if r == TMPDIR_ROOT or len(comps) < len(rc) or not all(
@@ -254,19 +260,57 @@ def reaches_root(pattern):
     return False
 
 
+def brace_expand(word, limit=32):
+    """bash's brace expansion, comma lists only and nested (`/{tmp,x}/tmp.*` ->
+    `/tmp/tmp.*`, `/x/tmp.*`), capped at `limit` results. `${…}` is a variable,
+    `{}` and `{a}` stay literal, and a sequence `{1..3}` is a documented limit."""
+    for i, c in enumerate(word):
+        if c != "{" or (i and word[i - 1] == "$"):
+            continue
+        depth, commas = 0, []
+        for j in range(i, len(word)):
+            if word[j] == "{":
+                depth += 1
+            elif word[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif word[j] == "," and depth == 1:
+                commas.append(j)
+        else:
+            continue            # never closed: no expansion here
+        if not commas:
+            continue
+        out, last = [], i + 1
+        for k in commas + [j]:
+            for e in brace_expand(word[:i] + word[last:k] + word[j + 1:], limit):
+                out.append(e)
+                if len(out) >= limit:
+                    return out
+            last = k + 1
+        return out
+    return [word]
+
+
 def tmp_glob(word, base):
     """A glob whose literal directory is a shared temp directory, or one that
     reaches a temp root (see reaches_root); or a shared directory itself (`rm -rf /tmp`
     takes the same as `rm -rf /tmp/*`). A bare `$TMPDIR` is left to the
     variable rule: `rm -rf "$TMPDIR"` after `export TMPDIR=$(mktemp -d …)` is
-    cleanup."""
-    if has_glob(word):
+    cleanup. Every brace expansion of the word counts (R-0125)."""
+    return any(tmp_glob_one(w, base) for w in brace_expand(word) if w)
+
+
+def tmp_glob_one(word, base):
+    # A cwd that is itself a glob (`cd /t* && rm -rf claude-1000`) makes a
+    # literal operand a glob (R-0125).
+    full = resolve(word, base)
+    if has_glob(word) or full != UNRESOLVED and has_glob(full):
         d = glob_dir(word, base)
         if d == UNRESOLVED or in_repo(d):
             return False
-        return is_shared(d) or reaches_root(resolve(word, base))
-    p = resolve(word, base)
-    return p != TMPDIR_ROOT and is_shared(p)
+        return is_shared(d) or reaches_root(full)
+    return full != TMPDIR_ROOT and is_shared(full)
 
 
 def printable(word):
@@ -640,6 +684,10 @@ def run_segment(tok, cwd, depth, state, sep):
     # After `--` every word is an operand: `rm -rf -- -home-x*` deletes -home-x*.
     end = args.index("--") if "--" in args else len(args)
     words = [a for a in args[:end] if not a.startswith("-")] + args[end + 1:]
+    # The operands as bash hands them over: `rm CLAUDE.{md,x}` writes CLAUDE.md
+    # (R-0125).
+    # An empty alternative (`{a,}`) yields no word, as in bash.
+    words = [e for w in words for e in brace_expand(w) if e]
 
     if verb == "git":
         hit = git_skips_hook(args)

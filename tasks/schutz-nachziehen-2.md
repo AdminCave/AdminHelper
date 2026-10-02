@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
 # Harness-Schutz nachziehen 2 (R-0125, R-0127, R-0133, R-0134, R-0130, R-0132) — Task-Ledger
-Status: freigegeben · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
+Status: aktiv · Branch: harness/schutz-nachziehen-2 · Commit-Granularität: pro Task · Review: pro Task (feature-review; Harness-Pfade ⇒ Reviewer Opus) · Modell: Opus
 Freigabe: Kevin, 2026-10-02 („Schutz 2 freigeben“), übermittelt durch die Aufsichts-Session adminhelper-ac
 Spec: docs/features/schutz-nachziehen-2.md (Roadmap R-0125, R-0127, R-0133, R-0134, R-0130, R-0132)
 Heavy: none — nur der PreToolUse-Wächter, review.sh und ihre hermetischen Tests; kein Stack-, Gateway-, PKI- oder Install-Pfad, alles über verify.sh scripts.
@@ -18,8 +18,10 @@ main@159d1c97. Wächter-Proben nur als JSON auf stdin wie `scripts/tests/hooks_t
 diff-scan-Proben in einem Scratch-Repo mit einer Kopie von `review.sh` wie `scripts/tests/review_scripts_test.sh`.
 „Rot vorher“ heißt: heute frei bzw. `diff-scan: clean` gemessen (Worker B, 2026-10-02).
 
-### T1 — Wächter: `[^…]`, Klammer-Expansion und `cd` in einen Glob mit wörtlichem Operand  [ ]
+### T1 — Wächter: `[^…]`, Klammer-Expansion und `cd` in einen Glob mit wörtlichem Operand  [x]
 Komponente: scripts · Dateien: scripts/dev/hooks/harness-guard.sh, scripts/tests/hooks_test.sh, DEVELOPMENT.md
+Evidenz: run.sh[quick] scripts: 6 passed, 0 failed, 12 skipped @f1c3dff1 2026-10-02T11:03:28+02:00
+Review: approve (opus), nits applied
 Änderung: (a) `reaches_root` (`:239–255`) normalisiert vor `fnmatch` `[^` zu `[!` (bash liest beides als Negation).
 (b) Operanden werden vor `tmp_glob`/`rel` per Klammer-Expansion aufgelöst: nur Komma-Listen, verschachtelt, auf etwa
 32 Ergebnisse gedeckelt; jedes Ergebnis wird geprüft. (c) `tmp_glob` (`:257–270`) prüft „hat Glob“ am aufgelösten
