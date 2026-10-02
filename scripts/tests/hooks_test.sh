@@ -596,6 +596,20 @@ guard inter Bash "$(cmdjson "$(printf 'tr a b <<< "$x"\nrm -rf /tmp/tmp.*')")"
 denied "$OUT" && ok "denied: a delete on the line after a here-string" || bad "here-string, temp rule: $OUT$ERR"
 guard auto Bash "$(cmdjson "$(printf 'tr a b <<< "$x"\nsed -i s/a/b/ CLAUDE.md')")"
 denied "$OUT" && ok "denied (autonomous): a harness edit on the line after a here-string" || bad "here-string, harness rule: $OUT$ERR"
+# R-0133: `<<` and `<<=` inside `((…))` / `$((…))` are shifts, not a here-doc.
+# Read as one, every line after it was hidden.
+guard auto Bash "$(cmdjson "$(printf 'echo $((1<<3))\nsed -i s/a/b/ CLAUDE.md')")"
+denied "$OUT" && ok "denied (autonomous): a harness edit after \$((1<<3))" || bad "arith shift, harness rule: $OUT$ERR"
+guard auto Bash "$(cmdjson "$(printf '(( x <<= 1 ))\nsed -i s/a/b/ CLAUDE.md')")"
+denied "$OUT" && ok "denied (autonomous): a harness edit after (( x <<= 1 ))" || bad "arith assign, harness rule: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'echo $((1<<3))\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: a delete on the line after \$((1<<3))" || bad "arith shift, temp rule: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'echo $(( (1+2) << 3 ))\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: nested parentheses inside the arithmetic" || bad "arith nested: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf '(( x = 1 +\n 2 << 3 ))\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: arithmetic over two lines" || bad "arith over lines: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'echo $((1<<3)); cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
+[ -z "$OUT" ] && ok "free: a here-doc after the arithmetic on the same line still is one" || bad "arith then here-doc: $OUT"
 for hd in '<<-EOF' "<<'EOF'" '<< "EOF"'; do
   guard inter Bash "$(cmdjson "$(printf 'cat > notes.md %s\nrm -rf /tmp/tmp.*\nEOF' "$hd")")"
   [ -z "$OUT" ] && ok "free: the command as the body of $hd" || bad "here-doc $hd: $OUT"
@@ -662,6 +676,44 @@ denied "$OUT" && ok "denied: a glob above the value of TMPDIR" || bad "glob abov
 guard inter Bash "$(cmdjson 'rm -rf /?/x/*')"
 [ -z "$OUT" ] && ok "free: a glob above no temp root (/?/x/*)" || bad "false positive: /?/x/* -> $OUT"
 
+# R-0125: three more glob forms. bash reads `[^x]` like `[!x]` (Python's fnmatch
+# took the `^` literally), `{tmp,x}` expands before the command sees it, and a
+# cwd that is itself a glob (`cd /t*`) makes a literal operand a glob. Every mode.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  modes=""
+  guard inter Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes inter"
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes auto"
+  bash "$HARNESS" off >/dev/null
+  guard auto Bash "$(cmdjson "$cmd")"; denied "$OUT" && modes="$modes off"
+  bash "$HARNESS" on >/dev/null
+  [ "$modes" = " inter auto off" ] && ok "denied in every mode: $cmd" \
+    || bad "$cmd — denied only in:${modes:- no mode}"
+done <<'CMDS'
+rm -rf /[^x]mp/tmp.*
+rm -rf /[^x]mp
+rm -rf /[!x]mp/tmp.*
+rm -rf /{tmp,x}/tmp.*
+rm -rf /{tmp,var}
+rm -rf /{x,{y,tmp}}/tmp.*
+cd /t* && rm -rf claude-1000
+for d in /{tmp,x}/tmp.*; do rm -rf "$d"; done
+cd {,/tmp} && rm -rf tmp.*
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard inter Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -rf /tmp/foo.{a,b}
+rm -f build/{a,b}.o
+find . -name '*.o' -exec rm {} +
+rm -rf ${TMPDIR:-x}/y
+rm -rf /tmp/{1..3}
+CMDS
+guard auto Bash "$(cmdjson 'rm -f CLAUDE.{md,bak}')"
+denied "$OUT" && ok "autonomous: a brace operand that names a harness path is denied" || bad "brace harness path: $OUT$ERR"
+
 # R-0109, the parser: `--` ends the options (a `-home-…` operand is one), `|&`
 # is a pipe, `);` is two operators, `xargs sh -c 'rm …'` deletes like `xargs rm`,
 # and `grep -l`/`-L` list names. The same forms in an own directory stay free.
@@ -720,6 +772,168 @@ guard auto Bash "$(cmdjson 'chmod +x apps/web/x.sh')"
 [ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: chmod outside the harness paths" || bad "chmod false positive: $OUT$ERR"
 guard auto Bash "$(cmdjson 'chmod --reference CLAUDE.md apps/web/x.sh')"
 [ -z "$OUT" ] && [ -z "$ERR" ] && ok "free: the --reference file is only read" || bad "chmod --reference: $OUT$ERR"
+
+# R-0127: taking away a directory that holds harness paths takes them along —
+# deleting it, moving it, chmod/chown -R on it, a glob in it, a deleting find
+# from it. The checkout root holds them all. Autonomous: denied; interactive: a
+# warning, like every harness path.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+rm -rf .claude
+rm -rf scripts/dev/hooks
+rmdir scripts/dev/hooks
+chmod -R -x scripts/dev/hooks
+chown -R x .claude
+rm -rf scripts/dev/*
+rm -rf ./*
+rm -rf scripts
+find scripts -delete
+find . -name '*.sh' -exec rm {} +
+mv scripts/dev /tmp/x
+find .claude/skills -delete
+find CLAUDE.md -delete
+rm -rf ..
+rm -rf ../*
+mv -t /tmp/x scripts/dev
+find {.claude,x} -delete
+CMDS
+guard inter Bash "$(cmdjson 'rm -rf scripts/dev/hooks')"
+[ -z "$OUT" ] && grep -q 'harness path' <<<"$ERR" \
+  && ok "interactive: taking away a harness directory only warns" || bad "interactive ancestor: out=$OUT err=$ERR"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "autonomous, free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -f apps/web/dist/*.js
+chmod -R +x apps/web/scripts
+rm -rf apps/web/node_modules
+cp CLAUDE.md /tmp/x
+rm -rf /tmp/scratch
+mv apps/web/a apps/web/b
+rm -f scripts/tests/x_test.sh
+rm -rf scripts/dev/hook
+mv -t scripts/dev foo.sh
+CMDS
+
+# R-0134: an input redirection leaves the segment with its word, like an output
+# one. Left in, `<` in front of the verb hid it, and behind cp/mv it moved the
+# destination.
+guard inter Bash "$(cmdjson '< /dev/null rm -rf /tmp/tmp.*')"
+denied "$OUT" && ok "denied: < in front of the verb" || bad "< before rm: $OUT$ERR"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+<<< x tee CLAUDE.md
+cp /etc/hosts CLAUDE.md < /dev/null
+cp /etc/hosts CLAUDE.md <<< x
+0< /dev/null tee CLAUDE.md
+exec 3<> CLAUDE.md
+2>/dev/null tee CLAUDE.md
+CMDS
+guard inter Bash "$(cmdjson '2>/dev/null rm -rf /tmp/tmp.*')"
+denied "$OUT" && ok "denied: 2>/dev/null in front of the verb (as before)" || bad "2> before rm: $OUT$ERR"
+# shlex drops the quotes, so a quoted "<" arrives as the bare operator. It is a
+# word unless the line holds an unquoted `<`, and never right before another
+# operator — read as a redirection it swallowed the next word.
+guard inter Bash "$(cmdjson 'rm -rf "<" /tmp/tmp.*')"
+denied "$OUT" && ok "denied: a quoted \"<\" next to a temp glob stays a word" || bad "quoted < before glob: $OUT$ERR"
+guard inter Bash "$(cmdjson "git commit -m '<' --no-""verify")"
+denied "$OUT" && ok "denied: a quoted '<' as the message does not hide the bypass" || bad "quoted < message: $OUT$ERR"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+echo "<" > CLAUDE.md
+echo '<<<' >> CLAUDE.md
+tee "<" CLAUDE.md
+< /dev/null echo "<" > CLAUDE.md
+wc -l < x; bash -c 'tee "<" CLAUDE.md'
+CMDS
+guard auto Bash "$(cmdjson 'wc -l < CLAUDE.md')"
+[ -z "$OUT" ] && ok "autonomous, free: reading a harness file through <" || bad "false positive: wc -l < CLAUDE.md -> $OUT"
+# T7 (/code-review of this branch): a word made only of quoted or escaped
+# operator characters stays a word, also on a line that holds a real `<` — read
+# as a redirection, it swallowed the bypass or the glob next to it.
+NOV="--no-""verify"
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  cmd="${cmd//NOV/$NOV}"
+  guard inter Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+wc -l < notes.txt; git commit -m "<" NOV
+sort < in.txt; rm -rf "<" /tmp/tmp.*
+echo $((1<2)); git commit -m '<' -n
+diff <(ls) x; rm -rf '<' /tmp/tmp.*
+wc -l < notes.txt; rm -rf \< /tmp/tmp.*
+cat < x; git commit -m ">" NOV
+CMDS
+guard auto Bash "$(cmdjson 'wc -l < x; echo "<" > CLAUDE.md')"
+denied "$OUT" && ok "autonomous, denied: a quoted \"<\" before a real > CLAUDE.md" || bad "quoted < then >: $OUT$ERR"
+guard auto Bash "$(cmdjson 'sort < CLAUDE.md > /dev/null')"
+[ -z "$OUT" ] && ok "autonomous, free: a real < still takes its word" || bad "false positive: sort < CLAUDE.md -> $OUT"
+
+# T7: a glob operand of a take-away verb counts through what it matches in the
+# real tree, not through its directory — `rm -f *.log` in the root takes the
+# logs, not the checkout. A `cd` into a glob puts the glob in front of the
+# operand. Behind a variable the directory still counts.
+mkdir -p "$TREE/scripts/tests"
+: > "$TREE/build.log"; : > "$TREE/scripts/tests/run.sh"; : > "$TREE/scripts/tests/a.tmp"
+: > "$TREE/.claude/x.md"   # in an empty directory `rm -rf *` takes nothing away
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  [ -z "$OUT" ] && ok "autonomous, free: $cmd" || bad "false positive: $cmd -> $OUT"
+done <<'CMDS'
+rm -f *.log
+rm -f scripts/tests/*.tmp
+rm -f ../*.log
+rm -f scripts/tests/*.none
+CMDS
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  guard auto Bash "$(cmdjson "$cmd")"
+  denied "$OUT" && ok "autonomous, denied: $cmd" || bad "not denied: $cmd -> $OUT$ERR"
+done <<'CMDS'
+rm -f scripts/tests/*.sh
+rm -rf scripts/d*
+rm -rf scripts/$X/*
+rm -rf scripts/[[:lower:]]ev
+cd scripts/d* && rm -rf hooks
+cd .cl?ude && rm -rf *
+cd s*/dev && chmod -R -x hooks
+cd sc* && mv dev /tmp/x
+find scripts/d* -delete
+CMDS
+rm -f "$TREE/build.log" "$TREE/scripts/tests/run.sh" "$TREE/scripts/tests/a.tmp" "$TREE/.claude/x.md"
+rmdir "$TREE/scripts/tests"
+# Past GLOB_LIMIT matches the glob counts through its literal directory again:
+# 1001 harmless files under scripts/dev, which holds harness paths.
+mkdir -p "$TREE/scripts/dev/many"
+for i in $(seq 0 1000); do : > "$TREE/scripts/dev/many/x$i"; done
+guard auto Bash "$(cmdjson 'rm -f scripts/dev/m*/x*')"
+denied "$OUT" && ok "autonomous, denied: a glob past the match limit counts through its directory" \
+  || bad "glob limit: $OUT$ERR"
+rm -rf "$TREE/scripts/dev/many"
+
+# T7: a comment is no code — a `((` or a `<<X` in it opens nothing, and a quote
+# in it opens no string that hides the next line. Only a `#` at the start of a
+# word starts one.
+guard inter Bash "$(cmdjson "$(printf 'echo hi # see ((a\ncat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
+[ -z "$OUT" ] && ok "free: a here-doc after a comment that holds ((" || bad "comment with ((: $OUT"
+guard inter Bash "$(cmdjson "$(printf '# cat <<X\nrm -rf /tmp/tmp.*')")"
+denied "$OUT" && ok "denied: a delete after a comment that holds <<X" || bad "comment with <<X: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf "echo x # it's\nrm -rf /tmp/tmp.*")")"
+denied "$OUT" && ok "denied: a delete after a comment that holds a quote" || bad "comment with a quote: $OUT$ERR"
+guard inter Bash "$(cmdjson "$(printf 'echo a#b; cat > notes.md <<EOF\nrm -rf /tmp/tmp.*\nEOF')")"
+[ -z "$OUT" ] && ok "free: a # inside a word starts no comment, the here-doc stays one" || bad "# in a word: $OUT"
 
 # The keyword gap: `do`/`then`/… were read as the command word, so a harness
 # edit behind them went through even in an autonomous run.

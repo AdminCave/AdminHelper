@@ -65,6 +65,8 @@ printf '# changelog\n' > "$FIX/CHANGELOG.md"
 git -C "$FIX" init -q
 git -C "$FIX" config user.email test@example.invalid
 git -C "$FIX" config user.name "Fixture"
+# A global core.autocrlf would strip the CRLF case before diff-scan sees it.
+git -C "$FIX" config core.autocrlf false
 git -C "$FIX" add -A
 git -C "$FIX" commit -qm "fixture"
 
@@ -120,7 +122,15 @@ NEW_PATTERNS=(
   '.todo(|it.todo("later")'                              # review: ok fixture pattern
   'xdescribe(|xdescribe("x", () => {})'                  # review: ok fixture pattern
   'xtest(|xtest("x", () => {})'                          # review: ok fixture pattern
-  'test.fixme(|test.fixme("x", async () => {})'          # review: ok fixture pattern
+  '.fixme(|test.fixme("x", async () => {})'             # review: ok fixture pattern
+  '.fixme(|test.describe.fixme("x", () => {})'          # review: ok fixture pattern
+  'fit(|fit("x", () => {})'                             # review: ok fixture pattern
+  'fdescribe(|fdescribe("x", () => {})'                 # review: ok fixture pattern
+  '.runIf(|it.runIf(ci)("x", () => {})'                 # review: ok fixture pattern
+  '.fails(|it.fails("x", () => {})'                     # review: ok fixture pattern
+  'test.fail(|test.fail()'                              # review: ok fixture pattern
+  '.skipTest(|        self.skipTest("x")'               # review: ok fixture pattern
+  'pytest.importorskip(|pytest.importorskip("x")'       # review: ok fixture pattern
   'it.only(|it.only("x", () => {})'                      # review: ok fixture pattern
   'test.only(|test.only("x", () => {})'                  # review: ok fixture pattern
   'describe.only(|describe.only("x", () => {})'          # review: ok fixture pattern
@@ -137,6 +147,15 @@ for entry in "${NEW_PATTERNS[@]}"; do
   r diff-scan --staged
   [ $rc -eq 3 ] && grep -qF -- "  $want: " <<<"$OUT" \
     && ok "caught by $want: $line" || bad "missed or misnamed: $line (want $want; rc=$rc out=$OUT)"
+done
+# What only looks like it: an assertion that fails on purpose, and a word that
+# merely ends in a pattern (the boundary in front keeps `fit(` out of `profit(`).
+for line in 'assert.fail("unreachable")' 'sys.exit(1)' 'profit(1)' 'outfit(x)'; do
+  reset_index
+  printf '%s\n' "$line" >> "$FIX/scripts/dev/tool.sh"
+  stage scripts/dev/tool.sh
+  r diff-scan --staged
+  [ $rc -eq 0 ] && ok "free: $line" || bad "false positive: $line (rc=$rc out=$OUT)"
 done
 
 reset_index
@@ -637,6 +656,84 @@ printf '#[test]\nfn z() {\n}\n' > "$FIX/apps/desktop/src-tauri/tests/z.rs"
 stage apps/desktop/src-tauri/tests/z.rs
 r diff-scan --staged
 [ $rc -eq 0 ] && ok "Rust: the debug_ macros stay outside, as they always did" || bad "rust debug_: rc=$rc out=$OUT"
+# R-0130: a removed assertion counts where tests are — a test file, or the span
+# of a test in the old file — and never on an import line. Removing one from
+# production code is no silenced test.
+base apps/desktop/src-tauri/tests/imp.rs 'use pretty_assertions::assert_eq;
+fn f() {}
+'
+printf 'fn f() {}\n' > "$FIX/apps/desktop/src-tauri/tests/imp.rs"; stage apps/desktop/src-tauri/tests/imp.rs
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed import in a test file is no assertion" || bad "removed import: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/src/lib.rs 'fn g(o: Option<u8>) -> u8 {
+    let v = o.expect("boom");
+    v
+}
+'
+printf 'fn g(o: Option<u8>) -> u8 {\n    o.unwrap()\n}\n' > "$FIX/apps/desktop/src-tauri/src/lib.rs"; stage apps/desktop/src-tauri/src/lib.rs
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed .expect( in production code is no assertion" || bad "removed expect in src: rc=$rc out=$OUT"
+base apps/server/app/helpers.py 'def check(r, s):
+    assert r.status == s
+'
+printf 'def check(r, s):\n    return r.status == s\n' > "$FIX/apps/server/app/helpers.py"; stage apps/server/app/helpers.py
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed assert in an app helper is no silenced test" || bad "removed assert in app: rc=$rc out=$OUT"
+base apps/web/src/i.test.ts 'import assert from "node:assert";
+it("i", () => {});
+'
+printf 'it("i", () => {});\n' > "$FIX/apps/web/src/i.test.ts"; stage apps/web/src/i.test.ts
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed JS import of assert in a test file is no assertion" || bad "removed js import: rc=$rc out=$OUT"
+base apps/server/tests/test_imp.py 'from hamcrest import assert_that
+def test_i():
+    pass
+'
+printf 'def test_i():\n    pass\n' > "$FIX/apps/server/tests/test_imp.py"; stage apps/server/tests/test_imp.py
+r diff-scan --staged
+[ $rc -eq 0 ] && ok "a removed Python from-import of assert_that is no assertion" || bad "removed py import: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/src/inl.rs '#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        assert!(true);
+    }
+}
+'
+printf '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n    }\n}\n' > "$FIX/apps/desktop/src-tauri/src/inl.rs"; stage apps/desktop/src-tauri/src/inl.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'apps/desktop/src-tauri/src/inl.rs:.*removed assertion' <<<"$OUT" \
+  && ok "an assertion out of an inline #[test] under src/ still counts" || bad "inline rust test: rc=$rc out=$OUT"
+base apps/desktop/src-tauri/src/tk.rs '#[cfg(test)]
+mod tests {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn t() {
+        assert_eq!(1, 1);
+    }
+}
+'
+printf '#[cfg(test)]\nmod tests {\n    #[tokio::test(flavor = "multi_thread")]\n    async fn t() {\n    }\n}\n' > "$FIX/apps/desktop/src-tauri/src/tk.rs"
+stage apps/desktop/src-tauri/src/tk.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'src/tk.rs:.*removed assertion' <<<"$OUT" \
+  && ok "an assertion out of a #[tokio::test(...)] under src/ still counts" || bad "tokio test attr: rc=$rc out=$OUT"
+# A renamed module: the old span lives in the OLD path.
+base apps/desktop/src-tauri/src/inl.rs '#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        let a = 1;
+        let b = 1;
+        assert_eq!(a, b);
+    }
+}
+'
+git -C "$FIX" mv apps/desktop/src-tauri/src/inl.rs apps/desktop/src-tauri/src/inl2.rs
+printf '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n        let a = 1;\n        let b = 1;\n    }\n}\n' > "$FIX/apps/desktop/src-tauri/src/inl2.rs"
+stage apps/desktop/src-tauri/src/inl2.rs
+r diff-scan --staged
+[ $rc -eq 3 ] && grep -q 'removed assertion: assert_eq!(a, b);' <<<"$OUT" \
+  && ok "a module renamed with an assertion removed from its test still counts" || bad "renamed module: rc=$rc out=$OUT"
 GO_DEAD='package x
 
 import "testing"
@@ -677,7 +774,7 @@ ret_case() {  # ret_case <path> <content> <added-content> <want-rc> <label>
   base "$1" "$2"; printf '%s' "$3" > "$FIX/$1"; stage "$1"
   r diff-scan --staged
   if [ "$4" = 3 ]; then
-    [ $rc -eq 3 ] && grep -q "$1:.*bare return in a test" <<<"$OUT" && ok "$5" || bad "$5: rc=$rc out=$OUT"
+    [ $rc -eq 3 ] && grep -q "$1:.*early return in a test" <<<"$OUT" && ok "$5" || bad "$5: rc=$rc out=$OUT"
   else
     [ $rc -eq 0 ] && ok "$5" || bad "$5: rc=$rc out=$OUT"
   fi
@@ -794,6 +891,157 @@ it("r", () => {
   expect(1).toBe(1);
 });
 ' 3 "TS: a bare return; in a test is a finding"
+# R-0132: a return with the value the test function returns anyway, and the same
+# line with a CRLF ending, stop a test just as well.
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    return None
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: return None in a test is a finding"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r():
+    x = 1
+    assert x == 1
+
+
+def helper():
+    return None
+    x = 2
+    return x
+' 0 "Python: return None in a helper is free"
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  return undefined;
+  expect(1).toBe(1);
+});
+' 3 "TS: return undefined; in a test is a finding"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    return Ok(());
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+' 3 "Rust: return Ok(()); in a test is a finding"
+ret_case apps/server/tests/test_crlf.py "$(printf 'def test_c():\r\n    x = 1\r\n    assert x\r\n')" \
+  "$(printf 'def test_c():\r\n    x = 1\r\n    return\r\n    assert x\r\n')" 3 "CRLF: a bare return in a test is a finding"
+# T7: a return in a function nested in the test (a stub, a callback) ends only
+# that function, and a return with nothing of the test after it ends nothing.
+# A return in a branch of the test itself, or in a Go subtest, still counts.
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r(monkeypatch):
+    async def _noop(*_a, **_k):
+        return None
+
+    x = 1
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 0 "Python: return None in a stub nested in the test is free"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r(monkeypatch):
+    async def _noop(
+        *_a,
+        **_k,
+    ):
+        return None
+
+    x = 1
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 0 "Python: the same stub with a signature over several lines is free"
+ret_case apps/server/tests/test_r.py "$PY_R" 'def test_r(cond):
+    x = 1
+    if cond:
+        return
+    assert x == 1
+
+
+def helper():
+    x = 2
+    return x
+' 3 "Python: a return in a branch of the test is a finding"
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  const stub = () => {
+    return undefined;
+  };
+  stub();
+  expect(1).toBe(1);
+});
+' 0 "TS: return undefined; in a callback nested in the test is free"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() -> Result<(), String> {
+    assert!(f());
+    return Ok(());
+}
+
+fn f() -> bool {
+    true
+}
+' 0 "Rust: a last return Ok(()); after the checks is free"
+GO_SUB='package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	t.Run("sub", func(t *testing.T) {
+		if f() != 1 {
+			t.Fatal("x")
+		}
+	})
+}
+'
+ret_case apps/agent/r_test.go "$GO_SUB" 'package x
+
+import "testing"
+
+func TestR(t *testing.T) {
+	t.Run("sub", func(t *testing.T) {
+		return
+		if f() != 1 {
+			t.Fatal("x")
+		}
+	})
+}
+' 3 "Go: a return in a t.Run subtest is a finding"
+ret_case apps/web/src/r.test.ts "$TS_R" 'import { expect, it } from "vitest";
+
+it("r", () => {
+  if (typeof globalThis.structuredClone !== "function") {
+    return;
+  }
+  expect(1).toBe(1);
+});
+' 3 "TS: a string \"function\" opens no nested function"
+ret_case apps/desktop/src-tauri/tests/r.rs "$RS_R" '#[test]
+fn r() {
+    match f() {
+        true => {
+            return;
+        }
+        false => {}
+    }
+    assert!(f());
+}
+
+fn f() -> bool {
+    true
+}
+' 3 "Rust: a match arm => { opens no nested function"
 
 r diff-scan --staged --task tasks/del.md T9
 [ $rc -eq 2 ] && grep -q "no task T9" <<<"$OUT" && ok "an unknown task -> exit 2, not a silent strict run" \
