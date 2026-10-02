@@ -16,8 +16,15 @@
 #   diff-scan  does this diff buy its green by switching a test off? A `|| true`,
 #              a `set +e`, a skip, xfail, todo or `.only(` of the test frameworks,
 #              a deleted assertion (with the Rust assert_ macros and, in a Go
-#              test, the t.Fatal/t.Error calls) or a bare `return` inside a test
-#              changes what "passed" means. Two things are deliberately not findings: a
+#              test, the t.Fatal/t.Error calls; only where tests are — a test
+#              file or the span of a test, never an import line, R-0130; a
+#              helper in `#[cfg(test)] mod tests` without `#[test]` is outside)
+#              or a `return` inside a test, bare or with the value a test
+#              returns anyway (None, undefined, Ok(())), with code of the test
+#              after it and not in a function nested in the test, changes
+#              what "passed" means. Other return values and a generic `.fail(`
+#              stay out.
+#              Two things are deliberately not findings: a
 #              line that carries `# review: ok <reason>` (and says why), and a
 #              pattern that only appears behind a comment marker, because a
 #              comment switches nothing off. With --task, a third: an assertion
@@ -52,8 +59,10 @@ die() { echo "review.sh: $*" >&2; exit 2; }
 # with the language it comes from: pytest, vitest/jest/Playwright, Rust, Go,
 # shell. One line per group, so each can carry the marker that exempts it.
 SKIP_PATTERNS='@pytest.mark.skip\x1fpytest.skip(\x1f@pytest.mark.xfail\x1fpytest.xfail(\x1f'        # review: ok this IS the list
-SKIP_PATTERNS+='it.skip(\x1ftest.skip(\x1fdescribe.skip(\x1f.skipIf(\x1f.todo(\x1ftest.fixme(\x1f'  # review: ok this IS the list
-SKIP_PATTERNS+='xit(\x1fxtest(\x1fxdescribe(\x1fit.only(\x1ftest.only(\x1fdescribe.only(\x1f'     # review: ok this IS the list
+SKIP_PATTERNS+='.skipTest(\x1fpytest.importorskip(\x1f'                                             # review: ok this IS the list
+SKIP_PATTERNS+='it.skip(\x1ftest.skip(\x1fdescribe.skip(\x1f.skipIf(\x1f.todo(\x1f.fixme(\x1f'      # review: ok this IS the list
+SKIP_PATTERNS+='fit(\x1ffdescribe(\x1f.runIf(\x1f.fails(\x1ftest.fail(\x1f'                         # review: ok this IS the list
+SKIP_PATTERNS+='xit(\x1fxtest(\x1fxdescribe(\x1fit.only(\x1ftest.only(\x1fdescribe.only(\x1f'       # review: ok this IS the list
 SKIP_PATTERNS+='#[ignore\x1ft.Skip(\x1ft.Skipf(\x1ft.SkipNow(\x1f|| true\x1f--no-verify\x1fset +e'  # review: ok this IS the list
 
 # Which test files a component owns. The scope check allows them even when the
@@ -161,6 +170,9 @@ case "$VERB" in
                         # A deletion has +++ /dev/null; the path is on the --- side.
                         if (file == "/dev/null") file = oldfile; else sub(/^b\//, "", file)
                         sub(/\t$/, "", file)
+                        # A rename: the old span of a test lives under the OLD path.
+                        if (oldfile != file && oldfile != "/dev/null")
+                          printf "RN\t%s\t%s\n", oldfile, file
                         next
                       }
       /^@@/           {
@@ -174,23 +186,20 @@ case "$VERB" in
       /^-/            {
                         line = substr($0, 2)
                         printf "RL\t%s\t%d\n", file, oldno
+                        # assert, the Rust macros assert_{eq,ne,matches,…}!, expect(
+                        # of vitest/jest, and in a Go test file the calls on its
+                        # testing.T t — outside one, a t is just a name. Whether
+                        # the line stood where tests are is the judge below.
                         if (line !~ /review: ok/ &&
-                            (line ~ /(^|[^A-Za-z_.])assert([^A-Za-z_]|$)/ || line ~ /expect\(/))
-                          printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
-                        # R-0082: the Rust macros assert_{eq,ne,matches,…}! (the
-                        # underscore kept them out above), and in a Go test file the
-                        # calls on its testing.T t — outside one, a t is just a name.
-                        # A branch of its own, not a wider regex above: diff-scan reads
-                        # its own removed regex line as a removed assertion.
-                        else if (line !~ /review: ok/ &&
-                                 (line ~ /(^|[^A-Za-z_.])assert_[a-z]+!?([^A-Za-z_]|$)/ ||
-                                  (file ~ /_test\.go$/ &&
-                                   line ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)))
+                            (line ~ /(^|[^A-Za-z_.])assert(_[a-z]+)?!?([^A-Za-z_]|$)/ || line ~ /expect\(/ ||
+                             (file ~ /_test\.go$/ &&
+                              line ~ /(^|[^A-Za-z0-9_.])t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)\(/)))
                           printf "RA\t%s\t%d\t%s\n", file, oldno, trim(line)
                         oldno++; next
                       }
       /^\+/           {
                         line = substr($0, 2)
+                        sub(/\r$/, "", line)
                         if (line !~ /review: ok/) {
                           cmt = comment_at(line)
                           cnt = split(PAT, pat, "\x1f")
@@ -209,10 +218,11 @@ case "$VERB" in
                               break
                             }
                           }
-                          # A line that is only a return: inside a test it ends
-                          # the test before its checks. Whether it is inside one
-                          # is decided below, against the new file.
-                          if (line ~ /^[ \t]*return;?[ \t]*((#|\/\/).*)?$/)
+                          # A line that is only a return, bare or with the value a
+                          # test returns anyway: inside a test it ends the test
+                          # before its checks. Whether it is inside one is decided
+                          # below, against the new file.
+                          if (line ~ /^[ \t]*return( None| undefined| Ok\(\(\)\))?;?[ \t]*((#|\/\/).*)?$/)
                             printf "AR\t%s\t%d\t%s\n", file, newno, trim(line)
                         }
                         newno++; next
@@ -239,7 +249,8 @@ for l in lines:
         _, f, n = l.split("\t", 2)
         removed.setdefault(f, set()).add(int(n))
 ars = [l.split("\t", 3)[1:] for l in lines if l.startswith("AR\t")]
-out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t"))]
+renamed = dict(l.split("\t", 2)[1:][::-1] for l in lines if l.startswith("RN\t"))   # new -> old
+out = [l for l in lines if not l.startswith(("RA\t", "RL\t", "AR\t", "RN\t"))]
 
 def git(*a):
     r = subprocess.run(("git", "-c", "core.quotePath=false") + a, capture_output=True)
@@ -266,7 +277,7 @@ PY = re.compile(r"^(\s*)(?:async\s+)?def\s+(test\w*)\s*\(")
 GO = re.compile(r"^()func\s+(Test\w*)\s*\(")
 JS = re.compile(r"^(\s*)(?:it|test)(?:\.only|\.skip)?\s*\(\s*([\x27\x22`])(.*?)\2")
 RS = re.compile(r"^(\s*)(?:pub\s+)?(?:async\s+)?fn\s+(\w+)")
-RS_ATTR = re.compile(r"^\s*#\[(?:[a-z_]+::)?test\]")
+RS_ATTR = re.compile(r"^\s*#\[(?:[a-z_]+::)?test[\]()]")   # also #[tokio::test(flavor = …)]
 
 def heads(path, text):
     """[(name, first_line, last_line, indent)] of the test heads in text, 1-based."""
@@ -360,15 +371,85 @@ for part in re.split(r";\s*(?=[^\s;:]+::)", decl):
         else:
             entries[(path, name)] = (a, b)
 
-# A bare return counts inside the span of a test in the NEW file only; a
-# helper next to the tests may return early.
+# A return that ends a test early (bare, or with None, undefined, Ok(()))
+# counts inside the span of a test in the NEW file only; a helper next to the
+# tests may return early. So may a function nested in the test (a stub, a
+# callback): its return ends that function, not the test. A Go subtest (t.Run)
+# is no such function, a return there ends the subtest. And a return with no
+# code of the test after it ends nothing.
+# Per language: a string "function", a vi.fn( or a Rust match arm `=> {` is no
+# function of its own.
+NESTED = {
+    "py": re.compile(r"^\s*(async\s+)?def\s"),
+    "js": re.compile(r"\bfunction\s*\*?\s*[\w$]*\s*\(|=>\s*\{\s*$"),
+    "rs": re.compile(r"\bfn\s+\w|\|[^|]*\|\s*(->\s*[^{]*)?\{\s*$"),
+    "go": re.compile(r"\bfunc\b"),
+}
+SUBTEST = re.compile(r"\bt\.Run\(")
+
+
+def lang(path):
+    if path.endswith(".py"):
+        return "py"
+    if path.endswith(".go"):
+        return "go"
+    if path.endswith(".rs"):
+        return "rs"
+    return "js" if re.search(r"\.(t|j)sx?$|\.mjs$|\.cjs$", path) else None
+
+
+def code(s):
+    t = s.strip()
+    return bool(t) and not t.startswith(("#", "//")) and bool(t.strip(")]};,"))
+
+
+def depth(s):
+    return len(s) - len(s.lstrip(" \t"))
+
+
+def ends_test_early(src, a, b, n, nested):
+    # Walk the openers above the return, each one less indented than the last,
+    # up to the head of the test; a closer line (`) -> None:`, `} else {`)
+    # opens nothing of its own.
+    cur = depth(src[n - 1])
+    for k in range(n - 1, a, -1):
+        s = src[k - 1]
+        if not code(s) or s.lstrip().startswith((")", "]", "}")):
+            continue
+        if depth(s) < cur:
+            if nested and nested.search(s) and not SUBTEST.search(s):
+                return False
+            cur = depth(s)
+    return any(code(src[k - 1]) for k in range(n + 1, b + 1))
+
+
 spans = {}
 for path, newno, ln in ars:
     if path not in spans:
-        spans[path] = heads(path, new_text(path))
+        src = new_text(path)
+        spans[path] = (src.split("\n"), heads(path, src))
+    lines, found = spans[path]
     n = int(newno)
-    if any(a < n <= b for _, a, b, _ in spans[path]):
-        out.append(f"{path}:{newno}  bare return in a test: {ln}")
+    if any(a < n <= b and ends_test_early(lines, a, b, n, NESTED.get(lang(path))) for _, a, b, _ in found):
+        out.append(f"{path}:{newno}  early return in a test: {ln}")
+
+# R-0130: a removed assertion counts where tests are — in a test file, or in
+# the span of a test in the OLD file (Rust keeps tests inline under src/) —
+# and an import line never is one (`use pretty_assertions::assert_eq;`).
+# Production code may lose an assert or an .expect( without silencing a test.
+TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_[^/]*[.]py$|_test[.](py|go|sh)$|[.](test|spec)[.][^/]+$")
+IMPORT = re.compile(r"^(use|import)[ \t]|^from[ \t]+[^ \t]+[ \t]+import[ \t]")
+old_spans = {}
+
+def where_tests_are(path, n):
+    old = renamed.get(path, path)
+    if TEST_PATH.search(path) or TEST_PATH.search(old):
+        return True
+    if old not in old_spans:
+        old_spans[old] = heads(old, old_text(old))
+    return any(a <= n <= b for _, a, b, _ in old_spans[old])
+
+ras = [r for r in ras if not IMPORT.match(r[2]) and where_tests_are(r[0], int(r[1]))]
 
 used = set()
 for path, oldno, text in ras:
