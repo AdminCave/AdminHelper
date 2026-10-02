@@ -35,6 +35,10 @@ IntColumn = Annotated[int, Field(ge=-2147483648, le=2147483647)]
 # A day of the week, 0 = Monday — the domain of a weekly maintenance window.
 Weekday = Annotated[int, Field(ge=0, le=6)]
 
+# The length of a weekly maintenance window, at most a day: the evaluator's
+# day_offset loop relies on that cap (schemas.MaintenanceInput._kind_fields).
+WindowMinutes = Annotated[int, Field(ge=1, le=1440)]
+
 
 def _find_nul(data: dict) -> tuple[tuple, str] | None:
     """Location and value of a string in `data` that carries a NUL, if any.

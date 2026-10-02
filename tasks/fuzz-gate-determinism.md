@@ -101,3 +101,18 @@ entsprechend. CHANGELOG [Unreleased] ein Eintrag.
 Verify: bash scripts/dev/verify.sh scripts --strict
 Doku: die Task ist die Doku
 Abhängt von: T2, T3, T4
+
+### T6 — Nachträge aus /code-review: Domänengrenze duration_minutes, wirksame 422-Tests, Protokoll-Kodierung, Pin-Satz  [x]
+Komponente: monitoring · Dateien: apps/monitoring/app/core/bounds.py, apps/monitoring/app/schemas.py, apps/monitoring/tests/test_openapi_integer_bounds.py, apps/monitoring/tests/openapi.snapshot.json, scripts/tests/schemathesis_curl_log.py, DEVELOPMENT.md, CHANGELOG.md
+Evidenz: run.sh[quick] monitoring scripts: 10 passed, 0 failed, 8 skipped @2b3e9907 2026-10-02T13:25:10+02:00
+Review: approve (sonnet), nit miterledigt
+Herkunft: /code-review über den Branch-Diff (2026-10-02)
+Änderung: (1) `duration_minutes` trägt die Domänengrenze des Modells (1..1440, Validator `_kind_fields`) im Schema statt der
+int32-Spanne, wie es die Regel aus T3 verlangt (Typ `WindowMinutes` in `bounds.py`); der Desktop sendet bei `once` `null`, bei
+`weekly` 1..1440. (2) Die 422-Tests prüfen, dass die Feldschranke greift (`detail[].type` und `loc` des Felds), nicht nur
+irgendeine 422 — zwei Zeilen fing schon vorher ein Validator. (3) Das curl-Protokoll schreibt `ensure_ascii=True`, damit ein
+einzelnes Surrogat den Messlauf nicht mit falscher Ursache rot macht. (4) DEVELOPMENT.md: Die Pins gelten im CI-Job und in
+jedem run.sh-Lauf, dessen pytest-Schritte `requirements-dev.txt` installieren; ein nackter `--step schemathesis` nimmt das
+venv, wie es ist. CHANGELOG-Eintrag aus T3 nachziehen.
+Verify: bash scripts/tests/run.sh quick --strict --only monitoring scripts
+Doku: DEVELOPMENT.md (Teil der Task), CHANGELOG

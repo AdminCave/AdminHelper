@@ -111,7 +111,9 @@ Gleichzeitigkeit etwas tut. Dafür erzeugen diese Suiten ihre Eingaben selbst.
   in einer `OFFSET`- oder INTEGER-Spalte).
 - **Versionen gepinnt:** `hypothesis` und `schemathesis` stehen in den drei
   `requirements-dev.txt` exakt (`==`); ein neues Release ändert die Fälle erst mit
-  einem Commit. Prüfwerkzeug: `bash scripts/tests/schemathesis_determinism.sh
+  einem Commit. Das gilt im CI-Job und in jedem `run.sh`-Lauf, dessen pytest-Schritte
+  die `requirements-dev.txt` installieren; ein Lauf nur mit `--step schemathesis` nimmt
+  das venv, wie es ist. Prüfwerkzeug: `bash scripts/tests/schemathesis_determinism.sh
   [--only <dienst…>]` fährt den Gate-Schritt je Dienst zweimal und vergleicht die
   Fälle je Test als `curl`-Protokoll (`<dienst>: N cases, M differing lines`, Exit 0
   nur bei 0 Abweichungen). Für den Server nur fahren, wenn keine andere Server-Suite

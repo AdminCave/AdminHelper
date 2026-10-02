@@ -13,7 +13,7 @@ from pydantic import Field, field_validator, model_validator
 
 from app.check_configs import validate_check_config
 from app.check_types import VALID_CHECK_TYPES
-from app.core.bounds import IntColumn, RequestModel, Weekday
+from app.core.bounds import IntColumn, RequestModel, Weekday, WindowMinutes
 
 
 class CheckCreate(RequestModel):
@@ -183,7 +183,7 @@ class MaintenanceInput(RequestModel):
     ends_at: datetime | None = None
     weekdays: list[Weekday] = []
     start_time: str | None = None
-    duration_minutes: IntColumn | None = None
+    duration_minutes: WindowMinutes | None = None
     timezone: str = "UTC"
     enabled: bool = True
 

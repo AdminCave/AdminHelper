@@ -123,3 +123,27 @@ def test_values_past_the_bounds_are_a_422(client_db, path, body):
     # answers 422 instead of handing the value to the database.
     client, _ = client_db
     assert client.post(path, json=body).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "path,body,loc",
+    [
+        (
+            "/alerts",
+            {"name": "r", "channel": "webhook", "cooldown_minutes": 2**31},
+            ["body", "cooldown_minutes"],
+        ),
+        ("/checks", {**_PING, "consecutive_fails": 2**31}, ["body", "consecutive_fails"]),
+        ("/maintenance", {**_WEEKLY, "duration_minutes": 2000}, ["body", "duration_minutes"]),
+        ("/maintenance", {**_WEEKLY, "weekdays": [7]}, ["body", "weekdays", 0]),
+    ],
+)
+def test_the_field_bound_itself_answers(client_db, path, body, loc):
+    # The bound of the field itself answers, not a model validator further down: the
+    # INTEGER columns end at 2**31 - 1, a weekly window at 1440 minutes, a weekday at 6.
+    client, _ = client_db
+    r = client.post(path, json=body)
+    assert r.status_code == 422, r.text
+    assert {"type": "less_than_equal", "loc": loc} in [
+        {"type": e["type"], "loc": e["loc"]} for e in r.json()["detail"]
+    ], r.text

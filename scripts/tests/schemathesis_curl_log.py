@@ -56,7 +56,8 @@ def pytest_configure(config):
     def call_and_validate(self, *args, **kwargs):
         test = os.environ.get("PYTEST_CURRENT_TEST", "?").rsplit(" (", 1)[0]
         with open(_LOG, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps([test, _curl(self)], ensure_ascii=False) + "\n")
+            # ensure_ascii: a lone surrogate in a generated value must not fail the write.
+            fh.write(json.dumps([test, _curl(self)]) + "\n")
         return original(self, *args, **kwargs)
 
     schemathesis.Case.call_and_validate = call_and_validate

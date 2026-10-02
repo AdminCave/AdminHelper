@@ -288,9 +288,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Monitoring durch einen Stub; die fuenf Ausschluesse der Proxy-Routen sind entfallen. Doku:
   `DEVELOPMENT.md` „Generatoren", `docs/developer/cicd.html`.
 - **Monitoring: Obergrenzen fuer ganzzahlige Eingaben (R-0063):** `cooldown_minutes` (Alert-Regeln und
-  Vorlagen), `consecutive_fails` (Checks und Vorlagen) und `duration_minutes` (Wartungsfenster) enden
-  bei der INTEGER-Grenze `2147483647`, `weekdays` traegt 0–6 jetzt auch im Schema. Groessere Werte
-  beantwortet der Dienst mit `422`, statt sie an die Datenbank zu geben. Je Dienst prueft ein Test, dass
+  Vorlagen) und `consecutive_fails` (Checks und Vorlagen) enden bei der INTEGER-Grenze `2147483647`;
+  `duration_minutes` (1–1440) und `weekdays` (0–6) der Wartungsfenster tragen ihre Grenzen jetzt auch
+  im Schema, bisher galten sie nur im Validator (ein `once`-Fenster, das `duration_minutes` bisher
+  ignorierte, darf damit keinen Wert ausserhalb 1–1440 mehr senden). Groessere Werte beantwortet der
+  Dienst mit `422`, statt sie an die Datenbank zu geben. Je Dienst prueft ein Test, dass
   jeder Integer-Eingang des veroeffentlichten Schemas ein `maximum` hat.
 - **Import-422 in der deklarierten Form (Server):** `POST /api/connections/import` meldet abgelehnte
   Eintraege jetzt wie jede andere 422 der API: `detail` ist eine Liste mit einem Eintrag je Fehler,
